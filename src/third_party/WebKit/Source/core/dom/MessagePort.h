@@ -27,7 +27,6 @@
 #ifndef MessagePort_h
 #define MessagePort_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
@@ -41,48 +40,45 @@
 #include "wtf/Vector.h"
 #include "wtf/WeakPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class Event;
 class ExceptionState;
-class LocalFrame;
 class MessagePort;
 class ExecutionContext;
 class SerializedScriptValue;
 
 // The overwhelmingly common case is sending a single port, so handle that efficiently with an inline buffer of size 1.
-typedef Vector<RefPtr<MessagePort>, 1> MessagePortArray;
+typedef WillBeHeapVector<RefPtrWillBeMember<MessagePort>, 1> MessagePortArray;
 
-// Not to be confused with blink::WebMessagePortChannelArray; this one uses Vector and OwnPtr instead of WebVector and raw pointers.
-typedef Vector<OwnPtr<blink::WebMessagePortChannel>, 1> MessagePortChannelArray;
+// Not to be confused with WebMessagePortChannelArray; this one uses Vector and OwnPtr instead of WebVector and raw pointers.
+typedef Vector<OwnPtr<WebMessagePortChannel>, 1> MessagePortChannelArray;
 
 class MessagePort FINAL : public RefCountedWillBeRefCountedGarbageCollected<MessagePort>
     , public ActiveDOMObject
     , public EventTargetWithInlineData
-    , public ScriptWrappable
-    , public blink::WebMessagePortChannelClient {
+    , public WebMessagePortChannelClient {
     REFCOUNTED_EVENT_TARGET(MessagePort);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MessagePort);
 public:
     static PassRefPtrWillBeRawPtr<MessagePort> create(ExecutionContext&);
     virtual ~MessagePort();
 
-    void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, ExceptionState&);
+    void postMessage(ExecutionContext*, PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, ExceptionState&);
 
     void start();
     void close();
 
-    void entangle(PassOwnPtr<blink::WebMessagePortChannel>);
-    PassOwnPtr<blink::WebMessagePortChannel> disentangle();
+    void entangle(PassOwnPtr<WebMessagePortChannel>);
+    PassOwnPtr<WebMessagePortChannel> disentangle();
 
-    static PassOwnPtr<blink::WebMessagePortChannelArray> toWebMessagePortChannelArray(PassOwnPtr<MessagePortChannelArray>);
-    static PassOwnPtr<MessagePortArray> toMessagePortArray(ExecutionContext*, const blink::WebMessagePortChannelArray&);
+    static PassOwnPtr<WebMessagePortChannelArray> toWebMessagePortChannelArray(PassOwnPtr<MessagePortChannelArray>);
+    static PassOwnPtrWillBeRawPtr<MessagePortArray> toMessagePortArray(ExecutionContext*, const WebMessagePortChannelArray&);
 
     // Returns 0 if there is an exception, or if the passed-in array is 0/empty.
     static PassOwnPtr<MessagePortChannelArray> disentanglePorts(const MessagePortArray*, ExceptionState&);
 
     // Returns 0 if the passed array is 0/empty.
-    static PassOwnPtr<MessagePortArray> entanglePorts(ExecutionContext&, PassOwnPtr<MessagePortChannelArray>);
+    static PassOwnPtrWillBeRawPtr<MessagePortArray> entanglePorts(ExecutionContext&, PassOwnPtr<MessagePortChannelArray>);
 
     bool started() const { return m_started; }
 
@@ -114,7 +110,7 @@ private:
     virtual void messageAvailable() OVERRIDE;
     void dispatchMessages();
 
-    OwnPtr<blink::WebMessagePortChannel> m_entangledChannel;
+    OwnPtr<WebMessagePortChannel> m_entangledChannel;
 
     bool m_started;
     bool m_closed;
@@ -122,6 +118,6 @@ private:
     WeakPtrFactory<MessagePort> m_weakFactory;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MessagePort_h

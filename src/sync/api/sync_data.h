@@ -15,8 +15,8 @@
 #include "base/stl_util.h"
 #include "base/time/time.h"
 #include "sync/api/attachments/attachment.h"
-#include "sync/api/attachments/attachment_service_proxy.h"
 #include "sync/base/sync_export.h"
+#include "sync/internal_api/public/attachments/attachment_service_proxy.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/util/immutable.h"
 #include "sync/internal_api/public/util/weak_handle.h"
@@ -110,7 +110,7 @@ class SYNC_EXPORT SyncData {
 
   // Necessary since we forward-declare sync_pb::SyncEntity; see
   // comments in immutable.h.
-  struct ImmutableSyncEntityTraits {
+  struct SYNC_EXPORT ImmutableSyncEntityTraits {
     typedef sync_pb::SyncEntity* Wrapper;
 
     static void InitializeWrapper(Wrapper* wrapper);

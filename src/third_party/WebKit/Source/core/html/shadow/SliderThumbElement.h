@@ -37,7 +37,7 @@
 #include "core/rendering/RenderBlockFlow.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLElement;
 class HTMLInputElement;
@@ -80,19 +80,6 @@ inline PassRefPtrWillBeRawPtr<Element> SliderThumbElement::cloneElementWithoutAt
 
 // FIXME: There are no ways to check if a node is a SliderThumbElement.
 DEFINE_ELEMENT_TYPE_CASTS(SliderThumbElement, isHTMLElement());
-
-// --------------------------------
-
-class RenderSliderThumb FINAL : public RenderBlockFlow {
-public:
-    RenderSliderThumb(SliderThumbElement*);
-    void updateAppearance(RenderStyle* parentStyle);
-
-private:
-    virtual bool isSliderThumb() const OVERRIDE;
-};
-
-// --------------------------------
 
 class SliderContainerElement FINAL : public HTMLDivElement {
 public:

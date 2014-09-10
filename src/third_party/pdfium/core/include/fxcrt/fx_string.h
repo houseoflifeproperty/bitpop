@@ -1,7 +1,7 @@
 // Copyright 2014 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
- 
+
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #ifndef _FX_STRING_H_
@@ -340,7 +340,7 @@ public:
 protected:
 
     struct CFX_StringData*	m_pData;
-    void					AllocCopy(CFX_ByteString& dest, FX_STRSIZE nCopyLen, FX_STRSIZE nCopyIndex, FX_STRSIZE nExtraLen) const;
+    void					AllocCopy(CFX_ByteString& dest, FX_STRSIZE nCopyLen, FX_STRSIZE nCopyIndex) const;
     void					AssignCopy(FX_STRSIZE nSrcLen, FX_LPCSTR lpszSrcData);
     void					ConcatCopy(FX_STRSIZE nSrc1Len, FX_LPCSTR lpszSrc1Data, FX_STRSIZE nSrc2Len, FX_LPCSTR lpszSrc2Data);
     void					ConcatInPlace(FX_STRSIZE nSrcLen, FX_LPCSTR lpszSrcData);
@@ -634,9 +634,11 @@ public:
 
     static CFX_WideString	FromLocal(const char* str, FX_STRSIZE len = -1);
 
-    static CFX_WideString	FromUTF8(const char* str, FX_STRSIZE len = -1);
+    static CFX_WideString	FromUTF8(const char* str, FX_STRSIZE len);
 
-    static CFX_WideString	FromUTF16LE(const unsigned short* str, FX_STRSIZE len = -1);
+    static CFX_WideString	FromUTF16LE(const unsigned short* str, FX_STRSIZE len);
+
+    static FX_STRSIZE       WStringLength(const unsigned short* str);
 
     operator FX_LPCWSTR() const
     {
@@ -756,7 +758,7 @@ protected:
     void					ConcatInPlace(FX_STRSIZE nSrcLen, FX_LPCWSTR lpszSrcData);
     void					ConcatCopy(FX_STRSIZE nSrc1Len, FX_LPCWSTR lpszSrc1Data, FX_STRSIZE nSrc2Len, FX_LPCWSTR lpszSrc2Data);
     void					AssignCopy(FX_STRSIZE nSrcLen, FX_LPCWSTR lpszSrcData);
-    void					AllocCopy(CFX_WideString& dest, FX_STRSIZE nCopyLen, FX_STRSIZE nCopyIndex, FX_STRSIZE nExtraLen) const;
+    void					AllocCopy(CFX_WideString& dest, FX_STRSIZE nCopyLen, FX_STRSIZE nCopyIndex) const;
 };
 inline CFX_WideStringC::CFX_WideStringC(const CFX_WideString& src)
 {
@@ -841,30 +843,4 @@ inline CFX_ByteString	FX_UTF8Encode(const CFX_WideString &wsStr)
 {
     return FX_UTF8Encode((FX_LPCWSTR)wsStr, wsStr.GetLength());
 }
-class CFX_ByteStringL : public CFX_ByteStringC
-{
-public:
-    CFX_ByteStringL() : CFX_ByteStringC() {}
-    ~CFX_ByteStringL() {}
-
-    void		Empty(IFX_Allocator* pAllocator);
-    FX_LPSTR	AllocBuffer(FX_STRSIZE length, IFX_Allocator* pAllocator);
-
-    void		Set(FX_BSTR src, IFX_Allocator* pAllocator);
-};
-class CFX_WideStringL : public CFX_WideStringC
-{
-public:
-    CFX_WideStringL() : CFX_WideStringC() {}
-    ~CFX_WideStringL() {}
-
-    void		Empty(IFX_Allocator* pAllocator);
-    void		Set(FX_WSTR src, IFX_Allocator* pAllocator);
-
-    int			GetInteger() const;
-    FX_FLOAT	GetFloat() const;
-
-    void		TrimRight(FX_LPCWSTR lpszTargets);
-};
-void	FX_UTF8Encode(FX_LPCWSTR pwsStr, FX_STRSIZE len, CFX_ByteStringL &utf8Str, IFX_Allocator* pAllocator = NULL);
 #endif

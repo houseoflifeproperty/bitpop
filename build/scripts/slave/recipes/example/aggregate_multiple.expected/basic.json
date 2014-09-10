@@ -1,0 +1,50 @@
+[
+  {
+    "cmd": [
+      "true"
+    ],
+    "name": "prelude"
+  },
+  {
+    "cmd": [
+      "true"
+    ],
+    "name": "aggregated start"
+  },
+  {
+    "cmd": [
+      "true"
+    ],
+    "name": "aggregated finish"
+  },
+  {
+    "cmd": [
+      "true"
+    ],
+    "name": "normal start"
+  },
+  {
+    "cmd": [
+      "true"
+    ],
+    "name": "normal finish"
+  },
+  {
+    "cmd": [
+      "true"
+    ],
+    "name": "composite start"
+  },
+  {
+    "cmd": [
+      "true"
+    ],
+    "name": "composite finish"
+  },
+  {
+    "cmd": [
+      "true"
+    ],
+    "name": "clean up"
+  }
+]

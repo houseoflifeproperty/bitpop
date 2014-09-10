@@ -25,6 +25,7 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 from StringIO import StringIO
 
 from webkitpy.common.system.environment import Environment
@@ -37,6 +38,7 @@ from webkitpy.common.system.workspace_mock import MockWorkspace
 
 class MockSystemHost(object):
     def __init__(self, log_executive=False, executive_throws_when_run=None, os_name=None, os_version=None, executive=None, filesystem=None):
+        self.executable = 'python'
         self.executive = executive or MockExecutive(should_log=log_executive, should_throw_when_run=executive_throws_when_run)
         self.filesystem = filesystem or MockFileSystem()
         self.user = MockUser()

@@ -30,7 +30,7 @@
 #include "core/rendering/style/StyleTransformData.h"
 #include "core/rendering/svg/ReferenceFilterBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 StyleRareNonInheritedData::StyleRareNonInheritedData()
     : opacity(RenderStyle::initialOpacity())
@@ -87,10 +87,14 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_touchAction(RenderStyle::initialTouchAction())
     , m_objectFit(RenderStyle::initialObjectFit())
     , m_isolation(RenderStyle::initialIsolation())
+    , m_justifyItems(RenderStyle::initialJustifyItems())
+    , m_justifyItemsOverflowAlignment(RenderStyle::initialJustifyItemsOverflowAlignment())
+    , m_justifyItemsPositionType(NonLegacyPosition)
     , m_justifySelf(RenderStyle::initialJustifySelf())
     , m_justifySelfOverflowAlignment(RenderStyle::initialJustifySelfOverflowAlignment())
     , m_scrollBehavior(RenderStyle::initialScrollBehavior())
     , m_requiresAcceleratedCompositingForExternalReasons(false)
+    , m_hasInlineTransform(false)
 {
     m_maskBoxImage.setMaskDefaults();
 }
@@ -167,10 +171,14 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_touchAction(o.m_touchAction)
     , m_objectFit(o.m_objectFit)
     , m_isolation(o.m_isolation)
+    , m_justifyItems(o.m_justifyItems)
+    , m_justifyItemsOverflowAlignment(o.m_justifyItemsOverflowAlignment)
+    , m_justifyItemsPositionType(o.m_justifyItemsPositionType)
     , m_justifySelf(o.m_justifySelf)
     , m_justifySelfOverflowAlignment(o.m_justifySelfOverflowAlignment)
     , m_scrollBehavior(o.m_scrollBehavior)
     , m_requiresAcceleratedCompositingForExternalReasons(o.m_requiresAcceleratedCompositingForExternalReasons)
+    , m_hasInlineTransform(o.m_hasInlineTransform)
 {
 }
 
@@ -251,10 +259,14 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_touchAction == o.m_touchAction
         && m_objectFit == o.m_objectFit
         && m_isolation == o.m_isolation
+        && m_justifyItems == o.m_justifyItems
+        && m_justifyItemsOverflowAlignment == o.m_justifyItemsOverflowAlignment
+        && m_justifyItemsPositionType == o.m_justifyItemsPositionType
         && m_justifySelf == o.m_justifySelf
         && m_justifySelfOverflowAlignment == o.m_justifySelfOverflowAlignment
         && m_scrollBehavior == o.m_scrollBehavior
-        && m_requiresAcceleratedCompositingForExternalReasons == o.m_requiresAcceleratedCompositingForExternalReasons;
+        && m_requiresAcceleratedCompositingForExternalReasons == o.m_requiresAcceleratedCompositingForExternalReasons
+        && m_hasInlineTransform == o.m_hasInlineTransform;
 }
 
 bool StyleRareNonInheritedData::contentDataEquivalent(const StyleRareNonInheritedData& o) const
@@ -308,4 +320,4 @@ bool StyleRareNonInheritedData::hasFilters() const
     return m_filter.get() && !m_filter->m_operations.isEmpty();
 }
 
-} // namespace WebCore
+} // namespace blink

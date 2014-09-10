@@ -10,11 +10,12 @@ from telemetry.core import exceptions
 from telemetry.core import extension_dict
 from telemetry.core import local_server
 from telemetry.core import memory_cache_http_server
-from telemetry.core import platform
 from telemetry.core import tab_list
 from telemetry.core import wpr_modes
 from telemetry.core import wpr_server
 from telemetry.core.backends import browser_backend
+from telemetry.core.platform import tracing_category_filter
+from telemetry.core.platform import tracing_options
 from telemetry.core.platform.profiler import profiler_finder
 
 
@@ -30,17 +31,18 @@ class Browser(object):
       ... do all your operations on browser here
   """
   def __init__(self, backend, platform_backend):
+    assert platform_backend.platform != None
+
     self._browser_backend = backend
-    self._http_server = None
-    self._wpr_server = None
     self._platform_backend = platform_backend
-    self._platform = platform.Platform(platform_backend)
+    self._wpr_server = None
     self._active_profilers = []
     self._profilers_states = {}
     self._local_server_controller = local_server.LocalServerController(backend)
     self._tabs = tab_list.TabList(backend.tab_list_backend)
     self.credentials = browser_credentials.BrowserCredentials()
-    self._platform.SetFullPerformanceModeEnabled(True)
+
+    self._platform_backend.DidCreateBrowser(self, self._browser_backend)
 
   def __enter__(self):
     self.Start()
@@ -51,16 +53,11 @@ class Browser(object):
 
   @property
   def platform(self):
-    return self._platform
+    return self._platform_backend.platform
 
   @property
   def browser_type(self):
     return self._browser_backend.browser_type
-
-  @property
-  def is_content_shell(self):
-    """Returns whether this browser is a content shell, only."""
-    return self._browser_backend.is_content_shell
 
   @property
   def supports_extensions(self):
@@ -100,7 +97,7 @@ class Browser(object):
 
   @property
   def supports_tracing(self):
-    return self._browser_backend.supports_tracing
+    return self.platform.tracing_controller.IsChromeTracingSupported(self)
 
   def is_profiler_active(self, profiler_name):
     return profiler_name in [profiler.name() for
@@ -182,10 +179,12 @@ class Browser(object):
     """
     self._platform_backend.PurgeUnpinnedMemory()
     result = self._GetStatsCommon(self._platform_backend.GetMemoryStats)
-    result['SystemCommitCharge'] = \
-        self._platform_backend.GetSystemCommitCharge()
-    result['SystemTotalPhysicalMemory'] = \
-        self._platform_backend.GetSystemTotalPhysicalMemory()
+    commit_charge = self._platform_backend.GetSystemCommitCharge()
+    if commit_charge:
+      result['SystemCommitCharge'] = commit_charge
+    total = self._platform_backend.GetSystemTotalPhysicalMemory()
+    if total:
+      result['SystemTotalPhysicalMemory'] = total
     return result
 
   @property
@@ -275,16 +274,28 @@ class Browser(object):
     self._active_profilers = []
     return output_files
 
+
   def StartTracing(self, custom_categories=None, timeout=10):
-    return self._browser_backend.StartTracing(custom_categories, timeout)
+    """Note: this function is deprecated. Prefer platform.tracing_controller."""
+    if not isinstance(custom_categories,
+                      tracing_category_filter.TracingCategoryFilter):
+      category_filter = tracing_category_filter.TracingCategoryFilter(
+          filter_string=custom_categories)
+    else:
+      category_filter = custom_categories
+    options = tracing_options.TracingOptions()
+    options.enable_chrome_trace = True
+    return self.platform.tracing_controller.Start(
+        options, category_filter, timeout)
 
   @property
   def is_tracing_running(self):
-    return self._browser_backend.is_tracing_running
+    """Note: this function is deprecated. Prefer platform.tracing_controller."""
+    return self.platform.tracing_controller.is_tracing_running
 
   def StopTracing(self):
-    """ Stops tracing and returns the result as TimelineData object. """
-    return self._browser_backend.StopTracing()
+    """Note: this function is deprecated. Prefer platform.tracing_controller."""
+    return self.platform.tracing_controller.Stop()
 
   def Start(self):
     browser_options = self._browser_backend.browser_options
@@ -300,6 +311,7 @@ class Browser(object):
 
     self._browser_backend.SetBrowser(self)
     self._browser_backend.Start()
+    self._platform_backend.DidStartBrowser(self, self._browser_backend)
 
   def Close(self):
     """Closes this browser."""
@@ -307,15 +319,12 @@ class Browser(object):
       profiler_class.WillCloseBrowser(self._browser_backend,
                                       self._platform_backend)
 
-    self.platform.SetFullPerformanceModeEnabled(False)
+    if self._browser_backend.IsBrowserRunning():
+      self._platform_backend.WillCloseBrowser(self, self._browser_backend)
 
     if self._wpr_server:
       self._wpr_server.Close()
       self._wpr_server = None
-
-    if self._http_server:
-      self._http_server.Close()
-      self._http_server = None
 
     self._local_server_controller.Close()
     self._browser_backend.Close()
@@ -324,7 +333,7 @@ class Browser(object):
   @property
   def http_server(self):
     return self._local_server_controller.GetRunningServer(
-      memory_cache_http_server.MemoryCacheHTTPServer, None)
+        memory_cache_http_server.MemoryCacheHTTPServer, None)
 
   def SetHTTPServerDirectories(self, paths):
     """Returns True if the HTTP server was started, False otherwise."""

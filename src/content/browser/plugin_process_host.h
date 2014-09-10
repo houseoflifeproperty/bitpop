@@ -20,10 +20,10 @@
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "content/public/common/process_type.h"
+#include "content/public/common/resource_type.h"
 #include "content/public/common/webplugininfo.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ui/gfx/native_widget_types.h"
-#include "webkit/common/resource_type.h"
 
 struct ResourceHostMsg_Request;
 
@@ -134,8 +134,6 @@ class CONTENT_EXPORT PluginProcessHost : public BrowserChildProcessHostDelegate,
 #endif
 
 #if defined(OS_MACOSX)
-  void OnPluginSelectWindow(uint32 window_id, gfx::Rect window_rect,
-                            bool modal);
   void OnPluginShowWindow(uint32 window_id, gfx::Rect window_rect,
                           bool modal);
   void OnPluginHideWindow(uint32 window_id, gfx::Rect window_rect);

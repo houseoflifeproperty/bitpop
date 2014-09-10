@@ -413,7 +413,7 @@ void DesktopWindowTreeHostWin::FlashFrame(bool flash_frame) {
   message_handler_->FlashFrame(flash_frame);
 }
 
-void DesktopWindowTreeHostWin::OnRootViewLayout() const {
+void DesktopWindowTreeHostWin::OnRootViewLayout() {
 }
 
 void DesktopWindowTreeHostWin::OnNativeWidgetFocus() {
@@ -507,10 +507,6 @@ void DesktopWindowTreeHostWin::ReleaseCapture() {
 
 void DesktopWindowTreeHostWin::PostNativeEvent(
     const base::NativeEvent& native_event) {
-}
-
-void DesktopWindowTreeHostWin::OnDeviceScaleFactorChanged(
-    float device_scale_factor) {
 }
 
 void DesktopWindowTreeHostWin::SetCursorNative(gfx::NativeCursor cursor) {
@@ -693,7 +689,6 @@ void DesktopWindowTreeHostWin::HandleCancelMode() {
 
 void DesktopWindowTreeHostWin::HandleCaptureLost() {
   OnHostLostWindowCapture();
-  native_widget_delegate_->OnMouseCaptureLost();
 }
 
 void DesktopWindowTreeHostWin::HandleClose() {
@@ -866,13 +861,6 @@ bool DesktopWindowTreeHostWin::HandleTooltipNotify(int w_param,
                                                    NMHDR* l_param,
                                                    LRESULT* l_result) {
   return tooltip_ && tooltip_->HandleNotify(w_param, l_param, l_result);
-}
-
-void DesktopWindowTreeHostWin::HandleTooltipMouseMove(UINT message,
-                                                      WPARAM w_param,
-                                                      LPARAM l_param) {
-  // TooltipWin implementation doesn't need this.
-  // TODO(sky): remove from HWNDMessageHandler once non-aura path nuked.
 }
 
 void DesktopWindowTreeHostWin::HandleMenuLoop(bool in_menu_loop) {

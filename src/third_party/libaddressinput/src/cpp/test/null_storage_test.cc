@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libaddressinput/callback.h>
 #include <libaddressinput/null_storage.h>
+
+#include <libaddressinput/callback.h>
 #include <libaddressinput/storage.h>
 #include <libaddressinput/util/basictypes.h>
 #include <libaddressinput/util/scoped_ptr.h>
@@ -32,16 +33,16 @@ using i18n::addressinput::Storage;
 
 class NullStorageTest : public testing::Test {
  protected:
-  NullStorageTest() {}
+  NullStorageTest()
+      : data_ready_(BuildCallback(this, &NullStorageTest::OnDataReady)) {}
 
-  Storage::Callback* BuildCallback() {
-    return ::BuildCallback(this, &NullStorageTest::OnDataReady);
-  }
+  virtual ~NullStorageTest() {}
 
   NullStorage storage_;
   bool success_;
   std::string key_;
   std::string data_;
+  const scoped_ptr<const Storage::Callback> data_ready_;
 
   static const char kKey[];
 
@@ -68,8 +69,7 @@ TEST_F(NullStorageTest, Put) {
 }
 
 TEST_F(NullStorageTest, Get) {
-  const scoped_ptr<const Storage::Callback> callback(BuildCallback());
-  storage_.Get(kKey, *callback);
+  storage_.Get(kKey, *data_ready_);
   EXPECT_FALSE(success_);
   EXPECT_EQ(kKey, key_);
   EXPECT_TRUE(data_.empty());

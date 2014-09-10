@@ -70,6 +70,27 @@ void ConsolidateCaptureFormats(media::VideoCaptureFormats* formats) {
   }
 }
 
+// The maximum number of buffers in the capture pipeline.  See
+// VideoCaptureController ctor comments for more details.
+const int kMaxNumberOfBuffers = 3;
+const int kMaxNumberOfBuffersForTabCapture = 5;
+
+// Used for logging capture events.
+// Elements in this enum should not be deleted or rearranged; the only
+// permitted operation is to add new elements before NUM_VIDEO_CAPTURE_EVENT.
+enum VideoCaptureEvent {
+  VIDEO_CAPTURE_EVENT_START_CAPTURE = 0,
+  VIDEO_CAPTURE_EVENT_STOP_CAPTURE_NORMAL = 1,
+  VIDEO_CAPTURE_EVENT_STOP_CAPTURE_DUE_TO_ERROR = 2,
+  NUM_VIDEO_CAPTURE_EVENT
+};
+
+void LogVideoCaptureEvent(VideoCaptureEvent event) {
+  UMA_HISTOGRAM_ENUMERATION("Media.VideoCaptureManager.Event",
+                            event,
+                            NUM_VIDEO_CAPTURE_EVENT);
+}
+
 }  // namespace
 
 namespace content {
@@ -282,6 +303,8 @@ void VideoCaptureManager::StartCaptureForClient(
 
   DCHECK(entry->video_capture_controller);
 
+  LogVideoCaptureEvent(VIDEO_CAPTURE_EVENT_START_CAPTURE);
+
   // First client starts the device.
   if (entry->video_capture_controller->GetClientCount() == 0) {
     DVLOG(1) << "VideoCaptureManager starting device (type = "
@@ -311,6 +334,10 @@ void VideoCaptureManager::StopCaptureForClient(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(controller);
   DCHECK(client_handler);
+
+  LogVideoCaptureEvent(aborted_due_to_error ?
+      VIDEO_CAPTURE_EVENT_STOP_CAPTURE_DUE_TO_ERROR :
+      VIDEO_CAPTURE_EVENT_STOP_CAPTURE_NORMAL);
 
   DeviceEntry* entry = GetDeviceEntryForController(controller);
   if (!entry) {
@@ -582,8 +609,10 @@ VideoCaptureManager::DeviceEntry* VideoCaptureManager::GetOrCreateDeviceEntry(
     return existing_device;
   }
 
+  const int max_buffers = device_info.type == MEDIA_TAB_VIDEO_CAPTURE ?
+      kMaxNumberOfBuffersForTabCapture : kMaxNumberOfBuffers;
   scoped_ptr<VideoCaptureController> video_capture_controller(
-      new VideoCaptureController());
+      new VideoCaptureController(max_buffers));
   DeviceEntry* new_device = new DeviceEntry(device_info.type,
                                             device_info.id,
                                             video_capture_controller.Pass());

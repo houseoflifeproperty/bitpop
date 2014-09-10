@@ -26,6 +26,7 @@
 #include "chrome/test/base/testing_profile_manager.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/test/bookmark_test_helpers.h"
+#include "components/history/core/browser/keyword_search_term.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
@@ -114,7 +115,8 @@ class AndroidProviderBackendDelegate : public HistoryBackend::Delegate {
 class AndroidProviderBackendTest : public testing::Test {
  public:
   AndroidProviderBackendTest()
-      : profile_manager_(
+      : thumbnail_db_(NULL),
+        profile_manager_(
           TestingBrowserProcess::GetGlobal()),
         bookmark_model_(NULL),
         ui_thread_(BrowserThread::UI, &message_loop_),
@@ -364,7 +366,6 @@ TEST_F(AndroidProviderBackendTest, UpdateTables) {
 
 TEST_F(AndroidProviderBackendTest, QueryHistoryAndBookmarks) {
   GURL url1("http://www.cnn.com");
-  URLID url_id1 = 0;
   const base::string16 title1(UTF8ToUTF16("cnn"));
   std::vector<VisitInfo> visits1;
   Time last_visited1 = Time::Now() - TimeDelta::FromDays(1);
@@ -375,7 +376,6 @@ TEST_F(AndroidProviderBackendTest, QueryHistoryAndBookmarks) {
   visits1.push_back(VisitInfo(last_visited1, content::PAGE_TRANSITION_LINK));
 
   GURL url2("http://www.example.com");
-  URLID url_id2 = 0;
   std::vector<VisitInfo> visits2;
   const base::string16 title2(UTF8ToUTF16("example"));
   Time last_visited2 = Time::Now();
@@ -394,17 +394,13 @@ TEST_F(AndroidProviderBackendTest, QueryHistoryAndBookmarks) {
   history_backend->Init(std::string(), false);
   history_backend->AddVisits(url1, visits1, history::SOURCE_SYNCED);
   history_backend->AddVisits(url2, visits2, history::SOURCE_SYNCED);
-  URLRow url_row;
 
-  ASSERT_TRUE(history_backend->GetURL(url1, &url_row));
-  url_id1 = url_row.id();
-  url_row.set_title(title1);
-  ASSERT_TRUE(history_backend->UpdateURL(url_id1, url_row));
-
-  ASSERT_TRUE(history_backend->GetURL(url2, &url_row));
-  url_id2 = url_row.id();
-  url_row.set_title(title2);
-  ASSERT_TRUE(history_backend->UpdateURL(url_id2, url_row));
+  history::URLRows url_rows(2u);
+  ASSERT_TRUE(history_backend->GetURL(url1, &url_rows[0]));
+  ASSERT_TRUE(history_backend->GetURL(url2, &url_rows[1]));
+  url_rows[0].set_title(title1);
+  url_rows[1].set_title(title2);
+  ASSERT_EQ(2u, history_backend->UpdateURLs(url_rows));
 
   // Set favicon to url2.
   std::vector<unsigned char> data;
@@ -1379,7 +1375,7 @@ TEST_F(AndroidProviderBackendTest, UpdateSearchTerms) {
   SearchRow search_row;
   search_row.set_search_term(update_term);
   search_row.set_url(GURL("http://google.com"));
-  search_row.set_template_url_id(1);
+  search_row.set_keyword_id(1);
   search_row.set_search_time(Time::Now() - TimeDelta::FromHours(1));
   int update_count = 0;
   ASSERT_TRUE(backend->UpdateSearchTerms(search_row, "search = ?", args,
@@ -1564,7 +1560,7 @@ TEST_F(AndroidProviderBackendTest, InsertSearchTerm) {
   SearchRow search_row;
   search_row.set_search_term(UTF8ToUTF16("google"));
   search_row.set_url(GURL("http://google.com"));
-  search_row.set_template_url_id(1);
+  search_row.set_keyword_id(1);
   search_row.set_search_time(Time::Now() - TimeDelta::FromHours(1));
 
   SearchTermID id = backend->InsertSearchTerm(search_row);
@@ -1815,7 +1811,6 @@ TEST_F(AndroidProviderBackendTest, AndroidCTSComplianceFolderColumnExists) {
 
 TEST_F(AndroidProviderBackendTest, QueryWithoutThumbnailDB) {
   GURL url1("http://www.cnn.com");
-  URLID url_id1 = 0;
   const base::string16 title1(UTF8ToUTF16("cnn"));
   std::vector<VisitInfo> visits1;
   Time last_visited1 = Time::Now() - TimeDelta::FromDays(1);
@@ -1826,7 +1821,6 @@ TEST_F(AndroidProviderBackendTest, QueryWithoutThumbnailDB) {
   visits1.push_back(VisitInfo(last_visited1, content::PAGE_TRANSITION_LINK));
 
   GURL url2("http://www.example.com");
-  URLID url_id2 = 0;
   std::vector<VisitInfo> visits2;
   const base::string16 title2(UTF8ToUTF16("example"));
   Time last_visited2 = Time::Now();
@@ -1847,15 +1841,12 @@ TEST_F(AndroidProviderBackendTest, QueryWithoutThumbnailDB) {
   history_backend->AddVisits(url2, visits2, history::SOURCE_SYNCED);
   URLRow url_row;
 
-  ASSERT_TRUE(history_backend->GetURL(url1, &url_row));
-  url_id1 = url_row.id();
-  url_row.set_title(title1);
-  ASSERT_TRUE(history_backend->UpdateURL(url_id1, url_row));
-
-  ASSERT_TRUE(history_backend->GetURL(url2, &url_row));
-  url_id2 = url_row.id();
-  url_row.set_title(title2);
-  ASSERT_TRUE(history_backend->UpdateURL(url_id2, url_row));
+  history::URLRows url_rows(2u);
+  ASSERT_TRUE(history_backend->GetURL(url1, &url_rows[0]));
+  ASSERT_TRUE(history_backend->GetURL(url2, &url_rows[1]));
+  url_rows[0].set_title(title1);
+  url_rows[1].set_title(title2);
+  ASSERT_EQ(2u, history_backend->UpdateURLs(url_rows));
 
   // Set favicon to url2.
   std::vector<unsigned char> data;
@@ -2019,7 +2010,7 @@ TEST_F(AndroidProviderBackendTest, DeleteWithoutThumbnailDB) {
 
   {
     HistoryDatabase history_db;
-    ThumbnailDatabase thumbnail_db;
+    ThumbnailDatabase thumbnail_db(NULL);
     ASSERT_EQ(sql::INIT_OK, history_db.Init(history_db_name_));
     ASSERT_EQ(sql::INIT_OK, thumbnail_db.Init(thumbnail_db_name_));
 
@@ -2096,7 +2087,7 @@ TEST_F(AndroidProviderBackendTest, UpdateFaviconWithoutThumbnail) {
 
   {
     HistoryDatabase history_db;
-    ThumbnailDatabase thumbnail_db;
+    ThumbnailDatabase thumbnail_db(NULL);
     ASSERT_EQ(sql::INIT_OK, history_db.Init(history_db_name_));
     ASSERT_EQ(sql::INIT_OK, thumbnail_db.Init(thumbnail_db_name_));
     scoped_ptr<AndroidProviderBackend> backend(

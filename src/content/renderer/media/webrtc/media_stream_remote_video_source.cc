@@ -72,7 +72,7 @@ void MediaStreamRemoteVideoSource::
 RemoteVideoSourceDelegate::RenderFrame(
     const cricket::VideoFrame* frame) {
   base::TimeDelta timestamp = base::TimeDelta::FromMicroseconds(
-      frame->GetElapsedTime() / talk_base::kNumNanosecsPerMicrosec);
+      frame->GetElapsedTime() / rtc::kNumNanosecsPerMicrosec);
 
   scoped_refptr<media::VideoFrame> video_frame;
   if (frame->GetNativeHandle() != NULL) {
@@ -106,7 +106,7 @@ RemoteVideoSourceDelegate::RenderFrame(
   media::VideoCaptureFormat format(
       gfx::Size(video_frame->natural_size().width(),
                 video_frame->natural_size().height()),
-                MediaStreamVideoSource::kDefaultFrameRate,
+                MediaStreamVideoSource::kUnknownFrameRate,
                 pixel_format);
 
   io_message_loop_->PostTask(
@@ -138,6 +138,7 @@ MediaStreamRemoteVideoSource::~MediaStreamRemoteVideoSource() {
 void MediaStreamRemoteVideoSource::GetCurrentSupportedFormats(
     int max_requested_width,
     int max_requested_height,
+    double max_requested_frame_rate,
     const VideoCaptureDeviceFormatsCB& callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
   media::VideoCaptureFormats formats;
@@ -153,7 +154,7 @@ void MediaStreamRemoteVideoSource::StartSourceImpl(
   DCHECK(!delegate_);
   delegate_ = new RemoteVideoSourceDelegate(io_message_loop(), frame_callback);
   remote_track_->AddRenderer(delegate_);
-  OnStartDone(true);
+  OnStartDone(MEDIA_DEVICE_OK);
 }
 
 void MediaStreamRemoteVideoSource::StopSourceImpl() {

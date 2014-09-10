@@ -15,8 +15,8 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/chromeos/login/screens/update_screen_actor.h"
 #include "chrome/browser/chromeos/login/screens/wizard_screen.h"
-#include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chromeos/dbus/update_engine_client.h"
+#include "chromeos/network/portal_detector/network_portal_detector.h"
 
 namespace chromeos {
 
@@ -44,8 +44,7 @@ class UpdateScreen: public UpdateEngineClient::Observer,
   // UpdateScreenActor::Delegate implementation:
   virtual void CancelUpdate() OVERRIDE;
   virtual void OnActorDestroyed(UpdateScreenActor* actor) OVERRIDE;
-  virtual void OnConnectToNetworkRequested(
-      const std::string& service_path) OVERRIDE;
+  virtual void OnConnectToNetworkRequested() OVERRIDE;
 
   // Starts network check. Made virtual to simplify mocking.
   virtual void StartNetworkCheck();

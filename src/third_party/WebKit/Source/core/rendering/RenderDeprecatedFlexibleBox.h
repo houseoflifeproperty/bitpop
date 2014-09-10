@@ -25,16 +25,14 @@
 
 #include "core/rendering/RenderBlock.h"
 
-namespace WebCore {
+namespace blink {
 
 class FlexBoxIterator;
 
 class RenderDeprecatedFlexibleBox FINAL : public RenderBlock {
 public:
-    RenderDeprecatedFlexibleBox(Element*);
+    RenderDeprecatedFlexibleBox(Element&);
     virtual ~RenderDeprecatedFlexibleBox();
-
-    static RenderDeprecatedFlexibleBox* createAnonymous(Document*);
 
     virtual const char* renderName() const OVERRIDE;
 
@@ -44,14 +42,13 @@ public:
     void layoutHorizontalBox(bool relayoutChildren);
     void layoutVerticalBox(bool relayoutChildren);
 
-    virtual bool avoidsFloats() const OVERRIDE { return true; }
     virtual bool isDeprecatedFlexibleBox() const OVERRIDE { return true; }
     bool isStretchingChildren() const { return m_stretchingChildren; }
     virtual bool canCollapseAnonymousBlockChild() const OVERRIDE { return false; }
 
     void placeChild(RenderBox* child, const LayoutPoint& location);
 
-protected:
+private:
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
     virtual void computePreferredLogicalWidths() OVERRIDE;
 
@@ -61,15 +58,14 @@ protected:
     bool isVertical() const { return style()->boxOrient() == VERTICAL; }
     bool isHorizontal() const { return style()->boxOrient() == HORIZONTAL; }
 
-    bool m_stretchingChildren;
-
-private:
     void applyLineClamp(FlexBoxIterator&, bool relayoutChildren);
     void clearLineClamp();
+
+    bool m_stretchingChildren;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderDeprecatedFlexibleBox, isDeprecatedFlexibleBox());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderDeprecatedFlexibleBox_h

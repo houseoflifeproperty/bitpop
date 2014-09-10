@@ -31,10 +31,10 @@
 #include "config.h"
 #include "modules/indexeddb/InspectorIndexedDBAgent.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "bindings/v8/ScriptController.h"
-#include "bindings/v8/ScriptState.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ScriptController.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "core/dom/DOMStringList.h"
 #include "core/dom/Document.h"
 #include "core/events/EventListener.h"
@@ -42,6 +42,7 @@
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorState.h"
 #include "core/page/Page.h"
+#include "modules/IndexedDBNames.h"
 #include "modules/indexeddb/DOMWindowIndexedDatabase.h"
 #include "modules/indexeddb/IDBCursor.h"
 #include "modules/indexeddb/IDBCursorWithValue.h"
@@ -63,22 +64,22 @@
 #include "public/platform/WebIDBTypes.h"
 #include "wtf/Vector.h"
 
-using WebCore::TypeBuilder::Array;
-using WebCore::TypeBuilder::IndexedDB::DatabaseWithObjectStores;
-using WebCore::TypeBuilder::IndexedDB::DataEntry;
-using WebCore::TypeBuilder::IndexedDB::Key;
-using WebCore::TypeBuilder::IndexedDB::KeyPath;
-using WebCore::TypeBuilder::IndexedDB::KeyRange;
-using WebCore::TypeBuilder::IndexedDB::ObjectStore;
-using WebCore::TypeBuilder::IndexedDB::ObjectStoreIndex;
+using blink::TypeBuilder::Array;
+using blink::TypeBuilder::IndexedDB::DatabaseWithObjectStores;
+using blink::TypeBuilder::IndexedDB::DataEntry;
+using blink::TypeBuilder::IndexedDB::Key;
+using blink::TypeBuilder::IndexedDB::KeyPath;
+using blink::TypeBuilder::IndexedDB::KeyRange;
+using blink::TypeBuilder::IndexedDB::ObjectStore;
+using blink::TypeBuilder::IndexedDB::ObjectStoreIndex;
 
-typedef WebCore::InspectorBackendDispatcher::IndexedDBCommandHandler::RequestDatabaseNamesCallback RequestDatabaseNamesCallback;
-typedef WebCore::InspectorBackendDispatcher::IndexedDBCommandHandler::RequestDatabaseCallback RequestDatabaseCallback;
-typedef WebCore::InspectorBackendDispatcher::IndexedDBCommandHandler::RequestDataCallback RequestDataCallback;
-typedef WebCore::InspectorBackendDispatcher::CallbackBase RequestCallback;
-typedef WebCore::InspectorBackendDispatcher::IndexedDBCommandHandler::ClearObjectStoreCallback ClearObjectStoreCallback;
+typedef blink::InspectorBackendDispatcher::IndexedDBCommandHandler::RequestDatabaseNamesCallback RequestDatabaseNamesCallback;
+typedef blink::InspectorBackendDispatcher::IndexedDBCommandHandler::RequestDatabaseCallback RequestDatabaseCallback;
+typedef blink::InspectorBackendDispatcher::IndexedDBCommandHandler::RequestDataCallback RequestDataCallback;
+typedef blink::InspectorBackendDispatcher::CallbackBase RequestCallback;
+typedef blink::InspectorBackendDispatcher::IndexedDBCommandHandler::ClearObjectStoreCallback ClearObjectStoreCallback;
 
-namespace WebCore {
+namespace blink {
 
 namespace IndexedDBAgentState {
 static const char indexedDBAgentEnabled[] = "indexedDBAgentEnabled";
@@ -200,7 +201,7 @@ void ExecutableWithDatabase::start(IDBFactory* idbFactory, SecurityOrigin*, cons
     idbOpenDBRequest->addEventListener(EventTypeNames::success, callback, false);
 }
 
-static IDBTransaction* transactionForDatabase(ExecutionContext* executionContext, IDBDatabase* idbDatabase, const String& objectStoreName, const String& mode = IDBTransaction::modeReadOnly())
+static IDBTransaction* transactionForDatabase(ExecutionContext* executionContext, IDBDatabase* idbDatabase, const String& objectStoreName, const String& mode = IndexedDBNames::readonly)
 {
     TrackExceptionState exceptionState;
     IDBTransaction* idbTransaction = idbDatabase->transaction(executionContext, objectStoreName, mode, exceptionState);
@@ -511,9 +512,9 @@ public:
                 return;
             }
 
-            idbRequest = idbIndex->openCursor(scriptState(), m_idbKeyRange.get(), blink::WebIDBCursorDirectionNext);
+            idbRequest = idbIndex->openCursor(scriptState(), m_idbKeyRange.get(), WebIDBCursorDirectionNext);
         } else {
-            idbRequest = idbObjectStore->openCursor(scriptState(), m_idbKeyRange.get(), blink::WebIDBCursorDirectionNext);
+            idbRequest = idbObjectStore->openCursor(scriptState(), m_idbKeyRange.get(), WebIDBCursorDirectionNext);
         }
         idbRequest->addEventListener(EventTypeNames::success, openCursorCallback, false);
     }
@@ -554,7 +555,7 @@ LocalFrame* findFrameWithSecurityOrigin(Page* page, const String& securityOrigin
 
 void InspectorIndexedDBAgent::provideTo(Page* page)
 {
-    OwnPtr<InspectorIndexedDBAgent> agent(adoptPtr(new InspectorIndexedDBAgent(page)));
+    OwnPtrWillBeRawPtr<InspectorIndexedDBAgent> agent(adoptPtrWillBeNoop(new InspectorIndexedDBAgent(page)));
     page->inspectorController().registerModuleAgent(agent.release());
 }
 
@@ -730,7 +731,7 @@ public:
     {
         if (!requestCallback()->isActive())
             return;
-        IDBTransaction* idbTransaction = transactionForDatabase(context(), idbDatabase, m_objectStoreName, IDBTransaction::modeReadWrite());
+        IDBTransaction* idbTransaction = transactionForDatabase(context(), idbDatabase, m_objectStoreName, IndexedDBNames::readwrite);
         if (!idbTransaction) {
             m_requestCallback->sendFailure("Could not get transaction");
             return;
@@ -774,4 +775,10 @@ void InspectorIndexedDBAgent::clearObjectStore(ErrorString* errorString, const S
     clearObjectStore->start(idbFactory, document->securityOrigin(), databaseName);
 }
 
-} // namespace WebCore
+void InspectorIndexedDBAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_page);
+    InspectorBaseAgent::trace(visitor);
+}
+
+} // namespace blink

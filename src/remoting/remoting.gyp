@@ -9,6 +9,9 @@
     # Set this to run the jscompile checks after building the webapp.
     'run_jscompile%': 0,
 
+    # Set this to enable cast mode on the android client.
+    'enable_cast%': 0,
+
     'variables': {
       'conditions': [
         # Enable the multi-process host on Windows by default.
@@ -165,7 +168,7 @@
           'host/win/host_messages.mc.jinja2',
           'host/win/version.rc.jinja2',
           'resources/play_store_resources.cc',
-          'webapp/background.js',
+          'webapp/background/background.js',
           'webapp/butter_bar.js',
           'webapp/client_screen.js',
           'webapp/error.js',

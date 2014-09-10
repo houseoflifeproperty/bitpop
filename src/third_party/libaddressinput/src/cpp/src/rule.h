@@ -27,13 +27,12 @@
 #include <string>
 #include <vector>
 
-#include "format_element.h"
-
 namespace i18n {
 namespace addressinput {
 
+class FormatElement;
 class Json;
-class RE2ptr;
+struct RE2ptr;
 
 // Stores address metadata addressing rules, to be used for determining the
 // layout of an address input widget or for address validation. Sample usage:
@@ -99,9 +98,7 @@ class Rule {
   }
 
   // Returns the sole postal code for this rule, if there is one.
-  const std::string& GetSolePostalCode() const {
-    return sole_postal_code_;
-  }
+  const std::string& GetSolePostalCode() const { return sole_postal_code_; }
 
   // The message string identifier for admin area name. If not set, then
   // INVALID_MESSAGE_ID.
@@ -127,9 +124,7 @@ class Rule {
   }
 
   // Returns the post service URL string for this rule.
-  const std::string& GetPostServiceUrl() const {
-    return post_service_url_;
-  }
+  const std::string& GetPostServiceUrl() const { return post_service_url_; }
 
  private:
   std::string id_;

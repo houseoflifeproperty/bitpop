@@ -815,9 +815,6 @@ void HWNDMessageHandler::FrameTypeChanged() {
     UINT flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER;
     SetWindowPos(hwnd(), NULL, 0, 0, 0, 0, flags | SWP_HIDEWINDOW);
     SetWindowPos(hwnd(), NULL, 0, 0, 0, 0, flags | SWP_SHOWWINDOW);
-    // Invalidate the window to force a paint. There may be child windows which
-    // could resize in this context. Don't paint right away.
-    ::InvalidateRect(hwnd(), NULL, FALSE);
   }
 
   // WM_DWMCOMPOSITIONCHANGED is only sent to top level windows, however we want
@@ -915,12 +912,13 @@ LRESULT HWNDMessageHandler::OnWndProc(UINT message,
     return 0;
   msg_handled_ = old_msg_handled;
 
-  if (!processed)
+  if (!processed) {
     result = DefWindowProc(window, message, w_param, l_param);
-
-  // DefWindowProc() may have destroyed the window in a nested message loop.
-  if (!::IsWindow(window))
-    return result;
+    // DefWindowProc() may have destroyed the window and/or us in a nested
+    // message loop.
+    if (!ref || !::IsWindow(window))
+      return result;
+  }
 
   if (delegate_) {
     delegate_->PostHandleMSG(message, w_param, l_param);
@@ -935,35 +933,55 @@ LRESULT HWNDMessageHandler::OnWndProc(UINT message,
 
 LRESULT HWNDMessageHandler::HandleMouseMessage(unsigned int message,
                                                WPARAM w_param,
-                                               LPARAM l_param) {
+                                               LPARAM l_param,
+                                               bool* handled) {
   // Don't track forwarded mouse messages. We expect the caller to track the
   // mouse.
-  return HandleMouseEventInternal(message, w_param, l_param, false);
-}
-
-LRESULT HWNDMessageHandler::HandleTouchMessage(unsigned int message,
-                                               WPARAM w_param,
-                                               LPARAM l_param) {
-  return OnTouchEvent(message, w_param, l_param);
+  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  LRESULT ret = HandleMouseEventInternal(message, w_param, l_param, false);
+  *handled = IsMsgHandled();
+  return ret;
 }
 
 LRESULT HWNDMessageHandler::HandleKeyboardMessage(unsigned int message,
                                                   WPARAM w_param,
-                                                  LPARAM l_param) {
-  return OnKeyEvent(message, w_param, l_param);
+                                                  LPARAM l_param,
+                                                  bool* handled) {
+  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  LRESULT ret = OnKeyEvent(message, w_param, l_param);
+  *handled = IsMsgHandled();
+  return ret;
+}
+
+LRESULT HWNDMessageHandler::HandleTouchMessage(unsigned int message,
+                                               WPARAM w_param,
+                                               LPARAM l_param,
+                                               bool* handled) {
+  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  LRESULT ret = OnTouchEvent(message, w_param, l_param);
+  *handled = IsMsgHandled();
+  return ret;
 }
 
 LRESULT HWNDMessageHandler::HandleScrollMessage(unsigned int message,
                                                 WPARAM w_param,
-                                                LPARAM l_param) {
-  return OnScrollMessage(message, w_param, l_param);
+                                                LPARAM l_param,
+                                                bool* handled) {
+  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  LRESULT ret = OnScrollMessage(message, w_param, l_param);
+  *handled = IsMsgHandled();
+  return ret;
 }
 
 LRESULT HWNDMessageHandler::HandleNcHitTestMessage(unsigned int message,
                                                    WPARAM w_param,
-                                                   LPARAM l_param) {
-  return OnNCHitTest(
+                                                   LPARAM l_param,
+                                                   bool* handled) {
+  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  LRESULT ret = OnNCHitTest(
       gfx::Point(CR_GET_X_LPARAM(l_param), CR_GET_Y_LPARAM(l_param)));
+  *handled = IsMsgHandled();
+  return ret;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1476,7 +1494,7 @@ LRESULT HWNDMessageHandler::OnKeyEvent(UINT message,
                                        WPARAM w_param,
                                        LPARAM l_param) {
   MSG msg = { hwnd(), message, w_param, l_param, GetMessageTime() };
-  ui::KeyEvent key(msg, message == WM_CHAR);
+  ui::KeyEvent key(msg);
   if (!delegate_->HandleUntranslatedKeyEvent(key))
     DispatchKeyEventPostIME(key);
   return 0;
@@ -2364,9 +2382,6 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
   ui::MouseEvent event(msg);
   if (IsSynthesizedMouseMessage(message, message_time, l_param))
     event.set_flags(event.flags() | ui::EF_FROM_TOUCH);
-
-  if (!(event.flags() & ui::EF_IS_NON_CLIENT))
-    delegate_->HandleTooltipMouseMove(message, w_param, l_param);
 
   if (event.type() == ui::ET_MOUSE_MOVED && !HasCapture() && track_mouse) {
     // Windows only fires WM_MOUSELEAVE events if the application begins

@@ -52,7 +52,7 @@ class Helper {
                           std::string* data) {
     if (success) {
       assert(data != NULL);
-      bool is_stale = !ValidatingUtil::UnwrapTimestamp(data, time(NULL));
+      bool is_stale = !ValidatingUtil::UnwrapTimestamp(data, std::time(NULL));
       bool is_corrupted = !ValidatingUtil::UnwrapChecksum(data);
       success = !is_corrupted && !is_stale;
       if (is_corrupted) {
@@ -68,7 +68,7 @@ class Helper {
   }
 
   const Storage::Callback& data_ready_;
-  scoped_ptr<Storage::Callback> wrapped_data_ready_;
+  const scoped_ptr<const Storage::Callback> wrapped_data_ready_;
 
   DISALLOW_COPY_AND_ASSIGN(Helper);
 };
@@ -84,7 +84,7 @@ ValidatingStorage::~ValidatingStorage() {}
 
 void ValidatingStorage::Put(const std::string& key, std::string* data) {
   assert(data != NULL);
-  ValidatingUtil::Wrap(time(NULL), data);
+  ValidatingUtil::Wrap(std::time(NULL), data);
   wrapped_storage_->Put(key, data);
 }
 

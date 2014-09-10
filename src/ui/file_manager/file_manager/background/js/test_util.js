@@ -61,14 +61,14 @@ test.util.sync.getWindows = function() {
   for (var id in background.appWindows) {
     var windowWrapper = background.appWindows[id];
     windows[id] = {
-      innerWidth: windowWrapper.contentWindow.innerWidth,
-      innerHeight: windowWrapper.contentWindow.innerHeight
+      outerWidth: windowWrapper.contentWindow.outerWidth,
+      outerHeight: windowWrapper.contentWindow.outerHeight
     };
   }
   for (var id in background.dialogs) {
     windows[id] = {
-      innerWidth: background.dialogs[id].innerWidth,
-      innerHeight: background.dialogs[id].innerHeight
+      outerWidth: background.dialogs[id].outerWidth,
+      outerHeight: background.dialogs[id].outerHeight
     };
   }
   return windows;
@@ -565,7 +565,7 @@ test.util.sync.overrideInstallWebstoreItemApi =
         message ? {message: message} : null;
   };
 
-  var installWebstoreItem = function(itemId, callback) {
+  var installWebstoreItem = function(itemId, silentInstallation, callback) {
     setTimeout(function() {
       if (itemId !== expectedItemId) {
         setLastError('Invalid Chrome Web Store item ID');
@@ -593,7 +593,7 @@ test.util.sync.overrideInstallWebstoreItemApi =
  * @return {boolean} Always return true.
  */
 test.util.sync.overrideTasks = function(contentWindow, taskList) {
-  var getFileTasks = function(urls, mime, onTasks) {
+  var getFileTasks = function(urls, onTasks) {
     // Call onTask asynchronously (same with original getFileTasks).
     setTimeout(function() {
       onTasks(taskList);

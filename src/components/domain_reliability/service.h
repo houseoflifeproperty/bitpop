@@ -16,9 +16,13 @@
 #include "components/domain_reliability/domain_reliability_export.h"
 #include "components/keyed_service/core/keyed_service.h"
 
+namespace base {
+class Value;
+}  // namespace base
+
 namespace net {
 class URLRequestContextGetter;
-};
+}  // namespace net
 
 namespace domain_reliability {
 
@@ -43,7 +47,7 @@ class DOMAIN_RELIABILITY_EXPORT DomainReliabilityService
   // most once, and must be called before any of the below methods can be
   // called. The caller is responsible for destroying the Monitor on the given
   // task runner when it is no longer needed.
-  virtual scoped_ptr<DomainReliabilityMonitor> Init(
+  virtual scoped_ptr<DomainReliabilityMonitor> CreateMonitor(
       scoped_refptr<base::SequencedTaskRunner> network_task_runner) = 0;
 
   // Clears browsing data on the associated Monitor. |Init()| must have been
@@ -51,8 +55,9 @@ class DOMAIN_RELIABILITY_EXPORT DomainReliabilityService
   virtual void ClearBrowsingData(DomainReliabilityClearMode clear_mode,
                                  const base::Closure& callback) = 0;
 
-  // KeyedService implementation:
-  virtual void Shutdown() OVERRIDE = 0;
+  virtual void GetWebUIData(
+      const base::Callback<void(scoped_ptr<base::Value>)>& callback)
+      const = 0;
 
  protected:
   DomainReliabilityService();

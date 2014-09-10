@@ -18,24 +18,26 @@ engine, CSS style resolution, layout, and other technologies.
 
 import os
 
-from telemetry import test
-from telemetry.page import page_measurement
+from telemetry import benchmark
 from telemetry.page import page_set
+from telemetry.page import page_test
+from telemetry.value import list_of_scalar_values
 
 
-class SpeedometerMeasurement(page_measurement.PageMeasurement):
+class SpeedometerMeasurement(page_test.PageTest):
 
-  def MeasurePage(self, _, tab, results):
+  def ValidateAndMeasurePage(self, page, tab, results):
     tab.WaitForDocumentReadyStateToBeComplete()
     tab.ExecuteJavaScript('benchmarkClient.iterationCount = 10; startTest();')
     tab.WaitForJavaScriptExpression(
         'benchmarkClient._finishedTestCount == benchmarkClient.testsCount', 600)
-    results.Add(
-        'Total', 'ms', tab.EvaluateJavaScript('benchmarkClient._timeValues'))
+    results.AddValue(list_of_scalar_values.ListOfScalarValues(
+        page, 'Total', 'ms',
+        tab.EvaluateJavaScript('benchmarkClient._timeValues')))
 
 
-@test.Disabled('android')  # Times out
-class Speedometer(test.Test):
+@benchmark.Disabled('android')  # Times out
+class Speedometer(benchmark.Benchmark):
   test = SpeedometerMeasurement
 
   def CreatePageSet(self, options):

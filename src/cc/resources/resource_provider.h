@@ -153,14 +153,6 @@ class CC_EXPORT ResourceProvider {
   void ReleaseCachedData();
   base::TimeTicks EstimatedUploadCompletionTime(size_t uploads_per_tick);
 
-  // Flush all context operations, kicking uploads and ensuring ordering with
-  // respect to other contexts.
-  void Flush();
-
-  // Finish all context operations, causing any pending callbacks to be
-  // scheduled.
-  void Finish();
-
   // Only flush the command buffer if supported.
   // Returns true if the shallow flush occurred, false otherwise.
   bool ShallowFlushIfSupported();
@@ -309,6 +301,8 @@ class CC_EXPORT ResourceProvider {
   class Fence : public base::RefCounted<Fence> {
    public:
     Fence() {}
+
+    virtual void Set() = 0;
     virtual bool HasPassed() = 0;
 
    protected:
@@ -319,11 +313,11 @@ class CC_EXPORT ResourceProvider {
     DISALLOW_COPY_AND_ASSIGN(Fence);
   };
 
-  // Returns a canvas for direct rasterization.
+  // Returns a canvas for gpu rasterization.
   // Call Unmap before the resource can be read or used for compositing.
   // It is used for direct gpu rasterization.
-  SkCanvas* MapDirectRasterBuffer(ResourceId id);
-  void UnmapDirectRasterBuffer(ResourceId id);
+  SkCanvas* MapGpuRasterBuffer(ResourceId id);
+  void UnmapGpuRasterBuffer(ResourceId id);
 
   // Returns a canvas backed by an image buffer. UnmapImageRasterBuffer
   // returns true if canvas was written to while mapped.
@@ -364,7 +358,7 @@ class CC_EXPORT ResourceProvider {
   void SetReadLockFence(Fence* fence) { current_read_lock_fence_ = fence; }
 
   // Enable read lock fences for a specific resource.
-  void EnableReadLockFences(ResourceProvider::ResourceId id, bool enable);
+  void EnableReadLockFences(ResourceProvider::ResourceId id);
 
   // Indicates if we can currently lock this resource for write.
   bool CanLockForWrite(ResourceId id);
@@ -375,7 +369,7 @@ class CC_EXPORT ResourceProvider {
   static GLint GetActiveTextureUnit(gpu::gles2::GLES2Interface* gl);
 
  private:
-  class DirectRasterBuffer;
+  class GpuRasterBuffer;
   class ImageRasterBuffer;
   class PixelRasterBuffer;
 
@@ -426,7 +420,7 @@ class CC_EXPORT ResourceProvider {
     bool pending_set_pixels : 1;
     bool set_pixels_completion_forced : 1;
     bool allocated : 1;
-    bool enable_read_lock_fences : 1;
+    bool read_lock_fences_enabled : 1;
     bool has_shared_bitmap_id : 1;
     bool allow_overlay : 1;
     scoped_refptr<Fence> read_lock_fence;
@@ -445,7 +439,7 @@ class CC_EXPORT ResourceProvider {
     ResourceFormat format;
     SharedBitmapId shared_bitmap_id;
     SharedBitmap* shared_bitmap;
-    linked_ptr<DirectRasterBuffer> direct_raster_buffer;
+    linked_ptr<GpuRasterBuffer> gpu_raster_buffer;
     linked_ptr<ImageRasterBuffer> image_raster_buffer;
     linked_ptr<PixelRasterBuffer> pixel_raster_buffer;
   };
@@ -474,12 +468,12 @@ class CC_EXPORT ResourceProvider {
     int canvas_save_count_;
   };
 
-  class DirectRasterBuffer : public RasterBuffer {
+  class GpuRasterBuffer : public RasterBuffer {
    public:
-    DirectRasterBuffer(const Resource* resource,
-                       ResourceProvider* resource_provider,
-                       bool use_distance_field_text);
-    virtual ~DirectRasterBuffer();
+    GpuRasterBuffer(const Resource* resource,
+                    ResourceProvider* resource_provider,
+                    bool use_distance_field_text);
+    virtual ~GpuRasterBuffer();
 
    protected:
     virtual SkCanvas* DoLockForWrite() OVERRIDE;
@@ -491,7 +485,7 @@ class CC_EXPORT ResourceProvider {
     uint32_t surface_generation_id_;
     const bool use_distance_field_text_;
 
-    DISALLOW_COPY_AND_ASSIGN(DirectRasterBuffer);
+    DISALLOW_COPY_AND_ASSIGN(GpuRasterBuffer);
   };
 
   class BitmapRasterBuffer : public RasterBuffer {
@@ -669,6 +663,7 @@ inline unsigned BitsPerPixel(ResourceFormat format) {
     32,  // RGBA_8888
     16,  // RGBA_4444
     32,  // BGRA_8888
+    8,   // ALPHA_8
     8,   // LUMINANCE_8
     16,  // RGB_565,
     4    // ETC1
@@ -682,6 +677,7 @@ inline GLenum GLDataType(ResourceFormat format) {
     GL_UNSIGNED_BYTE,           // RGBA_8888
     GL_UNSIGNED_SHORT_4_4_4_4,  // RGBA_4444
     GL_UNSIGNED_BYTE,           // BGRA_8888
+    GL_UNSIGNED_BYTE,           // ALPHA_8
     GL_UNSIGNED_BYTE,           // LUMINANCE_8
     GL_UNSIGNED_SHORT_5_6_5,    // RGB_565,
     GL_UNSIGNED_BYTE            // ETC1
@@ -695,6 +691,7 @@ inline GLenum GLDataFormat(ResourceFormat format) {
     GL_RGBA,           // RGBA_8888
     GL_RGBA,           // RGBA_4444
     GL_BGRA_EXT,       // BGRA_8888
+    GL_ALPHA,          // ALPHA_8
     GL_LUMINANCE,      // LUMINANCE_8
     GL_RGB,            // RGB_565
     GL_ETC1_RGB8_OES   // ETC1

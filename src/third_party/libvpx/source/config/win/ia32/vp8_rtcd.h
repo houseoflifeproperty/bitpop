@@ -100,6 +100,10 @@ int vp8_denoiser_filter_c(unsigned char *mc_running_avg_y, int mc_avg_y_stride, 
 int vp8_denoiser_filter_sse2(unsigned char *mc_running_avg_y, int mc_avg_y_stride, unsigned char *running_avg_y, int avg_y_stride, unsigned char *sig, int sig_stride, unsigned int motion_magnitude, int increase_denoising);
 RTCD_EXTERN int (*vp8_denoiser_filter)(unsigned char *mc_running_avg_y, int mc_avg_y_stride, unsigned char *running_avg_y, int avg_y_stride, unsigned char *sig, int sig_stride, unsigned int motion_magnitude, int increase_denoising);
 
+int vp8_denoiser_filter_uv_c(unsigned char *mc_running_avg, int mc_avg_stride, unsigned char *running_avg, int avg_stride, unsigned char *sig, int sig_stride, unsigned int motion_magnitude, int increase_denoising);
+int vp8_denoiser_filter_uv_sse2(unsigned char *mc_running_avg, int mc_avg_stride, unsigned char *running_avg, int avg_stride, unsigned char *sig, int sig_stride, unsigned int motion_magnitude, int increase_denoising);
+RTCD_EXTERN int (*vp8_denoiser_filter_uv)(unsigned char *mc_running_avg, int mc_avg_stride, unsigned char *running_avg, int avg_stride, unsigned char *sig, int sig_stride, unsigned int motion_magnitude, int increase_denoising);
+
 void vp8_dequant_idct_add_c(short *input, short *dq, unsigned char *output, int stride);
 void vp8_dequant_idct_add_mmx(short *input, short *dq, unsigned char *output, int stride);
 RTCD_EXTERN void (*vp8_dequant_idct_add)(short *input, short *dq, unsigned char *output, int stride);
@@ -246,6 +250,7 @@ RTCD_EXTERN int (*vp8_refining_search_sad)(struct macroblock *x, struct block *b
 
 void vp8_regular_quantize_b_c(struct block *, struct blockd *);
 void vp8_regular_quantize_b_sse2(struct block *, struct blockd *);
+void vp8_regular_quantize_b_sse4_1(struct block *, struct blockd *);
 RTCD_EXTERN void (*vp8_regular_quantize_b)(struct block *, struct blockd *);
 
 void vp8_regular_quantize_b_pair_c(struct block *b1, struct block *b2, struct blockd *d1, struct blockd *d2);
@@ -525,6 +530,8 @@ static void setup_rtcd_internal(void)
     if (flags & HAS_MMX) vp8_dc_only_idct_add = vp8_dc_only_idct_add_mmx;
     vp8_denoiser_filter = vp8_denoiser_filter_c;
     if (flags & HAS_SSE2) vp8_denoiser_filter = vp8_denoiser_filter_sse2;
+    vp8_denoiser_filter_uv = vp8_denoiser_filter_uv_c;
+    if (flags & HAS_SSE2) vp8_denoiser_filter_uv = vp8_denoiser_filter_uv_sse2;
     vp8_dequant_idct_add = vp8_dequant_idct_add_c;
     if (flags & HAS_MMX) vp8_dequant_idct_add = vp8_dequant_idct_add_mmx;
     vp8_dequant_idct_add_uv_block = vp8_dequant_idct_add_uv_block_c;
@@ -599,6 +606,7 @@ static void setup_rtcd_internal(void)
     if (flags & HAS_SSE3) vp8_refining_search_sad = vp8_refining_search_sadx4;
     vp8_regular_quantize_b = vp8_regular_quantize_b_c;
     if (flags & HAS_SSE2) vp8_regular_quantize_b = vp8_regular_quantize_b_sse2;
+    if (flags & HAS_SSE4_1) vp8_regular_quantize_b = vp8_regular_quantize_b_sse4_1;
     vp8_sad16x16 = vp8_sad16x16_c;
     if (flags & HAS_MMX) vp8_sad16x16 = vp8_sad16x16_mmx;
     if (flags & HAS_SSE2) vp8_sad16x16 = vp8_sad16x16_wmt;

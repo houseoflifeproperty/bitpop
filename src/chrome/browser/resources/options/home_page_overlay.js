@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var Page = cr.ui.pageManager.Page;
   /** @const */ var SettingsDialog = options.SettingsDialog;
 
   /**
@@ -30,11 +30,8 @@ cr.define('options', function() {
      */
     autocompleteList_: null,
 
-    /**
-     * Initialize the page.
-     */
+    /** @override */
     initializePage: function() {
-      // Call base class implementation to start preference initialization.
       SettingsDialog.prototype.initializePage.call(this);
 
       var self = this;

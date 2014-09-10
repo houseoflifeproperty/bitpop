@@ -1,6 +1,5 @@
 [
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -10,17 +9,9 @@
       "--url",
       "http://patch.url/"
     ],
-    "name": "patch git setup",
-    "seed_steps": [
-      "patch git setup",
-      "patch fetch",
-      "patch clean",
-      "patch git checkout",
-      "apply patch"
-    ]
+    "name": "patch git setup"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "git",
       "fetch",
@@ -31,7 +22,6 @@
     "name": "patch fetch"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "git",
       "clean",
@@ -43,7 +33,6 @@
     "name": "patch clean"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "git",
       "checkout",
@@ -54,7 +43,6 @@
     "name": "patch git checkout"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "patch",
       "--dir",

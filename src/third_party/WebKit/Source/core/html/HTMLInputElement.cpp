@@ -29,9 +29,10 @@
 #include "config.h"
 #include "core/html/HTMLInputElement.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptEventListener.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ScriptEventListener.h"
+#include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
 #include "core/accessibility/AXObjectCache.h"
@@ -49,6 +50,7 @@
 #include "core/events/ScopedEventQueue.h"
 #include "core/events/TouchEvent.h"
 #include "core/fileapi/FileList.h"
+#include "core/frame/EventHandlerRegistry.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
@@ -77,7 +79,7 @@
 #include "platform/text/PlatformLocale.h"
 #include "wtf/MathExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -174,8 +176,8 @@ HTMLInputElement::~HTMLInputElement()
     // We should unregister it to avoid accessing a deleted object.
     if (isRadioButton())
         document().formController().radioButtonGroupScope().removeButton(this);
-    if (m_hasTouchEventHandler)
-        document().didRemoveTouchEventHandler(this);
+    if (m_hasTouchEventHandler && document().frameHost())
+        document().frameHost()->eventHandlerRegistry().didRemoveEventHandler(*this, EventHandlerRegistry::TouchEvent);
 #endif
 }
 
@@ -379,11 +381,6 @@ void HTMLInputElement::endEditing()
     frame->host()->chrome().client().didEndEditingOnTextField(*this);
 }
 
-bool HTMLInputElement::shouldUseInputMethod()
-{
-    return m_inputType->shouldUseInputMethod();
-}
-
 void HTMLInputElement::handleFocusEvent(Element* oldFocusedElement, FocusType type)
 {
     m_inputTypeView->handleFocusEvent(oldFocusedElement, type);
@@ -426,10 +423,14 @@ void HTMLInputElement::updateType()
 
     bool hasTouchEventHandler = m_inputTypeView->hasTouchEventHandler();
     if (hasTouchEventHandler != m_hasTouchEventHandler) {
-        if (hasTouchEventHandler)
-            document().didAddTouchEventHandler(this);
-        else
-            document().didRemoveTouchEventHandler(this);
+        // If the Document is being or has been stopped, don't register any handlers.
+        if (document().frameHost() && document().lifecycle().state() < DocumentLifecycle::Stopping) {
+            EventHandlerRegistry& registry = document().frameHost()->eventHandlerRegistry();
+            if (hasTouchEventHandler)
+                registry.didAddEventHandler(*this, EventHandlerRegistry::TouchEvent);
+            else
+                registry.didRemoveEventHandler(*this, EventHandlerRegistry::TouchEvent);
+        }
         m_hasTouchEventHandler = hasTouchEventHandler;
     }
 
@@ -452,11 +453,12 @@ void HTMLInputElement::updateType()
 
     if (didRespectHeightAndWidth != m_inputType->shouldRespectHeightAndWidthAttributes()) {
         ASSERT(elementData());
-        if (const Attribute* height = findAttributeByName(heightAttr))
+        AttributeCollection attributes = attributesWithoutUpdate();
+        if (const Attribute* height = attributes.find(heightAttr))
             attributeChanged(heightAttr, height->value());
-        if (const Attribute* width = findAttributeByName(widthAttr))
+        if (const Attribute* width = attributes.find(widthAttr))
             attributeChanged(widthAttr, width->value());
-        if (const Attribute* align = findAttributeByName(alignAttr))
+        if (const Attribute* align = attributes.find(alignAttr))
             attributeChanged(alignAttr, align->value());
     }
 
@@ -613,6 +615,22 @@ void HTMLInputElement::collectStyleForPresentationAttribute(const QualifiedName&
         applyBorderAttributeToStyle(value, style);
     else
         HTMLTextFormControlElement::collectStyleForPresentationAttribute(name, value, style);
+}
+
+void HTMLInputElement::attributeWillChange(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
+{
+    if (name == formactionAttr && inDocument()) {
+        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
+        if (activityLogger) {
+            Vector<String> argv;
+            argv.append("input");
+            argv.append(formactionAttr.toString());
+            argv.append(oldValue);
+            argv.append(newValue);
+            activityLogger->logEvent("blinkSetAttribute", argv.size(), argv.data());
+        }
+    }
+    HTMLTextFormControlElement::attributeWillChange(name, oldValue, newValue);
 }
 
 void HTMLInputElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -1211,11 +1229,6 @@ const AtomicString& HTMLInputElement::defaultValue() const
     return fastGetAttribute(valueAttr);
 }
 
-void HTMLInputElement::setDefaultValue(const AtomicString& value)
-{
-    setAttribute(valueAttr, value);
-}
-
 static inline bool isRFC2616TokenCharacter(UChar ch)
 {
     return isASCII(ch) && ch > ' ' && ch != '"' && ch != '(' && ch != ')' && ch != ',' && ch != '/' && (ch < ':' || ch > '@') && (ch < '[' || ch > ']') && ch != '{' && ch != '}' && ch != 0x7f;
@@ -1411,11 +1424,21 @@ void HTMLInputElement::didChangeForm()
 
 Node::InsertionNotificationRequest HTMLInputElement::insertedInto(ContainerNode* insertionPoint)
 {
+    if (insertionPoint->inDocument()) {
+        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
+        if (activityLogger) {
+            Vector<String> argv;
+            argv.append("input");
+            argv.append(fastGetAttribute(typeAttr));
+            argv.append(fastGetAttribute(formactionAttr));
+            activityLogger->logEvent("blinkAddElement", argv.size(), argv.data());
+        }
+    }
     HTMLTextFormControlElement::insertedInto(insertionPoint);
     if (insertionPoint->inDocument() && !form())
         addToRadioButtonGroup();
     resetListAttributeTargetObserver();
-    return InsertionDone;
+    return InsertionShouldCallDidNotifySubtreeInsertions;
 }
 
 void HTMLInputElement::removedFrom(ContainerNode* insertionPoint)
@@ -1434,11 +1457,6 @@ void HTMLInputElement::didMoveToNewDocument(Document& oldDocument)
 
     if (isRadioButton())
         oldDocument.formController().radioButtonGroupScope().removeButton(this);
-    if (m_hasTouchEventHandler)
-        oldDocument.didRemoveTouchEventHandler(this);
-
-    if (m_hasTouchEventHandler)
-        document().didAddTouchEventHandler(this);
 
     HTMLTextFormControlElement::didMoveToNewDocument(oldDocument);
 }
@@ -1810,7 +1828,7 @@ bool HTMLInputElement::setupDateTimeChooserParameters(DateTimeChooserParameters&
     parameters.anchorRectInRootView = document().view()->contentsToRootView(pixelSnappedBoundingBox());
     parameters.currentValue = value();
     parameters.doubleValue = m_inputType->valueAsDouble();
-    parameters.isAnchorElementRTL = computedStyle()->direction() == RTL;
+    parameters.isAnchorElementRTL = m_inputType->computedTextDirection() == RTL;
     if (HTMLDataListElement* dataList = this->dataList()) {
         RefPtrWillBeRawPtr<HTMLCollection> options = dataList->options();
         for (unsigned i = 0; HTMLOptionElement* option = toHTMLOptionElement(options->item(i)); ++i) {
@@ -1861,6 +1879,11 @@ PassRefPtr<RenderStyle> HTMLInputElement::customStyleForRenderer()
 bool HTMLInputElement::shouldDispatchFormControlChangeEvent(String& oldValue, String& newValue)
 {
     return m_inputType->shouldDispatchFormControlChangeEvent(oldValue, newValue);
+}
+
+void HTMLInputElement::didNotifySubtreeInsertionsToDocument()
+{
+    listAttributeTargetChanged();
 }
 
 } // namespace

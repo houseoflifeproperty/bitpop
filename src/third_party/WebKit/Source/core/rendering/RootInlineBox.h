@@ -24,7 +24,7 @@
 #include "core/rendering/InlineFlowBox.h"
 #include "platform/text/BidiContext.h"
 
-namespace WebCore {
+namespace blink {
 
 class EllipsisBox;
 class HitTestResult;
@@ -73,12 +73,13 @@ public:
     int blockDirectionPointInLine() const;
 
     LayoutUnit alignBoxesInBlockDirection(LayoutUnit heightOfBlock, GlyphOverflowAndFallbackFontsMap&, VerticalPositionCache&);
-    void setLineTopBottomPositions(LayoutUnit top, LayoutUnit bottom, LayoutUnit topWithLeading, LayoutUnit bottomWithLeading)
+    void setLineTopBottomPositions(LayoutUnit top, LayoutUnit bottom, LayoutUnit topWithLeading, LayoutUnit bottomWithLeading, LayoutUnit selectionBottom = LayoutUnit::min())
     {
         m_lineTop = top;
         m_lineBottom = bottom;
         m_lineTopWithLeading = topWithLeading;
         m_lineBottomWithLeading = bottomWithLeading;
+        m_selectionBottom = selectionBottom == LayoutUnit::min() ? bottom : selectionBottom;
     }
 
     virtual RenderLineBoxList* rendererLineBoxes() const OVERRIDE FINAL;
@@ -107,8 +108,6 @@ public:
     void paintEllipsisBox(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) const;
 
     virtual void clearTruncation() OVERRIDE FINAL;
-
-    bool isHyphenated() const;
 
     virtual int baselinePosition(FontBaseline baselineType) const OVERRIDE FINAL;
     virtual LayoutUnit lineHeight() const OVERRIDE FINAL;
@@ -207,12 +206,6 @@ private:
     RenderObject* m_lineBreakObj;
     RefPtr<BidiContext> m_lineBreakContext;
 
-    LayoutUnit m_lineTop;
-    LayoutUnit m_lineBottom;
-
-    LayoutUnit m_lineTopWithLeading;
-    LayoutUnit m_lineBottomWithLeading;
-
     struct LineFragmentationData {
         WTF_MAKE_NONCOPYABLE(LineFragmentationData); WTF_MAKE_FAST_ALLOCATED;
     public:
@@ -234,8 +227,14 @@ private:
     // Floats hanging off the line are pushed into this vector during layout. It is only
     // good for as long as the line has not been marked dirty.
     OwnPtr<Vector<RenderBox*> > m_floats;
+
+    LayoutUnit m_lineTop;
+    LayoutUnit m_lineBottom;
+    LayoutUnit m_lineTopWithLeading;
+    LayoutUnit m_lineBottomWithLeading;
+    LayoutUnit m_selectionBottom;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RootInlineBox_h

@@ -45,7 +45,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace WebCore {
+namespace blink {
 
 static IntRect boundingBoxForEventNodes(Node* eventNode)
 {
@@ -95,7 +95,7 @@ void findGoodTouchTargets(const IntRect& touchBox, LocalFrame* mainFrame, Vector
     IntPoint touchPoint = touchBox.center();
     IntPoint contentsPoint = mainFrame->view()->windowToContents(touchPoint);
 
-    HitTestResult result = mainFrame->eventHandler().hitTestResultAtPoint(contentsPoint, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent, IntSize(touchPointPadding, touchPointPadding));
+    HitTestResult result = mainFrame->eventHandler().hitTestResultAtPoint(contentsPoint, HitTestRequest::ReadOnly | HitTestRequest::Active, IntSize(touchPointPadding, touchPointPadding));
     const WillBeHeapListHashSet<RefPtrWillBeMember<Node> >& hitResults = result.rectBasedTestResult();
 
     // Blacklist nodes that are container of disambiguated nodes.
@@ -146,4 +146,4 @@ void findGoodTouchTargets(const IntRect& touchBox, LocalFrame* mainFrame, Vector
     }
 }
 
-} // namespace WebCore
+} // namespace blink

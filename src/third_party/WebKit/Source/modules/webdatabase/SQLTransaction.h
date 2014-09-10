@@ -29,7 +29,7 @@
 #ifndef SQLTransaction_h
 #define SQLTransaction_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/webdatabase/AbstractSQLTransaction.h"
 #include "modules/webdatabase/SQLCallbackWrapper.h"
 #include "modules/webdatabase/SQLStatement.h"
@@ -38,7 +38,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class AbstractSQLTransactionBackend;
 class Database;
@@ -109,6 +109,6 @@ private:
     bool m_readOnly;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SQLTransaction_h

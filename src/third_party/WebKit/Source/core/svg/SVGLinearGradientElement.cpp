@@ -30,7 +30,7 @@
 #include "core/svg/SVGLength.h"
 #include "core/svg/SVGTransformList.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGLinearGradientElement::SVGLinearGradientElement(Document& document)
     : SVGGradientElement(SVGNames::linearGradientTag, document)
@@ -147,7 +147,7 @@ bool SVGLinearGradientElement::collectGradientAttributes(LinearGradientAttribute
     if (!renderer())
         return false;
 
-    HashSet<SVGGradientElement*> processedGradients;
+    WillBeHeapHashSet<RawPtrWillBeMember<SVGGradientElement> > processedGradients;
     SVGGradientElement* current = this;
 
     setGradientAttributes(current, attributes);

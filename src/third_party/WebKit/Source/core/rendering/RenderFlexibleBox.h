@@ -34,7 +34,7 @@
 #include "core/rendering/OrderIterator.h"
 #include "core/rendering/RenderBlock.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderFlexibleBox : public RenderBlock {
 public:
@@ -46,7 +46,6 @@ public:
     virtual const char* renderName() const OVERRIDE;
 
     virtual bool isFlexibleBox() const OVERRIDE FINAL { return true; }
-    virtual bool avoidsFloats() const OVERRIDE FINAL { return true; }
     virtual bool canCollapseAnonymousBlockChild() const OVERRIDE { return false; }
     virtual void layoutBlock(bool relayoutChildren) OVERRIDE FINAL;
 
@@ -113,6 +112,7 @@ private:
     LayoutUnit flowAwareMarginBeforeForChild(RenderBox* child) const;
     LayoutUnit crossAxisMarginExtentForChild(RenderBox* child) const;
     LayoutUnit crossAxisScrollbarExtent() const;
+    LayoutUnit crossAxisScrollbarExtentForChild(RenderBox* child) const;
     LayoutPoint flowAwareLocationForChild(RenderBox* child) const;
     // FIXME: Supporting layout deltas.
     void setFlowAwareLocationForChild(RenderBox* child, const LayoutPoint&);
@@ -131,7 +131,6 @@ private:
     void repositionLogicalHeightDependentFlexItems(Vector<LineContext>&);
     LayoutUnit clientLogicalBottomAfterRepositioning();
     void appendChildFrameRects(ChildFrameRects&);
-    void repaintChildrenDuringLayoutIfMoved(const ChildFrameRects&);
 
     LayoutUnit availableAlignmentSpaceForChild(LayoutUnit lineCrossAxisExtent, RenderBox*);
     LayoutUnit availableAlignmentSpaceForChildBeforeStretching(LayoutUnit lineCrossAxisExtent, RenderBox*);
@@ -167,6 +166,6 @@ private:
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderFlexibleBox, isFlexibleBox());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderFlexibleBox_h

@@ -11,8 +11,16 @@
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
 #include "cc/base/delayed_unique_notifier.h"
+#include "cc/output/context_provider.h"
 #include "cc/resources/raster_worker_pool.h"
 #include "cc/resources/rasterizer.h"
+
+namespace base {
+namespace debug {
+class ConvertableToTraceFormat;
+class TracedValue;
+}
+}
 
 namespace cc {
 class ResourceProvider;
@@ -26,6 +34,7 @@ class CC_EXPORT PixelBufferRasterWorkerPool : public RasterWorkerPool,
   static scoped_ptr<RasterWorkerPool> Create(
       base::SequencedTaskRunner* task_runner,
       TaskGraphRunner* task_graph_runner,
+      ContextProvider* context_provider,
       ResourceProvider* resource_provider,
       size_t max_transfer_buffer_usage_bytes);
 
@@ -72,6 +81,7 @@ class CC_EXPORT PixelBufferRasterWorkerPool : public RasterWorkerPool,
 
   PixelBufferRasterWorkerPool(base::SequencedTaskRunner* task_runner,
                               TaskGraphRunner* task_graph_runner,
+                              ContextProvider* context_provider,
                               ResourceProvider* resource_provider,
                               size_t max_transfer_buffer_usage_bytes);
 
@@ -87,13 +97,14 @@ class CC_EXPORT PixelBufferRasterWorkerPool : public RasterWorkerPool,
   void CheckForCompletedRasterizerTasks();
 
   const char* StateName() const;
-  scoped_ptr<base::Value> StateAsValue() const;
-  scoped_ptr<base::Value> ThrottleStateAsValue() const;
+  scoped_refptr<base::debug::ConvertableToTraceFormat> StateAsValue() const;
+  void ThrottleStateAsValueInto(base::debug::TracedValue* throttle_state) const;
 
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
   TaskGraphRunner* task_graph_runner_;
   const NamespaceToken namespace_token_;
   RasterizerClient* client_;
+  ContextProvider* context_provider_;
   ResourceProvider* resource_provider_;
 
   bool shutdown_;

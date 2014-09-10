@@ -30,7 +30,7 @@
 #include "core/rendering/svg/RenderSVGRect.h"
 #include "platform/graphics/GraphicsContext.h"
 
-namespace WebCore {
+namespace blink {
 
 RenderSVGRect::RenderSVGRect(SVGRectElement* node)
     : RenderSVGShape(node)
@@ -77,7 +77,7 @@ void RenderSVGRect::updateShapeFromElement()
     m_innerStrokeRect = m_fillBoundingBox;
     m_outerStrokeRect = m_fillBoundingBox;
 
-    if (style()->svgStyle()->hasStroke()) {
+    if (style()->svgStyle().hasStroke()) {
         float strokeWidth = this->strokeWidth();
         m_innerStrokeRect.inflate(-strokeWidth / 2);
         m_outerStrokeRect.inflate(strokeWidth / 2);
@@ -98,7 +98,7 @@ void RenderSVGRect::fillShape(GraphicsContext* context) const
 
 void RenderSVGRect::strokeShape(GraphicsContext* context) const
 {
-    if (!style()->svgStyle()->hasVisibleStroke())
+    if (!style()->svgStyle().hasVisibleStroke())
         return;
 
     if (m_usePathFallback) {

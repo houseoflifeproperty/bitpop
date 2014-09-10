@@ -32,7 +32,11 @@ class GSHandler(ExtractHandler):
     status = slave_utils.GSUtilCopy(self.url, '.')
     if 0 != status:
       return False
-    shutil.move(os.path.basename(self.url), self.archive_name)
+    try:
+      shutil.move(os.path.basename(self.url), self.archive_name)
+    except OSError:
+      os.remove(self.archive_name)
+      shutil.move(os.path.basename(self.url), self.archive_name)
     return True
 
 
@@ -59,6 +63,7 @@ class WebHandler(ExtractHandler):
 def GetBuildUrl(options, build_revision, webkit_revision=None):
   """Compute the url to download the build from.  This will use as a base
      string, in order of preference:
+     0) options.build_archive_url
      1) options.build_url
      2) options.factory_properties.build_url
      3) build url constructed from build_properties.  This last type of
@@ -68,7 +73,10 @@ def GetBuildUrl(options, build_revision, webkit_revision=None):
        options: options object as specified by parser below.
        build_revision: Revision for the build.
        webkit_revision: WebKit revision (optional)
-   """
+  """
+  if options.build_archive_url:
+    return options.build_archive_url, None
+
   base_filename, version_suffix = slave_utils.GetZipFileNames(
       options.build_properties, build_revision, webkit_revision, extract=True)
 
@@ -87,9 +95,9 @@ def GetBuildUrl(options, build_revision, webkit_revision=None):
     url = url.rstrip('/')
     url = '%s/%s' % (url, '%(base_filename)s.zip')
   url = url % replace_dict
-
+  archive_name = url.split('/')[-1]
   versioned_url = url.replace('.zip', version_suffix + '.zip')
-  return url, versioned_url
+  return versioned_url, archive_name
 
 
 def real_main(options):
@@ -107,14 +115,18 @@ def real_main(options):
   output_dir = os.path.join(abs_build_dir, archive_name.replace('.zip', ''))
 
   src_dir = os.path.dirname(abs_build_dir)
-  if not options.build_revision:
+  if not options.build_revision and not options.build_archive_url:
     (build_revision, webkit_revision) = slave_utils.GetBuildRevisions(
         src_dir, options.webkit_dir, options.revision_dir)
   else:
     build_revision = options.build_revision
     webkit_revision = options.webkit_revision
-  base_url, url = GetBuildUrl(options, build_revision, webkit_revision)
-  archive_name = os.path.basename(base_url)
+  url, archive_name = GetBuildUrl(options, build_revision, webkit_revision)
+  if archive_name is None:
+    archive_name = 'build.zip'
+    base_url = None
+  else:
+    base_url = '/'.join(url.split('/')[:-1] + [archive_name])
 
   if url.startswith('gs://'):
     handler = GSHandler(url=url, archive_name=archive_name)
@@ -149,12 +161,12 @@ def real_main(options):
 
     # If the versioned url failed, we try to get the latest build.
     if failure:
-      if url.startswith('gs://'):
+      if url.startswith('gs://') or not base_url:
         continue
       else:
         print 'Fetching latest build at %s' % base_url
-        handler.url = base_url
-        if not handler.download():
+        base_handler = handler.__class__(base_url, handler.archive_name)
+        if not base_handler.download():
           continue
 
     print 'Extracting build %s to %s...' % (archive_name, abs_build_dir)
@@ -207,7 +219,9 @@ def main():
                            help='path to the top-level sources directory')
   option_parser.add_option('--build-dir', help='ignored')
   option_parser.add_option('--build-url',
-                           help='url where to find the build to extract')
+                           help='Base url where to find the build to extract')
+  option_parser.add_option('--build-archive-url',
+                           help='Exact url where to find the build to extract')
   # TODO(cmp): Remove --halt-on-missing-build when the buildbots are upgraded
   #            to not use this argument.
   option_parser.add_option('--halt-on-missing-build', action='store_true',

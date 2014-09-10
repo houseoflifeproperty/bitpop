@@ -32,7 +32,6 @@
 #include <utility>
 #include <vector>
 
-#include "language.h"
 #include "lookup_key.h"
 #include "region_data_constants.h"
 #include "retriever.h"
@@ -53,14 +52,10 @@ class IndexLess : public std::binary_function<std::string, std::string, bool> {
  public:
   result_type operator()(const first_argument_type& a,
                          const second_argument_type& b) const {
+    static const StringCompare kStringCompare;
     return kStringCompare.NaturalLess(a, b);
   }
-
- private:
-  static const StringCompare kStringCompare;
 };
-
-const StringCompare IndexLess::kStringCompare;
 
 }  // namespace
 
@@ -77,16 +72,19 @@ class Helper {
          const Retriever& retriever,
          std::set<std::string>* pending,
          IndexMap* rule_index,
-         std::vector<const Rule*>* rule_storage)
+         std::vector<const Rule*>* rule_storage,
+         std::map<std::string, const Rule*>* region_rules)
       : region_code_(region_code),
         loaded_(loaded),
         pending_(pending),
         rule_index_(rule_index),
         rule_storage_(rule_storage),
+        region_rules_(region_rules),
         retrieved_(BuildCallback(this, &Helper::OnRetrieved)) {
     assert(pending_ != NULL);
     assert(rule_index_ != NULL);
     assert(rule_storage_ != NULL);
+    assert(region_rules_ != NULL);
     assert(retrieved_ != NULL);
     pending_->insert(key);
     retriever.Retrieve(key, *retrieved_);
@@ -105,7 +103,16 @@ class Helper {
     (void)status;  // Prevent unused variable if assert() is optimized away.
 
     Json json;
+    std::string id;
     std::vector<const Rule*> sub_rules;
+
+    IndexMap::iterator last_index_it = rule_index_->end();
+    IndexMap::iterator last_latin_it = rule_index_->end();
+    std::map<std::string, const Rule*>::iterator last_region_it =
+        region_rules_->end();
+
+    IndexMap::const_iterator hints[arraysize(LookupKey::kHierarchy) - 1];
+    std::fill(hints, hints + arraysize(hints), rule_index_->end());
 
     if (!success) {
       goto callback;
@@ -116,20 +123,17 @@ class Helper {
       goto callback;
     }
 
-    for (std::vector<std::string>::const_iterator
-         it = json.GetKeys().begin(); it != json.GetKeys().end(); ++it) {
-      if (!json.HasDictionaryValueForKey(*it)) {
+    for (std::vector<const Json*>::const_iterator
+         it = json.GetSubDictionaries().begin();
+         it != json.GetSubDictionaries().end();
+         ++it) {
+      const Json* value = *it;
+      assert(value != NULL);
+      if (!value->GetStringValueForKey("id", &id)) {
         success = false;
         goto callback;
       }
-      const Json& value = json.GetDictionaryValueForKey(*it);
-
-      if (!value.HasStringValueForKey("id")) {
-        success = false;
-        goto callback;
-      }
-      const std::string& id = value.GetStringValueForKey("id");
-      assert(*it == id);  // Sanity check.
+      assert(!id.empty());
 
       size_t depth = std::count(id.begin(), id.end(), '/') - 1;
       assert(depth < arraysize(LookupKey::kHierarchy));
@@ -140,7 +144,7 @@ class Helper {
         // All rules on the COUNTRY level inherit from the default rule.
         rule->CopyFrom(Rule::GetDefault());
       }
-      rule->ParseJsonRule(value);
+      rule->ParseJsonRule(*value);
       assert(id == rule->GetId());  // Sanity check.
 
       rule_storage_->push_back(rule);
@@ -148,11 +152,15 @@ class Helper {
         sub_rules.push_back(rule);
       }
 
-      // Add the ID of this Rule object to the rule index.
-      std::pair<IndexMap::iterator, bool> result =
-          rule_index_->insert(std::make_pair(id, rule));
-      assert(result.second);
-      (void)result;  // Prevent unused variable if assert() is optimized away.
+      // Add the ID of this Rule object to the rule index with natural string
+      // comparison for keys.
+      last_index_it =
+          rule_index_->insert(last_index_it, std::make_pair(id, rule));
+
+      // Add the ID of this Rule object to the region-specific rule index with
+      // exact string comparison for keys.
+      last_region_it =
+          region_rules_->insert(last_region_it, std::make_pair(id, rule));
 
       ++rule_count;
     }
@@ -184,9 +192,12 @@ class Helper {
         }
         parent_id.resize(pos);
 
-        IndexMap::const_iterator jt = rule_index_->find(parent_id);
-        assert(jt != rule_index_->end());
-        hierarchy.push(jt->second);
+        IndexMap::const_iterator* const hint = &hints[hierarchy.size() - 1];
+        if (*hint == rule_index_->end() || (*hint)->first != parent_id) {
+          *hint = rule_index_->find(parent_id);
+        }
+        assert(*hint != rule_index_->end());
+        hierarchy.push((*hint)->second);
       }
 
       std::string human_id((*it)->GetId().substr(0, sizeof "data/ZZ" - 1));
@@ -222,13 +233,15 @@ class Helper {
         }
       }
 
-      rule_index_->insert(std::make_pair(human_id, *it));
+      last_index_it =
+          rule_index_->insert(last_index_it, std::make_pair(human_id, *it));
 
       // Add the Latin script ID, if a Latin script name could be found for
       // every part of the ID.
       if (std::count(human_id.begin(), human_id.end(), '/') ==
           std::count(latin_id.begin(), latin_id.end(), '/')) {
-        rule_index_->insert(std::make_pair(latin_id, *it));
+        last_latin_it =
+            rule_index_->insert(last_latin_it, std::make_pair(latin_id, *it));
       }
     }
 
@@ -242,6 +255,7 @@ class Helper {
   std::set<std::string>* const pending_;
   IndexMap* const rule_index_;
   std::vector<const Rule*>* const rule_storage_;
+  std::map<std::string, const Rule*>* const region_rules_;
   const scoped_ptr<const Retriever::Callback> retrieved_;
 
   DISALLOW_COPY_AND_ASSIGN(Helper);
@@ -257,13 +271,12 @@ std::string KeyFromRegionCode(const std::string& region_code) {
 
 }  // namespace
 
-PreloadSupplier::PreloadSupplier(const std::string& validation_data_url,
-                                 const Downloader* downloader,
-                                 Storage* storage)
-    : retriever_(new Retriever(validation_data_url, downloader, storage)),
+PreloadSupplier::PreloadSupplier(const Source* source, Storage* storage)
+    : retriever_(new Retriever(source, storage)),
       pending_(),
       rule_index_(new IndexMap),
-      rule_storage_() {}
+      rule_storage_(),
+      region_rules_() {}
 
 PreloadSupplier::~PreloadSupplier() {
   for (std::vector<const Rule*>::const_iterator
@@ -308,7 +321,14 @@ void PreloadSupplier::LoadRules(const std::string& region_code,
       *retriever_,
       &pending_,
       rule_index_.get(),
-      &rule_storage_);
+      &rule_storage_,
+      &region_rules_[region_code]);
+}
+
+const std::map<std::string, const Rule*>& PreloadSupplier::GetRulesForRegion(
+    const std::string& region_code) const {
+  assert(IsLoaded(region_code));
+  return region_rules_.find(region_code)->second;
 }
 
 bool PreloadSupplier::IsLoaded(const std::string& region_code) const {

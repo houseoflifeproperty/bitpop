@@ -30,6 +30,7 @@
 #include "WebBlendMode.h"
 #include "WebColor.h"
 #include "WebCommon.h"
+#include "WebCompositorAnimationDelegate.h"
 #include "WebFloatPoint3D.h"
 #include "WebPoint.h"
 #include "WebRect.h"
@@ -41,7 +42,7 @@ class SkMatrix44;
 class SkImageFilter;
 
 namespace blink {
-class WebAnimationDelegate;
+
 class WebFilterOperations;
 class WebLayerClient;
 class WebLayerScrollClient;
@@ -127,13 +128,6 @@ public:
     // WebFilterOperations object.
     virtual void setFilters(const WebFilterOperations&) = 0;
 
-    // Apply filters to pixels that show through the background of this layer.
-    // Note: These filters are only possible on layers that are drawn directly
-    // to a root render surface with an opaque background. This means if an
-    // ancestor of the background-filtered layer sets certain properties
-    // (opacity, transforms), it may conflict and hide the background filters.
-    virtual void setBackgroundFilters(const WebFilterOperations&) = 0;
-
     // An animation delegate is notified when animations are started and
     // stopped. The WebLayer does not take ownership of the delegate, and it is
     // the responsibility of the client to reset the layer's delegate before
@@ -143,7 +137,7 @@ public:
 
     // Returns false if the animation cannot be added.
     // Takes ownership of the WebAnimation object.
-    virtual bool addAnimation(WebAnimation*) = 0;
+    virtual bool addAnimation(WebCompositorAnimation*) = 0;
 
     // Removes all animations with the given id.
     virtual void removeAnimation(int animationId) = 0;

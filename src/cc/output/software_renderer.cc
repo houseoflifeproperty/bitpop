@@ -29,7 +29,7 @@
 #include "third_party/skia/include/core/SkMatrix.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "third_party/skia/include/effects/SkLayerRasterizer.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
 
@@ -472,7 +472,9 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
 
 void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,
                                     const TileDrawQuad* quad) {
-  DCHECK(!output_surface_->ForcedDrawToSoftwareDevice());
+  // |resource_provider_| can be NULL in resourceless software draws, which
+  // should never produce tile quads in the first place.
+  DCHECK(resource_provider_);
   DCHECK(IsSoftwareResource(quad->resource_id));
 
   ResourceProvider::ScopedReadLockSoftware lock(resource_provider_,
@@ -524,9 +526,6 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
   if (!quad->filters.IsEmpty()) {
     skia::RefPtr<SkImageFilter> filter = RenderSurfaceFilters::BuildImageFilter(
         quad->filters, content_texture->size());
-    // TODO(ajuma): In addition origin translation, the canvas should also be
-    // scaled to accomodate device pixel ratio and pinch zoom. See
-    // crbug.com/281516 and crbug.com/281518.
     // TODO(ajuma): Apply the filter in the same pass as the content where
     // possible (e.g. when there's no origin offset). See crbug.com/308201.
     if (filter) {
@@ -539,6 +538,7 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
         canvas.clear(SK_ColorTRANSPARENT);
         canvas.translate(SkIntToScalar(-quad->rect.origin().x()),
                          SkIntToScalar(-quad->rect.origin().y()));
+        canvas.scale(quad->filters_scale.x(), quad->filters_scale.y());
         canvas.drawSprite(*content, 0, 0, &paint);
       }
     }
@@ -615,9 +615,8 @@ void SoftwareRenderer::CopyCurrentRenderPassToBitmap(
   gfx::Rect window_copy_rect = MoveFromDrawToWindowSpace(copy_rect);
 
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
-  bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                    window_copy_rect.width(),
-                    window_copy_rect.height());
+  bitmap->setInfo(SkImageInfo::MakeN32Premul(window_copy_rect.width(),
+                                             window_copy_rect.height()));
   current_canvas_->readPixels(
       bitmap.get(), window_copy_rect.x(), window_copy_rect.y());
 

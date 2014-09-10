@@ -32,7 +32,7 @@
 
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLUnknownElement FINAL : public HTMLElement {
 public:
@@ -50,11 +50,6 @@ private:
         ScriptWrappable::init(this);
     }
 };
-
-inline bool isHTMLUnknownElement(const Element& element)
-{
-    return element.isHTMLElement() && toHTMLElement(element).isHTMLUnknownElement();
-}
 
 inline bool isHTMLUnknownElement(const HTMLElement& element)
 {

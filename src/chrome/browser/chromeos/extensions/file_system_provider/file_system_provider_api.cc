@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/debug/trace_event.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/file_system_provider/provided_file_system_interface.h"
@@ -51,7 +52,8 @@ bool FileSystemProviderMountFunction::RunSync() {
   // TODO(mtomasz): Pass more detailed errors, rather than just a bool.
   if (!service->MountFileSystem(extension_id(),
                                 params->options.file_system_id,
-                                params->options.display_name)) {
+                                params->options.display_name,
+                                params->options.writable)) {
     base::ListValue* result = new base::ListValue();
     result->Append(CreateError(kSecurityErrorName, kMountFailedErrorMessage));
     SetResult(result);
@@ -74,7 +76,8 @@ bool FileSystemProviderUnmountFunction::RunSync() {
     return false;
 
   if (!service->UnmountFileSystem(extension_id(),
-                                  params->options.file_system_id)) {
+                                  params->options.file_system_id,
+                                  Service::UNMOUNT_REASON_USER)) {
     // TODO(mtomasz): Pass more detailed errors, rather than just a bool.
     base::ListValue* result = new base::ListValue();
     result->Append(CreateError(kSecurityErrorName, kUnmountFailedErrorMessage));
@@ -97,15 +100,6 @@ bool FileSystemProviderInternalUnmountRequestedSuccessFunction::RunWhenValid() {
   return true;
 }
 
-bool FileSystemProviderInternalUnmountRequestedErrorFunction::RunWhenValid() {
-  using api::file_system_provider_internal::UnmountRequestedError::Params;
-  const scoped_ptr<Params> params(Params::Create(*args_));
-  EXTENSION_FUNCTION_VALIDATE(params);
-
-  RejectRequest(ProviderErrorToFileError(params->error));
-  return true;
-}
-
 bool
 FileSystemProviderInternalGetMetadataRequestedSuccessFunction::RunWhenValid() {
   using api::file_system_provider_internal::GetMetadataRequestedSuccess::Params;
@@ -114,16 +108,6 @@ FileSystemProviderInternalGetMetadataRequestedSuccessFunction::RunWhenValid() {
 
   FulfillRequest(RequestValue::CreateForGetMetadataSuccess(params.Pass()),
                  false /* has_more */);
-  return true;
-}
-
-bool
-FileSystemProviderInternalGetMetadataRequestedErrorFunction::RunWhenValid() {
-  using api::file_system_provider_internal::GetMetadataRequestedError::Params;
-  const scoped_ptr<Params> params(Params::Create(*args_));
-  EXTENSION_FUNCTION_VALIDATE(params);
-
-  RejectRequest(ProviderErrorToFileError(params->error));
   return true;
 }
 
@@ -141,58 +125,10 @@ bool FileSystemProviderInternalReadDirectoryRequestedSuccessFunction::
 }
 
 bool
-FileSystemProviderInternalReadDirectoryRequestedErrorFunction::RunWhenValid() {
-  using api::file_system_provider_internal::ReadDirectoryRequestedError::Params;
-  const scoped_ptr<Params> params(Params::Create(*args_));
-  EXTENSION_FUNCTION_VALIDATE(params);
-
-  RejectRequest(ProviderErrorToFileError(params->error));
-  return true;
-}
-
-bool
-FileSystemProviderInternalOpenFileRequestedSuccessFunction::RunWhenValid() {
-  using api::file_system_provider_internal::OpenFileRequestedSuccess::Params;
-  scoped_ptr<Params> params(Params::Create(*args_));
-  EXTENSION_FUNCTION_VALIDATE(params);
-
-  FulfillRequest(scoped_ptr<RequestValue>(new RequestValue()),
-                 false /* has_more */);
-  return true;
-}
-
-bool FileSystemProviderInternalOpenFileRequestedErrorFunction::RunWhenValid() {
-  using api::file_system_provider_internal::OpenFileRequestedError::Params;
-  const scoped_ptr<Params> params(Params::Create(*args_));
-  EXTENSION_FUNCTION_VALIDATE(params);
-
-  RejectRequest(ProviderErrorToFileError(params->error));
-  return true;
-}
-
-bool
-FileSystemProviderInternalCloseFileRequestedSuccessFunction::RunWhenValid() {
-  using api::file_system_provider_internal::CloseFileRequestedSuccess::Params;
-  scoped_ptr<Params> params(Params::Create(*args_));
-  EXTENSION_FUNCTION_VALIDATE(params);
-
-  FulfillRequest(scoped_ptr<RequestValue>(new RequestValue()),
-                 false /* has_more */);
-  return true;
-}
-
-bool FileSystemProviderInternalCloseFileRequestedErrorFunction::RunWhenValid() {
-  using api::file_system_provider_internal::CloseFileRequestedError::Params;
-  const scoped_ptr<Params> params(Params::Create(*args_));
-  EXTENSION_FUNCTION_VALIDATE(params);
-
-  RejectRequest(ProviderErrorToFileError(params->error));
-  return true;
-}
-
-bool
 FileSystemProviderInternalReadFileRequestedSuccessFunction::RunWhenValid() {
+  TRACE_EVENT0("file_system_provider", "ReadFileRequestedSuccess");
   using api::file_system_provider_internal::ReadFileRequestedSuccess::Params;
+
   scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
@@ -202,12 +138,25 @@ FileSystemProviderInternalReadFileRequestedSuccessFunction::RunWhenValid() {
   return true;
 }
 
-bool FileSystemProviderInternalReadFileRequestedErrorFunction::RunWhenValid() {
-  using api::file_system_provider_internal::ReadFileRequestedError::Params;
-  const scoped_ptr<Params> params(Params::Create(*args_));
+bool
+FileSystemProviderInternalOperationRequestedSuccessFunction::RunWhenValid() {
+  using api::file_system_provider_internal::OperationRequestedSuccess::Params;
+  scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  RejectRequest(ProviderErrorToFileError(params->error));
+  FulfillRequest(scoped_ptr<RequestValue>(
+                     RequestValue::CreateForOperationSuccess(params.Pass())),
+                 false /* has_more */);
+  return true;
+}
+
+bool FileSystemProviderInternalOperationRequestedErrorFunction::RunWhenValid() {
+  using api::file_system_provider_internal::OperationRequestedError::Params;
+  scoped_ptr<Params> params(Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  const base::File::Error error = ProviderErrorToFileError(params->error);
+  RejectRequest(RequestValue::CreateForOperationError(params.Pass()), error);
   return true;
 }
 

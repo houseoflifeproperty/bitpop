@@ -207,13 +207,16 @@ class OpaqueBrowserFrameViewLayoutTest : public views::ViewsTestBase {
     window_title_ = new views::Label(delegate_->GetWindowTitle());
     window_title_->SetVisible(delegate_->ShouldShowWindowTitle());
     window_title_->SetEnabledColor(SK_ColorWHITE);
-    window_title_->set_subpixel_rendering_enabled(false);
+    window_title_->SetSubpixelRenderingEnabled(false);
     window_title_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     window_title_->set_id(VIEW_ID_WINDOW_TITLE);
     root_view_->AddChildView(window_title_);
   }
 
   void AddAvatarButton() {
+    // Disable the New Avatar Menu.
+    switches::DisableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
+
     menu_button_ = new AvatarMenuButton(NULL, false);
     menu_button_->set_id(VIEW_ID_AVATAR_BUTTON);
     delegate_->SetShouldShowAvatar(true);
@@ -230,10 +233,13 @@ class OpaqueBrowserFrameViewLayoutTest : public views::ViewsTestBase {
   }
 
   void AddNewAvatarButton() {
-   new_avatar_button_ =
-       new views::MenuButton(NULL, base::string16(), NULL, false);
-   new_avatar_button_->set_id(VIEW_ID_NEW_AVATAR_BUTTON);
-   root_view_->AddChildView(new_avatar_button_);
+    // Enable the New Avatar Menu.
+    switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
+
+    new_avatar_button_ =
+        new views::MenuButton(NULL, base::string16(), NULL, false);
+    new_avatar_button_->set_id(VIEW_ID_NEW_AVATAR_BUTTON);
+    root_view_->AddChildView(new_avatar_button_);
   }
 
   void ExpectBasicWindowBounds() {
@@ -514,17 +520,14 @@ TEST_F(OpaqueBrowserFrameViewLayoutTest,
 }
 
 TEST_F(OpaqueBrowserFrameViewLayoutTest, WindowWithNewAvatar) {
-  switches::EnableNewProfileManagementForTesting(
-      CommandLine::ForCurrentProcess());
-
   // Tests a normal tabstrip window with the new style avatar icon.
   AddNewAvatarButton();
   root_view_->Layout();
 
   ExpectBasicWindowBounds();
 
-  // Check the location of the caption button
-  EXPECT_EQ("385,1 12x20", new_avatar_button_->bounds().ToString());
+  // Check the location of the avatar button.
+  EXPECT_EQ("385,1 12x18", new_avatar_button_->bounds().ToString());
   // The basic window bounds are (-1, 13 398x29). There should not be an icon
   // avatar in the left, and the new avatar button has an offset of 5 to its
   // next control.

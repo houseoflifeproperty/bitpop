@@ -2108,16 +2108,14 @@ void SuggestMgr::lcs(const char * s, const char * s2, int * l1, int * l2, char *
     m = strlen(s);
     n = strlen(s2);
   }
-  c = (char *) malloc((m + 1) * (n + 1));
-  b = (char *) malloc((m + 1) * (n + 1));
+  c = (char *) calloc(m + 1, n + 1);
+  b = (char *) calloc(m + 1, n + 1);
   if (!c || !b) {
     if (c) free(c);
     if (b) free(b);
     *result = NULL;
     return;
   }
-  for (i = 1; i <= m; i++) c[i*(n+1)] = 0;
-  for (j = 0; j <= n; j++) c[j] = 0;
   for (i = 1; i <= m; i++) {
     for (j = 1; j <= n; j++) {
       if ( ((utf8) && (*((short *) su+i-1) == *((short *)su2+j-1)))

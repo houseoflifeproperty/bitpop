@@ -26,12 +26,12 @@
 #ifndef VisiblePosition_h
 #define VisiblePosition_h
 
-#include "core/dom/Position.h"
 #include "core/editing/EditingBoundary.h"
+#include "core/editing/PositionWithAffinity.h"
 #include "platform/heap/Handle.h"
 #include "platform/text/TextDirection.h"
 
-namespace WebCore {
+namespace blink {
 
 // VisiblePosition default affinity is downstream because
 // the callers do not really care (they just want the
@@ -48,6 +48,7 @@ namespace WebCore {
 
 class InlineBox;
 class Node;
+class Range;
 
 class VisiblePosition FINAL {
     DISALLOW_ALLOCATION();
@@ -137,15 +138,15 @@ VisiblePosition startVisiblePosition(const Range*, EAffinity);
 
 Element* enclosingBlockFlowElement(const VisiblePosition&);
 
-bool isFirstVisiblePositionInNode(const VisiblePosition&, const Node*);
-bool isLastVisiblePositionInNode(const VisiblePosition&, const Node*);
+bool isFirstVisiblePositionInNode(const VisiblePosition&, const ContainerNode*);
+bool isLastVisiblePositionInNode(const VisiblePosition&, const ContainerNode*);
 
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
 // Outside the WebCore namespace for ease of invocation from gdb.
-void showTree(const WebCore::VisiblePosition*);
-void showTree(const WebCore::VisiblePosition&);
+void showTree(const blink::VisiblePosition*);
+void showTree(const blink::VisiblePosition&);
 #endif
 
 #endif // VisiblePosition_h

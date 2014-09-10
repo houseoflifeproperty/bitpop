@@ -31,7 +31,6 @@
 #ifndef InputMethodContext_h
 #define InputMethodContext_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/editing/CompositionUnderline.h"
 #include "core/events/EventTarget.h"
 #include "core/html/HTMLElement.h"
@@ -40,13 +39,13 @@
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 class InputMethodController;
 class Node;
 
-class InputMethodContext FINAL : public NoBaseWillBeRefCountedGarbageCollected<InputMethodContext>, public ScriptWrappable, public EventTargetWithInlineData {
+class InputMethodContext FINAL : public NoBaseWillBeRefCountedGarbageCollected<InputMethodContext>, public EventTargetWithInlineData {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(InputMethodContext);
 public:
     static PassOwnPtrWillBeRawPtr<InputMethodContext> create(HTMLElement*);
@@ -96,6 +95,6 @@ private:
     Vector<unsigned> m_segments;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InputMethodContext_h

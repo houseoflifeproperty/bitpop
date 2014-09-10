@@ -33,7 +33,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/TextPosition.h"
 
-namespace WebCore {
+namespace blink {
 
 class Resource;
 class ScriptResource;
@@ -72,8 +72,6 @@ public:
 
 private:
     HTMLScriptRunner(Document*, HTMLScriptRunnerHost*);
-
-    LocalFrame* frame() const;
 
     enum PendingScriptType {
         PendingScriptBlockingParser,

@@ -7,23 +7,30 @@ import os
 import re
 import urlparse
 
+_next_page_id = 0
 
 class Page(object):
+
   def __init__(self, url, page_set=None, base_dir=None, name=''):
     self._url = url
     self._page_set = page_set
     # Default value of base_dir is the directory of the file that defines the
-    # class of this page instace.
+    # class of this page instance.
     if base_dir is None:
       base_dir = os.path.dirname(inspect.getfile(self.__class__))
     self._base_dir = base_dir
     self._name = name
+
+    global _next_page_id
+    self._id = _next_page_id
+    _next_page_id += 1
 
     # These attributes can be set dynamically by the page.
     self.synthetic_delays = dict()
     self.startup_url = page_set.startup_url if page_set else ''
     self.credentials = None
     self.disabled = False
+    self.skip_waits = False
     self.script_to_evaluate_on_commit = None
     self._SchemeErrorCheck()
 
@@ -38,6 +45,26 @@ class Page(object):
       if startup_url_scheme == 'file':
         raise ValueError('startup_url with local file scheme is not supported')
 
+  def TransferToPageSet(self, another_page_set):
+    """ Transfer this page to another page set.
+    Args:
+      another_page_set: an instance of telemetry.page.PageSet to transfer this
+          page to.
+    Note:
+      This method removes this page instance from the pages list of its current
+      page_set, so one should be careful not to iterate through the list of
+      pages of a page_set and calling this method.
+      For example, the below loop is erroneous:
+        for p in page_set_A.pages:
+          p.TransferToPageSet(page_set_B.pages)
+    """
+    assert self._page_set
+    if another_page_set is self._page_set:
+      return
+    self._page_set.pages.remove(self)
+    self._page_set = another_page_set
+    self._page_set.AddPage(self)
+
   def RunNavigateSteps(self, action_runner):
     action_runner.NavigateToPage(self)
 
@@ -51,6 +78,16 @@ class Page(object):
     assert browser_info
     return True
 
+  def AsDict(self):
+    """Converts a page object to a dict suitable for JSON output."""
+    d = {
+      'id': self._id,
+      'url': self._url,
+    }
+    if self._name:
+      d['name'] = self._name
+    return d
+
   @property
   def page_set(self):
     return self._page_set
@@ -62,6 +99,10 @@ class Page(object):
   @property
   def url(self):
     return self._url
+
+  @property
+  def id(self):
+    return self._id
 
   def GetSyntheticDelayCategories(self):
     result = []

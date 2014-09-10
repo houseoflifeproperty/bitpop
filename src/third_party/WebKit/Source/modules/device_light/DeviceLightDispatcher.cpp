@@ -8,7 +8,7 @@
 #include "modules/device_light/DeviceLightController.h"
 #include "public/platform/Platform.h"
 
-namespace WebCore {
+namespace blink {
 
 DeviceLightDispatcher& DeviceLightDispatcher::instance()
 {
@@ -27,12 +27,12 @@ DeviceLightDispatcher::~DeviceLightDispatcher()
 
 void DeviceLightDispatcher::startListening()
 {
-    blink::Platform::current()->setDeviceLightListener(this);
+    Platform::current()->startListening(WebPlatformEventDeviceLight, this);
 }
 
 void DeviceLightDispatcher::stopListening()
 {
-    blink::Platform::current()->setDeviceLightListener(0);
+    Platform::current()->stopListening(WebPlatformEventDeviceLight);
     m_lastDeviceLightData = -1;
 }
 
@@ -47,4 +47,4 @@ double DeviceLightDispatcher::latestDeviceLightData() const
     return m_lastDeviceLightData;
 }
 
-} // namespace WebCore
+} // namespace blink

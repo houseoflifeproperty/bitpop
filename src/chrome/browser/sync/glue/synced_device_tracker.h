@@ -22,7 +22,7 @@ namespace browser_sync {
 
 class DeviceInfo;
 
-class SyncedDeviceTracker : public ChangeProcessor {
+class SyncedDeviceTracker : public sync_driver::ChangeProcessor {
  public:
   SyncedDeviceTracker(syncer::UserShare* user_share,
                       const std::string& cache_guid);
@@ -47,7 +47,8 @@ class SyncedDeviceTracker : public ChangeProcessor {
   virtual scoped_ptr<DeviceInfo> ReadLocalDeviceInfo(
       const syncer::BaseTransaction &trans) const;
   virtual scoped_ptr<DeviceInfo> ReadLocalDeviceInfo() const;
-  virtual void InitLocalDeviceInfo(const base::Closure& callback);
+  virtual void InitLocalDeviceInfo(const std::string& signin_scoped_device_id,
+                                   const base::Closure& callback);
   virtual scoped_ptr<DeviceInfo> ReadDeviceInfo(
       const std::string& client_id) const;
   virtual void GetAllSyncedDeviceInfo(
@@ -61,6 +62,13 @@ class SyncedDeviceTracker : public ChangeProcessor {
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
 
+  // Update |backup_timestamp| in local device info specifics to |backup_time|
+  // if different.
+  void UpdateLocalDeviceBackupTime(base::Time backup_time);
+
+  // Return time derived from |backup_timestamp| in local device info specifics.
+  base::Time GetLocalDeviceBackupTime() const;
+
  private:
   friend class SyncedDeviceTrackerTest;
 
@@ -72,8 +80,7 @@ class SyncedDeviceTracker : public ChangeProcessor {
 
   // Helper to write arbitrary device info. Useful for writing local device
   // info and also used by test cases to write arbitrary device infos.
-  void WriteDeviceInfo(const sync_pb::DeviceInfoSpecifics& specifics,
-                       const std::string& tag);
+  void WriteDeviceInfo(const DeviceInfo& info, const std::string& tag);
 
   syncer::UserShare* user_share_;
   const std::string cache_guid_;

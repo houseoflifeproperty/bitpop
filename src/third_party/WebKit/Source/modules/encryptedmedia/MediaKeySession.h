@@ -26,29 +26,24 @@
 #ifndef MediaKeySession_h
 #define MediaKeySession_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptPromiseProperty.h"
 #include "core/dom/ActiveDOMObject.h"
+#include "core/dom/DOMException.h"
 #include "modules/EventTargetModules.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebContentDecryptionModuleSession.h"
-#include "wtf/Deque.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
-#include "wtf/Uint8Array.h"
-#include "wtf/WeakPtr.h"
-#include "wtf/text/WTFString.h"
+#include "wtf/Forward.h"
 
 namespace blink {
-class WebContentDecryptionModule;
-}
 
-namespace WebCore {
-
-class ExceptionState;
+class ScriptPromise;
+class ScriptState;
 class GenericEventQueue;
 class MediaKeyError;
 class MediaKeys;
+class WebContentDecryptionModule;
+class WebString;
 
 // References are held by JS only. However, even if all JS references are
 // dropped, it won't be garbage collected until close event received or
@@ -64,23 +59,24 @@ class MediaKeys;
 // it may outlive any JavaScript references as long as the MediaKeys object is alive.
 // The WebContentDecryptionModuleSession has the same lifetime as this object.
 class MediaKeySession FINAL
-    : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<MediaKeySession>, public ActiveDOMObject, public ScriptWrappable, public EventTargetWithInlineData
-    , private blink::WebContentDecryptionModuleSession::Client {
+    : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<MediaKeySession>, public ActiveDOMObject, public EventTargetWithInlineData
+    , private WebContentDecryptionModuleSession::Client {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<MediaKeySession>);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaKeySession);
 public:
-    static MediaKeySession* create(ExecutionContext*, blink::WebContentDecryptionModule*, MediaKeys*);
+    static ScriptPromise create(ScriptState*, MediaKeys*, const String& initDataType, PassRefPtr<ArrayBuffer> initData, const String& sessionType);
     virtual ~MediaKeySession();
 
     const String& keySystem() const { return m_keySystem; }
     String sessionId() const;
+    ScriptPromise closed(ScriptState*);
 
     void setError(MediaKeyError*);
     MediaKeyError* error() { return m_error.get(); }
 
-    void initializeNewSession(const String& mimeType, const Uint8Array& initData);
-    void update(Uint8Array* response, ExceptionState&);
-    void release(ExceptionState&);
+    ScriptPromise update(ScriptState*, ArrayBuffer* response);
+    ScriptPromise update(ScriptState*, ArrayBufferView* response);
+    ScriptPromise release(ScriptState*);
 
     void enqueueEvent(PassRefPtrWillBeRawPtr<Event>);
 
@@ -95,37 +91,25 @@ public:
     virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    // A struct holding the pending action.
-    struct PendingAction {
-        enum Type {
-            Update,
-            Release
-        };
-        const Type type;
-        const RefPtr<Uint8Array> data;
+    class PendingAction;
+    friend class MediaKeySessionInitializer;
 
-        static PassOwnPtr<PendingAction> CreatePendingUpdate(PassRefPtr<Uint8Array> data);
-        static PassOwnPtr<PendingAction> CreatePendingRelease();
-        ~PendingAction();
-
-    private:
-        PendingAction(Type, PassRefPtr<Uint8Array> data);
-    };
-
-    MediaKeySession(ExecutionContext*, blink::WebContentDecryptionModule*, MediaKeys*);
+    MediaKeySession(ExecutionContext*, MediaKeys*, PassOwnPtr<WebContentDecryptionModuleSession>);
     void actionTimerFired(Timer<MediaKeySession>*);
 
-    // blink::WebContentDecryptionModuleSession::Client
-    virtual void message(const unsigned char* message, size_t messageLength, const blink::WebURL& destinationURL) OVERRIDE;
+    // WebContentDecryptionModuleSession::Client
+    virtual void message(const unsigned char* message, size_t messageLength, const WebURL& destinationURL) OVERRIDE;
     virtual void ready() OVERRIDE;
     virtual void close() OVERRIDE;
     virtual void error(MediaKeyErrorCode, unsigned long systemCode) OVERRIDE;
-    virtual void error(blink::WebContentDecryptionModuleException, unsigned long systemCode, const blink::WebString& errorMessage) OVERRIDE;
+    virtual void error(WebContentDecryptionModuleException, unsigned long systemCode, const WebString& errorMessage) OVERRIDE;
+
+    ScriptPromise updateInternal(ScriptState*, PassRefPtr<ArrayBuffer> response);
 
     String m_keySystem;
-    RefPtr<MediaKeyError> m_error;
+    RefPtrWillBeMember<MediaKeyError> m_error;
     OwnPtrWillBeMember<GenericEventQueue> m_asyncEventQueue;
-    OwnPtr<blink::WebContentDecryptionModuleSession> m_session;
+    OwnPtr<WebContentDecryptionModuleSession> m_session;
 
     // Used to determine if MediaKeys is still active.
     WeakMember<MediaKeys> m_keys;
@@ -133,10 +117,14 @@ private:
     // Is the CDM finished with this session?
     bool m_isClosed;
 
-    Deque<OwnPtr<PendingAction> > m_pendingActions;
+    // Keep track of the closed promise.
+    typedef ScriptPromiseProperty<Member<MediaKeySession>, V8UndefinedType, RefPtrWillBeMember<DOMException> > ClosedPromise;
+    Member<ClosedPromise> m_closedPromise;
+
+    HeapDeque<Member<PendingAction> > m_pendingActions;
     Timer<MediaKeySession> m_actionTimer;
 };
 
-}
+} // namespace blink
 
 #endif // MediaKeySession_h

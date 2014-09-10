@@ -31,14 +31,13 @@
 #ifndef InspectorDatabaseResource_h
 #define InspectorDatabaseResource_h
 
-#include "InspectorFrontend.h"
+#include "core/InspectorFrontend.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
+#include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
-#include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 class Database;
 class InspectorFrontend;
 
@@ -62,6 +61,6 @@ private:
     String m_version;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InspectorDatabaseResource_h

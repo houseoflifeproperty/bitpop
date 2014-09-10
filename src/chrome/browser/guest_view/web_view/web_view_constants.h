@@ -9,6 +9,17 @@
 
 namespace webview {
 
+// Attributes.
+extern const char kAttributeAutoSize[];
+extern const char kAttributeMaxHeight[];
+extern const char kAttributeMaxWidth[];
+extern const char kAttributeMinHeight[];
+extern const char kAttributeMinWidth[];
+
+// API namespace.
+// TODO(kalman): Consolidate this with the other API constants.
+extern const char kAPINamespace[];
+
 // Events.
 extern const char kEventClose[];
 extern const char kEventConsoleMessage[];
@@ -31,6 +42,9 @@ extern const char kEventResponsive[];
 extern const char kEventSizeChanged[];
 extern const char kEventUnresponsive[];
 extern const char kEventZoomChange[];
+
+// Event related constants.
+extern const char kWebViewEventPrefix[];
 
 // Parameters/properties on events.
 extern const char kContextMenuItems[];

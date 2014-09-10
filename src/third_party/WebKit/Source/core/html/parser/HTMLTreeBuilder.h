@@ -39,7 +39,7 @@
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/TextPosition.h"
 
-namespace WebCore {
+namespace blink {
 
 class AtomicHTMLToken;
 class Document;
@@ -214,7 +214,7 @@ private:
     };
 
     bool m_framesetOk;
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool m_isAttached;
 #endif
     FragmentParsingContext m_fragmentContext;

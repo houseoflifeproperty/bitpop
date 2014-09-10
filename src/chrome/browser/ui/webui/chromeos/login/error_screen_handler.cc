@@ -13,8 +13,6 @@
 #include "chrome/browser/chromeos/login/ui/captive_portal_window_proxy.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/ui/webui_login_view.h"
-#include "chrome/browser/chromeos/net/network_portal_detector.h"
-#include "chrome/browser/chromeos/net/network_portal_detector_strategy.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
@@ -23,6 +21,9 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/dbus/session_manager_client.h"
+#include "chromeos/network/portal_detector/network_portal_detector.h"
+#include "chromeos/network/portal_detector/network_portal_detector_strategy.h"
+#include "components/user_manager/user_manager.h"
 #include "extensions/browser/extension_system.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
@@ -42,7 +43,8 @@ ErrorScreenHandler::ErrorScreenHandler(
     : BaseScreenHandler(kJsScreenPath),
       delegate_(NULL),
       network_state_informer_(network_state_informer),
-      show_on_init_(false) {
+      show_on_init_(false),
+      weak_ptr_factory_(this) {
   DCHECK(network_state_informer_.get());
 }
 
@@ -53,12 +55,14 @@ void ErrorScreenHandler::SetDelegate(ErrorScreenActorDelegate* delegate) {
 }
 
 void ErrorScreenHandler::Show(OobeDisplay::Screen parent_screen,
-                              base::DictionaryValue* params) {
+                              base::DictionaryValue* params,
+                              const base::Closure& on_hide) {
   if (!page_is_ready()) {
     show_on_init_ = true;
     return;
   }
   parent_screen_ = parent_screen;
+  on_hide_.reset(new base::Closure(on_hide));
   ShowScreen(OobeUI::kScreenErrorMessage, params);
   NetworkErrorShown();
   NetworkPortalDetector::Get()->SetStrategy(
@@ -68,12 +72,25 @@ void ErrorScreenHandler::Show(OobeDisplay::Screen parent_screen,
   LOG(WARNING) << "Offline message is displayed";
 }
 
+void ErrorScreenHandler::CheckAndShowScreen() {
+  std::string screen_name;
+  if (GetScreenName(parent_screen(), &screen_name))
+    ShowScreen(screen_name.c_str(), NULL);
+}
+
+void ErrorScreenHandler::Show(OobeDisplay::Screen parent_screen,
+                              base::DictionaryValue* params) {
+  Show(parent_screen,
+       params,
+       base::Bind(&ErrorScreenHandler::CheckAndShowScreen,
+                  weak_ptr_factory_.GetWeakPtr()));
+}
+
 void ErrorScreenHandler::Hide() {
   if (parent_screen_ == OobeUI::SCREEN_UNKNOWN)
     return;
-  std::string screen_name;
-  if (GetScreenName(parent_screen_, &screen_name))
-    ShowScreen(screen_name.c_str(), NULL);
+  if (on_hide_)
+    on_hide_->Run();
   NetworkPortalDetector::Get()->SetStrategy(
       PortalDetectorStrategy::STRATEGY_ID_LOGIN_SCREEN);
   if (delegate_)
@@ -188,7 +205,7 @@ void ErrorScreenHandler::HandleDiagnoseButtonClicked() {
                                   NEW_WINDOW));
   InitAppSession(profile, extension_id);
 
-  UserManager::Get()->SessionStarted();
+  user_manager::UserManager::Get()->SessionStarted();
 
   LoginDisplayHostImpl::default_host()->Finalize();
 }

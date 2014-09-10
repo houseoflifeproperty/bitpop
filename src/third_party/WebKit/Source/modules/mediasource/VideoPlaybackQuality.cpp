@@ -35,12 +35,12 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/timing/Performance.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<VideoPlaybackQuality> VideoPlaybackQuality::create(
+VideoPlaybackQuality* VideoPlaybackQuality::create(
     const Document& document, unsigned totalVideoFrames, unsigned droppedVideoFrames, unsigned corruptedVideoFrames)
 {
-    return adoptRefWillBeNoop(new VideoPlaybackQuality(document, totalVideoFrames, droppedVideoFrames, corruptedVideoFrames));
+    return new VideoPlaybackQuality(document, totalVideoFrames, droppedVideoFrames, corruptedVideoFrames);
 }
 
 VideoPlaybackQuality::VideoPlaybackQuality(
@@ -50,6 +50,7 @@ VideoPlaybackQuality::VideoPlaybackQuality(
     , m_droppedVideoFrames(droppedVideoFrames)
     , m_corruptedVideoFrames(corruptedVideoFrames)
 {
+    ScriptWrappable::init(this);
     if (document.domWindow())
         m_creationTime = document.domWindow()->performance().now();
 }

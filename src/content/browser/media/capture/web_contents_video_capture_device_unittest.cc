@@ -32,6 +32,8 @@
 #include "skia/ext/platform_canvas.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/gfx/display.h"
+#include "ui/gfx/screen.h"
 
 namespace content {
 namespace {
@@ -39,6 +41,7 @@ namespace {
 const int kTestWidth = 320;
 const int kTestHeight = 240;
 const int kTestFramesPerSecond = 20;
+const float kTestDeviceScaleFactor = 2.0f;
 const SkColor kNothingYet = 0xdeadbeef;
 const SkColor kNotInterested = ~kNothingYet;
 
@@ -196,8 +199,8 @@ class CaptureTestView : public TestRenderWidgetHostView {
     const base::TimeTicks present_time = base::TimeTicks::Now();
     RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback callback;
     scoped_refptr<media::VideoFrame> target;
-    if (subscriber_ && subscriber_->ShouldCaptureFrame(present_time,
-                                                       &target, &callback)) {
+    if (subscriber_ && subscriber_->ShouldCaptureFrame(
+            gfx::Rect(), present_time, &target, &callback)) {
       SkColor c = ConvertRgbToYuv(controller_->GetSolidColor());
       media::FillYUV(
           target.get(), SkColorGetR(c), SkColorGetG(c), SkColorGetB(c));
@@ -249,7 +252,7 @@ class CaptureTestRenderViewHost : public TestRenderViewHost {
       const gfx::Rect& src_rect,
       const gfx::Size& accelerated_dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config& bitmap_config) OVERRIDE {
+      const SkColorType color_type) OVERRIDE {
     gfx::Size size = controller_->GetCopyResultSize();
     SkColor color = controller_->GetSolidColor();
 
@@ -466,6 +469,49 @@ class StubClientObserver {
   DISALLOW_COPY_AND_ASSIGN(StubClientObserver);
 };
 
+// A dummy implementation of gfx::Screen, since WebContentsVideoCaptureDevice
+// needs access to a gfx::Display's device scale factor.
+class FakeScreen : public gfx::Screen {
+ public:
+  FakeScreen() : the_one_display_(0x1337, gfx::Rect(0, 0, 2560, 1440)) {
+    the_one_display_.set_device_scale_factor(kTestDeviceScaleFactor);
+  }
+  virtual ~FakeScreen() {}
+
+  // gfx::Screen implementation (only what's needed for testing).
+  virtual bool IsDIPEnabled() OVERRIDE { return true; }
+  virtual gfx::Point GetCursorScreenPoint() OVERRIDE { return gfx::Point(); }
+  virtual gfx::NativeWindow GetWindowUnderCursor() OVERRIDE { return NULL; }
+  virtual gfx::NativeWindow GetWindowAtScreenPoint(
+      const gfx::Point& point) OVERRIDE { return NULL; }
+  virtual int GetNumDisplays() const OVERRIDE { return 1; }
+  virtual std::vector<gfx::Display> GetAllDisplays() const OVERRIDE {
+    return std::vector<gfx::Display>(1, the_one_display_);
+  }
+  virtual gfx::Display GetDisplayNearestWindow(
+      gfx::NativeView view) const OVERRIDE {
+    return the_one_display_;
+  }
+  virtual gfx::Display GetDisplayNearestPoint(
+      const gfx::Point& point) const OVERRIDE {
+    return the_one_display_;
+  }
+  virtual gfx::Display GetDisplayMatching(
+      const gfx::Rect& match_rect) const OVERRIDE {
+    return the_one_display_;
+  }
+  virtual gfx::Display GetPrimaryDisplay() const OVERRIDE {
+    return the_one_display_;
+  }
+  virtual void AddObserver(gfx::DisplayObserver* observer) OVERRIDE {}
+  virtual void RemoveObserver(gfx::DisplayObserver* observer) OVERRIDE {}
+
+ private:
+  gfx::Display the_one_display_;
+
+  DISALLOW_COPY_AND_ASSIGN(FakeScreen);
+};
+
 // Test harness that sets up a minimal environment with necessary stubs.
 class WebContentsVideoCaptureDeviceTest : public testing::Test {
  public:
@@ -477,6 +523,9 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
 
  protected:
   virtual void SetUp() {
+    gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, &fake_screen_);
+    ASSERT_EQ(&fake_screen_, gfx::Screen::GetNativeScreen());
+
     // TODO(nick): Sadness and woe! Much "mock-the-world" boilerplate could be
     // eliminated here, if only we could use RenderViewHostTestHarness. The
     // catch is that we need our TestRenderViewHost to support a
@@ -499,17 +548,11 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
         render_process_host_factory_.get());
     web_contents_.reset(
         TestWebContents::Create(browser_context_.get(), site_instance.get()));
-
-    // This is actually a CaptureTestRenderViewHost.
-    RenderWidgetHostImpl* rwh =
-        RenderWidgetHostImpl::From(web_contents_->GetRenderViewHost());
-
-    std::string device_id =
-        WebContentsCaptureUtil::AppendWebContentsDeviceScheme(
-            base::StringPrintf("%d:%d", rwh->GetProcess()->GetID(),
-                               rwh->GetRoutingID()));
-
-    device_.reset(WebContentsVideoCaptureDevice::Create(device_id));
+    RenderFrameHost* const main_frame = web_contents_->GetMainFrame();
+    device_.reset(WebContentsVideoCaptureDevice::Create(
+        base::StringPrintf("web-contents-media-stream://%d:%d",
+                           main_frame->GetProcess()->GetID(),
+                           main_frame->GetRoutingID())));
 
     base::RunLoop().RunUntilIdle();
   }
@@ -536,10 +579,13 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
     SiteInstanceImpl::set_render_process_host_factory(NULL);
     render_view_host_factory_.reset();
     render_process_host_factory_.reset();
+
+    gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, NULL);
   }
 
   // Accessors.
   CaptureTestSourceController* source() { return &controller_; }
+  WebContents* web_contents() const { return web_contents_.get(); }
   media::VideoCaptureDevice* device() { return device_.get(); }
 
   void SimulateDrawEvent() {
@@ -564,6 +610,8 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
   }
 
  private:
+  FakeScreen fake_screen_;
+
   StubClientObserver client_observer_;
 
   // The controller controls which pixel patterns to produce.
@@ -603,6 +651,11 @@ TEST_F(WebContentsVideoCaptureDeviceTest, InvalidInitialWebContentsError) {
 }
 
 TEST_F(WebContentsVideoCaptureDeviceTest, WebContentsDestroyed) {
+  const gfx::Size capture_preferred_size(
+      static_cast<int>(kTestWidth / kTestDeviceScaleFactor),
+      static_cast<int>(kTestHeight / kTestDeviceScaleFactor));
+  ASSERT_NE(capture_preferred_size, web_contents()->GetPreferredSize());
+
   // We'll simulate the tab being closed after the capture pipeline is up and
   // running.
   media::VideoCaptureParams capture_params;
@@ -617,6 +670,10 @@ TEST_F(WebContentsVideoCaptureDeviceTest, WebContentsDestroyed) {
   ASSERT_NO_FATAL_FAILURE(client_observer()->WaitForNextColor(SK_ColorRED));
 
   base::RunLoop().RunUntilIdle();
+
+  // Check that the preferred size of the WebContents matches the one provided
+  // by WebContentsVideoCaptureDevice.
+  EXPECT_EQ(capture_preferred_size, web_contents()->GetPreferredSize());
 
   // Post a task to close the tab. We should see an error reported to the
   // consumer.

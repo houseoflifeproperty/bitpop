@@ -21,6 +21,7 @@
         'image/image_unittest_util.h',
         'image/image_unittest_util_ios.mm',
         'image/image_unittest_util_mac.mm',
+        'screen_unittest.cc',
         'test/run_all_unittests.cc',
         'text_elider_unittest.cc',
         'text_utils_unittest.cc',
@@ -35,10 +36,12 @@
         'blit_unittest.cc',
         'break_list_unittest.cc',
         'canvas_unittest.cc',
+        'canvas_unittest_mac.mm',
         'codec/jpeg_codec_unittest.cc',
         'codec/png_codec_unittest.cc',
         'color_analysis_unittest.cc',
         'color_utils_unittest.cc',
+        'display_change_notifier_unittest.cc',
         'display_unittest.cc',
         'font_list_unittest.cc',
         'geometry/box_unittest.cc',
@@ -56,9 +59,12 @@
         'geometry/vector3d_unittest.cc',
         'image/image_mac_unittest.mm',
         'image/image_util_unittest.cc',
+        'mac/coordinate_conversion_unittest.mm',
+        'platform_font_mac_unittest.mm',
         'range/range_mac_unittest.mm',
         'range/range_unittest.cc',
         'range/range_win_unittest.cc',
+        'render_text_unittest.cc',
         'sequential_id_generator_unittest.cc',
         'shadow_value_unittest.cc',
         'skbitmap_operations_unittest.cc',
@@ -73,6 +79,7 @@
         '../../testing/gtest.gyp:gtest',
         '../../third_party/libpng/libpng.gyp:libpng',
         '../base/ui_base.gyp:ui_base',
+        '../resources/ui_resources.gyp:ui_test_pak',
         'gfx.gyp:gfx',
         'gfx.gyp:gfx_geometry',
         'gfx.gyp:gfx_test_support',
@@ -99,6 +106,7 @@
             '../../build/linux/system.gyp:pangocairo',
           ],
           'sources': [
+            'font_render_params_linux_unittest.cc',
             'platform_font_pango_unittest.cc',
           ],
           'conditions': [
@@ -114,12 +122,28 @@
             'canvas_unittest.cc',
             'font_list_unittest.cc',
             'font_unittest.cc',
+            'render_text_unittest.cc',
             'text_elider_unittest.cc',
           ],
         }],
         ['OS == "android"', {
           'dependencies': [
             '../../testing/android/native_test.gyp:native_test_native_code',
+          ],
+          # Do not run display_change_notifier_unittest.cc on Android because it
+          # does not compile display_observer.cc
+          'sources!': [
+            'display_change_notifier_unittest.cc',
+          ],
+        }],
+        ['OS=="android" or OS=="ios"', {
+          'sources!': [
+            'render_text_unittest.cc',
+          ],
+        }],
+        ['use_aura==1', {
+          'sources!': [
+            'screen_unittest.cc',
           ],
         }],
       ],

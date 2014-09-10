@@ -403,9 +403,9 @@ class ChangeInfo(object):
     if self.issue and self.patchset:
       try:
         self.SendToRietveld('/lint/issue%s_%s' % (self.issue, self.patchset),
-            timeout=10)
+            timeout=60)
       except ssl.SSLError as e:
-        # It takes more than 10 seconds to lint some CLs. Silently ignore
+        # It takes more than 60 seconds to lint some CLs. Silently ignore
         # the expected timeout.
         if e.message != 'The read operation timed out':
           raise
@@ -1367,6 +1367,12 @@ def CMDtry(args):
   else:
     change_info = ChangeInfo.Load(args[0], GetRepositoryRoot(),
                                   True, True)
+
+  props = change_info.RpcServer().get_issue_properties(
+    change_info.issue, False)
+  if props.get('private'):
+    ErrorExit('Cannot use trybots on a private issue')
+
   if change_info.GetFiles():
     args = args[1:]
   else:

@@ -88,6 +88,23 @@
               '-I', '<(libvpx_source)',
               '-I', '<(shared_generated_dir)', # Generated assembly offsets
             ],
+            # yasm only gets the flags we define. It doesn't inherit any of the
+            # really useful defines that come with a gcc invocation. In this
+            # case, we rely on __ANDROID__ to set 'rand' to 'lrand48'.
+            # Previously we used the builtin _rand but that's gone away.
+            'conditions': [
+              ['OS=="android"', {
+                'yasm_flags': [
+                  '-D', '__ANDROID__',
+                ],
+              }],
+            ],
+            'clang_warning_flags': [
+              # libvpx heavily relies on implicit enum casting.
+              '-Wno-conversion',
+              # libvpx does `if ((a == b))` in some places.
+              '-Wno-parentheses-equality',
+            ],
           },
           'dependencies': [
             'gen_asm_offsets_vp8',
@@ -124,8 +141,7 @@
                 # Currently no sse3 intrinsic functions
                 #'libvpx_intrinsics_sse3',
                 'libvpx_intrinsics_ssse3',
-                # Currently no sse4_1 intrinsic functions
-                #'libvpx_intrinsics_sse4_1',
+                'libvpx_intrinsics_sse4_1',
                 # Currently no avx intrinsic functions
                 #'libvpx_intrinsics_avx',
                 #'libvpx_intrinsics_avx2',
@@ -149,35 +165,12 @@
                     # Currently no sse3 intrinsic functions
                     #'libvpx_intrinsics_sse3',
                     'libvpx_intrinsics_ssse3',
-                    # Currently no sse4_1 intrinsic functions
-                    #'libvpx_intrinsics_sse4_1',
+                    'libvpx_intrinsics_sse4_1',
                     # Currently no avx intrinsic functions
                     #'libvpx_intrinsics_avx',
                     #'libvpx_intrinsics_avx2',
                   ],
                 }],
-              ],
-            }],
-            ['clang == 1', {
-              'xcode_settings': {
-                'WARNING_CFLAGS': [
-                  # libvpx heavily relies on implicit enum casting.
-                  '-Wno-conversion',
-                  # libvpx does `if ((a == b))` in some places.
-                  '-Wno-parentheses-equality',
-                ],
-              },
-              'cflags': [
-                '-Wno-conversion',
-                '-Wno-parentheses-equality',
-              ],
-            }],
-            ['chromeos == 1', {
-              # ChromeOS needs these files for animated WebM avatars.
-              'sources': [
-                '<(libvpx_source)/third_party/libmkv/EbmlIDs.h',
-                '<(libvpx_source)/third_party/libmkv/EbmlWriter.c',
-                '<(libvpx_source)/third_party/libmkv/EbmlWriter.h',
               ],
             }],
           ],
@@ -343,14 +336,6 @@
                 '../../build/android/cpufeatures.gypi',
               ],
             }],
-            ['chromeos == 1', {
-              # ChromeOS needs these files for animated WebM avatars.
-              'sources': [
-                '<(libvpx_source)/third_party/libmkv/EbmlIDs.h',
-                '<(libvpx_source)/third_party/libmkv/EbmlWriter.c',
-                '<(libvpx_source)/third_party/libmkv/EbmlWriter.h',
-              ],
-            }],
             ['OS == "ios"', {
               'xcode_settings': {
                 'OTHER_CFLAGS!': [
@@ -490,7 +475,7 @@
                 '-s', '<(ninja_obj_dir)/encoder/libvpx_asm_offsets_vp8.vp8_asm_enc_offsets.obj',
                 '-s', '<(PRODUCT_DIR)/obj/Source/WebKit/chromium/third_party/libvpx/<(libvpx_source)/vp8/encoder/libvpx_asm_offsets_vp8.vp8_asm_enc_offsets.obj',
               ],
-              'process_output_as_sources': 1,
+              'process_outputs_as_sources': 1,
             },
           ],
           'sources': [
@@ -501,6 +486,7 @@
             'unpack_lib_search_path_list': [
               '-a', '<(PRODUCT_DIR)/libvpx_asm_offsets_vp8.a',
               '-a', '<(LIB_DIR)/third_party/libvpx/libvpx_asm_offsets_vp8.a',
+              '-a', '<(LIB_DIR)/chromium/src/third_party/libvpx/libvpx_asm_offsets_vp8.a',
               '-a', '<(LIB_DIR)/Source/WebKit/chromium/third_party/libvpx/libvpx_asm_offsets_vp8.a',
               '-a', '<(lib_intermediate_name)',
             ],
@@ -563,7 +549,7 @@
                 '-s', '<(ninja_obj_dir)/encoder/libvpx_asm_offsets_vpx_scale.vpx_scale_asm_offsets.obj',
                 '-s', '<(PRODUCT_DIR)/obj/Source/WebKit/chromium/third_party/libvpx/<(libvpx_source)/vpx_scale/libvpx_asm_offsets_vpx_scale.vpx_scale_asm_offsets.obj',
               ],
-              'process_output_as_sources': 1,
+              'process_outputs_as_sources': 1,
             },
           ],
           'sources': [
@@ -574,6 +560,7 @@
             'unpack_lib_search_path_list': [
               '-a', '<(PRODUCT_DIR)/libvpx_asm_offsets_vpx_scale.a',
               '-a', '<(LIB_DIR)/third_party/libvpx/libvpx_asm_offsets_vpx_scale.a',
+              '-a', '<(LIB_DIR)/chromium/src/third_party/libvpx/libvpx_asm_offsets_vpx_scale.a',
               '-a', '<(LIB_DIR)/Source/WebKit/chromium/third_party/libvpx/libvpx_asm_offsets_vpx_scale.a',
               '-a', '<(lib_intermediate_name)',
             ],

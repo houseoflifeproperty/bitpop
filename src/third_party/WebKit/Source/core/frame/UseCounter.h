@@ -33,7 +33,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSStyleSheet;
 class LocalDOMWindow;
@@ -206,7 +206,6 @@ public:
         InputTypeTextMaxLength = 191,
         InputTypePassword = 192,
         InputTypePasswordMaxLength = 193,
-        SVGInstanceRoot = 194,
         ShowModalDialog = 195,
         PrefixedPageVisibility = 196,
         CSSStyleSheetInsertRuleOptionalArg = 198, // Inconsistent with the specification and other browsers.
@@ -263,14 +262,9 @@ public:
         DeprecatedWebKitRepeatingRadialGradient = 264,
         PrefixedImageSmoothingEnabled = 267,
         UnprefixedImageSmoothingEnabled = 268,
-        PromiseConstructor = 270,
-        PromiseCast = 271,
-        PromiseReject = 272,
-        PromiseResolve = 273,
         // The above items are available in M34 branch.
 
         TextAutosizing = 274,
-        TextAutosizingLayout = 275,
         HTMLAnchorElementPingAttribute = 276,
         InsertAdjacentHTML = 278,
         SVGClassName = 279,
@@ -309,7 +303,6 @@ public:
         NamedNodeMapRemoveNamedItemNS = 312,
         OpenWebDatabaseInWorker = 313, // This didn't work because of crbug.com/376039. Available since M37.
         OpenWebDatabaseSyncInWorker = 314, // This didn't work because of crbug.com/376039. Available since M37.
-        PrefixedAllowFullscreenAttribute = 315,
         XHRProgressEventPosition = 316,
         XHRProgressEventTotalSize = 317,
         PrefixedDocumentIsFullscreen = 318,
@@ -322,7 +315,6 @@ public:
         // The above items are available in M35 branch.
 
         SVGForeignObjectElement = 325,
-        PrefixedElementRequestPointerLock = 326,
         SelectionSetPosition = 327,
         AnimationPlayerFinishEvent = 328,
         SVGSVGElementInXMLDocument = 329,
@@ -355,8 +347,6 @@ public:
         WindowOffscreenBuffering = 356,
         WindowDefaultStatus = 357,
         WindowDefaultstatus = 358,
-        PrefixedConvertPointFromPageToNode = 359,
-        PrefixedConvertPointFromNodeToPage = 360,
         PrefixedTransitionEventConstructor = 361,
         PrefixedMutationObserverConstructor = 362,
         PrefixedIDBCursorConstructor = 363,
@@ -369,33 +359,22 @@ public:
         PrefixedIDBTransactionConstructor = 370,
         NotificationPermission = 371,
         RangeDetach = 372,
-        DocumentImportNodeOptionalArgument = 373,
         HTMLTableElementVspace = 374,
         HTMLTableElementHspace = 375,
-        PrefixedDocumentExitPointerLock = 376,
-        PrefixedDocumentPointerLockElement = 377,
         PrefixedTouchRadiusX = 378,
         PrefixedTouchRadiusY = 379,
         PrefixedTouchRotationAngle = 380,
         PrefixedTouchForce = 381,
         PrefixedMouseEventMovementX = 382,
         PrefixedMouseEventMovementY = 383,
-        PrefixedWheelEventDirectionInvertedFromDevice = 384,
-        PrefixedWheelEventInit = 385,
         PrefixedFileRelativePath = 386,
         DocumentCaretRangeFromPoint = 387,
         DocumentGetCSSCanvasContext = 388,
         ElementScrollIntoViewIfNeeded = 389,
-        ElementScrollByLines = 390,
-        ElementScrollByPages = 391,
         RangeCompareNode = 392,
         RangeExpand = 393,
-        HTMLFrameElementWidth = 394,
-        HTMLFrameElementHeight = 395,
         HTMLImageElementX = 396,
         HTMLImageElementY = 397,
-        HTMLOptionsCollectionRemoveElement = 398,
-        HTMLPreElementWrap = 399,
         SelectionBaseNode = 400,
         SelectionBaseOffset = 401,
         SelectionExtentNode = 402,
@@ -404,7 +383,6 @@ public:
         SelectionModify = 405,
         SelectionSetBaseAndExtent = 406,
         SelectionEmpty = 407,
-        SVGFEMorphologyElementSetRadius = 408,
         VTTCue = 409,
         VTTCueRender = 410,
         VTTCueRenderVertical = 411,
@@ -429,11 +407,10 @@ public:
         TextEncoderConstructor = 429,
         TextEncoderEncode = 430,
         TextDecoderConstructor = 431,
-        TextDecoderDecode= 432,
+        TextDecoderDecode = 432,
         FocusInOutEvent = 433,
         MouseEventMovementX = 434,
         MouseEventMovementY = 435,
-        MixedContentTextTrack = 436,
         MixedContentRaw = 437,
         MixedContentImage = 438,
         MixedContentMedia = 439,
@@ -442,7 +419,7 @@ public:
         FormsSubmitted = 442,
         TextInputEventOnInput = 443,
         TextInputEventOnTextArea = 444,
-        TextInputEventOnContentEditable= 445,
+        TextInputEventOnContentEditable = 445,
         TextInputEventOnNotNode = 446,
         WebkitBeforeTextInsertedOnInput = 447,
         WebkitBeforeTextInsertedOnTextArea = 448,
@@ -470,6 +447,47 @@ public:
         CSSSelectorPseudoHostContext = 470,
         CSSDeepCombinator = 471,
         SyncXHRWithCredentials = 472,
+        // The above items are available in M37 branch.
+
+        UseAsm = 473,
+        KeyEventNotAllowedInFullScreen = 474,
+        DOMWindowOpen = 475,
+        DOMWindowOpenFeatures = 476,
+        MediaStreamTrackGetSources = 478,
+        AspectRatioFlexItem = 479,
+        DetailsElement = 480,
+        DialogElement = 481,
+        MapElement = 482,
+        MeterElement = 483,
+        ProgressElement = 484,
+        VideoFullscreenAllowedExemption = 485,
+        WebKitPoint = 488,
+        PrefixedHTMLElementDropzone = 490,
+        WheelEventWheelDeltaX = 491,
+        WheelEventWheelDeltaY = 492,
+        WheelEventWheelDelta = 493,
+        SendBeacon = 494,
+        SendBeaconQuotaExceeded = 495,
+        SVGSMILElementInDocument = 501,
+        MouseEventOffsetX = 502,
+        MouseEventOffsetY = 503,
+        MouseEventX = 504,
+        MouseEventY = 505,
+        MouseEventFromElement = 506,
+        MouseEventToElement = 507,
+        RequestFileSystem = 508,
+        RequestFileSystemWorker = 509,
+        RequestFileSystemSyncWorker = 510,
+        UIEventLayerX = 511,
+        UIEventLayerY = 512,
+        UIEventPageX = 513,
+        UIEventPageY = 514,
+        BgPropertiesFixed = 515,
+        HTMLImageElementComposite = 516,
+        DevToolsConsoleTimeline = 517,
+        DevToolsConsoleProfile = 518,
+        SVGStyleElementTitle = 519,
+        PictureSourceSrc = 520,
         // Add new features immediately above this line. Don't change assigned
         // numbers of any item, and don't reuse removed slots.
         // Also, run update_use_counter_feature_enum.py in chromium/src/tools/metrics/histograms/
@@ -537,6 +555,6 @@ private:
     BitVector m_CSSFeatureBits;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // UseCounter_h

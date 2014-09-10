@@ -235,9 +235,10 @@ public class AutocompleteController {
      * @return The url to navigate to for this match with aqs parameter updated, if we are
      *         making a Google search query.
      */
-    public String updateMatchDestinationUrl(int selectedIndex, long elapsedTimeSinceInputChange) {
-        return nativeUpdateMatchDestinationURL(mNativeAutocompleteControllerAndroid, selectedIndex,
-                elapsedTimeSinceInputChange);
+    public String updateMatchDestinationUrlWithQueryFormulationTime(int selectedIndex,
+            long elapsedTimeSinceInputChange) {
+        return nativeUpdateMatchDestinationURLWithQueryFormulationTime(
+                mNativeAutocompleteControllerAndroid, selectedIndex, elapsedTimeSinceInputChange);
     }
 
     /**
@@ -265,8 +266,9 @@ public class AutocompleteController {
             boolean focusedFromFakebox);
     private native void nativeDeleteSuggestion(long nativeAutocompleteControllerAndroid,
             int selectedIndex);
-    private native String nativeUpdateMatchDestinationURL(long nativeAutocompleteControllerAndroid,
-            int selectedIndex, long elapsedTimeSinceInputChange);
+    private native String nativeUpdateMatchDestinationURLWithQueryFormulationTime(
+            long nativeAutocompleteControllerAndroid, int selectedIndex,
+            long elapsedTimeSinceInputChange);
     private native OmniboxSuggestion nativeGetTopSynchronousMatch(
             long nativeAutocompleteControllerAndroid, String query);
 

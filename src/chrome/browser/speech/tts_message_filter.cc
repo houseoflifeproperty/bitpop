@@ -6,18 +6,16 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/speech/tts_controller.h"
-#include "chrome/browser/speech/tts_message_filter.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_process_host.h"
 
 using content::BrowserThread;
 
-TtsMessageFilter::TtsMessageFilter(int render_process_id, Profile* profile)
+TtsMessageFilter::TtsMessageFilter(int render_process_id,
+                                   content::BrowserContext* browser_context)
     : BrowserMessageFilter(TtsMsgStart),
       render_process_id_(render_process_id),
-      profile_(profile) {
+      browser_context_(browser_context) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   TtsController::GetInstance()->AddVoicesChangedDelegate(this);
 }
@@ -62,7 +60,7 @@ void TtsMessageFilter::OnInitializeVoiceList() {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   TtsController* tts_controller = TtsController::GetInstance();
   std::vector<VoiceData> voices;
-  tts_controller->GetVoices(profile_, &voices);
+  tts_controller->GetVoices(browser_context_, &voices);
 
   std::vector<TtsVoice> out_voices;
   out_voices.resize(voices.size());
@@ -79,7 +77,8 @@ void TtsMessageFilter::OnInitializeVoiceList() {
 
 void TtsMessageFilter::OnSpeak(const TtsUtteranceRequest& request) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  scoped_ptr<Utterance> utterance(new Utterance(profile_));
+
+  scoped_ptr<Utterance> utterance(new Utterance(browser_context_));
   utterance->set_src_id(request.id);
   utterance->set_text(request.text);
   utterance->set_lang(request.lang);

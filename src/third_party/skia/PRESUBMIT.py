@@ -25,6 +25,8 @@ PUBLIC_API_OWNERS = (
     'reed@google.com',
     'bsalomon@chromium.org',
     'bsalomon@google.com',
+    'djsollen@chromium.org',
+    'djsollen@google.com',
 )
 
 AUTHORS_FILE_NAME = 'AUTHORS'
@@ -46,6 +48,31 @@ def _CheckChangeHasEol(input_api, output_api, source_file_filter=None):
   return []
 
 
+def _PythonChecks(input_api, output_api):
+  """Run checks on any modified Python files."""
+  pylint_disabled_warnings = (
+      'F0401',  # Unable to import.
+      'E0611',  # No name in module.
+      'W0232',  # Class has no __init__ method.
+      'E1002',  # Use of super on an old style class.
+      'W0403',  # Relative import used.
+      'R0201',  # Method could be a function.
+      'E1003',  # Using class name in super.
+      'W0613',  # Unused argument.
+  )
+  # Run Pylint on only the modified python files. Unfortunately it still runs
+  # Pylint on the whole file instead of just the modified lines.
+  affected_python_files = []
+  for affected_file in input_api.AffectedSourceFiles(None):
+    affected_file_path = affected_file.LocalPath()
+    if affected_file_path.endswith('.py'):
+      affected_python_files.append(affected_file_path)
+  return input_api.canned_checks.RunPylint(
+      input_api, output_api,
+      disabled_warnings=pylint_disabled_warnings,
+      white_list=affected_python_files)
+
+
 def _CommonChecks(input_api, output_api):
   """Presubmit checks common to upload and commit."""
   results = []
@@ -58,6 +85,7 @@ def _CommonChecks(input_api, output_api):
   results.extend(
       _CheckChangeHasEol(
           input_api, output_api, source_file_filter=sources))
+  results.extend(_PythonChecks(input_api, output_api))
   return results
 
 
@@ -114,7 +142,7 @@ def _CheckOwnerIsInAuthorsFile(input_api, output_api):
   results = []
   issue = input_api.change.issue
   if issue and input_api.rietveld:
-    issue_properties = input_api.rietveld.get_issue_properties( 
+    issue_properties = input_api.rietveld.get_issue_properties(
         issue=int(issue), messages=False)
     owner_email = issue_properties['owner_email']
 
@@ -143,7 +171,7 @@ def _CheckOwnerIsInAuthorsFile(input_api, output_api):
             '(individual) or '
             'https://developers.google.com/open-source/cla/corporate '
             '(corporate).'
-            % owner_email)) 
+            % owner_email))
     except IOError:
       # Do not fail if authors file cannot be found.
       traceback.print_exc()
@@ -189,7 +217,7 @@ def _CheckLGTMsForPublicAPI(input_api, output_api):
             'lgtm' in message['text'].lower()):
           # Found an lgtm in a message from an owner.
           lgtm_from_owner = True
-          break;
+          break
 
   if not lgtm_from_owner:
     results.append(

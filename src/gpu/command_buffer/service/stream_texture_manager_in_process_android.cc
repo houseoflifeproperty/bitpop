@@ -23,7 +23,7 @@ class GLImageImpl : public gfx::GLImage {
               const base::Closure& release_callback);
 
   // implement gfx::GLImage
-  virtual void Destroy() OVERRIDE;
+  virtual void Destroy(bool have_context) OVERRIDE;
   virtual gfx::Size GetSize() OVERRIDE;
   virtual bool BindTexImage(unsigned target) OVERRIDE;
   virtual void ReleaseTexImage(unsigned target) OVERRIDE;
@@ -31,6 +31,11 @@ class GLImageImpl : public gfx::GLImage {
   virtual void DidUseTexImage() OVERRIDE {}
   virtual void WillModifyTexImage() OVERRIDE {}
   virtual void DidModifyTexImage() OVERRIDE {}
+  virtual bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                                    int z_order,
+                                    gfx::OverlayTransform transform,
+                                    const gfx::Rect& bounds_rect,
+                                    const gfx::RectF& crop_rect) OVERRIDE;
 
  private:
   virtual ~GLImageImpl();
@@ -50,12 +55,12 @@ GLImageImpl::~GLImageImpl() {
   release_callback_.Run();
 }
 
-void GLImageImpl::Destroy() {
+void GLImageImpl::Destroy(bool have_context) {
   NOTREACHED();
 }
 
-void GLImageImpl::WillUseTexImage() {
-  surface_texture_->UpdateTexImage();
+gfx::Size GLImageImpl::GetSize() {
+  return gfx::Size();
 }
 
 bool GLImageImpl::BindTexImage(unsigned target) {
@@ -67,8 +72,17 @@ void GLImageImpl::ReleaseTexImage(unsigned target) {
   NOTREACHED();
 }
 
-gfx::Size GLImageImpl::GetSize() {
-  return gfx::Size();
+void GLImageImpl::WillUseTexImage() {
+  surface_texture_->UpdateTexImage();
+}
+
+bool GLImageImpl::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                                       int z_order,
+                                       gfx::OverlayTransform transform,
+                                       const gfx::Rect& bounds_rect,
+                                       const gfx::RectF& crop_rect) {
+  NOTREACHED();
+  return false;
 }
 
 }  // anonymous namespace

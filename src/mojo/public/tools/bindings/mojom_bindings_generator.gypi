@@ -5,7 +5,7 @@
 {
   'rules': [
     {
-      'rule_name': 'Generate C++, JS and Java source files from mojom files',
+      'rule_name': '<(_target_name)_mojom_bindings_generator',
       'extension': 'mojom',
       'variables': {
         'mojom_base_output_dir':
@@ -13,6 +13,9 @@
         'mojom_bindings_generator':
             '<(DEPTH)/mojo/public/tools/bindings/mojom_bindings_generator.py',
         'java_out_dir': '<(PRODUCT_DIR)/java_mojo/<(_target_name)/src',
+        'mojom_import_args%': [
+	  '-I<(DEPTH)'
+        ],
       },
       'inputs': [
         '<(mojom_bindings_generator)',
@@ -40,7 +43,10 @@
         '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/enum_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/enum.java.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/header.java.tmpl',
-        '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/java_macros.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/interface.java.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/interface_definition.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/struct_definition.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/struct.java.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/js_templates/enum_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/js_templates/interface_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/js_templates/module.js.tmpl',
@@ -73,6 +79,7 @@
         './<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).mojom',
         '--use_chromium_bundled_pylibs',
         '-d', '<(DEPTH)',
+        '<@(mojom_import_args)',
         '-o', '<(SHARED_INTERMEDIATE_DIR)/<(mojom_base_output_dir)/<(RULE_INPUT_DIRNAME)',
         '--java_output_directory=<(java_out_dir)',
       ],

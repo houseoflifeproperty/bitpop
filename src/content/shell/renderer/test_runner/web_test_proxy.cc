@@ -9,23 +9,26 @@
 #include "base/callback_helpers.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "content/shell/renderer/test_runner/MockColorChooser.h"
-#include "content/shell/renderer/test_runner/MockWebSpeechRecognizer.h"
-#include "content/shell/renderer/test_runner/SpellCheckClient.h"
-#include "content/shell/renderer/test_runner/TestCommon.h"
-#include "content/shell/renderer/test_runner/TestInterfaces.h"
+#include "base/strings/stringprintf.h"
 #include "content/shell/renderer/test_runner/TestPlugin.h"
 #include "content/shell/renderer/test_runner/WebTestDelegate.h"
 #include "content/shell/renderer/test_runner/WebTestInterfaces.h"
 #include "content/shell/renderer/test_runner/accessibility_controller.h"
 #include "content/shell/renderer/test_runner/event_sender.h"
+#include "content/shell/renderer/test_runner/mock_color_chooser.h"
+#include "content/shell/renderer/test_runner/mock_screen_orientation_client.h"
 #include "content/shell/renderer/test_runner/mock_web_push_client.h"
+#include "content/shell/renderer/test_runner/mock_web_speech_recognizer.h"
 #include "content/shell/renderer/test_runner/mock_web_user_media_client.h"
+#include "content/shell/renderer/test_runner/spell_check_client.h"
+#include "content/shell/renderer/test_runner/test_interfaces.h"
 #include "content/shell/renderer/test_runner/test_runner.h"
 #include "content/shell/renderer/test_runner/web_test_runner.h"
 // FIXME: Including platform_canvas.h here is a layering violation.
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/public/platform/Platform.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
+#include "third_party/WebKit/public/platform/WebClipboard.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
@@ -111,12 +114,10 @@ void PrintResponseDescription(WebTestDelegate* delegate,
     delegate->printMessage("(null)");
     return;
   }
-  std::string url = response.url().spec();
-  char data[100];
-  snprintf(data, sizeof(data), "%d", response.httpStatusCode());
-  delegate->printMessage(std::string("<NSURLResponse ") +
-                         DescriptionSuitableForTestResult(url) +
-                         ", http status code " + data + ">");
+  delegate->printMessage(base::StringPrintf(
+      "<NSURLResponse %s, http status code %d>",
+      DescriptionSuitableForTestResult(response.url().spec()).c_str(),
+      response.httpStatusCode()));
 }
 
 std::string URLDescription(const GURL& url) {
@@ -283,10 +284,8 @@ std::string DumpFrameScrollPosition(blink::WebFrame* frame, bool recursive) {
       result =
           std::string("frame '") + frame->uniqueName().utf8().data() + "' ";
     }
-    char data[100];
-    snprintf(
-        data, sizeof(data), "scrolled to %d,%d\n", offset.width, offset.height);
-    result += data;
+    base::StringAppendF(
+        &result, "scrolled to %d,%d\n", offset.width, offset.height);
   }
 
   if (!recursive)
@@ -300,7 +299,8 @@ std::string DumpFrameScrollPosition(blink::WebFrame* frame, bool recursive) {
 std::string DumpAllBackForwardLists(TestInterfaces* interfaces,
                                     WebTestDelegate* delegate) {
   std::string result;
-  const std::vector<WebTestProxyBase*>& window_list = interfaces->windowList();
+  const std::vector<WebTestProxyBase*>& window_list =
+      interfaces->GetWindowList();
   for (size_t i = 0; i < window_list.size(); ++i)
     result.append(delegate->dumpHistoryForWindow(window_list.at(i)));
   return result;
@@ -317,19 +317,22 @@ WebTestProxyBase::WebTestProxyBase()
 }
 
 WebTestProxyBase::~WebTestProxyBase() {
-  test_interfaces_->windowClosed(this);
+  test_interfaces_->WindowClosed(this);
+  // Tests must wait for readback requests to finish before notifying that
+  // they are done.
+  CHECK_EQ(0u, composite_and_readback_callbacks_.size());
 }
 
 void WebTestProxyBase::SetInterfaces(WebTestInterfaces* interfaces) {
   test_interfaces_ = interfaces->testInterfaces();
-  test_interfaces_->windowOpened(this);
+  test_interfaces_->WindowOpened(this);
 }
 
 void WebTestProxyBase::SetDelegate(WebTestDelegate* delegate) {
   delegate_ = delegate;
-  spellcheck_->setDelegate(delegate);
+  spellcheck_->SetDelegate(delegate);
   if (speech_recognizer_.get())
-    speech_recognizer_->setDelegate(delegate);
+    speech_recognizer_->SetDelegate(delegate);
 }
 
 blink::WebView* WebTestProxyBase::GetWebView() const {
@@ -381,30 +384,31 @@ void WebTestProxyBase::ShowValidationMessage(
 
 std::string WebTestProxyBase::CaptureTree(bool debug_render_tree) {
   bool should_dump_custom_text =
-      test_interfaces_->testRunner()->shouldDumpAsCustomText();
-  bool should_dump_as_text = test_interfaces_->testRunner()->shouldDumpAsText();
+      test_interfaces_->GetTestRunner()->shouldDumpAsCustomText();
+  bool should_dump_as_text =
+      test_interfaces_->GetTestRunner()->shouldDumpAsText();
   bool should_dump_as_markup =
-      test_interfaces_->testRunner()->shouldDumpAsMarkup();
-  bool should_dump_as_printed = test_interfaces_->testRunner()->isPrinting();
+      test_interfaces_->GetTestRunner()->shouldDumpAsMarkup();
+  bool should_dump_as_printed = test_interfaces_->GetTestRunner()->isPrinting();
   blink::WebFrame* frame = GetWebView()->mainFrame();
   std::string data_utf8;
   if (should_dump_custom_text) {
     // Append a newline for the test driver.
-    data_utf8 = test_interfaces_->testRunner()->customDumpText() + "\n";
+    data_utf8 = test_interfaces_->GetTestRunner()->customDumpText() + "\n";
   } else if (should_dump_as_text) {
     bool recursive =
-        test_interfaces_->testRunner()->shouldDumpChildFramesAsText();
+        test_interfaces_->GetTestRunner()->shouldDumpChildFramesAsText();
     data_utf8 = should_dump_as_printed ?
         DumpFramesAsPrintedText(frame, recursive) :
         DumpFramesAsText(frame, recursive);
   } else if (should_dump_as_markup) {
     bool recursive =
-        test_interfaces_->testRunner()->shouldDumpChildFramesAsMarkup();
+        test_interfaces_->GetTestRunner()->shouldDumpChildFramesAsMarkup();
     // Append a newline for the test driver.
     data_utf8 = DumpFramesAsMarkup(frame, recursive);
   } else {
-    bool recursive =
-        test_interfaces_->testRunner()->shouldDumpChildFrameScrollPositions();
+    bool recursive = test_interfaces_->GetTestRunner()
+                         ->shouldDumpChildFrameScrollPositions();
     blink::WebFrame::RenderAsTextControls render_text_behavior =
         blink::WebFrame::RenderAsTextNormal;
     if (should_dump_as_printed)
@@ -415,7 +419,7 @@ std::string WebTestProxyBase::CaptureTree(bool debug_render_tree) {
     data_utf8 += DumpFrameScrollPosition(frame, recursive);
   }
 
-  if (test_interfaces_->testRunner()->ShouldDumpBackForwardList())
+  if (test_interfaces_->GetTestRunner()->ShouldDumpBackForwardList())
     data_utf8 += DumpAllBackForwardLists(test_interfaces_, delegate_);
 
   return data_utf8;
@@ -425,7 +429,7 @@ void WebTestProxyBase::DrawSelectionRect(SkCanvas* canvas) {
   // See if we need to draw the selection bounds rect. Selection bounds
   // rect is the rect enclosing the (possibly transformed) selection.
   // The rect should be drawn after everything is laid out and painted.
-  if (!test_interfaces_->testRunner()->shouldDumpSelectionRect())
+  if (!test_interfaces_->GetTestRunner()->shouldDumpSelectionRect())
     return;
   // If there is a selection rect - draw a red 1px border enclosing rect
   blink::WebRect wr = GetWebView()->mainFrame()->selectionBoundsRect();
@@ -464,6 +468,28 @@ void WebTestProxyBase::SetAcceptLanguages(const std::string& accept_languages) {
     GetWebView()->acceptLanguagesChanged();
 }
 
+void WebTestProxyBase::CopyImageAtAndCapturePixels(
+    int x, int y, const base::Callback<void(const SkBitmap&)>& callback) {
+  DCHECK(web_widget_->isAcceleratedCompositingActive());
+  DCHECK(!callback.is_null());
+  uint64_t sequence_number =  blink::Platform::current()->clipboard()->
+      sequenceNumber(blink::WebClipboard::Buffer());
+  GetWebView()->copyImageAt(blink::WebPoint(x, y));
+  if (sequence_number == blink::Platform::current()->clipboard()->
+      sequenceNumber(blink::WebClipboard::Buffer())) {
+    SkBitmap emptyBitmap;
+    callback.Run(emptyBitmap);
+    return;
+  }
+
+  blink::WebData data = blink::Platform::current()->clipboard()->readImage(
+      blink::WebClipboard::Buffer());
+  blink::WebImage image = blink::WebImage::fromData(data, blink::WebSize());
+  const SkBitmap& bitmap = image.getSkBitmap();
+  SkAutoLockPixels autoLock(bitmap);
+  callback.Run(bitmap);
+}
+
 void WebTestProxyBase::CapturePixelsForPrinting(
     const base::Callback<void(const SkBitmap&)>& callback) {
   web_widget_->layout();
@@ -477,8 +503,11 @@ void WebTestProxyBase::CapturePixelsForPrinting(
   bool is_opaque = false;
   skia::RefPtr<SkCanvas> canvas(skia::AdoptRef(skia::TryCreateBitmapCanvas(
       page_size_in_pixels.width, totalHeight, is_opaque)));
-  if (canvas)
-    web_frame->printPagesWithBoundaries(canvas.get(), page_size_in_pixels);
+  if (!canvas) {
+    callback.Run(SkBitmap());
+    return;
+  }
+  web_frame->printPagesWithBoundaries(canvas.get(), page_size_in_pixels);
   web_frame->printEnd();
 
   DrawSelectionRect(canvas.get());
@@ -494,7 +523,7 @@ void WebTestProxyBase::CapturePixelsAsync(
   DCHECK(web_widget_->isAcceleratedCompositingActive());
   DCHECK(!callback.is_null());
 
-  if (test_interfaces_->testRunner()->isPrinting()) {
+  if (test_interfaces_->GetTestRunner()->isPrinting()) {
     base::MessageLoopProxy::current()->PostTask(
         FROM_HERE,
         base::Bind(&WebTestProxyBase::CapturePixelsForPrinting,
@@ -528,6 +557,25 @@ void WebTestProxyBase::DisplayAsyncThen(const base::Closure& callback) {
       &WebTestProxyBase::DidDisplayAsync, base::Unretained(this), callback));
 }
 
+void WebTestProxyBase::GetScreenOrientationForTesting(
+    blink::WebScreenInfo& screen_info) {
+  if (!screen_orientation_client_)
+    return;
+  // Override screen orientation information with mock data.
+  screen_info.orientationType =
+      screen_orientation_client_->CurrentOrientationType();
+  screen_info.orientationAngle =
+      screen_orientation_client_->CurrentOrientationAngle();
+}
+
+MockScreenOrientationClient*
+WebTestProxyBase::GetScreenOrientationClientMock() {
+  if (!screen_orientation_client_.get()) {
+    screen_orientation_client_.reset(new MockScreenOrientationClient);
+  }
+  return screen_orientation_client_.get();
+}
+
 blink::WebMIDIClientMock* WebTestProxyBase::GetMIDIClientMock() {
   if (!midi_client_.get())
     midi_client_.reset(new blink::WebMIDIClientMock);
@@ -537,13 +585,13 @@ blink::WebMIDIClientMock* WebTestProxyBase::GetMIDIClientMock() {
 MockWebSpeechRecognizer* WebTestProxyBase::GetSpeechRecognizerMock() {
   if (!speech_recognizer_.get()) {
     speech_recognizer_.reset(new MockWebSpeechRecognizer());
-    speech_recognizer_->setDelegate(delegate_);
+    speech_recognizer_->SetDelegate(delegate_);
   }
   return speech_recognizer_.get();
 }
 
 void WebTestProxyBase::ScheduleAnimation() {
-  if (!test_interfaces_->testRunner()->TestIsRunning())
+  if (!test_interfaces_->GetTestRunner()->TestIsRunning())
     return;
 
   if (!animate_scheduled_) {
@@ -569,11 +617,11 @@ void WebTestProxyBase::PostAccessibilityEvent(const blink::WebAXObject& obj,
   // accessibility events,
   // and AccessibilityController will hold on to their target nodes if we don't
   // ignore them here.
-  if (!test_interfaces_->testRunner()->TestIsRunning())
+  if (!test_interfaces_->GetTestRunner()->TestIsRunning())
     return;
 
   if (event == blink::WebAXEventFocus)
-    test_interfaces_->accessibilityController()->SetFocusedElement(obj);
+    test_interfaces_->GetAccessibilityController()->SetFocusedElement(obj);
 
   const char* event_name = NULL;
   switch (event) {
@@ -666,10 +714,10 @@ void WebTestProxyBase::PostAccessibilityEvent(const blink::WebAXObject& obj,
       break;
   }
 
-  test_interfaces_->accessibilityController()->NotificationReceived(obj,
-                                                                    event_name);
+  test_interfaces_->GetAccessibilityController()->NotificationReceived(
+      obj, event_name);
 
-  if (test_interfaces_->accessibilityController()
+  if (test_interfaces_->GetAccessibilityController()
           ->ShouldLogAccessibilityEvents()) {
     std::string message("AccessibilityNotification - ");
     message += event_name;
@@ -694,21 +742,21 @@ void WebTestProxyBase::StartDragging(blink::WebLocalFrame* frame,
                                      const blink::WebPoint& point) {
   // When running a test, we need to fake a drag drop operation otherwise
   // Windows waits for real mouse events to know when the drag is over.
-  test_interfaces_->eventSender()->DoDragDrop(data, mask);
+  test_interfaces_->GetEventSender()->DoDragDrop(data, mask);
 }
 
 // The output from these methods in layout test mode should match that
 // expected by the layout tests. See EditingDelegate.m in DumpRenderTree.
 
 void WebTestProxyBase::DidChangeSelection(bool is_empty_callback) {
-  if (test_interfaces_->testRunner()->shouldDumpEditingCallbacks())
+  if (test_interfaces_->GetTestRunner()->shouldDumpEditingCallbacks())
     delegate_->printMessage(
         "EDITING DELEGATE: "
         "webViewDidChangeSelection:WebViewDidChangeSelectionNotification\n");
 }
 
 void WebTestProxyBase::DidChangeContents() {
-  if (test_interfaces_->testRunner()->shouldDumpEditingCallbacks())
+  if (test_interfaces_->GetTestRunner()->shouldDumpEditingCallbacks())
     delegate_->printMessage(
         "EDITING DELEGATE: webViewDidChange:WebViewDidChangeNotification\n");
 }
@@ -719,9 +767,9 @@ bool WebTestProxyBase::CreateView(blink::WebLocalFrame* frame,
                                   const blink::WebString& frame_name,
                                   blink::WebNavigationPolicy policy,
                                   bool suppress_opener) {
-  if (!test_interfaces_->testRunner()->canOpenWindows())
+  if (!test_interfaces_->GetTestRunner()->canOpenWindows())
     return false;
-  if (test_interfaces_->testRunner()->shouldDumpCreateView())
+  if (test_interfaces_->GetTestRunner()->shouldDumpCreateView())
     delegate_->printMessage(std::string("createView(") +
                             URLDescription(request.url()) + ")\n");
   return true;
@@ -736,7 +784,7 @@ blink::WebPlugin* WebTestProxyBase::CreatePlugin(
 }
 
 void WebTestProxyBase::SetStatusText(const blink::WebString& text) {
-  if (!test_interfaces_->testRunner()->shouldDumpStatusCallbacks())
+  if (!test_interfaces_->GetTestRunner()->shouldDumpStatusCallbacks())
     return;
   delegate_->printMessage(
       std::string("UI DELEGATE STATUS CALLBACK: setStatusText:") +
@@ -744,14 +792,14 @@ void WebTestProxyBase::SetStatusText(const blink::WebString& text) {
 }
 
 void WebTestProxyBase::DidStopLoading() {
-  if (test_interfaces_->testRunner()->shouldDumpProgressFinishedCallback())
+  if (test_interfaces_->GetTestRunner()->shouldDumpProgressFinishedCallback())
     delegate_->printMessage("postProgressFinishedNotification\n");
 }
 
 void WebTestProxyBase::ShowContextMenu(
     blink::WebLocalFrame* frame,
     const blink::WebContextMenuData& context_menu_data) {
-  test_interfaces_->eventSender()->SetContextMenuData(context_menu_data);
+  test_interfaces_->GetEventSender()->SetContextMenuData(context_menu_data);
 }
 
 blink::WebUserMediaClient* WebTestProxyBase::GetUserMediaClient() {
@@ -771,7 +819,7 @@ void WebTestProxyBase::PrintPage(blink::WebLocalFrame* frame) {
 }
 
 blink::WebNotificationPresenter* WebTestProxyBase::GetNotificationPresenter() {
-  return test_interfaces_->testRunner()->notification_presenter();
+  return test_interfaces_->GetTestRunner()->notification_presenter();
 }
 
 blink::WebMIDIClient* WebTestProxyBase::GetWebMIDIClient() {
@@ -783,15 +831,15 @@ blink::WebSpeechRecognizer* WebTestProxyBase::GetSpeechRecognizer() {
 }
 
 bool WebTestProxyBase::RequestPointerLock() {
-  return test_interfaces_->testRunner()->RequestPointerLock();
+  return test_interfaces_->GetTestRunner()->RequestPointerLock();
 }
 
 void WebTestProxyBase::RequestPointerUnlock() {
-  test_interfaces_->testRunner()->RequestPointerUnlock();
+  test_interfaces_->GetTestRunner()->RequestPointerUnlock();
 }
 
 bool WebTestProxyBase::IsPointerLocked() {
-  return test_interfaces_->testRunner()->isPointerLocked();
+  return test_interfaces_->GetTestRunner()->isPointerLocked();
 }
 
 void WebTestProxyBase::DidFocus() {
@@ -804,7 +852,7 @@ void WebTestProxyBase::DidBlur() {
 
 void WebTestProxyBase::SetToolTipText(const blink::WebString& text,
                                       blink::WebTextDirection direction) {
-  test_interfaces_->testRunner()->setToolTipText(text);
+  test_interfaces_->GetTestRunner()->setToolTipText(text);
 }
 
 void WebTestProxyBase::DidOpenChooser() {
@@ -824,7 +872,7 @@ void WebTestProxyBase::LoadURLExternally(
     const blink::WebURLRequest& request,
     blink::WebNavigationPolicy policy,
     const blink::WebString& suggested_name) {
-  if (test_interfaces_->testRunner()->shouldWaitUntilExternalURLLoad()) {
+  if (test_interfaces_->GetTestRunner()->shouldWaitUntilExternalURLLoad()) {
     if (policy == blink::WebNavigationPolicyDownload) {
       delegate_->printMessage(
           std::string("Downloading URL with suggested filename \"") +
@@ -838,15 +886,15 @@ void WebTestProxyBase::LoadURLExternally(
 }
 
 void WebTestProxyBase::DidStartProvisionalLoad(blink::WebLocalFrame* frame) {
-  if (!test_interfaces_->testRunner()->topLoadingFrame())
-    test_interfaces_->testRunner()->setTopLoadingFrame(frame, false);
+  if (!test_interfaces_->GetTestRunner()->topLoadingFrame())
+    test_interfaces_->GetTestRunner()->setTopLoadingFrame(frame, false);
 
-  if (test_interfaces_->testRunner()->shouldDumpFrameLoadCallbacks()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpFrameLoadCallbacks()) {
     PrintFrameDescription(delegate_, frame);
     delegate_->printMessage(" - didStartProvisionalLoadForFrame\n");
   }
 
-  if (test_interfaces_->testRunner()
+  if (test_interfaces_->GetTestRunner()
           ->shouldDumpUserGestureInFrameLoadCallbacks()) {
     PrintFrameuserGestureStatus(
         delegate_, frame, " - in didStartProvisionalLoadForFrame\n");
@@ -855,7 +903,7 @@ void WebTestProxyBase::DidStartProvisionalLoad(blink::WebLocalFrame* frame) {
 
 void WebTestProxyBase::DidReceiveServerRedirectForProvisionalLoad(
     blink::WebLocalFrame* frame) {
-  if (test_interfaces_->testRunner()->shouldDumpFrameLoadCallbacks()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpFrameLoadCallbacks()) {
     PrintFrameDescription(delegate_, frame);
     delegate_->printMessage(
         " - didReceiveServerRedirectForProvisionalLoadForFrame\n");
@@ -864,7 +912,7 @@ void WebTestProxyBase::DidReceiveServerRedirectForProvisionalLoad(
 
 bool WebTestProxyBase::DidFailProvisionalLoad(blink::WebLocalFrame* frame,
                                               const blink::WebURLError& error) {
-  if (test_interfaces_->testRunner()->shouldDumpFrameLoadCallbacks()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpFrameLoadCallbacks()) {
     PrintFrameDescription(delegate_, frame);
     delegate_->printMessage(" - didFailProvisionalLoadWithError\n");
   }
@@ -876,7 +924,7 @@ void WebTestProxyBase::DidCommitProvisionalLoad(
     blink::WebLocalFrame* frame,
     const blink::WebHistoryItem& history_item,
     blink::WebHistoryCommitType history_type) {
-  if (test_interfaces_->testRunner()->shouldDumpFrameLoadCallbacks()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpFrameLoadCallbacks()) {
     PrintFrameDescription(delegate_, frame);
     delegate_->printMessage(" - didCommitLoadForFrame\n");
   }
@@ -887,45 +935,41 @@ void WebTestProxyBase::DidReceiveTitle(blink::WebLocalFrame* frame,
                                        blink::WebTextDirection direction) {
   blink::WebCString title8 = title.utf8();
 
-  if (test_interfaces_->testRunner()->shouldDumpFrameLoadCallbacks()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpFrameLoadCallbacks()) {
     PrintFrameDescription(delegate_, frame);
     delegate_->printMessage(std::string(" - didReceiveTitle: ") +
                             title8.data() + "\n");
   }
 
-  if (test_interfaces_->testRunner()->shouldDumpTitleChanges())
+  if (test_interfaces_->GetTestRunner()->shouldDumpTitleChanges())
     delegate_->printMessage(std::string("TITLE CHANGED: '") + title8.data() +
                             "'\n");
 }
 
 void WebTestProxyBase::DidChangeIcon(blink::WebLocalFrame* frame,
                                      blink::WebIconURL::Type icon_type) {
-  if (test_interfaces_->testRunner()->shouldDumpIconChanges()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpIconChanges()) {
     PrintFrameDescription(delegate_, frame);
     delegate_->printMessage(std::string(" - didChangeIcons\n"));
   }
 }
 
 void WebTestProxyBase::DidFinishDocumentLoad(blink::WebLocalFrame* frame) {
-  if (test_interfaces_->testRunner()->shouldDumpFrameLoadCallbacks()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpFrameLoadCallbacks()) {
     PrintFrameDescription(delegate_, frame);
     delegate_->printMessage(" - didFinishDocumentLoadForFrame\n");
   } else {
     unsigned pendingUnloadEvents = frame->unloadListenerCount();
     if (pendingUnloadEvents) {
       PrintFrameDescription(delegate_, frame);
-      char buffer[100];
-      snprintf(buffer,
-               sizeof(buffer),
-               " - has %u onunload handler(s)\n",
-               pendingUnloadEvents);
-      delegate_->printMessage(buffer);
+      delegate_->printMessage(base::StringPrintf(
+          " - has %u onunload handler(s)\n", pendingUnloadEvents));
     }
   }
 }
 
 void WebTestProxyBase::DidHandleOnloadEvents(blink::WebLocalFrame* frame) {
-  if (test_interfaces_->testRunner()->shouldDumpFrameLoadCallbacks()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpFrameLoadCallbacks()) {
     PrintFrameDescription(delegate_, frame);
     delegate_->printMessage(" - didHandleOnloadEventsForFrame\n");
   }
@@ -933,7 +977,7 @@ void WebTestProxyBase::DidHandleOnloadEvents(blink::WebLocalFrame* frame) {
 
 void WebTestProxyBase::DidFailLoad(blink::WebLocalFrame* frame,
                                    const blink::WebURLError& error) {
-  if (test_interfaces_->testRunner()->shouldDumpFrameLoadCallbacks()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpFrameLoadCallbacks()) {
     PrintFrameDescription(delegate_, frame);
     delegate_->printMessage(" - didFailLoadWithError\n");
   }
@@ -941,7 +985,7 @@ void WebTestProxyBase::DidFailLoad(blink::WebLocalFrame* frame,
 }
 
 void WebTestProxyBase::DidFinishLoad(blink::WebLocalFrame* frame) {
-  if (test_interfaces_->testRunner()->shouldDumpFrameLoadCallbacks()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpFrameLoadCallbacks()) {
     PrintFrameDescription(delegate_, frame);
     delegate_->printMessage(" - didFinishLoadForFrame\n");
   }
@@ -951,13 +995,13 @@ void WebTestProxyBase::DidFinishLoad(blink::WebLocalFrame* frame) {
 void WebTestProxyBase::DidDetectXSS(blink::WebLocalFrame* frame,
                                     const blink::WebURL& insecure_url,
                                     bool did_block_entire_page) {
-  if (test_interfaces_->testRunner()->shouldDumpFrameLoadCallbacks())
+  if (test_interfaces_->GetTestRunner()->shouldDumpFrameLoadCallbacks())
     delegate_->printMessage("didDetectXSS\n");
 }
 
 void WebTestProxyBase::DidDispatchPingLoader(blink::WebLocalFrame* frame,
                                              const blink::WebURL& url) {
-  if (test_interfaces_->testRunner()->shouldDumpPingLoaderCallbacks())
+  if (test_interfaces_->GetTestRunner()->shouldDumpPingLoaderCallbacks())
     delegate_->printMessage(std::string("PingLoader dispatched to '") +
                             URLDescription(url).c_str() + "'.\n");
 }
@@ -965,7 +1009,7 @@ void WebTestProxyBase::DidDispatchPingLoader(blink::WebLocalFrame* frame,
 void WebTestProxyBase::WillRequestResource(
     blink::WebLocalFrame* frame,
     const blink::WebCachedURLRequest& request) {
-  if (test_interfaces_->testRunner()->shouldDumpResourceRequestCallbacks()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpResourceRequestCallbacks()) {
     PrintFrameDescription(delegate_, frame);
     delegate_->printMessage(std::string(" - ") +
                             request.initiatorName().utf8().data());
@@ -987,15 +1031,15 @@ void WebTestProxyBase::WillSendRequest(
   GURL main_document_url = request.firstPartyForCookies();
 
   if (redirect_response.isNull() &&
-      (test_interfaces_->testRunner()->shouldDumpResourceLoadCallbacks() ||
-       test_interfaces_->testRunner()->shouldDumpResourcePriorities())) {
+      (test_interfaces_->GetTestRunner()->shouldDumpResourceLoadCallbacks() ||
+       test_interfaces_->GetTestRunner()->shouldDumpResourcePriorities())) {
     DCHECK(resource_identifier_map_.find(identifier) ==
            resource_identifier_map_.end());
     resource_identifier_map_[identifier] =
         DescriptionSuitableForTestResult(request_url);
   }
 
-  if (test_interfaces_->testRunner()->shouldDumpResourceLoadCallbacks()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpResourceLoadCallbacks()) {
     if (resource_identifier_map_.find(identifier) ==
         resource_identifier_map_.end())
       delegate_->printMessage("<unknown>");
@@ -1013,7 +1057,7 @@ void WebTestProxyBase::WillSendRequest(
     delegate_->printMessage("\n");
   }
 
-  if (test_interfaces_->testRunner()->shouldDumpResourcePriorities()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpResourcePriorities()) {
     delegate_->printMessage(
         DescriptionSuitableForTestResult(request_url).c_str());
     delegate_->printMessage(" has priority ");
@@ -1021,9 +1065,9 @@ void WebTestProxyBase::WillSendRequest(
     delegate_->printMessage("\n");
   }
 
-  if (test_interfaces_->testRunner()->httpHeadersToClear()) {
+  if (test_interfaces_->GetTestRunner()->httpHeadersToClear()) {
     const std::set<std::string>* clearHeaders =
-        test_interfaces_->testRunner()->httpHeadersToClear();
+        test_interfaces_->GetTestRunner()->httpHeadersToClear();
     for (std::set<std::string>::const_iterator header = clearHeaders->begin();
          header != clearHeaders->end();
          ++header)
@@ -1052,7 +1096,7 @@ void WebTestProxyBase::DidReceiveResponse(
     blink::WebLocalFrame* frame,
     unsigned identifier,
     const blink::WebURLResponse& response) {
-  if (test_interfaces_->testRunner()->shouldDumpResourceLoadCallbacks()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpResourceLoadCallbacks()) {
     if (resource_identifier_map_.find(identifier) ==
         resource_identifier_map_.end())
       delegate_->printMessage("<unknown>");
@@ -1062,7 +1106,8 @@ void WebTestProxyBase::DidReceiveResponse(
     PrintResponseDescription(delegate_, response);
     delegate_->printMessage("\n");
   }
-  if (test_interfaces_->testRunner()->shouldDumpResourceResponseMIMETypes()) {
+  if (test_interfaces_->GetTestRunner()
+          ->shouldDumpResourceResponseMIMETypes()) {
     GURL url = response.url();
     blink::WebString mime_type = response.mimeType();
     delegate_->printMessage(url.ExtractFileName());
@@ -1080,25 +1125,22 @@ void WebTestProxyBase::DidChangeResourcePriority(
     unsigned identifier,
     const blink::WebURLRequest::Priority& priority,
     int intra_priority_value) {
-  if (test_interfaces_->testRunner()->shouldDumpResourcePriorities()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpResourcePriorities()) {
     if (resource_identifier_map_.find(identifier) ==
         resource_identifier_map_.end())
       delegate_->printMessage("<unknown>");
     else
       delegate_->printMessage(resource_identifier_map_[identifier]);
-    delegate_->printMessage(" changed priority to ");
-    delegate_->printMessage(PriorityDescription(priority));
-    char buffer[64];
-    snprintf(
-        buffer, sizeof(buffer), ", intra_priority %d", intra_priority_value);
-    delegate_->printMessage(buffer);
-    delegate_->printMessage("\n");
+    delegate_->printMessage(
+        base::StringPrintf(" changed priority to %s, intra_priority %d\n",
+                           PriorityDescription(priority).c_str(),
+                           intra_priority_value));
   }
 }
 
 void WebTestProxyBase::DidFinishResourceLoad(blink::WebLocalFrame* frame,
                                              unsigned identifier) {
-  if (test_interfaces_->testRunner()->shouldDumpResourceLoadCallbacks()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpResourceLoadCallbacks()) {
     if (resource_identifier_map_.find(identifier) ==
         resource_identifier_map_.end())
       delegate_->printMessage("<unknown>");
@@ -1136,9 +1178,7 @@ void WebTestProxyBase::DidAddMessageToConsole(
   }
   delegate_->printMessage(std::string("CONSOLE ") + level + ": ");
   if (source_line) {
-    char buffer[40];
-    snprintf(buffer, sizeof(buffer), "line %d: ", source_line);
-    delegate_->printMessage(buffer);
+    delegate_->printMessage(base::StringPrintf("line %d: ", source_line));
   }
   if (!message.text.isEmpty()) {
     std::string new_message;
@@ -1154,33 +1194,28 @@ void WebTestProxyBase::DidAddMessageToConsole(
 }
 
 void WebTestProxyBase::LocationChangeDone(blink::WebFrame* frame) {
-  if (frame != test_interfaces_->testRunner()->topLoadingFrame())
+  if (frame != test_interfaces_->GetTestRunner()->topLoadingFrame())
     return;
-  test_interfaces_->testRunner()->setTopLoadingFrame(frame, true);
+  test_interfaces_->GetTestRunner()->setTopLoadingFrame(frame, true);
 }
 
 blink::WebNavigationPolicy WebTestProxyBase::DecidePolicyForNavigation(
-    blink::WebLocalFrame* frame,
-    blink::WebDataSource::ExtraData* data,
-    const blink::WebURLRequest& request,
-    blink::WebNavigationType type,
-    blink::WebNavigationPolicy default_policy,
-    bool is_redirect) {
+    const blink::WebFrameClient::NavigationPolicyInfo& info) {
   blink::WebNavigationPolicy result;
-  if (!test_interfaces_->testRunner()->policyDelegateEnabled())
-    return default_policy;
+  if (!test_interfaces_->GetTestRunner()->policyDelegateEnabled())
+    return info.defaultPolicy;
 
   delegate_->printMessage(std::string("Policy delegate: attempt to load ") +
-                          URLDescription(request.url()) +
+                          URLDescription(info.urlRequest.url()) +
                           " with navigation type '" +
-                          WebNavigationTypeToString(type) + "'\n");
-  if (test_interfaces_->testRunner()->policyDelegateIsPermissive())
+                          WebNavigationTypeToString(info.navigationType) + "'\n");
+  if (test_interfaces_->GetTestRunner()->policyDelegateIsPermissive())
     result = blink::WebNavigationPolicyCurrentTab;
   else
     result = blink::WebNavigationPolicyIgnore;
 
-  if (test_interfaces_->testRunner()->policyDelegateShouldNotifyDone())
-    test_interfaces_->testRunner()->policyDelegateDone();
+  if (test_interfaces_->GetTestRunner()->policyDelegateShouldNotifyDone())
+    test_interfaces_->GetTestRunner()->policyDelegateDone();
   return result;
 }
 
@@ -1189,7 +1224,7 @@ bool WebTestProxyBase::WillCheckAndDispatchMessageEvent(
     blink::WebFrame* target_frame,
     blink::WebSecurityOrigin target,
     blink::WebDOMMessageEvent event) {
-  if (test_interfaces_->testRunner()->shouldInterceptPostMessage()) {
+  if (test_interfaces_->GetTestRunner()->shouldInterceptPostMessage()) {
     delegate_->printMessage("intercepted postMessage\n");
     return true;
   }
@@ -1198,7 +1233,7 @@ bool WebTestProxyBase::WillCheckAndDispatchMessageEvent(
 }
 
 void WebTestProxyBase::PostSpellCheckEvent(const blink::WebString& event_name) {
-  if (test_interfaces_->testRunner()->shouldDumpSpellCheckCallbacks()) {
+  if (test_interfaces_->GetTestRunner()->shouldDumpSpellCheckCallbacks()) {
     delegate_->printMessage(std::string("SpellCheckEvent: ") +
                             event_name.utf8().data() + "\n");
   }

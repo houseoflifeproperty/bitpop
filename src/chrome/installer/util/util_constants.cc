@@ -212,6 +212,7 @@ const char kOutputFile[] = "output-file";
 // TODO(gab): Rename setup.exe itself altogether and use the same binary for
 // Active Setup.
 const wchar_t kActiveSetupExe[] = L"chrmstp.exe";
+const wchar_t kAppLauncherGuid[] = L"{FDA71E6F-AC4C-4a00-8B70-9958A68906BF}";
 const wchar_t kChromeAppHostExe[] = L"app_host.exe";
 const wchar_t kChromeDll[] = L"chrome.dll";
 const wchar_t kChromeChildDll[] = L"chrome_child.dll";
@@ -262,7 +263,6 @@ const wchar_t kChromeChannelCanary[] = L"canary";
 const wchar_t kChromeChannelDev[] = L"dev";
 const wchar_t kChromeChannelBeta[] = L"beta";
 const wchar_t kChromeChannelStable[] = L"";
-const wchar_t kChromeChannelStableExplicit[] = L"stable";
 
 const size_t kMaxAppModelIdLength = 64U;
 

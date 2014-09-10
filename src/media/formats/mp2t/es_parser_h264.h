@@ -15,6 +15,7 @@
 #include "base/time/time.h"
 #include "media/base/media_export.h"
 #include "media/base/video_decoder_config.h"
+#include "media/formats/mp2t/es_adapter_video.h"
 #include "media/formats/mp2t/es_parser.h"
 
 namespace media {
@@ -42,13 +43,13 @@ class MEDIA_EXPORT EsParserH264 : NON_EXPORTED_BASE(public EsParser) {
   // EsParser implementation.
   virtual bool Parse(const uint8* buf, int size,
                      base::TimeDelta pts,
-                     base::TimeDelta dts) OVERRIDE;
+                     DecodeTimestamp dts) OVERRIDE;
   virtual void Flush() OVERRIDE;
   virtual void Reset() OVERRIDE;
 
  private:
   struct TimingDesc {
-    base::TimeDelta dts;
+    DecodeTimestamp dts;
     base::TimeDelta pts;
   };
 
@@ -72,9 +73,7 @@ class MEDIA_EXPORT EsParserH264 : NON_EXPORTED_BASE(public EsParser) {
   // Return true if successful.
   bool UpdateVideoDecoderConfig(const H264SPS* sps);
 
-  // Callbacks to pass the stream configuration and the frames.
-  NewVideoConfigCB new_video_config_cb_;
-  EmitBufferCB emit_buffer_cb_;
+  EsAdapterVideo es_adapter_;
 
   // Bytes of the ES stream that have not been emitted yet.
   scoped_ptr<media::OffsetByteQueue> es_queue_;
@@ -89,10 +88,11 @@ class MEDIA_EXPORT EsParserH264 : NON_EXPORTED_BASE(public EsParser) {
 
   // Last video decoder config.
   VideoDecoderConfig last_video_decoder_config_;
+
+  DISALLOW_COPY_AND_ASSIGN(EsParserH264);
 };
 
 }  // namespace mp2t
 }  // namespace media
 
 #endif
-

@@ -25,6 +25,7 @@
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
+#include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/bookmark_model_loaded_observer.h"
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
@@ -47,6 +48,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/bookmarks/browser/bookmark_model.h"
+#include "components/password_manager/core/browser/password_store.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -80,13 +82,13 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
-#include "chrome/browser/chromeos/login/users/user.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #endif
 
 using base::UserMetricsAction;
@@ -311,12 +313,14 @@ std::vector<Profile*> ProfileManager::GetLastOpenedProfiles() {
 Profile* ProfileManager::GetPrimaryUserProfile() {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
 #if defined(OS_CHROMEOS)
-  if (!profile_manager->IsLoggedIn() || !chromeos::UserManager::IsInitialized())
+  if (!profile_manager->IsLoggedIn() ||
+      !user_manager::UserManager::IsInitialized())
     return profile_manager->GetActiveUserOrOffTheRecordProfileFromPath(
         profile_manager->user_data_dir());
-  chromeos::UserManager* manager = chromeos::UserManager::Get();
-  // Note: The user manager will take care of guest profiles.
-  return manager->GetProfileByUser(manager->GetPrimaryUser());
+  user_manager::UserManager* manager = user_manager::UserManager::Get();
+  // Note: The ProfileHelper will take care of guest profiles.
+  return chromeos::ProfileHelper::Get()->GetProfileByUserUnsafe(
+      manager->GetPrimaryUser());
 #else
   return profile_manager->GetActiveUserOrOffTheRecordProfileFromPath(
       profile_manager->user_data_dir());
@@ -328,19 +332,20 @@ Profile* ProfileManager::GetActiveUserProfile() {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
 #if defined(OS_CHROMEOS)
   if (!profile_manager->IsLoggedIn() ||
-      !chromeos::UserManager::IsInitialized()) {
+      !user_manager::UserManager::IsInitialized()) {
     return profile_manager->GetActiveUserOrOffTheRecordProfileFromPath(
         profile_manager->user_data_dir());
   }
 
-  chromeos::UserManager* manager = chromeos::UserManager::Get();
-  const chromeos::User* user = manager->GetActiveUser();
+  user_manager::UserManager* manager = user_manager::UserManager::Get();
+  const user_manager::User* user = manager->GetActiveUser();
   // To avoid an endless loop (crbug.com/334098) we have to additionally check
   // if the profile of the user was already created. If the profile was not yet
   // created we load the profile using the profile directly.
   // TODO: This should be cleaned up with the new profile manager.
   if (user && user->is_profile_created())
-    return manager->GetProfileByUser(user);
+    return chromeos::ProfileHelper::Get()->GetProfileByUserUnsafe(user);
+
 #endif
   Profile* profile =
       profile_manager->GetActiveUserOrOffTheRecordProfileFromPath(
@@ -382,6 +387,10 @@ void ProfileManager::CreateProfileAsync(
     const base::string16& icon_url,
     const std::string& supervised_user_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  TRACE_EVENT1("startup",
+               "ProfileManager::CreateProfileAsync",
+               "profile_path",
+               profile_path.value().c_str());
 
   // Make sure that this profile is not pending deletion.
   if (IsProfileMarkedForDeletion(profile_path)) {
@@ -468,12 +477,11 @@ base::FilePath ProfileManager::GetInitialProfileDir() {
     // In case of multi-profiles ignore --login-profile switch.
     // TODO(nkostylev): Some cases like Guest mode will have empty username_hash
     // so default kLoginProfile dir will be used.
-    std::string user_id_hash = g_browser_process->platform_part()->
-        profile_helper()->active_user_id_hash();
-    if (!user_id_hash.empty()) {
-      profile_dir = g_browser_process->platform_part()->
-          profile_helper()->GetActiveUserProfileDir();
-    }
+    std::string user_id_hash =
+        chromeos::ProfileHelper::Get()->active_user_id_hash();
+    if (!user_id_hash.empty())
+      profile_dir = chromeos::ProfileHelper::Get()->GetActiveUserProfileDir();
+
     relative_profile_dir = relative_profile_dir.Append(profile_dir);
     return relative_profile_dir;
   }
@@ -498,8 +506,7 @@ Profile* ProfileManager::GetLastUsedProfile(
     // since it may refer to profile that has been in use in previous session.
     // That profile dir may not be mounted in this session so instead return
     // active profile from current session.
-    profile_dir = g_browser_process->platform_part()->
-        profile_helper()->GetActiveUserProfileDir();
+    profile_dir = chromeos::ProfileHelper::Get()->GetActiveUserProfileDir();
 
     base::FilePath profile_path(user_data_dir);
     Profile* profile = GetProfile(profile_path.Append(profile_dir));
@@ -644,8 +651,11 @@ void ProfileManager::ScheduleProfileForDeletion(
   PrefService* local_state = g_browser_process->local_state();
   ProfileInfoCache& cache = GetProfileInfoCache();
 
-  if (profile_dir.BaseName().MaybeAsASCII() ==
-      local_state->GetString(prefs::kProfileLastUsed)) {
+  const std::string last_used_profile =
+      local_state->GetString(prefs::kProfileLastUsed);
+
+  if (last_used_profile == profile_dir.BaseName().MaybeAsASCII() ||
+      last_used_profile == GetGuestProfilePath().BaseName().MaybeAsASCII()) {
     // Update the last used profile pref before closing browser windows. This
     // way the correct last used profile is set for any notification observers.
     base::FilePath last_non_supervised_profile_path;
@@ -669,10 +679,21 @@ void ProfileManager::ScheduleProfileForDeletion(
       // correct last used profile is set for any notification observers.
       local_state->SetString(prefs::kProfileLastUsed,
                              new_path.BaseName().MaybeAsASCII());
+
+      // If we are using --new-avatar-menu, then assign the default
+      // placeholder avatar and name. Otherwise, use random ones.
+      bool is_new_avatar_menu = switches::IsNewAvatarMenu();
+      int avatar_index = profiles::GetPlaceholderAvatarIndex();
+      base::string16 new_avatar_url = is_new_avatar_menu ?
+          base::UTF8ToUTF16(profiles::GetDefaultAvatarIconUrl(avatar_index)) :
+          base::string16();
+      base::string16 new_profile_name = is_new_avatar_menu ?
+          cache.ChooseNameForNewProfile(avatar_index) : base::string16();
+
       CreateProfileAsync(new_path,
                          callback,
-                         base::string16(),
-                         base::string16(),
+                         new_profile_name,
+                         new_avatar_url,
                          std::string());
     } else {
       // On the Mac, the browser process is not killed when all browser windows
@@ -757,9 +778,10 @@ void ProfileManager::InitProfileUserPrefs(Profile* profile) {
           cache.GetSupervisedUserIdOfProfileAtIndex(profile_cache_index);
     } else if (profile->GetPath() ==
                profiles::GetDefaultProfileDir(cache.GetUserDataDir())) {
-      avatar_index = 0;
-      // The --new-profile-management flag no longer uses the "First User" name.
-      profile_name = switches::IsNewProfileManagement() ?
+      // The --new-avatar-menu flag no longer uses the "First User" name.
+      bool is_new_avatar_menu = switches::IsNewAvatarMenu();
+      avatar_index = profiles::GetPlaceholderAvatarIndex();
+      profile_name = is_new_avatar_menu ?
           base::UTF16ToUTF8(cache.ChooseNameForNewProfile(avatar_index)) :
           l10n_util::GetStringUTF8(IDS_DEFAULT_PROFILE_NAME);
     } else {
@@ -981,7 +1003,7 @@ void ProfileManager::DoFinalInitForServices(Profile* profile,
         extensions::ExtensionSystem::Get(profile)->extension_service());
   }
 #endif
-#if defined(ENABLE_MANAGED_USERS)
+#if defined(ENABLE_MANAGED_USERS) && !defined(OS_ANDROID)
   // Initialization needs to happen after extension system initialization (for
   // extension::ManagementPolicy) and InitProfileUserPrefs (for setting the
   // initializing the supervised flag if necessary).
@@ -1032,7 +1054,7 @@ Profile* ProfileManager::GetActiveUserOrOffTheRecordProfileFromPath(
     // if the login-profile switch is passed so that we can test this.
     if (ShouldGoOffTheRecord(profile))
       return profile->GetOffTheRecordProfile();
-    DCHECK(!chromeos::UserManager::Get()->IsLoggedInAsGuest());
+    DCHECK(!user_manager::UserManager::Get()->IsLoggedInAsGuest());
     return profile;
   }
 
@@ -1045,8 +1067,8 @@ Profile* ProfileManager::GetActiveUserOrOffTheRecordProfileFromPath(
 
   Profile* profile = GetProfile(default_profile_dir);
   // Some unit tests didn't initialize the UserManager.
-  if (chromeos::UserManager::IsInitialized() &&
-      chromeos::UserManager::Get()->IsLoggedInAsGuest())
+  if (user_manager::UserManager::IsInitialized() &&
+      user_manager::UserManager::Get()->IsLoggedInAsGuest())
     return profile->GetOffTheRecordProfile();
   return profile;
 #else
@@ -1104,6 +1126,14 @@ void ProfileManager::FinishDeletingProfile(const base::FilePath& profile_dir) {
     bool profile_is_signed_in = !cache.GetUserNameOfProfileAtIndex(
         cache.GetIndexOfProfileWithPath(profile_dir)).empty();
     ProfileMetrics::LogProfileDelete(profile_is_signed_in);
+    // Some platforms store passwords in keychains. They should be removed.
+    scoped_refptr<password_manager::PasswordStore> password_store =
+        PasswordStoreFactory::GetForProfile(profile, Profile::EXPLICIT_ACCESS)
+            .get();
+    if (password_store) {
+      password_store->RemoveLoginsCreatedBetween(base::Time(),
+                                                 base::Time::Max());
+    }
   }
 
   QueueProfileDirectoryForDeletion(profile_dir);

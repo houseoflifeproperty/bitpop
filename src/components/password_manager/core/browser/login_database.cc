@@ -15,6 +15,8 @@
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "components/autofill/core/common/password_form.h"
+#include "google_apis/gaia/gaia_auth_util.h"
+#include "google_apis/gaia/gaia_urls.h"
 #include "sql/connection.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
@@ -254,7 +256,7 @@ bool LoginDatabase::InitLoginsTable() {
   return true;
 }
 
-void LoginDatabase::ReportMetrics() {
+void LoginDatabase::ReportMetrics(const std::string& sync_username) {
   sql::Statement s(db_.GetCachedStatement(
       SQL_FROM_HERE,
       "SELECT signon_realm, blacklisted_by_user, COUNT(username_value) "
@@ -302,6 +304,30 @@ void LoginDatabase::ReportMetrics() {
           usage_statement.ColumnInt(1), 0, 100, 10);
     }
   }
+
+  bool syncing_account_saved = false;
+  if (!sync_username.empty()) {
+    sql::Statement sync_statement(db_.GetCachedStatement(
+        SQL_FROM_HERE,
+        "SELECT username_value FROM logins "
+        "WHERE signon_realm == ?"));
+    sync_statement.BindString(
+        0, GaiaUrls::GetInstance()->gaia_url().GetOrigin().spec());
+
+    if (!sync_statement.is_valid())
+      return;
+
+    while (sync_statement.Step()) {
+      std::string username = sync_statement.ColumnString(0);
+      if (gaia::AreEmailsSame(sync_username, username)) {
+        syncing_account_saved = true;
+        break;
+      }
+    }
+  }
+  UMA_HISTOGRAM_ENUMERATION("PasswordManager.SyncingAccountState",
+                            2 * sync_username.empty() + syncing_account_saved,
+                            4);
 }
 
 PasswordStoreChangeList LoginDatabase::AddLogin(const PasswordForm& form) {
@@ -362,7 +388,11 @@ PasswordStoreChangeList LoginDatabase::UpdateLogin(const PasswordForm& form) {
                                           "possible_usernames = ?, "
                                           "times_used = ?, "
                                           "submit_element = ?, "
-                                          "date_synced = ? "
+                                          "date_synced = ?, "
+                                          "date_created = ?, "
+                                          "blacklisted_by_user = ?, "
+                                          "scheme = ?, "
+                                          "password_type = ? "
                                           "WHERE origin_url = ? AND "
                                           "username_element = ? AND "
                                           "username_value = ? AND "
@@ -378,12 +408,16 @@ PasswordStoreChangeList LoginDatabase::UpdateLogin(const PasswordForm& form) {
   s.BindInt(5, form.times_used);
   s.BindString16(6, form.submit_element);
   s.BindInt64(7, form.date_synced.ToInternalValue());
+  s.BindInt64(8, form.date_created.ToTimeT());
+  s.BindInt(9, form.blacklisted_by_user);
+  s.BindInt(10, form.scheme);
+  s.BindInt(11, form.type);
 
-  s.BindString(8, form.origin.spec());
-  s.BindString16(9, form.username_element);
-  s.BindString16(10, form.username_value);
-  s.BindString16(11, form.password_element);
-  s.BindString(12, form.signon_realm);
+  s.BindString(12, form.origin.spec());
+  s.BindString16(13, form.username_element);
+  s.BindString16(14, form.username_value);
+  s.BindString16(15, form.password_element);
+  s.BindString(16, form.signon_realm);
 
   if (!s.Run())
     return PasswordStoreChangeList();

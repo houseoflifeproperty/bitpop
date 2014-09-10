@@ -5,10 +5,10 @@
 #include "net/cert/x509_certificate.h"
 
 #include <openssl/asn1.h>
+#include <openssl/bytestring.h>
 #include <openssl/crypto.h>
 #include <openssl/obj_mac.h>
 #include <openssl/pem.h>
-#include <openssl/pkcs7.h>
 #include <openssl/sha.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
@@ -19,6 +19,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "crypto/openssl_util.h"
+#include "crypto/scoped_openssl_types.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/cert/x509_util_openssl.h"
@@ -32,31 +33,27 @@ namespace net {
 
 namespace {
 
+typedef crypto::ScopedOpenSSL<GENERAL_NAMES, GENERAL_NAMES_free>::Type
+    ScopedGENERAL_NAMES;
+
 void CreateOSCertHandlesFromPKCS7Bytes(
     const char* data, int length,
     X509Certificate::OSCertHandles* handles) {
   crypto::EnsureOpenSSLInit();
-  const unsigned char* der_data = reinterpret_cast<const unsigned char*>(data);
-  crypto::ScopedOpenSSL<PKCS7, PKCS7_free> pkcs7_cert(
-      d2i_PKCS7(NULL, &der_data, length));
-  if (!pkcs7_cert.get())
-    return;
+  crypto::OpenSSLErrStackTracer err_cleaner(FROM_HERE);
 
-  STACK_OF(X509)* certs = NULL;
-  int nid = OBJ_obj2nid(pkcs7_cert.get()->type);
-  if (nid == NID_pkcs7_signed) {
-    certs = pkcs7_cert.get()->d.sign->cert;
-  } else if (nid == NID_pkcs7_signedAndEnveloped) {
-    certs = pkcs7_cert.get()->d.signed_and_enveloped->cert;
-  }
+  CBS der_data;
+  CBS_init(&der_data, reinterpret_cast<const uint8_t*>(data), length);
+  STACK_OF(X509)* certs = sk_X509_new_null();
 
-  if (certs) {
-    for (int i = 0; i < sk_X509_num(certs); ++i) {
+  if (PKCS7_get_certificates(certs, &der_data)) {
+    for (size_t i = 0; i < sk_X509_num(certs); ++i) {
       X509* x509_cert =
           X509Certificate::DupOSCertHandle(sk_X509_value(certs, i));
       handles->push_back(x509_cert);
     }
   }
+  sk_X509_pop_free(certs, X509_free);
 }
 
 void ParsePrincipalValues(X509_NAME* name,
@@ -105,12 +102,12 @@ void ParseSubjectAltName(X509Certificate::OSCertHandle cert,
   if (!alt_name_ext)
     return;
 
-  crypto::ScopedOpenSSL<GENERAL_NAMES, GENERAL_NAMES_free> alt_names(
+  ScopedGENERAL_NAMES alt_names(
       reinterpret_cast<GENERAL_NAMES*>(X509V3_EXT_d2i(alt_name_ext)));
   if (!alt_names.get())
     return;
 
-  for (int i = 0; i < sk_GENERAL_NAME_num(alt_names.get()); ++i) {
+  for (size_t i = 0; i < sk_GENERAL_NAME_num(alt_names.get()); ++i) {
     const GENERAL_NAME* name = sk_GENERAL_NAME_value(alt_names.get(), i);
     if (name->type == GEN_DNS && dns_names) {
       const unsigned char* dns_name = ASN1_STRING_data(name->d.dNSName);
@@ -182,7 +179,7 @@ class X509InitSingleton {
   }
 
   int der_cache_ex_index_;
-  crypto::ScopedOpenSSL<X509_STORE, X509_STORE_free> store_;
+  crypto::ScopedOpenSSL<X509_STORE, X509_STORE_free>::Type store_;
 
   DISALLOW_COPY_AND_ASSIGN(X509InitSingleton);
 };
@@ -244,13 +241,7 @@ void sk_X509_NAME_free_all(STACK_OF(X509_NAME)* sk) {
 X509Certificate::OSCertHandle X509Certificate::DupOSCertHandle(
     OSCertHandle cert_handle) {
   DCHECK(cert_handle);
-  // Using X509_dup causes the entire certificate to be reparsed. This
-  // conversion, besides being non-trivial, drops any associated
-  // application-specific data set by X509_set_ex_data. Using CRYPTO_add
-  // just bumps up the ref-count for the cert, without causing any allocations
-  // or deallocations.
-  CRYPTO_add(&cert_handle->references, 1, CRYPTO_LOCK_X509);
-  return cert_handle;
+  return X509_up_ref(cert_handle);
 }
 
 // static
@@ -437,8 +428,7 @@ void X509Certificate::GetPublicKeyInfo(OSCertHandle cert_handle,
   *type = kPublicKeyTypeUnknown;
   *size_bits = 0;
 
-  crypto::ScopedOpenSSL<EVP_PKEY, EVP_PKEY_free> scoped_key(
-      X509_get_pubkey(cert_handle));
+  crypto::ScopedEVP_PKEY scoped_key(X509_get_pubkey(cert_handle));
   if (!scoped_key.get())
     return;
 
@@ -472,7 +462,7 @@ bool X509Certificate::IsIssuedByEncoded(
 
   // Convert to a temporary list of X509_NAME objects.
   // It will own the objects it points to.
-  crypto::ScopedOpenSSL<STACK_OF(X509_NAME), sk_X509_NAME_free_all>
+  crypto::ScopedOpenSSL<STACK_OF(X509_NAME), sk_X509_NAME_free_all>::Type
       issuer_names(sk_X509_NAME_new_null());
   if (!issuer_names.get())
     return false;
@@ -506,7 +496,7 @@ bool X509Certificate::IsIssuedByEncoded(
 
   // and 'cert_names'.
   for (size_t n = 0; n < cert_names.size(); ++n) {
-    for (int m = 0; m < sk_X509_NAME_num(issuer_names.get()); ++m) {
+    for (size_t m = 0; m < sk_X509_NAME_num(issuer_names.get()); ++m) {
       X509_NAME* issuer = sk_X509_NAME_value(issuer_names.get(), m);
       if (X509_NAME_cmp(issuer, cert_names[n]) == 0) {
         return true;

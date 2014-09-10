@@ -3,12 +3,16 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
+#include "base/files/file_path.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "chrome/browser/chrome_elf_init_win.h"
+#include "chrome/browser/install_verification/win/module_info.h"
+#include "chrome/browser/install_verification/win/module_verification_common.h"
 #include "chrome_elf/blacklist/blacklist.h"
 #include "chrome_elf/chrome_elf_constants.h"
 #include "chrome_elf/dll_hash/dll_hash.h"
@@ -109,6 +113,10 @@ void InitializeChromeElf() {
       base::TimeDelta::FromSeconds(kBlacklistReportingDelaySec));
 }
 
+// Note that running multiple chrome instances with distinct user data
+// directories could lead to deletion (and/or replacement) of the finch
+// blacklist registry data in one instance before the second has a chance to
+// read those values.
 void AddFinchBlacklistToRegistry() {
   base::win::RegKey finch_blacklist_registry_key(
       HKEY_CURRENT_USER, blacklist::kRegistryFinchListPath, KEY_SET_VALUE);
@@ -117,8 +125,13 @@ void AddFinchBlacklistToRegistry() {
   if (!finch_blacklist_registry_key.Valid())
     return;
 
+  // Delete and recreate the key to clear the registry.
+  finch_blacklist_registry_key.DeleteKey(L"");
+  finch_blacklist_registry_key.Create(
+      HKEY_CURRENT_USER, blacklist::kRegistryFinchListPath, KEY_SET_VALUE);
+
   std::map<std::string, std::string> params;
-  chrome_variations::GetVariationParams(kBrowserBlacklistTrialName, &params);
+  variations::GetVariationParams(kBrowserBlacklistTrialName, &params);
 
   for (std::map<std::string, std::string>::iterator it = params.begin();
        it != params.end();
@@ -194,4 +207,23 @@ void BrowserBlacklistBeaconSetup() {
     if (set_version == ERROR_SUCCESS && set_state == ERROR_SUCCESS)
       RecordBlacklistSetupEvent(BLACKLIST_SETUP_ENABLED);
   }
+}
+
+bool GetLoadedBlacklistedModules(std::vector<base::string16>* module_names) {
+  DCHECK(module_names);
+
+  std::set<ModuleInfo> module_info_set;
+  if (!GetLoadedModules(&module_info_set))
+    return false;
+
+  std::set<ModuleInfo>::const_iterator module_iter(module_info_set.begin());
+  for (; module_iter != module_info_set.end(); ++module_iter) {
+    base::string16 module_file_name(base::StringToLowerASCII(
+        base::FilePath(module_iter->name).BaseName().value()));
+    if (blacklist::GetBlacklistIndex(module_file_name.c_str()) != -1) {
+      module_names->push_back(module_iter->name);
+    }
+  }
+
+  return true;
 }

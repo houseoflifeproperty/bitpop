@@ -40,14 +40,14 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore { class WebSocketChannel; }
-
 namespace blink {
 
 class WebDocument;
+class WebSocketChannel;
+class WebSocketChannelClientProxy;
 class WebURL;
 
-class WebSocketImpl FINAL : public WebSocket, public WebCore::WebSocketChannelClient {
+class WebSocketImpl FINAL : public WebSocket {
 public:
     WebSocketImpl(const WebDocument&, WebSocketClient*);
     virtual ~WebSocketImpl();
@@ -66,18 +66,19 @@ public:
     virtual void fail(const WebString& reason) OVERRIDE;
     virtual void disconnect() OVERRIDE;
 
-    // WebSocketChannelClient
-    virtual void didConnect(const String& subprotocol, const String& extensions) OVERRIDE;
-    virtual void didReceiveMessage(const String& message) OVERRIDE;
-    virtual void didReceiveBinaryData(PassOwnPtr<Vector<char> > binaryData) OVERRIDE;
-    virtual void didReceiveMessageError() OVERRIDE;
-    virtual void didConsumeBufferedAmount(unsigned long consumed) OVERRIDE;
-    virtual void didStartClosingHandshake() OVERRIDE;
-    virtual void didClose(ClosingHandshakeCompletionStatus, unsigned short code, const String& reason) OVERRIDE;
+    // WebSocketChannelClient methods proxied by WebSocketChannelClientProxy.
+    void didConnect(const String& subprotocol, const String& extensions);
+    void didReceiveMessage(const String& message);
+    void didReceiveBinaryData(PassOwnPtr<Vector<char> > binaryData);
+    void didReceiveMessageError();
+    void didConsumeBufferedAmount(unsigned long consumed);
+    void didStartClosingHandshake();
+    void didClose(WebSocketChannelClient::ClosingHandshakeCompletionStatus, unsigned short code, const String& reason);
 
 private:
-    RefPtrWillBePersistent<WebCore::WebSocketChannel> m_private;
+    Persistent<WebSocketChannel> m_private;
     WebSocketClient* m_client;
+    Persistent<WebSocketChannelClientProxy> m_channelProxy;
     BinaryType m_binaryType;
     WebString m_subprotocol;
     WebString m_extensions;

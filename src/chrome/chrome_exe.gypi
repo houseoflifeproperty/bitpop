@@ -9,6 +9,11 @@
       'type': 'none',
       'dependencies': [ 'chrome_initial', ],
       'conditions': [
+        ['OS=="linux" and clang_type_profiler==1', {
+          'dependencies!': [
+            '<(DEPTH)/base/allocator/allocator.gyp:type_profiler',
+          ],
+        }],
         ['OS == "win"', {
           'actions': [
             {
@@ -275,7 +280,6 @@
             '../components/components.gyp:chrome_manifest_bundle',
             'helper_app',
             'infoplist_strings_tool',
-            'interpose_dependency_shim',
             # On Mac, make sure we've built chrome_dll, which contains all of
             # the library code with Chromium functionality.
             'chrome_dll',
@@ -332,7 +336,6 @@
               'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/Contents/Versions/<(version_full)',
               'files': [
                 '<(PRODUCT_DIR)/<(mac_product_name) Helper.app',
-                '<(PRODUCT_DIR)/libplugin_carbon_interpose.dylib',
               ],
             },
           ],
@@ -487,6 +490,7 @@
             'installer_util',
             'image_pre_reader',
             '../base/base.gyp:base',
+            '../crypto/crypto.gyp:crypto',
             '../breakpad/breakpad.gyp:breakpad_handler',
             '../breakpad/breakpad.gyp:breakpad_sender',
             '../chrome_elf/chrome_elf.gyp:chrome_elf',
@@ -512,7 +516,10 @@
                 'ole32.dll',
                 'oleaut32.dll',
               ],
-              'AdditionalDependencies': [ 'wintrust.lib' ],
+              'AdditionalDependencies': [
+                'wintrust.lib',
+                'crypt32.lib'
+              ],
               'conditions': [
                 ['asan==0', {
                   # Set /SUBSYSTEM:WINDOWS for chrome.exe itself, except for the

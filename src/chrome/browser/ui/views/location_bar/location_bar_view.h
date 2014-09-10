@@ -9,11 +9,9 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_member.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
-#include "chrome/browser/search_engines/template_url_service_observer.h"
-#include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
 #include "chrome/browser/ui/search/search_model_observer.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
@@ -21,6 +19,7 @@
 #include "chrome/browser/ui/views/dropdown_bar_host_delegate.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
+#include "components/search_engines/template_url_service_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/gfx/animation/animation_delegate.h"
@@ -321,16 +320,8 @@ class LocationBarView : public LocationBar,
   // Updates |manage_passwords_icon_view_|. Returns true if visibility changed.
   bool RefreshManagePasswordsIconView();
 
-  // Shows the manage passwords bubble if there is a savable password.
-  void ShowManagePasswordsBubbleIfNeeded();
-
   // Helper to show the first run info bubble.
   void ShowFirstRunBubbleInternal();
-
-  // Handles a request to change the value of this text field from software
-  // using an accessibility API (typically automation software, screen readers
-  // don't normally use this). Sets the value and clears the selection.
-  void AccessibilitySetValue(const base::string16& new_value);
 
   // Returns true if the suggest text is valid.
   bool HasValidSuggestText() const;
@@ -568,9 +559,6 @@ class LocationBarView : public LocationBar,
 
   // Used to register for notifications received by NotificationObserver.
   content::NotificationRegistrar registrar_;
-
-  // Used to bind callback functions to this object.
-  base::WeakPtrFactory<LocationBarView> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(LocationBarView);
 };

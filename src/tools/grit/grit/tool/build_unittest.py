@@ -49,15 +49,41 @@ class BuildUnittest(unittest.TestCase):
     self.failUnless(os.path.isfile(expected_dep_file))
     with open(expected_dep_file) as f:
       line = f.readline()
-      (dep_file_name, deps_string) = line.split(': ')
+      (dep_output_file, deps_string) = line.split(': ')
       deps = deps_string.split(' ')
-      self.failUnlessEqual(os.path.abspath(expected_dep_file),
-          os.path.abspath(os.path.join(output_dir, dep_file_name)),
-          "depfile should refer to itself as the depended upon file")
+
+      self.failUnlessEqual("resource.h", dep_output_file)
       self.failUnlessEqual(1, len(deps))
       self.failUnlessEqual(deps[0],
           util.PathFromRoot('grit/testdata/substitute.xmb'))
 
+  def testAssertOutputs(self):
+    output_dir = tempfile.mkdtemp()
+    class DummyOpts(object):
+      def __init__(self):
+        self.input = util.PathFromRoot('grit/testdata/substitute.grd')
+        self.verbose = False
+        self.extra_verbose = False
+
+    # Incomplete output file list should fail.
+    builder_fail = build.RcBuilder()
+    self.failUnlessEqual(2,
+        builder_fail.Run(DummyOpts(), [
+            '-o', output_dir,
+            '-a', os.path.abspath(
+                os.path.join(output_dir, 'en_generated_resources.rc'))]))
+
+    # Complete output file list should succeed.
+    builder_ok = build.RcBuilder()
+    self.failUnlessEqual(0,
+        builder_ok.Run(DummyOpts(), [
+            '-o', output_dir,
+            '-a', os.path.abspath(
+                os.path.join(output_dir, 'en_generated_resources.rc')),
+            '-a', os.path.abspath(
+                os.path.join(output_dir, 'sv_generated_resources.rc')),
+            '-a', os.path.abspath(
+                os.path.join(output_dir, 'resource.h'))]))
 
 if __name__ == '__main__':
   unittest.main()

@@ -53,7 +53,6 @@ struct SandboxTypeToResourceIDMapping {
 // profile for all process types known to content.
 SandboxTypeToResourceIDMapping kDefaultSandboxTypeToResourceIDMapping[] = {
   { SANDBOX_TYPE_RENDERER, IDR_RENDERER_SANDBOX_PROFILE },
-  { SANDBOX_TYPE_WORKER,   IDR_WORKER_SANDBOX_PROFILE },
   { SANDBOX_TYPE_UTILITY,  IDR_UTILITY_SANDBOX_PROFILE },
   { SANDBOX_TYPE_GPU,      IDR_GPU_SANDBOX_PROFILE },
   { SANDBOX_TYPE_PPAPI,    IDR_PPAPI_SANDBOX_PROFILE },
@@ -526,7 +525,8 @@ bool Sandbox::EnableSandbox(int sandbox_type,
 
   // Enable verbose logging if enabled on the command line. (See common.sb
   // for details).
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
   bool enable_logging =
       command_line->HasSwitch(switches::kEnableSandboxLogging);;
   if (enable_logging) {

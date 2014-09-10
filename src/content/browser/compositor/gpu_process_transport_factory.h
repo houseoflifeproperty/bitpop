@@ -60,6 +60,9 @@ class GpuProcessTransportFactory
   // ImageTransportFactory implementation.
   virtual ui::ContextFactory* GetContextFactory() OVERRIDE;
   virtual gfx::GLSurfaceHandle GetSharedSurfaceHandle() OVERRIDE;
+  virtual scoped_ptr<cc::SurfaceIdAllocator> CreateSurfaceIdAllocator()
+      OVERRIDE;
+  virtual cc::SurfaceManager* GetSurfaceManager() OVERRIDE;
   virtual GLHelper* GetGLHelper() OVERRIDE;
   virtual void AddObserver(ImageTransportFactoryObserver* observer) OVERRIDE;
   virtual void RemoveObserver(
@@ -86,6 +89,7 @@ class GpuProcessTransportFactory
   ObserverList<ImageTransportFactoryObserver> observer_list_;
   base::WeakPtrFactory<GpuProcessTransportFactory> callback_factory_;
   scoped_ptr<cc::SurfaceManager> surface_manager_;
+  uint32_t next_surface_id_namespace_;
 
   // The contents of this map and its methods may only be used on the compositor
   // thread.

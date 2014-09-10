@@ -27,20 +27,23 @@
 #ifndef WebGLShaderPrecisionFormat_h
 #define WebGLShaderPrecisionFormat_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/graphics/GraphicsTypes3D.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class WebGLShaderPrecisionFormat : public RefCounted<WebGLShaderPrecisionFormat>, public ScriptWrappable {
+class WebGLShaderPrecisionFormat FINAL : public RefCountedWillBeGarbageCollected<WebGLShaderPrecisionFormat>, public ScriptWrappable {
 public:
-    static PassRefPtr<WebGLShaderPrecisionFormat> create(GLint rangeMin, GLint rangeMax, GLint precision);
+    static PassRefPtrWillBeRawPtr<WebGLShaderPrecisionFormat> create(GLint rangeMin, GLint rangeMax, GLint precision);
 
     GLint rangeMin() const;
     GLint rangeMax() const;
     GLint precision() const;
+
+    void trace(Visitor*) { }
 
 private:
     WebGLShaderPrecisionFormat(GLint rangeMin, GLint rangeMax, GLint precision);

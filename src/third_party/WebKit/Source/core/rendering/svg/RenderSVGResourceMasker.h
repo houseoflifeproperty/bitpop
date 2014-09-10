@@ -30,7 +30,7 @@
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class DisplayList;
 class GraphicsContext;
@@ -55,7 +55,7 @@ public:
     static const RenderSVGResourceType s_resourceType;
 
 private:
-    void calculateMaskContentRepaintRect();
+    void calculateMaskContentPaintInvalidationRect();
     void drawMaskForRenderer(GraphicsContext*, const FloatRect& targetBoundingBox);
     PassRefPtr<DisplayList> asDisplayList(GraphicsContext*, const AffineTransform&);
 

@@ -11,7 +11,7 @@ DEPS = [
 
 def GenSteps(api):
   api.path['checkout'] = api.path['slave_build']
-  yield api.tryserver.maybe_apply_issue()
+  api.tryserver.maybe_apply_issue()
 
 
 def GenTests(api):

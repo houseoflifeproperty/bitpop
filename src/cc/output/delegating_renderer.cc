@@ -9,23 +9,13 @@
 #include <vector>
 
 #include "base/debug/trace_event.h"
-#include "base/strings/string_split.h"
-#include "base/strings/string_util.h"
-#include "base/strings/stringprintf.h"
 #include "cc/output/compositor_frame_ack.h"
-#include "cc/quads/checkerboard_draw_quad.h"
-#include "cc/quads/debug_border_draw_quad.h"
+#include "cc/output/context_provider.h"
+#include "cc/quads/draw_quad.h"
 #include "cc/quads/render_pass.h"
-#include "cc/quads/render_pass_draw_quad.h"
-#include "cc/quads/solid_color_draw_quad.h"
-#include "cc/quads/texture_draw_quad.h"
-#include "cc/quads/tile_draw_quad.h"
-#include "cc/quads/yuv_video_draw_quad.h"
 #include "cc/resources/resource_provider.h"
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
-#include "gpu/command_buffer/common/gpu_memory_allocation.h"
-#include "third_party/khronos/GLES2/gl2ext.h"
 
 
 namespace cc {
@@ -120,13 +110,6 @@ void DelegatingRenderer::SwapBuffers(const CompositorFrameMetadata& metadata) {
 void DelegatingRenderer::ReceiveSwapBuffersAck(
     const CompositorFrameAck& ack) {
   resource_provider_->ReceiveReturnsFromParent(ack.resources);
-}
-
-bool DelegatingRenderer::IsContextLost() {
-  ContextProvider* context_provider = output_surface_->context_provider();
-  if (!context_provider)
-    return false;
-  return context_provider->IsContextLost();
 }
 
 void DelegatingRenderer::DidChangeVisibility() {

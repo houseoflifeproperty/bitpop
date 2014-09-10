@@ -22,12 +22,13 @@
 
 #include "core/rendering/svg/RenderSVGResourcePattern.h"
 
+#include "core/dom/ElementTraversal.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
 #include "core/svg/SVGFitToViewBox.h"
 #include "platform/graphics/GraphicsContext.h"
 
-namespace WebCore {
+namespace blink {
 
 const RenderSVGResourceType RenderSVGResourcePattern::s_resourceType = PatternResourceType;
 
@@ -41,14 +42,14 @@ void RenderSVGResourcePattern::removeAllClientsFromCache(bool markForInvalidatio
 {
     m_patternMap.clear();
     m_shouldCollectPatternAttributes = true;
-    markAllClientsForInvalidation(markForInvalidation ? RepaintInvalidation : ParentOnlyInvalidation);
+    markAllClientsForInvalidation(markForInvalidation ? PaintInvalidation : ParentOnlyInvalidation);
 }
 
 void RenderSVGResourcePattern::removeClientFromCache(RenderObject* client, bool markForInvalidation)
 {
     ASSERT(client);
     m_patternMap.remove(client);
-    markClientForInvalidation(client, markForInvalidation ? RepaintInvalidation : ParentOnlyInvalidation);
+    markClientForInvalidation(client, markForInvalidation ? PaintInvalidation : ParentOnlyInvalidation);
 }
 
 PatternData* RenderSVGResourcePattern::buildPattern(RenderObject* object, unsigned short resourceMode)
@@ -106,7 +107,7 @@ PatternData* RenderSVGResourcePattern::buildPattern(RenderObject* object, unsign
 
     // Build pattern.
     OwnPtr<PatternData> patternData = adoptPtr(new PatternData);
-    patternData->pattern = Pattern::create(copiedImage, true, true);
+    patternData->pattern = Pattern::createBitmapPattern(copiedImage);
 
     // Compute pattern space transformation.
     const IntSize tileImageSize = tileImage->size();
@@ -142,8 +143,7 @@ bool RenderSVGResourcePattern::applyResource(RenderObject* object, RenderStyle* 
     if (!patternData)
         return false;
 
-    const SVGRenderStyle* svgStyle = style->svgStyle();
-    ASSERT(svgStyle);
+    const SVGRenderStyle& svgStyle = style->svgStyle();
 
     AffineTransform computedPatternSpaceTransform = computeResourceSpaceTransform(object, patternData->transform, svgStyle, resourceMode);
     patternData->pattern->setPatternSpaceTransform(computedPatternSpaceTransform);
@@ -152,11 +152,11 @@ bool RenderSVGResourcePattern::applyResource(RenderObject* object, RenderStyle* 
     context->save();
 
     if (resourceMode & ApplyToFillMode) {
-        context->setAlphaAsFloat(svgStyle->fillOpacity());
+        context->setAlphaAsFloat(svgStyle.fillOpacity());
         context->setFillPattern(patternData->pattern);
-        context->setFillRule(svgStyle->fillRule());
+        context->setFillRule(svgStyle.fillRule());
     } else if (resourceMode & ApplyToStrokeMode) {
-        context->setAlphaAsFloat(svgStyle->strokeOpacity());
+        context->setAlphaAsFloat(svgStyle.strokeOpacity());
         context->setStrokePattern(patternData->pattern);
         SVGRenderSupport::applyStrokeStyleToContext(context, style, object);
     }
@@ -258,8 +258,8 @@ PassOwnPtr<ImageBuffer> RenderSVGResourcePattern::createTileImage(const PatternA
         contentTransformation = tileImageTransform;
 
     // Draw the content into the ImageBuffer.
-    for (Element* element = ElementTraversal::firstWithin(*attributes.patternContentElement()); element; element = ElementTraversal::nextSibling(*element)) {
-        if (!element->isSVGElement() || !element->renderer())
+    for (SVGElement* element = Traversal<SVGElement>::firstChild(*attributes.patternContentElement()); element; element = Traversal<SVGElement>::nextSibling(*element)) {
+        if (!element->renderer())
             continue;
         if (element->renderer()->needsLayout())
             return nullptr;

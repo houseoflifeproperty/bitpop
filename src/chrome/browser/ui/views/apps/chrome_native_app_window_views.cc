@@ -212,7 +212,7 @@ void ChromeNativeAppWindowViews::InitializeDefaultWindow(
   init_params.delegate = this;
   init_params.remove_standard_frame = IsFrameless() || has_frame_color_;
   init_params.use_system_default_icon = true;
-  if (create_params.transparent_background)
+  if (create_params.alpha_enabled)
     init_params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   init_params.keep_on_top = create_params.always_on_top;
 
@@ -246,11 +246,9 @@ void ChromeNativeAppWindowViews::InitializeDefaultWindow(
   }
 
   if (IsFrameless() &&
-      init_params.opacity == views::Widget::InitParams::TRANSLUCENT_WINDOW &&
-      !create_params.resizable) {
+      init_params.opacity == views::Widget::InitParams::TRANSLUCENT_WINDOW) {
     // The given window is most likely not rectangular since it uses
-    // transparency, has no standard frame and the user cannot resize it using
-    // the OS supplied methods. Therefore we do not use a shadow for it.
+    // transparency and has no standard frame, don't show a shadow for it.
     // TODO(skuhne): If we run into an application which should have a shadow
     // but does not have, a new attribute has to be added.
     wm::SetShadowType(widget()->GetNativeWindow(), wm::SHADOW_TYPE_NONE);
@@ -473,14 +471,14 @@ void ChromeNativeAppWindowViews::ShowContextMenuForView(
   int hit_test =
       widget()->non_client_view()->NonClientHitTest(point_in_view_coords);
   if (hit_test == HTCAPTION) {
-    menu_runner_.reset(new views::MenuRunner(model.get()));
+    menu_runner_.reset(new views::MenuRunner(
+        model.get(),
+        views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU));
     if (menu_runner_->RunMenuAt(source->GetWidget(),
                                 NULL,
                                 gfx::Rect(p, gfx::Size(0, 0)),
                                 views::MENU_ANCHOR_TOPLEFT,
-                                source_type,
-                                views::MenuRunner::HAS_MNEMONICS |
-                                    views::MenuRunner::CONTEXT_MENU) ==
+                                source_type) ==
         views::MenuRunner::MENU_DELETED) {
       return;
     }
@@ -534,15 +532,11 @@ views::NonClientFrameView* ChromeNativeAppWindowViews::CreateNonClientFrameView(
 
     ash::CustomFrameViewAsh* custom_frame_view =
         new ash::CustomFrameViewAsh(widget);
-#if defined(OS_CHROMEOS)
     // Non-frameless app windows can be put into immersive fullscreen.
-    // TODO(pkotwicz): Investigate if immersive fullscreen can be enabled for
-    // Windows Ash.
     immersive_fullscreen_controller_.reset(
         new ash::ImmersiveFullscreenController());
     custom_frame_view->InitImmersiveFullscreenControllerForView(
         immersive_fullscreen_controller_.get());
-#endif
     custom_frame_view->GetHeaderView()->set_context_menu_controller(this);
     return custom_frame_view;
   }

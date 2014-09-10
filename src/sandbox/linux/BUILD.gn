@@ -66,12 +66,15 @@ source_set("sandbox_linux_test_utils") {
 # The main sandboxing test target.
 test("sandbox_linux_unittests") {
   sources = [
-    "tests/main.cc",
-    "tests/unit_tests_unittest.cc",
     "services/broker_process_unittest.cc",
     "services/scoped_process_unittest.cc",
     "services/thread_helpers_unittests.cc",
     "services/yama_unittests.cc",
+    "tests/main.cc",
+    "tests/scoped_temporary_file.cc",
+    "tests/scoped_temporary_file.h",
+    "tests/scoped_temporary_file_unittest.cc",
+    "tests/unit_tests_unittest.cc",
   ]
 
   deps = [
@@ -89,6 +92,8 @@ test("sandbox_linux_unittests") {
   }
   if (use_seccomp_bpf) {
     sources += [
+      "bpf_dsl/bpf_dsl_unittest.cc",
+      "bpf_dsl/cons_unittest.cc",
       "seccomp-bpf-helpers/baseline_policy_unittest.cc",
       "seccomp-bpf/bpf_tests_unittest.cc",
       "seccomp-bpf/codegen_unittest.cc",
@@ -126,6 +131,9 @@ test("sandbox_linux_unittests") {
 
 component("seccomp_bpf") {
   sources = [
+    "bpf_dsl/bpf_dsl.cc",
+    "bpf_dsl/bpf_dsl.h",
+    "bpf_dsl/cons.h",
     "seccomp-bpf/basicblock.cc",
     "seccomp-bpf/basicblock.h",
     "seccomp-bpf/codegen.cc",

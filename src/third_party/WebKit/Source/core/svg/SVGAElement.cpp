@@ -49,7 +49,7 @@
 #include "platform/PlatformMouseEvent.h"
 #include "platform/network/ResourceRequest.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -75,53 +75,28 @@ String SVGAElement::title() const
     return SVGElement::title();
 }
 
-bool SVGAElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        SVGURIReference::addSupportedAttributes(supportedAttributes);
-        supportedAttributes.add(SVGNames::targetAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
 void SVGAElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGGraphicsElement::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::targetAttr) {
-        m_svgTarget->setBaseValueAsString(value, parseError);
-    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
-    } else {
-        ASSERT_NOT_REACHED();
-    }
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGAElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGGraphicsElement::svgAttributeChanged(attrName);
-        return;
-    }
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
     // Unlike other SVG*Element classes, SVGAElement only listens to SVGURIReference changes
     // as none of the other properties changes the linking behaviour for our <a> element.
     if (SVGURIReference::isKnownAttribute(attrName)) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
+
         bool wasLink = isLink();
         setIsLink(!hrefString().isNull());
 
         if (wasLink != isLink())
             setNeedsStyleRecalc(SubtreeStyleChange);
+
+        return;
     }
+
+    SVGGraphicsElement::svgAttributeChanged(attrName);
 }
 
 RenderObject* SVGAElement::createRenderer(RenderStyle*)
@@ -179,7 +154,7 @@ short SVGAElement::tabIndex() const
 
 bool SVGAElement::supportsFocus() const
 {
-    if (rendererIsEditable())
+    if (hasEditableStyle())
         return SVGGraphicsElement::supportsFocus();
     // If not a link we should still be able to focus the element if it has tabIndex.
     return isLink() || Element::supportsFocus();
@@ -214,7 +189,7 @@ bool SVGAElement::canStartSelection() const
 {
     if (!isLink())
         return SVGElement::canStartSelection();
-    return rendererIsEditable();
+    return hasEditableStyle();
 }
 
 bool SVGAElement::willRespondToMouseClickEvents()
@@ -222,4 +197,4 @@ bool SVGAElement::willRespondToMouseClickEvents()
     return isLink() || SVGGraphicsElement::willRespondToMouseClickEvents();
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -13,10 +13,6 @@
 #include "content/public/renderer/navigation_state.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_view.h"
-#include "extensions/common/constants.h"
-#include "extensions/common/extension.h"
-#include "extensions/common/permissions/permissions_data.h"
-#include "extensions/renderer/dispatcher.h"
 #include "third_party/WebKit/public/platform/WebPermissionCallbacks.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
@@ -25,7 +21,13 @@
 #include "third_party/WebKit/public/web/WebFrameClient.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "webkit/child/weburlresponse_extradata_impl.h"
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/common/extensions/chrome_extension_messages.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/renderer/dispatcher.h"
+#endif
 
 using blink::WebDataSource;
 using blink::WebDocument;
@@ -37,7 +39,6 @@ using blink::WebURL;
 using blink::WebView;
 using content::DocumentState;
 using content::NavigationState;
-using extensions::APIPermission;
 
 namespace {
 
@@ -151,7 +152,9 @@ ContentSettingsObserver::ContentSettingsObserver(
     : content::RenderFrameObserver(render_frame),
       content::RenderFrameObserverTracker<ContentSettingsObserver>(
           render_frame),
+#if defined(ENABLE_EXTENSIONS)
       extension_dispatcher_(extension_dispatcher),
+#endif
       allow_displaying_insecure_content_(false),
       allow_running_insecure_content_(false),
       content_setting_rules_(NULL),
@@ -299,15 +302,15 @@ bool ContentSettingsObserver::allowImage(bool enabled_per_settings,
     if (is_interstitial_page_)
       return true;
 
-    WebFrame* frame = render_frame()->GetWebFrame();
-    if (IsWhitelistedForContentSettings(frame))
+    if (IsWhitelistedForContentSettings(render_frame()))
       return true;
 
     if (content_setting_rules_) {
       GURL secondary_url(image_url);
-      allow = GetContentSettingFromRules(
-          content_setting_rules_->image_rules,
-          frame, secondary_url) != CONTENT_SETTING_BLOCK;
+      allow =
+          GetContentSettingFromRules(content_setting_rules_->image_rules,
+                                     render_frame()->GetWebFrame(),
+                                     secondary_url) != CONTENT_SETTING_BLOCK;
     }
   }
   if (!allow)
@@ -357,7 +360,7 @@ bool ContentSettingsObserver::allowScript(bool enabled_per_settings) {
         GURL(frame->document().securityOrigin().toString()));
     allow = setting != CONTENT_SETTING_BLOCK;
   }
-  allow = allow || IsWhitelistedForContentSettings(frame);
+  allow = allow || IsWhitelistedForContentSettings(render_frame());
 
   cached_script_permissions_[frame] = allow;
   return allow;
@@ -372,15 +375,14 @@ bool ContentSettingsObserver::allowScriptFromSource(
     return true;
 
   bool allow = true;
-  WebFrame* frame = render_frame()->GetWebFrame();
   if (content_setting_rules_) {
-    ContentSetting setting = GetContentSettingFromRules(
-        content_setting_rules_->script_rules,
-        frame,
-        GURL(script_url));
+    ContentSetting setting =
+        GetContentSettingFromRules(content_setting_rules_->script_rules,
+                                   render_frame()->GetWebFrame(),
+                                   GURL(script_url));
     allow = setting != CONTENT_SETTING_BLOCK;
   }
-  return allow || IsWhitelistedForContentSettings(frame);
+  return allow || IsWhitelistedForContentSettings(render_frame());
 }
 
 bool ContentSettingsObserver::allowStorage(bool local) {
@@ -426,38 +428,12 @@ bool ContentSettingsObserver::allowWriteToClipboard(bool default_value) {
   return allowed;
 }
 
-bool ContentSettingsObserver::allowWebComponents(bool default_value) {
-  if (default_value)
-    return true;
-
-  WebFrame* frame = render_frame()->GetWebFrame();
-  WebSecurityOrigin origin = frame->document().securityOrigin();
-  if (EqualsASCII(origin.protocol(), content::kChromeUIScheme))
-    return true;
-
-  if (const extensions::Extension* extension = GetExtension(origin)) {
-    if (extension->permissions_data()->HasAPIPermission(
-            APIPermission::kExperimental))
-      return true;
-  }
-
-  return false;
-}
-
 bool ContentSettingsObserver::allowMutationEvents(bool default_value) {
-  WebFrame* frame = render_frame()->GetWebFrame();
-  WebSecurityOrigin origin = frame->document().securityOrigin();
-  const extensions::Extension* extension = GetExtension(origin);
-  if (extension && extension->is_platform_app())
-    return false;
-  return default_value;
+  return IsPlatformApp() ? false : default_value;
 }
 
 bool ContentSettingsObserver::allowPushState() {
-  WebFrame* frame = render_frame()->GetWebFrame();
-  WebSecurityOrigin origin = frame->document().securityOrigin();
-  const extensions::Extension* extension = GetExtension(origin);
-  return !extension || !extension->is_platform_app();
+  return !IsPlatformApp();
 }
 
 static void SendInsecureContentSignal(int signal) {
@@ -651,6 +627,18 @@ void ContentSettingsObserver::ClearBlockedContentSettings() {
   cached_script_permissions_.clear();
 }
 
+bool ContentSettingsObserver::IsPlatformApp() {
+#if defined(ENABLE_EXTENSIONS)
+  WebFrame* frame = render_frame()->GetWebFrame();
+  WebSecurityOrigin origin = frame->document().securityOrigin();
+  const extensions::Extension* extension = GetExtension(origin);
+  return extension && extension->is_platform_app();
+#else
+  return false;
+#endif
+}
+
+#if defined(ENABLE_EXTENSIONS)
 const extensions::Extension* ContentSettingsObserver::GetExtension(
     const WebSecurityOrigin& origin) const {
   if (!EqualsASCII(origin.protocol(), extensions::kExtensionScheme))
@@ -662,21 +650,22 @@ const extensions::Extension* ContentSettingsObserver::GetExtension(
 
   return extension_dispatcher_->extensions()->GetByID(extension_id);
 }
+#endif
 
-bool ContentSettingsObserver::IsWhitelistedForContentSettings(WebFrame* frame) {
+bool ContentSettingsObserver::IsWhitelistedForContentSettings(
+    content::RenderFrame* frame) {
   // Whitelist Instant processes.
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kInstantProcess))
     return true;
 
   // Whitelist ftp directory listings, as they require JavaScript to function
   // properly.
-  webkit_glue::WebURLResponseExtraDataImpl* extra_data =
-      static_cast<webkit_glue::WebURLResponseExtraDataImpl*>(
-          frame->dataSource()->response().extraData());
-  if (extra_data && extra_data->is_ftp_directory_listing())
+  if (frame->IsFTPDirectoryListing())
     return true;
-  return IsWhitelistedForContentSettings(frame->document().securityOrigin(),
-                                         frame->document().url());
+
+  WebFrame* web_frame = frame->GetWebFrame();
+  return IsWhitelistedForContentSettings(web_frame->document().securityOrigin(),
+                                         web_frame->document().url());
 }
 
 bool ContentSettingsObserver::IsWhitelistedForContentSettings(
@@ -694,8 +683,10 @@ bool ContentSettingsObserver::IsWhitelistedForContentSettings(
   if (EqualsASCII(origin.protocol(), content::kChromeDevToolsScheme))
     return true;  // DevTools UI elements should still work.
 
+#if defined(ENABLE_EXTENSIONS)
   if (EqualsASCII(origin.protocol(), extensions::kExtensionScheme))
     return true;
+#endif
 
   // TODO(creis, fsamuel): Remove this once the concept of swapped out
   // RenderFrames goes away.

@@ -27,7 +27,7 @@
 #include "config.h"
 #include "modules/navigatorcontentutils/NavigatorContentUtils.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/frame/LocalFrame.h"
@@ -36,14 +36,14 @@
 #include "wtf/HashSet.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
-static HashSet<String>* protocolWhitelist;
+static HashSet<String>* schemeWhitelist;
 
-static void initProtocolHandlerWhitelist()
+static void initCustomSchemeHandlerWhitelist()
 {
-    protocolWhitelist = new HashSet<String>;
-    static const char* const protocols[] = {
+    schemeWhitelist = new HashSet<String>;
+    static const char* const schemes[] = {
         "bitcoin",
         "geo",
         "im",
@@ -64,8 +64,8 @@ static void initProtocolHandlerWhitelist()
         "wtai",
         "xmpp",
     };
-    for (size_t i = 0; i < WTF_ARRAY_LENGTH(protocols); ++i)
-        protocolWhitelist->add(protocols[i]);
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(schemes); ++i)
+        schemeWhitelist->add(schemes[i]);
 }
 
 static bool verifyCustomHandlerURL(const KURL& baseURL, const String& url, ExceptionState& exceptionState)
@@ -94,42 +94,39 @@ static bool verifyCustomHandlerURL(const KURL& baseURL, const String& url, Excep
     return true;
 }
 
-static bool isProtocolWhitelisted(const String& scheme)
+static bool isSchemeWhitelisted(const String& scheme)
 {
-    if (!protocolWhitelist)
-        initProtocolHandlerWhitelist();
+    if (!schemeWhitelist)
+        initCustomSchemeHandlerWhitelist();
 
     StringBuilder builder;
     unsigned length = scheme.length();
     for (unsigned i = 0; i < length; ++i)
         builder.append(toASCIILower(scheme[i]));
 
-    return protocolWhitelist->contains(builder.toString());
+    return schemeWhitelist->contains(builder.toString());
 }
 
-static bool verifyProtocolHandlerScheme(const String& scheme, const String& method, ExceptionState& exceptionState)
+static bool verifyCustomHandlerScheme(const String& scheme, ExceptionState& exceptionState)
 {
+    if (!isValidProtocol(scheme)) {
+        exceptionState.throwSecurityError("The scheme '" + scheme + "' is not valid protocol");
+        return false;
+    }
+
     if (scheme.startsWith("web+")) {
         // The specification requires that the length of scheme is at least five characteres (including 'web+' prefix).
-        if (scheme.length() >= 5 && isValidProtocol(scheme))
+        if (scheme.length() >= 5)
             return true;
-        if (!isValidProtocol(scheme))
-            exceptionState.throwSecurityError("The scheme '" + scheme + "' is not a valid protocol.");
-        else
-            exceptionState.throwSecurityError("The scheme '" + scheme + "' is less than five characters long.");
+
+        exceptionState.throwSecurityError("The scheme '" + scheme + "' is less than five characters long.");
         return false;
     }
 
-    // The specification requires that schemes don't contain colons.
-    size_t index = scheme.find(':');
-    if (index != kNotFound) {
-        exceptionState.throwDOMException(SyntaxError, "The scheme '" + scheme + "' contains colon.");
-        return false;
-    }
-
-    if (isProtocolWhitelisted(scheme))
+    if (isSchemeWhitelisted(scheme))
         return true;
-    exceptionState.throwSecurityError("The scheme '" + scheme + "' doesn't belong to the protocol whitelist. Please prefix non-whitelisted schemes with the string 'web+'.");
+
+    exceptionState.throwSecurityError("The scheme '" + scheme + "' doesn't belong to the scheme whitelist. Please prefix non-whitelisted schemes with the string 'web+'.");
     return false;
 }
 
@@ -158,7 +155,7 @@ void NavigatorContentUtils::registerProtocolHandler(Navigator& navigator, const 
     if (!verifyCustomHandlerURL(baseURL, url, exceptionState))
         return;
 
-    if (!verifyProtocolHandlerScheme(scheme, "registerProtocolHandler", exceptionState))
+    if (!verifyCustomHandlerScheme(scheme, exceptionState))
         return;
 
     ASSERT(navigator.frame()->page());
@@ -201,7 +198,7 @@ String NavigatorContentUtils::isProtocolHandlerRegistered(Navigator& navigator, 
     if (!verifyCustomHandlerURL(baseURL, url, exceptionState))
         return declined;
 
-    if (!verifyProtocolHandlerScheme(scheme, "isProtocolHandlerRegistered", exceptionState))
+    if (!verifyCustomHandlerScheme(scheme, exceptionState))
         return declined;
 
     ASSERT(navigator.frame()->page());
@@ -219,7 +216,7 @@ void NavigatorContentUtils::unregisterProtocolHandler(Navigator& navigator, cons
     if (!verifyCustomHandlerURL(baseURL, url, exceptionState))
         return;
 
-    if (!verifyProtocolHandlerScheme(scheme, "unregisterProtocolHandler", exceptionState))
+    if (!verifyCustomHandlerScheme(scheme, exceptionState))
         return;
 
     ASSERT(navigator.frame()->page());
@@ -236,4 +233,4 @@ void provideNavigatorContentUtilsTo(Page& page, PassOwnPtr<NavigatorContentUtils
     NavigatorContentUtils::provideTo(page, NavigatorContentUtils::supplementName(), NavigatorContentUtils::create(client));
 }
 
-} // namespace WebCore
+} // namespace blink

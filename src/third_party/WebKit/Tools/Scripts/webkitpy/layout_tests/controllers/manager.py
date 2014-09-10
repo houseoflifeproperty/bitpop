@@ -82,6 +82,7 @@ class Manager(object):
         self.PERF_SUBDIR = 'perf'
         self.WEBSOCKET_SUBDIR = 'websocket' + port.TEST_PATH_SEPARATOR
         self.LAYOUT_TESTS_DIRECTORY = 'LayoutTests'
+        self.ARCHIVED_RESULTS_LIMIT = 25
         self._http_server_started = False
         self._websockets_server_started = False
 
@@ -151,6 +152,34 @@ class Manager(object):
     def needs_servers(self, test_names):
         return any(self._test_requires_lock(test_name) for test_name in test_names)
 
+    def _rename_results_folder(self):
+        try:
+            timestamp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime(self._filesystem.mtime(self._filesystem.join(self._results_directory, "results.html"))))
+        except OSError, e:
+            # It might be possible that results.html was not generated in previous run, because the test
+            # run was interrupted even before testing started. In those cases, don't archive the folder.
+            # Simply override the current folder contents with new results.
+            import errno
+            if e.errno == errno.EEXIST:
+                _log.warning("No results.html file found in previous run, skipping it.")
+            return None
+        archived_name = ''.join((self._filesystem.basename(self._results_directory), "_", timestamp))
+        archived_path = self._filesystem.join(self._filesystem.dirname(self._results_directory), archived_name)
+        self._filesystem.move(self._results_directory, archived_path)
+
+    def _clobber_old_archived_results(self):
+        results_directory_path = self._filesystem.dirname(self._results_directory)
+        file_list = self._filesystem.listdir(results_directory_path)
+        results_directories = []
+        for dir in file_list:
+            file_path = self._filesystem.join(results_directory_path, dir)
+            if self._filesystem.isdir(file_path):
+                results_directories.append(file_path)
+        results_directories.sort(key=lambda x: self._filesystem.mtime(x))
+        self._printer.write_update("Clobbering old archived results in %s" % results_directory_path)
+        for dir in results_directories[:-self.ARCHIVED_RESULTS_LIMIT]:
+            self._filesystem.rmtree(dir)
+
     def _set_up_run(self, test_names):
         self._printer.write_update("Checking build ...")
         if self._options.build:
@@ -173,7 +202,13 @@ class Manager(object):
                 self._port.stop_helper()
                 return exit_code
 
-        if self._options.clobber_old_results:
+        if self._options.enable_versioned_results and self._filesystem.exists(self._results_directory):
+            if self._options.clobber_old_results:
+                _log.warning("Flag --enable_versioned_results overrides --clobber-old-results.")
+            self._clobber_old_archived_results()
+            # Rename the existing results folder for archiving.
+            self._rename_results_folder()
+        elif self._options.clobber_old_results:
             self._clobber_old_results()
 
         # Create the output directory if it doesn't already exist.
@@ -260,6 +295,11 @@ class Manager(object):
 
         if not self._options.dry_run:
             self._write_json_files(summarized_full_results, summarized_failing_results, initial_results)
+
+            if self._options.write_full_results_to:
+                self._filesystem.copyfile(self._filesystem.join(self._results_directory, "full_results.json"),
+                                          self._options.write_full_results_to)
+
             self._upload_json_files()
 
             results_path = self._filesystem.join(self._results_directory, "results.html")
@@ -376,7 +416,7 @@ class Manager(object):
         _log.debug("Writing JSON files in %s." % self._results_directory)
 
         # FIXME: Upload stats.json to the server and delete times_ms.
-        times_trie = json_results_generator.test_timings_trie(self._port, initial_results.results_by_name.values())
+        times_trie = json_results_generator.test_timings_trie(initial_results.results_by_name.values())
         times_json_path = self._filesystem.join(self._results_directory, "times_ms.json")
         json_results_generator.write_json(self._filesystem, times_trie, times_json_path)
 

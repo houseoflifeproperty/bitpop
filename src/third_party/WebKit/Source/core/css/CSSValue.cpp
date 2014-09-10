@@ -27,7 +27,6 @@
 #include "config.h"
 #include "core/css/CSSValue.h"
 
-#include "core/css/CSSArrayFunctionValue.h"
 #include "core/css/CSSAspectRatioValue.h"
 #include "core/css/CSSBorderImageSliceValue.h"
 #include "core/css/CSSCalculationValue.h"
@@ -55,11 +54,25 @@
 #include "core/css/CSSTransformValue.h"
 #include "core/css/CSSUnicodeRangeValue.h"
 #include "core/css/CSSValueList.h"
-#include "core/svg/SVGPaint.h"
 
-namespace WebCore {
+namespace blink {
 
-struct SameSizeAsCSSValue : public RefCountedWillBeGarbageCollectedFinalized<SameSizeAsCSSValue> {
+struct SameSizeAsCSSValue : public RefCountedWillBeGarbageCollectedFinalized<SameSizeAsCSSValue>
+// VC++ 2013 doesn't support EBCO (Empty Base Class Optimization), and having
+// multiple empty base classes makes the size of CSSValue bloat (Note that both
+// of GarbageCollectedFinalized and ScriptWrappableBase are empty classes).
+// See the following article for details.
+// http://social.msdn.microsoft.com/forums/vstudio/en-US/504c6598-6076-4acf-96b6-e6acb475d302/vc-multiple-inheritance-empty-base-classes-bloats-object-size
+//
+// FIXME: Remove this #if directive once VC++'s issue gets fixed.
+// Note that we're going to split CSSValue class into two classes; CSSOMValue
+// (assumed name) which derives ScriptWrappable and CSSValue (new one) which
+// doesn't derive ScriptWrappable or ScriptWrappableBase. Then, we can safely
+// remove this #if directive.
+#if ENABLE(OILPAN) && COMPILER(MSVC)
+    , public ScriptWrappableBase
+#endif
+{
     uint32_t bitfields;
 };
 
@@ -197,10 +210,6 @@ bool CSSValue::equals(const CSSValue& other) const
             return compareCSSValues<CSSImageSetValue>(*this, other);
         case CSSFilterClass:
             return compareCSSValues<CSSFilterValue>(*this, other);
-        case CSSArrayFunctionValueClass:
-            return compareCSSValues<CSSArrayFunctionValue>(*this, other);
-        case SVGPaintClass:
-            return compareCSSValues<SVGPaint>(*this, other);
         case CSSSVGDocumentClass:
             return compareCSSValues<CSSSVGDocumentValue>(*this, other);
         default:
@@ -279,10 +288,6 @@ String CSSValue::cssText() const
         return toCSSImageSetValue(this)->customCSSText();
     case CSSFilterClass:
         return toCSSFilterValue(this)->customCSSText();
-    case CSSArrayFunctionValueClass:
-        return toCSSArrayFunctionValue(this)->customCSSText();
-    case SVGPaintClass:
-        return toSVGPaint(this)->customCSSText();
     case CSSSVGDocumentClass:
         return toCSSSVGDocumentValue(this)->customCSSText();
     }
@@ -384,12 +389,6 @@ void CSSValue::destroy()
     case CSSFilterClass:
         delete toCSSFilterValue(this);
         return;
-    case CSSArrayFunctionValueClass:
-        delete toCSSArrayFunctionValue(this);
-        return;
-    case SVGPaintClass:
-        delete toSVGPaint(this);
-        return;
     case CSSSVGDocumentClass:
         delete toCSSSVGDocumentValue(this);
         return;
@@ -401,7 +400,7 @@ void CSSValue::finalizeGarbageCollectedObject()
 {
     if (m_isTextClone) {
         ASSERT(isCSSOMSafe());
-        static_cast<TextCloneCSSValue*>(this)->~TextCloneCSSValue();
+        toTextCloneCSSValue(this)->~TextCloneCSSValue();
         return;
     }
     ASSERT(!isCSSOMSafe() || isSubtypeExposedToCSSOM());
@@ -491,12 +490,6 @@ void CSSValue::finalizeGarbageCollectedObject()
     case CSSFilterClass:
         toCSSFilterValue(this)->~CSSFilterValue();
         return;
-    case CSSArrayFunctionValueClass:
-        toCSSArrayFunctionValue(this)->~CSSArrayFunctionValue();
-        return;
-    case SVGPaintClass:
-        toSVGPaint(this)->~SVGPaint();
-        return;
     case CSSSVGDocumentClass:
         toCSSSVGDocumentValue(this)->~CSSSVGDocumentValue();
         return;
@@ -508,7 +501,7 @@ void CSSValue::trace(Visitor* visitor)
 {
     if (m_isTextClone) {
         ASSERT(isCSSOMSafe());
-        static_cast<TextCloneCSSValue*>(this)->traceAfterDispatch(visitor);
+        toTextCloneCSSValue(this)->traceAfterDispatch(visitor);
         return;
     }
     ASSERT(!isCSSOMSafe() || isSubtypeExposedToCSSOM());
@@ -598,12 +591,6 @@ void CSSValue::trace(Visitor* visitor)
     case CSSFilterClass:
         toCSSFilterValue(this)->traceAfterDispatch(visitor);
         return;
-    case CSSArrayFunctionValueClass:
-        toCSSArrayFunctionValue(this)->traceAfterDispatch(visitor);
-        return;
-    case SVGPaintClass:
-        toSVGPaint(this)->traceAfterDispatch(visitor);
-        return;
     case CSSSVGDocumentClass:
         toCSSSVGDocumentValue(this)->traceAfterDispatch(visitor);
         return;
@@ -623,14 +610,10 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSValue::cloneForCSSOM() const
         return toCSSImageValue(this)->cloneForCSSOM();
     case CSSFilterClass:
         return toCSSFilterValue(this)->cloneForCSSOM();
-    case CSSArrayFunctionValueClass:
-        return toCSSArrayFunctionValue(this)->cloneForCSSOM();
     case CSSTransformClass:
         return toCSSTransformValue(this)->cloneForCSSOM();
     case ImageSetClass:
         return toCSSImageSetValue(this)->cloneForCSSOM();
-    case SVGPaintClass:
-        return toSVGPaint(this)->cloneForCSSOM();
     default:
         ASSERT(!isSubtypeExposedToCSSOM());
         return TextCloneCSSValue::create(classType(), cssText());

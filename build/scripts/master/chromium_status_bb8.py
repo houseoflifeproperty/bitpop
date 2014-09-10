@@ -127,6 +127,10 @@ class HorizontalOneBoxPerBuilder(base.HtmlResource):
             can be used to see builds from any builder in the set. If no
             builder= is given, shows them all.
   """
+  def __init__(self, builder_filter_fn=None, *args, **kwargs):
+    super(HorizontalOneBoxPerBuilder, self).__init__(*args, **kwargs)
+    self.builder_filter_fn = builder_filter_fn or (lambda b: True)
+
 
   # pylint: disable=W0221
   def content(self, request, cxt):
@@ -134,6 +138,8 @@ class HorizontalOneBoxPerBuilder(base.HtmlResource):
     builders = request.args.get("builder", status.getBuilderNames())
     cxt_builders = []
     for builder_name in builders:
+      if not self.builder_filter_fn(builder_name):
+        continue
       try:
         builder_status = status.getBuilder(builder_name)
       except KeyError:
@@ -261,13 +267,16 @@ class ConsoleStatusResource(console.ConsoleStatusResource):
     return console.ConsoleStatusResource.content(self, request, cxt)
 
 
-def SetupChromiumPages(webstatus, tagComparator=None):
+def SetupChromiumPages(webstatus, tagComparator=None, customEndpoints=None,
+                       console_repo_filter=None, console_builder_filter=None):
   """Add customizations to default web reporting."""
 
   def _tick_filter(n, stride):
     n = ((n / stride) + 1) * stride
     return filter(lambda x: x % (n/stride) == 0, range(n+1))
 
+  if not customEndpoints:
+    customEndpoints = {}
   orig_shortrev = webstatus.templates.filters['shortrev']
 
   webstatus.templates.filters.update(
@@ -282,9 +291,15 @@ def SetupChromiumPages(webstatus, tagComparator=None):
         'fixname': lambda x: x.translate(None, ' -():'),
         'extract_index': lambda x, i: [y[i] for y in x] })
 
+  kwargs = {}
+  if console_repo_filter:
+    kwargs['repository'] = console_repo_filter
+  if console_builder_filter:
+    kwargs['builder_filter_fn'] = console_builder_filter
   console_ = ConsoleStatusResource(
       orderByTime=webstatus.orderConsoleByTime,
-      tagComparator=tagComparator)
+      tagComparator=tagComparator,
+      **kwargs)
 
   webstatus.putChild("stats", stats.StatsStatusResource())
   webstatus.putChild("waterfall", WaterfallStatusResource())
@@ -292,5 +307,8 @@ def SetupChromiumPages(webstatus, tagComparator=None):
   webstatus.putChild("grid", console_)
   webstatus.putChild("tgrid", console_)
   webstatus.putChild("horizontal_one_box_per_builder",
-                     HorizontalOneBoxPerBuilder())
+                     HorizontalOneBoxPerBuilder(
+                         builder_filter_fn=console_builder_filter))
+  for url, resource in customEndpoints.items():
+    webstatus.putChild(url, resource)
   return webstatus

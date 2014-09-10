@@ -33,7 +33,7 @@
 #include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/BitArray.h"
 
-namespace WebCore {
+namespace blink {
 
 typedef BitArray<numCSSProperties> CSSPropertySwitches;
 
@@ -45,17 +45,6 @@ static void setCSSPropertiesEnabled(CSSPropertyID* properties, size_t length, bo
 
 static void setPropertySwitchesFromRuntimeFeatures()
 {
-    CSSPropertyID exclusionProperties[] = {
-        CSSPropertyWebkitWrapFlow,
-        CSSPropertyWebkitWrapThrough,
-    };
-    setCSSPropertiesEnabled(exclusionProperties, WTF_ARRAY_LENGTH(exclusionProperties), RuntimeEnabledFeatures::cssExclusionsEnabled());
-    CSSPropertyID shapeProperties[] = {
-        CSSPropertyShapeMargin,
-        CSSPropertyShapeImageThreshold,
-        CSSPropertyShapeOutside,
-    };
-    setCSSPropertiesEnabled(shapeProperties, WTF_ARRAY_LENGTH(shapeProperties), RuntimeEnabledFeatures::cssShapesEnabled());
     CSSPropertyID css3TextDecorationProperties[] = {
         CSSPropertyTextDecorationColor,
         CSSPropertyTextDecorationLine,
@@ -84,7 +73,8 @@ static void setPropertySwitchesFromRuntimeFeatures()
         CSSPropertyGridTemplateAreas,
         CSSPropertyGridTemplate,
         CSSPropertyGrid,
-        CSSPropertyJustifySelf
+        CSSPropertyJustifySelf,
+        CSSPropertyJustifyItems
     };
     setCSSPropertiesEnabled(cssGridLayoutProperties, WTF_ARRAY_LENGTH(cssGridLayoutProperties), RuntimeEnabledFeatures::cssGridLayoutEnabled());
     CSSPropertyID cssObjectFitPositionProperties[] = {
@@ -106,19 +96,8 @@ static void setPropertySwitchesFromRuntimeFeatures()
     };
     setCSSPropertiesEnabled(animationProperties, WTF_ARRAY_LENGTH(animationProperties), RuntimeEnabledFeatures::cssAnimationUnprefixedEnabled());
 
-    CSSPropertyID transformProperties[] = {
-        CSSPropertyBackfaceVisibility,
-        CSSPropertyPerspective,
-        CSSPropertyPerspectiveOrigin,
-        CSSPropertyTransform,
-        CSSPropertyTransformOrigin,
-        CSSPropertyTransformStyle
-    };
-    setCSSPropertiesEnabled(transformProperties, WTF_ARRAY_LENGTH(transformProperties), RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled());
-
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyMixBlendMode, RuntimeEnabledFeatures::cssCompositingEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyIsolation, RuntimeEnabledFeatures::cssCompositingEnabled());
-    RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyTouchAction, RuntimeEnabledFeatures::cssTouchActionEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyTouchActionDelay, RuntimeEnabledFeatures::cssTouchActionDelayEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyMaskSourceType, RuntimeEnabledFeatures::cssMaskSourceTypeEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyColumnFill, RuntimeEnabledFeatures::regionBasedColumnsEnabled());
@@ -174,4 +153,4 @@ void RuntimeCSSEnabled::filterEnabledCSSPropertiesIntoVector(const CSSPropertyID
     }
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -5,28 +5,6 @@
 'use strict';
 
 /**
- * @type {DOMFileSystem}
- */
-var fileSystem = null;
-
-/**
- * @type {string}
- * @const
- */
-var FILE_SYSTEM_ID = 'vanilla';
-
-/**
- * @type {Object}
- * @const
- */
-var TESTING_ROOT = Object.freeze({
-  isDirectory: true,
-  name: '',
-  size: 0,
-  modificationTime: new Date(2014, 4, 28, 10, 39, 15)
-});
-
-/**
  * @type {Object}
  * @const
  */
@@ -60,26 +38,6 @@ var TESTING_TIRAMISU_FILE = Object.freeze({
 });
 
 /**
- * Gets volume information for the provided file system.
- *
- * @param {string} fileSystemId Id of the provided file system.
- * @param {function(Object)} callback Callback to be called on result, with the
- *     volume information object in case of success, or null if not found.
- */
-function getVolumeInfo(fileSystemId, callback) {
-  chrome.fileBrowserPrivate.getVolumeMetadataList(function(volumeList) {
-    for (var i = 0; i < volumeList.length; i++) {
-      if (volumeList[i].extensionId == chrome.runtime.id &&
-          volumeList[i].fileSystemId == fileSystemId) {
-        callback(volumeList[i]);
-        return;
-      }
-    }
-    callback(null);
-  });
-}
-
-/**
  * Returns entries in the requested directory.
  *
  * @param {ReadDirectoryRequestedOptions} options Options.
@@ -88,7 +46,7 @@ function getVolumeInfo(fileSystemId, callback) {
  * @param {function(string)} onError Error callback with an error code.
  */
 function onReadDirectoryRequested(options, onSuccess, onError) {
-  if (options.fileSystemId != FILE_SYSTEM_ID) {
+  if (options.fileSystemId != test_util.FILE_SYSTEM_ID) {
     onError('SECURITY');  // enum ProviderError.
     return;
   }
@@ -103,67 +61,26 @@ function onReadDirectoryRequested(options, onSuccess, onError) {
 }
 
 /**
- * Returns metadata for the requested entry.
- *
- * To successfully acquire a DirectoryEntry, or even a DOMFileSystem, this event
- * must be implemented and return correct values.
- *
- * @param {GetMetadataRequestedOptions} options Options.
- * @param {function(Object)} onSuccess Success callback with metadata passed
- *     an argument.
- * @param {function(string)} onError Error callback with an error code.
- */
-function onGetMetadataRequested(options, onSuccess, onError) {
-  if (options.fileSystemId != FILE_SYSTEM_ID) {
-    onError('SECURITY');  // enum ProviderError.
-    return;
-  }
-
-  if (options.entryPath == '/') {
-    onSuccess(TESTING_ROOT);
-    return;
-  }
-
-  if (options.entryPath == '/' + TESTING_HELLO_DIR.name) {
-    onSuccess(TESTING_HELLO_DIR);
-    return;
-  }
-
-  onError('NOT_FOUND');  // enum ProviderError.
-}
-
-/**
  * Sets up the tests. Called once per all test cases. In case of a failure,
  * the callback is not called.
  *
  * @param {function()} callback Success callback.
  */
 function setUp(callback) {
-  chrome.fileSystemProvider.mount(
-      {
-        fileSystemId: FILE_SYSTEM_ID,
-        displayName: 'chocolate.zip'
-      },
-      function() {
-        chrome.fileSystemProvider.onReadDirectoryRequested.addListener(
-            onReadDirectoryRequested);
-        chrome.fileSystemProvider.onGetMetadataRequested.addListener(
-            onGetMetadataRequested);
-        getVolumeInfo(FILE_SYSTEM_ID, function(volumeInfo) {
-          chrome.test.assertTrue(!!volumeInfo);
-          chrome.fileBrowserPrivate.requestFileSystem(
-              volumeInfo.volumeId,
-              function(inFileSystem) {
-                chrome.test.assertTrue(!!inFileSystem);
+  chrome.fileSystemProvider.onGetMetadataRequested.addListener(
+      test_util.onGetMetadataRequestedDefault);
 
-                fileSystem = inFileSystem;
-                callback();
-              });
-        });
-      },
-      function() {
-        chrome.test.fail();
-      });
+  test_util.defaultMetadata['/' + TESTING_HELLO_DIR.name] =
+      TESTING_HELLO_DIR;
+  test_util.defaultMetadata['/' + TESTING_HELLO_DIR.name + '/' +
+        TESTING_TIRAMISU_FILE.name] = TESTING_TIRAMISU_FILE;
+  test_util.defaultMetadata['/' + TESTING_HELLO_DIR.name + '/' +
+      TESTING_CANDIES_DIR.name] = TESTING_CANDIES_DIR;
+
+  chrome.fileSystemProvider.onReadDirectoryRequested.addListener(
+      onReadDirectoryRequested);
+
+  test_util.mountFileSystem(callback);
 }
 
 /**
@@ -175,7 +92,7 @@ function runTests() {
     // should succeed.
     function readEntriesSuccess() {
       var onTestSuccess = chrome.test.callbackPass();
-      fileSystem.root.getDirectory(
+      test_util.fileSystem.root.getDirectory(
           'hello',
           {create: false},
           function(dirEntry) {
@@ -212,7 +129,7 @@ function runTests() {
     // error.
     function readEntriesError() {
       var onTestSuccess = chrome.test.callbackPass();
-      fileSystem.root.getDirectory(
+      test_util.fileSystem.root.getDirectory(
           'cranberries',
           {create: false},
           function(dirEntry) {

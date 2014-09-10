@@ -23,18 +23,18 @@ def GenSteps(api):
   s.name = api.properties['repo_name']
   s.url = api.properties['repo_url']
   s.revision = 'refs/remotes/origin/master'
-  yield api.gclient.checkout(spec)
+  api.gclient.checkout(spec)
   # Many following steps depends on checkout being set as 'src'
   api.path['checkout'] = api.path['slave_build'].join('src')
   api.chromium.set_config('codesearch')
-  yield api.chromium.runhooks()
+  api.chromium.runhooks()
 
-  yield api.step('archive source',
+  api.step('archive source',
                  [api.path['build'].join('scripts',
                                  'slave', 'archive_source_codesearch.py'),
                   'src', 'src-internal', '-f', tarball_name])
 
-  yield api.gsutil.upload(
+  api.gsutil.upload(
       name='upload source tarball',
       source=api.path['slave_build'].join(tarball_name),
       bucket=bucket_name,

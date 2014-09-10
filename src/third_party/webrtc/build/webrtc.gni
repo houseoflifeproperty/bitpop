@@ -25,12 +25,25 @@ declare_args() {
   # when building voice engine exclusively.
   enable_video = true
 
+  # Disable this to not build libvpx and instead use an externally provided lib.
+  build_libvpx = true
+
   # Selects fixed-point code where possible.
   prefer_fixed_point = false
 
-  build_libjpeg = true
+  # Enable data logging. Produces text files with data logged within engines
+  # which can be easily parsed for offline processing.
+  enable_data_logging = false
+
   # Enables the use of protocol buffers for debug recordings.
   enable_protobuf = true
+
+  # Disable these to not build components which can be externally provided.
+  build_json = true
+  build_libjpeg = true
+  build_libyuv = true
+  build_libvpx = true
+  build_ssl = true
 
   # Disable by default.
   have_dbus_glib = false

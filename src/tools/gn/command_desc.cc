@@ -10,12 +10,12 @@
 #include "tools/gn/commands.h"
 #include "tools/gn/config.h"
 #include "tools/gn/config_values_extractors.h"
-#include "tools/gn/file_template.h"
 #include "tools/gn/filesystem_utils.h"
 #include "tools/gn/item.h"
 #include "tools/gn/label.h"
 #include "tools/gn/setup.h"
 #include "tools/gn/standard_out.h"
+#include "tools/gn/substitution_writer.h"
 #include "tools/gn/target.h"
 
 namespace commands {
@@ -58,9 +58,13 @@ void RecursiveCollectChildDeps(const Target* target, std::set<Label>* result) {
     RecursiveCollectDeps(datadeps[i].ptr, result);
 }
 
-// Prints dependencies of the given target (not the target itself).
+// Prints dependencies of the given target (not the target itself). If the
+// set is non-null, new targets encountered will be added to the set, and if
+// a dependency is in the set already, it will not be recused into. When the
+// set is null, all dependencies will be printed.
 void RecursivePrintDeps(const Target* target,
                         const Label& default_toolchain,
+                        std::set<const Target*>* seen_targets,
                         int indent_level) {
   LabelTargetVector sorted_deps = target->deps();
   const LabelTargetVector& datadeps = target->datadeps();
@@ -70,6 +74,8 @@ void RecursivePrintDeps(const Target* target,
 
   std::string indent(indent_level * 2, ' ');
   for (size_t i = 0; i < sorted_deps.size(); i++) {
+    const Target* cur_dep = sorted_deps[i].ptr;
+
     // Don't print groups. Groups are flattened such that the deps of the
     // group are added directly to the target that depended on the group.
     // Printing and recursing into groups here will cause such targets to be
@@ -78,12 +84,31 @@ void RecursivePrintDeps(const Target* target,
     // It would be much more intuitive to do the opposite and not display the
     // deps that were copied from the group to the target and instead display
     // the group, but the source of those dependencies is not tracked.
-    if (sorted_deps[i].ptr->output_type() == Target::GROUP)
+    if (cur_dep->output_type() == Target::GROUP)
       continue;
 
     OutputString(indent +
-        sorted_deps[i].label.GetUserVisibleName(default_toolchain) + "\n");
-    RecursivePrintDeps(sorted_deps[i].ptr, default_toolchain, indent_level + 1);
+        cur_dep->label().GetUserVisibleName(default_toolchain));
+    bool print_children = true;
+    if (seen_targets) {
+      if (seen_targets->find(cur_dep) == seen_targets->end()) {
+        // New target, mark it visited.
+        seen_targets->insert(cur_dep);
+      } else {
+        // Already seen.
+        print_children = false;
+        // Only print "..." if something is actually elided, which means that
+        // the current target has children.
+        if (!cur_dep->deps().empty() || !cur_dep->datadeps().empty())
+          OutputString("...");
+      }
+    }
+
+    OutputString("\n");
+    if (print_children) {
+      RecursivePrintDeps(cur_dep, default_toolchain, seen_targets,
+                         indent_level + 1);
+    }
   }
 }
 
@@ -95,7 +120,15 @@ void PrintDeps(const Target* target, bool display_header) {
   if (cmdline->HasSwitch("tree")) {
     if (display_header)
       OutputString("\nDependency tree:\n");
-    RecursivePrintDeps(target, toolchain_label, 1);
+
+    if (cmdline->HasSwitch("all")) {
+      // Show all tree deps with no eliding.
+      RecursivePrintDeps(target, toolchain_label, NULL, 1);
+    } else {
+      // Don't recurse into duplicates.
+      std::set<const Target*> seen_targets;
+      RecursivePrintDeps(target, toolchain_label, &seen_targets, 1);
+    }
     return;
   }
 
@@ -112,8 +145,9 @@ void PrintDeps(const Target* target, bool display_header) {
       deps.push_back(*i);
   } else {
     if (display_header) {
-      OutputString("\nDirect dependencies "
-                   "(try also \"--all\" and \"--tree\"):\n");
+      OutputString(
+          "\nDirect dependencies "
+          "(try also \"--all\", \"--tree\", or even \"--all --tree\"):\n");
     }
 
     const LabelTargetVector& target_deps = target->deps();
@@ -216,8 +250,27 @@ void PrintConfigsVector(const Target* target,
   }
 }
 
+void PrintConfigsVector(const Target* target,
+                        const UniqueVector<LabelConfigPair>& configs,
+                        const std::string& heading,
+                        bool display_header) {
+  if (configs.empty())
+    return;
+
+  // Don't sort since the order determines how things are processed.
+  if (display_header)
+    OutputString("\n" + heading + " (in order applying):\n");
+
+  Label toolchain_label = target->label().GetToolchainLabel();
+  for (size_t i = 0; i < configs.size(); i++) {
+    OutputString("  " +
+        configs[i].label.GetUserVisibleName(toolchain_label) + "\n");
+  }
+}
+
 void PrintConfigs(const Target* target, bool display_header) {
-  PrintConfigsVector(target, target->configs(), "configs", display_header);
+  PrintConfigsVector(target, target->configs().vector(), "configs",
+                     display_header);
 }
 
 void PrintDirectDependentConfigs(const Target* target, bool display_header) {
@@ -257,31 +310,35 @@ void PrintInputs(const Target* target, bool display_header) {
 }
 
 void PrintOutputs(const Target* target, bool display_header) {
+  if (display_header)
+    OutputString("\noutputs:\n");
+
   if (target->output_type() == Target::ACTION) {
-    // Just display the outputs directly.
-    PrintFileList(target->action_values().outputs(), "outputs", false,
-                  display_header);
-  } else if (target->output_type() == Target::ACTION_FOREACH) {
-    // Display both the output pattern and resolved list.
-    if (display_header)
-      OutputString("\noutputs:\n");
-
-    // Display the pattern.
-    OutputString("  Output pattern:\n");
-    PrintFileList(target->action_values().outputs(), "", true, false);
-
-    // Now display what that resolves to given the sources.
-    OutputString("\n  Resolved output file list:\n");
-
-    std::vector<std::string> output_strings;
-    FileTemplate file_template = FileTemplate::GetForTargetOutputs(target);
-    for (size_t i = 0; i < target->sources().size(); i++)
-      file_template.Apply(target->sources()[i], &output_strings);
-
-    std::sort(output_strings.begin(), output_strings.end());
-    for (size_t i = 0; i < output_strings.size(); i++) {
-      OutputString("    " + output_strings[i] + "\n");
+    // Action, print out outputs, don't apply sources to it.
+    for (size_t i = 0; i < target->action_values().outputs().list().size();
+         i++) {
+      OutputString("  " +
+                   target->action_values().outputs().list()[i].AsString() +
+                   "\n");
     }
+  } else {
+    const SubstitutionList& outputs = target->action_values().outputs();
+    if (!outputs.required_types().empty()) {
+      // Display the pattern and resolved pattern separately, since there are
+      // subtitutions used.
+      OutputString("  Output pattern:\n");
+      for (size_t i = 0; i < outputs.list().size(); i++)
+        OutputString("    " + outputs.list()[i].AsString() + "\n");
+
+      // Now display what that resolves to given the sources.
+      OutputString("\n  Resolved output file list:\n");
+    }
+
+    // Resolved output list.
+    std::vector<SourceFile> output_files;
+    SubstitutionWriter::ApplyListToSources(target->settings(), outputs,
+                                           target->sources(), &output_files);
+    PrintFileList(output_files, "", true, false);
   }
 }
 
@@ -294,16 +351,18 @@ void PrintScript(const Target* target, bool display_header) {
 void PrintArgs(const Target* target, bool display_header) {
   if (display_header)
     OutputString("\nargs:\n");
-  for (size_t i = 0; i < target->action_values().args().size(); i++)
-    OutputString("  " + target->action_values().args()[i] + "\n");
+  for (size_t i = 0; i < target->action_values().args().list().size(); i++) {
+    OutputString("  " +
+                 target->action_values().args().list()[i].AsString() + "\n");
+  }
 }
 
 void PrintDepfile(const Target* target, bool display_header) {
-  if (target->action_values().depfile().value().empty())
+  if (target->action_values().depfile().empty())
     return;
   if (display_header)
     OutputString("\ndepfile:\n");
-  OutputString("  " + target->action_values().depfile().value() + "\n");
+  OutputString("  " + target->action_values().depfile().AsString() + "\n");
 }
 
 // Attribute the origin for attributing from where a target came from. Does
@@ -404,8 +463,10 @@ const char kDesc_Help[] =
     "  deps [--all | --tree]\n"
     "      Show immediate (or, when \"--all\" or \"--tree\" is specified,\n"
     "      recursive) dependencies of the given target. \"--tree\" shows them\n"
-    "      in a tree format.  Otherwise, they will be sorted alphabetically.\n"
-    "      Both \"deps\" and \"datadeps\" will be included.\n"
+    "      in a tree format with duplicates elided (noted by \"...\").\n"
+    "      \"--all\" shows them sorted alphabetically. Using both flags will\n"
+    "      print a tree with no omissions. Both \"deps\" and \"datadeps\"\n"
+    "      will be included.\n"
     "\n"
     "  direct_dependent_configs\n"
     "  all_dependent_configs\n"

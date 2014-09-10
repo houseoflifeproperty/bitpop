@@ -124,6 +124,9 @@ class FakeBuildstepStatus(mock.Mock):
   def setHidden(self, hidden):
     return None
 
+  def isWaitingForLocks(self):
+    return False
+
 
 class FakeBuildStatus(mock.Mock):
   def __init__(self):
@@ -168,6 +171,14 @@ class AnnotatorCommandsTest(unittest.TestCase):
   def handleReturnCode(self, code):
     self.step.script_observer['step'].stepFinished()
     self.step.script_observer.handleReturnCode(code)
+
+  def startNewStep(self, name='example_step'):
+    self.handleOutputLine('@@@SEED_STEP %s@@@' % name)
+    self.handleOutputLine('@@@SEED_STEP_TEXT@%s@example_text@@@' % name)
+    self.handleOutputLine('@@@STEP_CURSOR %s@@@' % name)
+
+  def assertNothingToWait(self):
+    self.assertEquals(0, len(self.step.script_observer.stepsToWait()))
 
   def testAddAnnotatedSteps(self):
     self.handleOutputLine('@@@BUILD_STEP step@@@')
@@ -286,8 +297,10 @@ class AnnotatorCommandsTest(unittest.TestCase):
     self.handleOutputLine('@@@HALT_ON_FAILURE@@@')
 
     catchFailure = lambda r: self.assertEquals(
-        self.step_status.getBuild().receivedStatus, [builder.FAILURE])
+        self.step_status.getBuild().receivedStatus,
+        [builder.FAILURE, builder.FAILURE])
     self.step.deferred.addBoth(catchFailure)
+    self.startNewStep()
     self.handleOutputLine('@@@STEP_FAILURE@@@')
 
     self.assertEquals(self.step.script_observer.annotate_status,
@@ -301,6 +314,7 @@ class AnnotatorCommandsTest(unittest.TestCase):
 
   def testHonorZeroReturnCode(self):
     self.handleOutputLine('@@@HONOR_ZERO_RETURN_CODE@@@')
+    self.startNewStep()
     self.handleOutputLine('@@@STEP_FAILURE@@@')
     self.step.script_observer.handleReturnCode(0)
 
@@ -338,7 +352,7 @@ class AnnotatorCommandsTest(unittest.TestCase):
 
   def testForNoPreambleAfter1Step(self):
     self.handleOutputLine('this line is part of the preamble')
-    self.step.commandComplete(self.command)
+    self.step.scriptComplete(self.command)
     logs = self.step_status.getLogs()
     # buildbot will append 'stdio' for the first non-annotated section
     # but it won't show up in self.step_status.getLogs()
@@ -347,7 +361,7 @@ class AnnotatorCommandsTest(unittest.TestCase):
   def testForPreambleAfter2Steps(self):
     self.handleOutputLine('this line is part of the preamble')
     self.handleOutputLine('@@@BUILD_STEP step2@@@')
-    self.step.commandComplete(self.command)
+    self.step.scriptComplete(self.command)
     logs = [l for x in self.buildstatus.steps for l in x.getLogs()]
     # annotator adds a stdio for each buildstep added
     self.assertEquals([x.getName() for x in logs], ['preamble', 'stdio'])
@@ -356,7 +370,7 @@ class AnnotatorCommandsTest(unittest.TestCase):
     self.handleOutputLine('this line is part of the preamble')
     self.handleOutputLine('@@@BUILD_STEP step2@@@')
     self.handleOutputLine('@@@BUILD_STEP step3@@@')
-    self.step.commandComplete(self.command)
+    self.step.scriptComplete(self.command)
     logs = [l for x in self.buildstatus.steps for l in x.getLogs()]
     self.assertEquals([x.getName() for x in logs], ['preamble', 'stdio',
                                                     'stdio'])
@@ -383,6 +397,7 @@ class AnnotatorCommandsTest(unittest.TestCase):
     self.assertEquals(finished, [False, True, True, True, False])
     self.assertEquals(self.step.script_observer.annotate_status,
                       builder.SUCCESS)
+    self.assertNothingToWait()
 
   def testCursor(self):
     self.handleOutputLine('@@@BUILD_STEP step@@@')
@@ -443,6 +458,102 @@ class AnnotatorCommandsTest(unittest.TestCase):
         ['', 'AAthis is line one\nAAthis is line two'],
         []
     ])
+    self.assertNothingToWait()
+
+  def testNeverEndingBuild(self):
+    self.handleOutputLine('@@@SEED_STEP step1@@@')
+    self.handleOutputLine('@@@STEP_CURSOR step1@@@')
+    self.handleOutputLine('@@@STEP_STARTED@@@')
+    self.handleOutputLine('@@@STEP_CLOSED@@@')
+    self.handleOutputLine('@@@SEED_STEP step2@@@')
+    self.handleOutputLine('@@@STEP_CURSOR step2@@@')
+    self.handleOutputLine('@@@STEP_STARTED@@@')
+    self.handleOutputLine('@@@STEP_CLOSED@@@')
+    self.step.script_observer.handleReturnCode(0)
+
+    self.assertNothingToWait()
+
+  def testNeverEndingFailedBuild(self):
+    self.handleOutputLine('@@@SEED_STEP step1@@@')
+    self.handleOutputLine('@@@STEP_CURSOR step1@@@')
+    self.handleOutputLine('@@@STEP_STARTED@@@')
+    self.handleOutputLine('@@@STEP_CLOSED@@@')
+    self.handleOutputLine('@@@SEED_STEP step2@@@')
+    self.handleOutputLine('@@@STEP_CURSOR step2@@@')
+    self.handleOutputLine('@@@STEP_STARTED@@@')
+    self.handleOutputLine('@@@STEP_FAILURE@@@')
+    self.step.script_observer.handleReturnCode(0)
+
+    self.assertNothingToWait()
+
+  def testNeverEndingBuildWithBuildStep(self):
+    self.handleOutputLine('@@@BUILD_STEP step@@@')
+    self.handleOutputLine('@@@BUILD_STEP step1@@@')
+    self.handleOutputLine('@@@BUILD_STEP step2@@@')
+    self.step.script_observer.handleReturnCode(0)
+
+    self.assertNothingToWait()
+
+  def testNeverEndingBuildStepsWithFailedBuildStep(self):
+    self.handleOutputLine('@@@BUILD_STEP step@@@')
+    self.handleOutputLine('@@@BUILD_STEP step1@@@')
+    self.handleOutputLine('@@@BUILD_STEP step2@@@')
+    self.handleOutputLine('@@@STEP_FAILURE@@@')
+    self.step.script_observer.handleReturnCode(0)
+
+    self.assertNothingToWait()
+
+  def testCannotClosePreamble(self):
+    self.assertRaises(ValueError, self.handleOutputLine, '@@@STEP_CLOSED@@@')
+
+  def testCannotClosePreambleUsingDoubleStepClose(self):
+    self.startNewStep()
+    self.handleOutputLine('@@@STEP_CLOSED@@@')
+    self.assertRaises(ValueError, self.handleOutputLine, '@@@STEP_CLOSED@@@')
+
+  def testPreambleNotClosedOnReturnCode(self):
+    self.startNewStep()
+    self.handleOutputLine('@@@STEP_CLOSED@@@')
+    self.step.script_observer.handleReturnCode(0)
+    preamble_step = self.step.script_observer.sections[0]['step']
+    self.assertTrue(preamble_step.isStarted())
+    self.assertFalse(preamble_step.isFinished())
+
+  def testCannotClosePreamble(self):
+    self.assertRaises(ValueError, self.handleOutputLine, '@@@STEP_CLOSED@@@')
+
+  def testCannotClosePreambleUsingDoubleStepClose(self):
+    self.startNewStep()
+    self.handleOutputLine('@@@STEP_CLOSED@@@')
+    self.assertRaises(ValueError, self.handleOutputLine, '@@@STEP_CLOSED@@@')
+
+  def testPreambleNotClosedOnReturnCode(self):
+    self.startNewStep()
+    self.handleOutputLine('@@@STEP_CLOSED@@@')
+    self.step.script_observer.handleReturnCode(0)
+    preamble_step = self.step.script_observer.sections[0]['step']
+    self.assertTrue(preamble_step.isStarted())
+    self.assertFalse(preamble_step.isFinished())
+
+  def testStopBuild(self):
+    self.startNewStep()
+    self.step.interrupt('it is time')
+
+  def testCannotClosePreamble(self):
+    self.assertRaises(ValueError, self.handleOutputLine, '@@@STEP_CLOSED@@@')
+
+  def testCannotClosePreambleUsingDoubleStepClose(self):
+    self.startNewStep()
+    self.handleOutputLine('@@@STEP_CLOSED@@@')
+    self.assertRaises(ValueError, self.handleOutputLine, '@@@STEP_CLOSED@@@')
+
+  def testPreambleNotClosedOnReturnCode(self):
+    self.startNewStep()
+    self.handleOutputLine('@@@STEP_CLOSED@@@')
+    self.step.script_observer.handleReturnCode(0)
+    preamble_step = self.step.script_observer.sections[0]['step']
+    self.assertTrue(preamble_step.isStarted())
+    self.assertFalse(preamble_step.isFinished())
 
   def testHandleRealOutput(self):
     with open(os.path.join(test_env.DATA_PATH,

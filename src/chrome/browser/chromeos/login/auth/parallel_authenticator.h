@@ -12,19 +12,19 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
-#include "chrome/browser/chromeos/login/auth/auth_attempt_state.h"
-#include "chrome/browser/chromeos/login/auth/auth_attempt_state_resolver.h"
-#include "chrome/browser/chromeos/login/auth/authenticator.h"
-#include "chrome/browser/chromeos/login/auth/test_attempt_state.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
+#include "chromeos/login/auth/auth_attempt_state.h"
+#include "chromeos/login/auth/auth_attempt_state_resolver.h"
+#include "chromeos/login/auth/authenticator.h"
+#include "chromeos/login/auth/test_attempt_state.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 
-class LoginFailure;
+class AuthFailure;
 class Profile;
 
 namespace chromeos {
 
-class LoginStatusConsumer;
+class AuthStatusConsumer;
 
 // Authenticates a Chromium OS user against cryptohome.
 // Relies on the fact that online authentications has been already performed
@@ -36,7 +36,7 @@ class LoginStatusConsumer;
 // and then call Resolve().  Resolve() will attempt to
 // determine which AuthState we're in, based on the info at hand.
 // It then triggers further action based on the calculated AuthState; this
-// further action might include calling back the passed-in LoginStatusConsumer
+// further action might include calling back the passed-in AuthStatusConsumer
 // to signal that login succeeded or failed, waiting for more outstanding
 // operations to complete, or triggering some more Cryptohome method calls.
 //
@@ -80,7 +80,7 @@ class ParallelAuthenticator : public Authenticator,
                              // but offline succeeded.
     GUEST_LOGIN = 17,        // Logged in guest mode.
     PUBLIC_ACCOUNT_LOGIN = 18,        // Logged into a public account.
-    LOCALLY_MANAGED_USER_LOGIN = 19,  // Logged in as a locally managed user.
+    SUPERVISED_USER_LOGIN = 19,       // Logged in as a supervised user.
     LOGIN_FAILED = 20,       // Login denied.
     OWNER_REQUIRED = 21,     // Login is restricted to the owner only.
     FAILED_USERNAME_HASH = 22,        // Failed GetSanitizedUsername request.
@@ -89,7 +89,7 @@ class ParallelAuthenticator : public Authenticator,
                                       // cryptohome after a login failure.
   };
 
-  explicit ParallelAuthenticator(LoginStatusConsumer* consumer);
+  explicit ParallelAuthenticator(AuthStatusConsumer* consumer);
 
   // Authenticator overrides.
   virtual void CompleteLogin(Profile* profile,
@@ -97,9 +97,9 @@ class ParallelAuthenticator : public Authenticator,
 
   // Given |user_context|, this method attempts to authenticate to your
   // Chrome OS device. As soon as we have successfully mounted the encrypted
-  // home directory for the user, we will call consumer_->OnLoginSuccess()
+  // home directory for the user, we will call consumer_->OnAuthSuccess()
   // with the username.
-  // Upon failure to login consumer_->OnLoginFailure() is called
+  // Upon failure to login consumer_->OnAuthFailure() is called
   // with an error message.
   //
   // Uses |profile| when doing URL fetches.
@@ -108,14 +108,14 @@ class ParallelAuthenticator : public Authenticator,
 
   // Given |user_context|, this method attempts to authenticate to the cached
   // user_context. This will never contact the server even if it's online.
-  // The auth result is sent to LoginStatusConsumer in a same way as
+  // The auth result is sent to AuthStatusConsumer in a same way as
   // AuthenticateToLogin does.
   virtual void AuthenticateToUnlock(const UserContext& user_context) OVERRIDE;
 
-  // Initiates locally managed user login.
+  // Initiates supervised user login.
   // Creates cryptohome if missing or mounts existing one and
   // notifies consumer on the success/failure.
-  virtual void LoginAsLocallyManagedUser(
+  virtual void LoginAsSupervisedUser(
       const UserContext& user_context) OVERRIDE;
 
   // Initiates retail mode login.
@@ -126,10 +126,10 @@ class ParallelAuthenticator : public Authenticator,
   // Mounts tmpfs and notifies consumer on the success/failure.
   virtual void LoginOffTheRecord() OVERRIDE;
 
-  // Initiates login into the public account identified by |username|.
+  // Initiates login into a public session.
   // Mounts an ephemeral cryptohome and notifies consumer on the
   // success/failure.
-  virtual void LoginAsPublicAccount(const std::string& username) OVERRIDE;
+  virtual void LoginAsPublicSession(const UserContext& user_context) OVERRIDE;
 
   // Initiates login into the kiosk mode account identified by |app_user_id|.
   // Mounts an ephemeral guest cryptohome if |use_guest_mount| is |true|.
@@ -141,9 +141,9 @@ class ParallelAuthenticator : public Authenticator,
 
   // These methods must be called on the UI thread, as they make DBus calls
   // and also call back to the login UI.
-  virtual void OnRetailModeLoginSuccess() OVERRIDE;
-  virtual void OnLoginSuccess() OVERRIDE;
-  virtual void OnLoginFailure(const LoginFailure& error) OVERRIDE;
+  virtual void OnRetailModeAuthSuccess() OVERRIDE;
+  virtual void OnAuthSuccess() OVERRIDE;
+  virtual void OnAuthFailure(const AuthFailure& error) OVERRIDE;
   virtual void RecoverEncryptedData(
       const std::string& old_password) OVERRIDE;
   virtual void ResyncEncryptedData() OVERRIDE;
@@ -157,7 +157,7 @@ class ParallelAuthenticator : public Authenticator,
   // Must be called on the UI thread.
   virtual void Resolve() OVERRIDE;
 
-  void OnOffTheRecordLoginSuccess();
+  void OnOffTheRecordAuthSuccess();
   void OnPasswordChangeDetected();
 
  protected:
@@ -240,8 +240,8 @@ class ParallelAuthenticator : public Authenticator,
   bool remove_user_data_on_failure_;
 
   // When |remove_user_data_on_failure_| is set, we delay calling
-  // consumer_->OnLoginFailure() until we removed the user cryptohome.
-  const LoginFailure* delayed_login_failure_;
+  // consumer_->OnAuthFailure() until we removed the user cryptohome.
+  const AuthFailure* delayed_login_failure_;
 
   DISALLOW_COPY_AND_ASSIGN(ParallelAuthenticator);
 };

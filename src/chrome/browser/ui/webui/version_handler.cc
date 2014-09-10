@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/metrics/field_trial.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/profiles/profile.h"
@@ -107,7 +108,7 @@ void VersionHandler::HandleRequestVersionInfo(const base::ListValue* args) {
   base::ListValue variations_list;
   for (std::vector<std::string>::const_iterator it = variations.begin();
       it != variations.end(); ++it) {
-    variations_list.Append(base::Value::CreateStringValue(*it));
+    variations_list.Append(new base::StringValue(*it));
   }
 
   // In release mode, this will return an empty list to clear the section.

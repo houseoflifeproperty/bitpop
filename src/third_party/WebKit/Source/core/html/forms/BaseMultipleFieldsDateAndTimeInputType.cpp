@@ -51,7 +51,7 @@
 #include "platform/text/PlatformLocale.h"
 #include "wtf/DateMath.h"
 
-namespace WebCore {
+namespace blink {
 
 class DateTimeFormatValidator : public DateTimeFormat::TokenHandler {
 public:
@@ -326,7 +326,7 @@ PassRefPtr<RenderStyle> BaseMultipleFieldsDateAndTimeInputType::customStyleForRe
         newDisplay = INLINE_FLEX;
     else if (originalDisplay == BLOCK)
         newDisplay = FLEX;
-    TextDirection contentDirection = element().locale().isRTL() ? RTL : LTR;
+    TextDirection contentDirection = computedTextDirection();
     if (originalStyle->direction() == contentDirection && originalDisplay == newDisplay)
         return originalStyle;
 
@@ -494,11 +494,6 @@ void BaseMultipleFieldsDateAndTimeInputType::setValue(const String& sanitizedVal
     }
 }
 
-bool BaseMultipleFieldsDateAndTimeInputType::shouldUseInputMethod() const
-{
-    return false;
-}
-
 void BaseMultipleFieldsDateAndTimeInputType::stepAttributeChanged()
 {
     updateView();
@@ -620,6 +615,11 @@ void BaseMultipleFieldsDateAndTimeInputType::updateClearButtonVisibility()
     }
 }
 
-} // namespace WebCore
+TextDirection BaseMultipleFieldsDateAndTimeInputType::computedTextDirection()
+{
+    return element().locale().isRTL() ? RTL : LTR;
+}
+
+} // namespace blink
 
 #endif

@@ -32,6 +32,7 @@
 
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "platform/Logging.h"
 #include "modules/webdatabase/DatabaseAuthorizer.h"
 #include "modules/webdatabase/DatabaseBase.h"
@@ -79,7 +80,7 @@
 // The ref counting mechanims will automatically destruct the un-added
 // (and un-returned) databases instances.
 
-namespace WebCore {
+namespace blink {
 
 static const char versionKey[] = "WebKitDatabaseVersionKey";
 static const char infoTableName[] = "__WebKitDatabaseInfoTable__";
@@ -135,9 +136,9 @@ static bool setTextValueInDatabase(SQLiteDatabase& db, const String& query, cons
 }
 
 // FIXME: move all guid-related functions to a DatabaseVersionTracker class.
-static Mutex& guidMutex()
+static RecursiveMutex& guidMutex()
 {
-    AtomicallyInitializedStatic(Mutex&, mutex = *new Mutex);
+    AtomicallyInitializedStatic(RecursiveMutex&, mutex = *new RecursiveMutex);
     return mutex;
 }
 
@@ -145,7 +146,7 @@ typedef HashMap<DatabaseGuid, String> GuidVersionMap;
 static GuidVersionMap& guidToVersionMap()
 {
     // Ensure the the mutex is locked.
-    ASSERT(!guidMutex().tryLock());
+    ASSERT(guidMutex().locked());
     DEFINE_STATIC_LOCAL(GuidVersionMap, map, ());
     return map;
 }
@@ -154,7 +155,7 @@ static GuidVersionMap& guidToVersionMap()
 static inline void updateGuidVersionMap(DatabaseGuid guid, String newVersion)
 {
     // Ensure the the mutex is locked.
-    ASSERT(!guidMutex().tryLock());
+    ASSERT(guidMutex().locked());
 
     // Note: It is not safe to put an empty string into the guidToVersionMap() map.
     // That's because the map is cross-thread, but empty strings are per-thread.
@@ -170,7 +171,7 @@ typedef HashMap<DatabaseGuid, HashSet<DatabaseBackendBase*>*> GuidDatabaseMap;
 static GuidDatabaseMap& guidToDatabaseMap()
 {
     // Ensure the the mutex is locked.
-    ASSERT(!guidMutex().tryLock());
+    ASSERT(guidMutex().locked());
     DEFINE_STATIC_LOCAL(GuidDatabaseMap, map, ());
     return map;
 }
@@ -178,7 +179,7 @@ static GuidDatabaseMap& guidToDatabaseMap()
 static DatabaseGuid guidForOriginAndName(const String& origin, const String& name)
 {
     // Ensure the the mutex is locked.
-    ASSERT(!guidMutex().tryLock());
+    ASSERT(guidMutex().locked());
 
     String stringID = origin + "/" + name;
 
@@ -605,8 +606,8 @@ bool DatabaseBackendBase::isInterrupted()
 // See about:histograms in chromium.
 void DatabaseBackendBase::reportOpenDatabaseResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
 {
-    if (blink::Platform::current()->databaseObserver()) {
-        blink::Platform::current()->databaseObserver()->reportOpenDatabaseResult(
+    if (Platform::current()->databaseObserver()) {
+        Platform::current()->databaseObserver()->reportOpenDatabaseResult(
             createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
             stringIdentifier(), isSyncDatabase(),
             errorSite, webSqlErrorCode, sqliteErrorCode);
@@ -615,8 +616,8 @@ void DatabaseBackendBase::reportOpenDatabaseResult(int errorSite, int webSqlErro
 
 void DatabaseBackendBase::reportChangeVersionResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
 {
-    if (blink::Platform::current()->databaseObserver()) {
-        blink::Platform::current()->databaseObserver()->reportChangeVersionResult(
+    if (Platform::current()->databaseObserver()) {
+        Platform::current()->databaseObserver()->reportChangeVersionResult(
             createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
             stringIdentifier(), isSyncDatabase(),
             errorSite, webSqlErrorCode, sqliteErrorCode);
@@ -625,8 +626,8 @@ void DatabaseBackendBase::reportChangeVersionResult(int errorSite, int webSqlErr
 
 void DatabaseBackendBase::reportStartTransactionResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
 {
-    if (blink::Platform::current()->databaseObserver()) {
-        blink::Platform::current()->databaseObserver()->reportStartTransactionResult(
+    if (Platform::current()->databaseObserver()) {
+        Platform::current()->databaseObserver()->reportStartTransactionResult(
             createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
             stringIdentifier(), isSyncDatabase(),
             errorSite, webSqlErrorCode, sqliteErrorCode);
@@ -635,8 +636,8 @@ void DatabaseBackendBase::reportStartTransactionResult(int errorSite, int webSql
 
 void DatabaseBackendBase::reportCommitTransactionResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
 {
-    if (blink::Platform::current()->databaseObserver()) {
-        blink::Platform::current()->databaseObserver()->reportCommitTransactionResult(
+    if (Platform::current()->databaseObserver()) {
+        Platform::current()->databaseObserver()->reportCommitTransactionResult(
             createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
             stringIdentifier(), isSyncDatabase(),
             errorSite, webSqlErrorCode, sqliteErrorCode);
@@ -645,8 +646,8 @@ void DatabaseBackendBase::reportCommitTransactionResult(int errorSite, int webSq
 
 void DatabaseBackendBase::reportExecuteStatementResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
 {
-    if (blink::Platform::current()->databaseObserver()) {
-        blink::Platform::current()->databaseObserver()->reportExecuteStatementResult(
+    if (Platform::current()->databaseObserver()) {
+        Platform::current()->databaseObserver()->reportExecuteStatementResult(
             createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
             stringIdentifier(), isSyncDatabase(),
             errorSite, webSqlErrorCode, sqliteErrorCode);
@@ -655,8 +656,8 @@ void DatabaseBackendBase::reportExecuteStatementResult(int errorSite, int webSql
 
 void DatabaseBackendBase::reportVacuumDatabaseResult(int sqliteErrorCode)
 {
-    if (blink::Platform::current()->databaseObserver()) {
-        blink::Platform::current()->databaseObserver()->reportVacuumDatabaseResult(
+    if (Platform::current()->databaseObserver()) {
+        Platform::current()->databaseObserver()->reportVacuumDatabaseResult(
             createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
             stringIdentifier(), isSyncDatabase(), sqliteErrorCode);
     }
@@ -664,7 +665,7 @@ void DatabaseBackendBase::reportVacuumDatabaseResult(int sqliteErrorCode)
 
 void DatabaseBackendBase::logErrorMessage(const String& message)
 {
-    executionContext()->addConsoleMessage(StorageMessageSource, ErrorMessageLevel, message);
+    executionContext()->addConsoleMessage(ConsoleMessage::create(StorageMessageSource, ErrorMessageLevel, message));
 }
 
 ExecutionContext* DatabaseBackendBase::executionContext() const
@@ -672,4 +673,4 @@ ExecutionContext* DatabaseBackendBase::executionContext() const
     return databaseContext()->executionContext();
 }
 
-} // namespace WebCore
+} // namespace blink

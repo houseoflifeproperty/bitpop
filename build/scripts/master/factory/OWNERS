@@ -9,7 +9,6 @@ per-file syzygy_commands.py=chrisha@chromium.org
 per-file syzygy_commands.py=siggi@chromium.org
 per-file syzygy_factory.py=chrisha@chromium.org
 per-file syzygy_factory.py=siggi@chromium.org
-per-file webrtc_factory.py=kjellander@chromium.org
 per-file nacl_ports_factory.py.py=binji@chromium.org
 per-file nacl_ports_factory.py.py=sbc@chromium.org
 per-file nacl_ports_commands.py=binji@chromium.org

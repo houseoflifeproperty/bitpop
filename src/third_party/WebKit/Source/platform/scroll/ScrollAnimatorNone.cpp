@@ -41,7 +41,7 @@
 
 using namespace std;
 
-namespace WebCore {
+namespace blink {
 
 const double kFrameRate = 60;
 const double kTickTime = 1 / kFrameRate;
@@ -401,7 +401,7 @@ bool ScrollAnimatorNone::scroll(ScrollbarOrientation orientation, ScrollGranular
     if (!m_scrollableArea->scrollAnimatorEnabled())
         return ScrollAnimator::scroll(orientation, granularity, step, delta);
 
-    TRACE_EVENT0("webkit", "ScrollAnimatorNone::scroll");
+    TRACE_EVENT0("blink", "ScrollAnimatorNone::scroll");
 
     // FIXME: get the type passed in. MouseWheel could also be by line, but should still have different
     // animation parameters than the keyboard.
@@ -485,7 +485,7 @@ void ScrollAnimatorNone::updateVisibleLengths()
 
 void ScrollAnimatorNone::animationTimerFired()
 {
-    TRACE_EVENT0("webkit", "ScrollAnimatorNone::animationTimerFired");
+    TRACE_EVENT0("blink", "ScrollAnimatorNone::animationTimerFired");
 
     double currentTime = WTF::monotonicallyIncreasingTime();
 
@@ -500,7 +500,7 @@ void ScrollAnimatorNone::animationTimerFired()
     else
         m_animationActive = false;
 
-    TRACE_EVENT0("webkit", "ScrollAnimatorNone::notifyPositionChanged");
+    TRACE_EVENT0("blink", "ScrollAnimatorNone::notifyPositionChanged");
     notifyPositionChanged();
 
     if (!continueAnimation)
@@ -524,4 +524,4 @@ void ScrollAnimatorNone::stopAnimationTimerIfNeeded()
         m_animationActive = false;
 }
 
-} // namespace WebCore
+} // namespace blink

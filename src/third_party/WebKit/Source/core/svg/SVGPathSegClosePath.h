@@ -23,18 +23,18 @@
 
 #include "core/svg/SVGPathSegWithContext.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGPathSegClosePath FINAL : public SVGPathSegWithContext {
 public:
-    static PassRefPtr<SVGPathSegClosePath> create(SVGPathElement* element, SVGPathSegRole role)
+    static PassRefPtr<SVGPathSegClosePath> create(SVGPathElement* element)
     {
-        return adoptRef(new SVGPathSegClosePath(element, role));
+        return adoptRef(new SVGPathSegClosePath(element));
     }
 
 private:
-    SVGPathSegClosePath(SVGPathElement* element, SVGPathSegRole role)
-        : SVGPathSegWithContext(element, role)
+    SVGPathSegClosePath(SVGPathElement* element)
+        : SVGPathSegWithContext(element)
     {
         ScriptWrappable::init(this);
     }
@@ -43,6 +43,6 @@ private:
     virtual String pathSegTypeAsLetter() const OVERRIDE { return "Z"; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

@@ -12,6 +12,7 @@
 #include "ash/system/tray/system_tray_notifier.h"
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chromeos/login/login_state.h"
@@ -340,12 +341,17 @@ void ConnectToNetwork(const std::string& service_path,
                       gfx::NativeWindow parent_window) {
   NET_LOG_USER("ConnectToNetwork", service_path);
   const NetworkState* network = GetNetworkState(service_path);
-  if (network && !network->error().empty() && !network->security().empty()) {
-    NET_LOG_USER("Configure: " + network->error(), service_path);
-    // If the network is in an error state, show the configuration UI directly
-    // to avoid a spurious notification.
-    HandleUnconfiguredNetwork(service_path, parent_window);
-    return;
+  if (network) {
+    if (!network->error().empty() && !network->security().empty()) {
+      NET_LOG_USER("Configure: " + network->error(), service_path);
+      // If the network is in an error state, show the configuration UI directly
+      // to avoid a spurious notification.
+      HandleUnconfiguredNetwork(service_path, parent_window);
+      return;
+    } else if (network->RequiresActivation()) {
+      ActivateCellular(service_path);
+      return;
+    }
   }
   const bool check_error_state = true;
   CallConnectToNetwork(service_path, check_error_state, parent_window);
@@ -442,7 +448,7 @@ void ShowMobileSetup(const std::string& service_path) {
     return;
   }
   if (cellular->activation_state() != shill::kActivationStateActivated &&
-      cellular->activate_over_non_cellular_networks() &&
+      cellular->activation_type() == shill::kActivationTypeNonCellular &&
       !handler->DefaultNetwork()) {
     message_center::MessageCenter::Get()->AddNotification(
         message_center::Notification::CreateSystemNotification(
@@ -567,8 +573,8 @@ base::string16 ErrorString(const std::string& error,
         IDS_CHROMEOS_NETWORK_ERROR_PPP_AUTH_FAILED);
   }
 
-  if (StringToLowerASCII(error) ==
-      StringToLowerASCII(std::string(shill::kUnknownString))) {
+  if (base::StringToLowerASCII(error) ==
+      base::StringToLowerASCII(std::string(shill::kUnknownString))) {
     return l10n_util::GetStringUTF16(IDS_CHROMEOS_NETWORK_ERROR_UNKNOWN);
   }
   return l10n_util::GetStringFUTF16(IDS_NETWORK_UNRECOGNIZED_ERROR,

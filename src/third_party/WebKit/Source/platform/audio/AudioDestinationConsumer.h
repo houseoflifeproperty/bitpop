@@ -34,7 +34,7 @@
 #include "platform/PlatformExport.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBus;
 
@@ -46,6 +46,6 @@ public:
     virtual void consumeAudio(AudioBus*, size_t numberOfFrames) = 0;
 };
 
-} // WebCore
+} // namespace blink
 
 #endif // AudioDestinationConsumer_h

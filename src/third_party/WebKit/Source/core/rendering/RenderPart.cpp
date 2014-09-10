@@ -34,9 +34,7 @@
 #include "core/rendering/RenderView.h"
 #include "core/rendering/svg/RenderSVGRoot.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 RenderPart::RenderPart(Element* node)
     : RenderWidget(node)
@@ -129,7 +127,7 @@ bool RenderPart::nodeAtPoint(const HitTestRequest& request, HitTestResult& resul
     return RenderWidget::nodeAtPoint(request, result, locationInContainer, accumulatedOffset, action);
 }
 
-CompositingReasons RenderPart::additionalCompositingReasons(CompositingTriggerFlags) const
+CompositingReasons RenderPart::additionalCompositingReasons() const
 {
     if (requiresAcceleratedCompositing())
         return CompositingReasonIFrame;

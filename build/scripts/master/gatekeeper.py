@@ -36,10 +36,9 @@ class GateKeeper(chromium_notifier.ChromiumNotifier):
   See builder.interfaces.IStatusReceiver to have more information about the
   parameters type."""
 
-
   def __init__(self, tree_status_url, tree_message=None,
                check_revisions=True, throttle=False,
-               gitpoller_paths=None, **kwargs):
+               gitpoller_paths=None, branches=None, **kwargs):
     """Constructor with following specific arguments (on top of base class').
 
     @type tree_status_url: String.
@@ -59,6 +58,10 @@ class GateKeeper(chromium_notifier.ChromiumNotifier):
                            used by the GitPoller(s). Implies that this
                            GateKeeper will be operating in git mode for a given
                            repository url.
+
+    @type branches: [String] or None
+    @param branches: A list of strings defining branches of interest.  If None
+                     (the default) indicates that all branches are of interest.
 
     @type password: String.
     @param password: Password for service.  If None, look in .status_password.
@@ -84,6 +87,7 @@ class GateKeeper(chromium_notifier.ChromiumNotifier):
         'Tree is ' + adjective + ' (Automatic: "%(steps)s" on '
         '"%(builder)s"%(blame)s)')
     self._last_closure_revision = 0
+    self.interesting_branches = branches
 
     # Set up variables for operating on commits in a Git repository.
     self.gitpoller_paths = gitpoller_paths or {}
@@ -121,6 +125,17 @@ class GateKeeper(chromium_notifier.ChromiumNotifier):
     # then we have nothing to do.
     if results[0] != FAILURE:
       return False
+
+    # If we are not building for a branch of interest, then we have nothing to
+    # do.
+    if self.interesting_branches:
+      try:
+        build_branch = build_status.getProperty('branch')
+        if build_branch not in self.interesting_branches:
+          return False
+        # otherwise continue
+      except(KeyError):
+        pass  # Continue on if the 'branch' property is not defined.
 
     # Check if the slave is still alive. We should not close the tree for
     # inactive slaves.

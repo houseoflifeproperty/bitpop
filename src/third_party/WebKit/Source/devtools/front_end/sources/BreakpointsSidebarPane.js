@@ -26,14 +26,12 @@
 /**
  * @constructor
  * @extends {WebInspector.SidebarPane}
- * @param {!WebInspector.DebuggerModel} debuggerModel
  * @param {!WebInspector.BreakpointManager} breakpointManager
  * @param {function(!WebInspector.UISourceCode, number=, number=, boolean=)} showSourceLineDelegate
  */
-WebInspector.JavaScriptBreakpointsSidebarPane = function(debuggerModel, breakpointManager, showSourceLineDelegate)
+WebInspector.JavaScriptBreakpointsSidebarPane = function(breakpointManager, showSourceLineDelegate)
 {
     WebInspector.SidebarPane.call(this, WebInspector.UIString("Breakpoints"));
-    this._debuggerModel = debuggerModel;
     this.registerRequiredCSS("breakpointsList.css");
 
     this._breakpointManager = breakpointManager;
@@ -64,12 +62,20 @@ WebInspector.JavaScriptBreakpointsSidebarPane.prototype = {
     _emptyElementContextMenu: function(event)
     {
         var contextMenu = new WebInspector.ContextMenu(event);
-        var breakpointActive = this._debuggerModel.breakpointsActive();
+        this._appendBreakpointActiveItem(contextMenu);
+        contextMenu.show();
+    },
+
+    /**
+     * @param {!WebInspector.ContextMenu} contextMenu
+     */
+    _appendBreakpointActiveItem: function(contextMenu)
+    {
+        var breakpointActive = this._breakpointManager.breakpointsActive();
         var breakpointActiveTitle = breakpointActive ?
             WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Deactivate breakpoints" : "Deactivate Breakpoints") :
             WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Activate breakpoints" : "Activate Breakpoints");
-        contextMenu.appendItem(breakpointActiveTitle, this._debuggerModel.setBreakpointsActive.bind(this._debuggerModel, !breakpointActive));
-        contextMenu.show();
+        contextMenu.appendItem(breakpointActiveTitle, this._breakpointManager.setBreakpointsActive.bind(this._breakpointManager, !breakpointActive));
     },
 
     /**
@@ -120,7 +126,8 @@ WebInspector.JavaScriptBreakpointsSidebarPane.prototype = {
             if (lineNumber < contentString.lineCount()) {
                 var lineText = contentString.lineAt(lineNumber);
                 var maxSnippetLength = 200;
-                snippetElement.textContent = lineText.substr(columnNumber).trimEnd(maxSnippetLength);
+                var snippetStartIndex = columnNumber > 100 ? columnNumber : 0;
+                snippetElement.textContent = lineText.substr(snippetStartIndex).trimEnd(maxSnippetLength);
             }
         }
 
@@ -184,7 +191,7 @@ WebInspector.JavaScriptBreakpointsSidebarPane.prototype = {
 
     /**
      * @param {!WebInspector.BreakpointManager.Breakpoint} breakpoint
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _breakpointCheckboxClicked: function(breakpoint, event)
     {
@@ -195,7 +202,7 @@ WebInspector.JavaScriptBreakpointsSidebarPane.prototype = {
 
     /**
      * @param {!WebInspector.BreakpointManager.Breakpoint} breakpoint
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _breakpointContextMenu: function(breakpoint, event)
     {
@@ -208,11 +215,7 @@ WebInspector.JavaScriptBreakpointsSidebarPane.prototype = {
         }
 
         contextMenu.appendSeparator();
-        var breakpointActive = this._debuggerModel.breakpointsActive();
-        var breakpointActiveTitle = breakpointActive ?
-            WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Deactivate breakpoints" : "Deactivate Breakpoints") :
-            WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Activate breakpoints" : "Activate Breakpoints");
-        contextMenu.appendItem(breakpointActiveTitle, this._debuggerModel.setBreakpointsActive.bind(this._debuggerModel, !breakpointActive));
+        this._appendBreakpointActiveItem(contextMenu);
 
         function enabledBreakpointCount(breakpoints)
         {
@@ -327,7 +330,7 @@ WebInspector.XHRBreakpointsSidebarPane.prototype = {
         inputElement.className = "editing";
         inputElement.id = "breakpoint-condition-input";
         inputElementContainer.appendChild(inputElement);
-        this._addListElement(inputElementContainer, this.listElement.firstChild);
+        this.addListElement(inputElementContainer, /** @type {?Element} */ (this.listElement.firstChild));
 
         /**
          * @param {boolean} accept
@@ -337,7 +340,7 @@ WebInspector.XHRBreakpointsSidebarPane.prototype = {
          */
         function finishEditing(accept, e, text)
         {
-            this._removeListElement(inputElementContainer);
+            this.removeListElement(inputElementContainer);
             if (accept) {
                 this._setBreakpoint(text, true);
                 this._saveBreakpoints();
@@ -374,13 +377,13 @@ WebInspector.XHRBreakpointsSidebarPane.prototype = {
         labelElement.addEventListener("dblclick", this._labelClicked.bind(this, url), false);
         element.appendChild(labelElement);
 
-        var currentElement = this.listElement.firstChild;
+        var currentElement = /** @type {?Element} */ (this.listElement.firstChild);
         while (currentElement) {
             if (currentElement._url && currentElement._url < element._url)
                 break;
-            currentElement = currentElement.nextSibling;
+            currentElement = /** @type {?Element} */ (currentElement.nextSibling);
         }
-        this._addListElement(element, currentElement);
+        this.addListElement(element, currentElement);
         this._breakpointElements[url] = element;
         if (enabled)
             DOMDebuggerAgent.setXHRBreakpoint(url);
@@ -392,7 +395,7 @@ WebInspector.XHRBreakpointsSidebarPane.prototype = {
         if (!element)
             return;
 
-        this._removeListElement(element);
+        this.removeListElement(element);
         delete this._breakpointElements[url];
         if (element._checkboxElement.checked)
             DOMDebuggerAgent.removeXHRBreakpoint(url);
@@ -454,7 +457,7 @@ WebInspector.XHRBreakpointsSidebarPane.prototype = {
          */
         function finishEditing(accept, e, text)
         {
-            this._removeListElement(inputElement);
+            this.removeListElement(inputElement);
             if (accept) {
                 this._removeBreakpoint(url);
                 this._setBreakpoint(text, element._checkboxElement.checked);
@@ -533,11 +536,13 @@ WebInspector.EventListenerBreakpointsSidebarPane = function()
     this._createCategory(WebInspector.UIString("Drag / drop"), ["dragenter", "dragover", "dragleave", "drop"]);
     this._createCategory(WebInspector.UIString("Keyboard"), ["keydown", "keyup", "keypress", "input"]);
     this._createCategory(WebInspector.UIString("Load"), ["load", "beforeunload", "unload", "abort", "error", "hashchange", "popstate"]);
+    this._createCategory(WebInspector.UIString("Media"), ["play", "pause", "playing", "canplay", "canplaythrough", "seeking", "seeked", "timeupdate", "ended", "ratechange", "durationchange", "volumechange", "loadstart", "progress", "suspend", "abort", "error", "emptied", "stalled", "loadedmetadata", "loadeddata", "waiting"], false, ["audio", "video"]);
     this._createCategory(WebInspector.UIString("Mouse"), ["click", "dblclick", "mousedown", "mouseup", "mouseover", "mousemove", "mouseout", "mousewheel", "wheel"]);
     this._createCategory(WebInspector.UIString("Timer"), ["setTimer", "clearTimer", "timerFired"], true);
     this._createCategory(WebInspector.UIString("Touch"), ["touchstart", "touchmove", "touchend", "touchcancel"]);
     this._createCategory(WebInspector.UIString("XHR"), ["readystatechange", "load", "loadstart", "loadend", "abort", "error", "progress", "timeout"], false, ["XMLHttpRequest", "XMLHttpRequestUpload"]);
     this._createCategory(WebInspector.UIString("WebGL"), ["webglErrorFired", "webglWarningFired"], true);
+    this._createCategory(WebInspector.UIString("Window"), ["close"], true);
 
     this._restoreBreakpoints();
 }
@@ -668,7 +673,7 @@ WebInspector.EventListenerBreakpointsSidebarPane.prototype = {
     /**
      * @param {string} eventName
      * @param {!Array.<string>} targetNames
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _breakpointCheckboxClicked: function(eventName, targetNames, event)
     {

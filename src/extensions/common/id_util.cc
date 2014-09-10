@@ -39,7 +39,8 @@ const size_t kIdSize = 16;
 std::string GenerateId(const std::string& input) {
   uint8 hash[kIdSize];
   crypto::SHA256HashString(input, hash, sizeof(hash));
-  std::string output = StringToLowerASCII(base::HexEncode(hash, sizeof(hash)));
+  std::string output =
+      base::StringToLowerASCII(base::HexEncode(hash, sizeof(hash)));
   ConvertHexadecimalToIDAlphabet(&output);
 
   return output;
@@ -60,8 +61,8 @@ base::FilePath MaybeNormalizePath(const base::FilePath& path) {
   // comparisons simpler.
   base::FilePath::StringType path_str = path.value();
   if (path_str.size() >= 2 && path_str[0] >= L'a' && path_str[0] <= L'z' &&
-      path_str[1] == ':')
-    path_str[0] += ('A' - 'a');
+      path_str[1] == L':')
+    path_str[0] = towupper(path_str[0]);
 
   return base::FilePath(path_str);
 #else

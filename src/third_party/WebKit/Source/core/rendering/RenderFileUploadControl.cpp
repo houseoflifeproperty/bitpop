@@ -24,20 +24,20 @@
 #include "core/HTMLNames.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/editing/PositionWithAffinity.h"
 #include "core/fileapi/FileList.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderButton.h"
 #include "core/rendering/RenderTheme.h"
+#include "core/rendering/TextRunConstructor.h"
 #include "platform/fonts/Font.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 #include "platform/text/PlatformLocale.h"
 #include "platform/text/TextRun.h"
 #include <math.h>
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -83,7 +83,7 @@ static int nodeWidth(Node* node)
 
 int RenderFileUploadControl::maxFilenameWidth() const
 {
-    return max(0, contentBoxRect().pixelSnappedWidth() - nodeWidth(uploadButton()) - afterButtonSpacing);
+    return std::max(0, contentBoxRect().pixelSnappedWidth() - nodeWidth(uploadButton()) - afterButtonSpacing);
 }
 
 void RenderFileUploadControl::paintObject(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -106,7 +106,6 @@ void RenderFileUploadControl::paintObject(PaintInfo& paintInfo, const LayoutPoin
         const String& displayedFilename = fileTextValue();
         const Font& font = style()->font();
         TextRun textRun = constructTextRun(this, font, displayedFilename, style(), TextRun::AllowTrailingExpansion, RespectDirection | RespectDirectionOverride);
-        textRun.disableRoundingHacks();
 
         // Determine where the filename should be placed
         LayoutUnit contentLeft = paintOffset.x() + borderLeft() + paddingLeft();
@@ -156,12 +155,12 @@ void RenderFileUploadControl::computeIntrinsicLogicalWidths(LayoutUnit& minLogic
     RenderFileUploadControl* renderer = const_cast<RenderFileUploadControl*>(this);
     float minDefaultLabelWidth = defaultWidthNumChars * font.width(constructTextRun(renderer, font, characterAsString, style(), TextRun::AllowTrailingExpansion));
 
-    const String label = toHTMLInputElement(node())->locale().queryString(blink::WebLocalizedString::FileButtonNoFileSelectedLabel);
+    const String label = toHTMLInputElement(node())->locale().queryString(WebLocalizedString::FileButtonNoFileSelectedLabel);
     float defaultLabelWidth = font.width(constructTextRun(renderer, font, label, style(), TextRun::AllowTrailingExpansion));
     if (HTMLInputElement* button = uploadButton())
         if (RenderObject* buttonRenderer = button->renderer())
             defaultLabelWidth += buttonRenderer->maxPreferredLogicalWidth() + afterButtonSpacing;
-    maxLogicalWidth = static_cast<int>(ceilf(max(minDefaultLabelWidth, defaultLabelWidth)));
+    maxLogicalWidth = static_cast<int>(ceilf(std::max(minDefaultLabelWidth, defaultLabelWidth)));
 
     if (!style()->width().isPercent())
         minLogicalWidth = maxLogicalWidth;
@@ -181,13 +180,13 @@ void RenderFileUploadControl::computePreferredLogicalWidths()
         computeIntrinsicLogicalWidths(m_minPreferredLogicalWidth, m_maxPreferredLogicalWidth);
 
     if (styleToUse->minWidth().isFixed() && styleToUse->minWidth().value() > 0) {
-        m_maxPreferredLogicalWidth = max(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->minWidth().value()));
-        m_minPreferredLogicalWidth = max(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->minWidth().value()));
+        m_maxPreferredLogicalWidth = std::max(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->minWidth().value()));
+        m_minPreferredLogicalWidth = std::max(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->minWidth().value()));
     }
 
     if (styleToUse->maxWidth().isFixed()) {
-        m_maxPreferredLogicalWidth = min(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->maxWidth().value()));
-        m_minPreferredLogicalWidth = min(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->maxWidth().value()));
+        m_maxPreferredLogicalWidth = std::min(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->maxWidth().value()));
+        m_minPreferredLogicalWidth = std::min(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->maxWidth().value()));
     }
 
     int toAdd = borderAndPaddingWidth();
@@ -225,4 +224,4 @@ String RenderFileUploadControl::fileTextValue() const
     return RenderTheme::theme().fileListNameForWidth(input->locale(), input->files(), style()->font(), maxFilenameWidth());
 }
 
-} // namespace WebCore
+} // namespace blink

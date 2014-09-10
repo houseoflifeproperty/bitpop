@@ -18,12 +18,7 @@
 #error "Full printing must be enabled"
 #endif
 
-#define IPC_MESSAGE_START UtilityPrintingMsgStart
-
-IPC_STRUCT_TRAITS_BEGIN(printing::PageRange)
-  IPC_STRUCT_TRAITS_MEMBER(from)
-  IPC_STRUCT_TRAITS_MEMBER(to)
-IPC_STRUCT_TRAITS_END()
+#define IPC_MESSAGE_START ChromeUtilityPrintingMsgStart
 
 IPC_STRUCT_TRAITS_BEGIN(printing::PrinterCapsAndDefaults)
   IPC_STRUCT_TRAITS_MEMBER(printer_capabilities)
@@ -33,9 +28,6 @@ IPC_STRUCT_TRAITS_BEGIN(printing::PrinterCapsAndDefaults)
 IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS_MAX_VALUE(printing::ColorModel, printing::PROCESSCOLORMODEL_RGB)
-IPC_ENUM_TRAITS_MIN_MAX_VALUE(printing::DuplexMode,
-                              printing::UNKNOWN_DUPLEX_MODE,
-                              printing::SHORT_EDGE)
 
 IPC_STRUCT_TRAITS_BEGIN(printing::PrinterSemanticCapsAndDefaults::Paper)
   IPC_STRUCT_TRAITS_MEMBER(display_name)
@@ -59,7 +51,7 @@ IPC_STRUCT_TRAITS_BEGIN(printing::PrinterSemanticCapsAndDefaults)
   IPC_STRUCT_TRAITS_MEMBER(default_dpi)
 IPC_STRUCT_TRAITS_END()
 
-IPC_ENUM_TRAITS(printing::PwgRasterTransformType);
+IPC_ENUM_TRAITS(printing::PwgRasterTransformType)
 
 IPC_STRUCT_TRAITS_BEGIN(printing::PwgRasterSettings)
   IPC_STRUCT_TRAITS_MEMBER(odd_page_transform)

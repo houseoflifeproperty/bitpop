@@ -40,7 +40,7 @@
 #include "wtf/ListHashSet.h"
 #include "wtf/text/StringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSStyleSheetResource;
 class DocumentResource;
@@ -87,7 +87,6 @@ public:
     ResourcePtr<Resource> fetchSynchronously(FetchRequest&);
     ResourcePtr<ImageResource> fetchImage(FetchRequest&);
     ResourcePtr<CSSStyleSheetResource> fetchCSSStyleSheet(FetchRequest&);
-    ResourcePtr<CSSStyleSheetResource> fetchUserCSSStyleSheet(FetchRequest&);
     ResourcePtr<ScriptResource> fetchScript(FetchRequest&);
     ResourcePtr<FontResource> fetchFont(FetchRequest&);
     ResourcePtr<RawResource> fetchRawResource(FetchRequest&);
@@ -182,9 +181,9 @@ private:
     void requestPreload(Resource::Type, FetchRequest&, const String& charset);
 
     enum RevalidationPolicy { Use, Revalidate, Reload, Load };
-    RevalidationPolicy determineRevalidationPolicy(Resource::Type, ResourceRequest&, bool forPreload, Resource* existingResource, FetchRequest::DeferOption, const ResourceLoaderOptions&) const;
+    RevalidationPolicy determineRevalidationPolicy(Resource::Type, const FetchRequest&, Resource* existingResource) const;
 
-    void determineTargetType(ResourceRequest&, Resource::Type);
+    void determineRequestContext(ResourceRequest&, Resource::Type);
     ResourceRequestCachePolicy resourceRequestCachePolicy(const ResourceRequest&, Resource::Type);
     void addAdditionalRequestHeaders(ResourceRequest&, Resource::Type);
 
@@ -223,8 +222,8 @@ private:
 
     HashMap<RefPtr<ResourceTimingInfo>, bool> m_scheduledResourceTimingReports;
 
-    OwnPtr<ResourceLoaderSet> m_loaders;
-    OwnPtr<ResourceLoaderSet> m_multipartLoaders;
+    OwnPtrWillBeMember<ResourceLoaderSet> m_loaders;
+    OwnPtrWillBeMember<ResourceLoaderSet> m_multipartLoaders;
 
     // Used in hit rate histograms.
     class DeadResourceStatsRecorder {
@@ -270,6 +269,6 @@ private:
     bool m_previousState;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

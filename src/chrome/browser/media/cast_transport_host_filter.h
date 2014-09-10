@@ -6,12 +6,18 @@
 #define CHROME_BROWSER_MEDIA_CAST_TRANSPORT_HOST_FILTER_H_
 
 #include "base/id_map.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/time/default_tick_clock.h"
 #include "chrome/common/cast_messages.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "media/cast/cast_sender.h"
 #include "media/cast/logging/logging_defines.h"
-#include "media/cast/transport/cast_transport_sender.h"
+#include "media/cast/net/cast_transport_sender.h"
+
+namespace content {
+class PowerSaveBlocker;
+}  // namespace content
 
 namespace cast {
 
@@ -23,12 +29,20 @@ class CastTransportHostFilter : public content::BrowserMessageFilter {
 
   void NotifyStatusChange(
       int32 channel_id,
-      media::cast::transport::CastTransportStatus result);
-  void ReceivedPacket(
+      media::cast::CastTransportStatus result);
+  void SendRawEvents(
       int32 channel_id,
-      scoped_ptr<media::cast::transport::Packet> result);
-  void RawEvents(int32 channel_id,
-                 const std::vector<media::cast::PacketEvent>& packet_events);
+      const std::vector<media::cast::PacketEvent>& packet_events,
+      const std::vector<media::cast::FrameEvent>& frame_events);
+  void SendRtt(int32 channel_id,
+               uint32 ssrc,
+               base::TimeDelta rtt,
+               base::TimeDelta avg_rtt,
+               base::TimeDelta min_rtt,
+               base::TimeDelta max_rtt);
+  void SendCastMessage(int32 channel_id,
+                       uint32 ssrc,
+                       const media::cast::RtcpCastMessage& cast_message);
 
   // BrowserMessageFilter implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -36,20 +50,21 @@ class CastTransportHostFilter : public content::BrowserMessageFilter {
   // Forwarding functions.
   void OnInitializeAudio(
       int32 channel_id,
-      const media::cast::transport::CastTransportAudioConfig& config);
+      const media::cast::CastTransportRtpConfig& config);
   void OnInitializeVideo(
       int32 channel_id,
-      const media::cast::transport::CastTransportVideoConfig& config);
+      const media::cast::CastTransportRtpConfig& config);
   void OnInsertCodedAudioFrame(
       int32 channel_id,
-      const media::cast::transport::EncodedFrame& audio_frame);
+      const media::cast::EncodedFrame& audio_frame);
   void OnInsertCodedVideoFrame(
       int32 channel_id,
-      const media::cast::transport::EncodedFrame& video_frame);
-  void OnSendRtcpFromRtpSender(
+      const media::cast::EncodedFrame& video_frame);
+  void OnSendSenderReport(
       int32 channel_id,
-      const media::cast::transport::SendRtcpFromRtpSenderData& data,
-      const media::cast::transport::RtcpDlrrReportBlock& dlrr);
+      uint32 ssrc,
+      base::TimeTicks current_time,
+      uint32 current_time_as_rtp_timestamp);
   void OnResendPackets(
       int32 channel_id,
       bool is_audio,
@@ -61,10 +76,17 @@ class CastTransportHostFilter : public content::BrowserMessageFilter {
       const net::IPEndPoint& remote_end_point);
   void OnDelete(int32 channel_id);
 
-  IDMap<media::cast::transport::CastTransportSender, IDMapOwnPointer> id_map_;
+  IDMap<media::cast::CastTransportSender, IDMapOwnPointer> id_map_;
 
   // Clock used by Cast transport.
   base::DefaultTickClock clock_;
+
+  // While |id_map_| is non-empty, hold an instance of
+  // content::PowerSaveBlocker.  This prevents Chrome from being suspended while
+  // remoting content.
+  scoped_ptr<content::PowerSaveBlocker> power_save_blocker_;
+
+  base::WeakPtrFactory<CastTransportHostFilter> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CastTransportHostFilter);
 };

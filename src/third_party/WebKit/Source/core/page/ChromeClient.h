@@ -28,7 +28,6 @@
 #include "core/loader/NavigationPolicy.h"
 #include "core/frame/ConsoleTypes.h"
 #include "core/page/FocusType.h"
-#include "core/rendering/RenderEmbeddedObject.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 #include "platform/Cursor.h"
 #include "platform/HostWindow.h"
@@ -39,13 +38,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
-
-#ifndef __OBJC__
-class NSMenu;
-class NSResponder;
-#endif
-
-namespace WebCore {
+namespace blink {
 
 class AXObject;
 class ColorChooser;
@@ -144,7 +137,7 @@ public:
     // Methods used by HostWindow.
     virtual void invalidateContentsAndRootView(const IntRect&) = 0;
     virtual void invalidateContentsForSlowScroll(const IntRect&) = 0;
-    virtual void scroll(const IntSize&, const IntRect&, const IntRect&) = 0;
+    virtual void scroll() = 0;
     virtual IntRect rootViewToScreen(const IntRect&) const = 0;
     virtual blink::WebScreenInfo screenInfo() const = 0;
     virtual void setCursor(const Cursor&) = 0;
@@ -193,6 +186,8 @@ public:
     virtual void enterFullScreenForElement(Element*) { }
     virtual void exitFullScreenForElement(Element*) { }
 
+    virtual void clearCompositedSelectionBounds() { }
+
     virtual void needTouchEvents(bool) = 0;
 
     virtual void setTouchAction(TouchAction) = 0;
@@ -231,12 +226,13 @@ public:
 
     // FIXME: Remove this method once we have input routing in the browser
     // process. See http://crbug.com/339659.
-    virtual void forwardInputEvent(WebCore::Frame*, WebCore::Event*) { }
+    virtual void forwardInputEvent(blink::Frame*, blink::Event*) { }
 
     // Input mehtod editor related functions.
     virtual void didCancelCompositionOnSelectionChange() { }
     virtual void willSetInputMethodState() { }
     virtual void didUpdateTextOfFocusedElementByNonUserInput() { }
+    virtual void showImeIfNeeded() { }
 
 protected:
     virtual ~ChromeClient() { }

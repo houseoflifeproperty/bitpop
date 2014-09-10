@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
@@ -110,7 +111,7 @@ class FakeSchedulerClient : public SchedulerClient {
   int num_draws() const { return num_draws_; }
   int num_actions_() const { return static_cast<int>(actions_.size()); }
   const char* Action(int i) const { return actions_[i]; }
-  base::Value& StateForAction(int i) const { return *states_[i]; }
+  std::string StateForAction(int i) const { return states_[i]->ToString(); }
   base::TimeTicks posted_begin_impl_frame_deadline() const {
     return posted_begin_impl_frame_deadline_;
   }
@@ -147,24 +148,24 @@ class FakeSchedulerClient : public SchedulerClient {
   // SchedulerClient implementation.
   virtual void SetNeedsBeginFrame(bool enable) OVERRIDE {
     actions_.push_back("SetNeedsBeginFrame");
-    states_.push_back(scheduler_->AsValue().release());
+    states_.push_back(scheduler_->AsValue());
     needs_begin_frame_ = enable;
   }
   virtual void WillBeginImplFrame(const BeginFrameArgs& args) OVERRIDE {
     actions_.push_back("WillBeginImplFrame");
-    states_.push_back(scheduler_->AsValue().release());
+    states_.push_back(scheduler_->AsValue());
   }
   virtual void ScheduledActionSendBeginMainFrame() OVERRIDE {
     actions_.push_back("ScheduledActionSendBeginMainFrame");
-    states_.push_back(scheduler_->AsValue().release());
+    states_.push_back(scheduler_->AsValue());
   }
   virtual void ScheduledActionAnimate() OVERRIDE {
     actions_.push_back("ScheduledActionAnimate");
-    states_.push_back(scheduler_->AsValue().release());
+    states_.push_back(scheduler_->AsValue());
   }
   virtual DrawResult ScheduledActionDrawAndSwapIfPossible() OVERRIDE {
     actions_.push_back("ScheduledActionDrawAndSwapIfPossible");
-    states_.push_back(scheduler_->AsValue().release());
+    states_.push_back(scheduler_->AsValue());
     num_draws_++;
     DrawResult result =
         draw_will_happen_ ? DRAW_SUCCESS : DRAW_ABORTED_CHECKERBOARD_ANIMATIONS;
@@ -186,30 +187,30 @@ class FakeSchedulerClient : public SchedulerClient {
   }
   virtual DrawResult ScheduledActionDrawAndSwapForced() OVERRIDE {
     actions_.push_back("ScheduledActionDrawAndSwapForced");
-    states_.push_back(scheduler_->AsValue().release());
+    states_.push_back(scheduler_->AsValue());
     return DRAW_SUCCESS;
   }
   virtual void ScheduledActionCommit() OVERRIDE {
     actions_.push_back("ScheduledActionCommit");
-    states_.push_back(scheduler_->AsValue().release());
+    states_.push_back(scheduler_->AsValue());
   }
   virtual void ScheduledActionUpdateVisibleTiles() OVERRIDE {
     actions_.push_back("ScheduledActionUpdateVisibleTiles");
-    states_.push_back(scheduler_->AsValue().release());
+    states_.push_back(scheduler_->AsValue());
     if (redraw_will_happen_if_update_visible_tiles_happens_)
       scheduler_->SetNeedsRedraw();
   }
-  virtual void ScheduledActionActivatePendingTree() OVERRIDE {
-    actions_.push_back("ScheduledActionActivatePendingTree");
-    states_.push_back(scheduler_->AsValue().release());
+  virtual void ScheduledActionActivateSyncTree() OVERRIDE {
+    actions_.push_back("ScheduledActionActivateSyncTree");
+    states_.push_back(scheduler_->AsValue());
   }
   virtual void ScheduledActionBeginOutputSurfaceCreation() OVERRIDE {
     actions_.push_back("ScheduledActionBeginOutputSurfaceCreation");
-    states_.push_back(scheduler_->AsValue().release());
+    states_.push_back(scheduler_->AsValue());
   }
   virtual void ScheduledActionManageTiles() OVERRIDE {
     actions_.push_back("ScheduledActionManageTiles");
-    states_.push_back(scheduler_->AsValue().release());
+    states_.push_back(scheduler_->AsValue());
   }
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks) OVERRIDE {
     if (log_anticipated_draw_time_change_)
@@ -238,7 +239,7 @@ class FakeSchedulerClient : public SchedulerClient {
   bool redraw_will_happen_if_update_visible_tiles_happens_;
   base::TimeTicks posted_begin_impl_frame_deadline_;
   std::vector<const char*> actions_;
-  ScopedVector<base::Value> states_;
+  std::vector<scoped_refptr<base::debug::ConvertableToTraceFormat> > states_;
   scoped_ptr<TestScheduler> scheduler_;
   scoped_refptr<OrderedSimpleTaskRunner> task_runner_;
 };
@@ -966,7 +967,7 @@ TEST(SchedulerTest, ShouldUpdateVisibleTiles) {
 
   client.Reset();
   scheduler->NotifyReadyToActivate();
-  EXPECT_SINGLE_ACTION("ScheduledActionActivatePendingTree", client);
+  EXPECT_SINGLE_ACTION("ScheduledActionActivateSyncTree", client);
 
   client.Reset();
   client.SetSwapContainsIncompleteTile(true);
@@ -1167,7 +1168,7 @@ TEST(SchedulerTest, PollForCommitCompletion) {
   for (int i = 0; i < 3; ++i) {
     EXPECT_EQ((frame_args.interval * 2).InMicroseconds(),
               client.task_runner().NextPendingTaskDelay().InMicroseconds())
-        << *scheduler->AsValue();
+        << scheduler->AsValue()->ToString();
     client.task_runner().RunPendingTasks();
     EXPECT_GT(client.num_actions_(), actions_so_far);
     EXPECT_STREQ(client.Action(client.num_actions_() - 1),
@@ -1180,7 +1181,7 @@ TEST(SchedulerTest, PollForCommitCompletion) {
   for (int i = 0; i < 3; ++i) {
     EXPECT_EQ((frame_args.interval * 2).InMicroseconds(),
               client.task_runner().NextPendingTaskDelay().InMicroseconds())
-        << *scheduler->AsValue();
+        << scheduler->AsValue()->ToString();
     client.task_runner().RunPendingTasks();
     EXPECT_GT(client.num_actions_(), actions_so_far);
     EXPECT_STREQ(client.Action(client.num_actions_() - 1),
@@ -1426,7 +1427,8 @@ void BeginFramesNotFromClient(bool begin_frame_scheduling_enabled,
   client.Reset();
 }
 
-TEST(SchedulerTest, SyntheticBeginFrames) {
+// See: http://crbug.com/388901
+TEST(SchedulerTest, DISABLED_SyntheticBeginFrames) {
   bool begin_frame_scheduling_enabled = false;
   bool throttle_frame_production = true;
   BeginFramesNotFromClient(begin_frame_scheduling_enabled,
@@ -1640,7 +1642,7 @@ void DidLoseOutputSurfaceAfterBeginFrameStartedWithHighLatency(
   scheduler->NotifyReadyToCommit();
   if (impl_side_painting) {
     EXPECT_ACTION("ScheduledActionCommit", client, 0, 3);
-    EXPECT_ACTION("ScheduledActionActivatePendingTree", client, 1, 3);
+    EXPECT_ACTION("ScheduledActionActivateSyncTree", client, 1, 3);
     EXPECT_ACTION("ScheduledActionBeginOutputSurfaceCreation", client, 2, 3);
   } else {
     EXPECT_ACTION("ScheduledActionCommit", client, 0, 2);
@@ -1690,8 +1692,8 @@ void DidLoseOutputSurfaceAfterReadyToCommit(bool impl_side_painting) {
   client.Reset();
   scheduler->DidLoseOutputSurface();
   if (impl_side_painting) {
-    // Pending tree should be forced to activate.
-    EXPECT_SINGLE_ACTION("ScheduledActionActivatePendingTree", client);
+    // Sync tree should be forced to activate.
+    EXPECT_SINGLE_ACTION("ScheduledActionActivateSyncTree", client);
   } else {
     // Do nothing when impl frame is in deadine pending state.
     EXPECT_NO_ACTION(client);

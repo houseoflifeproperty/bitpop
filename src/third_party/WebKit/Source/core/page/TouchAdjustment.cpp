@@ -38,7 +38,7 @@
 #include "platform/geometry/IntSize.h"
 #include "platform/text/TextBreakIterator.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace TouchAdjustment {
 
@@ -67,9 +67,9 @@ private:
 
 }
 
-WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(WebCore::TouchAdjustment::SubtargetGeometry)
+WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(blink::TouchAdjustment::SubtargetGeometry)
 
-namespace WebCore {
+namespace blink {
 
 namespace TouchAdjustment {
 
@@ -163,7 +163,7 @@ static inline void appendContextSubtargetsForNode(Node* node, SubtargetGeometryL
         return appendBasicSubtargetsForNode(node, subtargets);
 
     Text* textNode = toText(node);
-    RenderText* textRenderer = toRenderText(textNode->renderer());
+    RenderText* textRenderer = textNode->renderer();
 
     if (textRenderer->frame()->editor().behavior().shouldSelectOnContextualMenuClick()) {
         // Make subtargets out of every word.
@@ -473,6 +473,11 @@ bool findNodeWithLowestDistanceMetric(Node*& targetNode, IntPoint& targetPoint, 
             }
         }
     }
+
+    // As for HitTestResult.innerNode, we skip over pseudo elements.
+    if (targetNode && targetNode->isPseudoElement())
+        targetNode = targetNode->parentOrShadowHostNode();
+
     if (targetNode) {
         targetArea = targetNode->document().view()->contentsToWindow(targetArea);
     }
@@ -505,4 +510,4 @@ bool findBestZoomableArea(Node*& targetNode, IntRect& targetArea, const IntPoint
     return TouchAdjustment::findNodeWithLowestDistanceMetric(targetNode, targetPoint, targetArea, touchHotspot, touchArea, subtargets, TouchAdjustment::zoomableIntersectionQuotient);
 }
 
-} // namespace WebCore
+} // namespace blink

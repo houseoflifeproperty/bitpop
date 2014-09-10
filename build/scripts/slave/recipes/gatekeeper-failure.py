@@ -11,7 +11,7 @@ DEPS = [
 
 def GenSteps(api):
   if api.platform.is_linux:
-    yield api.step('fail', ['false'])
+    api.step('fail', ['false'])
 
 def GenTests(api):
   for plat in ('mac', 'linux', 'win'):

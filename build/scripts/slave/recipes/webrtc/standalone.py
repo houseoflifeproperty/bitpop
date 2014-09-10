@@ -11,7 +11,6 @@ DEPS = [
   'platform',
   'properties',
   'step',
-  'step_history',
   'tryserver',
   'webrtc',
 ]
@@ -45,26 +44,26 @@ def GenSteps(api):
   if api.tryserver.is_tryserver:
     api.chromium.apply_config('trybot_flavor')
 
-  yield api.gclient.checkout()
+  step_result = api.gclient.checkout()
   # Whatever step is run right before this line needs to emit got_revision.
-  update_step = api.step_history.last_step()
-  got_revision = update_step.presentation.properties['got_revision']
+  got_revision = step_result.presentation.properties['got_revision']
 
-  steps = []
   if api.tryserver.is_tryserver:
-    steps.append(api.tryserver.maybe_apply_issue())
+    api.tryserver.maybe_apply_issue()
 
-  steps.append(api.chromium.runhooks())
-  steps.append(api.chromium.compile())
+  api.chromium.runhooks()
+  if api.chromium.c.project_generator.tool == 'gn':
+    api.chromium.run_gn()
+    api.chromium.compile(targets=['all'])
+  else:
+    api.chromium.compile()
 
   if api.chromium.c.gyp_env.GYP_DEFINES.get('syzyasan', 0) == 1:
-    steps.append(api.chromium.apply_syzyasan())
+    api.chromium.apply_syzyasan()
 
   test_suite = recipe_config.get('test_suite')
   if test_suite and bot_type in ('builder_tester', 'tester'):
-    steps.extend(api.webrtc.runtests(test_suite, got_revision))
-  yield steps
-
+    api.webrtc.runtests(test_suite, got_revision)
 
 def _sanitize_nonalpha(text):
   return ''.join(c if c.isalnum() else '_' for c in text.lower())

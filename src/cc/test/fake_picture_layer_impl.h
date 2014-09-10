@@ -35,10 +35,22 @@ class FakePictureLayerImpl : public PictureLayerImpl {
 
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
       OVERRIDE;
-  virtual void AppendQuads(QuadSink* quad_sink,
+  virtual void AppendQuads(RenderPass* render_pass,
+                           const OcclusionTracker<LayerImpl>& occlusion_tracker,
                            AppendQuadsData* append_quads_data) OVERRIDE;
   virtual gfx::Size CalculateTileSize(
       const gfx::Size& content_bounds) const OVERRIDE;
+
+  virtual void DidBecomeActive() OVERRIDE;
+  size_t did_become_active_call_count() {
+    return did_become_active_call_count_;
+  }
+
+  virtual bool HasValidTilePriorities() const OVERRIDE;
+  void set_has_valid_tile_priorities(bool has_valid_priorities) {
+    has_valid_tile_priorities_ = has_valid_priorities;
+    use_set_valid_tile_priorities_flag_ = true;
+  }
 
   using PictureLayerImpl::AddTiling;
   using PictureLayerImpl::CleanUpTilingsOnActiveLayer;
@@ -46,6 +58,7 @@ class FakePictureLayerImpl : public PictureLayerImpl {
   using PictureLayerImpl::MarkVisibleResourcesAsRequired;
   using PictureLayerImpl::DoPostCommitInitializationIfNeeded;
   using PictureLayerImpl::MinimumContentsScale;
+  using PictureLayerImpl::GetViewportForTilePriorityInContentSpace;
   using PictureLayerImpl::SanityCheckTilingState;
 
   using PictureLayerImpl::UpdateIdealScales;
@@ -78,8 +91,8 @@ class FakePictureLayerImpl : public PictureLayerImpl {
   gfx::Rect visible_rect_for_tile_priority() {
     return visible_rect_for_tile_priority_;
   }
-  gfx::Size viewport_size_for_tile_priority() {
-    return viewport_size_for_tile_priority_;
+  gfx::Rect viewport_rect_for_tile_priority() {
+    return viewport_rect_for_tile_priority_;
   }
   gfx::Transform screen_space_transform_for_tile_priority() {
     return screen_space_transform_for_tile_priority_;
@@ -92,6 +105,7 @@ class FakePictureLayerImpl : public PictureLayerImpl {
   void SetAllTilesReady();
   void SetAllTilesReadyInTiling(PictureLayerTiling* tiling);
   void ResetAllTilesPriorities();
+  PictureLayerTilingSet* GetTilings() { return tilings_.get(); }
 
  protected:
   FakePictureLayerImpl(
@@ -108,6 +122,9 @@ class FakePictureLayerImpl : public PictureLayerImpl {
   gfx::Size fixed_tile_size_;
 
   size_t append_quads_count_;
+  size_t did_become_active_call_count_;
+  bool has_valid_tile_priorities_;
+  bool use_set_valid_tile_priorities_flag_;
 };
 
 }  // namespace cc

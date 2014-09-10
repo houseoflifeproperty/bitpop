@@ -12,7 +12,7 @@
 #include "{{filename}}"
 {% endfor %}
 
-namespace WebCore {
+namespace blink {
 
 {% if has_event_constructor %}
 class Dictionary;
@@ -27,18 +27,33 @@ public:
 {% endif %}
 class {{v8_class}} {
 public:
+    {% if has_private_script %}
+    class PrivateScript {
+    public:
+        {% for method in methods if method.is_implemented_in_private_script %}
+        static bool {{method.name}}Method({{method.argument_declarations_for_private_script | join(', ')}});
+        {% endfor %}
+        {% for attribute in attributes if attribute.is_implemented_in_private_script %}
+        static bool {{attribute.name}}AttributeGetter(LocalFrame* frame, {{cpp_class}}* holderImpl, {{attribute.cpp_type}}* result);
+        {% if not attribute.is_read_only %}
+        static bool {{attribute.name}}AttributeSetter(LocalFrame* frame, {{cpp_class}}* holderImpl, {{attribute.argument_cpp_type}} cppValue);
+        {% endif %}
+        {% endfor %}
+    };
+
+    {% endif %}
     static bool hasInstance(v8::Handle<v8::Value>, v8::Isolate*);
     static v8::Handle<v8::Object> findInstanceInPrototypeChain(v8::Handle<v8::Value>, v8::Isolate*);
     static v8::Handle<v8::FunctionTemplate> domTemplate(v8::Isolate*);
     static {{cpp_class}}* toNative(v8::Handle<v8::Object> object)
     {
-        return fromInternalPointer(object->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
+        return fromInternalPointer(blink::toInternalPointer(object));
     }
     static {{cpp_class}}* toNativeWithTypeCheck(v8::Isolate*, v8::Handle<v8::Value>);
     static const WrapperTypeInfo wrapperTypeInfo;
-    static void derefObject(void*);
+    static void derefObject(ScriptWrappableBase* internalPointer);
     {% if has_visit_dom_wrapper %}
-    static void visitDOMWrapper(void*, const v8::Persistent<v8::Object>&, v8::Isolate*);
+    static void visitDOMWrapper(ScriptWrappableBase* internalPointer, const v8::Persistent<v8::Object>&, v8::Isolate*);
     {% endif %}
     {% if is_active_dom_object %}
     static ActiveDOMObject* toActiveDOMObject(v8::Handle<v8::Object>);
@@ -49,10 +64,12 @@ public:
     {% if interface_name == 'Window' %}
     static v8::Handle<v8::ObjectTemplate> getShadowObjectTemplate(v8::Isolate*);
     {% endif %}
-    {% for method in methods if method.is_custom %}
+    {% for method in methods %}
+    {% if method.is_custom %}
     {% filter conditional(method.conditional_string) %}
     static void {{method.name}}MethodCustom(const v8::FunctionCallbackInfo<v8::Value>&);
     {% endfilter %}
+    {% endif %}
     {% endfor %}
     {% if constructors or has_custom_constructor or has_event_constructor %}
     static void constructorCallback(const v8::FunctionCallbackInfo<v8::Value>&);
@@ -129,31 +146,31 @@ public:
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + {{custom_internal_field_counter}};
     {% endif %}
     {# End custom internal fields #}
-    static inline void* toInternalPointer({{cpp_class}}* impl)
+    static inline ScriptWrappableBase* toInternalPointer({{cpp_class}}* impl)
     {
         {% if parent_interface %}
         return V8{{parent_interface}}::toInternalPointer(impl);
         {% else %}
-        return impl;
+        return reinterpret_cast<ScriptWrappableBase*>(static_cast<void*>(impl));
         {% endif %}
     }
 
-    static inline {{cpp_class}}* fromInternalPointer(void* object)
+    static inline {{cpp_class}}* fromInternalPointer(ScriptWrappableBase* internalPointer)
     {
         {% if parent_interface %}
-        return static_cast<{{cpp_class}}*>(V8{{parent_interface}}::fromInternalPointer(object));
+        return static_cast<{{cpp_class}}*>(V8{{parent_interface}}::fromInternalPointer(internalPointer));
         {% else %}
-        return static_cast<{{cpp_class}}*>(object);
+        return reinterpret_cast<{{cpp_class}}*>(static_cast<void*>(internalPointer));
         {% endif %}
     }
     {% if interface_name == 'Window' %}
     static bool namedSecurityCheckCustom(v8::Local<v8::Object> host, v8::Local<v8::Value> key, v8::AccessType, v8::Local<v8::Value> data);
     static bool indexedSecurityCheckCustom(v8::Local<v8::Object> host, uint32_t index, v8::AccessType, v8::Local<v8::Value> data);
     {% endif %}
-    static void installPerContextEnabledProperties(v8::Handle<v8::Object>, {{cpp_class}}*, v8::Isolate*){% if has_per_context_enabled_attributes %};
+    static void installConditionallyEnabledProperties(v8::Handle<v8::Object>, v8::Isolate*){% if has_conditional_attributes %};
     {% else %} { }
     {% endif %}
-    static void installPerContextEnabledMethods(v8::Handle<v8::Object>, v8::Isolate*){% if per_context_enabled_methods %};
+    static void installConditionallyEnabledMethods(v8::Handle<v8::Object>, v8::Isolate*){% if conditionally_enabled_methods %};
     {% else %} { }
     {% endif %}
     {# Element wrappers #}

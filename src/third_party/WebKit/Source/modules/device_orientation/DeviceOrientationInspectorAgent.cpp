@@ -5,7 +5,6 @@
 #include "config.h"
 #include "modules/device_orientation/DeviceOrientationInspectorAgent.h"
 
-#include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorState.h"
@@ -14,7 +13,7 @@
 #include "modules/device_orientation/DeviceOrientationController.h"
 #include "modules/device_orientation/DeviceOrientationData.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace DeviceOrientationInspectorAgentState {
 static const char alpha[] = "alpha";
@@ -25,7 +24,7 @@ static const char overrideEnabled[] = "overrideEnabled";
 
 void DeviceOrientationInspectorAgent::provideTo(Page& page)
 {
-    OwnPtr<DeviceOrientationInspectorAgent> deviceOrientationAgent(adoptPtr(new DeviceOrientationInspectorAgent(page)));
+    OwnPtrWillBeRawPtr<DeviceOrientationInspectorAgent> deviceOrientationAgent(adoptPtrWillBeNoop(new DeviceOrientationInspectorAgent(page)));
     page.inspectorController().registerModuleAgent(deviceOrientationAgent.release());
 }
 
@@ -83,4 +82,4 @@ void DeviceOrientationInspectorAgent::didCommitLoadForMainFrame()
     restore();
 }
 
-} // namespace WebCore
+} // namespace blink

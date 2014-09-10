@@ -33,9 +33,15 @@ except ImportError:
     print "ERROR: Add the TestResultServer, google_appengine and yaml/lib directories to your PYTHONPATH"
     raise
 
+from handlers import master_config
+
 import json
 import logging
 import unittest
+
+from google.appengine.ext import blobstore
+from google.appengine.ext import db
+from google.appengine.ext import testbed
 
 FULL_RESULT_EXAMPLE = """ADD_RESULTS({
     "seconds_since_epoch": 1368146629,
@@ -172,10 +178,16 @@ JSON_RESULTS_TEST_LIST_TEMPLATE = '{"Webkit":{"tests":{[TESTDATA_TESTS]}}}'
 
 
 class MockFile(object):
+    @property
+    def file_information(self):
+        return "master: %s, builder: %s, test_type: %s, build_number: %r, name: %s." % (
+            self.master, self.builder, self.test_type, self.build_number, self.name)
+
     def __init__(self, name='results.json', data=''):
         self.master = 'MockMasterName'
         self.builder = 'MockBuilderName'
         self.test_type = 'MockTestType'
+        self.build_number = 0
         self.name = name
         self.data = data
 
@@ -241,8 +253,9 @@ class JsonResultsTest(unittest.TestCase):
 
     def _test_merge(self, aggregated_data, incremental_data, expected_data, max_builds=jsonresults.JSON_RESULTS_MAX_BUILDS):
         aggregated_results = self._make_test_json(aggregated_data, builder_name=self._builder)
-        incremental_json, _ = JsonResults._get_incremental_json(self._builder, self._make_test_json(incremental_data, builder_name=self._builder), is_full_results_format=False)
-        merged_results, status_code = JsonResults.merge(self._builder, aggregated_results, incremental_json, num_runs=max_builds, sort_keys=True)
+        incremental_results = self._make_test_json(incremental_data, builder_name=self._builder)
+        incremental_json, _ = JsonResults._get_incremental_json(self._builder, JsonResults._load_json(aggregated_results), is_full_results_format=False)
+        merged_results, status_code = JsonResults.merge(self._builder, aggregated_results, JsonResults._load_json(incremental_results), num_runs=max_builds, sort_keys=True)
 
         if expected_data:
             expected_results = self._make_test_json(expected_data, builder_name=self._builder)
@@ -271,8 +284,9 @@ class JsonResultsTest(unittest.TestCase):
             }
         }
         incremental_string = self._make_test_json(incremental_data, builder_name=small_file.builder)
+        incremental_json = JsonResults._load_json(incremental_string)
 
-        self.assertTrue(JsonResults.update_files(small_file.builder, incremental_string, small_file, large_file, is_full_results_format=False))
+        self.assertTrue(JsonResults.update_files(small_file.builder, incremental_json, small_file, large_file, is_full_results_format=False))
         self.assert_json_equal(small_file.data, incremental_string)
         self.assert_json_equal(large_file.data, incremental_string)
 
@@ -338,7 +352,8 @@ class JsonResultsTest(unittest.TestCase):
                 }
             }
         }
-        incremental_results, _ = JsonResults._get_incremental_json(self._builder, self._make_test_json(incremental_data), is_full_results_format=False)
+        incremental_json = JsonResults._load_json(self._make_test_json(incremental_data))
+        incremental_results, _ = JsonResults._get_incremental_json(self._builder, incremental_json, is_full_results_format=False)
         aggregated_results = ""
         merged_results, _ = JsonResults.merge(self._builder, aggregated_results, incremental_results, num_runs=jsonresults.JSON_RESULTS_MAX_BUILDS, sort_keys=True)
         self.assert_json_equal(merged_results, incremental_results)
@@ -362,7 +377,7 @@ class JsonResultsTest(unittest.TestCase):
                 }
             }
         }, json_string=JSON_RESULTS_OLD_TEMPLATE)
-        incremental_json, _ = JsonResults._get_incremental_json(self._builder, incremental_results, is_full_results_format=False)
+        incremental_json, _ = JsonResults._get_incremental_json(self._builder, JsonResults._load_json(incremental_results), is_full_results_format=False)
         merged_results, _ = JsonResults.merge(self._builder, aggregated_results, incremental_json, num_runs=201, sort_keys=True)
         self.assert_json_equal(merged_results, self._make_test_json({
             "builds": ["3", "2", "1"],
@@ -438,7 +453,7 @@ class JsonResultsTest(unittest.TestCase):
         }
 
         aggregated_results = ""
-        incremental_json, _ = JsonResults._get_incremental_json(self._builder, FULL_RESULT_EXAMPLE, is_full_results_format=True)
+        incremental_json, _ = JsonResults._get_incremental_json(self._builder, JsonResults._load_json(FULL_RESULT_EXAMPLE), is_full_results_format=True)
         merged_results, _ = JsonResults.merge("Webkit", aggregated_results, incremental_json, num_runs=jsonresults.JSON_RESULTS_MAX_BUILDS, sort_keys=True)
         self.assert_json_equal(merged_results, expected_incremental_results)
 
@@ -1078,6 +1093,83 @@ class JsonResultsTest(unittest.TestCase):
                            "times": [[10, 0]]},
                        },
              "version": 4})
+
+    def test_deprecated_master_name(self):
+        tb = testbed.Testbed()
+        tb.activate()
+        tb.init_datastore_v3_stub()
+        tb.init_blobstore_stub()
+
+        master = master_config.getMaster('chromium.chromiumos')
+        builder = 'test-builder'
+        test_type = 'test-type'
+
+        test_data = [
+            {
+                'tests': {
+                    'Test1.testproc1': {
+                        'expected': 'PASS',
+                        'actual': 'PASS',
+                        'time': 1,
+                    }
+                },
+                'build_number': '123',
+                'version': JSON_RESULTS_HIERARCHICAL_VERSION,
+                'builder_name': builder,
+                'blink_revision': '12345',
+                'seconds_since_epoch': 1406123456,
+                'num_failures_by_type': {
+                    'FAIL': 0,
+                    'SKIP': 0,
+                    'PASS': 1
+                },
+                'chromium_revision': '67890',
+            },
+            {
+                'tests': {
+                    'Test2.testproc2': {
+                        'expected': 'PASS',
+                        'actual': 'FAIL',
+                        'time': 2,
+                    }
+                },
+                'build_number': '456',
+                'version': JSON_RESULTS_HIERARCHICAL_VERSION,
+                'builder_name': builder,
+                'blink_revision': '54321',
+                'seconds_since_epoch': 1406654321,
+                'num_failures_by_type': {
+                    'FAIL': 1,
+                    'SKIP': 0,
+                    'PASS': 0
+                },
+                'chromium_revision': '98765',
+            },
+        ]
+
+        # Upload a file using old master name
+
+        # Seed results files using the old name.
+        JsonResults.update(master['name'], builder, test_type, test_data[0], None, True)
+        # Update results files using the new name.
+        JsonResults.update(master['url_name'], builder, test_type, test_data[1], master['name'], True)
+        # Verify that the file keyed by url_name contains both sets of results.
+        files = TestFile.get_files(master['url_name'], builder, test_type, None, None, limit=3)
+        self.assertEqual(len(files), 2)
+        for f in files:
+            j = json.loads(f.data)
+            self.assertItemsEqual(j[builder]['blinkRevision'], ['12345', '54321'])
+
+        tb.deactivate()
+
+    def test_normalize_results_with_top_level_results_key_does_not_crash(self):
+        aggregated_json = {
+            'Linux Tests': {
+                'results': {'foo': {'results': [(1, 'P')],
+                                    'times': [(1, 1)]}},
+            }
+        }
+        JsonResults._normalize_results(aggregated_json, 1, 2)
 
 if __name__ == '__main__':
     unittest.main()

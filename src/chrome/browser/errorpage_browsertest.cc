@@ -80,20 +80,14 @@ bool WARN_UNUSED_RESULT IsDisplayingText(Browser* browser,
 void ToggleHelpBox(Browser* browser) {
   EXPECT_TRUE(content::ExecuteScript(
       browser->tab_strip_model()->GetActiveWebContents(),
-      "document.getElementById('more-less-button').click();"));
+      "document.getElementById('details-button').click();"));
 }
 
 // Returns true if |browser| is displaying the text representation of
 // |error_code| on the current page.
 bool WARN_UNUSED_RESULT IsDisplayingNetError(Browser* browser,
                                              net::Error error_code) {
-  // Get the error as a string, and remove the leading "net::", which is not
-  // included on error pages.
-  std::string error_string(net::ErrorToString(error_code));
-  DCHECK(StartsWithASCII(error_string, "net::", true));
-  error_string.erase(0, 5);
-
-  return IsDisplayingText(browser, error_string);
+  return IsDisplayingText(browser, net::ErrorToShortString(error_code));
 }
 
 // Checks that the local error page is being displayed, without remotely
@@ -469,13 +463,10 @@ class TestFailProvisionalLoadObserver : public content::WebContentsObserver {
 
   // This method is invoked when the provisional load failed.
   virtual void DidFailProvisionalLoad(
-      int64 frame_id,
-      const base::string16& frame_unique_name,
-      bool is_main_frame,
+      content::RenderFrameHost* render_frame_host,
       const GURL& validated_url,
       int error_code,
-      const base::string16& error_description,
-      content::RenderViewHost* render_view_host) OVERRIDE {
+      const base::string16& error_description) OVERRIDE {
     fail_url_ = validated_url;
   }
 
@@ -968,7 +959,7 @@ class ErrorPageNavigationCorrectionsFailTest : public ErrorPageTest {
         base::Bind(&ErrorPageNavigationCorrectionsFailTest::AddFilters));
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&ErrorPageNavigationCorrectionsFailTest::RemoveFilters));
@@ -1071,7 +1062,7 @@ class ErrorPageForIDNTest : public InProcessBrowserTest {
         base::Bind(&ErrorPageForIDNTest::AddFilters));
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&ErrorPageForIDNTest::RemoveFilters));

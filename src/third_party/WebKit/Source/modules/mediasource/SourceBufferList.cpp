@@ -35,7 +35,7 @@
 #include "modules/EventModules.h"
 #include "modules/mediasource/SourceBuffer.h"
 
-namespace WebCore {
+namespace blink {
 
 SourceBufferList::SourceBufferList(ExecutionContext* context, GenericEventQueue* asyncEventQueue)
     : m_executionContext(context)
@@ -46,10 +46,12 @@ SourceBufferList::SourceBufferList(ExecutionContext* context, GenericEventQueue*
 
 SourceBufferList::~SourceBufferList()
 {
+#if !ENABLE(OILPAN)
     ASSERT(m_list.isEmpty());
+#endif
 }
 
-void SourceBufferList::add(PassRefPtrWillBeRawPtr<SourceBuffer> buffer)
+void SourceBufferList::add(SourceBuffer* buffer)
 {
     m_list.append(buffer);
     scheduleEvent(EventTypeNames::addsourcebuffer);
@@ -96,4 +98,4 @@ void SourceBufferList::trace(Visitor* visitor)
     EventTargetWithInlineData::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

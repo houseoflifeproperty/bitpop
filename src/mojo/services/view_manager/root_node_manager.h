@@ -22,38 +22,27 @@ class Event;
 
 namespace mojo {
 
-class ServiceProvider;
+class ApplicationConnection;
 
-namespace view_manager {
 namespace service {
 
 class RootViewManagerDelegate;
-class View;
 class ViewManagerServiceImpl;
 
 // RootNodeManager is responsible for managing the set of
 // ViewManagerServiceImpls as well as providing the root of the node hierarchy.
 class MOJO_VIEW_MANAGER_EXPORT RootNodeManager : public NodeDelegate {
  public:
-  // Used to indicate if the server id should be incremented after notifiying
-  // clients of the change.
-  enum ChangeType {
-    CHANGE_TYPE_ADVANCE_SERVER_CHANGE_ID,
-    CHANGE_TYPE_DONT_ADVANCE_SERVER_CHANGE_ID,
-  };
-
   // Create when a ViewManagerServiceImpl is about to make a change. Ensures
   // clients are notified of the correct change id.
   class ScopedChange {
    public:
     ScopedChange(ViewManagerServiceImpl* connection,
                  RootNodeManager* root,
-                 RootNodeManager::ChangeType change_type,
                  bool is_delete_node);
     ~ScopedChange();
 
     ConnectionSpecificId connection_id() const { return connection_id_; }
-    ChangeType change_type() const { return change_type_; }
     bool is_delete_node() const { return is_delete_node_; }
 
     // Marks the connection with the specified id as having seen a message.
@@ -69,7 +58,6 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager : public NodeDelegate {
    private:
     RootNodeManager* root_;
     const ConnectionSpecificId connection_id_;
-    const ChangeType change_type_;
     const bool is_delete_node_;
 
     // See description of MarkConnectionAsMessaged/DidMessageConnection.
@@ -78,29 +66,28 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager : public NodeDelegate {
     DISALLOW_COPY_AND_ASSIGN(ScopedChange);
   };
 
-  RootNodeManager(ServiceProvider* service_provider,
-                  RootViewManagerDelegate* view_manager_delegate);
+  RootNodeManager(ApplicationConnection* app_connection,
+                  RootViewManagerDelegate* view_manager_delegate,
+                  const Callback<void()>& native_viewport_closed_callback);
   virtual ~RootNodeManager();
 
   // Returns the id for the next ViewManagerServiceImpl.
   ConnectionSpecificId GetAndAdvanceNextConnectionId();
-
-  Id next_server_change_id() const {
-    return next_server_change_id_;
-  }
 
   void AddConnection(ViewManagerServiceImpl* connection);
   void RemoveConnection(ViewManagerServiceImpl* connection);
 
   // Establishes the initial client. Similar to Connect(), but the resulting
   // client is allowed to do anything.
-  void EmbedRoot(const std::string& url);
+  void EmbedRoot(const std::string& url,
+                 InterfaceRequest<ServiceProvider> service_provider);
 
   // See description of ViewManagerService::Embed() for details. This assumes
-  // |node_ids| has been validated.
+  // |transport_node_id| is valid.
   void Embed(ConnectionSpecificId creator_id,
              const String& url,
-             const Array<Id>& node_ids);
+             Id transport_node_id,
+             InterfaceRequest<ServiceProvider> service_provider);
 
   // Returns the connection by id.
   ViewManagerServiceImpl* GetConnection(ConnectionSpecificId connection_id);
@@ -108,10 +95,7 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager : public NodeDelegate {
   // Returns the Node identified by |id|.
   Node* GetNode(const NodeId& id);
 
-  // Returns the View identified by |id|.
-  View* GetView(const ViewId& id);
-
-  Node* root() { return &root_; }
+  Node* root() { return root_.get(); }
 
   bool IsProcessingChange() const { return current_change_ != NULL; }
 
@@ -129,11 +113,18 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager : public NodeDelegate {
       ConnectionSpecificId creator_id,
       const std::string& url) const;
 
-  void DispatchViewInputEventToWindowManager(const View* view,
-                                             const ui::Event* event);
+  // Returns the ViewManagerServiceImpl that has |id| as a root.
+  ViewManagerServiceImpl* GetConnectionWithRoot(const NodeId& id) {
+    return const_cast<ViewManagerServiceImpl*>(
+        const_cast<const RootNodeManager*>(this)->GetConnectionWithRoot(id));
+  }
+  const ViewManagerServiceImpl* GetConnectionWithRoot(const NodeId& id) const;
+
+  void DispatchNodeInputEventToWindowManager(EventPtr event);
 
   // These functions trivially delegate to all ViewManagerServiceImpls, which in
   // term notify their clients.
+  void ProcessNodeDestroyed(Node* node);
   void ProcessNodeBoundsChanged(const Node* node,
                                 const gfx::Rect& old_bounds,
                                 const gfx::Rect& new_bounds);
@@ -143,11 +134,7 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager : public NodeDelegate {
   void ProcessNodeReorder(const Node* node,
                           const Node* relative_node,
                           const OrderDirection direction);
-  void ProcessNodeViewReplaced(const Node* node,
-                               const View* new_view_id,
-                               const View* old_view_id);
   void ProcessNodeDeleted(const NodeId& node);
-  void ProcessViewDeleted(const ViewId& view);
 
  private:
   // Used to setup any static state needed by RootNodeManager.
@@ -175,28 +162,27 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager : public NodeDelegate {
   }
 
   // Implementation of the two embed variants.
-  ViewManagerServiceImpl* EmbedImpl(ConnectionSpecificId creator_id,
-                                   const String& url,
-                                   const Array<Id>& node_ids);
+  ViewManagerServiceImpl* EmbedImpl(
+      ConnectionSpecificId creator_id,
+      const String& url,
+      const NodeId& root_id,
+      InterfaceRequest<ServiceProvider> service_provider);
 
   // Overridden from NodeDelegate:
+  virtual void OnNodeDestroyed(const Node* node) OVERRIDE;
   virtual void OnNodeHierarchyChanged(const Node* node,
                                       const Node* new_parent,
                                       const Node* old_parent) OVERRIDE;
-  virtual void OnNodeViewReplaced(const Node* node,
-                                  const View* new_view,
-                                  const View* old_view) OVERRIDE;
-  virtual void OnViewInputEvent(const View* view,
-                                const ui::Event* event) OVERRIDE;
+  virtual void OnNodeBoundsChanged(const Node* node,
+                                   const gfx::Rect& old_bounds,
+                                   const gfx::Rect& new_bounds) OVERRIDE;
 
   Context context_;
 
-  ServiceProvider* service_provider_;
+  ApplicationConnection* app_connection_;
 
   // ID to use for next ViewManagerServiceImpl.
   ConnectionSpecificId next_connection_id_;
-
-  Id next_server_change_id_;
 
   // Set of ViewManagerServiceImpls.
   ConnectionMap connection_map_;
@@ -204,7 +190,7 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager : public NodeDelegate {
   RootViewManager root_view_manager_;
 
   // Root node.
-  Node root_;
+  scoped_ptr<Node> root_;
 
   // Set of ViewManagerServiceImpls created by way of Connect(). These have to
   // be explicitly destroyed.
@@ -218,7 +204,6 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager : public NodeDelegate {
 };
 
 }  // namespace service
-}  // namespace view_manager
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_VIEW_MANAGER_ROOT_NODE_MANAGER_H_

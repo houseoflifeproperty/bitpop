@@ -103,6 +103,8 @@ public:
         free(ptr); // Not the system free, the one from this class.
     }
 
+    static bool isAllocationAllowed() { return true; }
+
     static void markNoTracing(...)
     {
         ASSERT_NOT_REACHED();
@@ -112,6 +114,19 @@ public:
     {
         ASSERT_NOT_REACHED();
     }
+
+    static void registerWeakTable(...)
+    {
+        ASSERT_NOT_REACHED();
+    }
+
+#if ENABLE(ASSERT)
+    static bool weakTableRegistered(...)
+    {
+        ASSERT_NOT_REACHED();
+        return false;
+    }
+#endif
 
     template<typename T, typename Traits>
     static void trace(...)

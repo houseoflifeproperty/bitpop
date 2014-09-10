@@ -2,6 +2,7 @@
 *.pyc
 *.svnrev
 .code_review_password
+.logstatus
 .manhole
 .project
 .pydevproject
@@ -18,6 +19,7 @@ start_slave.log
 state.sqlite
 state.sqlite-shm
 state.sqlite-wal
+status.log*
 twistd.hostname
 twistd.log*
 twistd.pid

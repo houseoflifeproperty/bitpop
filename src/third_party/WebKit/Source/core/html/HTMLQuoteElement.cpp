@@ -24,10 +24,9 @@
 #include "core/html/HTMLQuoteElement.h"
 
 #include "core/HTMLNames.h"
-#include "core/dom/Document.h"
 #include "core/dom/StyleEngine.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 

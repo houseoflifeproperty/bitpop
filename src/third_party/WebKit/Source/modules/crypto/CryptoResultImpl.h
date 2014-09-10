@@ -31,17 +31,17 @@
 #ifndef CryptoResultImpl_h
 #define CryptoResultImpl_h
 
-#include "bindings/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptPromise.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/CryptoResult.h"
 #include "public/platform/WebCrypto.h"
 #include "wtf/Forward.h"
 #include "wtf/WeakPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class ScriptPromiseResolverWithContext;
-ExceptionCode webCryptoErrorToExceptionCode(blink::WebCryptoErrorType);
+class ScriptPromiseResolver;
+ExceptionCode webCryptoErrorToExceptionCode(WebCryptoErrorType);
 
 // Wrapper around a Promise to notify completion of the crypto operation.
 //
@@ -59,12 +59,12 @@ public:
 
     static PassRefPtr<CryptoResultImpl> create(ScriptState*);
 
-    virtual void completeWithError(blink::WebCryptoErrorType, const blink::WebString&) OVERRIDE;
-    virtual void completeWithBuffer(const blink::WebArrayBuffer&) OVERRIDE;
+    virtual void completeWithError(WebCryptoErrorType, const WebString&) OVERRIDE;
+    virtual void completeWithBuffer(const WebArrayBuffer&) OVERRIDE;
     virtual void completeWithJson(const char* utf8Data, unsigned length) OVERRIDE;
     virtual void completeWithBoolean(bool) OVERRIDE;
-    virtual void completeWithKey(const blink::WebCryptoKey&) OVERRIDE;
-    virtual void completeWithKeyPair(const blink::WebCryptoKey& publicKey, const blink::WebCryptoKey& privateKey) OVERRIDE;
+    virtual void completeWithKey(const WebCryptoKey&) OVERRIDE;
+    virtual void completeWithKeyPair(const WebCryptoKey& publicKey, const WebCryptoKey& privateKey) OVERRIDE;
     virtual bool cancelled() const OVERRIDE;
 
     // If called after completion (including cancellation) will return an empty
@@ -77,10 +77,10 @@ private:
 
     void cancel();
 
-    WeakPtr<ScriptPromiseResolverWithContext> m_resolver;
+    WeakPtr<ScriptPromiseResolver> m_resolver;
     volatile int m_cancelled;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

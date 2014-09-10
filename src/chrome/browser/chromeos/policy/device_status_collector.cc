@@ -17,8 +17,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/users/user.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/common/chrome_version_info.h"
@@ -29,6 +27,8 @@
 #include "chromeos/settings/cros_settings_names.h"
 #include "chromeos/system/statistics_provider.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
+#include "components/user_manager/user_manager.h"
+#include "components/user_manager/user_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "policy/proto/device_management_backend.pb.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -71,9 +71,6 @@ int64 TimestampToDayKey(Time timestamp) {
   timestamp.LocalMidnight().LocalExplode(&exploded);
   return (Time::FromUTCExploded(exploded) - Time::UnixEpoch()).InMilliseconds();
 }
-
-// Maximum number of users to report.
-const int kMaxUserCount = 5;
 
 }  // namespace
 
@@ -430,12 +427,12 @@ void DeviceStatusCollector::GetNetworkInterfaces(
 void DeviceStatusCollector::GetUsers(em::DeviceStatusReportRequest* request) {
   policy::BrowserPolicyConnectorChromeOS* connector =
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
-  bool found_managed_user = false;
-  const chromeos::UserList& users = chromeos::UserManager::Get()->GetUsers();
-  chromeos::UserList::const_iterator user;
+  const user_manager::UserList& users =
+      user_manager::UserManager::Get()->GetUsers();
+  user_manager::UserList::const_iterator user;
   for (user = users.begin(); user != users.end(); ++user) {
     // Only regular users are reported.
-    if ((*user)->GetType() != chromeos::User::USER_TYPE_REGULAR)
+    if ((*user)->GetType() != user_manager::USER_TYPE_REGULAR)
       continue;
 
     em::DeviceUser* device_user = request->add_user();
@@ -443,17 +440,10 @@ void DeviceStatusCollector::GetUsers(em::DeviceStatusReportRequest* request) {
     if (connector->GetUserAffiliation(email) == USER_AFFILIATION_MANAGED) {
       device_user->set_type(em::DeviceUser::USER_TYPE_MANAGED);
       device_user->set_email(email);
-      found_managed_user = true;
     } else {
       device_user->set_type(em::DeviceUser::USER_TYPE_UNMANAGED);
       // Do not report the email address of unmanaged users.
     }
-
-    // Add only kMaxUserCount entries, unless no managed users are found in the
-    // first kMaxUserCount users. In that case, continue until at least one
-    // managed user is found.
-    if (request->user_size() >= kMaxUserCount && found_managed_user)
-      break;
   }
 }
 

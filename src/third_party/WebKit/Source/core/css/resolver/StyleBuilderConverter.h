@@ -35,8 +35,9 @@
 #include "core/rendering/style/StyleReflection.h"
 #include "core/svg/SVGLength.h"
 #include "platform/LengthSize.h"
+#include "platform/fonts/FontDescription.h"
 
-namespace WebCore {
+namespace blink {
 
 // Note that we assume the parser only allows valid CSSValue types.
 
@@ -44,7 +45,12 @@ class StyleBuilderConverter {
 public:
     static PassRefPtr<StyleReflection> convertBoxReflect(StyleResolverState&, CSSValue*);
     static AtomicString convertFragmentIdentifier(StyleResolverState&, CSSValue*);
+    static Color convertColor(StyleResolverState&, CSSValue*, bool forVisitedLink = false);
     template <typename T> static T convertComputedLength(StyleResolverState&, CSSValue*);
+    template <typename T> static T convertFlags(StyleResolverState&, CSSValue*);
+    static PassRefPtr<FontFeatureSettings> convertFontFeatureSettings(StyleResolverState&, CSSValue*);
+    static FontWeight convertFontWeight(StyleResolverState&, CSSValue*);
+    static FontDescription::VariantLigatures convertFontVariantLigatures(StyleResolverState&, CSSValue*);
     static EGlyphOrientation convertGlyphOrientation(StyleResolverState&, CSSValue*);
     static GridPosition convertGridPosition(StyleResolverState&, CSSValue*);
     static GridTrackSize convertGridTrackSize(StyleResolverState&, CSSValue*);
@@ -75,6 +81,15 @@ template <typename T>
 T StyleBuilderConverter::convertComputedLength(StyleResolverState& state, CSSValue* value)
 {
     return toCSSPrimitiveValue(value)->computeLength<T>(state.cssToLengthConversionData());
+}
+
+template <typename T>
+T StyleBuilderConverter::convertFlags(StyleResolverState& state, CSSValue* value)
+{
+    T flags = static_cast<T>(0);
+    for (CSSValueListIterator i(value); i.hasMore(); i.advance())
+        flags |= *toCSSPrimitiveValue(i.value());
+    return flags;
 }
 
 template <typename T>
@@ -112,6 +127,6 @@ AtomicString StyleBuilderConverter::convertString(StyleResolverState&, CSSValue*
     return AtomicString(primitiveValue->getStringValue());
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

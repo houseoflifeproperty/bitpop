@@ -10,7 +10,6 @@
 #include "chromeos/dbus/cros_disks_client.h"
 #include "chromeos/dbus/dbus_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/dbus_thread_manager_observer.h"
 #include "chromeos/dbus/fake_bluetooth_adapter_client.h"
 #include "chromeos/dbus/fake_bluetooth_agent_manager_client.h"
 #include "chromeos/dbus/fake_bluetooth_device_client.h"
@@ -22,6 +21,7 @@
 #include "chromeos/dbus/fake_bluetooth_profile_manager_client.h"
 #include "chromeos/dbus/fake_cryptohome_client.h"
 #include "chromeos/dbus/fake_debug_daemon_client.h"
+#include "chromeos/dbus/fake_easy_unlock_client.h"
 #include "chromeos/dbus/fake_gsm_sms_client.h"
 #include "chromeos/dbus/fake_image_burner_client.h"
 #include "chromeos/dbus/fake_introspectable_client.h"
@@ -51,8 +51,6 @@ FakeDBusThreadManager::FakeDBusThreadManager() {
 }
 
 FakeDBusThreadManager::~FakeDBusThreadManager() {
-  FOR_EACH_OBSERVER(DBusThreadManagerObserver, observers_,
-                    OnDBusThreadManagerDestroying(this));
 }
 
 void FakeDBusThreadManager::SetFakeClients() {
@@ -83,6 +81,7 @@ void FakeDBusThreadManager::SetFakeClients() {
   SetCryptohomeClient(scoped_ptr<CryptohomeClient>(new FakeCryptohomeClient));
   SetDebugDaemonClient(
       scoped_ptr<DebugDaemonClient>(new FakeDebugDaemonClient));
+  SetEasyUnlockClient(scoped_ptr<EasyUnlockClient>(new FakeEasyUnlockClient));
   SetLorgnetteManagerClient(
       scoped_ptr<LorgnetteManagerClient>(new FakeLorgnetteManagerClient));
 
@@ -205,6 +204,11 @@ void FakeDBusThreadManager::SetDebugDaemonClient(
   debug_daemon_client_ = client.Pass();
 }
 
+void FakeDBusThreadManager::SetEasyUnlockClient(
+    scoped_ptr<EasyUnlockClient> client) {
+  easy_unlock_client_ = client.Pass();
+}
+
 void FakeDBusThreadManager::SetLorgnetteManagerClient(
     scoped_ptr<LorgnetteManagerClient> client) {
   lorgnette_manager_client_ = client.Pass();
@@ -235,8 +239,7 @@ void FakeDBusThreadManager::SetShillProfileClient(
   shill_profile_client_ = client.Pass();
 }
 
-void FakeDBusThreadManager::SetGsmSMSClient(
-    scoped_ptr<GsmSMSClient> client) {
+void FakeDBusThreadManager::SetGsmSMSClient(scoped_ptr<GsmSMSClient> client) {
   gsm_sms_client_ = client.Pass();
 }
 
@@ -275,8 +278,7 @@ void FakeDBusThreadManager::SetNfcRecordClient(
   nfc_record_client_ = client.Pass();
 }
 
-void FakeDBusThreadManager::SetNfcTagClient(
-    scoped_ptr<NfcTagClient> client) {
+void FakeDBusThreadManager::SetNfcTagClient(scoped_ptr<NfcTagClient> client) {
   nfc_tag_client_ = client.Pass();
 }
 
@@ -314,64 +316,49 @@ void FakeDBusThreadManager::SetUpdateEngineClient(
   update_engine_client_ = client.Pass();
 }
 
-void FakeDBusThreadManager::AddObserver(
-    DBusThreadManagerObserver* observer) {
-  DCHECK(observer);
-  observers_.AddObserver(observer);
-}
-
-void FakeDBusThreadManager::RemoveObserver(
-    DBusThreadManagerObserver* observer) {
-  DCHECK(observer);
-  observers_.RemoveObserver(observer);
-}
-
 dbus::Bus* FakeDBusThreadManager::GetSystemBus() {
   return NULL;
 }
 
-BluetoothAdapterClient*
-    FakeDBusThreadManager::GetBluetoothAdapterClient() {
+BluetoothAdapterClient* FakeDBusThreadManager::GetBluetoothAdapterClient() {
   return bluetooth_adapter_client_.get();
 }
 
 BluetoothAgentManagerClient*
-    FakeDBusThreadManager::GetBluetoothAgentManagerClient() {
+FakeDBusThreadManager::GetBluetoothAgentManagerClient() {
   return bluetooth_agent_manager_client_.get();
 }
 
-BluetoothDeviceClient*
-    FakeDBusThreadManager::GetBluetoothDeviceClient() {
+BluetoothDeviceClient* FakeDBusThreadManager::GetBluetoothDeviceClient() {
   return bluetooth_device_client_.get();
 }
 
 BluetoothGattCharacteristicClient*
-    FakeDBusThreadManager::GetBluetoothGattCharacteristicClient() {
+FakeDBusThreadManager::GetBluetoothGattCharacteristicClient() {
   return bluetooth_gatt_characteristic_client_.get();
 }
 
 BluetoothGattDescriptorClient*
-    FakeDBusThreadManager::GetBluetoothGattDescriptorClient() {
+FakeDBusThreadManager::GetBluetoothGattDescriptorClient() {
   return bluetooth_gatt_descriptor_client_.get();
 }
 
 BluetoothGattManagerClient*
-    FakeDBusThreadManager::GetBluetoothGattManagerClient() {
+FakeDBusThreadManager::GetBluetoothGattManagerClient() {
   return bluetooth_gatt_manager_client_.get();
 }
 
 BluetoothGattServiceClient*
-    FakeDBusThreadManager::GetBluetoothGattServiceClient() {
+FakeDBusThreadManager::GetBluetoothGattServiceClient() {
   return bluetooth_gatt_service_client_.get();
 }
 
-BluetoothInputClient*
-    FakeDBusThreadManager::GetBluetoothInputClient() {
+BluetoothInputClient* FakeDBusThreadManager::GetBluetoothInputClient() {
   return bluetooth_input_client_.get();
 }
 
 BluetoothProfileManagerClient*
-    FakeDBusThreadManager::GetBluetoothProfileManagerClient() {
+FakeDBusThreadManager::GetBluetoothProfileManagerClient() {
   return bluetooth_profile_manager_client_.get();
 }
 
@@ -391,32 +378,30 @@ DebugDaemonClient* FakeDBusThreadManager::GetDebugDaemonClient() {
   return debug_daemon_client_.get();
 }
 
+EasyUnlockClient* FakeDBusThreadManager::GetEasyUnlockClient() {
+  return easy_unlock_client_.get();
+}
 LorgnetteManagerClient* FakeDBusThreadManager::GetLorgnetteManagerClient() {
   return lorgnette_manager_client_.get();
 }
 
-ShillDeviceClient*
-    FakeDBusThreadManager::GetShillDeviceClient() {
+ShillDeviceClient* FakeDBusThreadManager::GetShillDeviceClient() {
   return shill_device_client_.get();
 }
 
-ShillIPConfigClient*
-    FakeDBusThreadManager::GetShillIPConfigClient() {
+ShillIPConfigClient* FakeDBusThreadManager::GetShillIPConfigClient() {
   return shill_ipconfig_client_.get();
 }
 
-ShillManagerClient*
-    FakeDBusThreadManager::GetShillManagerClient() {
+ShillManagerClient* FakeDBusThreadManager::GetShillManagerClient() {
   return shill_manager_client_.get();
 }
 
-ShillProfileClient*
-    FakeDBusThreadManager::GetShillProfileClient() {
+ShillProfileClient* FakeDBusThreadManager::GetShillProfileClient() {
   return shill_profile_client_.get();
 }
 
-ShillServiceClient*
-    FakeDBusThreadManager::GetShillServiceClient() {
+ShillServiceClient* FakeDBusThreadManager::GetShillServiceClient() {
   return shill_service_client_.get();
 }
 
@@ -428,13 +413,11 @@ ImageBurnerClient* FakeDBusThreadManager::GetImageBurnerClient() {
   return image_burner_client_.get();
 }
 
-IntrospectableClient*
-    FakeDBusThreadManager::GetIntrospectableClient() {
+IntrospectableClient* FakeDBusThreadManager::GetIntrospectableClient() {
   return introspectable_client_.get();
 }
 
-ModemMessagingClient*
-    FakeDBusThreadManager::GetModemMessagingClient() {
+ModemMessagingClient* FakeDBusThreadManager::GetModemMessagingClient() {
   return modem_messaging_client_.get();
 }
 
@@ -458,8 +441,7 @@ NfcRecordClient* FakeDBusThreadManager::GetNfcRecordClient() {
   return nfc_record_client_.get();
 }
 
-PermissionBrokerClient*
-    FakeDBusThreadManager::GetPermissionBrokerClient() {
+PermissionBrokerClient* FakeDBusThreadManager::GetPermissionBrokerClient() {
   return permission_broker_client_.get();
 }
 
@@ -467,13 +449,11 @@ PowerManagerClient* FakeDBusThreadManager::GetPowerManagerClient() {
   return power_manager_client_.get();
 }
 
-PowerPolicyController*
-FakeDBusThreadManager::GetPowerPolicyController() {
+PowerPolicyController* FakeDBusThreadManager::GetPowerPolicyController() {
   return power_policy_controller_.get();
 }
 
-SessionManagerClient*
-    FakeDBusThreadManager::GetSessionManagerClient() {
+SessionManagerClient* FakeDBusThreadManager::GetSessionManagerClient() {
   return session_manager_client_.get();
 }
 

@@ -49,12 +49,11 @@
 }
 
 .network-log-grid.data-grid table.data {
-    background-size: 128px 82px;
-    background-image: linear-gradient(to bottom, white, white 50%, #eee 50%, #eee);
+    background: transparent;
 }
 
-.network-log-grid.data-grid.small table.data {
-    background-size: 128px 42px;
+.network-log-grid .odd {
+    background: #eee;
 }
 
 .network-log-grid.data-grid td {
@@ -71,21 +70,19 @@
 .network-log-grid.data-grid th {
     border-bottom: 1px solid rgb(205, 205, 205);
     border-left: 1px solid rgb(205, 205, 205);
-    height: 30px;
-}
-
-.network-log-grid.data-grid.small th {
-    height: 22px;
-}
-
-.network-log-grid.data-grid th,
-.network-log-grid.data-grid th.sort-descending,
-.network-log-grid.data-grid th.sort-ascending {
     background: white;
+}
+
+.network-log-grid.data-grid .header-container {
+    height: 31px;
 }
 
 .network-log-grid.data-grid .data-container {
     top: 31px;
+}
+
+.network-log-grid.data-grid.small .header-container {
+    height: 23px;
 }
 
 .network-log-grid.data-grid.small .data-container {
@@ -100,15 +97,7 @@
     color: inherit;
 }
 
-.network-log-grid.data-grid tr.offscreen > td > div {
-    display: none;
-}
-
-.network-log-grid.data-grid tr.filler {
-    background-color: white;
-}
-
-.network-log-grid.data-grid tr:not(.filler) td.name-column {
+.network-log-grid.data-grid .name-column {
     cursor: pointer;
 }
 
@@ -170,53 +159,53 @@
     content: url(Images/resourcePlainIconSmall.png);
 }
 
-.network-log-grid.data-grid .network-type-script .icon {
+.network-log-grid.data-grid .icon.script {
     content: url(Images/resourceJSIcon.png);
 }
 
-.network-log-grid.data-grid.small .network-type-script .icon {
+.network-log-grid.data-grid.small .icon.script {
     content: url(Images/resourceDocumentIconSmall.png);
 }
 
-.network-log-grid.data-grid .network-type-document .icon {
+.network-log-grid.data-grid .icon.document {
     content: url(Images/resourceDocumentIcon.png);
 }
 
-.network-log-grid.data-grid.small .network-type-document .icon {
+.network-log-grid.data-grid.small .icon.document {
     content: url(Images/resourceDocumentIconSmall.png);
 }
 
-.network-log-grid.data-grid .network-type-stylesheet .icon {
+.network-log-grid.data-grid .icon.stylesheet {
     content: url(Images/resourceCSSIcon.png);
 }
 
-.network-log-grid.data-grid.small .network-type-stylesheet .icon {
+.network-log-grid.data-grid.small .icon.stylesheet {
     content: url(Images/resourceDocumentIconSmall.png);
 }
 
-.network-log-grid.data-grid .network-type-media .icon {
-    content: url(Images/resourcePlainIcon.png); // FIXME: media icon
+.network-log-grid.data-grid .icon.media {
+    content: url(Images/resourcePlainIcon.png); /* FIXME: media icon */
 }
 
-.network-log-grid.data-grid.small .network-type-media .icon {
-    content: url(Images/resourcePlainIconSmall.png); // FIXME: media icon
+.network-log-grid.data-grid.small .icon.media {
+    content: url(Images/resourcePlainIconSmall.png); /* FIXME: media icon */
 }
-.network-log-grid.data-grid .network-type-texttrack .icon {
-    content: url(Images/resourcePlainIcon.png); // FIXME: vtt icon
-}
-
-.network-log-grid.data-grid.small .network-type-texttrack .icon {
-    content: url(Images/resourcePlainIconSmall.png); // FIXME: vtt icon
+.network-log-grid.data-grid .icon.texttrack {
+    content: url(Images/resourcePlainIcon.png); /* FIXME: vtt icon */
 }
 
-.network-log-grid.data-grid .network-type-image .icon {
+.network-log-grid.data-grid.small .icon.texttrack {
+    content: url(Images/resourcePlainIconSmall.png); /* FIXME: vtt icon */
+}
+
+.network-log-grid.data-grid .icon.image {
     position: relative;
     background-image: url(Images/resourcePlainIcon.png);
     background-repeat: no-repeat;
     content: "";
 }
 
-.network-log-grid.data-grid.small .network-type-image .icon {
+.network-log-grid.data-grid.small .icon.image {
     background-image: url(Images/resourcePlainIconSmall.png);
     content: "";
 }
@@ -256,6 +245,15 @@
     max-height: 11px;
 }
 
+.network-stack-trace .webkit-html-blackbox-link {
+    opacity: 0.6;
+}
+
+.network-async-trace-description {
+    padding: 3px 0 1px 0;
+    font-style: italic;
+}
+
 /* Graph styles */
 
 .network-graph-side {
@@ -286,9 +284,9 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    margin: auto -7px;
     height: 13px;
     line-height: 13px;
+    margin: auto;
     font-size: 90%;
     color: rgba(0, 0, 0, 0.75);
     text-shadow: rgba(255, 255, 255, 0.25) 1px 0 0, rgba(255, 255, 255, 0.25) -1px 0 0, rgba(255, 255, 255, 0.333) 0 1px 0, rgba(255, 255, 255, 0.25) 0 -1px 0;
@@ -310,15 +308,11 @@
     margin-right: 5px;
 }
 
-.network-graph-label.waiting-right {
-    margin-left: 5px;
-}
-
 .network-graph-label.before {
     color: rgba(0, 0, 0, 0.7);
     text-shadow: none;
     text-align: right;
-    margin-right: 2px;
+    margin-right: -1px;
 }
 
 .network-graph-label.before::after {
@@ -331,7 +325,7 @@
     color: rgba(0, 0, 0, 0.7);
     text-shadow: none;
     text-align: left;
-    margin-left: 2px;
+    margin-left: -1px;
 }
 
 .network-graph-label.after::before {
@@ -344,140 +338,106 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    margin: auto -7px;
+    margin: auto -1px;
     height: 12px;
-    min-width: 14px;
+    min-width: 2px;
     opacity: 0.65;
     border-width: 1px;
     border-style: solid;
-    border-radius: 7px / 6px;
-    box-shadow: inset 0 1px 1px 0px rgba(255, 255, 255, 0.8);
-
     border-color: hsl(0, 0%, 65%);
     background: linear-gradient(0deg, hsl(0, 0%, 73%), hsl(0, 0%, 78%));
 }
 
-.network-graph-bar.waiting,
-.network-graph-bar.waiting-right {
+.network-graph-bar.waiting {
     opacity: 0.35;
 }
 
 /* Resource categories */
 
 
-.resource-cached .network-graph-bar {
+.network-graph-bar.cached {
     background: hsl(0, 0%, 90%);
-    box-shadow: inset 0 1px 1px 0px rgba(255, 255, 255, 0.8),
-                inset 0 0 0 2px hsl(0, 0%, 73%),
-                inset 0 1px 0 2px hsla(0, 0%, 76%, 0.85);
 }
 
-.network-type-document .network-graph-bar {
+.network-graph-bar.document {
     border-color: hsl(215, 49%, 52%);
     background: linear-gradient(0deg, hsl(215, 72%, 61%), hsl(215, 100%, 69%));
 }
 
-.network-type-document.resource-cached .network-graph-bar {
+.network-graph-bar.cached.document {
     background: hsl(215, 99%, 86%);
-    box-shadow: inset 0 1px 1px 0px rgba(255, 255, 255, 0.8),
-                inset 0 0 0 2px hsl(215, 71%, 61%),
-                inset 0 1px 0 2px hsla(215, 58%, 65%, 0.85);
 }
 
-.network-type-stylesheet .network-graph-bar {
+.network-graph-bar.stylesheet {
     border-color: hsl(99, 34%, 52%);
     background: linear-gradient(0deg, hsl(100, 50%, 61%), hsl(90, 50%, 64%));
 }
 
-.network-type-stylesheet.resource-cached .network-graph-bar {
+.network-graph-bar.cached.stylesheet {
     background: hsl(99, 100%, 86%);
-    box-shadow: inset 0 1px 1px 0px rgba(255, 255, 255, 0.8),
-                inset 0 0 0 2px hsl(99, 72%, 61%),
-                inset 0 1px 0 2px hsla(99, 59%, 65%, 0.85);
 }
 
-.network-type-image .network-graph-bar {
+.network-graph-bar.image {
     border-color: hsl(272, 31%, 52%);
     background: linear-gradient(0deg, hsl(272, 46%, 61%), hsl(272, 64%, 69%));
 }
 
-.network-type-image.resource-cached .network-graph-bar {
+.network-graph-bar.cached.image {
     background: hsl(272, 65%, 86%);
-    box-shadow: inset 0 1px 1px 0px rgba(255, 255, 255, 0.8),
-                inset 0 0 0 2px hsl(272, 47%, 61%),
-                inset 0 1px 0 2px hsla(273, 38%, 65%, 0.85);
 }
 
-.network-type-media .network-graph-bar {
+.network-graph-bar.media {
     border-color: hsl(272, 31%, 52%);
     background: linear-gradient(0deg, hsl(272, 46%, 61%), hsl(272, 64%, 69%));
 }
 
-.network-type-media.resource-cached .network-graph-bar {
+.network-graph-bar.cached.media {
     background: hsl(272, 65%, 86%);
-    box-shadow: inset 0 1px 1px 0px rgba(255, 255, 255, 0.8),
-                inset 0 0 0 2px hsl(272, 47%, 61%),
-                inset 0 1px 0 2px hsla(273, 38%, 65%, 0.85);
 }
 
-.network-type-font .network-graph-bar {
+.network-graph-bar.font {
     border-color: hsl(8, 49%, 52%);
     background: linear-gradient(0deg, hsl(8, 72%, 61%), hsl(8, 100%, 69%));
 }
 
-.network-type-font.resource-cached .network-graph-bar {
+.network-graph-bar.cached.font {
     background: hsl(8, 100%, 86%);
-    box-shadow: inset 0 1px 1px 0px rgba(255, 255, 255, 0.8),
-                inset 0 0 0 2px hsl(8, 72%, 61%),
-                inset 0 1px 0 2px hsla(8, 59%, 65%, 0.85);
 }
 
-.network-type-texttrack .network-graph-bar {
+.network-graph-bar.texttrack {
     border-color: hsl(8, 49%, 52%);
     background: linear-gradient(0deg, hsl(8, 72%, 61%), hsl(8, 100%, 69%));
 }
 
-.network-type-texttrack.resource-cached .network-graph-bar {
+.network-graph-bar.cached.texttrack {
     background: hsl(8, 100%, 86%);
-    box-shadow: inset 0 1px 1px 0px rgba(255, 255, 255, 0.8),
-                inset 0 0 0 2px hsl(8, 72%, 61%),
-                inset 0 1px 0 2px hsla(8, 59%, 65%, 0.85);
 }
 
-.network-type-script .network-graph-bar {
+.network-graph-bar.script {
     border-color: hsl(31, 49%, 52%);
     background: linear-gradient(0deg, hsl(31, 72%, 61%), hsl(31, 100%, 69%));
 }
 
-.network-type-script.resource-cached .network-graph-bar {
+.network-graph-bar.cached.script {
     background: hsl(31, 100%, 86%);
-    box-shadow: inset 0 1px 1px 0px rgba(255, 255, 255, 0.8),
-                inset 0 0 0 2px hsl(31, 78%, 61%),
-                inset 0 1px 0 2px hsla(31, 64%, 65%, 0.85);
 }
 
-.network-type-xhr .network-graph-bar {
+.network-graph-bar.xhr {
     border-color: hsl(53, 49%, 52%);
     background: linear-gradient(0deg, hsl(53, 72%, 61%), hsl(53, 100%, 69%));
 }
 
-.network-type-xhr.resource-cached .network-graph-bar {
+.network-graph-bar.cached.xhr {
     background: hsl(53, 100%, 86%);
-    box-shadow: inset 0 1px 1px 0px rgba(255, 255, 255, 0.8),
-                inset 0 0 0 2px hsl(53, 72%, 61%),
-                inset 0 1px 0 2px hsla(54, 59%, 65%, 0.85);
 }
 
-.network-type-websocket .network-graph-bar {
+.network-graph-bar.websocket {
     border-color: hsl(0, 0%, 65%);
     background: linear-gradient(0deg, hsl(0, 0%, 73%), hsl(0, 0%, 78%));
 }
 
-.network-type-websocket.resource-cached .network-graph-bar {
+.network-graph-bar.cached.websocket {
     background: hsl(0, 0%, 90%);
-    box-shadow: inset 0 1px 1px 0px rgba(255, 255, 255, 0.8),
-                inset 0 0 0 2px hsl(0, 0%, 73%),
-                inset 0 1px 0 2px hsla(0, 0%, 76%, 0.85);
 }
 
 .network-dim-cell {
@@ -564,12 +524,6 @@
     background-color: transparent;
 }
 
-/* Filters */
-
-.network-log-grid.data-grid table.data tr.revealed.filtered-out {
-    display: none;
-}
-
 #network-container {
     overflow-y: auto;
     overflow-x: hidden;
@@ -578,26 +532,4 @@
 /* Brief mode peculiarities. */
 #network-container.brief-mode .network-timeline-grid {
     display: none;
-}
-
-#network-container.brief-mode td,
-#network-container.brief-mode th {
-    border-left: none;
-}
-
-#network-container.brief-mode .network-log-grid.data-grid .data-grid-resizer {
-    display: none;
-}
-
-#network-container.brief-mode .network-timeline-grid {
-    display: none;
-}
-
-#network-container:not(.brief-mode) .data-grid tr.selected {
-    background-color: transparent;
-    color: #222;
-}
-
-#network-container.brief-mode .data-grid .data-container {
-    padding-right: 0;
 }

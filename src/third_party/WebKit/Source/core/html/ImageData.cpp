@@ -29,11 +29,11 @@
 #include "config.h"
 #include "core/html/ImageData.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<ImageData> ImageData::create(const IntSize& size)
 {

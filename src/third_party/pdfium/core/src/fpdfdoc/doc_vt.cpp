@@ -317,7 +317,7 @@ void CSection::ClearWord(const CPVT_WordPlace & place)
     delete m_WordArray.GetAt(place.nWordIndex);
     m_WordArray.RemoveAt(place.nWordIndex);
 }
-CTypeset::CTypeset(CSection * pSection) : m_pSection(pSection), m_pVT(pSection->m_pVT), m_rcRet(0.0f, 0.0f, 0.0f, 0.0f)
+CTypeset::CTypeset(CSection * pSection) : m_rcRet(0.0f, 0.0f, 0.0f, 0.0f), m_pVT(pSection->m_pVT), m_pSection(pSection)
 {
 }
 CTypeset::~CTypeset()
@@ -804,22 +804,21 @@ void CTypeset::OutputLines()
     m_rcRet = CPVT_FloatRect(fMinX, fMinY, fMaxX, fMaxY);
 }
 CPDF_VariableText::CPDF_VariableText() :
-    m_pVTProvider(NULL),
-    m_pVTIterator(NULL),
-    m_bInitial(FALSE),
-    m_bRichText(FALSE),
+    m_nLimitChar(0),
+    m_nCharArray(0),
     m_bMultiLine(FALSE),
     m_bLimitWidth(FALSE),
     m_bAutoFontSize(FALSE),
-    m_nLimitChar(0),
-    m_nCharArray(0),
     m_nAlignment(0),
+    m_fLineLeading(0.0f),
     m_fCharSpace(0.0f),
-    m_fWordSpace(0.0f),
-    m_fFontSize(0.0f),
     m_nHorzScale(100),
     m_wSubWord(0),
-    m_fLineLeading(0.0f)
+    m_fFontSize(0.0f),
+    m_bInitial(FALSE),
+    m_bRichText(FALSE),
+    m_pVTProvider(NULL),
+    m_pVTIterator(NULL)
 {
 }
 CPDF_VariableText::~CPDF_VariableText()
@@ -1688,8 +1687,8 @@ IPDF_VariableText_Provider*	CPDF_VariableText::SetProvider(IPDF_VariableText_Pro
     return pOld;
 }
 CPDF_VariableText_Iterator::CPDF_VariableText_Iterator(CPDF_VariableText * pVT):
-    m_pVT(pVT),
-    m_CurPos(-1, -1, -1)
+    m_CurPos(-1, -1, -1),
+    m_pVT(pVT)
 {
 }
 CPDF_VariableText_Iterator::~CPDF_VariableText_Iterator()
@@ -1742,7 +1741,7 @@ FX_BOOL	CPDF_VariableText_Iterator::NextLine()
 FX_BOOL	CPDF_VariableText_Iterator::PrevLine()
 {
     ASSERT(m_pVT != NULL);
-    if (CSection * pSection = m_pVT->m_SectionArray.GetAt(m_CurPos.nSecIndex)) {
+    if (m_pVT->m_SectionArray.GetAt(m_CurPos.nSecIndex)) {
         if (m_CurPos.nLineIndex > 0) {
             m_CurPos = CPVT_WordPlace(m_CurPos.nSecIndex, m_CurPos.nLineIndex - 1, -1);
             return TRUE;
@@ -1780,7 +1779,7 @@ FX_BOOL	CPDF_VariableText_Iterator::GetWord(CPVT_Word & word) const
     ASSERT(m_pVT != NULL);
     word.WordPlace = m_CurPos;
     if (CSection * pSection = m_pVT->m_SectionArray.GetAt(m_CurPos.nSecIndex)) {
-        if (CLine * pLine = pSection->m_LineArray.GetAt(m_CurPos.nLineIndex)) {
+        if (pSection->m_LineArray.GetAt(m_CurPos.nLineIndex)) {
             if (CPVT_WordInfo * pWord = pSection->m_WordArray.GetAt(m_CurPos.nWordIndex)) {
                 word.Word = pWord->Word;
                 word.nCharset = pWord->nCharset;

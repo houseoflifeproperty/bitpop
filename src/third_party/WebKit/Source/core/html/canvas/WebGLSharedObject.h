@@ -28,7 +28,7 @@
 
 #include "core/html/canvas/WebGLObject.h"
 
-namespace WebCore {
+namespace blink {
 
 class WebGLContextGroup;
 class WebGLRenderingContextBase;
@@ -55,7 +55,7 @@ public:
     void detachContextGroup();
 
 protected:
-    WebGLSharedObject(WebGLRenderingContextBase*);
+    explicit WebGLSharedObject(WebGLRenderingContextBase*);
 
     virtual bool hasGroupOrContext() const OVERRIDE FINAL
     {
@@ -68,6 +68,6 @@ private:
     WebGLContextGroup* m_contextGroup;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebGLSharedObject_h

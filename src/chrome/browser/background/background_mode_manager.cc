@@ -161,6 +161,29 @@ base::string16 BackgroundModeManager::BackgroundModeData::name() {
   return name_;
 }
 
+std::set<const extensions::Extension*>
+BackgroundModeManager::BackgroundModeData::GetNewBackgroundApps() {
+  std::set<const extensions::Extension*> new_apps;
+
+  // Copy all current extensions into our list of |current_extensions_|.
+  for (extensions::ExtensionList::const_iterator it = applications_->begin();
+       it != applications_->end(); ++it) {
+    const extensions::ExtensionId& id = (*it)->id();
+    if (current_extensions_.count(id) == 0) {
+      // Not found in our set yet - add it and maybe return as a previously
+      // unseen extension.
+      current_extensions_.insert(id);
+      // If this application has been newly loaded after the initial startup,
+      // notify the user.
+      if (applications_->is_ready()) {
+        const extensions::Extension* extension = (*it).get();
+        new_apps.insert(extension);
+      }
+    }
+  }
+  return new_apps;
+}
+
 // static
 bool BackgroundModeManager::BackgroundModeData::BackgroundModeDataCompare(
     const BackgroundModeData* bmd1,
@@ -273,20 +296,11 @@ void BackgroundModeManager::RegisterProfile(Profile* profile) {
     name = profile_cache_->GetNameOfProfileAtIndex(index);
   bmd->SetName(name);
 
-  // Listen for when extensions are loaded or add the background permission so
-  // we can display a "background app installed" notification and enter
-  // "launch on login" mode on the Mac.
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-                 content::Source<Profile>(profile));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_PERMISSIONS_UPDATED,
-                 content::Source<Profile>(profile));
-
-
   // Check for the presence of background apps after all extensions have been
   // loaded, to handle the case where an extension has been manually removed
   // while Chrome was not running.
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSIONS_READY,
+  registrar_.Add(this,
+                 extensions::NOTIFICATION_EXTENSIONS_READY_DEPRECATED,
                  content::Source<Profile>(profile));
 
   bmd->applications_->AddObserver(this);
@@ -319,41 +333,10 @@ void BackgroundModeManager::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSIONS_READY:
+    case extensions::NOTIFICATION_EXTENSIONS_READY_DEPRECATED:
       // Extensions are loaded, so we don't need to manually keep the browser
       // process alive any more when running in no-startup-window mode.
       DecrementKeepAliveCountForStartup();
-      break;
-
-    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
-        Extension* extension = content::Details<Extension>(details).ptr();
-        Profile* profile = content::Source<Profile>(source).ptr();
-        if (BackgroundApplicationListModel::IsBackgroundApp(
-                *extension, profile)) {
-          // Extensions loaded after the ExtensionsService is ready should be
-          // treated as new installs.
-          if (extensions::ExtensionSystem::Get(profile)->extension_service()->
-                  is_ready()) {
-            bool is_being_reloaded = false;
-            CheckReloadStatus(extension, &is_being_reloaded);
-            // No need to show the notification if we showed to the user
-            // previously for this app.
-            if (!is_being_reloaded)
-              OnBackgroundAppInstalled(extension);
-          }
-        }
-      }
-      break;
-    case chrome::NOTIFICATION_EXTENSION_PERMISSIONS_UPDATED: {
-        UpdatedExtensionPermissionsInfo* info =
-            content::Details<UpdatedExtensionPermissionsInfo>(details).ptr();
-        if (info->permissions->HasAPIPermission(
-                extensions::APIPermission::kBackground) &&
-            info->reason == UpdatedExtensionPermissionsInfo::ADDED) {
-          // Turned on background permission, so treat this as a new install.
-          OnBackgroundAppInstalled(info->extension);
-        }
-      }
       break;
     case chrome::NOTIFICATION_APP_TERMINATING:
       // Make sure we aren't still keeping the app alive (only happens if we
@@ -424,6 +407,15 @@ void BackgroundModeManager::OnApplicationListChanged(Profile* profile) {
     }
     // List of applications changed so update the UI.
     UpdateStatusTrayIconContextMenu();
+
+    // Notify the user about any new applications.
+    BackgroundModeData* bmd = GetBackgroundModeData(profile);
+    std::set<const extensions::Extension*> new_apps =
+        bmd->GetNewBackgroundApps();
+    for (std::set<const extensions::Extension*>::const_iterator it =
+             new_apps.begin(); it != new_apps.end(); ++it) {
+      OnBackgroundAppInstalled(*it);
+    }
   }
 }
 
@@ -660,22 +652,6 @@ void BackgroundModeManager::OnBackgroundAppInstalled(
   if (extension) {  // NULL when called by unit tests.
     DisplayAppInstalledNotification(extension);
   }
-}
-
-void BackgroundModeManager::CheckReloadStatus(
-    const Extension* extension,
-    bool* is_being_reloaded) {
-    // Walk the BackgroundModeData for all profiles to see if one of their
-    // extensions is being reloaded.
-    for (BackgroundModeInfoMap::const_iterator it =
-             background_mode_data_.begin();
-         it != background_mode_data_.end();
-         ++it) {
-      Profile* profile = it->first;
-      // If the extension is being reloaded, no need to show a notification.
-      if (profile->GetExtensionService()->IsBeingReloaded(extension->id()))
-        *is_being_reloaded = true;
-    }
 }
 
 void BackgroundModeManager::CreateStatusTrayIcon() {

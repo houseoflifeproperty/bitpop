@@ -26,11 +26,12 @@
 #include "config.h"
 #include "modules/indexeddb/IDBTransaction.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/events/EventQueue.h"
 #include "core/inspector/ScriptCallStack.h"
+#include "modules/IndexedDBNames.h"
 #include "modules/indexeddb/IDBDatabase.h"
 #include "modules/indexeddb/IDBEventDispatcher.h"
 #include "modules/indexeddb/IDBIndex.h"
@@ -41,9 +42,9 @@
 
 using blink::WebIDBDatabase;
 
-namespace WebCore {
+namespace blink {
 
-IDBTransaction* IDBTransaction::create(ExecutionContext* context, int64_t id, const Vector<String>& objectStoreNames, blink::WebIDBTransactionMode mode, IDBDatabase* db)
+IDBTransaction* IDBTransaction::create(ExecutionContext* context, int64_t id, const Vector<String>& objectStoreNames, WebIDBTransactionMode mode, IDBDatabase* db)
 {
     IDBOpenDBRequest* openDBRequest = 0;
     IDBTransaction* transaction = adoptRefCountedGarbageCollectedWillBeNoop(new IDBTransaction(context, id, objectStoreNames, mode, db, openDBRequest, IDBDatabaseMetadata()));
@@ -53,30 +54,12 @@ IDBTransaction* IDBTransaction::create(ExecutionContext* context, int64_t id, co
 
 IDBTransaction* IDBTransaction::create(ExecutionContext* context, int64_t id, IDBDatabase* db, IDBOpenDBRequest* openDBRequest, const IDBDatabaseMetadata& previousMetadata)
 {
-    IDBTransaction* transaction = adoptRefCountedGarbageCollectedWillBeNoop(new IDBTransaction(context, id, Vector<String>(), blink::WebIDBTransactionModeVersionChange, db, openDBRequest, previousMetadata));
+    IDBTransaction* transaction = adoptRefCountedGarbageCollectedWillBeNoop(new IDBTransaction(context, id, Vector<String>(), WebIDBTransactionModeVersionChange, db, openDBRequest, previousMetadata));
     transaction->suspendIfNeeded();
     return transaction;
 }
 
-const AtomicString& IDBTransaction::modeReadOnly()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, readonly, ("readonly", AtomicString::ConstructFromLiteral));
-    return readonly;
-}
-
-const AtomicString& IDBTransaction::modeReadWrite()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, readwrite, ("readwrite", AtomicString::ConstructFromLiteral));
-    return readwrite;
-}
-
-const AtomicString& IDBTransaction::modeVersionChange()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, versionchange, ("versionchange", AtomicString::ConstructFromLiteral));
-    return versionchange;
-}
-
-IDBTransaction::IDBTransaction(ExecutionContext* context, int64_t id, const Vector<String>& objectStoreNames, blink::WebIDBTransactionMode mode, IDBDatabase* db, IDBOpenDBRequest* openDBRequest, const IDBDatabaseMetadata& previousMetadata)
+IDBTransaction::IDBTransaction(ExecutionContext* context, int64_t id, const Vector<String>& objectStoreNames, WebIDBTransactionMode mode, IDBDatabase* db, IDBOpenDBRequest* openDBRequest, const IDBDatabaseMetadata& previousMetadata)
     : ActiveDOMObject(context)
     , m_id(id)
     , m_database(db)
@@ -89,7 +72,7 @@ IDBTransaction::IDBTransaction(ExecutionContext* context, int64_t id, const Vect
     , m_previousMetadata(previousMetadata)
 {
     ScriptWrappable::init(this);
-    if (mode == blink::WebIDBTransactionModeVersionChange) {
+    if (mode == WebIDBTransactionModeVersionChange) {
         // Not active until the callback.
         m_state = Inactive;
     }
@@ -115,11 +98,6 @@ void IDBTransaction::trace(Visitor* visitor)
     visitor->trace(m_deletedObjectStores);
     visitor->trace(m_objectStoreCleanupMap);
     EventTargetWithInlineData::trace(visitor);
-}
-
-const String& IDBTransaction::mode() const
-{
-    return modeToString(m_mode);
 }
 
 void IDBTransaction::setError(PassRefPtrWillBeRawPtr<DOMError> error)
@@ -299,36 +277,32 @@ bool IDBTransaction::hasPendingActivity() const
     return m_hasPendingActivity && !m_contextStopped;
 }
 
-blink::WebIDBTransactionMode IDBTransaction::stringToMode(const String& modeString, ExceptionState& exceptionState)
+WebIDBTransactionMode IDBTransaction::stringToMode(const String& modeString, ExceptionState& exceptionState)
 {
-    if (modeString.isNull()
-        || modeString == IDBTransaction::modeReadOnly())
-        return blink::WebIDBTransactionModeReadOnly;
-    if (modeString == IDBTransaction::modeReadWrite())
-        return blink::WebIDBTransactionModeReadWrite;
+    if (modeString == IndexedDBNames::readonly)
+        return WebIDBTransactionModeReadOnly;
+    if (modeString == IndexedDBNames::readwrite)
+        return WebIDBTransactionModeReadWrite;
 
     exceptionState.throwTypeError("The mode provided ('" + modeString + "') is not one of 'readonly' or 'readwrite'.");
-    return blink::WebIDBTransactionModeReadOnly;
+    return WebIDBTransactionModeReadOnly;
 }
 
-const AtomicString& IDBTransaction::modeToString(blink::WebIDBTransactionMode mode)
+const String& IDBTransaction::mode() const
 {
-    switch (mode) {
-    case blink::WebIDBTransactionModeReadOnly:
-        return IDBTransaction::modeReadOnly();
-        break;
+    switch (m_mode) {
+    case WebIDBTransactionModeReadOnly:
+        return IndexedDBNames::readonly;
 
-    case blink::WebIDBTransactionModeReadWrite:
-        return IDBTransaction::modeReadWrite();
-        break;
+    case WebIDBTransactionModeReadWrite:
+        return IndexedDBNames::readwrite;
 
-    case blink::WebIDBTransactionModeVersionChange:
-        return IDBTransaction::modeVersionChange();
-        break;
+    case WebIDBTransactionModeVersionChange:
+        return IndexedDBNames::versionchange;
     }
 
     ASSERT_NOT_REACHED();
-    return IDBTransaction::modeReadOnly();
+    return IndexedDBNames::readonly;
 }
 
 const AtomicString& IDBTransaction::interfaceName() const
@@ -400,9 +374,9 @@ void IDBTransaction::enqueueEvent(PassRefPtrWillBeRawPtr<Event> event)
     eventQueue->enqueueEvent(event);
 }
 
-blink::WebIDBDatabase* IDBTransaction::backendDB() const
+WebIDBDatabase* IDBTransaction::backendDB() const
 {
     return m_database->backend();
 }
 
-} // namespace WebCore
+} // namespace blink

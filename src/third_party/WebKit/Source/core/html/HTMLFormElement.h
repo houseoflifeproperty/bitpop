@@ -35,7 +35,7 @@ namespace WTF{
 class TextEncoding;
 }
 
-namespace WebCore {
+namespace blink {
 
 class Event;
 class FormAssociatedElement;
@@ -117,7 +117,7 @@ public:
     const FormAssociatedElement::List& associatedElements() const;
     const WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement> >& imageElements();
 
-    void anonymousNamedGetter(const AtomicString& name, bool&, RefPtrWillBeRawPtr<RadioNodeList>&, bool&, RefPtrWillBeRawPtr<Element>&);
+    void anonymousNamedGetter(const AtomicString& name, RefPtrWillBeRawPtr<RadioNodeList>&, RefPtrWillBeRawPtr<Element>&);
 
 private:
     explicit HTMLFormElement(Document&);
@@ -129,6 +129,7 @@ private:
 
     virtual void handleLocalEvents(Event*) OVERRIDE;
 
+    virtual void attributeWillChange(const QualifiedName&, const AtomicString& oldValue, const AtomicString& newValue) OVERRIDE;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
     virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
@@ -187,6 +188,6 @@ private:
     OwnPtrWillBeMember<GenericEventQueue> m_pendingAutocompleteEventsQueue;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLFormElement_h

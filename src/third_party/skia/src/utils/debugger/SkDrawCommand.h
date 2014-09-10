@@ -343,12 +343,16 @@ private:
 
 class SkDrawPictureCommand : public SkDrawCommand {
 public:
-    SkDrawPictureCommand(const SkPicture* picture);
+    SkDrawPictureCommand(const SkPicture* picture, const SkMatrix* matrix, const SkPaint* paint);
     virtual void execute(SkCanvas* canvas) SK_OVERRIDE;
     virtual bool render(SkCanvas* canvas) const SK_OVERRIDE;
 
 private:
     SkAutoTUnref<const SkPicture> fPicture;
+    SkMatrix                      fMatrix;
+    SkMatrix*                     fMatrixPtr;
+    SkPaint                       fPaint;
+    SkPaint*                      fPaintPtr;
 
     typedef SkDrawCommand INHERITED;
 };
@@ -522,13 +526,11 @@ private:
 
 class SkSaveCommand : public SkDrawCommand {
 public:
-    SkSaveCommand(SkCanvas::SaveFlags flags);
+    SkSaveCommand();
     virtual void execute(SkCanvas* canvas) SK_OVERRIDE;
     virtual void trackSaveState(int* state) SK_OVERRIDE;
     virtual Action action() const SK_OVERRIDE { return kPushLayer_Action; }
 private:
-    SkCanvas::SaveFlags fFlags;
-
     typedef SkDrawCommand INHERITED;
 };
 

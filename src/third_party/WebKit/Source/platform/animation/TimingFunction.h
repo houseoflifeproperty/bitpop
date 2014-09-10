@@ -32,12 +32,11 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/StdLibExtras.h"
-#include "wtf/Vector.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
 #include <algorithm>
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT TimingFunction : public RefCounted<TimingFunction> {
 public:
@@ -55,6 +54,10 @@ public:
     // Evaluates the timing function at the given fraction. The accuracy parameter provides a hint as to the required
     // accuracy and is not guaranteed.
     virtual double evaluate(double fraction, double accuracy) const = 0;
+
+    // This function returns the minimum and maximum values obtainable when
+    // calling evaluate();
+    virtual void range(double* minValue, double* maxValue) const = 0;
 
 protected:
     TimingFunction(Type type)
@@ -80,6 +83,7 @@ public:
 
     virtual double evaluate(double fraction, double) const OVERRIDE;
 
+    virtual void range(double* minValue, double* maxValue) const OVERRIDE;
 private:
     LinearTimingFunction()
         : TimingFunction(LinearFunction)
@@ -136,6 +140,7 @@ public:
     virtual String toString() const OVERRIDE;
 
     virtual double evaluate(double fraction, double accuracy) const OVERRIDE;
+    virtual void range(double* minValue, double* maxValue) const OVERRIDE;
 
     double x1() const { return m_x1; }
     double y1() const { return m_y1; }
@@ -214,6 +219,7 @@ public:
 
     virtual double evaluate(double fraction, double) const OVERRIDE;
 
+    virtual void range(double* minValue, double* maxValue) const OVERRIDE;
     int numberOfSteps() const { return m_steps; }
     StepAtPosition stepAtPosition() const { return m_stepAtPosition; }
 
@@ -250,6 +256,6 @@ DEFINE_TIMING_FUNCTION_TYPE_CASTS(Linear);
 DEFINE_TIMING_FUNCTION_TYPE_CASTS(CubicBezier);
 DEFINE_TIMING_FUNCTION_TYPE_CASTS(Steps);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TimingFunction_h

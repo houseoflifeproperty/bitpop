@@ -7,7 +7,7 @@
 #include "core/page/Page.h"
 #include "core/frame/Settings.h"
 
-namespace WebCore {
+namespace blink {
 
 InternalSettingsGenerated::InternalSettingsGenerated(Page* page)
     : m_page(page)
@@ -15,6 +15,7 @@ InternalSettingsGenerated::InternalSettingsGenerated(Page* page)
     , m_{{setting.name}}(page->settings().{{setting.name}}())
     {% endfor %}
 {
+    ScriptWrappable::init(this);
 }
 
 InternalSettingsGenerated::~InternalSettingsGenerated()
@@ -35,4 +36,4 @@ void InternalSettingsGenerated::set{{setting.name|upper_first}}({{setting.type|t
 }
 {% endfor %}
 
-} // namespace WebCore
+} // namespace blink

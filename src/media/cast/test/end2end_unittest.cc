@@ -29,6 +29,10 @@
 #include "media/cast/cast_receiver.h"
 #include "media/cast/cast_sender.h"
 #include "media/cast/logging/simple_event_subscriber.h"
+#include "media/cast/net/cast_transport_config.h"
+#include "media/cast/net/cast_transport_defines.h"
+#include "media/cast/net/cast_transport_sender.h"
+#include "media/cast/net/cast_transport_sender_impl.h"
 #include "media/cast/test/fake_single_thread_task_runner.h"
 #include "media/cast/test/skewed_single_thread_task_runner.h"
 #include "media/cast/test/skewed_tick_clock.h"
@@ -36,10 +40,6 @@
 #include "media/cast/test/utility/default_config.h"
 #include "media/cast/test/utility/udp_proxy.h"
 #include "media/cast/test/utility/video_utility.h"
-#include "media/cast/transport/cast_transport_config.h"
-#include "media/cast/transport/cast_transport_defines.h"
-#include "media/cast/transport/cast_transport_sender.h"
-#include "media/cast/transport/cast_transport_sender_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace media {
@@ -97,9 +97,9 @@ std::string ConvertFromBase16String(const std::string base_16) {
   return compressed;
 }
 
-void UpdateCastTransportStatus(transport::CastTransportStatus status) {
-  bool result = (status == transport::TRANSPORT_AUDIO_INITIALIZED ||
-                 status == transport::TRANSPORT_VIDEO_INITIALIZED);
+void UpdateCastTransportStatus(CastTransportStatus status) {
+  bool result = (status == TRANSPORT_AUDIO_INITIALIZED ||
+                 status == TRANSPORT_VIDEO_INITIALIZED);
   EXPECT_TRUE(result);
 }
 
@@ -168,23 +168,23 @@ std::map<uint16, LoggingEventCounts> GetEventCountForPacketEvents(
 // PacketReceiverCallback.
 class LoopBackPacketPipe : public test::PacketPipe {
  public:
-  LoopBackPacketPipe(const transport::PacketReceiverCallback& packet_receiver)
+  LoopBackPacketPipe(const PacketReceiverCallback& packet_receiver)
       : packet_receiver_(packet_receiver) {}
 
   virtual ~LoopBackPacketPipe() {}
 
   // PacketPipe implementations.
-  virtual void Send(scoped_ptr<transport::Packet> packet) OVERRIDE {
+  virtual void Send(scoped_ptr<Packet> packet) OVERRIDE {
     packet_receiver_.Run(packet.Pass());
   }
 
  private:
-  transport::PacketReceiverCallback packet_receiver_;
+  PacketReceiverCallback packet_receiver_;
 };
 
 // Class that sends the packet direct from sender into the receiver with the
 // ability to drop packets between the two.
-class LoopBackTransport : public transport::PacketSender {
+class LoopBackTransport : public PacketSender {
  public:
   explicit LoopBackTransport(scoped_refptr<CastEnvironment> cast_environment)
       : send_packets_(true),
@@ -192,7 +192,7 @@ class LoopBackTransport : public transport::PacketSender {
         cast_environment_(cast_environment) {}
 
   void SetPacketReceiver(
-      const transport::PacketReceiverCallback& packet_receiver,
+      const PacketReceiverCallback& packet_receiver,
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
       base::TickClock* clock) {
     scoped_ptr<test::PacketPipe> loopback_pipe(
@@ -205,7 +205,7 @@ class LoopBackTransport : public transport::PacketSender {
     packet_pipe_->InitOnIOThread(task_runner, clock);
   }
 
-  virtual bool SendPacket(transport::PacketRef packet,
+  virtual bool SendPacket(PacketRef packet,
                           const base::Closure& cb) OVERRIDE {
     DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
     if (!send_packets_)
@@ -307,7 +307,7 @@ class TestReceiverAudioCallback
     EXPECT_TRUE(is_continuous);
   }
 
-  void CheckCodedAudioFrame(scoped_ptr<transport::EncodedFrame> audio_frame) {
+  void CheckCodedAudioFrame(scoped_ptr<EncodedFrame> audio_frame) {
     ASSERT_TRUE(!!audio_frame);
     ASSERT_FALSE(expected_frames_.empty());
     const ExpectedAudioFrame& expected_audio_frame =
@@ -458,14 +458,15 @@ class End2EndTest : public ::testing::Test {
         &event_subscriber_sender_);
   }
 
-  void Configure(transport::VideoCodec video_codec,
-                 transport::AudioCodec audio_codec,
+  void Configure(Codec video_codec,
+                 Codec audio_codec,
                  int audio_sampling_frequency,
                  int max_number_of_video_buffers_used) {
-    audio_sender_config_.rtp_config.ssrc = 1;
-    audio_sender_config_.rtp_config.max_delay_ms = kTargetPlayoutDelayMs;
+    audio_sender_config_.ssrc = 1;
     audio_sender_config_.incoming_feedback_ssrc = 2;
-    audio_sender_config_.rtp_config.payload_type = 96;
+    audio_sender_config_.target_playout_delay =
+        base::TimeDelta::FromMilliseconds(kTargetPlayoutDelayMs);
+    audio_sender_config_.rtp_payload_type = 96;
     audio_sender_config_.use_external_encoder = false;
     audio_sender_config_.frequency = audio_sampling_frequency;
     audio_sender_config_.channels = kAudioChannels;
@@ -474,22 +475,23 @@ class End2EndTest : public ::testing::Test {
 
     audio_receiver_config_.feedback_ssrc =
         audio_sender_config_.incoming_feedback_ssrc;
-    audio_receiver_config_.incoming_ssrc = audio_sender_config_.rtp_config.ssrc;
+    audio_receiver_config_.incoming_ssrc = audio_sender_config_.ssrc;
     audio_receiver_config_.rtp_max_delay_ms = kTargetPlayoutDelayMs;
     audio_receiver_config_.rtp_payload_type =
-        audio_sender_config_.rtp_config.payload_type;
+        audio_sender_config_.rtp_payload_type;
     audio_receiver_config_.frequency = audio_sender_config_.frequency;
     audio_receiver_config_.channels = kAudioChannels;
     audio_receiver_config_.max_frame_rate = 100;
-    audio_receiver_config_.codec.audio = audio_sender_config_.codec;
+    audio_receiver_config_.codec = audio_sender_config_.codec;
 
     test_receiver_audio_callback_->SetExpectedSamplingFrequency(
         audio_receiver_config_.frequency);
 
-    video_sender_config_.rtp_config.ssrc = 3;
-    video_sender_config_.rtp_config.max_delay_ms = kTargetPlayoutDelayMs;
+    video_sender_config_.ssrc = 3;
     video_sender_config_.incoming_feedback_ssrc = 4;
-    video_sender_config_.rtp_config.payload_type = 97;
+    video_sender_config_.target_playout_delay =
+        base::TimeDelta::FromMilliseconds(kTargetPlayoutDelayMs);
+    video_sender_config_.rtp_payload_type = 97;
     video_sender_config_.use_external_encoder = false;
     video_sender_config_.width = kVideoHdWidth;
     video_sender_config_.height = kVideoHdHeight;
@@ -505,14 +507,14 @@ class End2EndTest : public ::testing::Test {
 
     video_receiver_config_.feedback_ssrc =
         video_sender_config_.incoming_feedback_ssrc;
-    video_receiver_config_.incoming_ssrc = video_sender_config_.rtp_config.ssrc;
+    video_receiver_config_.incoming_ssrc = video_sender_config_.ssrc;
     video_receiver_config_.rtp_max_delay_ms = kTargetPlayoutDelayMs;
     video_receiver_config_.rtp_payload_type =
-        video_sender_config_.rtp_config.payload_type;
+        video_sender_config_.rtp_payload_type;
     video_receiver_config_.frequency = kVideoFrequency;
     video_receiver_config_.channels = 1;
     video_receiver_config_.max_frame_rate = video_sender_config_.max_frame_rate;
-    video_receiver_config_.codec.video = video_sender_config_.codec;
+    video_receiver_config_.codec = video_sender_config_.codec;
   }
 
   void SetReceiverSkew(double skew, base::TimeDelta offset) {
@@ -580,13 +582,13 @@ class End2EndTest : public ::testing::Test {
                                           &receiver_to_sender_);
 
     net::IPEndPoint dummy_endpoint;
-    transport_sender_.reset(new transport::CastTransportSenderImpl(
+    transport_sender_.reset(new CastTransportSenderImpl(
         NULL,
         testing_clock_sender_,
         dummy_endpoint,
         base::Bind(&UpdateCastTransportStatus),
         base::Bind(&End2EndTest::LogRawEvents, base::Unretained(this)),
-        base::TimeDelta::FromSeconds(1),
+        base::TimeDelta::FromMilliseconds(1),
         task_runner_sender_,
         &sender_to_receiver_));
 
@@ -601,9 +603,10 @@ class End2EndTest : public ::testing::Test {
                                   CreateDefaultVideoEncodeAcceleratorCallback(),
                                   CreateDefaultVideoEncodeMemoryCallback());
 
-    receiver_to_sender_.SetPacketReceiver(cast_sender_->packet_receiver(),
-                                          task_runner_,
-                                          &testing_clock_);
+    receiver_to_sender_.SetPacketReceiver(
+        transport_sender_->PacketReceiverForTesting(),
+        task_runner_,
+        &testing_clock_);
     sender_to_receiver_.SetPacketReceiver(cast_receiver_->packet_receiver(),
                                           task_runner_,
                                           &testing_clock_);
@@ -713,8 +716,8 @@ class End2EndTest : public ::testing::Test {
                    base::Unretained(this)));
   }
 
-  void LogRawEvents(const std::vector<PacketEvent>& packet_events) {
-    EXPECT_FALSE(packet_events.empty());
+  void LogRawEvents(const std::vector<PacketEvent>& packet_events,
+                    const std::vector<FrameEvent>& frame_events) {
     for (std::vector<media::cast::PacketEvent>::const_iterator it =
              packet_events.begin();
          it != packet_events.end();
@@ -727,6 +730,16 @@ class End2EndTest : public ::testing::Test {
                                                              it->packet_id,
                                                              it->max_packet_id,
                                                              it->size);
+    }
+    for (std::vector<media::cast::FrameEvent>::const_iterator it =
+             frame_events.begin();
+         it != frame_events.end();
+         ++it) {
+      cast_environment_sender_->Logging()->InsertFrameEvent(it->timestamp,
+                                                            it->type,
+                                                            it->media_type,
+                                                            it->rtp_timestamp,
+                                                            it->frame_id);
     }
   }
 
@@ -760,7 +773,7 @@ class End2EndTest : public ::testing::Test {
 
   LoopBackTransport receiver_to_sender_;
   LoopBackTransport sender_to_receiver_;
-  scoped_ptr<transport::CastTransportSenderImpl> transport_sender_;
+  scoped_ptr<CastTransportSenderImpl> transport_sender_;
 
   scoped_ptr<CastReceiver> cast_receiver_;
   scoped_ptr<CastSender> cast_sender_;
@@ -782,7 +795,7 @@ class End2EndTest : public ::testing::Test {
 };
 
 TEST_F(End2EndTest, LoopNoLossPcm16) {
-  Configure(transport::kVp8, transport::kPcm16, 32000, 1);
+  Configure(CODEC_VIDEO_VP8, CODEC_AUDIO_PCM16, 32000, 1);
   // Reduce video resolution to allow processing multiple frames within a
   // reasonable time frame.
   video_sender_config_.width = kVideoQcifWidth;
@@ -836,7 +849,7 @@ TEST_F(End2EndTest, LoopNoLossPcm16) {
 // This tests our external decoder interface for Audio.
 // Audio test without packet loss using raw PCM 16 audio "codec";
 TEST_F(End2EndTest, LoopNoLossPcm16ExternalDecoder) {
-  Configure(transport::kVp8, transport::kPcm16, 32000, 1);
+  Configure(CODEC_VIDEO_VP8, CODEC_AUDIO_PCM16, 32000, 1);
   Create();
 
   const int kNumIterations = 10;
@@ -854,7 +867,8 @@ TEST_F(End2EndTest, LoopNoLossPcm16ExternalDecoder) {
 
 // This tests our Opus audio codec without video.
 TEST_F(End2EndTest, LoopNoLossOpus) {
-  Configure(transport::kVp8, transport::kOpus, kDefaultAudioSamplingRate, 1);
+  Configure(CODEC_VIDEO_VP8, CODEC_AUDIO_OPUS,
+            kDefaultAudioSamplingRate, 1);
   Create();
 
   const int kNumIterations = 300;
@@ -880,7 +894,8 @@ TEST_F(End2EndTest, LoopNoLossOpus) {
 // in audio_receiver.cc for likely cause(s) of this bug.
 // http://crbug.com/356942
 TEST_F(End2EndTest, DISABLED_StartSenderBeforeReceiver) {
-  Configure(transport::kVp8, transport::kPcm16, kDefaultAudioSamplingRate, 1);
+  Configure(CODEC_VIDEO_VP8, CODEC_AUDIO_PCM16,
+            kDefaultAudioSamplingRate, 1);
   Create();
 
   int video_start = kVideoStart;
@@ -968,8 +983,10 @@ TEST_F(End2EndTest, DISABLED_StartSenderBeforeReceiver) {
 // This tests a network glitch lasting for 10 video frames.
 // Flaky. See crbug.com/351596.
 TEST_F(End2EndTest, DISABLED_GlitchWith3Buffers) {
-  Configure(transport::kVp8, transport::kOpus, kDefaultAudioSamplingRate, 3);
-  video_sender_config_.rtp_config.max_delay_ms = 67;
+  Configure(CODEC_VIDEO_VP8, CODEC_AUDIO_OPUS,
+            kDefaultAudioSamplingRate, 3);
+  video_sender_config_.target_playout_delay =
+      base::TimeDelta::FromMilliseconds(67);
   video_receiver_config_.rtp_max_delay_ms = 67;
   Create();
 
@@ -1031,8 +1048,10 @@ TEST_F(End2EndTest, DISABLED_GlitchWith3Buffers) {
 
 // Disabled due to flakiness and crashiness.  http://crbug.com/360951
 TEST_F(End2EndTest, DISABLED_DropEveryOtherFrame3Buffers) {
-  Configure(transport::kVp8, transport::kOpus, kDefaultAudioSamplingRate, 3);
-  video_sender_config_.rtp_config.max_delay_ms = 67;
+  Configure(CODEC_VIDEO_VP8, CODEC_AUDIO_OPUS,
+            kDefaultAudioSamplingRate, 3);
+  video_sender_config_.target_playout_delay =
+      base::TimeDelta::FromMilliseconds(67);
   video_receiver_config_.rtp_max_delay_ms = 67;
   Create();
   sender_to_receiver_.DropAllPacketsBelongingToOddFrames();
@@ -1069,17 +1088,17 @@ TEST_F(End2EndTest, DISABLED_DropEveryOtherFrame3Buffers) {
 }
 
 TEST_F(End2EndTest, CryptoVideo) {
-  Configure(transport::kVp8, transport::kPcm16, 32000, 1);
+  Configure(CODEC_VIDEO_VP8, CODEC_AUDIO_PCM16, 32000, 1);
 
-  video_sender_config_.rtp_config.aes_iv_mask =
+  video_sender_config_.aes_iv_mask =
       ConvertFromBase16String("1234567890abcdeffedcba0987654321");
-  video_sender_config_.rtp_config.aes_key =
+  video_sender_config_.aes_key =
       ConvertFromBase16String("deadbeefcafeb0b0b0b0cafedeadbeef");
 
   video_receiver_config_.aes_iv_mask =
-      video_sender_config_.rtp_config.aes_iv_mask;
+      video_sender_config_.aes_iv_mask;
   video_receiver_config_.aes_key =
-      video_sender_config_.rtp_config.aes_key;
+      video_sender_config_.aes_key;
 
   Create();
 
@@ -1107,17 +1126,17 @@ TEST_F(End2EndTest, CryptoVideo) {
 }
 
 TEST_F(End2EndTest, CryptoAudio) {
-  Configure(transport::kVp8, transport::kPcm16, 32000, 1);
+  Configure(CODEC_VIDEO_VP8, CODEC_AUDIO_PCM16, 32000, 1);
 
-  audio_sender_config_.rtp_config.aes_iv_mask =
+  audio_sender_config_.aes_iv_mask =
       ConvertFromBase16String("abcdeffedcba12345678900987654321");
-    audio_sender_config_.rtp_config.aes_key =
+  audio_sender_config_.aes_key =
       ConvertFromBase16String("deadbeefcafecafedeadbeefb0b0b0b0");
 
   audio_receiver_config_.aes_iv_mask =
-      audio_sender_config_.rtp_config.aes_iv_mask;
+      audio_sender_config_.aes_iv_mask;
   audio_receiver_config_.aes_key =
-      audio_sender_config_.rtp_config.aes_key;
+      audio_sender_config_.aes_key;
 
   Create();
 
@@ -1136,7 +1155,7 @@ TEST_F(End2EndTest, CryptoAudio) {
 // Video test without packet loss - tests the logging aspects of the end2end,
 // but is basically equivalent to LoopNoLossPcm16.
 TEST_F(End2EndTest, VideoLogging) {
-  Configure(transport::kVp8, transport::kPcm16, 32000, 1);
+  Configure(CODEC_VIDEO_VP8, CODEC_AUDIO_PCM16, 32000, 1);
   Create();
 
   int video_start = kVideoStart;
@@ -1246,21 +1265,21 @@ TEST_F(End2EndTest, VideoLogging) {
       total_event_count_for_packet += map_it->second.counter[i];
     }
 
-    int expected_event_count_for_packet = 0;
     EXPECT_GT(map_it->second.counter[PACKET_RECEIVED], 0);
-    expected_event_count_for_packet +=
-        map_it->second.counter[PACKET_RECEIVED];
+    int packets_received = map_it->second.counter[PACKET_RECEIVED];
+    int packets_sent = map_it->second.counter[PACKET_SENT_TO_NETWORK];
+    EXPECT_EQ(packets_sent, packets_received);
 
     // Verify that there were no other events logged with respect to this
-    // packet. (i.e. Total event count = expected event count)
-    EXPECT_EQ(total_event_count_for_packet, expected_event_count_for_packet);
+    // packet. (i.e. Total event count = packets sent + packets received)
+    EXPECT_EQ(packets_received + packets_sent, total_event_count_for_packet);
   }
 }
 
 // Audio test without packet loss - tests the logging aspects of the end2end,
 // but is basically equivalent to LoopNoLossPcm16.
 TEST_F(End2EndTest, AudioLogging) {
-  Configure(transport::kVp8, transport::kPcm16, 32000, 1);
+  Configure(CODEC_VIDEO_VP8, CODEC_AUDIO_PCM16, 32000, 1);
   Create();
 
   int audio_diff = kFrameTimerMs;
@@ -1341,7 +1360,8 @@ TEST_F(End2EndTest, AudioLogging) {
 }
 
 TEST_F(End2EndTest, BasicFakeSoftwareVideo) {
-  Configure(transport::kFakeSoftwareVideo, transport::kPcm16, 32000, 1);
+  Configure(CODEC_VIDEO_FAKE, CODEC_AUDIO_PCM16, 32000,
+            1);
   Create();
   StartBasicPlayer();
   SetReceiverSkew(1.0, base::TimeDelta::FromMilliseconds(1));
@@ -1362,7 +1382,8 @@ TEST_F(End2EndTest, BasicFakeSoftwareVideo) {
 }
 
 TEST_F(End2EndTest, ReceiverClockFast) {
-  Configure(transport::kFakeSoftwareVideo, transport::kPcm16, 32000, 1);
+  Configure(CODEC_VIDEO_FAKE, CODEC_AUDIO_PCM16, 32000,
+            1);
   Create();
   StartBasicPlayer();
   SetReceiverSkew(2.0, base::TimeDelta::FromMicroseconds(1234567));
@@ -1377,7 +1398,8 @@ TEST_F(End2EndTest, ReceiverClockFast) {
 }
 
 TEST_F(End2EndTest, ReceiverClockSlow) {
-  Configure(transport::kFakeSoftwareVideo, transport::kPcm16, 32000, 1);
+  Configure(CODEC_VIDEO_FAKE, CODEC_AUDIO_PCM16, 32000,
+            1);
   Create();
   StartBasicPlayer();
   SetReceiverSkew(0.5, base::TimeDelta::FromMicroseconds(-765432));
@@ -1392,7 +1414,8 @@ TEST_F(End2EndTest, ReceiverClockSlow) {
 }
 
 TEST_F(End2EndTest, SmoothPlayoutWithFivePercentClockRateSkew) {
-  Configure(transport::kFakeSoftwareVideo, transport::kPcm16, 32000, 1);
+  Configure(CODEC_VIDEO_FAKE, CODEC_AUDIO_PCM16, 32000,
+            1);
   Create();
   StartBasicPlayer();
   SetReceiverSkew(1.05, base::TimeDelta::FromMilliseconds(-42));
@@ -1413,7 +1436,8 @@ TEST_F(End2EndTest, SmoothPlayoutWithFivePercentClockRateSkew) {
 }
 
 TEST_F(End2EndTest, EvilNetwork) {
-  Configure(transport::kFakeSoftwareVideo, transport::kPcm16, 32000, 1);
+  Configure(CODEC_VIDEO_FAKE, CODEC_AUDIO_PCM16, 32000,
+            1);
   receiver_to_sender_.SetPacketPipe(test::EvilNetwork().Pass());
   sender_to_receiver_.SetPacketPipe(test::EvilNetwork().Pass());
   Create();

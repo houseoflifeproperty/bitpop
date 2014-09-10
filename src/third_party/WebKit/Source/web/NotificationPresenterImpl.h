@@ -33,25 +33,22 @@
 
 #include "modules/notifications/NotificationClient.h"
 
-#include "wtf/PassRefPtr.h"
-
 namespace blink {
 
 class WebNotificationPresenter;
 
-class NotificationPresenterImpl FINAL : public WebCore::NotificationClient {
+class NotificationPresenterImpl FINAL : public NotificationClient {
 public:
-    NotificationPresenterImpl() : m_presenter(0) { }
+    NotificationPresenterImpl();
 
     void initialize(WebNotificationPresenter* presenter);
     bool isInitialized();
 
-    // WebCore::NotificationPresenter implementation.
-    virtual bool show(WebCore::Notification*) OVERRIDE;
-    virtual void close(WebCore::Notification*) OVERRIDE;
-    virtual void notificationObjectDestroyed(WebCore::Notification*) OVERRIDE;
-    virtual WebCore::NotificationClient::Permission checkPermission(WebCore::ExecutionContext*) OVERRIDE;
-    virtual void requestPermission(WebCore::ExecutionContext*, WTF::PassOwnPtr<WebCore::NotificationPermissionCallback>) OVERRIDE;
+    // NotificationClient:
+    virtual bool show(Notification*) OVERRIDE;
+    virtual void close(Notification*) OVERRIDE;
+    virtual void notificationObjectDestroyed(Notification*) OVERRIDE;
+    virtual NotificationClient::Permission checkPermission(ExecutionContext*) OVERRIDE;
 
 private:
     // WebNotificationPresenter that this object delegates to.

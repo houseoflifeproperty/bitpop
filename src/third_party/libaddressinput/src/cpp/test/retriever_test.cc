@@ -17,6 +17,7 @@
 #include <libaddressinput/callback.h>
 #include <libaddressinput/null_storage.h>
 #include <libaddressinput/storage.h>
+#include <libaddressinput/util/basictypes.h>
 #include <libaddressinput/util/scoped_ptr.h>
 
 #include <cstddef>
@@ -24,8 +25,8 @@
 
 #include <gtest/gtest.h>
 
-#include "fake_downloader.h"
-#include "mock_downloader.h"
+#include "mock_source.h"
+#include "testdata_source.h"
 
 #define CHECKSUM "dd63dafcbd4d5b28badfcaf86fb6fcdb"
 #define DATA "{'foo': 'bar'}"
@@ -34,16 +35,16 @@
 namespace {
 
 using i18n::addressinput::BuildCallback;
-using i18n::addressinput::FakeDownloader;
-using i18n::addressinput::MockDownloader;
+using i18n::addressinput::MockSource;
 using i18n::addressinput::NullStorage;
 using i18n::addressinput::Retriever;
-using i18n::addressinput::Storage;
 using i18n::addressinput::scoped_ptr;
+using i18n::addressinput::Storage;
+using i18n::addressinput::TestdataSource;
 
 const char kKey[] = "data/CA/AB--fr";
 
-// Empty data that the downloader can return.
+// Empty data that the source can return.
 const char kEmptyData[] = "{}";
 
 // The value of the data that the stale storage returns.
@@ -58,23 +59,19 @@ const char kStaleWrappedData[] = "timestamp=" OLD_TIMESTAMP "\n"
 class RetrieverTest : public testing::Test {
  protected:
   RetrieverTest()
-      : retriever_(FakeDownloader::kFakeDataUrl,
-                   new FakeDownloader,
-                   new NullStorage),
+      : retriever_(new TestdataSource(false), new NullStorage),
         success_(false),
         key_(),
-        data_() {}
+        data_(),
+        data_ready_(BuildCallback(this, &RetrieverTest::OnDataReady)) {}
 
   virtual ~RetrieverTest() {}
-
-  Retriever::Callback* BuildCallback() {
-    return ::BuildCallback(this, &RetrieverTest::OnDataReady);
-  }
 
   Retriever retriever_;
   bool success_;
   std::string key_;
   std::string data_;
+  const scoped_ptr<const Retriever::Callback> data_ready_;
 
  private:
   void OnDataReady(bool success,
@@ -84,11 +81,12 @@ class RetrieverTest : public testing::Test {
     key_ = key;
     data_ = data;
   }
+
+  DISALLOW_COPY_AND_ASSIGN(RetrieverTest);
 };
 
 TEST_F(RetrieverTest, RetrieveData) {
-  scoped_ptr<Retriever::Callback> callback(BuildCallback());
-  retriever_.Retrieve(kKey, *callback);
+  retriever_.Retrieve(kKey, *data_ready_);
 
   EXPECT_TRUE(success_);
   EXPECT_EQ(kKey, key_);
@@ -97,11 +95,8 @@ TEST_F(RetrieverTest, RetrieveData) {
 }
 
 TEST_F(RetrieverTest, ReadDataFromStorage) {
-  scoped_ptr<Retriever::Callback> callback1(BuildCallback());
-  retriever_.Retrieve(kKey, *callback1);
-
-  scoped_ptr<Retriever::Callback> callback2(BuildCallback());
-  retriever_.Retrieve(kKey, *callback2);
+  retriever_.Retrieve(kKey, *data_ready_);
+  retriever_.Retrieve(kKey, *data_ready_);
 
   EXPECT_TRUE(success_);
   EXPECT_EQ(kKey, key_);
@@ -112,22 +107,18 @@ TEST_F(RetrieverTest, ReadDataFromStorage) {
 TEST_F(RetrieverTest, MissingKeyReturnsEmptyData) {
   static const char kMissingKey[] = "junk";
 
-  scoped_ptr<Retriever::Callback> callback(BuildCallback());
-  retriever_.Retrieve(kMissingKey, *callback);
+  retriever_.Retrieve(kMissingKey, *data_ready_);
 
   EXPECT_TRUE(success_);
   EXPECT_EQ(kMissingKey, key_);
   EXPECT_EQ(kEmptyData, data_);
 }
 
-TEST_F(RetrieverTest, FaultyDownloader) {
-  // An empty MockDownloader will fail for any request.
-  Retriever bad_retriever(MockDownloader::kMockDataUrl,
-                          new MockDownloader,
-                          new NullStorage);
+TEST_F(RetrieverTest, FaultySource) {
+  // An empty MockSource will fail for any request.
+  Retriever bad_retriever(new MockSource, new NullStorage);
 
-  scoped_ptr<Retriever::Callback> callback(BuildCallback());
-  bad_retriever.Retrieve(kKey, *callback);
+  bad_retriever.Retrieve(kKey, *data_ready_);
 
   EXPECT_FALSE(success_);
   EXPECT_EQ(kKey, key_);
@@ -157,15 +148,13 @@ class StaleStorage : public Storage {
   DISALLOW_COPY_AND_ASSIGN(StaleStorage);
 };
 
-TEST_F(RetrieverTest, UseStaleDataWhenDownloaderFails) {
+TEST_F(RetrieverTest, UseStaleDataWhenSourceFails) {
   // Owned by |resilient_retriver|.
   StaleStorage* stale_storage = new StaleStorage;
-  // An empty MockDownloader will fail for any request.
-  Retriever resilient_retriever(
-      MockDownloader::kMockDataUrl, new MockDownloader, stale_storage);
+  // An empty MockSource will fail for any request.
+  Retriever resilient_retriever(new MockSource, stale_storage);
 
-  scoped_ptr<Retriever::Callback> callback(BuildCallback());
-  resilient_retriever.Retrieve(kKey, *callback);
+  resilient_retriever.Retrieve(kKey, *data_ready_);
 
   EXPECT_TRUE(success_);
   EXPECT_EQ(kKey, key_);
@@ -173,14 +162,12 @@ TEST_F(RetrieverTest, UseStaleDataWhenDownloaderFails) {
   EXPECT_FALSE(stale_storage->data_updated_);
 }
 
-TEST_F(RetrieverTest, DoNotUseStaleDataWhenDownloaderSucceeds) {
+TEST_F(RetrieverTest, DoNotUseStaleDataWhenSourceSucceeds) {
   // Owned by |resilient_retriver|.
   StaleStorage* stale_storage = new StaleStorage;
-  Retriever resilient_retriever(
-      FakeDownloader::kFakeDataUrl, new FakeDownloader, stale_storage);
+  Retriever resilient_retriever(new TestdataSource(false), stale_storage);
 
-  scoped_ptr<Retriever::Callback> callback(BuildCallback());
-  resilient_retriever.Retrieve(kKey, *callback);
+  resilient_retriever.Retrieve(kKey, *data_ready_);
 
   EXPECT_TRUE(success_);
   EXPECT_EQ(kKey, key_);

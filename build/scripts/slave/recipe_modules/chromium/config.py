@@ -5,7 +5,7 @@
 import pipes
 
 from slave.recipe_config import config_item_context, ConfigGroup
-from slave.recipe_config import Dict, Single, Static, Set, BadConf
+from slave.recipe_config import Dict, List, Single, Static, Set, BadConf
 from slave.recipe_config_types import Path
 
 # Because of the way that we use decorators, pylint can't figure out the proper
@@ -20,6 +20,7 @@ TARGET_ARCHS = HOST_ARCHS + ('arm', 'mipsel')
 BUILD_CONFIGS = ('Release', 'Debug')
 MEMORY_TOOLS = ('memcheck', 'tsan', 'tsan_rv', 'drmemory_full',
                 'drmemory_light')
+PROJECT_GENERATORS = ('gyp', 'gn')
 
 def check(val, potentials):
   assert val in potentials
@@ -34,11 +35,13 @@ def BaseConfig(HOST_PLATFORM, HOST_ARCH, HOST_BITS,
     compile_py = ConfigGroup(
       default_targets = Set(basestring),
       build_tool = Single(basestring),
+      cross_tool = Single(basestring, required=False),
       compiler = Single(basestring, required=False),
       mode = Single(basestring, required=False),
       goma_dir = Single(Path, required=False),
       clobber = Single(bool, empty_val=False, required=False, hidden=False),
       pass_arch_flag = Single(bool, empty_val=False, required=False),
+      xcode_sdk = Single(basestring, required=False),
     ),
     gyp_env = ConfigGroup(
       GYP_CROSSCOMPILE = Single(int, jsonish_fn=str, required=False),
@@ -48,12 +51,16 @@ def BaseConfig(HOST_PLATFORM, HOST_ARCH, HOST_BITS,
       GYP_GENERATOR_FLAGS = Dict(equal_fn, ' '.join, (basestring,int)),
       GYP_USE_SEPARATE_MSPDBSRV = Single(int, jsonish_fn=str, required=False),
     ),
+    project_generator = ConfigGroup(
+      tool = Single(basestring, empty_val='gyp'),
+      args = Set(basestring),
+    ),
     build_dir = Single(Path),
     runtests = ConfigGroup(
       memory_tool = Single(basestring, required=False),
       memory_tests_runner = Single(Path),
       lsan_suppressions_file = Single(Path),
-      tsan_suppressions_file = Single(Path),
+      test_args = List(basestring),
     ),
 
     # Some platforms do not have a 1:1 correlation of BUILD_CONFIG to what is
@@ -101,8 +108,8 @@ def BASE(c):
 
   for (plat, arch, bits) in host_targ_tuples:
     if plat == 'ios':
-      if arch != 'arm' or bits != 32:
-        raise BadConf('iOS only supports arm/32')
+      if arch not in ('arm', 'intel'):
+        raise BadConf('%s/%s arch is not supported on %s' % (arch, bits, plat))
     elif plat in ('win', 'mac'):
       if arch != 'intel':
         raise BadConf('%s arch is not supported on %s' % (arch, plat))
@@ -143,6 +150,11 @@ def BASE(c):
                                         platform_ext={'win': '.bat',
                                                       'mac': '.sh',
                                                       'linux': '.sh'})
+
+  if c.project_generator.tool not in PROJECT_GENERATORS:  # pragma: no cover
+    raise BadConf('"%s" is not a supported project generator tool, the '
+                  'supported ones are: %s' % (c.project_generator.tool,
+                                              ','.join(PROJECT_GENERATORS)))
   gyp_arch = {
     ('intel', 32): 'ia32',
     ('intel', 64): 'x64',
@@ -160,6 +172,10 @@ def BASE(c):
     shared_library(c, final=False)
   else:  # pragma: no cover
     raise BadConf('Unknown build config "%s"' % c.BUILD_CONFIG)
+
+@config_ctx()
+def gn(c):
+  c.project_generator.tool = 'gn'
 
 @config_ctx(group='builder')
 def ninja(c):
@@ -282,6 +298,10 @@ def asan(c):
   c.gyp_env.GYP_DEFINES['asan'] = 1
   c.gyp_env.GYP_DEFINES['lsan'] = 1
 
+@config_ctx()
+def no_lsan(c):
+  c.gyp_env.GYP_DEFINES['lsan'] = 0
+
 @config_ctx(group='memory_tool')
 def memcheck(c):
   _memory_tool(c, 'memcheck')
@@ -350,9 +370,10 @@ def chromium(c):
 
 @config_ctx(includes=['ninja', 'clang', 'goma', 'asan'])
 def chromium_asan(c):
-  c.compile_py.default_targets = ['All', 'chromium_builder_tests']
   c.runtests.lsan_suppressions_file = Path('[CHECKOUT]', 'tools', 'lsan',
                                            'suppressions.txt')
+  c.runtests.test_args.append('--test-launcher-batch-limit=1')
+  c.runtests.test_args.append('--test-launcher-print-test-stdio=always')
 
 @config_ctx(includes=['ninja', 'clang', 'goma', 'syzyasan'])
 def chromium_syzyasan(c):
@@ -361,8 +382,6 @@ def chromium_syzyasan(c):
 @config_ctx(includes=['ninja', 'clang', 'goma', 'tsan2'])
 def chromium_tsan2(c):
   c.compile_py.default_targets = ['All', 'chromium_builder_tests']
-  c.runtests.tsan_suppressions_file = Path('[CHECKOUT]', 'tools', 'valgrind',
-                                           'tsan_v2', 'suppressions.txt')
 
 @config_ctx(includes=['ninja', 'default_compiler', 'goma', 'chromeos'])
 def chromium_chromeos(c):
@@ -380,6 +399,41 @@ def chromium_chromeos_clang(c):
 def chromium_clang(c):
   c.compile_py.default_targets = ['All', 'chromium_builder_tests']
 
+@config_ctx(includes=['static_library'])
+def ios(c):
+  gyp_defs = c.gyp_env.GYP_DEFINES
+  gyp_defs['OS'] = c.TARGET_PLATFORM
+  gyp_defs['chromium_ios_signing'] = 0
+
+  if c.TARGET_BITS == 64:
+    gyp_defs['target_subarch'] = 'both'
+
+  # Do not pass target_arch explicitly, this is the current practice on iOS.
+  # TODO(phajdan.jr): Clean this up and pass target_arch explicitly.
+  del gyp_defs['target_arch']
+
+  c.gyp_env.GYP_GENERATOR_FLAGS['xcode_project_version'] = '3.2'
+
+@config_ctx(includes=['ios'])
+def chromium_ios_device(c):
+  c.compile_py.build_tool = 'xcode'
+  c.compile_py.default_targets = ['All']
+  c.compile_py.xcode_sdk = 'iphoneos7.1'
+
+@config_ctx(includes=['ios', 'ninja'])
+def chromium_ios_ninja(c):
+  c.build_config_fs += '-iphoneos'
+  c.compile_py.default_targets = ['All']
+
+  gyp_defs = c.gyp_env.GYP_DEFINES
+  gyp_defs['clang_xcode'] = 0
+
+@config_ctx(includes=['ios'])
+def chromium_ios_simulator(c):
+  c.compile_py.build_tool = 'xcode'
+  c.compile_py.default_targets = ['All']
+  c.compile_py.xcode_sdk = 'iphonesimulator7.1'
+
 @config_ctx(includes=['chromium', 'official'])
 def chromium_official(c):
   # TODO(phajdan.jr): Unify compile targets used by official builders.
@@ -395,6 +449,10 @@ def blink(c):
 @config_ctx(includes=['chromium_clang'])
 def blink_clang(c):
   c.compile_py.default_targets = ['blink_tests']
+
+@config_ctx()
+def blink_asserts_on(c, invert=False):
+  c.gyp_env.GYP_DEFINES['blink_asserts_always_on'] = int(not invert)
 
 @config_ctx(includes=['ninja', 'static_library', 'default_compiler', 'goma'])
 def android(c):
@@ -413,3 +471,24 @@ def _android_common(c):
 def codesearch(c):
   gyp_defs = c.gyp_env.GYP_DEFINES
   gyp_defs['fastbuild'] = 1
+
+@config_ctx(includes=['ninja', 'static_library'])
+def chrome_pgo_base(c):
+  c.gyp_env.GYP_DEFINES['buildtype'] = 'Official'
+  c.gyp_env.GYP_DEFINES['optimize'] = 'max'
+  c.gyp_env.GYP_DEFINES['use_goma'] = 0
+  fastbuild(c, invert=True)
+  c.compile_py.default_targets = ['chrome']
+
+#### 'Full' configurations
+@config_ctx(includes=['chrome_pgo_base'])
+def chrome_pgo_instrument(c):
+  c.gyp_env.GYP_DEFINES['chrome_pgo_phase'] = 1
+
+@config_ctx(includes=['chrome_pgo_base'])
+def chrome_pgo_optimize(c):
+  c.gyp_env.GYP_DEFINES['chrome_pgo_phase'] = 2
+
+@config_ctx()
+def v8_optimize_medium(c):
+  c.gyp_env.GYP_DEFINES['v8_optimized_debug'] = 1

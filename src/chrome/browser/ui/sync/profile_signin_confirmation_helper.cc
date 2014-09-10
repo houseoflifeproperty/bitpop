@@ -8,23 +8,27 @@
 #include "base/memory/ref_counted.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string16.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/common/cancelable_request.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_db_task.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "content/public/browser/browser_thread.h"
+#include "ui/gfx/color_utils.h"
+#include "ui/native_theme/native_theme.h"
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/sync_helper.h"
-#include "components/bookmarks/browser/bookmark_model.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
-#include "ui/gfx/color_utils.h"
-#include "ui/native_theme/native_theme.h"
+#endif
 
 namespace {
 
@@ -55,6 +59,7 @@ class HasTypedURLsTask : public history::HistoryDBTask {
 
  private:
   virtual ~HasTypedURLsTask() {}
+
   bool has_typed_urls_;
   base::Callback<void(bool)> cb_;
 };
@@ -68,23 +73,19 @@ bool HasBookmarks(Profile* profile) {
 }
 
 // Helper functions for Chrome profile signin.
-class ProfileSigninConfirmationHelper
-    : public base::RefCounted<ProfileSigninConfirmationHelper> {
+class ProfileSigninConfirmationHelper {
  public:
   ProfileSigninConfirmationHelper(
       Profile* profile,
       const base::Callback<void(bool)>& return_result);
   void CheckHasHistory(int max_entries);
   void CheckHasTypedURLs();
-  void set_pending_requests(int requests);
 
  private:
-  friend class base::RefCounted<ProfileSigninConfirmationHelper>;
-
+  // Deletes itself.
   ~ProfileSigninConfirmationHelper();
 
   void OnHistoryQueryResults(size_t max_entries,
-                             CancelableRequestProvider::Handle handle,
                              history::QueryResults* results);
   void ReturnResult(bool result);
 
@@ -92,13 +93,10 @@ class ProfileSigninConfirmationHelper
   Profile* profile_;
 
   // Used for async tasks.
-  CancelableRequestConsumer request_consumer_;
+  base::CancelableTaskTracker task_tracker_;
 
   // Keep track of how many async requests are pending.
   int pending_requests_;
-
-  // Indicates whether the result has already been returned to caller.
-  bool result_returned_;
 
   // Callback to pass the result back to the caller.
   const base::Callback<void(bool)> return_result_;
@@ -111,16 +109,15 @@ ProfileSigninConfirmationHelper::ProfileSigninConfirmationHelper(
     const base::Callback<void(bool)>& return_result)
     : profile_(profile),
       pending_requests_(0),
-      result_returned_(false),
       return_result_(return_result) {
 }
 
 ProfileSigninConfirmationHelper::~ProfileSigninConfirmationHelper() {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 }
 
 void ProfileSigninConfirmationHelper::OnHistoryQueryResults(
     size_t max_entries,
-    CancelableRequestProvider::Handle handle,
     history::QueryResults* results) {
   history::QueryResults owned_results;
   results->Swap(&owned_results);
@@ -135,6 +132,7 @@ void ProfileSigninConfirmationHelper::OnHistoryQueryResults(
 void ProfileSigninConfirmationHelper::CheckHasHistory(int max_entries) {
   HistoryService* service =
       HistoryServiceFactory::GetForProfileWithoutCreating(profile_);
+  pending_requests_++;
   if (!service) {
     ReturnResult(false);
     return;
@@ -142,38 +140,39 @@ void ProfileSigninConfirmationHelper::CheckHasHistory(int max_entries) {
   history::QueryOptions opts;
   opts.max_count = max_entries;
   service->QueryHistory(
-      base::string16(), opts, &request_consumer_,
+      base::string16(),
+      opts,
       base::Bind(&ProfileSigninConfirmationHelper::OnHistoryQueryResults,
-                 this,
-                 max_entries));
+                 base::Unretained(this),
+                 max_entries),
+      &task_tracker_);
 }
 
 void ProfileSigninConfirmationHelper::CheckHasTypedURLs() {
   HistoryService* service =
       HistoryServiceFactory::GetForProfileWithoutCreating(profile_);
+  pending_requests_++;
   if (!service) {
     ReturnResult(false);
     return;
   }
   service->ScheduleDBTask(
-      new HasTypedURLsTask(
-          base::Bind(
-              &ProfileSigninConfirmationHelper::ReturnResult,
-              this)),
-      &request_consumer_);
-}
-
-void ProfileSigninConfirmationHelper::set_pending_requests(int requests) {
-  pending_requests_ = requests;
+      scoped_ptr<history::HistoryDBTask>(new HasTypedURLsTask(
+          base::Bind(&ProfileSigninConfirmationHelper::ReturnResult,
+                     base::Unretained(this)))),
+      &task_tracker_);
 }
 
 void ProfileSigninConfirmationHelper::ReturnResult(bool result) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   // Pass |true| into the callback as soon as one of the tasks passes a
   // result of |true|, otherwise pass the last returned result.
-  if (!result_returned_ && (--pending_requests_ == 0 || result)) {
-    result_returned_ = true;
-    request_consumer_.CancelAllRequests();
+  if (--pending_requests_ == 0 || result) {
     return_result_.Run(result);
+
+    // This leaks at shutdown if the HistoryService is destroyed, but
+    // the process is going to die anyway.
+    delete this;
   }
 }
 
@@ -196,6 +195,7 @@ bool HasBeenShutdown(Profile* profile) {
 }
 
 bool HasSyncedExtensions(Profile* profile) {
+#if defined(ENABLE_EXTENSIONS)
   extensions::ExtensionSystem* system =
       extensions::ExtensionSystem::Get(profile);
   if (system && system->extension_service()) {
@@ -215,12 +215,15 @@ bool HasSyncedExtensions(Profile* profile) {
       }
     }
   }
+#endif
   return false;
 }
 
 void CheckShouldPromptForNewProfile(
     Profile* profile,
     const base::Callback<void(bool)>& return_result) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
   if (HasBeenShutdown(profile) ||
       HasBookmarks(profile) ||
       HasSyncedExtensions(profile)) {
@@ -228,10 +231,8 @@ void CheckShouldPromptForNewProfile(
     return;
   }
   // Fire asynchronous queries for profile data.
-  scoped_refptr<ProfileSigninConfirmationHelper> helper =
+  ProfileSigninConfirmationHelper* helper =
       new ProfileSigninConfirmationHelper(profile, return_result);
-  const int requests = 2;
-  helper->set_pending_requests(requests);
   helper->CheckHasHistory(kHistoryEntriesBeforeNewProfilePrompt);
   helper->CheckHasTypedURLs();
 }

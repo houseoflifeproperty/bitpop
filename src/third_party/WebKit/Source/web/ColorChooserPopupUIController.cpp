@@ -26,16 +26,13 @@
 #include "config.h"
 #include "web/ColorChooserPopupUIController.h"
 
-#include "ColorSuggestionPicker.h"
-#include "PickerCommon.h"
 #include "core/frame/FrameView.h"
 #include "platform/ColorChooserClient.h"
 #include "platform/geometry/IntRect.h"
+#include "public/platform/Platform.h"
 #include "public/web/WebColorChooser.h"
 #include "web/ChromeClientImpl.h"
 #include "web/WebViewImpl.h"
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -46,7 +43,7 @@ enum ColorPickerPopupAction {
     ColorPickerPopupActionSetValue = 0
 };
 
-ColorChooserPopupUIController::ColorChooserPopupUIController(WebCore::LocalFrame* frame, ChromeClientImpl* chromeClient, ColorChooserClient* client)
+ColorChooserPopupUIController::ColorChooserPopupUIController(LocalFrame* frame, ChromeClientImpl* chromeClient, ColorChooserClient* client)
     : ColorChooserUIController(frame, client)
     , m_chromeClient(chromeClient)
     , m_client(client)
@@ -89,16 +86,16 @@ void ColorChooserPopupUIController::writeDocument(SharedBuffer* data)
     IntRect anchorRectInScreen = m_chromeClient->rootViewToScreen(m_client->elementRectRelativeToRootView());
 
     PagePopupClient::addString("<!DOCTYPE html><head><meta charset='UTF-8'><style>\n", data);
-    data->append(pickerCommonCss, sizeof(pickerCommonCss));
-    data->append(colorSuggestionPickerCss, sizeof(colorSuggestionPickerCss));
+    data->append(Platform::current()->loadResource("pickerCommon.css"));
+    data->append(Platform::current()->loadResource("colorSuggestionPicker.css"));
     PagePopupClient::addString("</style></head><body><div id=main>Loading...</div><script>\n"
         "window.dialogArguments = {\n", data);
     PagePopupClient::addProperty("values", suggestionValues, data);
     PagePopupClient::addProperty("otherColorLabel", locale().queryString(WebLocalizedString::OtherColorLabel), data);
     addProperty("anchorRectInScreen", anchorRectInScreen, data);
     PagePopupClient::addString("};\n", data);
-    data->append(pickerCommonJs, sizeof(pickerCommonJs));
-    data->append(colorSuggestionPickerJs, sizeof(colorSuggestionPickerJs));
+    data->append(Platform::current()->loadResource("pickerCommon.js"));
+    data->append(Platform::current()->loadResource("colorSuggestionPicker.js"));
     PagePopupClient::addString("</script></body>\n", data);
 }
 
@@ -149,4 +146,4 @@ void ColorChooserPopupUIController::closePopup()
     m_chromeClient->closePagePopup(m_popup);
 }
 
-}
+} // namespace blink

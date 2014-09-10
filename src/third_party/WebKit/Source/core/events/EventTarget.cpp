@@ -32,20 +32,22 @@
 #include "config.h"
 #include "core/events/EventTarget.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/NoEventDispatchAssertion.h"
 #include "core/editing/Editor.h"
 #include "core/events/Event.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/frame/LocalDOMWindow.h"
+#include "core/frame/UseCounter.h"
+#include "platform/EventDispatchForbiddenScope.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
 
 using namespace WTF;
 
-namespace WebCore {
+namespace blink {
 
 EventTargetData::EventTargetData()
 {
@@ -53,6 +55,11 @@ EventTargetData::EventTargetData()
 
 EventTargetData::~EventTargetData()
 {
+}
+
+EventTarget::EventTarget()
+{
+    ScriptWrappable::init(this);
 }
 
 EventTarget::~EventTarget()
@@ -87,10 +94,19 @@ bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtr<Eve
     // generated bindings), but breaks legacy content. http://crbug.com/249598
     if (!listener)
         return false;
+
+    V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
+    if (activityLogger) {
+        Vector<String> argv;
+        argv.append(toNode() ? toNode()->nodeName() : interfaceName());
+        argv.append(eventType);
+        activityLogger->logEvent("blinkAddEventListener", argv.size(), argv.data());
+    }
+
     return ensureEventTargetData().eventListenerMap.add(eventType, listener, useCapture);
 }
 
-bool EventTarget::removeEventListener(const AtomicString& eventType, EventListener* listener, bool useCapture)
+bool EventTarget::removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
 {
     EventTargetData* d = eventTargetData();
     if (!d)
@@ -98,7 +114,7 @@ bool EventTarget::removeEventListener(const AtomicString& eventType, EventListen
 
     size_t indexOfRemovedListener;
 
-    if (!d->eventListenerMap.remove(eventType, listener, useCapture, indexOfRemovedListener))
+    if (!d->eventListenerMap.remove(eventType, listener.get(), useCapture, indexOfRemovedListener))
         return false;
 
     // Notify firing events planning to invoke the listener at 'index' that
@@ -208,47 +224,41 @@ void EventTarget::countLegacyEvents(const AtomicString& legacyTypeName, EventLis
     UseCounter::Feature unprefixedFeature;
     UseCounter::Feature prefixedFeature;
     UseCounter::Feature prefixedAndUnprefixedFeature;
-    bool shouldCount = false;
-
     if (legacyTypeName == EventTypeNames::webkitTransitionEnd) {
         prefixedFeature = UseCounter::PrefixedTransitionEndEvent;
         unprefixedFeature = UseCounter::UnprefixedTransitionEndEvent;
         prefixedAndUnprefixedFeature = UseCounter::PrefixedAndUnprefixedTransitionEndEvent;
-        shouldCount = true;
     } else if (legacyTypeName == EventTypeNames::webkitAnimationEnd) {
         prefixedFeature = UseCounter::PrefixedAnimationEndEvent;
         unprefixedFeature = UseCounter::UnprefixedAnimationEndEvent;
         prefixedAndUnprefixedFeature = UseCounter::PrefixedAndUnprefixedAnimationEndEvent;
-        shouldCount = true;
     } else if (legacyTypeName == EventTypeNames::webkitAnimationStart) {
         prefixedFeature = UseCounter::PrefixedAnimationStartEvent;
         unprefixedFeature = UseCounter::UnprefixedAnimationStartEvent;
         prefixedAndUnprefixedFeature = UseCounter::PrefixedAndUnprefixedAnimationStartEvent;
-        shouldCount = true;
     } else if (legacyTypeName == EventTypeNames::webkitAnimationIteration) {
         prefixedFeature = UseCounter::PrefixedAnimationIterationEvent;
         unprefixedFeature = UseCounter::UnprefixedAnimationIterationEvent;
         prefixedAndUnprefixedFeature = UseCounter::PrefixedAndUnprefixedAnimationIterationEvent;
-        shouldCount = true;
+    } else {
+        return;
     }
 
-    if (shouldCount) {
-        if (LocalDOMWindow* executingWindow = this->executingWindow()) {
-            if (legacyListenersVector) {
-                if (listenersVector)
-                    UseCounter::count(executingWindow->document(), prefixedAndUnprefixedFeature);
-                else
-                    UseCounter::count(executingWindow->document(), prefixedFeature);
-            } else if (listenersVector) {
-                UseCounter::count(executingWindow->document(), unprefixedFeature);
-            }
+    if (LocalDOMWindow* executingWindow = this->executingWindow()) {
+        if (legacyListenersVector) {
+            if (listenersVector)
+                UseCounter::count(executingWindow->document(), prefixedAndUnprefixedFeature);
+            else
+                UseCounter::count(executingWindow->document(), prefixedFeature);
+        } else if (listenersVector) {
+            UseCounter::count(executingWindow->document(), unprefixedFeature);
         }
     }
 }
 
 bool EventTarget::fireEventListeners(Event* event)
 {
-    ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
+    ASSERT(!EventDispatchForbiddenScope::isEventDispatchForbidden());
     ASSERT(event && !event->type().isEmpty());
 
     EventTargetData* d = eventTargetData();
@@ -378,4 +388,4 @@ void EventTarget::removeAllEventListeners()
     }
 }
 
-} // namespace WebCore
+} // namespace blink

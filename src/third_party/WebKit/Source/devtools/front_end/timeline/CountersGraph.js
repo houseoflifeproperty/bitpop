@@ -148,7 +148,7 @@ WebInspector.CountersGraph.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _onClick: function(event)
     {
@@ -199,7 +199,7 @@ WebInspector.CountersGraph.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _onMouseOut: function(event)
     {
@@ -214,7 +214,7 @@ WebInspector.CountersGraph.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _onMouseMove: function(event)
     {
@@ -429,7 +429,7 @@ WebInspector.CountersGraph.CounterUI.prototype = {
      */
     updateCurrentValue: function(x)
     {
-        if (!this.visible() || !this.counter.values.length)
+        if (!this.visible() || !this.counter.values.length || !this.counter.x)
             return;
         var index = this._recordIndexAt(x);
         this._value.textContent = WebInspector.UIString(this._currentValueLabel, this.counter.values[index]);

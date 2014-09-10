@@ -28,18 +28,16 @@
 
 #include "platform/heap/Handle.h"
 #include "public/platform/WebVector.h"
+#include "wtf/Forward.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
-#include "wtf/text/WTFString.h"
 
 namespace blink {
 class WebSourceInfo;
 }
 
-namespace WebCore {
+namespace blink {
 
-class MediaStreamTrackSourcesRequest : public RefCountedWillBeGarbageCollectedFinalized<MediaStreamTrackSourcesRequest> {
+class MediaStreamTrackSourcesRequest : public GarbageCollectedFinalized<MediaStreamTrackSourcesRequest> {
 public:
     class ExtraData {
     public:
@@ -63,6 +61,6 @@ private:
     OwnPtr<ExtraData> m_extraData;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MediaStreamTrackSourcesRequest_h

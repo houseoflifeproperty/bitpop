@@ -8,18 +8,19 @@
 #include "core/dom/DocumentSupplementable.h"
 #include "core/frame/DeviceSingleWindowEventController.h"
 
-namespace WebCore {
+namespace blink {
 
-class LocalDOMWindow;
 class Event;
 
-class DeviceLightController FINAL : public NoBaseWillBeGarbageCollectedFinalized<DeviceLightController>, public DeviceSingleWindowEventController, public DocumentSupplement {
+class DeviceLightController FINAL : public DeviceSingleWindowEventController, public DocumentSupplement {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DeviceLightController);
 public:
     virtual ~DeviceLightController();
 
     static const char* supplementName();
     static DeviceLightController& from(Document&);
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     explicit DeviceLightController(Document&);
@@ -35,6 +36,6 @@ private:
     virtual bool isNullEvent(Event*) const OVERRIDE;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeviceLightController_h

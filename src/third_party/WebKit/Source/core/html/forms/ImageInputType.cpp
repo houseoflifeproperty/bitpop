@@ -36,7 +36,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -136,7 +136,7 @@ void ImageInputType::srcAttributeChanged()
 {
     if (!element().renderer())
         return;
-    element().imageLoader()->updateFromElementIgnoringPreviousError();
+    element().imageLoader()->updateFromElement(ImageLoader::UpdateIgnorePreviousError);
 }
 
 void ImageInputType::startResourceLoading()
@@ -242,4 +242,4 @@ const QualifiedName& ImageInputType::subResourceAttributeName() const
     return srcAttr;
 }
 
-} // namespace WebCore
+} // namespace blink

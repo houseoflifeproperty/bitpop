@@ -6,6 +6,7 @@
  */
 
 #include "SkRecorder.h"
+#include "SkPatchUtils.h"
 #include "SkPicture.h"
 
 // SkCanvas will fail in mysterious ways if it doesn't know the real width and height.
@@ -57,12 +58,12 @@ T* SkRecorder::copy(const T* src) {
 // This copy() is for arrays.
 // It will work with POD or non-POD, though currently we only use it for POD.
 template <typename T>
-T* SkRecorder::copy(const T src[], unsigned count) {
+T* SkRecorder::copy(const T src[], size_t count) {
     if (NULL == src) {
         return NULL;
     }
     T* dst = fRecord->alloc<T>(count);
-    for (unsigned i = 0; i < count; i++) {
+    for (size_t i = 0; i < count; i++) {
         SkNEW_PLACEMENT_ARGS(dst + i, T, (src[i]));
     }
     return dst;
@@ -72,7 +73,7 @@ T* SkRecorder::copy(const T src[], unsigned count) {
 // This measured around 2x faster for copying code points,
 // but I found no corresponding speedup for other arrays.
 template <>
-char* SkRecorder::copy(const char src[], unsigned count) {
+char* SkRecorder::copy(const char src[], size_t count) {
     if (NULL == src) {
         return NULL;
     }
@@ -186,8 +187,8 @@ void SkRecorder::onDrawTextOnPath(const void* text, size_t byteLength, const SkP
            this->copy(matrix));
 }
 
-void SkRecorder::onDrawPicture(const SkPicture* picture) {
-    picture->draw(this);
+void SkRecorder::onDrawPicture(const SkPicture* pic, const SkMatrix* matrix, const SkPaint* paint) {
+    APPEND(DrawPicture, this->copy(paint), pic, this->copy(matrix));
 }
 
 void SkRecorder::drawVertices(VertexMode vmode,
@@ -206,9 +207,18 @@ void SkRecorder::drawVertices(VertexMode vmode,
                          indexCount);
 }
 
-void SkRecorder::willSave(SkCanvas::SaveFlags flags) {
-    APPEND(Save, flags);
-    INHERITED(willSave, flags);
+void SkRecorder::onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
+                             const SkPoint texCoords[4], SkXfermode* xmode, const SkPaint& paint) {
+    APPEND(DrawPatch, delay_copy(paint),
+           cubics ? this->copy(cubics, SkPatchUtils::kNumCtrlPts) : NULL,
+           colors ? this->copy(colors, SkPatchUtils::kNumCorners) : NULL,
+           texCoords ? this->copy(texCoords, SkPatchUtils::kNumCorners) : NULL,
+           xmode);
+}
+
+void SkRecorder::willSave() {
+    APPEND(Save);
+    INHERITED(willSave);
 }
 
 SkCanvas::SaveLayerStrategy SkRecorder::willSaveLayer(const SkRect* bounds,
@@ -219,9 +229,9 @@ SkCanvas::SaveLayerStrategy SkRecorder::willSaveLayer(const SkRect* bounds,
     return SkCanvas::kNoLayer_SaveLayerStrategy;
 }
 
-void SkRecorder::willRestore() {
-    APPEND(Restore);
-    INHERITED(willRestore);
+void SkRecorder::didRestore() {
+    APPEND(Restore, this->getTotalMatrix());
+    INHERITED(didRestore);
 }
 
 void SkRecorder::onPushCull(const SkRect& rect) {
@@ -238,6 +248,7 @@ void SkRecorder::didConcat(const SkMatrix& matrix) {
 }
 
 void SkRecorder::didSetMatrix(const SkMatrix& matrix) {
+    SkASSERT(matrix == this->getTotalMatrix());
     APPEND(SetMatrix, matrix);
     INHERITED(didSetMatrix, matrix);
 }

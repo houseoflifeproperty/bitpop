@@ -31,19 +31,19 @@
 #ifndef TextDecoder_h
 #define TextDecoder_h
 
-#include "bindings/v8/Dictionary.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/ArrayBufferView.h"
-#include "wtf/RefCounted.h"
 #include "wtf/text/TextCodec.h"
 #include "wtf/text/TextEncoding.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
-class TextDecoder FINAL : public GarbageCollectedFinalized<TextDecoder> {
+class TextDecoder FINAL : public GarbageCollectedFinalized<TextDecoder>, public ScriptWrappable {
 public:
     static TextDecoder* create(const String& label, const Dictionary&, ExceptionState&);
     ~TextDecoder();
@@ -67,6 +67,6 @@ private:
     bool m_bomSeen;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TextDecoder_h

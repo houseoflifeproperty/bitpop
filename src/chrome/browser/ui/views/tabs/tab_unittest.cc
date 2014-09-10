@@ -60,6 +60,8 @@ class FakeTabController : public TabController {
     return true;
   }
   virtual bool IsImmersiveStyle() const OVERRIDE { return immersive_style_; }
+  virtual void UpdateTabAccessibilityState(const Tab* tab,
+                                           ui::AXViewState* state) OVERRIDE{};
 
  private:
   ui::ListSelectionModel selection_model_;
@@ -229,8 +231,7 @@ TEST_F(TabTest, LayoutAndVisibilityOfElements) {
   Tab tab(&controller);
 
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 16, 16);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(16, 16);
   TabRendererData data;
   data.favicon = gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
 

@@ -30,12 +30,12 @@
 
 /**
  * @constructor
- * @extends {WebInspector.TargetAwareObject}
+ * @extends {WebInspector.SDKModel}
  * @param {!WebInspector.Target} target
  */
 WebInspector.NetworkManager = function(target)
 {
-    WebInspector.TargetAwareObject.call(this, target);
+    WebInspector.SDKModel.call(this, WebInspector.NetworkManager, target);
     this._dispatcher = new WebInspector.NetworkDispatcher(this);
     this._target = target;
     this._networkAgent = target.networkAgent();
@@ -81,6 +81,7 @@ WebInspector.NetworkManager._MIMETypes = {
     "font/opentype":               {"font": true},
     "application/octet-stream":    {"font": true, "image": true},
     "application/font-woff":       {"font": true},
+    "application/font-woff2":      {"font": true},
     "application/x-font-woff":     {"font": true},
     "application/x-font-type1":    {"font": true},
     "application/x-font-ttf":      {"font": true},
@@ -130,7 +131,12 @@ WebInspector.NetworkManager.prototype = {
         this._networkAgent.setCacheDisabled(enabled);
     },
 
-    __proto__: WebInspector.TargetAwareObject.prototype
+    dispose: function()
+    {
+        WebInspector.settings.cacheDisabled.removeChangeListener(this._cacheDisabledSettingChanged, this)
+    },
+
+    __proto__: WebInspector.SDKModel.prototype
 }
 
 /**
@@ -496,7 +502,7 @@ WebInspector.NetworkDispatcher.prototype = {
     {
         var originalNetworkRequest = this._inflightRequestsById[requestId];
         var previousRedirects = originalNetworkRequest.redirects || [];
-        originalNetworkRequest.requestId = "redirected:" + requestId + "." + previousRedirects.length;
+        originalNetworkRequest.requestId = requestId + ":redirected." + previousRedirects.length;
         delete originalNetworkRequest.redirects;
         if (previousRedirects.length > 0)
             originalNetworkRequest.redirectSource = previousRedirects[previousRedirects.length - 1];
@@ -565,8 +571,3 @@ WebInspector.NetworkDispatcher.prototype = {
         return networkRequest;
     }
 }
-
-/**
- * @type {!WebInspector.NetworkManager}
- */
-WebInspector.networkManager;

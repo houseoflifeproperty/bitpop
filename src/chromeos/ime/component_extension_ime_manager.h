@@ -5,6 +5,7 @@
 #ifndef CHROMEOS_IME_COMPONENT_EXTENSION_IME_MANAGER_H_
 #define CHROMEOS_IME_COMPONENT_EXTENSION_IME_MANAGER_H_
 
+#include <map>
 #include <set>
 
 #include "base/files/file_path.h"
@@ -63,12 +64,6 @@ class CHROMEOS_EXPORT ComponentExtensionIMEManagerDelegate {
 // This class manages component extension input method.
 class CHROMEOS_EXPORT ComponentExtensionIMEManager {
  public:
-  class Observer {
-   public:
-    // Called when the initialization is done.
-    virtual void OnImeComponentExtensionInitialized() = 0;
-  };
-
   ComponentExtensionIMEManager();
   virtual ~ComponentExtensionIMEManager();
 
@@ -76,12 +71,6 @@ class CHROMEOS_EXPORT ComponentExtensionIMEManager {
   // mapping between input method id and engine components. This function must
   // be called before using any other function.
   void Initialize(scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate);
-
-  // Notifies the observers for the component extension IMEs are initialized.
-  void NotifyInitialized();
-
-  // Returns true if the initialization is done, otherwise returns false.
-  bool IsInitialized();
 
   // Loads |input_method_id| component extension IME. This function returns true
   // on success. This function is safe to call multiple times. Returns false if
@@ -100,48 +89,30 @@ class CHROMEOS_EXPORT ComponentExtensionIMEManager {
   // Returns true if |extension_id| is whitelisted component extension.
   bool IsWhitelistedExtension(const std::string& extension_id);
 
-  // Returns InputMethodId. This function returns empty string if |extension_id|
-  // and |engine_id| is not a whitelisted component extention IME.
-  std::string GetId(const std::string& extension_id,
-                    const std::string& engine_id);
-
-  // Returns localized name of |input_method_id|.
-  std::string GetName(const std::string& input_method_id);
-
-  // Returns localized description of |input_method_id|.
-  std::string GetDescription(const std::string& input_method_id);
-
-  // Returns list of input method id associated with |language|.
-  std::vector<std::string> ListIMEByLanguage(const std::string& language);
-
   // Returns all IME as InputMethodDescriptors.
   input_method::InputMethodDescriptors GetAllIMEAsInputMethodDescriptor();
 
   // Returns all XKB keyboard IME as InputMethodDescriptors.
   input_method::InputMethodDescriptors GetXkbIMEAsInputMethodDescriptor();
 
-  void AddObserver(Observer* observer);
-  void RemoveObserver(Observer* observer);
-
  private:
   // Finds ComponentExtensionIME and EngineDescription associated with
   // |input_method_id|. This function retruns true if it is found, otherwise
   // returns false. |out_extension| and |out_engine| can be NULL.
   bool FindEngineEntry(const std::string& input_method_id,
-                       ComponentExtensionIME* out_extension,
-                       ComponentExtensionEngine* out_engine);
+                       ComponentExtensionIME* out_extension);
 
   bool IsInLoginLayoutWhitelist(const std::vector<std::string>& layouts);
 
   scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate_;
 
-  std::vector<ComponentExtensionIME> component_extension_imes_;
+  // The map of extension_id to ComponentExtensionIME instance.
+  // It's filled by Initialize() method and never changed during runtime.
+  std::map<std::string, ComponentExtensionIME> component_extension_imes_;
 
-  ObserverList<Observer> observers_;
-
-  bool is_initialized_;
-
-  bool was_initialization_notified_;
+  // For quick check the validity of a given input method id.
+  // It's filled by Initialize() method and never changed during runtime.
+  std::set<std::string> input_method_id_set_;
 
   std::set<std::string> login_layout_set_;
 

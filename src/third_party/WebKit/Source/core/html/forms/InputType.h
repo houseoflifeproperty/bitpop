@@ -38,7 +38,7 @@
 #include "core/html/forms/StepRange.h"
 #include "core/frame/UseCounter.h"
 
-namespace WebCore {
+namespace blink {
 
 class Chrome;
 class DateComponents;
@@ -155,7 +155,6 @@ public:
 
     virtual bool isKeyboardFocusable() const;
     virtual bool shouldShowFocusRingOnMouseFocus() const;
-    virtual bool shouldUseInputMethod() const;
     virtual void enableSecureTextInput();
     virtual void disableSecureTextInput();
     virtual void accessKeyAction(bool sendMouseEvents);
@@ -214,6 +213,8 @@ public:
     virtual unsigned height() const;
     virtual unsigned width() const;
 
+    virtual TextDirection computedTextDirection();
+
     void dispatchSimulatedClickIfActive(KeyboardEvent*) const;
 
     // InputTypeView override
@@ -239,5 +240,5 @@ private:
     void applyStep(const Decimal&, int count, AnyStepHandling, TextFieldEventBehavior, ExceptionState&);
 };
 
-} // namespace WebCore
+} // namespace blink
 #endif

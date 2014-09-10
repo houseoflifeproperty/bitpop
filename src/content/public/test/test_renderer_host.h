@@ -39,6 +39,30 @@ class TestRenderFrameHostFactory;
 class TestRenderViewHostFactory;
 class WebContents;
 
+// An interface and utility for driving tests of RenderFrameHost.
+class RenderFrameHostTester {
+ public:
+  // Retrieves the RenderFrameHostTester that drives the specified
+  // RenderFrameHost. The RenderFrameHost must have been created while
+  // RenderFrameHost testing was enabled; use a
+  // RenderViewHostTestEnabler instance (see below) to do this.
+  static RenderFrameHostTester* For(RenderFrameHost* host);
+
+  virtual ~RenderFrameHostTester() {}
+
+  // Gives tests access to RenderFrameHostImpl::OnCreateChild. The returned
+  // RenderFrameHost is owned by the parent RenderFrameHost.
+  virtual RenderFrameHost* AppendChild(const std::string& frame_name) = 0;
+
+  // Calls OnMsgNavigate on the RenderViewHost with the given information,
+  // including a custom PageTransition.  Sets the rest of the
+  // parameters in the message to the "typical" values. This is a helper
+  // function for simulating the most common types of loads.
+  virtual void SendNavigateWithTransition(int page_id,
+                                          const GURL& url,
+                                          PageTransition transition) = 0;
+};
+
 // An interface and utility for driving tests of RenderViewHost.
 class RenderViewHostTester {
  public:
@@ -108,8 +132,8 @@ class RenderViewHostTester {
 };
 
 // You can instantiate only one class like this at a time.  During its
-// lifetime, RenderViewHost objects created may be used via
-// RenderViewHostTester.
+// lifetime, RenderViewHost and RenderFrameHost objects created may be used via
+// RenderViewHostTester and RenderFrameHostTester respectively.
 class RenderViewHostTestEnabler {
  public:
   RenderViewHostTestEnabler();
@@ -131,11 +155,31 @@ class RenderViewHostTestHarness : public testing::Test {
   virtual ~RenderViewHostTestHarness();
 
   NavigationController& controller();
+
+  // The contents under test.
   WebContents* web_contents();
+
+  // RVH/RFH getters are shorthand for oft-used bits of web_contents().
+
+  // rvh() is equivalent to either of:
+  //   web_contents()->GetMainFrame()->GetRenderViewHost()
+  //   web_contents()->GetRenderViewHost()
   RenderViewHost* rvh();
+
+  // pending_rvh() is equivalent to:
+  //   WebContentsTester::For(web_contents())->GetPendingRenderViewHost()
   RenderViewHost* pending_rvh();
+
+  // active_rvh() is equivalent to pending_rvh() ? pending_rvh() : rvh()
   RenderViewHost* active_rvh();
+
+  // main_rfh() is equivalent to web_contents()->GetMainFrame()
   RenderFrameHost* main_rfh();
+
+  // pending_main_rfh() is equivalent to:
+  //   WebContentsTester::For(web_contents())->GetPendingMainFrame()
+  RenderFrameHost* pending_main_rfh();
+
   BrowserContext* browser_context();
   MockRenderProcessHost* process();
 
@@ -188,9 +232,6 @@ class RenderViewHostTestHarness : public testing::Test {
  private:
   scoped_ptr<BrowserContext> browser_context_;
 
-  // It is important not to use this directly in the implementation as
-  // web_contents() and SetContents() are virtual and may be
-  // overridden by subclasses.
   scoped_ptr<WebContents> contents_;
 #if defined(OS_WIN)
   scoped_ptr<ui::ScopedOleInitializer> ole_initializer_;

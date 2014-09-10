@@ -28,7 +28,7 @@
 
 #include "core/rendering/RenderMedia.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLVideoElement;
 
@@ -72,7 +72,7 @@ private:
     virtual LayoutUnit offsetWidth() const OVERRIDE;
     virtual LayoutUnit offsetHeight() const OVERRIDE;
 
-    virtual CompositingReasons additionalCompositingReasons(CompositingTriggerFlags) const OVERRIDE;
+    virtual CompositingReasons additionalCompositingReasons() const OVERRIDE;
 
     void updatePlayer();
 
@@ -83,6 +83,6 @@ private:
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderVideo, isVideo());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderVideo_h

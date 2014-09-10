@@ -68,8 +68,6 @@ const char kConversionErrorMessage[] =
     "properly.";
 
 PrefMappingEntry kPrefMapping[] = {
-    {"protectedContentEnabled", prefs::kEnableDRM, APIPermission::kPrivacy,
-     APIPermission::kPrivacy},
     {"alternateErrorPagesEnabled", prefs::kAlternateErrorPagesEnabled,
      APIPermission::kPrivacy, APIPermission::kPrivacy},
     {"autofillEnabled", autofill::prefs::kAutofillEnabled,
@@ -78,6 +76,13 @@ PrefMappingEntry kPrefMapping[] = {
      APIPermission::kPrivacy, APIPermission::kPrivacy},
     {"networkPredictionEnabled", prefs::kNetworkPredictionEnabled,
      APIPermission::kPrivacy, APIPermission::kPrivacy},
+    {"networkPredictionOptions", prefs::kNetworkPredictionOptions,
+     APIPermission::kPrivacy, APIPermission::kPrivacy},
+    {"passwordSavingEnabled",
+     password_manager::prefs::kPasswordManagerSavingEnabled,
+     APIPermission::kPrivacy, APIPermission::kPrivacy},
+    {"protectedContentEnabled", prefs::kEnableDRM, APIPermission::kPrivacy,
+     APIPermission::kPrivacy},
     {"proxy", prefs::kProxy, APIPermission::kProxy, APIPermission::kProxy},
     {"referrersEnabled", prefs::kEnableReferrers, APIPermission::kPrivacy,
      APIPermission::kPrivacy},
@@ -513,7 +518,7 @@ bool PreferenceFunction::ValidateBrowserPref(
   APIPermission::ID permission = permission_type == PERMISSION_TYPE_READ
                                      ? read_permission
                                      : write_permission;
-  if (!GetExtension()->permissions_data()->HasAPIPermission(permission)) {
+  if (!extension()->permissions_data()->HasAPIPermission(permission)) {
     error_ = ErrorUtils::FormatErrorMessage(
         keys::kPermissionErrorMessage, extension_pref_key);
     return false;

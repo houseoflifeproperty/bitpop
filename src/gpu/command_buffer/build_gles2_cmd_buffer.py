@@ -425,6 +425,7 @@ _STATES = {
         'type': 'GLfloat',
         'default': '1.0f',
         'range_checks': [{'check': "<= 0.0f", 'test_value': "0.0f"}],
+        'nan_check': True,
       }],
   },
   'DepthMask': {
@@ -1220,6 +1221,7 @@ _PEPPER_INTERFACES = [
   {'name': 'ChromiumEnableFeature', 'dev': False},
   {'name': 'ChromiumMapSub', 'dev': False},
   {'name': 'Query', 'dev': False},
+  {'name': 'VertexArrayObject', 'dev': False},
   {'name': 'DrawBuffers', 'dev': True},
 ]
 
@@ -1239,8 +1241,6 @@ _PEPPER_INTERFACES = [
 # gl_test_func: GL function that is expected to be called when testing.
 # cmd_args:     The arguments to use for the command. This overrides generating
 #               them based on the GL function arguments.
-#               a NonImmediate type is a type that stays a pointer even in
-#               and immediate version of acommand.
 # gen_cmd:      Whether or not this function geneates a command. Default = True.
 # data_transfer_methods: Array of methods that are used for transfering the
 #               pointer data.  Possible values: 'immediate', 'shm', 'bucket'.
@@ -1283,6 +1283,7 @@ _PEPPER_INTERFACES = [
 # extension_flag: Function is an extension and should be enabled only when
 #               the corresponding feature info flag is enabled. Implies
 #               'extension': True.
+# not_shared:   For GENn types, True if objects can't be shared between contexts
 
 _FUNCTION_INFO = {
   'ActiveTexture': {
@@ -1382,7 +1383,7 @@ _FUNCTION_INFO = {
     'count': 64,  # GL_MAILBOX_SIZE_CHROMIUM
     'unit_test': False,
     'client_test': False,
-    'extension': True,
+    'extension': "CHROMIUM_texture_mailbox",
     'chromium': True,
     'trace_level': 1,
   },
@@ -1393,7 +1394,7 @@ _FUNCTION_INFO = {
     'data_transfer_methods': ['immediate'],
     'unit_test': False,
     'client_test': False,
-    'extension': True,
+    'extension': "CHROMIUM_texture_mailbox",
     'chromium': True,
   },
   'ClearStencil': {
@@ -1648,7 +1649,7 @@ _FUNCTION_INFO = {
   'GenMailboxCHROMIUM': {
     'type': 'HandWritten',
     'impl_func': False,
-    'extension': True,
+    'extension': "CHROMIUM_texture_mailbox",
     'chromium': True,
   },
   'GenFramebuffers': {
@@ -1708,10 +1709,10 @@ _FUNCTION_INFO = {
     'result': ['SizedResult<GLuint>'],
   },
   'GetAttribLocation': {
-    'type': 'HandWritten',
-    'needs_size': True,
+    'type': 'Custom',
+    'data_transfer_methods': ['shm'],
     'cmd_args':
-        'GLidProgram program, const char* name, NonImmediate GLint* location',
+        'GLidProgram program, uint32_t name_bucket_id, GLint* location',
     'result': ['GLint'],
     'error_return': -1, # http://www.opengl.org/sdk/docs/man/xhtml/glGetAttribLocation.xml
   },
@@ -1865,10 +1866,10 @@ _FUNCTION_INFO = {
     'result': ['SizedResult<GLint>'],
   },
   'GetUniformLocation': {
-    'type': 'HandWritten',
-    'needs_size': True,
+    'type': 'Custom',
+    'data_transfer_methods': ['shm'],
     'cmd_args':
-        'GLidProgram program, const char* name, NonImmediate GLint* location',
+        'GLidProgram program, uint32_t name_bucket_id, GLint* location',
     'result': ['GLint'],
     'error_return': -1, # http://www.opengl.org/sdk/docs/man/xhtml/glGetUniformLocation.xml
   },
@@ -1976,7 +1977,7 @@ _FUNCTION_INFO = {
     'count': 64,  # GL_MAILBOX_SIZE_CHROMIUM
     'unit_test': False,
     'client_test': False,
-    'extension': True,
+    'extension': "CHROMIUM_texture_mailbox",
     'chromium': True,
     'trace_level': 1,
   },
@@ -1987,7 +1988,7 @@ _FUNCTION_INFO = {
     'count': 64,  # GL_MAILBOX_SIZE_CHROMIUM
     'unit_test': False,
     'client_test': False,
-    'extension': True,
+    'extension': "CHROMIUM_texture_mailbox",
     'chromium': True,
     'trace_level': 1,
   },
@@ -2353,6 +2354,7 @@ _FUNCTION_INFO = {
     'resource_types': 'Queries',
     'unit_test': False,
     'pepper_interface': 'Query',
+    'not_shared': 'True',
   },
   'DeleteQueriesEXT': {
     'type': 'DELn',
@@ -2426,6 +2428,7 @@ _FUNCTION_INFO = {
     'resource_type': 'VertexArray',
     'resource_types': 'VertexArrays',
     'unit_test': False,
+    'pepper_interface': 'VertexArrayObject',
   },
   'BindVertexArrayOES': {
     'type': 'Bind',
@@ -2435,6 +2438,7 @@ _FUNCTION_INFO = {
     'gen_func': 'GenVertexArraysOES',
     'unit_test': False,
     'client_test': False,
+    'pepper_interface': 'VertexArrayObject',
   },
   'DeleteVertexArraysOES': {
     'type': 'DELn',
@@ -2443,6 +2447,7 @@ _FUNCTION_INFO = {
     'resource_type': 'VertexArray',
     'resource_types': 'VertexArrays',
     'unit_test': False,
+    'pepper_interface': 'VertexArrayObject',
   },
   'IsVertexArrayOES': {
     'type': 'Is',
@@ -2451,6 +2456,7 @@ _FUNCTION_INFO = {
     'decoder_func': 'DoIsVertexArrayOES',
     'expectation': False,
     'unit_test': False,
+    'pepper_interface': 'VertexArrayObject',
   },
   'BindTexImage2DCHROMIUM': {
     'decoder_func': 'DoBindTexImage2DCHROMIUM',
@@ -2554,13 +2560,13 @@ _FUNCTION_INFO = {
   'InsertSyncPointCHROMIUM': {
     'type': 'HandWritten',
     'impl_func': False,
-    'extension': True,
+    'extension': "CHROMIUM_sync_point",
     'chromium': True,
   },
   'WaitSyncPointCHROMIUM': {
     'type': 'Custom',
     'impl_func': True,
-    'extension': True,
+    'extension': "CHROMIUM_sync_point",
     'chromium': True,
     'trace_level': 1,
   },
@@ -3319,19 +3325,27 @@ class StateSetHandler(TypeHandler):
     state = _STATES[state_name]
     states = state['states']
     args = func.GetOriginalArgs()
-    code = []
     for ndx,item in enumerate(states):
+      code = []
       if 'range_checks' in item:
         for range_check in item['range_checks']:
           code.append("%s %s" % (args[ndx].name, range_check['check']))
-    if len(code):
-      file.Write("  if (%s) {\n" % " ||\n      ".join(code))
-      file.Write(
-        '    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE,'
-        ' "%s", "%s out of range");\n' %
-        (func.name, args[ndx].name))
-      file.Write("    return error::kNoError;\n")
-      file.Write("  }\n")
+      if 'nan_check' in item:
+        # Drivers might generate an INVALID_VALUE error when a value is set
+        # to NaN. This is allowed behavior under GLES 3.0 section 2.1.1 or
+        # OpenGL 4.5 section 2.3.4.1 - providing NaN allows undefined results.
+        # Make this behavior consistent within Chromium, and avoid leaking GL
+        # errors by generating the error in the command buffer instead of
+        # letting the GL driver generate it.
+        code.append("base::IsNaN(%s)" % args[ndx].name)
+      if len(code):
+        file.Write("  if (%s) {\n" % " ||\n      ".join(code))
+        file.Write(
+          '    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE,'
+          ' "%s", "%s out of range");\n' %
+          (func.name, args[ndx].name))
+        file.Write("    return error::kNoError;\n")
+        file.Write("  }\n")
     code = []
     for ndx,item in enumerate(states):
       code.append("state_.%s != %s" % (item['name'], args[ndx].name))
@@ -3382,6 +3396,30 @@ TEST_P(%(test_name)s, %(name)sInvalidValue%(ndx)d_%(check_ndx)d) {
             'args': ", ".join(arg_strings),
           }
           file.Write(valid_test % vars)
+      if 'nan_check' in item:
+        valid_test = """
+TEST_P(%(test_name)s, %(name)sNaNValue%(ndx)d) {
+  SpecializedSetup<cmds::%(name)s, 0>(false);
+  cmds::%(name)s cmd;
+  cmd.Init(%(args)s);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
+}
+"""
+        name = func.name
+        arg_strings = [
+          arg.GetValidArg(func) \
+          for arg in func.GetOriginalArgs() if not arg.IsConstant()
+        ]
+
+        arg_strings[ndx] = 'nanf("")'
+        vars = {
+          'test_name': 'GLES2DecoderTest%d' % file.file_num,
+          'name': name,
+          'ndx': ndx,
+          'args': ", ".join(arg_strings),
+        }
+        file.Write(valid_test % vars)
 
 
 class StateSetRGBAlphaHandler(TypeHandler):
@@ -4048,9 +4086,20 @@ class GENnHandler(TypeHandler):
     self.WriteClientGLCallLog(func, file)
     for arg in func.GetOriginalArgs():
       arg.WriteClientSideValidationCode(file, func)
-    code = """  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GetIdHandler(id_namespaces::k%(resource_types)s)->
-      MakeIds(this, 0, %(args)s);
+    not_shared = func.GetInfo('not_shared')
+    if not_shared:
+      alloc_code = (
+"""  IdAllocatorInterface* id_allocator = GetIdAllocator(id_namespaces::k%s);
+  for (GLsizei ii = 0; ii < n; ++ii)
+    %s[ii] = id_allocator->AllocateID();""" %
+  (func.GetInfo('resource_types'), func.GetOriginalArgs()[1].name))
+    else:
+      alloc_code = ("""  GetIdHandler(id_namespaces::k%(resource_types)s)->
+      MakeIds(this, 0, %(args)s);""" % args)
+    args['alloc_code'] = alloc_code
+
+    code = """ GPU_CLIENT_SINGLE_THREAD_CHECK();
+%(alloc_code)s
   %(name)sHelper(%(args)s);
   helper_->%(name)sImmediate(%(args)s);
   if (share_group_->bind_generates_resource())
@@ -6517,21 +6566,6 @@ class InputStringBucketArgument(Argument):
     return "_"
 
 
-class NonImmediatePointerArgument(PointerArgument):
-  """A pointer argument that stays a pointer even in an immediate cmd."""
-
-  def __init__(self, name, type):
-    PointerArgument.__init__(self, name, type)
-
-  def IsPointer(self):
-    """Returns true if argument is a pointer."""
-    return False
-
-  def GetImmediateVersion(self):
-    """Overridden from Argument."""
-    return self
-
-
 class ResourceIdArgument(Argument):
   """A class that represents a resource id argument to a function."""
 
@@ -7189,14 +7223,9 @@ def CreateArg(arg_string):
     return None
   # Is this a pointer argument?
   elif arg_string.find('*') >= 0:
-    if arg_parts[0] == 'NonImmediate':
-      return NonImmediatePointerArgument(
-          arg_parts[-1],
-          " ".join(arg_parts[1:-1]))
-    else:
-      return PointerArgument(
-          arg_parts[-1],
-          " ".join(arg_parts[0:-1]))
+    return PointerArgument(
+        arg_parts[-1],
+        " ".join(arg_parts[0:-1]))
   # Is this a resource argument? Must come after pointer check.
   elif arg_parts[0].startswith('GLidBind'):
     return ResourceIdBindArgument(arg_parts[-1], " ".join(arg_parts[0:-1]))
@@ -8229,6 +8258,22 @@ const size_t GLES2Util::enum_to_string_table_len_ =
 
     file.Close()
 
+  def WriteMojoGLCallVisitorForExtension(self, filename, extension):
+    """Provides the GL implementation for mojo for a particular extension"""
+    file = CWriter(filename)
+    file.Write(_LICENSE)
+    file.Write(_DO_NOT_EDIT_WARNING)
+
+    for func in self.original_functions:
+      if func.GetInfo("extension") != extension:
+        continue
+      file.Write("VISIT_GL_CALL(%s, %s, (%s), (%s))\n" %
+                             (func.name, func.return_type,
+                              func.MakeTypedOriginalArgString(""),
+                              func.MakeOriginalArgString("")))
+
+    file.Close()
+
 def Format(generated_files):
   for filename in generated_files:
     call(["clang-format", "-i", "-style=chromium", filename])
@@ -8310,8 +8355,14 @@ def main(argv):
   gen.WriteCommonUtilsHeader("common/gles2_cmd_utils_autogen.h")
   gen.WriteCommonUtilsImpl("common/gles2_cmd_utils_implementation_autogen.h")
   gen.WriteGLES2Header("../GLES2/gl2chromium_autogen.h")
-  gen.WriteMojoGLCallVisitor(
-      "../../mojo/public/c/gles2/gles2_call_visitor_autogen.h")
+  mojo_gles2_prefix = "../../mojo/public/c/gles2/gles2_call_visitor"
+  gen.WriteMojoGLCallVisitor(mojo_gles2_prefix + "_autogen.h")
+  gen.WriteMojoGLCallVisitorForExtension(
+      mojo_gles2_prefix + "_chromium_texture_mailbox_autogen.h",
+      "CHROMIUM_texture_mailbox")
+  gen.WriteMojoGLCallVisitorForExtension(
+      mojo_gles2_prefix + "_chromium_sync_point_autogen.h",
+      "CHROMIUM_sync_point")
 
   Format([
       "common/gles2_cmd_format_autogen.h",
@@ -8341,9 +8392,12 @@ def main(argv):
       "service/gles2_cmd_validation_autogen.h",
       "service/gles2_cmd_validation_implementation_autogen.h"])
   os.chdir("../..")
+  mojo_gles2_prefix = "mojo/public/c/gles2/gles2_call_visitor"
   Format([
       "gpu/GLES2/gl2chromium_autogen.h",
-      "mojo/public/c/gles2/gles2_call_visitor_autogen.h",
+      mojo_gles2_prefix + "_autogen.h",
+      mojo_gles2_prefix + "_chromium_texture_mailbox_autogen.h",
+      mojo_gles2_prefix + "_chromium_sync_point_autogen.h",
       "ppapi/c/dev/ppb_opengles2ext_dev.h",
       "ppapi/c/ppb_opengles2.h",
       "ppapi/lib/gl/gles2/gles2.c",

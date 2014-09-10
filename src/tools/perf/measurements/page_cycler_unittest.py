@@ -6,7 +6,7 @@ import unittest
 
 from telemetry.core import browser_options
 from telemetry.page import page_runner
-from telemetry.results import page_measurement_results
+from telemetry.results import page_test_results
 from telemetry.unittest import simple_mock
 
 from measurements import page_cycler
@@ -108,7 +108,9 @@ class PageCyclerUnitTest(unittest.TestCase):
       real_memory_module = page_cycler.memory
       try:
         page_cycler.memory = mock_memory_module
-        cycler.DidStartBrowser(FakeBrowser())
+        browser = FakeBrowser()
+        cycler.WillStartBrowser(browser)
+        cycler.DidStartBrowser(browser)
       finally:
         page_cycler.memory = real_memory_module
 
@@ -138,19 +140,18 @@ class PageCyclerUnitTest(unittest.TestCase):
     url_name = 'http://fakepage.com'
     page = FakePage(url_name)
     tab = FakeTab()
-    results = page_measurement_results.PageMeasurementResults()
 
     for i in range(5):
+      results = page_test_results.PageTestResults()
+      results.WillRunPage(page)
       cycler.WillNavigateToPage(page, tab)
       self.assertEqual(max(0, i - 2), tab.clear_cache_calls,
                        'Iteration %d tab.clear_cache_calls %d' %
                        (i, tab.clear_cache_calls))
-      results.WillMeasurePage(page)
-      cycler.MeasurePage(page, tab, results)
+      cycler.ValidateAndMeasurePage(page, tab, results)
+      results.DidRunPage(page)
 
-      values = results.page_specific_values_for_current_page
-      results.DidMeasurePage()
-
+      values = results.all_page_specific_values
       self.assertGreater(len(values), 2)
 
       self.assertEqual(values[0].page, page)
@@ -164,16 +165,15 @@ class PageCyclerUnitTest(unittest.TestCase):
     cycler = self.SetUpCycler(['--pageset-repeat=3'], True)
     pages = [FakePage('http://fakepage1.com'), FakePage('http://fakepage2.com')]
     tab = FakeTab()
-    results = page_measurement_results.PageMeasurementResults()
     for i in range(3):
       for page in pages:
+        results = page_test_results.PageTestResults()
+        results.WillRunPage(page)
         cycler.WillNavigateToPage(page, tab)
-        results.WillMeasurePage(page)
-        cycler.MeasurePage(page, tab, results)
+        cycler.ValidateAndMeasurePage(page, tab, results)
+        results.DidRunPage(page)
 
-        values = results.page_specific_values_for_current_page
-        results.DidMeasurePage()
-
+        values = results.all_page_specific_values
         self.assertGreater(len(values), 2)
 
         self.assertEqual(values[0].page, page)
@@ -189,17 +189,16 @@ class PageCyclerUnitTest(unittest.TestCase):
 
     pages = [FakePage('http://fakepage1.com'), FakePage('http://fakepage2.com')]
     tab = FakeTab()
-    results = page_measurement_results.PageMeasurementResults()
 
     for i in range(2):
       for page in pages:
+        results = page_test_results.PageTestResults()
+        results.WillRunPage(page)
         cycler.WillNavigateToPage(page, tab)
-        results.WillMeasurePage(page)
-        cycler.MeasurePage(page, tab, results)
+        cycler.ValidateAndMeasurePage(page, tab, results)
+        results.DidRunPage(page)
 
-        values = results.page_specific_values_for_current_page
-        results.DidMeasurePage()
-
+        values = results.all_page_specific_values
         self.assertEqual(4, len(values))
 
         self.assertEqual(values[0].page, page)
@@ -212,6 +211,5 @@ class PageCyclerUnitTest(unittest.TestCase):
           self.assertEqual(value.name,
                            'cpu_utilization.cpu_utilization_%s' % expected)
           self.assertEqual(value.units, '%')
-
 
         cycler.DidNavigateToPage(page, tab)

@@ -265,9 +265,6 @@ private:
 
     ImplType m_impl;
     NodeBase m_anchor;
-#ifndef ASSERT_ENABLED
-    uint64_t m_modifications;
-#endif
 };
 
 template<typename Value, typename HashFunctions>
@@ -325,11 +322,6 @@ struct LinkedHashSetTraits : public SimpleClassHashTraits<LinkedHashSetNode<Valu
         static const bool value = ValueTraits::template NeedsTracingLazily<>::value;
     };
     static const WeakHandlingFlag weakHandlingFlag = ValueTraits::weakHandlingFlag;
-    template<typename Visitor>
-    static bool shouldRemoveFromCollection(Visitor* visitor, LinkedHashSetNode<Value>& node)
-    {
-        return ValueTraits::shouldRemoveFromCollection(visitor, node.m_value);
-    }
 };
 
 template<typename LinkedHashSetType>
@@ -388,7 +380,7 @@ private:
 protected:
     LinkedHashSetConstIterator(const LinkedHashSetNodeBase* position, const LinkedHashSetType* container)
         : m_position(position)
-#ifdef ASSERT_ENABLED
+#if ENABLE(ASSERT)
         , m_container(container)
         , m_containerModifications(container->modifications())
 #endif
@@ -434,7 +426,7 @@ public:
 
 private:
     const LinkedHashSetNodeBase* m_position;
-#ifdef ASSERT_ENABLED
+#if ENABLE(ASSERT)
     void checkModifications() const { m_container->checkModifications(m_containerModifications); }
     const LinkedHashSetType* m_container;
     int64_t m_containerModifications;
@@ -507,7 +499,7 @@ template<typename T, typename U, typename V, typename W>
 inline void LinkedHashSet<T, U, V, W>::swap(LinkedHashSet& other)
 {
     m_impl.swap(other.m_impl);
-    swap(m_anchor, other.m_anchor);
+    swapAnchor(m_anchor, other.m_anchor);
 }
 
 template<typename T, typename U, typename V, typename Allocator>
@@ -675,8 +667,32 @@ inline void LinkedHashSet<T, U, V, W>::remove(ValuePeekInType value)
     remove(find(value));
 }
 
+inline void swapAnchor(LinkedHashSetNodeBase& a, LinkedHashSetNodeBase& b)
+{
+    ASSERT(a.m_prev && a.m_next && b.m_prev && b.m_next);
+    swap(a.m_prev, b.m_prev);
+    swap(a.m_next, b.m_next);
+    if (b.m_next == &a) {
+        ASSERT(b.m_prev == &a);
+        b.m_next = &b;
+        b.m_prev = &b;
+    } else {
+        b.m_next->m_prev = &b;
+        b.m_prev->m_next = &b;
+    }
+    if (a.m_next == &b) {
+        ASSERT(a.m_prev == &b);
+        a.m_next = &a;
+        a.m_prev = &a;
+    } else {
+        a.m_next->m_prev = &a;
+        a.m_prev->m_next = &a;
+    }
+}
+
 inline void swap(LinkedHashSetNodeBase& a, LinkedHashSetNodeBase& b)
 {
+    ASSERT(a.m_next != &a && b.m_next != &b);
     swap(a.m_prev, b.m_prev);
     swap(a.m_next, b.m_next);
     if (b.m_next) {
@@ -709,6 +725,13 @@ void deleteAllValues(const LinkedHashSet<ValueType, T, U>& set)
     for (iterator it = set.begin(); it != end; ++it)
         delete *it;
 }
+
+#if !ENABLE(OILPAN)
+template<typename T, typename U, typename V>
+struct NeedsTracing<LinkedHashSet<T, U, V> > {
+    static const bool value = false;
+};
+#endif
 
 }
 

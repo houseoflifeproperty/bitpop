@@ -201,6 +201,7 @@ extern const char kOutputFile[];
 }  // namespace switches
 
 extern const wchar_t kActiveSetupExe[];
+extern const wchar_t kAppLauncherGuid[];
 extern const wchar_t kChromeAppHostExe[];
 extern const wchar_t kChromeDll[];
 extern const wchar_t kChromeChildDll[];
@@ -255,7 +256,6 @@ extern const wchar_t kChromeChannelCanary[];
 extern const wchar_t kChromeChannelDev[];
 extern const wchar_t kChromeChannelBeta[];
 extern const wchar_t kChromeChannelStable[];
-extern const wchar_t kChromeChannelStableExplicit[];
 
 extern const size_t kMaxAppModelIdLength;
 

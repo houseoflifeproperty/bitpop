@@ -79,7 +79,7 @@ static CGFontRenderingMode cgFontRenderingModeForNSFont(NSFont* font) {
 
 using namespace std;
 
-namespace WebCore {
+namespace blink {
 
 static bool fontHasVerticalGlyphs(CTFontRef ctFont)
 {
@@ -113,7 +113,7 @@ static bool useHinting()
     // Enable hinting when subpixel font scaling is disabled or
     // when running the set of standard non-subpixel layout tests,
     // otherwise use subpixel glyph positioning.
-    return (isRunningLayoutTest() && !isFontAntialiasingEnabledForTest()) || !RuntimeEnabledFeatures::subpixelFontScalingEnabled();
+    return (LayoutTestSupport::isRunningLayoutTest() && !LayoutTestSupport::isFontAntialiasingEnabledForTest()) || !RuntimeEnabledFeatures::subpixelFontScalingEnabled();
 }
 
 const SimpleFontData* SimpleFontData::getCompositeFontReferenceFontData(NSFont *key) const
@@ -453,4 +453,4 @@ bool SimpleFontData::canRenderCombiningCharacterSequence(const UChar* characters
     return true;
 }
 
-} // namespace WebCore
+} // namespace blink

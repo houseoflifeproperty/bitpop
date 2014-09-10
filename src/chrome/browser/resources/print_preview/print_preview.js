@@ -7,6 +7,7 @@
 var localStrings = new LocalStrings(templateData);
 
 <include src="component.js"/>
+<include src="print_preview_focus_manager.js"/>
 
 cr.define('print_preview', function() {
   'use strict';
@@ -34,13 +35,6 @@ cr.define('print_preview', function() {
     this.userInfo_ = new print_preview.UserInfo();
 
     /**
-     * Metrics object used to report usage statistics.
-     * @type {!print_preview.Metrics}
-     * @private
-     */
-    this.metrics_ = new print_preview.Metrics();
-
-    /**
      * Application state.
      * @type {!print_preview.AppState}
      * @private
@@ -60,7 +54,7 @@ cr.define('print_preview', function() {
      * @private
      */
     this.destinationStore_ = new print_preview.DestinationStore(
-        this.nativeLayer_, this.userInfo_, this.appState_, this.metrics_);
+        this.nativeLayer_, this.userInfo_, this.appState_);
 
     /**
      * Storage of the print ticket used to create the print job.
@@ -85,7 +79,7 @@ cr.define('print_preview', function() {
      * @private
      */
     this.destinationSearch_ = new print_preview.DestinationSearch(
-        this.destinationStore_, this.userInfo_, this.metrics_);
+        this.destinationStore_, this.userInfo_);
     this.addChild(this.destinationSearch_);
 
     /**
@@ -165,6 +159,24 @@ cr.define('print_preview', function() {
     this.addChild(this.otherOptionsSettings_);
 
     /**
+     * Component that renders the advanced options button.
+     * @type {!print_preview.AdvancedOptionsSettings}
+     * @private
+     */
+    this.advancedOptionsSettings_ = new print_preview.AdvancedOptionsSettings(
+        this.destinationStore_);
+    this.addChild(this.advancedOptionsSettings_);
+
+    /**
+     * Component used to search for print destinations.
+     * @type {!print_preview.AdvancedSettings}
+     * @private
+     */
+    this.advancedSettings_ = new print_preview.AdvancedSettings(
+        this.printTicketStore_);
+    this.addChild(this.advancedSettings_);
+
+    /**
      * Area of the UI that holds the print preview.
      * @type {!print_preview.PreviewArea}
      * @private
@@ -192,6 +204,14 @@ cr.define('print_preview', function() {
      * @private
      */
     this.isInKioskAutoPrintMode_ = false;
+
+    /**
+     * Whether Print Preview is in App Kiosk mode, basically, use only printers
+     * available for the device.
+     * @type {boolean}
+     * @private
+     */
+    this.isInAppKioskMode_ = false;
 
     /**
      * State of the print preview UI.
@@ -247,6 +267,7 @@ cr.define('print_preview', function() {
         this.setIsEnabled_(false);
       }
       this.nativeLayer_.startGetInitialSettings();
+      print_preview.PrintPreviewFocusManager.getInstance().initialize();
       cr.ui.FocusOutlineManager.forDocument(document);
     },
 
@@ -285,7 +306,10 @@ cr.define('print_preview', function() {
           this.nativeLayer_,
           print_preview.NativeLayer.EventType.PRIVET_PRINT_FAILED,
           this.onPrivetPrintFailed_.bind(this));
-
+      this.tracker.add(
+          this.nativeLayer_,
+          print_preview.NativeLayer.EventType.MANIPULATE_SETTINGS_FOR_TEST,
+          this.onManipulateSettingsForTest_.bind(this));
 
       this.tracker.add(
           $('system-dialog-link'),
@@ -368,6 +392,11 @@ cr.define('print_preview', function() {
           print_preview.DestinationListItem.EventType.REGISTER_PROMO_CLICKED,
           this.onCloudPrintRegisterPromoClick_.bind(this));
 
+      this.tracker.add(
+          this.advancedOptionsSettings_,
+          print_preview.AdvancedOptionsSettings.EventType.BUTTON_ACTIVATED,
+          this.onAdvancedOptionsButtonActivated_.bind(this));
+
       // TODO(rltoscano): Move no-destinations-promo into its own component
       // instead being part of PrintPreview.
       this.tracker.add(
@@ -396,6 +425,8 @@ cr.define('print_preview', function() {
       this.colorSettings_.decorate($('color-settings'));
       this.marginSettings_.decorate($('margin-settings'));
       this.otherOptionsSettings_.decorate($('other-options-settings'));
+      this.advancedOptionsSettings_.decorate($('advanced-options-settings'));
+      this.advancedSettings_.decorate($('advanced-settings'));
       this.previewArea_.decorate($('preview-area'));
 
       setIsVisible($('open-pdf-in-preview-link'), cr.isMac);
@@ -420,6 +451,7 @@ cr.define('print_preview', function() {
       this.colorSettings_.isEnabled = isEnabled;
       this.marginSettings_.isEnabled = isEnabled;
       this.otherOptionsSettings_.isEnabled = isEnabled;
+      this.advancedOptionsSettings_.isEnabled = isEnabled;
     },
 
     /**
@@ -530,6 +562,7 @@ cr.define('print_preview', function() {
 
       var settings = event.initialSettings;
       this.isInKioskAutoPrintMode_ = settings.isInKioskAutoPrintMode;
+      this.isInAppKioskMode_ = settings.isInAppKioskMode;
 
       // The following components must be initialized in this order.
       this.appState_.init(
@@ -544,12 +577,13 @@ cr.define('print_preview', function() {
           settings.decimalDelimeter,
           settings.unitType,
           settings.selectionOnly);
-      this.destinationStore_.init();
+      this.destinationStore_.init(settings.isInAppKioskMode);
       this.appState_.setInitialized();
 
       $('document-title').innerText = settings.documentTitle;
       setIsVisible($('system-dialog-link'),
-                   !settings.hidePrintWithSystemDialogLink);
+                   !settings.hidePrintWithSystemDialogLink &&
+                   !settings.isInAppKioskMode);
     },
 
     /**
@@ -563,7 +597,8 @@ cr.define('print_preview', function() {
       this.cloudPrintInterface_ = new cloudprint.CloudPrintInterface(
           event.baseCloudPrintUrl,
           this.nativeLayer_,
-          this.userInfo_);
+          this.userInfo_,
+          event.appKioskMode);
       this.tracker.add(
           this.cloudPrintInterface_,
           cloudprint.CloudPrintInterface.EventType.SUBMIT_DONE,
@@ -662,7 +697,9 @@ cr.define('print_preview', function() {
      */
     onCloudPrintError_: function(event) {
       if (event.status == 403) {
-        this.destinationSearch_.showCloudPrintPromo();
+        if (!this.isInAppKioskMode_) {
+          this.destinationSearch_.showCloudPrintPromo();
+        }
       } else if (event.status == 0) {
         return; // Ignore, the system does not have internet connectivity.
       } else {
@@ -691,6 +728,7 @@ cr.define('print_preview', function() {
     onPreviewGenerationDone_: function() {
       this.isPreviewGenerationInProgress_ = false;
       this.printHeader_.isPrintButtonEnabled = true;
+      this.nativeLayer_.previewReadyForTest();
       this.printIfReady_();
     },
 
@@ -749,8 +787,6 @@ cr.define('print_preview', function() {
      * @private
      */
      onCloudPrintRegisterPromoClick_: function(e) {
-       this.metrics_.incrementDestinationSearchBucket(
-         print_preview.Metrics.DestinationSearchBucket.REGISTER_PROMO_SELECTED);
        var devicesUrl = 'chrome://devices/register?id=' + e.destination.id;
        this.nativeLayer_.startForceOpenNewTab(devicesUrl);
        this.destinationStore_.waitForRegister(e.destination.id);
@@ -766,20 +802,14 @@ cr.define('print_preview', function() {
       // Escape key closes the dialog.
       if (e.keyCode == 27 && !e.shiftKey && !e.ctrlKey && !e.altKey &&
           !e.metaKey) {
-        if (this.destinationSearch_.getIsVisible()) {
-          this.destinationSearch_.setIsVisible(false);
-          this.metrics_.incrementDestinationSearchBucket(
-              print_preview.Metrics.DestinationSearchBucket.CANCELED);
-        } else {
-          <if expr="toolkit_views">
-          // On the toolkit_views environment, ESC key is handled by C++-side
-          // instead of JS-side.
-          return;
-          </if>
-          <if expr="not toolkit_views">
-          this.close_();
-          </if>
-        }
+        <if expr="toolkit_views">
+        // On the toolkit_views environment, ESC key is handled by C++-side
+        // instead of JS-side.
+        return;
+        </if>
+        <if expr="not toolkit_views">
+        this.close_();
+        </if>
         e.preventDefault();
         return;
       }
@@ -795,7 +825,7 @@ cr.define('print_preview', function() {
       }
 
       if (e.keyCode == 13 /*enter*/ &&
-          !this.destinationSearch_.getIsVisible() &&
+          !document.querySelector('.overlay:not([hidden])') &&
           this.destinationStore_.selectedDestination &&
           this.printTicketStore_.isTicketValid()) {
         assert(this.uiState_ == PrintPreview.UiState_.READY,
@@ -834,8 +864,16 @@ cr.define('print_preview', function() {
       this.destinationStore_.startLoadCloudDestinations();
       this.destinationStore_.startLoadLocalDestinations();
       this.destinationStore_.startLoadPrivetDestinations();
-      this.metrics_.incrementDestinationSearchBucket(
-          print_preview.Metrics.DestinationSearchBucket.SHOWN);
+    },
+
+    /**
+     * Called when the destination settings' change button is activated.
+     * Displays the destination search component.
+     * @private
+     */
+    onAdvancedOptionsButtonActivated_: function() {
+      this.advancedSettings_.showForDestination(
+          this.destinationStore_.selectedDestination);
     },
 
     /**
@@ -890,6 +928,141 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * Called when the print preview settings need to be changed for testing.
+     * @param {Event} event Event object that contains the option that is to
+     *     be changed and what to set that option.
+     * @private
+     */
+    onManipulateSettingsForTest_: function(event) {
+      if ('selectSaveAsPdfDestination' in event.settings) {
+        this.saveAsPdfForTest_();  // No parameters.
+      } else if ('layoutSettings' in event.settings) {
+        this.setLayoutSettingsForTest_(event.settings.layoutSettings.portrait);
+      } else if ('pageRange' in event.settings) {
+        this.setPageRangeForTest_(event.settings.pageRange);
+      } else if ('headersAndFooters' in event.settings) {
+        this.setHeadersAndFootersForTest_(event.settings.headersAndFooters);
+      } else if ('backgroundColorsAndImages' in event.settings) {
+        this.setBackgroundColorsAndImagesForTest_(
+            event.settings.backgroundColorsAndImages);
+      } else if ('margins' in event.settings) {
+        this.setMarginsForTest_(event.settings.margins);
+      }
+    },
+
+    /**
+     * Called by onManipulateSettingsForTest_(). Sets the print destination
+     * as a pdf.
+     * @private
+     */
+    saveAsPdfForTest_: function() {
+      if (this.destinationStore_.selectedDestination &&
+          print_preview.Destination.GooglePromotedId.SAVE_AS_PDF ==
+          this.destinationStore_.selectedDestination.id) {
+        this.nativeLayer_.previewReadyForTest();
+        return;
+      }
+
+      var destinations = this.destinationStore_.destinations();
+      var pdfDestination = null;
+      for (var i = 0; i < destinations.length; i++) {
+        if (destinations[i].id ==
+            print_preview.Destination.GooglePromotedId.SAVE_AS_PDF) {
+          pdfDestination = destinations[i];
+          break;
+        }
+      }
+
+      if (pdfDestination)
+        this.destinationStore_.selectDestination(pdfDestination);
+      else
+        this.nativeLayer_.previewFailedForTest();
+    },
+
+    /**
+     * Called by onManipulateSettingsForTest_(). Sets the layout settings to
+     * either portrait or landscape.
+     * @param {boolean} portrait Whether to use portrait page layout;
+     *     if false: landscape.
+     * @private
+     */
+    setLayoutSettingsForTest_: function(portrait) {
+      var element = document.querySelector(portrait ?
+          '.layout-settings-portrait-radio' :
+          '.layout-settings-landscape-radio');
+      if (element.checked)
+        this.nativeLayer_.previewReadyForTest();
+      else
+        element.click();
+    },
+
+    /**
+     * Called by onManipulateSettingsForTest_(). Sets the page range for
+     * for the print preview settings.
+     * @param {string} pageRange Sets the page range to the desired value(s).
+     *     Ex: "1-5,9" means pages 1 through 5 and page 9 will be printed.
+     * @private
+     */
+    setPageRangeForTest_: function(pageRange) {
+      var textbox = document.querySelector('.page-settings-custom-input');
+      if (textbox.value == pageRange) {
+        this.nativeLayer_.previewReadyForTest();
+      } else {
+        textbox.value = pageRange;
+        document.querySelector('.page-settings-custom-radio').click();
+      }
+    },
+
+    /**
+     * Called by onManipulateSettings_(). Checks or unchecks the headers and
+     * footers option on print preview.
+     * @param {boolean} headersAndFooters Whether the "Headers and Footers"
+     *     checkbox should be checked.
+     * @private
+     */
+    setHeadersAndFootersForTest_: function(headersAndFooters) {
+      var checkbox = document.querySelector('.header-footer-checkbox');
+      if (headersAndFooters == checkbox.checked)
+        this.nativeLayer_.previewReadyForTest();
+      else
+        checkbox.click();
+    },
+
+    /**
+     * Called by onManipulateSettings_(). Checks or unchecks the background
+     * colors and images option on print preview.
+     * @param {boolean} backgroundColorsAndImages If true, the checkbox should
+     *     be checked. Otherwise it should be unchecked.
+     * @private
+     */
+    setBackgroundColorsAndImagesForTest_: function(backgroundColorsAndImages) {
+      var checkbox = document.querySelector('.css-background-checkbox');
+      if (backgroundColorsAndImages == checkbox.checked)
+        this.nativeLayer_.previewReadyForTest();
+      else
+        checkbox.click();
+    },
+
+    /**
+     * Called by onManipulateSettings_(). Sets the margin settings
+     * that are desired. Custom margin settings aren't currently supported.
+     * @param {number} margins The desired margins combobox index. Must be
+     *     a valid index or else the test fails.
+     * @private
+     */
+    setMarginsForTest_: function(margins) {
+      var combobox = document.querySelector('.margin-settings-select');
+      if (margins == combobox.selectedIndex) {
+        this.nativeLayer_.previewReadyForTest();
+      } else if (margins >= 0 && margins < combobox.length) {
+        combobox.selectedIndex = margins;
+        this.marginSettings_.onSelectChange_();
+      } else {
+        this.nativeLayer_.previewFailedForTest();
+      }
+    },
+
+    /**
      * Called when the open-cloud-print-dialog link is clicked. Opens the Google
      * Cloud Print web dialog.
      * @private
@@ -936,8 +1109,8 @@ cr.define('print_preview', function() {
       setIsVisible(this.getChildElement('#no-destinations-promo'),
                    isPromoVisible);
       if (isPromoVisible) {
-        this.metrics_.incrementGcpPromoBucket(
-            print_preview.Metrics.GcpPromoBucket.SHOWN);
+        new print_preview.GcpPromoMetricsContext().record(
+            print_preview.Metrics.GcpPromoBucket.PROMO_SHOWN);
       }
     },
 
@@ -947,8 +1120,8 @@ cr.define('print_preview', function() {
      * @private
      */
     onNoDestinationsPromoClose_: function() {
-      this.metrics_.incrementGcpPromoBucket(
-          print_preview.Metrics.GcpPromoBucket.DISMISSED);
+      new print_preview.GcpPromoMetricsContext().record(
+          print_preview.Metrics.GcpPromoBucket.PROMO_CLOSED);
       setIsVisible(this.getChildElement('#no-destinations-promo'), false);
       this.appState_.persistIsGcpPromoDismissed(true);
     },
@@ -959,8 +1132,8 @@ cr.define('print_preview', function() {
      * @private
      */
     onNoDestinationsPromoClick_: function() {
-      this.metrics_.incrementGcpPromoBucket(
-          print_preview.Metrics.GcpPromoBucket.CLICKED);
+      new print_preview.GcpPromoMetricsContext().record(
+          print_preview.Metrics.GcpPromoBucket.PROMO_CLICKED);
       this.appState_.persistIsGcpPromoDismissed(true);
       window.open(this.cloudPrintInterface_.baseUrl + '?user=' +
                   this.userInfo_.activeUser + '#printers');
@@ -975,6 +1148,9 @@ cr.define('print_preview', function() {
 });
 
 // Pull in all other scripts in a single shot.
+<include src="common/overlay.js"/>
+<include src="common/search_box.js"/>
+
 <include src="data/page_number_set.js"/>
 <include src="data/destination.js"/>
 <include src="data/local_parsers.js"/>
@@ -1022,6 +1198,9 @@ cr.define('print_preview', function() {
 <include src="settings/margin_settings.js"/>
 <include src="settings/destination_settings.js"/>
 <include src="settings/other_options_settings.js"/>
+<include src="settings/advanced_options_settings.js"/>
+<include src="settings/advanced_settings/advanced_settings.js"/>
+<include src="settings/advanced_settings/advanced_settings_item.js"/>
 
 <include src="previewarea/margin_control.js"/>
 <include src="previewarea/margin_control_container.js"/>
@@ -1034,7 +1213,6 @@ cr.define('print_preview', function() {
 <include src="search/recent_destination_list.js"/>
 <include src="search/destination_list_item.js"/>
 <include src="search/destination_search.js"/>
-<include src="search/search_box.js"/>
 <include src="search/fedex_tos.js"/>
 
 window.addEventListener('DOMContentLoaded', function() {

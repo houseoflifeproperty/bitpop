@@ -10,6 +10,7 @@
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/browser_window_testing_views.h"
 #include "chrome/browser/ui/views/toolbar/browser_action_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "content/public/test/test_utils.h"
@@ -41,7 +42,7 @@ class BrowserActionsContainerTest : public ExtensionBrowserTest {
           browser_actions_bar_->GetExtensionAction(extension_index);
 
       content::WindowedNotificationObserver observer(
-          chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
+          extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
           content::Source<ExtensionAction>(browser_action));
       observer.Wait();
     }

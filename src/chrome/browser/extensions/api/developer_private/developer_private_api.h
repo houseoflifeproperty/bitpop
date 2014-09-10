@@ -88,8 +88,10 @@ class DeveloperPrivateEventRouter : public content::NotificationObserver,
       bool is_update,
       bool from_ephemeral,
       const std::string& old_name) OVERRIDE;
-  virtual void OnExtensionUninstalled(content::BrowserContext* browser_context,
-                                      const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUninstalled(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      extensions::UninstallReason reason) OVERRIDE;
 
   // ErrorConsole::Observer implementation.
   virtual void OnErrorAdded(const ExtensionError* error) OVERRIDE;
@@ -410,12 +412,14 @@ class DeveloperPrivateLoadDirectoryFunction
   // ExtensionFunction:
   virtual bool RunAsync() OVERRIDE;
 
+  bool LoadByFileSystemAPI(const fileapi::FileSystemURL& directory_url);
+
   void ClearExistingDirectoryContent(const base::FilePath& project_path);
 
-  void ReadSyncFileSystemDirectory(const base::FilePath& project_path,
-                                   const base::FilePath& destination_path);
+  void ReadDirectoryByFileSystemAPI(const base::FilePath& project_path,
+                                    const base::FilePath& destination_path);
 
-  void ReadSyncFileSystemDirectoryCb(
+  void ReadDirectoryByFileSystemAPICb(
       const base::FilePath& project_path,
       const base::FilePath& destination_path,
       base::File::Error result,
@@ -441,9 +445,6 @@ class DeveloperPrivateLoadDirectoryFunction
 
   // physical path on disc of the folder to be copied.
   base::FilePath project_base_path_;
-
-  // Path of the current folder to be copied.
-  base::FilePath current_path_;
 
  private:
   int pending_copy_operations_count_;

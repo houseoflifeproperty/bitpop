@@ -81,11 +81,16 @@ public class AddressWidget implements AdapterView.OnItemSelectedListener {
 
     private ScriptType mScript;
 
+    // The appropriate label that should be applied to the locality (city) field of the current
+    // country.  Examples include "city" or "district".
+    private String mLocalityLabel;
+
     // The appropriate label that should be applied to the admin area field of the current country.
     // Examples include "state", "province", "emirate", etc.
     private String mAdminLabel;
 
     private static final Map<String, Integer> ADMIN_LABELS;
+    private static final Map<String, Integer> LOCALITY_LABELS;
     private static final Map<String, Integer> ADMIN_ERROR_MESSAGES;
 
     private static final FormOptions SHOW_ALL_FIELDS = new FormOptions.Builder().build();
@@ -107,11 +112,17 @@ public class AddressWidget implements AdapterView.OnItemSelectedListener {
         adminLabelMap.put("do_si", R.string.i18n_do_si);
         adminLabelMap.put("emirate", R.string.i18n_emirate);
         adminLabelMap.put("island", R.string.i18n_island);
+        adminLabelMap.put("oblast", R.string.i18n_oblast);
         adminLabelMap.put("parish", R.string.i18n_parish);
         adminLabelMap.put("prefecture", R.string.i18n_prefecture);
         adminLabelMap.put("province", R.string.i18n_province);
         adminLabelMap.put("state", R.string.i18n_state_label);
         ADMIN_LABELS = Collections.unmodifiableMap(adminLabelMap);
+
+        Map<String, Integer> localityLabelMap = new HashMap<String, Integer>(2);
+        localityLabelMap.put("city", R.string.i18n_locality_label);
+        localityLabelMap.put("district", R.string.i18n_dependent_locality_label);
+        LOCALITY_LABELS = Collections.unmodifiableMap(localityLabelMap);
 
         Map<String, Integer> adminErrorMap = new HashMap<String, Integer>(15);
         adminErrorMap.put("area", R.string.invalid_area);
@@ -121,6 +132,7 @@ public class AddressWidget implements AdapterView.OnItemSelectedListener {
         adminErrorMap.put("do_si", R.string.invalid_do_si);
         adminErrorMap.put("emirate", R.string.invalid_emirate);
         adminErrorMap.put("island", R.string.invalid_island);
+        adminErrorMap.put("oblast", R.string.invalid_oblast);
         adminErrorMap.put("parish", R.string.invalid_parish);
         adminErrorMap.put("prefecture", R.string.invalid_prefecture);
         adminErrorMap.put("province", R.string.invalid_province);
@@ -266,7 +278,7 @@ public class AddressWidget implements AdapterView.OnItemSelectedListener {
 
         // Set up AddressField.LOCALITY
         AddressUiComponent localityUi = new AddressUiComponent(AddressField.LOCALITY);
-        localityUi.setFieldName(mContext.getString(R.string.i18n_locality_label));
+        localityUi.setFieldName(getLocalityFieldName(countryNode));
         mInputWidgets.put(AddressField.LOCALITY, localityUi);
 
         // Set up AddressField.DEPENDENT_LOCALITY
@@ -328,6 +340,17 @@ public class AddressWidget implements AdapterView.OnItemSelectedListener {
             zipName = mContext.getString(R.string.i18n_zip_code_label);
         }
         return zipName;
+    }
+
+    private String getLocalityFieldName(AddressVerificationNodeData countryNode) {
+        String localityLabelType = countryNode.get(AddressDataKey.LOCALITY_NAME_TYPE);
+        mLocalityLabel = localityLabelType;
+        Integer result = LOCALITY_LABELS.get(localityLabelType);
+        if (result == null) {
+            // Fallback to city.
+            result = R.string.i18n_locality_label;
+        }
+        return mContext.getString(result);
     }
 
     private String getAdminAreaFieldName(AddressVerificationNodeData countryNode) {

@@ -13,6 +13,7 @@
 #include "base/time/time.h"
 #include "sync/base/sync_export.h"
 #include "sync/engine/nudge_source.h"
+#include "sync/internal_api/public/base/invalidation_interface.h"
 #include "sync/sessions/sync_session.h"
 
 namespace tracked_objects {
@@ -21,7 +22,6 @@ class Location;
 
 namespace syncer {
 
-class ObjectIdInvalidationMap;
 struct ServerConnectionEvent;
 
 struct SYNC_EXPORT_PRIVATE ConfigurationParams {
@@ -115,8 +115,17 @@ class SYNC_EXPORT_PRIVATE SyncScheduler
   // order to fetch the update.
   virtual void ScheduleInvalidationNudge(
       const base::TimeDelta& desired_delay,
-      const ObjectIdInvalidationMap& invalidations,
+      syncer::ModelType type,
+      scoped_ptr<InvalidationInterface> invalidation,
       const tracked_objects::Location& nudge_location) = 0;
+
+  // Requests a non-blocking initial sync request for the specified type.
+  //
+  // Many types can only complete initial sync while the scheduler is in
+  // configure mode, but a few of them are able to perform their initial sync
+  // while the scheduler is in normal mode.  This non-blocking initial sync
+  // can be requested through this function.
+  virtual void ScheduleInitialSyncNudge(syncer::ModelType model_type) = 0;
 
   // Change status of notifications in the SyncSessionContext.
   virtual void SetNotificationsEnabled(bool notifications_enabled) = 0;

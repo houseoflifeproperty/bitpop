@@ -4,11 +4,12 @@
 
 #include "src/v8.h"
 
-#include "src/disassembler.h"
 #include "src/disasm.h"
+#include "src/disassembler.h"
+#include "src/heap/objects-visiting.h"
 #include "src/jsregexp.h"
 #include "src/macro-assembler.h"
-#include "src/objects-visiting.h"
+#include "src/ostreams.h"
 
 namespace v8 {
 namespace internal {
@@ -54,6 +55,7 @@ void HeapObject::HeapObjectVerify() {
       Map::cast(this)->MapVerify();
       break;
     case HEAP_NUMBER_TYPE:
+    case MUTABLE_HEAP_NUMBER_TYPE:
       HeapNumber::cast(this)->HeapNumberVerify();
       break;
     case FIXED_ARRAY_TYPE:
@@ -205,7 +207,7 @@ void Symbol::SymbolVerify() {
 
 
 void HeapNumber::HeapNumberVerify() {
-  CHECK(IsHeapNumber());
+  CHECK(IsHeapNumber() || IsMutableHeapNumber());
 }
 
 
@@ -263,10 +265,10 @@ void JSObject::JSObjectVerify() {
         Representation r = descriptors->GetDetails(i).representation();
         FieldIndex index = FieldIndex::ForDescriptor(map(), i);
         Object* value = RawFastPropertyAt(index);
-        if (r.IsDouble()) ASSERT(value->IsHeapNumber());
+        if (r.IsDouble()) DCHECK(value->IsMutableHeapNumber());
         if (value->IsUninitialized()) continue;
-        if (r.IsSmi()) ASSERT(value->IsSmi());
-        if (r.IsHeapObject()) ASSERT(value->IsHeapObject());
+        if (r.IsSmi()) DCHECK(value->IsSmi());
+        if (r.IsHeapObject()) DCHECK(value->IsHeapObject());
         HeapType* field_type = descriptors->GetFieldType(i);
         if (r.IsNone()) {
           CHECK(field_type->Is(HeapType::None()));
@@ -298,17 +300,17 @@ void Map::MapVerify() {
           instance_size() < heap->Capacity()));
   VerifyHeapPointer(prototype());
   VerifyHeapPointer(instance_descriptors());
-  SLOW_ASSERT(instance_descriptors()->IsSortedNoDuplicates());
+  SLOW_DCHECK(instance_descriptors()->IsSortedNoDuplicates());
   if (HasTransitionArray()) {
-    SLOW_ASSERT(transitions()->IsSortedNoDuplicates());
-    SLOW_ASSERT(transitions()->IsConsistentWithBackPointers(this));
+    SLOW_DCHECK(transitions()->IsSortedNoDuplicates());
+    SLOW_DCHECK(transitions()->IsConsistentWithBackPointers(this));
   }
 }
 
 
-void Map::SharedMapVerify() {
+void Map::DictionaryMapVerify() {
   MapVerify();
-  CHECK(is_shared());
+  CHECK(is_dictionary_map());
   CHECK(instance_descriptors()->IsEmpty());
   CHECK_EQ(0, pre_allocated_property_fields());
   CHECK_EQ(0, unused_property_fields());
@@ -347,6 +349,7 @@ void PolymorphicCodeCache::PolymorphicCodeCacheVerify() {
 void TypeFeedbackInfo::TypeFeedbackInfoVerify() {
   VerifyObjectField(kStorage1Offset);
   VerifyObjectField(kStorage2Offset);
+  VerifyObjectField(kStorage3Offset);
 }
 
 
@@ -638,6 +641,8 @@ void Code::CodeVerify() {
       last_gc_pc = it.rinfo()->pc();
     }
   }
+  CHECK(raw_type_feedback_info() == Smi::FromInt(0) ||
+        raw_type_feedback_info()->IsSmi() == IsCodeStubOrIC());
 }
 
 
@@ -878,7 +883,6 @@ void AccessorPair::AccessorPairVerify() {
   CHECK(IsAccessorPair());
   VerifyPointer(getter());
   VerifyPointer(setter());
-  VerifySmiField(kAccessFlagsOffset);
 }
 
 
@@ -1008,7 +1012,7 @@ void NormalizedMapCache::NormalizedMapCacheVerify() {
     for (int i = 0; i < length(); i++) {
       Object* e = FixedArray::get(i);
       if (e->IsMap()) {
-        Map::cast(e)->SharedMapVerify();
+        Map::cast(e)->DictionaryMapVerify();
       } else {
         CHECK(e->IsUndefined());
       }
@@ -1140,13 +1144,15 @@ bool DescriptorArray::IsSortedNoDuplicates(int valid_entries) {
   for (int i = 0; i < number_of_descriptors(); i++) {
     Name* key = GetSortedKey(i);
     if (key == current_key) {
-      PrintDescriptors();
+      OFStream os(stdout);
+      PrintDescriptors(os);
       return false;
     }
     current_key = key;
     uint32_t hash = GetSortedKey(i)->Hash();
     if (hash < current) {
-      PrintDescriptors();
+      OFStream os(stdout);
+      PrintDescriptors(os);
       return false;
     }
     current = hash;
@@ -1156,19 +1162,21 @@ bool DescriptorArray::IsSortedNoDuplicates(int valid_entries) {
 
 
 bool TransitionArray::IsSortedNoDuplicates(int valid_entries) {
-  ASSERT(valid_entries == -1);
+  DCHECK(valid_entries == -1);
   Name* current_key = NULL;
   uint32_t current = 0;
   for (int i = 0; i < number_of_transitions(); i++) {
     Name* key = GetSortedKey(i);
     if (key == current_key) {
-      PrintTransitions();
+      OFStream os(stdout);
+      PrintTransitions(os);
       return false;
     }
     current_key = key;
     uint32_t hash = GetSortedKey(i)->Hash();
     if (hash < current) {
-      PrintTransitions();
+      OFStream os(stdout);
+      PrintTransitions(os);
       return false;
     }
     current = hash;

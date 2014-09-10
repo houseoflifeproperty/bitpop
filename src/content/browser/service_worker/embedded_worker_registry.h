@@ -40,8 +40,14 @@ class CONTENT_EXPORT EmbeddedWorkerRegistry
  public:
   typedef base::Callback<void(ServiceWorkerStatusCode)> StatusCallback;
 
-  explicit EmbeddedWorkerRegistry(
-      base::WeakPtr<ServiceWorkerContextCore> context);
+  static scoped_refptr<EmbeddedWorkerRegistry> Create(
+      const base::WeakPtr<ServiceWorkerContextCore>& contxet);
+
+  // Used for DeleteAndStartOver. Creates a new registry which takes over
+  // |next_embedded_worker_id_| and |process_sender_map_| from |old_registry|.
+  static scoped_refptr<EmbeddedWorkerRegistry> Create(
+      const base::WeakPtr<ServiceWorkerContextCore>& context,
+      EmbeddedWorkerRegistry* old_registry);
 
   bool OnMessageReceived(const IPC::Message& message);
 
@@ -65,6 +71,7 @@ class CONTENT_EXPORT EmbeddedWorkerRegistry
   void OnWorkerScriptLoadFailed(int process_id, int embedded_worker_id);
   void OnWorkerStarted(int process_id, int thread_id, int embedded_worker_id);
   void OnWorkerStopped(int process_id, int embedded_worker_id);
+  void OnPausedAfterDownload(int process_id, int embedded_worker_id);
   void OnReportException(int embedded_worker_id,
                          const base::string16& error_message,
                          int line_number,
@@ -84,6 +91,9 @@ class CONTENT_EXPORT EmbeddedWorkerRegistry
   // Returns an embedded worker instance for given |embedded_worker_id|.
   EmbeddedWorkerInstance* GetWorker(int embedded_worker_id);
 
+  // Returns true if |embedded_worker_id| is managed by this registry.
+  bool CanHandle(int embedded_worker_id) const;
+
  private:
   friend class base::RefCounted<EmbeddedWorkerRegistry>;
   friend class EmbeddedWorkerInstance;
@@ -91,6 +101,9 @@ class CONTENT_EXPORT EmbeddedWorkerRegistry
   typedef std::map<int, EmbeddedWorkerInstance*> WorkerInstanceMap;
   typedef std::map<int, IPC::Sender*> ProcessToSenderMap;
 
+  EmbeddedWorkerRegistry(
+      const base::WeakPtr<ServiceWorkerContextCore>& context,
+      int initial_embedded_worker_id);
   ~EmbeddedWorkerRegistry();
 
   ServiceWorkerStatusCode Send(int process_id, IPC::Message* message);
@@ -109,6 +122,7 @@ class CONTENT_EXPORT EmbeddedWorkerRegistry
   std::map<int, std::set<int> > worker_process_map_;
 
   int next_embedded_worker_id_;
+  const int initial_embedded_worker_id_;
 
   DISALLOW_COPY_AND_ASSIGN(EmbeddedWorkerRegistry);
 };

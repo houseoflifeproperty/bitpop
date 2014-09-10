@@ -18,6 +18,7 @@
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "grit/generated_resources.h"
 #include "sync/api/sync_change_processor.h"
 #include "sync/api/sync_data.h"
@@ -116,8 +117,12 @@ bool IsUnRemovableDefaultApp(const std::string& id) {
 }
 
 void UninstallExtension(ExtensionService* service, const std::string& id) {
-  if (service && service->GetInstalledExtension(id))
-    service->UninstallExtension(id, false, NULL);
+  if (service && service->GetInstalledExtension(id)) {
+    service->UninstallExtension(id,
+                                extensions::UNINSTALL_REASON_SYNC,
+                                base::Bind(&base::DoNothing),
+                                NULL);
+  }
 }
 
 bool GetAppListItemType(AppListItem* item,
@@ -229,7 +234,8 @@ AppListSyncableService::AppListSyncableService(
   }
 
   // The extensions for this profile have not yet all been loaded.
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSIONS_READY,
+  registrar_.Add(this,
+                 extensions::NOTIFICATION_EXTENSIONS_READY_DEPRECATED,
                  content::Source<Profile>(profile));
 }
 
@@ -275,7 +281,7 @@ void AppListSyncableService::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  DCHECK_EQ(chrome::NOTIFICATION_EXTENSIONS_READY, type);
+  DCHECK_EQ(extensions::NOTIFICATION_EXTENSIONS_READY_DEPRECATED, type);
   DCHECK_EQ(profile_, content::Source<Profile>(source).ptr());
   registrar_.RemoveAll();
   BuildModel();

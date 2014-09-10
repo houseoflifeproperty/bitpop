@@ -7,13 +7,15 @@
 Handles test configuration, but all the logic for
 actually running the test is in Test and PageRunner."""
 
+import hashlib
 import inspect
 import json
 import os
 import sys
 
+from telemetry import benchmark
 from telemetry import decorators
-from telemetry import test
+from telemetry.core import browser_finder
 from telemetry.core import browser_options
 from telemetry.core import command_line
 from telemetry.core import discover
@@ -49,7 +51,7 @@ class Help(command_line.OptparseCommand):
         parser.print_help()
         return 0
 
-    print >> sys.stderr, ('usage: %s <command> [<options>]' % _ScriptName())
+    print >> sys.stderr, ('usage: %s [command] [<options>]' % _ScriptName())
     print >> sys.stderr, 'Available commands are:'
     for command in _Commands():
       print >> sys.stderr, '  %-10s %s' % (
@@ -65,8 +67,15 @@ class List(command_line.OptparseCommand):
   usage = '[test_name] [<options>]'
 
   @classmethod
+  def CreateParser(cls):
+    options = browser_options.BrowserFinderOptions()
+    parser = options.CreateParser('%%prog %s %s' % (cls.Name(), cls.usage))
+    return parser
+
+  @classmethod
   def AddCommandLineArgs(cls, parser):
-    parser.add_option('-j', '--json', action='store_true')
+    parser.add_option('-j', '--json-output-file', type='string')
+    parser.add_option('-n', '--num-shards', type='int', default=1)
 
   @classmethod
   def ProcessCommandLineArgs(cls, parser, args):
@@ -78,22 +87,17 @@ class List(command_line.OptparseCommand):
       parser.error('Must provide at most one test name.')
 
   def Run(self, args):
-    if args.json:
-      test_list = []
-      for test_class in sorted(args.tests, key=lambda t: t.Name()):
-        test_list.append({
-            'name': test_class.Name(),
-            'description': test_class.Description(),
-            'options': test_class.options,
-        })
-      print json.dumps(test_list)
+    if args.json_output_file:
+      possible_browser = browser_finder.FindBrowser(args)
+      with open(args.json_output_file, 'w') as f:
+        f.write(_GetJsonTestList(possible_browser, args.tests, args.num_shards))
     else:
       _PrintTestList(args.tests)
     return 0
 
 
 class Run(command_line.OptparseCommand):
-  """Run one or more tests"""
+  """Run one or more tests (default)"""
 
   usage = 'test_name [page_set] [<options>]'
 
@@ -105,7 +109,7 @@ class Run(command_line.OptparseCommand):
 
   @classmethod
   def AddCommandLineArgs(cls, parser):
-    test.AddCommandLineArgs(parser)
+    benchmark.AddCommandLineArgs(parser)
 
     # Allow tests to add their own command line options.
     matching_tests = []
@@ -154,7 +158,7 @@ class Run(command_line.OptparseCommand):
               discover.IsPageSetFile(page_set_path)):
         parser.error('Unsupported page set file format.')
 
-      class TestWrapper(test.Test):
+      class TestWrapper(benchmark.Benchmark):
         test = test_class
 
         @classmethod
@@ -166,9 +170,10 @@ class Run(command_line.OptparseCommand):
       if len(args.positional_args) > 1:
         parser.error('Too many arguments.')
 
-    assert issubclass(test_class, test.Test), 'Trying to run a non-Test?!'
+    assert issubclass(test_class, benchmark.Benchmark), (
+        'Trying to run a non-Benchmark?!')
 
-    test.ProcessCommandLineArgs(parser, args)
+    benchmark.ProcessCommandLineArgs(parser, args)
     test_class.ProcessCommandLineArgs(parser, args)
 
     cls._test = test_class
@@ -198,7 +203,7 @@ def _MatchingCommands(string):
 def _Tests():
   tests = []
   for base_dir in config.base_paths:
-    tests += discover.DiscoverClasses(base_dir, base_dir, test.Test,
+    tests += discover.DiscoverClasses(base_dir, base_dir, benchmark.Benchmark,
                                       index_by_class_name=True).values()
     page_tests = discover.DiscoverClasses(base_dir, base_dir,
                                           page_test.PageTest,
@@ -234,6 +239,48 @@ def _MatchTestName(input_test_name, exact_matches=True):
           if _Matches(input_test_name, test_class.Name())]
 
 
+def _GetJsonTestList(possible_browser, test_classes, num_shards):
+  """Returns a list of all enabled tests in a JSON format expected by buildbots.
+
+  JSON format (see build/android/pylib/perf/test_runner.py):
+  { "version": int,
+    "steps": {
+      "foo": {
+        "device_affinity": int,
+        "cmd": "script_to_execute foo"
+      },
+      "bar": {
+        "device_affinity": int,
+        "cmd": "script_to_execute bar"
+      }
+    }
+  }
+  """
+  output = {
+    'version': 1,
+    'steps': {
+    }
+  }
+  for test_class in test_classes:
+    if not issubclass(test_class, benchmark.Benchmark):
+      continue
+    if not decorators.IsEnabled(test_class, possible_browser):
+      continue
+    name = test_class.Name()
+    output['steps'][name] = {
+      'cmd': ' '.join([sys.executable, os.path.realpath(sys.argv[0]),
+                       '--browser=%s' % possible_browser.browser_type,
+                       '-v', '--output-format=buildbot', name]),
+      # TODO(tonyg): Currently we set the device affinity to a stable hash of
+      # the test name. This somewhat evenly distributes benchmarks among the
+      # requested number of shards. However, it is far from optimal in terms of
+      # cycle time. We should add a test size decorator (e.g. small, medium,
+      # large) and let that inform sharding.
+      'device_affinity': int(hashlib.sha1(name).hexdigest(), 16) % num_shards
+    }
+  return json.dumps(output, indent=2, sort_keys=True)
+
+
 def _PrintTestList(tests):
   if not tests:
     print >> sys.stderr, 'No tests found!'
@@ -243,7 +290,7 @@ def _PrintTestList(tests):
   format_string = '  %%-%ds %%s' % max(len(t.Name()) for t in tests)
 
   filtered_tests = [test_class for test_class in tests
-                    if issubclass(test_class, test.Test)]
+                    if issubclass(test_class, benchmark.Benchmark)]
   if filtered_tests:
     print >> sys.stderr, 'Available tests are:'
     for test_class in sorted(filtered_tests, key=lambda t: t.Name()):

@@ -26,7 +26,7 @@
 
 #include "core/html/HTMLFrameElementBase.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLIFrameElement FINAL : public HTMLFrameElementBase {
 public:
@@ -36,6 +36,7 @@ private:
     explicit HTMLIFrameElement(Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
+    virtual void attributeWillChange(const QualifiedName&, const AtomicString& oldValue, const AtomicString& newValue) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 
@@ -53,6 +54,6 @@ private:
     bool m_didLoadNonEmptyDocument;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLIFrameElement_h

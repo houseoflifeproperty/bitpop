@@ -32,22 +32,31 @@
 #include "core/inspector/PageConsoleAgent.h"
 
 #include "core/dom/Node.h"
+#include "core/dom/NodeTraversal.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorDOMAgent.h"
 
-namespace WebCore {
+namespace blink {
 
-PageConsoleAgent::PageConsoleAgent(InjectedScriptManager* injectedScriptManager, InspectorDOMAgent* domAgent, InspectorTimelineAgent* timelineAgent)
-    : InspectorConsoleAgent(timelineAgent, injectedScriptManager)
+PageConsoleAgent::PageConsoleAgent(InjectedScriptManager* injectedScriptManager, InspectorDOMAgent* domAgent, InspectorTimelineAgent* timelineAgent, InspectorTracingAgent* tracingAgent)
+    : InspectorConsoleAgent(timelineAgent, tracingAgent, injectedScriptManager)
     , m_inspectorDOMAgent(domAgent)
 {
 }
 
 PageConsoleAgent::~PageConsoleAgent()
 {
-    m_inspectorDOMAgent = 0;
+#if !ENABLE(OILPAN)
+    m_inspectorDOMAgent = nullptr;
+#endif
+}
+
+void PageConsoleAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_inspectorDOMAgent);
+    InspectorConsoleAgent::trace(visitor);
 }
 
 void PageConsoleAgent::clearMessages(ErrorString* errorString)
@@ -75,7 +84,7 @@ void PageConsoleAgent::addInspectedNode(ErrorString* errorString, int nodeId)
         return;
     }
     while (node->isInShadowTree()) {
-        Node& ancestor = node->highestAncestorOrSelf();
+        Node& ancestor = NodeTraversal::highestAncestorOrSelf(*node);
         if (!ancestor.isShadowRoot() || toShadowRoot(ancestor).type() == ShadowRoot::AuthorShadowRoot)
             break;
         // User agent shadow root, keep climbing up.
@@ -84,4 +93,4 @@ void PageConsoleAgent::addInspectedNode(ErrorString* errorString, int nodeId)
     m_injectedScriptManager->injectedScriptHost()->addInspectedObject(adoptPtr(new InspectableNode(node)));
 }
 
-} // namespace WebCore
+} // namespace blink

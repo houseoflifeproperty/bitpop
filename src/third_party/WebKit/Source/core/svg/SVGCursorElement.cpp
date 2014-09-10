@@ -24,9 +24,8 @@
 
 #include "core/SVGNames.h"
 #include "core/XLinkNames.h"
-#include "core/dom/Document.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGCursorElement::SVGCursorElement(Document& document)
     : SVGElement(SVGNames::cursorTag, document)
@@ -125,7 +124,9 @@ void SVGCursorElement::svgAttributeChanged(const QualifiedName& attrName)
 
 void SVGCursorElement::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_clients);
+#endif
     SVGElement::trace(visitor);
 }
 

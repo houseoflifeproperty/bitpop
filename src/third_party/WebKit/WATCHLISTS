@@ -35,13 +35,13 @@
       'filepath': 'Source/core/html/canvas/'
     },
     'clipboard': {
-      'filepath': 'Source/core/clipboard',
-      'filepath': 'Source/core/page/*Drag',
-      'filepath': 'Source/platform/*Drag',
-      'filepath': 'Source/platform/clipboard',
-      'filepath': 'Source/web/*Drag',
-      'filepath': 'public/platform/*Drag',
-      'filepath': 'public/web/*Drag',
+      'filepath': 'Source/core/clipboard' \
+                  '|Source/core/page/.*Drag' \
+                  '|Source/platform/.*Drag' \
+                  '|Source/platform/clipboard' \
+                  '|Source/web/.*Drag' \
+                  '|public/platform/.*Drag' \
+                  '|public/web/.*Drag',
     },
     'css': {
       'filepath': 'Source/core/css',
@@ -86,8 +86,14 @@
       'filepath': 'public'
     },
     'serviceworkers' : {
-      'filepath':  'Source/modules/serviceworkers' \
-                   '|LayoutTests/http/tests/serviceworker'
+      'filepath': 'Source/modules/serviceworkers' \
+                  '|LayoutTests/http/tests/serviceworker'
+    },
+    'serviceworkers_tests' : {
+      'filepath': 'LayoutTests/http/tests/serviceworker'
+    },
+    'sheriff_o_matic' : {
+      'filepath': 'Tools/GardeningServer'
     },
     'spellcheck' : {
       'filepath':  'Source/core/editing/Editor' \
@@ -236,12 +242,9 @@
     'device_orientation': {
       'filepath': 'Source/modules/device_orientation/' \
                   '|LayoutTests/fast/dom/DeviceMotion/' \
-                  '|LayoutTests/fast/dom/DeviceOrientation/'
-    },
-    'activity_logger': {
-      'filepath': 'public/web/WebDOMActivityLogger.h' \
-                  '|Source/bindings/scripts/code_generator_v8.pm' \
-                  '|Source/web/WebDOMActivityLogger.cpp'
+                  '|LayoutTests/fast/dom/DeviceOrientation/' \
+                  '|Source/core/frame/DeviceEvent(Controller|Dispatcher)Base' \
+                  '|Source/core/frame/DeviceSingleWindowEventController'
     },
     'webp': {
       'filepath': 'Source/platform/image-decoders/webp' \
@@ -272,7 +275,15 @@
     },
     'battery_status': {
       'filepath': 'Source/modules/battery/' \
-                  '|LayoutTests/battery-status/'
+                  '|LayoutTests/battery-status/' \
+                  '|Source/core/frame/DeviceEvent(Controller|Dispatcher)Base'
+    },
+    'device_light': {
+      'filepath': 'Source/modules/device_light/' \
+                  '|LayoutTests/fast/dom/DeviceLight/'
+    },
+    'websockets': {
+      'filepath': 'Source/modules/websockets/'
     },
   },
 
@@ -338,10 +349,10 @@
                  'falken@chromium.org' ],
     'wtf': [ 'abarth@chromium.org',
              'mikhail.pozdnyakov@intel.com',
+             'aandrey+blink@chromium.org',
              'blink-reviews-wtf@chromium.org' ],
-    'indexed_db': ['alecflett@chromium.org','dgrogan@chromium.org',
-                   'jsbell+idb@chromium.org', 'cmumford@chromium.org',
-                   'ericu+idb@chromium.org'],
+    'indexed_db': ['dgrogan@chromium.org',
+                   'jsbell+idb@chromium.org', 'cmumford@chromium.org'],
     'rendering': [ 'pdr@chromium.org',
                    'eae+blinkwatch@chromium.org',
                    'jchaffraix+rendering@chromium.org',
@@ -364,14 +375,13 @@
                'nhiroki@chromium.org' ],
     'viewport_interaction': [ 'kenneth.christiansen@gmail.com' ],
     'css_regions': [ 'ChromiumBugTracker@adobe.com' ],
-    'web_idl': [ 'arv+blink@chromium.org', 'ch.dumez@samsung.com', 'watchdog-blink-watchlist@google.com' ],
+    'web_idl': [ 'arv+blink@chromium.org', 'ch.dumez@samsung.com' ],
     'webcomponents': [ 'webcomponents-bugzilla@chromium.org', 'dglazkov+blink@chromium.org' ],
     'mediastream': [ 'tommyw+watchlist@chromium.org' ],
     'navigator_content_utils': [ 'gyuyoung.kim@webkit.org' ],
     'geolocation': [ 'mvanouwerkerk+watch@chromium.org', 'timvolodine@chromium.org' ],
     'vibration': [ 'mvanouwerkerk+watch@chromium.org' ],
-    'serviceworkers': [ 'alecflett+watch@chromium.org',
-                        'jsbell+serviceworker@chromium.org',
+    'serviceworkers': [ 'jsbell+serviceworker@chromium.org',
                         'kinuko+serviceworker@chromium.org',
                         'tzik@chromium.org',
                         'nhiroki@chromium.org',
@@ -379,9 +389,16 @@
                         'falken@chromium.org',
                         'michaeln@chromium.org',
                         'serviceworker-reviews@chromium.org' ],
+    'serviceworkers_tests': [ 'kenjibaheux+watch@chromium.org' ],
+    'sheriff_o_matic': [ 'jochen@chromium.org',
+                         'szager@chromium.org',
+                         'dsinclair@chromium.org',
+                         'ojan@chromium.org',
+                         'leviw@chromium.org',
+                         'michaelpg@chromium.org',
+                         'teravest@chromium.org' ],
     'spellcheck' : [ 'groby+blinkspell@chromium.org' ],
     'device_orientation': [ 'timvolodine@chromium.org', 'mvanouwerkerk+watch@chromium.org', 'ch.dumez@samsung.com' ],
-    'activity_logger': [ 'watchdog-blink-watchlist@google.com' ],
     'webp': [ 'urvang@google.com',
               'jzern@chromium.org',
               'skal@google.com',
@@ -390,5 +407,7 @@
     'css_flexbox': [ 'cbiesinger@chromium.org' ],
     'battery_status': [ 'timvolodine@chromium.org' ],
     'out_of_process_frames': [ 'dcheng@chromium.org' ],
+    'device_light': [ 'timvolodine@chromium.org' ],
+    'websockets': [ 'tyoshino+watch@chromium.org', 'yhirano+watch@chromium.org' ],
   },
 }

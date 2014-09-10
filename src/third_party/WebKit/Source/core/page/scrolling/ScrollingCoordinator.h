@@ -37,7 +37,7 @@ class WebLayer;
 class WebScrollbarLayer;
 }
 
-namespace WebCore {
+namespace blink {
 
 typedef unsigned MainThreadScrollingReasons;
 
@@ -135,7 +135,6 @@ private:
 
     bool hasVisibleSlowRepaintViewportConstrainedObjects(FrameView*) const;
 
-    bool touchHitTestingEnabled() const;
     void setShouldHandleScrollGestureOnMainThreadRegion(const Region&);
     void setTouchEventTargetRects(LayerHitTestRects&);
     void computeTouchEventTargetRects(LayerHitTestRects&);
@@ -156,6 +155,6 @@ private:
     MainThreadScrollingReasons m_lastMainThreadScrollingReasons;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ScrollingCoordinator_h

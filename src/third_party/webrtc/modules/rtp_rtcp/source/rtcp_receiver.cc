@@ -224,12 +224,12 @@ bool RTCPReceiver::GetAndResetXrRrRtt(uint16_t* rtt_ms) {
   return true;
 }
 
-int32_t
-RTCPReceiver::NTP(uint32_t *ReceivedNTPsecs,
-                  uint32_t *ReceivedNTPfrac,
-                  uint32_t *RTCPArrivalTimeSecs,
-                  uint32_t *RTCPArrivalTimeFrac,
-                  uint32_t *rtcp_timestamp) const
+// TODO(pbos): Make this fail when we haven't received NTP.
+bool RTCPReceiver::NTP(uint32_t* ReceivedNTPsecs,
+                       uint32_t* ReceivedNTPfrac,
+                       uint32_t* RTCPArrivalTimeSecs,
+                       uint32_t* RTCPArrivalTimeFrac,
+                       uint32_t* rtcp_timestamp) const
 {
     CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
     if(ReceivedNTPsecs)
@@ -251,7 +251,7 @@ RTCPReceiver::NTP(uint32_t *ReceivedNTPsecs,
     if (rtcp_timestamp) {
       *rtcp_timestamp = _remoteSenderInfo.RTPtimeStamp;
     }
-    return 0;
+    return true;
 }
 
 bool RTCPReceiver::LastReceivedXrReferenceTimeInfo(
@@ -1361,8 +1361,6 @@ int32_t RTCPReceiver::UpdateTMMBR() {
 void RTCPReceiver::RegisterRtcpStatisticsCallback(
     RtcpStatisticsCallback* callback) {
   CriticalSectionScoped cs(_criticalSectionFeedbacks);
-  if (callback != NULL)
-    assert(stats_callback_ == NULL);
   stats_callback_ = callback;
 }
 
@@ -1472,7 +1470,7 @@ void RTCPReceiver::TriggerCallbacksFromRTCPPacket(
         stats.fraction_lost = it->fractionLost;
         stats.jitter = it->jitter;
 
-        stats_callback_->StatisticsUpdated(stats, local_ssrc);
+        stats_callback_->StatisticsUpdated(stats, it->sourceSSRC);
       }
     }
   }

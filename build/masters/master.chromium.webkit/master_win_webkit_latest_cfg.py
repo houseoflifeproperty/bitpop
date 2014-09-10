@@ -26,9 +26,8 @@ defaults['category'] = 'layout'
 ################################################################################
 
 # Archive location
-rel_archive = master_config.GetArchiveUrl('ChromiumWebkit',
-                                          'WebKit Win Builder',
-                                          'webkit-win-latest-rel', 'win32')
+rel_archive = master_config.GetGSUtilUrl('chromium-build-transfer',
+                                         'WebKit Win Builder')
 
 #
 # Triggerable scheduler for testers
@@ -43,12 +42,14 @@ B('WebKit Win Builder', 'f_webkit_win_rel',
   auto_reboot=False)
 F('f_webkit_win_rel', win().ChromiumFactory(
     slave_type='Builder',
-    options=['--build-tool=ninja', '--', 'blink_tests'],
+    build_url=rel_archive,
+    options=['--build-tool=ninja', '--compiler=goma', '--', 'blink_tests'],
     factory_properties={
         'trigger': 's4_webkit_rel_trigger',
         'blink_config': 'blink',
         'gclient_env': {
             'GYP_GENERATORS':'ninja',
+            'GYP_DEFINES': 'fastbuild=1',
         },
     }))
 
@@ -78,12 +79,13 @@ B('WebKit Win x64 Builder', 'f_webkit_win_rel_x64',
 F('f_webkit_win_rel_x64', win().ChromiumFactory(
     slave_type='Builder',
     target='Release_x64',
-    options=['--build-tool=ninja', '--', 'blink_tests'],
+    options=['--build-tool=ninja', '--compiler=goma', '--', 'blink_tests'],
     factory_properties={
         'blink_config': 'blink',
         'gclient_env': {
             'GYP_GENERATORS':'ninja',
-            'GYP_DEFINES': 'component=shared_library target_arch=x64',
+            'GYP_DEFINES':
+                'component=shared_library fastbuild=1 target_arch=x64',
         },
     }))
 
@@ -112,9 +114,8 @@ F('f_webkit_win_oilpan_rel', win().ChromiumFactory(
 ################################################################################
 
 # Archive location
-dbg_archive = master_config.GetArchiveUrl('ChromiumWebkit',
-                                          'WebKit Win Builder (dbg)',
-                                          'webkit-win-latest-dbg', 'win32')
+dbg_archive = master_config.GetGSUtilUrl('chromium-build-transfer',
+                                         'WebKit Win Builder (dbg)')
 #
 # Triggerable scheduler for testers
 #
@@ -128,12 +129,14 @@ B('WebKit Win Builder (dbg)', 'f_webkit_win_dbg', scheduler='global_scheduler',
 F('f_webkit_win_dbg', win().ChromiumFactory(
     target='Debug',
     slave_type='Builder',
-    options=['--build-tool=ninja', '--', 'blink_tests'],
+    build_url=dbg_archive,
+    options=['--build-tool=ninja', '--compiler=goma', '--', 'blink_tests'],
     factory_properties={
         'trigger': 's4_webkit_dbg_trigger',
         'blink_config': 'blink',
         'gclient_env': {
             'GYP_GENERATORS':'ninja',
+            'GYP_DEFINES': 'fastbuild=1',
         },
     }))
 
@@ -185,7 +188,7 @@ B('WebKit Win x64 Builder (dbg)', 'f_webkit_win_dbg_x64',
 F('f_webkit_win_dbg_x64', win().ChromiumFactory(
     slave_type='Builder',
     target='Debug_x64',
-    options=['--build-tool=ninja', '--', 'blink_tests'],
+    options=['--build-tool=ninja', '--compiler=goma', '--', 'blink_tests'],
     factory_properties={
         'blink_config': 'blink',
         'gclient_env': {

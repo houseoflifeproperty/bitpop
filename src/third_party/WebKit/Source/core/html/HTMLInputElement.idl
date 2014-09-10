@@ -35,7 +35,7 @@ interface HTMLInputElement : HTMLElement {
     // The 'files' attribute is intentionally not readonly.
     // https://www.w3.org/Bugs/Public/show_bug.cgi?id=22682
     attribute FileList files;
-    [Reflect, URL, LogActivity=SetterOnly] attribute DOMString formAction;
+    [Reflect, URL] attribute DOMString formAction;
     [CustomElementCallbacks] attribute DOMString formEnctype;
     [CustomElementCallbacks] attribute DOMString formMethod;
     [Reflect] attribute boolean formNoValidate;
@@ -54,13 +54,13 @@ interface HTMLInputElement : HTMLElement {
     [Reflect] attribute boolean readOnly;
     [Reflect] attribute boolean required;
     [RaisesException=Setter, CustomElementCallbacks] attribute unsigned long size; // Changed string -> long -> unsigned long
-    [Reflect, URL, LogActivity=SetterOnly] attribute DOMString src;
+    [Reflect, URL] attribute DOMString src;
     [Reflect] attribute DOMString step;
     [CustomElementCallbacks] attribute DOMString type; // readonly dropped as part of DOM level 2
-    [CustomElementCallbacks] attribute DOMString defaultValue;
+    [Reflect=value, CustomElementCallbacks] attribute DOMString defaultValue;
     [Reflect] attribute DOMString useMap;
     // See the discussion in https://bugs.webkit.org/show_bug.cgi?id=100085
-    [TreatNullAs=NullString, RaisesException=Setter, CustomElementCallbacks] attribute DOMString value;
+    [TreatNullAs=EmptyString, RaisesException=Setter, CustomElementCallbacks] attribute DOMString value;
     [RaisesException=Setter, CustomElementCallbacks] attribute Date? valueAsDate;
     [RaisesException=Setter, CustomElementCallbacks] attribute unrestricted double valueAsNumber;
 
@@ -72,7 +72,7 @@ interface HTMLInputElement : HTMLElement {
     readonly attribute ValidityState validity;
     readonly attribute DOMString validationMessage;
     boolean checkValidity();
-    void setCustomValidity([TreatNullAs=NullString, TreatUndefinedAs=NullString] DOMString error);
+    void setCustomValidity([TreatUndefinedAs=NullString] DOMString? error);
 
     readonly attribute NodeList labels;
 
@@ -97,5 +97,5 @@ interface HTMLInputElement : HTMLElement {
     [Reflect, MeasureAs=IncrementalAttribute] attribute boolean incremental;
 
     // See http://www.w3.org/TR/html-media-capture/
-    [Conditional=MEDIA_CAPTURE, Reflect] attribute boolean capture;
+    [RuntimeEnabled=MediaCapture, Reflect] attribute boolean capture;
 };

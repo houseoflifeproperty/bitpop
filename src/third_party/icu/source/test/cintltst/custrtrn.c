@@ -1,6 +1,6 @@
 /********************************************************************
  * COPYRIGHT:
- * Copyright (c) 2001-2010, International Business Machines Corporation and
+ * Copyright (c) 2001-2013, International Business Machines Corporation and
  * others. All Rights Reserved.
  ********************************************************************/
 /********************************************************************************
@@ -846,6 +846,19 @@ static void Test_UChar_UTF8_API(void){
             log_err("error: u_strToUTF8WithSub(no subchar) failed\n");
         }
     }
+    {
+        /*
+         * Test with an illegal lead byte that would be followed by more than 3 trail bytes.
+         * See ticket #10371.
+         */
+        static const char src[1]={ 0xf8 };
+        UChar out16[10];
+        err=U_ZERO_ERROR;
+        u_strFromUTF8(out16, LENGTHOF(out16), NULL, src, 1, &err);
+        if(err!=U_INVALID_CHAR_FOUND) {
+            log_err("error: u_strFromUTF8(5-byte lead byte) failed\n");
+        }
+    }
 }
 
 /* compare if two strings are equal, but match 0xfffd in the second string with anything in the first */
@@ -1404,6 +1417,7 @@ static void Test_widestrs()
         err = U_ZERO_ERROR;
         wl = (int32_t)uprv_wcslen(wcs);
         cp = u_strFromWCS(rts, rtcap, &rtl, wcs, wl, &err);
+        (void)cp;    /* Suppress set but not used warning. */
         if (U_FAILURE(err)) {
                 errname = u_errorName(err);
                 fprintf(stderr, "test_widestrs: ucnv_wcstombs error: %s!\n",errname);
@@ -1432,6 +1446,8 @@ Test_WCHART_LongString(){
     UChar* uDest = NULL;
     UBool failed = FALSE;
 
+    log_verbose("Loaded string of %d UChars\n", uSrcLen);
+
     if(U_FAILURE(status)){
         log_data_err("Could not get testinclude resource from testtypes bundle. Error: %s\n",u_errorName(status));
         return;
@@ -1445,22 +1461,45 @@ Test_WCHART_LongString(){
         wDest =(wchar_t*) malloc(sizeof(wchar_t) * (reqLen+1));
         wDestLen = reqLen+1;
         u_strToWCS(wDest,wDestLen,&reqLen,uSrc,-1,&status);
+        log_verbose("To %d*%d-byte wchar_ts\n", reqLen,sizeof(wchar_t));
     }
+
+    {
+      int j;
+      for(j=0;j>=0&&j<reqLen;j++) {
+        if(wDest[j]!=uSrc[j]) {
+          log_verbose("Diff %04X vs %04X @ %d\n", wDest[j],uSrc[j],j);
+          break;
+        }
+      }
+    }
+
     uDestLen = 0;
     /* pre-flight */
     u_strFromWCS(uDest, uDestLen,&reqLen,wDest,-1,&status);
-
     if(status == U_BUFFER_OVERFLOW_ERROR){
         status =U_ZERO_ERROR;
         uDest = (UChar*) malloc(sizeof(UChar) * (reqLen+1));
+        u_memset(uDest,0xFFFF,reqLen+1);
         uDestLen = reqLen + 1;
         u_strFromWCS(uDest, uDestLen,&reqLen,wDest,-1,&status);
+        log_verbose("Back to %d UChars\n", reqLen);
     }
+#if defined(U_WCHAR_IS_UTF16)
+    log_verbose("U_WCHAR_IS_UTF16\n");
+#elif defined(U_WCHAR_IS_UTF32)
+    log_verbose("U_WCHAR_IS_UTF32\n");
+#else
+    log_verbose("U_WCHAR_IS_idunno (not UTF)\n");
+#endif
 
+    if(reqLen!=uSrcLen) {
+        log_err("Error: dest len is %d but expected src len %d\n", reqLen, uSrcLen);
+    }
 
     for(i=0; i< uSrcLen; i++){
         if(uDest[i] != str[i]){
-            log_verbose("u_str*WCS() failed for null terminated string expected: \\u%04X got: \\u%04X at index: %i \n", src16j[i] ,uDest[i],i);
+            log_verbose("u_str*WCS() failed for null terminated string expected: \\u%04X got: \\u%04X at index: %i \n", str[i], uDest[i],i);
             failed =TRUE;
         }
     }

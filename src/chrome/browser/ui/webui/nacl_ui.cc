@@ -37,7 +37,6 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -253,9 +252,6 @@ void NaClDomHandler::AddPnaclInfo(base::ListValue* list) {
   base::string16 pnacl_enabled_string = ASCIIToUTF16("Enabled");
   if (!isPluginEnabled(0)) {
     pnacl_enabled_string = ASCIIToUTF16("Disabled in profile prefs");
-  } else if (CommandLine::ForCurrentProcess()->HasSwitch(
-                 switches::kDisablePnacl)) {
-    pnacl_enabled_string = ASCIIToUTF16("Disabled by flag '--disable-pnacl'");
   }
   AddPair(list,
           ASCIIToUTF16("Portable Native Client (PNaCl)"),

@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "build/intsafe_workaround.h"
-
 #include <atlbase.h>
 #include <atlcom.h>
 #include <atlctl.h>
@@ -93,8 +91,8 @@ using delegate_execute::DelegateExecuteOperation;
 using base::win::ScopedHandle;
 
 int RelaunchChrome(const DelegateExecuteOperation& operation) {
-  AtlTrace("Relaunching [%ls] with flags [%s]\n",
-           operation.mutex().c_str(), operation.relaunch_flags());
+  AtlTrace("Relaunching [%ls] with flags [%ls]\n",
+           operation.mutex().c_str(), operation.relaunch_flags().c_str());
   ScopedHandle mutex(OpenMutexW(SYNCHRONIZE, FALSE, operation.mutex().c_str()));
   if (mutex.IsValid()) {
     const int kWaitSeconds = 5;

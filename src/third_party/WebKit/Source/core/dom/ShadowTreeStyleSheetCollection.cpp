@@ -35,7 +35,7 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLStyleElement.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -96,13 +96,10 @@ void ShadowTreeStyleSheetCollection::updateActiveStyleSheets(StyleEngine* engine
     analyzeStyleSheetChange(updateMode, collection, change);
 
     if (StyleResolver* styleResolver = engine->resolver()) {
-        // FIXME: We might have already had styles in child treescope. In this case, we cannot use buildScopedStyleTreeInDocumentOrder.
-        // Need to change "false" to some valid condition.
-        styleResolver->setBuildScopedStyleTreeInDocumentOrder(false);
         if (change.styleResolverUpdateType != Additive) {
             // We should not destroy StyleResolver when we find any stylesheet update in a shadow tree.
             // In this case, we will reset rulesets created from style elements in the shadow tree.
-            resetAllRuleSetsInTreeScope(styleResolver);
+            styleResolver->resetAuthorStyle(treeScope());
             styleResolver->removePendingAuthorStyleSheets(m_activeAuthorStyleSheets);
             styleResolver->lazyAppendAuthorStyleSheets(0, collection.activeAuthorStyleSheets());
         } else {
@@ -110,9 +107,8 @@ void ShadowTreeStyleSheetCollection::updateActiveStyleSheets(StyleEngine* engine
         }
     }
     if (change.requiresFullStyleRecalc)
-        toShadowRoot(m_treeScope.rootNode()).host()->setNeedsStyleRecalc(SubtreeStyleChange);
+        toShadowRoot(treeScope().rootNode()).host()->setNeedsStyleRecalc(SubtreeStyleChange);
 
-    m_scopingNodesForStyleScoped.didRemoveScopingNodes();
     collection.swap(*this);
     updateUsesRemUnits();
 }

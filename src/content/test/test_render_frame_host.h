@@ -9,13 +9,31 @@
 
 #include "base/basictypes.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/page_transition_types.h"
+#include "content/public/test/test_renderer_host.h"
+#include "content/test/test_render_view_host.h"
 
 struct FrameHostMsg_DidCommitProvisionalLoad_Params;
 
 namespace content {
 
-class TestRenderFrameHost : public RenderFrameHostImpl {
+class TestRenderFrameHostCreationObserver : public WebContentsObserver {
+ public:
+  explicit TestRenderFrameHostCreationObserver(WebContents* web_contents);
+  virtual ~TestRenderFrameHostCreationObserver();
+
+  // WebContentsObserver implementation.
+  virtual void RenderFrameCreated(RenderFrameHost* render_frame_host) OVERRIDE;
+
+  RenderFrameHost* last_created_frame() const { return last_created_frame_; }
+
+ private:
+  RenderFrameHost* last_created_frame_;
+};
+
+class TestRenderFrameHost : public RenderFrameHostImpl,
+                            public RenderFrameHostTester {
  public:
   TestRenderFrameHost(RenderViewHostImpl* render_view_host,
                       RenderFrameHostDelegate* delegate,
@@ -25,11 +43,17 @@ class TestRenderFrameHost : public RenderFrameHostImpl {
                       bool is_swapped_out);
   virtual ~TestRenderFrameHost();
 
+  // RenderFrameHostImpl overrides (same values, but in Test* types)
+  virtual TestRenderViewHost* GetRenderViewHost() OVERRIDE;
+
+  // RenderFrameHostTester implementation.
+  virtual TestRenderFrameHost* AppendChild(
+      const std::string& frame_name) OVERRIDE;
+  virtual void SendNavigateWithTransition(int page_id,
+                                          const GURL& url,
+                                          PageTransition transition) OVERRIDE;
+
   void SendNavigate(int page_id, const GURL& url);
-  void SendNavigateWithTransition(
-      int page_id,
-      const GURL& url,
-      PageTransition transition);
   void SendFailedNavigate(int page_id, const GURL& url);
   void SendNavigateWithTransitionAndResponseCode(
       int page_id,
@@ -57,6 +81,7 @@ class TestRenderFrameHost : public RenderFrameHostImpl {
       int response_code,
       const base::FilePath* file_path_for_history_item,
       const std::vector<GURL>& redirects);
+  void SendBeginNavigationWithURL(const GURL& url);
 
   void set_contents_mime_type(const std::string& mime_type) {
     contents_mime_type_ = mime_type;
@@ -74,6 +99,8 @@ class TestRenderFrameHost : public RenderFrameHostImpl {
   // here.
 
  private:
+  TestRenderFrameHostCreationObserver child_creation_observer_;
+
   std::string contents_mime_type_;
 
   // See set_simulate_history_list_was_cleared() above.

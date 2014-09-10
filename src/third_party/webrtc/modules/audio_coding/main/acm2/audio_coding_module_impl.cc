@@ -749,7 +749,6 @@ ACMGenericCodec* AudioCodingModuleImpl::CreateCodec(const CodecInst& codec) {
     return my_codec;
   }
   my_codec->SetUniqueID(id_);
-  my_codec->SetNetEqDecodeLock(receiver_.DecodeLock());
 
   return my_codec;
 }
@@ -1203,6 +1202,7 @@ int AudioCodingModuleImpl::SendBitrate() const {
 // Set available bandwidth, inform the encoder about the estimated bandwidth
 // received from the remote party.
 int AudioCodingModuleImpl::SetReceivedEstimatedBandwidth(int bw) {
+  CriticalSectionScoped lock(acm_crit_sect_);
   return codecs_[current_send_codec_idx_]->SetEstimatedBandwidth(bw);
 }
 
@@ -1452,6 +1452,7 @@ int AudioCodingModuleImpl::SetREDStatus(
 //
 
 bool AudioCodingModuleImpl::CodecFEC() const {
+  CriticalSectionScoped lock(acm_crit_sect_);
   return codec_fec_enabled_;
 }
 
@@ -1476,6 +1477,7 @@ int AudioCodingModuleImpl::SetCodecFEC(bool enable_codec_fec) {
 }
 
 int AudioCodingModuleImpl::SetPacketLossRate(int loss_rate) {
+  CriticalSectionScoped lock(acm_crit_sect_);
   if (HaveValidEncoder("SetPacketLossRate") &&
       codecs_[current_send_codec_idx_]->SetPacketLossRate(loss_rate) < 0) {
       WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, id_,
@@ -1616,14 +1618,8 @@ int AudioCodingModuleImpl::ReceiveFrequency() const {
 
   int codec_id = receiver_.last_audio_codec_id();
 
-  int sample_rate_hz;
-  if (codec_id < 0)
-    sample_rate_hz = receiver_.current_sample_rate_hz();
-  else
-    sample_rate_hz = ACMCodecDB::database_[codec_id].plfreq;
-
-  // TODO(tlegrand): Remove this option when we have full 48 kHz support.
-  return (sample_rate_hz > 32000) ? 32000 : sample_rate_hz;
+  return codec_id < 0 ? receiver_.current_sample_rate_hz() :
+                        ACMCodecDB::database_[codec_id].plfreq;
 }
 
 // Get current playout frequency.
@@ -1915,6 +1911,15 @@ int AudioCodingModuleImpl::ConfigISACBandwidthEstimator(
       frame_size_ms, rate_bit_per_sec, enforce_frame_size);
 }
 
+// Informs Opus encoder about the maximum audio bandwidth needs to be encoded.
+int AudioCodingModuleImpl::SetOpusMaxBandwidth(int bandwidth_hz) {
+  CriticalSectionScoped lock(acm_crit_sect_);
+  if (!HaveValidEncoder("SetOpusMaxBandwidth")) {
+    return -1;
+  }
+  return codecs_[current_send_codec_idx_]->SetOpusMaxBandwidth(bandwidth_hz);
+}
+
 int AudioCodingModuleImpl::PlayoutTimestamp(uint32_t* timestamp) {
   return receiver_.GetPlayoutTimestamp(timestamp) ? 0 : -1;
 }
@@ -1950,6 +1955,7 @@ int AudioCodingModuleImpl::REDPayloadISAC(int isac_rate,
                                           int isac_bw_estimate,
                                           uint8_t* payload,
                                           int16_t* length_bytes) {
+  CriticalSectionScoped lock(acm_crit_sect_);
   if (!HaveValidEncoder("EncodeData")) {
     return -1;
   }

@@ -12,6 +12,7 @@
 #define VP8_ENCODER_DENOISING_H_
 
 #include "block.h"
+#include "vp8/common/loopfilter.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,19 +22,33 @@ extern "C" {
 #define SUM_DIFF_THRESHOLD_HIGH (16 * 16 * 3)
 #define MOTION_MAGNITUDE_THRESHOLD (8*3)
 
+#define SUM_DIFF_THRESHOLD_UV (96)   // (8 * 8 * 1.5)
+#define SUM_DIFF_THRESHOLD_HIGH_UV (8 * 8 * 2)
+#define SUM_DIFF_FROM_AVG_THRESH_UV (8 * 8 * 4)
+#define MOTION_MAGNITUDE_THRESHOLD_UV (8*3)
+
 enum vp8_denoiser_decision
 {
   COPY_BLOCK,
   FILTER_BLOCK
 };
 
+enum vp8_denoiser_filter_state {
+  kNoFilter,
+  kFilterZeroMV,
+  kFilterNonZeroMV
+};
+
 typedef struct vp8_denoiser
 {
     YV12_BUFFER_CONFIG yv12_running_avg[MAX_REF_FRAMES];
     YV12_BUFFER_CONFIG yv12_mc_running_avg;
+    unsigned char* denoise_state;
+    int num_mb_cols;
 } VP8_DENOISER;
 
-int vp8_denoiser_allocate(VP8_DENOISER *denoiser, int width, int height);
+int vp8_denoiser_allocate(VP8_DENOISER *denoiser, int width, int height,
+                          int num_mb_rows, int num_mb_cols);
 
 void vp8_denoiser_free(VP8_DENOISER *denoiser);
 
@@ -42,7 +57,12 @@ void vp8_denoiser_denoise_mb(VP8_DENOISER *denoiser,
                              unsigned int best_sse,
                              unsigned int zero_mv_sse,
                              int recon_yoffset,
-                             int recon_uvoffset);
+                             int recon_uvoffset,
+                             loop_filter_info_n *lfi_n,
+                             int mb_row,
+                             int mb_col,
+                             int block_index,
+                             int uv_denoise);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -43,7 +43,7 @@
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 
-using namespace WebCore;
+using namespace blink;
 
 namespace blink {
 
@@ -62,12 +62,12 @@ void WebDragData::assign(const WebDragData& other)
     m_private = other.m_private;
 }
 
-WebDragData::WebDragData(const PassRefPtrWillBeRawPtr<WebCore::DataObject>& object)
+WebDragData::WebDragData(const PassRefPtrWillBeRawPtr<blink::DataObject>& object)
 {
     m_private = object;
 }
 
-WebDragData& WebDragData::operator=(const PassRefPtrWillBeRawPtr<WebCore::DataObject>& object)
+WebDragData& WebDragData::operator=(const PassRefPtrWillBeRawPtr<blink::DataObject>& object)
 {
     m_private = object;
     return *this;
@@ -98,26 +98,34 @@ WebVector<WebDragData::Item> WebDragData::items() const
                 item.storageType = Item::StorageTypeBinaryData;
                 item.binaryData = originalItem->sharedBuffer();
             } else if (originalItem->isFilename()) {
-                RefPtrWillBeRawPtr<WebCore::Blob> blob = originalItem->getAsFile();
+                RefPtrWillBeRawPtr<blink::Blob> blob = originalItem->getAsFile();
                 if (blob->isFile()) {
                     File* file = toFile(blob.get());
-                    if (!file->path().isEmpty()) {
-                        item.storageType = Item::StorageTypeFilename;
-                        item.filenameData = file->path();
-                        item.displayNameData = file->name();
-                    } else if (!file->fileSystemURL().isEmpty()) {
-                        item.storageType = Item::StorageTypeFileSystemFile;
-                        item.fileSystemURL = file->fileSystemURL();
-                        item.fileSystemFileSize = file->size();
+                    if (file->hasBackingFile()) {
+                        if (file->userVisibility() == File::IsUserVisible) {
+                            item.storageType = Item::StorageTypeFilename;
+                            item.filenameData = file->path();
+                            item.displayNameData = file->name();
+                        } else {
+                            item.storageType = Item::StorageTypeFileSystemFile;
+                            item.fileSystemURL = file->fileSystemURL();
+                            item.fileSystemFileSize = file->size();
+                        }
                     } else {
-                        ASSERT_NOT_REACHED();
+                        // FIXME: support dragging constructed Files across renderers, see http://crbug.com/394955
+                        item.storageType = Item::StorageTypeString;
+                        item.stringType = "text/plain";
+                        item.stringData = file->name();
                     }
-                } else
+                } else {
                     ASSERT_NOT_REACHED();
-            } else
+                }
+            } else {
                 ASSERT_NOT_REACHED();
-        } else
+            }
+        } else {
             ASSERT_NOT_REACHED();
+        }
         item.title = originalItem->title();
         item.baseURL = originalItem->baseURL();
         itemList.append(item);

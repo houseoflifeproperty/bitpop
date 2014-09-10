@@ -35,8 +35,6 @@
 #include "platform/mediastream/RTCVoidRequest.h"
 #include "wtf/PassOwnPtr.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 namespace {

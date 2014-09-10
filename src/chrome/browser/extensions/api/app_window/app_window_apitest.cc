@@ -15,6 +15,10 @@
 #include "ui/base/base_window.h"
 #include "ui/gfx/rect.h"
 
+#if defined(OS_WIN)
+#include "ui/base/win/shell.h"
+#endif
+
 using apps::AppWindow;
 
 namespace {
@@ -51,8 +55,13 @@ namespace extensions {
 IN_PROC_BROWSER_TEST_F(ExperimentalPlatformAppBrowserTest, WindowsApiSetIcon) {
   scoped_ptr<TestAppWindowRegistryObserver> test_observer(
       new TestAppWindowRegistryObserver(browser()->profile()));
-  LoadAndLaunchPlatformApp("windows_api_set_icon", "IconSet");
+  ExtensionTestMessageListener listener("ready", true);
+
+  // Launch the app and wait for it to be ready.
+  LoadAndLaunchPlatformApp("windows_api_set_icon", &listener);
   EXPECT_EQ(0, test_observer->icon_updates());
+  listener.Reply("");
+
   // Now wait until the WebContent has decoded the icon and chrome has
   // processed it. This needs to be in a loop since the renderer runs in a
   // different process.
@@ -102,6 +111,54 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, WindowsApiGet) {
   EXPECT_TRUE(RunPlatformAppTest("platform_apps/windows_api_get"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, WindowsApiSetShape) {
+  EXPECT_TRUE(RunPlatformAppTest("platform_apps/windows_api_shape"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       WindowsApiAlphaEnabledHasPermissions) {
+  const char* no_alpha_dir =
+      "platform_apps/windows_api_alpha_enabled/has_permissions_no_alpha";
+  const char* test_dir = no_alpha_dir;
+
+#if defined(USE_AURA) && (defined(OS_CHROMEOS) || !defined(OS_LINUX))
+  test_dir =
+      "platform_apps/windows_api_alpha_enabled/has_permissions_has_alpha";
+#if defined(OS_WIN)
+  if (!ui::win::IsAeroGlassEnabled()) {
+    test_dir = no_alpha_dir;
+  }
+#endif  // OS_WIN
+#endif  // USE_AURA && (OS_CHROMEOS || !OS_LINUX)
+
+  EXPECT_TRUE(RunPlatformAppTest(test_dir)) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       WindowsApiAlphaEnabledNoPermissions) {
+  EXPECT_TRUE(RunPlatformAppTest(
+      "platform_apps/windows_api_alpha_enabled/no_permissions"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, WindowsApiAlphaEnabledInStable) {
+  extensions::ScopedCurrentChannel channel(chrome::VersionInfo::CHANNEL_STABLE);
+  EXPECT_TRUE(RunPlatformAppTestWithFlags(
+      "platform_apps/windows_api_alpha_enabled/in_stable",
+      // Ignore manifest warnings because the extension will not load at all
+      // in stable.
+      kFlagIgnoreManifestWarnings))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       WindowsApiAlphaEnabledWrongFrameType) {
+  EXPECT_TRUE(RunPlatformAppTest(
+      "platform_apps/windows_api_alpha_enabled/wrong_frame_type"))
       << message_;
 }
 

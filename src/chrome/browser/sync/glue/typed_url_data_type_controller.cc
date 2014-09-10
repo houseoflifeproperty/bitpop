@@ -121,10 +121,12 @@ void TypedUrlDataTypeController::OnSavingBrowserHistoryDisabledChanged() {
     // generate an unrecoverable error. This can be fixed by restarting
     // Chrome (on restart, typed urls will not be a registered type).
     if (state() != NOT_RUNNING && state() != STOPPING) {
-      profile_sync_service()->DisableDatatype(
-          syncer::TYPED_URLS,
+      syncer::SyncError error(
           FROM_HERE,
-          "History saving is now disabled by policy.");
+          syncer::SyncError::DATATYPE_POLICY_ERROR,
+          "History saving is now disabled by policy.",
+          syncer::TYPED_URLS);
+      OnSingleDataTypeUnrecoverableError(error);
     }
   }
 }
@@ -136,8 +138,10 @@ bool TypedUrlDataTypeController::PostTaskOnBackendThread(
   HistoryService* history = HistoryServiceFactory::GetForProfile(
       profile(), Profile::IMPLICIT_ACCESS);
   if (history) {
-    history->ScheduleDBTask(new RunTaskOnHistoryThread(task, this),
-                            &cancelable_consumer_);
+    history->ScheduleDBTask(
+        scoped_ptr<history::HistoryDBTask>(
+            new RunTaskOnHistoryThread(task, this)),
+        &task_tracker_);
     return true;
   } else {
     // History must be disabled - don't start.
@@ -158,7 +162,7 @@ TypedUrlDataTypeController::CreateSyncComponents() {
 }
 
 void TypedUrlDataTypeController::DisconnectProcessor(
-    ChangeProcessor* processor) {
+    sync_driver::ChangeProcessor* processor) {
   static_cast<TypedUrlChangeProcessor*>(processor)->Disconnect();
 }
 

@@ -11,16 +11,15 @@
 #include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
 #include "mojo/services/view_manager/ids.h"
 #include "mojo/services/view_manager/view_manager_export.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/aura/window_observer.h"
 
 namespace mojo {
-namespace view_manager {
 namespace service {
 
 class NodeDelegate;
-class View;
 
 // Represents a node in the graph. Delegate is informed of interesting events.
 class MOJO_VIEW_MANAGER_EXPORT Node
@@ -30,8 +29,7 @@ class MOJO_VIEW_MANAGER_EXPORT Node
   Node(NodeDelegate* delegate, const NodeId& id);
   virtual ~Node();
 
-  void set_view_id(const ViewId& view_id) { view_id_ = view_id; }
-  const ViewId& view_id() const { return view_id_; }
+  static Node* NodeForWindow(aura::Window* window);
 
   const NodeId& id() const { return id_; }
 
@@ -59,10 +57,13 @@ class MOJO_VIEW_MANAGER_EXPORT Node
 
   bool Contains(const Node* node) const;
 
-  // Sets the view associated with this node. Node does not own its View.
-  void SetView(View* view);
-  View* view() { return view_; }
-  const View* view() const { return view_; }
+  // Returns true if the window is visible. This does not consider visibility
+  // of any ancestors.
+  bool IsVisible() const;
+  void SetVisible(bool value);
+
+  void SetBitmap(const SkBitmap& contents);
+  const SkBitmap& bitmap() const { return bitmap_; }
 
  private:
   // WindowObserver overrides:
@@ -89,24 +90,16 @@ class MOJO_VIEW_MANAGER_EXPORT Node
   virtual bool HasHitTestMask() const OVERRIDE;
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
 
-  // ui::EventHandler overrides:
-  virtual void OnEvent(ui::Event* event) OVERRIDE;
-
   NodeDelegate* delegate_;
   const NodeId id_;
 
-  // Weak pointer to view associated with this node.
-  View* view_;
-
-  ViewId view_id_;
-
   aura::Window window_;
+  SkBitmap bitmap_;
 
   DISALLOW_COPY_AND_ASSIGN(Node);
 };
 
 }  // namespace service
-}  // namespace view_manager
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_VIEW_MANAGER_NODE_H_

@@ -33,18 +33,9 @@
 #include "core/frame/LocalFrame.h"
 #include "core/html/FormAssociatedElement.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
-
-static bool supportsLabels(const Element& element)
-{
-    if (!element.isHTMLElement())
-        return false;
-    if (!toHTMLElement(element).isLabelable())
-        return false;
-    return toLabelableElement(element).supportLabels();
-}
 
 inline HTMLLabelElement::HTMLLabelElement(Document& document)
     : HTMLElement(labelTag, document)
@@ -67,16 +58,15 @@ LabelableElement* HTMLLabelElement::control() const
         // Search the children and descendants of the label element for a form element.
         // per http://dev.w3.org/html5/spec/Overview.html#the-label-element
         // the form element must be "labelable form-associated element".
-        for (Element* element = ElementTraversal::next(*this, this); element; element = ElementTraversal::next(*element, this)) {
-            if (!supportsLabels(*element))
-                continue;
-            return toLabelableElement(element);
+        for (LabelableElement* element = Traversal<LabelableElement>::next(*this, this); element; element = Traversal<LabelableElement>::next(*element, this)) {
+            if (element->supportLabels())
+                return element;
         }
         return 0;
     }
 
     if (Element* element = treeScope().getElementById(controlId)) {
-        if (supportsLabels(*element))
+        if (isLabelableElement(*element) && toLabelableElement(*element).supportLabels())
             return toLabelableElement(element);
     }
 
@@ -198,6 +188,51 @@ void HTMLLabelElement::accessKeyAction(bool sendMouseEvents)
         element->accessKeyAction(sendMouseEvents);
     else
         HTMLElement::accessKeyAction(sendMouseEvents);
+}
+
+void HTMLLabelElement::updateLabel(TreeScope& scope, const AtomicString& oldForAttributeValue, const AtomicString& newForAttributeValue)
+{
+    if (!inDocument())
+        return;
+
+    if (oldForAttributeValue == newForAttributeValue)
+        return;
+
+    if (!oldForAttributeValue.isEmpty())
+        scope.removeLabel(oldForAttributeValue, toHTMLLabelElement(this));
+    if (!newForAttributeValue.isEmpty())
+        scope.addLabel(newForAttributeValue, toHTMLLabelElement(this));
+}
+
+void HTMLLabelElement::attributeWillChange(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
+{
+    if (name == HTMLNames::forAttr) {
+        TreeScope& scope = treeScope();
+        if (scope.shouldCacheLabelsByForAttribute())
+            updateLabel(scope, oldValue, newValue);
+    }
+    HTMLElement::attributeWillChange(name, oldValue, newValue);
+}
+
+Node::InsertionNotificationRequest HTMLLabelElement::insertedInto(ContainerNode* insertionPoint)
+{
+    InsertionNotificationRequest result = HTMLElement::insertedInto(insertionPoint);
+    if (insertionPoint->isInTreeScope()) {
+        TreeScope& scope = insertionPoint->treeScope();
+        if (scope == treeScope() && scope.shouldCacheLabelsByForAttribute())
+            updateLabel(scope, nullAtom, fastGetAttribute(forAttr));
+    }
+    return result;
+}
+
+void HTMLLabelElement::removedFrom(ContainerNode* insertionPoint)
+{
+    if (insertionPoint->isInTreeScope() && treeScope() == document()) {
+        TreeScope& treeScope = insertionPoint->treeScope();
+        if (treeScope.shouldCacheLabelsByForAttribute())
+            updateLabel(treeScope, fastGetAttribute(forAttr), nullAtom);
+    }
+    HTMLElement::removedFrom(insertionPoint);
 }
 
 } // namespace

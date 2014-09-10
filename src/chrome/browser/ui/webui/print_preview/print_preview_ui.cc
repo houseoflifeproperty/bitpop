@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 
 #include <map>
+#include <vector>
 
 #include "base/id_map.h"
 #include "base/lazy_instance.h"
@@ -20,6 +21,7 @@
 #include "chrome/browser/printing/background_printing_manager.h"
 #include "chrome/browser/printing/print_preview_data_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/metrics_handler.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_handler.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/print_messages.h"
@@ -166,7 +168,6 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
                              IDS_PRINT_INVALID_PRINTER_SETTINGS);
   source->AddLocalizedString("printButton", IDS_PRINT_PREVIEW_PRINT_BUTTON);
   source->AddLocalizedString("saveButton", IDS_PRINT_PREVIEW_SAVE_BUTTON);
-  source->AddLocalizedString("cancelButton", IDS_PRINT_PREVIEW_CANCEL_BUTTON);
   source->AddLocalizedString("printing", IDS_PRINT_PREVIEW_PRINTING);
   source->AddLocalizedString("printingToPDFInProgress",
                              IDS_PRINT_PREVIEW_PRINTING_TO_PDF_IN_PROGRESS);
@@ -276,7 +277,6 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
                              IDS_PRINT_PREVIEW_MEDIA_SIZE_LABEL);
   source->AddLocalizedString("destinationSearchTitle",
                              IDS_PRINT_PREVIEW_DESTINATION_SEARCH_TITLE);
-  source->AddLocalizedString("userInfo", IDS_PRINT_PREVIEW_USER_INFO);
   source->AddLocalizedString("accountSelectTitle",
                              IDS_PRINT_PREVIEW_ACCOUNT_SELECT_TITLE);
   source->AddLocalizedString("addAccountTitle",
@@ -330,6 +330,19 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
                              IDS_PRINT_PREVIEW_COULD_NOT_PRINT);
   source->AddLocalizedString("registerPromoButtonText",
                              IDS_PRINT_PREVIEW_REGISTER_PROMO_BUTTON_TEXT);
+  source->AddLocalizedString(
+      "advancedSettingsSearchBoxPlaceholder",
+      IDS_PRINT_PREVIEW_ADVANCED_SETTINGS_SEARCH_BOX_PLACEHOLDER);
+  source->AddLocalizedString("advancedSettingsDialogTitle",
+                             IDS_PRINT_PREVIEW_ADVANCED_SETTINGS_DIALOG_TITLE);
+  source->AddLocalizedString(
+      "advancedSettingsDialogConfirm",
+      IDS_PRINT_PREVIEW_ADVANCED_SETTINGS_DIALOG_CONFIRM);
+  source->AddLocalizedString("cancel", IDS_CANCEL);
+  source->AddLocalizedString("advancedOptionsLabel",
+                             IDS_PRINT_PREVIEW_ADVANCED_OPTIONS_LABEL);
+  source->AddLocalizedString("showAdvancedOptions",
+                             IDS_PRINT_PREVIEW_SHOW_ADVANCED_OPTIONS);
 
   source->SetJsonPath("strings.js");
   source->AddResourcePath("print_preview.js", IDR_PRINT_PREVIEW_JS);
@@ -375,6 +388,8 @@ PrintPreviewUI::PrintPreviewUI(content::WebUI* web_ui)
   // WebUI owns |handler_|.
   handler_ = new PrintPreviewHandler();
   web_ui->AddMessageHandler(handler_);
+
+  web_ui->AddMessageHandler(new MetricsHandler());
 
   g_print_preview_request_id_map.Get().Set(id_, -1);
 }
@@ -602,11 +617,23 @@ void PrintPreviewUI::OnReloadPrintersList() {
   web_ui()->CallJavascriptFunction("reloadPrintersList");
 }
 
-void PrintPreviewUI::OnPrintPreviewScalingDisabled() {
-  web_ui()->CallJavascriptFunction("printScalingDisabledForSourcePDF");
+void PrintPreviewUI::OnSetOptionsFromDocument(
+    const PrintHostMsg_SetOptionsFromDocument_Params& params) {
+  // Notify WebUI that print scaling is disabled
+  if (params.is_scaling_disabled)
+    web_ui()->CallJavascriptFunction("printScalingDisabledForSourcePDF");
 }
 
 // static
 void PrintPreviewUI::SetDelegateForTesting(TestingDelegate* delegate) {
   g_testing_delegate = delegate;
+}
+
+void PrintPreviewUI::SetSelectedFileForTesting(const base::FilePath& path) {
+  handler_->FileSelected(path, 0, NULL);
+}
+
+void PrintPreviewUI::SetPdfSavedClosureForTesting(
+    const base::Closure& closure) {
+  handler_->SetPdfSavedClosureForTesting(closure);
 }

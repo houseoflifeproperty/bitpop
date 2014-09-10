@@ -27,9 +27,9 @@
 #include "core/events/EventDispatchMediator.h"
 #include "core/events/MouseRelatedEvent.h"
 
-namespace WebCore {
+namespace blink {
 
-class Clipboard;
+class DataTransfer;
 class EventDispatcher;
 class PlatformMouseEvent;
 
@@ -59,7 +59,7 @@ public:
         int detail, int screenX, int screenY, int pageX, int pageY,
         int movementX, int movementY,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, unsigned short button,
-        PassRefPtrWillBeRawPtr<EventTarget> relatedTarget, PassRefPtrWillBeRawPtr<Clipboard>, bool isSimulated = false);
+        PassRefPtrWillBeRawPtr<EventTarget> relatedTarget, PassRefPtrWillBeRawPtr<DataTransfer>, bool isSimulated = false);
 
     static PassRefPtrWillBeRawPtr<MouseEvent> create(const AtomicString& eventType, PassRefPtrWillBeRawPtr<AbstractView>, const PlatformMouseEvent&, int detail, PassRefPtrWillBeRawPtr<Node> relatedTarget);
 
@@ -77,13 +77,12 @@ public:
     unsigned short button() const { return m_button; }
     bool buttonDown() const { return m_buttonDown; }
     EventTarget* relatedTarget() const { return m_relatedTarget.get(); }
-    EventTarget* relatedTarget(bool& isNull) const { isNull = !m_relatedTarget; return m_relatedTarget.get(); }
     void setRelatedTarget(PassRefPtrWillBeRawPtr<EventTarget> relatedTarget) { m_relatedTarget = relatedTarget; }
 
     Node* toElement() const;
     Node* fromElement() const;
 
-    Clipboard* dataTransfer() const { return isDragEvent() ? m_clipboard.get() : 0; }
+    DataTransfer* dataTransfer() const { return isDragEvent() ? m_dataTransfer.get() : 0; }
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
 
@@ -98,7 +97,7 @@ protected:
         int detail, int screenX, int screenY, int pageX, int pageY,
         int movementX, int movementY,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, unsigned short button,
-        PassRefPtrWillBeRawPtr<EventTarget> relatedTarget, PassRefPtrWillBeRawPtr<Clipboard>, bool isSimulated);
+        PassRefPtrWillBeRawPtr<EventTarget> relatedTarget, PassRefPtrWillBeRawPtr<DataTransfer>, bool isSimulated);
 
     MouseEvent(const AtomicString& type, const MouseEventInit&);
 
@@ -108,7 +107,7 @@ private:
     unsigned short m_button;
     bool m_buttonDown;
     RefPtrWillBeMember<EventTarget> m_relatedTarget;
-    RefPtrWillBeMember<Clipboard> m_clipboard;
+    RefPtrWillBeMember<DataTransfer> m_dataTransfer;
 };
 
 class SimulatedMouseEvent FINAL : public MouseEvent {
@@ -138,6 +137,6 @@ private:
 
 DEFINE_EVENT_TYPE_CASTS(MouseEvent);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MouseEvent_h

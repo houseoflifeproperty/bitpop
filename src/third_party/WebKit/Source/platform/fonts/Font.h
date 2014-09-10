@@ -42,7 +42,7 @@
 #undef Complex
 #endif
 
-namespace WebCore {
+namespace blink {
 
 class FloatPoint;
 class FloatRect;
@@ -65,6 +65,11 @@ struct GlyphOverflow {
         , bottom(0)
         , computeBounds(false)
     {
+    }
+
+    bool isZero() const
+    {
+        return !left && !right && !top && !bottom;
     }
 
     int left;
@@ -217,6 +222,6 @@ inline float Font::tabWidth(const SimpleFontData& fontData, unsigned tabSize, fl
     return tabWidth - fmodf(position, tabWidth);
 }
 
-}
+} // namespace blink
 
 #endif

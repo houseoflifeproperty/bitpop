@@ -5,25 +5,32 @@
 #ifndef RequestInit_h
 #define RequestInit_h
 
-#include "bindings/v8/Dictionary.h"
-#include "modules/serviceworkers/HeaderMap.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "modules/serviceworkers/Headers.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-struct RequestInit {
+class RequestInit {
+    STACK_ALLOCATED();
+public:
     explicit RequestInit(const Dictionary& options)
-        : method("GET")
     {
-        options.get("url", url);
-        // FIXME: Spec uses ByteString for method. http://crbug.com/347426
-        options.get("method", method);
-        options.get("headers", headers);
+        DictionaryHelper::get(options, "method", method);
+        DictionaryHelper::get(options, "headers", headers);
+        if (!headers) {
+            DictionaryHelper::get(options, "headers", headersDictionary);
+        }
+        DictionaryHelper::get(options, "mode", mode);
+        DictionaryHelper::get(options, "credentials", credentials);
     }
 
-    String url;
     String method;
-    RefPtr<HeaderMap> headers;
+    RefPtrWillBeMember<Headers> headers;
+    Dictionary headersDictionary;
+    String mode;
+    String credentials;
 };
 
 }

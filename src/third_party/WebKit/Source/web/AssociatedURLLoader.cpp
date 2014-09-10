@@ -32,6 +32,7 @@
 #include "web/AssociatedURLLoader.h"
 
 #include "core/fetch/CrossOriginAccessControl.h"
+#include "core/fetch/FetchUtils.h"
 #include "core/loader/DocumentThreadableLoader.h"
 #include "core/loader/DocumentThreadableLoaderClient.h"
 #include "core/xml/XMLHttpRequest.h"
@@ -50,9 +51,6 @@
 #include "wtf/HashSet.h"
 #include "wtf/text/WTFString.h"
 
-using namespace WebCore;
-using namespace WTF;
-
 namespace blink {
 
 namespace {
@@ -69,11 +67,9 @@ private:
     bool m_isSafe;
 };
 
-typedef HashSet<String, CaseFoldingHash> HTTPHeaderSet;
-
 void HTTPRequestHeaderValidator::visitHeader(const WebString& name, const WebString& value)
 {
-    m_isSafe = m_isSafe && isValidHTTPToken(name) && XMLHttpRequest::isAllowedHTTPHeader(name) && isValidHTTPHeaderValue(value);
+    m_isSafe = m_isSafe && isValidHTTPToken(name) && !FetchUtils::isForbiddenHeaderName(name) && isValidHTTPHeaderValue(value);
 }
 
 // FIXME: Remove this and use WebCore code that does the same thing.
@@ -302,7 +298,7 @@ AssociatedURLLoader::~AssociatedURLLoader()
 }
 
 #define COMPILE_ASSERT_MATCHING_ENUM(webkit_name, webcore_name) \
-    COMPILE_ASSERT(static_cast<int>(blink::webkit_name) == static_cast<int>(WebCore::webcore_name), mismatching_enums)
+    COMPILE_ASSERT(static_cast<int>(webkit_name) == static_cast<int>(webcore_name), mismatching_enums)
 
 COMPILE_ASSERT_MATCHING_ENUM(WebURLLoaderOptions::CrossOriginRequestPolicyDeny, DenyCrossOriginRequests);
 COMPILE_ASSERT_MATCHING_ENUM(WebURLLoaderOptions::CrossOriginRequestPolicyUseAccessControl, UseAccessControl);
@@ -328,7 +324,7 @@ void AssociatedURLLoader::loadAsynchronously(const WebURLRequest& request, WebUR
     WebURLRequest newRequest(request);
     if (m_options.untrustedHTTP) {
         WebString method = newRequest.httpMethod();
-        allowLoad = isValidHTTPToken(method) && XMLHttpRequest::isAllowedHTTPMethod(method);
+        allowLoad = isValidHTTPToken(method) && FetchUtils::isUsefulMethod(method);
         if (allowLoad) {
             newRequest.setHTTPMethod(XMLHttpRequest::uppercaseKnownHTTPMethod(method));
             HTTPRequestHeaderValidator validator;
@@ -341,8 +337,8 @@ void AssociatedURLLoader::loadAsynchronously(const WebURLRequest& request, WebUR
 
     if (allowLoad) {
         ThreadableLoaderOptions options;
-        options.preflightPolicy = static_cast<WebCore::PreflightPolicy>(m_options.preflightPolicy);
-        options.crossOriginRequestPolicy = static_cast<WebCore::CrossOriginRequestPolicy>(m_options.crossOriginRequestPolicy);
+        options.preflightPolicy = static_cast<PreflightPolicy>(m_options.preflightPolicy);
+        options.crossOriginRequestPolicy = static_cast<CrossOriginRequestPolicy>(m_options.crossOriginRequestPolicy);
 
         ResourceLoaderOptions resourceLoaderOptions;
         resourceLoaderOptions.sniffContent = m_options.sniffContent ? SniffContent : DoNotSniffContent;
@@ -350,6 +346,13 @@ void AssociatedURLLoader::loadAsynchronously(const WebURLRequest& request, WebUR
         resourceLoaderOptions.dataBufferingPolicy = DoNotBufferData;
 
         const ResourceRequest& webcoreRequest = newRequest.toResourceRequest();
+        if (webcoreRequest.requestContext() == WebURLRequest::RequestContextUnspecified) {
+            // FIXME: We load URLs without setting a TargetType (and therefore a request context) in several
+            // places in content/ (P2PPortAllocatorSession::AllocateLegacyRelaySession, for example). Remove
+            // this once those places are patched up.
+            newRequest.setRequestContext(WebURLRequest::RequestContextInternal);
+        }
+
         Document* webcoreDocument = m_frameImpl->frame()->document();
         ASSERT(webcoreDocument);
         m_loader = DocumentThreadableLoader::create(*webcoreDocument, m_clientAdapter.get(), webcoreRequest, options, resourceLoaderOptions);

@@ -29,11 +29,10 @@
 #include "modules/mediastream/RTCStatsResponse.h"
 #include "platform/heap/Handle.h"
 #include "platform/mediastream/RTCStatsRequest.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
+#include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class MediaStreamTrack;
 class RTCPeerConnection;
@@ -41,29 +40,29 @@ class RTCStatsCallback;
 
 class RTCStatsRequestImpl FINAL : public RTCStatsRequest, public ActiveDOMObject {
 public:
-    static PassRefPtr<RTCStatsRequestImpl> create(ExecutionContext*, PassRefPtrWillBeRawPtr<RTCPeerConnection>, PassOwnPtr<RTCStatsCallback>, PassRefPtr<MediaStreamTrack>);
+    static PassRefPtr<RTCStatsRequestImpl> create(ExecutionContext*, RTCPeerConnection*, PassOwnPtr<RTCStatsCallback>, MediaStreamTrack*);
     virtual ~RTCStatsRequestImpl();
 
-    virtual PassRefPtrWillBeRawPtr<RTCStatsResponseBase> createResponse() OVERRIDE;
+    virtual RTCStatsResponseBase* createResponse() OVERRIDE;
     virtual bool hasSelector() OVERRIDE;
     virtual MediaStreamComponent* component() OVERRIDE;
 
-    virtual void requestSucceeded(PassRefPtrWillBeRawPtr<RTCStatsResponseBase>) OVERRIDE;
+    virtual void requestSucceeded(RTCStatsResponseBase*) OVERRIDE;
 
     // ActiveDOMObject
     virtual void stop() OVERRIDE;
 
 private:
-    RTCStatsRequestImpl(ExecutionContext*, PassRefPtrWillBeRawPtr<RTCPeerConnection>, PassOwnPtr<RTCStatsCallback>, PassRefPtr<MediaStreamTrack>);
+    RTCStatsRequestImpl(ExecutionContext*, RTCPeerConnection*, PassOwnPtr<RTCStatsCallback>, MediaStreamTrack*);
 
     void clear();
 
     OwnPtr<RTCStatsCallback> m_successCallback;
     RefPtr<MediaStreamComponent> m_component;
 
-    RefPtrWillBePersistent<RTCPeerConnection> m_requester;
+    Persistent<RTCPeerConnection> m_requester;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCStatsRequestImpl_h

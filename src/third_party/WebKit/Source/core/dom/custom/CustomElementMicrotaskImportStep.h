@@ -39,7 +39,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/WeakPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class CustomElementSyncMicrotaskQueue;
 class HTMLImportChild;
@@ -57,7 +57,7 @@ public:
     virtual ~CustomElementMicrotaskImportStep();
 
     // API for HTML Imports
-    void parentWasChanged();
+    void invalidate();
     void importDidFinishLoading();
 #if !ENABLE(OILPAN)
     WeakPtr<CustomElementMicrotaskImportStep> weakPtr() { return m_weakFactory.createWeakPtr(); }

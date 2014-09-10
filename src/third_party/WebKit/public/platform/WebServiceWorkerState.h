@@ -13,9 +13,9 @@ enum WebServiceWorkerState {
     WebServiceWorkerStateInstalling,
     WebServiceWorkerStateInstalled,
     WebServiceWorkerStateActivating,
-    WebServiceWorkerStateActive,
-    WebServiceWorkerStateDeactivated,
-    WebServiceWorkerStateLast = WebServiceWorkerStateDeactivated
+    WebServiceWorkerStateActivated,
+    WebServiceWorkerStateRedundant,
+    WebServiceWorkerStateLast = WebServiceWorkerStateRedundant
 };
 
 } // namespace blink

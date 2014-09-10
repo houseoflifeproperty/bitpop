@@ -34,7 +34,8 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
   virtual void ReleaseResources() OVERRIDE;
   virtual bool WillDraw(DrawMode draw_mode,
                         ResourceProvider* resource_provider) OVERRIDE;
-  virtual void AppendQuads(QuadSink* quad_sink,
+  virtual void AppendQuads(RenderPass* render_pass,
+                           const OcclusionTracker<LayerImpl>& occlusion_tracker,
                            AppendQuadsData* append_quads_data) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
 
@@ -56,7 +57,7 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
   DelegatedRendererLayerImpl(LayerTreeImpl* tree_impl, int id);
 
   int ChildIdForTesting() const { return child_id_; }
-  const ScopedPtrVector<RenderPass>& RenderPassesInDrawOrderForTesting() const {
+  const RenderPassList& RenderPassesInDrawOrderForTesting() const {
     return render_passes_in_draw_order_;
   }
   const ResourceProvider::ResourceIdArray& ResourcesForTesting() const {
@@ -66,11 +67,10 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
  private:
   void ClearChildId();
 
-  void AppendRainbowDebugBorder(QuadSink* quad_sink,
+  void AppendRainbowDebugBorder(RenderPass* render_pass,
                                 AppendQuadsData* append_quads_data);
 
-  void SetRenderPasses(
-      ScopedPtrVector<RenderPass>* render_passes_in_draw_order);
+  void SetRenderPasses(RenderPassList* render_passes_in_draw_order);
   void ClearRenderPasses();
 
   // Returns |true| if the delegated_render_pass_id is part of the current
@@ -80,7 +80,8 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
       RenderPass::Id* output_render_pass_id) const;
 
   void AppendRenderPassQuads(
-      QuadSink* quad_sink,
+      RenderPass* render_pass,
+      const OcclusionTracker<LayerImpl>& occlusion_tracker,
       AppendQuadsData* append_quads_data,
       const RenderPass* delegated_render_pass,
       const gfx::Size& frame_size) const;
@@ -90,7 +91,7 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
 
   bool have_render_passes_to_push_;
   float inverse_device_scale_factor_;
-  ScopedPtrVector<RenderPass> render_passes_in_draw_order_;
+  RenderPassList render_passes_in_draw_order_;
   base::hash_map<RenderPass::Id, int> render_passes_index_by_id_;
   ResourceProvider::ResourceIdArray resources_;
 

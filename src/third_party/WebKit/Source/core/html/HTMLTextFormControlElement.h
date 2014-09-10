@@ -27,7 +27,7 @@
 
 #include "core/html/HTMLFormControlElementWithState.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class Position;
@@ -42,6 +42,11 @@ class HTMLTextFormControlElement : public HTMLFormControlElementWithState {
 public:
     // Common flag for HTMLInputElement::tooLong() and HTMLTextAreaElement::tooLong().
     enum NeedsToCheckDirtyFlag {CheckDirtyFlag, IgnoreDirtyFlag};
+    // Option of setSelectionRange.
+    enum SelectionOption {
+        ChangeSelection,
+        NotChangeSelection
+    };
 
     virtual ~HTMLTextFormControlElement();
 
@@ -69,7 +74,7 @@ public:
     virtual void setRangeText(const String& replacement, ExceptionState&);
     virtual void setRangeText(const String& replacement, unsigned start, unsigned end, const String& selectionMode, ExceptionState&);
     void setSelectionRange(int start, int end, const String& direction);
-    void setSelectionRange(int start, int end, TextFieldSelectionDirection = SelectionHasNoDirection);
+    void setSelectionRange(int start, int end, TextFieldSelectionDirection = SelectionHasNoDirection, SelectionOption = ChangeSelection);
     PassRefPtrWillBeRawPtr<Range> selection() const;
 
     virtual void dispatchFormControlChangeEvent() OVERRIDE FINAL;
@@ -86,6 +91,14 @@ public:
     String directionForFormData() const;
 
     void setTextAsOfLastFormControlChangeEvent(const String& text) { m_textAsOfLastFormControlChangeEvent = text; }
+
+    // These functions don't cause synchronous layout and SpellChecker uses
+    // them to improve performance.
+    // Passed |Position| must point inside of a text form control.
+    static Position startOfWord(const Position&);
+    static Position endOfWord(const Position&);
+    static Position startOfSentence(const Position&);
+    static Position endOfSentence(const Position&);
 
 protected:
     HTMLTextFormControlElement(const QualifiedName&, Document&, HTMLFormElement*);

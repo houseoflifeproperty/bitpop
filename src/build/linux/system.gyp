@@ -12,6 +12,10 @@
       }],
     ],
 
+    # If any of the linux_link_FOO below are set to 1, then the corresponding
+    # target will be linked against the FOO library (either dynamically or
+    # statically, depending on the pkg-config files), as opposed to loading the
+    # FOO library dynamically with dlopen.
     'linux_link_libgps%': 0,
     'linux_link_libpci%': 0,
     'linux_link_libspeechd%': 0,
@@ -416,6 +420,24 @@
         },
       ],
     }],
+    ['ozone_platform_dri==1 or ozone_platform_gbm==1', {
+      'targets': [
+        {
+          'target_name': 'libdrm',
+          'type': 'none',
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags libdrm)',
+            ],
+          },
+          'link_settings': {
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l libdrm)',
+            ],
+          },
+        },
+      ],
+    }],
   ],  # conditions
   'targets': [
     {
@@ -432,20 +454,6 @@
         ],
         'libraries': [
           '<!@(<(pkg-config) --libs-only-l dbus-1)',
-        ],
-      },
-    },
-    {
-      'target_name': 'dridrm',
-      'type': 'none',
-      'direct_dependent_settings': {
-        'cflags': [
-          '<!@(<(pkg-config) --cflags libdrm)',
-        ],
-      },
-      'link_settings': {
-        'libraries': [
-          '<!@(<(pkg-config) --libs-only-l libdrm)',
         ],
       },
     },
@@ -862,6 +870,7 @@
       },
     },
     {
+      # GN version: //third_party/speech-dispatcher
       'target_name': 'libspeechd',
       'type': 'static_library',
       'direct_dependent_settings': {
@@ -984,7 +993,7 @@
           'conditions': [
             ['use_openssl==1', {
               'dependencies': [
-                '../../third_party/openssl/openssl.gyp:openssl',
+                '../../third_party/boringssl/boringssl.gyp:boringssl',
               ],
             }],
             ['use_openssl==0', {

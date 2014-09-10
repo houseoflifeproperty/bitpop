@@ -24,6 +24,19 @@ config("internal_config") {
   }
 }
 
+config("client_config") {
+  include_dirs = [ "src" ]
+  if (is_android) {
+    include_dirs += [ "src/common/android/include" ]
+  }
+}
+
+config("handler_config") {
+  include_dirs = [
+    "src",
+  ]
+}
+
 # minidump_stackwalk and minidump_dump are tool-type executables that do
 # not build on iOS.
 if (current_toolchain == host_toolchain && !is_win) {
@@ -206,7 +219,7 @@ if (current_toolchain == host_toolchain && is_mac) {
 }
 
 if (is_mac) {
-  static_library("breakpad_utilities") {
+  static_library("utilities") {
     sources = [
       "src/client/mac/handler/breakpad_nlist_64.cc",
       "src/client/mac/handler/dynamic_images.cc",
@@ -241,6 +254,7 @@ if (is_mac) {
     include_dirs = [
       "src/client/apple/Framework",
       "src/common/mac",
+      "src",
     ]
     libs = [
       "CoreServices.framework",
@@ -248,7 +262,7 @@ if (is_mac) {
     ]
 
     deps = [
-      ":breakpad_utilities"
+      ":utilities"
     ]
   }
 
@@ -279,10 +293,15 @@ if (is_mac) {
     ]
 
     deps = [
-      ":breakpad_utilities",
+      ":utilities",
       ":crash_inspector",
-      ":crash_report_sender",
+      # TODO(GYP): Make this link
+      #":crash_report_sender",
     ]
+  }
+
+  group("client") {
+    direct_dependent_configs = [ ":client_config" ]
   }
 }
 
@@ -305,70 +324,67 @@ if (is_linux || is_android) {
   }
 }
 
-if (is_linux && current_toolchain == host_toolchain) {
-  executable("dump_syms") {
-    sources = [
-      "src/common/dwarf/bytereader.cc",
-      "src/common/dwarf_cfi_to_module.cc",
-      "src/common/dwarf_cfi_to_module.h",
-      "src/common/dwarf_cu_to_module.cc",
-      "src/common/dwarf_cu_to_module.h",
-      "src/common/dwarf/dwarf2diehandler.cc",
-      "src/common/dwarf/dwarf2reader.cc",
-      "src/common/dwarf_line_to_module.cc",
-      "src/common/dwarf_line_to_module.h",
-      "src/common/language.cc",
-      "src/common/language.h",
-      "src/common/linux/crc32.cc",
-      "src/common/linux/crc32.h",
-      "src/common/linux/dump_symbols.cc",
-      "src/common/linux/dump_symbols.h",
-      "src/common/linux/elf_symbols_to_module.cc",
-      "src/common/linux/elf_symbols_to_module.h",
-      "src/common/linux/elfutils.cc",
-      "src/common/linux/elfutils.h",
-      "src/common/linux/file_id.cc",
-      "src/common/linux/file_id.h",
-      "src/common/linux/linux_libc_support.cc",
-      "src/common/linux/linux_libc_support.h",
-      "src/common/linux/memory_mapped_file.cc",
-      "src/common/linux/memory_mapped_file.h",
-      "src/common/linux/guid_creator.h",
-      "src/common/module.cc",
-      "src/common/module.h",
-      "src/common/stabs_reader.cc",
-      "src/common/stabs_reader.h",
-      "src/common/stabs_to_module.cc",
-      "src/common/stabs_to_module.h",
-      "src/tools/linux/dump_syms/dump_syms.cc",
-    ]
+if (is_linux) {
+  if (current_toolchain == host_toolchain) {
+    # dump_syms is a host tool, so only compile it for the host system.
+    executable("dump_syms") {
+      sources = [
+        "src/common/dwarf/bytereader.cc",
+        "src/common/dwarf_cfi_to_module.cc",
+        "src/common/dwarf_cfi_to_module.h",
+        "src/common/dwarf_cu_to_module.cc",
+        "src/common/dwarf_cu_to_module.h",
+        "src/common/dwarf/dwarf2diehandler.cc",
+        "src/common/dwarf/dwarf2reader.cc",
+        "src/common/dwarf_line_to_module.cc",
+        "src/common/dwarf_line_to_module.h",
+        "src/common/language.cc",
+        "src/common/language.h",
+        "src/common/linux/crc32.cc",
+        "src/common/linux/crc32.h",
+        "src/common/linux/dump_symbols.cc",
+        "src/common/linux/dump_symbols.h",
+        "src/common/linux/elf_symbols_to_module.cc",
+        "src/common/linux/elf_symbols_to_module.h",
+        "src/common/linux/elfutils.cc",
+        "src/common/linux/elfutils.h",
+        "src/common/linux/file_id.cc",
+        "src/common/linux/file_id.h",
+        "src/common/linux/linux_libc_support.cc",
+        "src/common/linux/linux_libc_support.h",
+        "src/common/linux/memory_mapped_file.cc",
+        "src/common/linux/memory_mapped_file.h",
+        "src/common/linux/guid_creator.h",
+        "src/common/module.cc",
+        "src/common/module.h",
+        "src/common/stabs_reader.cc",
+        "src/common/stabs_reader.h",
+        "src/common/stabs_to_module.cc",
+        "src/common/stabs_to_module.h",
+        "src/tools/linux/dump_syms/dump_syms.cc",
+      ]
 
-    # There are some warnings in this code.
-    configs -= [ "//build/config/compiler:chromium_code" ]
-    configs += [ "//build/config/compiler:no_chromium_code" ]
+      # There are some warnings in this code.
+      configs -= [ "//build/config/compiler:chromium_code" ]
+      configs += [ "//build/config/compiler:no_chromium_code" ]
 
-    # dwarf2reader.cc uses dynamic_cast. Because we don't typically
-    # don't support RTTI, we enable it for this single target. Since
-    # dump_syms doesn't share any object files with anything else,
-    # this doesn't end up polluting Chrome itself.
-    configs -= [ "//build/config/compiler:no_rtti" ]
-    configs += [ "//build/config/compiler:rtti" ]
+      # dwarf2reader.cc uses dynamic_cast. Because we don't typically
+      # don't support RTTI, we enable it for this single target. Since
+      # dump_syms doesn't share any object files with anything else,
+      # this doesn't end up polluting Chrome itself.
+      configs -= [ "//build/config/compiler:no_rtti" ]
+      configs += [ "//build/config/compiler:rtti" ]
 
-    # Breakpad rev 583 introduced this flag.
-    # Using this define, stabs_reader.h will include a.out.h to
-    # build on Linux.
-    defines = [ "HAVE_A_OUT_H" ]
+      # Breakpad rev 583 introduced this flag.
+      # Using this define, stabs_reader.h will include a.out.h to
+      # build on Linux.
+      defines = [ "HAVE_A_OUT_H" ]
 
-    include_dirs = [ "src" ]
-  }
-
-  config("breakpad_client_config") {
-    if (is_android) {
-      include_dirs = [ "src/common/android/include" ]
+      include_dirs = [ "src" ]
     }
   }
 
-  static_library("breakpad_client") {
+  static_library("client") {
     sources = [
       "src/client/linux/crash_generation/crash_generation_client.cc",
       "src/client/linux/crash_generation/crash_generation_client.h",
@@ -420,12 +436,10 @@ if (is_linux && current_toolchain == host_toolchain) {
       "src/common/string_conversion.h",
     ]
 
-    direct_dependent_configs = [ ":breakpad_client_config" ]
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [ "//build/config/compiler:no_chromium_code" ]
+    direct_dependent_configs = [ ":client_config" ]
 
-    # Android NDK toolchain doesn't support -mimplicit-it=always
-    if (cpu_arch == "arm" && !is_android) {
-      cflags = [ "-Wa,-mimplicit-it=always" ]
-    }
     if (cpu_arch == "arm" && is_chromeos) {
       # Avoid running out of registers in
       # linux_syscall_support.h:sys_clone()'s inline assembly.
@@ -446,7 +460,7 @@ if (is_linux && current_toolchain == host_toolchain) {
     ]
   }
 
-  static_library("breakpad_processor_support") {
+  static_library("processor_support") {
     sources = [
       "src/common/scoped_ptr.h",
       "src/processor/basic_code_modules.cc",
@@ -496,8 +510,8 @@ if (is_linux && current_toolchain == host_toolchain) {
     ]
 
     deps = [
-      ":breakpad_client",
-      ":breakpad_processor_support",
+      ":client",
+      ":processor_support",
       ":linux_dumper_unittest_helper",
       "//testing/gtest",
       "//testing/gtest:gtest_main",
@@ -516,7 +530,7 @@ if (is_linux && current_toolchain == host_toolchain) {
 
     if (is_clang) {
       # See http://crbug.com/138571#c18
-      cflags += [ "-Wno-unused-value" ]
+      cflags = [ "-Wno-unused-value" ]
     }
 
 
@@ -532,7 +546,7 @@ if (is_linux && current_toolchain == host_toolchain) {
       "src/client/linux/minidump_writer/linux_dumper_unittest_helper.cc",
     ]
     deps = [
-      ":breakpad_processor_support",
+      ":processor_support",
     ]
 
     include_dirs = [
@@ -551,9 +565,10 @@ if (is_linux && current_toolchain == host_toolchain) {
     ]
 
     # This file has an unused variable warning.
-    cflags = [ "-Wno-unused-variable" ]
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [ "//build/config/compiler:no_chromium_code" ]
 
-    deps = [ ":breakpad_client" ]
+    deps = [ ":client" ]
 
     include_dirs = [ "src" ]
 
@@ -568,7 +583,7 @@ if (is_linux && current_toolchain == host_toolchain) {
 
     include_dirs = [ "src" ]
 
-    deps = [ ":breakpad_client" ]
+    deps = [ ":client" ]
   }
 
   executable("core-2-minidump") {
@@ -577,7 +592,7 @@ if (is_linux && current_toolchain == host_toolchain) {
     ]
 
     deps = [
-      ":breakpad_client",
+      ":client",
     ]
 
     include_dirs = [ "src" ]
@@ -585,7 +600,7 @@ if (is_linux && current_toolchain == host_toolchain) {
 }
 
 if (is_ios) {
-  static_library("breakpad_client") {
+  static_library("client") {
     sources = [
       "src/client/ios/Breakpad.h",
       "src/client/ios/Breakpad.mm",
@@ -640,4 +655,36 @@ if (is_ios) {
   }
 
   # TODO(GYP) There is some XCode-only targets like ninja-breakpad.
+}
+
+if (is_win) {
+  group("client") {
+    direct_dependent_configs = [ ":client_config" ]
+  }
+
+  source_set("breakpad_handler") {
+    configs += [ ":handler_config" ]
+    if (is_win) {
+      direct_dependent_configs = [ ":handler_config" ]
+    }
+
+    defines = [ "BREAKPAD_NO_TERMINATE_THREAD" ]
+
+    sources = [
+      "src/client/windows/crash_generation/client_info.cc",
+      "src/client/windows/crash_generation/client_info.h",
+      "src/client/windows/crash_generation/crash_generation_client.cc",
+      "src/client/windows/crash_generation/crash_generation_client.h",
+      "src/client/windows/crash_generation/crash_generation_server.cc",
+      "src/client/windows/crash_generation/crash_generation_server.h",
+      "src/client/windows/handler/exception_handler.cc",
+      "src/client/windows/handler/exception_handler.h",
+      "src/common/windows/guid_string.cc",
+      "src/common/windows/guid_string.h",
+      "src/google_breakpad/common/minidump_format.h",
+      "src/client/windows/crash_generation/minidump_generator.cc",
+      "src/client/windows/crash_generation/minidump_generator.h",
+      "src/common/windows/string_utils-inl.h",
+    ]
+  }
 }

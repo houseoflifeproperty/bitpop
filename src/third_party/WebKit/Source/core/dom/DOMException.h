@@ -29,13 +29,13 @@
 #ifndef DOMException_h
 #define DOMException_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 typedef int ExceptionCode;
 
@@ -68,6 +68,6 @@ private:
     String m_unsanitizedMessage;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMException_h

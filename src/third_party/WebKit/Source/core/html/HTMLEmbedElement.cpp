@@ -27,6 +27,7 @@
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/HTMLObjectElement.h"
@@ -35,7 +36,7 @@
 #include "core/rendering/RenderEmbeddedObject.h"
 #include "core/rendering/RenderWidget.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -103,7 +104,7 @@ void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicStr
         if (renderer() && isImageType()) {
             if (!m_imageLoader)
                 m_imageLoader = HTMLImageLoader::create(this);
-            m_imageLoader->updateFromElementIgnoringPreviousError();
+            m_imageLoader->updateFromElement(ImageLoader::UpdateIgnorePreviousError);
         }
     } else {
         HTMLPlugInElement::parseAttribute(name, value);
@@ -112,12 +113,9 @@ void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicStr
 
 void HTMLEmbedElement::parametersForPlugin(Vector<String>& paramNames, Vector<String>& paramValues)
 {
-    if (!hasAttributes())
-        return;
-
     AttributeCollection attributes = this->attributes();
-    AttributeCollection::const_iterator end = attributes.end();
-    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+    AttributeCollection::iterator end = attributes.end();
+    for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
         paramNames.append(it->localName().string());
         paramValues.append(it->value().string());
     }
@@ -183,11 +181,6 @@ bool HTMLEmbedElement::isURLAttribute(const Attribute& attribute) const
 const QualifiedName& HTMLEmbedElement::subResourceAttributeName() const
 {
     return srcAttr;
-}
-
-const AtomicString HTMLEmbedElement::imageSourceURL() const
-{
-    return getAttribute(srcAttr);
 }
 
 bool HTMLEmbedElement::isInteractiveContent() const

@@ -41,7 +41,7 @@ class EditorClientImpl;
 
 class WebTextCheckingCompletionImpl FINAL : public WebTextCheckingCompletion {
 public:
-    explicit WebTextCheckingCompletionImpl(WTF::PassRefPtr<WebCore::TextCheckingRequest> request)
+    explicit WebTextCheckingCompletionImpl(WTF::PassRefPtr<TextCheckingRequest> request)
         : m_request(request)
     {
     }
@@ -52,7 +52,7 @@ public:
 private:
     virtual ~WebTextCheckingCompletionImpl() { }
 
-    WTF::RefPtr<WebCore::TextCheckingRequest> m_request;
+    WTF::RefPtr<TextCheckingRequest> m_request;
 };
 
 } // namespace blink

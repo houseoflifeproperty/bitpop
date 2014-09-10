@@ -10,8 +10,8 @@
 
 #include <vector>
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/strings/string_split.h"
 #include "base/threading/platform_thread.h"
@@ -47,7 +47,7 @@ bool DenyFilePermission(const FilePath& path, DWORD permission) {
   change.Trustee.MultipleTrusteeOperation = NO_MULTIPLE_TRUSTEE;
   change.Trustee.TrusteeForm = TRUSTEE_IS_NAME;
   change.Trustee.TrusteeType = TRUSTEE_IS_USER;
-  change.Trustee.ptstrName = L"CURRENT_USER";
+  change.Trustee.ptstrName = const_cast<wchar_t*>(L"CURRENT_USER");
 
   PACL new_dacl;
   if (SetEntriesInAcl(1, &change, old_dacl, &new_dacl) != ERROR_SUCCESS) {
@@ -259,39 +259,24 @@ bool HasInternetZoneIdentifier(const FilePath& full_path) {
   }
 }
 
-}  // namespace base
-
-namespace file_util {
-
-using base::DenyFilePermission;
-using base::GetPermissionInfo;
-using base::RestorePermissionInfo;
-
-std::wstring FilePathAsWString(const base::FilePath& path) {
-  return path.value();
-}
-base::FilePath WStringAsFilePath(const std::wstring& path) {
-  return base::FilePath(path);
-}
-
-bool MakeFileUnreadable(const base::FilePath& path) {
+bool MakeFileUnreadable(const FilePath& path) {
   return DenyFilePermission(path, GENERIC_READ);
 }
 
-bool MakeFileUnwritable(const base::FilePath& path) {
+bool MakeFileUnwritable(const FilePath& path) {
   return DenyFilePermission(path, GENERIC_WRITE);
 }
 
-PermissionRestorer::PermissionRestorer(const base::FilePath& path)
+FilePermissionRestorer::FilePermissionRestorer(const FilePath& path)
     : path_(path), info_(NULL), length_(0) {
   info_ = GetPermissionInfo(path_, &length_);
   DCHECK(info_ != NULL);
   DCHECK_NE(0u, length_);
 }
 
-PermissionRestorer::~PermissionRestorer() {
+FilePermissionRestorer::~FilePermissionRestorer() {
   if (!RestorePermissionInfo(path_, info_, length_))
     NOTREACHED();
 }
 
-}  // namespace file_util
+}  // namespace base

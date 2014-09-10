@@ -35,14 +35,20 @@
 #include "platform/graphics/ImageBuffer.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkDevice.h"
+#include "third_party/skia/include/core/SkPicture.h"
 
-namespace WebCore {
+namespace blink {
 
 ImageBufferSurface::ImageBufferSurface(const IntSize& size, OpacityMode opacityMode)
     : m_opacityMode(opacityMode)
     , m_size(size)
 {
     setIsHidden(false);
+}
+
+PassRefPtr<SkPicture> ImageBufferSurface::getPicture()
+{
+    return nullptr;
 }
 
 void ImageBufferSurface::clear()
@@ -55,12 +61,14 @@ void ImageBufferSurface::clear()
             canvas()->drawARGB(255, 0, 0, 0, SkXfermode::kSrc_Mode);
         else
             canvas()->drawARGB(0, 0, 0, 0, SkXfermode::kClear_Mode);
+        didClearCanvas();
     }
 }
 
-const SkBitmap& ImageBufferSurface::bitmap() const
+const SkBitmap& ImageBufferSurface::bitmap()
 {
     ASSERT(canvas());
+    willAccessPixels();
     return canvas()->getTopDevice()->accessBitmap(false);
 }
 
@@ -70,4 +78,4 @@ const SkBitmap& ImageBufferSurface::cachedBitmap() const
     return nullBitmap;
 }
 
-} // namespace WebCore
+} // namespace blink

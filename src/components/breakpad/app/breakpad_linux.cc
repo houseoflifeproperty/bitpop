@@ -29,7 +29,6 @@
 #include "base/files/file_path.h"
 #include "base/linux_util.h"
 #include "base/path_service.h"
-#include "base/platform_file.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/global_descriptors.h"
 #include "base/process/memory.h"
@@ -207,7 +206,7 @@ void SetClientIdFromCommandLine(const CommandLine& command_line) {
   // Get the guid from the command line switch.
   std::string switch_value =
       command_line.GetSwitchValueASCII(switches::kEnableCrashReporter);
-  GetBreakpadClient()->SetClientID(switch_value);
+  GetBreakpadClient()->SetBreakpadClientIdFromGUID(switch_value);
 }
 
 // MIME substrings.

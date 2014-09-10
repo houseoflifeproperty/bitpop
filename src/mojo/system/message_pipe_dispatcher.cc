@@ -32,9 +32,8 @@ struct SerializedMessagePipeDispatcher {
 // static
 const MojoCreateMessagePipeOptions
     MessagePipeDispatcher::kDefaultCreateOptions = {
-  static_cast<uint32_t>(sizeof(MojoCreateMessagePipeOptions)),
-  MOJO_CREATE_MESSAGE_PIPE_OPTIONS_FLAG_NONE
-};
+        static_cast<uint32_t>(sizeof(MojoCreateMessagePipeOptions)),
+        MOJO_CREATE_MESSAGE_PIPE_OPTIONS_FLAG_NONE};
 
 MessagePipeDispatcher::MessagePipeDispatcher(
     const MojoCreateMessagePipeOptions& /*validated_options*/)
@@ -43,20 +42,24 @@ MessagePipeDispatcher::MessagePipeDispatcher(
 
 // static
 MojoResult MessagePipeDispatcher::ValidateCreateOptions(
-    const MojoCreateMessagePipeOptions* in_options,
+    UserPointer<const MojoCreateMessagePipeOptions> in_options,
     MojoCreateMessagePipeOptions* out_options) {
   const MojoCreateMessagePipeOptionsFlags kKnownFlags =
       MOJO_CREATE_MESSAGE_PIPE_OPTIONS_FLAG_NONE;
 
   *out_options = kDefaultCreateOptions;
-  if (!in_options)
+  if (in_options.IsNull())
     return MOJO_RESULT_OK;
 
-  MojoResult result =
-      ValidateOptionsStructPointerSizeAndFlags<MojoCreateMessagePipeOptions>(
-          in_options, kKnownFlags, out_options);
-  if (result != MOJO_RESULT_OK)
-    return result;
+  UserOptionsReader<MojoCreateMessagePipeOptions> reader(in_options);
+  if (!reader.is_valid())
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  if (!OPTIONS_STRUCT_HAS_MEMBER(MojoCreateMessagePipeOptions, flags, reader))
+    return MOJO_RESULT_OK;
+  if ((reader.options().flags & ~kKnownFlags))
+    return MOJO_RESULT_UNIMPLEMENTED;
+  out_options->flags = reader.options().flags;
 
   // Checks for fields beyond |flags|:
 
@@ -81,12 +84,11 @@ Dispatcher::Type MessagePipeDispatcher::GetType() const {
 // static
 std::pair<scoped_refptr<MessagePipeDispatcher>, scoped_refptr<MessagePipe> >
 MessagePipeDispatcher::CreateRemoteMessagePipe() {
-  scoped_refptr<MessagePipe> message_pipe(
-      new MessagePipe(
-          scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
-          scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
-  scoped_refptr<MessagePipeDispatcher> dispatcher(new MessagePipeDispatcher(
-      MessagePipeDispatcher::kDefaultCreateOptions));
+  scoped_refptr<MessagePipe> message_pipe(new MessagePipe(
+      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
+      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
+  scoped_refptr<MessagePipeDispatcher> dispatcher(
+      new MessagePipeDispatcher(MessagePipeDispatcher::kDefaultCreateOptions));
   dispatcher->Init(message_pipe, 0);
 
   return std::make_pair(dispatcher, message_pipe);
@@ -122,8 +124,8 @@ scoped_refptr<MessagePipeDispatcher> MessagePipeDispatcher::Deserialize(
                   "attach; remote ID = " << remote_id << ")";
     return scoped_refptr<MessagePipeDispatcher>();
   }
-  DVLOG(2) << "Deserializing message pipe dispatcher (remote ID = "
-           << remote_id << ", new local ID = " << local_id << ")";
+  DVLOG(2) << "Deserializing message pipe dispatcher (remote ID = " << remote_id
+           << ", new local ID = " << local_id << ")";
 
   if (!channel->RunMessagePipeEndpoint(local_id, remote_id)) {
     // In general, this shouldn't fail, since we generated |local_id| locally.
@@ -179,7 +181,7 @@ MessagePipeDispatcher::CreateEquivalentDispatcherAndCloseImplNoLock() {
 }
 
 MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
-    const void* bytes,
+    UserPointer<const void> bytes,
     uint32_t num_bytes,
     std::vector<DispatcherTransport>* transports,
     MojoWriteMessageFlags flags) {
@@ -188,44 +190,45 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
 
   lock().AssertAcquired();
 
-  if (!VerifyUserPointerWithSize<1>(bytes, num_bytes))
-    return MOJO_RESULT_INVALID_ARGUMENT;
   if (num_bytes > kMaxMessageNumBytes)
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
-  return message_pipe_->WriteMessage(port_, bytes, num_bytes, transports,
-                                     flags);
+  return message_pipe_->WriteMessage(
+      port_, bytes, num_bytes, transports, flags);
 }
 
 MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
-    void* bytes,
-    uint32_t* num_bytes,
+    UserPointer<void> bytes,
+    UserPointer<uint32_t> num_bytes,
     DispatcherVector* dispatchers,
     uint32_t* num_dispatchers,
     MojoReadMessageFlags flags) {
   lock().AssertAcquired();
-
-  if (num_bytes) {
-    if (!VerifyUserPointer<uint32_t>(num_bytes))
-      return MOJO_RESULT_INVALID_ARGUMENT;
-    if (!VerifyUserPointerWithSize<1>(bytes, *num_bytes))
-      return MOJO_RESULT_INVALID_ARGUMENT;
-  }
-
-  return message_pipe_->ReadMessage(port_, bytes, num_bytes, dispatchers,
-                                    num_dispatchers, flags);
+  return message_pipe_->ReadMessage(
+      port_, bytes, num_bytes, dispatchers, num_dispatchers, flags);
 }
 
-MojoResult MessagePipeDispatcher::AddWaiterImplNoLock(Waiter* waiter,
-                                                      MojoHandleSignals signals,
-                                                      uint32_t context) {
+HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateImplNoLock()
+    const {
   lock().AssertAcquired();
-  return message_pipe_->AddWaiter(port_, waiter, signals, context);
+  return message_pipe_->GetHandleSignalsState(port_);
 }
 
-void MessagePipeDispatcher::RemoveWaiterImplNoLock(Waiter* waiter) {
+MojoResult MessagePipeDispatcher::AddWaiterImplNoLock(
+    Waiter* waiter,
+    MojoHandleSignals signals,
+    uint32_t context,
+    HandleSignalsState* signals_state) {
   lock().AssertAcquired();
-  message_pipe_->RemoveWaiter(port_, waiter);
+  return message_pipe_->AddWaiter(
+      port_, waiter, signals, context, signals_state);
+}
+
+void MessagePipeDispatcher::RemoveWaiterImplNoLock(
+    Waiter* waiter,
+    HandleSignalsState* signals_state) {
+  lock().AssertAcquired();
+  message_pipe_->RemoveWaiter(port_, waiter, signals_state);
 }
 
 void MessagePipeDispatcher::StartSerializeImplNoLock(
@@ -273,7 +276,8 @@ bool MessagePipeDispatcher::EndSerializeAndCloseImplNoLock(
 // MessagePipeDispatcherTransport ----------------------------------------------
 
 MessagePipeDispatcherTransport::MessagePipeDispatcherTransport(
-    DispatcherTransport transport) : DispatcherTransport(transport) {
+    DispatcherTransport transport)
+    : DispatcherTransport(transport) {
   DCHECK_EQ(message_pipe_dispatcher()->GetType(), Dispatcher::kTypeMessagePipe);
 }
 

@@ -30,11 +30,9 @@
 
 #include "core/dom/TreeScopeStyleSheetCollection.h"
 
-namespace WebCore {
+namespace blink {
 
-class CSSStyleSheet;
 class ShadowRoot;
-class StyleSheet;
 class StyleSheetCollection;
 class StyleEngine;
 

@@ -16,13 +16,12 @@
 #include "ash/test/test_session_state_delegate.h"
 #include "ash/test/test_shell_delegate.h"
 #include "ash/test/test_system_tray_delegate.h"
-#include "ash/wm/coordinate_conversion.h"
 #include "ash/wm/window_positioner.h"
 #include "base/command_line.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/window_tree_client.h"
-#include "ui/aura/test/event_generator.h"
+#include "ui/aura/test/event_generator_delegate_aura.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
@@ -32,6 +31,7 @@
 #include "ui/gfx/display.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/screen.h"
+#include "ui/wm/core/coordinate_conversion.h"
 
 #if defined(OS_CHROMEOS)
 #include "ash/system/chromeos/tray_display.h"
@@ -44,6 +44,7 @@
 #include "base/win/windows_version.h"
 #include "ui/aura/remote_window_tree_host_win.h"
 #include "ui/aura/window_tree_host_win.h"
+#include "ui/platform_window/win/win_window.h"
 #include "win8/test/test_registrar_constants.h"
 #endif
 
@@ -55,12 +56,13 @@ namespace ash {
 namespace test {
 namespace {
 
-class AshEventGeneratorDelegate : public aura::test::EventGeneratorDelegate {
+class AshEventGeneratorDelegate
+    : public aura::test::EventGeneratorDelegateAura {
  public:
   AshEventGeneratorDelegate() {}
   virtual ~AshEventGeneratorDelegate() {}
 
-  // aura::test::EventGeneratorDelegate overrides:
+  // aura::test::EventGeneratorDelegateAura overrides:
   virtual aura::WindowTreeHost* GetHostAt(
       const gfx::Point& point_in_screen) const OVERRIDE {
     gfx::Screen* screen = Shell::GetScreen();
@@ -122,7 +124,7 @@ void AshTestBase::SetUp() {
         switches::kAshHostWindowBounds, "1+1-800x600");
   }
 #if defined(OS_WIN)
-  aura::test::SetUsePopupAsRootWindowForTest(true);
+  ui::test::SetUsePopupAsRootWindowForTest(true);
 #endif
   ash_test_helper_->SetUp(start_session_);
 
@@ -172,7 +174,7 @@ void AshTestBase::TearDown() {
 
   ash_test_helper_->TearDown();
 #if defined(OS_WIN)
-  aura::test::SetUsePopupAsRootWindowForTest(false);
+  ui::test::SetUsePopupAsRootWindowForTest(false);
   // Kill the viewer process if we spun one up.
   metro_viewer_host_.reset();
 
@@ -191,10 +193,10 @@ void AshTestBase::TearDown() {
   gfx::Display::SetInternalDisplayId(gfx::Display::kInvalidDisplayID);
 }
 
-aura::test::EventGenerator& AshTestBase::GetEventGenerator() {
+ui::test::EventGenerator& AshTestBase::GetEventGenerator() {
   if (!event_generator_) {
     event_generator_.reset(
-        new aura::test::EventGenerator(new AshEventGeneratorDelegate()));
+        new ui::test::EventGenerator(new AshEventGeneratorDelegate()));
   }
   return *event_generator_.get();
 }
@@ -260,7 +262,7 @@ aura::Window* AshTestBase::CreateTestWindowInShellWithDelegateAndType(
     aura::Window* root = ash::Shell::GetInstance()->display_controller()->
         GetRootWindowForDisplayId(display.id());
     gfx::Point origin = bounds.origin();
-    wm::ConvertPointFromScreen(root, &origin);
+    ::wm::ConvertPointFromScreen(root, &origin);
     window->SetBounds(gfx::Rect(origin, bounds.size()));
     aura::client::ParentWindowWithContext(window, root, bounds);
   }

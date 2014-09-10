@@ -20,17 +20,20 @@
 #ifndef MediaQueryListListener_h
 #define MediaQueryListListener_h
 
-#include "bindings/v8/ScriptState.h"
-#include "bindings/v8/ScriptValue.h"
+#include "bindings/core/v8/ScriptState.h"
+#include "bindings/core/v8/ScriptValue.h"
+#include "core/css/MediaQueryList.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class MediaQueryList;
 
 // See http://dev.w3.org/csswg/cssom-view/#the-mediaquerylist-interface
-
+// FIXME: For JS use this should become a DOM Event.
+// C++ listeners can subclass this class and override call(). The no-argument constructor
+// is provided for this purpose.
 class MediaQueryListListener : public RefCountedWillBeGarbageCollectedFinalized<MediaQueryListListener> {
 public:
     static PassRefPtrWillBeRawPtr<MediaQueryListListener> create(ScriptState* scriptState, const ScriptValue& value)
@@ -39,11 +42,23 @@ public:
             return nullptr;
         return adoptRefWillBeNoop(new MediaQueryListListener(scriptState, value));
     }
-    void queryChanged(MediaQueryList*);
+    virtual ~MediaQueryListListener();
 
-    bool operator==(const MediaQueryListListener& other) const { return m_function == other.m_function; }
+    virtual void call();
 
-    void trace(Visitor*) { }
+    // Used to keep the MediaQueryList alive and registered with the MediaQueryMatcher
+    // as long as the listener exists.
+    void setMediaQueryList(MediaQueryList* query) { m_query = query; }
+    void clearMediaQueryList() { m_query = nullptr; }
+
+    bool operator==(const MediaQueryListListener& other) const { return m_function.isNull() ? this == &other : m_function == other.m_function; }
+
+    virtual void trace(Visitor* visitor) { visitor->trace(m_query); }
+
+protected:
+    MediaQueryListListener();
+
+    RefPtrWillBeMember<MediaQueryList> m_query;
 
 private:
     MediaQueryListListener(ScriptState*, const ScriptValue&);

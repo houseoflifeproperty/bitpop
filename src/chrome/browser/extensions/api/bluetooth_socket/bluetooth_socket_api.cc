@@ -4,6 +4,8 @@
 
 #include "chrome/browser/extensions/api/bluetooth_socket/bluetooth_socket_api.h"
 
+#include <stdint.h>
+
 #include "chrome/browser/extensions/api/bluetooth_socket/bluetooth_api_socket.h"
 #include "chrome/browser/extensions/api/bluetooth_socket/bluetooth_socket_event_dispatcher.h"
 #include "chrome/common/extensions/api/bluetooth/bluetooth_manifest_data.h"
@@ -25,6 +27,7 @@ using extensions::api::bluetooth_socket::SocketProperties;
 namespace {
 
 const char kDeviceNotFoundError[] = "Device not found";
+const char kInvalidPsmError[] = "Invalid PSM";
 const char kInvalidUuidError[] = "Invalid UUID";
 const char kPermissionDeniedError[] = "Permission denied";
 const char kSocketNotFoundError[] = "Socket not found";
@@ -36,8 +39,8 @@ linked_ptr<SocketInfo> CreateSocketInfo(int socket_id,
   // This represents what we know about the socket, and does not call through
   // to the system.
   socket_info->socket_id = socket_id;
-  if (!socket->name().empty()) {
-    socket_info->name.reset(new std::string(socket->name()));
+  if (socket->name()) {
+    socket_info->name.reset(new std::string(*socket->name()));
   }
   socket_info->persistent = socket->persistent();
   if (socket->buffer_size() > 0) {
@@ -80,6 +83,34 @@ extensions::api::BluetoothSocketEventDispatcher* GetSocketEventDispatcher(
   return socket_event_dispatcher;
 }
 
+// Returns |true| if |psm| is a valid PSM.
+// Per the Bluetooth specification, the PSM field must be at least two octets in
+// length, with least significant bit of the least significant octet equal to
+// '1' and the least significant bit of the most significant octet equal to '0'.
+bool IsValidPsm(int psm) {
+  if (psm <= 0)
+    return false;
+
+  std::vector<int16_t> octets;
+  while (psm > 0) {
+     octets.push_back(psm & 0xFF);
+     psm = psm >> 8;
+  }
+
+  if (octets.size() < 2U)
+    return false;
+
+  // The least significant bit of the least significant octet must be '1'.
+  if ((octets.front() & 0x01) != 1)
+    return false;
+
+  // The least significant bit of the most significant octet must be '0'.
+  if ((octets.back() & 0x01) != 0)
+    return false;
+
+  return true;
+}
+
 }  // namespace
 
 namespace extensions {
@@ -98,7 +129,7 @@ bool BluetoothSocketAsyncApiFunction::RunAsync() {
 }
 
 bool BluetoothSocketAsyncApiFunction::PrePrepare() {
-  if (!BluetoothManifestData::CheckSocketPermitted(GetExtension())) {
+  if (!BluetoothManifestData::CheckSocketPermitted(extension())) {
     error_ = kPermissionDeniedError;
     return false;
   }
@@ -264,15 +295,20 @@ void BluetoothSocketListenFunction::OnGetAdapter(
   }
 
   BluetoothPermissionRequest param(uuid());
-  if (!BluetoothManifestData::CheckRequest(GetExtension(), param)) {
+  if (!BluetoothManifestData::CheckRequest(extension(), param)) {
     error_ = kPermissionDeniedError;
     AsyncWorkCompleted();
     return;
   }
 
+  scoped_ptr<std::string> name;
+  if (socket->name())
+    name.reset(new std::string(*socket->name()));
+
   CreateService(
       adapter,
       bluetooth_uuid,
+      name.Pass(),
       base::Bind(&BluetoothSocketListenFunction::OnCreateService, this),
       base::Bind(&BluetoothSocketListenFunction::OnCreateServiceError, this));
 }
@@ -330,18 +366,20 @@ bool BluetoothSocketListenUsingRfcommFunction::CreateParams() {
 void BluetoothSocketListenUsingRfcommFunction::CreateService(
     scoped_refptr<device::BluetoothAdapter> adapter,
     const device::BluetoothUUID& uuid,
+    scoped_ptr<std::string> name,
     const device::BluetoothAdapter::CreateServiceCallback& callback,
     const device::BluetoothAdapter::CreateServiceErrorCallback&
         error_callback) {
-  int channel = device::BluetoothAdapter::kChannelAuto;
+  device::BluetoothAdapter::ServiceOptions service_options;
+  service_options.name = name.Pass();
 
   ListenOptions* options = params_->options.get();
   if (options) {
     if (options->channel.get())
-      channel = *(options->channel);
+      service_options.channel.reset(new int(*(options->channel)));
   }
 
-  adapter->CreateRfcommService(uuid, channel, callback, error_callback);
+  adapter->CreateRfcommService(uuid, service_options, callback, error_callback);
 }
 
 void BluetoothSocketListenUsingRfcommFunction::CreateResults() {
@@ -371,29 +409,40 @@ bool BluetoothSocketListenUsingL2capFunction::CreateParams() {
 void BluetoothSocketListenUsingL2capFunction::CreateService(
     scoped_refptr<device::BluetoothAdapter> adapter,
     const device::BluetoothUUID& uuid,
+    scoped_ptr<std::string> name,
     const device::BluetoothAdapter::CreateServiceCallback& callback,
     const device::BluetoothAdapter::CreateServiceErrorCallback&
         error_callback) {
-  int psm = device::BluetoothAdapter::kPsmAuto;
+  device::BluetoothAdapter::ServiceOptions service_options;
+  service_options.name = name.Pass();
 
   ListenOptions* options = params_->options.get();
   if (options) {
-    if (options->psm.get())
-      psm = *(options->psm);
+    if (options->psm) {
+      int psm = *options->psm;
+      if (!IsValidPsm(psm)) {
+        error_callback.Run(kInvalidPsmError);
+        return;
+      }
+
+      service_options.psm.reset(new int(psm));
+    }
   }
 
-  adapter->CreateL2capService(uuid, psm, callback, error_callback);
+  adapter->CreateL2capService(uuid, service_options, callback, error_callback);
 }
 
 void BluetoothSocketListenUsingL2capFunction::CreateResults() {
   results_ = bluetooth_socket::ListenUsingL2cap::Results::Create();
 }
 
-BluetoothSocketConnectFunction::BluetoothSocketConnectFunction() {}
+BluetoothSocketAbstractConnectFunction::
+    BluetoothSocketAbstractConnectFunction() {}
 
-BluetoothSocketConnectFunction::~BluetoothSocketConnectFunction() {}
+BluetoothSocketAbstractConnectFunction::
+    ~BluetoothSocketAbstractConnectFunction() {}
 
-bool BluetoothSocketConnectFunction::Prepare() {
+bool BluetoothSocketAbstractConnectFunction::Prepare() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   params_ = bluetooth_socket::Connect::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params_.get());
@@ -402,13 +451,13 @@ bool BluetoothSocketConnectFunction::Prepare() {
   return socket_event_dispatcher_ != NULL;
 }
 
-void BluetoothSocketConnectFunction::AsyncWorkStart() {
+void BluetoothSocketAbstractConnectFunction::AsyncWorkStart() {
   DCHECK(BrowserThread::CurrentlyOn(work_thread_id()));
   device::BluetoothAdapterFactory::GetAdapter(
-      base::Bind(&BluetoothSocketConnectFunction::OnGetAdapter, this));
+      base::Bind(&BluetoothSocketAbstractConnectFunction::OnGetAdapter, this));
 }
 
-void BluetoothSocketConnectFunction::OnGetAdapter(
+void BluetoothSocketAbstractConnectFunction::OnGetAdapter(
     scoped_refptr<device::BluetoothAdapter> adapter) {
   DCHECK(BrowserThread::CurrentlyOn(work_thread_id()));
   BluetoothApiSocket* socket = GetSocket(params_->socket_id);
@@ -433,19 +482,16 @@ void BluetoothSocketConnectFunction::OnGetAdapter(
   }
 
   BluetoothPermissionRequest param(params_->uuid);
-  if (!BluetoothManifestData::CheckRequest(GetExtension(), param)) {
+  if (!BluetoothManifestData::CheckRequest(extension(), param)) {
     error_ = kPermissionDeniedError;
     AsyncWorkCompleted();
     return;
   }
 
-  device->ConnectToService(
-      uuid,
-      base::Bind(&BluetoothSocketConnectFunction::OnConnect, this),
-      base::Bind(&BluetoothSocketConnectFunction::OnConnectError, this));
+  ConnectToService(device, uuid);
 }
 
-void BluetoothSocketConnectFunction::OnConnect(
+void BluetoothSocketAbstractConnectFunction::OnConnect(
     scoped_refptr<device::BluetoothSocket> socket) {
   DCHECK(BrowserThread::CurrentlyOn(work_thread_id()));
 
@@ -469,11 +515,24 @@ void BluetoothSocketConnectFunction::OnConnect(
   AsyncWorkCompleted();
 }
 
-void BluetoothSocketConnectFunction::OnConnectError(
+void BluetoothSocketAbstractConnectFunction::OnConnectError(
     const std::string& message) {
   DCHECK(BrowserThread::CurrentlyOn(work_thread_id()));
   error_ = message;
   AsyncWorkCompleted();
+}
+
+BluetoothSocketConnectFunction::BluetoothSocketConnectFunction() {}
+
+BluetoothSocketConnectFunction::~BluetoothSocketConnectFunction() {}
+
+void BluetoothSocketConnectFunction::ConnectToService(
+    device::BluetoothDevice* device,
+    const device::BluetoothUUID& uuid) {
+  device->ConnectToService(
+      uuid,
+      base::Bind(&BluetoothSocketConnectFunction::OnConnect, this),
+      base::Bind(&BluetoothSocketConnectFunction::OnConnectError, this));
 }
 
 BluetoothSocketDisconnectFunction::BluetoothSocketDisconnectFunction() {}

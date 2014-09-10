@@ -1,6 +1,6 @@
 /***********************************************************************
  * COPYRIGHT: 
- * Copyright (c) 1997-2010, International Business Machines Corporation
+ * Copyright (c) 1997-2013, International Business Machines Corporation
  * and others. All Rights Reserved.
  ***********************************************************************/
 
@@ -14,6 +14,7 @@
 #include "unicode/gregocal.h"
 #include "unicode/resbund.h"
 #include "unicode/strenum.h"
+#include "unicode/uversion.h"
 #include "tztest.h"
 #include "cmemory.h"
 #include "putilimp.h"
@@ -34,35 +35,45 @@
 // class TimeZoneTest
 // *****************************************************************************
 
-// TODO: We should probably read following data at runtime, so we can update
-// these values every release with necessary data changes.
-const int32_t TimeZoneTest::REFERENCE_YEAR = 2009;
-const char * TimeZoneTest::REFERENCE_DATA_VERSION = "2009d";
+// Some test case data is current date/tzdata version sensitive and producing errors
+// when year/rule are changed. Although we want to keep our eyes on test failures
+// caused by tzdata changes while development, keep maintaining test data in maintenance
+// stream is a little bit hassle. ICU 49 or later versions are using minor version field
+// to indicate a development build (0) or official release build (others). For development
+// builds, a test failure triggers an error, while release builds only report them in
+// verbose mode with logln.
+static UBool isDevelopmentBuild = (U_ICU_VERSION_MINOR_NUM == 0);
 
 void TimeZoneTest::runIndexedTest( int32_t index, UBool exec, const char* &name, char* /*par*/ )
 {
-    if (exec) logln("TestSuite TestTimeZone");
-    switch (index) {
-        CASE(0, TestPRTOffset);
-        CASE(1, TestVariousAPI518);
-        CASE(2, TestGetAvailableIDs913);
-        CASE(3, TestGenericAPI);
-        CASE(4, TestRuleAPI);
-        CASE(5, TestShortZoneIDs);
-        CASE(6, TestCustomParse);
-        CASE(7, TestDisplayName);
-        CASE(8, TestDSTSavings);
-        CASE(9, TestAlternateRules);
-        CASE(10,TestCountries); 
-        CASE(11,TestHistorical);
-        CASE(12,TestEquivalentIDs);
-        CASE(13, TestAliasedNames);
-        CASE(14, TestFractionalDST);
-        CASE(15, TestFebruary);
-        CASE(16, TestCanonicalID);
-        CASE(17, TestDisplayNamesMeta);
-       default: name = ""; break;
+    if (exec) {
+        logln("TestSuite TestTimeZone");
     }
+    TESTCASE_AUTO_BEGIN;
+    TESTCASE_AUTO(TestPRTOffset);
+    TESTCASE_AUTO(TestVariousAPI518);
+    TESTCASE_AUTO(TestGetAvailableIDs913);
+    TESTCASE_AUTO(TestGenericAPI);
+    TESTCASE_AUTO(TestRuleAPI);
+    TESTCASE_AUTO(TestShortZoneIDs);
+    TESTCASE_AUTO(TestCustomParse);
+    TESTCASE_AUTO(TestDisplayName);
+    TESTCASE_AUTO(TestDSTSavings);
+    TESTCASE_AUTO(TestAlternateRules);
+    TESTCASE_AUTO(TestCountries); 
+    TESTCASE_AUTO(TestHistorical);
+    TESTCASE_AUTO(TestEquivalentIDs);
+    TESTCASE_AUTO(TestAliasedNames);
+    TESTCASE_AUTO(TestFractionalDST);
+    TESTCASE_AUTO(TestFebruary);
+    TESTCASE_AUTO(TestCanonicalID);
+    TESTCASE_AUTO(TestDisplayNamesMeta);
+    TESTCASE_AUTO(TestGetRegion);
+    TESTCASE_AUTO(TestGetAvailableIDsNew);
+    TESTCASE_AUTO(TestGetUnknown);
+    TESTCASE_AUTO(TestGetWindowsID);
+    TESTCASE_AUTO(TestGetIDForWindowsID);
+    TESTCASE_AUTO_END;
 }
 
 const int32_t TimeZoneTest::millisPerHour = 3600000;
@@ -413,6 +424,10 @@ TimeZoneTest::TestGetAvailableIDs913()
     UnicodeString *buf = new UnicodeString("TimeZone::createEnumeration() = { ");
     int32_t s_length;
     StringEnumeration* s = TimeZone::createEnumeration();
+    if (s == NULL) {
+        dataerrln("Unable to create TimeZone enumeration");
+        return;
+    }
     s_length = s->count(ec);
     for (i = 0; i < s_length;++i) {
         if (i > 0) *buf += ", ";
@@ -501,7 +516,7 @@ TimeZoneTest::TestGetAvailableIDs913()
     UnicodeString temp;
     if (tz == 0)
         errln("FAIL: getTimeZone(NON_EXISTENT) = null");
-    else if (tz->getID(temp) != "GMT")
+    else if (tz->getID(temp) != UCAL_UNKNOWN_ZONE_ID)
         errln("FAIL: getTimeZone(NON_EXISTENT) = " + temp);
     delete tz;
 
@@ -509,6 +524,238 @@ TimeZoneTest::TestGetAvailableIDs913()
     delete s;
 }
 
+void
+TimeZoneTest::TestGetAvailableIDsNew()
+{
+    UErrorCode ec = U_ZERO_ERROR;
+    StringEnumeration *any, *canonical, *canonicalLoc;
+    StringEnumeration *any_US, *canonical_US, *canonicalLoc_US;
+    StringEnumeration *any_W5, *any_CA_W5;
+    StringEnumeration *any_US_E14;
+    int32_t rawOffset;
+    const UnicodeString *id1, *id2;
+    UnicodeString canonicalID;
+    UBool isSystemID;
+    char region[4];
+    int32_t zoneCount;
+
+    any = canonical = canonicalLoc = any_US = canonical_US = canonicalLoc_US = any_W5 = any_CA_W5 = any_US_E14 = NULL;
+    
+    any = TimeZone::createTimeZoneIDEnumeration(UCAL_ZONE_TYPE_ANY, NULL, NULL, ec);
+    if (U_FAILURE(ec)) {
+        dataerrln("Failed to create enumration for ANY");
+        goto cleanup;
+    }
+
+    canonical = TimeZone::createTimeZoneIDEnumeration(UCAL_ZONE_TYPE_CANONICAL, NULL, NULL, ec);
+    if (U_FAILURE(ec)) {
+        errln("Failed to create enumration for CANONICAL");
+        goto cleanup;
+    }
+
+    canonicalLoc = TimeZone::createTimeZoneIDEnumeration(UCAL_ZONE_TYPE_CANONICAL_LOCATION, NULL, NULL, ec);
+    if (U_FAILURE(ec)) {
+        errln("Failed to create enumration for CANONICALLOC");
+        goto cleanup;
+    }
+
+    any_US = TimeZone::createTimeZoneIDEnumeration(UCAL_ZONE_TYPE_ANY, "US", NULL, ec);
+    if (U_FAILURE(ec)) {
+        errln("Failed to create enumration for ANY_US");
+        goto cleanup;
+    }
+
+    canonical_US = TimeZone::createTimeZoneIDEnumeration(UCAL_ZONE_TYPE_CANONICAL, "US", NULL, ec);
+    if (U_FAILURE(ec)) {
+        errln("Failed to create enumration for CANONICAL_US");
+        goto cleanup;
+    }
+
+    canonicalLoc_US = TimeZone::createTimeZoneIDEnumeration(UCAL_ZONE_TYPE_CANONICAL_LOCATION, "US", NULL, ec);
+    if (U_FAILURE(ec)) {
+        errln("Failed to create enumration for CANONICALLOC_US");
+        goto cleanup;
+    }
+
+    rawOffset = (-5)*60*60*1000;
+    any_W5 = TimeZone::createTimeZoneIDEnumeration(UCAL_ZONE_TYPE_ANY, NULL, &rawOffset, ec);
+    if (U_FAILURE(ec)) {
+        errln("Failed to create enumration for ANY_W5");
+        goto cleanup;
+    }
+
+    any_CA_W5 = TimeZone::createTimeZoneIDEnumeration(UCAL_ZONE_TYPE_ANY, "CA", &rawOffset, ec);
+    if (U_FAILURE(ec)) {
+        errln("Failed to create enumration for ANY_CA_W5");
+        goto cleanup;
+    }
+
+    rawOffset = 14*60*60*1000;
+    any_US_E14 = TimeZone::createTimeZoneIDEnumeration(UCAL_ZONE_TYPE_ANY, "US", &rawOffset, ec);
+    if (U_FAILURE(ec)) {
+        errln("Failed to create enumration for ANY_US_E14");
+        goto cleanup;
+    }
+
+    checkContainsAll(any, "ANY", canonical, "CANONICAL");
+    checkContainsAll(canonical, "CANONICAL", canonicalLoc, "CANONICALLOC");
+
+    checkContainsAll(any, "ANY", any_US, "ANY_US");
+    checkContainsAll(canonical, "CANONICAL", canonical_US, "CANONICAL_US");
+    checkContainsAll(canonicalLoc, "CANONICALLOC", canonicalLoc_US, "CANONICALLOC_US");
+
+    checkContainsAll(any_US, "ANY_US", canonical_US, "CANONICAL_US");
+    checkContainsAll(canonical_US, "CANONICAL_US", canonicalLoc_US, "CANONICALLOC_US");
+
+    checkContainsAll(any, "ANY", any_W5, "ANY_W5");
+    checkContainsAll(any_W5, "ANY_W5", any_CA_W5, "ANY_CA_W5");
+
+    // And ID in any set, but not in canonical set must not be a canonical ID
+    any->reset(ec);
+    while ((id1 = any->snext(ec)) != NULL) {
+        UBool found = FALSE;
+        canonical->reset(ec);
+        while ((id2 = canonical->snext(ec)) != NULL) {
+            if (*id1 == *id2) {
+                found = TRUE;
+                break;
+            }
+        }
+        if (U_FAILURE(ec)) {
+            break;
+        }
+        if (!found) {
+            TimeZone::getCanonicalID(*id1, canonicalID, isSystemID, ec);
+            if (U_FAILURE(ec)) {
+                break;
+            }
+            if (*id1 == canonicalID) {
+                errln((UnicodeString)"FAIL: canonicalID [" + *id1 + "] is not in CANONICAL");
+            }
+            if (!isSystemID) {
+                errln((UnicodeString)"FAIL: ANY contains non-system ID: " + *id1);
+            }
+        }
+    }
+    if (U_FAILURE(ec)) {
+        errln("Error checking IDs in ANY, but not in CANONICAL");
+        ec = U_ZERO_ERROR;
+    }
+
+    // canonical set must contains only canonical IDs
+    canonical->reset(ec);
+    while ((id1 = canonical->snext(ec)) != NULL) {
+        TimeZone::getCanonicalID(*id1, canonicalID, isSystemID, ec);
+        if (U_FAILURE(ec)) {
+            break;
+        }
+        if (*id1 != canonicalID) {
+            errln((UnicodeString)"FAIL: CANONICAL contains non-canonical ID: " + *id1);
+        }
+        if (!isSystemID) {
+            errln((UnicodeString)"FAILE: CANONICAL contains non-system ID: " + *id1);
+        }
+    }
+    if (U_FAILURE(ec)) {
+        errln("Error checking IDs in CANONICAL");
+        ec = U_ZERO_ERROR;
+    }
+
+    // canonicalLoc set must contain only canonical location IDs
+    canonicalLoc->reset(ec);
+    while ((id1 = canonicalLoc->snext(ec)) != NULL) {
+        TimeZone::getRegion(*id1, region, sizeof(region), ec);
+        if (U_FAILURE(ec)) {
+            break;
+        }
+        if (uprv_strcmp(region, "001") == 0) {
+            errln((UnicodeString)"FAIL: CANONICALLOC contains non location zone: " + *id1);
+        }
+    }
+    if (U_FAILURE(ec)) {
+        errln("Error checking IDs in CANONICALLOC");
+        ec = U_ZERO_ERROR;
+    }
+
+    // any_US must contain only US zones
+    any_US->reset(ec);
+    while ((id1 = any_US->snext(ec)) != NULL) {
+        TimeZone::getRegion(*id1, region, sizeof(region), ec);
+        if (U_FAILURE(ec)) {
+            break;
+        }
+        if (uprv_strcmp(region, "US") != 0) {
+            errln((UnicodeString)"FAIL: ANY_US contains non-US zone ID: " + *id1);
+        }
+    }
+    if (U_FAILURE(ec)) {
+        errln("Error checking IDs in ANY_US");
+        ec = U_ZERO_ERROR;
+    }
+
+    // any_W5 must contain only GMT-05:00 zones
+    any_W5->reset(ec);
+    while ((id1 = any_W5->snext(ec)) != NULL) {
+        TimeZone *tz = TimeZone::createTimeZone(*id1);
+        if (tz->getRawOffset() != (-5)*60*60*1000) {
+            errln((UnicodeString)"FAIL: ANY_W5 contains a zone whose offset is not -05:00: " + *id1);
+        }
+        delete tz;
+    }
+    if (U_FAILURE(ec)) {
+        errln("Error checking IDs in ANY_W5");
+        ec = U_ZERO_ERROR;
+    }
+
+    // No US zone swith GMT+14:00
+    zoneCount = any_US_E14->count(ec);
+    if (U_FAILURE(ec)) {
+        errln("Error checking IDs in ANY_US_E14");
+        ec = U_ZERO_ERROR;
+    } else if (zoneCount != 0) {
+        errln("FAIL: ANY_US_E14 must be empty");
+    }
+
+cleanup:
+    delete any;
+    delete canonical;
+    delete canonicalLoc;
+    delete any_US;
+    delete canonical_US;
+    delete canonicalLoc_US;
+    delete any_W5;
+    delete any_CA_W5;
+    delete any_US_E14;
+}
+
+void
+TimeZoneTest::checkContainsAll(StringEnumeration *s1, const char *name1,
+        StringEnumeration *s2, const char *name2)
+{
+    UErrorCode ec = U_ZERO_ERROR;
+    const UnicodeString *id1, *id2;
+
+    s2->reset(ec);
+
+    while ((id2 = s2->snext(ec)) != NULL) {
+        UBool found = FALSE;
+        s1->reset(ec);
+        while ((id1 = s1->snext(ec)) != NULL) {
+            if (*id1 == *id2) {
+                found = TRUE;
+                break;
+            }
+        }
+        if (!found) {
+            errln((UnicodeString)"FAIL: " + name1 + "does not contain "
+                + *id2 + " in " + name2);
+        }
+    }
+
+    if (U_FAILURE(ec)) {
+        errln((UnicodeString)"Error checkContainsAll for " + name1 + " - " + name2);
+    }
+}
 
 /**
  * NOTE: As of ICU 2.8, this test confirms that the "tz.alias"
@@ -591,37 +838,6 @@ TimeZoneTest::TestGetAvailableIDs913()
  */
 void TimeZoneTest::TestShortZoneIDs()
 {
-    UErrorCode status = U_ZERO_ERROR;
-
-    // This test case is tzdata version sensitive.
-    UBool isNonReferenceTzdataVersion = FALSE;
-    const char *tzdataVer = TimeZone::getTZDataVersion(status);
-    if (failure(status, "getTZDataVersion")) return;
-    if (uprv_strcmp(tzdataVer, TimeZoneTest::REFERENCE_DATA_VERSION) != 0) {
-        // Note: We want to display a warning message here if
-        // REFERENCE_DATA_VERSION is out of date - so we
-        // do not forget to update the value before GA.
-        isNonReferenceTzdataVersion = TRUE;
-        logln(UnicodeString("Warning: Active tzdata version (") + tzdataVer +
-            ") does not match the reference tzdata version ("
-            + REFERENCE_DATA_VERSION + ") for this test case data.");
-    }
-
-    // Note: useDaylightTime returns true if DST is observed
-    // in the time zone in the current calendar year.  The test
-    // data is valid for the date after the reference year below.
-    // If system clock is before the year, some test cases may
-    // fail.
-    GregorianCalendar cal(*TimeZone::getGMT(), status);
-    if (failure(status, "GregorianCalendar")) return;
-    cal.set(TimeZoneTest::REFERENCE_YEAR, UCAL_JANUARY, 2); // day 2 in GMT
-
-    UBool isDateBeforeReferenceYear = ucal_getNow() < cal.getTime(status);
-    if (failure(status, "Calendar::getTime")) return;
-    if (isDateBeforeReferenceYear) {
-        logln("Warning: Past time is set to the system clock.  Some test cases may not return expected results.");
-    }
-
     int32_t i;
     // Create a small struct to hold the array
     struct
@@ -632,41 +848,40 @@ void TimeZoneTest::TestShortZoneIDs()
     }
     kReferenceList [] =
     {
-        {"MIT", -660, FALSE},
-        {"HST", -600, FALSE},
-        {"AST", -540, TRUE},
-        {"PST", -480, TRUE},
-        {"PNT", -420, FALSE},
+        {"HST", -600, FALSE}, // Olson northamerica -10:00
+        {"AST", -540, TRUE},  // ICU Link - America/Anchorage
+        {"PST", -480, TRUE},  // ICU Link - America/Los_Angeles
+        {"PNT", -420, FALSE}, // ICU Link - America/Phoenix
         {"MST", -420, FALSE}, // updated Aug 2003 aliu
-        {"CST", -360, TRUE},
-        {"IET", -300, TRUE},  // updated Jan 2006 srl
-        {"EST", -300, FALSE}, // updated Aug 2003 aliu
-        {"PRT", -240, FALSE},
-        {"CNT", -210, TRUE},
-        {"AGT", -180, TRUE}, // updated by tzdata2007k
-        {"BET", -180, TRUE},
-        {"GMT", 0, FALSE},
-        {"UTC", 0, FALSE}, // ** srl: seems broken in C++
-        {"ECT", 60, TRUE},
-        {"MET", 60, TRUE}, // updated 12/3/99 aliu
-        {"ART", 120, TRUE},
-        {"EET", 120, TRUE},
-        {"CAT", 120, FALSE}, // Africa/Harare
-        {"EAT", 180, FALSE},
-        {"NET", 240, TRUE}, // updated 12/3/99 aliu
-        {"PLT", 300, FALSE}, // updated by 2008c - no DST after 2008
-        {"IST", 330, FALSE},
-        {"BST", 360, FALSE},
-        {"VST", 420, FALSE},
-        {"CTT", 480, FALSE}, // updated Aug 2003 aliu
-        {"JST", 540, FALSE},
-        {"ACT", 570, FALSE}, // updated Aug 2003 aliu
-        {"AET", 600, TRUE},
-        {"SST", 660, FALSE},
-        {"NST", 720, TRUE}, // Pacific/Auckland
+        {"CST", -360, TRUE},  // Olson northamerica -7:00
+        {"IET", -300, TRUE},  // ICU Link - America/Indiana/Indianapolis
+        {"EST", -300, FALSE}, // Olson northamerica -5:00
+        {"PRT", -240, FALSE}, // ICU Link - America/Puerto_Rico
+        {"CNT", -210, TRUE},  // ICU Link - America/St_Johns
+        {"AGT", -180, FALSE}, // ICU Link - America/Argentina/Buenos_Aires
+        {"BET", -180, TRUE},  // ICU Link - America/Sao_Paulo
+        {"GMT", 0, FALSE},    // Olson etcetera Link - Etc/GMT
+        {"UTC", 0, FALSE},    // Olson etcetera 0
+        {"ECT", 60, TRUE},    // ICU Link - Europe/Paris
+        {"MET", 60, TRUE},    // Olson europe 1:00 C-Eur
+        {"CAT", 120, FALSE},  // ICU Link - Africa/Harare
+        {"ART", 120, FALSE},  // ICU Link - Africa/Cairo
+        {"EET", 120, TRUE},   // Olson europe 2:00 EU
+        {"EAT", 180, FALSE},  // ICU Link - Africa/Addis_Ababa
+        {"NET", 240, FALSE},  // ICU Link - Asia/Yerevan
+        {"PLT", 300, FALSE},  // ICU Link - Asia/Karachi
+        {"IST", 330, FALSE},  // ICU Link - Asia/Kolkata
+        {"BST", 360, FALSE},  // ICU Link - Asia/Dhaka
+        {"VST", 420, FALSE},  // ICU Link - Asia/Ho_Chi_Minh
+        {"CTT", 480, FALSE},  // ICU Link - Asia/Shanghai
+        {"JST", 540, FALSE},  // ICU Link - Asia/Tokyo
+        {"ACT", 570, FALSE},  // ICU Link - Australia/Darwin
+        {"AET", 600, TRUE},   // ICU Link - Australia/Sydney
+        {"SST", 660, FALSE},  // ICU Link - Pacific/Guadalcanal
+        {"NST", 720, TRUE},   // ICU Link - Pacific/Auckland
+        {"MIT", 780, TRUE},   // ICU Link - Pacific/Apia
 
-        // From icuzones:
-        {"Etc/Unknown", 0, FALSE},
+        {"Etc/Unknown", 0, FALSE},  // CLDR
 
         {"SystemV/AST4ADT", -240, TRUE},
         {"SystemV/EST5EDT", -300, TRUE},
@@ -698,13 +913,13 @@ void TimeZoneTest::TestShortZoneIDs()
         // Check daylight usage.
         UBool usesDaylight = tz->useDaylightTime();
         if (usesDaylight != kReferenceList[i].daylight) {
-            if (isNonReferenceTzdataVersion || isDateBeforeReferenceYear) {
+            if (!isDevelopmentBuild) {
                 logln("Warning: Time Zone " + itsID + " use daylight is " +
                       (usesDaylight?"TRUE":"FALSE") +
                       " but it should be " +
                       ((kReferenceList[i].daylight)?"TRUE":"FALSE"));
             } else {
-                errln("FAIL: Time Zone " + itsID + " use daylight is " +
+                dataerrln("FAIL: Time Zone " + itsID + " use daylight is " +
                       (usesDaylight?"TRUE":"FALSE") +
                       " but it should be " +
                       ((kReferenceList[i].daylight)?"TRUE":"FALSE"));
@@ -715,12 +930,12 @@ void TimeZoneTest::TestShortZoneIDs()
         // Check offset
         int32_t offsetInMinutes = tz->getRawOffset()/60000;
         if (offsetInMinutes != kReferenceList[i].offset) {
-            if (isNonReferenceTzdataVersion || isDateBeforeReferenceYear) {
+            if (!isDevelopmentBuild) {
                 logln("FAIL: Time Zone " + itsID + " raw offset is " +
                       offsetInMinutes +
                       " but it should be " + kReferenceList[i].offset);
             } else {
-                errln("FAIL: Time Zone " + itsID + " raw offset is " +
+                dataerrln("FAIL: Time Zone " + itsID + " raw offset is " +
                       offsetInMinutes +
                       " but it should be " + kReferenceList[i].offset);
             }
@@ -962,7 +1177,7 @@ void TimeZoneTest::TestCustomParse()
             formatOffset(ioffset, offset);
             formatTZID(ioffset, expectedID);
             logln(id + " -> " + itsID + " " + offset);
-            if (exp == kUnparseable && itsID != "GMT") {
+            if (exp == kUnparseable && itsID != UCAL_UNKNOWN_ZONE_ID) {
                 errln("Expected parse failure for " + id +
                       ", got offset of " + offset +
                       ", id " + itsID);
@@ -1205,8 +1420,8 @@ TimeZoneTest::TestDisplayName()
 
         {FALSE, TimeZone::SHORT_COMMONLY_USED, "PST"},
         {TRUE,  TimeZone::SHORT_COMMONLY_USED, "PDT"},
-        {FALSE, TimeZone::GENERIC_LOCATION,  "United States (Los Angeles)"},
-        {TRUE,  TimeZone::GENERIC_LOCATION,  "United States (Los Angeles)"},
+        {FALSE, TimeZone::GENERIC_LOCATION,  "Los Angeles Time"},
+        {TRUE,  TimeZone::GENERIC_LOCATION,  "Los Angeles Time"},
 
         {FALSE, TimeZone::LONG, ""}
     };
@@ -1479,6 +1694,10 @@ void TimeZoneTest::TestCountries() {
     UErrorCode ec = U_ZERO_ERROR;
     int32_t n;
     StringEnumeration* s = TimeZone::createEnumeration("US");
+    if (s == NULL) {
+        dataerrln("Unable to create TimeZone enumeration for US");
+        return;
+    }
     n = s->count(ec);
     UBool la = FALSE, tokyo = FALSE;
     UnicodeString laZone("America/Los_Angeles", "");
@@ -1737,12 +1956,28 @@ void TimeZoneTest::TestCanonicalID() {
         const char *alias;
         const char *zone;
     } excluded1[] = {
+        {"Africa/Khartoum", "Africa/Juba"},
         {"America/Shiprock", "America/Denver"}, // America/Shiprock is defined as a Link to America/Denver in tzdata
-        {"America/Marigot", "America/Guadeloupe"}, 
-        {"America/St_Barthelemy", "America/Guadeloupe"},
+        {"America/Dominica", "America/Anguilla"},
+        {"America/Grenada", "America/Anguilla"},
+        {"America/Guadeloupe", "America/Anguilla"},
+        {"America/Marigot", "America/Anguilla"},
+        {"America/Montserrat", "America/Anguilla"},
+        {"America/Port_of_Spain", "America/Anguilla"},
+        {"America/St_Barthelemy", "America/Anguilla"},
+        {"America/St_Kitts", "America/Anguilla"},
+        {"America/St_Lucia", "America/Anguilla"},
+        {"America/St_Thomas", "America/Anguilla"},
+        {"America/St_Vincent", "America/Anguilla"},
+        {"America/Tortola", "America/Anguilla"},
+        {"America/Virgin", "America/Anguilla"},
+        {"America/Curacao", "America/Aruba"},
+        {"America/Kralendijk", "America/Aruba"},
+        {"America/Lower_Princes", "America/Aruba"},
         {"Antarctica/South_Pole", "Antarctica/McMurdo"},
         {"Atlantic/Jan_Mayen", "Europe/Oslo"},
         {"Arctic/Longyearbyen", "Europe/Oslo"},
+        {"Europe/Busingen", "Europe/Zurich"},
         {"Europe/Guernsey", "Europe/London"},
         {"Europe/Isle_of_Man", "Europe/London"},
         {"Europe/Jersey", "Europe/London"},
@@ -1755,6 +1990,9 @@ void TimeZoneTest::TestCanonicalID() {
         {"Europe/Mariehamn", "Europe/Helsinki"},
         {"Europe/San_Marino", "Europe/Rome"},
         {"Europe/Vatican", "Europe/Rome"},
+        {"Europe/Vaduz", "Europe/Zurich"},
+        {"Pacific/Auckland", "Antarctica/McMurdo"},
+        {"Pacific/Johnston", "Pacific/Honolulu"},
         {0, 0}
     };
 
@@ -1775,6 +2013,10 @@ void TimeZoneTest::TestCanonicalID() {
     UErrorCode ec = U_ZERO_ERROR;
     int32_t s_length, i, j, k;
     StringEnumeration* s = TimeZone::createEnumeration();
+    if (s == NULL) {
+        dataerrln("Unable to create TimeZone enumeration");
+        return;
+    }
     UnicodeString canonicalID, tmpCanonical;
     s_length = s->count(ec);
     for (i = 0; i < s_length;++i) {
@@ -1846,8 +2088,11 @@ void TimeZoneTest::TestCanonicalID() {
         {"GMT-091015", "GMT-09:10:15", FALSE},
         {"GMT+1:90", 0, FALSE},
         {"America/Argentina/Buenos_Aires", "America/Buenos_Aires", TRUE},
+        {"Etc/Unknown", "Etc/Unknown", FALSE},
         {"bogus", 0, FALSE},
         {"", 0, FALSE},
+        {"America/Marigot", "America/Marigot", TRUE},     // Olson link, but CLDR canonical (#8953)
+        {"Europe/Bratislava", "Europe/Bratislava", TRUE}, // Same as above
         {0, 0, FALSE}
     };
 
@@ -1887,7 +2132,7 @@ static struct   {
      //  zone id         locale   summer   format          expected display name
       {"Europe/London",     "en", FALSE, TimeZone::SHORT, "GMT"},
       {"Europe/London",     "en", FALSE, TimeZone::LONG,  "Greenwich Mean Time"},
-      {"Europe/London",     "en", TRUE,  TimeZone::SHORT, "GMT+01:00" /*"BST"*/},
+      {"Europe/London",     "en", TRUE,  TimeZone::SHORT, "GMT+1" /*"BST"*/},
       {"Europe/London",     "en", TRUE,  TimeZone::LONG,  "British Summer Time"},
       
       {"America/Anchorage", "en", FALSE, TimeZone::SHORT, "AKST"},
@@ -1896,27 +2141,36 @@ static struct   {
       {"America/Anchorage", "en", TRUE,  TimeZone::LONG,  "Alaska Daylight Time"},
       
       // Southern Hemisphere, all data from meta:Australia_Western
-      {"Australia/Perth",   "en", FALSE, TimeZone::SHORT, "GMT+08:00"/*"AWST"*/},
+      {"Australia/Perth",   "en", FALSE, TimeZone::SHORT, "GMT+8"/*"AWST"*/},
       {"Australia/Perth",   "en", FALSE, TimeZone::LONG,  "Australian Western Standard Time"},
-      {"Australia/Perth",   "en", TRUE,  TimeZone::SHORT, "GMT+09:00"/*"AWDT"*/},
+      // Note: Perth does not observe DST currently. When display name is missing,
+      // the localized GMT format with the current offset is used even daylight name was
+      // requested. See #9350.
+      {"Australia/Perth",   "en", TRUE,  TimeZone::SHORT, "GMT+8"/*"AWDT"*/},
       {"Australia/Perth",   "en", TRUE,  TimeZone::LONG,  "Australian Western Daylight Time"},
        
-      {"America/Sao_Paulo",  "en", FALSE, TimeZone::SHORT, "GMT-03:00"/*"BRT"*/},
-      {"America/Sao_Paulo",  "en", FALSE, TimeZone::LONG,  "Brasilia Time"},
-      {"America/Sao_Paulo",  "en", TRUE,  TimeZone::SHORT, "GMT-02:00"/*"BRST"*/},
+      {"America/Sao_Paulo",  "en", FALSE, TimeZone::SHORT, "GMT-3"/*"BRT"*/},
+      {"America/Sao_Paulo",  "en", FALSE, TimeZone::LONG,  "Brasilia Standard Time"},
+      {"America/Sao_Paulo",  "en", TRUE,  TimeZone::SHORT, "GMT-2"/*"BRST"*/},
       {"America/Sao_Paulo",  "en", TRUE,  TimeZone::LONG,  "Brasilia Summer Time"},
        
       // No Summer Time, but had it before 1983.
       {"Pacific/Honolulu",   "en", FALSE, TimeZone::SHORT, "HST"},
       {"Pacific/Honolulu",   "en", FALSE, TimeZone::LONG,  "Hawaii-Aleutian Standard Time"},
-      {"Pacific/Honolulu",   "en", TRUE,  TimeZone::SHORT, "HST"},
-      {"Pacific/Honolulu",   "en", TRUE,  TimeZone::LONG,  "Hawaii-Aleutian Standard Time"},
+      {"Pacific/Honolulu",   "en", TRUE,  TimeZone::SHORT, "HDT"},
+      {"Pacific/Honolulu",   "en", TRUE,  TimeZone::LONG,  "Hawaii-Aleutian Daylight Time"},
        
       // Northern, has Summer, not commonly used.
-      {"Europe/Helsinki",    "en", FALSE, TimeZone::SHORT, "GMT+02:00"/*"EET"*/},
-      {"Europe/Helsinki",    "en", FALSE, TimeZone::LONG,  "Eastern European Time"},
-      {"Europe/Helsinki",    "en", TRUE,  TimeZone::SHORT, "GMT+03:00"/*"EEST"*/},
-      {"Europe/Helsinki",    "en", true,  TimeZone::LONG,  "Eastern European Summer Time"},
+      {"Europe/Helsinki",    "en", FALSE, TimeZone::SHORT, "GMT+2"/*"EET"*/},
+      {"Europe/Helsinki",    "en", FALSE, TimeZone::LONG,  "Eastern European Standard Time"},
+      {"Europe/Helsinki",    "en", TRUE,  TimeZone::SHORT, "GMT+3"/*"EEST"*/},
+      {"Europe/Helsinki",    "en", TRUE,  TimeZone::LONG,  "Eastern European Summer Time"},
+
+      // Repeating the test data for DST.  The test data below trigger the problem reported
+      // by Ticket#6644
+      {"Europe/London",       "en", TRUE, TimeZone::SHORT, "GMT+1" /*"BST"*/},
+      {"Europe/London",       "en", TRUE, TimeZone::LONG,  "British Summer Time"},
+
       {NULL, NULL, FALSE, TimeZone::SHORT, NULL}   // NULL values terminate list
     };
 
@@ -1924,11 +2178,6 @@ void TimeZoneTest::TestDisplayNamesMeta() {
     UErrorCode status = U_ZERO_ERROR;
     GregorianCalendar cal(*TimeZone::getGMT(), status);
     if (failure(status, "GregorianCalendar", TRUE)) return;
-
-    UBool isReferenceYear = TRUE;
-    if (cal.get(UCAL_YEAR, status) != TimeZoneTest::REFERENCE_YEAR) {
-        isReferenceYear = FALSE;
-    }
 
     UBool sawAnError = FALSE;
     for (int testNum   = 0; zoneDisplayTestData[testNum].zoneName != NULL; testNum++) {
@@ -1943,7 +2192,7 @@ void TimeZoneTest::TestDisplayNamesMeta() {
             char  name[100];
             UErrorCode status = U_ZERO_ERROR;
             displayName.extract(name, 100, NULL, status);
-            if (isReferenceYear) {
+            if (isDevelopmentBuild) {
                 sawAnError = TRUE;
                 dataerrln("Incorrect time zone display name.  zone = \"%s\",\n"
                       "   locale = \"%s\",   style = %s,  Summertime = %d\n"
@@ -1973,6 +2222,158 @@ void TimeZoneTest::TestDisplayNamesMeta() {
     }
     if (sawAnError) {
         dataerrln("***Note: Errors could be the result of changes to zoneStrings locale data");
+    }
+}
+
+void TimeZoneTest::TestGetRegion()
+{
+    static const struct {
+        const char *id;
+        const char *region;
+    } data[] = {
+        {"America/Los_Angeles",             "US"},
+        {"America/Indianapolis",            "US"},  // CLDR canonical, Olson backward
+        {"America/Indiana/Indianapolis",    "US"},  // CLDR alias
+        {"Mexico/General",                  "MX"},  // Link America/Mexico_City, Olson backward
+        {"Etc/UTC",                         "001"},
+        {"EST5EDT",                         "001"},
+        {"PST",                             "US"},  // Link America/Los_Angeles
+        {"Europe/Helsinki",                 "FI"},
+        {"Europe/Mariehamn",                "AX"},  // Link Europe/Helsinki, but in zone.tab
+        {"Asia/Riyadh",                     "SA"},
+        {"Asia/Riyadh87",                   "001"}, // this should be "SA" actually, but not in zone.tab
+        {"Etc/Unknown",                     0},  // CLDR canonical, but not a sysmte zone ID
+        {"bogus",                           0},  // bogus
+        {"GMT+08:00",                       0},  // a custom ID, not a system zone ID
+        {0, 0}
+    };
+
+    int32_t i;
+    char region[4];
+    UErrorCode sts;
+    for (i = 0; data[i].id; i++) {
+        sts = U_ZERO_ERROR;
+        TimeZone::getRegion(data[i].id, region, sizeof(region), sts);
+        if (U_SUCCESS(sts)) {
+            if (data[i].region == 0) {
+                errln((UnicodeString)"Fail: getRegion(\"" + data[i].id + "\") returns "
+                    + region + " [expected: U_ILLEGAL_ARGUMENT_ERROR]");
+            } else if (uprv_strcmp(region, data[i].region) != 0) {
+                errln((UnicodeString)"Fail: getRegion(\"" + data[i].id + "\") returns "
+                    + region + " [expected: " + data[i].region + "]");
+            }
+        } else if (sts == U_ILLEGAL_ARGUMENT_ERROR) {
+            if (data[i].region != 0) {
+                dataerrln((UnicodeString)"Fail: getRegion(\"" + data[i].id
+                    + "\") returns error status U_ILLEGAL_ARGUMENT_ERROR [expected: "
+                    + data[i].region + "]");
+            }
+        } else {
+                errln((UnicodeString)"Fail: getRegion(\"" + data[i].id
+                    + "\") returns an unexpected error status");
+        }
+    }
+
+    // Extra test cases for short buffer
+    int32_t len;
+    char region2[2];
+    sts = U_ZERO_ERROR;
+
+    len = TimeZone::getRegion("America/New_York", region2, sizeof(region2), sts);
+    if (sts == U_ILLEGAL_ARGUMENT_ERROR) {
+        dataerrln("Error calling TimeZone::getRegion");
+    } else {
+        if (sts != U_STRING_NOT_TERMINATED_WARNING) {
+            errln("Expected U_STRING_NOT_TERMINATED_WARNING");
+        }
+        if (len != 2) { // length of "US"
+            errln("Incorrect result length");
+        }
+        if (uprv_strncmp(region2, "US", 2) != 0) {
+            errln("Incorrect result");
+        }
+    }
+
+    char region1[1];
+    sts = U_ZERO_ERROR;
+
+    len = TimeZone::getRegion("America/Chicago", region1, sizeof(region1), sts);
+    if (sts == U_ILLEGAL_ARGUMENT_ERROR) {
+        dataerrln("Error calling TimeZone::getRegion");
+    } else {
+        if (sts != U_BUFFER_OVERFLOW_ERROR) {
+            errln("Expected U_BUFFER_OVERFLOW_ERROR");
+        }
+        if (len != 2) { // length of "US"
+            errln("Incorrect result length");
+        }
+    }
+}
+
+void TimeZoneTest::TestGetUnknown() {
+    const TimeZone &unknown = TimeZone::getUnknown();
+    UnicodeString expectedID = UNICODE_STRING_SIMPLE("Etc/Unknown");
+    UnicodeString id;
+    assertEquals("getUnknown() wrong ID", expectedID, unknown.getID(id));
+    assertTrue("getUnknown() wrong offset", 0 == unknown.getRawOffset());
+    assertFalse("getUnknown() uses DST", unknown.useDaylightTime());
+}
+
+void TimeZoneTest::TestGetWindowsID(void) {
+    static const struct {
+        const char *id;
+        const char *winid;
+    } TESTDATA[] = {
+        {"America/New_York",        "Eastern Standard Time"},
+        {"America/Montreal",        "Eastern Standard Time"},
+        {"America/Los_Angeles",     "Pacific Standard Time"},
+        {"America/Vancouver",       "Pacific Standard Time"},
+        {"Asia/Shanghai",           "China Standard Time"},
+        {"Asia/Chongqing",          "China Standard Time"},
+        {"America/Indianapolis",    "US Eastern Standard Time"},            // CLDR canonical name
+        {"America/Indiana/Indianapolis",    "US Eastern Standard Time"},    // tzdb canonical name
+        {"Asia/Khandyga",           "Yakutsk Standard Time"},
+        {"Australia/Eucla",         ""}, // No Windows ID mapping
+        {"Bogus",                   ""},
+        {0,                         0},
+    };
+
+    for (int32_t i = 0; TESTDATA[i].id != 0; i++) {
+        UErrorCode sts = U_ZERO_ERROR;
+        UnicodeString windowsID;
+
+        TimeZone::getWindowsID(UnicodeString(TESTDATA[i].id), windowsID, sts);
+        assertSuccess(TESTDATA[i].id, sts);
+        assertEquals(TESTDATA[i].id, UnicodeString(TESTDATA[i].winid), windowsID, TRUE);
+    }
+}
+
+void TimeZoneTest::TestGetIDForWindowsID(void) {
+    static const struct {
+        const char *winid;
+        const char *region;
+        const char *id;
+    } TESTDATA[] = {
+        {"Eastern Standard Time",   0,      "America/New_York"},
+        {"Eastern Standard Time",   "US",   "America/New_York"},
+        {"Eastern Standard Time",   "CA",   "America/Toronto"},
+        {"Eastern Standard Time",   "CN",   "America/New_York"},
+        {"China Standard Time",     0,      "Asia/Shanghai"},
+        {"China Standard Time",     "CN",   "Asia/Shanghai"},
+        {"China Standard Time",     "HK",   "Asia/Hong_Kong"},
+        {"Mid-Atlantic Standard Time",  0,  ""}, // No tz database mapping
+        {"Bogus",                   0,      ""},
+        {0,                         0,      0},
+    };
+
+    for (int32_t i = 0; TESTDATA[i].winid != 0; i++) {
+        UErrorCode sts = U_ZERO_ERROR;
+        UnicodeString id;
+
+        TimeZone::getIDForWindowsID(UnicodeString(TESTDATA[i].winid), TESTDATA[i].region,
+                                    id, sts);
+        assertSuccess(UnicodeString(TESTDATA[i].winid) + "/" + TESTDATA[i].region, sts);
+        assertEquals(UnicodeString(TESTDATA[i].winid) + "/" + TESTDATA[i].region, TESTDATA[i].id, id, TRUE);
     }
 }
 

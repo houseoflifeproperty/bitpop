@@ -50,7 +50,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
@@ -3295,8 +3295,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
   DisableJavascriptCalls();
   WebContents* web_contents =
       current_browser()->tab_strip_model()->GetActiveWebContents();
-  scoped_refptr<DevToolsAgentHost> agent(DevToolsAgentHost::GetOrCreateFor(
-      web_contents->GetRenderViewHost()));
+  scoped_refptr<DevToolsAgentHost> agent(
+      DevToolsAgentHost::GetOrCreateFor(web_contents));
   DevToolsManager* manager = DevToolsManager::GetInstance();
   FakeDevToolsClientHost client_host;
   manager->RegisterDevToolsClientHostFor(agent.get(), &client_host);
@@ -4360,7 +4360,9 @@ class PrerenderOmniboxBrowserTest : public PrerenderBrowserTest {
 };
 
 // Checks that closing the omnibox popup cancels an omnibox prerender.
-IN_PROC_BROWSER_TEST_F(PrerenderOmniboxBrowserTest, PrerenderOmniboxCancel) {
+// http://crbug.com/395152
+IN_PROC_BROWSER_TEST_F(PrerenderOmniboxBrowserTest,
+                       DISABLED_PrerenderOmniboxCancel) {
   // Ensure the cookie store has been loaded.
   if (!GetPrerenderManager()->cookie_store_loaded()) {
     base::RunLoop loop;
@@ -4380,7 +4382,9 @@ IN_PROC_BROWSER_TEST_F(PrerenderOmniboxBrowserTest, PrerenderOmniboxCancel) {
 }
 
 // Checks that accepting omnibox input abandons an omnibox prerender.
-IN_PROC_BROWSER_TEST_F(PrerenderOmniboxBrowserTest, PrerenderOmniboxAbandon) {
+// http://crbug.com/394592
+IN_PROC_BROWSER_TEST_F(PrerenderOmniboxBrowserTest,
+                       DISABLED_PrerenderOmniboxAbandon) {
   // Set the abandon timeout to something high so it does not introduce
   // flakiness if the prerender times out before the test completes.
   GetPrerenderManager()->mutable_config().abandon_time_to_live =

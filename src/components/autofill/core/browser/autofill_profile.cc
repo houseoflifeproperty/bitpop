@@ -26,7 +26,9 @@
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "grit/components_strings.h"
-#include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/address_data.h"
+#include "third_party/libaddressinput/chromium/addressinput_util.h"
+#include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_data.h"
+#include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_formatter.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using base::ASCIIToUTF16;
@@ -69,12 +71,16 @@ void GetFieldsForDistinguishingProfiles(
     COMPANY_NAME,
   };
 
+  std::vector<ServerFieldType> default_fields;
   if (!suggested_fields) {
-    DCHECK_EQ(excluded_field, UNKNOWN_TYPE);
-    distinguishing_fields->assign(
+    default_fields.assign(
         kDefaultDistinguishingFields,
         kDefaultDistinguishingFields + arraysize(kDefaultDistinguishingFields));
-    return;
+    if (excluded_field == UNKNOWN_TYPE) {
+      distinguishing_fields->swap(default_fields);
+      return;
+    }
+    suggested_fields = &default_fields;
   }
 
   // Keep track of which fields we've seen so that we avoid duplicate entries.
@@ -134,17 +140,30 @@ base::string16 GetFormGroupInfo(const FormGroup& form_group,
 }
 
 template <class T>
-void CopyValuesToItems(ServerFieldType type,
-                       const std::vector<base::string16>& values,
-                       std::vector<T>* form_group_items,
-                       const T& prototype) {
+void CopyRawValuesToItems(ServerFieldType type,
+                          const std::vector<base::string16>& values,
+                          const T& prototype,
+                          std::vector<T>* form_group_items) {
   form_group_items->resize(values.size(), prototype);
   for (size_t i = 0; i < form_group_items->size(); ++i) {
     (*form_group_items)[i].SetRawInfo(type, values[i]);
   }
   // Must have at least one (possibly empty) element.
-  if (form_group_items->empty())
-    form_group_items->resize(1, prototype);
+  form_group_items->resize(std::max<size_t>(1UL, values.size()), prototype);
+}
+
+template <class T>
+void CopyValuesToItems(AutofillType type,
+                       const std::vector<base::string16>& values,
+                       const T& prototype,
+                       const std::string& app_locale,
+                       std::vector<T>* form_group_items) {
+  form_group_items->resize(values.size(), prototype);
+  for (size_t i = 0; i < form_group_items->size(); ++i) {
+    (*form_group_items)[i].SetInfo(type, values[i], app_locale);
+  }
+  // Must have at least one (possibly empty) element.
+  form_group_items->resize(std::max<size_t>(1UL, values.size()), prototype);
 }
 
 template <class T>
@@ -196,15 +215,10 @@ class FindByPhone {
               const std::string& app_locale)
       : phone_(phone),
         country_code_(country_code),
-        app_locale_(app_locale) {
-  }
+        app_locale_(app_locale) {}
 
   bool operator()(const base::string16& phone) {
     return i18n::PhoneNumbersMatch(phone, phone_, country_code_, app_locale_);
-  }
-
-  bool operator()(const base::string16* phone) {
-    return i18n::PhoneNumbersMatch(*phone, phone_, country_code_, app_locale_);
   }
 
  private:
@@ -214,13 +228,18 @@ class FindByPhone {
 };
 
 // Functor used to check for case-insensitive equality of two strings.
-struct CaseInsensitiveStringEquals
-    : public std::binary_function<base::string16, base::string16, bool>
-{
-  bool operator()(const base::string16& x, const base::string16& y) const {
-    return
-        x.size() == y.size() && StringToLowerASCII(x) == StringToLowerASCII(y);
+struct CaseInsensitiveStringEquals {
+ public:
+  CaseInsensitiveStringEquals(const base::string16& other)
+      : other_(other) {}
+
+  bool operator()(const base::string16& x) const {
+    return x.size() == other_.size() &&
+        base::StringToLowerASCII(x) == base::StringToLowerASCII(other_);
   }
+
+ private:
+  const base::string16& other_;
 };
 
 }  // namespace
@@ -298,11 +317,11 @@ base::string16 AutofillProfile::GetInfo(const AutofillType& type,
   if (type.html_type() == HTML_TYPE_FULL_ADDRESS) {
     scoped_ptr< ::i18n::addressinput::AddressData> address_data =
         i18n::CreateAddressDataFromAutofillProfile(*this, app_locale);
-    if (!address_data->HasAllRequiredFields())
+    if (!addressinput::HasAllRequiredFields(*address_data))
       return base::string16();
 
     std::vector<std::string> lines;
-    address_data->FormatForDisplay(&lines);
+    ::i18n::addressinput::GetFormattedNationalAddress(*address_data, &lines);
     return base::UTF8ToUTF16(JoinString(lines, '\n'));
   }
 
@@ -347,22 +366,22 @@ void AutofillProfile::SetRawMultiInfo(
   switch (AutofillType(type).group()) {
     case NAME:
     case NAME_BILLING:
-      CopyValuesToItems(type, values, &name_, NameInfo());
+      CopyRawValuesToItems(type, values, NameInfo(), &name_);
       break;
+
     case EMAIL:
-      CopyValuesToItems(type, values, &email_, EmailInfo());
+      CopyRawValuesToItems(type, values, EmailInfo(), &email_);
       break;
+
     case PHONE_HOME:
     case PHONE_BILLING:
-      CopyValuesToItems(type,
-                        values,
-                        &phone_number_,
-                        PhoneNumber(this));
+      CopyRawValuesToItems(type, values, PhoneNumber(this), &phone_number_);
       break;
+
     default:
-      if (values.size() == 1) {
+      if (values.size() == 1U) {
         SetRawInfo(type, values[0]);
-      } else if (values.size() == 0) {
+      } else if (values.empty()) {
         SetRawInfo(type, base::string16());
       } else {
         // Shouldn't attempt to set multiple values on single-valued field.
@@ -376,6 +395,38 @@ void AutofillProfile::GetRawMultiInfo(
     ServerFieldType type,
     std::vector<base::string16>* values) const {
   GetMultiInfoImpl(AutofillType(type), std::string(), values);
+}
+
+void AutofillProfile::SetMultiInfo(const AutofillType& type,
+                                   const std::vector<base::string16>& values,
+                                   const std::string& app_locale) {
+  switch (AutofillType(type).group()) {
+    case NAME:
+    case NAME_BILLING:
+      CopyValuesToItems(type, values, NameInfo(), app_locale, &name_);
+      break;
+
+    case EMAIL:
+      CopyValuesToItems(type, values, EmailInfo(), app_locale, &email_);
+      break;
+
+    case PHONE_HOME:
+    case PHONE_BILLING:
+      CopyValuesToItems(
+          type, values, PhoneNumber(this), app_locale, &phone_number_);
+      break;
+
+    default:
+      if (values.size() == 1U) {
+        SetInfo(type, values[0], app_locale);
+      } else if (values.empty()) {
+        SetInfo(type, base::string16(), app_locale);
+      } else {
+        // Shouldn't attempt to set multiple values on single-valued field.
+        NOTREACHED();
+      }
+      break;
+  }
 }
 
 void AutofillProfile::GetMultiInfo(const AutofillType& type,
@@ -434,7 +485,8 @@ int AutofillProfile::Compare(const AutofillProfile& profile) const {
       return comparison;
   }
 
-  const ServerFieldType multi_value_types[] = { NAME_FIRST,
+  const ServerFieldType multi_value_types[] = { NAME_FULL,
+                                                NAME_FIRST,
                                                 NAME_MIDDLE,
                                                 NAME_LAST,
                                                 EMAIL_ADDRESS,
@@ -508,8 +560,8 @@ bool AutofillProfile::IsSubsetOf(const AutofillProfile& profile,
             app_locale)) {
         return false;
       }
-    } else if (StringToLowerASCII(GetRawInfo(*it)) !=
-                   StringToLowerASCII(profile.GetRawInfo(*it))) {
+    } else if (base::StringToLowerASCII(GetRawInfo(*it)) !=
+                   base::StringToLowerASCII(profile.GetRawInfo(*it))) {
       return false;
     }
   }
@@ -518,7 +570,8 @@ bool AutofillProfile::IsSubsetOf(const AutofillProfile& profile,
 }
 
 void AutofillProfile::OverwriteOrAppendNames(
-    const std::vector<NameInfo>& names) {
+    const std::vector<NameInfo>& names,
+    const std::string& app_locale) {
   std::vector<NameInfo> results(name_);
   for (std::vector<NameInfo>::const_iterator it = names.begin();
        it != names.end();
@@ -528,14 +581,20 @@ void AutofillProfile::OverwriteOrAppendNames(
 
     for (size_t index = 0; index < name_.size(); ++index) {
       NameInfo current_name = name_[index];
-      if (current_name.EqualsIgnoreCase(imported_name)) {
+      if (current_name.ParsedNamesAreEqual(imported_name)) {
+        if (current_name.GetRawInfo(NAME_FULL).empty()) {
+          current_name.SetRawInfo(NAME_FULL,
+                                  imported_name.GetRawInfo(NAME_FULL));
+        }
+
         should_append_imported_name = false;
         break;
       }
 
-      base::string16 full_name = current_name.GetRawInfo(NAME_FULL);
-      if (StringToLowerASCII(full_name) ==
-          StringToLowerASCII(imported_name.GetRawInfo(NAME_FULL))) {
+      AutofillType type = AutofillType(NAME_FULL);
+      base::string16 full_name = current_name.GetInfo(type, app_locale);
+      if (base::StringToLowerASCII(full_name) ==
+          base::StringToLowerASCII(imported_name.GetInfo(type, app_locale))) {
         // The imported name has the same full name string as one of the
         // existing names for this profile.  Because full names are
         // _heuristically_ parsed into {first, middle, last} name components,
@@ -545,13 +604,13 @@ void AutofillProfile::OverwriteOrAppendNames(
         // parse, as this more likely represents the correct, user-input parse
         // of the name.
         NameInfo heuristically_parsed_name;
-        heuristically_parsed_name.SetRawInfo(NAME_FULL, full_name);
-        if (imported_name.EqualsIgnoreCase(heuristically_parsed_name)) {
+        heuristically_parsed_name.SetInfo(type, full_name, app_locale);
+        if (imported_name.ParsedNamesAreEqual(heuristically_parsed_name)) {
           should_append_imported_name = false;
           break;
         }
 
-        if (current_name.EqualsIgnoreCase(heuristically_parsed_name)) {
+        if (current_name.ParsedNamesAreEqual(heuristically_parsed_name)) {
           results[index] = imported_name;
           should_append_imported_name = false;
           break;
@@ -589,44 +648,59 @@ void AutofillProfile::OverwriteWithOrAddTo(const AutofillProfile& profile,
 
   for (ServerFieldTypeSet::const_iterator iter = field_types.begin();
        iter != field_types.end(); ++iter) {
-    if (AutofillProfile::SupportsMultiValue(*iter)) {
-      std::vector<base::string16> new_values;
-      profile.GetRawMultiInfo(*iter, &new_values);
-      std::vector<base::string16> existing_values;
-      GetRawMultiInfo(*iter, &existing_values);
+    FieldTypeGroup group = AutofillType(*iter).group();
+    // Special case names.
+    if (group == NAME) {
+      OverwriteOrAppendNames(profile.name_, app_locale);
+      continue;
+    }
 
-      // GetMultiInfo always returns at least one element, even if the profile
-      // has no data stored for this field type.
-      if (existing_values.size() == 1 && existing_values.front().empty())
-        existing_values.clear();
-
-      FieldTypeGroup group = AutofillType(*iter).group();
-      for (std::vector<base::string16>::iterator value_iter =
-               new_values.begin();
-           value_iter != new_values.end(); ++value_iter) {
-        // Don't add duplicates.
-        if (group == PHONE_HOME) {
-          AddPhoneIfUnique(*value_iter, app_locale, &existing_values);
-        } else {
-          std::vector<base::string16>::const_iterator existing_iter =
-              std::find_if(
-                  existing_values.begin(), existing_values.end(),
-                  std::bind1st(CaseInsensitiveStringEquals(), *value_iter));
-          if (existing_iter == existing_values.end())
-            existing_values.insert(existing_values.end(), *value_iter);
-        }
-      }
-      if (group == NAME)
-        OverwriteOrAppendNames(profile.name_);
-      else
-        SetRawMultiInfo(*iter, existing_values);
-    } else {
+    // Single value field --- overwrite.
+    if (!AutofillProfile::SupportsMultiValue(*iter)) {
       base::string16 new_value = profile.GetRawInfo(*iter);
-      if (StringToLowerASCII(GetRawInfo(*iter)) !=
-              StringToLowerASCII(new_value)) {
+      if (base::StringToLowerASCII(GetRawInfo(*iter)) !=
+              base::StringToLowerASCII(new_value)) {
         SetRawInfo(*iter, new_value);
       }
+      continue;
     }
+
+    // Multi value field --- overwrite/append.
+    std::vector<base::string16> new_values;
+    profile.GetRawMultiInfo(*iter, &new_values);
+    std::vector<base::string16> existing_values;
+    GetRawMultiInfo(*iter, &existing_values);
+
+    // GetMultiInfo always returns at least one element, even if the profile
+    // has no data stored for this field type.
+    if (existing_values.size() == 1 && existing_values.front().empty())
+      existing_values.clear();
+
+    for (std::vector<base::string16>::iterator value_iter =
+             new_values.begin();
+         value_iter != new_values.end(); ++value_iter) {
+      // Don't add duplicates. Most types get case insensitive matching.
+      std::vector<base::string16>::const_iterator existing_iter;
+
+      if (group == PHONE_HOME) {
+        // Phones allow "fuzzy" matching, so "1-800-FLOWERS", "18003569377",
+        // "(800)356-9377" and "356-9377" are considered the same.
+        std::string country_code =
+            base::UTF16ToASCII(GetRawInfo(ADDRESS_HOME_COUNTRY));
+        existing_iter =
+            std::find_if(existing_values.begin(), existing_values.end(),
+                         FindByPhone(*value_iter, country_code, app_locale));
+      } else {
+        existing_iter =
+            std::find_if(existing_values.begin(), existing_values.end(),
+                         CaseInsensitiveStringEquals(*value_iter));
+      }
+
+      if (existing_iter == existing_values.end())
+        existing_values.insert(existing_values.end(), *value_iter);
+    }
+
+    SetRawMultiInfo(*iter, existing_values);
   }
 }
 
@@ -643,10 +717,11 @@ bool AutofillProfile::SupportsMultiValue(ServerFieldType type) {
 // static
 void AutofillProfile::CreateDifferentiatingLabels(
     const std::vector<AutofillProfile*>& profiles,
+    const std::string& app_locale,
     std::vector<base::string16>* labels) {
   const size_t kMinimalFieldsShown = 2;
   CreateInferredLabels(profiles, NULL, UNKNOWN_TYPE, kMinimalFieldsShown,
-                       labels);
+                       app_locale, labels);
   DCHECK_EQ(profiles.size(), labels->size());
 }
 
@@ -656,6 +731,7 @@ void AutofillProfile::CreateInferredLabels(
     const std::vector<ServerFieldType>* suggested_fields,
     ServerFieldType excluded_field,
     size_t minimal_fields_shown,
+    const std::string& app_locale,
     std::vector<base::string16>* labels) {
   std::vector<ServerFieldType> fields_to_use;
   GetFieldsForDistinguishingProfiles(suggested_fields, excluded_field,
@@ -668,7 +744,8 @@ void AutofillProfile::CreateInferredLabels(
   for (size_t i = 0; i < profiles.size(); ++i) {
     base::string16 label =
         profiles[i]->ConstructInferredLabel(fields_to_use,
-                                            minimal_fields_shown);
+                                            minimal_fields_shown,
+                                            app_locale);
     labels_to_profiles[label].push_back(i);
   }
 
@@ -685,7 +762,7 @@ void AutofillProfile::CreateInferredLabels(
       // We have more than one profile with the same label, so add
       // differentiating fields.
       CreateInferredLabelsHelper(profiles, it->second, fields_to_use,
-                                 minimal_fields_shown, labels);
+                                 minimal_fields_shown, app_locale, labels);
     }
   }
 }
@@ -719,25 +796,10 @@ void AutofillProfile::GetMultiInfoImpl(
   }
 }
 
-void AutofillProfile::AddPhoneIfUnique(
-    const base::string16& phone,
-    const std::string& app_locale,
-    std::vector<base::string16>* existing_phones) {
-  DCHECK(existing_phones);
-  // Phones allow "fuzzy" matching, so "1-800-FLOWERS", "18003569377",
-  // "(800)356-9377" and "356-9377" are considered the same.
-  std::string country_code =
-      base::UTF16ToASCII(GetRawInfo(ADDRESS_HOME_COUNTRY));
-  if (std::find_if(existing_phones->begin(), existing_phones->end(),
-                   FindByPhone(phone, country_code, app_locale)) ==
-      existing_phones->end()) {
-    existing_phones->push_back(phone);
-  }
-}
-
 base::string16 AutofillProfile::ConstructInferredLabel(
     const std::vector<ServerFieldType>& included_fields,
-    size_t num_fields_to_use) const {
+    size_t num_fields_to_use,
+    const std::string& app_locale) const {
   const base::string16 separator =
       l10n_util::GetStringUTF16(IDS_AUTOFILL_ADDRESS_SUMMARY_SEPARATOR);
 
@@ -747,7 +809,7 @@ base::string16 AutofillProfile::ConstructInferredLabel(
            included_fields.begin();
        it != included_fields.end() && num_fields_used < num_fields_to_use;
        ++it) {
-    base::string16 field = GetRawInfo(*it);
+    base::string16 field = GetInfo(AutofillType(*it), app_locale);
     if (field.empty())
       continue;
 
@@ -772,6 +834,7 @@ void AutofillProfile::CreateInferredLabelsHelper(
     const std::list<size_t>& indices,
     const std::vector<ServerFieldType>& fields,
     size_t num_fields_to_include,
+    const std::string& app_locale,
     std::vector<base::string16>* labels) {
   // For efficiency, we first construct a map of fields to their text values and
   // each value's frequency.
@@ -785,7 +848,8 @@ void AutofillProfile::CreateInferredLabelsHelper(
     for (std::list<size_t>::const_iterator it = indices.begin();
          it != indices.end(); ++it) {
       const AutofillProfile* profile = profiles[*it];
-      base::string16 field_text = profile->GetRawInfo(*field);
+      base::string16 field_text =
+          profile->GetInfo(AutofillType(*field), app_locale);
 
       // If this label is not already in the map, add it with frequency 0.
       if (!field_text_frequencies.count(field_text))
@@ -812,7 +876,8 @@ void AutofillProfile::CreateInferredLabelsHelper(
     for (std::vector<ServerFieldType>::const_iterator field = fields.begin();
          field != fields.end(); ++field) {
       // Skip over empty fields.
-      base::string16 field_text = profile->GetRawInfo(*field);
+      base::string16 field_text =
+          profile->GetInfo(AutofillType(*field), app_locale);
       if (field_text.empty())
         continue;
 
@@ -837,8 +902,8 @@ void AutofillProfile::CreateInferredLabelsHelper(
         break;
     }
 
-    (*labels)[*it] =
-        profile->ConstructInferredLabel(label_fields, label_fields.size());
+    (*labels)[*it] = profile->ConstructInferredLabel(
+        label_fields, label_fields.size(), app_locale);
   }
 }
 
@@ -880,6 +945,7 @@ FormGroup* AutofillProfile::MutableFormGroupForType(const AutofillType& type) {
     case NO_GROUP:
     case CREDIT_CARD:
     case PASSWORD_FIELD:
+    case TRANSACTION:
         return NULL;
   }
 

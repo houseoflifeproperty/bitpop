@@ -42,23 +42,9 @@ base::LazyInstance<Instances>::Leaky g_instances = LAZY_INSTANCE_INITIALIZER;
 static RenderViewDevToolsAgentHost* FindAgentHost(WebContents* web_contents) {
   if (g_instances == NULL)
     return NULL;
-  RenderViewHostDelegate* delegate =
-      static_cast<WebContentsImpl*>(web_contents);
   for (Instances::iterator it = g_instances.Get().begin();
        it != g_instances.Get().end(); ++it) {
-    RenderViewHost* rvh = (*it)->render_view_host();
-    if (rvh && rvh->GetDelegate() == delegate)
-      return *it;
-  }
-  return NULL;
-}
-
-static RenderViewDevToolsAgentHost* FindAgentHost(RenderViewHost* rvh) {
-  if (g_instances == NULL)
-    return NULL;
-  for (Instances::iterator it = g_instances.Get().begin();
-       it != g_instances.Get().end(); ++it) {
-    if (rvh == (*it)->render_view_host())
+    if ((*it)->GetWebContents() == web_contents)
       return *it;
   }
   return NULL;
@@ -75,42 +61,19 @@ DevToolsAgentHost::GetOrCreateFor(WebContents* web_contents) {
 }
 
 // static
-scoped_refptr<DevToolsAgentHost>
-DevToolsAgentHost::GetOrCreateFor(RenderViewHost* rvh) {
-  RenderViewDevToolsAgentHost* result = FindAgentHost(rvh);
-  if (!result)
-    result = new RenderViewDevToolsAgentHost(rvh);
-  return result;
-}
-
-// static
-bool DevToolsAgentHost::HasFor(RenderViewHost* rvh) {
-  return FindAgentHost(rvh) != NULL;
+bool DevToolsAgentHost::HasFor(WebContents* web_contents) {
+  return FindAgentHost(web_contents) != NULL;
 }
 
 // static
 bool DevToolsAgentHost::IsDebuggerAttached(WebContents* web_contents) {
-  if (g_instances == NULL)
-    return false;
-  DevToolsManager* devtools_manager = DevToolsManager::GetInstance();
-  if (!devtools_manager)
-    return false;
-  RenderViewHostDelegate* delegate =
-      static_cast<WebContentsImpl*>(web_contents);
-  for (Instances::iterator it = g_instances.Get().begin();
-       it != g_instances.Get().end(); ++it) {
-    RenderViewHost* rvh = (*it)->render_view_host_;
-    if (rvh && rvh->GetDelegate() != delegate)
-      continue;
-    if ((*it)->IsAttached())
-      return true;
-  }
-  return false;
+  RenderViewDevToolsAgentHost* agent_host = FindAgentHost(web_contents);
+  return agent_host && agent_host->IsAttached();
 }
 
 //static
-std::vector<RenderViewHost*> DevToolsAgentHost::GetValidRenderViewHosts() {
-  std::vector<RenderViewHost*> result;
+std::vector<WebContents*> DevToolsAgentHost::GetInspectableWebContents() {
+  std::set<WebContents*> set;
   scoped_ptr<RenderWidgetHostIterator> widgets(
       RenderWidgetHost::GetRenderWidgetHosts());
   while (RenderWidgetHost* widget = widgets->GetNextHost()) {
@@ -122,23 +85,11 @@ std::vector<RenderViewHost*> DevToolsAgentHost::GetValidRenderViewHosts() {
 
     RenderViewHost* rvh = RenderViewHost::From(widget);
     WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
-    if (!web_contents)
-      continue;
-
-    // Don't report a RenderViewHost if it is not the current RenderViewHost
-    // for some WebContents (this filters out pre-render RVHs and similar).
-    // However report a RenderViewHost created for an out of process iframe.
-    // TODO (kaznacheev): Revisit this when it is clear how OOP iframes
-    // interact with pre-rendering.
-    // TODO (kaznacheev): GetMainFrame() call is a temporary hack. Iterate over
-    // all RenderFrameHost instances when multiple OOP frames are supported.
-    if (rvh != web_contents->GetRenderViewHost() &&
-        !rvh->GetMainFrame()->IsCrossProcessSubframe()) {
-      continue;
-    }
-
-    result.push_back(rvh);
+    if (web_contents)
+      set.insert(web_contents);
   }
+  std::vector<WebContents*> result(set.size());
+  std::copy(set.begin(), set.end(), result.begin());
   return result;
 }
 
@@ -146,19 +97,12 @@ std::vector<RenderViewHost*> DevToolsAgentHost::GetValidRenderViewHosts() {
 void RenderViewDevToolsAgentHost::OnCancelPendingNavigation(
     RenderViewHost* pending,
     RenderViewHost* current) {
-  RenderViewDevToolsAgentHost* agent_host = FindAgentHost(pending);
+  WebContents* web_contents = WebContents::FromRenderViewHost(pending);
+  RenderViewDevToolsAgentHost* agent_host = FindAgentHost(web_contents);
   if (!agent_host)
     return;
   agent_host->DisconnectRenderViewHost();
   agent_host->ConnectRenderViewHost(current);
-}
-
-// static
-bool RenderViewDevToolsAgentHost::DispatchIPCMessage(
-    RenderViewHost* source,
-    const IPC::Message& message) {
-  RenderViewDevToolsAgentHost* agent_host = FindAgentHost(source);
-  return agent_host && agent_host->DispatchIPCMessage(message);
 }
 
 RenderViewDevToolsAgentHost::RenderViewDevToolsAgentHost(RenderViewHost* rvh)
@@ -179,8 +123,8 @@ RenderViewDevToolsAgentHost::RenderViewDevToolsAgentHost(RenderViewHost* rvh)
   AddRef();  // Balanced in RenderViewHostDestroyed.
 }
 
-RenderViewHost* RenderViewDevToolsAgentHost::GetRenderViewHost() {
-  return render_view_host_;
+WebContents* RenderViewDevToolsAgentHost::GetWebContents() {
+  return web_contents();
 }
 
 void RenderViewDevToolsAgentHost::DispatchOnInspectorBackend(
@@ -262,7 +206,13 @@ void RenderViewDevToolsAgentHost::OnClientDetached() {
 #endif
   overrides_handler_->OnClientDetached();
   tracing_handler_->OnClientDetached();
+  power_handler_->OnClientDetached();
   ClientDetachedFromRenderer();
+
+  // TODO(kaznacheev): Move this call back to DevToolsManagerImpl when
+  // extensions::ProcessManager no longer relies on this notification.
+  if (!reattaching_)
+    DevToolsManagerImpl::GetInstance()->NotifyObservers(this, false);
 }
 
 void RenderViewDevToolsAgentHost::ClientDetachedFromRenderer() {
@@ -270,11 +220,6 @@ void RenderViewDevToolsAgentHost::ClientDetachedFromRenderer() {
     return;
 
   InnerClientDetachedFromRenderer();
-
-  // TODO(kaznacheev): Move this call back to DevToolsManagerImpl when
-  // extensions::ProcessManager no longer relies on this notification.
-  if (!reattaching_)
-    DevToolsManagerImpl::GetInstance()->NotifyObservers(this, false);
 }
 
 void RenderViewDevToolsAgentHost::InnerClientDetachedFromRenderer() {
@@ -284,7 +229,7 @@ void RenderViewDevToolsAgentHost::InnerClientDetachedFromRenderer() {
        it != g_instances.Get().end(); ++it) {
     if (*it == this || !(*it)->IsAttached())
       continue;
-    RenderViewHost* rvh = (*it)->render_view_host();
+    RenderViewHost* rvh = (*it)->render_view_host_;
     if (rvh && rvh->GetProcess() == render_process_host)
       process_has_agents = true;
   }
@@ -362,6 +307,17 @@ void RenderViewDevToolsAgentHost::RenderProcessGone(
   }
 }
 
+bool RenderViewDevToolsAgentHost::OnMessageReceived(
+    const IPC::Message& message,
+    RenderFrameHost* render_frame_host) {
+  return DispatchIPCMessage(message);
+}
+
+bool RenderViewDevToolsAgentHost::OnMessageReceived(
+    const IPC::Message& message) {
+  return DispatchIPCMessage(message);
+}
+
 void RenderViewDevToolsAgentHost::DidAttachInterstitialPage() {
   if (!render_view_host_)
     return;
@@ -389,6 +345,7 @@ void RenderViewDevToolsAgentHost::SetRenderViewHost(RenderViewHost* rvh) {
   render_view_host_ = rvh;
 
   WebContentsObserver::Observe(WebContents::FromRenderViewHost(rvh));
+  overrides_handler_->OnRenderViewHostChanged();
 
   registrar_.Add(
       this,
@@ -403,6 +360,14 @@ void RenderViewDevToolsAgentHost::ClearRenderViewHost() {
       content::NOTIFICATION_RENDER_WIDGET_VISIBILITY_CHANGED,
       content::Source<RenderWidgetHost>(render_view_host_));
   render_view_host_ = NULL;
+}
+
+void RenderViewDevToolsAgentHost::DisconnectWebContents() {
+  DisconnectRenderViewHost();
+}
+
+void RenderViewDevToolsAgentHost::ConnectWebContents(WebContents* wc) {
+  ConnectRenderViewHost(wc->GetRenderViewHost());
 }
 
 void RenderViewDevToolsAgentHost::ConnectRenderViewHost(RenderViewHost* rvh) {
@@ -437,6 +402,8 @@ bool RenderViewDevToolsAgentHost::DispatchIPCMessage(
                         OnSaveAgentRuntimeState)
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_SwapCompositorFrame,
                                 handled = false; OnSwapCompositorFrame(msg))
+    IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_SetTouchEventEmulationEnabled,
+                                handled = OnSetTouchEventEmulationEnabled(msg))
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -448,6 +415,11 @@ void RenderViewDevToolsAgentHost::OnSwapCompositorFrame(
   if (!ViewHostMsg_SwapCompositorFrame::Read(&message, &param))
     return;
   overrides_handler_->OnSwapCompositorFrame(param.b.metadata);
+}
+
+bool RenderViewDevToolsAgentHost::OnSetTouchEventEmulationEnabled(
+    const IPC::Message& message) {
+  return overrides_handler_->OnSetTouchEventEmulationEnabled();
 }
 
 void RenderViewDevToolsAgentHost::SynchronousSwapCompositorFrame(
@@ -468,6 +440,13 @@ void RenderViewDevToolsAgentHost::OnDispatchOnInspectorFrontend(
     const std::string& message) {
   if (!render_view_host_)
     return;
+
+  scoped_refptr<DevToolsProtocol::Notification> notification =
+      DevToolsProtocol::ParseNotification(message);
+
+  if (notification) {
+    tracing_handler_->HandleNotification(notification);
+  }
   DevToolsManagerImpl::GetInstance()->DispatchOnInspectorFrontend(
       this, message);
 }

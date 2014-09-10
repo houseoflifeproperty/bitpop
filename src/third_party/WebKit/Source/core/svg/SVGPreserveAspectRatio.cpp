@@ -22,8 +22,8 @@
 #include "config.h"
 #include "core/svg/SVGPreserveAspectRatio.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGAnimationElement.h"
 #include "core/svg/SVGParserUtilities.h"
@@ -31,10 +31,9 @@
 #include "platform/transforms/AffineTransform.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGPreserveAspectRatio::SVGPreserveAspectRatio()
-    : SVGPropertyBase(classType())
 {
     setDefault();
 }
@@ -51,15 +50,6 @@ PassRefPtr<SVGPreserveAspectRatio> SVGPreserveAspectRatio::clone() const
 
     preserveAspectRatio->m_align = m_align;
     preserveAspectRatio->m_meetOrSlice = m_meetOrSlice;
-
-    return preserveAspectRatio.release();
-}
-
-PassRefPtr<SVGPropertyBase> SVGPreserveAspectRatio::cloneForAnimation(const String& value) const
-{
-    RefPtr<SVGPreserveAspectRatio> preserveAspectRatio = create();
-
-    preserveAspectRatio->setValueAsString(value, IGNORE_EXCEPTION);
 
     return preserveAspectRatio.release();
 }

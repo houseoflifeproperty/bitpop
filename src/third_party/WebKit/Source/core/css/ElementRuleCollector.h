@@ -30,7 +30,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSStyleSheet;
 class CSSRuleList;
@@ -83,11 +83,11 @@ private:
     RawPtrWillBeMember<const CSSStyleSheet> m_parentStyleSheet;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(WebCore::MatchedRule);
+WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(blink::MatchedRule);
 
-namespace WebCore {
+namespace blink {
 
 // FIXME: oilpan: when transition types are gone this class can be replaced with HeapVector.
 class StyleRuleList FINAL : public RefCountedWillBeGarbageCollected<StyleRuleList> {
@@ -126,29 +126,25 @@ public:
     PassRefPtrWillBeRawPtr<StyleRuleList> matchedStyleRuleList();
     PassRefPtrWillBeRawPtr<CSSRuleList> matchedCSSRuleList();
 
-    void collectMatchingRules(const MatchRequest&, RuleRange&, SelectorChecker::BehaviorAtBoundary = SelectorChecker::DoesNotCrossBoundary, CascadeScope = ignoreCascadeScope, CascadeOrder = ignoreCascadeOrder);
+    void collectMatchingRules(const MatchRequest&, RuleRange&, SelectorChecker::ContextFlags = SelectorChecker::DefaultBehavior, CascadeScope = ignoreCascadeScope, CascadeOrder = ignoreCascadeOrder);
     void sortAndTransferMatchedRules();
     void clearMatchedRules();
     void addElementStyleProperties(const StylePropertySet*, bool isCacheable = true);
 
-    unsigned lastMatchedRulesPosition() const { return m_matchedRules ? m_matchedRules->size() : 0; }
-    void sortMatchedRulesFrom(unsigned position);
-    void sortAndTransferMatchedRulesWithOnlySortBySpecificity();
-
 private:
-    void collectRuleIfMatches(const RuleData&, SelectorChecker::BehaviorAtBoundary, CascadeScope, CascadeOrder, const MatchRequest&, RuleRange&);
+    void collectRuleIfMatches(const RuleData&, SelectorChecker::ContextFlags, CascadeScope, CascadeOrder, const MatchRequest&, RuleRange&);
 
     template<typename RuleDataListType>
-    void collectMatchingRulesForList(const RuleDataListType* rules, SelectorChecker::BehaviorAtBoundary behaviorAtBoundary, CascadeScope cascadeScope, CascadeOrder cascadeOrder, const MatchRequest& matchRequest, RuleRange& ruleRange)
+    void collectMatchingRulesForList(const RuleDataListType* rules, SelectorChecker::ContextFlags contextFlags, CascadeScope cascadeScope, CascadeOrder cascadeOrder, const MatchRequest& matchRequest, RuleRange& ruleRange)
     {
         if (!rules)
             return;
 
         for (typename RuleDataListType::const_iterator it = rules->begin(), end = rules->end(); it != end; ++it)
-            collectRuleIfMatches(*it, behaviorAtBoundary, cascadeScope, cascadeOrder, matchRequest, ruleRange);
+            collectRuleIfMatches(*it, contextFlags, cascadeScope, cascadeOrder, matchRequest, ruleRange);
     }
 
-    bool ruleMatches(const RuleData&, const ContainerNode* scope, SelectorChecker::BehaviorAtBoundary, SelectorChecker::MatchResult*);
+    bool ruleMatches(const RuleData&, const ContainerNode* scope, SelectorChecker::ContextFlags, SelectorChecker::MatchResult*);
 
     CSSRuleList* nestedRuleList(CSSRule*);
     template<class CSSRuleCollection>
@@ -180,6 +176,6 @@ private:
     MatchResult m_result;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ElementRuleCollector_h

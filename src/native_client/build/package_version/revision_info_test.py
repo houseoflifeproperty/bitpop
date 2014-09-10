@@ -14,6 +14,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 import pynacl.working_directory
 
 import archive_info
+import error
 import package_info
 import packages_info
 import revision_info
@@ -37,7 +38,8 @@ class TestRevisionInfo(unittest.TestCase):
   def test_RevTargetSets(self):
     # Tests that we can properly set a target revision.
     package = package_info.PackageInfo()
-    package.AppendArchive(archive_info.ArchiveInfo('test_name', 'hash_value'))
+    package.AppendArchive(archive_info.ArchiveInfo(name='test_name',
+                                                   hash='hash_value'))
 
     revision_desc = revision_info.RevisionInfo(self._packages)
     revision_desc.SetTargetRevision('test_package', 'package_target', package)
@@ -47,13 +49,14 @@ class TestRevisionInfo(unittest.TestCase):
   def test_RevisionTargetSamePackage(self):
     # Tests that all the targets must all be the same.
     package = package_info.PackageInfo()
-    package.AppendArchive(archive_info.ArchiveInfo('test_name', 'hash_value'))
+    package.AppendArchive(archive_info.ArchiveInfo(name='test_name',
+                                                   hash='hash_value'))
 
     revision_desc = revision_info.RevisionInfo(self._packages)
     revision_desc.SetTargetRevision('test1', 'package_target', package)
 
     self.assertRaises(
-        RuntimeError,
+        error.Error,
         revision_desc.SetTargetRevision,
         'test2',
         'package_target',
@@ -63,7 +66,8 @@ class TestRevisionInfo(unittest.TestCase):
   def test_RevisionFileSaveLoad(self):
     # Tests that we can properly save and load a revision file.
     package = package_info.PackageInfo()
-    package.AppendArchive(archive_info.ArchiveInfo('test_name', 'hash_value'))
+    package.AppendArchive(archive_info.ArchiveInfo(name='test_name',
+                                                   hash='hash_value'))
 
     revision = revision_info.RevisionInfo(self._packages)
     revision.SetRevisionNumber(100)
@@ -93,7 +97,8 @@ class TestRevisionInfo(unittest.TestCase):
   def test_RevisionFileRequiresRevisionNumber(self):
     # Tests that we can properly save and load a revision file.
     package = package_info.PackageInfo()
-    package.AppendArchive(archive_info.ArchiveInfo('test_name', 'hash_value'))
+    package.AppendArchive(archive_info.ArchiveInfo(name='test_name',
+                                                   hash='hash_value'))
 
     revision = revision_info.RevisionInfo(self._packages)
     package_targets = self._packages.GetPackageTargetsForPackage(
@@ -110,7 +115,7 @@ class TestRevisionInfo(unittest.TestCase):
       revision_file = os.path.join(work_dir, 'test_revision.json')
 
       self.assertRaises(
-          RuntimeError,
+          error.Error,
           revision.SaveRevisionFile,
           revision_file
       )
@@ -118,7 +123,8 @@ class TestRevisionInfo(unittest.TestCase):
   def test_AlteredRevisionFileFails(self):
     # Tests that an altered revision file will fail to load.
     package = package_info.PackageInfo()
-    package.AppendArchive(archive_info.ArchiveInfo('test_name', 'hash_value'))
+    package.AppendArchive(archive_info.ArchiveInfo(name='test_name',
+                                                   hash='hash_value'))
 
     revision = revision_info.RevisionInfo(self._packages)
     revision.SetRevisionNumber(100)
@@ -145,7 +151,7 @@ class TestRevisionInfo(unittest.TestCase):
 
       new_revision = revision_info.RevisionInfo(self._packages)
       self.assertRaises(
-          IOError,
+          error.Error,
           new_revision.LoadRevisionFile,
           revision_file
       )
@@ -153,7 +159,8 @@ class TestRevisionInfo(unittest.TestCase):
   def test_RevisionFileMustSetAllTargets(self):
     # Tests that a revision file fails if not all package targets are set.
     package = package_info.PackageInfo()
-    package.AppendArchive(archive_info.ArchiveInfo('test_name', 'hash_value'))
+    package.AppendArchive(archive_info.ArchiveInfo(name='test_name',
+                                                   hash='hash_value'))
 
     package_targets = self._packages.GetPackageTargetsForPackage(
         TEST_MULTI_PACKAGE_PACKAGE_TARGET
@@ -174,7 +181,7 @@ class TestRevisionInfo(unittest.TestCase):
     with pynacl.working_directory.TemporaryWorkingDirectory() as work_dir:
       revision_file = os.path.join(work_dir, 'incomplete_revision.json')
       self.assertRaises(
-          RuntimeError,
+          error.Error,
           revision.SaveRevisionFile,
           revision_file
       )
@@ -182,7 +189,8 @@ class TestRevisionInfo(unittest.TestCase):
   def test_RevisionFileSavesForMultiTargets(self):
     # Tests that a revision successfully saves a multi-package target package.
     package = package_info.PackageInfo()
-    package.AppendArchive(archive_info.ArchiveInfo('test_name', 'hash_value'))
+    package.AppendArchive(archive_info.ArchiveInfo(name='test_name',
+                                                   hash='hash_value'))
 
     package_targets = self._packages.GetPackageTargetsForPackage(
         TEST_MULTI_PACKAGE_PACKAGE_TARGET

@@ -231,6 +231,39 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '}')
     self.CompareOutputs(output, expected_output)
 
+  def testStringEnumListPolicy(self):
+    # Tests a policy group with a single policy of type 'string-enum-list'.
+    grd = self.PrepareTest(
+        '{'
+        '  "policy_definitions": ['
+        '    {'
+        '      "name": "ListPolicy",'
+        '      "type": "string-enum-list",'
+        '      "caption": "Example List",'
+        '      "desc": "Example List",'
+        '      "items": ['
+        '        {"name": "ProxyServerDisabled", "value": "one",'
+        '         "caption": ""},'
+        '        {"name": "ProxyServerAutoDetect", "value": "two",'
+        '         "caption": ""},'
+        '      ],'
+        '      "supported_on": ["chrome.linux:8-"],'
+        '      "example_value": ["one", "two"]'
+        '    },'
+        '  ],'
+        '  "placeholders": [],'
+        '  "messages": {},'
+        '}')
+    output = self.GetOutput(grd, 'fr', {'_chromium' : '1'}, 'json', 'en')
+    expected_output = (
+        TEMPLATE_HEADER +
+        '  // Example List\n' +
+        HEADER_DELIMETER +
+        '  // Example List\n\n'
+        '  //"ListPolicy": ["one", "two"]\n\n'
+        '}')
+    self.CompareOutputs(output, expected_output)
+
   def testDictionaryPolicy(self):
     # Tests a policy group with a single policy of type 'dict'.
     example = {

@@ -4,6 +4,9 @@
 
 #include "content/renderer/service_worker/embedded_worker_context_client.h"
 
+#include <map>
+#include <string>
+
 #include "base/lazy_instance.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/pickle.h"
@@ -118,6 +121,15 @@ void EmbeddedWorkerContextClient::Send(IPC::Message* message) {
 
 blink::WebURL EmbeddedWorkerContextClient::scope() const {
   return service_worker_scope_;
+}
+
+blink::WebServiceWorkerCacheStorage*
+    EmbeddedWorkerContextClient::cacheStorage() {
+  return script_context_->cache_storage();
+}
+
+void EmbeddedWorkerContextClient::didPauseAfterDownload() {
+  Send(new EmbeddedWorkerHostMsg_DidPauseAfterDownload(embedded_worker_id_));
 }
 
 void EmbeddedWorkerContextClient::getClients(
@@ -255,7 +267,8 @@ void EmbeddedWorkerContextClient::didHandleFetchEvent(
     headers[base::UTF16ToUTF8(key)] =
         base::UTF16ToUTF8(web_response.getHeader(key));
   }
-  ServiceWorkerResponse response(web_response.status(),
+  ServiceWorkerResponse response(web_response.url(),
+                                 web_response.status(),
                                  web_response.statusText().utf8(),
                                  headers,
                                  web_response.blobUUID().utf8());

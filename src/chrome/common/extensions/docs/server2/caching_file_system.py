@@ -7,7 +7,7 @@ import sys
 
 from file_system import FileSystem, StatInfo, FileNotFoundError
 from future import Future
-from path_util import IsDirectory
+from path_util import IsDirectory, ToDirectory
 from third_party.json_schema_compiler.memoize import memoize
 
 
@@ -43,8 +43,7 @@ class CachingFileSystem(FileSystem):
     # Always stat the parent directory, since it will have the stat of the child
     # anyway, and this gives us an entire directory's stat info at once.
     dir_path, file_path = posixpath.split(path)
-    if dir_path and not dir_path.endswith('/'):
-      dir_path += '/'
+    dir_path = ToDirectory(dir_path)
 
     def make_stat_info(dir_stat):
       '''Converts a dir stat into the correct resulting StatInfo; if the Stat
@@ -63,14 +62,12 @@ class CachingFileSystem(FileSystem):
     if dir_stat is not None:
       return Future(value=make_stat_info(dir_stat))
 
-    dir_stat_future = self._MemoizedStatAsyncFromFileSystem(dir_path)
-    def resolve():
-      dir_stat = dir_stat_future.Get()
+    def next(dir_stat):
       assert dir_stat is not None  # should have raised a FileNotFoundError
       # We only ever need to cache the dir stat.
       self._stat_object_store.Set(dir_path, dir_stat)
       return make_stat_info(dir_stat)
-    return Future(callback=resolve)
+    return self._MemoizedStatAsyncFromFileSystem(dir_path).Then(next)
 
   @memoize
   def _MemoizedStatAsyncFromFileSystem(self, dir_path):
@@ -93,18 +90,17 @@ class CachingFileSystem(FileSystem):
     # with a value.
     stat_futures = {}
 
-    def swallow_file_not_found_error(future):
-      def resolve():
-        try: return future.Get()
-        except FileNotFoundError: return Nnone
-      return Future(callback=resolve)
+    def handle(error):
+      if isinstance(error, FileNotFoundError):
+        return None
+      raise error
 
     for path in paths:
       stat_value = cached_stat_values.get(path)
       if stat_value is None:
         stat_future = self.StatAsync(path)
         if skip_not_found:
-          stat_future = swallow_file_not_found_error(stat_future)
+          stat_future = stat_future.Then(lambda x: x, handle)
       else:
         stat_future = Future(value=stat_value)
       stat_futures[path] = stat_future
@@ -120,19 +116,16 @@ class CachingFileSystem(FileSystem):
       # Everything was cached and up-to-date.
       return Future(value=fresh_data)
 
-    # Read in the values that were uncached or old.
-    read_futures = self._file_system.Read(
-        set(paths) - set(fresh_data.iterkeys()),
-        skip_not_found=skip_not_found)
-    def resolve():
-      new_results = read_futures.Get()
+    def next(new_results):
       # Update the cache. This is a path -> (data, version) mapping.
       self._read_object_store.SetMulti(
           dict((path, (new_result, stat_futures[path].Get().version))
                for path, new_result in new_results.iteritems()))
       new_results.update(fresh_data)
       return new_results
-    return Future(callback=resolve)
+    # Read in the values that were uncached or old.
+    return self._file_system.Read(set(paths) - set(fresh_data.iterkeys()),
+                                  skip_not_found=skip_not_found).Then(next)
 
   def GetIdentity(self):
     return self._file_system.GetIdentity()

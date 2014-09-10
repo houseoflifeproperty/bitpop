@@ -27,7 +27,7 @@
 
 #include "core/rendering/RenderTableSection.h"
 
-namespace WebCore {
+namespace blink {
 
 static const unsigned unsetRowIndex = 0x7FFFFFFF;
 static const unsigned maxRowIndex = 0x7FFFFFFE; // 2,147,483,646
@@ -35,6 +35,7 @@ static const unsigned maxRowIndex = 0x7FFFFFFE; // 2,147,483,646
 class RenderTableRow FINAL : public RenderBox {
 public:
     explicit RenderTableRow(Element*);
+    virtual void trace(Visitor*) OVERRIDE;
 
     RenderTableCell* firstCell() const;
     RenderTableCell* lastCell() const;
@@ -108,7 +109,7 @@ private:
 
     virtual LayerType layerTypeRequired() const OVERRIDE
     {
-        if (hasTransform() || hasHiddenBackface() || hasClipPath() || createsGroup() || isStickyPositioned() || style()->shouldCompositeForCurrentAnimations())
+        if (hasTransform() || hasHiddenBackface() || hasClipPath() || createsGroup() || style()->shouldCompositeForCurrentAnimations())
             return NormalLayer;
 
         if (hasOverflowClip())
@@ -154,6 +155,6 @@ inline RenderTableRow* RenderTableSection::lastRow() const
     return toRenderTableRow(children()->lastChild());
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderTableRow_h

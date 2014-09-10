@@ -39,7 +39,7 @@ class ZipApi(recipe_api.RecipeApi):
     """
     pkg = self.make_package(directory, output)
     pkg.add_directory(directory)
-    yield pkg.zip(step_name)
+    pkg.zip(step_name)
 
   def unzip(self, step_name, zip_file, output):
     """Step to uncompress |zip_file| into |output| directory.
@@ -60,7 +60,7 @@ class ZipApi(recipe_api.RecipeApi):
       'use_python_zip': self.m.platform.is_win,
       'zip_file': str(zip_file),
     }
-    yield self.m.python(
+    self.m.python(
         name=step_name,
         script=self.resource('unzip.py'),
         stdin=self.m.json.input(script_input))
@@ -116,8 +116,9 @@ class ZipPackage(object):
       'root': str(self._root),
       'use_python_zip': self._module.m.platform.is_win,
     }
-    yield self._module.m.python(
+    step_result = self._module.m.python(
         name=step_name,
         script=self._module.resource('zip.py'),
         stdin=self._module.m.json.input(script_input))
     self._module.m.path.mock_add_paths(self._output)
+    return step_result

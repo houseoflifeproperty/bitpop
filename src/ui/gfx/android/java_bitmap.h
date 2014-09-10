@@ -51,18 +51,18 @@ class GFX_EXPORT JavaBitmap {
 };
 
 // Allocates a Java-backed bitmap (android.graphics.Bitmap) with the given
-// (non-empty!) size and configuration.
+// (non-empty!) size and color type.
 GFX_EXPORT base::android::ScopedJavaLocalRef<jobject> CreateJavaBitmap(
     int width,
     int height,
-    SkBitmap::Config bitmap_config);
+    SkColorType color_type);
 
-// Loads a Java-backed bitmap (android.graphics.Bitmap) from the provided
-// drawable resource identifier (e.g., android:drawable/overscroll_glow). If the
-// resource loads successfully, it will be integrally scaled down, preserving
-// aspect ratio, to a size no smaller than |size|. Otherwise, null is returned.
-GFX_EXPORT base::android::ScopedJavaLocalRef<jobject>
-    CreateJavaBitmapFromAndroidResource(const char* name, gfx::Size size);
+// Loads an SkBitmap from the provided drawable resource identifier (e.g.,
+// android:drawable/overscroll_glow). If the resource loads successfully, it
+// will be integrally scaled down, preserving aspect ratio, to a size no smaller
+// than |size|. Otherwise, an empty bitmap is returned.
+GFX_EXPORT SkBitmap
+    CreateSkBitmapFromAndroidResource(const char* name, gfx::Size size);
 
 // Converts |skbitmap| to a Java-backed bitmap (android.graphics.Bitmap).
 // Note: |skbitmap| is assumed to be non-null, non-empty and one of RGBA_8888 or
@@ -74,8 +74,8 @@ GFX_EXPORT base::android::ScopedJavaLocalRef<jobject> ConvertToJavaBitmap(
 // Note: |jbitmap| is assumed to be non-null, non-empty and of format RGBA_8888.
 GFX_EXPORT SkBitmap CreateSkBitmapFromJavaBitmap(const JavaBitmap& jbitmap);
 
-// Returns a Skia config value for the requested input java Bitmap.Config.
-GFX_EXPORT SkBitmap::Config ConvertToSkiaConfig(jobject bitmap_config);
+// Returns a Skia color type value for the requested input java Bitmap.Config.
+GFX_EXPORT SkColorType ConvertToSkiaColorType(jobject jbitmap_config);
 
 }  // namespace gfx
 

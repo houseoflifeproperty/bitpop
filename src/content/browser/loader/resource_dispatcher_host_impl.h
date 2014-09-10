@@ -30,16 +30,17 @@
 #include "content/browser/loader/resource_loader_delegate.h"
 #include "content/browser/loader/resource_scheduler.h"
 #include "content/common/content_export.h"
+#include "content/common/resource_request_body.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_url_parameters.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/resource_dispatcher_host.h"
+#include "content/public/common/resource_type.h"
 #include "ipc/ipc_message.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/url_request/url_request.h"
-#include "webkit/common/resource_type.h"
 
 class ResourceHandler;
 struct ResourceHostMsg_Request;
@@ -61,6 +62,7 @@ class ResourceRequestInfoImpl;
 class SaveFileManager;
 class WebContentsImpl;
 struct DownloadSaveInfo;
+struct NavigationRequestInfo;
 struct Referrer;
 
 class CONTENT_EXPORT ResourceDispatcherHostImpl
@@ -102,6 +104,9 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   // Notify the ResourceDispatcherHostImpl of a resource context destruction.
   void RemoveResourceContext(ResourceContext* context);
+
+  // Resumes a request that deferred at response start.
+  void ResumeResponseDeferredAtStart(const GlobalRequestID& id);
 
   // Force cancels any pending requests for the given |context|. This is
   // necessary to ensure that before |context| goes away, all requests
@@ -232,6 +237,12 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // using its shared memory buffer. Frees up that file descriptor to be used
   // elsewhere.
   void FinishedWithResourcesForRequest(const net::URLRequest* request_);
+
+  // Called by NavigationRequest to start a navigation request in the node
+  // identified by |frame_node_id|.
+  void NavigationRequest(const NavigationRequestInfo& info,
+                         scoped_refptr<ResourceRequestBody> request_body,
+                         int64 frame_node_id);
 
  private:
   friend class ResourceDispatcherHostTest;

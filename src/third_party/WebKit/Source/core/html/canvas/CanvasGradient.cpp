@@ -27,12 +27,12 @@
 #include "config.h"
 #include "core/html/canvas/CanvasGradient.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/canvas/CanvasPattern.h"
 #include "core/html/canvas/CanvasStyle.h"
 
-namespace WebCore {
+namespace blink {
 
 CanvasGradient::CanvasGradient(const FloatPoint& p0, const FloatPoint& p1)
     : m_gradient(Gradient::create(p0, p1))

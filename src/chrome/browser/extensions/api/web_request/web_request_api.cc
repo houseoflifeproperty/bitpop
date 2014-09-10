@@ -25,7 +25,6 @@
 #include "chrome/browser/extensions/api/declarative_webrequest/request_stage.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/webrequest_constants.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/webrequest_rules_registry.h"
-#include "chrome/browser/extensions/api/web_navigation/web_navigation_api_helpers.h"
 #include "chrome/browser/extensions/api/web_request/upload_data_presenter.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api_constants.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api_helpers.h"
@@ -34,6 +33,7 @@
 #include "chrome/browser/extensions/extension_warning_service.h"
 #include "chrome/browser/extensions/extension_warning_set.h"
 #include "chrome/browser/guest_view/web_view/web_view_constants.h"
+#include "chrome/browser/guest_view/web_view/web_view_renderer_state.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/extensions/api/web_request.h"
@@ -41,6 +41,7 @@
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/user_metrics.h"
@@ -74,6 +75,7 @@ using base::StringValue;
 using content::BrowserMessageFilter;
 using content::BrowserThread;
 using content::ResourceRequestInfo;
+using content::ResourceType;
 using extensions::ErrorUtils;
 using extensions::Extension;
 using extensions::ExtensionWarning;
@@ -82,7 +84,6 @@ using extensions::ExtensionWarningSet;
 using extensions::InfoMap;
 using extensions::Feature;
 using extensions::RulesRegistryService;
-using extensions::web_navigation_api_helpers::GetFrameId;
 
 namespace helpers = extension_web_request_api_helpers;
 namespace keys = extension_web_request_api_constants;
@@ -92,8 +93,7 @@ namespace activitylog = activity_log_web_request_constants;
 
 namespace {
 
-const char kWebRequest[] = "webRequest";
-const char kWebView[] = "webview";
+const char kWebRequestEventPrefix[] = "webRequest.";
 
 // List of all the webRequest events.
 const char* const kWebRequestEvents[] = {
@@ -138,10 +138,17 @@ const char* GetRequestStageAsString(
   return "Not reached";
 }
 
+int GetFrameId(bool is_main_frame, int frame_id) {
+  return is_main_frame ? 0 : frame_id;
+}
+
 bool IsWebRequestEvent(const std::string& event_name) {
   std::string web_request_event_name(event_name);
-  if (web_request_event_name.find(kWebView) != std::string::npos)
-    web_request_event_name.replace(0, sizeof(kWebView) - 1, kWebRequest);
+  if (StartsWithASCII(
+          web_request_event_name, webview::kWebViewEventPrefix, true)) {
+    web_request_event_name.replace(
+        0, strlen(webview::kWebViewEventPrefix), kWebRequestEventPrefix);
+  }
   return std::find(kWebRequestEvents, ARRAYEND(kWebRequestEvents),
                    web_request_event_name) != ARRAYEND(kWebRequestEvents);
 }
@@ -178,25 +185,26 @@ void ExtractRequestRoutingInfo(net::URLRequest* request,
 // a <webview> guest process or not. If it is from a <webview> guest process,
 // then |web_view_info| is returned with information about the instance ID
 // that uniquely identifies the <webview> and its embedder.
-bool GetWebViewInfo(net::URLRequest* request,
-                    ExtensionRendererState::WebViewInfo* web_view_info) {
+bool GetWebViewInfo(
+    net::URLRequest* request,
+    extensions::WebViewRendererState::WebViewInfo* web_view_info) {
   int render_process_host_id = -1;
   int routing_id = -1;
   ExtractRequestRoutingInfo(request, &render_process_host_id, &routing_id);
-  return ExtensionRendererState::GetInstance()->
-      GetWebViewInfo(render_process_host_id, routing_id, web_view_info);
+  return extensions::WebViewRendererState::GetInstance()->
+      GetInfo(render_process_host_id, routing_id, web_view_info);
 }
 
 void ExtractRequestInfoDetails(net::URLRequest* request,
                                bool* is_main_frame,
-                               int64* frame_id,
+                               int* frame_id,
                                bool* parent_is_main_frame,
-                               int64* parent_frame_id,
+                               int* parent_frame_id,
                                int* tab_id,
                                int* window_id,
                                int* render_process_host_id,
                                int* routing_id,
-                               ResourceType::Type* resource_type) {
+                               ResourceType* resource_type) {
   if (!request->GetUserData(NULL))
     return;
 
@@ -214,7 +222,7 @@ void ExtractRequestInfoDetails(net::URLRequest* request,
   if (helpers::IsRelevantResourceType(info->GetResourceType()))
     *resource_type = info->GetResourceType();
   else
-    *resource_type = ResourceType::LAST_TYPE;
+    *resource_type = content::RESOURCE_TYPE_LAST_TYPE;
 }
 
 // Extracts from |request| information for the keys requestId, url, method,
@@ -222,16 +230,16 @@ void ExtractRequestInfoDetails(net::URLRequest* request,
 // on to extensions.
 void ExtractRequestInfo(net::URLRequest* request, base::DictionaryValue* out) {
   bool is_main_frame = false;
-  int64 frame_id = -1;
+  int frame_id = -1;
   bool parent_is_main_frame = false;
-  int64 parent_frame_id = -1;
+  int parent_frame_id = -1;
   int frame_id_for_extension = -1;
   int parent_frame_id_for_extension = -1;
   int tab_id = -1;
   int window_id = -1;
   int render_process_host_id = -1;
   int routing_id = -1;
-  ResourceType::Type resource_type = ResourceType::LAST_TYPE;
+  ResourceType resource_type = content::RESOURCE_TYPE_LAST_TYPE;
   ExtractRequestInfoDetails(request, &is_main_frame, &frame_id,
                             &parent_is_main_frame, &parent_frame_id, &tab_id,
                             &window_id, &render_process_host_id, &routing_id,
@@ -399,7 +407,7 @@ void SendOnMessageEventOnUI(
     void* profile_id,
     const std::string& extension_id,
     bool is_web_view_guest,
-    const ExtensionRendererState::WebViewInfo& web_view_info,
+    const extensions::WebViewRendererState::WebViewInfo& web_view_info,
     scoped_ptr<base::DictionaryValue> event_argument) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
@@ -415,7 +423,6 @@ void SendOnMessageEventOnUI(
   extensions::EventFilteringInfo event_filtering_info;
 
   std::string event_name;
-#if defined(ENABLE_EXTENSIONS)
   // The instance ID uniquely identifies a <webview> instance within an embedder
   // process. We use a filter here so that only event listeners for a particular
   // <webview> will fire.
@@ -425,11 +432,6 @@ void SendOnMessageEventOnUI(
   } else {
     event_name = declarative_keys::kOnMessage;
   }
-#else
-  // TODO(thestig) Remove this once the WebRequestAPI code is disabled.
-  // http://crbug.com/305852
-  NOTREACHED();
-#endif
 
   scoped_ptr<extensions::Event> event(new extensions::Event(
       event_name,
@@ -460,7 +462,8 @@ WebRequestAPI::WebRequestAPI(content::BrowserContext* context)
     event_router->RegisterObserver(this, event_name);
 
     // Also observe the corresponding webview event.
-    event_name.replace(0, sizeof(kWebRequest) - 1, kWebView);
+    event_name.replace(
+        0, sizeof(kWebRequestEventPrefix) - 1, webview::kWebViewEventPrefix);
     event_router->RegisterObserver(this, event_name);
   }
 }
@@ -621,7 +624,7 @@ bool ExtensionWebRequestEventRouter::RequestFilter::InitFromValue(
         return false;
       for (size_t i = 0; i < types_value->GetSize(); ++i) {
         std::string type_str;
-        ResourceType::Type type;
+        ResourceType type;
         if (!types_value->GetString(i, &type_str) ||
             !helpers::ParseResourceType(type_str, &type))
           return false;
@@ -1403,21 +1406,21 @@ void ExtensionWebRequestEventRouter::AddCallbackForPageLoad(
 bool ExtensionWebRequestEventRouter::IsPageLoad(
     net::URLRequest* request) const {
   bool is_main_frame = false;
-  int64 frame_id = -1;
+  int frame_id = -1;
   bool parent_is_main_frame = false;
-  int64 parent_frame_id = -1;
+  int parent_frame_id = -1;
   int tab_id = -1;
   int window_id = -1;
   int render_process_host_id = -1;
   int routing_id = -1;
-  ResourceType::Type resource_type = ResourceType::LAST_TYPE;
+  ResourceType resource_type = content::RESOURCE_TYPE_LAST_TYPE;
 
   ExtractRequestInfoDetails(request, &is_main_frame, &frame_id,
                             &parent_is_main_frame, &parent_frame_id,
                             &tab_id, &window_id, &render_process_host_id,
                             &routing_id, &resource_type);
 
-  return resource_type == ResourceType::MAIN_FRAME;
+  return resource_type == content::RESOURCE_TYPE_MAIN_FRAME;
 }
 
 void ExtensionWebRequestEventRouter::NotifyPageLoad() {
@@ -1462,18 +1465,20 @@ void ExtensionWebRequestEventRouter::GetMatchingListenersImpl(
     int window_id,
     int render_process_host_id,
     int routing_id,
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     bool is_async_request,
     bool is_request_from_extension,
     int* extra_info_spec,
     std::vector<const ExtensionWebRequestEventRouter::EventListener*>*
         matching_listeners) {
   std::string web_request_event_name(event_name);
-  ExtensionRendererState::WebViewInfo web_view_info;
-  bool is_web_view_guest = ExtensionRendererState::GetInstance()->
-      GetWebViewInfo(render_process_host_id, routing_id, &web_view_info);
-  if (is_web_view_guest)
-    web_request_event_name.replace(0, sizeof(kWebRequest) - 1, kWebView);
+  extensions::WebViewRendererState::WebViewInfo web_view_info;
+  bool is_web_view_guest = extensions::WebViewRendererState::GetInstance()->
+      GetInfo(render_process_host_id, routing_id, &web_view_info);
+  if (is_web_view_guest) {
+    web_request_event_name.replace(
+        0, sizeof(kWebRequestEventPrefix) - 1, webview::kWebViewEventPrefix);
+  }
 
   std::set<EventListener>& listeners =
       listeners_[profile][web_request_event_name];
@@ -1516,8 +1521,9 @@ void ExtensionWebRequestEventRouter::GetMatchingListenersImpl(
     // and therefore prevent the extension from processing the request
     // handler. This is only a problem for blocking listeners.
     // http://crbug.com/105656
-    bool synchronous_xhr_from_extension = !is_async_request &&
-        is_request_from_extension && resource_type == ResourceType::XHR;
+    bool synchronous_xhr_from_extension =
+        !is_async_request && is_request_from_extension &&
+        resource_type == content::RESOURCE_TYPE_XHR;
 
     // Only send webRequest events for URLs the extension has access to.
     if (blocking_listener && synchronous_xhr_from_extension)
@@ -1539,14 +1545,14 @@ ExtensionWebRequestEventRouter::GetMatchingListeners(
   *extra_info_spec = 0;
 
   bool is_main_frame = false;
-  int64 frame_id = -1;
+  int frame_id = -1;
   bool parent_is_main_frame = false;
-  int64 parent_frame_id = -1;
+  int parent_frame_id = -1;
   int tab_id = -1;
   int window_id = -1;
   int render_process_host_id = -1;
   int routing_id = -1;
-  ResourceType::Type resource_type = ResourceType::LAST_TYPE;
+  ResourceType resource_type = content::RESOURCE_TYPE_LAST_TYPE;
   const GURL& url = request->url();
 
   ExtractRequestInfoDetails(request, &is_main_frame, &frame_id,
@@ -1843,7 +1849,7 @@ void ExtensionWebRequestEventRouter::SendMessages(
          message != messages.end(); ++message) {
       scoped_ptr<base::DictionaryValue> argument(new base::DictionaryValue);
       ExtractRequestInfo(blocked_request.request, argument.get());
-      ExtensionRendererState::WebViewInfo web_view_info;
+      extensions::WebViewRendererState::WebViewInfo web_view_info;
       bool is_web_view_guest = GetWebViewInfo(blocked_request.request,
                                               &web_view_info);
       argument->SetString(keys::kMessageKey, *message);
@@ -1972,7 +1978,7 @@ bool ExtensionWebRequestEventRouter::ProcessDeclarativeRules(
     net::URLRequest* request,
     extensions::RequestStage request_stage,
     const net::HttpResponseHeaders* original_response_headers) {
-  ExtensionRendererState::WebViewInfo web_view_info;
+  extensions::WebViewRendererState::WebViewInfo web_view_info;
   bool is_web_view_guest = GetWebViewInfo(request, &web_view_info);
 
   RulesRegistryService::WebViewKey webview_key(
@@ -2257,9 +2263,11 @@ bool WebRequestInternalAddEventListenerFunction::RunSync() {
 
   helpers::ClearCacheOnNavigation();
 
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, base::Bind(
-      &helpers::NotifyWebRequestAPIUsed,
-      profile_id(), make_scoped_refptr(GetExtension())));
+  BrowserThread::PostTask(BrowserThread::UI,
+                          FROM_HERE,
+                          base::Bind(&helpers::NotifyWebRequestAPIUsed,
+                                     profile_id(),
+                                     make_scoped_refptr(extension)));
 
   return true;
 }

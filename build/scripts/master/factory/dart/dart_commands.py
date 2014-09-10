@@ -163,7 +163,7 @@ class DartCommands(commands.FactoryCommands):
     shard = options.get('shard') or 1
     cmd = ('python ' + self._tools_dir + '/test.py '
            ' --progress=buildbot --report --time --mode=%s --arch=%s '
-           ' --compiler=dart2dart --shards=%s --shard=%s %s'
+           ' --compiler=dart2dart --host-checked --shards=%s --shard=%s %s'
            ) % (options['mode'], options['arch'], shards, shard,
                 self.standard_flags)
     if 'backend' in name:

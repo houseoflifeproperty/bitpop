@@ -96,6 +96,9 @@ struct PersistingImagesTable {
 
 // IDR_* resource names change whenever new resources are added; use persistent
 // IDs when storing to a cached pack.
+//
+// TODO(erg): The cocoa port is the last user of the IDR_*_[HP] variants. These
+// should be removed once the cocoa port no longer uses them.
 PersistingImagesTable kPersistingImages[] = {
   { PRS_THEME_FRAME, IDR_THEME_FRAME,
     "theme_frame" },
@@ -109,8 +112,10 @@ PersistingImagesTable kPersistingImages[] = {
     "theme_toolbar" },
   { PRS_THEME_TAB_BACKGROUND, IDR_THEME_TAB_BACKGROUND,
     "theme_tab_background" },
+#if !defined(OS_MACOSX)
   { PRS_THEME_TAB_BACKGROUND_INCOGNITO, IDR_THEME_TAB_BACKGROUND_INCOGNITO,
     "theme_tab_background_incognito" },
+#endif
   { PRS_THEME_TAB_BACKGROUND_V, IDR_THEME_TAB_BACKGROUND_V,
     "theme_tab_background_v"},
   { PRS_THEME_NTP_BACKGROUND, IDR_THEME_NTP_BACKGROUND,
@@ -454,10 +459,7 @@ SkBitmap CreateLowQualityResizedBitmap(const SkBitmap& source_bitmap,
                      ui::GetScaleForScaleFactor(desired_scale_factor) /
                      ui::GetScaleForScaleFactor(source_scale_factor)));
   SkBitmap scaled_bitmap;
-  scaled_bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                          scaled_size.width(),
-                          scaled_size.height());
-  if (!scaled_bitmap.allocPixels())
+  if (!scaled_bitmap.allocN32Pixels(scaled_size.width(), scaled_size.height()))
     SK_CRASH();
   scaled_bitmap.eraseARGB(0, 0, 0, 0);
   SkCanvas canvas(scaled_bitmap);

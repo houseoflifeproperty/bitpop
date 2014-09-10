@@ -41,7 +41,6 @@
 
 #include <gtest/gtest.h>
 
-using namespace WebCore;
 using namespace blink;
 
 namespace {
@@ -58,7 +57,7 @@ public:
     explicit GraphicsLayerForTesting(GraphicsLayerClient* client)
         : GraphicsLayer(client) { };
 
-    virtual blink::WebLayer* contentsLayer() const { return GraphicsLayer::contentsLayer(); }
+    virtual WebLayer* contentsLayer() const { return GraphicsLayer::contentsLayer(); }
 };
 
 class GraphicsLayerTest : public testing::Test {

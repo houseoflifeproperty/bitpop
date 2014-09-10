@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var Page = cr.ui.pageManager.Page;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
   /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
 
   /**
@@ -12,15 +13,15 @@ cr.define('options', function() {
    * @class
    */
   function AutofillEditAddressOverlay() {
-    OptionsPage.call(this, 'autofillEditAddress',
-                     loadTimeData.getString('autofillEditAddressTitle'),
-                     'autofill-edit-address-overlay');
+    Page.call(this, 'autofillEditAddress',
+              loadTimeData.getString('autofillEditAddressTitle'),
+              'autofill-edit-address-overlay');
   }
 
   cr.addSingletonGetter(AutofillEditAddressOverlay);
 
   AutofillEditAddressOverlay.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
     /**
      * The GUID of the loaded address.
@@ -44,11 +45,9 @@ cr.define('options', function() {
      */
     savedFieldValues_: {},
 
-    /**
-     * Initializes the page.
-     */
+    /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       this.createMultiValueLists_();
 
@@ -154,7 +153,7 @@ cr.define('options', function() {
       this.guid_ = '';
       this.languageCode_ = '';
       this.savedInputFields_ = {};
-      OptionsPage.closeOverlay();
+      PageManager.closeOverlay();
     },
 
     /**

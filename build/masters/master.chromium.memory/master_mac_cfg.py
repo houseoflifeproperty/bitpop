@@ -55,7 +55,6 @@ sharded_tests = [
   'ui_unittests',
   'unit_tests',
   'views_unittests',
-  'webkit_compositor_bindings_unittests',
 ]
 
 mac_asan_options = [
@@ -125,17 +124,11 @@ mac_asan_tests_3 = [
   'interactive_ui_tests',
 ]
 
-mac_asan_archive = master_config.GetArchiveUrl(
-    'ChromiumMemory',
-    'Mac ASan Builder',
-    'Mac_ASan_Builder',
-    'mac')
+mac_asan_archive = master_config.GetGSUtilUrl('chromium-build-transfer',
+                                              'Mac ASan Builder')
 
-mac_asan_64_archive = master_config.GetArchiveUrl(
-    'ChromiumMemory',
-    'Mac ASan 64 Builder',
-    'Mac_ASan_64_Builder',
-    'mac')
+mac_asan_64_archive = master_config.GetGSUtilUrl('chromium-build-transfer',
+                                                 'Mac ASan 64 Builder')
 
 gclient_env = {
   'GYP_DEFINES': 'asan=1 release_extra_cflags=-gline-tables-only',
@@ -158,6 +151,7 @@ B('Mac ASan Builder', 'mac_asan_rel', 'compile', 'mac_asan_rel',
   auto_reboot=False, notify_on_missing=True)
 F('mac_asan_rel', mac().ChromiumASANFactory(
     target='Release',
+    build_url=mac_asan_archive,
     slave_type='Builder',
     options=[
         '--build-tool=ninja',
@@ -224,6 +218,7 @@ B('Mac ASan 64 Builder', 'mac_asan_64_rel_f', 'compile', 'mac_asan_rel',
   auto_reboot=False, notify_on_missing=True)
 F('mac_asan_64_rel_f', mac().ChromiumASANFactory(
     target='Release',
+    build_url=mac_asan_64_archive,
     slave_type='Builder',
     options=[
         '--build-tool=ninja',

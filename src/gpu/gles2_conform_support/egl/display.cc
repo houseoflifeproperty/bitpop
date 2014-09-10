@@ -113,7 +113,7 @@ EGLSurface Display::CreateWindowSurface(EGLConfig config,
     return NULL;
 
   scoped_refptr<gpu::gles2::ContextGroup> group(new gpu::gles2::ContextGroup(
-      NULL, NULL, NULL, new gpu::gles2::ShaderTranslatorCache, NULL, true));
+      NULL, NULL, new gpu::gles2::ShaderTranslatorCache, NULL, true));
 
   decoder_.reset(gpu::gles2::GLES2Decoder::Create(group.get()));
   if (!decoder_.get())
@@ -168,8 +168,6 @@ EGLSurface Display::CreateWindowSurface(EGLConfig config,
                             attribs)) {
     return EGL_NO_SURFACE;
   }
-
-  gpu_control_service_.reset(new gpu::GpuControlService(NULL, NULL));
 
   command_buffer->SetPutOffsetChangeCallback(
       base::Bind(&gpu::GpuScheduler::PutChanged,
@@ -292,8 +290,17 @@ uint32 Display::InsertSyncPoint() {
   return 0u;
 }
 
+uint32 Display::InsertFutureSyncPoint() {
+  NOTIMPLEMENTED();
+  return 0u;
+}
+
+void Display::RetireSyncPoint(uint32 sync_point) {
+  NOTIMPLEMENTED();
+}
+
 void Display::SignalSyncPoint(uint32 sync_point,
-                             const base::Closure& callback) {
+                              const base::Closure& callback) {
   NOTIMPLEMENTED();
 }
 

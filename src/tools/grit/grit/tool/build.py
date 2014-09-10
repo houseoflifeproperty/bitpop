@@ -63,6 +63,20 @@ option).
 
 Options:
 
+  -a FILE           Assert that the given file is an output. There can be
+                    multiple "-a" flags listed for multiple outputs. If a "-a"
+                    or "--assert-file-list" argument is present, then the list
+                    of asserted files must match the output files or the tool
+                    will fail. The use-case is for the build system to maintain
+                    separate lists of output files and to catch errors if the
+                    build system's list and the grit list are out-of-sync.
+
+  --assert-file-list  Provide a file listing multiple asserted output files.
+                    There is one file name per line. This acts like specifying
+                    each file with "-a" on the command line, but without the
+                    possibility of running into OS line-length limits for very
+                    long lists.
+
   -o OUTPUTDIR      Specify what directory output paths are relative to.
                     Defaults to the current directory.
 
@@ -104,13 +118,20 @@ are exported to translation interchange files (e.g. XMB files), etc.
     self.output_directory = '.'
     first_ids_file = None
     whitelist_filenames = []
+    assert_output_files = []
     target_platform = None
     depfile = None
     depdir = None
     rc_header_format = None
-    (own_opts, args) = getopt.getopt(args, 'o:D:E:f:w:t:h:', ('depdir=','depfile='))
+    (own_opts, args) = getopt.getopt(args, 'a:o:D:E:f:w:t:h:',
+        ('depdir=','depfile=','assert-file-list='))
     for (key, val) in own_opts:
-      if key == '-o':
+      if key == '-a':
+        assert_output_files.append(val)
+      elif key == '--assert-file-list':
+        with open(val) as f:
+          assert_output_files += f.read().splitlines()
+      elif key == '-o':
         self.output_directory = val
       elif key == '-D':
         name, val = util.ParseDefine(val)
@@ -166,8 +187,12 @@ are exported to translation interchange files (e.g. XMB files), etc.
     self.res.RunGatherers()
     self.Process()
 
+    if assert_output_files:
+      if not self.CheckAssertedOutputFiles(assert_output_files):
+        return 2
+
     if depfile and depdir:
-      self.GenerateDepfile(opts.input, depfile, depdir)
+      self.GenerateDepfile(depfile, depdir)
 
     return 0
 
@@ -324,7 +349,31 @@ are exported to translation interchange files (e.g. XMB files), etc.
       print self.res.UberClique().missing_translations_
       sys.exit(-1)
 
-  def GenerateDepfile(self, input_filename, depfile, depdir):
+
+  def CheckAssertedOutputFiles(self, assert_output_files):
+    '''Checks that the asserted output files are specified in the given list.
+
+    Returns true if the asserted files are present. If they are not, returns
+    False and prints the failure.
+    '''
+    # Compare the absolute path names, sorted.
+    asserted = sorted([os.path.abspath(i) for i in assert_output_files])
+    actual = sorted([
+        os.path.abspath(os.path.join(self.output_directory, i.GetFilename()))
+        for i in self.res.GetOutputFiles()])
+
+    if asserted != actual:
+      print '''Asserted file list does not match.
+
+Expected output files: %s
+
+Actual output files: %s
+''' % (asserted, actual)
+      return False
+    return True
+
+
+  def GenerateDepfile(self, depfile, depdir):
     '''Generate a depfile that contains the imlicit dependencies of the input
     grd. The depfile will be in the same format as a makefile, and will contain
     references to files relative to |depdir|. It will be put in |depfile|.
@@ -343,19 +392,27 @@ are exported to translation interchange files (e.g. XMB files), etc.
     from the directory src/ we will generate a depfile ../out/gen/blah.grd.d
     that has the contents
 
-      gen/blah.grd.d: ../src/input1.xtb ../src/input2.xtb
+      gen/blah.h: ../src/input1.xtb ../src/input2.xtb
+
+    Where "gen/blah.h" is the first output (Ninja expects the .d file to list
+    the first output in cases where there is more than one).
 
     Note that all paths in the depfile are relative to ../out, the depdir.
     '''
     depfile = os.path.abspath(depfile)
     depdir = os.path.abspath(depdir)
+    infiles = self.res.GetInputFiles()
+
+    # Get the first output file relative to the depdir.
+    outputs = self.res.GetOutputFiles()
+    output_file = os.path.relpath(os.path.join(
+          self.output_directory, outputs[0].GetFilename()), depdir)
+
     # The path prefix to prepend to dependencies in the depfile.
     prefix = os.path.relpath(os.getcwd(), depdir)
-    # The path that the depfile refers to itself by.
-    self_ref_depfile = os.path.relpath(depfile, depdir)
-    infiles = self.res.GetInputFiles()
     deps_text = ' '.join([os.path.join(prefix, i) for i in infiles])
-    depfile_contents = self_ref_depfile + ': ' + deps_text
+
+    depfile_contents = output_file + ': ' + deps_text
     self.MakeDirectoriesTo(depfile)
     outfile = self.fo_create(depfile, 'wb')
     outfile.writelines(depfile_contents)

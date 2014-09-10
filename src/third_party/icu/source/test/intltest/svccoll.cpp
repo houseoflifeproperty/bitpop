@@ -1,6 +1,6 @@
 /*
  *******************************************************************************
- * Copyright (C) 2003-2010, International Business Machines Corporation and    *
+ * Copyright (C) 2003-2013, International Business Machines Corporation and    *
  * others. All Rights Reserved.                                                *
  *******************************************************************************
  */
@@ -353,7 +353,7 @@ void CollationServiceTest::TestRegisterFactory(void)
         errln("memory allocation error");
         return;
     }
-    fuFUNames->setValueDeleter(uhash_deleteUnicodeString);
+    fuFUNames->setValueDeleter(uprv_deleteUObject);
 
     fuFUNames->put(fu_FU.getName(), new UnicodeString("ze leetle bunny Fu-Fu"), status);
     fuFUNames->put(fu_FU_FOO.getName(), new UnicodeString("zee leetel bunny Foo-Foo"), status);
@@ -576,7 +576,7 @@ void CollationServiceTest::TestSeparateTree() {
                                                      Locale::createFromName("de"),
                                                      isAvailable, ec);
     assertSuccess("getFunctionalEquivalent", ec);
-    assertEquals("getFunctionalEquivalent(de)", "de", equiv.getName());
+    assertEquals("getFunctionalEquivalent(de)", "root", equiv.getName());
     assertTrue("getFunctionalEquivalent(de).isAvailable==TRUE",
                isAvailable == TRUE);
 
@@ -584,8 +584,24 @@ void CollationServiceTest::TestSeparateTree() {
                                               Locale::createFromName("de_DE"),
                                               isAvailable, ec);
     assertSuccess("getFunctionalEquivalent", ec);
-    assertEquals("getFunctionalEquivalent(de_DE)", "de", equiv.getName());
+    assertEquals("getFunctionalEquivalent(de_DE)", "root", equiv.getName());
     assertTrue("getFunctionalEquivalent(de_DE).isAvailable==TRUE",
+               isAvailable == TRUE);
+
+    equiv = Collator::getFunctionalEquivalent("collation",
+                                                     Locale::createFromName("sv"),
+                                                     isAvailable, ec);
+    assertSuccess("getFunctionalEquivalent", ec);
+    assertEquals("getFunctionalEquivalent(sv)", "sv", equiv.getName());
+    assertTrue("getFunctionalEquivalent(sv).isAvailable==TRUE",
+               isAvailable == TRUE);
+
+    equiv = Collator::getFunctionalEquivalent("collation",
+                                              Locale::createFromName("sv_SE"),
+                                              isAvailable, ec);
+    assertSuccess("getFunctionalEquivalent", ec);
+    assertEquals("getFunctionalEquivalent(sv_SE)", "sv", equiv.getName());
+    assertTrue("getFunctionalEquivalent(sv_SE).isAvailable==TRUE",
                isAvailable == TRUE);
 }
 

@@ -27,7 +27,8 @@ defaults['category'] = 'deps'
 #
 # Linux Rel Builder
 #
-B('WebKit Linux (deps)', 'f_webkit_linux_rel', scheduler='global_scheduler')
+B('WebKit Linux (deps)', 'f_webkit_linux_rel',
+  scheduler='global_deps_scheduler')
 F('f_webkit_linux_rel', linux().ChromiumFactory(
     tests=chromium_factory.blink_tests,
     options=[

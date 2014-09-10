@@ -204,7 +204,11 @@ TimeDelta UnitTestBase::GetMaxBatchingDelay(
 
 void UnitTestBase::InitZeroRegistrationSummary(RegistrationSummary* summary) {
   summary->set_num_registrations(0);
-  string zero_digest("\3329\243\356^kK\r2U\277\357\225`\030\220\257\330\007\t");
+  // "\3329..." can trigger MSVC to warn about "octal escape sequence terminated
+  // by decimal number", so break the string between the two to avoid the
+  // warning.
+  string zero_digest(
+      "\332" "9\243\356^kK\r2U\277\357\225`\030\220\257\330\007\t");
   summary->set_registration_digest(zero_digest);
 }
 

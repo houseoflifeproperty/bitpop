@@ -62,8 +62,6 @@ class Master(object):
   slave_internal_url = None
   git_internal_server_url = None
   syzygy_internal_url = None
-  webrtc_internal_url = None
-  webrtc_limited_url = None
   v8_internal_url = None
 
 
@@ -122,6 +120,13 @@ class Master(object):
   class Master4(Base):
     """Try server master."""
     master_host = 'master4.golo.chromium.org'
+    tree_closing_notification_recipients = []
+    from_address = 'tryserver@chromium.org'
+    code_review_site = 'https://codereview.chromium.org'
+
+  class Master4a(Base):
+    """Try server master."""
+    master_host = 'master4a.golo.chromium.org'
     tree_closing_notification_recipients = []
     from_address = 'tryserver@chromium.org'
     code_review_site = 'https://codereview.chromium.org'

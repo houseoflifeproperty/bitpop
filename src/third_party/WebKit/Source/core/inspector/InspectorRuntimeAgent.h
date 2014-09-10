@@ -36,7 +36,7 @@
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
 class InjectedScript;
 class InjectedScriptManager;
@@ -51,6 +51,7 @@ class InspectorRuntimeAgent : public InspectorBaseAgent<InspectorRuntimeAgent>, 
     WTF_MAKE_NONCOPYABLE(InspectorRuntimeAgent);
 public:
     virtual ~InspectorRuntimeAgent();
+    virtual void trace(Visitor*) OVERRIDE;
 
     // Part of the protocol.
     virtual void enable(ErrorString*) OVERRIDE;
@@ -64,7 +65,8 @@ public:
         const bool* returnByValue,
         const bool* generatePreview,
         RefPtr<TypeBuilder::Runtime::RemoteObject>& result,
-        TypeBuilder::OptOutput<bool>* wasThrown) OVERRIDE FINAL;
+        TypeBuilder::OptOutput<bool>* wasThrown,
+        RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) OVERRIDE FINAL;
     virtual void callFunctionOn(ErrorString*,
                         const String& objectId,
                         const String& expression,
@@ -101,10 +103,10 @@ protected:
     ScriptStateToId m_scriptStateToId;
 
 private:
-    InjectedScriptManager* m_injectedScriptManager;
+    RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
     ScriptDebugServer* m_scriptDebugServer;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InspectorRuntimeAgent_h

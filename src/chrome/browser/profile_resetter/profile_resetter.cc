@@ -16,8 +16,6 @@
 #include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/profile_resetter/brandcoded_default_settings.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_iterator.h"
@@ -26,6 +24,9 @@
 #include "chrome/installer/util/browser_distribution.h"
 #include "components/google/core/browser/google_pref_names.h"
 #include "components/google/core/browser/google_url_tracker.h"
+#include "components/search_engines/search_engines_pref_names.h"
+#include "components/search_engines/template_url_prepopulate_data.h"
+#include "components/search_engines/template_url_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
@@ -107,15 +108,15 @@ void ProfileResetter::Reset(
     Resettable flag;
     void (ProfileResetter::*method)();
   } flagToMethod[] = {
-        {DEFAULT_SEARCH_ENGINE, &ProfileResetter::ResetDefaultSearchEngine},
-        {HOMEPAGE, &ProfileResetter::ResetHomepage},
-        {CONTENT_SETTINGS, &ProfileResetter::ResetContentSettings},
-        {COOKIES_AND_SITE_DATA, &ProfileResetter::ResetCookiesAndSiteData},
-        {EXTENSIONS, &ProfileResetter::ResetExtensions},
-        {STARTUP_PAGES, &ProfileResetter::ResetStartupPages},
-        {PINNED_TABS, &ProfileResetter::ResetPinnedTabs},
-        {SHORTCUTS, &ProfileResetter::ResetShortcuts},
-    };
+    {DEFAULT_SEARCH_ENGINE, &ProfileResetter::ResetDefaultSearchEngine},
+    {HOMEPAGE, &ProfileResetter::ResetHomepage},
+    {CONTENT_SETTINGS, &ProfileResetter::ResetContentSettings},
+    {COOKIES_AND_SITE_DATA, &ProfileResetter::ResetCookiesAndSiteData},
+    {EXTENSIONS, &ProfileResetter::ResetExtensions},
+    {STARTUP_PAGES, &ProfileResetter::ResetStartupPages},
+    {PINNED_TABS, &ProfileResetter::ResetPinnedTabs},
+    {SHORTCUTS, &ProfileResetter::ResetShortcuts},
+  };
 
   ResettableFlags reset_triggered_for_flags = 0;
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(flagToMethod); ++i) {
@@ -269,7 +270,8 @@ void ProfileResetter::ResetExtensions() {
   std::vector<std::string> brandcode_extensions;
   master_settings_->GetExtensions(&brandcode_extensions);
 
-  ExtensionService* extension_service = profile_->GetExtensionService();
+  ExtensionService* extension_service =
+      extensions::ExtensionSystem::Get(profile_)->extension_service();
   DCHECK(extension_service);
   extension_service->DisableUserExtensions(brandcode_extensions);
 

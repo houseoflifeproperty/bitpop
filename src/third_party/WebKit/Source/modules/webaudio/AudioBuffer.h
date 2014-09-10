@@ -29,14 +29,14 @@
 #ifndef AudioBuffer_h
 #define AudioBuffer_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "wtf/Float32Array.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBus;
 class ExceptionState;
@@ -78,6 +78,6 @@ protected:
     Vector<RefPtr<Float32Array> > m_channels;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioBuffer_h

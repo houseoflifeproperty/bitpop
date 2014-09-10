@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,6 @@ class ContextFactory;
 }
 
 namespace mojo {
-namespace view_manager {
 namespace service {
 
 class ContextFactoryImpl;
@@ -25,9 +24,12 @@ class WindowTreeHostImpl : public aura::WindowTreeHost,
                            public ui::EventSource,
                            public NativeViewportClient {
  public:
-  WindowTreeHostImpl(NativeViewportPtr viewport,
-                     const gfx::Rect& bounds,
-                     const base::Callback<void()>& compositor_created_callback);
+  WindowTreeHostImpl(
+      NativeViewportPtr viewport,
+      const gfx::Rect& bounds,
+      const Callback<void()>& compositor_created_callback,
+      const Callback<void()>& native_viewport_closed_callback,
+      const Callback<void(EventPtr)>& event_received_callback);
   virtual ~WindowTreeHostImpl();
 
   gfx::Rect bounds() const { return bounds_; }
@@ -44,7 +46,6 @@ class WindowTreeHostImpl : public aura::WindowTreeHost,
   virtual void SetCapture() OVERRIDE;
   virtual void ReleaseCapture() OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& native_event) OVERRIDE;
-  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual void SetCursorNative(gfx::NativeCursor cursor) OVERRIDE;
   virtual void MoveCursorToNative(const gfx::Point& location) OVERRIDE;
   virtual void OnCursorVisibilityChangedNative(bool show) OVERRIDE;
@@ -54,7 +55,7 @@ class WindowTreeHostImpl : public aura::WindowTreeHost,
 
   // Overridden from NativeViewportClient:
   virtual void OnCreated() OVERRIDE;
-  virtual void OnDestroyed() OVERRIDE;
+  virtual void OnDestroyed(const mojo::Callback<void()>& callback) OVERRIDE;
   virtual void OnBoundsChanged(RectPtr bounds) OVERRIDE;
   virtual void OnEvent(EventPtr event,
                        const mojo::Callback<void()>& callback) OVERRIDE;
@@ -62,7 +63,9 @@ class WindowTreeHostImpl : public aura::WindowTreeHost,
   static ContextFactoryImpl* context_factory_;
 
   NativeViewportPtr native_viewport_;
-  base::Callback<void()> compositor_created_callback_;
+  Callback<void()> compositor_created_callback_;
+  Callback<void()> native_viewport_closed_callback_;
+  Callback<void(EventPtr)> event_received_callback_;
 
   gfx::Rect bounds_;
 
@@ -70,7 +73,6 @@ class WindowTreeHostImpl : public aura::WindowTreeHost,
 };
 
 }  // namespace service
-}  // namespace view_manager
 }  // namespace mojo
 
 #endif  // MOJO_AURA_WINDOW_TREE_HOST_MOJO_H_

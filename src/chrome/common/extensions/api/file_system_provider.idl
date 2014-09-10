@@ -48,12 +48,16 @@ namespace fileSystemProvider {
 
     // The last modified time of this entry.
     [instanceOf=Date] object modificationTime;
+
+    // Mime type for the entry.
+    DOMString? mimeType; 
   };
 
   // Options for the <code>mount()</code> method.
   dictionary MountOptions {
     DOMString fileSystemId;
     DOMString displayName;
+    [nodoc] boolean? writable;
   };
 
   // Options for the <code>unmount()</code> method.
@@ -87,7 +91,6 @@ namespace fileSystemProvider {
     long requestId;
     DOMString filePath;
     OpenFileMode mode;
-    boolean create;
   };
 
   // Options for the <code>onCloseFileRequested()</code> event.
@@ -106,20 +109,78 @@ namespace fileSystemProvider {
     double length;
   };
 
+  // Options for the <code>onCreateDirectoryRequested()</code> event.
+  dictionary CreateDirectoryRequestedOptions {
+    DOMString fileSystemId;
+    long requestId;
+    DOMString directoryPath;
+    boolean exclusive;
+    boolean recursive;
+  };
+
+  // Options for the <code>onDeleteEntryRequested()</code> event.
+  dictionary DeleteEntryRequestedOptions {
+    DOMString fileSystemId;
+    long requestId;
+    DOMString entryPath;
+    boolean recursive;
+  };
+
+  // Options for the <code>onCreateFileRequested()</code> event.
+  dictionary CreateFileRequestedOptions {
+    DOMString fileSystemId;
+    long requestId;
+    DOMString filePath;
+  };
+
+  // Options for the <code>onCopyEntryRequested()</code> event.
+  dictionary CopyEntryRequestedOptions {
+    DOMString fileSystemId;
+    long requestId;
+    DOMString sourcePath;
+    DOMString targetPath;
+  };
+
+  // Options for the <code>onMoveEntryRequested()</code> event.
+  dictionary MoveEntryRequestedOptions {
+    DOMString fileSystemId;
+    long requestId;
+    DOMString sourcePath;
+    DOMString targetPath;
+  };
+
+  // Options for the <code>onTruncateRequested()</code> event.
+  dictionary TruncateRequestedOptions {
+    DOMString fileSystemId;
+    long requestId;
+    DOMString filePath;
+    double length;
+  };
+
+  // Options for the <code>onWriteFileRequested()</code> event.
+  dictionary WriteFileRequestedOptions {
+    DOMString fileSystemId;
+    long requestId;
+    long openRequestId;
+    double offset;
+    double length;
+    ArrayBuffer data;
+  };
+
   // Callback to receive the result of mount() function.
   callback MountCallback = void([nodoc, instanceOf=DOMError] object error);
 
   // Callback to receive the result of unmount() function.
   callback UnmountCallback = void([nodoc, instanceOf=DOMError] object error);
 
+  // Callback to handle an error raised from the browser.
+  [nocompile] callback ErrorCallback = void([instanceOf=DOMError] object error);
+
   // Callback to be called by the providing extension in case of a success.
   callback ProviderSuccessCallback = void();
 
   // Callback to be called by the providing extension in case of an error.
   callback ProviderErrorCallback = void(ProviderError error);
-
-  // Callback to handle an error raised from the browser.
-  [nocompile] callback ErrorCallback = void([instanceOf=DOMError] object error);
 
   // Success callback for the <code>onGetMetadataRequested</code> event.
   callback MetadataCallback = void(EntryMetadata metadata);
@@ -128,13 +189,13 @@ namespace fileSystemProvider {
   // more entries will be returned, then <code>hasMore</code> must be true, and
   // it has to be called again with additional entries. If no more entries are
   // available, then <code>hasMore</code> must be set to false.
-  callback EntriesCallback = void(ResourceEntry[] entries, bool hasMore);
+  callback EntriesCallback = void(EntryMetadata[] entries, boolean hasMore);
 
   // Success callback for the <code>onReadFileRequested</code> event. If more
   // data will be returned, then <code>hasMore</code> must be true, and it
   // has to be called again with additional entries. If no more data is
   // available, then <code>hasMore</code> must be set to false.
-  callback FileDataCallback = void(ArrayBuffer data, bool hasMore);
+  callback FileDataCallback = void(ArrayBuffer data, boolean hasMore);
 
   interface Functions {
     // Mounts a file system with the given <code>fileSystemId</code> and <code>
@@ -192,9 +253,8 @@ namespace fileSystemProvider {
         EntriesCallback successCallback,
         ProviderErrorCallback errorCallback);
 
-    // Raised when opening a file at <code>filePath</code> is requested.
-    // If <code>create</code> is set to <code>true</code> and the file does not
-    // exist, then it should be created.
+    // Raised when opening a file at <code>filePath</code> is requested. If the
+    // file does not exist, then the operation must fail.
     [maxListeners=1] static void onOpenFileRequested(
         OpenFileRequestedOptions options,
         ProviderSuccessCallback successCallback,
@@ -207,13 +267,66 @@ namespace fileSystemProvider {
         ProviderSuccessCallback successCallback,
         ProviderErrorCallback errorCallback);
 
-    // Raised when contents of a file opened previously with <code>openRequestId
-    // </code>. The results should be returned in chunks by calling <code>
-    // successCallback</code> several times. In case of an error, <code>
-    // errorCallback</code> must be called.
+    // Raised when reading contents of a file opened previously with <code>
+    // openRequestId</code> is requested. The results should be returned in
+    // chunks by calling <code>successCallback</code> several times. In case of
+    // an error, <code>errorCallback</code> must be called.
     [maxListeners=1] static void onReadFileRequested(
         ReadFileRequestedOptions options,
         FileDataCallback successCallback,
+        ProviderErrorCallback errorCallback);
+
+    // Raised when creating a directory is requested. If <code>exclusive</code>
+    // is set to true, then the operation must fail if the target directory
+    // already exists. If <code>recursive</code> is true, then all of the
+    // missing directories on the directory path must be created.
+    [maxListeners=1, nodoc] static void onCreateDirectoryRequested(
+        CreateDirectoryRequestedOptions options,
+        ProviderSuccessCallback successCallback,
+        ProviderErrorCallback errorCallback);
+
+    // Raised when deleting an entry is requested. If <code>recursive</code> is
+    // true, and the entry is a directory, then all of the entries inside
+    // must be recursively deleted as well.
+    [maxListeners=1, nodoc] static void onDeleteEntryRequested(
+        DeleteEntryRequestedOptions options,
+        ProviderSuccessCallback successCallback,
+        ProviderErrorCallback errorCallback);
+
+    // Raised when creating a file is requested. If the file already exists,
+    // then <code>errorCallback</code> must be called with the <code>EXISTS
+    // </code> error code.
+    [maxListeners=1, nodoc] static void onCreateFileRequested(
+        CreateFileRequestedOptions options,
+        ProviderSuccessCallback successCallback,
+        ProviderErrorCallback errorCallback);
+
+    // Raised when copying an entry (recursively if a directory) is requested.
+    // If an error occurs, then <code>errorCallback</code> must be called.
+    [maxListeners=1, nodoc] static void onCopyEntryRequested(
+        CopyEntryRequestedOptions options,
+        ProviderSuccessCallback successCallback,
+        ProviderErrorCallback errorCallback);
+
+    // Raised when moving an entry (recursively if a directory) is requested.
+    // If an error occurs, then <code>errorCallback</code> must be called.
+    [maxListeners=1, nodoc] static void onMoveEntryRequested(
+        MoveEntryRequestedOptions options,
+        ProviderSuccessCallback successCallback,
+        ProviderErrorCallback errorCallback);
+
+    // Raised when truncating a file to a desired length is requested.
+    // If an error occurs, then <code>errorCallback</code> must be called.
+    [maxListeners=1, nodoc] static void onTruncateRequested(
+        TruncateRequestedOptions options,
+        ProviderSuccessCallback successCallback,
+        ProviderErrorCallback errorCallback);
+
+    // Raised when writing contents to a file opened previously with <code>
+    // openRequestId</code> is requested.
+    [maxListeners=1, nodoc] static void onWriteFileRequested(
+        WriteFileRequestedOptions options,
+        ProviderSuccessCallback successCallback,
         ProviderErrorCallback errorCallback);
   };
 };

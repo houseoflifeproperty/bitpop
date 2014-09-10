@@ -7,7 +7,6 @@
 #include <algorithm>
 
 #include "media/base/buffers.h"
-#include "media/base/stream_parser_buffer.h"
 #include "media/formats/mp4/rcheck.h"
 #include "media/formats/mp4/sample_to_group_iterator.h"
 
@@ -57,7 +56,7 @@ TrackRunInfo::TrackRunInfo()
 }
 TrackRunInfo::~TrackRunInfo() {}
 
-TimeDelta TimeDeltaFromRational(int64 numer, int64 denom) {
+base::TimeDelta TimeDeltaFromRational(int64 numer, int64 denom) {
   // To avoid overflow, split the following calculation:
   // (numer * base::Time::kMicrosecondsPerSecond) / denom
   // into:
@@ -73,7 +72,12 @@ TimeDelta TimeDeltaFromRational(int64 numer, int64 denom) {
 
   DCHECK((timeb_in_us < 0) || (timea_in_us <= kint64max - timeb_in_us));
   DCHECK((timeb_in_us > 0) || (timea_in_us >= kint64min - timeb_in_us));
-  return TimeDelta::FromMicroseconds(timea_in_us + timeb_in_us);
+  return base::TimeDelta::FromMicroseconds(timea_in_us + timeb_in_us);
+}
+
+DecodeTimestamp DecodeTimestampFromRational(int64 numer, int64 denom) {
+  return DecodeTimestamp::FromPresentationTime(
+      TimeDeltaFromRational(numer, denom));
 }
 
 TrackRunIterator::TrackRunIterator(const Movie* moov,
@@ -90,8 +94,7 @@ static void PopulateSampleInfo(const TrackExtends& trex,
                                const int64 edit_list_offset,
                                const uint32 i,
                                SampleInfo* sample_info,
-                               const SampleDependsOn sdtp_sample_depends_on,
-                               bool is_sync_sample) {
+                               const SampleDependsOn sdtp_sample_depends_on) {
   if (i < trun.sample_sizes.size()) {
     sample_info->size = trun.sample_sizes[i];
   } else if (tfhd.default_sample_size > 0) {
@@ -237,8 +240,6 @@ bool TrackRunIterator::Init(const MovieFragment& moof) {
 
     int64 run_start_dts = traf.decode_time.decode_time;
     int sample_count_sum = 0;
-    const SyncSample& sync_sample =
-        trak->media.information.sample_table.sync_sample;
     for (size_t j = 0; j < traf.runs.size(); j++) {
       const TrackFragmentRun& trun = traf.runs[j];
       TrackRunInfo tri;
@@ -300,8 +301,7 @@ bool TrackRunIterator::Init(const MovieFragment& moof) {
       tri.samples.resize(trun.sample_count);
       for (size_t k = 0; k < trun.sample_count; k++) {
         PopulateSampleInfo(*trex, traf.header, trun, edit_list_offset,
-                           k, &tri.samples[k], traf.sdtp.sample_depends_on(k),
-                           sync_sample.IsSyncSample(k));
+                           k, &tri.samples[k], traf.sdtp.sample_depends_on(k));
         run_start_dts += tri.samples[k].duration;
 
         if (!is_sample_to_group_valid) {
@@ -473,18 +473,18 @@ int TrackRunIterator::sample_size() const {
   return sample_itr_->size;
 }
 
-TimeDelta TrackRunIterator::dts() const {
+DecodeTimestamp TrackRunIterator::dts() const {
   DCHECK(IsSampleValid());
-  return TimeDeltaFromRational(sample_dts_, run_itr_->timescale);
+  return DecodeTimestampFromRational(sample_dts_, run_itr_->timescale);
 }
 
-TimeDelta TrackRunIterator::cts() const {
+base::TimeDelta TrackRunIterator::cts() const {
   DCHECK(IsSampleValid());
   return TimeDeltaFromRational(sample_dts_ + sample_itr_->cts_offset,
                                run_itr_->timescale);
 }
 
-TimeDelta TrackRunIterator::duration() const {
+base::TimeDelta TrackRunIterator::duration() const {
   DCHECK(IsSampleValid());
   return TimeDeltaFromRational(sample_itr_->duration, run_itr_->timescale);
 }

@@ -36,6 +36,7 @@
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
 #include "core/frame/LocalFrame.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/FrameLoader.h"
@@ -57,9 +58,9 @@
 
 using blink::WebSocketHandle;
 
-namespace WebCore {
+namespace blink {
 
-class NewWebSocketChannelImpl::BlobLoader FINAL : public NoBaseWillBeGarbageCollectedFinalized<NewWebSocketChannelImpl::BlobLoader>, public FileReaderLoaderClient {
+class NewWebSocketChannelImpl::BlobLoader FINAL : public GarbageCollectedFinalized<NewWebSocketChannelImpl::BlobLoader>, public FileReaderLoaderClient {
 public:
     BlobLoader(PassRefPtr<BlobDataHandle>, NewWebSocketChannelImpl*);
     virtual ~BlobLoader() { }
@@ -78,7 +79,7 @@ public:
     }
 
 private:
-    RawPtrWillBeMember<NewWebSocketChannelImpl> m_channel;
+    Member<NewWebSocketChannelImpl> m_channel;
     FileReaderLoader m_loader;
 };
 
@@ -108,9 +109,9 @@ void NewWebSocketChannelImpl::BlobLoader::didFail(FileError::ErrorCode errorCode
     // |this| is deleted here.
 }
 
-NewWebSocketChannelImpl::NewWebSocketChannelImpl(ExecutionContext* context, WebSocketChannelClient* client, const String& sourceURL, unsigned lineNumber)
+NewWebSocketChannelImpl::NewWebSocketChannelImpl(ExecutionContext* context, WebSocketChannelClient* client, const String& sourceURL, unsigned lineNumber, WebSocketHandle *handle)
     : ContextLifecycleObserver(context)
-    , m_handle(adoptPtr(blink::Platform::current()->createWebSocketHandle()))
+    , m_handle(adoptPtr(handle ? handle : Platform::current()->createWebSocketHandle()))
     , m_client(client)
     , m_identifier(0)
     , m_sendingQuota(0)
@@ -125,7 +126,7 @@ NewWebSocketChannelImpl::NewWebSocketChannelImpl(ExecutionContext* context, WebS
 
 NewWebSocketChannelImpl::~NewWebSocketChannelImpl()
 {
-    abortAsyncOperations();
+    ASSERT(!m_blobLoader);
 }
 
 bool NewWebSocketChannelImpl::connect(const KURL& url, const String& protocol)
@@ -134,11 +135,13 @@ bool NewWebSocketChannelImpl::connect(const KURL& url, const String& protocol)
     if (!m_handle)
         return false;
 
-    if (executionContext()->isDocument() && document()->frame() && !document()->frame()->loader().mixedContentChecker()->canConnectInsecureWebSocket(document()->securityOrigin(), url))
-        return false;
+    if (executionContext()->isDocument() && document()->frame()) {
+        if (!document()->frame()->loader().mixedContentChecker()->canConnectInsecureWebSocket(document()->securityOrigin(), url))
+            return false;
+    }
     if (MixedContentChecker::isMixedContent(document()->securityOrigin(), url)) {
         String message = "Connecting to a non-secure WebSocket server from a secure origin is deprecated.";
-        document()->addConsoleMessage(JSMessageSource, WarningMessageLevel, message);
+        document()->addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel, message));
     }
 
     m_url = url;
@@ -150,7 +153,7 @@ bool NewWebSocketChannelImpl::connect(const KURL& url, const String& protocol)
         // it.
         protocol.split(", ", true, protocols);
     }
-    blink::WebVector<blink::WebString> webProtocols(protocols.size());
+    WebVector<WebString> webProtocols(protocols.size());
     for (size_t i = 0; i < protocols.size(); ++i) {
         webProtocols[i] = protocols[i];
     }
@@ -169,7 +172,7 @@ bool NewWebSocketChannelImpl::connect(const KURL& url, const String& protocol)
     return true;
 }
 
-WebSocketChannel::SendResult NewWebSocketChannelImpl::send(const String& message)
+void NewWebSocketChannelImpl::send(const String& message)
 {
     WTF_LOG(Network, "NewWebSocketChannelImpl %p sendText(%s)", this, message.utf8().data());
     if (m_identifier) {
@@ -180,10 +183,9 @@ WebSocketChannel::SendResult NewWebSocketChannelImpl::send(const String& message
     }
     m_messages.append(adoptPtr(new Message(message)));
     sendInternal();
-    return SendSuccess;
 }
 
-WebSocketChannel::SendResult NewWebSocketChannelImpl::send(PassRefPtr<BlobDataHandle> blobDataHandle)
+void NewWebSocketChannelImpl::send(PassRefPtr<BlobDataHandle> blobDataHandle)
 {
     WTF_LOG(Network, "NewWebSocketChannelImpl %p sendBlob(%s, %s, %llu)", this, blobDataHandle->uuid().utf8().data(), blobDataHandle->type().utf8().data(), blobDataHandle->size());
     if (m_identifier) {
@@ -196,10 +198,9 @@ WebSocketChannel::SendResult NewWebSocketChannelImpl::send(PassRefPtr<BlobDataHa
     }
     m_messages.append(adoptPtr(new Message(blobDataHandle)));
     sendInternal();
-    return SendSuccess;
 }
 
-WebSocketChannel::SendResult NewWebSocketChannelImpl::send(const ArrayBuffer& buffer, unsigned byteOffset, unsigned byteLength)
+void NewWebSocketChannelImpl::send(const ArrayBuffer& buffer, unsigned byteOffset, unsigned byteLength)
 {
     WTF_LOG(Network, "NewWebSocketChannelImpl %p sendArrayBuffer(%p, %u, %u)", this, buffer.data(), byteOffset, byteLength);
     if (m_identifier) {
@@ -212,10 +213,9 @@ WebSocketChannel::SendResult NewWebSocketChannelImpl::send(const ArrayBuffer& bu
     // queue the data.
     m_messages.append(adoptPtr(new Message(buffer.slice(byteOffset, byteOffset + byteLength))));
     sendInternal();
-    return SendSuccess;
 }
 
-WebSocketChannel::SendResult NewWebSocketChannelImpl::send(PassOwnPtr<Vector<char> > data)
+void NewWebSocketChannelImpl::send(PassOwnPtr<Vector<char> > data)
 {
     WTF_LOG(Network, "NewWebSocketChannelImpl %p sendVector(%p, %llu)", this, data.get(), static_cast<unsigned long long>(data->size()));
     if (m_identifier) {
@@ -225,7 +225,6 @@ WebSocketChannel::SendResult NewWebSocketChannelImpl::send(PassOwnPtr<Vector<cha
     }
     m_messages.append(adoptPtr(new Message(data)));
     sendInternal();
-    return SendSuccess;
 }
 
 void NewWebSocketChannelImpl::close(int code, const String& reason)
@@ -233,7 +232,8 @@ void NewWebSocketChannelImpl::close(int code, const String& reason)
     WTF_LOG(Network, "NewWebSocketChannelImpl %p close(%d, %s)", this, code, reason.utf8().data());
     ASSERT(m_handle);
     unsigned short codeToSend = static_cast<unsigned short>(code == CloseEventCodeNotSpecified ? CloseEventCodeNoStatusRcvd : code);
-    m_handle->close(codeToSend, reason);
+    m_messages.append(adoptPtr(new Message(codeToSend, reason)));
+    sendInternal();
 }
 
 void NewWebSocketChannelImpl::fail(const String& reason, MessageLevel level, const String& sourceURL, unsigned lineNumber)
@@ -244,7 +244,7 @@ void NewWebSocketChannelImpl::fail(const String& reason, MessageLevel level, con
     if (m_identifier)
         InspectorInstrumentation::didReceiveWebSocketFrameError(document(), m_identifier, reason);
     const String message = "WebSocket connection to '" + m_url.elidedString() + "' failed: " + reason;
-    executionContext()->addConsoleMessage(JSMessageSource, level, message, sourceURL, lineNumber);
+    executionContext()->addConsoleMessage(ConsoleMessage::create(JSMessageSource, level, message, sourceURL, lineNumber));
 
     if (m_client)
         m_client->didReceiveMessageError();
@@ -265,7 +265,7 @@ void NewWebSocketChannelImpl::disconnect()
     }
     abortAsyncOperations();
     m_handle.clear();
-    m_client = 0;
+    m_client = nullptr;
     m_identifier = 0;
 }
 
@@ -295,13 +295,20 @@ NewWebSocketChannelImpl::Message::Message(PassOwnPtr<Vector<char> > vectorData)
     : type(MessageTypeVector)
     , vectorData(vectorData) { }
 
+NewWebSocketChannelImpl::Message::Message(unsigned short code, const String& reason)
+    : type(MessageTypeClose)
+    , code(code)
+    , reason(reason) { }
+
 void NewWebSocketChannelImpl::sendInternal()
 {
     ASSERT(m_handle);
     unsigned long consumedBufferedAmount = 0;
-    while (!m_messages.isEmpty() && m_sendingQuota > 0 && !m_blobLoader) {
+    while (!m_messages.isEmpty() && !m_blobLoader) {
         bool final = false;
         Message* message = m_messages.first().get();
+        if (m_sendingQuota <= 0 && message->type != MessageTypeClose)
+            break;
         switch (message->type) {
         case MessageTypeText: {
             WebSocketHandle::MessageType type =
@@ -316,7 +323,7 @@ void NewWebSocketChannelImpl::sendInternal()
         }
         case MessageTypeBlob:
             ASSERT(!m_blobLoader);
-            m_blobLoader = adoptPtrWillBeNoop(new BlobLoader(message->blobDataHandle, this));
+            m_blobLoader = new BlobLoader(message->blobDataHandle, this);
             break;
         case MessageTypeArrayBuffer: {
             WebSocketHandle::MessageType type =
@@ -338,6 +345,13 @@ void NewWebSocketChannelImpl::sendInternal()
             m_sentSizeOfTopMessage += size;
             m_sendingQuota -= size;
             consumedBufferedAmount += size;
+            break;
+        }
+        case MessageTypeClose: {
+            // No message should be sent from now on.
+            ASSERT(m_messages.size() == 1);
+            m_handle->close(message->code, message->reason);
+            final = true;
             break;
         }
         }
@@ -375,7 +389,7 @@ void NewWebSocketChannelImpl::handleDidClose(bool wasClean, unsigned short code,
         return;
     }
     WebSocketChannelClient* client = m_client;
-    m_client = 0;
+    m_client = nullptr;
     WebSocketChannelClient::ClosingHandshakeCompletionStatus status =
         wasClean ? WebSocketChannelClient::ClosingHandshakeComplete : WebSocketChannelClient::ClosingHandshakeIncomplete;
     client->didClose(status, code, reason);
@@ -390,7 +404,7 @@ Document* NewWebSocketChannelImpl::document()
     return toDocument(context);
 }
 
-void NewWebSocketChannelImpl::didConnect(WebSocketHandle* handle, bool fail, const blink::WebString& selectedProtocol, const blink::WebString& extensions)
+void NewWebSocketChannelImpl::didConnect(WebSocketHandle* handle, bool fail, const WebString& selectedProtocol, const WebString& extensions)
 {
     WTF_LOG(Network, "NewWebSocketChannelImpl %p didConnect(%p, %d, %s, %s)", this, handle, fail, selectedProtocol.utf8().data(), extensions.utf8().data());
     ASSERT(m_handle);
@@ -404,7 +418,7 @@ void NewWebSocketChannelImpl::didConnect(WebSocketHandle* handle, bool fail, con
     m_client->didConnect(selectedProtocol, extensions);
 }
 
-void NewWebSocketChannelImpl::didStartOpeningHandshake(WebSocketHandle* handle, const blink::WebSocketHandshakeRequestInfo& request)
+void NewWebSocketChannelImpl::didStartOpeningHandshake(WebSocketHandle* handle, const WebSocketHandshakeRequestInfo& request)
 {
     WTF_LOG(Network, "NewWebSocketChannelImpl %p didStartOpeningHandshake(%p)", this, handle);
     if (m_identifier) {
@@ -416,7 +430,7 @@ void NewWebSocketChannelImpl::didStartOpeningHandshake(WebSocketHandle* handle, 
     }
 }
 
-void NewWebSocketChannelImpl::didFinishOpeningHandshake(WebSocketHandle* handle, const blink::WebSocketHandshakeResponseInfo& response)
+void NewWebSocketChannelImpl::didFinishOpeningHandshake(WebSocketHandle* handle, const WebSocketHandshakeResponseInfo& response)
 {
     WTF_LOG(Network, "NewWebSocketChannelImpl %p didFinishOpeningHandshake(%p)", this, handle);
     if (m_identifier) {
@@ -427,7 +441,7 @@ void NewWebSocketChannelImpl::didFinishOpeningHandshake(WebSocketHandle* handle,
     m_handshakeRequest.clear();
 }
 
-void NewWebSocketChannelImpl::didFail(WebSocketHandle* handle, const blink::WebString& message)
+void NewWebSocketChannelImpl::didFail(WebSocketHandle* handle, const WebString& message)
 {
     WTF_LOG(Network, "NewWebSocketChannelImpl %p didFail(%p, %s)", this, handle, message.utf8().data());
     // This function is called when the browser is required to fail the
@@ -488,7 +502,7 @@ void NewWebSocketChannelImpl::didReceiveData(WebSocketHandle* handle, bool fin, 
     }
 }
 
-void NewWebSocketChannelImpl::didClose(WebSocketHandle* handle, bool wasClean, unsigned short code, const blink::WebString& reason)
+void NewWebSocketChannelImpl::didClose(WebSocketHandle* handle, bool wasClean, unsigned short code, const WebString& reason)
 {
     WTF_LOG(Network, "NewWebSocketChannelImpl %p didClose(%p, %d, %u, %s)", this, handle, wasClean, code, String(reason).utf8().data());
     ASSERT(m_handle);
@@ -546,7 +560,8 @@ void NewWebSocketChannelImpl::didFailLoadingBlob(FileError::ErrorCode errorCode)
 void NewWebSocketChannelImpl::trace(Visitor* visitor)
 {
     visitor->trace(m_blobLoader);
+    visitor->trace(m_client);
     WebSocketChannel::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

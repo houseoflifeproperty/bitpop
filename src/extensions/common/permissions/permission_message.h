@@ -42,7 +42,7 @@ class PermissionMessage {
     kTtsEngine,
     kContentSettings,
     kPrivacy,
-    kManagedMode,
+    kSupervisedUser,
     kInput,
     kAudioCapture,
     kVideoCapture,
@@ -86,6 +86,8 @@ class PermissionMessage {
     kAccessibilityFeaturesRead,
     kBluetoothPrivate,
     kIdentityEmail,
+    kExperienceSamplingPrivate,
+    kCopresence,
     kEnumBoundary,
   };
   COMPILE_ASSERT(PermissionMessage::kNone > PermissionMessage::kUnknown,

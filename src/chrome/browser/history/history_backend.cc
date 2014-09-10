@@ -23,15 +23,16 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/favicon/favicon_changed_details.h"
 #include "chrome/browser/history/download_row.h"
 #include "chrome/browser/history/history_db_task.h"
+#include "chrome/browser/history/history_db_task.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/in_memory_history_backend.h"
-#include "chrome/browser/history/page_usage_data.h"
+#include "chrome/browser/history/in_memory_history_backend.h"
 #include "chrome/browser/history/top_sites.h"
+#include "chrome/browser/history/typed_url_syncable_service.h"
 #include "chrome/browser/history/typed_url_syncable_service.h"
 #include "chrome/browser/history/visit_filter.h"
 #include "chrome/common/chrome_constants.h"
@@ -39,6 +40,8 @@
 #include "chrome/common/url_constants.h"
 #include "components/favicon_base/select_favicon_frames.h"
 #include "components/history/core/browser/history_client.h"
+#include "components/history/core/browser/keyword_search_term.h"
+#include "components/history/core/browser/page_usage_data.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
@@ -66,11 +69,22 @@ using base::TimeTicks;
 
 namespace history {
 
+namespace {
+void RunUnlessCanceled(
+    const base::Closure& closure,
+    const base::CancelableTaskTracker::IsCanceledCallback& is_canceled) {
+  if (!is_canceled.Run())
+    closure.Run();
+}
+}  // namespace
+
+#if defined(OS_ANDROID)
 // How long we keep segment data for in days. Currently 3 months.
 // This value needs to be greater or equal to
 // MostVisitedModel::kMostVisitedScope but we don't want to introduce a direct
 // dependency between MostVisitedModel and the history backend.
 const int kSegmentDataRetention = 90;
+#endif
 
 // How long we'll wait to do a commit, so that things are batched together.
 const int kCommitIntervalSeconds = 10;
@@ -152,12 +166,41 @@ class CommitLaterTask : public base::RefCounted<CommitLaterTask> {
   scoped_refptr<HistoryBackend> history_backend_;
 };
 
-// HistoryBackend::QueryURLResult ----------------------------------------------
 
-HistoryBackend::QueryURLResult::QueryURLResult() : success(false) {
+QueuedHistoryDBTask::QueuedHistoryDBTask(
+    scoped_ptr<HistoryDBTask> task,
+    scoped_refptr<base::SingleThreadTaskRunner> origin_loop,
+    const base::CancelableTaskTracker::IsCanceledCallback& is_canceled)
+    : task_(task.Pass()), origin_loop_(origin_loop), is_canceled_(is_canceled) {
+  DCHECK(task_);
+  DCHECK(origin_loop_);
+  DCHECK(!is_canceled_.is_null());
 }
 
-HistoryBackend::QueryURLResult::~QueryURLResult() {
+QueuedHistoryDBTask::~QueuedHistoryDBTask() {
+  // Ensure that |task_| is destroyed on its origin thread.
+  origin_loop_->PostTask(
+      FROM_HERE,
+      base::Bind(&base::DeletePointer<HistoryDBTask>,
+                 base::Unretained(task_.release())));
+}
+
+bool QueuedHistoryDBTask::is_canceled() {
+  return is_canceled_.Run();
+}
+
+bool QueuedHistoryDBTask::Run(HistoryBackend* backend,
+                                        HistoryDatabase* db) {
+  return task_->RunOnDBThread(backend, db);
+}
+
+void QueuedHistoryDBTask::DoneRun() {
+  origin_loop_->PostTask(
+      FROM_HERE,
+      base::Bind(&RunUnlessCanceled,
+                 base::Bind(&HistoryDBTask::DoneRunOnMainThread,
+                            base::Unretained(task_.get())),
+                 is_canceled_));
 }
 
 // HistoryBackend --------------------------------------------------------------
@@ -177,7 +220,9 @@ HistoryBackend::HistoryBackend(const base::FilePath& history_dir,
 
 HistoryBackend::~HistoryBackend() {
   DCHECK(!scheduled_commit_.get()) << "Deleting without cleanup";
-  ReleaseDBTasks();
+  STLDeleteContainerPointers(queued_history_db_tasks_.begin(),
+                             queued_history_db_tasks_.end());
+  queued_history_db_tasks_.clear();
 
 #if defined(OS_ANDROID)
   // Release AndroidProviderBackend before other objects.
@@ -313,8 +358,10 @@ SegmentID HistoryBackend::UpdateSegments(
     if (!url_id)
       return 0;
 
-    if (!(segment_id = db_->GetSegmentNamed(segment_name))) {
-      if (!(segment_id = db_->CreateSegment(url_id, segment_name))) {
+    segment_id = db_->GetSegmentNamed(segment_name);
+    if (!segment_id) {
+      segment_id = db_->CreateSegment(url_id, segment_name);
+      if (!segment_id) {
         NOTREACHED();
         return 0;
       }
@@ -329,7 +376,8 @@ SegmentID HistoryBackend::UpdateSegments(
     // This can happen if the initial navigation wasn't AUTO_BOOKMARK or
     // TYPED. (For example GENERATED). In this case this visit doesn't count
     // toward any segment.
-    if (!(segment_id = GetLastSegmentID(from_visit)))
+    segment_id = GetLastSegmentID(from_visit);
+    if (!segment_id)
       return 0;
   }
 
@@ -596,7 +644,7 @@ void HistoryBackend::InitImpl(const std::string& languages) {
   // main thread.
   {
     scoped_ptr<InMemoryHistoryBackend> mem_backend(new InMemoryHistoryBackend);
-    if (mem_backend->Init(history_name, db_.get()))
+    if (mem_backend->Init(history_name))
       delegate_->SetInMemoryBackend(mem_backend.Pass());
   }
   db_->BeginExclusiveMode();  // Must be after the mem backend read the data.
@@ -606,7 +654,7 @@ void HistoryBackend::InitImpl(const std::string& languages) {
   // favicons.  Thumbnails are stored in "top sites".  Consider
   // renaming "thumbnail" references to "favicons" or something of the
   // sort.
-  thumbnail_db_.reset(new ThumbnailDatabase());
+  thumbnail_db_.reset(new ThumbnailDatabase(history_client_));
   if (thumbnail_db_->Init(thumbnail_name) != sql::INIT_OK) {
     // Unlike the main database, we don't error out when the database is too
     // new because this error is much less severe. Generally, this shouldn't
@@ -766,7 +814,7 @@ std::pair<URLID, VisitID> HistoryBackend::AddPageVisit(
     details->visit_time = time;
     // TODO(meelapshah) Disabled due to potential PageCycler regression.
     // Re-enable this.
-    // GetMostRecentRedirectsTo(url, &details->redirects);
+    // QueryRedirectsTo(url, &details->redirects);
     BroadcastNotifications(chrome::NOTIFICATION_HISTORY_URL_VISITED,
                            details.PassAs<HistoryDetails>());
   } else {
@@ -949,10 +997,29 @@ bool HistoryBackend::GetMostRecentVisitsForURL(URLID id,
   return false;
 }
 
-bool HistoryBackend::UpdateURL(URLID id, const history::URLRow& url) {
-  if (db_)
-    return db_->UpdateURLRow(id, url);
-  return false;
+size_t HistoryBackend::UpdateURLs(const history::URLRows& urls) {
+  if (!db_)
+    return 0;
+
+  scoped_ptr<URLsModifiedDetails> details(new URLsModifiedDetails);
+  for (history::URLRows::const_iterator it = urls.begin(); it != urls.end();
+       ++it) {
+    DCHECK(it->id());
+    if (db_->UpdateURLRow(it->id(), *it))
+      details->changed_urls.push_back(*it);
+  }
+
+  // Broadcast notifications for any URLs that have actually been changed. This
+  // will update the in-memory database and the InMemoryURLIndex.
+  size_t num_updated_records = details->changed_urls.size();
+  if (num_updated_records) {
+    if (typed_url_syncable_service_)
+      typed_url_syncable_service_->OnUrlsModified(&details->changed_urls);
+    BroadcastNotifications(chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
+                           details.PassAs<HistoryDetails>());
+    ScheduleCommit();
+  }
+  return num_updated_records;
 }
 
 bool HistoryBackend::AddVisits(const GURL& url,
@@ -1010,41 +1077,10 @@ TypedUrlSyncableService* HistoryBackend::GetTypedUrlSyncableService() const {
   return typed_url_syncable_service_.get();
 }
 
-// Segment usage ---------------------------------------------------------------
-
-void HistoryBackend::DeleteOldSegmentData() {
-  if (db_)
-    db_->DeleteSegmentData(Time::Now() -
-                           TimeDelta::FromDays(kSegmentDataRetention));
-}
-
-void HistoryBackend::QuerySegmentUsage(
-    scoped_refptr<QuerySegmentUsageRequest> request,
-    const Time from_time,
-    int max_result_count) {
-  if (request->canceled())
-    return;
-
-  if (db_) {
-    db_->QuerySegmentUsage(from_time, max_result_count, &request->value.get());
-
-    // If this is the first time we query segments, invoke
-    // DeleteOldSegmentData asynchronously. We do this to cleanup old
-    // entries.
-    if (!segment_queried_) {
-      segment_queried_ = true;
-      base::MessageLoop::current()->PostTask(
-          FROM_HERE,
-          base::Bind(&HistoryBackend::DeleteOldSegmentData, this));
-    }
-  }
-  request->ForwardResult(request->handle(), &request->value.get());
-}
-
 // Keyword visits --------------------------------------------------------------
 
 void HistoryBackend::SetKeywordSearchTermsForURL(const GURL& url,
-                                                 TemplateURLID keyword_id,
+                                                 KeywordID keyword_id,
                                                  const base::string16& term) {
   if (!db_)
     return;
@@ -1066,28 +1102,12 @@ void HistoryBackend::SetKeywordSearchTermsForURL(const GURL& url,
   ScheduleCommit();
 }
 
-void HistoryBackend::DeleteAllSearchTermsForKeyword(
-    TemplateURLID keyword_id) {
+void HistoryBackend::DeleteAllSearchTermsForKeyword(KeywordID keyword_id) {
   if (!db_)
     return;
 
   db_->DeleteAllSearchTermsForKeyword(keyword_id);
   ScheduleCommit();
-}
-
-void HistoryBackend::GetMostRecentKeywordSearchTerms(
-    scoped_refptr<GetMostRecentKeywordSearchTermsRequest> request,
-    TemplateURLID keyword_id,
-    const base::string16& prefix,
-    int max_count) {
-  if (request->canceled())
-    return;
-
-  if (db_) {
-    db_->GetMostRecentKeywordSearchTerms(keyword_id, prefix, max_count,
-                                         &(request->value));
-  }
-  request->ForwardResult(request->handle(), &request->value);
 }
 
 void HistoryBackend::DeleteKeywordSearchTermForURL(const GURL& url) {
@@ -1105,7 +1125,7 @@ void HistoryBackend::DeleteKeywordSearchTermForURL(const GURL& url) {
   ScheduleCommit();
 }
 
-void HistoryBackend::DeleteMatchingURLsForKeyword(TemplateURLID keyword_id,
+void HistoryBackend::DeleteMatchingURLsForKeyword(KeywordID keyword_id,
                                                   const base::string16& term) {
   if (!db_)
     return;
@@ -1185,26 +1205,20 @@ void HistoryBackend::RemoveDownloads(const std::set<uint32>& ids) {
                         ids.size() - num_downloads_deleted);
 }
 
-void HistoryBackend::QueryHistory(scoped_refptr<QueryHistoryRequest> request,
-                                  const base::string16& text_query,
-                                  const QueryOptions& options) {
-  if (request->canceled())
-    return;
-
-  TimeTicks beginning_time = TimeTicks::Now();
-
+void HistoryBackend::QueryHistory(const base::string16& text_query,
+                                  const QueryOptions& options,
+                                  QueryResults* query_results) {
+  DCHECK(query_results);
+  base::TimeTicks beginning_time = base::TimeTicks::Now();
   if (db_) {
     if (text_query.empty()) {
       // Basic history query for the main database.
-      QueryHistoryBasic(options, &request->value);
+      QueryHistoryBasic(options, query_results);
     } else {
       // Text history query.
-      QueryHistoryText(text_query, options, &request->value);
+      QueryHistoryText(text_query, options, query_results);
     }
   }
-
-  request->ForwardResult(request->handle(), &request->value);
-
   UMA_HISTOGRAM_TIMES("History.QueryHistory",
                       TimeTicks::Now() - beginning_time);
 }
@@ -1287,97 +1301,74 @@ void HistoryBackend::QueryHistoryText(const base::string16& text_query,
     result->set_reached_beginning(true);
 }
 
-// Frontend to GetMostRecentRedirectsFrom from the history thread.
-void HistoryBackend::QueryRedirectsFrom(
-    scoped_refptr<QueryRedirectsRequest> request,
-    const GURL& url) {
-  if (request->canceled())
+void HistoryBackend::QueryRedirectsFrom(const GURL& from_url,
+                                        RedirectList* redirects) {
+  redirects->clear();
+  if (!db_)
     return;
-  bool success = GetMostRecentRedirectsFrom(url, &request->value);
-  request->ForwardResult(request->handle(), url, success, &request->value);
+
+  URLID from_url_id = db_->GetRowForURL(from_url, NULL);
+  VisitID cur_visit = db_->GetMostRecentVisitForURL(from_url_id, NULL);
+  if (!cur_visit)
+    return;  // No visits for URL.
+
+  GetRedirectsFromSpecificVisit(cur_visit, redirects);
 }
 
-void HistoryBackend::QueryRedirectsTo(
-    scoped_refptr<QueryRedirectsRequest> request,
-    const GURL& url) {
-  if (request->canceled())
+void HistoryBackend::QueryRedirectsTo(const GURL& to_url,
+                                      RedirectList* redirects) {
+  redirects->clear();
+  if (!db_)
     return;
-  bool success = GetMostRecentRedirectsTo(url, &request->value);
-  request->ForwardResult(request->handle(), url, success, &request->value);
+
+  URLID to_url_id = db_->GetRowForURL(to_url, NULL);
+  VisitID cur_visit = db_->GetMostRecentVisitForURL(to_url_id, NULL);
+  if (!cur_visit)
+    return;  // No visits for URL.
+
+  GetRedirectsToSpecificVisit(cur_visit, redirects);
 }
 
 void HistoryBackend::GetVisibleVisitCountToHost(
-    scoped_refptr<GetVisibleVisitCountToHostRequest> request,
-    const GURL& url) {
-  if (request->canceled())
-    return;
-  int count = 0;
-  Time first_visit;
-  const bool success = db_.get() &&
-      db_->GetVisibleVisitCountToHost(url, &count, &first_visit);
-  request->ForwardResult(request->handle(), success, count, first_visit);
+    const GURL& url,
+    VisibleVisitCountToHostResult* result) {
+  result->count = 0;
+  result->success = db_.get() &&
+                    db_->GetVisibleVisitCountToHost(
+                        url, &result->count, &result->first_visit);
 }
 
-void HistoryBackend::QueryTopURLsAndRedirects(
-    scoped_refptr<QueryTopURLsAndRedirectsRequest> request,
-    int result_count) {
-  if (request->canceled())
+void HistoryBackend::QueryMostVisitedURLs(int result_count,
+                                          int days_back,
+                                          MostVisitedURLList* result) {
+  if (!db_)
     return;
-
-  if (!db_) {
-    request->ForwardResult(request->handle(), false, NULL, NULL);
-    return;
-  }
-
-  std::vector<GURL>* top_urls = &request->value.a;
-  history::RedirectMap* redirects = &request->value.b;
 
   ScopedVector<PageUsageData> data;
-  db_->QuerySegmentUsage(base::Time::Now() - base::TimeDelta::FromDays(90),
-      result_count, &data.get());
+  db_->QuerySegmentUsage(
+      base::Time::Now() - base::TimeDelta::FromDays(days_back),
+      result_count,
+      &data.get());
 
   for (size_t i = 0; i < data.size(); ++i) {
-    top_urls->push_back(data[i]->GetURL());
-    RefCountedVector<GURL>* list = new RefCountedVector<GURL>;
-    GetMostRecentRedirectsFrom(top_urls->back(), &list->data);
-    (*redirects)[top_urls->back()] = list;
+    PageUsageData* current_data = data[i];
+    RedirectList redirects;
+    QueryRedirectsFrom(current_data->GetURL(), &redirects);
+    MostVisitedURL url = MakeMostVisitedURL(*current_data, redirects);
+    result->push_back(url);
   }
-
-  request->ForwardResult(request->handle(), true, top_urls, redirects);
 }
 
-// Will replace QueryTopURLsAndRedirectsRequest.
-void HistoryBackend::QueryMostVisitedURLs(
-    scoped_refptr<QueryMostVisitedURLsRequest> request,
-    int result_count,
-    int days_back) {
-  if (request->canceled())
-    return;
-
-  if (!db_) {
-    // No History Database - return an empty list.
-    request->ForwardResult(request->handle(), MostVisitedURLList());
-    return;
-  }
-
-  MostVisitedURLList* result = &request->value;
-  QueryMostVisitedURLsImpl(result_count, days_back, result);
-  request->ForwardResult(request->handle(), *result);
-}
-
-void HistoryBackend::QueryFilteredURLs(
-      scoped_refptr<QueryFilteredURLsRequest> request,
-      int result_count,
-      const history::VisitFilter& filter,
-      bool extended_info)  {
-  if (request->canceled())
-    return;
-
+void HistoryBackend::QueryFilteredURLs(int result_count,
+                                       const history::VisitFilter& filter,
+                                       bool extended_info,
+                                       history::FilteredURLList* result) {
+  DCHECK(result);
   base::Time request_start = base::Time::Now();
 
+  result->clear();
   if (!db_) {
     // No History Database - return an empty list.
-    request->ForwardResult(request->handle(), FilteredURLList());
     return;
   }
 
@@ -1414,7 +1405,6 @@ void HistoryBackend::QueryFilteredURLs(
     }
   }
 
-  FilteredURLList& result = request->value;
   for (size_t i = 0; i < data.size(); ++i) {
     PageUsageData* current_data = data[i];
     FilteredURL url(*current_data);
@@ -1434,7 +1424,7 @@ void HistoryBackend::QueryFilteredURLs(
         // TODO(macourteau): implement the url.extended_info.visits stat.
       }
     }
-    result.push_back(url);
+    result->push_back(url);
   }
 
   int delta_time = std::max(1, std::min(999,
@@ -1444,28 +1434,6 @@ void HistoryBackend::QueryFilteredURLs(
       Add(delta_time),
       base::LinearHistogram::FactoryGet("NewTabPage.SuggestedSitesLoadTime",
           1, 1000, 100, base::Histogram::kUmaTargetedHistogramFlag));
-
-  request->ForwardResult(request->handle(), result);
-}
-
-void HistoryBackend::QueryMostVisitedURLsImpl(int result_count,
-                                              int days_back,
-                                              MostVisitedURLList* result) {
-  if (!db_)
-    return;
-
-  ScopedVector<PageUsageData> data;
-  db_->QuerySegmentUsage(base::Time::Now() -
-                         base::TimeDelta::FromDays(days_back),
-                         result_count, &data.get());
-
-  for (size_t i = 0; i < data.size(); ++i) {
-    PageUsageData* current_data = data[i];
-    RedirectList redirects;
-    GetMostRecentRedirectsFrom(current_data->GetURL(), &redirects);
-    MostVisitedURL url = MakeMostVisitedURL(*current_data, redirects);
-    result->push_back(url);
-  }
 }
 
 void HistoryBackend::GetRedirectsFromSpecificVisit(
@@ -1508,42 +1476,9 @@ void HistoryBackend::GetRedirectsToSpecificVisit(
   }
 }
 
-bool HistoryBackend::GetMostRecentRedirectsFrom(
-    const GURL& from_url,
-    history::RedirectList* redirects) {
-  redirects->clear();
-  if (!db_)
-    return false;
-
-  URLID from_url_id = db_->GetRowForURL(from_url, NULL);
-  VisitID cur_visit = db_->GetMostRecentVisitForURL(from_url_id, NULL);
-  if (!cur_visit)
-    return false;  // No visits for URL.
-
-  GetRedirectsFromSpecificVisit(cur_visit, redirects);
-  return true;
-}
-
-bool HistoryBackend::GetMostRecentRedirectsTo(
-    const GURL& to_url,
-    history::RedirectList* redirects) {
-  redirects->clear();
-  if (!db_)
-    return false;
-
-  URLID to_url_id = db_->GetRowForURL(to_url, NULL);
-  VisitID cur_visit = db_->GetMostRecentVisitForURL(to_url_id, NULL);
-  if (!cur_visit)
-    return false;  // No visits for URL.
-
-  GetRedirectsToSpecificVisit(cur_visit, redirects);
-  return true;
-}
-
-void HistoryBackend::ScheduleAutocomplete(HistoryURLProvider* provider,
-                                          HistoryURLProviderParams* params) {
-  // ExecuteWithDB should handle the NULL database case.
-  provider->ExecuteWithDB(this, db_.get(), params);
+void HistoryBackend::ScheduleAutocomplete(const base::Callback<
+    void(history::HistoryBackend*, history::URLDatabase*)>& callback) {
+  callback.Run(this, db_.get());
 }
 
 void HistoryBackend::DeleteFTSIndexDatabases() {
@@ -2405,41 +2340,37 @@ void HistoryBackend::CancelScheduledCommit() {
 void HistoryBackend::ProcessDBTaskImpl() {
   if (!db_) {
     // db went away, release all the refs.
-    ReleaseDBTasks();
+    STLDeleteContainerPointers(queued_history_db_tasks_.begin(),
+                               queued_history_db_tasks_.end());
+    queued_history_db_tasks_.clear();
     return;
   }
 
   // Remove any canceled tasks.
-  while (!db_task_requests_.empty() && db_task_requests_.front()->canceled()) {
-    db_task_requests_.front()->Release();
-    db_task_requests_.pop_front();
+  while (!queued_history_db_tasks_.empty()) {
+    QueuedHistoryDBTask* task = queued_history_db_tasks_.front();
+    if (!task->is_canceled())
+      break;
+
+    delete task;
+    queued_history_db_tasks_.pop_front();
   }
-  if (db_task_requests_.empty())
+  if (queued_history_db_tasks_.empty())
     return;
 
   // Run the first task.
-  HistoryDBTaskRequest* request = db_task_requests_.front();
-  db_task_requests_.pop_front();
-  if (request->value->RunOnDBThread(this, db_.get())) {
-    // The task is done. Notify the callback.
-    request->ForwardResult();
-    // We AddRef'd the request before adding, need to release it now.
-    request->Release();
+  scoped_ptr<QueuedHistoryDBTask> task(queued_history_db_tasks_.front());
+  queued_history_db_tasks_.pop_front();
+  if (task->Run(this, db_.get())) {
+    // The task is done, notify the callback.
+    task->DoneRun();
   } else {
-    // Tasks wants to run some more. Schedule it at the end of current tasks.
-    db_task_requests_.push_back(request);
-    // And process it after an invoke later.
+    // The task wants to run some more. Schedule it at the end of the current
+    // tasks, and process it after an invoke later.
+    queued_history_db_tasks_.push_back(task.release());
     base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(&HistoryBackend::ProcessDBTaskImpl, this));
   }
-}
-
-void HistoryBackend::ReleaseDBTasks() {
-  for (std::list<HistoryDBTaskRequest*>::iterator i =
-       db_task_requests_.begin(); i != db_task_requests_.end(); ++i) {
-    (*i)->Release();
-  }
-  db_task_requests_.clear();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2622,20 +2553,14 @@ void HistoryBackend::KillHistoryDatabase() {
 }
 
 void HistoryBackend::ProcessDBTask(
-    scoped_refptr<HistoryDBTaskRequest> request) {
-  DCHECK(request.get());
-  if (request->canceled())
-    return;
-
-  bool task_scheduled = !db_task_requests_.empty();
-  // Make sure we up the refcount of the request. ProcessDBTaskImpl will
-  // release when done with the task.
-  request->AddRef();
-  db_task_requests_.push_back(request.get());
-  if (!task_scheduled) {
-    // No other tasks are scheduled. Process request now.
+    scoped_ptr<HistoryDBTask> task,
+    scoped_refptr<base::SingleThreadTaskRunner> origin_loop,
+    const base::CancelableTaskTracker::IsCanceledCallback& is_canceled) {
+  bool scheduled = !queued_history_db_tasks_.empty();
+  queued_history_db_tasks_.push_back(
+      new QueuedHistoryDBTask(task.Pass(), origin_loop, is_canceled));
+  if (!scheduled)
     ProcessDBTaskImpl();
-  }
 }
 
 void HistoryBackend::BroadcastNotifications(
@@ -2816,8 +2741,8 @@ void HistoryBackend::NotifyVisitObservers(const VisitRow& visit) {
 #if defined(OS_ANDROID)
 void HistoryBackend::PopulateMostVisitedURLMap() {
   MostVisitedURLList most_visited_urls;
-  QueryMostVisitedURLsImpl(kPageVisitStatsMaxTopSites, kSegmentDataRetention,
-                           &most_visited_urls);
+  QueryMostVisitedURLs(
+      kPageVisitStatsMaxTopSites, kSegmentDataRetention, &most_visited_urls);
 
   DCHECK_LE(most_visited_urls.size(), kPageVisitStatsMaxTopSites);
   for (size_t i = 0; i < most_visited_urls.size(); ++i) {

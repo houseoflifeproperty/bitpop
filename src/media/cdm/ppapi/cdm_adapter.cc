@@ -255,7 +255,6 @@ CdmAdapter::CdmAdapter(PP_Instance instance, pp::Module* module)
 #if defined(OS_CHROMEOS)
       output_protection_(this),
       platform_verification_(this),
-      challenge_in_progress_(false),
       output_link_mask_(0),
       output_protection_mask_(0),
       query_output_protection_in_progress_(false),
@@ -384,10 +383,28 @@ void CdmAdapter::UpdateSession(uint32_t promise_id,
                       response_size);
 }
 
+void CdmAdapter::CloseSession(uint32_t promise_id,
+                              const std::string& web_session_id) {
+  if (!cdm_->CloseSession(
+          promise_id, web_session_id.data(), web_session_id.length())) {
+    // CDM_4 and CDM_5 don't support this method, so reject the promise.
+    RejectPromise(promise_id, cdm::kNotSupportedError, 0, "Not implemented.");
+  }
+}
+
 void CdmAdapter::ReleaseSession(uint32_t promise_id,
                                 const std::string& web_session_id) {
-  cdm_->ReleaseSession(
+  cdm_->RemoveSession(
       promise_id, web_session_id.data(), web_session_id.length());
+}
+
+void CdmAdapter::GetUsableKeyIds(uint32_t promise_id,
+                                 const std::string& web_session_id) {
+  if (!cdm_->GetUsableKeyIds(
+          promise_id, web_session_id.data(), web_session_id.length())) {
+    // CDM_4 and CDM_5 don't support this method, so reject the promise.
+    RejectPromise(promise_id, cdm::kNotSupportedError, 0, "Not implemented.");
+  }
 }
 
 // Note: In the following decryption/decoding related functions, errors are NOT
@@ -668,15 +685,25 @@ void CdmAdapter::OnSessionError(uint32_t session_id,
   }
 }
 
-// cdm::Host_5 methods
+// cdm::Host_5 and cdm::Host_6 methods
 
 cdm::Time CdmAdapter::GetCurrentTime() {
+  return GetCurrentWallTime();
+}
+
+cdm::Time CdmAdapter::GetCurrentWallTime() {
   return pp::Module::Get()->core()->GetTime();
 }
 
 void CdmAdapter::OnResolvePromise(uint32_t promise_id) {
   PostOnMain(callback_factory_.NewCallback(
       &CdmAdapter::SendPromiseResolvedInternal, promise_id));
+
+  // CDM_5 doesn't support OnSessionKeysChange(), so simulate one if requested.
+  // Passing "true" which may result in false positives for retrying.
+  std::string session_id;
+  if (cdm_->SessionUsableKeysEventNeeded(promise_id, &session_id))
+    OnSessionKeysChange(session_id.data(), session_id.length(), true);
 }
 
 void CdmAdapter::OnResolveNewSessionPromise(uint32_t promise_id,
@@ -686,6 +713,27 @@ void CdmAdapter::OnResolveNewSessionPromise(uint32_t promise_id,
       &CdmAdapter::SendPromiseResolvedWithSessionInternal,
       promise_id,
       std::string(web_session_id, web_session_id_length)));
+
+  // CDM_5 doesn't support OnSessionKeysChange(), so simulate one if requested.
+  // Passing "true" which may result in false positives for retrying.
+  std::string session_id;
+  if (cdm_->SessionUsableKeysEventNeeded(promise_id, &session_id))
+    OnSessionKeysChange(web_session_id, web_session_id_length, true);
+}
+
+void CdmAdapter::OnResolveKeyIdsPromise(uint32_t promise_id,
+                                        const cdm::BinaryData* usable_key_ids,
+                                        uint32_t usable_key_ids_length) {
+  std::vector<std::vector<uint8> > key_ids;
+  for (uint32_t i = 0; i < usable_key_ids_length; ++i) {
+    key_ids.push_back(
+        std::vector<uint8>(usable_key_ids[i].data,
+                           usable_key_ids[i].data + usable_key_ids[i].length));
+  }
+  PostOnMain(callback_factory_.NewCallback(
+      &CdmAdapter::SendPromiseResolvedWithUsableKeyIdsInternal,
+      promise_id,
+      key_ids));
 }
 
 void CdmAdapter::OnRejectPromise(uint32_t promise_id,
@@ -725,17 +773,26 @@ void CdmAdapter::OnSessionMessage(const char* web_session_id,
 void CdmAdapter::OnSessionKeysChange(const char* web_session_id,
                                      uint32_t web_session_id_length,
                                      bool has_additional_usable_key) {
-  // TODO(jrummell): Implement this event in subsequent CL
-  // (http://crbug.com/370251).
-  PP_NOTREACHED();
+  OnSessionUsableKeysChange(
+      web_session_id, web_session_id_length, has_additional_usable_key);
+}
+
+void CdmAdapter::OnSessionUsableKeysChange(const char* web_session_id,
+                                           uint32_t web_session_id_length,
+                                           bool has_additional_usable_key) {
+  PostOnMain(callback_factory_.NewCallback(
+      &CdmAdapter::SendSessionUsableKeysChangeInternal,
+      std::string(web_session_id, web_session_id_length),
+      has_additional_usable_key));
 }
 
 void CdmAdapter::OnExpirationChange(const char* web_session_id,
                                     uint32_t web_session_id_length,
                                     cdm::Time new_expiry_time) {
-  // TODO(jrummell): Implement this event in subsequent CL
-  // (http://crbug.com/370251).
-  PP_NOTREACHED();
+  PostOnMain(callback_factory_.NewCallback(
+      &CdmAdapter::SendExpirationChangeInternal,
+      std::string(web_session_id, web_session_id_length),
+      new_expiry_time));
 }
 
 void CdmAdapter::OnSessionReady(const char* web_session_id,
@@ -781,6 +838,15 @@ void CdmAdapter::SendPromiseResolvedWithSessionInternal(
   PP_DCHECK(result == PP_OK);
   pp::ContentDecryptor_Private::PromiseResolvedWithSession(promise_id,
                                                            web_session_id);
+}
+
+void CdmAdapter::SendPromiseResolvedWithUsableKeyIdsInternal(
+    int32_t result,
+    uint32_t promise_id,
+    std::vector<std::vector<uint8> > key_ids) {
+  PP_DCHECK(result == PP_OK);
+  // TODO(jrummell): Implement this event in subsequent CL.
+  // (http://crbug.com/358271).
 }
 
 void CdmAdapter::SendPromiseRejectedInternal(int32_t result,
@@ -831,6 +897,23 @@ void CdmAdapter::SendSessionErrorInternal(int32_t result,
       CdmExceptionTypeToPpCdmExceptionType(error.error),
       error.system_code,
       error.error_description);
+}
+
+void CdmAdapter::SendSessionUsableKeysChangeInternal(
+    int32_t result,
+    const std::string& web_session_id,
+    bool has_additional_usable_key) {
+  PP_DCHECK(result == PP_OK);
+  // TODO(jrummell): Implement this event in subsequent CL.
+  // (http://crbug.com/358271).
+}
+
+void CdmAdapter::SendExpirationChangeInternal(int32_t result,
+                                              const std::string& web_session_id,
+                                              cdm::Time new_expiry_time) {
+  PP_DCHECK(result == PP_OK);
+  // TODO(jrummell): Implement this event in subsequent CL.
+  // (http://crbug.com/358271).
 }
 
 void CdmAdapter::DeliverBlock(int32_t result,
@@ -1009,34 +1092,33 @@ void CdmAdapter::SendPlatformChallenge(
     const char* service_id, uint32_t service_id_length,
     const char* challenge, uint32_t challenge_length) {
 #if defined(OS_CHROMEOS)
-  PP_DCHECK(!challenge_in_progress_);
-
-  // Ensure member variables set by the callback are in a clean state.
-  signed_data_output_ = pp::Var();
-  signed_data_signature_output_ = pp::Var();
-  platform_key_certificate_output_ = pp::Var();
-
   pp::VarArrayBuffer challenge_var(challenge_length);
   uint8_t* var_data = static_cast<uint8_t*>(challenge_var.Map());
   memcpy(var_data, challenge, challenge_length);
 
   std::string service_id_str(service_id, service_id_length);
+
+  linked_ptr<PepperPlatformChallengeResponse> response(
+      new PepperPlatformChallengeResponse());
+
   int32_t result = platform_verification_.ChallengePlatform(
-      pp::Var(service_id_str), challenge_var, &signed_data_output_,
-      &signed_data_signature_output_, &platform_key_certificate_output_,
-      callback_factory_.NewCallback(&CdmAdapter::SendPlatformChallengeDone));
+      pp::Var(service_id_str),
+      challenge_var,
+      &response->signed_data,
+      &response->signed_data_signature,
+      &response->platform_key_certificate,
+      callback_factory_.NewCallback(&CdmAdapter::SendPlatformChallengeDone,
+                                    response));
   challenge_var.Unmap();
-  if (result == PP_OK_COMPLETIONPENDING) {
-    challenge_in_progress_ = true;
+  if (result == PP_OK_COMPLETIONPENDING)
     return;
-  }
 
   // Fall through on error and issue an empty OnPlatformChallengeResponse().
   PP_DCHECK(result != PP_OK);
 #endif
 
-  cdm::PlatformChallengeResponse response = {};
-  cdm_->OnPlatformChallengeResponse(response);
+  cdm::PlatformChallengeResponse platform_challenge_response = {};
+  cdm_->OnPlatformChallengeResponse(platform_challenge_response);
 }
 
 void CdmAdapter::EnableOutputProtection(uint32_t desired_protection_mask) {
@@ -1154,29 +1236,29 @@ void CdmAdapter::ReportOutputProtectionQueryResult() {
   // queries and success results.
 }
 
-void CdmAdapter::SendPlatformChallengeDone(int32_t result) {
-  challenge_in_progress_ = false;
-
+void CdmAdapter::SendPlatformChallengeDone(
+    int32_t result,
+    const linked_ptr<PepperPlatformChallengeResponse>& response) {
   if (result != PP_OK) {
     CDM_DLOG() << __FUNCTION__ << ": Platform challenge failed!";
-    cdm::PlatformChallengeResponse response = {};
-    cdm_->OnPlatformChallengeResponse(response);
+    cdm::PlatformChallengeResponse platform_challenge_response = {};
+    cdm_->OnPlatformChallengeResponse(platform_challenge_response);
     return;
   }
 
-  pp::VarArrayBuffer signed_data_var(signed_data_output_);
-  pp::VarArrayBuffer signed_data_signature_var(signed_data_signature_output_);
+  pp::VarArrayBuffer signed_data_var(response->signed_data);
+  pp::VarArrayBuffer signed_data_signature_var(response->signed_data_signature);
   std::string platform_key_certificate_string =
-      platform_key_certificate_output_.AsString();
+      response->platform_key_certificate.AsString();
 
-  cdm::PlatformChallengeResponse response = {
+  cdm::PlatformChallengeResponse platform_challenge_response = {
       static_cast<uint8_t*>(signed_data_var.Map()),
       signed_data_var.ByteLength(),
       static_cast<uint8_t*>(signed_data_signature_var.Map()),
       signed_data_signature_var.ByteLength(),
       reinterpret_cast<const uint8_t*>(platform_key_certificate_string.data()),
       static_cast<uint32_t>(platform_key_certificate_string.length())};
-  cdm_->OnPlatformChallengeResponse(response);
+  cdm_->OnPlatformChallengeResponse(platform_challenge_response);
 
   signed_data_var.Unmap();
   signed_data_signature_var.Unmap();
@@ -1216,7 +1298,7 @@ void* GetCdmHost(int host_interface_version, void* user_data) {
     return NULL;
 
   COMPILE_ASSERT(
-      cdm::ContentDecryptionModule::Host::kVersion == cdm::Host_5::kVersion,
+      cdm::ContentDecryptionModule::Host::kVersion == cdm::Host_6::kVersion,
       update_code_below);
 
   // Ensure IsSupportedCdmHostVersion matches implementation of this function.
@@ -1226,10 +1308,11 @@ void* GetCdmHost(int host_interface_version, void* user_data) {
 
   PP_DCHECK(
       // Future version is not supported.
-      !IsSupportedCdmHostVersion(cdm::Host_5::kVersion + 1) &&
+      !IsSupportedCdmHostVersion(cdm::Host_6::kVersion + 1) &&
       // Current version is supported.
-      IsSupportedCdmHostVersion(cdm::Host_5::kVersion) &&
+      IsSupportedCdmHostVersion(cdm::Host_6::kVersion) &&
       // Include all previous supported versions (if any) here.
+      IsSupportedCdmHostVersion(cdm::Host_5::kVersion) &&
       IsSupportedCdmHostVersion(cdm::Host_4::kVersion) &&
       // One older than the oldest supported version is not supported.
       !IsSupportedCdmHostVersion(cdm::Host_4::kVersion - 1));
@@ -1242,6 +1325,8 @@ void* GetCdmHost(int host_interface_version, void* user_data) {
       return static_cast<cdm::Host_4*>(cdm_adapter);
     case cdm::Host_5::kVersion:
       return static_cast<cdm::Host_5*>(cdm_adapter);
+    case cdm::Host_6::kVersion:
+      return static_cast<cdm::Host_6*>(cdm_adapter);
     default:
       PP_NOTREACHED();
       return NULL;

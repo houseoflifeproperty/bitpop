@@ -15,6 +15,8 @@
 #include "base/memory/linked_ptr.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "extensions/common/permissions/permissions_data.h"
+#include "extensions/common/user_script.h"
 
 namespace content {
 class WebContents;
@@ -44,18 +46,6 @@ class ActiveScriptController : public LocationBarController::ActionProvider,
   static ActiveScriptController* GetForWebContents(
       content::WebContents* web_contents);
 
-  // Returns true if the extension requesting script injection requires
-  // user consent. If this is true, the caller should then register a request
-  // via RequestScriptInjection().
-  bool RequiresUserConsentForScriptInjection(const Extension* extension);
-
-  // Register a request for a script injection, to be executed by running
-  // |callback|. The only assumption that can be made about when (or if)
-  // |callback| is run is that, if it is run, it will run on the current page.
-  void RequestScriptInjection(const Extension* extension,
-                              int page_id,
-                              const base::Closure& callback);
-
   // Notifies the ActiveScriptController that an extension has been granted
   // active tab permissions. This will run any pending injections for that
   // extension.
@@ -64,38 +54,62 @@ class ActiveScriptController : public LocationBarController::ActionProvider,
   // Notifies the ActiveScriptController of detected ad injection.
   void OnAdInjectionDetected(const std::set<std::string>& ad_injectors);
 
+  // Adds the visible origin to |extension|'s active permissions, granting
+  // |extension| permission to always run script injections on the origin.
+  void AlwaysRunOnVisibleOrigin(const Extension* extension);
+
+  // Returns true if there is an active script injection action for |extension|.
+  bool HasActiveScriptAction(const Extension* extension);
+
   // LocationBarControllerProvider implementation.
   virtual ExtensionAction* GetActionForExtension(
       const Extension* extension) OVERRIDE;
-  virtual LocationBarController::Action OnClicked(
+  virtual ExtensionAction::ShowAction OnClicked(
       const Extension* extension) OVERRIDE;
   virtual void OnNavigated() OVERRIDE;
   virtual void OnExtensionUnloaded(const Extension* extension) OVERRIDE;
 
- private:
-  // A single pending request. This could be a pair, but we'd have way too many
-  // stl typedefs, and "request.closure" is nicer than "request.first".
-  struct PendingRequest {
-    PendingRequest();  // For STL.
-    PendingRequest(const base::Closure& closure, int page_id);
-    ~PendingRequest();
+#if defined(UNIT_TEST)
+  // Only used in tests.
+  PermissionsData::AccessType RequiresUserConsentForScriptInjectionForTesting(
+      const Extension* extension,
+      UserScript::InjectionType type) {
+    return RequiresUserConsentForScriptInjection(extension, type);
+  }
+  void RequestScriptInjectionForTesting(const Extension* extension,
+                                        const base::Closure& callback) {
+    return RequestScriptInjection(extension, callback);
+  }
+#endif  // defined(UNIT_TEST)
 
-    base::Closure closure;
-    int page_id;
-  };
-  typedef std::vector<PendingRequest> PendingRequestList;
+ private:
+  typedef std::vector<base::Closure> PendingRequestList;
   typedef std::map<std::string, PendingRequestList> PendingRequestMap;
 
+  // Returns true if the extension requesting script injection requires
+  // user consent. If this is true, the caller should then register a request
+  // via RequestScriptInjection().
+  PermissionsData::AccessType RequiresUserConsentForScriptInjection(
+      const Extension* extension,
+      UserScript::InjectionType type);
+
+  // |callback|. The only assumption that can be made about when (or if)
+  // |callback| is run is that, if it is run, it will run on the current page.
+  void RequestScriptInjection(const Extension* extension,
+                              const base::Closure& callback);
+
+  // Register a request for a script injection, to be executed by running
   // Runs any pending injections for the corresponding extension.
   void RunPendingForExtension(const Extension* extension);
 
-  // Handle the RequestContentScriptPermission message.
-  void OnRequestContentScriptPermission(const std::string& extension_id,
-                                        int page_id,
-                                        int request_id);
+  // Handle the RequestScriptInjectionPermission message.
+  void OnRequestScriptInjectionPermission(
+      const std::string& extension_id,
+      UserScript::InjectionType script_type,
+      int64 request_id);
 
   // Grants permission for the given request to run.
-  void GrantContentScriptPermission(int request_id);
+  void PermitScriptInjection(int64 request_id);
 
   // content::WebContentsObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;

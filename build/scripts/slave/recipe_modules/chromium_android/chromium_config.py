@@ -68,30 +68,30 @@ def cronet_builder(c):
   c.compile_py.default_targets=['cronet_package', 'cronet_sample_test_apk']
 
 @CONFIG_CTX(includes=['main_builder'])
-def arm_builder(c):
+def arm_k_builder(c):
   gyp_defs = c.gyp_env.GYP_DEFINES
-  gyp_defs['android_sdk_build_tools_version'] = '19.0.0'
-  gyp_defs['android_sdk_version'] = '19'
+  gyp_defs['android_sdk_version'] = '20'
   gyp_defs['android_sdk_root'] = Path(
     '[CHECKOUT]', 'third_party', 'android_tools', 'sdk')
 
-@CONFIG_CTX(includes=['arm_builder'])
-def android_shared(c):
-  c.gyp_env.GYP_DEFINES['component'] = 'shared_library'
-
-@CONFIG_CTX(includes=['main_builder'])
-def arm_l_builder(c):
+@CONFIG_CTX()
+def hera(c):
   gyp_defs = c.gyp_env.GYP_DEFINES
   gyp_defs['android_sdk_build_tools_version'] = 'android-L'
   gyp_defs['android_sdk_version'] = 'L'
   gyp_defs['android_sdk_root'] = Path(
     '[CHECKOUT]', 'third_party', 'android_tools_internal', 'sdk')
   gyp_defs['use_unpublished_apis'] = 1
-  c.compile_py.default_targets = ['All', 'hera_apk']
+  gyp_defs['use_unreleased_google_play_services_first_party']=1
+  c.compile_py.default_targets = ['All', 'hera_apk', 'hera_test_apk']
 
-@CONFIG_CTX(includes=['arm_builder'],
+@CONFIG_CTX(includes=['main_builder', 'hera'])
+def arm_l_builder(c):
+  pass
+
+@CONFIG_CTX(includes=['arm_k_builder'],
             config_vars={'BUILD_CONFIG': 'Release'})
-def arm_builder_rel(c):
+def arm_k_builder_rel(c):
   pass
 
 @CONFIG_CTX(includes=['base_config', 'default_compiler', 'goma'],
@@ -108,6 +108,11 @@ def arm64_builder(c):
   gyp_defs['OS'] = 'android'
   gyp_defs['target_arch'] = 'arm64'
 
+@CONFIG_CTX(includes=['arm64_builder'],
+            config_vars={'BUILD_CONFIG': 'Release'})
+def arm64_builder_rel(c):
+  pass
+
 @CONFIG_CTX(includes=['main_builder'])
 def try_builder(c):
   pass
@@ -118,6 +123,10 @@ def x86_try_builder(c):
 
 @CONFIG_CTX(includes=['base_config'])
 def tests_base(c):
+  pass
+
+@CONFIG_CTX(includes=['arm64_builder_rel'])
+def tests_arm64(c):
   pass
 
 @CONFIG_CTX(includes=['tests_base'])
@@ -146,3 +155,16 @@ def coverage_builder_tests(c):
   gyp_defs = c.gyp_env.GYP_DEFINES
   gyp_defs['emma_coverage'] = 1
   gyp_defs['emma_filter'] = 'com.google.android.apps.chrome.*'
+
+@CONFIG_CTX(includes=['main_builder'])
+def oilpan_builder(c):
+  gyp_defs = c.gyp_env.GYP_DEFINES
+  gyp_defs['enable_oilpan'] = 1
+
+# TODO(zty): figure out what perf builder really wants and use that instead.
+# e.g. official
+@CONFIG_CTX(includes=['main_builder'])
+def perf(c):
+  gyp_defs = c.gyp_env.GYP_DEFINES
+  gyp_defs['branding'] = 'Chrome'
+  gyp_defs['buildtype'] = 'Official'

@@ -12,7 +12,7 @@
 
 class SkLinearGradient : public SkGradientShaderBase {
 public:
-    SkLinearGradient(const SkPoint pts[2], const Descriptor&, const SkMatrix* localMatrix);
+    SkLinearGradient(const SkPoint pts[2], const Descriptor&);
 
     virtual size_t contextSize() const SK_OVERRIDE;
 
@@ -31,7 +31,7 @@ public:
     virtual BitmapType asABitmap(SkBitmap*, SkMatrix*, TileMode*) const SK_OVERRIDE;
     virtual GradientType asAGradient(GradientInfo* info) const SK_OVERRIDE;
     virtual bool asNewEffect(GrContext* context, const SkPaint& paint, const SkMatrix* localMatrix,
-                             GrColor* grColor, GrEffectRef** grEffect) const SK_OVERRIDE;
+                             GrColor* paintColor, GrEffect** effect) const SK_OVERRIDE;
 
     SK_TO_STRING_OVERRIDE()
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkLinearGradient)

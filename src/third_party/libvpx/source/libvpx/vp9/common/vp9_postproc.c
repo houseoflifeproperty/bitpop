@@ -263,19 +263,13 @@ void vp9_deblock(const YV12_BUFFER_CONFIG *src, YV12_BUFFER_CONFIG *dst,
                         + 0.0065 + 0.5);
   int i;
 
-  const uint8_t *const srcs[4] = {src->y_buffer, src->u_buffer, src->v_buffer,
-                                  src->alpha_buffer};
-  const int src_strides[4] = {src->y_stride, src->uv_stride, src->uv_stride,
-                              src->alpha_stride};
-  const int src_widths[4] = {src->y_width, src->uv_width, src->uv_width,
-                             src->alpha_width};
-  const int src_heights[4] = {src->y_height, src->uv_height, src->uv_height,
-                              src->alpha_height};
+  const uint8_t *const srcs[3] = {src->y_buffer, src->u_buffer, src->v_buffer};
+  const int src_strides[3] = {src->y_stride, src->uv_stride, src->uv_stride};
+  const int src_widths[3] = {src->y_width, src->uv_width, src->uv_width};
+  const int src_heights[3] = {src->y_height, src->uv_height, src->uv_height};
 
-  uint8_t *const dsts[4] = {dst->y_buffer, dst->u_buffer, dst->v_buffer,
-                            dst->alpha_buffer};
-  const int dst_strides[4] = {dst->y_stride, dst->uv_stride, dst->uv_stride,
-                              dst->alpha_stride};
+  uint8_t *const dsts[3] = {dst->y_buffer, dst->u_buffer, dst->v_buffer};
+  const int dst_strides[3] = {dst->y_stride, dst->uv_stride, dst->uv_stride};
 
   for (i = 0; i < MAX_MB_PLANE; ++i)
     vp9_post_proc_down_and_across(srcs[i], dsts[i],
@@ -289,19 +283,13 @@ void vp9_denoise(const YV12_BUFFER_CONFIG *src, YV12_BUFFER_CONFIG *dst,
                         + 0.0065 + 0.5);
   int i;
 
-  const uint8_t *const srcs[4] = {src->y_buffer, src->u_buffer, src->v_buffer,
-                                  src->alpha_buffer};
-  const int src_strides[4] = {src->y_stride, src->uv_stride, src->uv_stride,
-                              src->alpha_stride};
-  const int src_widths[4] = {src->y_width, src->uv_width, src->uv_width,
-                             src->alpha_width};
-  const int src_heights[4] = {src->y_height, src->uv_height, src->uv_height,
-                              src->alpha_height};
+  const uint8_t *const srcs[3] = {src->y_buffer, src->u_buffer, src->v_buffer};
+  const int src_strides[3] = {src->y_stride, src->uv_stride, src->uv_stride};
+  const int src_widths[3] = {src->y_width, src->uv_width, src->uv_width};
+  const int src_heights[3] = {src->y_height, src->uv_height, src->uv_height};
 
-  uint8_t *const dsts[4] = {dst->y_buffer, dst->u_buffer, dst->v_buffer,
-                            dst->alpha_buffer};
-  const int dst_strides[4] = {dst->y_stride, dst->uv_stride, dst->uv_stride,
-                              dst->alpha_stride};
+  uint8_t *const dsts[3] = {dst->y_buffer, dst->u_buffer, dst->v_buffer};
+  const int dst_strides[3] = {dst->y_stride, dst->uv_stride, dst->uv_stride};
 
   for (i = 0; i < MAX_MB_PLANE; ++i) {
     const int src_stride = src_strides[i];
@@ -410,6 +398,14 @@ int vp9_post_proc_frame(struct VP9Common *cm,
   }
 
   vp9_clear_system_state();
+
+#if CONFIG_VP9_POSTPROC || CONFIG_INTERNAL_STATS
+  if (vp9_realloc_frame_buffer(&cm->post_proc_buffer, cm->width, cm->height,
+                               cm->subsampling_x, cm->subsampling_y,
+                               VP9_DEC_BORDER_IN_PIXELS, NULL, NULL, NULL) < 0)
+    vpx_internal_error(&cm->error, VPX_CODEC_MEM_ERROR,
+                       "Failed to allocate post-processing buffer");
+#endif
 
   if (flags & VP9D_DEMACROBLOCK) {
     deblock_and_de_macro_block(cm->frame_to_show, ppbuf,

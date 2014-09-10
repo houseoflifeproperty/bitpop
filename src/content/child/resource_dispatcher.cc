@@ -25,12 +25,12 @@
 #include "content/public/child/request_peer.h"
 #include "content/public/child/resource_dispatcher_delegate.h"
 #include "content/public/common/resource_response.h"
+#include "content/public/common/resource_type.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_response_headers.h"
 #include "webkit/child/resource_loader_bridge.h"
-#include "webkit/common/resource_type.h"
 
 using webkit_glue::ResourceLoaderBridge;
 
@@ -128,6 +128,7 @@ IPCResourceLoaderBridge::IPCResourceLoaderBridge(
   request_.appcache_host_id = request_info.appcache_host_id;
   request_.download_to_file = request_info.download_to_file;
   request_.has_user_gesture = request_info.has_user_gesture;
+  request_.enable_load_timing = request_info.enable_load_timing;
 
   const RequestExtraData kEmptyData;
   const RequestExtraData* extra_data;
@@ -358,6 +359,13 @@ void ResourceDispatcher::OnReceivedResponse(
       request_info->peer = new_peer;
   }
 
+  // Updates the response_url if the response was fetched by a ServiceWorker,
+  // and it was not generated inside the ServiceWorker.
+  if (response_head.was_fetched_via_service_worker &&
+      !response_head.original_url_via_service_worker.is_empty()) {
+    request_info->response_url = response_head.original_url_via_service_worker;
+  }
+
   ResourceResponseInfo renderer_response_info;
   ToResourceResponseInfo(*request_info, response_head, &renderer_response_info);
   request_info->site_isolation_metadata =
@@ -491,8 +499,7 @@ void ResourceDispatcher::OnDownloadedData(int request_id,
 
 void ResourceDispatcher::OnReceivedRedirect(
     int request_id,
-    const GURL& new_url,
-    const GURL& new_first_party_for_cookies,
+    const net::RedirectInfo& redirect_info,
     const ResourceResponseHead& response_head) {
   TRACE_EVENT0("loader", "ResourceDispatcher::OnReceivedRedirect");
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
@@ -502,8 +509,8 @@ void ResourceDispatcher::OnReceivedRedirect(
 
   ResourceResponseInfo renderer_response_info;
   ToResourceResponseInfo(*request_info, response_head, &renderer_response_info);
-  if (request_info->peer->OnReceivedRedirect(
-          new_url, new_first_party_for_cookies, renderer_response_info)) {
+  if (request_info->peer->OnReceivedRedirect(redirect_info,
+                                             renderer_response_info)) {
     // Double-check if the request is still around. The call above could
     // potentially remove it.
     request_info = GetPendingRequestInfo(request_id);
@@ -511,7 +518,7 @@ void ResourceDispatcher::OnReceivedRedirect(
       return;
     // We update the response_url here so that we can send it to
     // SiteIsolationPolicy later when OnReceivedResponse is called.
-    request_info->response_url = new_url;
+    request_info->response_url = redirect_info.new_url;
     request_info->pending_redirect_message.reset(
         new ResourceHostMsg_FollowRedirect(request_id));
     if (!request_info->is_deferred) {
@@ -567,7 +574,7 @@ void ResourceDispatcher::OnRequestComplete(
 }
 
 int ResourceDispatcher::AddPendingRequest(RequestPeer* callback,
-                                          ResourceType::Type resource_type,
+                                          ResourceType resource_type,
                                           int origin_pid,
                                           const GURL& frame_origin,
                                           const GURL& request_url,
@@ -665,7 +672,7 @@ bool ResourceDispatcher::AttachThreadedDataReceiver(
 ResourceDispatcher::PendingRequestInfo::PendingRequestInfo()
     : peer(NULL),
       threaded_data_provider(NULL),
-      resource_type(ResourceType::SUB_RESOURCE),
+      resource_type(RESOURCE_TYPE_SUB_RESOURCE),
       is_deferred(false),
       download_to_file(false),
       blocked_response(false),
@@ -674,7 +681,7 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo()
 
 ResourceDispatcher::PendingRequestInfo::PendingRequestInfo(
     RequestPeer* peer,
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     int origin_pid,
     const GURL& frame_origin,
     const GURL& request_url,

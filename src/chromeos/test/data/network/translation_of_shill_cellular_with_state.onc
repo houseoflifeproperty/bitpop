@@ -2,8 +2,8 @@
   "Type": "Cellular",
   "Name": "Test Network",
   "Cellular": {
-    "ActivateOverNonCellularNetwork": false,
     "ActivationState": "activated",
+    "ActivationType": "OTASP",
     "AllowRoaming": true,
     "HomeProvider": {
       "country": "us",
@@ -36,6 +36,10 @@
         "Password": "test-password3",
         "Username": "test-username3"
       }
-    ]
+    ],
+    "SIMLockStatus": {
+      "LockType": "sim-pin",
+      "LockEnabled": true
+    }
   }
 }

@@ -38,6 +38,9 @@ group.add_argument('--buildbot', action='store_true',
                  help='Buildbot mode (build and archive the toolchain)')
 group.add_argument('--trybot', action='store_true',
                  help='Trybot mode (build but do not archove the toolchain)')
+parser.add_argument('--tests-arch', choices=['x86-32', 'x86-64'],
+                    default='x86-64',
+                    help='Host architecture for tests in buildbot_pnacl.sh')
 args = parser.parse_args()
 
 host_os = buildbot_lib.GetHostPlatform()
@@ -70,16 +73,21 @@ def ToolchainBuildCmd(python_executable=None, sync=False, extra_flags=[]):
   elif args.trybot:
     executable_args.append('--trybot')
 
+  # Enabling LLVM assertions have a higher cost on Windows, particularly in the
+  # presence of threads. So disable them on windows but leave them on elsewhere
+  # to get the extra error checking.
+  # See https://code.google.com/p/nativeclient/issues/detail?id=3830
+  if host_os == 'win':
+    executable_args.append('--disable-llvm-assertions')
+
   return executable + executable_args + sync_flag + extra_flags
 
 
 # Clean out any installed toolchain parts that were built by previous bot runs.
-with buildbot_lib.Step('Sync TC install dir', status):
+with buildbot_lib.Step('Clobber TC install dir', status):
+  print 'Removing', toolchain_install_dir
   pynacl.file_tools.RemoveDirectoryIfPresent(toolchain_install_dir)
-  buildbot_lib.Command(
-      context,
-      [sys.executable, PACKAGE_VERSION_SCRIPT,
-       '--packages', 'pnacl_newlib', 'sync', '--extract'])
+
 
 # Run checkdeps so that the PNaCl toolchain trybots catch mistakes that would
 # cause the normal NaCl bots to fail.
@@ -128,7 +136,9 @@ with buildbot_lib.Step('Update cygwin/check bash', status, halt_on_fail=True):
 
 # toolchain_build outputs its own buildbot annotations, so don't use
 # buildbot_lib.Step to run it here.
-cmd = ToolchainBuildCmd(cygwin_python if host_os == 'win' else None,
+# Always run with the system python.
+# TODO(dschuff): remove support for cygwin python once the mingw build is rolled
+cmd = ToolchainBuildCmd(None,
                         host_os != 'win', # On Windows, we synced already
                         ['--packages-file', TEMP_PACKAGES_FILE])
 logging.info('Running: ' + ' '.join(cmd))
@@ -177,7 +187,7 @@ if host_os != 'win':
                  '--verbose']
     buildbot_lib.Command(context, llvm_test)
 
-
+sys.stdout.flush()
 # On Linux we build all toolchain components (driven from this script), and then
 # call buildbot_pnacl.sh which builds the sandboxed translator and runs tests
 # for all the components.
@@ -199,10 +209,7 @@ buildbot_shell = os.path.join(NACL_DIR, 'buildbot', 'buildbot_pnacl.sh')
 
 # Generate flags for buildbot_pnacl.sh
 
-# TODO(dschuff): Figure out if it makes sense to import the utilities from
-# build/ into scripts from buildbot/ or only use things from buildbot_lib,
-# or unify them in some way.
-arch = 'x8664' if platform.machine() == 'x86_64' else 'x8632'
+arch = 'x8664' if args.tests_arch == 'x86-64' else 'x8632'
 
 if args.buildbot:
   trybot_mode = 'false'

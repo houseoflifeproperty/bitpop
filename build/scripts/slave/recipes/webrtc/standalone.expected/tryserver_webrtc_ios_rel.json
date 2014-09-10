@@ -11,7 +11,6 @@
     "name": "gclient setup"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -22,7 +21,6 @@
     "name": "gclient revert"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -54,7 +52,6 @@
     ]
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "svn",
       "export",
@@ -71,7 +68,6 @@
     ]
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "patch",
       "--dir",
@@ -97,14 +93,9 @@
       "GYP_DEFINES": "OS=ios build_with_libjingle=1 chromium_ios_signing=0 clang=1 component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]/goma' key_id='' target_arch=armv7 use_goma=1",
       "GYP_GENERATORS": "ninja"
     },
-    "name": "gclient runhooks",
-    "seed_steps": [
-      "gclient runhooks",
-      "compile"
-    ]
+    "name": "gclient runhooks"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",

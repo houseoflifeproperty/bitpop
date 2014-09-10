@@ -36,6 +36,7 @@ class V8TestApi(recipe_test_api.RecipeTestApi):
       results.append({
         'flags': ['--opt42'],
         'result': 'FAIL',
+        'run': 1,
         'stdout': 'Some output.',
         'stderr': 'Some errput.',
         'name': 'suite-name/dir/test-name%d' % i,
@@ -45,6 +46,7 @@ class V8TestApi(recipe_test_api.RecipeTestApi):
       results.append({
         'flags': ['--other'],
         'result': 'FAIL',
+        'run': 1,
         'stdout': 'Some output.',
         'stderr': 'Some errput.',
         'name': 'suite-name/dir/test-name%d' % i,
@@ -54,6 +56,7 @@ class V8TestApi(recipe_test_api.RecipeTestApi):
       results.append({
         'flags': ['--other'],
         'result': 'CRASH',
+        'run': 1,
         'stdout': 'Some output\nwith\nmore\nlines.',
         'stderr': 'Some errput.',
         'name': 'other-suite/dir/other-test-very-long-name%d' % i,

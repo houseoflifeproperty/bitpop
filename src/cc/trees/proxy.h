@@ -16,7 +16,12 @@
 #include "base/values.h"
 #include "cc/base/cc_export.h"
 
-namespace base { class SingleThreadTaskRunner; }
+namespace base {
+namespace debug {
+class TracedValue;
+}
+class SingleThreadTaskRunner;
+}
 
 namespace gfx {
 class Rect;
@@ -89,17 +94,18 @@ class CC_EXPORT Proxy {
   // Maximum number of sub-region texture updates supported for each commit.
   virtual size_t MaxPartialTextureUpdates() const = 0;
 
-  virtual scoped_ptr<base::Value> AsValue() const = 0;
+  virtual bool SupportsImplScrolling() const = 0;
+
+  virtual void AsValueInto(base::debug::TracedValue* value) const = 0;
 
   virtual void SetDebugState(const LayerTreeDebugState& debug_state) = 0;
 
   // Testing hooks
-  virtual bool CommitPendingForTesting() = 0;
-  virtual scoped_ptr<base::Value> SchedulerAsValueForTesting();
+  virtual bool MainFrameWillHappenForTesting() = 0;
 
  protected:
-  explicit Proxy(
-      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
+  Proxy(scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+        scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
   friend class DebugScopedSetImplThread;
   friend class DebugScopedSetMainThread;
   friend class DebugScopedSetMainThreadBlocked;

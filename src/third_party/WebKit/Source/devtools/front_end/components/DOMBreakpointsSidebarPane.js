@@ -31,7 +31,6 @@
 /**
  * @constructor
  * @extends {WebInspector.NativeBreakpointsSidebarPane}
- * @implements {WebInspector.TargetManager.Observer}
  */
 WebInspector.DOMBreakpointsSidebarPane = function()
 {
@@ -54,32 +53,15 @@ WebInspector.DOMBreakpointsSidebarPane = function()
     this._contextMenuLabels[this._breakpointTypes.AttributeModified] = WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Attributes modifications" : "Attributes Modifications");
     this._contextMenuLabels[this._breakpointTypes.NodeRemoved] = WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Node removal" : "Node Removal");
 
-    WebInspector.targetManager.observeTargets(this);
+    WebInspector.targetManager.addModelListener(WebInspector.ResourceTreeModel, WebInspector.ResourceTreeModel.EventTypes.InspectedURLChanged, this._inspectedURLChanged, this);
+    WebInspector.targetManager.addModelListener(WebInspector.DOMModel, WebInspector.DOMModel.Events.NodeRemoved, this._nodeRemoved, this);
 }
 
 WebInspector.DOMBreakpointsSidebarPane.prototype = {
-    /**
-     * @param {!WebInspector.Target} target
-     */
-    targetAdded: function(target)
-    {
-        target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.InspectedURLChanged, this._inspectedURLChanged, this);
-        target.domModel.addEventListener(WebInspector.DOMModel.Events.NodeRemoved, this._nodeRemoved, this);
-    },
-
-    /**
-     * @param {!WebInspector.Target} target
-     */
-    targetRemoved: function(target)
-    {
-        target.resourceTreeModel.removeEventListener(WebInspector.ResourceTreeModel.EventTypes.InspectedURLChanged, this._inspectedURLChanged, this);
-        target.domModel.removeEventListener(WebInspector.DOMModel.Events.NodeRemoved, this._nodeRemoved, this);
-    },
-
     _inspectedURLChanged: function(event)
     {
         this._breakpointElements = {};
-        this._reset();
+        this.reset();
         var url = /** @type {string} */ (event.data);
         this._inspectedURL = url.removeURLFragment();
     },
@@ -254,7 +236,7 @@ WebInspector.DOMBreakpointsSidebarPane.prototype = {
                 break;
             currentElement = currentElement.nextSibling;
         }
-        this._addListElement(element, currentElement);
+        this.addListElement(element, currentElement);
         this._breakpointElements[breakpointId] = element;
         if (enabled)
             DOMDebuggerAgent.setDOMBreakpoint(node.id, type);
@@ -276,7 +258,7 @@ WebInspector.DOMBreakpointsSidebarPane.prototype = {
         if (!element)
             return;
 
-        this._removeListElement(element);
+        this.removeListElement(element);
         delete this._breakpointElements[breakpointId];
         if (element._checkboxElement.checked)
             DOMDebuggerAgent.removeDOMBreakpoint(node.id, type);
@@ -415,7 +397,7 @@ WebInspector.DOMBreakpointsSidebarPane.prototype = {
  */
 WebInspector.DOMBreakpointsSidebarPane.Proxy = function(pane, panel)
 {
-    WebInspector.View._assert(!pane.titleElement.firstChild, "Cannot create proxy for a sidebar pane with a toolbar");
+    WebInspector.View.__assert(!pane.titleElement.firstChild, "Cannot create proxy for a sidebar pane with a toolbar");
 
     WebInspector.SidebarPane.call(this, pane.title());
     this.registerRequiredCSS("breakpointsList.css");

@@ -24,11 +24,11 @@
 #ifndef ValidityState_h
 #define ValidityState_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/FormAssociatedElement.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ValidityState : public NoBaseWillBeGarbageCollectedFinalized<ValidityState>, public ScriptWrappable {
     WTF_MAKE_NONCOPYABLE(ValidityState);
@@ -69,6 +69,6 @@ private:
     RawPtrWillBeMember<FormAssociatedElement> m_control;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ValidityState_h

@@ -27,11 +27,11 @@
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/cert_store_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
-#include "content/browser/cross_site_request_manager.h"
 #include "content/browser/download/download_resource_handler.h"
 #include "content/browser/download/save_file_manager.h"
 #include "content/browser/download/save_file_resource_handler.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
+#include "content/browser/frame_host/navigation_request_info.h"
 #include "content/browser/loader/async_resource_handler.h"
 #include "content/browser/loader/buffered_resource_handler.h"
 #include "content/browser/loader/cross_site_resource_handler.h"
@@ -52,10 +52,9 @@
 #include "content/browser/streams/stream.h"
 #include "content/browser/streams/stream_context.h"
 #include "content/browser/streams/stream_registry.h"
-#include "content/browser/worker_host/worker_service_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/appcache_interfaces.h"
 #include "content/common/resource_messages.h"
-#include "content/common/resource_request_body.h"
 #include "content/common/ssl_status_serialization.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -94,7 +93,6 @@
 #include "webkit/browser/blob/blob_url_request_job_factory.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/common/appcache/appcache_interfaces.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 
 using base::Time;
@@ -137,10 +135,10 @@ const double kMaxRequestsPerProcessRatio = 0.45;
 // same resource (see bugs 46104 and 31014).
 const int kDefaultDetachableCancelDelayMs = 30000;
 
-bool IsDetachableResourceType(ResourceType::Type type) {
+bool IsDetachableResourceType(ResourceType type) {
   switch (type) {
-    case ResourceType::PREFETCH:
-    case ResourceType::PING:
+    case RESOURCE_TYPE_PREFETCH:
+    case RESOURCE_TYPE_PING:
       return true;
     default:
       return false;
@@ -172,7 +170,8 @@ void AbortRequestBeforeItStarts(ResourceMessageFilter* filter,
 
 void SetReferrerForRequest(net::URLRequest* request, const Referrer& referrer) {
   if (!referrer.url.is_valid() ||
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoReferrers)) {
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kNoReferrers)) {
     request->SetReferrer(std::string());
   } else {
     request->SetReferrer(referrer.url.spec());
@@ -247,16 +246,6 @@ void RemoveDownloadFileFromChildSecurityPolicy(int child_id,
   ChildProcessSecurityPolicyImpl::GetInstance()->RevokeAllPermissionsForFile(
       child_id, path);
 }
-
-#if defined(OS_WIN)
-#pragma warning(disable: 4748)
-#pragma optimize("", off)
-#endif
-
-#if defined(OS_WIN)
-#pragma optimize("", on)
-#pragma warning(default: 4748)
-#endif
 
 DownloadInterruptReason CallbackAndReturn(
     const DownloadUrlParameters::OnStartedCallback& started_cb,
@@ -385,6 +374,17 @@ void ResourceDispatcherHostImpl::RemoveResourceContext(
     ResourceContext* context) {
   CHECK(ContainsKey(active_resource_contexts_, context));
   active_resource_contexts_.erase(context);
+}
+
+void ResourceDispatcherHostImpl::ResumeResponseDeferredAtStart(
+    const GlobalRequestID& id) {
+  ResourceLoader* loader = GetLoader(id);
+  if (loader) {
+    // The response we were meant to resume could have already been canceled.
+    ResourceRequestInfoImpl* info = loader->GetRequestInfo();
+    if (info->cross_site_handler())
+      info->cross_site_handler()->ResumeResponseDeferredAtStart(id.request_id);
+  }
 }
 
 void ResourceDispatcherHostImpl::CancelRequestsForContext(
@@ -516,6 +516,15 @@ DownloadInterruptReason ResourceDispatcherHostImpl::BeginDownload(
     extra_load_flags |= net::LOAD_DISABLE_CACHE;
   }
   request->SetLoadFlags(request->load_flags() | extra_load_flags);
+
+  // We treat a download as a main frame load, and thus update the policy URL on
+  // redirects.
+  //
+  // TODO(davidben): Is this correct? If this came from a
+  // ViewHostMsg_DownloadUrl in a frame, should it have first-party URL set
+  // appropriately?
+  request->set_first_party_url_policy(
+      net::URLRequest::UPDATE_FIRST_PARTY_URL_ON_REDIRECT);
 
   // Check if the renderer is permitted to request the requested URL.
   if (!ChildProcessSecurityPolicyImpl::GetInstance()->
@@ -667,7 +676,7 @@ bool ResourceDispatcherHostImpl::HandleExternalProtocol(ResourceLoader* loader,
 
   ResourceRequestInfoImpl* info = loader->GetRequestInfo();
 
-  if (!ResourceType::IsFrame(info->GetResourceType()))
+  if (!IsResourceTypeFrame(info->GetResourceType()))
     return false;
 
   const net::URLRequestJobFactory* job_factory =
@@ -737,7 +746,7 @@ void ResourceDispatcherHostImpl::DidFinishLoading(ResourceLoader* loader) {
   ResourceRequestInfo* info = loader->GetRequestInfo();
 
   // Record final result of all resource loads.
-  if (info->GetResourceType() == ResourceType::MAIN_FRAME) {
+  if (info->GetResourceType() == RESOURCE_TYPE_MAIN_FRAME) {
     // This enumeration has "3" appended to its name to distinguish it from
     // older versions.
     UMA_HISTOGRAM_SPARSE_SLOWLY(
@@ -758,7 +767,7 @@ void ResourceDispatcherHostImpl::DidFinishLoading(ResourceLoader* loader) {
           "Net.CertificateTransparency.MainFrameValidSCTCount", num_valid_scts);
     }
   } else {
-    if (info->GetResourceType() == ResourceType::IMAGE) {
+    if (info->GetResourceType() == RESOURCE_TYPE_IMAGE) {
       UMA_HISTOGRAM_SPARSE_SLOWLY(
           "Net.ErrorCodesForImages",
           -loader->request()->status().error());
@@ -1034,6 +1043,13 @@ void ResourceDispatcherHostImpl::BeginRequest(
   new_request->set_first_party_for_cookies(
       request_data.first_party_for_cookies);
 
+  // If the request is a MAIN_FRAME request, the first-party URL gets updated on
+  // redirects.
+  if (request_data.resource_type == RESOURCE_TYPE_MAIN_FRAME) {
+    new_request->set_first_party_url_policy(
+        net::URLRequest::UPDATE_FIRST_PARTY_URL_ON_REDIRECT);
+  }
+
   const Referrer referrer(request_data.referrer, request_data.referrer_policy);
   SetReferrerForRequest(new_request.get(), referrer);
 
@@ -1054,7 +1070,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
   }
 
   bool allow_download = request_data.allow_download &&
-      ResourceType::IsFrame(request_data.resource_type);
+      IsResourceTypeFrame(request_data.resource_type);
 
   // Make extra info and read footer (contains request ID).
   ResourceRequestInfoImpl* extra_info =
@@ -1075,6 +1091,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
           false,  // is stream
           allow_download,
           request_data.has_user_gesture,
+          request_data.enable_load_timing,
           request_data.referrer_policy,
           request_data.visiblity_state,
           resource_context,
@@ -1157,12 +1174,13 @@ scoped_ptr<ResourceHandler> ResourceDispatcherHostImpl::CreateResourceHandler(
   // let us check whether a transfer is required and pause for the unload
   // handler either if so or if a cross-process navigation is already under way.
   bool is_swappable_navigation =
-      request_data.resource_type == ResourceType::MAIN_FRAME;
+      request_data.resource_type == RESOURCE_TYPE_MAIN_FRAME;
   // If we are using --site-per-process, install it for subframes as well.
   if (!is_swappable_navigation &&
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess)) {
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSitePerProcess)) {
     is_swappable_navigation =
-        request_data.resource_type == ResourceType::SUB_FRAME;
+        request_data.resource_type == RESOURCE_TYPE_SUB_FRAME;
   }
   if (is_swappable_navigation && process_type == PROCESS_TYPE_RENDERER)
     handler.reset(new CrossSiteResourceHandler(handler.Pass(), request));
@@ -1288,13 +1306,14 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       false,     // is_main_frame
       false,     // parent_is_main_frame
       -1,        // parent_render_frame_id
-      ResourceType::SUB_RESOURCE,
+      RESOURCE_TYPE_SUB_RESOURCE,
       PAGE_TRANSITION_LINK,
       false,     // should_replace_current_entry
       download,  // is_download
       false,     // is_stream
       download,  // allow_download
       false,     // has_user_gesture
+      false,     // enable_load_timing
       blink::WebReferrerPolicyDefault,
       blink::WebPageVisibilityStateVisible,
       context,
@@ -1595,6 +1614,13 @@ void ResourceDispatcherHostImpl::FinishedWithResourcesForRequest(
   const ResourceRequestInfoImpl* info =
       ResourceRequestInfoImpl::ForRequest(request_);
   IncrementOutstandingRequestsCount(-1, *info);
+}
+
+void ResourceDispatcherHostImpl::NavigationRequest(
+    const NavigationRequestInfo& info,
+    scoped_refptr<ResourceRequestBody> request_body,
+    int64 frame_node_id) {
+  NOTIMPLEMENTED();
 }
 
 // static
@@ -1925,15 +1951,15 @@ int ResourceDispatcherHostImpl::BuildLoadFlagsForRequest(
   // keep-alive connection created to load a sub-frame or a sub-resource could
   // be reused to load a main frame.
   load_flags |= net::LOAD_VERIFY_EV_CERT;
-  if (request_data.resource_type == ResourceType::MAIN_FRAME) {
+  if (request_data.resource_type == RESOURCE_TYPE_MAIN_FRAME) {
     load_flags |= net::LOAD_MAIN_FRAME;
-  } else if (request_data.resource_type == ResourceType::SUB_FRAME) {
+  } else if (request_data.resource_type == RESOURCE_TYPE_SUB_FRAME) {
     load_flags |= net::LOAD_SUB_FRAME;
-  } else if (request_data.resource_type == ResourceType::PREFETCH) {
+  } else if (request_data.resource_type == RESOURCE_TYPE_PREFETCH) {
     load_flags |= (net::LOAD_PREFETCH | net::LOAD_DO_NOT_PROMPT_FOR_LOGIN);
-  } else if (request_data.resource_type == ResourceType::FAVICON) {
+  } else if (request_data.resource_type == RESOURCE_TYPE_FAVICON) {
     load_flags |= net::LOAD_DO_NOT_PROMPT_FOR_LOGIN;
-  } else if (request_data.resource_type == ResourceType::IMAGE) {
+  } else if (request_data.resource_type == RESOURCE_TYPE_IMAGE) {
     // Prevent third-party image content from prompting for login, as this
     // is often a scam to extract credentials for another domain from the user.
     // Only block image loads, as the attack applies largely to the "src"
@@ -1968,6 +1994,11 @@ int ResourceDispatcherHostImpl::BuildLoadFlagsForRequest(
     VLOG(1) << "Denied unauthorized request for raw headers";
     load_flags &= ~net::LOAD_REPORT_RAW_HEADERS;
   }
+
+  // Add a flag to selectively bypass the data reduction proxy if the resource
+  // type is not an image.
+  if (request_data.resource_type != RESOURCE_TYPE_IMAGE)
+    load_flags |= net::LOAD_BYPASS_DATA_REDUCTION_PROXY;
 
   return load_flags;
 }

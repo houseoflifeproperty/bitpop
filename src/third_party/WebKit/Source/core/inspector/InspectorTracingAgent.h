@@ -12,37 +12,48 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class InspectorClient;
+class InspectorWorkerAgent;
 
 class InspectorTracingAgent FINAL
     : public InspectorBaseAgent<InspectorTracingAgent>
     , public InspectorBackendDispatcher::TracingCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorTracingAgent);
 public:
-    static PassOwnPtr<InspectorTracingAgent> create(InspectorClient* client)
+    static PassOwnPtrWillBeRawPtr<InspectorTracingAgent> create(InspectorClient* client, InspectorWorkerAgent* workerAgent)
     {
-        return adoptPtr(new InspectorTracingAgent(client));
+        return adoptPtrWillBeNoop(new InspectorTracingAgent(client, workerAgent));
     }
 
     // Base agent methods.
     virtual void restore() OVERRIDE;
+    virtual void setFrontend(InspectorFrontend*) OVERRIDE;
+
+    void consoleTimeline(const String& title);
+    void consoleTimelineEnd(const String& title);
 
     // Protocol method implementations.
-    virtual void start(ErrorString*, const String& categoryFilter, const String&, const double*, String* sessionId) OVERRIDE;
+    virtual void start(ErrorString*, const String& categoryFilter, const String&, const double*) OVERRIDE;
+    virtual void end(ErrorString*);
 
     // Methods for other agents to use.
     void setLayerTreeId(int);
 
 private:
-    explicit InspectorTracingAgent(InspectorClient*);
+    InspectorTracingAgent(InspectorClient*, InspectorWorkerAgent*);
 
     void emitMetadataEvents();
+    void innerStart(const String& categoryFilter, bool fromConsole);
     String sessionId();
+    void notifyTracingStopped();
 
     int m_layerTreeId;
     InspectorClient* m_client;
+    Vector<String> m_consoleTimelines;
+    InspectorFrontend::Tracing* m_frontend;
+    InspectorWorkerAgent* m_workerAgent;
 };
 
 }

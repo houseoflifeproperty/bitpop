@@ -41,7 +41,7 @@ bool ReadBase64String(const base::ListValue& list_value,
 void AppendBase64String(const std::string& str, base::ListValue* list_value) {
   std::string base64_str;
   base::Base64Encode(str, &base64_str);
-  list_value->Append(base::Value::CreateStringValue(base64_str));
+  list_value->AppendString(base64_str);
 }
 
 }  // namespace
@@ -65,16 +65,6 @@ void PersistedLogs::LogHashPair::Init(const std::string& log_data) {
   hash = base::SHA1HashString(log_data);
 }
 
-void PersistedLogs::LogHashPair::Clear() {
-  compressed_log_data.clear();
-  hash.clear();
-}
-
-void PersistedLogs::LogHashPair::Swap(PersistedLogs::LogHashPair* input) {
-  compressed_log_data.swap(input->compressed_log_data);
-  hash.swap(input->hash);
-}
-
 PersistedLogs::PersistedLogs(PrefService* local_state,
                              const char* pref_name,
                              const char* old_pref_name,
@@ -86,8 +76,8 @@ PersistedLogs::PersistedLogs(PrefService* local_state,
       old_pref_name_(old_pref_name),
       min_log_count_(min_log_count),
       min_log_bytes_(min_log_bytes),
-      max_log_size_(max_log_size),
-      last_provisional_store_index_(-1) {
+      max_log_size_(max_log_size != 0 ? max_log_size : static_cast<size_t>(-1)),
+      staged_log_index_(-1) {
   DCHECK(local_state_);
   // One of the limit arguments must be non-zero.
   DCHECK(min_log_count_ > 0 || min_log_bytes_ > 0);
@@ -95,22 +85,7 @@ PersistedLogs::PersistedLogs(PrefService* local_state,
 
 PersistedLogs::~PersistedLogs() {}
 
-void PersistedLogs::SerializeLogs() {
-  // Remove any logs that are over the serialization size limit.
-  if (max_log_size_) {
-    for (std::vector<LogHashPair>::iterator it = list_.begin();
-         it != list_.end();) {
-      size_t log_size = it->compressed_log_data.length();
-      if (log_size > max_log_size_) {
-        UMA_HISTOGRAM_COUNTS("UMA.Large Accumulated Log Not Persisted",
-                             static_cast<int>(log_size));
-        it = list_.erase(it);
-      } else {
-        ++it;
-      }
-    }
-  }
-
+void PersistedLogs::SerializeLogs() const {
   ListPrefUpdate update(local_state_, pref_name_);
   WriteLogsToPrefList(update.Get());
 
@@ -140,62 +115,46 @@ void PersistedLogs::StageLog() {
   // hard-to-identify crashes much later.
   CHECK(!list_.empty());
   DCHECK(!has_staged_log());
-  staged_log_.Swap(&list_.back());
-  list_.pop_back();
-
-  // If the staged log was the last provisional store, clear that.
-  if (static_cast<size_t>(last_provisional_store_index_) == list_.size())
-    last_provisional_store_index_ = -1;
+  staged_log_index_ = list_.size() - 1;
   DCHECK(has_staged_log());
 }
 
 void PersistedLogs::DiscardStagedLog() {
   DCHECK(has_staged_log());
-  staged_log_.Clear();
+  DCHECK_LT(static_cast<size_t>(staged_log_index_), list_.size());
+  list_.erase(list_.begin() + staged_log_index_);
+  staged_log_index_ = -1;
 }
 
-void PersistedLogs::StoreStagedLogAsUnsent(StoreType store_type) {
-  list_.push_back(LogHashPair());
-  list_.back().Swap(&staged_log_);
-  if (store_type == PROVISIONAL_STORE)
-    last_provisional_store_index_ = list_.size() - 1;
-}
-
-void PersistedLogs::DiscardLastProvisionalStore() {
-  if (last_provisional_store_index_ == -1)
-    return;
-  DCHECK_LT(static_cast<size_t>(last_provisional_store_index_), list_.size());
-  list_.erase(list_.begin() + last_provisional_store_index_);
-  last_provisional_store_index_ = -1;
-}
-
-void PersistedLogs::WriteLogsToPrefList(base::ListValue* list_value) {
+void PersistedLogs::WriteLogsToPrefList(base::ListValue* list_value) const {
   list_value->Clear();
-  // Leave the list completely empty if there are no storable values.
-  if (list_.empty())
-    return;
 
-  size_t start = 0;
-  // If there are too many logs, keep the most recent logs up to the length
-  // limit, and at least to the minimum number of bytes.
-  if (list_.size() > min_log_count_) {
-    start = list_.size();
-    size_t bytes_used = 0;
-    std::vector<LogHashPair>::const_reverse_iterator end = list_.rend();
-    for (std::vector<LogHashPair>::const_reverse_iterator it = list_.rbegin();
-         it != end; ++it) {
-      const size_t log_size = it->compressed_log_data.length();
-      if (bytes_used >= min_log_bytes_ &&
-          (list_.size() - start) >= min_log_count_) {
-        break;
-      }
-      bytes_used += log_size;
-      --start;
+  // Keep the most recent logs which are smaller than |max_log_size_|.
+  // We keep at least |min_log_bytes_| and |min_log_count_| of logs before
+  // discarding older logs.
+  size_t start = list_.size();
+  size_t saved_log_count = 0;
+  size_t bytes_used = 0;
+  for (; start > 0; --start) {
+    size_t log_size = list_[start - 1].compressed_log_data.length();
+    if (bytes_used >= min_log_bytes_ &&
+        saved_log_count >= min_log_count_) {
+      break;
     }
+    // Oversized logs won't be persisted, so don't count them.
+    if (log_size > max_log_size_)
+      continue;
+    bytes_used += log_size;
+    ++saved_log_count;
   }
-  DCHECK_LT(start, list_.size());
 
   for (size_t i = start; i < list_.size(); ++i) {
+    size_t log_size = list_[i].compressed_log_data.length();
+    if (log_size > max_log_size_) {
+      UMA_HISTOGRAM_COUNTS("UMA.Large Accumulated Log Not Persisted",
+                           static_cast<int>(log_size));
+      continue;
+    }
     AppendBase64String(list_[i].compressed_log_data, list_value);
     AppendBase64String(list_[i].hash, list_value);
   }

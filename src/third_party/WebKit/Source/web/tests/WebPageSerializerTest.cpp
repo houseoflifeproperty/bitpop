@@ -31,7 +31,6 @@
 #include "config.h"
 #include "public/web/WebPageSerializer.h"
 
-#include "core/dom/Document.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
@@ -47,7 +46,7 @@
 #include <gtest/gtest.h>
 
 using namespace blink;
-using WebCore::Document;
+using blink::Document;
 using blink::URLTestHelpers::toKURL;
 
 namespace {

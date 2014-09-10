@@ -55,17 +55,7 @@
 #include "platform/heap/Heap.h"
 #include "wtf/text/StringStatics.h"
 
-namespace WebCore {
-
-void CoreInitializer::initEventNames()
-{
-    EventNames::init();
-}
-
-void CoreInitializer::initEventTargetNames()
-{
-    EventTargetNames::init();
-}
+namespace blink {
 
 void CoreInitializer::registerEventFactory()
 {
@@ -79,8 +69,7 @@ void CoreInitializer::registerEventFactory()
 
 void CoreInitializer::init()
 {
-    if (m_isInited)
-        return;
+    ASSERT(!m_isInited);
     m_isInited = true;
 
     // It would make logical sense to do this and WTF::StringStatics::init() in
@@ -93,8 +82,8 @@ void CoreInitializer::init()
     XMLNSNames::init();
     XMLNames::init();
 
-    initEventNames();
-    initEventTargetNames();
+    EventNames::init();
+    EventTargetNames::init();
     EventTypeNames::init();
     FetchInitiatorTypeNames::init();
     FontFamilyNames::init();
@@ -120,7 +109,7 @@ void CoreInitializer::init()
     HTMLParserThread::init();
 }
 
-void shutdown()
+void CoreInitializer::shutdown()
 {
     // Make sure we stop the HTMLParserThread before Platform::current() is cleared.
     HTMLParserThread::shutdown();
@@ -128,4 +117,4 @@ void shutdown()
     Partitions::shutdown();
 }
 
-} // namespace WebCore
+} // namespace blink

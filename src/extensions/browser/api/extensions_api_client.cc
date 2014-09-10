@@ -4,6 +4,8 @@
 
 #include "extensions/browser/api/extensions_api_client.h"
 
+#include "base/logging.h"
+
 namespace extensions {
 namespace {
 
@@ -23,5 +25,26 @@ void ExtensionsAPIClient::AddAdditionalValueStoreCaches(
     const scoped_refptr<SettingsStorageFactory>& factory,
     const scoped_refptr<ObserverListThreadSafe<SettingsObserver> >& observers,
     std::map<settings_namespace::Namespace, ValueStoreCache*>* caches) {}
+
+bool ExtensionsAPIClient::AppViewInternalAttachFrame(
+    content::BrowserContext* browser_context,
+    const GURL& url,
+    int guest_instance_id,
+    const std::string& guest_extension_id) {
+  return false;
+}
+
+bool ExtensionsAPIClient::AppViewInternalDenyRequest(
+    content::BrowserContext* browser_context,
+    int guest_instance_id,
+    const std::string& guest_extension_id) {
+  return false;
+}
+
+device::HidService* ExtensionsAPIClient::GetHidService() {
+  // This should never be called by clients which don't support the HID API.
+  NOTIMPLEMENTED();
+  return NULL;
+}
 
 }  // namespace extensions

@@ -32,11 +32,11 @@
 
 #include "core/svg/SVGPointTearOff.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGMatrixTearOff.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGPointTearOff::SVGPointTearOff(PassRefPtr<SVGPoint> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName)
     : SVGPropertyTearOff<SVGPoint>(target, contextElement, propertyIsAnimVal, attributeName)

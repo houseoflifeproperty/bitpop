@@ -38,6 +38,7 @@
 #include "public/web/WebSettings.h"
 #include "public/web/WebView.h"
 #include "web/WebLocalFrameImpl.h"
+#include "web/tests/FrameTestHelpers.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 
@@ -70,7 +71,8 @@ class FrameLoaderClientImplTest : public testing::Test {
 public:
     void SetUp()
     {
-        m_webView = WebView::create(0);
+        FrameTestHelpers::TestWebViewClient webViewClient;
+        m_webView = WebView::create(&webViewClient);
         // FIXME: http://crbug.com/363843. This needs to find a better way to
         // not create graphics layers.
         m_webView->settings()->setAcceleratedCompositingEnabled(false);
@@ -93,7 +95,7 @@ public:
     const WebString userAgent()
     {
         // The test always returns the same user agent, regardless of the URL passed in.
-        WebCore::KURL dummyURL(WebCore::ParsedURLString, "about:blank");
+        blink::KURL dummyURL(blink::ParsedURLString, "about:blank");
         WTF::CString userAgent = m_frameLoaderClientImpl->userAgent(dummyURL).utf8();
         return WebString::fromUTF8(userAgent.data(), userAgent.length());
     }

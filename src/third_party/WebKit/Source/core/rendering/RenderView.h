@@ -24,12 +24,13 @@
 
 #include "core/frame/FrameView.h"
 #include "core/rendering/LayoutState.h"
+#include "core/rendering/PaintInvalidationState.h"
 #include "core/rendering/RenderBlockFlow.h"
 #include "platform/PODFreeListArena.h"
 #include "platform/scroll/ScrollableArea.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class FlowThreadController;
 class RenderLayerCompositor;
@@ -43,9 +44,13 @@ class RenderView FINAL : public RenderBlockFlow {
 public:
     explicit RenderView(Document*);
     virtual ~RenderView();
+    virtual void trace(Visitor*) OVERRIDE;
 
     bool hitTest(const HitTestRequest&, HitTestResult&);
     bool hitTest(const HitTestRequest&, const HitTestLocation&, HitTestResult&);
+
+    // Returns the total count of calls to HitTest, for testing.
+    unsigned hitTestCount() const { return m_hitTestCount; }
 
     virtual const char* renderName() const OVERRIDE { return "RenderView"; }
 
@@ -75,13 +80,13 @@ public:
 
     FrameView* frameView() const { return m_frameView; }
 
-    virtual void mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect&, bool fixed = false) const OVERRIDE;
-    void repaintViewRectangle(const LayoutRect&) const;
+    virtual void mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect&, ViewportConstrainedPosition, const PaintInvalidationState*) const OVERRIDE;
+    void invalidatePaintForRectangle(const LayoutRect&) const;
 
-    void repaintViewAndCompositedLayers();
+    void invalidatePaintForViewAndCompositedLayers();
 
     virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
-    virtual void paintBoxDecorations(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void paintBoxDecorationBackground(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
     enum SelectionRepaintMode { RepaintNewXOROld, RepaintNewMinusOld, RepaintNothing };
     void setSelection(RenderObject* start, int startPos, RenderObject* end, int endPos, SelectionRepaintMode = RepaintNewXOROld);
@@ -91,50 +96,17 @@ public:
     RenderObject* selectionEnd() const { return m_selectionEnd; }
     IntRect selectionBounds(bool clipToVisibleContent = true) const;
     void selectionStartEnd(int& startPos, int& endPos) const;
-    void repaintSelection() const;
+    void invalidatePaintForSelection() const;
 
     virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const OVERRIDE;
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const OVERRIDE;
 
     virtual LayoutRect viewRect() const OVERRIDE;
 
-    // layoutDelta is used transiently during layout to store how far an object has moved from its
-    // last layout location, in order to repaint correctly.
-    // If we're doing a full repaint m_layoutState will be 0, but in that case layoutDelta doesn't matter.
-    LayoutSize layoutDelta() const
-    {
-        ASSERT(!RuntimeEnabledFeatures::repaintAfterLayoutEnabled());
-        return m_layoutState ? m_layoutState->layoutDelta() : LayoutSize();
-    }
-    void addLayoutDelta(const LayoutSize& delta)
-    {
-        ASSERT(!RuntimeEnabledFeatures::repaintAfterLayoutEnabled());
-        if (m_layoutState)
-            m_layoutState->addLayoutDelta(delta);
-    }
+    bool shouldDoFullPaintInvalidationForNextLayout() const;
+    bool doingFullPaintInvalidation() const { return m_frameView->needsFullPaintInvalidation(); }
 
-#if ASSERT_ENABLED
-    bool layoutDeltaMatches(const LayoutSize& delta)
-    {
-        ASSERT(!RuntimeEnabledFeatures::repaintAfterLayoutEnabled());
-        if (!m_layoutState)
-            return false;
-        return (delta.width() == m_layoutState->layoutDelta().width() || m_layoutState->layoutDeltaXSaturated()) && (delta.height() == m_layoutState->layoutDelta().height() || m_layoutState->layoutDeltaYSaturated());
-    }
-#endif
-
-    bool shouldDoFullRepaintForNextLayout() const;
-    bool doingFullRepaint() const { return m_frameView->needsFullPaintInvalidation(); }
-
-    // Returns true if layoutState should be used for its cached offset and clip.
-    bool layoutStateCachedOffsetsEnabled() const { return m_layoutState && m_layoutState->cachedOffsetsEnabled(); }
     LayoutState* layoutState() const { return m_layoutState; }
-
-    bool canMapUsingLayoutStateForContainer(const RenderObject* repaintContainer) const
-    {
-        // FIXME: LayoutState should be enabled for other repaint containers than the RenderView. crbug.com/363834
-        return layoutStateCachedOffsetsEnabled() && (repaintContainer == this);
-    }
 
     virtual void updateHitTestResult(HitTestResult&, const LayoutPoint&) OVERRIDE;
 
@@ -184,20 +156,21 @@ public:
 
     void pushLayoutState(LayoutState&);
     void popLayoutState();
+
 private:
-    virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const OVERRIDE;
+    virtual void mapLocalToContainer(const RenderLayerModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = 0) const OVERRIDE;
     virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const OVERRIDE;
     virtual void mapAbsoluteToLocalPoint(MapCoordinatesFlags, TransformState&) const OVERRIDE;
     virtual void computeSelfHitTestRects(Vector<LayoutRect>&, const LayoutPoint& layerOffset) const OVERRIDE;
 
-    virtual void invalidateTreeAfterLayout(const RenderLayerModelObject& paintInvalidationContainer) OVERRIDE FINAL;
+    virtual void invalidateTreeIfNeeded(const PaintInvalidationState&) OVERRIDE FINAL;
 
-    bool shouldRepaint(const LayoutRect&) const;
+    bool shouldInvalidatePaint(const LayoutRect&) const;
 
     bool rootFillsViewportBackground(RenderBox* rootBox) const;
 
     void layoutContent();
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     void checkLayoutState();
 #endif
 
@@ -212,8 +185,8 @@ private:
 
     FrameView* m_frameView;
 
-    RenderObject* m_selectionStart;
-    RenderObject* m_selectionEnd;
+    RawPtrWillBeMember<RenderObject> m_selectionStart;
+    RawPtrWillBeMember<RenderObject> m_selectionEnd;
 
     int m_selectionStartPos;
     int m_selectionEndPos;
@@ -225,8 +198,10 @@ private:
     OwnPtr<FlowThreadController> m_flowThreadController;
     RefPtr<IntervalArena> m_intervalArena;
 
-    RenderQuote* m_renderQuoteHead;
+    RawPtrWillBeMember<RenderQuote> m_renderQuoteHead;
     unsigned m_renderCounterCount;
+
+    unsigned m_hitTestCount;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderView, isRenderView());
@@ -239,31 +214,24 @@ DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderView, isRenderView());
 class ForceHorriblySlowRectMapping {
     WTF_MAKE_NONCOPYABLE(ForceHorriblySlowRectMapping);
 public:
-    ForceHorriblySlowRectMapping(const RenderObject& root)
-        : m_view(*root.view())
-        , m_didDisable(m_view.layoutState() && m_view.layoutState()->cachedOffsetsEnabled())
+    ForceHorriblySlowRectMapping(const PaintInvalidationState* paintInvalidationState)
+        : m_paintInvalidationState(paintInvalidationState)
+        , m_didDisable(m_paintInvalidationState && m_paintInvalidationState->cachedOffsetsEnabled())
     {
-        if (m_view.layoutState())
-            m_view.layoutState()->m_cachedOffsetsEnabled = false;
-#if ASSERT_ENABLED
-        m_layoutState = m_view.layoutState();
-#endif
+        if (m_paintInvalidationState)
+            m_paintInvalidationState->m_cachedOffsetsEnabled = false;
     }
 
     ~ForceHorriblySlowRectMapping()
     {
-        ASSERT(m_view.layoutState() == m_layoutState);
         if (m_didDisable)
-            m_view.layoutState()->m_cachedOffsetsEnabled = true;
+            m_paintInvalidationState->m_cachedOffsetsEnabled = true;
     }
 private:
-    RenderView& m_view;
+    const PaintInvalidationState* m_paintInvalidationState;
     bool m_didDisable;
-#if ASSERT_ENABLED
-    LayoutState* m_layoutState;
-#endif
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderView_h

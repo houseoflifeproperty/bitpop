@@ -47,7 +47,7 @@ class ServiceWorkerHandleTest : public testing::Test {
     helper_.reset(new EmbeddedWorkerTestHelper(kRenderProcessId));
 
     registration_ = new ServiceWorkerRegistration(
-        GURL("http://www.example.com/*"),
+        GURL("http://www.example.com/"),
         GURL("http://www.example.com/service_worker.js"),
         1L,
         helper_->context()->AsWeakPtr());
@@ -71,6 +71,8 @@ class ServiceWorkerHandleTest : public testing::Test {
   scoped_ptr<EmbeddedWorkerTestHelper> helper_;
   scoped_refptr<ServiceWorkerRegistration> registration_;
   scoped_refptr<ServiceWorkerVersion> version_;
+
+ private:
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerHandleTest);
 };
 
@@ -79,6 +81,7 @@ TEST_F(ServiceWorkerHandleTest, OnVersionStateChanged) {
       ServiceWorkerHandle::Create(helper_->context()->AsWeakPtr(),
                                   helper_.get(),
                                   1 /* thread_id */,
+                                  33 /* provider_id */,
                                   version_);
 
   // Start the worker, and then...
@@ -89,9 +92,12 @@ TEST_F(ServiceWorkerHandleTest, OnVersionStateChanged) {
 
   // ...dispatch install event.
   status = SERVICE_WORKER_ERROR_FAILED;
+  version_->SetStatus(ServiceWorkerVersion::INSTALLING);
   version_->DispatchInstallEvent(-1, CreateReceiverOnCurrentThread(&status));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(SERVICE_WORKER_OK, status);
+
+  version_->SetStatus(ServiceWorkerVersion::INSTALLED);
 
   ASSERT_EQ(4UL, ipc_sink()->message_count());
 

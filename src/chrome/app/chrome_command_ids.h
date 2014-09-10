@@ -213,6 +213,7 @@
 #define IDC_SHOW_SYNC_ERROR             40243
 #define IDC_DISTILL_PAGE                40244
 #define IDC_HELP_MENU                   40245
+#define IDC_EXTENSIONS_OVERFLOW_MENU    40246
 
 // Spell-check
 // Insert any additional suggestions before _LAST; these have to be consecutive.
@@ -254,11 +255,11 @@
 #define IDC_PROFILE_MAIN_MENU           46100     // OSX only
 #define IDC_INPUT_METHODS_MENU          46300     // Linux only
 
-// Custom context menu entries
+// The range of command ids reserved for context menus added by web content.
 #define IDC_CONTENT_CONTEXT_CUSTOM_FIRST 47000
 #define IDC_CONTENT_CONTEXT_CUSTOM_LAST  48000
 
-// Context menu items added by extensions.
+// The range of command ids reserved for context menus added by extensions.
 #define IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST 49000
 #define IDC_EXTENSIONS_CONTEXT_CUSTOM_LAST 50000
 

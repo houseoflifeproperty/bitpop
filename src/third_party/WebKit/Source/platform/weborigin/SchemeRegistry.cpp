@@ -28,8 +28,9 @@
 #include "platform/weborigin/SchemeRegistry.h"
 
 #include "wtf/MainThread.h"
+#include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 static URLSchemesMap& localURLSchemes()
 {
@@ -256,6 +257,23 @@ bool SchemeRegistry::shouldTreatURLSchemeAsCORSEnabled(const String& scheme)
     return CORSEnabledSchemes().contains(scheme);
 }
 
+String SchemeRegistry::listOfCORSEnabledURLSchemes()
+{
+    StringBuilder builder;
+    const URLSchemesMap& corsEnabledSchemes = CORSEnabledSchemes();
+
+    bool addSeparator = false;
+    for (URLSchemesMap::const_iterator it = corsEnabledSchemes.begin(); it != corsEnabledSchemes.end(); ++it) {
+        if (addSeparator)
+            builder.append(", ");
+        else
+            addSeparator = true;
+
+        builder.append(*it);
+    }
+    return builder.toString();
+}
+
 void SchemeRegistry::registerURLSchemeAsBypassingContentSecurityPolicy(const String& scheme)
 {
     ContentSecurityPolicyBypassingSchemes().add(scheme);
@@ -273,4 +291,4 @@ bool SchemeRegistry::schemeShouldBypassContentSecurityPolicy(const String& schem
     return ContentSecurityPolicyBypassingSchemes().contains(scheme);
 }
 
-} // namespace WebCore
+} // namespace blink

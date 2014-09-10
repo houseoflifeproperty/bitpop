@@ -22,9 +22,10 @@
 #define InlineBox_h
 
 #include "core/rendering/RenderBoxModelObject.h"
+#include "core/rendering/RenderObjectInlines.h"
 #include "platform/text/TextDirection.h"
 
-namespace WebCore {
+namespace blink {
 
 class HitTestRequest;
 class HitTestResult;
@@ -43,7 +44,7 @@ public:
         , m_parent(0)
         , m_renderer(obj)
         , m_logicalWidth(0)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
         , m_hasBadParent(false)
 #endif
     {
@@ -58,7 +59,7 @@ public:
         , m_topLeft(topLeft)
         , m_logicalWidth(logicalWidth)
         , m_bitfields(firstLine, constructed, dirty, extracted, isHorizontal)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
         , m_hasBadParent(false)
 #endif
     {
@@ -267,7 +268,7 @@ public:
     // visibleLeftEdge, visibleRightEdge are in the parent's coordinate system.
     virtual float placeEllipsisBox(bool ltr, float visibleLeftEdge, float visibleRightEdge, float ellipsisWidth, float &truncatedWidth, bool&);
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     void setHasBadParent();
 #endif
 
@@ -408,18 +409,18 @@ protected:
 private:
     InlineBoxBitfields m_bitfields;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool m_hasBadParent;
 #endif
 };
 
-#ifdef NDEBUG
+#if !ENABLE(ASSERT)
 inline InlineBox::~InlineBox()
 {
 }
 #endif
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 inline void InlineBox::setHasBadParent()
 {
     m_hasBadParent = true;
@@ -430,19 +431,14 @@ inline void InlineBox::setHasBadParent()
     DEFINE_TYPE_CASTS(typeName, InlineBox, box, box->is##typeName(), box.is##typeName())
 
 // Allow equality comparisons of InlineBox's by reference or pointer, interchangeably.
-inline bool operator==(const InlineBox& a, const InlineBox& b) { return &a == &b; }
-inline bool operator==(const InlineBox& a, const InlineBox* b) { return &a == b; }
-inline bool operator==(const InlineBox* a, const InlineBox& b) { return a == &b; }
-inline bool operator!=(const InlineBox& a, const InlineBox& b) { return !(a == b); }
-inline bool operator!=(const InlineBox& a, const InlineBox* b) { return !(a == b); }
-inline bool operator!=(const InlineBox* a, const InlineBox& b) { return !(a == b); }
+DEFINE_COMPARISON_OPERATORS_WITH_REFERENCES(InlineBox)
 
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
 // Outside the WebCore namespace for ease of invocation from gdb.
-void showTree(const WebCore::InlineBox*);
-void showLineTree(const WebCore::InlineBox*);
+void showTree(const blink::InlineBox*);
+void showLineTree(const blink::InlineBox*);
 #endif
 
 #endif // InlineBox_h

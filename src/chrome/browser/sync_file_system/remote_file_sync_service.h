@@ -60,6 +60,13 @@ enum RemoteServiceState {
   // they may fail (with recoverable error code).
   REMOTE_SERVICE_AUTHENTICATION_REQUIRED,
 
+  // Remote service is temporarily unavailable due to lack of API permissions.
+  // This state may be automatically resolved when the API gets right
+  // permissions to access with.
+  // The consumer of this service can still make new requests but
+  // they may fail (with recoverable error code).
+  REMOTE_SERVICE_ACCESS_FORBIDDEN,
+
   // Remote service is disabled by configuration change or due to some
   // unrecoverable errors, e.g. local database corruption.
   // Any new requests will immediately fail when the service is in
@@ -211,7 +218,7 @@ class RemoteFileSyncService {
   // REMOTE_SERVICE_TEMPORARY_UNAVAILABLE).
   virtual void SetSyncEnabled(bool enabled) = 0;
 
-  virtual void PromoteDemotedChanges() = 0;
+  virtual void PromoteDemotedChanges(const base::Closure& callback) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RemoteFileSyncService);

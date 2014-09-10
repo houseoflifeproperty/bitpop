@@ -28,7 +28,7 @@
 #ifndef MessageEvent_h
 #define MessageEvent_h
 
-#include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/SerializedScriptValue.h"
 #include "core/events/Event.h"
 #include "core/events/EventTarget.h"
 #include "core/dom/MessagePort.h"
@@ -36,7 +36,7 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "wtf/ArrayBuffer.h"
 
-namespace WebCore {
+namespace blink {
 
 struct MessageEventInit : public EventInit {
     MessageEventInit();
@@ -53,11 +53,11 @@ public:
     {
         return adoptRefWillBeNoop(new MessageEvent);
     }
-    static PassRefPtrWillBeRawPtr<MessageEvent> create(PassOwnPtr<MessagePortArray> ports, const String& origin = String(), const String& lastEventId = String(), PassRefPtrWillBeRawPtr<EventTarget> source = nullptr)
+    static PassRefPtrWillBeRawPtr<MessageEvent> create(PassOwnPtrWillBeRawPtr<MessagePortArray> ports, const String& origin = String(), const String& lastEventId = String(), PassRefPtrWillBeRawPtr<EventTarget> source = nullptr)
     {
         return adoptRefWillBeNoop(new MessageEvent(origin, lastEventId, source, ports));
     }
-    static PassRefPtrWillBeRawPtr<MessageEvent> create(PassOwnPtr<MessagePortArray> ports, PassRefPtr<SerializedScriptValue> data, const String& origin = String(), const String& lastEventId = String(), PassRefPtrWillBeRawPtr<EventTarget> source = nullptr)
+    static PassRefPtrWillBeRawPtr<MessageEvent> create(PassOwnPtrWillBeRawPtr<MessagePortArray> ports, PassRefPtr<SerializedScriptValue> data, const String& origin = String(), const String& lastEventId = String(), PassRefPtrWillBeRawPtr<EventTarget> source = nullptr)
     {
         return adoptRefWillBeNoop(new MessageEvent(data, origin, lastEventId, source, ports));
     }
@@ -80,13 +80,12 @@ public:
     static PassRefPtrWillBeRawPtr<MessageEvent> create(const AtomicString& type, const MessageEventInit& initializer, ExceptionState&);
     virtual ~MessageEvent();
 
-    void initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, const String& origin, const String& lastEventId, LocalDOMWindow* source, PassOwnPtr<MessagePortArray>);
-    void initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, LocalDOMWindow* source, PassOwnPtr<MessagePortArray>);
+    void initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, const String& origin, const String& lastEventId, LocalDOMWindow* source, PassOwnPtrWillBeRawPtr<MessagePortArray>);
+    void initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, LocalDOMWindow* source, PassOwnPtrWillBeRawPtr<MessagePortArray>);
 
     const String& origin() const { return m_origin; }
     const String& lastEventId() const { return m_lastEventId; }
     EventTarget* source() const { return m_source.get(); }
-    EventTarget* source(bool& isNull) const { isNull = !m_source; return m_source.get(); }
     MessagePortArray ports() const { return m_ports ? *m_ports : MessagePortArray(); }
     MessagePortChannelArray* channels() const { return m_channels ? m_channels.get() : 0; }
 
@@ -118,8 +117,8 @@ public:
 private:
     MessageEvent();
     MessageEvent(const AtomicString&, const MessageEventInit&);
-    MessageEvent(const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtr<MessagePortArray>);
-    MessageEvent(PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtr<MessagePortArray>);
+    MessageEvent(const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtrWillBeRawPtr<MessagePortArray>);
+    MessageEvent(PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtrWillBeRawPtr<MessagePortArray>);
     MessageEvent(PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtr<MessagePortChannelArray>);
 
     MessageEvent(const String& data, const String& origin);
@@ -137,10 +136,10 @@ private:
     // m_ports are the MessagePorts in an engtangled state, and m_channels are
     // the MessageChannels in a disentangled state. Only one of them can be
     // non-empty at a time. entangleMessagePorts() moves between the states.
-    OwnPtr<MessagePortArray> m_ports;
+    OwnPtrWillBeMember<MessagePortArray> m_ports;
     OwnPtr<MessagePortChannelArray> m_channels;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MessageEvent_h

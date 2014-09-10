@@ -30,6 +30,7 @@
         '<(libvpx_source)/vp9/common/arm/neon/vp9_convolve_neon.c',
         '<(libvpx_source)/vp9/common/arm/neon/vp9_idct16x16_neon.c',
         '<(libvpx_source)/vp9/common/arm/neon/vp9_loopfilter_16_neon.c',
+        '<(libvpx_source)/vp9/encoder/arm/neon/vp9_sad_neon.c',
       ],
       'conditions': [
         ['os_posix==1 and OS!="mac" and OS!="ios"', {

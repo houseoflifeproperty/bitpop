@@ -20,38 +20,36 @@
 #include <libaddressinput/util/basictypes.h>
 #include <libaddressinput/util/scoped_ptr.h>
 
-#include "fake_downloader.h"
-#include "lookup_key.h"
-#include "rule.h"
-
 #include <cstddef>
 #include <string>
 
 #include <gtest/gtest.h>
 
+#include "lookup_key.h"
+#include "rule.h"
+#include "testdata_source.h"
+
 namespace {
 
 using i18n::addressinput::AddressData;
 using i18n::addressinput::BuildCallback;
-using i18n::addressinput::FakeDownloader;
 using i18n::addressinput::LookupKey;
 using i18n::addressinput::NullStorage;
 using i18n::addressinput::PreloadSupplier;
 using i18n::addressinput::Rule;
 using i18n::addressinput::scoped_ptr;
+using i18n::addressinput::TestdataSource;
 
 class PreloadSupplierTest : public testing::Test {
  protected:
   PreloadSupplierTest()
-      : supplier_(FakeDownloader::kFakeAggregateDataUrl,
-                  new FakeDownloader,
-                  new NullStorage),
+      : supplier_(new TestdataSource(true), new NullStorage),
         loaded_callback_(BuildCallback(this, &PreloadSupplierTest::OnLoaded)) {}
 
   virtual ~PreloadSupplierTest() {}
 
   PreloadSupplier supplier_;
-  scoped_ptr<PreloadSupplier::Callback> loaded_callback_;
+  const scoped_ptr<const PreloadSupplier::Callback> loaded_callback_;
 
  private:
   void OnLoaded(bool success, const std::string& region_code, int num_rules) {
@@ -119,6 +117,14 @@ TEST_F(PreloadSupplierTest, GetTooPreciseRule) {
   precise_key.FromAddress(precise_address);
   const Rule* rule = supplier_.GetRule(precise_key);
   EXPECT_TRUE(rule == NULL);
+}
+
+TEST_F(PreloadSupplierTest, GetRulesForRegion) {
+  supplier_.LoadRules("CN", *loaded_callback_);
+  const std::map<std::string, const Rule*>& rules =
+      supplier_.GetRulesForRegion("CN");
+  EXPECT_TRUE(rules.find("data/CN") != rules.end());
+  EXPECT_LT(1U, rules.size());
 }
 
 }  // namespace

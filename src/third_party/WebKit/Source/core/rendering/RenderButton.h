@@ -24,7 +24,7 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/rendering/RenderFlexibleBox.h"
 
-namespace WebCore {
+namespace blink {
 
 // RenderButtons are just like normal flexboxes except that they will generate an anonymous block child.
 // For inputs, they will also generate an anonymous RenderText and keep its style and content up
@@ -37,7 +37,7 @@ public:
     virtual const char* renderName() const OVERRIDE { return "RenderButton"; }
     virtual bool isRenderButton() const OVERRIDE { return true; }
 
-    virtual bool canBeSelectionLeaf() const OVERRIDE { return node() && node()->rendererIsEditable(); }
+    virtual bool canBeSelectionLeaf() const OVERRIDE { return node() && node()->hasEditableStyle(); }
     virtual bool canCollapseAnonymousBlockChild() const OVERRIDE { return true; }
 
     virtual void addChild(RenderObject* newChild, RenderObject *beforeChild = 0) OVERRIDE;
@@ -67,6 +67,6 @@ private:
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderButton, isRenderButton());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderButton_h

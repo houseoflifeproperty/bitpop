@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 from measurements import smooth_gesture_util
 
-from telemetry.core.backends.chrome import tracing_backend
+from telemetry.core.platform import tracing_category_filter
 from telemetry.timeline.model import TimelineModel
 from telemetry.page.actions import action_runner
 from telemetry.web_perf import timeline_interaction_record as tir_module
@@ -15,13 +15,13 @@ RUN_SMOOTH_ACTIONS = 'RunSmoothAllActions'
 class TimelineController(object):
   def __init__(self):
     super(TimelineController, self).__init__()
-    self.trace_categories = tracing_backend.DEFAULT_TRACE_CATEGORIES
+    self.trace_categories = None
     self._model = None
     self._renderer_process = None
     self._smooth_records = []
     self._interaction = None
 
-  def Start(self, page, tab):
+  def SetUp(self, page, tab):
     """Starts gathering timeline data.
 
     """
@@ -30,12 +30,13 @@ class TimelineController(object):
     self._renderer_process = None
     if not tab.browser.supports_tracing:
       raise Exception('Not supported')
-    if self.trace_categories:
-      categories = [self.trace_categories] + \
-          page.GetSyntheticDelayCategories()
-    else:
-      categories = page.GetSyntheticDelayCategories()
-    tab.browser.StartTracing(','.join(categories))
+    category_filter = tracing_category_filter.TracingCategoryFilter(
+        filter_string=self.trace_categories)
+    for delay in page.GetSyntheticDelayCategories():
+      category_filter.AddSyntheticDelay(delay)
+    tab.browser.StartTracing(category_filter)
+
+  def Start(self, tab):
     # Start the smooth marker for all actions.
     runner = action_runner.ActionRunner(tab)
     self._interaction = runner.BeginInteraction(
@@ -56,7 +57,7 @@ class TimelineController(object):
       if not tir_module.IsTimelineInteractionRecord(event.name):
         continue
       r = tir_module.TimelineInteractionRecord.FromAsyncEvent(event)
-      if r.logical_name == RUN_SMOOTH_ACTIONS:
+      if r.label == RUN_SMOOTH_ACTIONS:
         assert run_smooth_actions_record is None, (
           'TimelineController cannot issue more than 1 %s record' %
           RUN_SMOOTH_ACTIONS)

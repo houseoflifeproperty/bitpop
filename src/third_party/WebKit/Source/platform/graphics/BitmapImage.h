@@ -36,7 +36,7 @@
 #include "platform/graphics/ImageSource.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class NativeImageSkia;
 template <typename T> class Timer;
@@ -79,11 +79,12 @@ public:
     virtual bool maybeAnimated() OVERRIDE;
 
     virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() OVERRIDE;
+    virtual PassRefPtr<Image> imageForDefaultFrame() OVERRIDE;
     virtual bool currentFrameKnownToBeOpaque() OVERRIDE;
 
     ImageOrientation currentFrameOrientation();
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     virtual bool notSolidColor() OVERRIDE;
 #endif
 
@@ -102,9 +103,11 @@ protected:
     BitmapImage(PassRefPtr<NativeImageSkia>, ImageObserver* = 0);
     BitmapImage(ImageObserver* = 0);
 
-    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, blink::WebBlendMode) OVERRIDE;
-    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, blink::WebBlendMode, RespectImageOrientationEnum) OVERRIDE;
+    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, WebBlendMode) OVERRIDE;
+    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, WebBlendMode, RespectImageOrientationEnum) OVERRIDE;
 
+    // True if the image is animated (contains multiple frames)
+    bool isAnimated();
     size_t currentFrame() const { return m_currentFrame; }
     size_t frameCount();
     PassRefPtr<NativeImageSkia> frameAtIndex(size_t);
@@ -190,6 +193,6 @@ protected:
 
 DEFINE_IMAGE_TYPE_CASTS(BitmapImage);
 
-}
+} // namespace blink
 
 #endif

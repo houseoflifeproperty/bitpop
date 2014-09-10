@@ -37,6 +37,7 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/extension_system.h"
 #include "gpu/config/gpu_feature_type.h"
 #include "gpu/config/gpu_info.h"
 #include "net/dns/mock_host_resolver.h"
@@ -112,8 +113,6 @@ class ExtensionWebstorePrivateApiTest : public ExtensionApiTest {
     command_line->AppendSwitchASCII(
         switches::kAppsGalleryURL,
         "http://www.example.com/files/extensions/api_test");
-    command_line->AppendSwitchASCII(
-        switches::kAppsGalleryInstallAutoConfirmForTests, "accept");
   }
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
@@ -147,6 +146,9 @@ class ExtensionWebstorePrivateApiTest : public ExtensionApiTest {
   virtual void SetUpOnMainThread() OVERRIDE {
     ExtensionApiTest::SetUpOnMainThread();
 
+    ExtensionInstallPrompt::g_auto_confirm_for_tests =
+        ExtensionInstallPrompt::ACCEPT;
+
     // Grab references to the fake signin manager and token service.
     signin_manager_ =
         static_cast<FakeSigninManagerForTesting*>(
@@ -167,9 +169,8 @@ class ExtensionWebstorePrivateApiTest : public ExtensionApiTest {
  protected:
   // Returns a test server URL, but with host 'www.example.com' so it matches
   // the web store app's extent that we set up via command line flags.
-  virtual GURL GetTestServerURL(const std::string& path) {
-    GURL url = test_server()->GetURL(
-        std::string("files/extensions/api_test/webstore_private/") + path);
+  GURL DoGetTestServerURL(const std::string& path) {
+    GURL url = test_server()->GetURL(path);
 
     // Replace the host with 'www.example.com' so it matches the web store
     // app's extent.
@@ -178,6 +179,11 @@ class ExtensionWebstorePrivateApiTest : public ExtensionApiTest {
     replace_host.SetHostStr(host_str);
 
     return url.ReplaceComponents(replace_host);
+  }
+
+  virtual GURL GetTestServerURL(const std::string& path) {
+    return DoGetTestServerURL(
+        std::string("files/extensions/api_test/webstore_private/") + path);
   }
 
   // Navigates to |page| and runs the Extension API test there. Any downloads
@@ -218,7 +224,7 @@ class ExtensionWebstorePrivateApiTest : public ExtensionApiTest {
   }
 
   ExtensionService* service() {
-    return browser()->profile()->GetExtensionService();
+    return ExtensionSystem::Get(browser()->profile())->extension_service();
   }
 
   FakeSigninManagerForTesting* signin_manager_;
@@ -271,7 +277,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, InstallAccepted) {
 }
 
 // Test having the default download directory missing.
- IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, MissingDownloadDir) {
+IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, MissingDownloadDir) {
   // Set a non-existent directory as the download path.
   base::ScopedTempDir temp_dir;
   EXPECT_TRUE(temp_dir.CreateUniqueTempDir());
@@ -294,8 +300,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, InstallLocalized) {
 
 // Now test the case where the user cancels the confirmation dialog.
 IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, InstallCancelled) {
-  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-      switches::kAppsGalleryInstallAutoConfirmForTests, "cancel");
+  ExtensionInstallPrompt::g_auto_confirm_for_tests =
+      ExtensionInstallPrompt::CANCEL;
   ASSERT_TRUE(RunInstallTest("cancelled.html", "extension.crx"));
 }
 
@@ -577,6 +583,41 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest,
 
   // TODO(isherman): Also test the redirect back to the continue URL once
   // sign-in completes?
+}
+
+class EphemeralAppWebstorePrivateApiTest
+    : public ExtensionWebstorePrivateApiTest {
+ public:
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+    ExtensionWebstorePrivateApiTest::SetUpInProcessBrowserTestFixture();
+
+    net::HostPortPair host_port = test_server()->host_port_pair();
+    std::string test_gallery_url = base::StringPrintf(
+        "http://www.example.com:%d/files/extensions/platform_apps/"
+        "ephemeral_launcher",
+        host_port.port());
+    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+        switches::kAppsGalleryURL, test_gallery_url);
+  }
+
+  virtual GURL GetTestServerURL(const std::string& path) OVERRIDE {
+    return DoGetTestServerURL(
+        std::string("files/extensions/platform_apps/ephemeral_launcher/") +
+        path);
+  }
+};
+
+// Run tests when the --enable-ephemeral-apps switch is not enabled.
+IN_PROC_BROWSER_TEST_F(EphemeralAppWebstorePrivateApiTest,
+                       EphemeralAppsFeatureDisabled) {
+  ASSERT_TRUE(RunInstallTest("webstore_launch_disabled.html", "app.crx"));
+}
+
+// Run tests when the --enable-ephemeral-apps switch is enabled.
+IN_PROC_BROWSER_TEST_F(EphemeralAppWebstorePrivateApiTest, LaunchEphemeralApp) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableEphemeralApps);
+  ASSERT_TRUE(RunInstallTest("webstore_launch_app.html", "app.crx"));
 }
 
 }  // namespace extensions

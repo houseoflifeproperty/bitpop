@@ -15,6 +15,7 @@ import hashlib
 import json
 
 import archive_info
+import error
 import package_info
 import packages_info
 
@@ -27,8 +28,15 @@ FIELD_REVISION_HASH = 'revision_hash'
 
 
 class RevisionInfo(object):
-  """Revision JSON file describing the revision for a package."""
+  """Revision information object describing a set revision for a package."""
   def __init__(self, packages_desc, revision_file=None):
+    """Constructor for a RevisionInfo object.
+
+    Args:
+      packages_desc: Packages description containing all the necessary packages
+                     and package targets to verify a revision file is complete.
+      revision_file: Optional JSON file representing a RevisionInfo object.
+    """
     assert isinstance(packages_desc, packages_info.PackagesInfo)
     self._packages_desc = packages_desc
     self._revision_num = -1
@@ -49,6 +57,7 @@ class RevisionInfo(object):
             self._package_targets == other._package_targets)
 
   def _GetRevisionHash(self):
+    """Returns a stable hash for a revision file for validation purposes."""
     hash_string = str(self._revision_num)
     hash_string += str(self._package_name)
     for package_target in sorted(self._package_targets):
@@ -63,10 +72,13 @@ class RevisionInfo(object):
     return hashlib.sha1(hash_string).hexdigest()
 
   def _ValidateRevisionComplete(self):
+    """Validate packages to make sure it matches the packages description."""
     if self._package_name is None:
-      raise RuntimeError('Invalid revision information - no package name.')
+      raise error.Error('Invalid revision information - '
+                                  'no package name.')
     elif self._revision_num == -1:
-      raise RuntimeError('Invalid revision information - no revision number')
+      raise error.Error('Invalid revision information - '
+                                  'no revision number')
 
     package_targets = self._packages_desc.GetPackageTargetsForPackage(
         self._package_name
@@ -77,18 +89,22 @@ class RevisionInfo(object):
       revision_targets = set(self._package_targets.keys())
 
       if package_targets != revision_targets:
-        raise RuntimeError('Invalid revision information - target mismatch:'
+        raise error.Error('Invalid revision information - '
+                           'target mismatch:'
                            + '\n%s:' % self._package_name
                            + '\n  Required Target Packages:'
                            + '\n\t' + '\n\t'.join(sorted(package_targets))
                            + '\n  Supplied Target Packages:'
                            + '\n\t' + '\n\t'.join(sorted(revision_targets)))
 
-  def LoadRevisionFile(self, revision_file):
-    """Loads a revision file into this object
+  def LoadRevisionFile(self, revision_file, skip_hash_verify=False):
+    """Loads a revision JSON file into this object.
 
     Args:
-      revision_file: File name for a revision file.
+      revision_file: File name for a revision JSON file.
+      skip_hash_verify: If True, will skip the hash validation check. This
+                        should only be used if a field has been added or
+                        removed in order to recalculate the revision hash.
     """
     try:
       with open(revision_file, 'rt') as f:
@@ -104,19 +120,22 @@ class RevisionInfo(object):
             archive_list
         )
     except (TypeError, KeyError) as e:
-      raise RuntimeError('Invalid revision file [%s]: %s' % (revision_file, e))
+      raise error.Error('Invalid revision file [%s]: %s' %
+                                  (revision_file, e))
 
     self._ValidateRevisionComplete()
 
-    hash_value = revision_json[FIELD_REVISION_HASH]
-    if self._GetRevisionHash() != hash_value:
-      raise IOError('Invalid revision file - revision hash check failed')
+    if not skip_hash_verify:
+      hash_value = revision_json[FIELD_REVISION_HASH]
+      if self._GetRevisionHash() != hash_value:
+        raise error.Error('Invalid revision file [%s] - revision hash check '
+            'failed' % revision_file)
 
   def SaveRevisionFile(self, revision_file):
-    """Saves this object to a revision file to be loaded later.
+    """Saves this object to a revision JSON file to be loaded later.
 
     Args:
-      revision_file: File name where revision file will be saved.
+      revision_file: File name where revision JSON file will be saved.
     """
     self._ValidateRevisionComplete()
 
@@ -162,9 +181,10 @@ class RevisionInfo(object):
     if self._package_name is None:
       self._package_name = package_name
     elif self._package_name != package_name:
-      raise RuntimeError('Revision information must be all for the same package'
-                         + '\nOriginal package name: %s' % self._package_name
-                         + '\nNew package name: %s' % package_name)
+      raise error.Error('Revision information must be all for the '
+                        'same package\n'
+                        'Original package name: %s\nNew package name: %s'
+                        % (self._package_name, package_name))
     self._package_targets[package_target] = package_desc
 
   def GetPackageInfo(self, package_target):

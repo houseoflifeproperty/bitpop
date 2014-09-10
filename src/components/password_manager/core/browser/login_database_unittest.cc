@@ -134,7 +134,6 @@ TEST_F(LoginDatabaseTest, Logins) {
   form.scheme = PasswordForm::SCHEME_HTML;
   form.times_used = 1;
   form.form_data.name = ASCIIToUTF16("form_name");
-  form.form_data.method = ASCIIToUTF16("POST");
   form.date_synced = base::Time::Now();
 
   // Add it and make sure it is there and that all the fields were retrieved
@@ -899,6 +898,45 @@ TEST_F(LoginDatabaseTest, DoubleAdd) {
   list.push_back(PasswordStoreChange(PasswordStoreChange::REMOVE, form));
   list.push_back(PasswordStoreChange(PasswordStoreChange::ADD, form));
   EXPECT_EQ(list, db_.AddLogin(form));
+}
+
+TEST_F(LoginDatabaseTest, UpdateLogin) {
+  PasswordForm form;
+  form.origin = GURL("http://accounts.google.com/LoginAuth");
+  form.signon_realm = "http://accounts.google.com/";
+  form.username_value = ASCIIToUTF16("my_username");
+  form.password_value = ASCIIToUTF16("my_password");
+  form.ssl_valid = false;
+  form.preferred = true;
+  form.blacklisted_by_user = false;
+  form.scheme = PasswordForm::SCHEME_HTML;
+  EXPECT_EQ(AddChangeForForm(form), db_.AddLogin(form));
+
+  form.action = GURL("http://accounts.google.com/login");
+  form.password_value = ASCIIToUTF16("my_new_password");
+  form.ssl_valid = true;
+  form.preferred = false;
+  form.other_possible_usernames.push_back(ASCIIToUTF16("my_new_username"));
+  form.times_used = 20;
+  form.submit_element = ASCIIToUTF16("submit_element");
+  form.date_synced = base::Time::Now();
+  form.date_created = base::Time::Now() - base::TimeDelta::FromDays(1);
+  // Remove this line after crbug/374132 is fixed.
+  form.date_created = base::Time::FromTimeT(form.date_created.ToTimeT());
+  form.blacklisted_by_user = true;
+  form.scheme = PasswordForm::SCHEME_BASIC;
+  form.type = PasswordForm::TYPE_GENERATED;
+  EXPECT_EQ(UpdateChangeForForm(form), db_.UpdateLogin(form));
+
+  ScopedVector<autofill::PasswordForm> result;
+  EXPECT_TRUE(db_.GetLogins(form, &result.get()));
+  ASSERT_EQ(1U, result.size());
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  // On Mac, passwords are not stored in login database, instead they're in
+  // the keychain.
+  form.password_value.clear();
+#endif  // OS_MACOSX && !OS_IOS
+  EXPECT_EQ(form, *result[0]);
 }
 
 #if defined(OS_POSIX)

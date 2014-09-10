@@ -26,7 +26,7 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderObject;
 class RenderSVGResourceClipper;
@@ -43,7 +43,7 @@ class SVGResources {
 public:
     SVGResources();
 
-    static PassOwnPtr<SVGResources> buildResources(const RenderObject*, const SVGRenderStyle*);
+    static PassOwnPtr<SVGResources> buildResources(const RenderObject*, const SVGRenderStyle&);
     void layoutIfNeeded();
 
     static bool supportsMarkers(const SVGElement&);

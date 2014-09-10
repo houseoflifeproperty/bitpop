@@ -38,7 +38,7 @@
 #include "platform/heap/glue/PendingGCRunner.h"
 #include "public/platform/Platform.h"
 
-namespace WebCore {
+namespace blink {
 
 DatabaseThread::DatabaseThread()
     : m_transactionClient(adoptPtr(new SQLTransactionClient()))
@@ -62,15 +62,17 @@ DatabaseThread::~DatabaseThread()
 
 void DatabaseThread::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_openDatabaseSet);
     visitor->trace(m_transactionCoordinator);
+#endif
 }
 
 void DatabaseThread::start()
 {
     if (m_thread)
         return;
-    m_thread = adoptPtr(blink::Platform::current()->createThread("WebCore: Database"));
+    m_thread = adoptPtr(Platform::current()->createThread("WebCore: Database"));
     m_thread->postTask(new Task(WTF::bind(&DatabaseThread::setupDatabaseThread, this)));
 }
 
@@ -95,7 +97,7 @@ void DatabaseThread::requestTermination(TaskSynchronizer *cleanupSync)
 
 bool DatabaseThread::terminationRequested(TaskSynchronizer* taskSynchronizer) const
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     if (taskSynchronizer)
         taskSynchronizer->setHasCheckedForTermination();
 #endif
@@ -169,4 +171,4 @@ void DatabaseThread::scheduleTask(PassOwnPtr<DatabaseTask> task)
     m_thread->postTask(task.leakPtr());
 }
 
-} // namespace WebCore
+} // namespace blink

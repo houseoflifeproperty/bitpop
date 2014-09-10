@@ -124,9 +124,11 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   //
   // Profiling information for the request is saved to |net_log| if non-NULL.
   int ResolveProxy(const GURL& url,
+                   int load_flags,
                    ProxyInfo* results,
                    const net::CompletionCallback& callback,
                    PacRequest** pac_request,
+                   NetworkDelegate* network_delegate,
                    const BoundNetLog& net_log);
 
   // This method is called after a failure to connect or resolve a host name.
@@ -144,10 +146,12 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   //
   // Profiling information for the request is saved to |net_log| if non-NULL.
   int ReconsiderProxyAfterError(const GURL& url,
+                                int load_flags,
                                 int net_error,
                                 ProxyInfo* results,
                                 const CompletionCallback& callback,
                                 PacRequest** pac_request,
+                                NetworkDelegate* network_delegate,
                                 const BoundNetLog& net_log);
 
   // Explicitly trigger proxy fallback for the given |results| by updating our
@@ -269,49 +273,6 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
 
   bool quick_check_enabled() const { return quick_check_enabled_; }
 
-  // Values of the UMA DataReductionProxy.BypassInfo{Primary|Fallback}
-  // histograms. This enum must remain synchronized with the enum of the same
-  // name in metrics/histograms/histograms.xml.
-  enum DataReductionProxyBypassEventType {
-    // Bypass the proxy for less than 30 minutes.
-    SHORT_BYPASS = 0,
-
-    // Bypass the proxy for 30 minutes or more.
-    LONG_BYPASS,
-
-    // Bypass the proxy because of an internal server error.
-    INTERNAL_SERVER_ERROR_BYPASS,
-
-    // Bypass the proxy because of any other error.
-    ERROR_BYPASS,
-
-    // Bypass the proxy because responses appear not to be coming via it.
-    MISSING_VIA_HEADER,
-
-    // Bypass the proxy because the proxy, not the origin, sent a 4xx response.
-    PROXY_4XX_BYPASS,
-
-    // Bypass the proxy because we got a 407 from the proxy without a challenge.
-    MALFORMED_407_BYPASS,
-
-    // This must always be last.
-    BYPASS_EVENT_TYPE_MAX
-  };
-
-  // Records a |DataReductionProxyBypassEventType| for either the data reduction
-  // proxy (|is_primary| is true) or the data reduction proxy fallback.
-  void RecordDataReductionProxyBypassInfo(
-      bool is_primary,
-      const ProxyServer& proxy_server,
-      DataReductionProxyBypassEventType bypass_type) const;
-
-  // Records a net error code that resulted in bypassing the data reduction
-  // proxy (|is_primary| is true) or the data reduction proxy fallback.
-  void RecordDataReductionProxyBypassOnNetworkError(
-      bool is_primary,
-      const ProxyServer& proxy_server,
-      int net_error);
-
  private:
   FRIEND_TEST_ALL_PREFIXES(ProxyServiceTest, UpdateConfigAfterFailedAutodetect);
   FRIEND_TEST_ALL_PREFIXES(ProxyServiceTest, UpdateConfigFromPACToDirect);
@@ -351,7 +312,10 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // Returns ERR_IO_PENDING if the request cannot be completed synchronously.
   // Otherwise it fills |result| with the proxy information for |url|.
   // Completing synchronously means we don't need to query ProxyResolver.
-  int TryToCompleteSynchronously(const GURL& url, ProxyInfo* result);
+  int TryToCompleteSynchronously(const GURL& url,
+                                 int load_flags,
+                                 NetworkDelegate* network_delegate,
+                                 ProxyInfo* result);
 
   // Cancels all of the requests sent to the ProxyResolver. These will be
   // restarted when calling SetReady().
@@ -370,7 +334,10 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // Called when proxy resolution has completed (either synchronously or
   // asynchronously). Handles logging the result, and cleaning out
   // bad entries from the results list.
-  int DidFinishResolvingProxy(ProxyInfo* result,
+  int DidFinishResolvingProxy(const GURL& url,
+                              int load_flags,
+                              NetworkDelegate* network_delegate,
+                              ProxyInfo* result,
                               int result_code,
                               const BoundNetLog& net_log);
 
@@ -459,42 +426,6 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   bool quick_check_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(ProxyService);
-};
-
-// Wrapper for invoking methods on a ProxyService synchronously.
-class NET_EXPORT SyncProxyServiceHelper
-    : public base::RefCountedThreadSafe<SyncProxyServiceHelper> {
- public:
-  SyncProxyServiceHelper(base::MessageLoop* io_message_loop,
-                         ProxyService* proxy_service);
-
-  int ResolveProxy(const GURL& url,
-                   ProxyInfo* proxy_info,
-                   const BoundNetLog& net_log);
-  int ReconsiderProxyAfterError(const GURL& url,
-                                int net_error,
-                                ProxyInfo* proxy_info,
-                                const BoundNetLog& net_log);
-
- private:
-  friend class base::RefCountedThreadSafe<SyncProxyServiceHelper>;
-
-  virtual ~SyncProxyServiceHelper();
-
-  void StartAsyncResolve(const GURL& url, const BoundNetLog& net_log);
-  void StartAsyncReconsider(const GURL& url,
-                            int net_error,
-                            const BoundNetLog& net_log);
-
-  void OnCompletion(int result);
-
-  base::MessageLoop* io_message_loop_;
-  ProxyService* proxy_service_;
-
-  base::WaitableEvent event_;
-  CompletionCallback callback_;
-  ProxyInfo proxy_info_;
-  int result_;
 };
 
 }  // namespace net

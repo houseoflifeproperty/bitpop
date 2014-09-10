@@ -26,20 +26,20 @@
 #ifndef WebGLFramebuffer_h
 #define WebGLFramebuffer_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLContextObject.h"
 #include "core/html/canvas/WebGLSharedObject.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class WebGLRenderbuffer;
 class WebGLTexture;
 
 class WebGLFramebuffer FINAL : public WebGLContextObject, public ScriptWrappable {
 public:
-    class WebGLAttachment : public RefCounted<WebGLAttachment> {
+    class WebGLAttachment : public RefCountedWillBeGarbageCollectedFinalized<WebGLAttachment> {
     public:
         virtual ~WebGLAttachment();
 
@@ -58,13 +58,15 @@ public:
         virtual void attach(blink::WebGraphicsContext3D*, GLenum attachment) = 0;
         virtual void unattach(blink::WebGraphicsContext3D*, GLenum attachment) = 0;
 
+        virtual void trace(Visitor*) { }
+
     protected:
         WebGLAttachment();
     };
 
     virtual ~WebGLFramebuffer();
 
-    static PassRefPtr<WebGLFramebuffer> create(WebGLRenderingContextBase*);
+    static PassRefPtrWillBeRawPtr<WebGLFramebuffer> create(WebGLRenderingContextBase*);
 
     void setAttachmentForBoundFramebuffer(GLenum attachment, GLenum texTarget, WebGLTexture*, GLint level);
     void setAttachmentForBoundFramebuffer(GLenum attachment, WebGLRenderbuffer*);
@@ -99,8 +101,10 @@ public:
 
     GLenum getDrawBuffer(GLenum);
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 protected:
-    WebGLFramebuffer(WebGLRenderingContextBase*);
+    explicit WebGLFramebuffer(WebGLRenderingContextBase*);
 
     virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) OVERRIDE;
 
@@ -117,7 +121,7 @@ private:
     // Check if a new drawBuffers call should be issued. This is called when we add or remove an attachment.
     void drawBuffersIfNecessary(bool force);
 
-    typedef WTF::HashMap<GLenum, RefPtr<WebGLAttachment> > AttachmentMap;
+    typedef WillBeHeapHashMap<GLenum, RefPtrWillBeMember<WebGLAttachment> > AttachmentMap;
 
     AttachmentMap m_attachments;
 
@@ -127,6 +131,6 @@ private:
     Vector<GLenum> m_filteredDrawBuffers;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebGLFramebuffer_h

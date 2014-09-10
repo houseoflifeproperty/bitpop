@@ -24,7 +24,6 @@
 #include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "cc/resources/shared_bitmap.h"
-#include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/renderer_host/event_with_latency_info.h"
 #include "content/browser/renderer_host/input/input_ack_handler.h"
 #include "content/browser/renderer_host/input/input_router_client.h"
@@ -43,7 +42,6 @@
 
 struct AcceleratedSurfaceMsg_BufferPresented_Params;
 struct ViewHostMsg_BeginSmoothScroll_Params;
-struct ViewHostMsg_CompositorSurfaceBuffersSwapped_Params;
 struct ViewHostMsg_SelectionBounds_Params;
 struct ViewHostMsg_TextInputState_Params;
 struct ViewHostMsg_UpdateRect_Params;
@@ -79,6 +77,7 @@ class WebLayer;
 #endif
 
 namespace content {
+class BrowserAccessibilityManager;
 class InputRouter;
 class MockRenderWidgetHost;
 class RenderWidgetHostDelegate;
@@ -96,8 +95,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       public InputRouterClient,
       public InputAckHandler,
       public TouchEmulatorClient,
-      public IPC::Listener,
-      public BrowserAccessibilityDelegate {
+      public IPC::Listener {
  public:
   // routing_id can be MSG_ROUTING_NONE, in which case the next available
   // routing id is taken from the RenderProcessHost.
@@ -136,16 +134,12 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const gfx::Rect& src_rect,
       const gfx::Size& accelerated_dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config& bitmap_config) OVERRIDE;
+      const SkColorType color_type) OVERRIDE;
   virtual bool CanCopyFromBackingStore() OVERRIDE;
 #if defined(OS_ANDROID)
   virtual void LockBackingStore() OVERRIDE;
   virtual void UnlockBackingStore() OVERRIDE;
 #endif
-  virtual void EnableFullAccessibilityMode() OVERRIDE;
-  virtual bool IsFullAccessibilityModeForTesting() OVERRIDE;
-  virtual void EnableTreeOnlyAccessibilityMode() OVERRIDE;
-  virtual bool IsTreeOnlyAccessibilityModeForTesting() OVERRIDE;
   virtual void ForwardMouseEvent(
       const blink::WebMouseEvent& mouse_event) OVERRIDE;
   virtual void ForwardWheelEvent(
@@ -173,24 +167,12 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const MouseEventCallback& callback) OVERRIDE;
   virtual void GetWebScreenInfo(blink::WebScreenInfo* result) OVERRIDE;
 
-  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+  virtual SkColorType PreferredReadbackFormat() OVERRIDE;
 
-  // BrowserAccessibilityDelegate
-  virtual void AccessibilitySetFocus(int acc_obj_id) OVERRIDE;
-  virtual void AccessibilityDoDefaultAction(int acc_obj_id) OVERRIDE;
-  virtual void AccessibilityShowMenu(int acc_obj_id) OVERRIDE;
-  virtual void AccessibilityScrollToMakeVisible(
-      int acc_obj_id, gfx::Rect subfocus) OVERRIDE;
-  virtual void AccessibilityScrollToPoint(
-      int acc_obj_id, gfx::Point point) OVERRIDE;
-  virtual void AccessibilitySetTextSelection(
-      int acc_obj_id, int start_offset, int end_offset) OVERRIDE;
-  virtual bool AccessibilityViewHasFocus() const OVERRIDE;
-  virtual gfx::Rect AccessibilityGetViewBounds() const OVERRIDE;
-  virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds)
-      const OVERRIDE;
-  virtual void AccessibilityHitTest(const gfx::Point& point) OVERRIDE;
-  virtual void AccessibilityFatalError() OVERRIDE;
+  // Forces redraw in the renderer and when the update reaches the browser
+  // grabs snapshot from the compositor. Returns PNG-encoded snapshot.
+  void GetSnapshotFromBrowser(
+      const base::Callback<void(const unsigned char*,size_t)> callback);
 
   const NativeWebKeyboardEvent* GetLastKeyboardEvent() const;
 
@@ -226,7 +208,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Called to notify the RenderWidget that it has been hidden or restored from
   // having been hidden.
   void WasHidden();
-  void WasShown();
+  void WasShown(const ui::LatencyInfo& latency_info);
 
   // Returns true if the RenderWidget is hidden.
   bool is_hidden() const { return is_hidden_; }
@@ -248,6 +230,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Indicates if the page has finished loading.
   void SetIsLoading(bool is_loading);
 
+#if defined(OS_MACOSX)
   // Pause for a moment to wait for pending repaint or resize messages sent to
   // the renderer to arrive. If pending resize messages are for an old window
   // size, then also pump through a new resize message if there is time.
@@ -259,6 +242,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Wait for a surface matching the size of the widget's view, possibly
   // blocking until the renderer sends a new frame.
   void WaitForSurface();
+#endif
+
+  bool resize_ack_pending_for_testing() { return resize_ack_pending_; }
 
   // GPU accelerated version of GetBackingStore function. This will
   // trigger a re-composite to the view. It may fail if a resize is pending, or
@@ -289,10 +275,13 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const blink::WebMouseWheelEvent& wheel_event,
       const ui::LatencyInfo& ui_latency);
 
-  // TouchEmulatorClient overrides.
+  // Enables/disables touch emulation using mouse event. See TouchEmulator.
+  void SetTouchEventEmulationEnabled(bool enabled, bool allow_pinch);
+
+  // TouchEmulatorClient implementation.
   virtual void ForwardGestureEvent(
       const blink::WebGestureEvent& gesture_event) OVERRIDE;
-  virtual void ForwardTouchEvent(
+  virtual void ForwardEmulatedTouchEvent(
       const blink::WebTouchEvent& touch_event) OVERRIDE;
   virtual void SetCursor(const WebCursor& cursor) OVERRIDE;
   virtual void ShowContextMenuAtPoint(const gfx::Point& point) OVERRIDE;
@@ -387,30 +376,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // pre-defined edit commands
   void SetEditCommandsForNextKeyEvent(
       const std::vector<EditCommand>& commands);
-
-  // Gets the accessibility mode.
-  AccessibilityMode accessibility_mode() const {
-    return accessibility_mode_;
-  }
-
-  // Adds the given accessibility mode to the current accessibility mode bitmap.
-  void AddAccessibilityMode(AccessibilityMode mode);
-
-  // Removes the given accessibility mode from the current accessibility mode
-  // bitmap, managing the bits that are shared with other modes such that a
-  // bit will only be turned off when all modes that depend on it have been
-  // removed.
-  void RemoveAccessibilityMode(AccessibilityMode mode);
-
-  // Resets the accessibility mode to the default setting in
-  // BrowserStateAccessibilityImpl.
-  void ResetAccessibilityMode();
-
-#if defined(OS_WIN)
-  void SetParentNativeViewAccessible(
-      gfx::NativeViewAccessible accessible_parent);
-  gfx::NativeViewAccessible GetParentNativeViewAccessible() const;
-#endif
 
   // Executes the edit command on the RenderView.
   void ExecuteEditCommand(const std::string& command,
@@ -512,6 +477,17 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void AddLatencyInfoComponentIds(ui::LatencyInfo* latency_info);
 
   InputRouter* input_router() { return input_router_.get(); }
+
+  // Get the BrowserAccessibilityManager for the root of the frame tree,
+  BrowserAccessibilityManager* GetRootBrowserAccessibilityManager();
+
+  // Get the BrowserAccessibilityManager for the root of the frame tree,
+  // or create it if it doesn't already exist.
+  BrowserAccessibilityManager* GetOrCreateRootBrowserAccessibilityManager();
+
+#if defined(OS_WIN)
+  gfx::NativeViewAccessible GetParentNativeViewAccessible();
+#endif
 
  protected:
   virtual RenderWidgetHostImpl* AsRenderWidgetHostImpl() OVERRIDE;
@@ -616,10 +592,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void OnRequestMove(const gfx::Rect& pos);
   void OnSetTooltipText(const base::string16& tooltip_text,
                         blink::WebTextDirection text_direction_hint);
-#if defined(OS_MACOSX)
-  void OnCompositorSurfaceBuffersSwapped(
-      const ViewHostMsg_CompositorSurfaceBuffersSwapped_Params& params);
-#endif
   bool OnSwapCompositorFrame(const IPC::Message& message);
   void OnFlingingStopped();
   void OnUpdateRect(const ViewHostMsg_UpdateRect_Params& params);
@@ -694,10 +666,17 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // which may get in recursive loops).
   void DelayedAutoResized();
 
+  void WindowOldSnapshotReachedScreen(int snapshot_id);
+
   void WindowSnapshotReachedScreen(int snapshot_id);
 
-  // Send a message to the renderer process to change the accessibility mode.
-  void SetAccessibilityMode(AccessibilityMode AccessibilityMode);
+  void OnSnapshotDataReceived(int snapshot_id,
+                              const unsigned char* png,
+                              size_t size);
+
+  void OnSnapshotDataReceivedAsync(
+      int snapshot_id,
+      scoped_refptr<base::RefCountedBytes> png_data);
 
   // Our delegate, which wants to know mainly about keyboard events.
   // It will remain non-NULL until DetachDelegate() is called.
@@ -770,8 +749,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   bool waiting_for_screen_rects_ack_;
   gfx::Rect last_view_screen_rect_;
   gfx::Rect last_window_screen_rect_;
-
-  AccessibilityMode accessibility_mode_;
 
   // Keyboard event listeners.
   std::vector<KeyPressEventCallback> key_press_event_callbacks_;
@@ -863,6 +840,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 #endif
 
   int64 last_input_number_;
+
+  int next_browser_snapshot_id_;
+  typedef std::map<int,
+      base::Callback<void(const unsigned char*, size_t)> > PendingSnapshotMap;
+  PendingSnapshotMap pending_browser_snapshots_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostImpl);
 };

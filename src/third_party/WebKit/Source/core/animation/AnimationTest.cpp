@@ -5,7 +5,8 @@
 #include "config.h"
 #include "core/animation/Animation.h"
 
-#include "bindings/v8/Dictionary.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "bindings/core/v8/Nullable.h"
 #include "core/animation/AnimationClock.h"
 #include "core/animation/AnimationHelpers.h"
 #include "core/animation/AnimationNodeTiming.h"
@@ -17,7 +18,7 @@
 #include <gtest/gtest.h>
 #include <v8.h>
 
-namespace WebCore {
+namespace blink {
 
 class AnimationAnimationTest : public ::testing::Test {
 protected:
@@ -75,11 +76,11 @@ TEST_F(AnimationAnimationV8Test, CanCreateAnAnimation)
     jsKeyframes.append(Dictionary(keyframe2, m_isolate));
 
     String value1;
-    ASSERT_TRUE(jsKeyframes[0].get("width", value1));
+    ASSERT_TRUE(DictionaryHelper::get(jsKeyframes[0], "width", value1));
     ASSERT_EQ("100px", value1);
 
     String value2;
-    ASSERT_TRUE(jsKeyframes[1].get("width", value2));
+    ASSERT_TRUE(DictionaryHelper::get(jsKeyframes[1], "width", value2));
     ASSERT_EQ("0px", value2);
 
     RefPtrWillBeRawPtr<Animation> animation = createAnimation(element.get(), jsKeyframes, 0, exceptionState);
@@ -250,15 +251,12 @@ TEST_F(AnimationAnimationV8Test, SpecifiedDurationGetter)
     RefPtrWillBeRawPtr<Animation> animationWithDuration = createAnimation(element.get(), jsKeyframes, timingInputDictionaryWithDuration, exceptionState);
 
     RefPtrWillBeRawPtr<AnimationNodeTiming> specifiedWithDuration = animationWithDuration->timing();
-    bool isNumber = false;
-    double numberDuration = std::numeric_limits<double>::quiet_NaN();
-    bool isString = false;
-    String stringDuration = "";
-    specifiedWithDuration->getDuration("duration", isNumber, numberDuration, isString, stringDuration);
-    EXPECT_TRUE(isNumber);
-    EXPECT_EQ(2.5, numberDuration);
-    EXPECT_FALSE(isString);
-    EXPECT_EQ("", stringDuration);
+    Nullable<double> numberDuration;
+    String stringDuration;
+    specifiedWithDuration->getDuration("duration", numberDuration, stringDuration);
+    EXPECT_FALSE(numberDuration.isNull());
+    EXPECT_EQ(2.5, numberDuration.get());
+    EXPECT_TRUE(stringDuration.isNull());
 
 
     v8::Handle<v8::Object> timingInputNoDuration = v8::Object::New(m_isolate);
@@ -267,15 +265,12 @@ TEST_F(AnimationAnimationV8Test, SpecifiedDurationGetter)
     RefPtrWillBeRawPtr<Animation> animationNoDuration = createAnimation(element.get(), jsKeyframes, timingInputDictionaryNoDuration, exceptionState);
 
     RefPtrWillBeRawPtr<AnimationNodeTiming> specifiedNoDuration = animationNoDuration->timing();
-    isNumber = false;
-    numberDuration = std::numeric_limits<double>::quiet_NaN();
-    isString = false;
-    stringDuration = "";
-    specifiedNoDuration->getDuration("duration", isNumber, numberDuration, isString, stringDuration);
-    EXPECT_FALSE(isNumber);
-    EXPECT_TRUE(std::isnan(numberDuration));
-    EXPECT_TRUE(isString);
-    EXPECT_EQ("auto", stringDuration);
+    Nullable<double> numberDuration2;
+    String stringDuration2;
+    specifiedNoDuration->getDuration("duration", numberDuration2, stringDuration2);
+    EXPECT_TRUE(numberDuration2.isNull());
+    EXPECT_FALSE(stringDuration2.isNull());
+    EXPECT_EQ("auto", stringDuration2);
 }
 
 TEST_F(AnimationAnimationV8Test, SpecifiedSetters)
@@ -329,26 +324,20 @@ TEST_F(AnimationAnimationV8Test, SetSpecifiedDuration)
 
     RefPtrWillBeRawPtr<AnimationNodeTiming> specified = animation->timing();
 
-    bool isNumber = false;
-    double numberDuration = std::numeric_limits<double>::quiet_NaN();
-    bool isString = false;
-    String stringDuration = "";
-    specified->getDuration("duration", isNumber, numberDuration, isString, stringDuration);
-    EXPECT_FALSE(isNumber);
-    EXPECT_TRUE(std::isnan(numberDuration));
-    EXPECT_TRUE(isString);
+    Nullable<double> numberDuration;
+    String stringDuration;
+    specified->getDuration("duration", numberDuration, stringDuration);
+    EXPECT_TRUE(numberDuration.isNull());
+    EXPECT_FALSE(stringDuration.isNull());
     EXPECT_EQ("auto", stringDuration);
 
     specified->setDuration("duration", 2.5);
-    isNumber = false;
-    numberDuration = std::numeric_limits<double>::quiet_NaN();
-    isString = false;
-    stringDuration = "";
-    specified->getDuration("duration", isNumber, numberDuration, isString, stringDuration);
-    EXPECT_TRUE(isNumber);
-    EXPECT_EQ(2.5, numberDuration);
-    EXPECT_FALSE(isString);
-    EXPECT_EQ("", stringDuration);
+    Nullable<double> numberDuration2;
+    String stringDuration2;
+    specified->getDuration("duration", numberDuration2, stringDuration2);
+    EXPECT_FALSE(numberDuration2.isNull());
+    EXPECT_EQ(2.5, numberDuration2.get());
+    EXPECT_TRUE(stringDuration2.isNull());
 }
 
 TEST_F(AnimationAnimationTest, TimeToEffectChange)
@@ -464,4 +453,4 @@ TEST_F(AnimationAnimationTest, ElementDestructorClearsAnimationTarget)
 #endif
 }
 
-} // namespace WebCore
+} // namespace blink

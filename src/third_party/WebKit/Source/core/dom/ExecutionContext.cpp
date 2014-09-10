@@ -31,6 +31,7 @@
 #include "core/dom/AddConsoleMessageTask.h"
 #include "core/dom/ContextLifecycleNotifier.h"
 #include "core/dom/ExecutionContextTask.h"
+#include "core/events/ErrorEvent.h"
 #include "core/events/EventTarget.h"
 #include "core/html/PublicURLManager.h"
 #include "core/inspector/InspectorInstrumentation.h"
@@ -39,7 +40,7 @@
 #include "core/workers/WorkerThread.h"
 #include "wtf/MainThread.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext::PendingException : public NoBaseWillBeGarbageCollectedFinalized<ExecutionContext::PendingException> {
     WTF_MAKE_NONCOPYABLE(PendingException);
@@ -157,18 +158,11 @@ void ExecutionContext::reportException(PassRefPtrWillBeRawPtr<ErrorEvent> event,
     m_pendingExceptions.clear();
 }
 
-void ExecutionContext::addConsoleMessage(MessageSource source, MessageLevel level, const String& message, const String& sourceURL, unsigned lineNumber)
+void ExecutionContext::addConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage> consoleMessage)
 {
     if (!m_client)
         return;
-    m_client->addMessage(source, level, message, sourceURL, lineNumber, 0);
-}
-
-void ExecutionContext::addConsoleMessage(MessageSource source, MessageLevel level, const String& message, ScriptState* scriptState)
-{
-    if (!m_client)
-        return;
-    m_client->addMessage(source, level, message, String(), 0, scriptState);
+    m_client->addMessage(consoleMessage);
 }
 
 bool ExecutionContext::dispatchErrorEvent(PassRefPtrWillBeRawPtr<ErrorEvent> event, AccessControlStatus corsStatus)
@@ -302,13 +296,6 @@ void ExecutionContext::postTask(PassOwnPtr<ExecutionContextTask> task)
     m_client->postTask(task);
 }
 
-void ExecutionContext::postTask(const Closure& closure)
-{
-    if (!m_client)
-        return;
-    m_client->postTask(CallClosureTask::create(closure));
-}
-
 PassOwnPtr<LifecycleNotifier<ExecutionContext> > ExecutionContext::createLifecycleNotifier()
 {
     return ContextLifecycleNotifier::create(this);
@@ -341,7 +328,8 @@ void ExecutionContext::trace(Visitor* visitor)
 #if ENABLE(OILPAN)
     visitor->trace(m_pendingExceptions);
 #endif
-    Supplementable<WebCore::ExecutionContext>::trace(visitor);
+    WillBeHeapSupplementable<ExecutionContext>::trace(visitor);
+    LifecycleContext<ExecutionContext>::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

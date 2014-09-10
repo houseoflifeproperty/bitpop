@@ -108,7 +108,7 @@ void CreateProfileHandler::CreateProfile(const base::ListValue* args) {
           sync_service->QuerySyncStatusSummary();
       if (status == ProfileSyncService::DATATYPES_NOT_INITIALIZED) {
         ShowProfileCreationWarning(l10n_util::GetStringUTF16(
-            IDS_PROFILES_CREATE_MANAGED_JUST_SIGNED_IN));
+            IDS_PROFILES_CREATE_SUPERVISED_JUST_SIGNED_IN));
       }
     }
   }
@@ -255,7 +255,7 @@ void CreateProfileHandler::CreateShortcutAndShowSuccess(
   bool is_supervised =
       profile_creation_type_ == SUPERVISED_PROFILE_CREATION ||
       profile_creation_type_ == SUPERVISED_PROFILE_IMPORT;
-  dict.SetBoolean("isManaged", is_supervised);
+  dict.SetBoolean("isSupervised", is_supervised);
   web_ui()->CallJavascriptFunction(
       GetJavascriptMethodName(PROFILE_CREATION_SUCCESS), dict);
 
@@ -283,7 +283,9 @@ void CreateProfileHandler::ShowProfileCreationError(
   web_ui()->CallJavascriptFunction(
       GetJavascriptMethodName(PROFILE_CREATION_ERROR),
       base::StringValue(error));
-  helper::DeleteProfileAtPath(profile->GetPath(), web_ui());
+  // The ProfileManager calls us back with a NULL profile in some cases.
+  if (profile)
+    helper::DeleteProfileAtPath(profile->GetPath(), web_ui());
 }
 
 void CreateProfileHandler::ShowProfileCreationWarning(
@@ -369,19 +371,19 @@ base::string16 CreateProfileHandler::GetProfileCreationErrorMessage(
     case SIGNIN_ERROR:
       message_id =
           profile_creation_type_ == SUPERVISED_PROFILE_IMPORT ?
-              IDS_MANAGED_USER_IMPORT_SIGN_IN_ERROR :
+              IDS_SUPERVISED_USER_IMPORT_SIGN_IN_ERROR :
               IDS_PROFILES_CREATE_SIGN_IN_ERROR;
       break;
     case REMOTE_ERROR:
       message_id =
           profile_creation_type_ == SUPERVISED_PROFILE_IMPORT ?
-              IDS_MANAGED_USER_IMPORT_REMOTE_ERROR :
+              IDS_SUPERVISED_USER_IMPORT_REMOTE_ERROR :
               IDS_PROFILES_CREATE_REMOTE_ERROR;
       break;
     case LOCAL_ERROR:
       message_id =
           profile_creation_type_ == SUPERVISED_PROFILE_IMPORT ?
-              IDS_MANAGED_USER_IMPORT_LOCAL_ERROR :
+              IDS_SUPERVISED_USER_IMPORT_LOCAL_ERROR :
               IDS_PROFILES_CREATE_LOCAL_ERROR;
       break;
   }
@@ -394,11 +396,11 @@ std::string CreateProfileHandler::GetJavascriptMethodName(
   switch (status) {
     case PROFILE_CREATION_SUCCESS:
       return profile_creation_type_ == SUPERVISED_PROFILE_IMPORT ?
-          "BrowserOptions.showManagedUserImportSuccess" :
+          "BrowserOptions.showSupervisedUserImportSuccess" :
           "BrowserOptions.showCreateProfileSuccess";
     case PROFILE_CREATION_ERROR:
       return profile_creation_type_ == SUPERVISED_PROFILE_IMPORT ?
-          "BrowserOptions.showManagedUserImportError" :
+          "BrowserOptions.showSupervisedUserImportError" :
           "BrowserOptions.showCreateProfileError";
   }
 

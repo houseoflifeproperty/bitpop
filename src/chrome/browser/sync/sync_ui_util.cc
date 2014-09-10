@@ -35,10 +35,9 @@
 #include "sync/protocol/proto_enum_conversions.h"
 #include "sync/protocol/sync_protocol_error.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "components/user_manager/user_manager.h"
 #endif  // defined(OS_CHROMEOS)
 
 typedef GoogleServiceAuthError AuthError;
@@ -56,11 +55,11 @@ base::string16 GetSyncedStateStatusLabel(ProfileSyncService* service,
   std::string user_display_name = signin.GetAuthenticatedUsername();
 
 #if defined(OS_CHROMEOS)
-  if (chromeos::UserManager::IsInitialized()) {
+  if (user_manager::UserManager::IsInitialized()) {
     // On CrOS user email is sanitized and then passed to the signin manager.
     // Original email (containing dots) is stored as "display email".
-    user_display_name = chromeos::UserManager::Get()->
-        GetUserDisplayEmail(user_display_name);
+    user_display_name = user_manager::UserManager::Get()->GetUserDisplayEmail(
+        user_display_name);
   }
 #endif  // defined(OS_CHROMEOS)
 

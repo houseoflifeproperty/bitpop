@@ -31,6 +31,7 @@
 #ifndef ElementAnimation_h
 #define ElementAnimation_h
 
+#include "core/animation/ActiveAnimations.h"
 #include "core/animation/Animation.h"
 #include "core/animation/AnimationTimeline.h"
 #include "core/animation/EffectInput.h"
@@ -39,7 +40,8 @@
 #include "core/dom/Element.h"
 #include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+
+namespace blink {
 
 class Dictionary;
 
@@ -87,6 +89,23 @@ public:
         return animateInternal(element, effect.release(), Timing());
     }
 
+    static WillBeHeapVector<RefPtrWillBeMember<AnimationPlayer> > getAnimationPlayers(Element& element)
+    {
+        WillBeHeapVector<RefPtrWillBeMember<AnimationPlayer> > animationPlayers;
+
+        if (!element.hasActiveAnimations())
+            return animationPlayers;
+
+        const AnimationPlayerCountedSet& players = element.activeAnimations()->players();
+
+        for (AnimationPlayerCountedSet::const_iterator it = players.begin(); it != players.end(); ++it) {
+            ASSERT(it->key->source());
+            if (it->key->source()->isCurrent())
+                animationPlayers.append(it->key);
+        }
+        return animationPlayers;
+    }
+
 private:
     static AnimationPlayer* animateInternal(Element& element, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing)
     {
@@ -98,6 +117,6 @@ private:
     }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ElementAnimation_h

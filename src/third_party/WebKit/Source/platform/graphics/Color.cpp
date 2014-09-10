@@ -35,9 +35,9 @@
 
 using namespace std;
 
-namespace WebCore {
+namespace blink {
 
-#if !COMPILER(MSVC) || COMPILER(CLANG)
+#if !COMPILER(MSVC)
 // FIXME: Use C++11 strong enums to avoid static data member with initializer definition problems.
 const RGBA32 Color::black;
 const RGBA32 Color::white;
@@ -464,4 +464,4 @@ RGBA32 premultipliedARGBFromColor(const Color& color)
     return pixelColor;
 }
 
-} // namespace WebCore
+} // namespace blink

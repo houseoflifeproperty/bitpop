@@ -14,8 +14,10 @@
 #include "cc/base/scoped_ptr_algorithm.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/delegated_renderer_layer.h"
+#include "cc/layers/nine_patch_layer.h"
 #include "cc/layers/picture_layer.h"
 #include "cc/layers/solid_color_layer.h"
+#include "cc/layers/surface_layer.h"
 #include "cc/layers/texture_layer.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/delegated_frame_data.h"
@@ -495,6 +497,7 @@ void Layer::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
   solid_color_layer_ = NULL;
   texture_layer_ = NULL;
   delegated_renderer_layer_ = NULL;
+  surface_layer_ = NULL;
 
   cc_layer_->AddLayerAnimationEventObserver(this);
   for (size_t i = 0; i < children_.size(); ++i) {
@@ -563,6 +566,18 @@ void Layer::SetShowDelegatedContent(cc::DelegatedFrameProvider* frame_provider,
   RecomputeDrawsContentAndUVRect();
 }
 
+void Layer::SetShowSurface(cc::SurfaceId id, gfx::Size frame_size_in_dip) {
+  DCHECK_EQ(type_, LAYER_TEXTURED);
+
+  scoped_refptr<cc::SurfaceLayer> new_layer = cc::SurfaceLayer::Create();
+  new_layer->SetSurfaceId(id);
+  SwitchToLayer(new_layer);
+  surface_layer_ = new_layer;
+
+  frame_size_in_dip_ = frame_size_in_dip;
+  RecomputeDrawsContentAndUVRect();
+}
+
 void Layer::SetShowPaintedContent() {
   if (content_layer_.get())
     return;
@@ -583,10 +598,32 @@ void Layer::SetShowPaintedContent() {
   RecomputeDrawsContentAndUVRect();
 }
 
+void Layer::UpdateNinePatchLayerBitmap(const SkBitmap& bitmap,
+                                       const gfx::Rect& aperture) {
+  DCHECK(type_ == LAYER_NINE_PATCH && nine_patch_layer_.get());
+  SkBitmap bitmap_copy;
+  if (bitmap.isImmutable()) {
+    bitmap_copy = bitmap;
+  } else {
+    // UIResourceBitmap requires an immutable copy of the input |bitmap|.
+    bitmap.copyTo(&bitmap_copy);
+    bitmap_copy.setImmutable();
+  }
+  nine_patch_layer_->SetBitmap(bitmap_copy);
+  nine_patch_layer_->SetAperture(aperture);
+}
+
+void Layer::UpdateNinePatchLayerBorder(const gfx::Rect& border) {
+  DCHECK(type_ == LAYER_NINE_PATCH && nine_patch_layer_.get());
+  nine_patch_layer_->SetBorder(border);
+}
+
 void Layer::SetColor(SkColor color) { GetAnimator()->SetColor(color); }
 
 bool Layer::SchedulePaint(const gfx::Rect& invalid_rect) {
-  if (type_ == LAYER_SOLID_COLOR || (!delegate_ && !mailbox_.IsValid()))
+  if (type_ == LAYER_SOLID_COLOR ||
+      type_ == LAYER_NINE_PATCH ||
+      (!delegate_ && !mailbox_.IsValid()))
     return false;
 
   damaged_region_.op(invalid_rect.x(),
@@ -927,6 +964,9 @@ void Layer::CreateWebLayer() {
   if (type_ == LAYER_SOLID_COLOR) {
     solid_color_layer_ = cc::SolidColorLayer::Create();
     cc_layer_ = solid_color_layer_.get();
+  } else if (type_ == LAYER_NINE_PATCH) {
+    nine_patch_layer_ = cc::NinePatchLayer::Create();
+    cc_layer_ = nine_patch_layer_.get();
   } else {
     if (Layer::UsingPictureLayer())
       content_layer_ = cc::PictureLayer::Create(this);
@@ -956,7 +996,7 @@ void Layer::RecomputeDrawsContentAndUVRect() {
         static_cast<float>(size.width()) / frame_size_in_dip_.width(),
         static_cast<float>(size.height()) / frame_size_in_dip_.height());
     texture_layer_->SetUV(uv_top_left, uv_bottom_right);
-  } else if (delegated_renderer_layer_.get()) {
+  } else if (delegated_renderer_layer_.get() || surface_layer_.get()) {
     size.SetToMin(frame_size_in_dip_);
   }
   cc_layer_->SetBounds(size);

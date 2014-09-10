@@ -24,9 +24,12 @@
 #include "ui/views/widget/widget.h"
 
 using views::FocusManager;
+using views::ViewStorage;
 
 AccessibilityEventRouterViews::AccessibilityEventRouterViews()
-    : most_recent_profile_(NULL) {
+    : most_recent_profile_(NULL),
+      most_recent_view_id_(
+          ViewStorage::GetInstance()->CreateStorageID()) {
   // Register for notification when profile is destroyed to ensure that all
   // observers are detatched at that time.
   registrar_.Add(this, chrome::NOTIFICATION_PROFILE_DESTROYED,
@@ -49,7 +52,7 @@ void AccessibilityEventRouterViews::HandleAccessibilityEvent(
   }
 
   if (event_type == ui::AX_EVENT_TEXT_CHANGED ||
-      event_type == ui::AX_EVENT_SELECTION_CHANGED) {
+      event_type == ui::AX_EVENT_TEXT_SELECTION_CHANGED) {
     // These two events should only be sent for views that have focus. This
     // enforces the invariant that we fire events triggered by user action and
     // not by programmatic logic. For example, the location bar can be updated
@@ -68,7 +71,7 @@ void AccessibilityEventRouterViews::HandleAccessibilityEvent(
   // event loop, to handle cases where the view's state changes after
   // the call to post the event. It's safe to use base::Unretained(this)
   // because AccessibilityEventRouterViews is a singleton.
-  views::ViewStorage* view_storage = views::ViewStorage::GetInstance();
+  ViewStorage* view_storage = ViewStorage::GetInstance();
   int view_storage_id = view_storage->CreateStorageID();
   view_storage->StoreView(view_storage_id, view);
   base::MessageLoop::current()->PostTask(
@@ -120,7 +123,7 @@ void AccessibilityEventRouterViews::Observe(
 void AccessibilityEventRouterViews::DispatchEventOnViewStorageId(
     int view_storage_id,
     ui::AXEvent type) {
-  views::ViewStorage* view_storage = views::ViewStorage::GetInstance();
+  ViewStorage* view_storage = ViewStorage::GetInstance();
   views::View* view = view_storage->RetrieveView(view_storage_id);
   view_storage->RemoveView(view_storage_id);
   if (!view)
@@ -162,6 +165,20 @@ void AccessibilityEventRouterViews::DispatchAccessibilityEvent(
     SendMenuNotification(view, type, profile);
     return;
   }
+
+  view = FindFirstAccessibleAncestor(view);
+
+  // Since multiple items could share a highest focusable view, these items
+  // could all dispatch the same accessibility hover events, which isn't
+  // necessary.
+  if (type == ui::AX_EVENT_HOVER &&
+      ViewStorage::GetInstance()->RetrieveView(most_recent_view_id_) == view) {
+    return;
+  }
+  // If there was already a view stored here from before, it must be removed
+  // before storing a new view.
+  ViewStorage::GetInstance()->RemoveView(most_recent_view_id_);
+  ViewStorage::GetInstance()->StoreView(most_recent_view_id_, view);
 
   ui::AXViewState state;
   view->GetAccessibleState(&state);
@@ -209,8 +226,14 @@ void AccessibilityEventRouterViews::DispatchAccessibilityEvent(
   case ui::AX_ROLE_SLIDER:
     SendSliderNotification(view, type, profile);
     break;
+  case ui::AX_ROLE_STATIC_TEXT:
+    SendStaticTextNotification(view, type, profile);
+    break;
   case ui::AX_ROLE_TREE:
     SendTreeNotification(view, type, profile);
+    break;
+  case ui::AX_ROLE_TAB:
+    SendTabNotification(view, type, profile);
     break;
   case ui::AX_ROLE_TREE_ITEM:
     SendTreeItemNotification(view, type, profile);
@@ -228,11 +251,36 @@ void AccessibilityEventRouterViews::DispatchAccessibilityEvent(
 }
 
 // static
+void AccessibilityEventRouterViews::SendTabNotification(
+    views::View* view,
+    ui::AXEvent event,
+    Profile* profile) {
+  ui::AXViewState state;
+  view->GetAccessibleState(&state);
+  if (state.index == -1)
+    return;
+  std::string name = base::UTF16ToUTF8(state.name);
+  std::string context = GetViewContext(view);
+  AccessibilityTabInfo info(profile, name, context, state.index, state.count);
+  SendControlAccessibilityNotification(event, &info);
+}
+
+// static
 void AccessibilityEventRouterViews::SendButtonNotification(
     views::View* view,
     ui::AXEvent event,
     Profile* profile) {
   AccessibilityButtonInfo info(
+      profile, GetViewName(view), GetViewContext(view));
+  SendControlAccessibilityNotification(event, &info);
+}
+
+// static
+void AccessibilityEventRouterViews::SendStaticTextNotification(
+    views::View* view,
+    ui::AXEvent event,
+    Profile* profile) {
+  AccessibilityStaticTextInfo info(
       profile, GetViewName(view), GetViewContext(view));
   SendControlAccessibilityNotification(event, &info);
 }
@@ -551,4 +599,15 @@ std::string AccessibilityEventRouterViews::RecursiveGetStaticText(
       return result;
   }
   return std::string();
+}
+
+// static
+views::View* AccessibilityEventRouterViews::FindFirstAccessibleAncestor(
+    views::View* view) {
+  views::View* temp_view = view;
+  while (temp_view->parent() && !temp_view->IsAccessibilityFocusable())
+    temp_view = temp_view->parent();
+  if (temp_view->IsAccessibilityFocusable())
+    return temp_view;
+  return view;
 }

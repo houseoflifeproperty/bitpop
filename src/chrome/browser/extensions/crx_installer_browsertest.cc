@@ -4,6 +4,7 @@
 
 #include "base/at_exit.h"
 #include "base/memory/ref_counted.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/download/download_crx_util.h"
 #include "chrome/browser/extensions/browser_action_test_util.h"
 #include "chrome/browser/extensions/crx_installer.h"
@@ -24,6 +25,8 @@
 #include "content/public/test/download_test_observer.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/management_policy.h"
+#include "extensions/browser/notification_types.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/file_util.h"
@@ -34,7 +37,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/users/fake_user_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/scoped_user_manager_enabler.h"
 #include "chrome/browser/extensions/extension_assets_manager_chromeos.h"
 #include "chromeos/chromeos_switches.h"
 #endif
@@ -136,6 +139,21 @@ scoped_refptr<MockPromptProxy> CreateMockPromptProxyForBrowser(
   return new MockPromptProxy(
       browser->tab_strip_model()->GetActiveWebContents());
 }
+
+class ManagementPolicyMock : public extensions::ManagementPolicy::Provider {
+ public:
+  ManagementPolicyMock() {}
+
+  virtual std::string GetDebugPolicyProviderName() const OVERRIDE {
+    return "ManagementPolicyMock";
+  }
+
+  virtual bool UserMayLoad(const Extension* extension,
+                           base::string16* error) const OVERRIDE {
+    *error = base::UTF8ToUTF16("Dummy error message");
+    return false;
+  }
+};
 
 }  // namespace
 
@@ -380,12 +398,12 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, HiDpiThemeTest) {
 }
 
 // See http://crbug.com/315299.
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_LINUX)
 #define MAYBE_InstallDelayedUntilNextUpdate \
         DISABLED_InstallDelayedUntilNextUpdate
 #else
 #define MAYBE_InstallDelayedUntilNextUpdate InstallDelayedUntilNextUpdate
-#endif  // defined(OS_WIN)
+#endif
 IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest,
                        MAYBE_InstallDelayedUntilNextUpdate) {
   const std::string extension_id("ldnnhddmnhbkjipkidpdiheffobcpfmf");
@@ -407,7 +425,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest,
   // Make test extension non-idle by opening the extension's browser action
   // popup. This should cause the installation to be delayed.
   content::WindowedNotificationObserver loading_observer(
-      chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
+      extensions::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
       content::Source<Profile>(profile()));
   BrowserActionTestUtil util(browser());
   // There is only one extension, so just click the first browser action.
@@ -548,6 +566,16 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, DoNotSync) {
   EXPECT_TRUE(extension_prefs->DoNotSync(crx_installer->extension()->id()));
   EXPECT_FALSE(extensions::util::ShouldSyncApp(crx_installer->extension(),
                                                browser()->profile()));
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, ManagementPolicy) {
+  ManagementPolicyMock policy;
+  extensions::ExtensionSystem::Get(profile())
+      ->management_policy()
+      ->RegisterProvider(&policy);
+
+  base::FilePath crx_path = test_data_dir_.AppendASCII("crx_installer/v1.crx");
+  EXPECT_FALSE(InstallExtension(crx_path, 0));
 }
 
 }  // namespace extensions

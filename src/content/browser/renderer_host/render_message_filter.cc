@@ -29,6 +29,8 @@
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
+#include "content/browser/renderer_host/render_widget_resize_helper.h"
+#include "content/browser/transition_request_manager.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/cookie_data.h"
@@ -403,10 +405,14 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_OpenChannelToPpapiBroker,
                         OnOpenChannelToPpapiBroker)
 #endif
+#if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_SwapCompositorFrame,
-        render_widget_helper_->DidReceiveBackingStoreMsg(message))
+        RenderWidgetResizeHelper::Get()->PostRendererProcessMsg(
+            render_process_id_, message))
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_UpdateRect,
-        render_widget_helper_->DidReceiveBackingStoreMsg(message))
+        RenderWidgetResizeHelper::Get()->PostRendererProcessMsg(
+            render_process_id_, message))
+#endif
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_CheckPermission,
                         OnCheckNotificationPermission)
     IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateSharedMemory,
@@ -437,6 +443,8 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message) {
 #if defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RunWebAudioMediaCodec, OnWebAudioMediaCodec)
 #endif
+    IPC_MESSAGE_HANDLER(FrameHostMsg_AddNavigationTransitionData,
+                        OnAddNavigationTransitionData)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -504,6 +512,7 @@ void RenderMessageFilter::OnCreateWindow(
     *route_id = MSG_ROUTING_NONE;
     *main_frame_route_id = MSG_ROUTING_NONE;
     *surface_id = 0;
+    *cloned_session_storage_namespace_id = 0;
     return;
   }
 
@@ -977,24 +986,10 @@ void RenderMessageFilter::OnFreeTransportDIB(
 }
 #endif
 
-bool RenderMessageFilter::CheckPreparsedJsCachingEnabled() const {
-  static bool checked = false;
-  static bool result = false;
-  if (!checked) {
-    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-    result = command_line.HasSwitch(switches::kEnablePreparsedJsCaching);
-    checked = true;
-  }
-  return result;
-}
-
 void RenderMessageFilter::OnCacheableMetadataAvailable(
     const GURL& url,
     double expected_response_time,
     const std::vector<char>& data) {
-  if (!CheckPreparsedJsCachingEnabled())
-    return;
-
   net::HttpCache* cache = request_context_->GetURLRequestContext()->
       http_transaction_factory()->GetCache();
   DCHECK(cache);
@@ -1219,5 +1214,16 @@ void RenderMessageFilter::OnWebAudioMediaCodec(
       true);
 }
 #endif
+
+
+void RenderMessageFilter::OnAddNavigationTransitionData(
+    int render_frame_id,
+    const std::string& allowed_destination_host_pattern,
+    const std::string& selector,
+    const std::string& markup) {
+  TransitionRequestManager::GetInstance()->AddPendingTransitionRequestData(
+      render_process_id_, render_frame_id, allowed_destination_host_pattern,
+      selector, markup);
+}
 
 }  // namespace content

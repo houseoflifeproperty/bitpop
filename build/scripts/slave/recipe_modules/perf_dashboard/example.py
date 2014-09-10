@@ -31,10 +31,10 @@ def GenSteps(api):
     }
   s2['error'] = "0.4898"
   s2['units'] = "ms"
-  
+
   api.perf_dashboard.set_default_config()
-  yield api.perf_dashboard.post([s1, s2])
-  
+  api.perf_dashboard.post([s1, s2])
+
 def GenTests(api):
   for platform in ('linux', 'win', 'mac'):
     for production in (True, False):

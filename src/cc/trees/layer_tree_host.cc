@@ -12,6 +12,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/debug/trace_event_argument.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
@@ -21,6 +22,7 @@
 #include "cc/base/math_util.h"
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
+#include "cc/input/layer_selection_bound.h"
 #include "cc/input/top_controls_manager.h"
 #include "cc/layers/heads_up_display_layer.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
@@ -67,11 +69,13 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::CreateThreaded(
     LayerTreeHostClient* client,
     SharedBitmapManager* manager,
     const LayerTreeSettings& settings,
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
+  DCHECK(main_task_runner);
   DCHECK(impl_task_runner);
   scoped_ptr<LayerTreeHost> layer_tree_host(
       new LayerTreeHost(client, manager, settings));
-  layer_tree_host->InitializeThreaded(impl_task_runner);
+  layer_tree_host->InitializeThreaded(main_task_runner, impl_task_runner);
   return layer_tree_host.Pass();
 }
 
@@ -79,10 +83,12 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::CreateSingleThreaded(
     LayerTreeHostClient* client,
     LayerTreeHostSingleThreadClient* single_thread_client,
     SharedBitmapManager* manager,
-    const LayerTreeSettings& settings) {
+    const LayerTreeSettings& settings,
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner) {
   scoped_ptr<LayerTreeHost> layer_tree_host(
       new LayerTreeHost(client, manager, settings));
-  layer_tree_host->InitializeSingleThreaded(single_thread_client);
+  layer_tree_host->InitializeSingleThreaded(single_thread_client,
+                                            main_task_runner);
   return layer_tree_host.Pass();
 }
 
@@ -124,13 +130,17 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
 }
 
 void LayerTreeHost::InitializeThreaded(
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
-  InitializeProxy(ThreadProxy::Create(this, impl_task_runner));
+  InitializeProxy(
+      ThreadProxy::Create(this, main_task_runner, impl_task_runner));
 }
 
 void LayerTreeHost::InitializeSingleThreaded(
-    LayerTreeHostSingleThreadClient* single_thread_client) {
-  InitializeProxy(SingleThreadProxy::Create(this, single_thread_client));
+    LayerTreeHostSingleThreadClient* single_thread_client,
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner) {
+  InitializeProxy(
+      SingleThreadProxy::Create(this, single_thread_client, main_task_runner));
 }
 
 void LayerTreeHost::InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing) {
@@ -142,10 +152,18 @@ void LayerTreeHost::InitializeProxy(scoped_ptr<Proxy> proxy) {
 
   proxy_ = proxy.Pass();
   proxy_->Start();
+  if (settings_.accelerated_animation_enabled) {
+    animation_registrar_->set_supports_scroll_animations(
+        proxy_->SupportsImplScrolling());
+  }
 }
 
 LayerTreeHost::~LayerTreeHost() {
   TRACE_EVENT0("cc", "LayerTreeHost::~LayerTreeHost");
+
+  CHECK(swap_promise_monitor_.empty());
+
+  BreakSwapPromises(SwapPromise::COMMIT_FAILS);
 
   overhang_ui_resource_.reset();
 
@@ -283,9 +301,11 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
 
   sync_tree->set_source_frame_number(source_frame_number());
 
-  if (needs_full_tree_sync_)
+  if (needs_full_tree_sync_) {
     sync_tree->SetRootLayer(TreeSynchronizer::SynchronizeTrees(
         root_layer(), sync_tree->DetachLayerTree(), sync_tree));
+  }
+
   {
     TRACE_EVENT0("cc", "LayerTreeHost::PushProperties");
     TreeSynchronizer::PushProperties(root_layer(), sync_tree->root_layer());
@@ -314,6 +334,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   } else {
     sync_tree->ClearViewportLayers();
   }
+
+  sync_tree->RegisterSelection(selection_start_, selection_end_);
 
   float page_scale_delta =
       sync_tree->page_scale_delta() / sync_tree->sent_page_scale_delta();
@@ -357,6 +379,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     if (sync_tree->ContentsTexturesPurged())
       sync_tree->ResetContentsTexturesPurged();
   }
+
+  sync_tree->set_has_ever_been_drawn(false);
 
   micro_benchmark_controller_.ScheduleImplBenchmarks(host_impl);
 }
@@ -1010,31 +1034,40 @@ void LayerTreeHost::PaintLayerContents(
   in_paint_layer_contents_ = false;
 }
 
-void LayerTreeHost::ApplyScrollAndScale(const ScrollAndScaleSet& info) {
+void LayerTreeHost::ApplyScrollAndScale(ScrollAndScaleSet* info) {
   if (!root_layer_.get())
     return;
+
+  ScopedPtrVector<SwapPromise>::iterator it = info->swap_promises.begin();
+  for (; it != info->swap_promises.end(); ++it) {
+    scoped_ptr<SwapPromise> swap_promise(info->swap_promises.take(it));
+    TRACE_EVENT_FLOW_STEP0("input",
+                           "LatencyInfo.Flow",
+                           TRACE_ID_DONT_MANGLE(swap_promise->TraceId()),
+                           "Main thread scroll update");
+    QueueSwapPromise(swap_promise.Pass());
+  }
 
   gfx::Vector2d inner_viewport_scroll_delta;
   gfx::Vector2d outer_viewport_scroll_delta;
 
-  for (size_t i = 0; i < info.scrolls.size(); ++i) {
-    Layer* layer =
-        LayerTreeHostCommon::FindLayerInSubtree(root_layer_.get(),
-                                                info.scrolls[i].layer_id);
+  for (size_t i = 0; i < info->scrolls.size(); ++i) {
+    Layer* layer = LayerTreeHostCommon::FindLayerInSubtree(
+        root_layer_.get(), info->scrolls[i].layer_id);
     if (!layer)
       continue;
     if (layer == outer_viewport_scroll_layer_.get()) {
-      outer_viewport_scroll_delta += info.scrolls[i].scroll_delta;
+      outer_viewport_scroll_delta += info->scrolls[i].scroll_delta;
     } else if (layer == inner_viewport_scroll_layer_.get()) {
-      inner_viewport_scroll_delta += info.scrolls[i].scroll_delta;
+      inner_viewport_scroll_delta += info->scrolls[i].scroll_delta;
     } else {
       layer->SetScrollOffsetFromImplSide(layer->scroll_offset() +
-                                         info.scrolls[i].scroll_delta);
+                                         info->scrolls[i].scroll_delta);
     }
   }
 
   if (!inner_viewport_scroll_delta.IsZero() ||
-      !outer_viewport_scroll_delta.IsZero() || info.page_scale_delta != 1.f) {
+      !outer_viewport_scroll_delta.IsZero() || info->page_scale_delta != 1.f) {
     // SetScrollOffsetFromImplSide above could have destroyed the tree,
     // so re-get this layer before doing anything to it.
 
@@ -1051,11 +1084,11 @@ void LayerTreeHost::ApplyScrollAndScale(const ScrollAndScaleSet& info) {
           outer_viewport_scroll_layer_->scroll_offset() +
           outer_viewport_scroll_delta);
     }
-    ApplyPageScaleDeltaFromImplSide(info.page_scale_delta);
+    ApplyPageScaleDeltaFromImplSide(info->page_scale_delta);
 
     client_->ApplyScrollAndScale(
         inner_viewport_scroll_delta + outer_viewport_scroll_delta,
-        info.page_scale_delta);
+        info->page_scale_delta);
   }
 }
 
@@ -1132,10 +1165,10 @@ void LayerTreeHost::UpdateTopControlsState(TopControlsState constraints,
                  animate));
 }
 
-scoped_ptr<base::Value> LayerTreeHost::AsValue() const {
-  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
-  state->Set("proxy", proxy_->AsValue().release());
-  return state.PassAs<base::Value>();
+void LayerTreeHost::AsValueInto(base::debug::TracedValue* state) const {
+  state->BeginDictionary("proxy");
+  proxy_->AsValueInto(state);
+  state->EndDictionary();
 }
 
 void LayerTreeHost::AnimateLayers(base::TimeTicks monotonic_time) {
@@ -1221,6 +1254,16 @@ void LayerTreeHost::RegisterViewportLayers(
   outer_viewport_scroll_layer_ = outer_viewport_scroll_layer;
 }
 
+void LayerTreeHost::RegisterSelection(const LayerSelectionBound& start,
+                                      const LayerSelectionBound& end) {
+  if (selection_start_ == start && selection_end_ == end)
+    return;
+
+  selection_start_ = start;
+  selection_end_ = end;
+  SetNeedsCommit();
+}
+
 int LayerTreeHost::ScheduleMicroBenchmark(
     const std::string& benchmark_name,
     scoped_ptr<base::Value> value,
@@ -1250,8 +1293,6 @@ void LayerTreeHost::NotifySwapPromiseMonitorsOfSetNeedsCommit() {
 
 void LayerTreeHost::QueueSwapPromise(scoped_ptr<SwapPromise> swap_promise) {
   DCHECK(swap_promise);
-  if (swap_promise_list_.size() > kMaxQueuedSwapPromiseNumber)
-    BreakSwapPromises(SwapPromise::SWAP_PROMISE_LIST_OVERFLOW);
   swap_promise_list_.push_back(swap_promise.Pass());
 }
 

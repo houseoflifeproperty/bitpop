@@ -15,9 +15,6 @@
 #include "SkDrawLooper.h"
 #include "SkMatrix.h"
 #include "SkXfermode.h"
-#ifdef SK_BUILD_FOR_ANDROID
-#include "SkPaintOptionsAndroid.h"
-#endif
 
 class SkAnnotation;
 class SkAutoGlyphCache;
@@ -89,7 +86,7 @@ public:
     };
 
     Hinting getHinting() const {
-        return static_cast<Hinting>(fHinting);
+        return static_cast<Hinting>(fBitfields.fHinting);
     }
 
     void setHinting(Hinting hintingLevel);
@@ -121,7 +118,7 @@ public:
     /** Return the paint's flags. Use the Flag enum to test flag values.
         @return the paint's flags (see enums ending in _Flag for bit masks)
     */
-    uint32_t getFlags() const { return fFlags; }
+    uint32_t getFlags() const { return fBitfields.fFlags; }
 
     /** Set the paint's flags. Use the Flag enum to specific flag values.
         @param flags    The new flag bits for the paint (see Flags enum)
@@ -302,7 +299,9 @@ public:
      *  Return the filter level. This affects the quality (and performance) of
      *  drawing scaled images.
      */
-    FilterLevel getFilterLevel() const { return (FilterLevel)fFilterLevel; }
+    FilterLevel getFilterLevel() const {
+      return (FilterLevel)fBitfields.fFilterLevel;
+    }
 
     /**
      *  Set the filter level. This affects the quality (and performance) of
@@ -350,7 +349,7 @@ public:
         kFill_Style).
         @return the paint's Style
     */
-    Style getStyle() const { return (Style)fStyle; }
+    Style getStyle() const { return (Style)fBitfields.fStyle; }
 
     /** Set the paint's style, used for controlling how primitives'
         geometries are interpreted (except for drawBitmap, which always assumes
@@ -456,7 +455,7 @@ public:
         @return the line cap style for the paint, used whenever the paint's
                 style is Stroke or StrokeAndFill.
     */
-    Cap getStrokeCap() const { return (Cap)fCapType; }
+    Cap getStrokeCap() const { return (Cap)fBitfields.fCapType; }
 
     /** Set the paint's stroke cap type.
         @param cap  set the paint's line cap style, used whenever the paint's
@@ -468,7 +467,7 @@ public:
         @return the paint's line join style, used whenever the paint's style is
                 Stroke or StrokeAndFill.
     */
-    Join getStrokeJoin() const { return (Join)fJoinType; }
+    Join getStrokeJoin() const { return (Join)fBitfields.fJoinType; }
 
     /** Set the paint's stroke join type.
         @param join set the paint's line join style, used whenever the paint's
@@ -685,7 +684,7 @@ public:
     /** Return the paint's Align value for drawing text.
         @return the paint's Align value for drawing text.
     */
-    Align   getTextAlign() const { return (Align)fTextAlign; }
+    Align   getTextAlign() const { return (Align)fBitfields.fTextAlign; }
 
     /** Set the paint's text alignment.
         @param align set the paint's Align value for drawing text.
@@ -738,7 +737,9 @@ public:
         kGlyphID_TextEncoding   //!< the text parameters are glyph indices
     };
 
-    TextEncoding getTextEncoding() const { return (TextEncoding)fTextEncoding; }
+    TextEncoding getTextEncoding() const {
+      return (TextEncoding)fBitfields.fTextEncoding;
+    }
 
     void setTextEncoding(TextEncoding encoding);
 
@@ -937,15 +938,6 @@ public:
 #ifdef SK_BUILD_FOR_ANDROID
     uint32_t getGenerationID() const;
     void setGenerationID(uint32_t generationID);
-
-    /** Returns the base glyph count for the strike associated with this paint
-    */
-    unsigned getBaseGlyphCount(SkUnichar text) const;
-
-    const SkPaintOptionsAndroid& getPaintOptionsAndroid() const {
-        return fPaintOptionsAndroid;
-    }
-    void setPaintOptionsAndroid(const SkPaintOptionsAndroid& options);
 #endif
 
     // returns true if the paint's settings (e.g. xfermode + alpha) resolve to
@@ -1066,13 +1058,10 @@ private:
             unsigned        fHinting : 2;
             unsigned        fFilterLevel : 2;
             //unsigned      fFreeBits : 2;
-        };
-        uint32_t fBitfields;
+        } fBitfields;
+        uint32_t fBitfieldsUInt;
     };
     uint32_t fDirtyBits;
-
-    uint32_t getBitfields() const { return fBitfields; }
-    void setBitfields(uint32_t bitfields);
 
     SkDrawCacheProc    getDrawCacheProc() const;
     SkMeasureCacheProc getMeasureCacheProc(TextBufferDirection dir,
@@ -1117,9 +1106,6 @@ private:
 
     static bool TooBigToUseCache(const SkMatrix& ctm, const SkMatrix& textM);
 
-    bool tooBigToUseCache() const;
-    bool tooBigToUseCache(const SkMatrix& ctm) const;
-
     // Set flags/hinting/textSize up to use for drawing text as paths.
     // Returns scale factor to restore the original textSize, since will will
     // have change it to kCanonicalTextSizeForPaths.
@@ -1139,12 +1125,11 @@ private:
     friend class SkPDFDevice;
     friend class GrBitmapTextContext;
     friend class GrDistanceFieldTextContext;
+    friend class GrStencilAndCoverTextContext;
     friend class SkTextToPathIter;
     friend class SkCanonicalizePaint;
 
 #ifdef SK_BUILD_FOR_ANDROID
-    SkPaintOptionsAndroid fPaintOptionsAndroid;
-
     // In order for the == operator to work properly this must be the last field
     // in the struct so that we can do a memcmp to this field's offset.
     uint32_t        fGenerationID;

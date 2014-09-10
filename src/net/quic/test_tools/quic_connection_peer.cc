@@ -43,6 +43,12 @@ QuicAckFrame* QuicConnectionPeer::CreateAckFrame(QuicConnection* connection) {
 }
 
 // static
+QuicStopWaitingFrame* QuicConnectionPeer::CreateStopWaitingFrame(
+    QuicConnection* connection) {
+  return connection->CreateStopWaitingFrame();
+}
+
+// static
 QuicConnectionVisitorInterface* QuicConnectionPeer::GetVisitor(
     QuicConnection* connection) {
   return connection->visitor_;
@@ -208,8 +214,13 @@ QuicPacketWriter* QuicConnectionPeer::GetWriter(QuicConnection* connection) {
 
 // static
 void QuicConnectionPeer::SetWriter(QuicConnection* connection,
-                                   QuicPacketWriter* writer) {
+                                   QuicPacketWriter* writer,
+                                   bool owns_writer) {
+  if (connection->owns_writer_) {
+    delete connection->writer_;
+  }
   connection->writer_ = writer;
+  connection->owns_writer_ = owns_writer;
 }
 
 // static

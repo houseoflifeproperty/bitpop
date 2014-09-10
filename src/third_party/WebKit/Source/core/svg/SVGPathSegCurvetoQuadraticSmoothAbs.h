@@ -24,18 +24,18 @@
 
 #include "core/svg/SVGPathSegWithContext.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGPathSegCurvetoQuadraticSmoothAbs FINAL : public SVGPathSegSingleCoordinate {
 public:
-    static PassRefPtr<SVGPathSegCurvetoQuadraticSmoothAbs> create(SVGPathElement* element, SVGPathSegRole role, float x, float y)
+    static PassRefPtr<SVGPathSegCurvetoQuadraticSmoothAbs> create(SVGPathElement* element, float x, float y)
     {
-        return adoptRef(new SVGPathSegCurvetoQuadraticSmoothAbs(element, role, x, y));
+        return adoptRef(new SVGPathSegCurvetoQuadraticSmoothAbs(element, x, y));
     }
 
 private:
-    SVGPathSegCurvetoQuadraticSmoothAbs(SVGPathElement* element, SVGPathSegRole role, float x, float y)
-        : SVGPathSegSingleCoordinate(element, role, x, y)
+    SVGPathSegCurvetoQuadraticSmoothAbs(SVGPathElement* element, float x, float y)
+        : SVGPathSegSingleCoordinate(element, x, y)
     {
         ScriptWrappable::init(this);
     }
@@ -44,6 +44,6 @@ private:
     virtual String pathSegTypeAsLetter() const OVERRIDE { return "T"; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

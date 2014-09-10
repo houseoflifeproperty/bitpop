@@ -22,7 +22,7 @@
   'WATCHLISTS': {
     'build': ['cmp-cc@chromium.org', 'ilevy-cc@chromium.org'],
     'build_scripts': ['kjellander-cc@chromium.org',
-                      'stip+watch@chromium.org'],
+                      'stip+watch@chromium.org', 'pgervais+watch@chromium.org'],
   },
 
 }

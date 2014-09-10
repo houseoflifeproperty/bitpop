@@ -36,14 +36,20 @@
 #include "core/SVGNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
+#include "core/dom/custom/CustomElementMicrotaskRunQueue.h"
 #include "core/dom/custom/CustomElementObserver.h"
 #include "core/dom/custom/CustomElementScheduler.h"
 
-namespace WebCore {
+namespace blink {
 
 CustomElementMicrotaskImportStep* CustomElement::didCreateImport(HTMLImportChild* import)
 {
     return CustomElementScheduler::scheduleImport(import);
+}
+
+void CustomElement::didFinishLoadingImport(Document& master)
+{
+    master.customElementMicrotaskRunQueue()->requestDispatchIfNeeded();
 }
 
 Vector<AtomicString>& CustomElement::embedderCustomElementNames()
@@ -139,4 +145,4 @@ void CustomElement::wasDestroyed(Element* element)
     }
 }
 
-} // namespace WebCore
+} // namespace blink

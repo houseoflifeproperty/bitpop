@@ -89,10 +89,8 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   // construction and so we pass it in here.
   static BrowserPluginGuest* Create(
       int instance_id,
-      SiteInstance* guest_site_instance,
       WebContentsImpl* web_contents,
-      scoped_ptr<base::DictionaryValue> extra_params,
-      BrowserPluginGuest* opener);
+      BrowserPluginGuestDelegate* delegate);
 
   // Returns whether the given WebContents is a BrowserPlugin guest.
   static bool IsGuest(WebContentsImpl* web_contents);
@@ -114,6 +112,11 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   // this BrowserPluginGuest, and its new unattached windows.
   void Destroy();
 
+  // Creates a new guest WebContentsImpl with the provided |params| with |this|
+  // as the |opener|.
+  WebContentsImpl* CreateNewGuestWindow(
+      const WebContents::CreateParams& params);
+
   // Returns the identifier that uniquely identifies a browser plugin guest
   // within an embedder.
   int instance_id() const { return instance_id_; }
@@ -132,9 +135,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   bool visible() const { return guest_visible_; }
   bool is_in_destruction() { return is_in_destruction_; }
 
-  // Returns the BrowserPluginGuest that created this guest, if any.
-  BrowserPluginGuest* GetOpener() const;
-
   void UpdateVisibility();
 
   void CopyFromCompositingSurface(
@@ -146,12 +146,9 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
 
   // WebContentsObserver implementation.
   virtual void DidCommitProvisionalLoadForFrame(
-      int64 frame_id,
-      const base::string16& frame_unique_name,
-      bool is_main_frame,
+      RenderFrameHost* render_frame_host,
       const GURL& url,
-      PageTransition transition_type,
-      RenderViewHost* render_view_host) OVERRIDE;
+      PageTransition transition_type) OVERRIDE;
 
   virtual void RenderViewReady() OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
@@ -190,11 +187,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   // Called when the drag started by this guest ends at an OS-level.
   void EndSystemDrag();
 
-  void set_delegate(BrowserPluginGuestDelegate* delegate) {
-    DCHECK(!delegate_);
-    delegate_ = delegate;
-  }
-
   void RespondToPermissionRequest(int request_id,
                                   bool should_allow,
                                   const std::string& user_input);
@@ -208,7 +200,8 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   // |web_contents| has to stay valid for the lifetime of BrowserPluginGuest.
   BrowserPluginGuest(int instance_id,
                      bool has_render_view,
-                     WebContentsImpl* web_contents);
+                     WebContentsImpl* web_contents,
+                     BrowserPluginGuestDelegate* delegate);
 
   void WillDestroy();
 
@@ -261,10 +254,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   // access it.
   void OnSetName(int instance_id, const std::string& name);
   // Updates the size state of the guest.
-  void OnSetAutoSize(
-      int instance_id,
-      const BrowserPluginHostMsg_AutoSize_Params& auto_size_params,
-      const BrowserPluginHostMsg_ResizeGuest_Params& resize_guest_params);
   void OnSetEditCommandsForNextKeyEvent(
       int instance_id,
       const std::vector<EditCommand>& edit_commands);
@@ -338,7 +327,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
 
   // An identifier that uniquely identifies a browser plugin guest within an
   // embedder.
-  int instance_id_;
+  const int instance_id_;
   float guest_device_scale_factor_;
   gfx::Rect guest_window_rect_;
   gfx::Rect guest_screen_rect_;
@@ -348,11 +337,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   bool guest_visible_;
   bool guest_opaque_;
   bool embedder_visible_;
-  std::string name_;
-  bool auto_size_enabled_;
-  gfx::Size max_auto_size_;
-  gfx::Size min_auto_size_;
-  gfx::Size full_size_;
 
   // Each copy-request is identified by a unique number. The unique number is
   // used to keep track of the right callback.
@@ -370,8 +354,8 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
 
   // Last seen size of guest contents (by OnUpdateRect).
   gfx::Size last_seen_view_size_;
-  // Last seen autosize attribute state (by OnUpdateRect).
-  bool last_seen_auto_size_enabled_;
+  // Last seen size of BrowserPlugin (by OnResizeGuest).
+  gfx::Size last_seen_browser_plugin_size_;
 
   bool is_in_destruction_;
 
@@ -384,7 +368,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   // once the guest is attached to a particular embedder.
   std::deque<linked_ptr<IPC::Message> > pending_messages_;
 
-  BrowserPluginGuestDelegate* delegate_;
+  BrowserPluginGuestDelegate* const delegate_;
 
   // Weak pointer used to ask GeolocationPermissionContext about geolocation
   // permission.

@@ -25,9 +25,7 @@
 #include "core/html/HTMLMeterElement.h"
 #include "core/rendering/RenderTheme.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -82,4 +80,4 @@ void RenderMeter::updateFromElement()
     paintInvalidationForWholeRenderer();
 }
 
-} // namespace WebCore
+} // namespace blink

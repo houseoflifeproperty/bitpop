@@ -9,14 +9,17 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/sequenced_task_runner.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/task_runner.h"
 #include "base/test/test_simple_task_runner.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
+#include "content/browser/indexed_db/indexed_db_factory_impl.h"
 #include "content/browser/indexed_db/indexed_db_leveldb_coding.h"
 #include "content/browser/indexed_db/indexed_db_value.h"
+#include "content/browser/indexed_db/leveldb/leveldb_factory.h"
 #include "content/public/test/mock_special_storage_policy.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebIDBTypes.h"
@@ -64,23 +67,26 @@ class TestableIndexedDBBackingStore : public IndexedDBBackingStore {
       const base::FilePath& path_base,
       net::URLRequestContext* request_context,
       LevelDBFactory* leveldb_factory,
-      base::TaskRunner* task_runner) {
+      base::SequencedTaskRunner* task_runner,
+      leveldb::Status* status) {
     DCHECK(!path_base.empty());
 
     scoped_ptr<LevelDBComparator> comparator(new Comparator());
 
-    if (!base::CreateDirectory(path_base))
+    if (!base::CreateDirectory(path_base)) {
+      *status = leveldb::Status::IOError("Unable to create base dir");
       return scoped_refptr<TestableIndexedDBBackingStore>();
+    }
 
     const base::FilePath file_path = path_base.AppendASCII("test_db_path");
     const base::FilePath blob_path = path_base.AppendASCII("test_blob_path");
 
     scoped_ptr<LevelDBDatabase> db;
     bool is_disk_full = false;
-    leveldb::Status status = leveldb_factory->OpenLevelDB(
+    *status = leveldb_factory->OpenLevelDB(
         file_path, comparator.get(), &db, &is_disk_full);
 
-    if (!db || !status.ok())
+    if (!db || !status->ok())
       return scoped_refptr<TestableIndexedDBBackingStore>();
 
     scoped_refptr<TestableIndexedDBBackingStore> backing_store(
@@ -92,7 +98,8 @@ class TestableIndexedDBBackingStore : public IndexedDBBackingStore {
                                           comparator.Pass(),
                                           task_runner));
 
-    if (!backing_store->SetUpMetadata())
+    *status = backing_store->SetUpMetadata();
+    if (!status->ok())
       return scoped_refptr<TestableIndexedDBBackingStore>();
 
     return backing_store;
@@ -151,7 +158,7 @@ class TestableIndexedDBBackingStore : public IndexedDBBackingStore {
                                 net::URLRequestContext* request_context,
                                 scoped_ptr<LevelDBDatabase> db,
                                 scoped_ptr<LevelDBComparator> comparator,
-                                base::TaskRunner* task_runner)
+                                base::SequencedTaskRunner* task_runner)
       : IndexedDBBackingStore(indexed_db_factory,
                               origin_url,
                               blob_path,
@@ -168,10 +175,10 @@ class TestableIndexedDBBackingStore : public IndexedDBBackingStore {
   DISALLOW_COPY_AND_ASSIGN(TestableIndexedDBBackingStore);
 };
 
-class TestIDBFactory : public IndexedDBFactory {
+class TestIDBFactory : public IndexedDBFactoryImpl {
  public:
   explicit TestIDBFactory(IndexedDBContextImpl* idb_context)
-      : IndexedDBFactory(idb_context) {}
+      : IndexedDBFactoryImpl(idb_context) {}
 
   scoped_refptr<TestableIndexedDBBackingStore> OpenBackingStoreForTest(
       const GURL& origin,
@@ -179,13 +186,15 @@ class TestIDBFactory : public IndexedDBFactory {
     blink::WebIDBDataLoss data_loss;
     std::string data_loss_reason;
     bool disk_full;
+    leveldb::Status status;
     scoped_refptr<IndexedDBBackingStore> backing_store =
         OpenBackingStore(origin,
                          context()->data_path(),
                          url_request_context,
                          &data_loss,
                          &data_loss_reason,
-                         &disk_full);
+                         &disk_full,
+                         &status);
     scoped_refptr<TestableIndexedDBBackingStore> testable_store =
         static_cast<TestableIndexedDBBackingStore*>(backing_store.get());
     return testable_store;
@@ -201,14 +210,16 @@ class TestIDBFactory : public IndexedDBFactory {
       blink::WebIDBDataLoss* data_loss,
       std::string* data_loss_message,
       bool* disk_full,
-      bool first_time) OVERRIDE {
+      bool first_time,
+      leveldb::Status* status) OVERRIDE {
     DefaultLevelDBFactory leveldb_factory;
     return TestableIndexedDBBackingStore::Open(this,
                                                origin_url,
                                                data_directory,
                                                request_context,
                                                &leveldb_factory,
-                                               context()->TaskRunner());
+                                               context()->TaskRunner(),
+                                               status);
   }
 
  private:
@@ -337,6 +348,8 @@ class IndexedDBBackingStoreTest : public testing::Test {
   std::vector<IndexedDBBlobInfo> m_blob_info;
 
  private:
+  content::TestBrowserThreadBundle thread_bundle_;
+
   DISALLOW_COPY_AND_ASSIGN(IndexedDBBackingStoreTest);
 };
 
@@ -364,7 +377,7 @@ TEST_F(IndexedDBBackingStoreTest, PutGetConsistency) {
     ScopedVector<webkit_blob::BlobDataHandle> handles;
     IndexedDBBackingStore::RecordIdentifier record;
     leveldb::Status s = backing_store_->PutRecord(
-        &transaction1, 1, 1, m_key1, m_value1, &handles, &record);
+        &transaction1, 1, 1, m_key1, &m_value1, &handles, &record);
     EXPECT_TRUE(s.ok());
     scoped_refptr<TestCallback> callback(new TestCallback());
     EXPECT_TRUE(transaction1.CommitPhaseOne(callback).ok());
@@ -399,7 +412,7 @@ TEST_F(IndexedDBBackingStoreTest, PutGetConsistencyWithBlobs) {
                                           1,
                                           1,
                                           m_key3,
-                                          m_value3,
+                                          &m_value3,
                                           &handles,
                                           &record).ok());
     scoped_refptr<TestCallback> callback(new TestCallback());
@@ -484,28 +497,28 @@ TEST_F(IndexedDBBackingStoreTest, DeleteRange) {
                                             1,
                                             i + 1,
                                             key0,
-                                            value0,
+                                            &value0,
                                             &handles,
                                             &record).ok());
       EXPECT_TRUE(backing_store_->PutRecord(&transaction1,
                                             1,
                                             i + 1,
                                             key1,
-                                            value1,
+                                            &value1,
                                             &handles,
                                             &record).ok());
       EXPECT_TRUE(backing_store_->PutRecord(&transaction1,
                                             1,
                                             i + 1,
                                             key2,
-                                            value2,
+                                            &value2,
                                             &handles,
                                             &record).ok());
       EXPECT_TRUE(backing_store_->PutRecord(&transaction1,
                                             1,
                                             i + 1,
                                             key3,
-                                            value3,
+                                            &value3,
                                             &handles,
                                             &record).ok());
       scoped_refptr<TestCallback> callback(new TestCallback());
@@ -574,28 +587,28 @@ TEST_F(IndexedDBBackingStoreTest, DeleteRangeEmptyRange) {
                                             1,
                                             i + 1,
                                             key0,
-                                            value0,
+                                            &value0,
                                             &handles,
                                             &record).ok());
       EXPECT_TRUE(backing_store_->PutRecord(&transaction1,
                                             1,
                                             i + 1,
                                             key1,
-                                            value1,
+                                            &value1,
                                             &handles,
                                             &record).ok());
       EXPECT_TRUE(backing_store_->PutRecord(&transaction1,
                                             1,
                                             i + 1,
                                             key2,
-                                            value2,
+                                            &value2,
                                             &handles,
                                             &record).ok());
       EXPECT_TRUE(backing_store_->PutRecord(&transaction1,
                                             1,
                                             i + 1,
                                             key3,
-                                            value3,
+                                            &value3,
                                             &handles,
                                             &record).ok());
       scoped_refptr<TestCallback> callback(new TestCallback());
@@ -633,7 +646,7 @@ TEST_F(IndexedDBBackingStoreTest, LiveBlobJournal) {
                                           1,
                                           1,
                                           m_key3,
-                                          m_value3,
+                                          &m_value3,
                                           &handles,
                                           &record).ok());
     scoped_refptr<TestCallback> callback(new TestCallback());
@@ -712,7 +725,7 @@ TEST_F(IndexedDBBackingStoreTest, HighIds) {
                                                   high_database_id,
                                                   high_object_store_id,
                                                   m_key1,
-                                                  m_value1,
+                                                  &m_value1,
                                                   &handles,
                                                   &record);
     EXPECT_TRUE(s.ok());
@@ -801,23 +814,23 @@ TEST_F(IndexedDBBackingStoreTest, InvalidIds) {
                                                 database_id,
                                                 KeyPrefix::kInvalidId,
                                                 m_key1,
-                                                m_value1,
+                                                &m_value1,
                                                 &handles,
                                                 &record);
   EXPECT_FALSE(s.ok());
   s = backing_store_->PutRecord(
-      &transaction1, database_id, 0, m_key1, m_value1, &handles, &record);
+      &transaction1, database_id, 0, m_key1, &m_value1, &handles, &record);
   EXPECT_FALSE(s.ok());
   s = backing_store_->PutRecord(&transaction1,
                                 KeyPrefix::kInvalidId,
                                 object_store_id,
                                 m_key1,
-                                m_value1,
+                                &m_value1,
                                 &handles,
                                 &record);
   EXPECT_FALSE(s.ok());
   s = backing_store_->PutRecord(
-      &transaction1, 0, object_store_id, m_key1, m_value1, &handles, &record);
+      &transaction1, 0, object_store_id, m_key1, &m_value1, &handles, &record);
   EXPECT_FALSE(s.ok());
 
   s = backing_store_->GetRecord(
@@ -955,6 +968,35 @@ TEST_F(IndexedDBBackingStoreTest, CreateDatabase) {
     EXPECT_EQ(unique, index.unique);
     EXPECT_EQ(multi_entry, index.multi_entry);
   }
+}
+
+TEST_F(IndexedDBBackingStoreTest, GetDatabaseNames) {
+  const base::string16 string_version(ASCIIToUTF16("string_version"));
+
+  const base::string16 db1_name(ASCIIToUTF16("db1"));
+  const int64 db1_version = 1LL;
+  int64 db1_id;
+
+  // Database records with DEFAULT_INT_VERSION represent stale data,
+  // and should not be enumerated.
+  const base::string16 db2_name(ASCIIToUTF16("db2"));
+  const int64 db2_version = IndexedDBDatabaseMetadata::DEFAULT_INT_VERSION;
+  int64 db2_id;
+
+  leveldb::Status s = backing_store_->CreateIDBDatabaseMetaData(
+      db1_name, string_version, db1_version, &db1_id);
+  EXPECT_TRUE(s.ok());
+  EXPECT_GT(db1_id, 0LL);
+
+  s = backing_store_->CreateIDBDatabaseMetaData(
+      db2_name, string_version, db2_version, &db2_id);
+  EXPECT_TRUE(s.ok());
+  EXPECT_GT(db2_id, db1_id);
+
+  std::vector<base::string16> names = backing_store_->GetDatabaseNames(&s);
+  EXPECT_TRUE(s.ok());
+  EXPECT_EQ(names.size(), 1ULL);
+  EXPECT_EQ(names[0], db1_name);
 }
 
 }  // namespace

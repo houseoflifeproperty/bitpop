@@ -66,7 +66,7 @@ class ContentRendererClient;
 // related to the browser object and associated window, like opening a new Tab
 // with a testing page loaded.
 //
-// CleanUpOnMainThread() is called just after executing the real test code to
+// TearDownOnMainThread() is called just after executing the real test code to
 // do necessary cleanup before the browser is torn down.
 //
 // TearDownInProcessBrowserTestFixture() is called after BrowserMain() exits to
@@ -122,10 +122,6 @@ class InProcessBrowserTest : public content::BrowserTestBase {
   // successful.
   virtual bool SetUpUserDataDirectory() WARN_UNUSED_RESULT;
 
-  // Override this to add any custom cleanup code that needs to be done on the
-  // main thread before the browser is torn down.
-  virtual void CleanUpOnMainThread() {}
-
   // BrowserTestBase:
   virtual void RunTestOnMainThreadLoop() OVERRIDE;
 
@@ -171,6 +167,10 @@ class InProcessBrowserTest : public content::BrowserTestBase {
     exit_when_last_browser_closes_ = value;
   }
 
+  void set_open_about_blank_on_browser_launch(bool value) {
+    open_about_blank_on_browser_launch_ = value;
+  }
+
   // This must be called before RunTestOnMainThreadLoop() to have any effect.
   void set_multi_desktop_test(bool multi_desktop_test) {
     multi_desktop_test_ = multi_desktop_test;
@@ -197,6 +197,9 @@ class InProcessBrowserTest : public content::BrowserTestBase {
 
   // True if we should exit the tests after the last browser instance closes.
   bool exit_when_last_browser_closes_;
+
+  // True if the about:blank tab should be opened when the browser is launched.
+  bool open_about_blank_on_browser_launch_;
 
   // True if this is a multi-desktop test (in which case this browser test will
   // not ensure that Browsers are only created on the tested desktop).

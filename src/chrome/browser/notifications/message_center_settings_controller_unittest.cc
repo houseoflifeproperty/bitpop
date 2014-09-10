@@ -18,6 +18,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/users/fake_user_manager.h"
+#include "chrome/browser/chromeos/login/users/scoped_user_manager_enabler.h"
 #endif
 
 class MessageCenterSettingsControllerTest : public testing::Test {
@@ -53,6 +54,7 @@ class MessageCenterSettingsControllerTest : public testing::Test {
  private:
   TestingProfileManager testing_profile_manager_;
   scoped_ptr<MessageCenterSettingsController> controller_;
+  content::TestBrowserThreadBundle thread_bundle_;
 
   DISALLOW_COPY_AND_ASSIGN(MessageCenterSettingsControllerTest);
 };
@@ -95,7 +97,7 @@ class MessageCenterSettingsControllerChromeOSTest
  private:
   chromeos::FakeUserManager* GetFakeUserManager() {
     return static_cast<chromeos::FakeUserManager*>(
-        chromeos::UserManager::Get());
+        user_manager::UserManager::Get());
   }
 
   scoped_ptr<chromeos::ScopedUserManagerEnabler> user_manager_enabler_;

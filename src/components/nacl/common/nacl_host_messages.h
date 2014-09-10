@@ -21,6 +21,9 @@
 
 IPC_STRUCT_TRAITS_BEGIN(nacl::NaClLaunchParams)
   IPC_STRUCT_TRAITS_MEMBER(manifest_url)
+  IPC_STRUCT_TRAITS_MEMBER(nexe_file)
+  IPC_STRUCT_TRAITS_MEMBER(nexe_token_lo)
+  IPC_STRUCT_TRAITS_MEMBER(nexe_token_hi)
   IPC_STRUCT_TRAITS_MEMBER(render_view_id)
   IPC_STRUCT_TRAITS_MEMBER(permission_bits)
   IPC_STRUCT_TRAITS_MEMBER(uses_irt)
@@ -61,9 +64,12 @@ IPC_SYNC_MESSAGE_CONTROL1_2(NaClHostMsg_LaunchNaCl,
 
 // A renderer sends this to the browser process when it wants to
 // open a file for from the Pnacl component directory.
-IPC_SYNC_MESSAGE_CONTROL1_1(NaClHostMsg_GetReadonlyPnaclFD,
+IPC_SYNC_MESSAGE_CONTROL2_3(NaClHostMsg_GetReadonlyPnaclFD,
                             std::string /* name of requested PNaCl file */,
-                            IPC::PlatformFileForTransit /* output file */)
+                            bool /* is_executable */,
+                            IPC::PlatformFileForTransit /* output file */,
+                            uint64_t /* file_token_lo */,
+                            uint64_t /* file_token_hi */)
 
 // A renderer sends this to the browser process when it wants to
 // create a temporary file.

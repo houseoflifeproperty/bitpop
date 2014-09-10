@@ -751,6 +751,22 @@ class GraphingLogProcessor(PerformanceLogProcessor):
                       'units': graph.units}
     self._output[self.GRAPH_LIST] = json.dumps(graphs).split('\n')
 
+  def GetGraphs(self):
+    """Returns a list of graph names."""
+    return self._graphs.keys()
+
+  def GetTraces(self, graph):
+    """Returns a dict of traces associated with the given graph.
+
+    Returns:
+      A dict mapping names of traces to two-element lists of value, stddev.
+    """
+    return self._graphs[graph].BuildTracesDict()
+
+  def GetUnits(self, graph):
+    """Returns the units associated with the given graph."""
+    return str(self._graphs[graph].units)
+
 
 class GraphingEndureLogProcessor(GraphingLogProcessor):
   """Log processor for the Telemetry endure benchmark.

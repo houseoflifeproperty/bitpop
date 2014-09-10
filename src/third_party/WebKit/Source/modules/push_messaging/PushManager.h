@@ -5,23 +5,22 @@
 #ifndef PushManager_h
 #define PushManager_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 class ScriptPromise;
 class ScriptState;
 
-class PushManager FINAL : public GarbageCollectedFinalized<PushManager>, public ScriptWrappable {
+class PushManager FINAL : public GarbageCollected<PushManager>, public ScriptWrappable {
 public:
     static PushManager* create()
     {
         return new PushManager();
     }
-    virtual ~PushManager();
 
     ScriptPromise registerPushMessaging(ScriptState*, const String& senderId);
 
@@ -31,6 +30,6 @@ private:
     PushManager();
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PushManager_h

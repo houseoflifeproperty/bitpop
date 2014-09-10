@@ -13,7 +13,6 @@
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/aura/window.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_delegate.h"
 #include "ui/events/event.h"
@@ -389,7 +388,7 @@ gfx::Insets TrayBubbleView::GetBorderInsets() const {
 
 void TrayBubbleView::Init() {
   BoxLayout* layout = new BottomAlignedBoxLayout(this);
-  layout->set_main_axis_alignment(views::BoxLayout::MAIN_AXIS_ALIGNMENT_FILL);
+  layout->SetDefaultFlex(1);
   SetLayoutManager(layout);
 }
 

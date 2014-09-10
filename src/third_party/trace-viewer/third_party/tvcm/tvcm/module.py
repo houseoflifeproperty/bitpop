@@ -15,6 +15,8 @@ import re
 import inspect
 
 from tvcm import resource as resource_module
+from tvcm import js_utils
+
 
 class DepsException(Exception):
   """Exceptions related to module dependency resolution."""
@@ -62,7 +64,13 @@ class ModuleDependencyMetadata(object):
     self.dependent_module_names = []
     self.dependent_raw_script_relative_paths = []
     self.style_sheet_names = []
-    self.html_template_names = []
+
+  def AppendMetdata(self, other):
+    self.dependent_module_names += other.dependent_module_names
+    self.dependent_raw_script_relative_paths += \
+        other.dependent_raw_script_relative_paths
+    self.style_sheet_names += other.style_sheet_names
+
 
 class Module(object):
   """Represents a javascript module.
@@ -76,16 +84,18 @@ class Module(object):
   In addition to these properties, a Module also contains lists of other
   resources that it depends on.
   """
-  def __init__(self, loader, name, resource):
+  def __init__(self, loader, name, resource, load_resource=True):
     assert isinstance(name, basestring), 'Got %s instead' % repr(name)
-    assert isinstance(resource, resource_module.Resource)
     self.loader = loader
     self.name = name
     self.resource = resource
 
-    f = open(self.filename, 'r')
-    self.contents = f.read()
-    f.close()
+    if load_resource:
+      f = open(self.filename, 'r')
+      self.contents = f.read()
+      f.close()
+    else:
+      self.contents = None
 
     # Dependency metadata, set up during Parse().
     self.dependency_metadata = None
@@ -94,7 +104,9 @@ class Module(object):
     self.dependent_modules = []
     self.dependent_raw_scripts = []
     self.style_sheets = []
-    self.html_templates = []
+
+    # Caches.
+    self._all_dependent_modules_recursive = None
 
   def __repr__(self):
     return '%s(%s)' % (self.__class__.__name__, self.name)
@@ -103,13 +115,31 @@ class Module(object):
   def filename(self):
     return self.resource.absolute_path
 
-  @staticmethod
-  def html_contents_is_polymer_module(contents):
-    return '<polymer-component>' in contents
-
   def Parse(self):
     """Parses self.contents and fills in the module's dependency metadata."""
     raise NotImplementedError()
+
+  def GetTVCMDepsModuleType(self):
+    """Returns the tvcm.setModuleInfo type for this module"""
+    raise NotImplementedError()
+
+  def AppendJSContentsToFile(self,
+                             f,
+                             use_include_tags_for_scripts,
+                             dir_for_include_tag_root):
+    """Appends the js for this module to the provided file."""
+    for dependent_raw_script in self.dependent_raw_scripts:
+      if use_include_tags_for_scripts:
+        rel_filename = os.path.relpath(dependent_raw_script.filename,
+                                       dir_for_include_tag_root)
+        f.write("""<include src="%s">\n""" % rel_filename)
+      else:
+        f.write(js_utils.EscapeJSIfNeeded(dependent_raw_script.contents))
+        f.write('\n')
+
+  def AppendHTMLContentsToFile(self, f, ctl):
+    """Appends the html for this module [without links] to the provided file."""
+    pass
 
   def Load(self):
     """Loads the sub-resources that this module depends on from its dependency metadata.
@@ -135,12 +165,19 @@ class Module(object):
       style_sheet = self.loader.LoadStyleSheet(name)
       self.style_sheets.append(style_sheet)
 
-    for name in metadata.html_template_names:
-      html_template = self.loader.LoadHTMLTemplate(name)
-      self.html_templates.append(html_template)
+  @property
+  def all_dependent_modules_recursive(self):
+    if self._all_dependent_modules_recursive:
+      return self._all_dependent_modules_recursive
+
+    self._all_dependent_modules_recursive = set(self.dependent_modules)
+    for dependent_module in self.dependent_modules:
+      self._all_dependent_modules_recursive.update(
+          dependent_module.all_dependent_modules_recursive)
+    return self._all_dependent_modules_recursive
 
   def ComputeLoadSequenceRecursive(self, load_sequence, already_loaded_set,
-                                      depth=0):
+                                   depth=0):
     """Recursively builds up a load sequence list.
 
     Args:
@@ -160,18 +197,30 @@ class Module(object):
       already_loaded_set.add(self.name)
       load_sequence.append(self)
 
+  def GetAllDependentFilenamesRecursive(self, include_raw_scripts=True):
+    dependent_filenames = []
 
-class HTMLTemplate(object):
-  """Represents an html template resource referenced by a module via the
-  tvcm.requireTemplate(xxx) directive."""
-  def __init__(self, name, filename, contents):
-    self.name = name
-    self.filename = filename
-    self.contents = contents
+    visited_modules = set()
+    def Get(module):
+      module.AppendDirectlyDependentFilenamesTo(
+          dependent_filenames, include_raw_scripts)
+      visited_modules.add(module)
+      for m in module.dependent_modules:
+        if m in visited_modules:
+          continue
+        Get(m)
 
-  def __repr__(self):
-    return "HTMLTemplate(%s)" % self.name
+    Get(self)
+    return dependent_filenames
 
+  def AppendDirectlyDependentFilenamesTo(
+      self, dependent_filenames, include_raw_scripts=True):
+    dependent_filenames.append(self.resource.absolute_path)
+    if include_raw_scripts:
+      for raw_script in self.dependent_raw_scripts:
+        dependent_filenames.append(raw_script.resource.absolute_path)
+    for style_sheet in self.style_sheets:
+      style_sheet.AppendDirectlyDependentFilenamesTo(dependent_filenames)
 
 class RawScript(object):
   """Represents a raw script resource referenced by a module via the

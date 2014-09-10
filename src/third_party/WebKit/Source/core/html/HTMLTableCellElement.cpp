@@ -29,16 +29,21 @@
 #include "core/CSSValueKeywords.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/rendering/RenderTableCell.h"
 
 using std::max;
 using std::min;
 
-namespace WebCore {
+namespace blink {
 
-// Clamp rowspan at 8k to match Firefox.
-static const int maxRowspan = 8190;
+// Clamp rowspan and colspan at 8k.
+// Firefox used a limit of 8190 for rowspan but they changed it to 65,534.
+// (FIXME: We should consider increasing this limit (crbug.com/78577).
+// Firefox uses a limit of 1,000 for colspan and resets the value to 1
+// but we don't discriminate between rowspan / colspan as it is artificial.
+static const int maxColRowSpan = 8190;
 
 using namespace HTMLNames;
 
@@ -53,13 +58,13 @@ DEFINE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLTableCellElement)
 int HTMLTableCellElement::colSpan() const
 {
     const AtomicString& colSpanValue = fastGetAttribute(colspanAttr);
-    return max(1, colSpanValue.toInt());
+    return max(1, min(colSpanValue.toInt(), maxColRowSpan));
 }
 
 int HTMLTableCellElement::rowSpan() const
 {
     const AtomicString& rowSpanValue = fastGetAttribute(rowspanAttr);
-    return max(1, min(rowSpanValue.toInt(), maxRowspan));
+    return max(1, min(rowSpanValue.toInt(), maxColRowSpan));
 }
 
 int HTMLTableCellElement::cellIndex() const
@@ -127,12 +132,12 @@ bool HTMLTableCellElement::isURLAttribute(const Attribute& attribute) const
 
 bool HTMLTableCellElement::hasLegalLinkAttribute(const QualifiedName& name) const
 {
-    return (hasLocalName(tdTag) && name == backgroundAttr) || HTMLTablePartElement::hasLegalLinkAttribute(name);
+    return (hasTagName(tdTag) && name == backgroundAttr) || HTMLTablePartElement::hasLegalLinkAttribute(name);
 }
 
 const QualifiedName& HTMLTableCellElement::subResourceAttributeName() const
 {
-    return hasLocalName(tdTag) ? backgroundAttr : HTMLTablePartElement::subResourceAttributeName();
+    return hasTagName(tdTag) ? backgroundAttr : HTMLTablePartElement::subResourceAttributeName();
 }
 
 const AtomicString& HTMLTableCellElement::abbr() const
@@ -181,4 +186,4 @@ HTMLTableCellElement* HTMLTableCellElement::cellAbove() const
     return toHTMLTableCellElement(cellAboveRenderer->node());
 }
 
-} // namespace WebCore
+} // namespace blink

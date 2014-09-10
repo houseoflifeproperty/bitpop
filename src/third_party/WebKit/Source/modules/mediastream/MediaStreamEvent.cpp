@@ -25,7 +25,7 @@
 #include "config.h"
 #include "modules/mediastream/MediaStreamEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 MediaStreamEventInit::MediaStreamEventInit()
     : stream(nullptr)
@@ -37,7 +37,7 @@ PassRefPtrWillBeRawPtr<MediaStreamEvent> MediaStreamEvent::create()
     return adoptRefWillBeNoop(new MediaStreamEvent);
 }
 
-PassRefPtrWillBeRawPtr<MediaStreamEvent> MediaStreamEvent::create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<MediaStream> stream)
+PassRefPtrWillBeRawPtr<MediaStreamEvent> MediaStreamEvent::create(const AtomicString& type, bool canBubble, bool cancelable, MediaStream* stream)
 {
     return adoptRefWillBeNoop(new MediaStreamEvent(type, canBubble, cancelable, stream));
 }
@@ -52,7 +52,7 @@ MediaStreamEvent::MediaStreamEvent()
     ScriptWrappable::init(this);
 }
 
-MediaStreamEvent::MediaStreamEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<MediaStream> stream)
+MediaStreamEvent::MediaStreamEvent(const AtomicString& type, bool canBubble, bool cancelable, MediaStream* stream)
     : Event(type, canBubble, cancelable)
     , m_stream(stream)
 {
@@ -88,8 +88,9 @@ const AtomicString& MediaStreamEvent::interfaceName() const
 
 void MediaStreamEvent::trace(Visitor* visitor)
 {
+    visitor->trace(m_stream);
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink
 

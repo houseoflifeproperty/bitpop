@@ -31,8 +31,9 @@
 #include "config.h"
 #include "public/web/WebElement.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Element.h"
+#include "core/dom/FullscreenElementStack.h"
 #include "core/dom/NamedNodeMap.h"
 #include "core/dom/custom/CustomElementCallbackDispatcher.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -43,7 +44,7 @@
 #include "wtf/PassRefPtr.h"
 
 
-using namespace WebCore;
+using namespace blink;
 
 namespace blink {
 
@@ -60,12 +61,6 @@ bool WebElement::isTextFormControlElement() const
 WebString WebElement::tagName() const
 {
     return constUnwrap<Element>()->tagName();
-}
-
-bool WebElement::hasTagName(const WebString& tagName) const
-{
-    return equalIgnoringCase(constUnwrap<Element>()->tagName(),
-                             tagName.operator String());
 }
 
 bool WebElement::hasHTMLTagName(const WebString& tagName) const
@@ -111,7 +106,7 @@ unsigned WebElement::attributeCount() const
 {
     if (!constUnwrap<Element>()->hasAttributes())
         return 0;
-    return constUnwrap<Element>()->attributeCount();
+    return constUnwrap<Element>()->attributes().size();
 }
 
 WebNode WebElement::shadowRoot() const
@@ -126,14 +121,14 @@ WebString WebElement::attributeLocalName(unsigned index) const
 {
     if (index >= attributeCount())
         return WebString();
-    return constUnwrap<Element>()->attributeAt(index).localName();
+    return constUnwrap<Element>()->attributes().at(index).localName();
 }
 
 WebString WebElement::attributeValue(unsigned index) const
 {
     if (index >= attributeCount())
         return WebString();
-    return constUnwrap<Element>()->attributeAt(index).value();
+    return constUnwrap<Element>()->attributes().at(index).value();
 }
 
 WebString WebElement::innerText()
@@ -148,7 +143,8 @@ WebString WebElement::computeInheritedLanguage() const
 
 void WebElement::requestFullScreen()
 {
-    unwrap<Element>()->webkitRequestFullScreen(Element::ALLOW_KEYBOARD_INPUT);
+    Element* element = unwrap<Element>();
+    FullscreenElementStack::from(element->document()).requestFullscreen(*element, FullscreenElementStack::PrefixedMozillaAllowKeyboardInputRequest);
 }
 
 WebRect WebElement::boundsInViewportSpace()
@@ -161,7 +157,7 @@ WebImage WebElement::imageContents()
     if (isNull())
         return WebImage();
 
-    WebCore::Image* image = unwrap<Element>()->imageContents();
+    blink::Image* image = unwrap<Element>()->imageContents();
     if (!image)
         return WebImage();
 

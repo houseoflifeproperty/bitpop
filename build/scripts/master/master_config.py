@@ -31,9 +31,6 @@ def GetArchiveUrl(project, machine_name, builder_name, zip_os_name,
 def GetGSUtilUrl(gs_bucket, root_folder):
   return 'gs://%s/%s' % (gs_bucket, root_folder)
 
-def GetGSBuildCacheUrl(master_name, builder_name):
-  return 'gs://chromium-build-cache/%s/%s' % (master_name, builder_name)
-
 class Helper(object):
   def __init__(self, defaults):
     self._defaults = defaults

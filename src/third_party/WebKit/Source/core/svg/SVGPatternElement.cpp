@@ -29,7 +29,7 @@
 #include "core/svg/PatternAttributes.h"
 #include "platform/transforms/AffineTransform.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGPatternElement::SVGPatternElement(Document& document)
     : SVGElement(SVGNames::patternTag, document)
@@ -125,11 +125,11 @@ void SVGPatternElement::svgAttributeChanged(const QualifiedName& attrName)
         renderer->invalidateCacheAndMarkForLayout();
 }
 
-void SVGPatternElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void SVGPatternElement::childrenChanged(const ChildrenChange& change)
 {
-    SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    SVGElement::childrenChanged(change);
 
-    if (changedByParser)
+    if (change.byParser)
         return;
 
     if (RenderObject* object = renderer())
@@ -179,7 +179,7 @@ static void setPatternAttributes(const SVGPatternElement* element, PatternAttrib
 
 void SVGPatternElement::collectPatternAttributes(PatternAttributes& attributes) const
 {
-    HashSet<const SVGPatternElement*> processedPatterns;
+    WillBeHeapHashSet<RawPtrWillBeMember<const SVGPatternElement> > processedPatterns;
     const SVGPatternElement* current = this;
 
     while (true) {

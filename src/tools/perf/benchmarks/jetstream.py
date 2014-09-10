@@ -20,14 +20,15 @@ specialized optimization for one benchmark might make another benchmark slower.
 import json
 import os
 
-from telemetry import test
-from telemetry.page import page_measurement
+from telemetry import benchmark
 from telemetry.page import page_set
+from telemetry.page import page_test
 from telemetry.util import statistics
+from telemetry.value import list_of_scalar_values
 from telemetry.value import scalar
 
 
-class _JetstreamMeasurement(page_measurement.PageMeasurement):
+class _JetstreamMeasurement(page_test.PageTest):
   def __init__(self):
     super(_JetstreamMeasurement, self).__init__()
 
@@ -41,7 +42,7 @@ class _JetstreamMeasurement(page_measurement.PageMeasurement):
         }
         """
 
-  def MeasurePage(self, page, tab, results):
+  def ValidateAndMeasurePage(self, page, tab, results):
     get_results_js = """
         (function() {
           for (var i = 0; i < __results.length; i++) {
@@ -60,8 +61,9 @@ class _JetstreamMeasurement(page_measurement.PageMeasurement):
 
     all_scores = []
     for k, v in result.iteritems():
-      results.Add(k.replace('.', '_'), 'score', v['result'],
-                  data_type='unimportant')
+      results.AddValue(list_of_scalar_values.ListOfScalarValues(
+          results.current_page, k.replace('.', '_'), 'score', v['result'],
+          important=False))
       # Collect all test scores to compute geometric mean.
       all_scores.extend(v['result'])
     total = statistics.GeometricMean(all_scores)
@@ -69,8 +71,8 @@ class _JetstreamMeasurement(page_measurement.PageMeasurement):
         scalar.ScalarValue(None, 'Score', 'score', total))
 
 
-@test.Disabled('android', 'xp')  # crbug.com/381742
-class Jetstream(test.Test):
+@benchmark.Disabled('android', 'xp')  # crbug.com/381742
+class Jetstream(benchmark.Benchmark):
   test = _JetstreamMeasurement
 
   def CreatePageSet(self, options):

@@ -15,6 +15,8 @@
 #include "webrtc/modules/audio_coding/main/acm2/acm_codec_database.h"
 #include "webrtc/modules/audio_coding/main/acm2/acm_common_defs.h"
 #include "webrtc/system_wrappers/interface/trace.h"
+
+#define SIGN(x) (x > 0 ? 1 : -1)
 #endif
 
 namespace webrtc {
@@ -27,7 +29,9 @@ ACMOpus::ACMOpus(int16_t /* codec_id */)
     : encoder_inst_ptr_(NULL),
       sample_freq_(0),
       bitrate_(0),
-      channels_(1) {
+      channels_(1),
+      fec_enabled_(false),
+      packet_loss_rate_(0) {
   return;
 }
 
@@ -70,7 +74,9 @@ ACMOpus::ACMOpus(int16_t codec_id)
     : encoder_inst_ptr_(NULL),
       sample_freq_(32000),  // Default sampling frequency.
       bitrate_(20000),  // Default bit-rate.
-      channels_(1) {  // Default mono
+      channels_(1),  // Default mono.
+      fec_enabled_(false),  // Default FEC is off.
+      packet_loss_rate_(0) {
   codec_id_ = codec_id;
   // Opus has internal DTX, but we dont use it for now.
   has_internal_dtx_ = false;
@@ -80,7 +86,7 @@ ACMOpus::ACMOpus(int16_t codec_id)
   if (codec_id_ != ACMCodecDB::kOpus) {
     WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, unique_id_,
                  "Wrong codec id for Opus.");
-    sample_freq_ = -1;
+    sample_freq_ = 0xFFFF;
     bitrate_ = -1;
   }
   return;
@@ -188,6 +194,7 @@ int16_t ACMOpus::SetBitRateSafe(const int32_t rate) {
                  "SetBitRateSafe: Invalid rate Opus");
     return -1;
   }
+  // Initial packet loss rate.
 
   bitrate_ = rate;
 
@@ -217,12 +224,51 @@ int ACMOpus::SetFEC(bool enable_fec) {
 }
 
 int ACMOpus::SetPacketLossRate(int loss_rate) {
-  // Ask the encoder to change the target packet loss rate.
-  if (WebRtcOpus_SetPacketLossRate(encoder_inst_ptr_, loss_rate) == 0) {
-    packet_loss_rate_ = loss_rate;
+  // Optimize the loss rate to configure Opus. Basically, optimized loss rate is
+  // the input loss rate rounded down to various levels, because a robustly good
+  // audio quality is achieved by lowering the packet loss down.
+  // Additionally, to prevent toggling, margins are used, i.e., when jumping to
+  // a loss rate from below, a higher threshold is used than jumping to the same
+  // level from above.
+  const int kPacketLossRate20 = 20;
+  const int kPacketLossRate10 = 10;
+  const int kPacketLossRate5 = 5;
+  const int kPacketLossRate1 = 1;
+  const int kLossRate20Margin = 2;
+  const int kLossRate10Margin = 1;
+  const int kLossRate5Margin = 1;
+  int opt_loss_rate;
+  if (loss_rate >= kPacketLossRate20 + kLossRate20Margin *
+      SIGN(kPacketLossRate20 - packet_loss_rate_)) {
+    opt_loss_rate = kPacketLossRate20;
+  } else if (loss_rate >= kPacketLossRate10 + kLossRate10Margin *
+      SIGN(kPacketLossRate10 - packet_loss_rate_)) {
+    opt_loss_rate = kPacketLossRate10;
+  } else if (loss_rate >= kPacketLossRate5 + kLossRate5Margin *
+      SIGN(kPacketLossRate5 - packet_loss_rate_)) {
+    opt_loss_rate = kPacketLossRate5;
+  } else if (loss_rate >= kPacketLossRate1) {
+    opt_loss_rate = kPacketLossRate1;
+  } else {
+    opt_loss_rate = 0;
+  }
+
+  if (packet_loss_rate_ == opt_loss_rate) {
     return 0;
   }
+
+  // Ask the encoder to change the target packet loss rate.
+  if (WebRtcOpus_SetPacketLossRate(encoder_inst_ptr_, opt_loss_rate) == 0) {
+    packet_loss_rate_ = opt_loss_rate;
+    return 0;
+  }
+
   return -1;
+}
+
+int ACMOpus::SetOpusMaxBandwidth(int max_bandwidth) {
+  // Ask the encoder to change the maximum required bandwidth.
+  return WebRtcOpus_SetMaxBandwidth(encoder_inst_ptr_, max_bandwidth);
 }
 
 #endif  // WEBRTC_CODEC_OPUS

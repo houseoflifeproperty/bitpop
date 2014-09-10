@@ -44,9 +44,9 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class DatabaseTask : public blink::WebThread::Task {
+class DatabaseTask : public WebThread::Task {
     WTF_MAKE_NONCOPYABLE(DatabaseTask); WTF_MAKE_FAST_ALLOCATED;
 public:
     virtual ~DatabaseTask();
@@ -54,7 +54,7 @@ public:
     virtual void run() OVERRIDE FINAL;
 
     DatabaseBackend* database() const { return m_database.get(); }
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool hasSynchronizer() const { return m_synchronizer; }
     bool hasCheckedForTermination() const { return m_synchronizer->hasCheckedForTermination(); }
 #endif
@@ -154,6 +154,6 @@ private:
     Vector<String>& m_tableNames;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DatabaseTask_h

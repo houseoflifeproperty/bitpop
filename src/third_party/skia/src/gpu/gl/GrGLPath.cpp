@@ -7,12 +7,8 @@
  */
 
 #include "GrGLPath.h"
+#include "GrGLPathRendering.h"
 #include "GrGpuGL.h"
-
-#define GPUGL static_cast<GrGpuGL*>(this->getGpu())
-
-#define GL_CALL(X) GR_GL_CALL(GPUGL->glInterface(), X)
-#define GL_CALL_RET(R, X) GR_GL_CALL_RET(GPUGL->glInterface(), R, X)
 
 namespace {
 inline GrGLubyte verb_to_gl_path_cmd(SkPath::Verb verb) {
@@ -85,23 +81,22 @@ inline GrGLenum cap_to_gl_cap(SkPaint::Cap cap) {
 
 static const bool kIsWrapped = false; // The constructor creates the GL path object.
 
-GrGLPath::GrGLPath(GrGpuGL* gpu, const SkPath& path, const SkStrokeRec& stroke)
-    : INHERITED(gpu, kIsWrapped, path, stroke) {
-    SkASSERT(!path.isEmpty());
-
-    fPathID = gpu->createGLPathObject();
-
+void GrGLPath::InitPathObject(GrGpuGL* gpu,
+                              GrGLuint pathID,
+                              const SkPath& skPath,
+                              const SkStrokeRec& stroke) {
+    GrGLPathRendering* pr = gpu->pathRendering();
     SkSTArray<16, GrGLubyte, true> pathCommands;
     SkSTArray<16, SkPoint, true> pathPoints;
 
-    int verbCnt = fSkPath.countVerbs();
-    int pointCnt = fSkPath.countPoints();
+    int verbCnt = skPath.countVerbs();
+    int pointCnt = skPath.countPoints();
     pathCommands.resize_back(verbCnt);
     pathPoints.resize_back(pointCnt);
 
     // TODO: Direct access to path points since we could pass them on directly.
-    fSkPath.getPoints(&pathPoints[0], pointCnt);
-    fSkPath.getVerbs(&pathCommands[0], verbCnt);
+    skPath.getPoints(&pathPoints[0], pointCnt);
+    skPath.getVerbs(&pathCommands[0], verbCnt);
 
     SkDEBUGCODE(int numPts = 0);
     for (int i = 0; i < verbCnt; ++i) {
@@ -111,21 +106,29 @@ GrGLPath::GrGLPath(GrGpuGL* gpu, const SkPath& path, const SkStrokeRec& stroke)
     }
     SkASSERT(pathPoints.count() == numPts);
 
-    GL_CALL(PathCommands(fPathID,
-                         verbCnt, &pathCommands[0],
-                         2 * pointCnt, GR_GL_FLOAT, &pathPoints[0]));
+    pr->pathCommands(pathID, verbCnt, &pathCommands[0], 2 * pointCnt, GR_GL_FLOAT, &pathPoints[0]);
+    if (stroke.needToApply()) {
+        SkASSERT(!stroke.isHairlineStyle());
+        pr->pathParameterf(pathID, GR_GL_PATH_STROKE_WIDTH, SkScalarToFloat(stroke.getWidth()));
+        pr->pathParameterf(pathID, GR_GL_PATH_MITER_LIMIT, SkScalarToFloat(stroke.getMiter()));
+        GrGLenum join = join_to_gl_join(stroke.getJoin());
+        pr->pathParameteri(pathID, GR_GL_PATH_JOIN_STYLE, join);
+        GrGLenum cap = cap_to_gl_cap(stroke.getCap());
+        pr->pathParameteri(pathID, GR_GL_PATH_INITIAL_END_CAP, cap);
+        pr->pathParameteri(pathID, GR_GL_PATH_TERMINAL_END_CAP, cap);
+    }
+}
+
+GrGLPath::GrGLPath(GrGpuGL* gpu, const SkPath& path, const SkStrokeRec& stroke)
+    : INHERITED(gpu, kIsWrapped, path, stroke),
+      fPathID(gpu->pathRendering()->genPaths(1)) {
+    SkASSERT(!path.isEmpty());
+
+    InitPathObject(gpu, fPathID, fSkPath, stroke);
 
     if (stroke.needToApply()) {
-        GL_CALL(PathParameterf(fPathID, GR_GL_PATH_STROKE_WIDTH, SkScalarToFloat(stroke.getWidth())));
-        GL_CALL(PathParameterf(fPathID, GR_GL_PATH_MITER_LIMIT, SkScalarToFloat(stroke.getMiter())));
-        GrGLenum join = join_to_gl_join(stroke.getJoin());
-        GL_CALL(PathParameteri(fPathID, GR_GL_PATH_JOIN_STYLE, join));
-        GrGLenum cap = cap_to_gl_cap(stroke.getCap());
-        GL_CALL(PathParameteri(fPathID, GR_GL_PATH_INITIAL_END_CAP, cap));
-        GL_CALL(PathParameteri(fPathID, GR_GL_PATH_TERMINAL_END_CAP, cap));
-
         // FIXME: try to account for stroking, without rasterizing the stroke.
-        fBounds.outset(SkScalarToFloat(stroke.getWidth()), SkScalarToFloat(stroke.getWidth()));
+        fBounds.outset(stroke.getWidth(), stroke.getWidth());
     }
 }
 
@@ -135,7 +138,7 @@ GrGLPath::~GrGLPath() {
 
 void GrGLPath::onRelease() {
     if (0 != fPathID && !this->isWrapped()) {
-        static_cast<GrGpuGL*>(this->getGpu())->deleteGLPathObject(fPathID);
+        static_cast<GrGpuGL*>(this->getGpu())->pathRendering()->deletePaths(fPathID, 1);
         fPathID = 0;
     }
 

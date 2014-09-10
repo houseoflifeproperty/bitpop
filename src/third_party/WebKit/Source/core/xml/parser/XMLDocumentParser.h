@@ -29,7 +29,7 @@
 #include "core/dom/ScriptableDocumentParser.h"
 #include "core/fetch/ResourceClient.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/xml/XMLErrors.h"
+#include "core/xml/parser/XMLErrors.h"
 #include "platform/heap/Handle.h"
 #include "platform/text/SegmentedString.h"
 #include "wtf/HashMap.h"
@@ -38,7 +38,7 @@
 #include "wtf/text/StringHash.h"
 #include <libxml/tree.h>
 
-namespace WebCore {
+namespace blink {
 
 class ContainerNode;
 class ScriptResource;
@@ -196,6 +196,6 @@ private:
 xmlDocPtr xmlDocPtrForString(ResourceFetcher*, const String& source, const String& url);
 HashMap<String, String> parseAttributes(const String&, bool& attrsOK);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // XMLDocumentParser_h

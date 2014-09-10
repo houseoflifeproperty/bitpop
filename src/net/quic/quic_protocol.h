@@ -27,8 +27,6 @@
 
 namespace net {
 
-using ::operator<<;
-
 class QuicAckNotifier;
 class QuicPacket;
 struct QuicPacketHeader;
@@ -51,7 +49,7 @@ typedef uint32 QuicPriority;
 
 // TODO(rch): Consider Quic specific names for these constants.
 // Default and initial maximum size in bytes of a QUIC packet.
-const QuicByteCount kDefaultMaxPacketSize = 1200;
+const QuicByteCount kDefaultMaxPacketSize = 1350;
 // The maximum packet size of any QUIC packet, based on ethernet's max size,
 // minus the IP and UDP headers. IPv6 has a 40 byte header, UPD adds an
 // additional 8 bytes.  This is a total overhead of 48 bytes.  Ethernet's
@@ -70,6 +68,9 @@ const uint32 kDefaultFlowControlSendWindow = 16 * 1024;  // 16 KB
 // Maximum size of the congestion window, in packets, for TCP congestion control
 // algorithms.
 const size_t kMaxTcpCongestionWindow = 200;
+
+// Size of the socket receive buffer in bytes.
+const QuicByteCount kDefaultSocketReceiveBuffer = 256 * 1024;
 
 // Don't allow a client to suggest an RTT longer than 15 seconds.
 const uint32 kMaxInitialRoundTripTimeUs = 15 * kNumMicrosPerSecond;
@@ -102,6 +103,9 @@ const QuicStreamId kCryptoStreamId = 1;
 
 // Reserved ID for the headers stream.
 const QuicStreamId kHeadersStreamId = 3;
+
+// Maximum delayed ack time, in ms.
+const int kMaxDelayedAckTime = 25;
 
 // This is the default network timeout a for connection till the crypto
 // handshake succeeds and the negotiated timeout from the handshake is received.
@@ -275,12 +279,12 @@ enum QuicVersion {
   // Special case to indicate unknown/unsupported QUIC version.
   QUIC_VERSION_UNSUPPORTED = 0,
 
-  QUIC_VERSION_15 = 15,
-  QUIC_VERSION_16 = 16,
-  QUIC_VERSION_17 = 17,
-  QUIC_VERSION_18 = 18,
-  QUIC_VERSION_19 = 19,
-  QUIC_VERSION_20 = 20,  // Current version.
+  QUIC_VERSION_16 = 16,  // STOP_WAITING frame.
+  QUIC_VERSION_18 = 18,  // PING frame.
+  QUIC_VERSION_19 = 19,  // Connection level flow control.
+  QUIC_VERSION_20 = 20,  // Independent stream/connection flow control windows.
+  QUIC_VERSION_21 = 21,  // Headers/crypto streams are flow controlled.
+  QUIC_VERSION_22 = 22,  // Send Server Config Update messages on crypto stream.
 };
 
 // This vector contains QUIC versions which we currently support.
@@ -288,14 +292,14 @@ enum QuicVersion {
 // element, with subsequent elements in descending order (versions can be
 // skipped as necessary).
 //
-// IMPORTANT: if you are addding to this list, follow the instructions at
+// IMPORTANT: if you are adding to this list, follow the instructions at
 // http://sites/quic/adding-and-removing-versions
-static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_20,
+static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_22,
+                                                     QUIC_VERSION_21,
+                                                     QUIC_VERSION_20,
                                                      QUIC_VERSION_19,
                                                      QUIC_VERSION_18,
-                                                     QUIC_VERSION_17,
-                                                     QUIC_VERSION_16,
-                                                     QUIC_VERSION_15};
+                                                     QUIC_VERSION_16};
 
 typedef std::vector<QuicVersion> QuicVersionVector;
 
@@ -333,7 +337,8 @@ NET_EXPORT_PRIVATE std::string QuicVersionVectorToString(
 NET_EXPORT_PRIVATE QuicTag MakeQuicTag(char a, char b, char c, char d);
 
 // Returns true if the tag vector contains the specified tag.
-bool ContainsQuicTag(const QuicTagVector& tag_vector, QuicTag tag);
+NET_EXPORT_PRIVATE bool ContainsQuicTag(const QuicTagVector& tag_vector,
+                                        QuicTag tag);
 
 // Size in bytes of the data or fec packet header.
 NET_EXPORT_PRIVATE size_t GetPacketHeaderSize(const QuicPacketHeader& header);
@@ -443,6 +448,8 @@ enum QuicErrorCode {
   QUIC_INVALID_PRIORITY = 49,
   // Too many streams already open.
   QUIC_TOO_MANY_OPEN_STREAMS = 18,
+  // The peer must send a FIN/RST for each stream, and has not been doing so.
+  QUIC_TOO_MANY_UNFINISHED_STREAMS = 66,
   // Received public reset for this connection.
   QUIC_PUBLIC_RESET = 19,
   // Invalid protocol version.
@@ -526,12 +533,14 @@ enum QuicErrorCode {
   // A handshake message arrived, but we are still validating the
   // previous handshake message.
   QUIC_CRYPTO_MESSAGE_WHILE_VALIDATING_CLIENT_HELLO = 54,
+  // A server config update arrived before the handshake is complete.
+  QUIC_CRYPTO_UPDATE_BEFORE_HANDSHAKE_COMPLETE = 65,
   // This connection involved a version negotiation which appears to have been
   // tampered with.
   QUIC_VERSION_NEGOTIATION_MISMATCH = 55,
 
   // No error. Used as bound while iterating.
-  QUIC_LAST_ERROR = 65,
+  QUIC_LAST_ERROR = 67,
 };
 
 struct NET_EXPORT_PRIVATE QuicPacketPublicHeader {
@@ -632,12 +641,25 @@ typedef std::set<QuicPacketSequenceNumber> SequenceNumberSet;
 // TODO(pwestin): Add a way to enforce the max size of this map.
 typedef std::map<QuicPacketSequenceNumber, QuicTime> TimeMap;
 
-struct NET_EXPORT_PRIVATE ReceivedPacketInfo {
-  ReceivedPacketInfo();
-  ~ReceivedPacketInfo();
+struct NET_EXPORT_PRIVATE QuicStopWaitingFrame {
+  QuicStopWaitingFrame();
+  ~QuicStopWaitingFrame();
 
   NET_EXPORT_PRIVATE friend std::ostream& operator<<(
-      std::ostream& os, const ReceivedPacketInfo& s);
+      std::ostream& os, const QuicStopWaitingFrame& s);
+  // Entropy hash of all packets up to, but not including, the least unacked
+  // packet.
+  QuicPacketEntropyHash entropy_hash;
+  // The lowest packet we've sent which is unacked, and we expect an ack for.
+  QuicPacketSequenceNumber least_unacked;
+};
+
+struct NET_EXPORT_PRIVATE QuicAckFrame {
+  QuicAckFrame();
+  ~QuicAckFrame();
+
+  NET_EXPORT_PRIVATE friend std::ostream& operator<<(
+      std::ostream& os, const QuicAckFrame& s);
 
   // Entropy hash of all packets up to largest observed not including missing
   // packets.
@@ -674,47 +696,31 @@ struct NET_EXPORT_PRIVATE ReceivedPacketInfo {
 // as missing.
 // Always returns false for sequence numbers less than least_unacked.
 bool NET_EXPORT_PRIVATE IsAwaitingPacket(
-    const ReceivedPacketInfo& received_info,
+    const QuicAckFrame& ack_frame,
     QuicPacketSequenceNumber sequence_number);
 
 // Inserts missing packets between [lower, higher).
 void NET_EXPORT_PRIVATE InsertMissingPacketsBetween(
-    ReceivedPacketInfo* received_info,
+    QuicAckFrame* ack_frame,
     QuicPacketSequenceNumber lower,
     QuicPacketSequenceNumber higher);
-
-struct NET_EXPORT_PRIVATE QuicStopWaitingFrame {
-  QuicStopWaitingFrame();
-  ~QuicStopWaitingFrame();
-
-  NET_EXPORT_PRIVATE friend std::ostream& operator<<(
-      std::ostream& os, const QuicStopWaitingFrame& s);
-
-  // Entropy hash of all packets up to, but not including, the least unacked
-  // packet.
-  QuicPacketEntropyHash entropy_hash;
-  // The lowest packet we've sent which is unacked, and we expect an ack for.
-  QuicPacketSequenceNumber least_unacked;
-};
-
-struct NET_EXPORT_PRIVATE QuicAckFrame {
-  QuicAckFrame();
-
-  NET_EXPORT_PRIVATE friend std::ostream& operator<<(
-      std::ostream& os, const QuicAckFrame& s);
-
-  QuicStopWaitingFrame sent_info;
-  ReceivedPacketInfo received_info;
-};
 
 // Defines for all types of congestion feedback that will be negotiated in QUIC,
 // kTCP MUST be supported by all QUIC implementations to guarantee 100%
 // compatibility.
 enum CongestionFeedbackType {
   kTCP,  // Used to mimic TCP.
-  kInterArrival,  // Use additional inter arrival information.
-  kFixRate,  // Provided for testing.
-  kTCPBBR,  // BBR implementation based on TCP congestion feedback.
+  kTimestamp,  // Use additional inter arrival timestamp information.
+};
+
+// Defines for all types of congestion control algorithms that can be used in
+// QUIC. Note that this is separate from the congestion feedback type -
+// some congestion control algorithms may use the same feedback type
+// (Reno and Cubic are the classic example for that).
+enum CongestionControlType {
+  kCubic,
+  kReno,
+  kBBR,
 };
 
 enum LossDetectionType {
@@ -728,18 +734,13 @@ struct NET_EXPORT_PRIVATE CongestionFeedbackMessageTCP {
   QuicByteCount receive_window;
 };
 
-struct NET_EXPORT_PRIVATE CongestionFeedbackMessageInterArrival {
-  CongestionFeedbackMessageInterArrival();
-  ~CongestionFeedbackMessageInterArrival();
+struct NET_EXPORT_PRIVATE CongestionFeedbackMessageTimestamp {
+  CongestionFeedbackMessageTimestamp();
+  ~CongestionFeedbackMessageTimestamp();
 
   // The set of received packets since the last feedback was sent, along with
   // their arrival times.
   TimeMap received_packet_times;
-};
-
-struct NET_EXPORT_PRIVATE CongestionFeedbackMessageFixRate {
-  CongestionFeedbackMessageFixRate();
-  QuicBandwidth bitrate;
 };
 
 struct NET_EXPORT_PRIVATE QuicCongestionFeedbackFrame {
@@ -750,11 +751,10 @@ struct NET_EXPORT_PRIVATE QuicCongestionFeedbackFrame {
       std::ostream& os, const QuicCongestionFeedbackFrame& c);
 
   CongestionFeedbackType type;
-  // This should really be a union, but since the inter arrival struct
+  // This should really be a union, but since the timestamp struct
   // is non-trivial, C++ prohibits it.
   CongestionFeedbackMessageTCP tcp;
-  CongestionFeedbackMessageInterArrival inter_arrival;
-  CongestionFeedbackMessageFixRate fix_rate;
+  CongestionFeedbackMessageTimestamp timestamp;
 };
 
 struct NET_EXPORT_PRIVATE QuicRstStreamFrame {

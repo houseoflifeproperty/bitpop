@@ -142,6 +142,7 @@ VideoPixelFormat VideoCaptureDeviceWin::TranslateMediaSubtypeToPixelFormat(
     { MEDIASUBTYPE_MJPG, PIXEL_FORMAT_MJPEG },
     { MEDIASUBTYPE_UYVY, PIXEL_FORMAT_UYVY },
     { MEDIASUBTYPE_ARGB32, PIXEL_FORMAT_ARGB },
+    { kMediaSubTypeHDYC, PIXEL_FORMAT_UYVY },
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(pixel_formats); ++i) {
     if (sub_type == pixel_formats[i].sub_type)
@@ -303,7 +304,7 @@ void VideoCaptureDeviceWin::AllocateAndStart(
   int count = 0, size = 0;
   hr = stream_config->GetNumberOfCapabilities(&count, &size);
   if (FAILED(hr)) {
-    DVLOG(2) << "Failed to GetNumberOfCapabilities";
+    SetErrorState("Failed to GetNumberOfCapabilities");
     return;
   }
 
@@ -355,6 +356,10 @@ void VideoCaptureDeviceWin::AllocateAndStart(
     // Connect the MJPEG filter to the Capture filter.
     hr += graph_builder_->ConnectDirect(output_mjpg_pin_, input_sink_pin_,
                                         NULL);
+  } else if (media_type->subtype == kMediaSubTypeHDYC) {
+    // HDYC pixel format, used by the DeckLink capture card, needs an AVI
+    // decompressor filter after source, let |graph_builder_| add it.
+    hr = graph_builder_->Connect(output_capture_pin_, input_sink_pin_);
   } else {
     hr = graph_builder_->ConnectDirect(output_capture_pin_, input_sink_pin_,
                                        NULL);

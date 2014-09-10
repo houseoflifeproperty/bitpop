@@ -210,14 +210,15 @@ FileTable.prototype.__proto__ = cr.ui.Table.prototype;
  * Decorates the element.
  * @param {HTMLElement} self Table to decorate.
  * @param {MetadataCache} metadataCache To retrieve metadata.
+ * @param {VolumeManager} volumeManager To retrieve volume info.
  * @param {boolean} fullPage True if it's full page File Manager,
  *                           False if a file open/save dialog.
  */
-FileTable.decorate = function(self, metadataCache, fullPage) {
+FileTable.decorate = function(self, metadataCache, volumeManager, fullPage) {
   cr.ui.Table.decorate(self);
   self.__proto__ = FileTable.prototype;
   self.metadataCache_ = metadataCache;
-  self.collator_ = Intl.Collator([], {numeric: true, sensitivity: 'base'});
+  self.volumeManager_ = volumeManager;
 
   var columns = [
     new cr.ui.table.TableColumn('name', str('NAME_COLUMN_LABEL'),
@@ -422,21 +423,6 @@ FileTable.prototype.shouldStartDragSelection_ = function(event) {
 };
 
 /**
- * Prepares the data model to be sorted by columns.
- * @param {cr.ui.ArrayDataModel} dataModel Data model to prepare.
- */
-FileTable.prototype.setupCompareFunctions = function(dataModel) {
-  dataModel.setCompareFunction('name',
-                               this.compareName_.bind(this));
-  dataModel.setCompareFunction('modificationTime',
-                               this.compareMtime_.bind(this));
-  dataModel.setCompareFunction('size',
-                               this.compareSize_.bind(this));
-  dataModel.setCompareFunction('type',
-                               this.compareType_.bind(this));
-};
-
-/**
  * Render the Name column of the detail table.
  *
  * Invoked by cr.ui.Table when a file needs to be rendered.
@@ -468,8 +454,7 @@ FileTable.prototype.renderName_ = function(entry, columnId, table) {
 FileTable.prototype.renderSize_ = function(entry, columnId, table) {
   var div = this.ownerDocument.createElement('div');
   div.className = 'size';
-  this.updateSize_(
-      div, entry, this.metadataCache_.getCached(entry, 'filesystem'));
+  this.updateSize_(div, entry);
 
   return div;
 };
@@ -479,20 +464,34 @@ FileTable.prototype.renderSize_ = function(entry, columnId, table) {
  *
  * @param {HTMLDivElement} div The table cell.
  * @param {Entry} entry The corresponding entry.
- * @param {Object} filesystemProps Metadata.
  * @private
  */
-FileTable.prototype.updateSize_ = function(div, entry, filesystemProps) {
+FileTable.prototype.updateSize_ = function(div, entry) {
+  var filesystemProps = this.metadataCache_.getCached(entry, 'filesystem');
   if (!filesystemProps) {
     div.textContent = '...';
+    return;
   } else if (filesystemProps.size === -1) {
     div.textContent = '--';
+    return;
   } else if (filesystemProps.size === 0 &&
              FileType.isHosted(entry)) {
-    div.textContent = '--';
-  } else {
-    div.textContent = util.bytesToString(filesystemProps.size);
+    var driveProps = this.metadataCache_.getCached(entry, 'drive');
+    if (!driveProps) {
+      var locationInfo = this.volumeManager_.getLocationInfo(entry);
+      if (locationInfo && locationInfo.isDriveBased) {
+        // Should not reach here, since we already have size metadata.
+        // Putting dots just in case.
+        div.textContent = '...';
+        return;
+      }
+    } else if (driveProps.hosted) {
+      div.textContent = '--';
+      return;
+    }
   }
+
+  div.textContent = util.bytesToString(filesystemProps.size);
 };
 
 /**
@@ -524,8 +523,7 @@ FileTable.prototype.renderDate_ = function(entry, columnId, table) {
   var div = this.ownerDocument.createElement('div');
   div.className = 'date';
 
-  this.updateDate_(div,
-      this.metadataCache_.getCached(entry, 'filesystem'));
+  this.updateDate_(div, entry);
   return div;
 };
 
@@ -533,10 +531,11 @@ FileTable.prototype.renderDate_ = function(entry, columnId, table) {
  * Sets up or updates the date cell.
  *
  * @param {HTMLDivElement} div The table cell.
- * @param {Object} filesystemProps Metadata.
+ * @param {Entry} entry Entry of file to update.
  * @private
  */
-FileTable.prototype.updateDate_ = function(div, filesystemProps) {
+FileTable.prototype.updateDate_ = function(div, entry) {
+  var filesystemProps = this.metadataCache_.getCached(entry, 'filesystem');
   if (!filesystemProps) {
     div.textContent = '...';
     return;
@@ -575,119 +574,41 @@ FileTable.prototype.updateDate_ = function(div, filesystemProps) {
  * @param {Entry} entry File entry.
  */
 FileTable.prototype.updateFileMetadata = function(item, entry) {
-  var props = this.metadataCache_.getCached(entry, 'filesystem');
-  this.updateDate_(item.querySelector('.date'), props);
-  this.updateSize_(item.querySelector('.size'), entry, props);
+  this.updateDate_(item.querySelector('.date'), entry);
+  this.updateSize_(item.querySelector('.size'), entry);
 };
 
 /**
  * Updates list items 'in place' on metadata change.
  * @param {string} type Type of metadata change.
- * @param {Object.<string, Object>} propsMap Map from entry URLs to metadata
- *     properties.
+ * @param {Array.<Entry>} entries Entries to update.
  */
-FileTable.prototype.updateListItemsMetadata = function(type, propsMap) {
+FileTable.prototype.updateListItemsMetadata = function(type, entries) {
+  var urls = util.entriesToURLs(entries);
   var forEachCell = function(selector, callback) {
     var cells = this.querySelectorAll(selector);
     for (var i = 0; i < cells.length; i++) {
       var cell = cells[i];
       var listItem = this.list_.getListItemAncestor(cell);
       var entry = this.dataModel.item(listItem.listIndex);
-      if (entry) {
-        var props = propsMap[entry.toURL()];
-        if (props)
-          callback.call(this, cell, entry, props, listItem);
-      }
+      if (entry && urls.indexOf(entry.toURL()) !== -1)
+        callback.call(this, cell, entry, listItem);
     }
   }.bind(this);
   if (type === 'filesystem') {
-    forEachCell('.table-row-cell > .date', function(item, entry, props) {
-      this.updateDate_(item, props);
+    forEachCell('.table-row-cell > .date', function(item, entry, unused) {
+      this.updateDate_(item, entry);
     });
-    forEachCell('.table-row-cell > .size', function(item, entry, props) {
-      this.updateSize_(item, entry, props);
+    forEachCell('.table-row-cell > .size', function(item, entry, unused) {
+      this.updateSize_(item, entry);
     });
   } else if (type === 'drive') {
     // The cell name does not matter as the entire list item is needed.
-    forEachCell('.table-row-cell > .date',
-                function(item, entry, props, listItem) {
+    forEachCell('.table-row-cell > .date', function(item, entry, listItem) {
+      var props = this.metadataCache_.getCached(entry, 'drive');
       filelist.updateListItemDriveProps(listItem, props);
     });
   }
-};
-
-/**
- * Compare by mtime first, then by name.
- * @param {Entry} a First entry.
- * @param {Entry} b Second entry.
- * @return {number} Compare result.
- * @private
- */
-FileTable.prototype.compareName_ = function(a, b) {
-  return this.collator_.compare(a.name, b.name);
-};
-
-/**
- * Compare by mtime first, then by name.
- * @param {Entry} a First entry.
- * @param {Entry} b Second entry.
- * @return {number} Compare result.
- * @private
- */
-FileTable.prototype.compareMtime_ = function(a, b) {
-  var aCachedFilesystem = this.metadataCache_.getCached(a, 'filesystem');
-  var aTime = aCachedFilesystem ? aCachedFilesystem.modificationTime : 0;
-
-  var bCachedFilesystem = this.metadataCache_.getCached(b, 'filesystem');
-  var bTime = bCachedFilesystem ? bCachedFilesystem.modificationTime : 0;
-
-  if (aTime > bTime)
-    return 1;
-
-  if (aTime < bTime)
-    return -1;
-
-  return this.collator_.compare(a.name, b.name);
-};
-
-/**
- * Compare by size first, then by name.
- * @param {Entry} a First entry.
- * @param {Entry} b Second entry.
- * @return {number} Compare result.
- * @private
- */
-FileTable.prototype.compareSize_ = function(a, b) {
-  var aCachedFilesystem = this.metadataCache_.getCached(a, 'filesystem');
-  var aSize = aCachedFilesystem ? aCachedFilesystem.size : 0;
-
-  var bCachedFilesystem = this.metadataCache_.getCached(b, 'filesystem');
-  var bSize = bCachedFilesystem ? bCachedFilesystem.size : 0;
-
-  if (aSize !== bSize) return aSize - bSize;
-    return this.collator_.compare(a.name, b.name);
-};
-
-/**
- * Compare by type first, then by subtype and then by name.
- * @param {Entry} a First entry.
- * @param {Entry} b Second entry.
- * @return {number} Compare result.
- * @private
- */
-FileTable.prototype.compareType_ = function(a, b) {
-  // Directories precede files.
-  if (a.isDirectory !== b.isDirectory)
-    return Number(b.isDirectory) - Number(a.isDirectory);
-
-  var aType = FileType.typeToString(FileType.getType(a));
-  var bType = FileType.typeToString(FileType.getType(b));
-
-  var result = this.collator_.compare(aType, bType);
-  if (result !== 0)
-    return result;
-
-  return this.collator_.compare(a.name, b.name);
 };
 
 /**
@@ -829,6 +750,8 @@ filelist.updateListItemDriveProps = function(li, driveProps) {
 
   if (driveProps.customIconUrl)
     iconDiv.style.backgroundImage = 'url(' + driveProps.customIconUrl + ')';
+  else
+    iconDiv.style.backgroundImage = '';  // Back to the default image.
 
   if (li.classList.contains('directory'))
     iconDiv.classList.toggle('shared', driveProps.shared);

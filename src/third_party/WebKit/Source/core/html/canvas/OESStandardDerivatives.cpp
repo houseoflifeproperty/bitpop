@@ -27,7 +27,7 @@
 
 #include "core/html/canvas/OESStandardDerivatives.h"
 
-namespace WebCore {
+namespace blink {
 
 OESStandardDerivatives::OESStandardDerivatives(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
@@ -45,9 +45,9 @@ WebGLExtensionName OESStandardDerivatives::name() const
     return OESStandardDerivativesName;
 }
 
-PassRefPtr<OESStandardDerivatives> OESStandardDerivatives::create(WebGLRenderingContextBase* context)
+PassRefPtrWillBeRawPtr<OESStandardDerivatives> OESStandardDerivatives::create(WebGLRenderingContextBase* context)
 {
-    return adoptRef(new OESStandardDerivatives(context));
+    return adoptRefWillBeNoop(new OESStandardDerivatives(context));
 }
 
 bool OESStandardDerivatives::supported(WebGLRenderingContextBase* context)
@@ -60,4 +60,4 @@ const char* OESStandardDerivatives::extensionName()
     return "OES_standard_derivatives";
 }
 
-} // namespace WebCore
+} // namespace blink

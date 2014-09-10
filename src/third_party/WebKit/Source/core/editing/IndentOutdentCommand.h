@@ -29,7 +29,7 @@
 #include "core/editing/ApplyBlockElementCommand.h"
 #include "core/editing/EditAction.h"
 
-namespace WebCore {
+namespace blink {
 
 class IndentOutdentCommand FINAL : public ApplyBlockElementCommand {
 public:
@@ -49,14 +49,14 @@ private:
     void outdentRegion(const VisiblePosition&, const VisiblePosition&);
     void outdentParagraph();
     bool tryIndentingAsListItem(const Position&, const Position&);
-    void indentIntoBlockquote(const Position&, const Position&, RefPtrWillBeRawPtr<Element>&);
+    void indentIntoBlockquote(const Position&, const Position&, RefPtrWillBeRawPtr<HTMLElement>&);
 
     virtual void formatSelection(const VisiblePosition& startOfSelection, const VisiblePosition& endOfSelection) OVERRIDE;
-    virtual void formatRange(const Position& start, const Position& end, const Position& endOfSelection, RefPtrWillBeRawPtr<Element>& blockquoteForNextIndent) OVERRIDE;
+    virtual void formatRange(const Position& start, const Position& end, const Position& endOfSelection, RefPtrWillBeRawPtr<HTMLElement>& blockquoteForNextIndent) OVERRIDE;
 
     EIndentType m_typeOfAction;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // IndentOutdentCommand_h

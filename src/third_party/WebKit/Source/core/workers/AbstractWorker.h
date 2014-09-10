@@ -31,7 +31,6 @@
 #ifndef AbstractWorker_h
 #define AbstractWorker_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
@@ -41,7 +40,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/text/AtomicStringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class KURL;
@@ -59,12 +58,16 @@ public:
     AbstractWorker(ExecutionContext*);
     virtual ~AbstractWorker();
 
+    virtual void trace(Visitor* visitor)
+    {
+        EventTargetWithInlineData::trace(visitor);
+    }
+
 protected:
     // Helper function that converts a URL to an absolute URL and checks the result for validity.
     KURL resolveURL(const String& url, ExceptionState&);
-    intptr_t asID() const { return reinterpret_cast<intptr_t>(this); }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AbstractWorker_h

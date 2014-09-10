@@ -777,6 +777,30 @@ TEST_F('HistoryWebUIRealBackendTest', 'basic', function() {
   testDone();
 });
 
+TEST_F('HistoryWebUIRealBackendTest', 'atLeastOneFocusable', function() {
+  expectEquals(1, document.querySelectorAll('[tabindex="0"]').length);
+  testDone();
+});
+
+TEST_F('HistoryWebUIRealBackendTest', 'deleteRemovesEntry', function() {
+  assertTrue(historyModel.deletingHistoryAllowed);
+
+  var visit = document.querySelector('.entry').visit;
+  visit.titleLink.focus();
+  assertEquals(visit.titleLink, document.activeElement);
+
+  var deleteKey = document.createEvent('KeyboardEvent');
+  deleteKey.initKeyboardEvent('keydown', true, true, window, 'U+007F');
+  assertEquals('U+007F', deleteKey.keyIdentifier);
+
+  assertFalse(historyModel.isDeletingVisits());
+  expectFalse(visit.titleLink.dispatchEvent(deleteKey));
+  expectTrue(historyModel.isDeletingVisits());
+
+  expectNotEquals(visit.dropDown, document.activeElement);
+  testDone();
+});
+
 /**
  * Test individual deletion of history entries.
  */
@@ -822,6 +846,27 @@ TEST_F('HistoryWebUIRealBackendTest', 'singleDeletion', function() {
   });
 });
 
+TEST_F('HistoryWebUIRealBackendTest', 'leftRightChangeFocus', function() {
+  var visit = document.querySelector('.entry').visit;
+  visit.titleLink.focus();
+  assertEquals(visit.titleLink, document.activeElement);
+
+  var right = document.createEvent('KeyboardEvent');
+  right.initKeyboardEvent('keydown', true, true, window, 'Right');
+  assertEquals('Right', right.keyIdentifier);
+  expectFalse(visit.titleLink.dispatchEvent(right));
+
+  assertEquals(visit.dropDown, document.activeElement);
+
+  var left = document.createEvent('KeyboardEvent');
+  left.initKeyboardEvent('keydown', true, true, window, 'Left');
+  assertEquals('Left', left.keyIdentifier);
+  expectFalse(visit.dropDown.dispatchEvent(left));
+
+  expectEquals(visit.titleLink, document.activeElement);
+  testDone();
+});
+
 /**
  * Fixture for History WebUI testing when deletions are prohibited.
  * @extends {HistoryWebUIRealBackendTest}
@@ -854,12 +899,52 @@ TEST_F('HistoryWebUIDeleteProhibitedTest', 'deleteProhibited', function() {
   var removeVisit = $('remove-visit');
   expectTrue(removeVisit.disabled);
 
-  // Attempting to remove items anyway should fail.
-  historyModel.removeVisitsFromHistory(historyModel.visits_, function () {
-    // The callback is only called on success.
-    testDone([false, 'Delete succeeded even though it was prohibited.']);
-  });
-  waitForCallback('deleteFailed', testDone);
+  testDone();
+});
+
+TEST_F('HistoryWebUIDeleteProhibitedTest', 'atLeastOneFocusable', function() {
+  expectEquals(1, document.querySelectorAll('[tabindex="0"]').length);
+  testDone();
+});
+
+TEST_F('HistoryWebUIDeleteProhibitedTest', 'leftRightChangeFocus', function() {
+  var visit = document.querySelector('.entry').visit;
+  visit.titleLink.focus();
+  assertEquals(visit.titleLink, document.activeElement);
+
+  var right = document.createEvent('KeyboardEvent');
+  right.initKeyboardEvent('keydown', true, true, window, 'Right');
+  assertEquals('Right', right.keyIdentifier);
+  expectFalse(visit.titleLink.dispatchEvent(right));
+
+  assertEquals(visit.dropDown, document.activeElement);
+
+  var left = document.createEvent('KeyboardEvent');
+  left.initKeyboardEvent('keydown', true, true, window, 'Left');
+  assertEquals('Left', left.keyIdentifier);
+  expectFalse(visit.dropDown.dispatchEvent(left));
+
+  expectEquals(visit.titleLink, document.activeElement);
+  testDone();
+});
+
+TEST_F('HistoryWebUIDeleteProhibitedTest', 'deleteIgnored', function() {
+  assertFalse(historyModel.deletingHistoryAllowed);
+
+  var visit = document.querySelector('.entry').visit;
+  visit.titleLink.focus();
+  assertEquals(visit.titleLink, document.activeElement);
+
+  var deleteKey = document.createEvent('KeyboardEvent');
+  deleteKey.initKeyboardEvent('keydown', true, true, window, 'U+007F');
+  assertEquals('U+007F', deleteKey.keyIdentifier);
+
+  assertFalse(historyModel.isDeletingVisits());
+  expectTrue(visit.titleLink.dispatchEvent(deleteKey));
+  expectFalse(historyModel.isDeletingVisits());
+
+  expectEquals(visit.titleLink, document.activeElement);
+  testDone();
 });
 
 /**
@@ -899,6 +984,7 @@ TEST_F('HistoryWebUIIDNTest', 'basic', function() {
 /**
  * Fixture for a test that uses the real backend and tests how the history
  * page deals with odd schemes in URLs.
+ * @extends {HistoryWebUIRealBackendTest}
  */
 function HistoryWebUIWithSchemesTest() {}
 

@@ -42,10 +42,13 @@
 #include "core/inspector/InspectorResourceAgent.h"
 #include "core/inspector/InspectorTimelineAgent.h"
 #include "core/inspector/InstrumentingAgents.h"
+#include "core/inspector/ScriptAsyncCallStack.h"
+#include "core/inspector/ScriptCallStack.h"
 #include "core/inspector/WorkerInspectorController.h"
+#include "core/page/Page.h"
 #include "core/workers/WorkerGlobalScope.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 static HashSet<InstrumentingAgents*>* instrumentingAgentsSet = 0;
@@ -105,11 +108,6 @@ void continueAfterXFrameOptionsDeniedImpl(LocalFrame* frame, DocumentLoader* loa
     didReceiveResourceResponseButCanceledImpl(frame, loader, identifier, r);
 }
 
-void continueWithPolicyDownloadImpl(LocalFrame* frame, DocumentLoader* loader, unsigned long identifier, const ResourceResponse& r)
-{
-    didReceiveResourceResponseButCanceledImpl(frame, loader, identifier, r);
-}
-
 void continueWithPolicyIgnoreImpl(LocalFrame* frame, DocumentLoader* loader, unsigned long identifier, const ResourceResponse& r)
 {
     didReceiveResourceResponseButCanceledImpl(frame, loader, identifier, r);
@@ -146,6 +144,15 @@ String preprocessEventListenerImpl(InstrumentingAgents* instrumentingAgents, Loc
     if (InspectorDebuggerAgent* debuggerAgent = instrumentingAgents->inspectorDebuggerAgent())
         return debuggerAgent->preprocessEventListener(frame, source, url, functionName);
     return source;
+}
+
+void appendAsyncCallStack(ExecutionContext* executionContext, ScriptCallStack* callStack)
+{
+    InstrumentingAgents* instrumentingAgents = instrumentingAgentsFor(executionContext);
+    if (!instrumentingAgents)
+        return;
+    if (InspectorDebuggerAgent* debuggerAgent = instrumentingAgents->inspectorDebuggerAgent())
+        callStack->setAsyncCallStack(debuggerAgent->currentAsyncStackTraceForConsole());
 }
 
 bool canvasAgentEnabled(ExecutionContext* executionContext)
@@ -263,5 +270,5 @@ InstrumentingAgents* instrumentationForWorkerGlobalScope(WorkerGlobalScope* work
     return 0;
 }
 
-} // namespace WebCore
+} // namespace blink
 

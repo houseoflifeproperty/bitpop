@@ -31,17 +31,17 @@
 #ifndef FileSystemFlags_h
 #define FileSystemFlags_h
 
-#include "bindings/v8/Dictionary.h"
+#include "bindings/core/v8/Dictionary.h"
 
-namespace WebCore {
+namespace blink {
 
 struct FileSystemFlags  {
     explicit FileSystemFlags(const Dictionary& options)
         : create(false)
         , exclusive(false)
     {
-        options.get("create", create);
-        options.get("exclusive", exclusive);
+        DictionaryHelper::get(options, "create", create);
+        DictionaryHelper::get(options, "exclusive", exclusive);
     }
 
     bool create;

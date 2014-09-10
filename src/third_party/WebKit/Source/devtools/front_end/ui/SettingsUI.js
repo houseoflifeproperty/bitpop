@@ -115,11 +115,8 @@ WebInspector.SettingsUI.createSettingInputField = function(label, setting, numer
     inputElement.addEventListener("keydown", onKeyDown, false);
 
     var errorMessageLabel;
-    if (validatorCallback) {
-        errorMessageLabel = p.createChild("div");
-        errorMessageLabel.classList.add("field-error-message");
-        validate();
-    }
+    if (validatorCallback)
+        errorMessageLabel = p.createChild("div", "field-error-message");
 
     function onInput()
     {
@@ -133,6 +130,36 @@ WebInspector.SettingsUI.createSettingInputField = function(label, setting, numer
     {
         if (isEnterKey(event))
             apply();
+        incrementForArrows(event);
+    }
+
+    function incrementForArrows(event)
+    {
+        if (!numeric)
+            return;
+
+        var increment = event.keyIdentifier === "Up" ? 1 : event.keyIdentifier === "Down" ? -1 : 0;
+        if (!increment)
+            return;
+        if (event.shiftKey)
+            increment *= 10;
+
+        var value = inputElement.value;
+        if (validatorCallback && validatorCallback(value))
+            return;
+        value = Number(value);
+        if (clearForZero && !value)
+            return;
+        value += increment;
+        if (clearForZero && !value)
+            return;
+        value = String(value);
+        if (validatorCallback && validatorCallback(value))
+            return;
+
+        inputElement.value = value;
+        apply();
+        event.preventDefault();
     }
 
     function validate()
@@ -167,6 +194,9 @@ WebInspector.SettingsUI.createSettingInputField = function(label, setting, numer
     }
     onSettingChange();
 
+    if (validatorCallback)
+      validate();
+
     return p;
 }
 
@@ -178,10 +208,9 @@ WebInspector.SettingsUI.createSettingInputField = function(label, setting, numer
 WebInspector.SettingsUI.createCustomSetting = function(name, element)
 {
     var p = document.createElement("p");
-    var fieldsetElement = document.createElement("fieldset");
+    var fieldsetElement = p.createChild("fieldset");
     fieldsetElement.createChild("label").textContent = name;
     fieldsetElement.appendChild(element);
-    p.appendChild(fieldsetElement);
     return p;
 }
 

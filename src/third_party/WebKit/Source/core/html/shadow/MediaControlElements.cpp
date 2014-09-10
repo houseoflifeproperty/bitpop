@@ -30,9 +30,8 @@
 #include "config.h"
 #include "core/html/shadow/MediaControlElements.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/DOMTokenList.h"
-#include "core/dom/FullscreenElementStack.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/MouseEvent.h"
 #include "core/frame/LocalFrame.h"
@@ -48,7 +47,7 @@
 #include "core/rendering/RenderVideo.h"
 #include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -57,6 +56,33 @@ static const AtomicString& getMediaControlTimeRemainingDisplayElementShadowPseud
 
 // This is the duration from mediaControls.css
 static const double fadeOutDuration = 0.3;
+
+static bool isUserInteractionEvent(Event* event)
+{
+    const AtomicString& type = event->type();
+    return type == EventTypeNames::mousedown
+        || type == EventTypeNames::mouseup
+        || type == EventTypeNames::click
+        || type == EventTypeNames::dblclick
+        || event->isKeyboardEvent()
+        || event->isTouchEvent();
+}
+
+// Sliders (the volume control and timeline) need to capture some additional events used when dragging the thumb.
+static bool isUserInteractionEventForSlider(Event* event)
+{
+    const AtomicString& type = event->type();
+    return type == EventTypeNames::mousedown
+        || type == EventTypeNames::mouseup
+        || type == EventTypeNames::click
+        || type == EventTypeNames::dblclick
+        || type == EventTypeNames::mouseover
+        || type == EventTypeNames::mouseout
+        || type == EventTypeNames::mousemove
+        || event->isKeyboardEvent()
+        || event->isTouchEvent();
+}
+
 
 MediaControlPanelElement::MediaControlPanelElement(MediaControls& mediaControls)
     : MediaControlDivElement(mediaControls, MediaControlsPanel)
@@ -139,6 +165,11 @@ void MediaControlPanelElement::makeTransparent()
 void MediaControlPanelElement::setIsDisplayed(bool isDisplayed)
 {
     m_isDisplayed = isDisplayed;
+}
+
+bool MediaControlPanelElement::keepEventInNode(Event* event)
+{
+    return isUserInteractionEvent(event);
 }
 
 // ----------------------------
@@ -277,7 +308,7 @@ void MediaControlOverlayPlayButtonElement::defaultEventHandler(Event* event)
 
 void MediaControlOverlayPlayButtonElement::updateDisplayType()
 {
-    if (mediaElement().togglePlayStateWillPlay()) {
+    if (mediaElement().shouldShowControls() && mediaElement().togglePlayStateWillPlay()) {
         show();
     } else
         hide();
@@ -287,6 +318,11 @@ const AtomicString& MediaControlOverlayPlayButtonElement::shadowPseudoId() const
 {
     DEFINE_STATIC_LOCAL(AtomicString, id, ("-webkit-media-controls-overlay-play-button", AtomicString::ConstructFromLiteral));
     return id;
+}
+
+bool MediaControlOverlayPlayButtonElement::keepEventInNode(Event* event)
+{
+    return isUserInteractionEvent(event);
 }
 
 
@@ -396,11 +432,15 @@ void MediaControlTimelineElement::setDuration(double duration)
     setFloatingPointAttribute(maxAttr, std::isfinite(duration) ? duration : 0);
 }
 
-
 const AtomicString& MediaControlTimelineElement::shadowPseudoId() const
 {
     DEFINE_STATIC_LOCAL(AtomicString, id, ("-webkit-media-controls-timeline", AtomicString::ConstructFromLiteral));
     return id;
+}
+
+bool MediaControlTimelineElement::keepEventInNode(Event* event)
+{
+    return isUserInteractionEventForSlider(event);
 }
 
 // ----------------------------
@@ -466,6 +506,11 @@ const AtomicString& MediaControlVolumeSliderElement::shadowPseudoId() const
     return id;
 }
 
+bool MediaControlVolumeSliderElement::keepEventInNode(Event* event)
+{
+    return isUserInteractionEventForSlider(event);
+}
+
 // ----------------------------
 
 MediaControlFullscreenButtonElement::MediaControlFullscreenButtonElement(MediaControls& mediaControls)
@@ -485,10 +530,10 @@ PassRefPtrWillBeRawPtr<MediaControlFullscreenButtonElement> MediaControlFullscre
 void MediaControlFullscreenButtonElement::defaultEventHandler(Event* event)
 {
     if (event->type() == EventTypeNames::click) {
-        if (FullscreenElementStack::isActiveFullScreenElement(&mediaElement()))
-            FullscreenElementStack::from(document()).webkitCancelFullScreen();
+        if (mediaElement().isFullscreen())
+            mediaElement().exitFullscreen();
         else
-            FullscreenElementStack::from(document()).requestFullScreenForElement(&mediaElement(), 0, FullscreenElementStack::ExemptIFrameAllowFullScreenRequirement);
+            mediaElement().enterFullscreen();
         event->setDefaultHandled();
     }
     HTMLInputElement::defaultEventHandler(event);
@@ -675,4 +720,4 @@ void MediaControlTextTrackContainerElement::updateSizes()
 
 // ----------------------------
 
-} // namespace WebCore
+} // namespace blink

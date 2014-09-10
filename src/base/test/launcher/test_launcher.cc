@@ -12,8 +12,8 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/environment.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/format_macros.h"
 #include "base/hash.h"
@@ -41,6 +41,10 @@
 #include "base/mac/scoped_nsautorelease_pool.h"
 #endif
 
+#if defined(OS_WIN)
+#include "base/win/windows_version.h"
+#endif
+
 namespace base {
 
 // Launches a child process using |command_line|. If the child process is still
@@ -48,7 +52,7 @@ namespace base {
 // Returns exit code of the process.
 int LaunchChildTestProcessWithOptions(const CommandLine& command_line,
                                       const LaunchOptions& options,
-                                      bool use_job_objects,
+                                      int flags,
                                       base::TimeDelta timeout,
                                       bool* was_timeout);
 
@@ -79,7 +83,7 @@ const int kOutputTimeoutSeconds = 15;
 // Limit of output snippet lines when printing to stdout.
 // Avoids flooding the logs with amount of output that gums up
 // the infrastructure.
-const size_t kOutputSnippetLinesLimit = 50;
+const size_t kOutputSnippetLinesLimit = 5000;
 
 // Set of live launch test processes with corresponding lock (it is allowed
 // for callers to launch processes on different threads).
@@ -223,7 +227,7 @@ void RunCallback(
 void DoLaunchChildTestProcess(
     const CommandLine& command_line,
     base::TimeDelta timeout,
-    bool use_job_objects,
+    int flags,
     bool redirect_stdio,
     scoped_refptr<MessageLoopProxy> message_loop_proxy,
     const TestLauncher::LaunchChildGTestProcessCallback& callback) {
@@ -275,7 +279,7 @@ void DoLaunchChildTestProcess(
 
   bool was_timeout = false;
   int exit_code = LaunchChildTestProcessWithOptions(
-      command_line, options, use_job_objects, timeout, &was_timeout);
+      command_line, options, flags, timeout, &was_timeout);
 
   if (redirect_stdio) {
 #if defined(OS_WIN)
@@ -336,20 +340,6 @@ TestLauncher::TestLauncher(TestLauncherDelegate* launcher_delegate,
                       this,
                       &TestLauncher::OnOutputTimeout),
       parallel_jobs_(parallel_jobs) {
-  if (BotModeEnabled()) {
-    fprintf(stdout,
-            "Enabling defaults optimized for continuous integration bots.\n");
-    fflush(stdout);
-
-    // Enable test retries by default for bots. This can be still overridden
-    // from command line using --test-launcher-retry-limit flag.
-    retry_limit_ = 3;
-  } else {
-    // Default to serial test execution if not running on a bot. This makes it
-    // possible to disable stdio redirection and can still be overridden with
-    // --test-launcher-jobs flag.
-    parallel_jobs_ = 1;
-  }
 }
 
 TestLauncher::~TestLauncher() {
@@ -409,7 +399,7 @@ void TestLauncher::LaunchChildGTestProcess(
     const CommandLine& command_line,
     const std::string& wrapper,
     base::TimeDelta timeout,
-    bool use_job_objects,
+    int flags,
     const LaunchChildGTestProcessCallback& callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
@@ -427,7 +417,7 @@ void TestLauncher::LaunchChildGTestProcess(
       Bind(&DoLaunchChildTestProcess,
            new_command_line,
            timeout,
-           use_job_objects,
+           flags,
            redirect_stdio,
            MessageLoopProxy::current(),
            Bind(&TestLauncher::OnLaunchTestProcessFinished,
@@ -576,6 +566,12 @@ void TestLauncher::OnTestFinished(const TestResult& result) {
   test_started_count_ += retry_started_count;
 }
 
+// static
+std::string TestLauncher::FormatFullTestName(const std::string& test_case_name,
+                                             const std::string& test_name) {
+  return test_case_name + "." + test_name;
+}
+
 bool TestLauncher::Init() {
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
 
@@ -644,6 +640,9 @@ bool TestLauncher::Init() {
     }
 
     retry_limit_ = retry_limit;
+  } else if (!CommandLine::ForCurrentProcess()->HasSwitch(kGTestFilterFlag)) {
+    // Retry failures 3 times by default if we are running all of the tests.
+    retry_limit_ = 3;
   }
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
@@ -657,7 +656,12 @@ bool TestLauncher::Init() {
     }
 
     parallel_jobs_ = jobs;
+  } else if (CommandLine::ForCurrentProcess()->HasSwitch(kGTestFilterFlag)) {
+    // Do not run jobs in parallel by default if we are running a subset of
+    // the tests.
+    parallel_jobs_ = 1;
   }
+
   fprintf(stdout, "Using %" PRIuS " parallel jobs.\n", parallel_jobs_);
   fflush(stdout);
   worker_pool_owner_.reset(
@@ -785,9 +789,8 @@ void TestLauncher::RunTests() {
     const testing::TestCase* test_case = unit_test->GetTestCase(i);
     for (int j = 0; j < test_case->total_test_count(); ++j) {
       const testing::TestInfo* test_info = test_case->GetTestInfo(j);
-      std::string test_name = test_info->test_case_name();
-      test_name.append(".");
-      test_name.append(test_info->name());
+      std::string test_name = FormatFullTestName(
+          test_info->test_case_name(), test_info->name());
 
       results_tracker_.AddTest(test_name);
 
@@ -799,6 +802,9 @@ void TestLauncher::RunTests() {
         if (!command_line->HasSwitch(kGTestRunDisabledTestsFlag))
           continue;
       }
+
+      if (!launcher_delegate_->ShouldRunTest(test_case, test_info))
+        continue;
 
       // Skip the test that doesn't match the filter (if given).
       if (!positive_test_filter_.empty()) {
@@ -821,9 +827,6 @@ void TestLauncher::RunTests() {
         }
       }
       if (excluded)
-        continue;
-
-      if (!launcher_delegate_->ShouldRunTest(test_case, test_info))
         continue;
 
       if (base::Hash(test_name) % total_shards_ !=
@@ -1004,7 +1007,7 @@ CommandLine PrepareCommandLineForGTest(const CommandLine& command_line,
 // TODO(phajdan.jr): Move to anonymous namespace.
 int LaunchChildTestProcessWithOptions(const CommandLine& command_line,
                                       const LaunchOptions& options,
-                                      bool use_job_objects,
+                                      int flags,
                                       base::TimeDelta timeout,
                                       bool* was_timeout) {
 #if defined(OS_POSIX)
@@ -1018,19 +1021,23 @@ int LaunchChildTestProcessWithOptions(const CommandLine& command_line,
   DCHECK(!new_options.job_handle);
 
   win::ScopedHandle job_handle;
-  if (use_job_objects) {
+  if (flags & TestLauncher::USE_JOB_OBJECTS) {
     job_handle.Set(CreateJobObject(NULL, NULL));
     if (!job_handle.IsValid()) {
       LOG(ERROR) << "Could not create JobObject.";
       return -1;
     }
 
+    DWORD job_flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+
     // Allow break-away from job since sandbox and few other places rely on it
     // on Windows versions prior to Windows 8 (which supports nested jobs).
-    // TODO(phajdan.jr): Do not allow break-away on Windows 8.
-    if (!SetJobObjectLimitFlags(job_handle.Get(),
-                                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE |
-                                JOB_OBJECT_LIMIT_BREAKAWAY_OK)) {
+    if (win::GetVersion() < win::VERSION_WIN8 &&
+        flags & TestLauncher::ALLOW_BREAKAWAY_FROM_JOB) {
+      job_flags |= JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+    }
+
+    if (!SetJobObjectLimitFlags(job_handle.Get(), job_flags)) {
       LOG(ERROR) << "Could not SetJobObjectLimitFlags.";
       return -1;
     }

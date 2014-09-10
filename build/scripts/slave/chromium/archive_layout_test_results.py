@@ -71,6 +71,11 @@ def _CollectArchiveFiles(output_dir):
         actual_file_list.append(os.path.join(rel_path, name))
   if os.path.exists(os.path.join(output_dir, 'results.html')):
     actual_file_list.append('results.html')
+  if sys.platform == 'win32':
+    if os.path.exists(os.path.join(output_dir, 'access_log.txt')):
+      actual_file_list.append('access_log.txt')
+    if os.path.exists(os.path.join(output_dir, 'error_log.txt')):
+      actual_file_list.append('error_log.txt')
   return (actual_file_list, diff_file_list)
 
 

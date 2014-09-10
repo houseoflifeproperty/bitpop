@@ -83,7 +83,7 @@ const char* cl_error_to_string(cl_int err) {
 }
 #endif
 
-// TODO refactor BenchTimer to be used here
+// TODO refactor Timer to be used here
 double get_seconds() {
 #if SK_BUILD_FOR_WIN32
     LARGE_INTEGER currentTime;
@@ -117,7 +117,7 @@ bool get_directory(const char path[], SkTArray<SkString>* entries) {
     while ((entry = readdir(dir))) {
         // dirent only gives relative paths, we need to join them to the base path to check if they
         // are directories.
-        SkString joinedPath = SkOSPath::SkPathJoin(path, entry->d_name);
+        SkString joinedPath = SkOSPath::Join(path, entry->d_name);
 
         // We only care about files
         if (!sk_isdir(joinedPath.c_str())) {

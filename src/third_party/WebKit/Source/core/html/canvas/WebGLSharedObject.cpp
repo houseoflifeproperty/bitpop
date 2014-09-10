@@ -30,7 +30,7 @@
 #include "core/html/canvas/WebGLContextGroup.h"
 #include "core/html/canvas/WebGLRenderingContextBase.h"
 
-namespace WebCore {
+namespace blink {
 
 WebGLSharedObject::WebGLSharedObject(WebGLRenderingContextBase* context)
     : WebGLObject(context),
@@ -50,7 +50,7 @@ void WebGLSharedObject::detachContextGroup()
     if (m_contextGroup) {
         deleteObject(0);
         m_contextGroup->removeObject(this);
-        m_contextGroup = 0;
+        m_contextGroup = nullptr;
     }
 }
 

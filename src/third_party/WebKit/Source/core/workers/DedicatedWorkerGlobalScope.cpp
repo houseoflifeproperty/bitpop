@@ -31,15 +31,15 @@
 #include "config.h"
 #include "core/workers/DedicatedWorkerGlobalScope.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/SerializedScriptValue.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/workers/DedicatedWorkerThread.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerObjectProxy.h"
 #include "core/workers/WorkerThreadStartupData.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<DedicatedWorkerGlobalScope> DedicatedWorkerGlobalScope::create(DedicatedWorkerThread* thread, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData, double timeOrigin)
 {
@@ -63,7 +63,7 @@ const AtomicString& DedicatedWorkerGlobalScope::interfaceName() const
     return EventTargetNames::DedicatedWorkerGlobalScope;
 }
 
-void DedicatedWorkerGlobalScope::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
+void DedicatedWorkerGlobalScope::postMessage(ExecutionContext*, PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
 {
     // Disentangle the port in preparation for sending it to the remote context.
     OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(ports, exceptionState);
@@ -97,10 +97,11 @@ private:
 
     virtual void performTask(ExecutionContext* context) OVERRIDE
     {
+        ASSERT(context->isDocument());
         if (m_isDeprecation)
-            UseCounter::countDeprecation(*toDocument(context), m_feature);
+            UseCounter::countDeprecation(context, m_feature);
         else
-            UseCounter::count(*toDocument(context), m_feature);
+            UseCounter::count(context, m_feature);
     }
 
     UseCounter::Feature m_feature;
@@ -122,4 +123,4 @@ void DedicatedWorkerGlobalScope::trace(Visitor* visitor)
     WorkerGlobalScope::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

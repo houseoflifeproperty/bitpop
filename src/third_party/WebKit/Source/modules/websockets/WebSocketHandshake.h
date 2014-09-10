@@ -33,18 +33,19 @@
 
 #include "modules/websockets/WebSocketExtensionDispatcher.h"
 #include "modules/websockets/WebSocketExtensionProcessor.h"
+#include "platform/heap/Handle.h"
 #include "platform/network/WebSocketHandshakeRequest.h"
 #include "platform/network/WebSocketHandshakeResponse.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 
-class WebSocketHandshake {
-    WTF_MAKE_NONCOPYABLE(WebSocketHandshake); WTF_MAKE_FAST_ALLOCATED;
+class WebSocketHandshake : public GarbageCollectedFinalized<WebSocketHandshake> {
+    WTF_MAKE_NONCOPYABLE(WebSocketHandshake);
 public:
     // This enum is reused for histogram. When this needs to be modified, add a
     // new enum for histogram and convert mode values into values in the new
@@ -97,6 +98,8 @@ public:
 
     static String getExpectedWebSocketAccept(const String& secWebSocketKey);
 
+    void trace(Visitor*);
+
 private:
     KURL httpURLForAuthenticationAndCookies() const;
 
@@ -110,7 +113,7 @@ private:
     KURL m_url;
     String m_clientProtocol;
     bool m_secure;
-    Document* m_document;
+    RawPtrWillBeMember<Document> m_document;
 
     Mode m_mode;
 
@@ -128,6 +131,6 @@ private:
     WebSocketExtensionDispatcher m_extensionDispatcher;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebSocketHandshake_h

@@ -14,6 +14,7 @@
 #include "chrome/browser/android/bookmarks/partner_bookmarks_shim.h"
 #include "chrome/browser/bookmarks/chrome_bookmark_client.h"
 #include "components/bookmarks/browser/base_bookmark_model_observer.h"
+#include "components/bookmarks/common/android/bookmark_id.h"
 
 class Profile;
 
@@ -27,6 +28,42 @@ class BookmarksBridge : public BaseBookmarkModelObserver,
   void Destroy(JNIEnv*, jobject);
 
   static bool RegisterBookmarksBridge(JNIEnv* env);
+
+  base::android::ScopedJavaLocalRef<jobject> GetBookmarkByID(
+      JNIEnv* env,
+      jobject obj,
+      jlong id,
+      jint type);
+
+  void GetPermanentNodeIDs(JNIEnv* env,
+                           jobject obj,
+                           jobject j_result_obj);
+
+  void GetChildIDs(JNIEnv* env,
+                   jobject obj,
+                   jlong id,
+                   jint type,
+                   jboolean get_folders,
+                   jboolean get_bookmarks,
+                   jobject j_result_obj);
+
+  void GetAllBookmarkIDsOrderedByCreationDate(JNIEnv* env,
+                                              jobject obj,
+                                              jobject j_result_obj);
+
+  void SetBookmarkTitle(JNIEnv* env,
+                        jobject obj,
+                        jlong id,
+                        jint type,
+                        jstring title);
+
+  void SetBookmarkUrl(JNIEnv* env,
+                      jobject obj,
+                      jlong id,
+                      jint type,
+                      jstring url);
+
+  bool DoesBookmarkExist(JNIEnv* env, jobject obj, jlong id, jint type);
 
   void GetBookmarksForFolder(JNIEnv* env,
                              jobject obj,

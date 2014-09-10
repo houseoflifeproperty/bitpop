@@ -8,8 +8,38 @@
     "name": "taskkill"
   },
   {
-    "abort_on_failure": false,
-    "can_fail_build": false,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\bot_update.py",
+      "--master",
+      "tryserver.v8",
+      "--builder",
+      "v8_win_rel",
+      "--slave",
+      "TestSlavename",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]",
+      "--revision_mapping_file",
+      "{\"v8\": \"got_revision\"}",
+      "--patch_url",
+      "svn://svn-mirror.golo.chromium.org/patch",
+      "--output_json",
+      "/path/to/tmp/json",
+      "--revision",
+      "v8@bleeding_edge:12345",
+      "--no_shallow"
+    ],
+    "name": "bot_update",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"did_run\": false, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_failure\": false@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
     "cmd": [
       "python",
       "-u",
@@ -21,8 +51,6 @@
     "name": "gclient setup"
   },
   {
-    "abort_on_failure": false,
-    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -33,8 +61,6 @@
     "name": "gclient revert"
   },
   {
-    "abort_on_failure": false,
-    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -63,7 +89,6 @@
     ]
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "svn.bat",
       "export",
@@ -80,7 +105,6 @@
     ]
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -105,7 +129,6 @@
     ]
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "patch",
       "--dir",
@@ -127,7 +150,8 @@
       "runhooks"
     ],
     "env": {
-      "GYP_DEFINES": "dcheck_always_on=1 fastbuild=1 target_arch=ia32 v8_target_arch=ia32"
+      "GYP_DEFINES": "dcheck_always_on=1 fastbuild=1 target_arch=ia32 v8_target_arch=ia32",
+      "GYP_MSVS_VERSION": "2013"
     },
     "name": "gclient runhooks"
   },
@@ -140,8 +164,6 @@
     "name": "cleanup_temp"
   },
   {
-    "abort_on_failure": false,
-    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -157,7 +179,6 @@
     "name": "compile (with patch)"
   },
   {
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -167,7 +188,7 @@
       "--arch",
       "ia32",
       "--testname",
-      "mjsunit fuzz-natives cctest message preparser",
+      "mjsunit fuzz-natives cctest message preparser base-unittests compiler-unittests",
       "--quickcheck",
       "--json-test-results",
       "/path/to/tmp/json"

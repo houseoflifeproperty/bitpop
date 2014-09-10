@@ -4,17 +4,11 @@
 
 #include "chrome/renderer/translate/translate_helper.h"
 
-#if defined(CLD2_DYNAMIC_MODE)
-#include <stdint.h>
-#endif
-
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#if defined(CLD2_DYNAMIC_MODE)
-#include "base/files/memory_mapped_file.h"
-#endif
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -24,14 +18,13 @@
 #include "components/translate/core/common/translate_metrics.h"
 #include "components/translate/core/common/translate_util.h"
 #include "components/translate/core/language_detection/language_detection_util.h"
+#include "content/public/common/content_constants.h"
+#include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "extensions/common/constants.h"
 #include "extensions/renderer/extension_groups.h"
 #include "ipc/ipc_platform_file.h"
-#if defined(CLD2_DYNAMIC_MODE)
 #include "content/public/common/url_constants.h"
-#include "third_party/cld_2/src/public/compact_lang_det.h"
-#endif
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
@@ -75,45 +68,40 @@ const char kAutoDetectionLanguage[] = "auto";
 // Isolated world sets following content-security-policy.
 const char kContentSecurityPolicy[] = "script-src 'self' 'unsafe-eval'";
 
+// Whether or not we have set the CLD callback yet.
+bool g_cld_callback_set = false;
+
 }  // namespace
 
-#if defined(CLD2_DYNAMIC_MODE)
-// The mmap for the CLD2 data must be held forever once it is available in the
-// process. This is declared static in the translate_helper.h.
-base::LazyInstance<TranslateHelper::CLDMmapWrapper>::Leaky
-  TranslateHelper::s_cld_mmap_ = LAZY_INSTANCE_INITIALIZER;
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // TranslateHelper, public:
 //
 TranslateHelper::TranslateHelper(content::RenderView* render_view)
     : content::RenderViewObserver(render_view),
-      page_id_(-1),
+      page_seq_no_(0),
       translation_pending_(false),
-      weak_method_factory_(this)
-#if defined(CLD2_DYNAMIC_MODE)
-      ,cld2_data_file_polling_started_(false),
-      cld2_data_file_polling_canceled_(false),
+      weak_method_factory_(this),
+      cld_data_provider_(translate::CreateRendererCldDataProviderFor(this)),
+      cld_data_polling_started_(false),
+      cld_data_polling_canceled_(false),
       deferred_page_capture_(false),
-      deferred_page_id_(-1),
-      deferred_contents_(ASCIIToUTF16(""))
-#endif
-  {
+      deferred_page_seq_no_(-1) {
 }
 
 TranslateHelper::~TranslateHelper() {
   CancelPendingTranslation();
-#if defined(CLD2_DYNAMIC_MODE)
-  CancelCLD2DataFilePolling();
-#endif
+  CancelCldDataPolling();
 }
 
 void TranslateHelper::PrepareForUrl(const GURL& url) {
-#if defined(CLD2_DYNAMIC_MODE)
+  ++page_seq_no_;
+  Send(new ChromeViewHostMsg_TranslateAssignedSequenceNumber(
+      routing_id(), page_seq_no_));
   deferred_page_capture_ = false;
+  deferred_page_seq_no_ = -1;
   deferred_contents_.clear();
-  if (cld2_data_file_polling_started_)
+  if (cld_data_polling_started_)
     return;
 
   // TODO(andrewhayden): Refactor translate_manager.cc's IsTranslatableURL to
@@ -128,29 +116,20 @@ void TranslateHelper::PrepareForUrl(const GURL& url) {
     return;
   if (url.SchemeIs(url::kFtpScheme))
     return;
-#if defined(OS_CHROMEOS)
-  if (url.SchemeIs(extensions::kExtensionScheme) &&
-      url.DomainIs(file_manager::kFileManagerAppId))
+  if (url.SchemeIs(extensions::kExtensionScheme))
     return;
-#endif
 
   // Start polling for CLD data.
-  cld2_data_file_polling_started_ = true;
-  TranslateHelper::SendCLD2DataFileRequest(0, 1000);
-#endif
+  cld_data_polling_started_ = true;
+  TranslateHelper::SendCldDataRequest(0, 1000);
 }
 
-#if defined(CLD2_DYNAMIC_MODE)
-void TranslateHelper::DeferPageCaptured(const int page_id,
-                                        const base::string16& contents) {
-  deferred_page_capture_ = true;
-  deferred_page_id_ = page_id;
-  deferred_contents_ = contents;
+void TranslateHelper::PageCaptured(const base::string16& contents) {
+  PageCapturedImpl(page_seq_no_, contents);
 }
-#endif
 
-void TranslateHelper::PageCaptured(int page_id,
-                                   const base::string16& contents) {
+void TranslateHelper::PageCapturedImpl(int page_seq_no,
+                                       const base::string16& contents) {
   // Get the document language as set by WebKit from the http-equiv
   // meta tag for "content-language".  This may or may not also
   // have a value derived from the actual Content-Language HTTP
@@ -161,20 +140,28 @@ void TranslateHelper::PageCaptured(int page_id,
   // relevant for things like langauge textbooks).  This distinction
   // shouldn't affect translation.
   WebFrame* main_frame = GetMainFrame();
-  if (!main_frame || render_view()->GetPageId() != page_id)
+  if (!main_frame || page_seq_no_ != page_seq_no)
     return;
 
-  // TODO(andrewhayden): UMA insertion point here: Track if data is available.
-  // TODO(andrewhayden): Retry insertion point here, retry till data available.
-#if defined(CLD2_DYNAMIC_MODE)
-  if (!CLD2::isDataLoaded()) {
+  if (!cld_data_provider_->IsCldDataAvailable()) {
     // We're in dynamic mode and CLD data isn't loaded. Retry when CLD data
     // is loaded, if ever.
-    TranslateHelper::DeferPageCaptured(page_id, contents);
+    deferred_page_capture_ = true;
+    deferred_page_seq_no_ = page_seq_no;
+    deferred_contents_ = contents;
+    RecordLanguageDetectionTiming(DEFERRED);
     return;
   }
-#endif
-  page_id_ = page_id;
+
+  if (deferred_page_seq_no_ == -1) {
+    // CLD data was available before language detection was requested.
+    RecordLanguageDetectionTiming(ON_TIME);
+  } else {
+    // This is a request that was triggered because CLD data is now available
+    // and was previously deferred.
+    RecordLanguageDetectionTiming(RESUMED);
+  }
+
   WebDocument document = main_frame->document();
   std::string content_language = document.contentLanguage().utf8();
   WebElement html_element = document.documentElement();
@@ -194,7 +181,7 @@ void TranslateHelper::PageCaptured(int page_id,
   language_determined_time_ = base::TimeTicks::Now();
 
   GURL url(document.url());
-  LanguageDetectionDetails details;
+  translate::LanguageDetectionDetails details;
   details.time = base::Time::Now();
   details.url = url;
   details.content_language = content_language;
@@ -218,9 +205,7 @@ void TranslateHelper::CancelPendingTranslation() {
   translation_pending_ = false;
   source_lang_.clear();
   target_lang_.clear();
-#if defined(CLD2_DYNAMIC_MODE)
-  CancelCLD2DataFilePolling();
-#endif
+  CancelCldDataPolling();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -372,7 +357,7 @@ bool TranslateHelper::IsTranslationAllowed(WebDocument* document) {
       continue;
     WebElement element = node.to<WebElement>();
     // Check if a tag is <meta>.
-    if (!element.hasTagName(meta))
+    if (!element.hasHTMLTagName(meta))
       continue;
     // Check if the tag contains name="google".
     WebString attribute = element.getAttribute(name);
@@ -395,22 +380,20 @@ bool TranslateHelper::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(TranslateHelper, message)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_TranslatePage, OnTranslatePage)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_RevertTranslation, OnRevertTranslation)
-#if defined(CLD2_DYNAMIC_MODE)
-    IPC_MESSAGE_HANDLER(ChromeViewMsg_CLDDataAvailable, OnCLDDataAvailable);
-#endif
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
+  if (!handled) {
+    handled = cld_data_provider_->OnMessageReceived(message);
+  }
   return handled;
 }
 
-void TranslateHelper::OnTranslatePage(int page_id,
+void TranslateHelper::OnTranslatePage(int page_seq_no,
                                       const std::string& translate_script,
                                       const std::string& source_lang,
                                       const std::string& target_lang) {
   WebFrame* main_frame = GetMainFrame();
-  if (!main_frame ||
-      page_id_ != page_id ||
-      render_view()->GetPageId() != page_id)
+  if (!main_frame || page_seq_no_ != page_seq_no)
     return;  // We navigated away, nothing to do.
 
   // A similar translation is already under way, nothing to do.
@@ -456,11 +439,11 @@ void TranslateHelper::OnTranslatePage(int page_id,
     DCHECK(IsTranslateLibAvailable());
   }
 
-  TranslatePageImpl(0);
+  TranslatePageImpl(page_seq_no, 0);
 }
 
-void TranslateHelper::OnRevertTranslation(int page_id) {
-  if (page_id_ != page_id || render_view()->GetPageId() != page_id)
+void TranslateHelper::OnRevertTranslation(int page_seq_no) {
+  if (page_seq_no_ != page_seq_no)
     return;  // We navigated away, nothing to do.
 
   if (!IsTranslateLibAvailable()) {
@@ -473,16 +456,17 @@ void TranslateHelper::OnRevertTranslation(int page_id) {
   ExecuteScript("cr.googleTranslate.revert()");
 }
 
-void TranslateHelper::CheckTranslateStatus() {
+void TranslateHelper::CheckTranslateStatus(int page_seq_no) {
   // If this is not the same page, the translation has been canceled.  If the
   // view is gone, the page is closing.
-  if (page_id_ != render_view()->GetPageId() || !render_view()->GetWebView())
+  if (page_seq_no_ != page_seq_no || !render_view()->GetWebView())
     return;
 
   // First check if there was an error.
   if (HasTranslationFailed()) {
     // TODO(toyoshim): Check |errorCode| of translate.js and notify it here.
-    NotifyBrowserTranslationFailed(TranslateErrors::TRANSLATION_ERROR);
+    NotifyBrowserTranslationFailed(
+        translate::TranslateErrors::TRANSLATION_ERROR);
     return;  // There was an error.
   }
 
@@ -493,10 +477,12 @@ void TranslateHelper::CheckTranslateStatus() {
     if (source_lang_ == kAutoDetectionLanguage) {
       actual_source_lang = GetOriginalPageLanguage();
       if (actual_source_lang.empty()) {
-        NotifyBrowserTranslationFailed(TranslateErrors::UNKNOWN_LANGUAGE);
+        NotifyBrowserTranslationFailed(
+            translate::TranslateErrors::UNKNOWN_LANGUAGE);
         return;
       } else if (actual_source_lang == target_lang_) {
-        NotifyBrowserTranslationFailed(TranslateErrors::IDENTICAL_LANGUAGES);
+        NotifyBrowserTranslationFailed(
+            translate::TranslateErrors::IDENTICAL_LANGUAGES);
         return;
       }
     } else {
@@ -515,9 +501,11 @@ void TranslateHelper::CheckTranslateStatus() {
         ExecuteScriptAndGetDoubleResult("cr.googleTranslate.translationTime"));
 
     // Notify the browser we are done.
-    render_view()->Send(new ChromeViewHostMsg_PageTranslated(
-        render_view()->GetRoutingID(), render_view()->GetPageId(),
-        actual_source_lang, target_lang_, TranslateErrors::NONE));
+    render_view()->Send(
+        new ChromeViewHostMsg_PageTranslated(render_view()->GetRoutingID(),
+                                             actual_source_lang,
+                                             target_lang_,
+                                             translate::TranslateErrors::NONE));
     return;
   }
 
@@ -525,27 +513,28 @@ void TranslateHelper::CheckTranslateStatus() {
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&TranslateHelper::CheckTranslateStatus,
-                 weak_method_factory_.GetWeakPtr()),
+                 weak_method_factory_.GetWeakPtr(), page_seq_no),
       AdjustDelay(kTranslateStatusCheckDelayMs));
 }
 
-void TranslateHelper::TranslatePageImpl(int count) {
+void TranslateHelper::TranslatePageImpl(int page_seq_no, int count) {
   DCHECK_LT(count, kMaxTranslateInitCheckAttempts);
-  if (page_id_ != render_view()->GetPageId() || !render_view()->GetWebView())
+  if (page_seq_no_ != page_seq_no || !render_view()->GetWebView())
     return;
 
   if (!IsTranslateLibReady()) {
     // The library is not ready, try again later, unless we have tried several
     // times unsucessfully already.
     if (++count >= kMaxTranslateInitCheckAttempts) {
-      NotifyBrowserTranslationFailed(TranslateErrors::INITIALIZATION_ERROR);
+      NotifyBrowserTranslationFailed(
+          translate::TranslateErrors::INITIALIZATION_ERROR);
       return;
     }
     base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&TranslateHelper::TranslatePageImpl,
                    weak_method_factory_.GetWeakPtr(),
-                   count),
+                   page_seq_no, count),
         AdjustDelay(count * kTranslateInitCheckDelayMs));
     return;
   }
@@ -558,24 +547,24 @@ void TranslateHelper::TranslatePageImpl(int count) {
       ExecuteScriptAndGetDoubleResult("cr.googleTranslate.loadTime"));
 
   if (!StartTranslation()) {
-    NotifyBrowserTranslationFailed(TranslateErrors::TRANSLATION_ERROR);
+    NotifyBrowserTranslationFailed(
+        translate::TranslateErrors::TRANSLATION_ERROR);
     return;
   }
   // Check the status of the translation.
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&TranslateHelper::CheckTranslateStatus,
-                 weak_method_factory_.GetWeakPtr()),
+                 weak_method_factory_.GetWeakPtr(), page_seq_no),
       AdjustDelay(kTranslateStatusCheckDelayMs));
 }
 
 void TranslateHelper::NotifyBrowserTranslationFailed(
-    TranslateErrors::Type error) {
+    translate::TranslateErrors::Type error) {
   translation_pending_ = false;
   // Notify the browser there was an error.
   render_view()->Send(new ChromeViewHostMsg_PageTranslated(
-      render_view()->GetRoutingID(), page_id_, source_lang_,
-      target_lang_, error));
+      render_view()->GetRoutingID(), source_lang_, target_lang_, error));
 }
 
 WebFrame* TranslateHelper::GetMainFrame() {
@@ -588,23 +577,29 @@ WebFrame* TranslateHelper::GetMainFrame() {
   return web_view->mainFrame();
 }
 
-#if defined(CLD2_DYNAMIC_MODE)
-void TranslateHelper::CancelCLD2DataFilePolling() {
-  cld2_data_file_polling_canceled_ = true;
+void TranslateHelper::CancelCldDataPolling() {
+  cld_data_polling_canceled_ = true;
 }
 
-void TranslateHelper::SendCLD2DataFileRequest(const int delay_millis,
-                                              const int next_delay_millis) {
+void TranslateHelper::SendCldDataRequest(const int delay_millis,
+                                         const int next_delay_millis) {
   // Terminate immediately if told to stop polling.
-  if (cld2_data_file_polling_canceled_)
+  if (cld_data_polling_canceled_)
     return;
 
   // Terminate immediately if data is already loaded.
-  if (CLD2::isDataLoaded())
+  if (cld_data_provider_->IsCldDataAvailable())
     return;
 
-  // Else, send the IPC message to the browser process requesting the data...
-  Send(new ChromeViewHostMsg_NeedCLDData(routing_id()));
+  if (!g_cld_callback_set) {
+    g_cld_callback_set = true;
+    cld_data_provider_->SetCldAvailableCallback(
+        base::Bind(&TranslateHelper::OnCldDataAvailable,
+                   weak_method_factory_.GetWeakPtr()));
+  }
+
+  // Else, make an asynchronous request to get the data we need.
+  cld_data_provider_->SendCldDataRequest();
 
   // ... and enqueue another delayed task to call again. This will start a
   // chain of polling that will last until the pointer stops being NULL,
@@ -616,68 +611,45 @@ void TranslateHelper::SendCLD2DataFileRequest(const int delay_millis,
   // Use a weak pointer to avoid keeping this helper object around forever.
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&TranslateHelper::SendCLD2DataFileRequest,
+      base::Bind(&TranslateHelper::SendCldDataRequest,
                  weak_method_factory_.GetWeakPtr(),
-                 next_delay_millis, next_delay_millis),
+                 next_delay_millis,
+                 next_delay_millis),
       base::TimeDelta::FromMilliseconds(delay_millis));
 }
 
-void TranslateHelper::OnCLDDataAvailable(
-    const IPC::PlatformFileForTransit ipc_file_handle,
-    const uint64 data_offset,
-    const uint64 data_length) {
-  LoadCLDDData(IPC::PlatformFileForTransitToFile(ipc_file_handle), data_offset,
-               data_length);
-  if (deferred_page_capture_ && CLD2::isDataLoaded()) {
+void TranslateHelper::OnCldDataAvailable() {
+  if (deferred_page_capture_) {
     deferred_page_capture_ = false; // Don't do this a second time.
-    PageCaptured(deferred_page_id_, deferred_contents_);
-    deferred_page_id_ = -1; // Clean up for sanity
+    PageCapturedImpl(deferred_page_seq_no_, deferred_contents_);
+    deferred_page_seq_no_ = -1; // Clean up for sanity
     deferred_contents_.clear(); // Clean up for sanity
   }
 }
 
-void TranslateHelper::LoadCLDDData(
-    base::File file,
-    const uint64 data_offset,
-    const uint64 data_length) {
-  // Terminate immediately if told to stop polling.
-  if (cld2_data_file_polling_canceled_)
-    return;
+void TranslateHelper::RecordLanguageDetectionTiming(
+    LanguageDetectionTiming timing) {
+  // The following comment is copied from page_load_histograms.cc, and applies
+  // just as equally here:
+  //
+  // Since there are currently no guarantees that renderer histograms will be
+  // sent to the browser, we initiate a PostTask here to be sure that we send
+  // the histograms we generated.  Without this call, pages that don't have an
+  // on-close-handler might generate data that is lost when the renderer is
+  // shutdown abruptly (perchance because the user closed the tab).
+  DVLOG(1) << "Language detection timing: " << timing;
+  UMA_HISTOGRAM_ENUMERATION("Translate.LanguageDetectionTiming", timing,
+                            LANGUAGE_DETECTION_TIMING_MAX_VALUE);
 
-  // Terminate immediately if data is already loaded.
-  if (CLD2::isDataLoaded())
-    return;
-
-  if (!file.IsValid()) {
-    LOG(ERROR) << "Can't find the CLD data file.";
-    return;
-  }
-
-  // mmap the file
-  s_cld_mmap_.Get().value = new base::MemoryMappedFile();
-  bool initialized = s_cld_mmap_.Get().value->Initialize(file.Pass());
-  if (!initialized) {
-    LOG(ERROR) << "mmap initialization failed";
-    delete s_cld_mmap_.Get().value;
-    s_cld_mmap_.Get().value = NULL;
-    return;
-  }
-
-  // Sanity checks
-  uint64 max_int32 = std::numeric_limits<int32>::max();
-  if (data_length + data_offset > s_cld_mmap_.Get().value->length()
-      || data_length > max_int32) { // max signed 32 bit integer
-    LOG(ERROR) << "Illegal mmap config: data_offset="
-        << data_offset << ", data_length=" << data_length
-        << ", mmap->length()=" << s_cld_mmap_.Get().value->length();
-    delete s_cld_mmap_.Get().value;
-    s_cld_mmap_.Get().value = NULL;
-    return;
-  }
-
-  // Initialize the CLD subsystem... and it's all done!
-  const uint8* data_ptr = s_cld_mmap_.Get().value->data() + data_offset;
-  CLD2::loadDataFromRawAddress(data_ptr, data_length);
-  DCHECK(CLD2::isDataLoaded()) << "Failed to load CLD data from mmap";
+  // Note on performance: Under normal circumstances, this should get called
+  // once per page load. The code will either manage to do it ON_TIME or will
+  // be DEFERRED until CLD is ready. In the latter case, CLD is in dynamic mode
+  // and may eventually become available, triggering the RESUMED event; after
+  // this, everything should start being ON_TIME. This should never run more
+  // than twice in a page load, under any conditions.
+  // Also note that language detection is triggered off of a delay AFTER the
+  // page load completed event has fired, making this very much off the critical
+  // path.
+  content::RenderThread::Get()->UpdateHistograms(
+      content::kHistogramSynchronizerReservedSequenceNumber);
 }
-#endif

@@ -35,7 +35,7 @@
 #include "core/inspector/InspectorBaseAgent.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class InstrumentingAgents;
 
@@ -44,9 +44,9 @@ typedef String ErrorString;
 class InspectorMemoryAgent FINAL : public InspectorBaseAgent<InspectorMemoryAgent>, public InspectorBackendDispatcher::MemoryCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorMemoryAgent);
 public:
-    static PassOwnPtr<InspectorMemoryAgent> create()
+    static PassOwnPtrWillBeRawPtr<InspectorMemoryAgent> create()
     {
-        return adoptPtr(new InspectorMemoryAgent());
+        return adoptPtrWillBeNoop(new InspectorMemoryAgent());
     }
     virtual ~InspectorMemoryAgent();
 
@@ -61,6 +61,6 @@ private:
     InspectorFrontend::Memory* m_frontend;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InspectorMemoryAgent_h)

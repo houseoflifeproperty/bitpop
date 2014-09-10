@@ -23,7 +23,7 @@
 
 #include "core/svg/SVGLength.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/SVGNames.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/dom/ExceptionCode.h"
@@ -33,11 +33,11 @@
 #include "wtf/MathExtras.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
-inline String lengthTypeToString(SVGLengthType type)
+inline const char* lengthTypeToString(SVGLengthType type)
 {
     switch (type) {
     case LengthTypeUnknown:
@@ -64,7 +64,7 @@ inline String lengthTypeToString(SVGLengthType type)
     }
 
     ASSERT_NOT_REACHED();
-    return String();
+    return "";
 }
 
 template<typename CharType>
@@ -411,7 +411,7 @@ PassRefPtr<SVGLength> SVGLength::blend(PassRefPtr<SVGLength> passFrom, float pro
     if (fromType == LengthTypePercentage || toType == LengthTypePercentage) {
         float fromPercent = from->valueAsPercentage() * 100;
         float toPercent = valueAsPercentage() * 100;
-        length->newValueSpecifiedUnits(LengthTypePercentage, WebCore::blend(fromPercent, toPercent, progress));
+        length->newValueSpecifiedUnits(LengthTypePercentage, blink::blend(fromPercent, toPercent, progress));
         return length;
     }
 
@@ -419,9 +419,9 @@ PassRefPtr<SVGLength> SVGLength::blend(PassRefPtr<SVGLength> passFrom, float pro
         float fromValue = from->valueInSpecifiedUnits();
         float toValue = valueInSpecifiedUnits();
         if (isZero())
-            length->newValueSpecifiedUnits(fromType, WebCore::blend(fromValue, toValue, progress));
+            length->newValueSpecifiedUnits(fromType, blink::blend(fromValue, toValue, progress));
         else
-            length->newValueSpecifiedUnits(toType, WebCore::blend(fromValue, toValue, progress));
+            length->newValueSpecifiedUnits(toType, blink::blend(fromValue, toValue, progress));
         return length;
     }
 
@@ -439,7 +439,7 @@ PassRefPtr<SVGLength> SVGLength::blend(PassRefPtr<SVGLength> passFrom, float pro
         return create();
 
     float toValue = valueInSpecifiedUnits();
-    length->newValueSpecifiedUnits(toType, WebCore::blend(fromValue, toValue, progress));
+    length->newValueSpecifiedUnits(toType, blink::blend(fromValue, toValue, progress));
     return length;
 }
 

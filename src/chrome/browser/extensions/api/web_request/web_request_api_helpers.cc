@@ -32,15 +32,15 @@
 // top of this file.
 
 using base::Time;
+using content::ResourceType;
 using extensions::ExtensionWarning;
+using net::cookie_util::ParsedRequestCookie;
+using net::cookie_util::ParsedRequestCookies;
 
 namespace extension_web_request_api_helpers {
 
 namespace {
 
-// A ParsedRequestCookie consists of the key and value of the cookie.
-typedef std::pair<base::StringPiece, base::StringPiece> ParsedRequestCookie;
-typedef std::vector<ParsedRequestCookie> ParsedRequestCookies;
 typedef std::vector<linked_ptr<net::ParsedCookie> > ParsedResponseCookies;
 
 static const char* kResourceTypeStrings[] = {
@@ -55,21 +55,21 @@ static const char* kResourceTypeStrings[] = {
   "other",
 };
 
-static ResourceType::Type kResourceTypeValues[] = {
-  ResourceType::MAIN_FRAME,
-  ResourceType::SUB_FRAME,
-  ResourceType::STYLESHEET,
-  ResourceType::SCRIPT,
-  ResourceType::IMAGE,
-  ResourceType::OBJECT,
-  ResourceType::XHR,
-  ResourceType::LAST_TYPE,  // represents "other"
+static ResourceType kResourceTypeValues[] = {
+  content::RESOURCE_TYPE_MAIN_FRAME,
+  content::RESOURCE_TYPE_SUB_FRAME,
+  content::RESOURCE_TYPE_STYLESHEET,
+  content::RESOURCE_TYPE_SCRIPT,
+  content::RESOURCE_TYPE_IMAGE,
+  content::RESOURCE_TYPE_OBJECT,
+  content::RESOURCE_TYPE_XHR,
+  content::RESOURCE_TYPE_LAST_TYPE,  // represents "other"
   // TODO(jochen): We duplicate the last entry, so the array's size is not a
   // power of two. If it is, this triggers a bug in gcc 4.4 in Release builds
   // (http://gcc.gnu.org/bugzilla/show_bug.cgi?id=43949). Once we use a version
   // of gcc with this bug fixed, or the array is changed so this duplicate
   // entry is no longer required, this should be removed.
-  ResourceType::LAST_TYPE,
+  content::RESOURCE_TYPE_LAST_TYPE,
 };
 
 COMPILE_ASSERT(
@@ -342,7 +342,7 @@ EventResponseDelta* CalculateOnHeadersReceivedDelta(
     std::string value;
     while (old_response_headers->EnumerateHeaderLines(&iter, &name, &value)) {
       std::string name_lowercase(name);
-      StringToLowerASCII(&name_lowercase);
+      base::StringToLowerASCII(&name_lowercase);
 
       bool header_found = false;
       for (ResponseHeaders::const_iterator i = new_response_headers->begin();
@@ -482,67 +482,6 @@ void MergeOnBeforeRequestResponses(
   MergeRedirectUrlOfResponses(deltas, new_url, conflicting_extensions, net_log);
 }
 
-// Assumes that |header_value| is the cookie header value of a HTTP Request
-// following the cookie-string schema of RFC 6265, section 4.2.1, and returns
-// cookie name/value pairs. If cookie values are presented in double quotes,
-// these will appear in |parsed| as well. We can assume that the cookie header
-// is written by Chromium and therefore, well-formed.
-static void ParseRequestCookieLine(
-    const std::string& header_value,
-    ParsedRequestCookies* parsed_cookies) {
-  std::string::const_iterator i = header_value.begin();
-  while (i != header_value.end()) {
-    // Here we are at the beginning of a cookie.
-
-    // Eat whitespace.
-    while (i != header_value.end() && *i == ' ') ++i;
-    if (i == header_value.end()) return;
-
-    // Find cookie name.
-    std::string::const_iterator cookie_name_beginning = i;
-    while (i != header_value.end() && *i != '=') ++i;
-    base::StringPiece cookie_name(cookie_name_beginning, i);
-
-    // Find cookie value.
-    base::StringPiece cookie_value;
-    if (i != header_value.end()) {  // Cookies may have no value.
-      ++i;  // Skip '='.
-      std::string::const_iterator cookie_value_beginning = i;
-      if (*i == '"') {
-        ++i;  // Skip '"'.
-        while (i != header_value.end() && *i != '"') ++i;
-        if (i == header_value.end()) return;
-        ++i;  // Skip '"'.
-        cookie_value = base::StringPiece(cookie_value_beginning, i);
-        // i points to character after '"', potentially a ';'
-      } else {
-        while (i != header_value.end() && *i != ';') ++i;
-        cookie_value = base::StringPiece(cookie_value_beginning, i);
-        // i points to ';' or end of string.
-      }
-    }
-    parsed_cookies->push_back(make_pair(cookie_name, cookie_value));
-    // Eat ';'
-    if (i != header_value.end()) ++i;
-  }
-}
-
-// Writes all cookies of |parsed_cookies| into a HTTP Request header value
-// that belongs to the "Cookie" header.
-static std::string SerializeRequestCookieLine(
-    const ParsedRequestCookies& parsed_cookies) {
-  std::string buffer;
-  for (ParsedRequestCookies::const_iterator i = parsed_cookies.begin();
-       i != parsed_cookies.end(); ++i) {
-    if (!buffer.empty())
-      buffer += "; ";
-    buffer += i->first.as_string();
-    if (!i->second.empty())
-      buffer += "=" + i->second.as_string();
-  }
-  return buffer;
-}
-
 static bool DoesRequestCookieMatchFilter(
     const ParsedRequestCookie& cookie,
     RequestCookie* filter) {
@@ -680,7 +619,7 @@ void MergeCookiesInOnBeforeSendHeadersResponses(
   std::string cookie_header;
   request_headers->GetHeader(net::HttpRequestHeaders::kCookie, &cookie_header);
   ParsedRequestCookies cookies;
-  ParseRequestCookieLine(cookie_header, &cookies);
+  net::cookie_util::ParseRequestCookieLine(cookie_header, &cookies);
 
   // Modify cookies.
   bool modified = false;
@@ -690,7 +629,8 @@ void MergeCookiesInOnBeforeSendHeadersResponses(
 
   // Reassemble and store new cookie line.
   if (modified) {
-    std::string new_cookie_header = SerializeRequestCookieLine(cookies);
+    std::string new_cookie_header =
+        net::cookie_util::SerializeRequestCookieLine(cookies);
     request_headers->SetHeader(net::HttpRequestHeaders::kCookie,
                                new_cookie_header);
   }
@@ -903,55 +843,48 @@ static bool DoesResponseCookieMatchFilter(net::ParsedCookie* cookie,
                                           FilterResponseCookie* filter) {
   if (!cookie->IsValid()) return false;
   if (!filter) return true;
-  if (filter->name.get() && cookie->Name() != *filter->name) return false;
-  if (filter->value.get() && cookie->Value() != *filter->value) return false;
-  if (filter->expires.get()) {
+  if (filter->name && cookie->Name() != *filter->name)
+    return false;
+  if (filter->value && cookie->Value() != *filter->value)
+    return false;
+  if (filter->expires) {
     std::string actual_value =
         cookie->HasExpires() ? cookie->Expires() : std::string();
     if (actual_value != *filter->expires)
       return false;
   }
-  if (filter->max_age.get()) {
+  if (filter->max_age) {
     std::string actual_value =
         cookie->HasMaxAge() ? cookie->MaxAge() : std::string();
     if (actual_value != base::IntToString(*filter->max_age))
       return false;
   }
-  if (filter->domain.get()) {
+  if (filter->domain) {
     std::string actual_value =
         cookie->HasDomain() ? cookie->Domain() : std::string();
     if (actual_value != *filter->domain)
       return false;
   }
-  if (filter->path.get()) {
+  if (filter->path) {
     std::string actual_value =
         cookie->HasPath() ? cookie->Path() : std::string();
     if (actual_value != *filter->path)
       return false;
   }
-  if (filter->secure.get() && cookie->IsSecure() != *filter->secure)
+  if (filter->secure && cookie->IsSecure() != *filter->secure)
     return false;
-  if (filter->http_only.get() && cookie->IsHttpOnly() != *filter->http_only)
+  if (filter->http_only && cookie->IsHttpOnly() != *filter->http_only)
     return false;
-  int64 seconds_till_expiry;
-  bool lifetime_parsed = false;
-  if (filter->age_upper_bound.get() ||
-      filter->age_lower_bound.get() ||
-      (filter->session_cookie.get() && *filter->session_cookie)) {
-    lifetime_parsed = ParseCookieLifetime(cookie, &seconds_till_expiry);
-  }
-  if (filter->age_upper_bound.get()) {
-    if (seconds_till_expiry > *filter->age_upper_bound)
+  if (filter->age_upper_bound || filter->age_lower_bound ||
+      (filter->session_cookie && *filter->session_cookie)) {
+    int64 seconds_to_expiry;
+    bool lifetime_parsed = ParseCookieLifetime(cookie, &seconds_to_expiry);
+    if (filter->age_upper_bound && seconds_to_expiry > *filter->age_upper_bound)
       return false;
-  }
-  if (filter->age_lower_bound.get()) {
-    if (seconds_till_expiry < *filter->age_lower_bound)
+    if (filter->age_lower_bound && seconds_to_expiry < *filter->age_lower_bound)
       return false;
-  }
-  if (filter->session_cookie.get() &&
-      *filter->session_cookie &&
-      lifetime_parsed) {
-    return false;
+    if (filter->session_cookie && *filter->session_cookie && lifetime_parsed)
+      return false;
   }
   return true;
 }
@@ -1084,7 +1017,7 @@ void MergeCookiesInOnHeadersReceivedResponses(
 // Converts the key of the (key, value) pair to lower case.
 static ResponseHeader ToLowerCase(const ResponseHeader& header) {
   std::string lower_key(header.first);
-  StringToLowerASCII(&lower_key);
+  base::StringToLowerASCII(&lower_key);
   return ResponseHeader(lower_key, header.second);
 }
 
@@ -1093,13 +1026,13 @@ static ResponseHeader ToLowerCase(const ResponseHeader& header) {
 static std::string FindRemoveResponseHeader(
     const EventResponseDeltas& deltas,
     const std::string& key) {
-  std::string lower_key = StringToLowerASCII(key);
+  std::string lower_key = base::StringToLowerASCII(key);
   EventResponseDeltas::const_iterator delta;
   for (delta = deltas.begin(); delta != deltas.end(); ++delta) {
     ResponseHeaders::const_iterator i;
     for (i = (*delta)->deleted_response_headers.begin();
          i != (*delta)->deleted_response_headers.end(); ++i) {
-      if (StringToLowerASCII(i->first) == lower_key)
+      if (base::StringToLowerASCII(i->first) == lower_key)
         return (*delta)->extension_id;
     }
   }
@@ -1251,14 +1184,14 @@ bool MergeOnAuthRequiredResponses(
 
 #define ARRAYEND(array) (array + arraysize(array))
 
-bool IsRelevantResourceType(ResourceType::Type type) {
-  ResourceType::Type* iter =
+bool IsRelevantResourceType(ResourceType type) {
+  ResourceType* iter =
       std::find(kResourceTypeValues, ARRAYEND(kResourceTypeValues), type);
   return iter != ARRAYEND(kResourceTypeValues);
 }
 
-const char* ResourceTypeToString(ResourceType::Type type) {
-  ResourceType::Type* iter =
+const char* ResourceTypeToString(ResourceType type) {
+  ResourceType* iter =
       std::find(kResourceTypeValues, ARRAYEND(kResourceTypeValues), type);
   if (iter == ARRAYEND(kResourceTypeValues))
     return "other";
@@ -1267,7 +1200,7 @@ const char* ResourceTypeToString(ResourceType::Type type) {
 }
 
 bool ParseResourceType(const std::string& type_str,
-                       ResourceType::Type* type) {
+                       ResourceType* type) {
   const char** iter =
       std::find(kResourceTypeStrings, ARRAYEND(kResourceTypeStrings), type_str);
   if (iter == ARRAYEND(kResourceTypeStrings))

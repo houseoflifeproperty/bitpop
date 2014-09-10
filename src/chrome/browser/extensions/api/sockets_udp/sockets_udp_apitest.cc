@@ -5,9 +5,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
 #include "base/strings/stringprintf.h"
-#include "chrome/browser/extensions/api/dns/mock_host_resolver_creator.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/ui/browser.h"
@@ -17,13 +15,12 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "extensions/browser/api/dns/host_resolver_wrapper.h"
+#include "extensions/browser/api/dns/mock_host_resolver_creator.h"
 #include "extensions/browser/api/sockets_udp/sockets_udp_api.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 
 using extensions::Extension;
-
-namespace utils = extension_function_test_utils;
 
 namespace {
 
@@ -49,7 +46,7 @@ class SocketsUdpApiTest : public ExtensionApiTest {
         resolver_creator_->CreateMockHostResolver());
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     extensions::HostResolverWrapper::GetInstance()->
         SetHostResolverForTesting(NULL);
     resolver_creator_->DeleteMockHostResolver();
@@ -65,25 +62,6 @@ class SocketsUdpApiTest : public ExtensionApiTest {
 };
 
 }  // namespace
-
-IN_PROC_BROWSER_TEST_F(SocketsUdpApiTest, SocketsUdpCreateGood) {
-  scoped_refptr<extensions::core_api::SocketsUdpCreateFunction>
-      socket_create_function(
-          new extensions::core_api::SocketsUdpCreateFunction());
-  scoped_refptr<Extension> empty_extension(utils::CreateEmptyExtension());
-
-  socket_create_function->set_extension(empty_extension.get());
-  socket_create_function->set_has_callback(true);
-
-  scoped_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
-      socket_create_function.get(), "[]", browser(), utils::NONE));
-  ASSERT_EQ(base::Value::TYPE_DICTIONARY, result->GetType());
-  base::DictionaryValue *value =
-      static_cast<base::DictionaryValue*>(result.get());
-  int socketId = -1;
-  EXPECT_TRUE(value->GetInteger("socketId", &socketId));
-  EXPECT_TRUE(socketId > 0);
-}
 
 IN_PROC_BROWSER_TEST_F(SocketsUdpApiTest, SocketsUdpExtension) {
   scoped_ptr<net::SpawnedTestServer> test_server(

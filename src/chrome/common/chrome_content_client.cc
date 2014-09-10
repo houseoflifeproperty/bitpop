@@ -24,6 +24,8 @@
 #include "chrome/common/pepper_flash.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/common_resources.h"
+#include "components/dom_distiller/core/url_constants.h"
 #include "components/nacl/common/nacl_process_type.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
@@ -32,7 +34,6 @@
 #include "content/public/common/user_agent.h"
 #include "extensions/common/constants.h"
 #include "gpu/config/gpu_info.h"
-#include "grit/common_resources.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
@@ -46,6 +47,10 @@
 #include "base/win/windows_version.h"
 #elif defined(OS_MACOSX)
 #include "components/nacl/common/nacl_sandbox_type_mac.h"
+#endif
+
+#if !defined(DISABLE_NACL)
+#include "ppapi/native_client/src/trusted/plugin/ppapi_entrypoints.h"
 #endif
 
 #if defined(ENABLE_REMOTING)
@@ -69,6 +74,7 @@ const char kPDFPluginOutOfProcessMimeType[] =
 const uint32 kPDFPluginPermissions = ppapi::PERMISSION_PRIVATE |
                                      ppapi::PERMISSION_DEV;
 
+#if !defined(DISABLE_NACL)
 const char kNaClPluginMimeType[] = "application/x-nacl";
 const char kNaClPluginExtension[] = "";
 const char kNaClPluginDescription[] = "Native Client Executable";
@@ -78,6 +84,7 @@ const uint32 kNaClPluginPermissions = ppapi::PERMISSION_PRIVATE |
 const char kPnaclPluginMimeType[] = "application/x-pnacl";
 const char kPnaclPluginExtension[] = "";
 const char kPnaclPluginDescription[] = "Portable Native Client Executable";
+#endif  // !defined(DISABLE_NACL)
 
 const char kO1DPluginName[] = "Google Talk Plugin Video Renderer";
 const char kO1DPluginMimeType[] ="application/o1d";
@@ -119,11 +126,6 @@ const char kRemotingViewerPluginMimeDescription[] = "";
 const uint32 kRemotingViewerPluginPermissions = ppapi::PERMISSION_PRIVATE |
                                                 ppapi::PERMISSION_DEV;
 #endif  // defined(ENABLE_REMOTING)
-
-#if defined(OS_MACOSX) && !defined(OS_IOS)
-const char kInterposeLibraryPath[] =
-    "@executable_path/../../../libplugin_carbon_interpose.dylib";
-#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 
 // Appends the known built-in plugins to the given vector. Some built-in
 // plugins are "internal" which means they are compiled into the Chrome binary,
@@ -170,35 +172,34 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
     }
   }
 
+#if !defined(DISABLE_NACL)
   // Handle Native Client just like the PDF plugin. This means that it is
   // enabled by default for the non-portable case.  This allows apps installed
   // from the Chrome Web Store to use NaCl even if the command line switch
   // isn't set.  For other uses of NaCl we check for the command line switch.
-  // Specifically, Portable Native Client is only enabled by the command line
-  // switch.
-  static bool skip_nacl_file_check = false;
   if (PathService::Get(chrome::FILE_NACL_PLUGIN, &path)) {
-    if (skip_nacl_file_check || base::PathExists(path)) {
-      content::PepperPluginInfo nacl;
-      nacl.path = path;
-      nacl.name = ChromeContentClient::kNaClPluginName;
-      content::WebPluginMimeType nacl_mime_type(kNaClPluginMimeType,
-                                                kNaClPluginExtension,
-                                                kNaClPluginDescription);
-      nacl.mime_types.push_back(nacl_mime_type);
-      if (!CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kDisablePnacl)) {
-        content::WebPluginMimeType pnacl_mime_type(kPnaclPluginMimeType,
-                                                   kPnaclPluginExtension,
-                                                   kPnaclPluginDescription);
-        nacl.mime_types.push_back(pnacl_mime_type);
-      }
-      nacl.permissions = kNaClPluginPermissions;
-      plugins->push_back(nacl);
-
-      skip_nacl_file_check = true;
-    }
+    content::PepperPluginInfo nacl;
+    // The nacl plugin is now built into the Chromium binary.
+    nacl.is_internal = true;
+    nacl.path = path;
+    nacl.name = ChromeContentClient::kNaClPluginName;
+    content::WebPluginMimeType nacl_mime_type(kNaClPluginMimeType,
+                                              kNaClPluginExtension,
+                                              kNaClPluginDescription);
+    nacl.mime_types.push_back(nacl_mime_type);
+    content::WebPluginMimeType pnacl_mime_type(kPnaclPluginMimeType,
+                                               kPnaclPluginExtension,
+                                               kPnaclPluginDescription);
+    nacl.mime_types.push_back(pnacl_mime_type);
+    nacl.internal_entry_points.get_interface = nacl_plugin::PPP_GetInterface;
+    nacl.internal_entry_points.initialize_module =
+        nacl_plugin::PPP_InitializeModule;
+    nacl.internal_entry_points.shutdown_module =
+        nacl_plugin::PPP_ShutdownModule;
+    nacl.permissions = kNaClPluginPermissions;
+    plugins->push_back(nacl);
   }
+#endif  // !defined(DISABLE_NACL)
 
   static bool skip_o1d_file_check = false;
   if (PathService::Get(chrome::FILE_O1D_PLUGIN, &path)) {
@@ -279,8 +280,7 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
       std::vector<std::string> codecs;
       codecs.push_back(kCdmSupportedCodecVorbis);
       codecs.push_back(kCdmSupportedCodecVp8);
-      // TODO(xhwang): Add VP9 when it's supported by Widevine CDM.
-      // See http://crbug.com/361318
+      codecs.push_back(kCdmSupportedCodecVp9);
 #if defined(USE_PROPRIETARY_CODECS)
 // TODO(ddorwin): Rename these macros to reflect their real meaning: whether the
 // CDM Chrome was built [and shipped] with support these types.
@@ -486,8 +486,8 @@ void ChromeContentClient::AddAdditionalSchemes(
   savable_schemes->push_back(extensions::kExtensionResourceScheme);
   standard_schemes->push_back(chrome::kChromeSearchScheme);
   savable_schemes->push_back(chrome::kChromeSearchScheme);
-  standard_schemes->push_back(chrome::kDomDistillerScheme);
-  savable_schemes->push_back(chrome::kDomDistillerScheme);
+  standard_schemes->push_back(dom_distiller::kDomDistillerScheme);
+  savable_schemes->push_back(dom_distiller::kDomDistillerScheme);
 #if defined(OS_CHROMEOS)
   standard_schemes->push_back(chrome::kCrosScheme);
 #endif
@@ -543,9 +543,5 @@ bool ChromeContentClient::GetSandboxProfileForSandboxType(
     return true;
   }
   return false;
-}
-
-std::string ChromeContentClient::GetCarbonInterposePath() const {
-  return std::string(kInterposeLibraryPath);
 }
 #endif

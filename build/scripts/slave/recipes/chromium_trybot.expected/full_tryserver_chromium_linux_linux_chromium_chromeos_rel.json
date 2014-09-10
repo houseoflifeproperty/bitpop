@@ -1,0 +1,346 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/bot_update.py",
+      "--master",
+      "tryserver.chromium.linux",
+      "--builder",
+      "linux_chromium_chromeos_rel",
+      "--slave",
+      "TestSlavename",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_vars': {'googlecode_url': 'svn://svn-mirror.golo.chromium.org/%s', 'nacl_trunk': 'svn://svn-mirror.golo.chromium.org/native_client/trunk', 'sourceforge_url': 'svn://svn-mirror.golo.chromium.org/%(repo)s', 'webkit_trunk': 'svn://svn-mirror.golo.chromium.org/blink/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src'}]",
+      "--root",
+      "src",
+      "--revision_mapping_file",
+      "{\"src\": \"got_revision\", \"src/native_client\": \"got_nacl_revision\", \"src/third_party/WebKit\": \"got_webkit_revision\", \"src/third_party/webrtc\": \"got_webrtc_revision\", \"src/tools/swarming_client\": \"got_swarming_client_revision\", \"src/v8\": \"got_v8_revision\"}",
+      "--issue",
+      "12853011",
+      "--patchset",
+      "1",
+      "--output_json",
+      "/path/to/tmp/json",
+      "--revision",
+      "src@HEAD",
+      "--force"
+    ],
+    "name": "bot_update",
+    "~followup_annotations": [
+      "@@@STEP_TEXT@Some step text@@@",
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"did_run\": true, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_failure\": false, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_root\": \"src\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"properties\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_nacl_revision\": 274981, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_nacl_revision_git\": \"d998e125e8253980d76e269b7982aeeefc1b9b50\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_revision\": 170242, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_revision_git\": \"f27fede2220bcd326aee3e86ddfd4ebd0fe58cb9\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_swarming_client_revision\": 276089, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_swarming_client_revision_git\": \"a0ee5d99f1d4b38ddaa4c759c837980b63b99566\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_v8_revision\": 43426, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_v8_revision_git\": \"801ada225ddc271c132c3a35f03975671d43e399\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_webkit_revision\": 124383, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_webkit_revision_git\": \"5e2293dffc3cd07d37fbedea3b500f0eb650614d\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_webrtc_revision\": 120644, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_webrtc_revision_git\": \"0f90628433546e61d9268596da93418c623137f4\"@@@",
+      "@@@STEP_LOG_LINE@json.output@  }, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"root\": \"src\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"step_text\": \"Some step text\"@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_nacl_revision@274981@@@",
+      "@@@SET_BUILD_PROPERTY@got_webkit_revision@124383@@@",
+      "@@@SET_BUILD_PROPERTY@got_swarming_client_revision@276089@@@",
+      "@@@SET_BUILD_PROPERTY@got_webrtc_revision@120644@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@170242@@@",
+      "@@@SET_BUILD_PROPERTY@got_v8_revision@43426@@@",
+      "@@@SET_BUILD_PROPERTY@got_nacl_revision_git@\"d998e125e8253980d76e269b7982aeeefc1b9b50\"@@@",
+      "@@@SET_BUILD_PROPERTY@got_webkit_revision_git@\"5e2293dffc3cd07d37fbedea3b500f0eb650614d\"@@@",
+      "@@@SET_BUILD_PROPERTY@got_v8_revision_git@\"801ada225ddc271c132c3a35f03975671d43e399\"@@@",
+      "@@@SET_BUILD_PROPERTY@got_webrtc_revision_git@\"0f90628433546e61d9268596da93418c623137f4\"@@@",
+      "@@@SET_BUILD_PROPERTY@got_swarming_client_revision_git@\"a0ee5d99f1d4b38ddaa4c759c837980b63b99566\"@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision_git@\"f27fede2220bcd326aee3e86ddfd4ebd0fe58cb9\"@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "[SLAVE_BUILD]/src/testing/buildbot/chromium_trybot.json",
+      "/path/to/tmp/json"
+    ],
+    "name": "read test spec",
+    "~followup_annotations": [
+      "@@@STEP_TEXT@path: testing/buildbot/chromium_trybot.json@@@",
+      "@@@STEP_LOG_LINE@json.output@[@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"base_unittests\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"platforms\": [@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"linux\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"mac\"@@@",
+      "@@@STEP_LOG_LINE@json.output@    ], @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"test\": \"mojo_common_unittests\"@@@",
+      "@@@STEP_LOG_LINE@json.output@  }, @@@",
+      "@@@STEP_LOG_LINE@json.output@  {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"args\": [@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"--test-launcher-print-test-stdio=always\"@@@",
+      "@@@STEP_LOG_LINE@json.output@    ], @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"chromium_configs\": [@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_clang\"@@@",
+      "@@@STEP_LOG_LINE@json.output@    ], @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"platforms\": [@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"linux\"@@@",
+      "@@@STEP_LOG_LINE@json.output@    ], @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"test\": \"sandbox_linux_unittests\"@@@",
+      "@@@STEP_LOG_LINE@json.output@  }, @@@",
+      "@@@STEP_LOG_LINE@json.output@  {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"exclude_builders\": [@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"tryserver.chromium.win:win_chromium_x64_rel\"@@@",
+      "@@@STEP_LOG_LINE@json.output@    ], @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"test\": \"browser_tests\"@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@]@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "runhooks"
+    ],
+    "env": {
+      "GYP_DEFINES": "chromeos=1 component=static_library dcheck_always_on=1 fastbuild=1 ffmpeg_branding=ChromeOS gomadir='[BUILD]/goma' proprietary_codecs=1 target_arch=x64 use_goma=1"
+    },
+    "name": "gclient runhooks"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/compile.py",
+      "--target",
+      "Release",
+      "--src-dir",
+      "[SLAVE_BUILD]/src",
+      "--build-tool",
+      "ninja",
+      "--compiler",
+      "goma",
+      "--goma-dir",
+      "[BUILD]/goma",
+      "--",
+      "all",
+      "base_unittests",
+      "mojo_common_unittests",
+      "sandbox_linux_unittests",
+      "browser_tests",
+      "chrome"
+    ],
+    "name": "compile (with patch)"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/buildtools/checkdeps/checkdeps.py",
+      "--json",
+      "/path/to/tmp/json"
+    ],
+    "name": "checkdeps (with patch)",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@[]@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/tools/checkperms/checkperms.py",
+      "--root",
+      "[SLAVE_BUILD]/src",
+      "--json",
+      "/path/to/tmp/json"
+    ],
+    "name": "checkperms (with patch)",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@[]@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/tools/checklicenses/checklicenses.py",
+      "--root",
+      "[SLAVE_BUILD]/src",
+      "--json",
+      "/path/to/tmp/json"
+    ],
+    "name": "checklicenses (with patch)",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@[]@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/tools/deps2git/deps2git.py",
+      "-d",
+      "[SLAVE_BUILD]/src/DEPS",
+      "-o",
+      "[SLAVE_BUILD]/src/.DEPS.git",
+      "--verify",
+      "--json",
+      "/path/to/tmp/json"
+    ],
+    "name": "deps2git (with patch)",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@[]@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/tools/deps2git/deps2submodules.py",
+      "--gitless",
+      "[SLAVE_BUILD]/src/.DEPS.git"
+    ],
+    "name": "deps2submodules"
+  },
+  {
+    "allow_subannotations": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Release",
+      "--xvfb",
+      "--factory-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"\", \"build_config\": \"Release\", \"buildername\": \"linux_chromium_chromeos_rel\", \"buildnumber\": 571, \"issue\": 12853011, \"mastername\": \"tryserver.chromium.linux\", \"patchset\": 1, \"project\": \"chrome\", \"recipe\": \"chromium_trybot\", \"repository\": \"\", \"requester\": \"commit-bot@chromium.org\", \"revision\": null, \"rietveld\": \"https://codereview.chromium.org\", \"root\": \"src\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--build-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"\", \"build_config\": \"Release\", \"buildername\": \"linux_chromium_chromeos_rel\", \"buildnumber\": 571, \"issue\": 12853011, \"mastername\": \"tryserver.chromium.linux\", \"patchset\": 1, \"project\": \"chrome\", \"recipe\": \"chromium_trybot\", \"repository\": \"\", \"requester\": \"commit-bot@chromium.org\", \"revision\": null, \"rietveld\": \"https://codereview.chromium.org\", \"root\": \"src\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--annotate=gtest",
+      "--test-type=base_unittests",
+      "--test-launcher-summary-output",
+      "/path/to/tmp/json",
+      "--builder-name=linux_chromium_chromeos_rel",
+      "--slave-name=TestSlavename",
+      "--build-number=571",
+      "base_unittests"
+    ],
+    "name": "base_unittests (with patch)"
+  },
+  {
+    "allow_subannotations": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Release",
+      "--xvfb",
+      "--factory-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"\", \"build_config\": \"Release\", \"buildername\": \"linux_chromium_chromeos_rel\", \"buildnumber\": 571, \"issue\": 12853011, \"mastername\": \"tryserver.chromium.linux\", \"patchset\": 1, \"project\": \"chrome\", \"recipe\": \"chromium_trybot\", \"repository\": \"\", \"requester\": \"commit-bot@chromium.org\", \"revision\": null, \"rietveld\": \"https://codereview.chromium.org\", \"root\": \"src\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--build-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"\", \"build_config\": \"Release\", \"buildername\": \"linux_chromium_chromeos_rel\", \"buildnumber\": 571, \"issue\": 12853011, \"mastername\": \"tryserver.chromium.linux\", \"patchset\": 1, \"project\": \"chrome\", \"recipe\": \"chromium_trybot\", \"repository\": \"\", \"requester\": \"commit-bot@chromium.org\", \"revision\": null, \"rietveld\": \"https://codereview.chromium.org\", \"root\": \"src\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--annotate=gtest",
+      "--test-type=mojo_common_unittests",
+      "--test-launcher-summary-output",
+      "/path/to/tmp/json",
+      "--builder-name=linux_chromium_chromeos_rel",
+      "--slave-name=TestSlavename",
+      "--build-number=571",
+      "mojo_common_unittests"
+    ],
+    "name": "mojo_common_unittests (with patch)"
+  },
+  {
+    "allow_subannotations": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Release",
+      "--xvfb",
+      "--factory-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"\", \"build_config\": \"Release\", \"buildername\": \"linux_chromium_chromeos_rel\", \"buildnumber\": 571, \"issue\": 12853011, \"mastername\": \"tryserver.chromium.linux\", \"patchset\": 1, \"project\": \"chrome\", \"recipe\": \"chromium_trybot\", \"repository\": \"\", \"requester\": \"commit-bot@chromium.org\", \"revision\": null, \"rietveld\": \"https://codereview.chromium.org\", \"root\": \"src\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--build-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"\", \"build_config\": \"Release\", \"buildername\": \"linux_chromium_chromeos_rel\", \"buildnumber\": 571, \"issue\": 12853011, \"mastername\": \"tryserver.chromium.linux\", \"patchset\": 1, \"project\": \"chrome\", \"recipe\": \"chromium_trybot\", \"repository\": \"\", \"requester\": \"commit-bot@chromium.org\", \"revision\": null, \"rietveld\": \"https://codereview.chromium.org\", \"root\": \"src\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--annotate=gtest",
+      "--test-type=sandbox_linux_unittests",
+      "--test-launcher-summary-output",
+      "/path/to/tmp/json",
+      "--builder-name=linux_chromium_chromeos_rel",
+      "--slave-name=TestSlavename",
+      "--build-number=571",
+      "sandbox_linux_unittests",
+      "--test-launcher-print-test-stdio=always"
+    ],
+    "name": "sandbox_linux_unittests (with patch)"
+  },
+  {
+    "allow_subannotations": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Release",
+      "--xvfb",
+      "--factory-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"\", \"build_config\": \"Release\", \"buildername\": \"linux_chromium_chromeos_rel\", \"buildnumber\": 571, \"issue\": 12853011, \"mastername\": \"tryserver.chromium.linux\", \"patchset\": 1, \"project\": \"chrome\", \"recipe\": \"chromium_trybot\", \"repository\": \"\", \"requester\": \"commit-bot@chromium.org\", \"revision\": null, \"rietveld\": \"https://codereview.chromium.org\", \"root\": \"src\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--build-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"\", \"build_config\": \"Release\", \"buildername\": \"linux_chromium_chromeos_rel\", \"buildnumber\": 571, \"issue\": 12853011, \"mastername\": \"tryserver.chromium.linux\", \"patchset\": 1, \"project\": \"chrome\", \"recipe\": \"chromium_trybot\", \"repository\": \"\", \"requester\": \"commit-bot@chromium.org\", \"revision\": null, \"rietveld\": \"https://codereview.chromium.org\", \"root\": \"src\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--annotate=gtest",
+      "--test-type=browser_tests",
+      "--test-launcher-summary-output",
+      "/path/to/tmp/json",
+      "--builder-name=linux_chromium_chromeos_rel",
+      "--slave-name=TestSlavename",
+      "--build-number=571",
+      "browser_tests"
+    ],
+    "name": "browser_tests (with patch)"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/chrome/test/nacl_test_injection/buildbot_nacl_integration.py",
+      "--mode",
+      "Release",
+      "--json_build_results_output_file",
+      "/path/to/tmp/json"
+    ],
+    "name": "nacl_integration (with patch)",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@[]@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/mojo/tools/run_mojo_python_tests.py",
+      "--write-full-results-to",
+      "/path/to/tmp/json"
+    ],
+    "name": "mojo_python_tests (with patch)"
+  }
+]

@@ -37,7 +37,7 @@
 #include "wtf/text/WTFString.h"
 #include "wtf/unicode/CharacterNames.h"
 
-namespace WebCore {
+namespace blink {
 
 using std::max;
 using std::min;
@@ -61,7 +61,7 @@ GlyphPageTreeNode* GlyphPageTreeNode::getRoot(unsigned pageNumber)
         return foundNode;
 
     GlyphPageTreeNode* node = new GlyphPageTreeNode;
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     node->m_pageNumber = pageNumber;
 #endif
     roots->set(pageNumber, node);
@@ -207,13 +207,13 @@ void GlyphPageTreeNode::initializePage(const FontData* fontData, unsigned pageNu
             // for only 128 out of 256 characters.
             bool haveGlyphs;
             if (!fontData->isSegmented()) {
-                m_page = GlyphPage::createForSingleFontData(this, static_cast<const SimpleFontData*>(fontData));
-                haveGlyphs = fill(m_page.get(), 0, GlyphPage::size, buffer, bufferLength, static_cast<const SimpleFontData*>(fontData));
+                m_page = GlyphPage::createForSingleFontData(this, toSimpleFontData(fontData));
+                haveGlyphs = fill(m_page.get(), 0, GlyphPage::size, buffer, bufferLength, toSimpleFontData(fontData));
             } else {
                 m_page = GlyphPage::createForMixedFontData(this);
                 haveGlyphs = false;
 
-                const SegmentedFontData* segmentedFontData = static_cast<const SegmentedFontData*>(fontData);
+                const SegmentedFontData* segmentedFontData = toSegmentedFontData(fontData);
                 for (int i = segmentedFontData->numRanges() - 1; i >= 0; i--) {
                     const FontDataRange& range = segmentedFontData->rangeAt(i);
                     // all this casting is to ensure all the parameters to min and max have the same type,
@@ -322,7 +322,7 @@ GlyphPageTreeNode* GlyphPageTreeNode::getChild(const FontData* fontData, unsigne
             curr->m_customFontCount++;
     }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     child->m_pageNumber = m_pageNumber;
 #endif
     if (fontData) {
@@ -402,15 +402,15 @@ void GlyphPageTreeNode::pruneFontData(const SimpleFontData* fontData, unsigned l
     }
 #endif
 
-}
+} // namespace blink
 
 #ifndef NDEBUG
 void showGlyphPageTrees()
 {
     printf("Page 0:\n");
     showGlyphPageTree(0);
-    HashMap<int, WebCore::GlyphPageTreeNode*>::iterator end = WebCore::GlyphPageTreeNode::roots->end();
-    for (HashMap<int, WebCore::GlyphPageTreeNode*>::iterator it = WebCore::GlyphPageTreeNode::roots->begin(); it != end; ++it) {
+    HashMap<int, blink::GlyphPageTreeNode*>::iterator end = blink::GlyphPageTreeNode::roots->end();
+    for (HashMap<int, blink::GlyphPageTreeNode*>::iterator it = blink::GlyphPageTreeNode::roots->begin(); it != end; ++it) {
         printf("\nPage %d:\n", it->key);
         showGlyphPageTree(it->key);
     }
@@ -418,6 +418,6 @@ void showGlyphPageTrees()
 
 void showGlyphPageTree(unsigned pageNumber)
 {
-    WebCore::GlyphPageTreeNode::getRoot(pageNumber)->showSubtree();
+    blink::GlyphPageTreeNode::getRoot(pageNumber)->showSubtree();
 }
 #endif

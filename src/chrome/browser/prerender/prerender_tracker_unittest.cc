@@ -22,11 +22,13 @@
 #include "content/test/net/url_request_mock_http_job.h"
 #include "ipc/ipc_message.h"
 #include "net/base/request_priority.h"
+#include "net/url_request/redirect_info.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::BrowserThread;
+using content::ResourceType;
 
 namespace prerender {
 
@@ -118,13 +120,13 @@ class DeferredRedirectDelegate : public net::URLRequest::Delegate,
 
   // net::URLRequest::Delegate implementation:
   virtual void OnReceivedRedirect(net::URLRequest* request,
-                                  const GURL& new_url,
+                                  const net::RedirectInfo& redirect_info,
                                   bool* defer_redirect) OVERRIDE {
     // Defer the redirect either way.
     *defer_redirect = true;
 
     // Find out what the throttle would have done.
-    throttle_->WillRedirectRequest(new_url, &was_deferred_);
+    throttle_->WillRedirectRequest(redirect_info.new_url, &was_deferred_);
     run_loop_->Quit();
   }
   virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE { }
@@ -227,9 +229,13 @@ TEST_F(PrerenderTrackerTest, PrerenderThrottledRedirectResume) {
       net::DEFAULT_PRIORITY,
       &delegate,
       &url_request_context);
-  content::ResourceRequestInfo::AllocateForTesting(
-      &request, ResourceType::IMAGE, NULL,
-      kDefaultChildId, kDefaultRouteId, MSG_ROUTING_NONE, true);
+  content::ResourceRequestInfo::AllocateForTesting(&request,
+                                                   content::RESOURCE_TYPE_IMAGE,
+                                                   NULL,
+                                                   kDefaultChildId,
+                                                   kDefaultRouteId,
+                                                   MSG_ROUTING_NONE,
+                                                   true);
 
   // Install a prerender throttle.
   PrerenderResourceThrottle throttle(&request);
@@ -267,8 +273,13 @@ TEST_F(PrerenderTrackerTest, PrerenderThrottledRedirectMainFrame) {
       &delegate,
       &url_request_context);
   content::ResourceRequestInfo::AllocateForTesting(
-      &request, ResourceType::MAIN_FRAME, NULL,
-      kDefaultChildId, kDefaultRouteId, MSG_ROUTING_NONE, true);
+      &request,
+      content::RESOURCE_TYPE_MAIN_FRAME,
+      NULL,
+      kDefaultChildId,
+      kDefaultRouteId,
+      MSG_ROUTING_NONE,
+      true);
 
   // Install a prerender throttle.
   PrerenderResourceThrottle throttle(&request);
@@ -303,9 +314,13 @@ TEST_F(PrerenderTrackerTest, PrerenderThrottledRedirectSyncXHR) {
       net::DEFAULT_PRIORITY,
       &delegate,
       &url_request_context);
-  content::ResourceRequestInfo::AllocateForTesting(
-      &request, ResourceType::XHR, NULL,
-      kDefaultChildId, kDefaultRouteId, MSG_ROUTING_NONE, false);
+  content::ResourceRequestInfo::AllocateForTesting(&request,
+                                                   content::RESOURCE_TYPE_XHR,
+                                                   NULL,
+                                                   kDefaultChildId,
+                                                   kDefaultRouteId,
+                                                   MSG_ROUTING_NONE,
+                                                   false);
 
   // Install a prerender throttle.
   PrerenderResourceThrottle throttle(&request);

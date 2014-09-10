@@ -10,17 +10,38 @@ dimensions and startup method easily.
 
 import logging
 import os
-import socket
 import sys
 
 import os_utilities  # pylint: disable-msg=F0401
 import zipped_archive  # pylint: disable-msg=F0401
 
 
+def is_buildbot_slave_running():
+  """Returns True if a buildbot slave process is detected.
+
+  Sometimes human error occurs, and a bot is double-booked to be both a
+  buildbot slave and a Swarming bot.
+  """
+  if sys.platform == 'win32':
+    for drive in ('c', 'e'):
+      if os.path.isfile(drive + ':\\b\\build\\slave\\twistd.pid'):
+        return True
+  else:
+    if os.path.isfile('/b/build/slave/twistd.pid'):
+      return True
+  return False
+
+
 def get_attributes():
   """Returns the attributes for this machine."""
-  bot_id = socket.gethostname().lower().split('.', 1)[0]
-  return os_utilities.get_attributes(bot_id)
+  attributes = os_utilities.get_attributes(None)
+  if is_buildbot_slave_running():
+    # Make sure no task is triggered on this bot until this is resolved.
+    attributes['dimensions'] = {
+      'error': 'Detected a buildbot slave process!',
+      'id': attributes['id'],
+    }
+  return attributes
 
 
 def setup_bot():

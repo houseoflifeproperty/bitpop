@@ -9,22 +9,8 @@
         },
         {
             "type": "@WebInspector.ContextMenu.Provider",
-            "contextTypes": ["WebInspector.RemoteObject", "WebInspector.DOMNode"],
+            "contextTypes": ["WebInspector.RemoteObject", "WebInspector.DOMNode", "WebInspector.DeferredDOMNode"],
             "className": "WebInspector.ElementsPanel.ContextMenuProvider"
-        },
-        {
-            "type": "drawer-view",
-            "name": "emulation",
-            "title": "Emulation",
-            "order": "10",
-            "className": "WebInspector.OverridesView"
-        },
-        {
-            "type": "drawer-view",
-            "name": "rendering",
-            "title": "Rendering",
-            "order": "11",
-            "className": "WebInspector.RenderingOptionsView"
         },
         {
             "type": "@WebInspector.Renderer",
@@ -33,7 +19,7 @@
         },
         {
             "type": "@WebInspector.Revealer",
-            "contextTypes": ["WebInspector.DOMNode"],
+            "contextTypes": ["WebInspector.DOMNode", "WebInspector.DeferredDOMNode" ],
             "className": "WebInspector.ElementsPanel.DOMNodeRevealer"
         },
         {
@@ -42,21 +28,21 @@
             "className": "WebInspector.ElementsPanel.NodeRemoteObjectRevealer"
         },
         {
-            "type": "@WebInspector.Revealer",
-            "contextTypes": ["WebInspector.OverridesSupport"],
-            "className": "WebInspector.OverridesView.Revealer"
+            "type": "@WebInspector.NodeRemoteObjectInspector",
+            "contextTypes": ["WebInspector.RemoteObject"],
+            "className": "WebInspector.ElementsPanel.NodeRemoteObjectInspector"
         },
         {
             "type": "ui-setting",
             "section": "Elements",
-            "title": "Color format",
+            "title": "Color format:",
             "settingName": "colorFormat",
             "settingType": "select",
             "options": [
-                [ "As authored", "original" ],
-                [ "HEX: #DAC0DE", "hex", true ],
-                [ "RGB: rgb(128, 255, 255)", "rgb", true ],
-                [ "HSL: hsl(300, 80%, 90%)", "hsl", true ]
+                ["As authored", "original"],
+                ["HEX: #DAC0DE", "hex", true],
+                ["RGB: rgb(128, 255, 255)", "rgb", true],
+                ["HSL: hsl(300, 80%, 90%)", "hsl", true]
             ]
         },
         {
@@ -88,5 +74,15 @@
             "settingType": "checkbox"
         }
     ],
-    "scripts": [ "ElementsPanel.js" ]
+    "scripts": [
+        "Spectrum.js",
+        "DOMSyntaxHighlighter.js",
+        "ElementsTreeOutline.js",
+        "EventListenersSidebarPane.js",
+        "MetricsSidebarPane.js",
+        "PlatformFontsSidebarPane.js",
+        "PropertiesSidebarPane.js",
+        "StylesSidebarPane.js",
+        "ElementsPanel.js"
+    ]
 }

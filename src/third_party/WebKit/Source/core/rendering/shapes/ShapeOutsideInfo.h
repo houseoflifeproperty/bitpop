@@ -36,9 +36,8 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/LayoutSize.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderBlockFlow;
 class RenderBox;
@@ -48,8 +47,6 @@ class ShapeOutsideInfo FINAL {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     void setReferenceBoxLogicalSize(LayoutSize);
-
-    SegmentList computeSegmentsForLine(LayoutUnit lineTop, LayoutUnit lineHeight) const;
 
     LayoutUnit shapeLogicalTop() const { return computedShape().shapeMarginLogicalBoundingBox().y() + logicalTopOffset(); }
     LayoutUnit shapeLogicalBottom() const { return computedShape().shapeMarginLogicalBoundingBox().maxY() + logicalTopOffset(); }

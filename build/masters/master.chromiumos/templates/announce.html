@@ -224,11 +224,10 @@
                 "builder=amd64-generic+ASAN",
                 "reload=30",
             ].join("&");
-            var chromium_chromiumos = [
-                "builder=ChromiumOS+(x86)",
-                "builder=ChromiumOS+(amd64)",
-                "builder=ChromiumOS+(daisy)",
-                "builder=ChromiumOS+(arm)",
+            var chromiumos_chromium = [
+                "builder=X86+(chromium)",
+                "builder=AMD64+(chromium)",
+                "builder=Daisy+(chromium)",
                 "titles=on",
             ].join("&");
             var arm = [
@@ -250,10 +249,10 @@
             ].join("&");
 
             var bar = "https://build.chromium.org/p/chromiumos/horizontal_one_box_per_builder"
-            var bar_chromium_chromiumos = "https://build.chromium.org/p/chromium.chromiumos/horizontal_one_box_per_builder"
+            var bar_chromiumos_chromium = "https://build.chromium.org/p/chromiumos.chromium/horizontal_one_box_per_builder"
 
             var waterfall = '../chromiumos/waterfall'
-            var waterfall_chromium_chromiumos = '../chromium.chromiumos/waterfall'
+            var waterfall_chromiumos_chromium = '../chromiumos.chromium/waterfall'
             var waterfall_memory = "../chromium.memory/waterfall"
 
             function GetUrl(type, content) {
@@ -267,7 +266,7 @@
             DisplayBar(waterfall, bar, x86, "x86");
             DisplayBar(waterfall, bar, arm, "arm");
             DisplayBar(waterfall, bar, commit_queue, "commit queue");
-            DisplayBar(waterfall_chromium_chromiumos, bar_chromium_chromiumos, chromium_chromiumos, "chromium.chromiumos")
+            DisplayBar(waterfall_chromiumos_chromium, bar_chromiumos_chromium, chromiumos_chromium, "chromiumos.chromium")
           </script>
         </table>
       </td>

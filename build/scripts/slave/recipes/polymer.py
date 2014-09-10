@@ -49,16 +49,21 @@ def _CheckoutSteps(api):
     soln.url = url_base + name + '.git'
     soln.deps_file = ''
 
-  submodule_command = api.python(
+
+  api.gclient.checkout(cfg)
+  api.python(
       'submodule update', api.path['depot_tools'].join('gclient.py'),
       ['recurse', 'git', 'submodule', 'update', '--init', '--recursive'])
 
-  yield api.gclient.checkout(cfg)
-  yield submodule_command
-
 
 def GenSteps(api):
-  yield _CheckoutSteps(api)
+  # Disable linux builders until the browsers on the bots are updated to the
+  # latest version. [crbug.com/402664]
+  if api.platform.is_linux:
+    api.step('Linux builders (temporarily) disabled [crbug.com/402664]',
+        ['echo', 'Linux builders (temporarily) disabled [crbug.com/402664]'])
+    return None
+  _CheckoutSteps(api)
   this_repo = api.properties['buildername'].split()[0]
   api.path['checkout'] = api.path['slave_build'].join(this_repo)
 
@@ -66,7 +71,7 @@ def GenSteps(api):
   tmp_args = []
   if not api.platform.is_win:
     tmp_path = api.path['slave_build'].join('.tmp')
-    yield api.path.makedirs('tmp', tmp_path)
+    api.path.makedirs('tmp', tmp_path)
     tmp_args = ['--tmp', tmp_path]
 
   cmd_suffix = ''
@@ -88,20 +93,23 @@ def GenSteps(api):
     }
 
   test_prefix = []
-  if api.platform.is_linux:
+  # TODO: remove the no coverage pragma on the next line when re-enabling
+  # linux builders; it's been put there purely to get 100% code coverage.
+  # [crbug.com/402664]
+  if api.platform.is_linux: #pragma: no cover
     test_prefix = ['xvfb-run']
 
   # Install deps from npm
-  yield api.step('install-deps', ['npm' + cmd_suffix, 'install'] + tmp_args,
+  api.step('install-deps', ['npm' + cmd_suffix, 'install'] + tmp_args,
                  cwd=api.path['checkout'], env=node_env)
 
   # Update existing deps with version '*'
-  yield api.step('update-deps', ['npm' + cmd_suffix, 'update'] + tmp_args,
+  api.step('update-deps', ['npm' + cmd_suffix, 'update'] + tmp_args,
                  cwd=api.path['checkout'], env=node_env)
 
-  yield api.step('test', test_prefix + ['grunt' + cmd_suffix,
-                 'test-buildbot'], cwd=api.path['checkout'],
-                 env=node_env, allow_subannotations=True)
+  api.step('test', test_prefix + ['grunt' + cmd_suffix,
+           'test-buildbot'], cwd=api.path['checkout'],
+           env=node_env, allow_subannotations=True)
 
 
 def GenTests(api):

@@ -31,8 +31,8 @@
 #include "config.h"
 #include "modules/webmidi/NavigatorWebMIDI.h"
 
-#include "bindings/v8/ScriptPromise.h"
-#include "bindings/v8/ScriptPromiseResolver.h"
+#include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/DOMError.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
@@ -40,7 +40,7 @@
 #include "modules/webmidi/MIDIAccessInitializer.h"
 #include "modules/webmidi/MIDIOptions.h"
 
-namespace WebCore {
+namespace blink {
 
 NavigatorWebMIDI::NavigatorWebMIDI(LocalFrame* frame)
     : DOMWindowProperty(frame)
@@ -84,4 +84,4 @@ ScriptPromise NavigatorWebMIDI::requestMIDIAccess(ScriptState* scriptState, cons
     return MIDIAccessInitializer::start(scriptState, MIDIOptions(options));
 }
 
-} // namespace WebCore
+} // namespace blink

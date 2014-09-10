@@ -39,6 +39,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/url_constants.h"
+#include "extensions/browser/extension_system.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 #if defined(OS_MACOSX)
@@ -317,6 +318,10 @@ void BrowserCommandController::TabStateChanged() {
   UpdateCommandsForTabState();
 }
 
+void BrowserCommandController::ZoomStateChanged() {
+  UpdateCommandsForZoomState();
+}
+
 void BrowserCommandController::ContentRestrictionsChanged() {
   UpdateCommandsForContentRestrictionState();
 }
@@ -459,13 +464,6 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
     case IDC_TOGGLE_ASH_DESKTOP:
       chrome::ToggleAshDesktop();
       break;
-    case IDC_MINIMIZE_WINDOW:
-      content::RecordAction(
-          base::UserMetricsAction("Accel_Toggle_Minimized_M"));
-      ash::accelerators::ToggleMinimized();
-      break;
-    // If Ash needs many more commands here we should implement a general
-    // mechanism to pass accelerators back into Ash. http://crbug.com/285308
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -818,14 +816,17 @@ void BrowserCommandController::TabBlockedStateChanged(
 
 void BrowserCommandController::TabRestoreServiceChanged(
     TabRestoreService* service) {
-  command_updater_.UpdateCommandEnabled(
-      IDC_RESTORE_TAB,
-      GetRestoreTabType(browser_) != TabStripModelDelegate::RESTORE_NONE);
+  UpdateTabRestoreCommandState();
 }
 
 void BrowserCommandController::TabRestoreServiceDestroyed(
     TabRestoreService* service) {
   service->RemoveObserver(this);
+}
+
+void BrowserCommandController::TabRestoreServiceLoaded(
+    TabRestoreService* service) {
+  UpdateTabRestoreCommandState();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -876,7 +877,7 @@ void BrowserCommandController::InitCommandState() {
   command_updater_.UpdateCommandEnabled(IDC_NEW_TAB, true);
   command_updater_.UpdateCommandEnabled(IDC_CLOSE_TAB, true);
   command_updater_.UpdateCommandEnabled(IDC_DUPLICATE_TAB, true);
-  command_updater_.UpdateCommandEnabled(IDC_RESTORE_TAB, false);
+  UpdateTabRestoreCommandState();
 #if defined(OS_WIN) && defined(USE_ASH)
   if (browser_->host_desktop_type() != chrome::HOST_DESKTOP_TYPE_ASH)
     command_updater_.UpdateCommandEnabled(IDC_EXIT, true);
@@ -945,7 +946,7 @@ void BrowserCommandController::InitCommandState() {
   // Zoom
   command_updater_.UpdateCommandEnabled(IDC_ZOOM_MENU, true);
   command_updater_.UpdateCommandEnabled(IDC_ZOOM_PLUS, true);
-  command_updater_.UpdateCommandEnabled(IDC_ZOOM_NORMAL, true);
+  command_updater_.UpdateCommandEnabled(IDC_ZOOM_NORMAL, false);
   command_updater_.UpdateCommandEnabled(IDC_ZOOM_MINUS, true);
 
   // Show various bits of UI
@@ -1045,7 +1046,8 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
   command_updater->UpdateCommandEnabled(
       IDC_SHOW_BOOKMARK_MANAGER,
       browser_defaults::bookmarks_enabled && !forced_incognito);
-  ExtensionService* extension_service = profile->GetExtensionService();
+  ExtensionService* extension_service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
   const bool enable_extensions =
       extension_service && extension_service->extensions_enabled();
 
@@ -1124,6 +1126,18 @@ void BrowserCommandController::UpdateCommandsForTabState() {
   UpdateCommandsForContentRestrictionState();
   UpdateCommandsForBookmarkEditing();
   UpdateCommandsForFind();
+  // Update the zoom commands when an active tab is selected.
+  UpdateCommandsForZoomState();
+}
+
+void BrowserCommandController::UpdateCommandsForZoomState() {
+  WebContents* contents =
+      browser_->tab_strip_model()->GetActiveWebContents();
+  if (!contents)
+    return;
+  command_updater_.UpdateCommandEnabled(IDC_ZOOM_PLUS, CanZoomIn(contents));
+  command_updater_.UpdateCommandEnabled(IDC_ZOOM_NORMAL, ActualSize(contents));
+  command_updater_.UpdateCommandEnabled(IDC_ZOOM_MINUS, CanZoomOut(contents));
 }
 
 void BrowserCommandController::UpdateCommandsForContentRestrictionState() {
@@ -1299,6 +1313,18 @@ void BrowserCommandController::UpdateReloadStopState(bool is_loading,
                                                      bool force) {
   window()->UpdateReloadStopState(is_loading, force);
   command_updater_.UpdateCommandEnabled(IDC_STOP, is_loading);
+}
+
+void BrowserCommandController::UpdateTabRestoreCommandState() {
+  TabRestoreService* tab_restore_service =
+      TabRestoreServiceFactory::GetForProfile(profile());
+  // The command is enabled if the service hasn't loaded yet to trigger loading.
+  // The command is updated once the load completes.
+  command_updater_.UpdateCommandEnabled(
+      IDC_RESTORE_TAB,
+      tab_restore_service &&
+      (!tab_restore_service->IsLoaded() ||
+       GetRestoreTabType(browser_) != TabStripModelDelegate::RESTORE_NONE));
 }
 
 void BrowserCommandController::UpdateCommandsForFind() {

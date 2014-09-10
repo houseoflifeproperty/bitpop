@@ -4,6 +4,7 @@
 
 {
   'targets': [{
+    # GN version: //components/usb_service
     'target_name': 'usb_service',
     'type': '<(component)',
     'dependencies': [
@@ -20,11 +21,14 @@
       '..',
     ],
     'sources': [
+      # Note: sources list duplicated in GN build.
       'usb_service/usb_context.cc',
       'usb_service/usb_context.h',
       'usb_service/usb_device_impl.cc',
       'usb_service/usb_device_impl.h',
       'usb_service/usb_device.h',
+      'usb_service/usb_device_filter.cc',
+      'usb_service/usb_device_filter.h',
       'usb_service/usb_device_handle_impl.cc',
       'usb_service/usb_device_handle_impl.h',
       'usb_service/usb_device_handle.h',
@@ -41,7 +45,12 @@
         'dependencies': [
           '../build/linux/system.gyp:udev',
         ],
-      }]
+      }],
+      ['chromeos==1', {
+        'dependencies': [
+          '../chromeos/chromeos.gyp:chromeos',
+        ],
+      }],
     ]
   }],
 }

@@ -131,7 +131,7 @@
         'break_list.h',
         'canvas.cc',
         'canvas.h',
-        'canvas_android.cc',
+        'canvas_notimplemented.cc',
         'canvas_paint_mac.h',
         'canvas_paint_mac.mm',
         'canvas_paint_win.cc',
@@ -152,12 +152,17 @@
         'color_utils.h',
         'display.cc',
         'display.h',
+        'display_change_notifier.cc',
+        'display_change_notifier.h',
         'display_observer.cc',
         'display_observer.h',
         'favicon_size.cc',
         'favicon_size.h',
         'font.cc',
         'font.h',
+        'font_fallback.h',
+        'font_fallback_linux.cc',
+        'font_fallback_mac.cc',
         'font_fallback_win.cc',
         'font_fallback_win.h',
         'font_list.cc',
@@ -166,9 +171,9 @@
         'font_list_impl.h',
         'font_render_params_android.cc',
         'font_render_params_linux.cc',
-        'font_render_params_linux.h',
-        'font_smoothing_win.cc',
-        'font_smoothing_win.h',
+        'font_render_params_win.cc',
+        'font_render_params.cc',
+        'font_render_params.h',
         'frame_time.h',
         'gfx_export.h',
         'gfx_paths.cc',
@@ -203,6 +208,8 @@
         'interpolated_transform.h',
         'linux_font_delegate.cc',
         'linux_font_delegate.h',
+        'mac/coordinate_conversion.h',
+        'mac/coordinate_conversion.mm',
         'mac/scoped_ns_disable_screen_updates.h',
         'native_widget_types.h',
         'nine_image_painter.cc',
@@ -314,7 +321,7 @@
         #                  http://crbug.com/105550
         ['use_canvas_skia==1', {
           'sources!': [
-            'canvas_android.cc',
+            'canvas_notimplemented.cc',
           ],
         }, {  # use_canvas_skia!=1
           'sources!': [
@@ -413,7 +420,10 @@
     },
     {
       'target_name': 'gfx_test_support',
+      'type': 'static_library',
       'sources': [
+        'test/fontconfig_util_linux.cc',
+        'test/fontconfig_util_linux.h',
         'test/gfx_util.cc',
         'test/gfx_util.h',
         'test/ui_cocoa_test_helper.h',
@@ -432,18 +442,15 @@
             ],
           },
         }],
-        ['OS!="ios"', {
-          'type': 'static_library',
-        }, {  # OS=="ios"
-          # None of the sources in this target are built on iOS, resulting in
-          # link errors when building targets that depend on this target
-          # because the static library isn't found. If this target is changed
-          # to have sources that are built on iOS, the target should be changed
-          # to be of type static_library on all platforms.
-          'type': 'none',
+        ['OS=="ios"', {
           # The cocoa files don't apply to iOS.
           'sources/': [
             ['exclude', 'cocoa']
+          ],
+        }],
+        ['OS=="linux"', {
+          'dependencies': [
+            '../../build/linux/system.gyp:fontconfig',
           ],
         }],
       ],

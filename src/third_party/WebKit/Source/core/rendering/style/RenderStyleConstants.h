@@ -26,7 +26,7 @@
 #ifndef RenderStyleConstants_h
 #define RenderStyleConstants_h
 
-namespace WebCore {
+namespace blink {
 
 enum StyleRecalcChange {
     NoChange,
@@ -42,20 +42,6 @@ static const size_t PrintColorAdjustBits = 1;
 enum PrintColorAdjust {
     PrintColorAdjustEconomy,
     PrintColorAdjustExact
-};
-
-// When some style properties change, different amounts of work have to be done depending on
-// context (e.g. whether the property is changing on an element which has a compositing layer).
-// A simple StyleDifference does not provide enough information so we return a bit mask of
-// StyleDifferenceContextSensitiveProperties from RenderStyle::visualInvalidationDiff() too.
-enum StyleDifferenceContextSensitiveProperty {
-    ContextSensitivePropertyNone = 0,
-    ContextSensitivePropertyTransform = (1 << 0),
-    ContextSensitivePropertyOpacity = (1 << 1),
-    ContextSensitivePropertyZIndex = (1 << 2),
-    ContextSensitivePropertyFilter = (1 << 3),
-    // The object needs to be repainted if it contains text or properties dependent on color (e.g., border or outline).
-    ContextSensitivePropertyTextOrColor = (1 << 4)
 };
 
 // Static pseudo styles. Dynamic ones are produced on the fly.
@@ -91,8 +77,8 @@ enum EPosition {
     StaticPosition = 0,
     RelativePosition = 1,
     AbsolutePosition = 2,
-    StickyPosition = 3,
     // This value is required to pack our bits efficiently in RenderObject.
+    // FIXME: Is this still true now that we've remove position: sticky.
     FixedPosition = 6
 };
 
@@ -359,8 +345,8 @@ enum TextJustify {
 
 enum TextUnderlinePosition {
     // FIXME: Implement support for 'under left' and 'under right' values.
-    TextUnderlinePositionAuto = 0x1,
-    TextUnderlinePositionUnder = 0x2
+    TextUnderlinePositionAuto,
+    TextUnderlinePositionUnder
 };
 
 enum EPageBreak {
@@ -469,7 +455,7 @@ enum TextOrientation { TextOrientationVerticalRight, TextOrientationUpright, Tex
 
 enum TextOverflow { TextOverflowClip = 0, TextOverflowEllipsis };
 
-enum EImageRendering { ImageRenderingAuto, ImageRenderingOptimizeSpeed, ImageRenderingOptimizeQuality, ImageRenderingOptimizeContrast };
+enum EImageRendering { ImageRenderingAuto, ImageRenderingOptimizeSpeed, ImageRenderingOptimizeQuality, ImageRenderingOptimizeContrast, ImageRenderingPixelated };
 
 enum ImageResolutionSource { ImageResolutionSpecified = 0, ImageResolutionFromImage };
 
@@ -483,7 +469,26 @@ enum WrapThrough { WrapThroughWrap, WrapThroughNone };
 
 enum RubyPosition { RubyPositionBefore, RubyPositionAfter };
 
-enum GridAutoFlow { AutoFlowNone, AutoFlowColumn, AutoFlowRow };
+static const size_t GridAutoFlowBits = 5;
+enum InternalGridAutoFlowAlgorithm {
+    InternalAutoFlowAlgorithmSparse = 0x1,
+    InternalAutoFlowAlgorithmDense = 0x2,
+    InternalAutoFlowAlgorithmStack = 0x4
+};
+
+enum InternalGridAutoFlowDirection {
+    InternalAutoFlowDirectionRow = 0x8,
+    InternalAutoFlowDirectionColumn = 0x10
+};
+
+enum GridAutoFlow {
+    AutoFlowRow = InternalAutoFlowAlgorithmSparse | InternalAutoFlowDirectionRow,
+    AutoFlowColumn = InternalAutoFlowAlgorithmSparse | InternalAutoFlowDirectionColumn,
+    AutoFlowRowDense = InternalAutoFlowAlgorithmDense | InternalAutoFlowDirectionRow,
+    AutoFlowColumnDense = InternalAutoFlowAlgorithmDense | InternalAutoFlowDirectionColumn,
+    AutoFlowStackRow = InternalAutoFlowAlgorithmStack | InternalAutoFlowDirectionRow,
+    AutoFlowStackColumn = InternalAutoFlowAlgorithmStack | InternalAutoFlowDirectionColumn
+};
 
 enum DraggableRegionMode { DraggableRegionNone, DraggableRegionDrag, DraggableRegionNoDrag };
 
@@ -508,6 +513,7 @@ enum ItemPosition {
     ItemPositionAuto,
     ItemPositionStretch,
     ItemPositionBaseline,
+    ItemPositionLastBaseline,
     ItemPositionCenter,
     ItemPositionStart,
     ItemPositionEnd,
@@ -525,6 +531,11 @@ enum OverflowAlignment {
     OverflowAlignmentSafe
 };
 
+enum ItemPositionType {
+    NonLegacyPosition,
+    LegacyPosition
+};
+
 // Reasonable maximum to prevent insane font sizes from causing crashes on some platforms (such as Windows).
 static const float maximumAllowedFontSize = 1000000.0f;
 
@@ -533,6 +544,6 @@ enum TextIndentType { TextIndentNormal, TextIndentHanging };
 
 enum CSSBoxType { BoxMissing = 0, MarginBox, BorderBox, PaddingBox, ContentBox };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderStyleConstants_h

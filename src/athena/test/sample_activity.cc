@@ -16,7 +16,8 @@ SampleActivity::SampleActivity(SkColor color,
     : color_(color),
       contents_color_(contents_color),
       title_(title),
-      contents_view_(NULL) {
+      contents_view_(NULL),
+      current_state_(ACTIVITY_UNLOADED) {
 }
 
 SampleActivity::~SampleActivity() {
@@ -26,15 +27,35 @@ athena::ActivityViewModel* SampleActivity::GetActivityViewModel() {
   return this;
 }
 
+void SampleActivity::SetCurrentState(Activity::ActivityState state) {
+  current_state_ = state;
+}
+
+Activity::ActivityState SampleActivity::GetCurrentState() {
+  return current_state_;
+}
+
+bool SampleActivity::IsVisible() {
+  return contents_view_ && contents_view_->IsDrawn();
+}
+
+Activity::ActivityMediaState SampleActivity::GetMediaState() {
+  return Activity::ACTIVITY_MEDIA_STATE_NONE;
+}
+
 void SampleActivity::Init() {
 }
 
-SkColor SampleActivity::GetRepresentativeColor() {
+SkColor SampleActivity::GetRepresentativeColor() const {
   return color_;
 }
 
-base::string16 SampleActivity::GetTitle() {
+base::string16 SampleActivity::GetTitle() const {
   return title_;
+}
+
+bool SampleActivity::UsesFrame() const {
+  return true;
 }
 
 views::View* SampleActivity::GetContentsView() {
@@ -44,6 +65,13 @@ views::View* SampleActivity::GetContentsView() {
         views::Background::CreateSolidBackground(contents_color_));
   }
   return contents_view_;
+}
+
+void SampleActivity::CreateOverviewModeImage() {
+}
+
+gfx::ImageSkia SampleActivity::GetOverviewModeImage() {
+  return gfx::ImageSkia();
 }
 
 }  // namespace test

@@ -28,10 +28,8 @@
 #include "core/html/CollectionIndexCache.h"
 #include "core/html/CollectionType.h"
 #include "wtf/Forward.h"
-#include "wtf/HashMap.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLCollection : public RefCountedWillBeGarbageCollectedFinalized<HTMLCollection>, public ScriptWrappable, public LiveNodeListBase {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLCollection);
@@ -47,8 +45,8 @@ public:
     void invalidateCacheForAttribute(const QualifiedName*) const;
 
     // DOM API
-    unsigned length() const { return m_collectionIndexCache.nodeCount(*this); }
-    Element* item(unsigned offset) const { return m_collectionIndexCache.nodeAt(*this, offset); }
+    unsigned length() const;
+    Element* item(unsigned offset) const;
     virtual Element* namedItem(const AtomicString& name) const;
     bool namedPropertyQuery(const AtomicString&, ExceptionState&);
     void namedPropertyEnumerator(Vector<String>& names, ExceptionState&);
@@ -57,6 +55,7 @@ public:
     void namedItems(const AtomicString& name, WillBeHeapVector<RefPtrWillBeMember<Element> >&) const;
     bool isEmpty() const { return m_collectionIndexCache.isEmpty(*this); }
     bool hasExactlyOneItem() const { return m_collectionIndexCache.hasExactlyOneNode(*this); }
+    bool elementMatches(const Element&) const;
 
     // CollectionIndexCache API.
     bool canTraverseBackward() const { return !overridesItemAfter(); }
@@ -84,8 +83,10 @@ protected:
 
         void trace(Visitor* visitor)
         {
+#if ENABLE(OILPAN)
             visitor->trace(m_idCache);
             visitor->trace(m_nameCache);
+#endif
         }
 
     private:

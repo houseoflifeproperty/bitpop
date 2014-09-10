@@ -36,14 +36,16 @@
 #include "core/animation/AnimationTimeline.h"
 #include "core/animation/CompositorAnimations.h"
 #include "core/animation/KeyframeEffectModel.h"
+#include "core/animation/LegacyStyleInterpolation.h"
 #include "core/animation/css/CSSAnimatableValueFactory.h"
 #include "core/animation/css/CSSPropertyEquality.h"
-#include "core/animation/interpolation/LegacyStyleInterpolation.h"
 #include "core/css/CSSKeyframeRule.h"
+#include "core/css/CSSPropertyMetadata.h"
 #include "core/css/resolver/CSSToStyleMap.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Element.h"
 #include "core/dom/PseudoElement.h"
+#include "core/dom/StyleEngine.h"
 #include "core/events/TransitionEvent.h"
 #include "core/events/WebKitAnimationEvent.h"
 #include "core/frame/UseCounter.h"
@@ -55,7 +57,7 @@
 #include "wtf/BitArray.h"
 #include "wtf/HashSet.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
@@ -68,15 +70,11 @@ CSSPropertyID propertyForAnimation(CSSPropertyID property)
         return CSSPropertyTransform;
     case CSSPropertyWebkitPerspectiveOriginX:
     case CSSPropertyWebkitPerspectiveOriginY:
-        if (RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled())
-            return CSSPropertyPerspectiveOrigin;
-        break;
+        return CSSPropertyPerspectiveOrigin;
     case CSSPropertyWebkitTransformOriginX:
     case CSSPropertyWebkitTransformOriginY:
     case CSSPropertyWebkitTransformOriginZ:
-        if (RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled())
-            return CSSPropertyTransformOrigin;
-        break;
+        return CSSPropertyTransformOrigin;
     default:
         break;
     }
@@ -121,7 +119,7 @@ static void resolveKeyframes(StyleResolver* resolver, Element* element, const El
                 else
                     timingFunction = CSSToStyleMap::mapAnimationTimingFunction(toCSSValueList(value)->item(0));
                 keyframe->setEasing(timingFunction.release());
-            } else if (CSSAnimations::isAnimatableProperty(property)) {
+            } else if (CSSPropertyMetadata::isAnimatableProperty(property)) {
                 keyframe->setPropertyValue(property, CSSAnimatableValueFactory::create(property, *keyframeStyle).get());
             }
         }
@@ -203,10 +201,11 @@ static void resolveKeyframes(StyleResolver* resolver, Element* element, const El
 
 const StyleRuleKeyframes* CSSAnimations::matchScopedKeyframesRule(StyleResolver* resolver, const Element* element, const StringImpl* animationName)
 {
-    if (resolver->styleTreeHasOnlyScopedResolverForDocument())
-        return resolver->styleTreeScopedStyleResolverForDocument()->keyframeStylesForAnimation(animationName);
+    // FIXME: This is all implementation detail of style resolver, CSSAnimations shouldn't be reaching into any of it.
+    if (resolver->document().styleEngine()->hasOnlyScopedResolverForDocument())
+        return element->document().scopedStyleResolver()->keyframeStylesForAnimation(animationName);
 
-    Vector<ScopedStyleResolver*, 8> stack;
+    WillBeHeapVector<RawPtrWillBeMember<ScopedStyleResolver>, 8> stack;
     resolver->styleTreeResolveScopedKeyframesRules(element, stack);
     if (stack.isEmpty())
         return 0;
@@ -236,7 +235,7 @@ void CSSAnimations::calculateAnimationUpdate(CSSAnimationUpdate* update, Element
 {
     const ActiveAnimations* activeAnimations = element ? element->activeAnimations() : 0;
 
-#if !ASSERT_ENABLED
+#if !ENABLE(ASSERT)
     // If we're in an animation style change, no animations can have started, been cancelled or changed play state.
     // When ASSERT is enabled, we verify this optimization.
     if (activeAnimations && activeAnimations->isAnimationStyleChange())
@@ -328,7 +327,7 @@ void CSSAnimations::maybeApplyPendingUpdate(Element* element)
 
     for (WillBeHeapVector<CSSAnimationUpdate::NewAnimation>::const_iterator iter = update->newAnimations().begin(); iter != update->newAnimations().end(); ++iter) {
         const InertAnimation* inertAnimation = iter->animation.get();
-        OwnPtr<AnimationEventDelegate> eventDelegate = adoptPtr(new AnimationEventDelegate(element, iter->name));
+        OwnPtrWillBeRawPtr<AnimationEventDelegate> eventDelegate = adoptPtrWillBeNoop(new AnimationEventDelegate(element, iter->name));
         RefPtrWillBeRawPtr<Animation> animation = Animation::create(element, inertAnimation->effect(), inertAnimation->specifiedTiming(), Animation::DefaultPriority, eventDelegate.release());
         RefPtrWillBeRawPtr<AnimationPlayer> player = element->document().timeline().createAnimationPlayer(animation.get());
         element->document().compositorPendingAnimations().add(player.get());
@@ -365,7 +364,7 @@ void CSSAnimations::maybeApplyPendingUpdate(Element* element)
 
         CSSPropertyID id = newTransition.id;
         InertAnimation* inertAnimation = newTransition.animation.get();
-        OwnPtr<TransitionEventDelegate> eventDelegate = adoptPtr(new TransitionEventDelegate(element, newTransition.eventId));
+        OwnPtrWillBeRawPtr<TransitionEventDelegate> eventDelegate = adoptPtrWillBeNoop(new TransitionEventDelegate(element, newTransition.eventId));
 
         RefPtrWillBeRawPtr<AnimationEffect> effect = inertAnimation->effect();
 
@@ -460,7 +459,7 @@ void CSSAnimations::calculateTransitionUpdate(CSSAnimationUpdate* update, const 
     const TransitionMap* activeTransitions = activeAnimations ? &activeAnimations->cssAnimations().m_transitions : 0;
     const CSSTransitionData* transitionData = style.transitions();
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     // In debug builds we verify that it would have been safe to avoid populating and testing listedProperties if the style recalc is due to animation.
     const bool animationStyleRecalc = false;
 #else
@@ -493,7 +492,7 @@ void CSSAnimations::calculateTransitionUpdate(CSSAnimationUpdate* update, const 
 
                 if (!animateAll) {
                     id = propertyForAnimation(id);
-                    if (CSSAnimations::isAnimatableProperty(id))
+                    if (CSSPropertyMetadata::isAnimatableProperty(id))
                         listedProperties.set(id);
                     else
                         continue;
@@ -632,6 +631,12 @@ void CSSAnimations::AnimationEventDelegate::onEventCondition(const AnimationNode
     m_previousIteration = currentIteration;
 }
 
+void CSSAnimations::AnimationEventDelegate::trace(Visitor* visitor)
+{
+    visitor->trace(m_target);
+    AnimationNode::EventDelegate::trace(visitor);
+}
+
 void CSSAnimations::TransitionEventDelegate::onEventCondition(const AnimationNode* animationNode)
 {
     const AnimationNode::Phase currentPhase = animationNode->phase();
@@ -649,126 +654,10 @@ void CSSAnimations::TransitionEventDelegate::onEventCondition(const AnimationNod
     m_previousPhase = currentPhase;
 }
 
-bool CSSAnimations::isAnimatableProperty(CSSPropertyID property)
+void CSSAnimations::TransitionEventDelegate::trace(Visitor* visitor)
 {
-    switch (property) {
-    case CSSPropertyBackgroundColor:
-    case CSSPropertyBackgroundImage:
-    case CSSPropertyBackgroundPositionX:
-    case CSSPropertyBackgroundPositionY:
-    case CSSPropertyBackgroundSize:
-    case CSSPropertyBaselineShift:
-    case CSSPropertyBorderBottomColor:
-    case CSSPropertyBorderBottomLeftRadius:
-    case CSSPropertyBorderBottomRightRadius:
-    case CSSPropertyBorderBottomWidth:
-    case CSSPropertyBorderImageOutset:
-    case CSSPropertyBorderImageSlice:
-    case CSSPropertyBorderImageSource:
-    case CSSPropertyBorderImageWidth:
-    case CSSPropertyBorderLeftColor:
-    case CSSPropertyBorderLeftWidth:
-    case CSSPropertyBorderRightColor:
-    case CSSPropertyBorderRightWidth:
-    case CSSPropertyBorderTopColor:
-    case CSSPropertyBorderTopLeftRadius:
-    case CSSPropertyBorderTopRightRadius:
-    case CSSPropertyBorderTopWidth:
-    case CSSPropertyBottom:
-    case CSSPropertyBoxShadow:
-    case CSSPropertyClip:
-    case CSSPropertyColor:
-    case CSSPropertyFill:
-    case CSSPropertyFillOpacity:
-    case CSSPropertyFlexBasis:
-    case CSSPropertyFlexGrow:
-    case CSSPropertyFlexShrink:
-    case CSSPropertyFloodColor:
-    case CSSPropertyFloodOpacity:
-    case CSSPropertyFontSize:
-    case CSSPropertyFontWeight:
-    case CSSPropertyHeight:
-    case CSSPropertyLeft:
-    case CSSPropertyLetterSpacing:
-    case CSSPropertyLightingColor:
-    case CSSPropertyLineHeight:
-    case CSSPropertyListStyleImage:
-    case CSSPropertyMarginBottom:
-    case CSSPropertyMarginLeft:
-    case CSSPropertyMarginRight:
-    case CSSPropertyMarginTop:
-    case CSSPropertyMaxHeight:
-    case CSSPropertyMaxWidth:
-    case CSSPropertyMinHeight:
-    case CSSPropertyMinWidth:
-    case CSSPropertyObjectPosition:
-    case CSSPropertyOpacity:
-    case CSSPropertyOrphans:
-    case CSSPropertyOutlineColor:
-    case CSSPropertyOutlineOffset:
-    case CSSPropertyOutlineWidth:
-    case CSSPropertyPaddingBottom:
-    case CSSPropertyPaddingLeft:
-    case CSSPropertyPaddingRight:
-    case CSSPropertyPaddingTop:
-    case CSSPropertyRight:
-    case CSSPropertyStopColor:
-    case CSSPropertyStopOpacity:
-    case CSSPropertyStroke:
-    case CSSPropertyStrokeDasharray:
-    case CSSPropertyStrokeDashoffset:
-    case CSSPropertyStrokeMiterlimit:
-    case CSSPropertyStrokeOpacity:
-    case CSSPropertyStrokeWidth:
-    case CSSPropertyTextDecorationColor:
-    case CSSPropertyTextIndent:
-    case CSSPropertyTextShadow:
-    case CSSPropertyTop:
-    case CSSPropertyVerticalAlign:
-    case CSSPropertyVisibility:
-    case CSSPropertyWebkitBackgroundSize:
-    case CSSPropertyWebkitBorderHorizontalSpacing:
-    case CSSPropertyWebkitBorderVerticalSpacing:
-    case CSSPropertyWebkitBoxShadow:
-    case CSSPropertyWebkitClipPath:
-    case CSSPropertyWebkitColumnCount:
-    case CSSPropertyWebkitColumnGap:
-    case CSSPropertyWebkitColumnRuleColor:
-    case CSSPropertyWebkitColumnRuleWidth:
-    case CSSPropertyWebkitColumnWidth:
-    case CSSPropertyWebkitFilter:
-    case CSSPropertyWebkitMaskBoxImageOutset:
-    case CSSPropertyWebkitMaskBoxImageSlice:
-    case CSSPropertyWebkitMaskBoxImageSource:
-    case CSSPropertyWebkitMaskBoxImageWidth:
-    case CSSPropertyWebkitMaskImage:
-    case CSSPropertyWebkitMaskPositionX:
-    case CSSPropertyWebkitMaskPositionY:
-    case CSSPropertyWebkitMaskSize:
-    case CSSPropertyPerspective:
-    case CSSPropertyShapeOutside:
-    case CSSPropertyShapeMargin:
-    case CSSPropertyShapeImageThreshold:
-    case CSSPropertyWebkitTextStrokeColor:
-    case CSSPropertyTransform:
-    case CSSPropertyWidows:
-    case CSSPropertyWidth:
-    case CSSPropertyWordSpacing:
-    case CSSPropertyZIndex:
-    case CSSPropertyZoom:
-        return true;
-    case CSSPropertyPerspectiveOrigin:
-    case CSSPropertyTransformOrigin:
-        return RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled();
-    case CSSPropertyWebkitPerspectiveOriginX:
-    case CSSPropertyWebkitPerspectiveOriginY:
-    case CSSPropertyWebkitTransformOriginX:
-    case CSSPropertyWebkitTransformOriginY:
-    case CSSPropertyWebkitTransformOriginZ:
-        return !RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled();
-    default:
-        return false;
-    }
+    visitor->trace(m_target);
+    AnimationNode::EventDelegate::trace(visitor);
 }
 
 const StylePropertyShorthand& CSSAnimations::animatableProperties()
@@ -778,7 +667,7 @@ const StylePropertyShorthand& CSSAnimations::animatableProperties()
     if (properties.isEmpty()) {
         for (int i = firstCSSProperty; i < lastCSSProperty; ++i) {
             CSSPropertyID id = convertToCSSPropertyID(i);
-            if (isAnimatableProperty(id))
+            if (CSSPropertyMetadata::isAnimatableProperty(id))
                 properties.append(id);
         }
         propertyShorthand = StylePropertyShorthand(CSSPropertyInvalid, properties.begin(), properties.size());
@@ -828,19 +717,23 @@ bool CSSAnimations::isAllowedAnimation(CSSPropertyID property)
 
 void CSSAnimations::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_transitions);
     visitor->trace(m_pendingUpdate);
     visitor->trace(m_animations);
     visitor->trace(m_previousActiveInterpolationsForAnimations);
+#endif
 }
 
 void CSSAnimationUpdate::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_newTransitions);
     visitor->trace(m_activeInterpolationsForAnimations);
     visitor->trace(m_activeInterpolationsForTransitions);
     visitor->trace(m_newAnimations);
     visitor->trace(m_cancelledAnimationPlayers);
+#endif
 }
 
-} // namespace WebCore
+} // namespace blink

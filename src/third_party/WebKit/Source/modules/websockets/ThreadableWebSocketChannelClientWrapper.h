@@ -35,14 +35,13 @@
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/ThreadSafeRefCounted.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class ThreadableWebSocketChannelClientWrapper : public ThreadSafeRefCountedWillBeGarbageCollected<ThreadableWebSocketChannelClientWrapper> {
+class ThreadableWebSocketChannelClientWrapper : public GarbageCollected<ThreadableWebSocketChannelClientWrapper> {
 public:
-    static PassRefPtrWillBeRawPtr<ThreadableWebSocketChannelClientWrapper> create(WebSocketChannelClient*);
+    static ThreadableWebSocketChannelClientWrapper* create(WebSocketChannelClient*);
 
     void clearClient();
 
@@ -54,14 +53,14 @@ public:
     void didClose(WebSocketChannelClient::ClosingHandshakeCompletionStatus, unsigned short code, const String& reason);
     void didReceiveMessageError();
 
-    void trace(Visitor*) { }
+    void trace(Visitor*);
 
 private:
-    ThreadableWebSocketChannelClientWrapper(WebSocketChannelClient*);
+    explicit ThreadableWebSocketChannelClientWrapper(WebSocketChannelClient*);
 
-    WebSocketChannelClient* m_client;
+    Member<WebSocketChannelClient> m_client;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ThreadableWebSocketChannelClientWrapper_h

@@ -46,7 +46,6 @@ const char kFileFilters[] = "file_filters";
 const char kFileBrowserHandlers[] = "file_browser_handlers";
 const char kFileHandlers[] = "file_handlers";
 const char kFileHandlerExtensions[] = "extensions";
-const char kFileHandlerTitle[] = "title";
 const char kFileHandlerTypes[] = "types";
 const char kGlobal[] = "global";
 const char kHideBookmarkButton[] = "hide_bookmark_button";
@@ -69,6 +68,8 @@ const char kKioskMode[] = "kiosk_mode";
 const char kLanguage[] = "language";
 const char kLaunch[] = "app.launch";
 const char kLaunchContainer[] = "app.launch.container";
+const char kLauncherPage[] = "launcher_page";
+const char kLauncherPagePage[] = "launcher_page.page";
 const char kLaunchHeight[] = "app.launch.height";
 const char kLaunchLocalPath[] = "app.launch.local_path";
 const char kLaunchWebURL[] = "app.launch.web_url";
@@ -140,6 +141,7 @@ const char kSpellcheckDictionaryLocale[] = "dictionary_locale";
 const char kSpellcheckDictionaryPath[] = "dictionary_path";
 const char kStorageManagedSchema[] = "storage.managed_schema";
 const char kSuggestedKey[] = "suggested_key";
+const char kSynthesizeBrowserAction[] = "_synthesize_browser_action";
 const char kSystemIndicator[] = "system_indicator";
 const char kTheme[] = "theme";
 const char kThemeColors[] = "colors";
@@ -360,8 +362,6 @@ const char kInvalidFileHandlerExtensionElement[] =
     "Invalid value for 'file_handlers[*].extensions[*]'.";
 const char kInvalidFileHandlerNoTypeOrExtension[] =
     "'file_handlers[*]' must contain a non-empty 'types' or 'extensions'.";
-const char kInvalidFileHandlerTitle[] =
-    "Invalid value for 'file_handlers[*].title'.";
 const char kInvalidFileHandlerType[] =
     "Invalid value for 'file_handlers[*].types'.";
 const char kInvalidFileHandlerTypeElement[] =
@@ -717,8 +717,8 @@ const char kScriptBadgeTitleIgnored[] =
     "default_title specified in script_badge manifest section will not be "
     "used.";
 const char kServiceWorkerRequiresFlag[] =
-    "Service worker features require --enable-service-worker command-line "
-    "flag.";
+    "Service worker features require "
+    "--enable-experimental-web-platform-features command-line flag.";
 const char kUnrecognizedManifestKey[] = "Unrecognized manifest key '*'.";
 const char kUnrecognizedManifestProperty[] =
     "Unrecognized property '*' of manifest key '*'.";

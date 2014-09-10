@@ -26,9 +26,9 @@
 #ifndef FontFaceSetForEachCallback_h
 #define FontFaceSetForEachCallback_h
 
-#include "bindings/v8/ScriptValue.h"
+#include "bindings/core/v8/ScriptValue.h"
 
-namespace WebCore {
+namespace blink {
 
 class FontFace;
 class FontFaceSet;
@@ -40,6 +40,6 @@ public:
     virtual bool handleItem(FontFace*, FontFace*, FontFaceSet*) = 0;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FontFaceSetForEachCallback_h

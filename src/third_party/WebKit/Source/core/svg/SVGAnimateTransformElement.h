@@ -26,7 +26,7 @@
 #include "core/svg/SVGAnimateElement.h"
 #include "core/svg/SVGTransform.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGAnimateTransformElement FINAL : public SVGAnimateElement {
 public:
@@ -39,12 +39,11 @@ private:
 
     virtual bool hasValidAttributeType() OVERRIDE;
 
-    bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
     SVGTransformType m_type;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGAnimateTransformElement_h

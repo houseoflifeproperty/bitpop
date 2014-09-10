@@ -1,6 +1,6 @@
 /********************************************************************
  * COPYRIGHT: 
- * Copyright (c) 1997-2010, International Business Machines Corporation and
+ * Copyright (c) 1997-2013, International Business Machines Corporation and
  * others. All Rights Reserved.
  ********************************************************************/
 /********************************************************************************
@@ -38,12 +38,15 @@ log_data_err("Failure at file %s, line %d, error = %s (Are you missing data?)\n"
 #define TEST_ASSERT(expr) {if ((expr)==FALSE) { \
 log_data_err("Test Failure at file %s, line %d (Are you missing data?)\n", __FILE__, __LINE__);}}
 
+#if !UCONFIG_NO_FILE_IO
 static void TestBreakIteratorSafeClone(void);
+#endif
 static void TestBreakIteratorRules(void);
 static void TestBreakIteratorRuleError(void);
 static void TestBreakIteratorStatusVec(void);
 static void TestBreakIteratorUText(void);
 static void TestBreakIteratorTailoring(void);
+static void TestBreakIteratorRefresh(void);
 
 void addBrkIterAPITest(TestNode** root);
 
@@ -58,6 +61,7 @@ void addBrkIterAPITest(TestNode** root)
     addTest(root, &TestBreakIteratorRuleError, "tstxtbd/cbiapts/TestBreakIteratorRuleError");
     addTest(root, &TestBreakIteratorStatusVec, "tstxtbd/cbiapts/TestBreakIteratorStatusVec");
     addTest(root, &TestBreakIteratorTailoring, "tstxtbd/cbiapts/TestBreakIteratorTailoring");
+    addTest(root, &TestBreakIteratorRefresh, "tstxtbd/cbiapts/TestBreakIteratorRefresh");
 }
 
 #define CLONETEST_ITERATOR_COUNT 2
@@ -133,6 +137,7 @@ static void freeToUCharStrings(void **hook) {
 }
 
 
+#if !UCONFIG_NO_FILE_IO
 static void TestBreakIteratorCAPI()
 {
     UErrorCode status = U_ZERO_ERROR;
@@ -193,6 +198,9 @@ static void TestBreakIteratorCAPI()
     }
     /*trying to open an illegal iterator*/
     bogus     = ubrk_open((UBreakIteratorType)5, "en_US", text, u_strlen(text), &status);
+    if(bogus != NULL) {
+        log_err("FAIL: expected NULL from opening an invalid break iterator.\n");
+    }
     if(U_SUCCESS(status)){
         log_err("FAIL: Error in ubrk_open() for BOGUS breakiterator. Expected U_ILLEGAL_ARGUMENT_ERROR\n");
     }
@@ -393,46 +401,50 @@ static void TestBreakIteratorSafeClone(void)
         /* Check the various error & informational states */
 
         /* Null status - just returns NULL */
-        if (0 != ubrk_safeClone(someIterators[i], buffer[i], &bufferSize, 0))
+        if (NULL != ubrk_safeClone(someIterators[i], buffer[i], &bufferSize, NULL))
         {
             log_err("FAIL: Cloned Iterator failed to deal correctly with null status\n");
         }
         /* error status - should return 0 & keep error the same */
         status = U_MEMORY_ALLOCATION_ERROR;
-        if (0 != ubrk_safeClone(someIterators[i], buffer[i], &bufferSize, &status) || status != U_MEMORY_ALLOCATION_ERROR)
+        if (NULL != ubrk_safeClone(someIterators[i], buffer[i], &bufferSize, &status) || status != U_MEMORY_ALLOCATION_ERROR)
         {
             log_err("FAIL: Cloned Iterator failed to deal correctly with incoming error status\n");
         }
         status = U_ZERO_ERROR;
 
-        /* Null buffer size pointer - just returns NULL & set error to U_ILLEGAL_ARGUMENT_ERROR*/
-        if (0 != ubrk_safeClone(someIterators[i], buffer[i], 0, &status) || status != U_ILLEGAL_ARGUMENT_ERROR)
+        /* Null buffer size pointer is ok */
+        if (NULL == (brk = ubrk_safeClone(someIterators[i], buffer[i], NULL, &status)) || U_FAILURE(status))
         {
             log_err("FAIL: Cloned Iterator failed to deal correctly with null bufferSize pointer\n");
         }
+        ubrk_close(brk);
         status = U_ZERO_ERROR;
-    
+
         /* buffer size pointer is 0 - fill in pbufferSize with a size */
         bufferSize = 0;
-        if (0 != ubrk_safeClone(someIterators[i], buffer[i], &bufferSize, &status) || U_FAILURE(status) || bufferSize <= 0)
+        if (NULL != ubrk_safeClone(someIterators[i], buffer[i], &bufferSize, &status) ||
+                U_FAILURE(status) || bufferSize <= 0)
         {
             log_err("FAIL: Cloned Iterator failed a sizing request ('preflighting')\n");
         }
         /* Verify our define is large enough  */
         if (U_BRK_SAFECLONE_BUFFERSIZE < bufferSize)
         {
-            log_err("FAIL: Pre-calculated buffer size is too small\n");
+          log_err("FAIL: Pre-calculated buffer size is too small - %d but needed %d\n", U_BRK_SAFECLONE_BUFFERSIZE, bufferSize);
         }
         /* Verify we can use this run-time calculated size */
-        if (0 == (brk = ubrk_safeClone(someIterators[i], buffer[i], &bufferSize, &status)) || U_FAILURE(status))
+        if (NULL == (brk = ubrk_safeClone(someIterators[i], buffer[i], &bufferSize, &status)) || U_FAILURE(status))
         {
             log_err("FAIL: Iterator can't be cloned with run-time size\n");
         }
         if (brk)
             ubrk_close(brk);
         /* size one byte too small - should allocate & let us know */
-        --bufferSize;
-        if (0 == (brk = ubrk_safeClone(someIterators[i], 0, &bufferSize, &status)) || status != U_SAFECLONE_ALLOCATED_WARNING)
+        if (bufferSize > 1) {
+            --bufferSize;
+        }
+        if (NULL == (brk = ubrk_safeClone(someIterators[i], NULL, &bufferSize, &status)) || status != U_SAFECLONE_ALLOCATED_WARNING)
         {
             log_err("FAIL: Cloned Iterator failed to deal correctly with too-small buffer size\n");
         }
@@ -442,7 +454,7 @@ static void TestBreakIteratorSafeClone(void)
         bufferSize = U_BRK_SAFECLONE_BUFFERSIZE;
 
         /* Null buffer pointer - return Iterator & set error to U_SAFECLONE_ALLOCATED_ERROR */
-        if (0 == (brk = ubrk_safeClone(someIterators[i], 0, &bufferSize, &status)) || status != U_SAFECLONE_ALLOCATED_WARNING)
+        if (NULL == (brk = ubrk_safeClone(someIterators[i], NULL, &bufferSize, &status)) || status != U_SAFECLONE_ALLOCATED_WARNING)
         {
             log_err("FAIL: Cloned Iterator failed to deal correctly with null buffer pointer\n");
         }
@@ -453,22 +465,13 @@ static void TestBreakIteratorSafeClone(void)
         /* Mis-aligned buffer pointer. */
         {
             char  stackBuf[U_BRK_SAFECLONE_BUFFERSIZE+sizeof(void *)];
-            void  *p;
-            int32_t offset;
 
             brk = ubrk_safeClone(someIterators[i], &stackBuf[1], &bufferSize, &status);
-            if (U_FAILURE(status) || brk == 0) {
+            if (U_FAILURE(status) || brk == NULL) {
                 log_err("FAIL: Cloned Iterator failed with misaligned buffer pointer\n");
             }
             if (status == U_SAFECLONE_ALLOCATED_WARNING) {
-                log_err("FAIL: Cloned Iterator allocated when using a mis-aligned buffer.\n");
-            }
-            offset = (int32_t)((char *)&p-(char*)brk);
-            if (offset < 0) {
-                offset = -offset;
-            }
-            if (offset % sizeof(void *) != 0) {
-                log_err("FAIL: Cloned Iterator failed to align correctly with misaligned buffer pointer\n");
+                log_verbose("Cloned Iterator allocated when using a mis-aligned buffer.\n");
             }
             if (brk)
                 ubrk_close(brk);
@@ -476,7 +479,7 @@ static void TestBreakIteratorSafeClone(void)
 
 
         /* Null Iterator - return NULL & set U_ILLEGAL_ARGUMENT_ERROR */
-        if (0 != ubrk_safeClone(0, buffer[i], &bufferSize, &status) || status != U_ILLEGAL_ARGUMENT_ERROR)
+        if (NULL != ubrk_safeClone(NULL, buffer[i], &bufferSize, &status) || status != U_ILLEGAL_ARGUMENT_ERROR)
         {
             log_err("FAIL: Cloned Iterator failed to deal correctly with null Iterator pointer\n");
         }
@@ -497,6 +500,7 @@ static void TestBreakIteratorSafeClone(void)
         ubrk_close(someIterators[i]);
     }
 }
+#endif
 
 
 /*
@@ -716,9 +720,10 @@ static void TestBreakIteratorUText(void) {
 /* Thai/Lao grapheme break tailoring */
 static const UChar thTest[] = { 0x0020, 0x0E40, 0x0E01, 0x0020,
                                 0x0E01, 0x0E30, 0x0020, 0x0E01, 0x0E33, 0x0020, 0 };
-static const int32_t thTestOffs_enFwd[] = {  1,      3,  4,      6,  7,      9, 10 };
+/*in Unicode 6.1 en should behave just like th for this*/
+/*static const int32_t thTestOffs_enFwd[] = {  1,      3,  4,      6,  7,      9, 10 };*/
 static const int32_t thTestOffs_thFwd[] = {  1,  2,  3,  4,  5,  6,  7,      9, 10 };
-static const int32_t thTestOffs_enRev[] = {  9,      7,  6,      4,  3,      1,  0 };
+/*static const int32_t thTestOffs_enRev[] = {  9,      7,  6,      4,  3,      1,  0 };*/
 static const int32_t thTestOffs_thRev[] = {  9,      7,  6,  5,  4,  3,  2,  1,  0 };
 
 /* Hebrew line break tailoring, for cldrbug 3028 */
@@ -727,9 +732,10 @@ static const UChar heTest[] = { 0x0020, 0x002D, 0x0031, 0x0032, 0x0020,
                                 0x0061, 0x0300, 0x2010, 0x006B, 0x0020,
                                 0x05DE, 0x05D4, 0x002D, 0x0069, 0x0020,
                                 0x05D1, 0x05BC, 0x2010, 0x0047, 0x0020, 0 };
-static const int32_t heTestOffs_enFwd[] = {  1,  5,  7,  9, 12, 14, 17, 19, 22, 24 };
+/*in Unicode 6.1 en should behave just like he for this*/
+/*static const int32_t heTestOffs_enFwd[] = {  1,  5,  7,  9, 12, 14, 17, 19, 22, 24 };*/
 static const int32_t heTestOffs_heFwd[] = {  1,  5,  7,  9, 12, 14,     19,     24 };
-static const int32_t heTestOffs_enRev[] = { 22, 19, 17, 14, 12,  9,  7,  5,  1,  0 };
+/*static const int32_t heTestOffs_enRev[] = { 22, 19, 17, 14, 12,  9,  7,  5,  1,  0 };*/
 static const int32_t heTestOffs_heRev[] = {     19,     14, 12,  9,  7,  5,  1,  0 };
 
 /* Finnish line break tailoring, for cldrbug 3029 */
@@ -743,6 +749,16 @@ static const int32_t fiTestOffs_fiFwd[] =  {  1,  5,  7,  9, 12, 14, 16,     19,
 static const int32_t fiTestOffs_enRev[] =  { 23, 22, 19, 17, 16, 14, 12,  9,  7,  5,  1,  0 };
 static const int32_t fiTestOffs_fiRev[] =  {     22, 19,     16, 14, 12,  9,  7,  5,  1,  0 };
 
+/* Khmer dictionary-based work break, for ICU ticket #8329 */
+static const UChar kmTest[] = { /* 00 */ 0x179F, 0x17BC, 0x1798, 0x1785, 0x17C6, 0x178E, 0x17B6, 0x1799, 0x1796, 0x17C1,
+                                /* 10 */ 0x179B, 0x1794, 0x1793, 0x17D2, 0x178F, 0x17B7, 0x1785, 0x178A, 0x17BE, 0x1798,
+                                /* 20 */ 0x17D2, 0x1794, 0x17B8, 0x17A2, 0x1792, 0x17B7, 0x179F, 0x17D2, 0x178B, 0x17B6,
+                                /* 30 */ 0x1793, 0x17A2, 0x179A, 0x1796, 0x17D2, 0x179A, 0x17C7, 0x1782, 0x17BB, 0x178E,
+                                /* 40 */ 0x178A, 0x179B, 0x17CB, 0x1796, 0x17D2, 0x179A, 0x17C7, 0x17A2, 0x1784, 0x17D2,
+                                /* 50 */ 0x1782, 0 };
+static const int32_t kmTestOffs_kmFwd[] =  {  3, /*8,*/ 11, 17, 23, 31, /*33,*/  40,  43, 51 }; /* TODO: Investigate failure to break at offset 8 */
+static const int32_t kmTestOffs_kmRev[] =  { 43,  40,   /*33,*/ 31, 23, 17, 11, /*8,*/ 3,  0 };
+
 typedef struct {
     const char * locale;
     UBreakIteratorType type;
@@ -753,12 +769,13 @@ typedef struct {
 } RBBITailoringTest;
 
 static const RBBITailoringTest tailoringTests[] = {
-    { "en", UBRK_CHARACTER, thTest, thTestOffs_enFwd, thTestOffs_enRev, sizeof(thTestOffs_enFwd)/sizeof(thTestOffs_enFwd[0]) },
-    { "th", UBRK_CHARACTER, thTest, thTestOffs_thFwd, thTestOffs_thRev, sizeof(thTestOffs_thFwd)/sizeof(thTestOffs_thFwd[0]) },
-    { "en", UBRK_LINE,      heTest, heTestOffs_enFwd, heTestOffs_enRev, sizeof(heTestOffs_enFwd)/sizeof(heTestOffs_enFwd[0]) },
+    { "en", UBRK_CHARACTER, thTest, thTestOffs_thFwd, thTestOffs_thRev, sizeof(thTestOffs_thFwd)/sizeof(thTestOffs_thFwd[0]) },
+    { "en_US_POSIX", UBRK_CHARACTER, thTest, thTestOffs_thFwd, thTestOffs_thRev, sizeof(thTestOffs_thFwd)/sizeof(thTestOffs_thFwd[0]) },
+    { "en", UBRK_LINE,      heTest, heTestOffs_heFwd, heTestOffs_heRev, sizeof(heTestOffs_heFwd)/sizeof(heTestOffs_heFwd[0]) },
     { "he", UBRK_LINE,      heTest, heTestOffs_heFwd, heTestOffs_heRev, sizeof(heTestOffs_heFwd)/sizeof(heTestOffs_heFwd[0]) },
     { "en", UBRK_LINE,      fiTest, fiTestOffs_enFwd, fiTestOffs_enRev, sizeof(fiTestOffs_enFwd)/sizeof(fiTestOffs_enFwd[0]) },
     { "fi", UBRK_LINE,      fiTest, fiTestOffs_fiFwd, fiTestOffs_fiRev, sizeof(fiTestOffs_fiFwd)/sizeof(fiTestOffs_fiFwd[0]) },
+    { "km", UBRK_WORD,      kmTest, kmTestOffs_kmFwd, kmTestOffs_kmRev, sizeof(kmTestOffs_kmFwd)/sizeof(kmTestOffs_kmFwd[0]) },
     { NULL, 0, NULL, NULL, NULL, 0 },
 };
 
@@ -810,6 +827,56 @@ static void TestBreakIteratorTailoring(void) {
             log_err_status(status, "FAIL: locale %s, break type %d, ubrk_open status: %s\n", testPtr->locale, testPtr->type, u_errorName(status));
         }
     }
+}
+
+
+static void TestBreakIteratorRefresh(void) {
+    /*
+     *  RefreshInput changes out the input of a Break Iterator without
+     *    changing anything else in the iterator's state.  Used with Java JNI,
+     *    when Java moves the underlying string storage.   This test
+     *    runs a ubrk_next() repeatedly, moving the text in the middle of the sequence.
+     *    The right set of boundaries should still be found.
+     */
+    UChar testStr[]  = {0x20, 0x41, 0x20, 0x42, 0x20, 0x43, 0x20, 0x44, 0x0};  /* = " A B C D"  */
+    UChar movedStr[] = {0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,  0};
+    UErrorCode status = U_ZERO_ERROR;
+    UBreakIterator *bi;
+    UText ut1 = UTEXT_INITIALIZER;
+    UText ut2 = UTEXT_INITIALIZER;
+    
+    bi = ubrk_open(UBRK_LINE, "en_US", NULL, 0, &status);
+    TEST_ASSERT_SUCCESS(status);
+
+    utext_openUChars(&ut1, testStr, -1, &status);
+    TEST_ASSERT_SUCCESS(status);
+    ubrk_setUText(bi, &ut1, &status);
+    TEST_ASSERT_SUCCESS(status);
+
+    if (U_SUCCESS(status)) {
+        /* Line boundaries will occur before each letter in the original string */
+        TEST_ASSERT(1 == ubrk_next(bi));
+        TEST_ASSERT(3 == ubrk_next(bi));
+
+        /* Move the string, kill the original string.  */
+        u_strcpy(movedStr, testStr);
+        u_memset(testStr, 0x20, u_strlen(testStr));
+        utext_openUChars(&ut2, movedStr, -1, &status);
+        TEST_ASSERT_SUCCESS(status);
+        ubrk_refreshUText(bi, &ut2, &status);
+        TEST_ASSERT_SUCCESS(status);
+    
+        /* Find the following matches, now working in the moved string. */
+        TEST_ASSERT(5 == ubrk_next(bi));
+        TEST_ASSERT(7 == ubrk_next(bi));
+        TEST_ASSERT(8 == ubrk_next(bi));
+        TEST_ASSERT(UBRK_DONE == ubrk_next(bi));
+        TEST_ASSERT_SUCCESS(status);
+
+        utext_close(&ut1);
+        utext_close(&ut2);
+    }
+    ubrk_close(bi);
 }
 
 #endif /* #if !UCONFIG_NO_BREAK_ITERATION */

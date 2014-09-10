@@ -10,8 +10,8 @@
 #include <objbase.h>
 
 #include "base/basictypes.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/process/process.h"
@@ -45,7 +45,7 @@ class TestConsumer: public EtwTraceConsumerBase<TestConsumer> {
   void ClearQueue() {
     for (EventQueue::const_iterator it(events_.begin()), end(events_.end());
          it != end; ++it) {
-      delete[] it->MofData;
+      delete[] reinterpret_cast<char*>(it->MofData);
     }
 
     events_.clear();

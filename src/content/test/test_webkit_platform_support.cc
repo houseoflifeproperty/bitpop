@@ -35,11 +35,16 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
+#include "base/mac/scoped_nsautorelease_pool.h"
 #endif
 
 namespace content {
 
 TestWebKitPlatformSupport::TestWebKitPlatformSupport() {
+#if defined(OS_MACOSX)
+  base::mac::ScopedNSAutoreleasePool autorelease_pool;
+#endif
+
   url_loader_factory_.reset(new WebURLLoaderMockFactory());
   mock_clipboard_.reset(new MockWebClipboardImpl());
 
@@ -108,8 +113,8 @@ TestWebKitPlatformSupport::~TestWebKitPlatformSupport() {
   stats_table_.reset();
 }
 
-blink::WebMimeRegistry* TestWebKitPlatformSupport::mimeRegistry() {
-  return &mime_registry_;
+blink::WebBlobRegistry* TestWebKitPlatformSupport::blobRegistry() {
+  return &blob_registry_;
 }
 
 blink::WebClipboard* TestWebKitPlatformSupport::clipboard() {
@@ -126,6 +131,10 @@ blink::WebIDBFactory* TestWebKitPlatformSupport::idbFactory() {
   NOTREACHED() <<
       "IndexedDB cannot be tested with in-process harnesses.";
   return NULL;
+}
+
+blink::WebMimeRegistry* TestWebKitPlatformSupport::mimeRegistry() {
+  return &mime_registry_;
 }
 
 blink::WebURLLoader* TestWebKitPlatformSupport::createURLLoader() {

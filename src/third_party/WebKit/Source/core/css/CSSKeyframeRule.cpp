@@ -33,7 +33,7 @@
 #include "core/frame/UseCounter.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 StyleKeyframe::StyleKeyframe()
 {
@@ -96,10 +96,10 @@ MutableStylePropertySet& StyleKeyframe::mutableProperties()
 {
     if (!m_properties->isMutable())
         m_properties = m_properties->mutableCopy();
-    return *toMutableStylePropertySet(m_properties);
+    return *toMutableStylePropertySet(m_properties.get());
 }
 
-void StyleKeyframe::setProperties(PassRefPtr<StylePropertySet> properties)
+void StyleKeyframe::setProperties(PassRefPtrWillBeRawPtr<StylePropertySet> properties)
 {
     ASSERT(properties);
     m_properties = properties;
@@ -122,7 +122,7 @@ PassOwnPtr<Vector<double> > StyleKeyframe::createKeyList(CSSParserValueList* key
 {
     OwnPtr<Vector<double> > keyVector = adoptPtr(new Vector<double>(keys->size()));
     for (unsigned i = 0; i < keys->size(); ++i) {
-        ASSERT(keys->valueAt(i)->unit == WebCore::CSSPrimitiveValue::CSS_NUMBER);
+        ASSERT(keys->valueAt(i)->unit == blink::CSSPrimitiveValue::CSS_NUMBER);
         double key = keys->valueAt(i)->fValue;
         if (key < 0 || key > 100) {
             // As per http://www.w3.org/TR/css3-animations/#keyframes,
@@ -136,6 +136,10 @@ PassOwnPtr<Vector<double> > StyleKeyframe::createKeyList(CSSParserValueList* key
     return keyVector.release();
 }
 
+void StyleKeyframe::trace(Visitor* visitor)
+{
+    visitor->trace(m_properties);
+}
 
 CSSKeyframeRule::CSSKeyframeRule(StyleKeyframe* keyframe, CSSKeyframesRule* parent)
     : CSSRule(0)
@@ -172,4 +176,4 @@ void CSSKeyframeRule::trace(Visitor* visitor)
     CSSRule::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

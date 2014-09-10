@@ -32,7 +32,7 @@
 #include "wtf/MainThread.h"
 #include "wtf/text/TextPosition.h"
 
-namespace WebCore {
+namespace blink {
 
 // On a network with high latency and high bandwidth, using a device
 // with a fast CPU, we could end up speculatively tokenizing
@@ -54,7 +54,7 @@ static const size_t pendingTokenLimit = 1000;
 
 using namespace HTMLNames;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 
 static void checkThatTokensAreSafeToSendToAnotherThread(const CompactHTMLTokenStream* tokens)
 {
@@ -239,7 +239,7 @@ void BackgroundHTMLParser::sendTokensToMainThread()
     if (m_pendingTokens->isEmpty())
         return;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     checkThatTokensAreSafeToSendToAnotherThread(m_pendingTokens.get());
     checkThatPreloadsAreSafeToSendToAnotherThread(m_pendingPreloads);
     checkThatXSSInfosAreSafeToSendToAnotherThread(m_pendingXSSInfos);

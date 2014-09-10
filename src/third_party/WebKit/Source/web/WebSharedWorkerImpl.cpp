@@ -35,6 +35,7 @@
 #include "core/dom/Document.h"
 #include "core/events/MessageEvent.h"
 #include "core/html/HTMLFormElement.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/WorkerDebuggerAgent.h"
 #include "core/inspector/WorkerInspectorController.h"
@@ -58,6 +59,7 @@
 #include "public/platform/WebMessagePortChannel.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
+#include "public/platform/WebURLRequest.h"
 #include "public/web/WebFrame.h"
 #include "public/web/WebSettings.h"
 #include "public/web/WebView.h"
@@ -69,8 +71,6 @@
 #include "web/WorkerPermissionClient.h"
 #include "wtf/Functional.h"
 #include "wtf/MainThread.h"
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -92,7 +92,7 @@ public:
         ASSERT(loadingContext);
         m_receiveResponseCallback = receiveResponseCallback;
         m_finishCallback = finishCallback;
-        m_scriptLoader->setTargetType(ResourceRequest::TargetIsSharedWorker);
+        m_scriptLoader->setRequestContext(WebURLRequest::RequestContextSharedWorker);
         m_scriptLoader->loadAsynchronously(
             *loadingContext, scriptURL, DenyCrossOriginRequests, this);
     }
@@ -177,8 +177,14 @@ void WebSharedWorkerImpl::stopWorkerThread()
     if (m_askedToTerminate)
         return;
     m_askedToTerminate = true;
-    if (m_mainScriptLoader)
+    if (m_mainScriptLoader) {
         m_mainScriptLoader->cancel();
+        m_mainScriptLoader.clear();
+        if (client())
+            client()->workerScriptLoadFailed();
+        delete this;
+        return;
+    }
     if (m_workerThread)
         m_workerThread->stop();
 }
@@ -236,7 +242,7 @@ void WebSharedWorkerImpl::reportException(const String& errorMessage, int lineNu
     // Not suppported in SharedWorker.
 }
 
-void WebSharedWorkerImpl::reportConsoleMessage(MessageSource source, MessageLevel level, const String& message, int lineNumber, const String& sourceURL)
+void WebSharedWorkerImpl::reportConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>)
 {
     // Not supported in SharedWorker.
 }
@@ -276,12 +282,12 @@ void WebSharedWorkerImpl::workerGlobalScopeStarted(WorkerGlobalScope*)
 {
 }
 
-void WebSharedWorkerImpl::workerGlobalScopeDestroyed()
+void WebSharedWorkerImpl::workerThreadTerminated()
 {
-    callOnMainThread(bind(&WebSharedWorkerImpl::workerGlobalScopeDestroyedOnMainThread, this));
+    callOnMainThread(bind(&WebSharedWorkerImpl::workerThreadTerminatedOnMainThread, this));
 }
 
-void WebSharedWorkerImpl::workerGlobalScopeDestroyedOnMainThread()
+void WebSharedWorkerImpl::workerThreadTerminatedOnMainThread()
 {
     if (client())
         client()->workerContextDestroyed();
@@ -298,14 +304,14 @@ void WebSharedWorkerImpl::postTaskToLoader(PassOwnPtr<ExecutionContextTask> task
 
 bool WebSharedWorkerImpl::postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask> task)
 {
-    m_workerThread->runLoop().postTask(task);
+    m_workerThread->postTask(task);
     return true;
 }
 
 void WebSharedWorkerImpl::connect(WebMessagePortChannel* webChannel)
 {
-    workerThread()->runLoop().postTask(
-        createCallbackTask(&connectTask, adoptPtr(webChannel)));
+    workerThread()->postTask(
+        createCrossThreadTask(&connectTask, adoptPtr(webChannel)));
 }
 
 void WebSharedWorkerImpl::connectTask(ExecutionContext* context, PassOwnPtr<WebMessagePortChannel> channel)
@@ -343,10 +349,16 @@ void WebSharedWorkerImpl::onScriptLoaderFinished()
 {
     ASSERT(m_loadingDocument);
     ASSERT(m_mainScriptLoader);
-    if (m_mainScriptLoader->failed() || m_askedToTerminate) {
-        m_mainScriptLoader.clear();
+    if (m_askedToTerminate)
+        return;
+    if (m_mainScriptLoader->failed()) {
+        m_mainScriptLoader->cancel();
         if (client())
             client()->workerScriptLoadFailed();
+
+        // The SharedWorker was unable to load the initial script, so
+        // shut it down right here.
+        delete this;
         return;
     }
     WorkerThreadStartMode startMode = m_pauseWorkerContextOnStart ? PauseWorkerGlobalScopeOnStart : DontPauseWorkerGlobalScopeOnStart;
@@ -355,13 +367,13 @@ void WebSharedWorkerImpl::onScriptLoaderFinished()
     provideDatabaseClientToWorker(workerClients.get(), DatabaseClientImpl::create());
     WebSecurityOrigin webSecurityOrigin(m_loadingDocument->securityOrigin());
     providePermissionClientToWorker(workerClients.get(), adoptPtr(client()->createWorkerPermissionClientProxy(webSecurityOrigin)));
-    OwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(m_url, m_loadingDocument->userAgent(m_url), m_mainScriptLoader->script(), startMode, m_contentSecurityPolicy, static_cast<WebCore::ContentSecurityPolicyHeaderType>(m_policyType), workerClients.release());
+    OwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(m_url, m_loadingDocument->userAgent(m_url), m_mainScriptLoader->script(), startMode, m_contentSecurityPolicy, static_cast<ContentSecurityPolicyHeaderType>(m_policyType), workerClients.release());
     setWorkerThread(SharedWorkerThread::create(m_name, *this, *this, startupData.release()));
     InspectorInstrumentation::scriptImported(m_loadingDocument.get(), m_mainScriptLoader->identifier(), m_mainScriptLoader->script());
     m_mainScriptLoader.clear();
 
     if (m_attachDevToolsOnStart)
-        workerThread()->runLoop().postDebuggerTask(createCallbackTask(connectToWorkerContextInspectorTask, true));
+        workerThread()->postDebuggerTask(createCrossThreadTask(connectToWorkerContextInspectorTask, true));
 
     workerThread()->start();
     if (client())
@@ -392,13 +404,13 @@ void WebSharedWorkerImpl::resumeWorkerContext()
 {
     m_pauseWorkerContextOnStart = false;
     if (workerThread())
-        workerThread()->runLoop().postDebuggerTask(createCallbackTask(resumeWorkerContextTask, true));
+        workerThread()->postDebuggerTask(createCrossThreadTask(resumeWorkerContextTask, true));
 }
 
 void WebSharedWorkerImpl::attachDevTools()
 {
     if (workerThread())
-        workerThread()->runLoop().postDebuggerTask(createCallbackTask(connectToWorkerContextInspectorTask, true));
+        workerThread()->postDebuggerTask(createCrossThreadTask(connectToWorkerContextInspectorTask, true));
     else
         m_attachDevToolsOnStart = true;
 }
@@ -412,7 +424,7 @@ static void reconnectToWorkerContextInspectorTask(ExecutionContext* context, con
 
 void WebSharedWorkerImpl::reattachDevTools(const WebString& savedState)
 {
-    workerThread()->runLoop().postDebuggerTask(createCallbackTask(reconnectToWorkerContextInspectorTask, String(savedState)));
+    workerThread()->postDebuggerTask(createCrossThreadTask(reconnectToWorkerContextInspectorTask, String(savedState)));
 }
 
 static void disconnectFromWorkerContextInspectorTask(ExecutionContext* context, bool)
@@ -423,7 +435,7 @@ static void disconnectFromWorkerContextInspectorTask(ExecutionContext* context, 
 void WebSharedWorkerImpl::detachDevTools()
 {
     m_attachDevToolsOnStart = false;
-    workerThread()->runLoop().postDebuggerTask(createCallbackTask(disconnectFromWorkerContextInspectorTask, true));
+    workerThread()->postDebuggerTask(createCrossThreadTask(disconnectFromWorkerContextInspectorTask, true));
 }
 
 static void dispatchOnInspectorBackendTask(ExecutionContext* context, const String& message)
@@ -433,8 +445,10 @@ static void dispatchOnInspectorBackendTask(ExecutionContext* context, const Stri
 
 void WebSharedWorkerImpl::dispatchDevToolsMessage(const WebString& message)
 {
-    workerThread()->runLoop().postDebuggerTask(createCallbackTask(dispatchOnInspectorBackendTask, String(message)));
-    WorkerDebuggerAgent::interruptAndDispatchInspectorCommands(workerThread());
+    if (m_askedToTerminate)
+        return;
+    workerThread()->postDebuggerTask(createCrossThreadTask(dispatchOnInspectorBackendTask, String(message)));
+    workerThread()->interruptAndDispatchInspectorCommands();
 }
 
 WebSharedWorker* WebSharedWorker::create(WebSharedWorkerClient* client)

@@ -15,8 +15,8 @@
 #include "chrome/browser/content_settings/local_shared_objects_container.h"
 #include "chrome/browser/media/media_stream_devices_controller.h"
 #include "chrome/common/content_settings.h"
-#include "chrome/common/content_settings_types.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
+#include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -290,13 +290,10 @@ class TabSpecificContentSettings
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
   virtual void DidStartProvisionalLoadForFrame(
-      int64 frame_id,
-      int64 parent_frame_id,
-      bool is_main_frame,
+      content::RenderFrameHost* render_frame_host,
       const GURL& validated_url,
       bool is_error_page,
-      bool is_iframe_srcdoc,
-      content::RenderViewHost* render_view_host) OVERRIDE;
+      bool is_iframe_srcdoc) OVERRIDE;
   virtual void AppCacheAccessed(const GURL& manifest_url,
                                 bool blocked_by_policy) OVERRIDE;
 

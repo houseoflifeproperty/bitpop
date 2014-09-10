@@ -39,7 +39,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class Element;
@@ -55,16 +55,18 @@ class Node;
 
 typedef String ErrorString;
 
-class InspectorDOMDebuggerAgent FINAL :
-    public InspectorBaseAgent<InspectorDOMDebuggerAgent>,
-    public InspectorDebuggerAgent::Listener,
-    public InspectorDOMAgent::Listener,
-    public InspectorBackendDispatcher::DOMDebuggerCommandHandler {
+class InspectorDOMDebuggerAgent FINAL
+    : public InspectorBaseAgent<InspectorDOMDebuggerAgent>
+    , public InspectorDebuggerAgent::Listener
+    , public InspectorDOMAgent::Listener
+    , public InspectorBackendDispatcher::DOMDebuggerCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorDOMDebuggerAgent);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(InspectorDOMDebuggerAgent);
 public:
-    static PassOwnPtr<InspectorDOMDebuggerAgent> create(InspectorDOMAgent*, InspectorDebuggerAgent*);
+    static PassOwnPtrWillBeRawPtr<InspectorDOMDebuggerAgent> create(InspectorDOMAgent*, InspectorDebuggerAgent*);
 
     virtual ~InspectorDOMDebuggerAgent();
+    virtual void trace(Visitor*) OVERRIDE;
 
     // DOMDebugger API for InspectorFrontend
     virtual void setXHRBreakpoint(ErrorString*, const String& url) OVERRIDE;
@@ -95,6 +97,7 @@ public:
     void didFireWebGLWarning();
     void didFireWebGLErrorOrWarning(const String& message);
     void willExecuteCustomElementCallback(Element*);
+    void willCloseWindow();
 
     void didProcessTask();
 
@@ -105,7 +108,7 @@ private:
     InspectorDOMDebuggerAgent(InspectorDOMAgent*, InspectorDebuggerAgent*);
 
     void pauseOnNativeEventIfNeeded(PassRefPtr<JSONObject> eventData, bool synchronous);
-    PassRefPtr<JSONObject> preparePauseOnNativeEventData(const String& eventName, const AtomicString* targetName);
+    PassRefPtr<JSONObject> preparePauseOnNativeEventData(const String& eventName, const String* targetName);
 
     // InspectorDOMAgent::Listener implementation.
     virtual void domAgentWasEnabled() OVERRIDE;
@@ -126,13 +129,13 @@ private:
 
     void clear();
 
-    InspectorDOMAgent* m_domAgent;
-    InspectorDebuggerAgent* m_debuggerAgent;
-    HashMap<Node*, uint32_t> m_domBreakpoints;
+    RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
+    RawPtrWillBeMember<InspectorDebuggerAgent> m_debuggerAgent;
+    WillBeHeapHashMap<RawPtrWillBeMember<Node>, uint32_t> m_domBreakpoints;
     bool m_pauseInNextEventListener;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // !defined(InspectorDOMDebuggerAgent_h)

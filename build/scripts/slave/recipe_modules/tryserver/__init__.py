@@ -11,5 +11,4 @@ DEPS = [
   'raw_io',
   'rietveld',
   'step',
-  'step_history',
 ]

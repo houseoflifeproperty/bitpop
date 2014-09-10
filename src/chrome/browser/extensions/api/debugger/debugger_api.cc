@@ -162,7 +162,7 @@ class ExtensionDevToolsInfoBarDelegate : public ConfirmInfoBarDelegate {
   // Creates an extension dev tools infobar and delegate and adds the infobar to
   // the InfoBarService associated with |rvh|.  Returns the infobar if it was
   // successfully added.
-  static infobars::InfoBar* Create(RenderViewHost* rvh,
+  static infobars::InfoBar* Create(WebContents* web_contents,
                                    const std::string& client_name);
 
   void set_client_host(ExtensionDevToolsClientHost* client_host) {
@@ -190,12 +190,8 @@ class ExtensionDevToolsInfoBarDelegate : public ConfirmInfoBarDelegate {
 
 // static
 infobars::InfoBar* ExtensionDevToolsInfoBarDelegate::Create(
-    RenderViewHost* rvh,
+    WebContents* web_contents,
     const std::string& client_name) {
-  if (!rvh)
-    return NULL;
-
-  WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
   if (!web_contents)
     return NULL;
 
@@ -345,10 +341,10 @@ ExtensionDevToolsClientHost::ExtensionDevToolsClientHost(
     static_cast<ExtensionDevToolsInfoBarDelegate*>(
         infobar_->delegate())->set_client_host(this);
     registrar_.Add(
-        this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
-        content::Source<InfoBarService>(InfoBarService::FromWebContents(
-            WebContents::FromRenderViewHost(
-                agent_host_->GetRenderViewHost()))));
+        this,
+        chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
+        content::Source<InfoBarService>(
+            InfoBarService::FromWebContents(agent_host_->GetWebContents())));
   }
 }
 
@@ -360,8 +356,8 @@ ExtensionDevToolsClientHost::~ExtensionDevToolsClientHost() {
   if (infobar_) {
     static_cast<ExtensionDevToolsInfoBarDelegate*>(
         infobar_->delegate())->set_client_host(NULL);
-    InfoBarService* infobar_service = InfoBarService::FromWebContents(
-        WebContents::FromRenderViewHost(agent_host_->GetRenderViewHost()));
+    InfoBarService* infobar_service =
+        InfoBarService::FromWebContents(agent_host_->GetWebContents());
     infobar_service->RemoveInfoBar(infobar_);
   }
   AttachedClientHosts::GetInstance()->Remove(this);
@@ -507,7 +503,6 @@ void DebuggerFunction::FormatErrorMessage(const std::string& format) {
 }
 
 bool DebuggerFunction::InitAgentHost() {
-  const Extension* extension = GetExtension();
   if (debuggee_.tab_id) {
     WebContents* web_contents = NULL;
     bool result = ExtensionTabUtil::GetTabById(*debuggee_.tab_id,
@@ -520,7 +515,7 @@ bool DebuggerFunction::InitAgentHost() {
     if (result && web_contents) {
       // TODO(rdevlin.cronin) This should definitely be GetLastCommittedURL().
       GURL url = web_contents->GetVisibleURL();
-      if (PermissionsData::IsRestrictedUrl(url, url, extension, &error_))
+      if (PermissionsData::IsRestrictedUrl(url, url, extension(), &error_))
         return false;
       agent_host_ = DevToolsAgentHost::GetOrCreateFor(web_contents);
     }
@@ -532,12 +527,12 @@ bool DebuggerFunction::InitAgentHost() {
     if (extension_host) {
       if (PermissionsData::IsRestrictedUrl(extension_host->GetURL(),
                                            extension_host->GetURL(),
-                                           extension,
+                                           extension(),
                                            &error_)) {
         return false;
       }
-      agent_host_ = DevToolsAgentHost::GetOrCreateFor(
-          extension_host->render_view_host());
+      agent_host_ =
+          DevToolsAgentHost::GetOrCreateFor(extension_host->host_contents());
     }
   } else if (debuggee_.target_id) {
     agent_host_ = DevToolsAgentHost::GetForId(*debuggee_.target_id);
@@ -557,8 +552,8 @@ bool DebuggerFunction::InitClientHost() {
   if (!InitAgentHost())
     return false;
 
-  client_host_ = AttachedClientHosts::GetInstance()->Lookup(
-      agent_host_.get(), GetExtension()->id());
+  client_host_ = AttachedClientHosts::GetInstance()->Lookup(agent_host_.get(),
+                                                            extension()->id());
 
   if (!client_host_) {
     FormatErrorMessage(keys::kNotAttachedError);
@@ -597,14 +592,13 @@ bool DebuggerAttachFunction::RunAsync() {
     return false;
   }
 
-  const Extension* extension = GetExtension();
   infobars::InfoBar* infobar = NULL;
   if (!CommandLine::ForCurrentProcess()->
        HasSwitch(::switches::kSilentDebuggerExtensionAPI)) {
     // Do not attach to the target if for any reason the infobar cannot be shown
     // for this WebContents instance.
     infobar = ExtensionDevToolsInfoBarDelegate::Create(
-        agent_host_->GetRenderViewHost(), extension->name());
+        agent_host_->GetWebContents(), extension()->name());
     if (!infobar) {
       error_ = ErrorUtils::FormatErrorMessage(
           keys::kSilentDebuggingRequired,
@@ -615,8 +609,8 @@ bool DebuggerAttachFunction::RunAsync() {
 
   new ExtensionDevToolsClientHost(GetProfile(),
                                   agent_host_.get(),
-                                  extension->id(),
-                                  extension->name(),
+                                  extension()->id(),
+                                  extension()->name(),
                                   debuggee_,
                                   infobar);
   SendResponse(true);

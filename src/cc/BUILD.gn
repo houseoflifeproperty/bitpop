@@ -113,6 +113,9 @@ component("cc") {
     "input/input_handler.h",
     "input/page_scale_animation.cc",
     "input/page_scale_animation.h",
+    "input/layer_selection_bound.cc",
+    "input/layer_selection_bound.h",
+    "input/selection_bound_type.h",
     "input/top_controls_manager.cc",
     "input/top_controls_manager.h",
     "input/top_controls_manager_client.h",
@@ -170,8 +173,6 @@ component("cc") {
     "layers/picture_layer.h",
     "layers/picture_layer_impl.cc",
     "layers/picture_layer_impl.h",
-    "layers/quad_sink.h",
-    "layers/quad_sink.cc",
     "layers/render_pass_sink.h",
     "layers/render_surface.cc",
     "layers/render_surface.h",
@@ -214,6 +215,10 @@ component("cc") {
     "layers/video_layer_impl.h",
     "output/begin_frame_args.cc",
     "output/begin_frame_args.h",
+    "output/bsp_tree.cc",
+    "output/bsp_tree.h",
+    "output/bsp_walk_action.cc",
+    "output/bsp_walk_action.h",
     "output/compositor_frame.cc",
     "output/compositor_frame.h",
     "output/compositor_frame_ack.cc",
@@ -226,8 +231,8 @@ component("cc") {
     "output/copy_output_request.h",
     "output/copy_output_result.cc",
     "output/copy_output_result.h",
-    "output/delegated_frame_data.h",
     "output/delegated_frame_data.cc",
+    "output/delegated_frame_data.h",
     "output/delegating_renderer.cc",
     "output/delegating_renderer.h",
     "output/direct_renderer.cc",
@@ -238,8 +243,8 @@ component("cc") {
     "output/filter_operations.h",
     "output/geometry_binding.cc",
     "output/geometry_binding.h",
-    "output/gl_frame_data.h",
     "output/gl_frame_data.cc",
+    "output/gl_frame_data.h",
     "output/gl_renderer.cc",
     "output/gl_renderer.h",
     "output/gl_renderer_draw_cache.cc",
@@ -270,16 +275,21 @@ component("cc") {
     "output/software_output_device.h",
     "output/software_renderer.cc",
     "output/software_renderer.h",
+    "output/viewport_selection_bound.cc",
+    "output/viewport_selection_bound.h",
     "quads/checkerboard_draw_quad.cc",
     "quads/checkerboard_draw_quad.h",
     "quads/content_draw_quad_base.cc",
     "quads/content_draw_quad_base.h",
     "quads/debug_border_draw_quad.cc",
     "quads/debug_border_draw_quad.h",
+    "quads/draw_polygon.cc",
+    "quads/draw_polygon.h",
     "quads/draw_quad.cc",
     "quads/draw_quad.h",
     "quads/io_surface_draw_quad.cc",
     "quads/io_surface_draw_quad.h",
+    "quads/largest_draw_quad.h",
     "quads/picture_draw_quad.cc",
     "quads/picture_draw_quad.h",
     "quads/render_pass.cc",
@@ -306,14 +316,16 @@ component("cc") {
     "resources/bitmap_skpicture_content_layer_updater.h",
     "resources/content_layer_updater.cc",
     "resources/content_layer_updater.h",
-    "resources/direct_raster_worker_pool.cc",
-    "resources/direct_raster_worker_pool.h",
+    "resources/eviction_tile_priority_queue.cc",
+    "resources/eviction_tile_priority_queue.h",
+    "resources/gpu_raster_worker_pool.cc",
+    "resources/gpu_raster_worker_pool.h",
+    "resources/image_copy_raster_worker_pool.cc",
+    "resources/image_copy_raster_worker_pool.h",
     "resources/image_layer_updater.cc",
     "resources/image_layer_updater.h",
     "resources/image_raster_worker_pool.cc",
     "resources/image_raster_worker_pool.h",
-    "resources/image_copy_raster_worker_pool.cc",
-    "resources/image_copy_raster_worker_pool.h",
     "resources/layer_painter.h",
     "resources/layer_quad.cc",
     "resources/layer_quad.h",
@@ -331,10 +343,10 @@ component("cc") {
     "resources/picture_layer_tiling.h",
     "resources/picture_layer_tiling_set.cc",
     "resources/picture_layer_tiling_set.h",
-    "resources/picture_pile.cc",
-    "resources/picture_pile.h",
     "resources/picture_pile_base.cc",
     "resources/picture_pile_base.h",
+    "resources/picture_pile.cc",
+    "resources/picture_pile.h",
     "resources/picture_pile_impl.cc",
     "resources/picture_pile_impl.h",
     "resources/pixel_buffer_raster_worker_pool.cc",
@@ -348,28 +360,32 @@ component("cc") {
     "resources/prioritized_tile_set.h",
     "resources/priority_calculator.cc",
     "resources/priority_calculator.h",
-    "resources/raster_mode.cc",
-    "resources/raster_mode.h",
-    "resources/raster_worker_pool.cc",
-    "resources/raster_worker_pool.h",
     "resources/rasterizer.cc",
     "resources/rasterizer.h",
+    "resources/raster_mode.cc",
+    "resources/raster_mode.h",
+    "resources/raster_tile_priority_queue.cc",
+    "resources/raster_tile_priority_queue.h",
+    "resources/raster_worker_pool.cc",
+    "resources/raster_worker_pool.h",
     "resources/release_callback.h",
     "resources/resource.cc",
-    "resources/resource.h",
-    "resources/resource_format.h",
     "resources/resource_format.cc",
+    "resources/resource_format.h",
+    "resources/resource.h",
     "resources/resource_pool.cc",
     "resources/resource_pool.h",
     "resources/resource_provider.cc",
     "resources/resource_provider.h",
     "resources/resource_update.cc",
-    "resources/resource_update.h",
     "resources/resource_update_controller.cc",
     "resources/resource_update_controller.h",
+    "resources/resource_update.h",
     "resources/resource_update_queue.cc",
     "resources/resource_update_queue.h",
     "resources/returned_resource.h",
+    "resources/scoped_gpu_raster.cc",
+    "resources/scoped_gpu_raster.h",
     "resources/scoped_resource.cc",
     "resources/scoped_resource.h",
     "resources/scoped_ui_resource.cc",
@@ -384,9 +400,9 @@ component("cc") {
     "resources/task_graph_runner.cc",
     "resources/task_graph_runner.h",
     "resources/texture_mailbox.cc",
-    "resources/texture_mailbox.h",
     "resources/texture_mailbox_deleter.cc",
     "resources/texture_mailbox_deleter.h",
+    "resources/texture_mailbox.h",
     "resources/texture_uploader.cc",
     "resources/texture_uploader.h",
     "resources/tile.cc",
@@ -413,7 +429,6 @@ component("cc") {
     "scheduler/scheduler_settings.h",
     "scheduler/scheduler_state_machine.cc",
     "scheduler/scheduler_state_machine.h",
-    "scheduler/time_source.h",
     "trees/blocking_task_runner.cc",
     "trees/blocking_task_runner.h",
     "trees/damage_tracker.cc",
@@ -454,7 +469,7 @@ component("cc") {
     "//base",
     "//base/third_party/dynamic_annotations",
     "//gpu",
-    #"//media",  TODO(GYP)
+    "//media",
     "//skia",
     "//ui/events:events_base",
     "//ui/gfx",
@@ -465,35 +480,12 @@ component("cc") {
     "//skia",
   ]
 
-  defined = [ "CC_IMPLEMENTATION=1" ]
+  defines = [ "CC_IMPLEMENTATION=1" ]
 
   if (!is_debug && is_win) {
     configs -= [ "//build/config/compiler:optimize" ]
     configs += [ "//build/config/compiler:optimize_max" ]
   }
-}
-
-component("cc_surfaces") {
-  sources = [
-    "surfaces/surface.cc",
-    "surfaces/surface.h",
-    "surfaces/surface_aggregator.cc",
-    "surfaces/surface_aggregator.h",
-    "surfaces/surface_manager.cc",
-    "surfaces/surface_manager.h",
-    "surfaces/surfaces_export.h",
-  ]
-
-  defines = [ "CC_SURFACES_IMPLEMENTATION=1" ]
-
-  deps = [
-    ":cc",
-    "//base",
-    "//base/third_party/dynamic_annotations",
-    "//skia",
-    "//ui/gfx",
-    "//ui/gfx/geometry",
-  ]
 }
 
 source_set("test_support") {
@@ -568,8 +560,6 @@ source_set("test_support") {
     "test/layer_tree_test.cc",
     "test/layer_tree_test.h",
     "test/mock_occlusion_tracker.h",
-    "test/mock_quad_culler.cc",
-    "test/mock_quad_culler.h",
     "test/ordered_simple_task_runner.cc",
     "test/ordered_simple_task_runner.h",
     "test/ordered_texture_map.cc",
@@ -623,25 +613,25 @@ source_set("test_support") {
   deps = [
     "//base",
     "//base/third_party/dynamic_annotations",
-    "//gpu:gpu_unittest_utils",
+    "//gpu:test_support",
     "//gpu/command_buffer/client:gles2_c_lib",
     "//gpu/command_buffer/client:gles2_implementation",
     "//gpu/command_buffer/client:gl_in_process_context",
+    "//gpu/command_buffer/common:gles2_utils",
     "//gpu/skia_bindings",
     "//skia",
     "//testing/gmock",
     "//testing/gtest",
-    # TODO(GYP)
-    #"//third_party/mesa/mesa.gyp:osmesa",
     "//ui/gfx",
     "//ui/gfx/geometry",
-    "//ui/gfx:gfx_test_support",
+    "//ui/gfx:test_support",
     "//ui/gl",
   ]
-}
 
-# TODO(GYP) make these tests link when all deps are resolved.
-if (false) {
+  if (!is_android) {  # TODO(GYP) Enable on Android when osmesa links.
+    deps += [ "//third_party/mesa:osmesa" ]
+  }
+}
 
 test("cc_unittests") {
   sources = [
@@ -666,6 +656,7 @@ test("cc_unittests") {
     "layers/delegated_frame_provider_unittest.cc",
     "layers/delegated_frame_resource_collection_unittest.cc",
     "layers/delegated_renderer_layer_impl_unittest.cc",
+    "layers/delegated_renderer_layer_unittest.cc",
     "layers/heads_up_display_unittest.cc",
     "layers/heads_up_display_layer_impl_unittest.cc",
     "layers/io_surface_layer_impl_unittest.cc",
@@ -767,13 +758,13 @@ test("cc_unittests") {
 
   deps = [
     ":cc",
-    ":cc_surfaces",
     ":test_support",
     "//base/test:test_support",
+    "//cc/surfaces",
     "//gpu",
-    "//gpu:gpu_unittest_utils",
-    # TODO(GYP)
-    #"//media",
+    "//gpu:test_support",
+    "//gpu/command_buffer/common:gles2_utils",
+    "//media",
     "//testing/gmock",
     "//testing/gtest",
     "//ui/events:events_base",
@@ -783,7 +774,34 @@ test("cc_unittests") {
 }
 
 test("cc_perftests") {
-  # TODO(GYP)
-}
+  sources = [
+    "layers/layer_perftest.cc",
+    "layers/picture_layer_impl_perftest.cc",
+    "resources/picture_layer_tiling_perftest.cc",
+    "resources/picture_pile_impl_perftest.cc",
+    "resources/raster_worker_pool_perftest.cc",
+    "resources/task_graph_runner_perftest.cc",
+    "resources/tile_manager_perftest.cc",
+    "test/cc_test_suite.cc",
+    "test/run_all_perftests.cc",
+    "trees/layer_tree_host_common_perftest.cc",
+    "trees/layer_tree_host_perftest.cc",
+    "trees/occlusion_tracker_perftest.cc",
+  ]
 
-}  # if false
+  deps = [
+    ":cc",
+    ":test_support",
+    "//base",
+    "//gpu",
+    "//gpu:test_support",
+    "//gpu/command_buffer/common:gles2_utils",
+    "//media",
+    "//skia",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//testing/perf",
+    "//ui/gfx",
+    "//ui/gfx/geometry",
+  ]
+}

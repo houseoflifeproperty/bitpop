@@ -11,7 +11,6 @@
     "name": "gclient setup"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -22,7 +21,6 @@
     "name": "gclient revert"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -54,7 +52,6 @@
     ]
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "svn.bat",
       "export",
@@ -71,7 +68,6 @@
     ]
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -96,7 +92,6 @@
     ]
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "patch",
       "--dir",
@@ -121,31 +116,9 @@
       "GYP_DEFINES": "chromium_win_pch=0 component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]\\goma' syzyasan=1 target_arch=ia32 use_goma=1 win_z7=1",
       "GYP_USE_SEPARATE_MSPDBSRV": "1"
     },
-    "name": "gclient runhooks",
-    "seed_steps": [
-      "gclient runhooks",
-      "compile",
-      "apply_syzyasan",
-      "audio_decoder_unittests",
-      "common_audio_unittests",
-      "common_video_unittests",
-      "libjingle_media_unittest",
-      "libjingle_p2p_unittest",
-      "libjingle_peerconnection_unittest",
-      "libjingle_sound_unittest",
-      "libjingle_unittest",
-      "modules_tests",
-      "modules_unittests",
-      "system_wrappers_unittests",
-      "test_support_unittests",
-      "tools_unittests",
-      "video_engine_core_unittests",
-      "video_engine_tests",
-      "voice_engine_unittests"
-    ]
+    "name": "gclient runhooks"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -177,7 +150,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -199,7 +171,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -221,7 +192,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -243,7 +213,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -265,7 +234,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -287,7 +255,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -309,7 +276,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -331,7 +297,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -353,7 +318,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -375,7 +339,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -397,7 +360,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -419,7 +381,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -441,7 +402,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -463,7 +423,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -485,7 +444,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -507,7 +465,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",

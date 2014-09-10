@@ -47,11 +47,14 @@ VideoDecoderShim::PendingDecode::~PendingDecode() {
 
 struct VideoDecoderShim::PendingFrame {
   explicit PendingFrame(uint32_t decode_id);
-  PendingFrame(uint32_t decode_id, const gfx::Size& size);
+  PendingFrame(uint32_t decode_id,
+               const gfx::Size& coded_size,
+               const gfx::Rect& visible_rect);
   ~PendingFrame();
 
   const uint32_t decode_id;
-  const gfx::Size size;
+  const gfx::Size coded_size;
+  const gfx::Rect visible_rect;
   std::vector<uint8_t> argb_pixels;
 
  private:
@@ -64,10 +67,12 @@ VideoDecoderShim::PendingFrame::PendingFrame(uint32_t decode_id)
 }
 
 VideoDecoderShim::PendingFrame::PendingFrame(uint32_t decode_id,
-                                             const gfx::Size& size)
+                                             const gfx::Size& coded_size,
+                                             const gfx::Rect& visible_rect)
     : decode_id(decode_id),
-      size(size),
-      argb_pixels(size.width() * size.height() * 4) {
+      coded_size(coded_size),
+      visible_rect(visible_rect),
+      argb_pixels(coded_size.width() * coded_size.height() * 4) {
 }
 
 VideoDecoderShim::PendingFrame::~PendingFrame() {
@@ -125,19 +130,22 @@ VideoDecoderShim::DecoderImpl::~DecoderImpl() {
 void VideoDecoderShim::DecoderImpl::Initialize(
     media::VideoDecoderConfig config) {
   DCHECK(!decoder_);
+#if !defined(MEDIA_DISABLE_LIBVPX)
   if (config.codec() == media::kCodecVP9) {
     decoder_.reset(
         new media::VpxVideoDecoder(base::MessageLoopProxy::current()));
-  } else {
+  } else
+#endif
+  {
     scoped_ptr<media::FFmpegVideoDecoder> ffmpeg_video_decoder(
         new media::FFmpegVideoDecoder(base::MessageLoopProxy::current()));
     ffmpeg_video_decoder->set_decode_nalus(true);
     decoder_ = ffmpeg_video_decoder.Pass();
   }
   max_decodes_at_decoder_ = decoder_->GetMaxDecodeRequests();
-  // We can use base::Unretained() safely in decoder callbacks because we call
-  // VideoDecoder::Stop() before deletion. Stop() guarantees there will be no
-  // outstanding callbacks after it returns.
+  // We can use base::Unretained() safely in decoder callbacks because
+  // |decoder_| is owned by DecoderImpl. During Stop(), the |decoder_| will be
+  // destroyed and all outstanding callbacks will be fired.
   decoder_->Initialize(
       config,
       true /* low_delay */,
@@ -178,7 +186,7 @@ void VideoDecoderShim::DecoderImpl::Stop() {
   // again.
   while (!pending_decodes_.empty())
     pending_decodes_.pop();
-  decoder_->Stop();
+  decoder_.reset();
   // This instance is deleted once we exit this scope.
 }
 
@@ -255,7 +263,8 @@ void VideoDecoderShim::DecoderImpl::OnOutputComplete(
     const scoped_refptr<media::VideoFrame>& frame) {
   scoped_ptr<PendingFrame> pending_frame;
   if (!frame->end_of_stream()) {
-    pending_frame.reset(new PendingFrame(decode_id_, frame->coded_size()));
+    pending_frame.reset(new PendingFrame(
+        decode_id_, frame->coded_size(), frame->visible_rect()));
     // Convert the VideoFrame pixels to ABGR to match VideoDecodeAccelerator.
     libyuv::I420ToABGR(frame->data(media::VideoFrame::kYPlane),
                        frame->stride(media::VideoFrame::kYPlane),
@@ -385,12 +394,9 @@ void VideoDecoderShim::AssignPictureBuffers(
   GLuint num_textures = base::checked_cast<GLuint>(buffers.size());
   std::vector<uint32_t> local_texture_ids(num_textures);
   gpu::gles2::GLES2Interface* gles2 = context_provider_->ContextGL();
-  gles2->GenTextures(num_textures, &local_texture_ids.front());
   for (uint32_t i = 0; i < num_textures; i++) {
-    gles2->ActiveTexture(GL_TEXTURE0);
-    gles2->BindTexture(GL_TEXTURE_2D, local_texture_ids[i]);
-    gles2->ConsumeTextureCHROMIUM(GL_TEXTURE_2D,
-                                  pending_texture_mailboxes_[i].name);
+    local_texture_ids[i] = gles2->CreateAndConsumeTextureCHROMIUM(
+        GL_TEXTURE_2D, pending_texture_mailboxes_[i].name);
     // Map the plugin texture id to the local texture id.
     uint32_t plugin_texture_id = buffers[i].texture_id();
     texture_id_map_[plugin_texture_id] = local_texture_ids[i];
@@ -470,7 +476,7 @@ void VideoDecoderShim::OnOutputComplete(scoped_ptr<PendingFrame> frame) {
   DCHECK(host_);
 
   if (!frame->argb_pixels.empty()) {
-    if (texture_size_ != frame->size) {
+    if (texture_size_ != frame->coded_size) {
       // If the size has changed, all current textures must be dismissed. Add
       // all textures to |textures_to_dismiss_| and dismiss any that aren't in
       // use by the plugin. We will dismiss the rest as they are recycled.
@@ -492,10 +498,10 @@ void VideoDecoderShim::OnOutputComplete(scoped_ptr<PendingFrame> frame) {
         pending_texture_mailboxes_.push_back(gpu::Mailbox::Generate());
 
       host_->RequestTextures(texture_pool_size_,
-                             frame->size,
+                             frame->coded_size,
                              GL_TEXTURE_2D,
                              pending_texture_mailboxes_);
-      texture_size_ = frame->size;
+      texture_size_ = frame->coded_size;
     }
 
     pending_frames_.push(linked_ptr<PendingFrame>(frame.release()));
@@ -527,7 +533,8 @@ void VideoDecoderShim::SendPictures() {
                       GL_UNSIGNED_BYTE,
                       &frame->argb_pixels.front());
 
-    host_->PictureReady(media::Picture(texture_id, frame->decode_id));
+    host_->PictureReady(
+        media::Picture(texture_id, frame->decode_id, frame->visible_rect));
     pending_frames_.pop();
   }
 

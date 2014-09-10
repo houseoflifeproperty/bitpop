@@ -32,12 +32,11 @@
 #include "core/svg/SVGAnimatedTypeAnimator.h"
 #include "core/svg/SVGDocumentExtensions.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGAnimateElement::SVGAnimateElement(const QualifiedName& tagName, Document& document)
     : SVGAnimationElement(tagName, document)
 {
-    ASSERT(isSVGAnimateElement(*this));
     ScriptWrappable::init(this);
 }
 
@@ -175,7 +174,7 @@ void SVGAnimateElement::resetAnimatedType()
 
         WillBeHeapVector<RawPtrWillBeMember<SVGElement> >::const_iterator end = animatedElements.end();
         for (WillBeHeapVector<RawPtrWillBeMember<SVGElement> >::const_iterator it = animatedElements.begin(); it != end; ++it)
-            document().accessSVGExtensions().addElementReferencingTarget(this, *it);
+            addReferenceTo(*it);
 
         if (!m_animatedProperty)
             m_animatedProperty = animator->startAnimValAnimation(animatedElements);

@@ -39,6 +39,10 @@
     # If set to 1 together with blink_gc_plugin, the Blink GC plugin will dump
     # points-to graph files for each compilation unit.
     'blink_gc_plugin_dump_graph%': 0,
+    # If set to 1, the Blink will use the base allocator instead of
+    # PartitionAlloc. so that the top of stack-unwinding becomes the caller
+    # which requests memory allocation in blink.
+    'blink_disable_partition_allocator%': 0,
   },
   'targets': [
   {
@@ -56,6 +60,7 @@
       ],
       'variables': {
         'chromium_code': 1,
+        'clang_warning_flags': [ '-Wglobal-constructors' ],
       },
       'conditions': [
         ['OS=="win" and component=="shared_library"', {
@@ -96,18 +101,17 @@
           # timesNewRoman.unstatic.3258 and colorTransparent.unstatic.4879.
           'cflags': ['-Wno-uninitialized'],
         }],
-        ['clang==1', {
-          'cflags': ['-Wglobal-constructors'],
-          'xcode_settings': {
-            'WARNING_CFLAGS': ['-Wglobal-constructors'],
-          },
-        }],
         # Only enable the blink_gc_plugin when using clang and chrome plugins.
         ['blink_gc_plugin==1 and clang==1 and clang_use_chrome_plugins==1', {
           'cflags': ['<!@(../../../tools/clang/scripts/blink_gc_plugin_flags.sh enable-oilpan=<(enable_oilpan) dump-graph=<(blink_gc_plugin_dump_graph))'],
           'xcode_settings': {
             'OTHER_CFLAGS': ['<!@(../../../tools/clang/scripts/blink_gc_plugin_flags.sh enable-oilpan=<(enable_oilpan) dump-graph=<(blink_gc_plugin_dump_graph))'],
           },
+        }],
+        ['blink_disable_partition_allocator==1', {
+          'defines': [
+            'MEMORY_TOOL_REPLACES_ALLOCATOR',
+          ],
         }],
       ],
     },
@@ -126,12 +130,9 @@
       '<(DEPTH)/testing/gtest.gyp:gtest',
     ],
     'direct_dependent_settings': {
-      'cflags!': ['-Wglobal-constructors'],
-      'xcode_settings': {
-        'WARNING_CFLAGS!': ['-Wglobal-constructors'],
-      },
       'variables': {
         'chromium_code': 1,
+        'clang_warning_flags_unset': [ '-Wglobal-constructors' ],
       },
     },
   }

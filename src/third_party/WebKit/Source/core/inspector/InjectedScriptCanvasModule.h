@@ -31,11 +31,11 @@
 #ifndef InjectedScriptCanvasModule_h
 #define InjectedScriptCanvasModule_h
 
-#include "bindings/v8/ScriptState.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "core/inspector/InjectedScriptModule.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class InjectedScriptManager;
 class ScriptValue;
@@ -69,6 +69,6 @@ private:
 };
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InjectedScriptCanvasModule_h)

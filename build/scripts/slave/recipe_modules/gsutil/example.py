@@ -13,20 +13,26 @@ def GenSteps(api):
   local_file = api.path['slave_build'].join('boom')
   bucket = 'chromium-recipe-test'
   cloud_file = 'some/random/path/to/boom'
-  yield api.gsutil.upload(local_file, bucket, cloud_file)
+  api.gsutil.upload(local_file, bucket, cloud_file,
+      metadata={
+        'Test-Field': 'value',
+        'Remove-Me': None,
+        'x-custom-field': 'custom-value',
+        'Cache-Control': 'no-cache',
+      })
 
-  yield api.gsutil(['cp',
+  api.gsutil(['cp',
                     'gs://chromium-recipe-test/some/random/path/**',
                     'gs://chromium-recipe-test/staging'])
 
-  yield api.gsutil.download_url(
+  api.gsutil.download_url(
       'http://storage.cloud.google.com/' + bucket + '/' + cloud_file,
       local_file,
       name='gsutil download url')
 
   new_cloud_file = 'staging/to/boom'
   new_local_file = api.path['slave_build'].join('erang')
-  yield api.gsutil.download(bucket, new_cloud_file, new_local_file)
+  api.gsutil.download(bucket, new_cloud_file, new_local_file)
 
 
 def GenTests(api):

@@ -13,6 +13,8 @@ vars = {
 deps = {
     'breakpad':
         Var('git_url') + '/external/google-breakpad.git@fe34e3f9fef1eb425b25a79f0da84e2f277d433b',
+    'buildtools':
+        Var('git_url') + '/chromium/buildtools.git@59b93247766e1cdac6e482637ad493df38f7aeb7',
     'testing/gtest':
         Var('git_url') + '/external/googletest.git@74de57c951aedebc5dfe26a27604353432392b98',
     'third_party':
@@ -34,11 +36,6 @@ deps = {
 }
 
 deps_os = {
-    'android':
-    {
-        'src/third_party/android_tools':
-            Var('git_url') + '/android_tools.git@aabf2a28449fe47dedeee51d3570ff8687ff015f',
-    },
     'unix':
     {
         'third_party/ragel':
@@ -79,6 +76,30 @@ hooks = [
     {
     'action':
          [
+    'python',
+    'native_client/build/vs_toolchain.py',
+    'update'
+],
+    'pattern':
+         '.',
+    'name':
+         'win_toolchain'
+},
+    {
+    'action':
+         [
+    'python',
+    'tools/clang/scripts/update.py',
+    '--if-needed'
+],
+    'pattern':
+         '.',
+    'name':
+         'clang'
+},
+    {
+    'action':
+         [
     'download_from_google_storage',
     '--no_resume',
     '--platform=win32',
@@ -86,7 +107,7 @@ hooks = [
     '--bucket',
     'chromium-gn',
     '-s',
-    'native_client/tools/gn/bin/win/gn.exe.sha1'
+    'buildtools/win/gn.exe.sha1'
 ],
     'pattern':
          '.',
@@ -103,7 +124,7 @@ hooks = [
     '--bucket',
     'chromium-gn',
     '-s',
-    'native_client/tools/gn/bin/mac/gn.sha1'
+    'buildtools/mac/gn.sha1'
 ],
     'pattern':
          '.',
@@ -120,41 +141,7 @@ hooks = [
     '--bucket',
     'chromium-gn',
     '-s',
-    'native_client/tools/gn/bin/linux/gn.sha1'
-],
-    'pattern':
-         '.',
-    'name':
-         'gn_linux'
-},
-    {
-    'action':
-         [
-    'download_from_google_storage',
-    '--no_resume',
-    '--platform=linux*',
-    '--no_auth',
-    '--bucket',
-    'chromium-gn',
-    '-s',
-    'native_client/tools/gn/bin/linux/gn.sha1'
-],
-    'pattern':
-         '.',
-    'name':
-         'gn_linux'
-},
-    {
-    'action':
-         [
-    'download_from_google_storage',
-    '--no_resume',
-    '--platform=linux*',
-    '--no_auth',
-    '--bucket',
-    'chromium-gn',
-    '-s',
-    'native_client/tools/gn/bin/linux/gn32.sha1'
+    'buildtools/linux32/gn.sha1'
 ],
     'pattern':
          '.',
@@ -164,14 +151,19 @@ hooks = [
     {
     'action':
          [
-    'python',
-    'tools/clang/scripts/update.py',
-    '--if-needed'
+    'download_from_google_storage',
+    '--no_resume',
+    '--platform=linux*',
+    '--no_auth',
+    '--bucket',
+    'chromium-gn',
+    '-s',
+    'buildtools/linux64/gn.sha1'
 ],
     'pattern':
          '.',
     'name':
-         'clang'
+         'gn_linux64'
 },
     {
     'action':

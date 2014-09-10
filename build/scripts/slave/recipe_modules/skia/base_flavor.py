@@ -8,18 +8,11 @@
 
 class BaseFlavorUtils(object):
 
-  def __init__(self):
+  def __init__(self, skia_api):
     """Create a flavor utils instance.
 
     Since these classes need access to the APIs used by SkiaApi, we need an
     instance of SkiaApi.
-    """
-    self._skia_api = None
-
-  def set_skia_api(self, skia_api):
-    """Attach this flavor utils instance to a SkiaApi instance.
-
-    This method must be called before any others.
     """
     self._skia_api = skia_api
 

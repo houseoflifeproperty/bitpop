@@ -26,16 +26,16 @@
  */
 
 #include <string>
-#include "talk/base/helpers.h"
-#include "talk/base/logging.h"
-#include "talk/base/thread.h"
-#include "talk/base/window.h"
 #include "talk/media/base/constants.h"
 #include "talk/media/base/screencastid.h"
 #include "talk/p2p/base/parsing.h"
 #include "talk/session/media/call.h"
 #include "talk/session/media/currentspeakermonitor.h"
 #include "talk/session/media/mediasessionclient.h"
+#include "webrtc/base/helpers.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/thread.h"
+#include "webrtc/base/window.h"
 
 namespace cricket {
 
@@ -92,7 +92,7 @@ void AudioSourceProxy::OnMediaStreamsUpdate(Call* call, Session* session,
 }
 
 Call::Call(MediaSessionClient* session_client)
-    : id_(talk_base::CreateRandomId()),
+    : id_(rtc::CreateRandomId()),
       session_client_(session_client),
       local_renderer_(NULL),
       has_video_(false),
@@ -110,7 +110,7 @@ Call::~Call() {
     RemoveSession(session);
     session_client_->session_manager()->DestroySession(session);
   }
-  talk_base::Thread::Current()->Clear(this);
+  rtc::Thread::Current()->Clear(this);
 }
 
 Session* Call::InitiateSession(const buzz::Jid& to,
@@ -226,7 +226,7 @@ void Call::SetVideoRenderer(Session* session, uint32 ssrc,
   }
 }
 
-void Call::OnMessage(talk_base::Message* message) {
+void Call::OnMessage(rtc::Message* message) {
   switch (message->message_id) {
   case MSG_CHECKAUTODESTROY:
     // If no more sessions for this call, delete it
@@ -390,7 +390,7 @@ void Call::RemoveSession(Session* session) {
   SignalRemoveSession(this, session);
 
   // The call auto destroys when the last session is removed
-  talk_base::Thread::Current()->Post(this, MSG_CHECKAUTODESTROY);
+  rtc::Thread::Current()->Post(this, MSG_CHECKAUTODESTROY);
 }
 
 VoiceChannel* Call::GetVoiceChannel(Session* session) const {
@@ -458,7 +458,7 @@ void Call::MuteVideo(bool mute) {
 
 bool Call::SendData(Session* session,
                     const SendDataParams& params,
-                    const talk_base::Buffer& payload,
+                    const rtc::Buffer& payload,
                     SendDataResult* result) {
   DataChannel* data_channel = GetDataChannel(session);
   if (!data_channel) {
@@ -493,7 +493,7 @@ cricket::VideoFormat ScreencastFormatFromFps(int fps) {
 
 bool Call::StartScreencast(Session* session,
                            const std::string& streamid, uint32 ssrc,
-                           const ScreencastId& screencastid, int fps) {
+                           const ScreencastId& screenid, int fps) {
   MediaSessionMap::iterator it = media_session_map_.find(session->id());
   if (it == media_session_map_.end()) {
     return false;
@@ -506,9 +506,16 @@ bool Call::StartScreencast(Session* session,
     return false;
   }
 
-  VideoCapturer *capturer = video_channel->AddScreencast(ssrc, screencastid);
-  if (capturer == NULL) {
+  VideoCapturer* capturer = session_client_->channel_manager()->
+      CreateScreenCapturer(screenid);
+  if (!capturer) {
     LOG(LS_WARNING) << "Could not create screencast capturer.";
+    return false;
+  }
+
+  if (!video_channel->AddScreencast(ssrc, capturer)) {
+    delete capturer;
+    LOG(LS_WARNING) << "Could not add screencast capturer.";
     return false;
   }
 
@@ -617,7 +624,7 @@ VideoContentDescription* Call::CreateVideoStreamUpdate(
 void Call::SendVideoStreamUpdate(
     Session* session, VideoContentDescription* video) {
   // Takes the ownership of |video|.
-  talk_base::scoped_ptr<VideoContentDescription> description(video);
+  rtc::scoped_ptr<VideoContentDescription> description(video);
   const ContentInfo* video_info =
       GetFirstVideoContent(session->local_description());
   if (video_info == NULL) {
@@ -652,7 +659,7 @@ void Call::ContinuePlayDTMF() {
 
     // Post a message to play the next tone or at least clear the playing_dtmf_
     // bit.
-    talk_base::Thread::Current()->PostDelayed(kDTMFDelay, this, MSG_PLAYDTMF);
+    rtc::Thread::Current()->PostDelayed(kDTMFDelay, this, MSG_PLAYDTMF);
   }
 }
 
@@ -794,7 +801,7 @@ void Call::OnMediaMonitor(VideoChannel* channel, const VideoMediaInfo& info) {
 
 void Call::OnDataReceived(DataChannel* channel,
                           const ReceiveDataParams& params,
-                          const talk_base::Buffer& payload) {
+                          const rtc::Buffer& payload) {
   SignalDataReceived(this, params, payload);
 }
 

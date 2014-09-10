@@ -8,8 +8,8 @@
 #include "include/v8stdint.h"
 
 #include "src/base/build_config.h"
+#include "src/base/logging.h"
 #include "src/base/macros.h"
-#include "src/checks.h"
 
 // Unfortunately, the INFINITY macro cannot be used with the '-pedantic'
 // warning flag and certain versions of GCC due to a bug:
@@ -25,7 +25,27 @@
 # define V8_INFINITY INFINITY
 #endif
 
+#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM || \
+    V8_TARGET_ARCH_ARM64
+#define V8_TURBOFAN_BACKEND 1
+#else
+#define V8_TURBOFAN_BACKEND 0
+#endif
+#if V8_TURBOFAN_BACKEND && !V8_TARGET_ARCH_ARM64 && \
+    !(V8_OS_WIN && V8_TARGET_ARCH_X64)
+#define V8_TURBOFAN_TARGET 1
+#else
+#define V8_TURBOFAN_TARGET 0
+#endif
+
 namespace v8 {
+
+namespace base {
+class Mutex;
+class RecursiveMutex;
+class VirtualMemory;
+}
+
 namespace internal {
 
 // Determine whether we are running in a simulated environment.
@@ -39,6 +59,9 @@ namespace internal {
 #define USE_SIMULATOR 1
 #endif
 #if (V8_TARGET_ARCH_MIPS && !V8_HOST_ARCH_MIPS)
+#define USE_SIMULATOR 1
+#endif
+#if (V8_TARGET_ARCH_MIPS64 && !V8_HOST_ARCH_MIPS64)
 #define USE_SIMULATOR 1
 #endif
 #endif
@@ -65,51 +88,6 @@ typedef unsigned int __my_bool__;
 
 typedef uint8_t byte;
 typedef byte* Address;
-
-// Define our own macros for writing 64-bit constants.  This is less fragile
-// than defining __STDC_CONSTANT_MACROS before including <stdint.h>, and it
-// works on compilers that don't have it (like MSVC).
-#if V8_CC_MSVC
-# define V8_UINT64_C(x)   (x ## UI64)
-# define V8_INT64_C(x)    (x ## I64)
-# if V8_HOST_ARCH_64_BIT
-#  define V8_INTPTR_C(x)  (x ## I64)
-#  define V8_PTR_PREFIX   "ll"
-# else
-#  define V8_INTPTR_C(x)  (x)
-#  define V8_PTR_PREFIX   ""
-# endif  // V8_HOST_ARCH_64_BIT
-#elif V8_CC_MINGW64
-# define V8_UINT64_C(x)   (x ## ULL)
-# define V8_INT64_C(x)    (x ## LL)
-# define V8_INTPTR_C(x)   (x ## LL)
-# define V8_PTR_PREFIX    "I64"
-#elif V8_HOST_ARCH_64_BIT
-# if V8_OS_MACOSX
-#  define V8_UINT64_C(x)   (x ## ULL)
-#  define V8_INT64_C(x)    (x ## LL)
-# else
-#  define V8_UINT64_C(x)   (x ## UL)
-#  define V8_INT64_C(x)    (x ## L)
-# endif
-# define V8_INTPTR_C(x)   (x ## L)
-# define V8_PTR_PREFIX    "l"
-#else
-# define V8_UINT64_C(x)   (x ## ULL)
-# define V8_INT64_C(x)    (x ## LL)
-# define V8_INTPTR_C(x)   (x)
-# define V8_PTR_PREFIX    ""
-#endif
-
-#define V8PRIxPTR V8_PTR_PREFIX "x"
-#define V8PRIdPTR V8_PTR_PREFIX "d"
-#define V8PRIuPTR V8_PTR_PREFIX "u"
-
-// Fix for Mac OS X defining uintptr_t as "unsigned long":
-#if V8_OS_MACOSX
-#undef V8PRIxPTR
-#define V8PRIxPTR "lx"
-#endif
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -138,7 +116,11 @@ const int kInt64Size     = sizeof(int64_t);   // NOLINT
 const int kDoubleSize    = sizeof(double);    // NOLINT
 const int kIntptrSize    = sizeof(intptr_t);  // NOLINT
 const int kPointerSize   = sizeof(void*);     // NOLINT
+#if V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_32_BIT
+const int kRegisterSize  = kPointerSize + kPointerSize;
+#else
 const int kRegisterSize  = kPointerSize;
+#endif
 const int kPCOnStackSize = kRegisterSize;
 const int kFPOnStackSize = kRegisterSize;
 
@@ -154,9 +136,17 @@ const size_t kMaximalCodeRangeSize = 512 * MB;
 const int kPointerSizeLog2 = 2;
 const intptr_t kIntptrSignBit = 0x80000000;
 const uintptr_t kUintptrAllBitsSet = 0xFFFFFFFFu;
+#if V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_32_BIT
+// x32 port also requires code range.
+const bool kRequiresCodeRange = true;
+const size_t kMaximalCodeRangeSize = 256 * MB;
+#else
 const bool kRequiresCodeRange = false;
 const size_t kMaximalCodeRangeSize = 0 * MB;
 #endif
+#endif
+
+STATIC_ASSERT(kPointerSize == (1 << kPointerSizeLog2));
 
 const int kBitsPerByte = 8;
 const int kBitsPerByteLog2 = 3;
@@ -239,11 +229,15 @@ const int kCodeAlignmentBits = 5;
 const intptr_t kCodeAlignment = 1 << kCodeAlignmentBits;
 const intptr_t kCodeAlignmentMask = kCodeAlignment - 1;
 
-// Tag information for Failure.
-// TODO(yangguo): remove this from space owner calculation.
-const int kFailureTag = 3;
-const int kFailureTagSize = 2;
-const intptr_t kFailureTagMask = (1 << kFailureTagSize) - 1;
+// The owner field of a page is tagged with the page header tag. We need that
+// to find out if a slot is part of a large object. If we mask out the lower
+// 0xfffff bits (1M pages), go to the owner offset, and see that this field
+// is tagged with the page header tag, we can just look up the owner.
+// Otherwise, we know that we are somewhere (not within the first 1M) in a
+// large object.
+const int kPageHeaderTag = 3;
+const int kPageHeaderTagSize = 2;
+const intptr_t kPageHeaderTagMask = (1 << kPageHeaderTagSize) - 1;
 
 
 // Zap-value: The value used for zapping dead objects.
@@ -271,10 +265,6 @@ const uint32_t kFreeListZapValue = 0xfeed1eaf;
 #endif
 
 const int kCodeZapValue = 0xbadc0de;
-
-// Number of bits to represent the page size for paged spaces. The value of 20
-// gives 1Mb bytes per page.
-const int kPageSizeBits = 20;
 
 // On Intel architecture, cache line size is 64 bytes.
 // On ARM it may be less (32 bytes), but as far this constant is
@@ -344,9 +334,6 @@ class Variable;
 class RelocInfo;
 class Deserializer;
 class MessageLocation;
-class VirtualMemory;
-class Mutex;
-class RecursiveMutex;
 
 typedef bool (*WeakSlotCallback)(Object** pointer);
 
@@ -450,8 +437,8 @@ enum InlineCacheState {
   PREMONOMORPHIC,
   // Has been executed and only one receiver type has been seen.
   MONOMORPHIC,
-  // Like MONOMORPHIC but check failed due to prototype.
-  MONOMORPHIC_PROTOTYPE_FAILURE,
+  // Check failed due to prototype (or map deprecation).
+  PROTOTYPE_FAILURE,
   // Multiple receiver types have been seen.
   POLYMORPHIC,
   // Many receiver types have been seen.
@@ -459,7 +446,11 @@ enum InlineCacheState {
   // A generic handler is installed and no extra typefeedback is recorded.
   GENERIC,
   // Special state for debug break or step in prepare stubs.
-  DEBUG_STUB
+  DEBUG_STUB,
+  // Type-vector-based ICs have a default state, with the full calculation
+  // of IC state only determined by a look at the IC and the typevector
+  // together.
+  DEFAULT
 };
 
 
@@ -479,9 +470,11 @@ enum CallConstructorFlags {
 };
 
 
-enum InlineCacheHolderFlag {
-  OWN_MAP,  // For fast properties objects.
-  PROTOTYPE_MAP  // For slow properties objects (except GlobalObjects).
+enum CacheHolderFlag {
+  kCacheOnPrototype,
+  kCacheOnPrototypeReceiverIsDictionary,
+  kCacheOnPrototypeReceiverIsPrimitive,
+  kCacheOnReceiver
 };
 
 
@@ -744,6 +737,9 @@ enum InitializationFlag {
   kNeedsInitialization,
   kCreatedInitialized
 };
+
+
+enum MaybeAssignedFlag { kNotAssigned, kMaybeAssigned };
 
 
 enum ClearExceptionFlag {

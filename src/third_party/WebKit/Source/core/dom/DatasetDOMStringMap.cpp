@@ -26,14 +26,14 @@
 #include "config.h"
 #include "core/dom/DatasetDOMStringMap.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Element.h"
 #include "core/dom/ExceptionCode.h"
 #include "wtf/ASCIICType.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 static bool isValidAttributeName(const String& name)
 {
@@ -154,12 +154,9 @@ void DatasetDOMStringMap::deref()
 
 void DatasetDOMStringMap::getNames(Vector<String>& names)
 {
-    if (!m_element->hasAttributes())
-        return;
-
     AttributeCollection attributes = m_element->attributes();
-    AttributeCollection::const_iterator end = attributes.end();
-    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+    AttributeCollection::iterator end = attributes.end();
+    for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
         if (isValidAttributeName(it->localName()))
             names.append(convertAttributeNameToPropertyName(it->localName()));
     }
@@ -167,12 +164,9 @@ void DatasetDOMStringMap::getNames(Vector<String>& names)
 
 String DatasetDOMStringMap::item(const String& name)
 {
-    if (!m_element->hasAttributes())
-        return String();
-
     AttributeCollection attributes = m_element->attributes();
-    AttributeCollection::const_iterator end = attributes.end();
-    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+    AttributeCollection::iterator end = attributes.end();
+    for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
         if (propertyNameMatchesAttributeName(name, it->localName()))
             return it->value();
     }
@@ -182,12 +176,9 @@ String DatasetDOMStringMap::item(const String& name)
 
 bool DatasetDOMStringMap::contains(const String& name)
 {
-    if (!m_element->hasAttributes())
-        return false;
-
     AttributeCollection attributes = m_element->attributes();
-    AttributeCollection::const_iterator end = attributes.end();
-    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+    AttributeCollection::iterator end = attributes.end();
+    for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
         if (propertyNameMatchesAttributeName(name, it->localName()))
             return true;
     }
@@ -222,4 +213,4 @@ void DatasetDOMStringMap::trace(Visitor* visitor)
     DOMStringMap::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

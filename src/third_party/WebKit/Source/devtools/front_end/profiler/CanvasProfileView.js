@@ -50,14 +50,15 @@ WebInspector.CanvasProfileView = function(profile)
     this._imageSplitView = new WebInspector.SplitView(false, true, "canvasProfileViewSplitViewState", 300);
     this._imageSplitView.show(this._replayInfoSplitView.mainElement());
 
-    var replayImageContainerView = new WebInspector.VBox();
+    var replayImageContainerView = new WebInspector.VBoxWithResizeCallback(this._onReplayImageResize.bind(this));
     replayImageContainerView.setMinimumSize(50, 28);
     replayImageContainerView.show(this._imageSplitView.mainElement());
 
-    // NOTE: The replayImageContainer can NOT be a flex div (e.g. VBox or SplitView elements)!
-    var replayImageContainer = replayImageContainerView.element.createChild("div");
+    var replayImageContainer = replayImageContainerView.element;
     replayImageContainer.id = "canvas-replay-image-container";
-    this._replayImageElement = replayImageContainer.createChild("img", "canvas-replay-image");
+    var replayImageParent = replayImageContainer.createChild("div", "canvas-replay-image-parent");
+    replayImageParent.createChild("span"); // Helps to align the image vertically.
+    this._replayImageElement = replayImageParent.createChild("img");
     this._debugInfoElement = replayImageContainer.createChild("div", "canvas-debug-info hidden");
     this._spinnerIcon = replayImageContainer.createChild("div", "spinner-icon small hidden");
 
@@ -129,6 +130,13 @@ WebInspector.CanvasProfileView.prototype = {
         return this._profile;
     },
 
+    _onReplayImageResize: function()
+    {
+        var parent = this._replayImageElement.parentElement;
+        this._replayImageElement.style.maxWidth = parent.clientWidth + "px";
+        this._replayImageElement.style.maxHeight = parent.clientHeight + "px";
+    },
+
     /**
      * @override
      * @return {!Array.<!Element>}
@@ -160,7 +168,7 @@ WebInspector.CanvasProfileView.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _onMouseClick: function(event)
     {
@@ -486,7 +494,7 @@ WebInspector.CanvasProfileView.prototype = {
             // FIXME(62725): stack trace line/column numbers are one-based.
             var lineNumber = Math.max(0, call.lineNumber - 1) || 0;
             var columnNumber = Math.max(0, call.columnNumber - 1) || 0;
-            data[2] = this._linkifier.linkifyLocation(this.profile.target(), call.sourceURL, lineNumber, columnNumber);
+            data[2] = this._linkifier.linkifyScriptLocation(this.profile.target(), null, call.sourceURL, lineNumber, columnNumber);
         }
 
         callViewElement.createChild("span", "canvas-function-name").textContent = call.functionName || "context." + call.property;
@@ -519,11 +527,16 @@ WebInspector.CanvasProfileView.prototype = {
         return node;
     },
 
+    /**
+     * @param {!Element} element
+     * @param {!Event} event
+     * @return {!Element|!AnchorBox|undefined}
+     */
     _popoverAnchor: function(element, event)
     {
         var argumentElement = element.enclosingNodeOrSelfWithClass("canvas-call-argument");
         if (!argumentElement || argumentElement.__suppressPopover)
-            return null;
+            return;
         return argumentElement;
     },
 
@@ -634,7 +647,7 @@ WebInspector.CanvasProfileType = function()
     this._frameSelector.element.title = WebInspector.UIString("Frame containing the canvases to capture.");
     this._frameSelector.element.classList.add("hidden");
 
-    this._target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget());
+    this._target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.mainTarget());
     this._target.resourceTreeModel.frames().forEach(this._addFrame, this);
     this._target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameAdded, this._frameAdded, this);
     this._target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameDetached, this._frameRemoved, this);
@@ -687,22 +700,22 @@ WebInspector.CanvasProfileType.prototype = {
     _runSingleFrameCapturing: function()
     {
         var frameId = this._selectedFrameId();
-        this._target.profilingLock.acquire();
+        WebInspector.profilingLock().acquire();
         CanvasAgent.captureFrame(frameId, this._didStartCapturingFrame.bind(this, frameId));
-        this._target.profilingLock.release();
+        WebInspector.profilingLock().release();
     },
 
     _startFrameCapturing: function()
     {
         var frameId = this._selectedFrameId();
-        this._target.profilingLock.acquire();
+        WebInspector.profilingLock().acquire();
         CanvasAgent.startCapturing(frameId, this._didStartCapturingFrame.bind(this, frameId));
     },
 
     _stopFrameCapturing: function()
     {
         if (!this._lastProfileHeader) {
-            this._target.profilingLock.release();
+            WebInspector.profilingLock().release();
             return;
         }
         var profileHeader = this._lastProfileHeader;
@@ -713,7 +726,7 @@ WebInspector.CanvasProfileType.prototype = {
             profileHeader._updateCapturingStatus();
         }
         CanvasAgent.stopCapturing(traceLogId, didStopCapturing);
-        this._target.profilingLock.release();
+        WebInspector.profilingLock().release();
     },
 
     /**
@@ -769,7 +782,7 @@ WebInspector.CanvasProfileType.prototype = {
         this._decorationElement.removeChildren();
         this._decorationElement.createChild("div", "warning-icon-small");
         this._decorationElement.appendChild(document.createTextNode(this._canvasAgentEnabled ? WebInspector.UIString("Canvas Profiler is enabled.") : WebInspector.UIString("Canvas Profiler is disabled.")));
-        var button = this._decorationElement.createChild("button");
+        var button = this._decorationElement.createChild("button", "text-button");
         button.type = "button";
         button.textContent = this._canvasAgentEnabled ? WebInspector.UIString("Disable") : WebInspector.UIString("Enable");
         button.addEventListener("click", this._onProfilerEnableButtonClick.bind(this, !this._canvasAgentEnabled), false);
@@ -990,7 +1003,7 @@ WebInspector.CanvasDispatcher.prototype = {
  */
 WebInspector.CanvasProfileHeader = function(target, type, traceLogId, frameId)
 {
-    WebInspector.ProfileHeader.call(this, target, type, WebInspector.UIString("Trace Log %d", type._nextProfileUid));
+    WebInspector.ProfileHeader.call(this, target, type, WebInspector.UIString("Trace Log %d", type.nextProfileUid()));
     /** @type {!CanvasAgent.TraceLogId} */
     this._traceLogId = traceLogId || "";
     this._frameId = frameId;

@@ -446,7 +446,7 @@ def BitcodeLibs(host, bias_arch):
               # the native link).
               BuildTargetBitcodeCmd('unwind_stubs.c', 'unwind_stubs.bc',
                                     bias_arch),
-              BuildTargetBitcodeCmd('sjlj_eh_redirect.c',
+              BuildTargetBitcodeCmd('sjlj_eh_redirect.cc',
                                     'sjlj_eh_redirect.bc', bias_arch),
               # libpnaclmm.a (__atomic_* library functions).
               BuildTargetBitcodeCmd('pnaclmm.c', 'pnaclmm.bc', bias_arch),
@@ -601,12 +601,14 @@ def UnsandboxedIRT(arch):
           # This lib #includes
           # arbitrary stuff from native_client/src/{include,untrusted,trusted}
           'inputs': { 'support': os.path.join(NACL_DIR, 'src', 'nonsfi', 'irt'),
+                      'untrusted': os.path.join(
+                          NACL_DIR, 'src', 'untrusted', 'irt'),
                       'include': os.path.join(NACL_DIR, 'src'), },
           'commands': [
               # The NaCl headers insist on having a platform macro such as
-              # NACL_LINUX defined, but unsandboxed_irt.c does not itself use
-              # any of these macros, so defining NACL_LINUX here even on
-              # non-Linux systems is OK.
+              # NACL_LINUX defined, but src/nonsfi/irt_interfaces.c does not
+              # itself use any of these macros, so defining NACL_LINUX here
+              # even on non-Linux systems is OK.
               # TODO(dschuff): this include path breaks the input encapsulation
               # for build rules.
               command.Command([
@@ -614,6 +616,11 @@ def UnsandboxedIRT(arch):
                   '-I%(top_srcdir)s/..', '-DNACL_LINUX=1', '-DDEFINE_MAIN',
                   '-c', command.path.join('%(support)s', 'irt_interfaces.c'),
                   '-o', command.path.join('%(output)s', 'unsandboxed_irt.o')]),
+              command.Command([
+                  'gcc', '-m32', '-O2', '-Wall', '-Werror',
+                  '-I%(top_srcdir)s/..',
+                  '-c', command.path.join('%(untrusted)s', 'irt_query_list.c'),
+                  '-o', command.path.join('%(output)s', 'irt_query_list.o')]),
           ],
       },
   }

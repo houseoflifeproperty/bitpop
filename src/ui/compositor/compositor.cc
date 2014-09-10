@@ -44,7 +44,7 @@ namespace ui {
 
 CompositorLock::CompositorLock(Compositor* compositor)
     : compositor_(compositor) {
-  base::MessageLoop::current()->PostDelayedTask(
+  compositor_->task_runner_->PostDelayedTask(
       FROM_HERE,
       base::Bind(&CompositorLock::CancelLock, AsWeakPtr()),
       base::TimeDelta::FromMilliseconds(kCompositorLockTimeoutMs));
@@ -63,18 +63,18 @@ void CompositorLock::CancelLock() {
 
 }  // namespace ui
 
-namespace {
-
-}  // namespace
+namespace {}  // namespace
 
 namespace ui {
 
 Compositor::Compositor(gfx::AcceleratedWidget widget,
-                       ui::ContextFactory* context_factory)
+                       ui::ContextFactory* context_factory,
+                       scoped_refptr<base::SingleThreadTaskRunner> task_runner)
     : context_factory_(context_factory),
       root_layer_(NULL),
       widget_(widget),
       compositor_thread_loop_(context_factory->GetCompositorMessageLoop()),
+      task_runner_(task_runner),
       vsync_manager_(new CompositorVSyncManager()),
       device_scale_factor_(0.0f),
       last_started_frame_(0),
@@ -142,10 +142,15 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
         this,
         context_factory_->GetSharedBitmapManager(),
         settings,
+        task_runner_,
         compositor_thread_loop_);
   } else {
     host_ = cc::LayerTreeHost::CreateSingleThreaded(
-        this, this, context_factory_->GetSharedBitmapManager(), settings);
+        this,
+        this,
+        context_factory_->GetSharedBitmapManager(),
+        settings,
+        task_runner_);
   }
   UMA_HISTOGRAM_TIMES("GPU.CreateBrowserCompositor",
                       base::TimeTicks::Now() - before_create);
@@ -174,7 +179,7 @@ void Compositor::ScheduleDraw() {
     host_->SetNeedsCommit();
   } else if (!defer_draw_scheduling_) {
     defer_draw_scheduling_ = true;
-    base::MessageLoop::current()->PostTask(
+    task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&Compositor::Draw, schedule_draw_factory_.GetWeakPtr()));
   }
@@ -206,16 +211,15 @@ void Compositor::Draw() {
     draw_on_compositing_end_ = true;
     return;
   }
-  waiting_on_compositing_end_ = true;
-
-  TRACE_EVENT_ASYNC_BEGIN0("ui", "Compositor::Draw", last_started_frame_ + 1);
-
   if (!root_layer_)
     return;
+
+  TRACE_EVENT_ASYNC_BEGIN0("ui", "Compositor::Draw", last_started_frame_ + 1);
 
   DCHECK_NE(swap_state_, SWAP_POSTED);
   swap_state_ = SWAP_NONE;
 
+  waiting_on_compositing_end_ = true;
   last_started_frame_++;
   if (!IsLocked()) {
     // TODO(nduca): Temporary while compositor calls
@@ -272,10 +276,25 @@ scoped_refptr<CompositorVSyncManager> Compositor::vsync_manager() const {
 }
 
 void Compositor::AddObserver(CompositorObserver* observer) {
+#if defined(OS_MACOSX)
+  // Debugging instrumentation for crbug.com/401630.
+  // TODO(ccameron): remove this.
+  CHECK(observer);
+  if (!observer_list_.HasObserver(observer))
+    observer->observing_count_ += 1;
+#endif
+
   observer_list_.AddObserver(observer);
 }
 
 void Compositor::RemoveObserver(CompositorObserver* observer) {
+#if defined(OS_MACOSX)
+  // Debugging instrumentation for crbug.com/401630.
+  // TODO(ccameron): remove this.
+  if (observer_list_.HasObserver(observer))
+    observer->observing_count_ -= 1;
+#endif
+
   observer_list_.RemoveObserver(observer);
 }
 
@@ -283,9 +302,25 @@ bool Compositor::HasObserver(CompositorObserver* observer) {
   return observer_list_.HasObserver(observer);
 }
 
+void Compositor::AddAnimationObserver(CompositorAnimationObserver* observer) {
+  animation_observer_list_.AddObserver(observer);
+  host_->SetNeedsAnimate();
+}
+
+void Compositor::RemoveAnimationObserver(
+    CompositorAnimationObserver* observer) {
+  animation_observer_list_.RemoveObserver(observer);
+}
+
+bool Compositor::HasAnimationObserver(CompositorAnimationObserver* observer) {
+  return animation_observer_list_.HasObserver(observer);
+}
+
 void Compositor::Animate(base::TimeTicks frame_begin_time) {
-  layer_animator_collection_.Progress(frame_begin_time);
-  if (layer_animator_collection_.HasActiveAnimators())
+  FOR_EACH_OBSERVER(CompositorAnimationObserver,
+                    animation_observer_list_,
+                    OnAnimationStep(frame_begin_time));
+  if (animation_observer_list_.might_have_observers())
     host_->SetNeedsAnimate();
 }
 
@@ -354,10 +389,6 @@ void Compositor::DidAbortSwapBuffers() {
                     OnCompositingAborted(this));
 }
 
-void Compositor::ScheduleAnimationForLayerCollection() {
-  host_->SetNeedsAnimate();
-}
-
 const cc::LayerTreeDebugState& Compositor::GetLayerTreeDebugState() const {
   return host_->debug_state();
 }
@@ -406,9 +437,8 @@ void Compositor::NotifyEnd() {
     // draw cycle.
     ScheduleDraw();
   }
-  FOR_EACH_OBSERVER(CompositorObserver,
-                    observer_list_,
-                    OnCompositingEnded(this));
+  FOR_EACH_OBSERVER(
+      CompositorObserver, observer_list_, OnCompositingEnded(this));
 }
 
 }  // namespace ui

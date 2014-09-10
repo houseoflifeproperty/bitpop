@@ -53,7 +53,7 @@
 #include "config.h"
 #include "core/html/HTMLDocument.h"
 
-#include "bindings/v8/ScriptController.h"
+#include "bindings/core/v8/ScriptController.h"
 #include "core/HTMLNames.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
@@ -64,7 +64,7 @@
 #include "core/page/Page.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 

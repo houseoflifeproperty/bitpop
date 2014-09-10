@@ -33,7 +33,8 @@ def BaseConfig(INTERNAL=False, REPO_NAME=None, REPO_URL=None,
     channel = Single(basestring, empty_val='chrome'),
     upload_dest_prefix = Single(basestring, empty_val=''),
     gclient_custom_vars = Dict(value_type=(basestring, types.NoneType)),
-    coverage = Single(bool, required=False, empty_val=False)
+    coverage = Single(bool, required=False, empty_val=False),
+    adb_vendor_keys = Single(Path, required=False),
   )
 
 
@@ -63,10 +64,6 @@ def main_builder(c):
 
 @config_ctx()
 def clang_builder(c):
-  pass
-
-@config_ctx()
-def android_shared(c):
   pass
 
 @config_ctx(config_vars={'BUILD_CONFIG': 'Release'})
@@ -103,7 +100,7 @@ def dartium_builder(c):
   c.managed = True
 
 @config_ctx()
-def arm_builder(c):
+def arm_k_builder(c):
   pass
 
 @config_ctx()
@@ -111,7 +108,7 @@ def arm_l_builder(c):
   pass
 
 @config_ctx()
-def arm_builder_rel(c):
+def arm_k_builder_rel(c):
   pass
 
 @config_ctx()
@@ -124,6 +121,10 @@ def x64_builder(c):
 
 @config_ctx()
 def arm64_builder(c):
+  pass
+
+@config_ctx()
+def arm64_builder_rel(c):
   pass
 
 @config_ctx()
@@ -140,6 +141,10 @@ def x86_try_builder(c):
 
 @config_ctx()
 def tests_base(c):
+  pass
+
+@config_ctx(includes=['arm64_builder_rel'])
+def tests_arm64(c):
   pass
 
 @config_ctx(includes=['tests_base'])
@@ -173,4 +178,12 @@ def x86_try_instrumentation_tests(c):
 
 @config_ctx(includes=['main_builder'])
 def coverage_builder_tests(c):
+  pass
+
+@config_ctx(includes=['component_builder'])
+def oilpan_builder(c):
+  pass
+
+@config_ctx()
+def perf(c):
   pass

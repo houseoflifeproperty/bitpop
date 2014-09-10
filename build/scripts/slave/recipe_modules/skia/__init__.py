@@ -3,13 +3,12 @@
 # found in the LICENSE file.
 
 DEPS = [
-  'chromium',
   'gclient',
   'path',
   'platform',
   'properties',
   'python',
+  'raw_io',
   'step',
-  'step_history',
   'tryserver',
 ]

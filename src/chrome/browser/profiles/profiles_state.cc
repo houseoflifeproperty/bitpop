@@ -22,10 +22,7 @@
 #include "components/signin/core/common/profile_management_switches.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/users/user_manager.h"
-#endif
+#include "ui/gfx/text_elider.h"
 
 namespace profiles {
 
@@ -49,41 +46,65 @@ void RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterListPref(prefs::kProfilesLastActive);
 }
 
-base::string16 GetAvatarNameForProfile(Profile* profile) {
+base::string16 GetAvatarNameForProfile(const base::FilePath& profile_path) {
   base::string16 display_name;
 
-  if (profile->IsGuestSession()) {
+  if (profile_path == ProfileManager::GetGuestProfilePath()) {
     display_name = l10n_util::GetStringUTF16(IDS_GUEST_PROFILE_NAME);
   } else {
     ProfileInfoCache& cache =
         g_browser_process->profile_manager()->GetProfileInfoCache();
-    size_t index = cache.GetIndexOfProfileWithPath(profile->GetPath());
+    size_t index = cache.GetIndexOfProfileWithPath(profile_path);
 
     if (index == std::string::npos)
       return l10n_util::GetStringUTF16(IDS_SINGLE_PROFILE_DISPLAY_NAME);
 
-    // Using the --new-profile-management flag, there's a couple of rules
-    // about what the avatar button displays. If there's a single, local
-    // profile, with a default name (i.e. of the form Person %d), it should
-    // display IDS_SINGLE_PROFILE_DISPLAY_NAME. If this is a signed in profile,
-    // or the user has edited the profile name, or there are multiple profiles,
-    // it will return the actual name  of the profile.
+    // Using the --new-avatar-menu flag, there's a couple of rules about what
+    // the avatar button displays. If there's a single profile, with a default
+    // name (i.e. of the form Person %d) not manually set, it should display
+    // IDS_SINGLE_PROFILE_DISPLAY_NAME. Otherwise, it will return the actual
+    // name of the profile.
     base::string16 profile_name = cache.GetNameOfProfileAtIndex(index);
-    bool has_default_name = cache.ProfileIsUsingDefaultNameAtIndex(index);
+    bool has_default_name = cache.ProfileIsUsingDefaultNameAtIndex(index) &&
+        cache.IsDefaultProfileName(profile_name);
 
-    if (cache.GetNumberOfProfiles() == 1 && has_default_name &&
-        cache.GetUserNameOfProfileAtIndex(index).empty()) {
+    if (cache.GetNumberOfProfiles() == 1 && has_default_name)
       display_name = l10n_util::GetStringUTF16(IDS_SINGLE_PROFILE_DISPLAY_NAME);
-    } else {
+    else
       display_name = profile_name;
-    }
   }
   return display_name;
 }
 
+base::string16 GetAvatarButtonTextForProfile(Profile* profile) {
+  const int kMaxCharactersToDisplay = 15;
+  base::string16 name = GetAvatarNameForProfile(profile->GetPath());
+  name = gfx::TruncateString(name,
+                             kMaxCharactersToDisplay,
+                             gfx::CHARACTER_BREAK);
+  if (profile->IsSupervised()) {
+    name = l10n_util::GetStringFUTF16(IDS_SUPERVISED_USER_NEW_AVATAR_LABEL,
+                                      name);
+  }
+  return name;
+}
+
 void UpdateProfileName(Profile* profile,
                        const base::string16& new_profile_name) {
+  ProfileInfoCache& cache =
+      g_browser_process->profile_manager()->GetProfileInfoCache();
+  size_t profile_index = cache.GetIndexOfProfileWithPath(profile->GetPath());
+  if (profile_index == std::string::npos)
+    return;
+
+  if (new_profile_name == cache.GetNameOfProfileAtIndex(profile_index))
+    return;
+
+  // This is only called when updating the profile name through the UI,
+  // so we can assume the user has done this on purpose.
   PrefService* pref_service = profile->GetPrefs();
+  pref_service->SetBoolean(prefs::kProfileUsingDefaultName, false);
+
   // Updating the profile preference will cause the cache to be updated for
   // this preference.
   pref_service->SetString(prefs::kProfileName,

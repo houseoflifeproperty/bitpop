@@ -10,11 +10,6 @@ import subprocess
 import sys
 import tempfile
 
-# TODO(nduca): This whole file is built up around making individual ssh calls
-# for each operation. It really could get away with a single ssh session built
-# around pexpect, I suspect, if we wanted it to be faster. But, this was
-# convenient.
-
 # Some developers' workflow includes running the Chrome process from
 # /usr/local/... instead of the default location. We have to check for both
 # paths in order to support this workflow.
@@ -104,10 +99,25 @@ class CrOSInterface(object):
                       '-o StrictHostKeyChecking=no',
                       '-o KbdInteractiveAuthentication=no',
                       '-o PreferredAuthentications=publickey',
-                      '-o UserKnownHostsFile=/dev/null']
+                      '-o UserKnownHostsFile=/dev/null',
+                      '-o ControlMaster=no']
 
     if ssh_identity:
       self._ssh_identity = os.path.abspath(os.path.expanduser(ssh_identity))
+
+    # Establish master SSH connection using ControlPersist.
+    # Since only one test will be run on a remote host at a time,
+    # the control socket filename can be telemetry@hostname.
+    self._ssh_control_file = '/tmp/' + 'telemetry' + '@' + hostname
+    with open(os.devnull, 'w') as devnull:
+      subprocess.call(self.FormSSHCommandLine(['-M', '-o ControlPersist=yes']),
+                       stdin=devnull, stdout=devnull, stderr=devnull)
+
+  def __enter__(self):
+    return self
+
+  def __exit__(self, *args):
+    self.CloseConnection()
 
   @property
   def local(self):
@@ -128,7 +138,7 @@ class CrOSInterface(object):
     full_args = ['ssh',
                  '-o ForwardX11=no',
                  '-o ForwardX11Trusted=no',
-                 '-n'] + self._ssh_args
+                 '-n', '-S', self._ssh_control_file] + self._ssh_args
     if self._ssh_identity is not None:
       full_args.extend(['-i', self._ssh_identity])
     if extra_ssh_args:
@@ -447,3 +457,9 @@ class CrOSInterface(object):
       self.RunCmdOnDevice(['restart', 'ui'])
     else:
       self.RunCmdOnDevice(['start', 'ui'])
+
+  def CloseConnection(self):
+    if not self.local:
+      with open(os.devnull, 'w') as devnull:
+        subprocess.call(self.FormSSHCommandLine(['-O', 'exit', self._hostname]),
+                        stdout=devnull, stderr=devnull)

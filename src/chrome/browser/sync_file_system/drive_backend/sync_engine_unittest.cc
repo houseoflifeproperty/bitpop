@@ -7,6 +7,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "chrome/browser/drive/drive_uploader.h"
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/sync_file_system/drive_backend/callback_helper.h"
@@ -37,7 +38,7 @@ class SyncEngineTest : public testing::Test,
 
     worker_pool_ = new base::SequencedWorkerPool(1, "Worker");
     scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner =
-        base::MessageLoopProxy::current();
+        base::ThreadTaskRunnerHandle::Get();
     worker_task_runner_ =
         worker_pool_->GetSequencedTaskRunnerWithShutdownBehavior(
             worker_pool_->GetSequenceToken(),
@@ -46,7 +47,6 @@ class SyncEngineTest : public testing::Test,
     sync_engine_.reset(new drive_backend::SyncEngine(
         ui_task_runner,
         worker_task_runner_,
-        NULL /* file_task_runner */,
         NULL /* drive_task_runner */,
         profile_dir_.path(),
         NULL /* task_logger */,
@@ -55,6 +55,7 @@ class SyncEngineTest : public testing::Test,
         NULL /* signin_manager */,
         NULL /* token_service */,
         NULL /* request_context */,
+        scoped_ptr<SyncEngine::DriveServiceFactory>(),
         NULL /* in_memory_env */));
 
     sync_engine_->InitializeForTesting(
@@ -62,6 +63,7 @@ class SyncEngineTest : public testing::Test,
         scoped_ptr<drive::DriveUploaderInterface>(),
         scoped_ptr<SyncWorkerInterface>(new FakeSyncWorker));
     sync_engine_->SetSyncEnabled(true);
+    sync_engine_->OnReadyToSendRequests();
 
     WaitForWorkerTaskRunner();
   }

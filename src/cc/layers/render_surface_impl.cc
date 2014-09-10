@@ -12,13 +12,13 @@
 #include "cc/debug/debug_colors.h"
 #include "cc/layers/delegated_renderer_layer_impl.h"
 #include "cc/layers/layer_impl.h"
-#include "cc/layers/quad_sink.h"
 #include "cc/layers/render_pass_sink.h"
 #include "cc/quads/debug_border_draw_quad.h"
 #include "cc/quads/render_pass.h"
 #include "cc/quads/render_pass_draw_quad.h"
 #include "cc/quads/shared_quad_state.h"
 #include "cc/trees/damage_tracker.h"
+#include "cc/trees/occlusion_tracker.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/transform.h"
@@ -64,10 +64,6 @@ void RenderSurfaceImpl::SetClipRect(const gfx::Rect& clip_rect) {
 
   surface_property_changed_ = true;
   clip_rect_ = clip_rect;
-}
-
-bool RenderSurfaceImpl::ContentsChanged() const {
-  return !damage_tracker_->current_damage_rect().IsEmpty();
 }
 
 void RenderSurfaceImpl::SetContentRect(const gfx::Rect& content_rect) {
@@ -136,21 +132,24 @@ void RenderSurfaceImpl::AppendRenderPasses(RenderPassSink* pass_sink) {
   pass_sink->AppendRenderPass(pass.Pass());
 }
 
-void RenderSurfaceImpl::AppendQuads(QuadSink* quad_sink,
-                                    AppendQuadsData* append_quads_data,
-                                    bool for_replica,
-                                    RenderPass::Id render_pass_id) {
+void RenderSurfaceImpl::AppendQuads(
+    RenderPass* render_pass,
+    const OcclusionTracker<LayerImpl>& occlusion_tracker,
+    AppendQuadsData* append_quads_data,
+    bool for_replica,
+    RenderPass::Id render_pass_id) {
   DCHECK(!for_replica || owning_layer_->has_replica());
 
   const gfx::Transform& draw_transform =
       for_replica ? replica_draw_transform_ : draw_transform_;
   gfx::Rect visible_content_rect =
-      quad_sink->UnoccludedContributingSurfaceContentRect(content_rect_,
-                                                          draw_transform);
+      occlusion_tracker.UnoccludedContributingSurfaceContentRect(
+          content_rect_, draw_transform);
   if (visible_content_rect.IsEmpty())
     return;
 
-  SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
+  SharedQuadState* shared_quad_state =
+      render_pass->CreateAndAppendSharedQuadState();
   shared_quad_state->SetAll(draw_transform,
                             content_rect_.size(),
                             content_rect_,
@@ -169,11 +168,10 @@ void RenderSurfaceImpl::AppendQuads(QuadSink* quad_sink,
                       owning_layer_->layer_tree_impl()) :
                   DebugColors::SurfaceBorderWidth(
                       owning_layer_->layer_tree_impl());
-    scoped_ptr<DebugBorderDrawQuad> debug_border_quad =
-        DebugBorderDrawQuad::Create();
+    DebugBorderDrawQuad* debug_border_quad =
+        render_pass->CreateAndAppendDrawQuad<DebugBorderDrawQuad>();
     debug_border_quad->SetNew(
         shared_quad_state, content_rect_, visible_content_rect, color, width);
-    quad_sink->Append(debug_border_quad.PassAs<DrawQuad>());
   }
 
   // TODO(shawnsingh): By using the same RenderSurfaceImpl for both the content
@@ -219,21 +217,24 @@ void RenderSurfaceImpl::AppendQuads(QuadSink* quad_sink,
 
   ResourceProvider::ResourceId mask_resource_id =
       mask_layer ? mask_layer->ContentsResourceId() : 0;
-  gfx::Rect contents_changed_since_last_frame =
-      ContentsChanged() ? content_rect_ : gfx::Rect();
 
-  scoped_ptr<RenderPassDrawQuad> quad = RenderPassDrawQuad::Create();
+  DCHECK(owning_layer_->draw_properties().target_space_transform.IsScale2d());
+  gfx::Vector2dF owning_layer_to_target_scale =
+      owning_layer_->draw_properties().target_space_transform.Scale2d();
+  owning_layer_to_target_scale.Scale(owning_layer_->contents_scale_x(),
+                                     owning_layer_->contents_scale_y());
+
+  RenderPassDrawQuad* quad =
+      render_pass->CreateAndAppendDrawQuad<RenderPassDrawQuad>();
   quad->SetNew(shared_quad_state,
                content_rect_,
                visible_content_rect,
                render_pass_id,
-               for_replica,
                mask_resource_id,
-               contents_changed_since_last_frame,
                mask_uv_rect,
                owning_layer_->filters(),
+               owning_layer_to_target_scale,
                owning_layer_->background_filters());
-  quad_sink->Append(quad.PassAs<DrawQuad>());
 }
 
 }  // namespace cc

@@ -25,16 +25,16 @@ const int kPixelDistanceToRecord = 8000;
 // script and find a sweet spot.
 const float kDensityThreshold = 0.5f;
 
-bool rect_sort_y(const gfx::Rect &r1, const gfx::Rect &r2) {
+bool rect_sort_y(const gfx::Rect& r1, const gfx::Rect& r2) {
   return r1.y() < r2.y() || (r1.y() == r2.y() && r1.x() < r2.x());
 }
 
-bool rect_sort_x(const gfx::Rect &r1, const gfx::Rect &r2) {
+bool rect_sort_x(const gfx::Rect& r1, const gfx::Rect& r2) {
   return r1.x() < r2.x() || (r1.x() == r2.x() && r1.y() < r2.y());
 }
 
-float do_clustering(const std::vector<gfx::Rect>& tiles,
-                    std::vector<gfx::Rect>* clustered_rects) {
+float PerformClustering(const std::vector<gfx::Rect>& tiles,
+                        std::vector<gfx::Rect>* clustered_rects) {
   // These variables track the record area and invalid area
   // for the entire clustering
   int total_record_area = 0;
@@ -89,7 +89,7 @@ float do_clustering(const std::vector<gfx::Rect>& tiles,
 
   return static_cast<float>(total_invalid_area) /
          static_cast<float>(total_record_area);
-  }
+}
 
 float ClusterTiles(const std::vector<gfx::Rect>& invalid_tiles,
                    std::vector<gfx::Rect>* record_rects) {
@@ -113,20 +113,25 @@ float ClusterTiles(const std::vector<gfx::Rect>& invalid_tiles,
 
   float vertical_density;
   std::vector<gfx::Rect> vertical_clustering;
-  vertical_density = do_clustering(invalid_tiles_vertical,
-                                   &vertical_clustering);
+  vertical_density = PerformClustering(invalid_tiles_vertical,
+                                       &vertical_clustering);
+
+  // If vertical density is optimal, then we can return early.
+  if (vertical_density == 1.f) {
+    *record_rects = vertical_clustering;
+    return vertical_density;
+  }
 
   // Now try again with a horizontal sort, see which one is best
-  // TODO(humper): Heuristics for skipping this step?
   std::vector<gfx::Rect> invalid_tiles_horizontal = invalid_tiles;
-  std::sort(invalid_tiles_vertical.begin(),
-            invalid_tiles_vertical.end(),
+  std::sort(invalid_tiles_horizontal.begin(),
+            invalid_tiles_horizontal.end(),
             rect_sort_x);
 
   float horizontal_density;
   std::vector<gfx::Rect> horizontal_clustering;
-  horizontal_density = do_clustering(invalid_tiles_vertical,
-                                     &horizontal_clustering);
+  horizontal_density = PerformClustering(invalid_tiles_horizontal,
+                                         &horizontal_clustering);
 
   if (vertical_density < horizontal_density) {
     *record_rects = horizontal_clustering;
@@ -152,6 +157,7 @@ bool PicturePile::UpdateAndExpandInvalidation(
     SkColor background_color,
     bool contents_opaque,
     bool contents_fill_bounds_completely,
+    const gfx::Size& layer_size,
     const gfx::Rect& visible_layer_rect,
     int frame_number,
     Picture::RecordingMode recording_mode,
@@ -160,6 +166,15 @@ bool PicturePile::UpdateAndExpandInvalidation(
   contents_opaque_ = contents_opaque;
   contents_fill_bounds_completely_ = contents_fill_bounds_completely;
 
+  bool updated = false;
+
+  Region resize_invalidation;
+  gfx::Size old_tiling_size = tiling_size();
+  if (old_tiling_size != layer_size) {
+    tiling_.SetTilingSize(layer_size);
+    updated = true;
+  }
+
   gfx::Rect interest_rect = visible_layer_rect;
   interest_rect.Inset(
       -kPixelDistanceToRecord,
@@ -167,16 +182,97 @@ bool PicturePile::UpdateAndExpandInvalidation(
       -kPixelDistanceToRecord,
       -kPixelDistanceToRecord);
   recorded_viewport_ = interest_rect;
-  recorded_viewport_.Intersect(tiling_rect());
+  recorded_viewport_.Intersect(gfx::Rect(tiling_size()));
 
   gfx::Rect interest_rect_over_tiles =
       tiling_.ExpandRectToTileBounds(interest_rect);
 
-  Region invalidation_expanded_to_full_tiles;
+  if (old_tiling_size != layer_size) {
+    has_any_recordings_ = false;
 
-  bool invalidated = false;
+    // Drop recordings that are outside the new layer bounds or that changed
+    // size.
+    std::vector<PictureMapKey> to_erase;
+    int min_toss_x = tiling_.num_tiles_x();
+    if (tiling_size().width() > old_tiling_size.width()) {
+      min_toss_x =
+          tiling_.FirstBorderTileXIndexFromSrcCoord(old_tiling_size.width());
+    }
+    int min_toss_y = tiling_.num_tiles_y();
+    if (tiling_size().height() > old_tiling_size.height()) {
+      min_toss_y =
+          tiling_.FirstBorderTileYIndexFromSrcCoord(old_tiling_size.height());
+    }
+    for (PictureMap::const_iterator it = picture_map_.begin();
+         it != picture_map_.end();
+         ++it) {
+      const PictureMapKey& key = it->first;
+      if (key.first < min_toss_x && key.second < min_toss_y) {
+        has_any_recordings_ |= !!it->second.GetPicture();
+        continue;
+      }
+      to_erase.push_back(key);
+    }
+
+    for (size_t i = 0; i < to_erase.size(); ++i)
+      picture_map_.erase(to_erase[i]);
+
+    // If a recording is dropped and not re-recorded below, invalidate that
+    // full recording to cause any raster tiles that would use it to be
+    // dropped.
+    // If the recording will be replaced below, just invalidate newly exposed
+    // areas to force raster tiles that include the old recording to know
+    // there is new recording to display.
+    gfx::Rect old_tiling_rect_over_tiles =
+        tiling_.ExpandRectToTileBounds(gfx::Rect(old_tiling_size));
+    if (min_toss_x < tiling_.num_tiles_x()) {
+      int unrecorded_left = std::max(tiling_.TilePositionX(min_toss_x),
+                                     interest_rect_over_tiles.right());
+      int exposed_left = old_tiling_size.width();
+      int left = std::min(unrecorded_left, exposed_left);
+      int tile_right =
+          tiling_.TilePositionX(min_toss_x) + tiling_.TileSizeX(min_toss_x);
+      int exposed_right = tiling_size().width();
+      int right = std::min(tile_right, exposed_right);
+      gfx::Rect right_side(left,
+                           old_tiling_rect_over_tiles.y(),
+                           right - left,
+                           old_tiling_rect_over_tiles.height());
+      resize_invalidation.Union(right_side);
+    }
+    if (min_toss_y < tiling_.num_tiles_y()) {
+      int unrecorded_top = std::max(tiling_.TilePositionY(min_toss_y),
+                                    interest_rect_over_tiles.bottom());
+      int exposed_top = old_tiling_size.height();
+      int top = std::min(unrecorded_top, exposed_top);
+      int tile_bottom =
+          tiling_.TilePositionY(min_toss_y) + tiling_.TileSizeY(min_toss_y);
+      int exposed_bottom = tiling_size().height();
+      int bottom = std::min(tile_bottom, exposed_bottom);
+      gfx::Rect bottom_side(old_tiling_rect_over_tiles.x(),
+                            top,
+                            old_tiling_rect_over_tiles.width(),
+                            bottom - top);
+      resize_invalidation.Union(bottom_side);
+    }
+  }
+
+  Region invalidation_expanded_to_full_tiles;
   for (Region::Iterator i(*invalidation); i.has_rect(); i.next()) {
     gfx::Rect invalid_rect = i.rect();
+
+    // Expand invalidation that is outside tiles that intersect the interest
+    // rect. These tiles are no longer valid and should be considerered fully
+    // invalid, so we can know to not keep around raster tiles that intersect
+    // with these recording tiles.
+    gfx::Rect invalid_rect_outside_interest_rect_tiles = invalid_rect;
+    // TODO(danakj): We should have a Rect-subtract-Rect-to-2-rects operator
+    // instead of using Rect::Subtract which gives you the bounding box of the
+    // subtraction.
+    invalid_rect_outside_interest_rect_tiles.Subtract(interest_rect_over_tiles);
+    invalidation_expanded_to_full_tiles.Union(tiling_.ExpandRectToTileBounds(
+        invalid_rect_outside_interest_rect_tiles));
+
     // Split this inflated invalidation across tile boundaries and apply it
     // to all tiles that it touches.
     bool include_borders = true;
@@ -190,23 +286,18 @@ bool PicturePile::UpdateAndExpandInvalidation(
         continue;
 
       // Inform the grid cell that it has been invalidated in this frame.
-      invalidated = picture_it->second.Invalidate(frame_number) || invalidated;
+      updated = picture_it->second.Invalidate(frame_number) || updated;
+      // Invalidate drops the picture so the whole tile better be invalidated if
+      // it won't be re-recorded below.
+      DCHECK(
+          tiling_.TileBounds(key.first, key.second).Intersects(interest_rect) ||
+          invalidation_expanded_to_full_tiles.Contains(
+              tiling_.TileBounds(key.first, key.second)));
     }
-
-    // Expand invalidation that is outside tiles that intersect the interest
-    // rect. These tiles are no longer valid and should be considerered fully
-    // invalid, so we can know to not keep around raster tiles that intersect
-    // with these recording tiles.
-    gfx::Rect invalid_rect_outside_interest_rect_tiles = invalid_rect;
-    // TODO(danakj): We should have a Rect-subtract-Rect-to-2-rects operator
-    // instead of using Rect::Subtract which gives you the bounding box of the
-    // subtraction.
-    invalid_rect_outside_interest_rect_tiles.Subtract(interest_rect_over_tiles);
-    invalidation_expanded_to_full_tiles.Union(tiling_.ExpandRectToTileBounds(
-        invalid_rect_outside_interest_rect_tiles));
   }
 
   invalidation->Union(invalidation_expanded_to_full_tiles);
+  invalidation->Union(resize_invalidation);
 
   // Make a list of all invalid tiles; we will attempt to
   // cluster these into multiple invalidation regions.
@@ -244,7 +335,7 @@ bool PicturePile::UpdateAndExpandInvalidation(
   ClusterTiles(invalid_tiles, &record_rects);
 
   if (record_rects.empty())
-    return invalidated;
+    return updated;
 
   for (std::vector<gfx::Rect>::iterator it = record_rects.begin();
        it != record_rects.end();
@@ -308,6 +399,13 @@ bool PicturePile::UpdateAndExpandInvalidation(
   has_any_recordings_ = true;
   DCHECK(CanRasterSlowTileCheck(recorded_viewport_));
   return true;
+}
+
+void PicturePile::SetEmptyBounds() {
+  tiling_.SetTilingSize(gfx::Size());
+  picture_map_.clear();
+  has_any_recordings_ = false;
+  recorded_viewport_ = gfx::Rect();
 }
 
 }  // namespace cc

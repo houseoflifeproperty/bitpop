@@ -32,7 +32,7 @@
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
 
-namespace WebCore {
+namespace blink {
 
 typedef HashSet<String, CaseFoldingHash> HTTPHeaderSet;
 
@@ -54,9 +54,6 @@ public:
     static bool handleRedirect(Resource*, SecurityOrigin*, ResourceRequest&, const ResourceResponse&, ResourceLoaderOptions&, String&);
 };
 
-bool isSimpleCrossOriginAccessRequest(const String& method, const HTTPHeaderMap&);
-bool isOnAccessControlSimpleRequestMethodWhitelist(const String&);
-bool isOnAccessControlSimpleRequestHeaderWhitelist(const AtomicString& name, const AtomicString& value);
 bool isOnAccessControlResponseHeaderWhitelist(const String&);
 
 void updateRequestForAccessControl(ResourceRequest&, SecurityOrigin*, StoredCredentials);
@@ -66,6 +63,6 @@ bool passesAccessControlCheck(const ResourceResponse&, StoredCredentials, Securi
 bool passesPreflightStatusCheck(const ResourceResponse&, String& errorDescription);
 void parseAccessControlExposeHeadersAllowList(const String& headerValue, HTTPHeaderSet&);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CrossOriginAccessControl_h

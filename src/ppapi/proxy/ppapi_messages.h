@@ -264,6 +264,7 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(ppapi::CompositorLayerData::TextureLayer)
   IPC_STRUCT_TRAITS_MEMBER(mailbox)
+  IPC_STRUCT_TRAITS_MEMBER(target)
   IPC_STRUCT_TRAITS_MEMBER(sync_point)
   IPC_STRUCT_TRAITS_MEMBER(source_rect)
   IPC_STRUCT_TRAITS_MEMBER(premult_alpha)
@@ -296,6 +297,7 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(ppapi::MediaStreamAudioTrackShared::Attributes)
   IPC_STRUCT_TRAITS_MEMBER(buffers)
+  IPC_STRUCT_TRAITS_MEMBER(duration)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(ppapi::MediaStreamVideoTrackShared::Attributes)
@@ -685,7 +687,7 @@ IPC_SYNC_MESSAGE_ROUTED2_2(PpapiMsg_PPPMessageHandler_HandleBlockingMessage,
                            PP_Instance /* instance */,
                            ppapi::proxy::SerializedVar /* message */,
                            ppapi::proxy::SerializedVar /* result */,
-                           bool /* was_handled */);
+                           bool /* was_handled */)
 
 // PPP_MouseLock.
 IPC_MESSAGE_ROUTED1(PpapiMsg_PPPMouseLock_MouseLockLost,
@@ -822,7 +824,7 @@ IPC_MESSAGE_CONTROL1(PpapiHostMsg_ChannelCreated,
                      IPC::ChannelHandle /* handle */)
 
 // Notify the renderer that the PPAPI channel gets ready in the plugin.
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_StartupInitializationComplete);
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_StartupInitializationComplete)
 
 // Calls renderer to open a resource file for nacl_irt_open_resource().
 IPC_SYNC_MESSAGE_CONTROL1_1(PpapiHostMsg_OpenResource,
@@ -889,6 +891,12 @@ IPC_MESSAGE_ROUTED1(PpapiHostMsg_PPBGraphics3D_SwapBuffers,
 IPC_SYNC_MESSAGE_ROUTED1_1(PpapiHostMsg_PPBGraphics3D_InsertSyncPoint,
                            ppapi::HostResource /* context */,
                            uint32 /* sync_point */)
+IPC_SYNC_MESSAGE_ROUTED1_1(PpapiHostMsg_PPBGraphics3D_InsertFutureSyncPoint,
+                           ppapi::HostResource /* context */,
+                           uint32 /* sync_point */)
+IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBGraphics3D_RetireSyncPoint,
+                    ppapi::HostResource /* context */,
+                    uint32 /* sync_point */)
 
 // PPB_ImageData.
 IPC_SYNC_MESSAGE_ROUTED4_3(PpapiHostMsg_PPBImageData_CreatePlatform,
@@ -1004,9 +1012,8 @@ IPC_MESSAGE_ROUTED4(PpapiHostMsg_PPBInstance_UpdateSurroundingText,
                     uint32_t /* anchor */)
 
 // PPB_Var.
-IPC_SYNC_MESSAGE_ROUTED1_1(PpapiHostMsg_PPBVar_AddRefObject,
-                           int64 /* object_id */,
-                           int /* unused - need a return value for sync msgs */)
+IPC_SYNC_MESSAGE_ROUTED1_0(PpapiHostMsg_PPBVar_AddRefObject,
+                           int64 /* object_id */)
 IPC_MESSAGE_ROUTED1(PpapiHostMsg_PPBVar_ReleaseObject,
                     int64 /* object_id */)
 IPC_SYNC_MESSAGE_ROUTED2_2(PpapiHostMsg_PPBVar_HasProperty,
@@ -1330,8 +1337,8 @@ IPC_MESSAGE_CONTROL3(PpapiHostMsg_UMA_HistogramEnumeration,
                      std::string /* name */,
                      int32_t /* sample */,
                      int32_t /* boundary_value */)
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_UMA_IsCrashReportingEnabled);
-IPC_MESSAGE_CONTROL0(PpapiPluginMsg_UMA_IsCrashReportingEnabledReply);
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_UMA_IsCrashReportingEnabled)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_UMA_IsCrashReportingEnabledReply)
 
 // Compositor
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_Compositor_Create)
@@ -1529,11 +1536,11 @@ IPC_MESSAGE_CONTROL3(PpapiPluginMsg_MediaStreamTrack_InitBuffers,
                      int32_t /* buffer_size */,
                      bool /* readonly */)
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_MediaStreamTrack_EnqueueBuffer,
-                     int32_t /* index */);
+                     int32_t /* index */)
 IPC_MESSAGE_CONTROL1(PpapiHostMsg_MediaStreamTrack_EnqueueBuffer,
-                     int32_t /* index */);
+                     int32_t /* index */)
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_MediaStreamTrack_EnqueueBuffers,
-                     std::vector<int32_t> /* indices */);
+                     std::vector<int32_t> /* indices */)
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_MediaStreamTrack_Close)
 
 // NetworkMonitor.
@@ -1565,9 +1572,10 @@ IPC_MESSAGE_CONTROL1(PpapiPluginMsg_TrueTypeFontSingleton_GetFontsInFamilyReply,
                          /* fonts */)
 IPC_MESSAGE_CONTROL1(PpapiHostMsg_TrueTypeFont_Create,
                      ppapi::proxy::SerializedTrueTypeFontDesc /* desc */)
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_TrueTypeFont_Describe)
-IPC_MESSAGE_CONTROL1(PpapiPluginMsg_TrueTypeFont_DescribeReply,
-                     ppapi::proxy::SerializedTrueTypeFontDesc /* desc */)
+// Unsolicited reply to return the actual font's desc to the plugin.
+IPC_MESSAGE_CONTROL2(PpapiPluginMsg_TrueTypeFont_CreateReply,
+                     ppapi::proxy::SerializedTrueTypeFontDesc /* desc */,
+                     int32_t /* result */)
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_TrueTypeFont_GetTableTags)
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_TrueTypeFont_GetTableTagsReply,
                      std::vector<uint32_t> /* tags */)

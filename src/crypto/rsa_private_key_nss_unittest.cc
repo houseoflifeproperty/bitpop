@@ -8,7 +8,7 @@
 #include <pk11pub.h>
 
 #include "base/memory/scoped_ptr.h"
-#include "crypto/nss_util.h"
+#include "crypto/scoped_test_nss_db.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace crypto {
@@ -17,12 +17,6 @@ class RSAPrivateKeyNSSTest : public testing::Test {
  public:
   RSAPrivateKeyNSSTest() {}
   virtual ~RSAPrivateKeyNSSTest() {}
-
-  virtual void SetUp() {
-#if defined(OS_CHROMEOS)
-    OpenPersistentNSSDB();
-#endif
-  }
 
  private:
   ScopedTestNSSDB test_nssdb_;

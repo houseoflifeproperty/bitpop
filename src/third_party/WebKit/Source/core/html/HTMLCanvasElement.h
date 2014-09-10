@@ -37,11 +37,12 @@
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/graphics/ImageBufferClient.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebThread.h"
 #include "wtf/Forward.h"
 
 #define CanvasDefaultInterpolationQuality InterpolationLow
 
-namespace WebCore {
+namespace blink {
 
 class AffineTransform;
 class CanvasContextAttributes;
@@ -67,7 +68,7 @@ public:
     virtual void trace(Visitor*) { }
 };
 
-class HTMLCanvasElement FINAL : public HTMLElement, public DocumentVisibilityObserver, public CanvasImageSource, public ImageBufferClient {
+class HTMLCanvasElement FINAL : public HTMLElement, public DocumentVisibilityObserver, public CanvasImageSource, public ImageBufferClient, public blink::WebThread::TaskObserver {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLCanvasElement);
 public:
     DECLARE_NODE_FACTORY(HTMLCanvasElement);
@@ -151,6 +152,12 @@ public:
 
     // ImageBufferClient implementation
     virtual void notifySurfaceInvalid() OVERRIDE;
+    virtual bool isDirty() OVERRIDE { return !m_dirtyRect.isEmpty(); }
+    virtual void didFinalizeFrame() OVERRIDE;
+
+    // Implementation of WebThread::TaskObserver methods
+    virtual void willProcessTask() OVERRIDE;
+    virtual void didProcessTask() OVERRIDE;
 
     virtual void trace(Visitor*) OVERRIDE;
 
@@ -170,6 +177,8 @@ private:
     void createImageBuffer();
     void createImageBufferInternal();
     void clearImageBuffer();
+
+    void resetDirtyRect();
 
     void setSurfaceSize(const IntSize&);
 

@@ -29,9 +29,7 @@
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 bool RenderLayerModelObject::s_wasFloating = false;
 
@@ -92,26 +90,11 @@ void RenderLayerModelObject::styleWillChange(StyleDifference diff, const RenderS
 {
     s_wasFloating = isFloating();
 
-    // If our z-index changes value or our visibility changes,
-    // we need to dirty our stacking context's z-order list.
-    RenderStyle* oldStyle = style();
-    if (oldStyle) {
-        // Do a repaint with the old style first through RenderLayerRepainter.
-        // RenderObject::styleWillChange takes care of repainting objects without RenderLayers.
-        if (parent() && diff.needsRepaintLayer()) {
-            layer()->repainter().repaintIncludingNonCompositingDescendants();
+    if (RenderStyle* oldStyle = style()) {
+        if (parent() && diff.needsPaintInvalidationLayer()) {
             if (oldStyle->hasClip() != newStyle.hasClip()
                 || oldStyle->clip() != newStyle.clip())
                 layer()->clipper().clearClipRectsIncludingDescendants();
-        } else if (diff.needsFullLayout()) {
-            if (hasLayer()) {
-                if (!layer()->hasCompositedLayerMapping() && oldStyle->position() != newStyle.position())
-                    layer()->repainter().repaintIncludingNonCompositingDescendants();
-            } else if (newStyle.hasTransform() || newStyle.opacity() < 1 || newStyle.hasFilter()) {
-                // If we don't have a layer yet, but we are going to get one because of transform or opacity,
-                //  then we need to repaint the old position of the object.
-                paintInvalidationForWholeRenderer();
-            }
         }
     }
 
@@ -131,17 +114,12 @@ void RenderLayerModelObject::styleDidChange(StyleDifference diff, const RenderSt
             if (s_wasFloating && isFloating())
                 setChildNeedsLayout();
             createLayer(type);
-            if (parent() && !needsLayout() && containingBlock()) {
+            if (parent() && !needsLayout()) {
                 // FIXME: This invalidation is overly broad. We should update to
                 // do the correct invalidation at RenderStyle::diff time. crbug.com/349061
-                if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled())
-                    layer()->renderer()->setShouldDoFullPaintInvalidationAfterLayout(true);
-                else
-                    layer()->repainter().setRepaintStatus(NeedsFullRepaint);
-                // Hit in animations/interpolation/perspective-interpolation.html
-                // FIXME: I suspect we can remove this assert disabler now.
-                DisableCompositingQueryAsserts disabler;
-                layer()->updateLayerPositionRecursive();
+                layer()->renderer()->setShouldDoFullPaintInvalidation(true);
+                // FIXME: We should call a specialized version of this function.
+                layer()->updateLayerPositionsAfterLayout();
             }
         }
     } else if (layer() && layer()->parent()) {
@@ -191,20 +169,41 @@ void RenderLayerModelObject::addLayerHitTestRects(LayerHitTestRects& rects, cons
     }
 }
 
-CompositedLayerMappingPtr RenderLayerModelObject::compositedLayerMapping() const
+InvalidationReason RenderLayerModelObject::invalidatePaintIfNeeded(const PaintInvalidationState& paintInvalidationState, const RenderLayerModelObject& newPaintInvalidationContainer)
 {
-    return m_layer ? m_layer->compositedLayerMapping() : 0;
+    const LayoutRect oldPaintInvalidationRect = previousPaintInvalidationRect();
+    const LayoutPoint oldPositionFromPaintInvalidationContainer = previousPositionFromPaintInvalidationContainer();
+    setPreviousPaintInvalidationRect(boundsRectForPaintInvalidation(&newPaintInvalidationContainer, &paintInvalidationState));
+    setPreviousPositionFromPaintInvalidationContainer(RenderLayer::positionFromPaintInvalidationContainer(this, &newPaintInvalidationContainer, &paintInvalidationState));
+
+    // If we are set to do a full paint invalidation that means the RenderView will issue
+    // paint invalidations. We can then skip issuing of paint invalidations for the child
+    // renderers as they'll be covered by the RenderView.
+    if (view()->doingFullPaintInvalidation())
+        return InvalidationNone;
+
+    return RenderObject::invalidatePaintIfNeeded(newPaintInvalidationContainer, oldPaintInvalidationRect, oldPositionFromPaintInvalidationContainer, paintInvalidationState);
 }
 
-bool RenderLayerModelObject::hasCompositedLayerMapping() const
+void RenderLayerModelObject::invalidateTreeIfNeeded(const PaintInvalidationState& paintInvalidationState)
 {
-    return m_layer ? m_layer->hasCompositedLayerMapping() : false;
+    // FIXME: SVG should probably also go through this unified paint invalidation system.
+    ASSERT(!needsLayout());
+
+    if (!shouldCheckForPaintInvalidation(paintInvalidationState))
+        return;
+
+    bool establishesNewPaintInvalidationContainer = isPaintInvalidationContainer();
+    const RenderLayerModelObject& newPaintInvalidationContainer = *adjustCompositedContainerForSpecialAncestors(establishesNewPaintInvalidationContainer ? this : &paintInvalidationState.paintInvalidationContainer());
+    ASSERT(&newPaintInvalidationContainer == containerForPaintInvalidation());
+
+    InvalidationReason reason = invalidatePaintIfNeeded(paintInvalidationState, newPaintInvalidationContainer);
+
+    PaintInvalidationState childTreeWalkState(paintInvalidationState, *this, newPaintInvalidationContainer);
+    if (reason == InvalidationLocationChange || reason == InvalidationFull)
+        childTreeWalkState.setForceCheckForPaintInvalidation();
+    RenderObject::invalidateTreeIfNeeded(childTreeWalkState);
 }
 
-CompositedLayerMapping* RenderLayerModelObject::groupedMapping() const
-{
-    return m_layer ? m_layer->groupedMapping() : 0;
-}
-
-} // namespace WebCore
+} // namespace blink
 

@@ -31,13 +31,13 @@
 #include "config.h"
 #include "public/web/WebBlob.h"
 
-#include "V8Blob.h"
-#include "bindings/v8/V8Binding.h"
+#include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8Blob.h"
 #include "core/fileapi/Blob.h"
 #include "platform/blob/BlobData.h"
 #include "wtf/PassOwnPtr.h"
 
-using namespace WebCore;
+using namespace blink;
 
 namespace blink {
 
@@ -90,12 +90,12 @@ v8::Handle<v8::Value> WebBlob::toV8Value(v8::Handle<v8::Object> creationContext,
     return toV8(m_private.get(), creationContext, isolate);
 }
 
-WebBlob::WebBlob(const PassRefPtrWillBeRawPtr<WebCore::Blob>& blob)
+WebBlob::WebBlob(const PassRefPtrWillBeRawPtr<blink::Blob>& blob)
     : m_private(blob)
 {
 }
 
-WebBlob& WebBlob::operator=(const PassRefPtrWillBeRawPtr<WebCore::Blob>& blob)
+WebBlob& WebBlob::operator=(const PassRefPtrWillBeRawPtr<blink::Blob>& blob)
 {
     m_private = blob;
     return *this;

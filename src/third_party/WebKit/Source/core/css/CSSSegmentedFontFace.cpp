@@ -31,10 +31,11 @@
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontDescription.h"
+#include "platform/fonts/FontFaceCreationParams.h"
 #include "platform/fonts/SegmentedFontData.h"
 #include "platform/fonts/SimpleFontData.h"
 
-namespace WebCore {
+namespace blink {
 
 CSSSegmentedFontFace::CSSSegmentedFontFace(CSSFontSelector* fontSelector, FontTraits traits)
     : m_fontSelector(fontSelector)
@@ -130,8 +131,7 @@ PassRefPtr<FontData> CSSSegmentedFontFace::getFontData(const FontDescription& fo
         return nullptr;
 
     FontTraits desiredTraits = fontDescription.traits();
-    AtomicString emptyFontFamily = "";
-    FontCacheKey key = fontDescription.cacheKey(emptyFontFamily, desiredTraits);
+    FontCacheKey key = fontDescription.cacheKey(FontFaceCreationParams(), desiredTraits);
 
     RefPtr<SegmentedFontData>& fontData = m_fontDataTable.add(key.hash(), nullptr).storedValue->value;
     if (fontData && fontData->numRanges())
@@ -212,8 +212,10 @@ void CSSSegmentedFontFace::match(const String& text, WillBeHeapVector<RefPtrWill
 
 void CSSSegmentedFontFace::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_fontSelector);
     visitor->trace(m_fontFaces);
+#endif
 }
 
 }

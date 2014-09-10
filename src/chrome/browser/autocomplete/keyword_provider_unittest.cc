@@ -5,13 +5,13 @@
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/autocomplete/keyword_provider.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_service.h"
-#include "chrome/common/chrome_switches.h"
-#include "chrome/test/base/testing_browser_process.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/omnibox/autocomplete_match.h"
+#include "components/search_engines/search_engines_switches.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -83,7 +83,8 @@ void KeywordProviderTest::RunTest(
     AutocompleteInput input(keyword_cases[i].input, base::string16::npos,
                             base::string16(), GURL(),
                             metrics::OmniboxEventProto::INVALID_SPEC, true,
-                            false, true, true);
+                            false, true, true,
+                            ChromeAutocompleteSchemeClassifier(NULL));
     kw_provider_->Start(input, false);
     EXPECT_TRUE(kw_provider_->done());
     matches = kw_provider_->matches();
@@ -322,10 +323,11 @@ TEST_F(KeywordProviderTest, GetSubstitutingTemplateURLForInput) {
       base::string16::npos },
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
-    AutocompleteInput input(ASCIIToUTF16(cases[i].text),
-                            cases[i].cursor_position, base::string16(), GURL(),
-                            metrics::OmniboxEventProto::INVALID_SPEC, false,
-                            false, cases[i].allow_exact_keyword_match, true);
+    AutocompleteInput input(
+        ASCIIToUTF16(cases[i].text), cases[i].cursor_position, base::string16(),
+        GURL(), metrics::OmniboxEventProto::INVALID_SPEC, false, false,
+        cases[i].allow_exact_keyword_match, true,
+        ChromeAutocompleteSchemeClassifier(NULL));
     const TemplateURL* url =
         KeywordProvider::GetSubstitutingTemplateURLForInput(model_.get(),
                                                             &input);

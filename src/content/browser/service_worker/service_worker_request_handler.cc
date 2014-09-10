@@ -4,6 +4,8 @@
 
 #include "content/browser/service_worker/service_worker_request_handler.h"
 
+#include <string>
+
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
@@ -40,13 +42,13 @@ class ServiceWorkerRequestInterceptor
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerRequestInterceptor);
 };
 
-bool IsMethodSupported(const std::string& method) {
+bool IsMethodSupportedForAppCache(const std::string& method) {
   return (method == "GET") || (method == "HEAD");
 }
 
-bool IsSchemeAndMethodSupported(const net::URLRequest* request) {
+bool IsSchemeAndMethodSupportedForAppCache(const net::URLRequest* request) {
   return request->url().SchemeIsHTTPOrHTTPS() &&
-         IsMethodSupported(request->method());
+         IsMethodSupportedForAppCache(request->method());
 }
 
 }  // namespace
@@ -57,9 +59,8 @@ void ServiceWorkerRequestHandler::InitializeHandler(
     webkit_blob::BlobStorageContext* blob_storage_context,
     int process_id,
     int provider_id,
-    ResourceType::Type resource_type) {
-  if (!ServiceWorkerUtils::IsFeatureEnabled() ||
-      !IsSchemeAndMethodSupported(request)) {
+    ResourceType resource_type) {
+  if (!IsSchemeAndMethodSupportedForAppCache(request)) {
     return;
   }
 
@@ -101,7 +102,7 @@ ServiceWorkerRequestHandler::ServiceWorkerRequestHandler(
     base::WeakPtr<ServiceWorkerContextCore> context,
     base::WeakPtr<ServiceWorkerProviderHost> provider_host,
     base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context,
-    ResourceType::Type resource_type)
+    ResourceType resource_type)
     : context_(context),
       provider_host_(provider_host),
       blob_storage_context_(blob_storage_context),

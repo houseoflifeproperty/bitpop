@@ -31,24 +31,16 @@
 #ifndef SourceBuffer_h
 #define SourceBuffer_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
 #include "modules/EventTargetModules.h"
 #include "platform/AsyncMethodRunner.h"
 #include "platform/weborigin/KURL.h"
-#include "wtf/OwnPtr.h"
-#include "wtf/PassOwnPtr.h"
-#include "wtf/PassRefPtr.h"
+#include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
-#include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
-class WebSourceBuffer;
-}
-
-namespace WebCore {
 
 class ExceptionState;
 class FileReaderLoader;
@@ -56,12 +48,13 @@ class GenericEventQueue;
 class MediaSource;
 class Stream;
 class TimeRanges;
+class WebSourceBuffer;
 
-class SourceBuffer FINAL : public RefCountedWillBeRefCountedGarbageCollected<SourceBuffer>, public ActiveDOMObject, public EventTargetWithInlineData, public ScriptWrappable, public FileReaderLoaderClient {
-    REFCOUNTED_EVENT_TARGET(SourceBuffer);
+class SourceBuffer FINAL : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<SourceBuffer>, public ActiveDOMObject, public EventTargetWithInlineData, public FileReaderLoaderClient {
+    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<SourceBuffer>);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SourceBuffer);
 public:
-    static PassRefPtrWillBeRawPtr<SourceBuffer> create(PassOwnPtr<blink::WebSourceBuffer>, MediaSource*, GenericEventQueue*);
+    static SourceBuffer* create(PassOwnPtr<WebSourceBuffer>, MediaSource*, GenericEventQueue*);
     static const AtomicString& segmentsKeyword();
     static const AtomicString& sequenceKeyword();
 
@@ -71,7 +64,7 @@ public:
     const AtomicString& mode() const { return m_mode; }
     void setMode(const AtomicString&, ExceptionState&);
     bool updating() const { return m_updating; }
-    PassRefPtr<TimeRanges> buffered(ExceptionState&) const;
+    PassRefPtrWillBeRawPtr<TimeRanges> buffered(ExceptionState&) const;
     double timestampOffset() const;
     void setTimestampOffset(double, ExceptionState&);
     void appendBuffer(PassRefPtr<ArrayBuffer> data, ExceptionState&);
@@ -101,7 +94,7 @@ public:
     virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    SourceBuffer(PassOwnPtr<blink::WebSourceBuffer>, MediaSource*, GenericEventQueue*);
+    SourceBuffer(PassOwnPtr<WebSourceBuffer>, MediaSource*, GenericEventQueue*);
 
     bool isRemoved() const;
     void scheduleEvent(const AtomicString& eventName);
@@ -122,8 +115,8 @@ private:
     virtual void didFinishLoading() OVERRIDE;
     virtual void didFail(FileError::ErrorCode) OVERRIDE;
 
-    OwnPtr<blink::WebSourceBuffer> m_webSourceBuffer;
-    RawPtrWillBeMember<MediaSource> m_source;
+    OwnPtr<WebSourceBuffer> m_webSourceBuffer;
+    Member<MediaSource> m_source;
     GenericEventQueue* m_asyncEventQueue;
 
     AtomicString m_mode;
@@ -147,6 +140,6 @@ private:
     OwnPtr<FileReaderLoader> m_loader;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

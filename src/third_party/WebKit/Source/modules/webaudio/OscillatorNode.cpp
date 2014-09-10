@@ -37,9 +37,7 @@
 #include "wtf/StdLibExtras.h"
 #include <algorithm>
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 using namespace VectorMath;
 
@@ -60,22 +58,28 @@ OscillatorNode::OscillatorNode(AudioContext* context, float sampleRate)
     setNodeType(NodeTypeOscillator);
 
     // Use musical pitch standard A440 as a default.
-    m_frequency = AudioParam::create(context, "frequency", 440, 0, 100000);
+    m_frequency = AudioParam::create(context, 440);
     // Default to no detuning.
-    m_detune = AudioParam::create(context, "detune", 0, -4800, 4800);
+    m_detune = AudioParam::create(context, 0);
 
     // Sets up default wavetable.
     setType(m_type);
 
     // An oscillator is always mono.
-    addOutput(adoptPtr(new AudioNodeOutput(this, 1)));
+    addOutput(AudioNodeOutput::create(this, 1));
 
     initialize();
 }
 
 OscillatorNode::~OscillatorNode()
 {
+    ASSERT(!isInitialized());
+}
+
+void OscillatorNode::dispose()
+{
     uninitialize();
+    AudioScheduledSourceNode::dispose();
 }
 
 String OscillatorNode::type() const
@@ -267,7 +271,7 @@ void OscillatorNode::process(size_t framesToProcess)
     float frequency = 0;
     float* higherWaveData = 0;
     float* lowerWaveData = 0;
-    float tableInterpolationFactor;
+    float tableInterpolationFactor = 0;
 
     if (!hasSampleAccurateValues) {
         frequency = m_frequency->smoothedValue();
@@ -349,6 +353,6 @@ void OscillatorNode::trace(Visitor* visitor)
     AudioScheduledSourceNode::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

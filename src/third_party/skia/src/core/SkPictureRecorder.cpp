@@ -6,7 +6,6 @@
  */
 
 #include "SkBBoxHierarchyRecord.h"
-#include "SkPicturePlayback.h"
 #include "SkPictureRecord.h"
 #include "SkPictureRecorder.h"
 #include "SkRecord.h"
@@ -14,32 +13,26 @@
 #include "SkRecorder.h"
 #include "SkTypes.h"
 
-SkPictureRecorder::~SkPictureRecorder() {
-    this->reset();
-}
+SkPictureRecorder::SkPictureRecorder() {}
 
-void SkPictureRecorder::reset() {
-    SkSafeSetNull(fPictureRecord);
-    SkSafeSetNull(fRecorder);
-    SkDELETE(fRecord);
-    fRecord = NULL;
-}
+SkPictureRecorder::~SkPictureRecorder() {}
 
 SkCanvas* SkPictureRecorder::beginRecording(int width, int height,
                                             SkBBHFactory* bbhFactory /* = NULL */,
                                             uint32_t recordFlags /* = 0 */) {
-    this->reset();  // terminate any prior recording(s)
     fWidth = width;
     fHeight = height;
 
     const SkISize size = SkISize::Make(width, height);
 
     if (NULL != bbhFactory) {
-        SkAutoTUnref<SkBBoxHierarchy> tree((*bbhFactory)(width, height));
-        SkASSERT(NULL != tree);
-        fPictureRecord = SkNEW_ARGS(SkBBoxHierarchyRecord, (size, recordFlags, tree.get()));
+        // We don't need to hold a ref on the BBH ourselves, but might as well for
+        // consistency with EXPERIMENTAL_beginRecording(), which does need to.
+        fBBH.reset((*bbhFactory)(width, height));
+        SkASSERT(NULL != fBBH.get());
+        fPictureRecord.reset(SkNEW_ARGS(SkBBoxHierarchyRecord, (size, recordFlags, fBBH.get())));
     } else {
-        fPictureRecord = SkNEW_ARGS(SkPictureRecord, (size, recordFlags));
+        fPictureRecord.reset(SkNEW_ARGS(SkPictureRecord, (size, recordFlags)));
     }
 
     fPictureRecord->beginRecording();
@@ -48,43 +41,44 @@ SkCanvas* SkPictureRecorder::beginRecording(int width, int height,
 
 SkCanvas* SkPictureRecorder::EXPERIMENTAL_beginRecording(int width, int height,
                                                          SkBBHFactory* bbhFactory /* = NULL */) {
-    this->reset();
     fWidth = width;
     fHeight = height;
 
-    // TODO: plumb bbhFactory through
-    fRecord   = SkNEW(SkRecord);
-    fRecorder = SkNEW_ARGS(SkRecorder, (fRecord, width, height));
+    if (NULL != bbhFactory) {
+        fBBH.reset((*bbhFactory)(width, height));
+        SkASSERT(NULL != fBBH.get());
+    }
+
+    fRecord.reset(SkNEW(SkRecord));
+    fRecorder.reset(SkNEW_ARGS(SkRecorder, (fRecord.get(), width, height)));
     return this->getRecordingCanvas();
 }
 
 SkCanvas* SkPictureRecorder::getRecordingCanvas() {
-    if (NULL != fRecorder) {
-        return fRecorder;
+    if (NULL != fRecorder.get()) {
+        return fRecorder.get();
     }
-    return fPictureRecord;
+    return fPictureRecord.get();
 }
 
 SkPicture* SkPictureRecorder::endRecording() {
     SkPicture* picture = NULL;
 
-    if (NULL != fRecorder) {
-        // TODO: picture = SkNEW_ARGS(SkPicture, (fWidth, fHeight, fRecord));
-        //       fRecord = NULL;
+    if (NULL != fRecord.get()) {
+        picture = SkNEW_ARGS(SkPicture, (fWidth, fHeight, fRecord.detach(), fBBH.get()));
     }
 
-    if (NULL != fPictureRecord) {
+    if (NULL != fPictureRecord.get()) {
         fPictureRecord->endRecording();
         const bool deepCopyOps = false;
-        picture = SkNEW_ARGS(SkPicture, (fWidth, fHeight, *fPictureRecord, deepCopyOps));
+        picture = SkNEW_ARGS(SkPicture, (fWidth, fHeight, *fPictureRecord.get(), deepCopyOps));
     }
 
-    this->reset();
     return picture;
 }
 
 void SkPictureRecorder::internalOnly_EnableOpts(bool enableOpts) {
-    if (NULL != fPictureRecord) {
+    if (NULL != fPictureRecord.get()) {
         fPictureRecord->internalOnly_EnableOpts(enableOpts);
     }
 }
@@ -94,13 +88,13 @@ void SkPictureRecorder::partialReplay(SkCanvas* canvas) const {
         return;
     }
 
-    if (NULL != fRecorder) {
-        SkRecordDraw(*fRecord, canvas);
+    if (NULL != fRecord.get()) {
+        SkRecordDraw(*fRecord, canvas, NULL/*bbh*/, NULL/*callback*/);
     }
 
-    if (NULL != fPictureRecord) {
+    if (NULL != fPictureRecord.get()) {
         const bool deepCopyOps = true;
-        SkPicture picture(fWidth, fHeight, *fPictureRecord, deepCopyOps);
+        SkPicture picture(fWidth, fHeight, *fPictureRecord.get(), deepCopyOps);
         picture.draw(canvas);
     }
 }

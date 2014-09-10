@@ -33,7 +33,7 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class FloatPoint;
 class GraphicsContextStateSaver;
@@ -60,16 +60,17 @@ public:
         return *m_path;
     }
 
+    virtual bool isShapeEmpty() const { return path().isEmpty(); }
+
 protected:
     virtual void updateShapeFromElement();
-    virtual bool isShapeEmpty() const { return path().isEmpty(); }
     virtual bool shapeDependentStrokeContains(const FloatPoint&);
     virtual bool shapeDependentFillContains(const FloatPoint&, const WindRule) const;
     float strokeWidth() const;
     bool hasPath() const { return m_path.get(); }
     bool hasSmoothStroke() const;
 
-    bool hasNonScalingStroke() const { return style()->svgStyle()->vectorEffect() == VE_NON_SCALING_STROKE; }
+    bool hasNonScalingStroke() const { return style()->svgStyle().vectorEffect() == VE_NON_SCALING_STROKE; }
     AffineTransform nonScalingStrokeTransform() const;
     Path* nonScalingStrokePath(const Path*, const AffineTransform&) const;
 
@@ -81,7 +82,7 @@ private:
     bool fillContains(const FloatPoint&, bool requiresFill = true, const WindRule fillRule = RULE_NONZERO);
     bool strokeContains(const FloatPoint&, bool requiresStroke = true);
 
-    virtual FloatRect paintInvalidationRectInLocalCoordinates() const OVERRIDE FINAL { return m_repaintBoundingBox; }
+    virtual FloatRect paintInvalidationRectInLocalCoordinates() const OVERRIDE FINAL { return m_paintInvalidationBoundingBox; }
     virtual const AffineTransform& localToParentTransform() const OVERRIDE FINAL { return m_localTransform; }
     virtual AffineTransform localTransform() const OVERRIDE FINAL { return m_localTransform; }
 
@@ -90,7 +91,7 @@ private:
 
     virtual void layout() OVERRIDE FINAL;
     virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
-    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE FINAL;
+    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) const OVERRIDE FINAL;
 
     virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction) OVERRIDE FINAL;
 
@@ -98,7 +99,7 @@ private:
     virtual FloatRect strokeBoundingBox() const OVERRIDE FINAL { return m_strokeBoundingBox; }
     FloatRect calculateObjectBoundingBox() const;
     FloatRect calculateStrokeBoundingBox() const;
-    void updateRepaintBoundingBox();
+    void updatePaintInvalidationBoundingBox();
 
     bool setupNonScalingStrokeContext(AffineTransform&, GraphicsContextStateSaver&);
 
@@ -111,7 +112,7 @@ private:
     void drawMarkers(PaintInfo&);
 
 private:
-    FloatRect m_repaintBoundingBox;
+    FloatRect m_paintInvalidationBoundingBox;
     AffineTransform m_localTransform;
     OwnPtr<Path> m_path;
     Vector<MarkerPosition> m_markerPositions;

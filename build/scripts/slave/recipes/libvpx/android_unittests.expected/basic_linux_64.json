@@ -34,15 +34,7 @@
       "--url",
       "https://chromium.googlesource.com/android_tools"
     ],
-    "name": "git setup",
-    "seed_steps": [
-      "git setup",
-      "git fetch",
-      "git checkout",
-      "git clean",
-      "submodule sync",
-      "submodule update"
-    ]
+    "name": "git setup"
   },
   {
     "cmd": [
@@ -106,15 +98,7 @@
       "--url",
       "https://chromium.googlesource.com/webm/libvpx"
     ],
-    "name": "git setup (2)",
-    "seed_steps": [
-      "git setup (2)",
-      "git fetch (2)",
-      "git checkout (2)",
-      "git clean (2)",
-      "submodule sync (2)",
-      "submodule update (2)"
-    ]
+    "name": "git setup (2)"
   },
   {
     "cmd": [
@@ -177,18 +161,19 @@
       "--enable-unit-tests",
       "--enable-webm-io",
       "--disable-vp8-encoder",
-      "--disable-vp9-encoder",
+      "--enable-vp9-encoder",
       "--enable-decode-perf-tests",
       "--enable-external-build",
       "--enable-vp8-decoder",
       "--enable-vp9-decoder",
+      "--enable-encode-perf-tests",
+      "--disable-realtime-only",
       "--sdk-path=[SLAVE_BUILD]/android_tools/ndk",
       "--target=armv7-android-gcc"
     ],
     "name": "configure"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "[SLAVE_BUILD]/android_tools/ndk/ndk-build",
       "APP_BUILD_SCRIPT=[SLAVE_BUILD]/libvpx/test/android/Android.mk",
@@ -237,7 +222,6 @@
     "name": "push_so"
   },
   {
-    "can_fail_build": true,
     "cmd": [
       "python",
       "-u",
@@ -247,7 +231,8 @@
       "shell",
       "LD_LIBRARY_PATH=/data/local/tmp",
       "LIBVPX_TEST_DATA_PATH=/data/local/tmp",
-      "/data/local/tmp/vpx_test"
+      "/data/local/tmp/vpx_test",
+      "--gtest_filter=-*Large*"
     ],
     "name": "adb_wrap",
     "~followup_annotations": [
@@ -280,14 +265,18 @@
       "@@@STEP_LOG_LINE@json.output@    \"framesPerSecond\": 609.82868, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"threadCount\": 1, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"totalFrames\": 17895, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"type\": \"decode_perf_test\", @@@",
       "@@@STEP_LOG_LINE@json.output@    \"version\": \"v1.3.0-2045-g38c2d37\", @@@",
       "@@@STEP_LOG_LINE@json.output@    \"videoName\": \"vp90-2-bbb_426x240_tile_1x1_180kbps.webm\"@@@",
       "@@@STEP_LOG_LINE@json.output@  }, @@@",
       "@@@STEP_LOG_LINE@json.output@  {@@@",
-      "@@@STEP_LOG_LINE@json.output@    \"decodeTimeSecs\": 56.277676, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"encodeTimeSecs\": 56.277676, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"framesPerSecond\": 317.976883, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"minPsnr\": 43.5, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"speed\": 5, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"threadCount\": 2, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"totalFrames\": 17895, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"type\": \"encode_perf_test\", @@@",
       "@@@STEP_LOG_LINE@json.output@    \"version\": \"v1.3.0-2045-g38c2d37\", @@@",
       "@@@STEP_LOG_LINE@json.output@    \"videoName\": \"vp90-2-bbb_640x360_tile_1x2_337kbps.webm\"@@@",
       "@@@STEP_LOG_LINE@json.output@  }@@@",
@@ -302,6 +291,6 @@
       "[BUILD]/scripts/slave/recipe_modules/perf_dashboard/resources/post_json.py"
     ],
     "name": "perf dashboard post",
-    "stdin": "{\"data\": [{\"bot\": \"libvpx-bot\", \"buildername\": \"Nexus 5 Builder\", \"buildnumber\": \"75\", \"master\": \"client.libvpx\", \"masterid\": \"client.libvpx\", \"revision\": \"75\", \"test\": \"libvpx/decode/perf_test/nexus_5/vp90-2-bbb_426x240_tile_1x1_180kbps.webm_1\", \"units\": \"fps\", \"value\": 609.82868}, {\"bot\": \"libvpx-bot\", \"buildername\": \"Nexus 5 Builder\", \"buildnumber\": \"75\", \"master\": \"client.libvpx\", \"masterid\": \"client.libvpx\", \"revision\": \"75\", \"test\": \"libvpx/decode/perf_test/nexus_5/vp90-2-bbb_640x360_tile_1x2_337kbps.webm_2\", \"units\": \"fps\", \"value\": 317.976883}], \"url\": \"https://chromeperf.appspot.com/add_point\"}"
+    "stdin": "{\"data\": [{\"bot\": \"libvpx-bot\", \"buildername\": \"Nexus 5 Builder\", \"buildnumber\": \"75\", \"master\": \"client.libvpx\", \"masterid\": \"client.libvpx\", \"revision\": \"75\", \"test\": \"libvpx/decode/perf_test/nexus_5/vp90-2-bbb_426x240_tile_1x1_180kbps.webm_1\", \"units\": \"fps\", \"value\": 609.82868}, {\"bot\": \"libvpx-bot\", \"buildername\": \"Nexus 5 Builder\", \"buildnumber\": \"75\", \"master\": \"client.libvpx\", \"masterid\": \"client.libvpx\", \"revision\": \"75\", \"test\": \"libvpx/encode/perf_test/fps/nexus_5/vp90-2-bbb_640x360_tile_1x2_337kbps.webm_5\", \"units\": \"fps\", \"value\": 317.976883}, {\"bot\": \"libvpx-bot\", \"buildername\": \"Nexus 5 Builder\", \"buildnumber\": \"75\", \"master\": \"client.libvpx\", \"masterid\": \"client.libvpx\", \"revision\": \"75\", \"test\": \"libvpx/encode/perf_test/minPsnr/nexus_5/vp90-2-bbb_640x360_tile_1x2_337kbps.webm_5\", \"units\": \"dB\", \"value\": 43.5}], \"url\": \"https://chromeperf.appspot.com/add_point\"}"
   }
 ]

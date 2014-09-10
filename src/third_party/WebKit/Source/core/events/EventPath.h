@@ -33,7 +33,7 @@
 #include "wtf/HashMap.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Event;
 class EventTarget;
@@ -47,7 +47,7 @@ enum EventDispatchBehavior {
     StayInsideShadowDOM
 };
 
-class EventPath : public NoBaseWillBeGarbageCollectedFinalized<EventPath> {
+class EventPath FINAL : public NoBaseWillBeGarbageCollected<EventPath> {
 public:
     explicit EventPath(Event*);
     explicit EventPath(Node*);
@@ -55,7 +55,7 @@ public:
 
     NodeEventContext& operator[](size_t index) { return m_nodeEventContexts[index]; }
     const NodeEventContext& operator[](size_t index) const { return m_nodeEventContexts[index]; }
-    const NodeEventContext& last() const { return m_nodeEventContexts[size() - 1]; }
+    NodeEventContext& last() { return m_nodeEventContexts[size() - 1]; }
 
     bool isEmpty() const { return m_nodeEventContexts.isEmpty(); }
     size_t size() const { return m_nodeEventContexts.size(); }
@@ -91,7 +91,7 @@ private:
     static void buildRelatedNodeMap(const Node*, RelatedTargetMap&);
     static EventTarget* findRelatedNode(TreeScope*, RelatedTargetMap&);
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     static void checkReachability(TreeScope&, TouchList&);
 #endif
 

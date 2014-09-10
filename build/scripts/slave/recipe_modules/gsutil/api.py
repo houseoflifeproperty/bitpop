@@ -40,25 +40,22 @@ class GSUtilApi(recipe_api.RecipeApi):
     return self.m.python(full_name, gsutil_path, cmd_prefix + cmd, **kwargs)
 
   def upload(self, source, bucket, dest, args=None, link_name='gsutil.upload',
-             **kwargs):
-    args = args or []
+             metadata=None, **kwargs):
+    args = [] if args is None else args[:]
+    args += self._generate_metadata_args(metadata)
     full_dest = 'gs://%s/%s' % (bucket, dest)
     cmd = ['cp'] + args + [source, full_dest]
     name = kwargs.pop('name', 'upload')
 
+    result = self(cmd, name, **kwargs)
+
     if link_name:
-      @recipe_util.wrap_followup(kwargs)
-      def inline_followup(step_result):
-        step_result.presentation.links[link_name] = (
-          'https://storage.cloud.google.com/%s/%s' % (bucket, dest)
-        )
-
-      kwargs['followup_fn'] = inline_followup
-
-    return self(cmd, name, **kwargs)
+      result.presentation.links[link_name] = (
+        'https://storage.cloud.google.com/%s/%s' % (bucket, dest)
+      )
 
   def download(self, bucket, source, dest, args=None, **kwargs):
-    args = args or []
+    args = [] if args is None else args[:]
     full_source = 'gs://%s/%s' % (bucket, source)
     cmd = ['cp'] + args + [full_source, dest]
     name = kwargs.pop('name', 'download')
@@ -69,23 +66,56 @@ class GSUtilApi(recipe_api.RecipeApi):
     url = url.replace('https://storage.cloud.google.com/', 'gs://')
     cmd = ['cp'] + args + [url, dest]
     name = kwargs.pop('name', 'download')
-    return self(cmd, name, **kwargs)
+    self(cmd, name, **kwargs)
 
   def copy(self, source_bucket, source, dest_bucket, dest, args=None,
-           link_name='gsutil.copy', **kwargs):
+           link_name='gsutil.copy', metadata=None, **kwargs):
     args = args or []
+    args += self._generate_metadata_args(metadata)
     full_source = 'gs://%s/%s' % (source_bucket, source)
     full_dest = 'gs://%s/%s' % (dest_bucket, dest)
     cmd = ['cp'] + args + [full_source, full_dest]
     name = kwargs.pop('name', 'copy')
 
+    result = self(cmd, name, **kwargs)
+
     if link_name:
-      @recipe_util.wrap_followup(kwargs)
-      def inline_followup(step_result):
-        step_result.presentation.links[link_name] = (
-          'https://storage.cloud.google.com/%s/%s' % (dest_bucket, dest)
-        )
+      result.presentation.links[link_name] = (
+        'https://storage.cloud.google.com/%s/%s' % (dest_bucket, dest)
+      )
 
-      kwargs['followup_fn'] = inline_followup
+  def _generate_metadata_args(self, metadata):
+    result = []
+    if metadata:
+      for k, v in sorted(metadata.iteritems(), key=lambda (k, _): k):
+        field = self._get_metadata_field(k)
+        param = (field) if v is None else ('%s:%s' % (field, v))
+        result += ['-h', param]
+    return result
 
-    return self(cmd, name, **kwargs)
+  @staticmethod
+  def _get_metadata_field(name, provider_prefix=None):
+    """Returns: (str) the metadata field to use with Google Storage
+
+    The Google Storage specification for metadata can be found at:
+    https://developers.google.com/storage/docs/gsutil/addlhelp/WorkingWithObjectMetadata
+    """
+    # Already contains custom provider prefix
+    if name.lower().startswith('x-'):
+      return name
+
+    # See if it's innately supported by Google Storage
+    if name in (
+        'Cache-Control',
+        'Content-Disposition',
+        'Content-Encoding',
+        'Content-Language',
+        'Content-MD5',
+        'Content-Type',
+    ):
+      return name
+
+    # Add provider prefix
+    if not provider_prefix:
+      provider_prefix = 'x-goog-meta'
+    return '%s-%s' % (provider_prefix, name)

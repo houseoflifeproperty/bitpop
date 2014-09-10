@@ -199,9 +199,10 @@ MetadataCache.prototype.currentEvictionThreshold_ = function() {
  * @param {Array.<Entry>} entries The list of entries.
  * @param {string} type The metadata type.
  * @param {function(Object)} callback The metadata is passed to callback.
+ *     The callback is called asynchronously.
  */
 MetadataCache.prototype.get = function(entries, type, callback) {
-  return this.getInternal_(entries, type, false, callback);
+  this.getInternal_(entries, type, false, callback);
 };
 
 /**
@@ -211,9 +212,10 @@ MetadataCache.prototype.get = function(entries, type, callback) {
  * @param {Array.<Entry>} entries The list of entries.
  * @param {string} type The metadata type.
  * @param {function(Object)} callback The metadata is passed to callback.
+ *     The callback is called asynchronously.
  */
-MetadataCache.prototype.getLatest = function(entries, type, callback, refresh) {
-  return this.getInternal_(entries, type, true, callback);
+MetadataCache.prototype.getLatest = function(entries, type, callback) {
+  this.getInternal_(entries, type, true, callback);
 };
 
 /**
@@ -224,11 +226,12 @@ MetadataCache.prototype.getLatest = function(entries, type, callback, refresh) {
  * @param {boolean} refresh True to get the latest value and refresh the cache,
  *     false to get the value from the cache.
  * @param {function(Object)} callback The metadata is passed to callback.
+ *     The callback is called asynchronously.
  */
 MetadataCache.prototype.getInternal_ =
     function(entries, type, refresh, callback) {
   if (entries.length === 0) {
-    if (callback) callback([]);
+    if (callback) setTimeout(callback.bind(null, []), 0);
     return;
   }
 
@@ -241,7 +244,7 @@ MetadataCache.prototype.getInternal_ =
     remaining--;
     if (remaining === 0) {
       this.endBatchUpdates();
-      if (callback) setTimeout(callback, 0, result);
+      if (callback) callback(result);
     }
   };
 
@@ -256,12 +259,15 @@ MetadataCache.prototype.getInternal_ =
 
 /**
  * Fetches the metadata for one Entry. See comments to |get|.
+ * If required metadata is already in the cache, does not fetch it again.
+ *
  * @param {Entry} entry The entry.
  * @param {string} type Metadata type.
- * @param {function(Object)} callback The callback.
+ * @param {function(Object)} callback The metadata is passed to callback.
+ *     The callback is called asynchronously.
  */
-MetadataCache.prototype.getOne = function(entry, type, callback, refresh) {
-  return this.getOneInternal_(entry, type, false, callback);
+MetadataCache.prototype.getOne = function(entry, type, callback) {
+  this.getOneInternal_(entry, type, false, callback);
 };
 
 /**
@@ -271,7 +277,8 @@ MetadataCache.prototype.getOne = function(entry, type, callback, refresh) {
  * @param {string} type Metadata type.
  * @param {boolean} refresh True to get the latest value and refresh the cache,
  *     false to get the value from the cache.
- * @param {function(Object)} callback The callback.
+ * @param {function(Object)} callback The metadata is passed to callback.
+ *     The callback is called asynchronously.
  * @private
  */
 MetadataCache.prototype.getOneInternal_ =
@@ -306,7 +313,7 @@ MetadataCache.prototype.getOneInternal_ =
 
   if (!refresh && type in item.properties) {
     // Uses cache, if available and not on the 'refresh' mode.
-    callback(item.properties[type]);
+    setTimeout(callback.bind(null, item.properties[type]), 0);
     return;
   }
 
@@ -354,7 +361,7 @@ MetadataCache.prototype.getOneInternal_ =
   var tryNextProvider = function() {
     if (providers.length === 0) {
       self.endBatchUpdates();
-      callback(item.properties[type] || null);
+      setTimeout(callback.bind(null, item.properties[type] || null), 0);
       return;
     }
 
@@ -420,11 +427,23 @@ MetadataCache.prototype.clear = function(entries, type) {
   if (!(entries instanceof Array))
     entries = [entries];
 
+  this.clearByUrl(
+      entries.map(function(entry) { return entry.toURL(); }),
+      type);
+};
+
+/**
+ * Clears the cached metadata values. This method takes an URL since some items
+ * may be already removed and can't be fetches their entry.
+ *
+ * @param {Array.<string>} urls The list of URLs.
+ * @param {string} type The metadata types or * for any type.
+ */
+MetadataCache.prototype.clearByUrl = function(urls, type) {
   var types = type.split('|');
 
-  for (var index = 0; index < entries.length; index++) {
-    var entry = entries[index];
-    var entryURL = entry.toURL();
+  for (var index = 0; index < urls.length; index++) {
+    var entryURL = urls[index];
     if (entryURL in this.cache_) {
       if (type === '*') {
         this.cache_[entryURL].properties = {};
@@ -672,7 +691,7 @@ MetadataProvider.prototype.isInitialized = function() { return true; };
  * @param {Entry} entry File entry.
  * @param {string} type Requested metadata type.
  * @param {function(Object)} callback Callback expects a map from metadata type
- *     to metadata value.
+ *     to metadata value. This callback must be called asynchronously.
  */
 MetadataProvider.prototype.fetch = function(entry, type, callback) {
   throw new Error('Default metadata provider cannot fetch.');
@@ -719,7 +738,7 @@ FilesystemProvider.prototype.getId = function() { return 'filesystem'; };
  * @param {Entry} entry File entry.
  * @param {string} type Requested metadata type.
  * @param {function(Object)} callback Callback expects a map from metadata type
- *     to metadata value.
+ *     to metadata value. This callback is called asynchronously.
  */
 FilesystemProvider.prototype.fetch = function(
     entry, type, callback) {
@@ -797,7 +816,7 @@ DriveProvider.prototype.getId = function() { return 'drive'; };
  * @param {Entry} entry File entry.
  * @param {string} type Requested metadata type.
  * @param {function(Object)} callback Callback expects a map from metadata type
- *     to metadata value.
+ *     to metadata value. This callback is called asynchronously.
  */
 DriveProvider.prototype.fetch = function(entry, type, callback) {
   this.entries_.push(entry);
@@ -982,11 +1001,11 @@ ContentProvider.prototype.getId = function() { return 'content'; };
  * @param {Entry} entry File entry.
  * @param {string} type Requested metadata type.
  * @param {function(Object)} callback Callback expects a map from metadata type
- *     to metadata value.
+ *     to metadata value. This callback is called asynchronously.
  */
 ContentProvider.prototype.fetch = function(entry, type, callback) {
   if (entry.isDirectory) {
-    callback({});
+    setTimeout(callback.bind(null, {}), 0);
     return;
   }
   var entryURL = entry.toURL();

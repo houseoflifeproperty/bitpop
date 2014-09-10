@@ -342,9 +342,10 @@ class MergeShardResultsTest(auto_stub.TestCase):
     })
     merged, stdout = self.call(1)
     self.assertEqual(BAD_GTEST_JSON_ONLY_1_SHARD, merged)
-    self.assertIn('@@@STEP_WARNINGS@@@\nsome shards did not complete\n', stdout)
     self.assertIn(
-        '@@@STEP_LOG_LINE@some shards did not complete@'
+        '@@@STEP_WARNINGS@@@\nsome shards did not complete: 0\n', stdout)
+    self.assertIn(
+        '@@@STEP_LOG_LINE@some shards did not complete: 0@'
         'Missing results from the following shard(s): 0@@@\n', stdout)
 
 

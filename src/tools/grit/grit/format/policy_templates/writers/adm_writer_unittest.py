@@ -552,6 +552,86 @@ ListPolicy_Part="Label of list policy."
 ''')
     self.CompareOutputs(output, expected_output)
 
+  def testStringEnumListPolicy(self):
+    # Tests a policy group with a single policy of type 'string-enum-list'.
+    grd = self.PrepareTest('''
+      {
+        'policy_definitions': [
+          {
+            'name': 'ListPolicy',
+            'type': 'string-enum-list',
+            'supported_on': ['chrome.win:8-'],
+            'features': { 'can_be_recommended': True },
+            'desc': """Description of list policy.
+With a newline.""",
+            'items': [
+              {'name': 'ProxyServerDisabled', 'value': 'one',
+               'caption': 'Option1'},
+              {'name': 'ProxyServerAutoDetect', 'value': 'two',
+               'caption': 'Option2'},
+            ],
+            'caption': 'Caption of list policy.',
+            'label': 'Label of list policy.'
+          },
+        ],
+        'placeholders': [],
+        'messages': {
+          'win_supported_winxpsp2': {
+            'text': 'At least Windows 3.15', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
+          }
+        },
+      }''')
+    output = self.GetOutput(grd, 'fr', {'_chromium' : '1'}, 'adm', 'en')
+    expected_output = self.ConstructOutput(
+        ['MACHINE', 'USER'], '''
+  CATEGORY !!chromium
+    KEYNAME "Software\\Policies\\Chromium"
+
+    POLICY !!ListPolicy_Policy
+      #if version >= 4
+        SUPPORTED !!SUPPORTED_WINXPSP2
+      #endif
+      EXPLAIN !!ListPolicy_Explain
+
+      PART !!ListPolicy_Part  LISTBOX
+        KEYNAME "Software\\Policies\\Chromium\\ListPolicy"
+        VALUEPREFIX ""
+      END PART
+    END POLICY
+
+  END CATEGORY
+
+  CATEGORY !!chromium_recommended
+    KEYNAME "Software\\Policies\\Chromium\\Recommended"
+
+    POLICY !!ListPolicy_Policy
+      #if version >= 4
+        SUPPORTED !!SUPPORTED_WINXPSP2
+      #endif
+      EXPLAIN !!ListPolicy_Explain
+
+      PART !!ListPolicy_Part  LISTBOX
+        KEYNAME "Software\\Policies\\Chromium\\Recommended\\ListPolicy"
+        VALUEPREFIX ""
+      END PART
+    END POLICY
+
+  END CATEGORY
+
+
+''', '''[Strings]
+SUPPORTED_WINXPSP2="At least Windows 3.15"
+chromium="Chromium"
+chromium_recommended="Chromium - Recommended"
+ListPolicy_Policy="Caption of list policy."
+ListPolicy_Explain="Description of list policy.\\nWith a newline."
+ListPolicy_Part="Label of list policy."
+''')
+    self.CompareOutputs(output, expected_output)
+
   def testDictionaryPolicy(self):
     # Tests a policy group with a single policy of type 'dict'.
     grd = self.PrepareTest('''

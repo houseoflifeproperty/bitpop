@@ -185,7 +185,7 @@ class TFunction : public TSymbol
           defined(false)
     {
     }
-    TFunction(const TString *name, TType &retType, TOperator tOp = EOpNull)
+    TFunction(const TString *name, const TType &retType, TOperator tOp = EOpNull)
         : TSymbol(name),
           returnType(retType),
           mangledName(TFunction::mangleName(*name)),
@@ -288,8 +288,7 @@ class TSymbolTableLevel
     }
     ~TSymbolTableLevel();
 
-    bool insert(const TString &name, TSymbol &symbol);
-    bool insert(TSymbol &symbol);
+    bool insert(TSymbol *symbol);
 
     TSymbol *find(const TString &name) const;
 
@@ -298,7 +297,6 @@ class TSymbolTableLevel
 
   protected:
     tLevel level;
-    static int uniqueId; // for unique identification in code generation
 };
 
 enum ESymbolLevel
@@ -325,15 +323,15 @@ class TSymbolTable
     // When the symbol table is initialized with the built-ins, there should
     // 'push' calls, so that built-ins are at level 0 and the shader
     // globals are at level 1.
-    bool isEmpty()
+    bool isEmpty() const
     {
         return table.empty();
     }
-    bool atBuiltInLevel()
+    bool atBuiltInLevel() const
     {
         return currentLevel() <= LAST_BUILTIN_LEVEL;
     }
-    bool atGlobalLevel()
+    bool atGlobalLevel() const
     {
         return currentLevel() <= GLOBAL_LEVEL;
     }
@@ -352,12 +350,12 @@ class TSymbolTable
         precisionStack.pop_back();
     }
 
-    bool declare(TSymbol &symbol)
+    bool declare(TSymbol *symbol)
     {
         return insert(currentLevel(), symbol);
     }
 
-    bool insert(ESymbolLevel level, TSymbol &symbol)
+    bool insert(ESymbolLevel level, TSymbol *symbol)
     {
         return table[level]->insert(symbol);
     }
@@ -367,7 +365,7 @@ class TSymbolTable
         TVariable *constant = new TVariable(
             NewPoolTString(name), TType(EbtInt, EbpUndefined, EvqConst, 1));
         constant->getConstPointer()->setIConst(value);
-        return insert(level, *constant);
+        return insert(level, constant);
     }
 
     void insertBuiltIn(ESymbolLevel level, TType *rvalue, const char *name,
@@ -375,8 +373,8 @@ class TSymbolTable
                        TType *ptype4 = 0, TType *ptype5 = 0);
 
     TSymbol *find(const TString &name, int shaderVersion,
-                  bool *builtIn = NULL, bool *sameScope = NULL);
-    TSymbol *findBuiltIn(const TString &name, int shaderVersion);
+                  bool *builtIn = NULL, bool *sameScope = NULL) const;
+    TSymbol *findBuiltIn(const TString &name, int shaderVersion) const;
     
     TSymbolTableLevel *getOuterLevel()
     {
@@ -408,7 +406,7 @@ class TSymbolTable
 
     // Searches down the precisionStack for a precision qualifier
     // for the specified TBasicType
-    TPrecision getDefaultPrecision(TBasicType type);
+    TPrecision getDefaultPrecision(TBasicType type) const;
 
     static int nextUniqueId()
     {

@@ -50,12 +50,12 @@ class CdmSessionAdapter : public base::RefCounted<CdmSessionAdapter> {
   // Creates a new session and adds it to the internal map. The caller owns the
   // created session. RemoveSession() must be called when destroying it, if
   // RegisterSession() was called.
-  WebContentDecryptionModuleSessionImpl* CreateSession(
-      blink::WebContentDecryptionModuleSession::Client* client);
+  WebContentDecryptionModuleSessionImpl* CreateSession();
 
   // Adds a session to the internal map. Called once the session is successfully
-  // initialized.
-  void RegisterSession(
+  // initialized. Returns true if the session was registered, false if there is
+  // already an existing session with the same |web_session_id|.
+  bool RegisterSession(
       const std::string& web_session_id,
       base::WeakPtr<WebContentDecryptionModuleSessionImpl> session);
 
@@ -87,6 +87,9 @@ class CdmSessionAdapter : public base::RefCounted<CdmSessionAdapter> {
   // TODO(jrummell): Figure out lifetimes, as WMPI may still use the decryptor
   // after WebContentDecryptionModule is freed. http://crbug.com/330324
   media::Decryptor* GetDecryptor();
+
+  // Returns a prefix to use for UMAs.
+  const std::string& GetKeySystemUMAPrefix() const;
 
 #if defined(ENABLE_BROWSER_CDMS)
   // Returns the CDM ID associated with the |media_keys_|. May be kInvalidCdmId
@@ -124,6 +127,8 @@ class CdmSessionAdapter : public base::RefCounted<CdmSessionAdapter> {
 #if defined(ENABLE_BROWSER_CDMS)
   int cdm_id_;
 #endif
+
+  std::string key_system_uma_prefix_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<CdmSessionAdapter> weak_ptr_factory_;

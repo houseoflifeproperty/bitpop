@@ -5,8 +5,9 @@
 
 """A small maintenance tool to list slaves."""
 
-import os
+import json
 import optparse
+import os
 import re
 import sys
 
@@ -74,6 +75,9 @@ Note: t is replaced with 'tryserver', 'c' with chromium' and
   group.add_option('-w', '--waterfall',
                    dest='fmt', action='store_const', const='waterfall',
                    help='Output slave master and tasks')
+  group.add_option('', '--json',
+                   dest='fmt', action='store_const', const='json',
+                   help='Output slave list as JSON')
   parser.add_option_group(group)
   options, args = parser.parse_args(argv)
   if args:
@@ -130,6 +134,23 @@ Note: t is replaced with 'tryserver', 'c' with chromium' and
   if options.slave:
     selected = set(options.slave)
     slaves = [s for s in slaves if s.get('hostname') in selected]
+
+  if options.fmt == 'json':
+    normalized = []
+    for s in slaves:
+      host = s.get('hostname')
+      if host:
+        builder = s.get('builder') or []
+        if isinstance(builder, basestring):
+          builder = [builder]
+        assert isinstance(builder, list)
+        s['builder'] = sorted(builder)
+        normalized.append(s)
+    json.dump(
+        sorted(normalized, key=lambda s: (s.get('mastername'), s['hostname'])),
+        sys.stdout, sort_keys=True, indent=2, separators=(',', ': '))
+    sys.stdout.write('\n')
+    return
 
   for s in slaves:
     if options.fmt == 'raw':

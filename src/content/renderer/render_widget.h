@@ -10,6 +10,7 @@
 
 #include "base/auto_reset.h"
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -21,6 +22,7 @@
 #include "content/common/cursors/webcursor.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/input/synthetic_gesture_params.h"
+#include "content/renderer/message_delivery_policy.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
@@ -49,6 +51,7 @@ class ViewHostMsg_UpdateRect;
 
 namespace IPC {
 class SyncMessage;
+class SyncMessageFilter;
 }
 
 namespace blink {
@@ -59,7 +62,10 @@ class WebMouseEvent;
 class WebTouchEvent;
 }
 
-namespace cc { class OutputSurface; }
+namespace cc {
+class OutputSurface;
+class SwapPromise;
+}
 
 namespace gfx {
 class Range;
@@ -67,6 +73,7 @@ class Range;
 
 namespace content {
 class ExternalPopupMenu;
+class FrameSwapMessageQueue;
 class PepperPluginInstanceImpl;
 class RenderFrameImpl;
 class RenderFrameProxy;
@@ -161,6 +168,7 @@ class CONTENT_EXPORT RenderWidget
   virtual void resetInputMethod();
   virtual void didHandleGestureEvent(const blink::WebGestureEvent& event,
                                      bool event_cancelled);
+  virtual void showImeIfNeeded();
 
   // Begins the compositor's scheduler to start producing frames.
   void StartCompositor();
@@ -196,6 +204,18 @@ class CONTENT_EXPORT RenderWidget
   // Notifies about a compositor frame commit operation having finished.
   virtual void DidCommitCompositorFrame();
 
+  // Deliveres |message| together with compositor state change updates. The
+  // exact behavior depends on |policy|.
+  // This mechanism is not a drop-in replacement for IPC: messages sent this way
+  // will not be automatically available to BrowserMessageFilter, for example.
+  // FIFO ordering is preserved between messages enqueued with the same
+  // |policy|, the ordering between messages enqueued for different policies is
+  // undefined.
+  //
+  // |msg| message to send, ownership of |msg| is transferred.
+  // |policy| see the comment on MessageDeliveryPolicy.
+  void QueueMessage(IPC::Message* msg, MessageDeliveryPolicy policy);
+
   // Handle common setup/teardown for handling IME events.
   void StartHandlingImeEvent();
   void FinishHandlingImeEvent();
@@ -229,6 +249,7 @@ class CONTENT_EXPORT RenderWidget
       const blink::WebDeviceEmulationParams& params);
   void DisableScreenMetricsEmulation();
   void SetPopupOriginAdjustmentsForEmulation(ScreenMetricsEmulator* emulator);
+  gfx::Rect AdjustValidationMessageAnchor(const gfx::Rect& anchor);
 
   void ScheduleCompositeWithForcedRedraw();
 
@@ -348,7 +369,8 @@ class CONTENT_EXPORT RenderWidget
   virtual void OnResize(const ViewMsg_Resize_Params& params);
   void OnChangeResizeRect(const gfx::Rect& resizer_rect);
   virtual void OnWasHidden();
-  virtual void OnWasShown(bool needs_repainting);
+  virtual void OnWasShown(bool needs_repainting,
+                          const ui::LatencyInfo& latency_info);
   virtual void OnWasSwappedOut();
   void OnCreateVideoAck(int32 video_id);
   void OnUpdateVideoAck(int32 video_id);
@@ -371,9 +393,9 @@ class CONTENT_EXPORT RenderWidget
   void OnGetFPS();
   void OnUpdateScreenRects(const gfx::Rect& view_screen_rect,
                            const gfx::Rect& window_screen_rect);
-#if defined(OS_ANDROID)
   void OnShowImeIfNeeded();
 
+#if defined(OS_ANDROID)
   // Whenever an IME event that needs an acknowledgement is sent to the browser,
   // the number of outstanding IME events that needs acknowledgement should be
   // incremented. All IME events will be dropped until we receive an ack from
@@ -420,6 +442,16 @@ class CONTENT_EXPORT RenderWidget
   bool next_paint_is_resize_ack() const;
   void set_next_paint_is_resize_ack();
   void set_next_paint_is_repaint_ack();
+
+  // QueueMessage implementation extracted into a static method for easy
+  // testing.
+  static scoped_ptr<cc::SwapPromise> QueueMessageImpl(
+      IPC::Message* msg,
+      MessageDeliveryPolicy policy,
+      FrameSwapMessageQueue* frame_swap_message_queue,
+      scoped_refptr<IPC::SyncMessageFilter> sync_message_filter,
+      bool commit_requested,
+      int source_frame_number);
 
   // Override point to obtain that the current input method state and caret
   // position.
@@ -662,9 +694,6 @@ class CONTENT_EXPORT RenderWidget
   std::queue<SyntheticGestureCompletionCallback>
       pending_synthetic_gesture_callbacks_;
 
-  // Specified whether the compositor will run in its own thread.
-  bool is_threaded_compositing_enabled_;
-
   const ui::LatencyInfo* current_event_latency_info_;
 
   uint32 next_output_surface_id_;
@@ -693,6 +722,7 @@ class CONTENT_EXPORT RenderWidget
   gfx::Point popup_screen_origin_for_emulation_;
   float popup_origin_scale_for_emulation_;
 
+  scoped_refptr<FrameSwapMessageQueue> frame_swap_message_queue_;
   scoped_ptr<ResizingModeSelector> resizing_mode_selector_;
 
   // Lists of RenderFrameProxy objects that need to be notified of

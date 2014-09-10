@@ -112,6 +112,26 @@ base.values = function(dict) {
     });
 };
 
+
+/**
+ * Joins the |url| with optional query parameters defined in |opt_params|
+ * See unit test for usage.
+ * @param {string} url
+ * @param {Object.<string>=} opt_params
+ * @return {string}
+ */
+base.urlJoin = function(url, opt_params) {
+  if (!opt_params) {
+    return url;
+  }
+  var queryParameters = [];
+  for (var key in opt_params) {
+    queryParameters.push(encodeURIComponent(key) + "=" +
+                         encodeURIComponent(opt_params[key]));
+  }
+  return url + '?' + queryParameters.join('&');
+};
+
 base.Promise = function() {};
 
 /**
@@ -124,6 +144,24 @@ base.Promise.sleep = function(delay) {
     function(fulfill) {
       window.setTimeout(fulfill, delay);
     });
+};
+
+
+/**
+ * @param {Promise} promise
+ * @return {Promise} a Promise that will be fulfilled iff the specified Promise
+ *     is rejected.
+ */
+base.Promise.negate = function(promise) {
+  return promise.then(
+      /** @return {Promise} */
+      function() {
+        return Promise.reject();
+      },
+      /** @return {Promise} */
+      function() {
+        return Promise.resolve();
+      });
 };
 
 /**

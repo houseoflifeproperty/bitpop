@@ -8,7 +8,6 @@
     "name": "cleanup temp"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -24,7 +23,7 @@
       "--root",
       "src/third_party/WebKit",
       "--revision_mapping_file",
-      "{\"src\": \"got_revision\", \"src/native_client\": \"got_nacl_revision\", \"src/third_party/WebKit\": \"got_webkit_revision\", \"src/third_party/webrtc\": \"got_webrtc_revision\", \"src/tools/swarm_client\": \"got_swarm_client_revision\", \"src/tools/swarming_client\": \"got_swarming_client_revision\", \"src/v8\": \"got_v8_revision\"}",
+      "{\"src\": \"got_revision\", \"src/native_client\": \"got_nacl_revision\", \"src/third_party/WebKit\": \"got_webkit_revision\", \"src/third_party/webrtc\": \"got_webrtc_revision\", \"src/tools/swarming_client\": \"got_swarming_client_revision\", \"src/v8\": \"got_v8_revision\"}",
       "--issue",
       "12853011",
       "--patchset",
@@ -39,14 +38,13 @@
     "name": "bot_update",
     "~followup_annotations": [
       "@@@STEP_LOG_LINE@json.output@{@@@",
-      "@@@STEP_LOG_LINE@json.output@  \"did_run\": false@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"did_run\": false, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_failure\": false@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@"
     ]
   },
   {
-    "abort_on_failure": false,
-    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -58,8 +56,6 @@
     "name": "gclient setup"
   },
   {
-    "abort_on_failure": false,
-    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -70,8 +66,6 @@
     "name": "gclient revert"
   },
   {
-    "abort_on_failure": false,
-    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -107,9 +101,6 @@
       "@@@STEP_LOG_LINE@json.output@    \"src/third_party/webrtc/\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"revision\": 120644@@@",
       "@@@STEP_LOG_LINE@json.output@    }, @@@",
-      "@@@STEP_LOG_LINE@json.output@    \"src/tools/swarm_client/\": {@@@",
-      "@@@STEP_LOG_LINE@json.output@      \"revision\": 200767@@@",
-      "@@@STEP_LOG_LINE@json.output@    }, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"src/tools/swarming_client/\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"revision\": 276089@@@",
       "@@@STEP_LOG_LINE@json.output@    }, @@@",
@@ -124,12 +115,10 @@
       "@@@SET_BUILD_PROPERTY@got_swarming_client_revision@276089@@@",
       "@@@SET_BUILD_PROPERTY@got_webrtc_revision@120644@@@",
       "@@@SET_BUILD_PROPERTY@got_revision@170242@@@",
-      "@@@SET_BUILD_PROPERTY@got_v8_revision@43426@@@",
-      "@@@SET_BUILD_PROPERTY@got_swarm_client_revision@200767@@@"
+      "@@@SET_BUILD_PROPERTY@got_v8_revision@43426@@@"
     ]
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -149,5 +138,10 @@
       "step returned non-zero exit code: 1",
       "@@@STEP_FAILURE@@@"
     ]
+  },
+  {
+    "name": "$final_result",
+    "reason": "Step('apply_issue') failed with return_code 1",
+    "status_code": 1
   }
 ]

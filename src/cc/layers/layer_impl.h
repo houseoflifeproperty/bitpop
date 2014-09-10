@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
+#include "cc/animation/animation_delegate.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/animation/layer_animation_value_observer.h"
 #include "cc/animation/layer_animation_value_provider.h"
@@ -38,6 +39,7 @@
 namespace base {
 namespace debug {
 class ConvertableToTraceFormat;
+class TracedValue;
 }
 
 class DictionaryValue;
@@ -48,7 +50,8 @@ namespace cc {
 class LayerTreeHostImpl;
 class LayerTreeImpl;
 class MicroBenchmarkImpl;
-class QuadSink;
+template <typename LayerType>
+class OcclusionTracker;
 class Renderer;
 class ScrollbarAnimationController;
 class ScrollbarLayerImplBase;
@@ -64,7 +67,8 @@ enum DrawMode {
 };
 
 class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
-                            public LayerAnimationValueProvider {
+                            public LayerAnimationValueProvider,
+                            public AnimationDelegate {
  public:
   // Allows for the ownership of the total scroll offset to be delegated outside
   // of the layer.
@@ -101,6 +105,14 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual void OnAnimationWaitingForDeletion() OVERRIDE;
   virtual bool IsActive() const OVERRIDE;
 
+  // AnimationDelegate implementation.
+  virtual void NotifyAnimationStarted(
+      base::TimeTicks monotonic_time,
+      Animation::TargetProperty target_property) OVERRIDE{};
+  virtual void NotifyAnimationFinished(
+      base::TimeTicks monotonic_time,
+      Animation::TargetProperty target_property) OVERRIDE;
+
   // Tree structure.
   LayerImpl* parent() { return parent_; }
   const LayerImpl* parent() const { return parent_; }
@@ -128,6 +140,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return scroll_children_.get();
   }
 
+  void SetNumDescendantsThatDrawContent(int num_descendants);
   void SetClipParent(LayerImpl* ancestor);
 
   LayerImpl* clip_parent() {
@@ -177,7 +190,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // returns true.
   virtual bool WillDraw(DrawMode draw_mode,
                         ResourceProvider* resource_provider);
-  virtual void AppendQuads(QuadSink* quad_sink,
+  virtual void AppendQuads(RenderPass* render_pass,
+                           const OcclusionTracker<LayerImpl>& occlusion_tracker,
                            AppendQuadsData* append_quads_data) {}
   virtual void DidDraw(ResourceProvider* resource_provider);
 
@@ -188,7 +202,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual RenderPass::Id FirstContributingRenderPassId() const;
   virtual RenderPass::Id NextContributingRenderPassId(RenderPass::Id id) const;
 
-  virtual void UpdateTiles() {}
+  virtual void UpdateTiles(
+      const OcclusionTracker<LayerImpl>* occlusion_tracker) {}
   virtual void NotifyTileStateChanged(const Tile* tile) {}
 
   virtual ScrollbarLayerImplBase* ToScrollbarLayer();
@@ -197,6 +212,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void SetDrawsContent(bool draws_content);
   bool DrawsContent() const { return draws_content_; }
 
+  int NumDescendantsThatDrawContent() const;
   void SetHideLayerAndSubtree(bool hide);
   bool hide_layer_and_subtree() const { return hide_layer_and_subtree_; }
 
@@ -508,7 +524,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl);
   virtual void PushPropertiesTo(LayerImpl* layer);
 
-  scoped_ptr<base::Value> AsValue() const;
+  virtual void AsValueInto(base::debug::TracedValue* dict) const;
+
   virtual size_t GPUMemoryUsageInBytes() const;
 
   void SetNeedsPushProperties();
@@ -539,18 +556,16 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // Get the color and size of the layer's debug border.
   virtual void GetDebugBorderProperties(SkColor* color, float* width) const;
 
-  void AppendDebugBorderQuad(QuadSink* quad_sink,
+  void AppendDebugBorderQuad(RenderPass* render_pass,
                              const gfx::Size& content_bounds,
                              const SharedQuadState* shared_quad_state,
                              AppendQuadsData* append_quads_data) const;
-  void AppendDebugBorderQuad(QuadSink* quad_sink,
+  void AppendDebugBorderQuad(RenderPass* render_pass,
                              const gfx::Size& content_bounds,
                              const SharedQuadState* shared_quad_state,
                              AppendQuadsData* append_quads_data,
                              SkColor color,
                              float width) const;
-
-  virtual void AsValueInto(base::DictionaryValue* dict) const;
 
   void NoteLayerPropertyChanged();
   void NoteLayerPropertyChangedForSubtree();
@@ -636,6 +651,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   gfx::Vector2dF scroll_delta_;
   gfx::Vector2d sent_scroll_delta_;
   gfx::Vector2dF last_scroll_offset_;
+
+  int num_descendants_that_draw_content_;
 
   // The global depth value of the center of the layer. This value is used
   // to sort layers from back to front.

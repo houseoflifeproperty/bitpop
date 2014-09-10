@@ -84,6 +84,18 @@ lighter
 900
 
 //
+// font-stretch
+//
+ultra-condensed
+extra-condensed
+condensed
+semi-condensed
+semi-expanded
+expanded
+extra-expanded
+ultra-expanded
+
+//
 // font-size
 //
 xx-small
@@ -518,8 +530,12 @@ row-reverse
 column
 column-reverse
 // nowrap
-// wrap
+wrap
 wrap-reverse
+
+// grid-auto-flow
+dense
+stack
 
 // -internal-marquee-direction
 forwards
@@ -531,11 +547,6 @@ ahead
 up
 down
 // auto
-
-// -internal-marquee-speed
-slow
-// normal
-fast
 
 // -internal-marquee-repetition
 infinite
@@ -587,19 +598,6 @@ ellipsis
 // collapse
 // separate
 discard
-
-//
-// text-*-color
-//
-dot-dash
-dot-dot-dash
-wave
-
-//
-// text-*-mode
-//
-continuous
-skip-white-space
 
 //
 // word-break
@@ -876,6 +874,7 @@ off
 //auto
 //optimizeSpeed
 optimizeQuality
+pixelated
 -webkit-optimize-contrast
 
 // shape-outside
@@ -885,27 +884,17 @@ at
 // closest-side
 // farthest-side
 
-// -webkit-wrap-flow
-// auto
-// both
-// left
-// right
-maximum
-// clear
-
-// -webkit-wrap-through
-wrap
-// none
-
 alphabetic
-
-// position
-sticky
 
 // (pointer:) media feature
 // none
 coarse
 fine
+
+// (hover:) media feature
+//  none
+on-demand
+hover
 
 // blend modes
 // normal
@@ -976,10 +965,11 @@ pan-x
 pan-y
 manipulation
 
-// justify-self
+// justify-items / justify-self
 // auto
 // stretch
 // baseline
+last-baseline
 // center
 // start
 // end
@@ -991,6 +981,7 @@ self-end
 // right
 true
 safe
+legacy
 
 // scroll-behavior
 instant

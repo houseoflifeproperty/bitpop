@@ -26,15 +26,15 @@
 #ifndef WebGLDepthTexture_h
 #define WebGLDepthTexture_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class WebGLDepthTexture FINAL : public WebGLExtension, public ScriptWrappable {
 public:
-    static PassRefPtr<WebGLDepthTexture> create(WebGLRenderingContextBase*);
+    static PassRefPtrWillBeRawPtr<WebGLDepthTexture> create(WebGLRenderingContextBase*);
     static bool supported(WebGLRenderingContextBase*);
     static const char* extensionName();
 
@@ -42,9 +42,9 @@ public:
     virtual WebGLExtensionName name() const OVERRIDE;
 
 private:
-    WebGLDepthTexture(WebGLRenderingContextBase*);
+    explicit WebGLDepthTexture(WebGLRenderingContextBase*);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebGLDepthTexture_h

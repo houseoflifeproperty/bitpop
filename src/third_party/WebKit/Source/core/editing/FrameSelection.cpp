@@ -26,8 +26,7 @@
 #include "config.h"
 #include "core/editing/FrameSelection.h"
 
-#include <stdio.h>
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/HTMLNames.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/css/StylePropertySet.h"
@@ -45,6 +44,7 @@
 #include "core/editing/TypingCommand.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/events/Event.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLBodyElement.h"
@@ -72,10 +72,11 @@
 #include "platform/geometry/FloatQuad.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "wtf/text/CString.h"
+#include <stdio.h>
 
 #define EDIT_DEBUG 0
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -95,7 +96,7 @@ FrameSelection::FrameSelection(LocalFrame* frame)
     , m_observingVisibleSelection(false)
     , m_granularity(CharacterGranularity)
     , m_caretBlinkTimer(this, &FrameSelection::caretBlinkTimerFired)
-    , m_absCaretBoundsDirty(true)
+    , m_caretRectDirty(true)
     , m_caretPaint(true)
     , m_isCaretBlinkingSuspended(false)
     , m_focused(frame && frame->page() && frame->page()->focusController().focusedFrame() == frame)
@@ -120,7 +121,7 @@ Element* FrameSelection::rootEditableElementOrDocumentElement() const
     return selectionRoot ? selectionRoot : m_frame->document()->documentElement();
 }
 
-Node* FrameSelection::rootEditableElementOrTreeScopeRootNode() const
+ContainerNode* FrameSelection::rootEditableElementOrTreeScopeRootNode() const
 {
     Element* selectionRoot = m_selection.rootEditableElement();
     if (selectionRoot)
@@ -271,11 +272,9 @@ void FrameSelection::setSelection(const VisibleSelection& newSelection, SetSelec
         setFocusedNodeIfNeeded();
 
     if (!(options & DoNotUpdateAppearance)) {
-        m_frame->document()->updateLayoutIgnorePendingStylesheets();
-
         // Hits in compositing/overflow/do-not-paint-outline-into-composited-scrolling-contents.html
         DisableCompositingQueryAsserts disabler;
-        updateAppearance();
+        updateAppearance(ResetCaretBlink);
     }
 
     // Always clear the x position used for vertical arrow navigation.
@@ -296,6 +295,7 @@ void FrameSelection::setSelection(const VisibleSelection& newSelection, SetSelec
     }
 
     notifyAccessibilityForSelectionChange();
+    notifyCompositorForSelectionChange();
     m_frame->domWindow()->enqueueDocumentEvent(Event::create(EventTypeNames::selectionchange));
 }
 
@@ -470,13 +470,16 @@ void FrameSelection::updateSelectionIfNeeded(const Position& base, const Positio
     if (base == m_selection.base() && extent == m_selection.extent() && start == m_selection.start() && end == m_selection.end())
         return;
     VisibleSelection newSelection;
-    newSelection.setWithoutValidation(base, extent);
+    if (m_selection.isBaseFirst())
+        newSelection.setWithoutValidation(start, end);
+    else
+        newSelection.setWithoutValidation(end, start);
     setSelection(newSelection, DoNotSetFocus);
 }
 
 TextDirection FrameSelection::directionOfEnclosingBlock()
 {
-    return WebCore::directionOfEnclosingBlock(m_selection.extent());
+    return blink::directionOfEnclosingBlock(m_selection.extent());
 }
 
 TextDirection FrameSelection::directionOfSelection()
@@ -1210,7 +1213,7 @@ void FrameSelection::setExtent(const VisiblePosition &pos, EUserTriggered userTr
     setSelection(VisibleSelection(m_selection.base(), pos.deepEquivalent(), pos.affinity(), selectionHasDirection), CloseTyping | ClearTypingStyle | userTriggered);
 }
 
-RenderObject* FrameSelection::caretRenderer() const
+RenderBlock* FrameSelection::caretRenderer() const
 {
     return CaretBase::caretRenderer(m_selection.start().deprecatedNode());
 }
@@ -1220,68 +1223,64 @@ static bool isNonOrphanedCaret(const VisibleSelection& selection)
     return selection.isCaret() && !selection.start().isOrphan() && !selection.end().isOrphan();
 }
 
-LayoutRect FrameSelection::localCaretRect()
+static bool isTextFormControl(const VisibleSelection& selection)
 {
-    if (shouldUpdateCaretRect()) {
-        if (!isNonOrphanedCaret(m_selection))
-            clearCaretRect();
-        else if (updateCaretRect(m_frame->document(), VisiblePosition(m_selection.start(), m_selection.affinity())))
-            m_absCaretBoundsDirty = true;
-    }
-
-    return localCaretRectWithoutUpdate();
+    return enclosingTextFormControl(selection.start());
 }
 
 IntRect FrameSelection::absoluteCaretBounds()
 {
-    recomputeCaretRect();
-    return m_absCaretBounds;
+    ASSERT(m_frame->document()->lifecycle().state() != DocumentLifecycle::InPaintInvalidation);
+    m_frame->document()->updateLayoutIgnorePendingStylesheets();
+    if (!isNonOrphanedCaret(m_selection)) {
+        clearCaretRect();
+    } else {
+        if (isTextFormControl(m_selection))
+            updateCaretRect(m_frame->document(), PositionWithAffinity(m_selection.start().isCandidate() ? m_selection.start() : Position(), m_selection.affinity()));
+        else
+            updateCaretRect(m_frame->document(), VisiblePosition(m_selection.start(), m_selection.affinity()));
+    }
+    return absoluteBoundsForLocalRect(m_selection.start().deprecatedNode(), localCaretRectWithoutUpdate());
 }
 
-bool FrameSelection::recomputeCaretRect()
+static LayoutRect localCaretRect(const VisibleSelection& m_selection, const PositionWithAffinity& caretPosition, RenderObject*& renderer)
 {
-    if (!shouldUpdateCaretRect())
-        return false;
+    renderer = nullptr;
+    if (!isNonOrphanedCaret(m_selection))
+        return LayoutRect();
 
-    if (!m_frame || !m_frame->document()->view())
-        return false;
-
-    LayoutRect oldRect = localCaretRectWithoutUpdate();
-    LayoutRect newRect = localCaretRect();
-    if (oldRect == newRect && !m_absCaretBoundsDirty)
-        return false;
-
-    IntRect oldAbsCaretBounds = m_absCaretBounds;
-    m_absCaretBounds = absoluteBoundsForLocalRect(m_selection.start().deprecatedNode(), localCaretRectWithoutUpdate());
-    m_absCaretBoundsDirty = false;
-
-    if (oldAbsCaretBounds == m_absCaretBounds)
-        return false;
-
-    if (RenderView* view = m_frame->document()->renderView()) {
-        if (m_previousCaretNode && shouldRepaintCaret(view, m_previousCaretNode->isContentEditable()))
-            repaintCaretForLocalRect(m_previousCaretNode.get(), oldRect);
-        Node* node = m_selection.start().deprecatedNode();
-        m_previousCaretNode = node;
-        if (shouldRepaintCaret(view, isContentEditable()))
-            repaintCaretForLocalRect(node, newRect);
-    }
-
-    return true;
+    return localCaretRectOfPosition(caretPosition, renderer);
 }
 
 void FrameSelection::invalidateCaretRect()
 {
-    if (!isCaret())
+    if (!m_caretRectDirty)
+        return;
+    m_caretRectDirty = false;
+
+    RenderObject* renderer = nullptr;
+    LayoutRect newRect = localCaretRect(m_selection, PositionWithAffinity(m_selection.start(), m_selection.affinity()), renderer);
+    Node* newNode = renderer ? renderer->node() : nullptr;
+
+    if (!m_caretBlinkTimer.isActive() && newNode == m_previousCaretNode && newRect == m_previousCaretRect)
         return;
 
-    CaretBase::invalidateCaretRect(m_selection.start().deprecatedNode(), recomputeCaretRect());
+    RenderView* view = m_frame->document()->renderView();
+    if (m_previousCaretNode && shouldRepaintCaret(view, m_previousCaretNode->isContentEditable()))
+        invalidateLocalCaretRect(m_previousCaretNode.get(), m_previousCaretRect);
+    if (newNode && shouldRepaintCaret(view, newNode->isContentEditable()))
+        invalidateLocalCaretRect(newNode, newRect);
+
+    m_previousCaretNode = newNode;
+    m_previousCaretRect = newRect;
 }
 
 void FrameSelection::paintCaret(GraphicsContext* context, const LayoutPoint& paintOffset, const LayoutRect& clipRect)
 {
-    if (m_selection.isCaret() && m_caretPaint)
+    if (m_selection.isCaret() && m_caretPaint) {
+        updateCaretRect(m_frame->document(), m_selection.visibleStart());
         CaretBase::paintCaret(m_selection.start().deprecatedNode(), context, paintOffset, clipRect);
+    }
 }
 
 bool FrameSelection::contains(const LayoutPoint& point)
@@ -1294,7 +1293,7 @@ bool FrameSelection::contains(const LayoutPoint& point)
     if (!document->renderView())
         return false;
 
-    HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent);
+    HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active);
     HitTestResult result(point);
     document->renderView()->hitTest(request, result);
     Node* innerNode = result.innerNode();
@@ -1344,7 +1343,7 @@ void FrameSelection::selectFrameElementInParentIfFullySelected()
 
     // Get to the <iframe> or <frame> (or even <object>) element in the parent frame.
     // FIXME: Doesn't work for OOPI.
-    Element* ownerElement = m_frame->deprecatedLocalOwner();
+    HTMLFrameOwnerElement* ownerElement = m_frame->deprecatedLocalOwner();
     if (!ownerElement)
         return;
     ContainerNode* ownerElementParent = ownerElement->parentNode();
@@ -1352,7 +1351,7 @@ void FrameSelection::selectFrameElementInParentIfFullySelected()
         return;
 
     // This method's purpose is it to make it easier to select iframes (in order to delete them).  Don't do anything if the iframe isn't deletable.
-    if (!ownerElementParent->rendererIsEditable())
+    if (!ownerElementParent->hasEditableStyle())
         return;
 
     // Create compute positions before and after the element.
@@ -1448,6 +1447,14 @@ void FrameSelection::notifyAccessibilityForSelectionChange()
     }
 }
 
+void FrameSelection::notifyCompositorForSelectionChange()
+{
+    if (!RuntimeEnabledFeatures::compositedSelectionUpdatesEnabled())
+        return;
+
+    scheduleVisualUpdate();
+}
+
 void FrameSelection::focusedOrActiveStateChanged()
 {
     bool activeAndFocused = isFocusedAndActive();
@@ -1459,7 +1466,7 @@ void FrameSelection::focusedOrActiveStateChanged()
     // RenderObject::selectionForegroundColor() check if the frame is active,
     // we have to update places those colors were painted.
     if (RenderView* view = document->renderView())
-        view->repaintSelection();
+        view->invalidatePaintForSelection();
 
     // Caret appears in the active frame.
     if (activeAndFocused)
@@ -1519,27 +1526,23 @@ inline static bool shouldStopBlinkingDueToTypingCommand(LocalFrame* frame)
     return frame->editor().lastEditCommand() && frame->editor().lastEditCommand()->shouldStopCaretBlinking();
 }
 
-void FrameSelection::updateAppearance()
+void FrameSelection::updateAppearance(ResetCaretBlinkOption option)
 {
     // Paint a block cursor instead of a caret in overtype mode unless the caret is at the end of a line (in this case
     // the FrameSelection will paint a blinking caret as usual).
-    VisiblePosition forwardPosition;
-    if (m_shouldShowBlockCursor && m_selection.isCaret()) {
-        forwardPosition = modifyExtendingForward(CharacterGranularity);
-        m_caretPaint = forwardPosition.isNull();
-    }
+    bool paintBlockCursor = m_shouldShowBlockCursor && m_selection.isCaret() && !isLogicalEndOfLine(m_selection.visibleEnd());
 
-    bool caretRectChangedOrCleared = recomputeCaretRect();
-    bool shouldBlink = shouldBlinkCaret() && forwardPosition.isNull();
+    bool shouldBlink = !paintBlockCursor && shouldBlinkCaret();
+
+    bool willNeedCaretRectUpdate = false;
 
     // If the caret moved, stop the blink timer so we can restart with a
     // black caret in the new location.
-    if (caretRectChangedOrCleared || !shouldBlink || shouldStopBlinkingDueToTypingCommand(m_frame)) {
+    if (option == ResetCaretBlink || !shouldBlink || shouldStopBlinkingDueToTypingCommand(m_frame)) {
         m_caretBlinkTimer.stop();
-        if (!shouldBlink && m_caretPaint) {
-            m_caretPaint = false;
-            invalidateCaretRect();
-        }
+
+        m_caretPaint = false;
+        willNeedCaretRectUpdate = true;
     }
 
     // Start blinking with a black caret. Be sure not to restart if we're
@@ -1548,11 +1551,12 @@ void FrameSelection::updateAppearance()
         if (double blinkInterval = RenderTheme::theme().caretBlinkInterval())
             m_caretBlinkTimer.startRepeating(blinkInterval, FROM_HERE);
 
-        if (!m_caretPaint) {
-            m_caretPaint = true;
-            invalidateCaretRect();
-        }
+        m_caretPaint = true;
+        willNeedCaretRectUpdate = true;
     }
+
+    if (willNeedCaretRectUpdate)
+        setCaretRectNeedsUpdate();
 
     RenderView* view = m_frame->contentRenderer();
     if (!view)
@@ -1560,12 +1564,22 @@ void FrameSelection::updateAppearance()
 
     // Construct a new VisibleSolution, since m_selection is not necessarily valid, and the following steps
     // assume a valid selection. See <https://bugs.webkit.org/show_bug.cgi?id=69563> and <rdar://problem/10232866>.
-    VisibleSelection selection(m_selection.visibleStart(), forwardPosition.isNotNull() ? forwardPosition : m_selection.visibleEnd());
+
+    VisibleSelection selection;
+    if (isTextFormControl(m_selection)) {
+        Position endPosition = paintBlockCursor ? m_selection.extent().next() : m_selection.end();
+        selection.setWithoutValidation(m_selection.start(), endPosition);
+    } else {
+        VisiblePosition endVisiblePosition = paintBlockCursor ? modifyExtendingForward(CharacterGranularity) : m_selection.visibleEnd();
+        selection = VisibleSelection(m_selection.visibleStart(), endVisiblePosition);
+    }
 
     if (!selection.isRange()) {
         view->clearSelection();
         return;
     }
+
+    m_frame->document()->updateLayoutIgnorePendingStylesheets();
 
     // Use the rightmost candidate for the start of the selection, and the leftmost candidate for the end of the selection.
     // Example: foo <a>bar</a>.  Imagine that a line wrap occurs after 'foo', and that 'bar' is selected.   If we pass [foo, 3]
@@ -1595,11 +1609,6 @@ void FrameSelection::setCaretVisibility(CaretVisibility visibility)
     if (caretVisibility() == visibility)
         return;
 
-    m_frame->document()->updateLayoutIgnorePendingStylesheets();
-    if (m_caretPaint) {
-        m_caretPaint = false;
-        invalidateCaretRect();
-    }
     CaretBase::setCaretVisibility(visibility);
 
     updateAppearance();
@@ -1613,7 +1622,7 @@ bool FrameSelection::shouldBlinkCaret() const
     if (m_frame->settings() && m_frame->settings()->caretBrowsingEnabled())
         return false;
 
-    Node* root = rootEditableElement();
+    Element* root = rootEditableElement();
     if (!root)
         return false;
 
@@ -1628,17 +1637,14 @@ void FrameSelection::caretBlinkTimerFired(Timer<FrameSelection>*)
 {
     ASSERT(caretIsVisible());
     ASSERT(isCaret());
-    bool caretPaint = m_caretPaint;
-    if (isCaretBlinkingSuspended() && caretPaint)
+    if (isCaretBlinkingSuspended() && m_caretPaint)
         return;
-    m_caretPaint = !caretPaint;
-    invalidateCaretRect();
+    m_caretPaint = !m_caretPaint;
+    setCaretRectNeedsUpdate();
 }
 
 void FrameSelection::notifyRendererOfSelectionChange(EUserTriggered userTriggered)
 {
-    m_frame->document()->updateRenderTreeIfNeeded();
-
     if (HTMLTextFormControlElement* textControl = enclosingTextFormControl(start()))
         textControl->selectionChanged(userTriggered == UserTriggered);
 }
@@ -1800,14 +1806,13 @@ void FrameSelection::setSelectionFromNone()
 
     Document* document = m_frame->document();
     bool caretBrowsing = m_frame->settings() && m_frame->settings()->caretBrowsingEnabled();
-    if (!isNone() || !(document->rendererIsEditable() || caretBrowsing))
+    if (!isNone() || !(document->hasEditableStyle() || caretBrowsing))
         return;
 
-    Node* node = document->documentElement();
-    if (!node)
+    Element* documentElement = document->documentElement();
+    if (!documentElement)
         return;
-    Node* body = isHTMLBodyElement(*node) ? node : Traversal<HTMLBodyElement>::next(*node);
-    if (body)
+    if (HTMLBodyElement* body = Traversal<HTMLBodyElement>::firstChild(*documentElement))
         setSelection(VisibleSelection(firstPositionInOrBeforeNode(body), DOWNSTREAM));
 }
 
@@ -1899,16 +1904,31 @@ void FrameSelection::trace(Visitor* visitor)
     VisibleSelection::ChangeObserver::trace(visitor);
 }
 
+void FrameSelection::setCaretRectNeedsUpdate()
+{
+    m_caretRectDirty = true;
+
+    scheduleVisualUpdate();
+}
+
+void FrameSelection::scheduleVisualUpdate() const
+{
+    if (!m_frame)
+        return;
+    if (Page* page = m_frame->page())
+        page->animator().scheduleVisualUpdate();
+}
+
 }
 
 #ifndef NDEBUG
 
-void showTree(const WebCore::FrameSelection& sel)
+void showTree(const blink::FrameSelection& sel)
 {
     sel.showTreeForThis();
 }
 
-void showTree(const WebCore::FrameSelection* sel)
+void showTree(const blink::FrameSelection* sel)
 {
     if (sel)
         sel->showTreeForThis();

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
@@ -39,14 +41,14 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/download_test_observer.h"
 #include "content/public/test/test_renderer_host.h"
-#include "crypto/nss_util.h"
-#include "net/base/crypto_module.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_data_directory.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 
 #if defined(USE_NSS)
+#include "chrome/browser/net/nss_context.h"
+#include "net/base/crypto_module.h"
 #include "net/cert/nss_cert_database.h"
 #endif  // defined(USE_NSS)
 
@@ -77,13 +79,10 @@ class ProvisionalLoadWaiter : public content::WebContentsObserver {
   }
 
   virtual void DidFailProvisionalLoad(
-      int64 frame_id,
-      const base::string16& frame_unique_name,
-      bool is_main_frame,
+      content::RenderFrameHost* render_frame_host,
       const GURL& validated_url,
       int error_code,
-      const base::string16& error_description,
-      content::RenderViewHost* render_view_host) OVERRIDE {
+      const base::string16& error_description) OVERRIDE {
     seen_ = true;
     if (waiting_)
       base::MessageLoopForUI::current()->Quit();
@@ -449,7 +448,14 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestOKHTTPS) {
 }
 
 // Visits a page with https error and proceed:
-IN_PROC_BROWSER_TEST_F(SSLUITest, TestHTTPSExpiredCertAndProceed) {
+#if defined(OS_LINUX)
+// flaky http://crbug.com/396462
+#define MAYBE_TestHTTPSExpiredCertAndProceed \
+    DISABLED_TestHTTPSExpiredCertAndProceed
+#else
+#define MAYBE_TestHTTPSExpiredCertAndProceed TestHTTPSExpiredCertAndProceed
+#endif
+IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestHTTPSExpiredCertAndProceed) {
   ASSERT_TRUE(https_server_expired_.Start());
 
   ui_test_utils::NavigateToURL(browser(),
@@ -642,8 +648,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestHTTPSExpiredCertAndGoForward) {
 // certificate. Close the page while WSS connection waits for SSLManager's
 // response from UI thread.
 // Disabled on Windows because it was flaking on XP Tests (1). crbug.com/165258
-// Disabled under LeakSanitizer due to memory leaks. http://crbug.com/317363
-#if defined(OS_WIN) || defined(LEAK_SANITIZER)
+#if defined(OS_WIN)
 #define MAYBE_TestWSSInvalidCertAndClose DISABLED_TestWSSInvalidCertAndClose
 #else
 #define MAYBE_TestWSSInvalidCertAndClose TestWSSInvalidCertAndClose
@@ -720,27 +725,46 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestWSSInvalidCertAndGoForward) {
 }
 
 #if defined(USE_NSS)
+class SSLUITestWithClientCert : public SSLUITest {
+  public:
+   SSLUITestWithClientCert() : cert_db_(NULL) {}
+
+   virtual void SetUpOnMainThread() OVERRIDE {
+     SSLUITest::SetUpOnMainThread();
+
+     base::RunLoop loop;
+     GetNSSCertDatabaseForProfile(
+         browser()->profile(),
+         base::Bind(&SSLUITestWithClientCert::DidGetCertDatabase,
+                    base::Unretained(this),
+                    &loop));
+     loop.Run();
+   }
+
+  protected:
+   void DidGetCertDatabase(base::RunLoop* loop, net::NSSCertDatabase* cert_db) {
+     cert_db_ = cert_db;
+     loop->Quit();
+   }
+
+   net::NSSCertDatabase* cert_db_;
+};
+
 // SSL client certificate tests are only enabled when using NSS for private key
 // storage, as only NSS can avoid modifying global machine state when testing.
 // See http://crbug.com/51132
 
 // Visit a HTTPS page which requires client cert authentication. The client
 // cert will be selected automatically, then a test which uses WebSocket runs.
-// Disabled:  http://crbug.com/159985
-IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestWSSClientCert) {
-  // Open a temporary NSS DB for testing.
-  crypto::ScopedTestNSSDB test_nssdb;
-  ASSERT_TRUE(test_nssdb.is_open());
-
-  // Import client cert for test. These interfaces require NSS.
-  net::NSSCertDatabase* cert_db = net::NSSCertDatabase::GetInstance();
-  scoped_refptr<net::CryptoModule> crypt_module = cert_db->GetPublicModule();
+IN_PROC_BROWSER_TEST_F(SSLUITestWithClientCert, TestWSSClientCert) {
+  // Import a client cert for test.
+  scoped_refptr<net::CryptoModule> crypt_module = cert_db_->GetPublicModule();
   std::string pkcs12_data;
   base::FilePath cert_path = net::GetTestCertsDirectory().Append(
       FILE_PATH_LITERAL("websocket_client_cert.p12"));
   EXPECT_TRUE(base::ReadFileToString(cert_path, &pkcs12_data));
   EXPECT_EQ(net::OK,
-            cert_db->ImportFromPKCS12(
+            cert_db_->ImportFromPKCS12(
                 crypt_module.get(), pkcs12_data, base::string16(), true, NULL));
 
   // Start WebSocket test server with TLS and client cert authentication.
@@ -971,7 +995,16 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestUnsafeContents) {
 
 // Visits a page with insecure content loaded by JS (after the initial page
 // load).
-IN_PROC_BROWSER_TEST_F(SSLUITest, TestDisplaysInsecureContentLoadedFromJS) {
+#if defined(OS_LINUX)
+// flaky http://crbug.com/396462
+#define MAYBE_TestDisplaysInsecureContentLoadedFromJS \
+    DISABLED_TestDisplaysInsecureContentLoadedFromJS
+#else
+#define MAYBE_TestDisplaysInsecureContentLoadedFromJS \
+    TestDisplaysInsecureContentLoadedFromJS
+#endif
+IN_PROC_BROWSER_TEST_F(SSLUITest,
+                       MAYBE_TestDisplaysInsecureContentLoadedFromJS) {
   ASSERT_TRUE(test_server()->Start());
   ASSERT_TRUE(https_server_.Start());
 
@@ -1152,15 +1185,10 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestRunsCachedInsecureContent) {
       AuthState::DISPLAYED_INSECURE_CONTENT | AuthState::RAN_INSECURE_CONTENT);
 }
 
-#if defined(OS_WIN)
-// Flaky on Win7 debug (http://crbug.com/368280).
-#define MAYBE_TestCNInvalidStickiness DISABLED_TestCNInvalidStickiness
-#else
-#define MAYBE_TestCNInvalidStickiness TestCNInvalidStickiness
-#endif
 // This test ensures the CN invalid status does not 'stick' to a certificate
 // (see bug #1044942) and that it depends on the host-name.
-IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestCNInvalidStickiness) {
+// Test if disabled due to flakiness http://crbug.com/368280 .
+IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestCNInvalidStickiness) {
   ASSERT_TRUE(https_server_.Start());
   ASSERT_TRUE(https_server_mismatched_.Start());
 
@@ -1291,8 +1319,15 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestRedirectBadToGoodHTTPS) {
   CheckAuthenticatedState(tab, AuthState::NONE);
 }
 
+// Flaky on Linux. http://crbug.com/368280.
+#if defined(OS_LINUX)
+#define MAYBE_TestRedirectGoodToBadHTTPS DISABLED_TestRedirectGoodToBadHTTPS
+#else
+#define MAYBE_TestRedirectGoodToBadHTTPS TestRedirectGoodToBadHTTPS
+#endif
+
 // Visit a page over good https that is a redirect to a page with bad https.
-IN_PROC_BROWSER_TEST_F(SSLUITest, TestRedirectGoodToBadHTTPS) {
+IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestRedirectGoodToBadHTTPS) {
   ASSERT_TRUE(https_server_.Start());
   ASSERT_TRUE(https_server_expired_.Start());
 
@@ -1327,8 +1362,15 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestRedirectHTTPToGoodHTTPS) {
   CheckAuthenticatedState(tab, AuthState::NONE);
 }
 
+// Flaky on Linux. http://crbug.com/368280.
+#if defined(OS_LINUX)
+#define MAYBE_TestRedirectHTTPToBadHTTPS DISABLED_TestRedirectHTTPToBadHTTPS
+#else
+#define MAYBE_TestRedirectHTTPToBadHTTPS TestRedirectHTTPToBadHTTPS
+#endif
+
 // Visit a page over http that is a redirect to a page with bad HTTPS.
-IN_PROC_BROWSER_TEST_F(SSLUITest, TestRedirectHTTPToBadHTTPS) {
+IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestRedirectHTTPToBadHTTPS) {
   ASSERT_TRUE(test_server()->Start());
   ASSERT_TRUE(https_server_expired_.Start());
 
@@ -1729,7 +1771,15 @@ IN_PROC_BROWSER_TEST_F(SSLUITestIgnoreCertErrors, TestWSS) {
 
 // Verifies that the interstitial can proceed, even if JavaScript is disabled.
 // http://crbug.com/322948
-IN_PROC_BROWSER_TEST_F(SSLUITest, TestInterstitialJavaScriptProceeds) {
+#if defined(OS_LINUX)
+// flaky http://crbug.com/396458
+#define MAYBE_TestInterstitialJavaScriptProceeds \
+    DISABLED_TestInterstitialJavaScriptProceeds
+#else
+#define MAYBE_TestInterstitialJavaScriptProceeds \
+    TestInterstitialJavaScriptProceeds
+#endif
+IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestInterstitialJavaScriptProceeds) {
   browser()->profile()->GetHostContentSettingsMap()->SetDefaultContentSetting(
       CONTENT_SETTINGS_TYPE_JAVASCRIPT, CONTENT_SETTING_BLOCK);
 

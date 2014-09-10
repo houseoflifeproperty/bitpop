@@ -24,10 +24,10 @@
 #ifndef NodeList_h
 #define NodeList_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class Node;
 
@@ -54,6 +54,6 @@ protected:
     }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NodeList_h

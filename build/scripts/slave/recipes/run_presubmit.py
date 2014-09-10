@@ -11,7 +11,6 @@ DEPS = [
   'properties',
   'rietveld',
   'step',
-  'step_history',
 ]
 
 def GenSteps(api):
@@ -23,19 +22,14 @@ def GenSteps(api):
   api.gclient.set_config(repo_name)
   api.step.auto_resolve_conflicts = True
 
-  yield api.bot_update.ensure_checkout()
-  bot_update_step = api.step_history.last_step()
+  bot_update_step = api.bot_update.ensure_checkout()
   bot_update_mode = bot_update_step.json.output['did_run']
   if not bot_update_mode:
-    yield api.gclient.checkout(
-        revert=True, can_fail_build=False, abort_on_failure=False)
-    for step in api.step_history.values():
-      if step.retcode != 0:
-        yield (
-          api.path.rmcontents('slave build directory', api.path['slave_build']),
-          api.gclient.checkout(revert=False),
-        )
-        break
+    try:
+      api.gclient.checkout(revert=True)
+    except api.step.StepFailure:
+      api.path.rmcontents('slave build directory', api.path['slave_build'])
+      api.gclient.checkout(revert=False)
     upstream = ''
   else:
     relative_root = '%s/%s' % (api.gclient.c.solutions[0].name, root)
@@ -50,16 +44,16 @@ def GenSteps(api):
       upstream = bot_update_step.json.output['properties'].get(
           '%s_git' % got_revision_property) or ''
     # TODO(hinoka): Extract email/name from issue?
-    yield api.git('-c', 'user.email=commit-bot@chromium.org',
+    api.git('-c', 'user.email=commit-bot@chromium.org',
                   '-c', 'user.name=The Commit Bot',
                   'commit', '-a', '-m', 'Committed patch',
                   name='commit git patch',
                   cwd=api.path['checkout'].join(root))
 
   if not bot_update_mode:
-    yield api.rietveld.apply_issue(root)
+    api.rietveld.apply_issue(root)
 
-  yield api.step('presubmit', [
+  api.step('presubmit', [
     api.path['depot_tools'].join('presubmit_support.py'),
     '--root', api.path['checkout'].join(root),
     '--commit',
@@ -84,9 +78,10 @@ def GenTests(api):
 
     yield (
       api.test(repo_name) +
-      api.properties.tryserver(mastername='tryserver.chromium',
-                               buildername='chromium_presubmit',
-                               repo_name=repo_name, **extra) +
+      api.properties.tryserver(
+          mastername='tryserver.chromium.linux',
+          buildername='chromium_presubmit',
+          repo_name=repo_name, **extra) +
       api.step_data('presubmit', api.json.output([['chromium_presubmit',
                                                    ['compile']]]))
     )

@@ -32,9 +32,8 @@ defaults['category'] = 'deps'
 
 # Archive location
 rel_builddir = 'webkit-mac-pinned-rel'
-rel_archive = master_config.GetArchiveUrl('ChromiumWebkit',
-    'WebKit Mac Builder (deps)',
-    rel_builddir, 'mac')
+rel_archive = master_config.GetGSUtilUrl(
+    'chromium-build-transfer', 'WebKit Mac Builder (deps)')
 
 #
 # Triggerable scheduler for the dbg builder
@@ -45,9 +44,10 @@ T('s2_chromium_rel_trigger')
 # Mac Rel Builder
 #
 B('WebKit Mac Builder (deps)', 'f_webkit_mac_rel', auto_reboot=False,
-  scheduler='global_scheduler', builddir=rel_builddir)
+  scheduler='global_deps_scheduler', builddir=rel_builddir)
 F('f_webkit_mac_rel', mac_out().ChromiumFactory(
     slave_type='Builder',
+    build_url=rel_archive,
     options=['--build-tool=ninja', '--compiler=goma-clang', '--',
         'blink_tests'],
     factory_properties={

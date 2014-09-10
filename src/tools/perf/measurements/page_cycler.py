@@ -25,9 +25,11 @@ from metrics import power
 from metrics import speedindex
 from metrics import v8_object_stats
 from telemetry.core import util
-from telemetry.page import page_measurement
+from telemetry.page import page_test
+from telemetry.value import scalar
 
-class PageCycler(page_measurement.PageMeasurement):
+
+class PageCycler(page_test.PageTest):
   options = {'pageset_repeat': 10}
 
   def __init__(self, *args, **kwargs):
@@ -39,7 +41,7 @@ class PageCycler(page_measurement.PageMeasurement):
 
     self._speedindex_metric = speedindex.SpeedIndexMetric()
     self._memory_metric = None
-    self._power_metric = power.PowerMetric()
+    self._power_metric = None
     self._cpu_metric = None
     self._v8_object_stats_metric = None
     self._has_loaded_page = collections.defaultdict(int)
@@ -81,6 +83,10 @@ class PageCycler(page_measurement.PageMeasurement):
     else:
       cls._cold_run_start_index = args.pageset_repeat * args.page_repeat
 
+  def WillStartBrowser(self, browser):
+    """Initialize metrics once right before the browser has been launched."""
+    self._power_metric = power.PowerMetric(browser)
+
   def DidStartBrowser(self, browser):
     """Initialize metrics once right after the browser has been launched."""
     self._memory_metric = memory.MemoryMetric(browser)
@@ -118,15 +124,21 @@ class PageCycler(page_measurement.PageMeasurement):
     if self._report_speed_index:
       self._speedindex_metric.CustomizeBrowserOptions(options)
 
-  def MeasurePage(self, page, tab, results):
+  def ValidateAndMeasurePage(self, page, tab, results):
     tab.WaitForJavaScriptExpression('__pc_load_time', 60)
 
     chart_name_prefix = ('cold_' if self.IsRunCold(page.url) else
                          'warm_')
 
-    results.Add('page_load_time', 'ms',
-                int(float(tab.EvaluateJavaScript('__pc_load_time'))),
-                chart_name=chart_name_prefix+'times')
+    results.AddValue(scalar.ScalarValue(
+        results.current_page, '%stimes.page_load_time' % chart_name_prefix,
+        'ms', tab.EvaluateJavaScript('__pc_load_time'),
+        description='Average page load time. Measured from '
+                    'performance.timing.navigationStart until the completion '
+                    'time of a layout after the window.load event. Cold times '
+                    'are the times when the page is loaded cold, i.e. without '
+                    'loading it before, and warm times are times when the '
+                    'page is loaded after being loaded previously.'))
 
     self._has_loaded_page[page.url] += 1
 
@@ -165,6 +177,3 @@ class PageCycler(page_measurement.PageMeasurement):
     # warm run, and clearing the cache before the load of the following
     # URL would eliminate the intended warmup for the previous URL.
     return (self._has_loaded_page[url] >= self._cold_run_start_index)
-
-  def results_are_the_same_on_every_page(self):
-    return False

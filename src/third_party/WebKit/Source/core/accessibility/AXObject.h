@@ -37,7 +37,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class AXObject;
 class AXObjectCache;
@@ -49,6 +49,7 @@ class HTMLAreaElement;
 class IntPoint;
 class IntSize;
 class Node;
+class Range;
 class RenderObject;
 class RenderListItem;
 class ScrollableArea;
@@ -577,6 +578,6 @@ protected:
 #define DEFINE_AX_OBJECT_TYPE_CASTS(thisType, predicate) \
     DEFINE_TYPE_CASTS(thisType, AXObject, object, object->predicate, object.predicate)
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AXObject_h

@@ -43,7 +43,7 @@
 #include "wtf/RetainPtr.h"
 #endif
 
-namespace WebCore {
+namespace blink {
 
 class CSSFontFaceSource;
 class FontDescription;
@@ -119,7 +119,6 @@ public:
     float platformWidthForGlyph(Glyph) const;
 
     float spaceWidth() const { return m_spaceWidth; }
-    float adjustedSpaceWidth() const { return m_adjustedSpaceWidth; }
     void setSpaceWidth(float spaceWidth) { m_spaceWidth = spaceWidth; }
 
 #if OS(MACOSX)
@@ -208,7 +207,6 @@ private:
     Glyph m_spaceGlyph;
     float m_spaceWidth;
     Glyph m_zeroGlyph;
-    float m_adjustedSpaceWidth;
 
     Glyph m_zeroWidthSpaceGlyph;
 
@@ -293,5 +291,7 @@ ALWAYS_INLINE float SimpleFontData::widthForGlyph(Glyph glyph) const
     return width;
 }
 
-} // namespace WebCore
+DEFINE_FONT_DATA_TYPE_CASTS(SimpleFontData, false);
+
+} // namespace blink
 #endif // SimpleFontData_h

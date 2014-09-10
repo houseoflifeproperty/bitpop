@@ -31,7 +31,6 @@ namespace test {
 
 namespace {
 
-const int kIconDimension = 48;
 const int kCols = 2;
 const int kRows = 2;
 const int kTilesPerPage = kCols * kRows;
@@ -102,7 +101,7 @@ class AppsGridViewTest : public views::ViewsTestBase {
     model_->SetFoldersEnabled(true);
 
     apps_grid_view_.reset(new AppsGridView(NULL));
-    apps_grid_view_->SetLayout(kIconDimension, kCols, kRows);
+    apps_grid_view_->SetLayout(kCols, kRows);
     apps_grid_view_->SetBoundsRect(gfx::Rect(gfx::Size(kWidth, kHeight)));
     apps_grid_view_->SetModel(model_.get());
     apps_grid_view_->SetItemList(model_->top_level_item_list());
@@ -171,7 +170,7 @@ class AppsGridViewTest : public views::ViewsTestBase {
   }
 
   void SimulateKeyPress(ui::KeyboardCode key_code) {
-    ui::KeyEvent key_event(ui::ET_KEY_PRESSED, key_code, 0, false);
+    ui::KeyEvent key_event(ui::ET_KEY_PRESSED, key_code, ui::EF_NONE);
     apps_grid_view_->OnKeyPressed(key_event);
   }
 
@@ -307,8 +306,17 @@ TEST_F(AppsGridViewTest, MouseDragWithFolderDisabled) {
 
   // Adding a launcher item cancels the drag and respects the order.
   SimulateDrag(AppsGridView::MOUSE, from, to);
+  EXPECT_TRUE(apps_grid_view_->has_dragged_view());
   model_->CreateAndAddItem("Extra");
-  apps_grid_view_->EndDrag(false);
+  // No need to EndDrag explicitly - adding an item should do this.
+  EXPECT_FALSE(apps_grid_view_->has_dragged_view());
+  // Even though cancelled, mouse move events can still arrive via the item
+  // view. Ensure that behaves sanely, and doesn't start a new drag.
+  ui::MouseEvent drag_event(
+      ui::ET_MOUSE_DRAGGED, gfx::Point(1, 1), gfx::Point(2, 2), 0, 0);
+  apps_grid_view_->UpdateDragFromItem(AppsGridView::MOUSE, drag_event);
+  EXPECT_FALSE(apps_grid_view_->has_dragged_view());
+
   EXPECT_EQ(std::string("Item 1,Item 2,Item 3,Extra"),
             model_->GetModelContent());
   test_api_->LayoutToIdealBounds();
@@ -423,8 +431,8 @@ TEST_F(AppsGridViewTest, MouseDragItemReorder) {
   gfx::Point from = GetItemTileRectAt(0, 1).CenterPoint();
   int reorder_offset = (GetItemTileRectAt(0, 1).CenterPoint() -
                         GetItemTileRectAt(0, 0).CenterPoint()).Length() -
-                       kReorderDroppingCircleRadius -
-                       kPreferredIconDimension / 2 + 5;
+                       kReorderDroppingCircleRadius - kGridIconDimension / 2 +
+                       5;
   gfx::Point to = gfx::Point(from.x() - reorder_offset, from.y());
 
   // Dragging item_1 closing to item_0 should leads to re-ordering these two

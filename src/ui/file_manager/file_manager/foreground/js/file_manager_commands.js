@@ -41,30 +41,18 @@ var CommandUtil = {};
 /**
  * Extracts entry on which command event was dispatched.
  *
- * @param {DirectoryTree|DirectoryItem|NavigationList|HTMLLIElement|cr.ui.List}
+ * @param {DirectoryTree|DirectoryItem|HTMLLIElement|cr.ui.List}
  *     element Directory to extract a path from.
  * @return {Entry} Entry of the found node.
  */
 CommandUtil.getCommandEntry = function(element) {
-  if (element instanceof NavigationList) {
-    // element is a NavigationList.
-    /** @type {NavigationModelItem} */
-    var item = element.selectedItem;
-    return element.selectedItem &&
-        CommandUtil.getEntryFromNavigationModelItem_(item);
-  } else if (element instanceof NavigationListItem) {
-    // element is a subitem of NavigationList.
-    /** @type {NavigationList} */
-    var navigationList = element.parentElement;
-    var index = navigationList.getIndexOfListItem(element);
-    /** @type {NavigationModelItem} */
-    var item = (index != -1) ? navigationList.dataModel.item(index) : null;
-    return item && CommandUtil.getEntryFromNavigationModelItem_(item);
-  } else if (element instanceof DirectoryTree) {
+  if (element instanceof DirectoryTree) {
     // element is a DirectoryTree.
-    return element.selectedItem.entry;
-  } else if (element instanceof DirectoryItem) {
-    // element is a sub item in DirectoryTree.
+    return element.selectedItem ? element.selectedItem.entry : null;
+  } else if (element instanceof DirectoryItem ||
+             element instanceof VolumeItem ||
+             element instanceof ShortcutItem) {
+    // element are sub items in DirectoryTree.
     return element.entry;
   } else if (element instanceof cr.ui.List) {
     // element is a normal List (eg. the file list on the right panel).
@@ -79,7 +67,7 @@ CommandUtil.getCommandEntry = function(element) {
 
 /**
  * Obtains an entry from the give navigation model item.
- * @param {NavigationModelItem} item Navigation modle item.
+ * @param {NavigationModelItem} item Navigation model item.
  * @return {Entry} Related entry.
  * @private
  */
@@ -214,11 +202,11 @@ CommandUtil.defaultCommand = {
 CommandUtil.createVolumeSwitchCommand = function(index) {
   return {
     execute: function(event, fileManager) {
-      fileManager.navigationList.selectByIndex(index - 1);
+      fileManager.directoryTree.selectByIndex(index - 1);
     },
     canExecute: function(event, fileManager) {
       event.canExecute = index > 0 &&
-          index <= fileManager.navigationList.dataModel.length;
+          index <= fileManager.directoryTree.items.length;
     }
   };
 };
@@ -417,16 +405,16 @@ CommandHandler.COMMANDS_['format'] = {
   canExecute: function(event, fileManager) {
     var directoryModel = fileManager.directoryModel;
     var root = CommandUtil.getCommandEntry(event.target);
+    // |root| is null for unrecognized volumes. Regard such volumes as writable
+    // so that the format command is enabled.
+    var isReadOnly = root && fileManager.isOnReadonlyDirectory();
     // See the comment in execute() for why doing this.
     if (!root)
       root = directoryModel.getCurrentDirEntry();
     var location = root && fileManager.volumeManager.getLocationInfo(root);
     var removable = location && location.rootType ===
         VolumeManagerCommon.RootType.REMOVABLE;
-    // Don't check if the volume is read-only. Unformatted volume is considered
-    // read-only per VolumeInfo.isReadOnly, but can be formatted. An error will
-    // be raised if formatting failed anyway.
-    event.canExecute = removable;
+    event.canExecute = removable && !isReadOnly;
     event.command.setHidden(!removable);
   }
 };
@@ -731,10 +719,9 @@ CommandHandler.COMMANDS_['toggle-pinned'] = {
             currentEntry, 'drive', steps.updateUI.bind(this));
       },
 
-      // Update the user interface accoding to the cache state.
-      updateUI: function(drive) {
-        fileManager.updateMetadataInUI_(
-            'drive', [currentEntry.toURL()], [drive]);
+      // Update the user interface according to the cache state.
+      updateUI: function(drive /* not used */) {
+        fileManager.updateMetadataInUI_('drive', [currentEntry]);
         if (!error)
           steps.start();
       },
@@ -835,8 +822,7 @@ CommandHandler.COMMANDS_['create-folder-shortcut'] = {
     var onlyOneFolderSelected = true;
     // Only on list, user can select multiple files. The command is enabled only
     // when a single file is selected.
-    if (event.target instanceof cr.ui.List &&
-        !(event.target instanceof NavigationList)) {
+    if (event.target instanceof cr.ui.List) {
       var items = event.target.selectedItems;
       onlyOneFolderSelected = (items.length == 1 && items[0].isDirectory);
     }

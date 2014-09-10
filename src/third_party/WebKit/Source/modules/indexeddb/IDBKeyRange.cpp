@@ -26,12 +26,12 @@
 #include "config.h"
 #include "modules/indexeddb/IDBKeyRange.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/IDBBindingUtilities.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/modules/v8/IDBBindingUtilities.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/indexeddb/IDBDatabase.h"
 
-namespace WebCore {
+namespace blink {
 
 IDBKeyRange* IDBKeyRange::fromScriptValue(ExecutionContext* context, const ScriptValue& value, ExceptionState& exceptionState)
 {
@@ -140,4 +140,4 @@ IDBKeyRange* IDBKeyRange::bound(ExecutionContext* context, const ScriptValue& lo
     return IDBKeyRange::create(lower, upper, lowerOpen ? LowerBoundOpen : LowerBoundClosed, upperOpen ? UpperBoundOpen : UpperBoundClosed);
 }
 
-} // namespace WebCore
+} // namespace blink

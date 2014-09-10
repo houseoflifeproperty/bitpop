@@ -384,8 +384,16 @@
                 "href": "/apps/app_storage"
               },
               {
+                "title": "Keep Users Informed",
+                "href": "/apps/inform_users"
+              },
+              {
                 "title": "Cloud Messaging",
                 "href": "/apps/cloudMessaging"
+              },
+              {
+                "title": "Rich Notifications",
+                "href": "/apps/richNotifications"
               },
               {
                 "title": "User Authentication",
@@ -853,6 +861,10 @@
                 "href": "/native-client/reference/pnacl-bitcode-abi"
               },
               {
+                "title": "PNaCl Undefined Behavior",
+                "href": "/native-client/reference/pnacl-undefined-behavior"
+              },
+              {
                 "title": "PNaCl C/C++ Language Support",
                 "href": "/native-client/reference/pnacl-c-cpp-language-support"
               },
@@ -863,8 +875,16 @@
                     {
                       "title": "ARM 32-bit Sandbox",
                       "href": "/native-client/reference/sandbox_internals/arm-32-bit-sandbox"
+                    },
+                    {
+                      "title": "x86-64 Sandbox",
+                      "href": "/native-client/reference/sandbox_internals/x86-64-sandbox"
                     }
                 ]
+              },
+              {
+                "title": "Design Documents",
+                "href": "/native-client/reference/design-docs"
               }
             ]
           },

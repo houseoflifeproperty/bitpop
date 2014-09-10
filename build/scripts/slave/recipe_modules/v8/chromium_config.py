@@ -35,18 +35,30 @@ def v8(c):
 
 
 @CONFIG_CTX(includes=['v8'])
+def arm_hard_float(c):
+  c.compile_py.pass_arch_flag = True
+  c.compile_py.cross_tool = '/usr/bin/arm-linux-gnueabihf'
+  c.gyp_env.GYP_DEFINES['arm_float_abi'] = 'hard'
+
+
+@CONFIG_CTX(includes=['v8'])
 def interpreted_regexp(c):
   c.gyp_env.GYP_DEFINES['v8_interpreted_regexp'] = 1
 
 
 @CONFIG_CTX(includes=['v8'])
-def no_i18n(c):
-  c.gyp_env.GYP_DEFINES['v8_enable_i18n_support'] = 0
+def nacl_ia32(c):
+  c.gyp_env.GYP_DEFINES['v8_target_arch'] = 'nacl_ia32'
 
 
 @CONFIG_CTX(includes=['v8'])
-def no_lsan(c):
-  c.gyp_env.GYP_DEFINES['lsan'] = 0
+def nacl_x64(c):
+  c.gyp_env.GYP_DEFINES['v8_target_arch'] = 'nacl_x64'
+
+
+@CONFIG_CTX(includes=['v8'])
+def no_i18n(c):
+  c.gyp_env.GYP_DEFINES['v8_enable_i18n_support'] = 0
 
 
 @CONFIG_CTX(includes=['v8'])
@@ -69,6 +81,25 @@ def no_optimized_debug(c):
 def optimized_debug(c):
   if c.BUILD_CONFIG == 'Debug':
     c.gyp_env.GYP_DEFINES['v8_optimized_debug'] = 2
+
+
+@CONFIG_CTX(includes=['v8'])
+def predictable(c):
+  c.gyp_env.GYP_DEFINES['v8_enable_verify_predictable'] = 1
+
+
+@CONFIG_CTX(includes=['v8'])
+def simulate_mips(c):
+  # TODO(machenbach): Add mips64.
+  c.gyp_env.GYP_DEFINES['v8_target_arch'] = 'mipsel'
+
+
+@CONFIG_CTX(includes=['v8'])
+def simulate_arm(c):
+  if c.TARGET_BITS == 64:
+    c.gyp_env.GYP_DEFINES['v8_target_arch'] = 'arm64'
+  else:
+    c.gyp_env.GYP_DEFINES['v8_target_arch'] = 'arm'
 
 
 @CONFIG_CTX(includes=['v8'])

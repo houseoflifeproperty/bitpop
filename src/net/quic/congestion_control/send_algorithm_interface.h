@@ -29,7 +29,7 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
 
   static SendAlgorithmInterface* Create(const QuicClock* clock,
                                         const RttStats* rtt_stats,
-                                        CongestionFeedbackType type,
+                                        CongestionControlType type,
                                         QuicConnectionStats* stats);
 
   virtual ~SendAlgorithmInterface() {}
@@ -67,6 +67,9 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
   // nor OnPacketLost will be called for these packets.
   virtual void OnRetransmissionTimeout(bool packets_retransmitted) = 0;
 
+  // Called when the last retransmission timeout was spurious.
+  virtual void RevertRetransmissionTimeout() = 0;
+
   // Calculate the time until we can send the next packet.
   virtual QuicTime::Delta TimeUntilSend(
       QuicTime now,
@@ -77,6 +80,9 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
   // Returns 0 when it does not have an estimate.
   virtual QuicBandwidth BandwidthEstimate() const = 0;
 
+  // Returns true if the current bandwidth estimate is reliable.
+  virtual bool HasReliableBandwidthEstimate() const = 0;
+
   // Get the send algorithm specific retransmission delay, called RTO in TCP,
   // Note 1: the caller is responsible for sanity checking this value.
   // Note 2: this will return zero if we don't have enough data for an estimate.
@@ -86,6 +92,17 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
   // not the *available* window.  Some send algorithms may not use a congestion
   // window and will return 0.
   virtual QuicByteCount GetCongestionWindow() const = 0;
+
+  // Whether the send algorithm is currently in slow start.  When true, the
+  // BandwidthEstimate is expected to be too low.
+  virtual bool InSlowStart() const = 0;
+
+  // Returns the size of the slow start congestion window in bytes,
+  // aka ssthresh.  Some send algorithms do not define a slow start
+  // threshold and will return 0.
+  virtual QuicByteCount GetSlowStartThreshold() const = 0;
+
+  virtual CongestionControlType GetCongestionControlType() const = 0;
 };
 
 }  // namespace net

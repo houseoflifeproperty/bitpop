@@ -11,7 +11,6 @@
     "name": "gclient setup"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -45,9 +44,6 @@
       "@@@STEP_LOG_LINE@json.output@    \"src/third_party/webrtc/\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"revision\": 120644@@@",
       "@@@STEP_LOG_LINE@json.output@    }, @@@",
-      "@@@STEP_LOG_LINE@json.output@    \"src/tools/swarm_client/\": {@@@",
-      "@@@STEP_LOG_LINE@json.output@      \"revision\": 200767@@@",
-      "@@@STEP_LOG_LINE@json.output@    }, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"src/tools/swarming_client/\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"revision\": 276089@@@",
       "@@@STEP_LOG_LINE@json.output@    }, @@@",
@@ -62,8 +58,7 @@
       "@@@SET_BUILD_PROPERTY@got_swarming_client_revision@276089@@@",
       "@@@SET_BUILD_PROPERTY@got_webrtc_revision@120644@@@",
       "@@@SET_BUILD_PROPERTY@got_revision@58622@@@",
-      "@@@SET_BUILD_PROPERTY@got_v8_revision@43426@@@",
-      "@@@SET_BUILD_PROPERTY@got_swarm_client_revision@200767@@@"
+      "@@@SET_BUILD_PROPERTY@got_v8_revision@43426@@@"
     ]
   },
   {
@@ -99,7 +94,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -126,7 +120,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -153,7 +146,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -180,7 +172,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -207,7 +198,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -234,7 +224,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -261,7 +250,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -288,7 +276,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -315,7 +302,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -342,7 +328,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -369,7 +354,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -396,7 +380,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -423,7 +406,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -450,7 +432,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -477,7 +458,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -504,7 +484,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -531,7 +510,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -558,7 +536,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -585,7 +562,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -612,34 +588,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
-    "cmd": [
-      "python",
-      "-u",
-      "[BUILD]\\scripts\\slave\\runtest.py",
-      "--target",
-      "Release_x64",
-      "--factory-properties",
-      "{\"TARGET_BITS\": 64, \"USE_MIRROR\": true, \"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"deps\": \"dartium.deps\", \"mastername\": \"chromium.testing.master\", \"perf_id\": \"dartium-linux-release\", \"recipe\": \"dart/dartium_perf\", \"reference_build_executable\": \"src/chrome/tools/refbuild/chrome\", \"revision\": \"12345\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
-      "--build-properties",
-      "{\"TARGET_BITS\": 64, \"USE_MIRROR\": true, \"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"deps\": \"dartium.deps\", \"mastername\": \"chromium.testing.master\", \"perf_id\": \"dartium-linux-release\", \"recipe\": \"dart/dartium_perf\", \"reference_build_executable\": \"src/chrome/tools/refbuild/chrome\", \"revision\": \"12345\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
-      "--annotate=graphing",
-      "--results-url=https://chromeperf.appspot.com",
-      "--perf-dashboard-id=pica.pica",
-      "--test-type=pica.pica",
-      "--builder-name=TestBuilder",
-      "--slave-name=TestSlavename",
-      "--build-number=571",
-      "--run-python-script",
-      "--revision=12345",
-      "[BUILD]\\scripts\\slave\\telemetry.py",
-      "--factory-properties={\"browser_exe\": \"[SLAVE_BUILD]\\\\src\\\\out\\\\Release_x64\\\\chrome.exe\", \"blink_config\": \"chromium\", \"expectations\": true, \"show_perf_results\": true, \"test_name\": \"pica.pica\", \"tools_dir\": \"[SLAVE_BUILD]\\\\src\\\\tools\", \"target_platform\": \"win32\", \"target_os\": null, \"halt_on_missing_build\": true, \"target\": \"Release\", \"run_reference_build\": true, \"build_dir\": \"src/out\", \"step_name\": \"pica.pica\", \"reference_build_executable\": \"src/chrome/tools/refbuild/chrome\"}"
-    ],
-    "name": "pica.pica"
-  },
-  {
-    "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -666,7 +614,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",

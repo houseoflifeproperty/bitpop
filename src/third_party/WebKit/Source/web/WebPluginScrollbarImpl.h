@@ -30,14 +30,11 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
+
 class IntPoint;
 class IntRect;
 class Scrollbar;
-}
-
-namespace blink {
-
 class ScrollbarGroup;
 
 class WebPluginScrollbarImpl FINAL : public WebPluginScrollbar {
@@ -46,16 +43,16 @@ public:
     virtual ~WebPluginScrollbarImpl();
 
     void setScrollOffset(int);
-    void invalidateScrollbarRect(const WebCore::IntRect&);
+    void invalidateScrollbarRect(const IntRect&);
     // FIXME: Combine this with the other getTickmarks method
-    void getTickmarks(Vector<WebCore::IntRect>&) const;
-    WebCore::IntPoint convertFromContainingViewToScrollbar(const WebCore::IntPoint& parentPoint) const;
+    void getTickmarks(Vector<IntRect>&) const;
+    IntPoint convertFromContainingViewToScrollbar(const IntPoint& parentPoint) const;
     void scrollbarStyleChanged();
 
     int scrollOffset() { return m_scrollOffset; }
-    WebCore::Scrollbar* scrollbar() { return m_scrollbar.get(); }
+    Scrollbar* scrollbar() { return m_scrollbar.get(); }
 
-    // blink::WebScrollbar methods
+    // WebScrollbar methods
     virtual bool isOverlay() const OVERRIDE;
     virtual int value() const OVERRIDE;
     virtual WebPoint location() const OVERRIDE;
@@ -74,7 +71,7 @@ public:
     virtual bool isLeftSideVerticalScrollbar() const OVERRIDE;
     virtual bool isCustomScrollbar() const OVERRIDE;
 
-    // blink::WebPluginScrollbar methods
+    // WebPluginScrollbar methods
     virtual void setLocation(const WebRect&) OVERRIDE;
     virtual void setValue(int position) OVERRIDE;
     virtual void setDocumentSize(int) OVERRIDE;
@@ -96,7 +93,7 @@ private:
     WebPluginScrollbarClient* m_client;
 
     int m_scrollOffset;
-    RefPtr<WebCore::Scrollbar> m_scrollbar;
+    RefPtr<Scrollbar> m_scrollbar;
 };
 
 } // namespace blink

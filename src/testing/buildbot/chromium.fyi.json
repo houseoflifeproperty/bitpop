@@ -1,6 +1,7 @@
 {
   "Linux Trusty": {
     "gtest_tests": [
+      "accessibility_unittests",
       "app_list_unittests",
       "aura_unittests",
       "interactive_ui_tests",
@@ -39,7 +40,6 @@
       "sql_unittests",
       "browser_tests",
       "content_browsertests",
-      "webkit_compositor_bindings_unittests",
       "mojo_apps_js_unittests",
       "mojo_common_unittests",
       "mojo_js_unittests",
@@ -47,7 +47,7 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_service_manager_unittests",
+      "mojo_application_manager_unittests",
       "mojo_shell_tests",
       "mojo_system_unittests",
       "nacl_loader_unittests"
@@ -55,6 +55,7 @@
   },
   "Linux Trusty (dbg)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "app_list_unittests",
       "aura_unittests",
       "interactive_ui_tests",
@@ -93,7 +94,6 @@
       "sql_unittests",
       "browser_tests",
       "content_browsertests",
-      "webkit_compositor_bindings_unittests",
       "mojo_apps_js_unittests",
       "mojo_common_unittests",
       "mojo_js_unittests",
@@ -101,7 +101,7 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_service_manager_unittests",
+      "mojo_application_manager_unittests",
       "mojo_shell_tests",
       "mojo_system_unittests",
       "nacl_loader_unittests"
@@ -109,6 +109,7 @@
   },
   "Linux Trusty (32)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "app_list_unittests",
       "aura_unittests",
       "interactive_ui_tests",
@@ -147,7 +148,6 @@
       "sql_unittests",
       "browser_tests",
       "content_browsertests",
-      "webkit_compositor_bindings_unittests",
       "mojo_apps_js_unittests",
       "mojo_common_unittests",
       "mojo_js_unittests",
@@ -155,7 +155,7 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_service_manager_unittests",
+      "mojo_application_manager_unittests",
       "mojo_shell_tests",
       "mojo_system_unittests",
       "nacl_loader_unittests"
@@ -163,6 +163,7 @@
   },
   "Linux Trusty (dbg)(32)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "app_list_unittests",
       "aura_unittests",
       "interactive_ui_tests",
@@ -201,7 +202,6 @@
       "sql_unittests",
       "browser_tests",
       "content_browsertests",
-      "webkit_compositor_bindings_unittests",
       "mojo_apps_js_unittests",
       "mojo_common_unittests",
       "mojo_js_unittests",
@@ -209,7 +209,7 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_service_manager_unittests",
+      "mojo_application_manager_unittests",
       "mojo_shell_tests",
       "mojo_system_unittests",
       "nacl_loader_unittests"
@@ -223,10 +223,11 @@
       "browser_tests"
     ]
   },
-  "Chromium Linux MSan": {
+  "Linux MSan Tests": {
     "gtest_tests": [
+      "accessibility_unittests",
+      "app_shell_browsertests",
       "base_unittests",
-      "browser_tests",
       "cacheinvalidation_unittests",
       "cc_unittests",
       "content_browsertests",
@@ -250,9 +251,19 @@
       "url_unittests"
     ]
   },
-  "Chromium Linux MSan (browser tests)": {
+  "Linux MSan Browser (1)": {
     "gtest_tests": [
-      "browser_tests"
+      {"test": "browser_tests", "shard_index": 0, "total_shards": 3}
+    ]
+  },
+  "Linux MSan Browser (2)": {
+    "gtest_tests": [
+      {"test": "browser_tests", "shard_index": 1, "total_shards": 3}
+    ]
+  },
+  "Linux MSan Browser (3)": {
+    "gtest_tests": [
+      {"test": "browser_tests", "shard_index": 2, "total_shards": 3}
     ]
   }
 }

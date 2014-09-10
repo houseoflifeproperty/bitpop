@@ -7,3 +7,4 @@ def skia(c):
   soln.name = 'skia'
   soln.url = 'https://skia.googlesource.com/skia.git'
   c.got_revision_mapping['skia'] = 'got_revision'
+  c.target_os = ['android', 'chromeos']

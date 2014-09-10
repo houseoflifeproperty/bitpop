@@ -57,8 +57,6 @@
 
 namespace blink {
 
-using namespace WebCore;
-
 static const int borderSize = 1;
 
 static PlatformMouseEvent constructRelativeMouseEvent(const PlatformMouseEvent& e, FramelessScrollView* parent, FramelessScrollView* child)
@@ -493,10 +491,7 @@ void PopupContainer::getPopupMenuInfo(WebPopupMenuInfo* info)
 
         outputItem.label = inputItem.label;
         outputItem.enabled = inputItem.enabled;
-        if (inputItem.textDirection == WebCore::RTL)
-            outputItem.textDirection = WebTextDirectionRightToLeft;
-        else
-            outputItem.textDirection = WebTextDirectionLeftToRight;
+        outputItem.textDirection = toWebTextDirection(inputItem.textDirection);
         outputItem.hasTextDirectionOverride = inputItem.hasTextDirectionOverride;
 
         switch (inputItem.type) {

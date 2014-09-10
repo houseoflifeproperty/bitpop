@@ -50,7 +50,16 @@ class SmiOperationExecutionMode : public EnumSet<SmiOperationConstraint, byte> {
       : EnumSet<SmiOperationConstraint, byte>(bits) { }
 };
 
-bool AreAliased(Register r1, Register r2, Register r3, Register r4);
+#ifdef DEBUG
+bool AreAliased(Register reg1,
+                Register reg2,
+                Register reg3 = no_reg,
+                Register reg4 = no_reg,
+                Register reg5 = no_reg,
+                Register reg6 = no_reg,
+                Register reg7 = no_reg,
+                Register reg8 = no_reg);
+#endif
 
 // Forward declaration.
 class JumpTarget;
@@ -873,15 +882,15 @@ class MacroAssembler: public Assembler {
   void Move(Register dst, void* ptr, RelocInfo::Mode rmode) {
     // This method must not be used with heap object references. The stored
     // address is not GC safe. Use the handle version instead.
-    ASSERT(rmode > RelocInfo::LAST_GCED_ENUM);
+    DCHECK(rmode > RelocInfo::LAST_GCED_ENUM);
     movp(dst, ptr, rmode);
   }
 
   void Move(Register dst, Handle<Object> value, RelocInfo::Mode rmode) {
     AllowDeferredHandleDereference using_raw_address;
-    ASSERT(!RelocInfo::IsNone(rmode));
-    ASSERT(value->IsHeapObject());
-    ASSERT(!isolate()->heap()->InNewSpace(*value));
+    DCHECK(!RelocInfo::IsNone(rmode));
+    DCHECK(value->IsHeapObject());
+    DCHECK(!isolate()->heap()->InNewSpace(*value));
     movp(dst, reinterpret_cast<void*>(value.location()), rmode);
   }
 
@@ -1059,9 +1068,9 @@ class MacroAssembler: public Assembler {
     } else {
       static const int shift = Field::kShift;
       static const int mask = (Field::kMask >> Field::kShift) << kSmiTagSize;
-      ASSERT(SmiValuesAre31Bits());
-      ASSERT(kSmiShift == kSmiTagSize);
-      ASSERT((mask & 0x80000000u) == 0);
+      DCHECK(SmiValuesAre31Bits());
+      DCHECK(kSmiShift == kSmiTagSize);
+      DCHECK((mask & 0x80000000u) == 0);
       if (shift < kSmiShift) {
         shlp(reg, Immediate(kSmiShift - shift));
       } else if (shift > kSmiShift) {
@@ -1186,7 +1195,8 @@ class MacroAssembler: public Assembler {
   // space is full.
   void AllocateHeapNumber(Register result,
                           Register scratch,
-                          Label* gc_required);
+                          Label* gc_required,
+                          MutableMode mode = IMMUTABLE);
 
   // Allocate a sequential string. All the header fields of the string object
   // are initialized.
@@ -1377,7 +1387,7 @@ class MacroAssembler: public Assembler {
   void Ret(int bytes_dropped, Register scratch);
 
   Handle<Object> CodeObject() {
-    ASSERT(!code_object_.is_null());
+    DCHECK(!code_object_.is_null());
     return code_object_;
   }
 

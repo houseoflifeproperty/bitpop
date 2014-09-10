@@ -13,7 +13,6 @@
 #include "chromeos/ime/fake_input_method_delegate.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/ime/input_method_whitelist.h"
-#include "grit/generated_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -34,7 +33,8 @@ class TestableInputMethodUtil : public InputMethodUtil {
  public:
   explicit TestableInputMethodUtil(InputMethodDelegate* delegate,
                                    scoped_ptr<InputMethodDescriptors> methods)
-      : InputMethodUtil(delegate, methods.Pass()) {
+      : InputMethodUtil(delegate) {
+    ResetInputMethods(*methods);
   }
   // Change access rights.
   using InputMethodUtil::GetInputMethodIdsFromLanguageCodeInternal;

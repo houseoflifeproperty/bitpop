@@ -10,4 +10,5 @@ DEPS = [
   'properties',
   'python',
   'swarming_client',
+  'step',
 ]

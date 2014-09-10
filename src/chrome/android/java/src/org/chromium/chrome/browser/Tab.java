@@ -139,6 +139,10 @@ public class Tab implements NavigationClient {
 
     private boolean mIsClosing = false;
 
+    private Bitmap mFavicon = null;
+
+    private String mFaviconUrl = null;
+
     /**
      * A default {@link ChromeContextMenuItemDelegate} that supports some of the context menu
      * functionality.
@@ -167,6 +171,11 @@ public class Tab implements NavigationClient {
         @Override
         public void onSaveImageToClipboard(String url) {
             mClipboard.setHTMLText("<img src=\"" + url + "\">", url, url);
+        }
+
+        @Override
+        public String getPageUrl() {
+            return getUrl();
         }
     }
 
@@ -252,8 +261,8 @@ public class Tab implements NavigationClient {
     }
 
     private class TabWebContentsObserverAndroid extends WebContentsObserverAndroid {
-        public TabWebContentsObserverAndroid(ContentViewCore contentViewCore) {
-            super(contentViewCore);
+        public TabWebContentsObserverAndroid(WebContents webContents) {
+            super(webContents);
         }
 
         @Override
@@ -789,8 +798,8 @@ public class Tab implements NavigationClient {
         mContentViewCore = cvc;
 
         mWebContentsDelegate = createWebContentsDelegate();
-        mWebContentsObserver = new TabWebContentsObserverAndroid(mContentViewCore);
-        mVoiceSearchTabHelper = new VoiceSearchTabHelper(mContentViewCore);
+        mWebContentsObserver = new TabWebContentsObserverAndroid(mContentViewCore.getWebContents());
+        mVoiceSearchTabHelper = new VoiceSearchTabHelper(mContentViewCore.getWebContents());
 
         if (mContentViewClient != null) mContentViewCore.setContentViewClient(mContentViewClient);
 
@@ -821,6 +830,11 @@ public class Tab implements NavigationClient {
         }
 
         for (TabObserver observer : mObservers) observer.onContentChanged(this);
+
+        // For browser tabs, we want to set accessibility focus to the page
+        // when it loads. This is not the default behavior for embedded
+        // web views.
+        mContentViewCore.setShouldSetAccessibilityFocusOnPageLoad(true);
     }
 
     /**
@@ -880,10 +894,16 @@ public class Tab implements NavigationClient {
     /**
      * @return The bitmap of the favicon scaled to 16x16dp. null if no favicon
      *         is specified or it requires the default favicon.
-     *         TODO(bauerb): Upstream implementation.
      */
     public Bitmap getFavicon() {
-        return null;
+        if (mContentViewCore != null) {
+            if (mFavicon == null || !mContentViewCore.getUrl().equals(mFaviconUrl)) {
+                if (mNativeTabAndroid == 0) return null;
+                mFavicon = nativeGetFavicon(mNativeTabAndroid);
+                mFaviconUrl = mContentViewCore.getUrl();
+            }
+        }
+        return mFavicon;
     }
 
     /**
@@ -1009,6 +1029,8 @@ public class Tab implements NavigationClient {
      */
     @CalledByNative
     protected void onFaviconUpdated() {
+        mFavicon = null;
+        mFaviconUrl = null;
         for (TabObserver observer : mObservers) observer.onFaviconUpdated(this);
     }
 
@@ -1151,4 +1173,5 @@ public class Tab implements NavigationClient {
     private native void nativeSetActiveNavigationEntryTitleForUrl(long nativeTabAndroid, String url,
             String title);
     private native boolean nativePrint(long nativeTabAndroid);
+    private native Bitmap nativeGetFavicon(long nativeTabAndroid);
 }

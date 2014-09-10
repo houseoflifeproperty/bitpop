@@ -33,7 +33,7 @@
 #include "core/editing/TextIterator.h"
 #include "core/editing/VisiblePosition.h"
 
-namespace WebCore {
+namespace blink {
 
 PlainTextRange::PlainTextRange()
     : m_start(kNotFound)
@@ -103,10 +103,10 @@ PassRefPtrWillBeRawPtr<Range> PlainTextRange::createRangeFor(const ContainerNode
         // Fix textRunRange->endPosition(), but only if foundStart || foundEnd, because it is only
         // in those cases that textRunRange is used.
         if (foundEnd) {
-            // FIXME: This is a workaround for the fact that the end of a run is often at the wrong
-            // position for emitted '\n's.
-            if (len == 1 && it.characterAt(0) == '\n') {
-                scope.document().updateLayoutIgnorePendingStylesheets();
+            // FIXME: This is a workaround for the fact that the end of a run
+            // is often at the wrong position for emitted '\n's or if the
+            // renderer of the current node is a replaced element.
+            if (len == 1 && (it.characterAt(0) == '\n' || it.isInsideReplacedElement())) {
                 it.advance();
                 if (!it.atEnd()) {
                     RefPtrWillBeRawPtr<Range> range = it.range();
@@ -159,7 +159,7 @@ PassRefPtrWillBeRawPtr<Range> PlainTextRange::createRangeFor(const ContainerNode
     return resultRange.release();
 }
 
-PlainTextRange PlainTextRange::create(const Node& scope, const Range& range)
+PlainTextRange PlainTextRange::create(const ContainerNode& scope, const Range& range)
 {
     if (!range.startContainer())
         return PlainTextRange();
@@ -174,7 +174,7 @@ PlainTextRange PlainTextRange::create(const Node& scope, const Range& range)
     if (range.endContainer() != scope && !range.endContainer()->isDescendantOf(&scope))
         return PlainTextRange();
 
-    RefPtrWillBeRawPtr<Range> testRange = Range::create(scope.document(), const_cast<Node*>(&scope), 0, range.startContainer(), range.startOffset());
+    RefPtrWillBeRawPtr<Range> testRange = Range::create(scope.document(), const_cast<ContainerNode*>(&scope), 0, range.startContainer(), range.startOffset());
     ASSERT(testRange->startContainer() == &scope);
     size_t start = TextIterator::rangeLength(testRange.get());
 

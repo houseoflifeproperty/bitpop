@@ -19,6 +19,10 @@ FakeLayerTreeHostImpl::FakeLayerTreeHostImpl(Proxy* proxy,
   // Explicitly clear all debug settings.
   SetDebugState(LayerTreeDebugState());
   SetViewportSize(gfx::Size(100, 100));
+
+  // Avoid using Now() as the frame time in unit tests.
+  base::TimeTicks time_ticks = base::TimeTicks::FromInternalValue(1);
+  SetCurrentFrameTimeTicks(time_ticks);
 }
 
 FakeLayerTreeHostImpl::FakeLayerTreeHostImpl(const LayerTreeSettings& settings,
@@ -32,6 +36,10 @@ FakeLayerTreeHostImpl::FakeLayerTreeHostImpl(const LayerTreeSettings& settings,
                         0) {
   // Explicitly clear all debug settings.
   SetDebugState(LayerTreeDebugState());
+
+  // Avoid using Now() as the frame time in unit tests.
+  base::TimeTicks time_ticks = base::TimeTicks::FromInternalValue(1);
+  SetCurrentFrameTimeTicks(time_ticks);
 }
 
 FakeLayerTreeHostImpl::~FakeLayerTreeHostImpl() {}
@@ -52,6 +60,28 @@ base::TimeTicks FakeLayerTreeHostImpl::CurrentFrameTimeTicks() {
 void FakeLayerTreeHostImpl::SetCurrentFrameTimeTicks(
     base::TimeTicks current_frame_time_ticks) {
   current_frame_time_ticks_ = current_frame_time_ticks;
+}
+
+int FakeLayerTreeHostImpl::RecursiveUpdateNumChildren(LayerImpl* layer) {
+  int num_children_that_draw_content = 0;
+  for (size_t i = 0; i < layer->children().size(); ++i) {
+    num_children_that_draw_content +=
+        RecursiveUpdateNumChildren(layer->children()[i]);
+  }
+  if (layer->DrawsContent() && layer->HasDelegatedContent())
+    num_children_that_draw_content += 1000;
+  layer->SetNumDescendantsThatDrawContent(num_children_that_draw_content);
+  return num_children_that_draw_content + (layer->DrawsContent() ? 1 : 0);
+}
+
+void FakeLayerTreeHostImpl::UpdateNumChildrenAndDrawPropertiesForActiveTree() {
+  UpdateNumChildrenAndDrawProperties(active_tree());
+}
+
+void FakeLayerTreeHostImpl::UpdateNumChildrenAndDrawProperties(
+    LayerTreeImpl* layerTree) {
+  RecursiveUpdateNumChildren(layerTree->root_layer());
+  layerTree->UpdateDrawProperties();
 }
 
 }  // namespace cc

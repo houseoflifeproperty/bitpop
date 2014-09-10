@@ -31,13 +31,12 @@
 #include "config.h"
 #include "modules/quota/DOMWindowQuota.h"
 
-#include "core/dom/Document.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "modules/quota/DeprecatedStorageInfo.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 DOMWindowQuota::DOMWindowQuota(LocalDOMWindow& window)
     : DOMWindowProperty(window.frame())
@@ -83,4 +82,4 @@ void DOMWindowQuota::trace(Visitor* visitor)
     WillBeHeapSupplement<LocalDOMWindow>::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

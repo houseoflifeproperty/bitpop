@@ -40,9 +40,6 @@ class MockRenderProcessHost : public RenderProcessHost {
   virtual void RemoveRoute(int32 routing_id) OVERRIDE;
   virtual void AddObserver(RenderProcessHostObserver* observer) OVERRIDE;
   virtual void RemoveObserver(RenderProcessHostObserver* observer) OVERRIDE;
-  virtual bool WaitForBackingStoreMsg(int render_widget_id,
-                                      const base::TimeDelta& max_delay,
-                                      IPC::Message* msg) OVERRIDE;
   virtual void ReceivedBadMessage() OVERRIDE;
   virtual void WidgetRestored() OVERRIDE;
   virtual void WidgetHidden() OVERRIDE;
@@ -85,6 +82,7 @@ class MockRenderProcessHost : public RenderProcessHost {
   virtual void ResumeDeferredNavigation(const GlobalRequestID& request_id)
       OVERRIDE;
   virtual void NotifyTimezoneChange() OVERRIDE;
+  virtual ServiceRegistry* GetServiceRegistry() OVERRIDE;
 
   // IPC::Sender via RenderProcessHost.
   virtual bool Send(IPC::Message* msg) OVERRIDE;

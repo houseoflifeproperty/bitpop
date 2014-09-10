@@ -36,9 +36,10 @@
 #include "platform/animation/TimingFunction.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
+class FloatBox;
 
 // Given an input timing function between keyframe at 0 and keyframe at 1.0, we
 // need a timing function such that the behavior with the keyframes swapped is
@@ -64,6 +65,7 @@ public:
     virtual void cancelAnimationOnCompositor(const Element&, int id);
     virtual void pauseAnimationForTestingOnCompositor(const Element&, int id, double pauseTime);
 
+    virtual bool getAnimatedBoundingBox(FloatBox&, const AnimationEffect&, double minValue, double maxValue) const;
 protected:
     CompositorAnimations() { }
 
@@ -78,6 +80,6 @@ private:
     }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

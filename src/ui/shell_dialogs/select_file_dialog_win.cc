@@ -4,8 +4,6 @@
 
 #include "ui/shell_dialogs/select_file_dialog_win.h"
 
-#include <windows.h>
-#include <commdlg.h>
 #include <shlobj.h>
 
 #include <algorithm>
@@ -30,6 +28,7 @@
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/win/open_file_name_win.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/shell_dialogs/base_shell_dialog_win.h"
 #include "ui/shell_dialogs/shell_dialogs_delegate.h"
@@ -37,29 +36,14 @@
 
 namespace {
 
+bool CallBuiltinGetOpenFileName(OPENFILENAME* ofn) {
+  return ::GetOpenFileName(ofn) == TRUE;
+}
+
 // Given |extension|, if it's not empty, then remove the leading dot.
 std::wstring GetExtensionWithoutLeadingDot(const std::wstring& extension) {
   DCHECK(extension.empty() || extension[0] == L'.');
   return extension.empty() ? extension : extension.substr(1);
-}
-
-// Diverts to a metro-specific implementation as appropriate.
-bool CallGetOpenFileName(OPENFILENAME* ofn) {
-  HMODULE metro_module = base::win::GetMetroModule();
-  if (metro_module != NULL) {
-    typedef BOOL (*MetroGetOpenFileName)(OPENFILENAME*);
-    MetroGetOpenFileName metro_get_open_file_name =
-        reinterpret_cast<MetroGetOpenFileName>(
-            ::GetProcAddress(metro_module, "MetroGetOpenFileName"));
-    if (metro_get_open_file_name == NULL) {
-      NOTREACHED();
-      return false;
-    }
-
-    return metro_get_open_file_name(ofn) == TRUE;
-  } else {
-    return GetOpenFileName(ofn) == TRUE;
-  }
 }
 
 // Diverts to a metro-specific implementation as appropriate.
@@ -374,43 +358,15 @@ bool SaveFileAsWithFilter(HWND owner,
   return true;
 }
 
-// Prompt the user for location to save a file. 'suggested_name' is a full path
-// that gives the dialog box a hint as to how to initialize itself.
-// For example, a 'suggested_name' of:
-//   "C:\Documents and Settings\jojo\My Documents\picture.png"
-// will start the dialog in the "C:\Documents and Settings\jojo\My Documents\"
-// directory, and filter for .png file types.
-// 'owner' is the window to which the dialog box is modal, NULL for a modeless
-// dialog box.
-// On success,  returns true and 'final_name' contains the full path of the file
-// that the user chose. On error, returns false, and 'final_name' is not
-// modified.
-bool SaveFileAs(HWND owner,
-                const std::wstring& suggested_name,
-                std::wstring* final_name) {
-  std::wstring file_ext =
-      base::FilePath(suggested_name).Extension().insert(0, L"*");
-  std::wstring filter = FormatFilterForExtensions(
-      std::vector<std::wstring>(1, file_ext),
-      std::vector<std::wstring>(),
-      true);
-  unsigned index = 1;
-  return SaveFileAsWithFilter(owner,
-                              suggested_name,
-                              filter,
-                              L"",
-                              false,
-                              &index,
-                              final_name);
-}
-
 // Implementation of SelectFileDialog that shows a Windows common dialog for
 // choosing a file or folder.
 class SelectFileDialogImpl : public ui::SelectFileDialog,
                              public ui::BaseShellDialogImpl {
  public:
-  explicit SelectFileDialogImpl(Listener* listener,
-                                ui::SelectFilePolicy* policy);
+  SelectFileDialogImpl(
+      Listener* listener,
+      ui::SelectFilePolicy* policy,
+      const base::Callback<bool(OPENFILENAME*)>& get_open_file_name_impl);
 
   // BaseShellDialog implementation:
   virtual bool IsRunning(gfx::NativeWindow owning_window) const OVERRIDE;
@@ -519,15 +475,19 @@ class SelectFileDialogImpl : public ui::SelectFileDialog,
   base::string16 GetFilterForFileTypes(const FileTypeInfo* file_types);
 
   bool has_multiple_file_type_choices_;
+  base::Callback<bool(OPENFILENAME*)> get_open_file_name_impl_;
 
   DISALLOW_COPY_AND_ASSIGN(SelectFileDialogImpl);
 };
 
-SelectFileDialogImpl::SelectFileDialogImpl(Listener* listener,
-                                           ui::SelectFilePolicy* policy)
+SelectFileDialogImpl::SelectFileDialogImpl(
+    Listener* listener,
+    ui::SelectFilePolicy* policy,
+    const base::Callback<bool(OPENFILENAME*)>& get_open_file_name_impl)
     : SelectFileDialog(listener, policy),
       BaseShellDialogImpl(),
-      has_multiple_file_type_choices_(false) {
+      has_multiple_file_type_choices_(false),
+      get_open_file_name_impl_(get_open_file_name_impl) {
 }
 
 SelectFileDialogImpl::~SelectFileDialogImpl() {
@@ -773,47 +733,23 @@ bool SelectFileDialogImpl::RunOpenFileDialog(
     const std::wstring& filter,
     HWND owner,
     base::FilePath* path) {
-  OPENFILENAME ofn;
-  // We must do this otherwise the ofn's FlagsEx may be initialized to random
-  // junk in release builds which can cause the Places Bar not to show up!
-  ZeroMemory(&ofn, sizeof(ofn));
-  ofn.lStructSize = sizeof(ofn);
-  ofn.hwndOwner = owner;
-
-  wchar_t filename[MAX_PATH];
-  // According to http://support.microsoft.com/?scid=kb;en-us;222003&x=8&y=12,
-  // The lpstrFile Buffer MUST be NULL Terminated.
-  filename[0] = 0;
-  // Define the dir in here to keep the string buffer pointer pointed to
-  // ofn.lpstrInitialDir available during the period of running the
-  // GetOpenFileName.
-  base::FilePath dir;
-  // Use lpstrInitialDir to specify the initial directory
-  if (!path->empty()) {
-    if (IsDirectory(*path)) {
-      ofn.lpstrInitialDir = path->value().c_str();
-    } else {
-      dir = path->DirName();
-      ofn.lpstrInitialDir = dir.value().c_str();
-      // Only pure filename can be put in lpstrFile field.
-      base::wcslcpy(filename, path->BaseName().value().c_str(),
-                    arraysize(filename));
-    }
-  }
-
-  ofn.lpstrFile = filename;
-  ofn.nMaxFile = MAX_PATH;
-
   // We use OFN_NOCHANGEDIR so that the user can rename or delete the directory
   // without having to close Chrome first.
-  ofn.Flags = OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+  ui::win::OpenFileName ofn(owner, OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR);
+  if (!path->empty()) {
+    if (IsDirectory(*path))
+      ofn.SetInitialSelection(*path, base::FilePath());
+    else
+      ofn.SetInitialSelection(path->DirName(), path->BaseName());
+  }
 
   if (!filter.empty())
-    ofn.lpstrFilter = filter.c_str();
-  bool success = CallGetOpenFileName(&ofn);
+    ofn.GetOPENFILENAME()->lpstrFilter = filter.c_str();
+
+  bool success = get_open_file_name_impl_.Run(ofn.GetOPENFILENAME());
   DisableOwner(owner);
   if (success)
-    *path = base::FilePath(filename);
+    *path = ofn.GetSingleResult();
   return success;
 }
 
@@ -822,53 +758,31 @@ bool SelectFileDialogImpl::RunOpenMultiFileDialog(
     const std::wstring& filter,
     HWND owner,
     std::vector<base::FilePath>* paths) {
-  OPENFILENAME ofn;
-  // We must do this otherwise the ofn's FlagsEx may be initialized to random
-  // junk in release builds which can cause the Places Bar not to show up!
-  ZeroMemory(&ofn, sizeof(ofn));
-  ofn.lStructSize = sizeof(ofn);
-  ofn.hwndOwner = owner;
-
-  scoped_ptr<wchar_t[]> filename(new wchar_t[UNICODE_STRING_MAX_CHARS]);
-  filename[0] = 0;
-
-  ofn.lpstrFile = filename.get();
-  ofn.nMaxFile = UNICODE_STRING_MAX_CHARS;
   // We use OFN_NOCHANGEDIR so that the user can rename or delete the directory
   // without having to close Chrome first.
-  ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER
-               | OFN_HIDEREADONLY | OFN_ALLOWMULTISELECT | OFN_NOCHANGEDIR;
+  ui::win::OpenFileName ofn(owner,
+                            OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST |
+                                OFN_EXPLORER | OFN_HIDEREADONLY |
+                                OFN_ALLOWMULTISELECT | OFN_NOCHANGEDIR);
 
-  if (!filter.empty()) {
-    ofn.lpstrFilter = filter.c_str();
-  }
+  if (!filter.empty())
+    ofn.GetOPENFILENAME()->lpstrFilter = filter.c_str();
 
-  bool success = CallGetOpenFileName(&ofn);
+  base::FilePath directory;
+  std::vector<base::FilePath> filenames;
+
+  if (get_open_file_name_impl_.Run(ofn.GetOPENFILENAME()))
+    ofn.GetResult(&directory, &filenames);
+
   DisableOwner(owner);
-  if (success) {
-    std::vector<base::FilePath> files;
-    const wchar_t* selection = ofn.lpstrFile;
-    while (*selection) {  // Empty string indicates end of list.
-      files.push_back(base::FilePath(selection));
-      // Skip over filename and null-terminator.
-      selection += files.back().value().length() + 1;
-    }
-    if (files.empty()) {
-      success = false;
-    } else if (files.size() == 1) {
-      // When there is one file, it contains the path and filename.
-      paths->swap(files);
-    } else {
-      // Otherwise, the first string is the path, and the remainder are
-      // filenames.
-      std::vector<base::FilePath>::iterator path = files.begin();
-      for (std::vector<base::FilePath>::iterator file = path + 1;
-           file != files.end(); ++file) {
-        paths->push_back(path->Append(*file));
-      }
-    }
+
+  for (std::vector<base::FilePath>::iterator it = filenames.begin();
+       it != filenames.end();
+       ++it) {
+    paths->push_back(directory.Append(*it));
   }
-  return success;
+
+  return !paths->empty();
 }
 
 base::string16 SelectFileDialogImpl::GetFilterForFileTypes(
@@ -941,8 +855,16 @@ std::wstring AppendExtensionIfNeeded(
 
 SelectFileDialog* CreateWinSelectFileDialog(
     SelectFileDialog::Listener* listener,
+    SelectFilePolicy* policy,
+    const base::Callback<bool(OPENFILENAME* ofn)>& get_open_file_name_impl) {
+  return new SelectFileDialogImpl(listener, policy, get_open_file_name_impl);
+}
+
+SelectFileDialog* CreateDefaultWinSelectFileDialog(
+    SelectFileDialog::Listener* listener,
     SelectFilePolicy* policy) {
-  return new SelectFileDialogImpl(listener, policy);
+  return CreateWinSelectFileDialog(
+      listener, policy, base::Bind(&CallBuiltinGetOpenFileName));
 }
 
 }  // namespace ui

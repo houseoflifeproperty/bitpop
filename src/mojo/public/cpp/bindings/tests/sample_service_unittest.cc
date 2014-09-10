@@ -6,6 +6,8 @@
 #include <ostream>
 #include <string>
 
+#include "mojo/public/cpp/environment/environment.h"
+#include "mojo/public/cpp/system/macros.h"
 #include "mojo/public/interfaces/bindings/tests/sample_service.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -262,7 +264,7 @@ class ServiceImpl : public Service {
     EXPECT_FALSE(foo.is_null());
     if (!foo.is_null())
       CheckFoo(*foo);
-    EXPECT_EQ(BAZ_EXTRA, baz);
+    EXPECT_EQ(BAZ_OPTIONS_EXTRA, baz);
 
     if (g_dump_message_as_text) {
       // Also dump the Foo structure and all of its members.
@@ -312,7 +314,18 @@ class SimpleMessageReceiver : public mojo::MessageReceiverWithResponder {
   }
 };
 
-TEST(BindingsSampleTest, Basic) {
+class BindingsSampleTest : public testing::Test {
+ public:
+  BindingsSampleTest() {}
+  virtual ~BindingsSampleTest() {}
+
+ private:
+  mojo::Environment env_;
+
+  MOJO_DISALLOW_COPY_AND_ASSIGN(BindingsSampleTest);
+};
+
+TEST_F(BindingsSampleTest, Basic) {
   SimpleMessageReceiver receiver;
 
   // User has a proxy to a Service somehow.
@@ -328,23 +341,21 @@ TEST(BindingsSampleTest, Basic) {
   CheckFoo(*foo);
 
   PortPtr port;
-  service->Frobinate(foo.Pass(), Service::BAZ_EXTRA, port.Pass());
+  service->Frobinate(foo.Pass(), Service::BAZ_OPTIONS_EXTRA, port.Pass());
 
   delete service;
 }
 
-TEST(BindingsSampleTest, DefaultValues) {
+TEST_F(BindingsSampleTest, DefaultValues) {
   DefaultsTestPtr defaults(DefaultsTest::New());
   EXPECT_EQ(-12, defaults->a0);
   EXPECT_EQ(kTwelve, defaults->a1);
   EXPECT_EQ(1234, defaults->a2);
   EXPECT_EQ(34567U, defaults->a3);
   EXPECT_EQ(123456, defaults->a4);
-  // TODO(vtl): crbug.com/375522
-  // EXPECT_EQ(3456789012U, defaults->a5);
-  EXPECT_EQ(111111111111LL, defaults->a6);
-  // TODO(vtl): crbug.com/375522
-  // EXPECT_EQ(9999999999999999999ULL, defaults->a7);
+  EXPECT_EQ(3456789012U, defaults->a5);
+  EXPECT_EQ(-111111111111LL, defaults->a6);
+  EXPECT_EQ(9999999999999999999ULL, defaults->a7);
   EXPECT_EQ(0x12345, defaults->a8);
   EXPECT_EQ(-0x12345, defaults->a9);
   EXPECT_EQ(1234, defaults->a10);
@@ -362,6 +373,9 @@ TEST(BindingsSampleTest, DefaultValues) {
   ASSERT_FALSE(defaults->a22.is_null());
   EXPECT_EQ(imported::SHAPE_RECTANGLE, defaults->a22->shape);
   EXPECT_EQ(imported::COLOR_BLACK, defaults->a22->color);
+  EXPECT_EQ(0xFFFFFFFFFFFFFFFFULL, defaults->a23);
+  EXPECT_EQ(0x123456789, defaults->a24);
+  EXPECT_EQ(-0x123456789, defaults->a25);
 }
 
 }  // namespace

@@ -295,7 +295,7 @@ void InspectUI::InspectBrowserWithCustomFrontend(
 
   // Engage remote debugging between front-end and agent host.
   content::DevToolsManager::GetInstance()->RegisterDevToolsClientHostFor(
-      agent_host, bindings->frontend_host());
+      agent_host, bindings);
 }
 
 void InspectUI::InspectDevices(Browser* browser) {
@@ -476,12 +476,10 @@ DevToolsTargetImpl* InspectUI::FindTarget(
 }
 
 void InspectUI::PopulateTargets(const std::string& source,
-                                scoped_ptr<base::ListValue> targets) {
-  scoped_ptr<base::Value> source_value(base::Value::CreateStringValue(source));
-  web_ui()->CallJavascriptFunction(
-      "populateTargets",
-      *source_value.get(),
-      *targets.get());
+                                const base::ListValue& targets) {
+  web_ui()->CallJavascriptFunction("populateTargets",
+                                   base::StringValue(source),
+                                   targets);
 }
 
 void InspectUI::PopulatePortStatus(const base::Value& status) {

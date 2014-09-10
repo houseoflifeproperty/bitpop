@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/debug/trace_event_impl.h"
 #include "base/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
@@ -29,6 +30,7 @@ namespace {
 
 const char kRecordUntilFull[]   = "record-until-full";
 const char kRecordContinuously[] = "record-continuously";
+const char kRecordAsMuchAsPossible[] = "record-as-much-as-possible";
 const char kEnableSampling[] = "enable-sampling";
 
 void ReadFile(
@@ -46,9 +48,14 @@ void ReadFile(
 
 }  // namespace
 
+const char* DevToolsTracingHandler::kDefaultCategories =
+    "-*,disabled-by-default-devtools.timeline*";
+const double DevToolsTracingHandler::kDefaultReportingInterval = 1000.0;
+const double DevToolsTracingHandler::kMinimumReportingInterval = 250.0;
+
 DevToolsTracingHandler::DevToolsTracingHandler(
     DevToolsTracingHandler::Target target)
-    : weak_factory_(this), target_(target) {
+    : weak_factory_(this), target_(target), is_recording_(false) {
   RegisterCommandHandler(devtools::Tracing::start::kName,
                          base::Bind(&DevToolsTracingHandler::OnStart,
                                     base::Unretained(this)));
@@ -57,6 +64,12 @@ DevToolsTracingHandler::DevToolsTracingHandler(
                                     base::Unretained(this)));
   RegisterCommandHandler(devtools::Tracing::getCategories::kName,
                          base::Bind(&DevToolsTracingHandler::OnGetCategories,
+                                    base::Unretained(this)));
+  RegisterNotificationHandler(devtools::Tracing::started::kName,
+                         base::Bind(&DevToolsTracingHandler::OnTracingStarted,
+                                    base::Unretained(this)));
+  RegisterNotificationHandler(devtools::Tracing::stopped::kName,
+                         base::Bind(&DevToolsTracingHandler::OnTracingStopped,
                                     base::Unretained(this)));
 }
 
@@ -92,7 +105,8 @@ void DevToolsTracingHandler::ReadRecordingResult(
       if (buffer.size())
         buffer.append(",");
       buffer.append(item);
-      if (i % 1000 == 0) {
+      const size_t kMessageSizeThreshold = 1024 * 1024;
+      if (buffer.size() > kMessageSizeThreshold) {
         OnTraceDataCollected(buffer);
         buffer.clear();
       }
@@ -116,80 +130,91 @@ void DevToolsTracingHandler::OnTraceDataCollected(
   SendRawMessage(message);
 }
 
-TracingController::Options DevToolsTracingHandler::TraceOptionsFromString(
+base::debug::TraceOptions DevToolsTracingHandler::TraceOptionsFromString(
     const std::string& options) {
   std::vector<std::string> split;
   std::vector<std::string>::iterator iter;
-  int ret = 0;
+  base::debug::TraceOptions ret;
 
   base::SplitString(options, ',', &split);
   for (iter = split.begin(); iter != split.end(); ++iter) {
     if (*iter == kRecordUntilFull) {
-      ret &= ~TracingController::RECORD_CONTINUOUSLY;
+      ret.record_mode = base::debug::RECORD_UNTIL_FULL;
     } else if (*iter == kRecordContinuously) {
-      ret |= TracingController::RECORD_CONTINUOUSLY;
+      ret.record_mode = base::debug::RECORD_CONTINUOUSLY;
+    } else if (*iter == kRecordAsMuchAsPossible) {
+      ret.record_mode = base::debug::RECORD_AS_MUCH_AS_POSSIBLE;
     } else if (*iter == kEnableSampling) {
-      ret |= TracingController::ENABLE_SAMPLING;
+      ret.enable_sampling = true;
     }
   }
-  return static_cast<TracingController::Options>(ret);
+  return ret;
 }
 
 scoped_refptr<DevToolsProtocol::Response>
 DevToolsTracingHandler::OnStart(
     scoped_refptr<DevToolsProtocol::Command> command) {
+  is_recording_ = true;
+
   std::string categories;
+  base::debug::TraceOptions options;
+  double usage_reporting_interval = 0.0;
+
   base::DictionaryValue* params = command->params();
-  if (params)
+  if (params) {
     params->GetString(devtools::Tracing::start::kParamCategories, &categories);
-
-  TracingController::Options options = TracingController::DEFAULT_OPTIONS;
-  if (params && params->HasKey(devtools::Tracing::start::kParamOptions)) {
     std::string options_param;
-    params->GetString(devtools::Tracing::start::kParamOptions, &options_param);
-    options = TraceOptionsFromString(options_param);
-  }
-
-  if (params && params->HasKey(
-      devtools::Tracing::start::kParamBufferUsageReportingInterval)) {
-    double usage_reporting_interval = 0.0;
+    if (params->GetString(devtools::Tracing::start::kParamOptions,
+                          &options_param)) {
+      options = TraceOptionsFromString(options_param);
+    }
     params->GetDouble(
         devtools::Tracing::start::kParamBufferUsageReportingInterval,
         &usage_reporting_interval);
-    if (usage_reporting_interval > 0) {
-      base::TimeDelta interval = base::TimeDelta::FromMilliseconds(
-          std::ceil(usage_reporting_interval));
-      buffer_usage_poll_timer_.reset(new base::Timer(
-          FROM_HERE,
-          interval,
-          base::Bind(
-              base::IgnoreResult(&TracingController::GetTraceBufferPercentFull),
-              base::Unretained(TracingController::GetInstance()),
-              base::Bind(&DevToolsTracingHandler::OnBufferUsage,
-                         weak_factory_.GetWeakPtr())),
-          true));
-      buffer_usage_poll_timer_->Reset();
-    }
   }
+
+  SetupTimer(usage_reporting_interval);
 
   // If inspected target is a render process Tracing.start will be handled by
   // tracing agent in the renderer.
   if (target_ == Renderer) {
     TracingController::GetInstance()->EnableRecording(
-        categories, options, TracingController::EnableRecordingDoneCallback());
+        base::debug::CategoryFilter(categories),
+        options,
+        TracingController::EnableRecordingDoneCallback());
     return NULL;
   }
 
   TracingController::GetInstance()->EnableRecording(
-      categories, options,
-      base::Bind(&DevToolsTracingHandler::OnTracingStarted,
+      base::debug::CategoryFilter(categories),
+      options,
+      base::Bind(&DevToolsTracingHandler::OnRecordingEnabled,
                  weak_factory_.GetWeakPtr(),
                  command));
-
   return command->AsyncResponsePromise();
 }
 
-void DevToolsTracingHandler::OnTracingStarted(
+void DevToolsTracingHandler::SetupTimer(double usage_reporting_interval) {
+  if (usage_reporting_interval == 0) return;
+
+  if (usage_reporting_interval < kMinimumReportingInterval)
+      usage_reporting_interval = kMinimumReportingInterval;
+
+  base::TimeDelta interval = base::TimeDelta::FromMilliseconds(
+      std::ceil(usage_reporting_interval));
+  buffer_usage_poll_timer_.reset(new base::Timer(
+      FROM_HERE,
+      interval,
+      base::Bind(
+          base::IgnoreResult(&TracingController::GetTraceBufferPercentFull),
+          base::Unretained(TracingController::GetInstance()),
+          base::Bind(&DevToolsTracingHandler::OnBufferUsage,
+                     weak_factory_.GetWeakPtr())),
+      true));
+  buffer_usage_poll_timer_->Reset();
+}
+
+void DevToolsTracingHandler::OnRecordingEnabled(
     scoped_refptr<DevToolsProtocol::Command> command) {
   SendAsyncResponse(command->SuccessResponse(NULL));
 }
@@ -211,12 +236,14 @@ DevToolsTracingHandler::OnEnd(
 
 void DevToolsTracingHandler::DisableRecording(
     const TracingController::TracingFileResultCallback& callback) {
+  is_recording_ = false;
   buffer_usage_poll_timer_.reset();
   TracingController::GetInstance()->DisableRecording(base::FilePath(),
                                                      callback);
 }
 
 void DevToolsTracingHandler::OnClientDetached() {
+  if (is_recording_)
     DisableRecording();
 }
 
@@ -244,5 +271,30 @@ void DevToolsTracingHandler::OnCategoriesReceived(
                 category_list);
   SendAsyncResponse(command->SuccessResponse(response));
 }
+
+void DevToolsTracingHandler::OnTracingStarted(
+    scoped_refptr<DevToolsProtocol::Notification> notification) {
+  if (is_recording_)
+    return;
+  is_recording_ = true;
+
+  SetupTimer(kDefaultReportingInterval);
+
+  TracingController::GetInstance()->EnableRecording(
+      base::debug::CategoryFilter(kDefaultCategories),
+      base::debug::TraceOptions(),
+      TracingController::EnableRecordingDoneCallback());
+}
+
+void DevToolsTracingHandler::OnTracingStopped(
+    scoped_refptr<DevToolsProtocol::Notification> notification) {
+  if (!is_recording_)
+    return;
+  is_recording_ = false;
+  DisableRecording(
+      base::Bind(&DevToolsTracingHandler::BeginReadingRecordingResult,
+                 weak_factory_.GetWeakPtr()));
+}
+
 
 }  // namespace content

@@ -63,9 +63,6 @@ static const char kFrontendHostMethod[] = "method";
 static const char kFrontendHostParams[] = "params";
 static const char kTitleFormat[] = "Developer Tools - %s";
 
-static const char kDevicesChanged[] = "DevicesChanged";
-static const char kDeviceCountChanged[] = "DeviceCountChanged";
-
 std::string SkColorToRGBAString(SkColor color) {
   // We avoid StringPrintf because it will use locale specific formatters for
   // the double (e.g. ',' instead of '.' in German).
@@ -186,8 +183,6 @@ class DefaultBindingsDelegate : public DevToolsUIBindings::Delegate {
   virtual void ActivateWindow() OVERRIDE;
   virtual void CloseWindow() OVERRIDE {}
   virtual void SetInspectedPageBounds(const gfx::Rect& rect) OVERRIDE {}
-  virtual void SetContentsResizingStrategy(
-      const gfx::Insets& insets, const gfx::Size& min_size) OVERRIDE {}
   virtual void InspectElementCompleted() OVERRIDE {}
   virtual void MoveWindow(int x, int y) OVERRIDE {}
   virtual void SetIsDocked(bool is_docked) OVERRIDE {}
@@ -262,6 +257,16 @@ void DevToolsUIBindings::FrontendWebContentsObserver::WebContentsDestroyed() {
 
 void DevToolsUIBindings::FrontendWebContentsObserver::RenderProcessGone(
     base::TerminationStatus status) {
+  switch (status) {
+    case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
+    case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
+    case base::TERMINATION_STATUS_PROCESS_CRASHED:
+      content::DevToolsManager::GetInstance()->ClientHostClosing(
+          devtools_bindings_);
+      break;
+    default:
+      break;
+  }
   devtools_bindings_->delegate_->RenderProcessGone();
 }
 
@@ -269,10 +274,13 @@ void DevToolsUIBindings::FrontendWebContentsObserver::AboutToNavigateRenderView(
     content::RenderViewHost* render_view_host) {
   content::NavigationEntry* entry =
       web_contents()->GetController().GetActiveEntry();
-  if (devtools_bindings_->url_ == entry->GetURL())
-    content::DevToolsClientHost::SetupDevToolsFrontendClient(render_view_host);
-  else
+  if (devtools_bindings_->url_ == entry->GetURL()) {
+    devtools_bindings_->frontend_host_.reset(
+        content::DevToolsFrontendHost::Create(
+            render_view_host, devtools_bindings_));
+  } else {
     delete devtools_bindings_;
+  }
 }
 
 void DevToolsUIBindings::FrontendWebContentsObserver::
@@ -299,6 +307,9 @@ GURL DevToolsUIBindings::ApplyThemeToURL(Profile* profile,
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableDevToolsExperiments))
     url_string += "&experiments=true";
+#if defined(DEBUG_DEVTOOLS)
+  url_string += "&debugFrontend=true";
+#endif  // defined(DEBUG_DEVTOOLS)
   return GURL(url_string);
 }
 
@@ -307,14 +318,13 @@ DevToolsUIBindings::DevToolsUIBindings(content::WebContents* web_contents,
     : profile_(Profile::FromBrowserContext(web_contents->GetBrowserContext())),
       web_contents_(web_contents),
       delegate_(new DefaultBindingsDelegate(web_contents_)),
-      device_listener_enabled_(false),
+      device_count_updates_enabled_(false),
+      devices_updates_enabled_(false),
       url_(url),
       weak_factory_(this) {
   frontend_contents_observer_.reset(new FrontendWebContentsObserver(this));
   web_contents_->GetMutableRendererPrefs()->can_accept_load_drops = false;
 
-  frontend_host_.reset(content::DevToolsClientHost::CreateDevToolsFrontendHost(
-      web_contents_, this));
   file_helper_.reset(new DevToolsFileHelper(web_contents_, profile_));
   file_system_indexer_ = new DevToolsFileSystemIndexer();
   extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
@@ -341,23 +351,18 @@ DevToolsUIBindings::DevToolsUIBindings(content::WebContents* web_contents,
 }
 
 DevToolsUIBindings::~DevToolsUIBindings() {
-  content::DevToolsManager::GetInstance()->ClientHostClosing(
-      frontend_host_.get());
+  content::DevToolsManager::GetInstance()->ClientHostClosing(this);
 
   for (IndexingJobsMap::const_iterator jobs_it(indexing_jobs_.begin());
        jobs_it != indexing_jobs_.end(); ++jobs_it) {
     jobs_it->second->Stop();
   }
   indexing_jobs_.clear();
-
-  while (!subscribers_.empty())
-    Unsubscribe(*subscribers_.begin());
+  SetDeviceCountUpdatesEnabled(false);
+  SetDevicesUpdatesEnabled(false);
 }
 
-void DevToolsUIBindings::InspectedContentsClosing() {
-  delegate_->InspectedContentsClosing();
-}
-
+// content::NotificationObserver overrides ------------------------------------
 void DevToolsUIBindings::Observe(int type,
                                  const content::NotificationSource& source,
                                  const content::NotificationDetails& details) {
@@ -365,7 +370,9 @@ void DevToolsUIBindings::Observe(int type,
   UpdateTheme();
 }
 
-void DevToolsUIBindings::DispatchOnEmbedder(const std::string& message) {
+// content::DevToolsFrontendHost::Delegate implementation ---------------------
+void DevToolsUIBindings::HandleMessageFromDevToolsFrontend(
+    const std::string& message) {
   std::string method;
   base::ListValue empty_params;
   base::ListValue* params = &empty_params;
@@ -387,13 +394,35 @@ void DevToolsUIBindings::DispatchOnEmbedder(const std::string& message) {
   std::string error;
   embedder_message_dispatcher_->Dispatch(method, params, &error);
   if (id) {
-    scoped_ptr<base::Value> id_value(base::Value::CreateIntegerValue(id));
-    scoped_ptr<base::Value> error_value(base::Value::CreateStringValue(error));
+    base::FundamentalValue id_value(id);
+    base::StringValue error_value(error);
     CallClientFunction("InspectorFrontendAPI.embedderMessageAck",
-                       id_value.get(), error_value.get(), NULL);
+                       &id_value, &error_value, NULL);
   }
 }
 
+void DevToolsUIBindings::HandleMessageFromDevToolsFrontendToBackend(
+    const std::string& message) {
+  content::DevToolsManager::GetInstance()->DispatchOnInspectorBackend(
+      this, message);
+}
+
+// content::DevToolsClientHost implementation ---------------------------------
+void DevToolsUIBindings::DispatchOnInspectorFrontend(
+    const std::string& message) {
+  base::StringValue message_value(message);
+  CallClientFunction("InspectorFrontendAPI.dispatchMessage",
+                     &message_value, NULL, NULL);
+}
+
+void DevToolsUIBindings::InspectedContentsClosing() {
+  delegate_->InspectedContentsClosing();
+}
+
+void DevToolsUIBindings::ReplacedWithAnotherClient() {
+}
+
+// DevToolsEmbedderMessageDispatcher::Delegate implementation -----------------
 void DevToolsUIBindings::ActivateWindow() {
   delegate_->ActivateWindow();
 }
@@ -404,11 +433,6 @@ void DevToolsUIBindings::CloseWindow() {
 
 void DevToolsUIBindings::SetInspectedPageBounds(const gfx::Rect& rect) {
   delegate_->SetInspectedPageBounds(rect);
-}
-
-void DevToolsUIBindings::SetContentsResizingStrategy(
-    const gfx::Insets& insets, const gfx::Size& min_size) {
-  delegate_->SetContentsResizingStrategy(insets, min_size);
 }
 
 void DevToolsUIBindings::MoveWindow(int x, int y) {
@@ -571,66 +595,51 @@ void DevToolsUIBindings::OpenUrlOnRemoteDeviceAndInspect(
   }
 }
 
-void DevToolsUIBindings::Subscribe(const std::string& event_type) {
-  if (subscribers_.find(event_type) != subscribers_.end()) {
-    LOG(ERROR) << "Already subscribed for [" << event_type << "].";
+void DevToolsUIBindings::SetDeviceCountUpdatesEnabled(bool enabled) {
+  if (device_count_updates_enabled_ == enabled)
     return;
-  }
-
-  subscribers_.insert(event_type);
-
-  if (event_type == kDevicesChanged) {
-    remote_targets_handler_ = DevToolsTargetsUIHandler::CreateForAdb(
-        base::Bind(&DevToolsUIBindings::PopulateRemoteDevices,
-                   base::Unretained(this)),
-        profile_);
-  } else if (event_type == kDeviceCountChanged) {
-    EnableRemoteDeviceCounter(true);
-  } else {
-    LOG(ERROR) << "Attempt to start unknown event listener " << event_type;
-  }
-}
-
-void DevToolsUIBindings::Unsubscribe(const std::string& event_type) {
-  if (subscribers_.find(event_type) == subscribers_.end()) {
-    LOG(ERROR) << "Not yet subscribed for [" << event_type << "]";
-    return;
-  }
-
-  if (event_type == kDevicesChanged) {
-    remote_targets_handler_.reset();
-  } else if (event_type == kDeviceCountChanged) {
-    EnableRemoteDeviceCounter(false);
-  } else {
-    LOG(ERROR) << "Attempt to stop unknown event listener " << event_type;
-  }
-
-  subscribers_.erase(event_type);
-}
-
-void DevToolsUIBindings::EnableRemoteDeviceCounter(bool enable) {
   DevToolsAndroidBridge* adb_bridge =
       DevToolsAndroidBridge::Factory::GetForProfile(profile_);
   if (!adb_bridge)
     return;
 
-  DCHECK(device_listener_enabled_ != enable);
-  device_listener_enabled_ = enable;
-  if (enable)
+  device_count_updates_enabled_ = enabled;
+  if (enabled)
     adb_bridge->AddDeviceCountListener(this);
   else
     adb_bridge->RemoveDeviceCountListener(this);
 }
 
-void DevToolsUIBindings::DeviceCountChanged(int count) {
-  base::FundamentalValue value(count);
-  DispatchEventOnFrontend(kDeviceCountChanged, &value);
+void DevToolsUIBindings::SetDevicesUpdatesEnabled(bool enabled) {
+  if (devices_updates_enabled_ == enabled)
+    return;
+  devices_updates_enabled_ = enabled;
+  if (enabled) {
+    remote_targets_handler_ = DevToolsTargetsUIHandler::CreateForAdb(
+        base::Bind(&DevToolsUIBindings::DevicesUpdated,
+                   base::Unretained(this)),
+        profile_);
+  } else {
+    remote_targets_handler_.reset();
+  }
 }
 
-void DevToolsUIBindings::PopulateRemoteDevices(
+void DevToolsUIBindings::SendMessageToBrowser(const std::string& message) {
+  content::DevToolsManager::GetInstance()->DispatchOnInspectorBackend(
+      this, message);
+}
+
+void DevToolsUIBindings::DeviceCountChanged(int count) {
+  base::FundamentalValue value(count);
+  CallClientFunction("InspectorFrontendAPI.deviceCountUpdated", &value, NULL,
+                     NULL);
+}
+
+void DevToolsUIBindings::DevicesUpdated(
     const std::string& source,
-    scoped_ptr<base::ListValue> targets) {
-  DispatchEventOnFrontend(kDevicesChanged, targets.get());
+    const base::ListValue& targets) {
+  CallClientFunction("InspectorFrontendAPI.devicesUpdated", &targets, NULL,
+                     NULL);
 }
 
 void DevToolsUIBindings::FileSavedAs(const std::string& url) {
@@ -789,21 +798,10 @@ void DevToolsUIBindings::CallClientFunction(const std::string& function_name,
       }
     }
   }
-  base::string16 javascript =
-      base::UTF8ToUTF16(function_name + "(" + params + ");");
-  web_contents_->GetMainFrame()->ExecuteJavaScript(javascript);
-}
 
-void DevToolsUIBindings::DispatchEventOnFrontend(
-    const std::string& event_type,
-    const base::Value* event_data) {
-  if (subscribers_.find(event_type) == subscribers_.end())
-    return;
-  base::StringValue event_type_value = base::StringValue(event_type);
-  CallClientFunction("InspectorFrontendAPI.dispatchEventToListeners",
-                     &event_type_value,
-                     event_data,
-                     NULL);
+  base::string16 javascript = base::UTF8ToUTF16(
+      function_name + "(" + params + ");");
+  web_contents_->GetMainFrame()->ExecuteJavaScript(javascript);
 }
 
 void DevToolsUIBindings::DocumentOnLoadCompletedInMainFrame() {

@@ -35,7 +35,7 @@
 #include "core/svg/SVGPathSegList.h"
 #include "core/svg/properties/SVGListPropertyTearOffHelper.h"
 
-namespace WebCore {
+namespace blink {
 
 template<>
 class ListItemPropertyTraits<SVGPathSeg> {
@@ -60,9 +60,9 @@ public:
     }
 };
 
-class SVGPathSegListTearOff FINAL :
-    public SVGListPropertyTearOffHelper<SVGPathSegListTearOff, SVGPathSegList>,
-    public ScriptWrappable {
+class SVGPathSegListTearOff FINAL
+    : public SVGListPropertyTearOffHelper<SVGPathSegListTearOff, SVGPathSegList>
+    , public ScriptWrappable {
 public:
     static PassRefPtr<SVGPathSegListTearOff> create(PassRefPtr<SVGPathSegList> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
     {
@@ -77,6 +77,6 @@ private:
     }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGPathSegListTearOff_h_

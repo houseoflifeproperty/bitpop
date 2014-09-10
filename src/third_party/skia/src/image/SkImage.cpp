@@ -29,13 +29,12 @@ uint32_t SkImage::NextUniqueID() {
     return id;
 }
 
-void SkImage::draw(SkCanvas* canvas, SkScalar x, SkScalar y,
-                   const SkPaint* paint) {
+void SkImage::draw(SkCanvas* canvas, SkScalar x, SkScalar y, const SkPaint* paint) const {
     as_IB(this)->onDraw(canvas, x, y, paint);
 }
 
 void SkImage::draw(SkCanvas* canvas, const SkRect* src, const SkRect& dst,
-                   const SkPaint* paint) {
+                   const SkPaint* paint) const {
     as_IB(this)->onDrawRectToRect(canvas, src, dst, paint);
 }
 
@@ -76,6 +75,12 @@ bool SkImage::readPixels(SkBitmap* bitmap, const SkIRect* subset) const {
 
 GrTexture* SkImage::getTexture() {
     return as_IB(this)->onGetTexture();
+}
+
+SkShader* SkImage::newShader(SkShader::TileMode tileX,
+                             SkShader::TileMode tileY,
+                             const SkMatrix* localMatrix) const {
+    return as_IB(this)->onNewShader(tileX, tileY, localMatrix);
 }
 
 SkData* SkImage::encode(SkImageEncoder::Type type, int quality) const {

@@ -160,6 +160,10 @@ enum CWChannelBand {
 - (BluetoothHCIPowerState)powerState;
 @end
 
+enum {
+  kBluetoothFeatureLESupportedController = (1 << 6L),
+};
+
 @protocol IOBluetoothDeviceInquiryDelegate
 - (void)deviceInquiryStarted:(IOBluetoothDeviceInquiry*)sender;
 - (void)deviceInquiryDeviceFound:(IOBluetoothDeviceInquiry*)sender
@@ -192,6 +196,10 @@ BASE_EXPORT extern "C" NSString* const NSWindowWillEnterFullScreenNotification;
 enum {
   NSEventPhaseMayBegin    = 0x1 << 5
 };
+
+@interface NSColor (MountainLionSDK)
+- (CGColorRef)CGColor;
+@end
 
 #endif  // MAC_OS_X_VERSION_10_8
 
@@ -245,24 +253,5 @@ typedef NSUInteger NSWindowOcclusionState;
 @end
 
 #endif  // MAC_OS_X_VERSION_10_9
-
-
-#if !defined(MAC_OS_X_VERSION_10_10) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_10
-
-enum {
-  NSWindowTitleVisible  = 0,
-  NSWindowTitleHidden = 1,
-  NSWindowTitleHiddenWhenActive = 2,
-};
-typedef NSInteger NSWindowTitleVisibility;
-
-@interface NSWindow (YosemiteSDK)
-
-@property NSWindowTitleVisibility titleVisibility;
-
-@end
-
-#endif  // MAC_OS_X_VERSION_10_10
 
 #endif  // BASE_MAC_SDK_FORWARD_DECLARATIONS_H_

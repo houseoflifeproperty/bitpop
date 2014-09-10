@@ -18,8 +18,6 @@
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
-#include "chrome/browser/chromeos/drive/drive_integration_service.h"
-#include "chrome/browser/chromeos/drive/job_list.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/system_tray_delegate_chromeos.h"
 #include "chrome/browser/ui/browser_list_observer.h"
@@ -39,7 +37,6 @@ class SystemTrayDelegateChromeOS
     : public ash::ime::InputMethodMenuManager::Observer,
       public ash::SystemTrayDelegate,
       public SessionManagerClient::Observer,
-      public drive::JobListObserver,
       public content::NotificationObserver,
       public input_method::InputMethodManager::Observer,
       public chromeos::LoginState::Observer,
@@ -65,10 +62,9 @@ class SystemTrayDelegateChromeOS
   virtual void ChangeProfilePicture() OVERRIDE;
   virtual const std::string GetEnterpriseDomain() const OVERRIDE;
   virtual const base::string16 GetEnterpriseMessage() const OVERRIDE;
-  virtual const std::string GetLocallyManagedUserManager() const OVERRIDE;
-  virtual const base::string16 GetLocallyManagedUserManagerName()
-      const OVERRIDE;
-  virtual const base::string16 GetLocallyManagedUserMessage() const OVERRIDE;
+  virtual const std::string GetSupervisedUserManager() const OVERRIDE;
+  virtual const base::string16 GetSupervisedUserManagerName() const OVERRIDE;
+  virtual const base::string16 GetSupervisedUserMessage() const OVERRIDE;
   virtual bool SystemShouldUpgrade() const OVERRIDE;
   virtual base::HourClockType GetHourClockType() const OVERRIDE;
   virtual void ShowSettings() OVERRIDE;
@@ -80,13 +76,12 @@ class SystemTrayDelegateChromeOS
   virtual void ShowDisplaySettings() OVERRIDE;
   virtual void ShowChromeSlow() OVERRIDE;
   virtual bool ShouldShowDisplayNotification() OVERRIDE;
-  virtual void ShowDriveSettings() OVERRIDE;
   virtual void ShowIMESettings() OVERRIDE;
   virtual void ShowHelp() OVERRIDE;
   virtual void ShowAccessibilityHelp() OVERRIDE;
   virtual void ShowAccessibilitySettings() OVERRIDE;
   virtual void ShowPublicAccountInfo() OVERRIDE;
-  virtual void ShowLocallyManagedUserInfo() OVERRIDE;
+  virtual void ShowSupervisedUserInfo() OVERRIDE;
   virtual void ShowEnterpriseInfo() OVERRIDE;
   virtual void ShowUserLogin() OVERRIDE;
   virtual bool ShowSpringChargerReplacementDialog() OVERRIDE;
@@ -107,9 +102,6 @@ class SystemTrayDelegateChromeOS
   virtual void GetCurrentIMEProperties(ash::IMEPropertyInfoList* list) OVERRIDE;
   virtual void SwitchIME(const std::string& ime_id) OVERRIDE;
   virtual void ActivateIMEProperty(const std::string& key) OVERRIDE;
-  virtual void CancelDriveOperation(int32 operation_id) OVERRIDE;
-  virtual void GetDriveOperationStatusList(ash::DriveOperationStatusList* list)
-      OVERRIDE;
   virtual void ShowNetworkConfigure(const std::string& network_id,
                                     gfx::NativeWindow parent_window) OVERRIDE;
   virtual bool EnrollNetwork(const std::string& network_id,
@@ -132,8 +124,6 @@ class SystemTrayDelegateChromeOS
       OVERRIDE;
   virtual int GetSystemTrayMenuWidth() OVERRIDE;
   virtual void ActiveUserWasChanged() OVERRIDE;
-  virtual bool IsNetworkBehindCaptivePortal(
-      const std::string& service_path) const OVERRIDE;
   virtual bool IsSearchKeyMappedToCapsLock() OVERRIDE;
   virtual ash::tray::UserAccountsDelegate* GetUserAccountsDelegate(
       const std::string& user_id) OVERRIDE;
@@ -153,10 +143,6 @@ class SystemTrayDelegateChromeOS
   void SetProfile(Profile* profile);
 
   bool UnsetProfile(Profile* profile);
-
-  void ObserveDriveUpdates();
-
-  void UnobserveDriveUpdates();
 
   bool ShouldUse24HourClock() const;
 
@@ -213,16 +199,6 @@ class SystemTrayDelegateChromeOS
   virtual void OnAudioNodesChanged() OVERRIDE;
   virtual void OnActiveOutputNodeChanged() OVERRIDE;
   virtual void OnActiveInputNodeChanged() OVERRIDE;
-
-  // drive::JobListObserver overrides.
-  virtual void OnJobAdded(const drive::JobInfo& job_info) OVERRIDE;
-
-  virtual void OnJobDone(const drive::JobInfo& job_info,
-                         drive::FileError error) OVERRIDE;
-
-  virtual void OnJobUpdated(const drive::JobInfo& job_info) OVERRIDE;
-
-  drive::DriveIntegrationService* FindDriveIntegrationService();
 
   // Overridden from BluetoothAdapter::Observer.
   virtual void AdapterPresentChanged(device::BluetoothAdapter* adapter,

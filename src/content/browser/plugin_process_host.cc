@@ -46,7 +46,6 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
-#include "content/common/plugin_carbon_interpose_constants_mac.h"
 #include "ui/gfx/rect.h"
 #endif
 
@@ -161,8 +160,9 @@ bool PluginProcessHost::Init(const WebPluginInfo& info) {
 
   // Build command line for plugin. When we have a plugin launcher, we can't
   // allow "self" on linux and we need the real file path.
-  const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
-  CommandLine::StringType plugin_launcher =
+  const base::CommandLine& browser_command_line =
+      *base::CommandLine::ForCurrentProcess();
+  base::CommandLine::StringType plugin_launcher =
       browser_command_line.GetSwitchValueNative(switches::kPluginLauncher);
 
 #if defined(OS_MACOSX)
@@ -181,7 +181,7 @@ bool PluginProcessHost::Init(const WebPluginInfo& info) {
   if (exe_path.empty())
     return false;
 
-  CommandLine* cmd_line = new CommandLine(exe_path);
+  base::CommandLine* cmd_line = new base::CommandLine(exe_path);
   // Put the process type and plugin path first so they're easier to see
   // in process listings using native process management tools.
   cmd_line->AppendSwitchASCII(switches::kProcessType, switches::kPluginProcess);
@@ -225,25 +225,6 @@ bool PluginProcessHost::Init(const WebPluginInfo& info) {
 
   cmd_line->AppendSwitchASCII(switches::kProcessChannelID, channel_id);
 
-#if defined(OS_POSIX)
-  base::EnvironmentMap env;
-#if defined(OS_MACOSX) && !defined(__LP64__)
-  if (browser_command_line.HasSwitch(switches::kEnableCarbonInterposing)) {
-    std::string interpose_list = GetContentClient()->GetCarbonInterposePath();
-    if (!interpose_list.empty()) {
-      // Add our interposing library for Carbon. This is stripped back out in
-      // plugin_main.cc, so changes here should be reflected there.
-      const char* existing_list = getenv(kDYLDInsertLibrariesKey);
-      if (existing_list) {
-        interpose_list.insert(0, ":");
-        interpose_list.insert(0, existing_list);
-      }
-    }
-    env[kDYLDInsertLibrariesKey] = interpose_list;
-  }
-#endif
-#endif
-
   process_->Launch(
       new PluginSandboxedProcessLauncherDelegate(process_->GetHost()),
       cmd_line);
@@ -284,8 +265,6 @@ bool PluginProcessHost::OnMessageReceived(const IPC::Message& msg) {
                         OnPluginWindowDestroyed)
 #endif
 #if defined(OS_MACOSX)
-    IPC_MESSAGE_HANDLER(PluginProcessHostMsg_PluginSelectWindow,
-                        OnPluginSelectWindow)
     IPC_MESSAGE_HANDLER(PluginProcessHostMsg_PluginShowWindow,
                         OnPluginShowWindow)
     IPC_MESSAGE_HANDLER(PluginProcessHostMsg_PluginHideWindow,

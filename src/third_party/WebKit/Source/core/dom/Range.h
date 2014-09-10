@@ -25,8 +25,8 @@
 #ifndef Range_h
 #define Range_h
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/RangeBoundaryPoint.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntRect.h"
@@ -34,7 +34,7 @@
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class ClientRect;
 class ClientRectList;
@@ -156,7 +156,7 @@ private:
 
     Node* checkNodeWOffset(Node*, int offset, ExceptionState&) const;
     void checkNodeBA(Node*, ExceptionState&) const;
-    void checkDeleteExtract(ExceptionState&);
+    void checkExtractPrecondition(ExceptionState&);
 
     enum ActionType { DELETE_CONTENTS, EXTRACT_CONTENTS, CLONE_CONTENTS };
     PassRefPtrWillBeRawPtr<DocumentFragment> processContents(ActionType, ExceptionState&);
@@ -174,11 +174,11 @@ PassRefPtrWillBeRawPtr<Range> rangeOfContents(Node*);
 
 bool areRangesEqual(const Range*, const Range*);
 
-} // namespace
+} // namespace blink
 
 #ifndef NDEBUG
 // Outside the WebCore namespace for ease of invocation from gdb.
-void showTree(const WebCore::Range*);
+void showTree(const blink::Range*);
 #endif
 
 #endif

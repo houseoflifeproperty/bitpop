@@ -21,13 +21,13 @@
 #include "base/command_line.h"
 #include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/app_icon_loader_impl.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
@@ -70,6 +70,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_util.h"
 #include "extensions/common/extension.h"
@@ -90,10 +91,10 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 #include "chrome/browser/ui/ash/launcher/multi_profile_app_window_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/multi_profile_browser_status_monitor.h"
+#include "components/user_manager/user_manager.h"
 #endif
 
 using extensions::Extension;
@@ -197,6 +198,48 @@ std::string GetPrefForRootWindow(PrefService* pref_service,
   return default_string;
 }
 
+// Gets the shelf auto hide behavior from prefs for a root window.
+ash::ShelfAutoHideBehavior GetShelfAutoHideBehaviorFromPrefs(
+    Profile* profile,
+    aura::Window* root_window) {
+  // Don't show the shelf in app mode.
+  if (chrome::IsRunningInAppMode())
+    return ash::SHELF_AUTO_HIDE_ALWAYS_HIDDEN;
+
+  // See comment in |kShelfAlignment| as to why we consider two prefs.
+  const std::string behavior_value(
+      GetPrefForRootWindow(profile->GetPrefs(),
+                           root_window,
+                           prefs::kShelfAutoHideBehaviorLocal,
+                           prefs::kShelfAutoHideBehavior));
+
+  // Note: To maintain sync compatibility with old images of chrome/chromeos
+  // the set of values that may be encountered includes the now-extinct
+  // "Default" as well as "Never" and "Always", "Default" should now
+  // be treated as "Never" (http://crbug.com/146773).
+  if (behavior_value == ash::kShelfAutoHideBehaviorAlways)
+    return ash::SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS;
+  return ash::SHELF_AUTO_HIDE_BEHAVIOR_NEVER;
+}
+
+// Gets the shelf alignment from prefs for a root window.
+ash::ShelfAlignment GetShelfAlignmentFromPrefs(Profile* profile,
+                                               aura::Window* root_window) {
+  // See comment in |kShelfAlignment| as to why we consider two prefs.
+  const std::string alignment_value(
+      GetPrefForRootWindow(profile->GetPrefs(),
+                           root_window,
+                           prefs::kShelfAlignmentLocal,
+                           prefs::kShelfAlignment));
+  if (alignment_value == ash::kShelfAlignmentLeft)
+    return ash::SHELF_ALIGNMENT_LEFT;
+  else if (alignment_value == ash::kShelfAlignmentRight)
+    return ash::SHELF_ALIGNMENT_RIGHT;
+  else if (alignment_value == ash::kShelfAlignmentTop)
+    return ash::SHELF_ALIGNMENT_TOP;
+  return ash::SHELF_ALIGNMENT_BOTTOM;
+}
+
 // If prefs have synced and no user-set value exists at |local_path|, the value
 // from |synced_path| is copied to |local_path|.
 void MaybePropagatePrefToLocal(PrefServiceSyncable* pref_service,
@@ -226,14 +269,14 @@ std::string GetSourceFromAppListSource(ash::LaunchSource source) {
 // A class to get events from ChromeOS when a user gets changed or added.
 class ChromeLauncherControllerUserSwitchObserverChromeOS
     : public ChromeLauncherControllerUserSwitchObserver,
-      public chromeos::UserManager::UserSessionStateObserver,
+      public user_manager::UserManager::UserSessionStateObserver,
       content::NotificationObserver {
  public:
   ChromeLauncherControllerUserSwitchObserverChromeOS(
       ChromeLauncherController* controller)
       : controller_(controller) {
-    DCHECK(chromeos::UserManager::IsInitialized());
-    chromeos::UserManager::Get()->AddSessionStateObserver(this);
+    DCHECK(user_manager::UserManager::IsInitialized());
+    user_manager::UserManager::Get()->AddSessionStateObserver(this);
     // A UserAddedToSession notification can be sent before a profile is loaded.
     // Since our observers require that we have already a profile, we might have
     // to postpone the notification until the ProfileManager lets us know that
@@ -242,11 +285,12 @@ class ChromeLauncherControllerUserSwitchObserverChromeOS
                    content::NotificationService::AllSources());
   }
   virtual ~ChromeLauncherControllerUserSwitchObserverChromeOS() {
-    chromeos::UserManager::Get()->RemoveSessionStateObserver(this);
+    user_manager::UserManager::Get()->RemoveSessionStateObserver(this);
   }
 
-  // chromeos::UserManager::UserSessionStateObserver overrides:
-  virtual void UserAddedToSession(const chromeos::User* added_user) OVERRIDE;
+  // user_manager::UserManager::UserSessionStateObserver overrides:
+  virtual void UserAddedToSession(
+      const user_manager::User* added_user) OVERRIDE;
 
   // content::NotificationObserver overrides:
   virtual void Observe(int type,
@@ -272,7 +316,7 @@ class ChromeLauncherControllerUserSwitchObserverChromeOS
 };
 
 void ChromeLauncherControllerUserSwitchObserverChromeOS::UserAddedToSession(
-    const chromeos::User* active_user) {
+    const user_manager::User* active_user) {
   Profile* profile = multi_user_util::GetProfileFromUserID(
       active_user->email());
   // If we do not have a profile yet, we postpone forwarding the notification
@@ -381,12 +425,13 @@ ChromeLauncherController::ChromeLauncherController(Profile* profile,
         ash::Shell::GetInstance()->shelf_item_delegate_manager();
   }
 
-  notification_registrar_.Add(this,
-                              chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-                              content::Source<Profile>(profile_));
   notification_registrar_.Add(
       this,
-      chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
+      extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+      content::Source<Profile>(profile_));
+  notification_registrar_.Add(
+      this,
+      extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
       content::Source<Profile>(profile_));
 }
 
@@ -838,9 +883,10 @@ void ChromeLauncherController::SetLaunchType(
   if (!HasItemController(id))
     return;
 
-  extensions::SetLaunchType(profile_->GetExtensionService(),
-                            id_to_item_controller_map_[id]->app_id(),
-                            launch_type);
+  extensions::SetLaunchType(
+      extensions::ExtensionSystem::Get(profile_)->extension_service(),
+      id_to_item_controller_map_[id]->app_id(),
+      launch_type);
 }
 
 void ChromeLauncherController::UnpinAppWithID(const std::string& app_id) {
@@ -917,24 +963,7 @@ Profile* ChromeLauncherController::profile() {
 
 ash::ShelfAutoHideBehavior ChromeLauncherController::GetShelfAutoHideBehavior(
     aura::Window* root_window) const {
-  // Don't show the shelf in app mode.
-  if (chrome::IsRunningInAppMode())
-    return ash::SHELF_AUTO_HIDE_ALWAYS_HIDDEN;
-
-  // See comment in |kShelfAlignment| as to why we consider two prefs.
-  const std::string behavior_value(
-      GetPrefForRootWindow(profile_->GetPrefs(),
-                           root_window,
-                           prefs::kShelfAutoHideBehaviorLocal,
-                           prefs::kShelfAutoHideBehavior));
-
-  // Note: To maintain sync compatibility with old images of chrome/chromeos
-  // the set of values that may be encountered includes the now-extinct
-  // "Default" as well as "Never" and "Always", "Default" should now
-  // be treated as "Never" (http://crbug.com/146773).
-  if (behavior_value == ash::kShelfAutoHideBehaviorAlways)
-    return ash::SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS;
-  return ash::SHELF_AUTO_HIDE_BEHAVIOR_NEVER;
+  return GetShelfAutoHideBehaviorFromPrefs(profile_, root_window);
 }
 
 bool ChromeLauncherController::CanUserModifyShelfAutoHideBehavior(
@@ -1032,9 +1061,8 @@ void ChromeLauncherController::SetRefocusURLPatternForTest(ash::ShelfID id,
 
 const Extension* ChromeLauncherController::GetExtensionForAppID(
     const std::string& app_id) const {
-  // Some unit tests do not have a real extension.
-  return (profile_->GetExtensionService()) ?
-      profile_->GetExtensionService()->GetInstalledExtension(app_id) : NULL;
+  return extensions::ExtensionRegistry::Get(profile_)->GetExtensionById(
+      app_id, extensions::ExtensionRegistry::EVERYTHING);
 }
 
 void ChromeLauncherController::ActivateWindowOrMinimizeIfActive(
@@ -1154,7 +1182,7 @@ void ChromeLauncherController::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
+    case extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
       const Extension* extension =
           content::Details<const Extension>(details).ptr();
       if (IsAppPinned(extension->id())) {
@@ -1166,7 +1194,7 @@ void ChromeLauncherController::Observe(
       UpdateAppLaunchersFromPref();
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
+    case extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
       const content::Details<UnloadedExtensionInfo>& unload_info(details);
       const Extension* extension = unload_info->extension;
       const std::string& id = extension->id();
@@ -1436,6 +1464,25 @@ bool ChromeLauncherController::IsBrowserFromActiveUser(Browser* browser) {
   return multi_user_util::IsProfileFromActiveUser(browser->profile());
 }
 
+bool ChromeLauncherController::ShelfBoundsChangesProbablyWithUser(
+    aura::Window* root_window,
+    const std::string& user_id) const {
+  Profile* other_profile = multi_user_util::GetProfileFromUserID(user_id);
+  DCHECK_NE(other_profile, profile_);
+
+  // Note: The Auto hide state from preferences is not the same as the actual
+  // visibility of the shelf. Depending on all the various states (full screen,
+  // no window on desktop, multi user, ..) the shelf could be shown - or not.
+  bool currently_shown = ash::SHELF_AUTO_HIDE_BEHAVIOR_NEVER ==
+      GetShelfAutoHideBehaviorFromPrefs(profile_, root_window);
+  bool other_shown = ash::SHELF_AUTO_HIDE_BEHAVIOR_NEVER ==
+      GetShelfAutoHideBehaviorFromPrefs(other_profile, root_window);
+
+  return currently_shown != other_shown ||
+         GetShelfAlignmentFromPrefs(profile_, root_window) !=
+             GetShelfAlignmentFromPrefs(other_profile, root_window);
+}
+
 void ChromeLauncherController::LauncherItemClosed(ash::ShelfID id) {
   IDToItemControllerMap::iterator iter = id_to_item_controller_map_.find(id);
   CHECK(iter != id_to_item_controller_map_.end());
@@ -1694,20 +1741,8 @@ void ChromeLauncherController::SetShelfAlignmentFromPrefs() {
 
   for (aura::Window::Windows::const_iterator iter = root_windows.begin();
        iter != root_windows.end(); ++iter) {
-    // See comment in |kShelfAlignment| as to why we consider two prefs.
-    const std::string alignment_value(
-        GetPrefForRootWindow(profile_->GetPrefs(),
-                             *iter,
-                             prefs::kShelfAlignmentLocal,
-                             prefs::kShelfAlignment));
-    ash::ShelfAlignment alignment = ash::SHELF_ALIGNMENT_BOTTOM;
-    if (alignment_value == ash::kShelfAlignmentLeft)
-      alignment = ash::SHELF_ALIGNMENT_LEFT;
-    else if (alignment_value == ash::kShelfAlignmentRight)
-      alignment = ash::SHELF_ALIGNMENT_RIGHT;
-    else if (alignment_value == ash::kShelfAlignmentTop)
-      alignment = ash::SHELF_ALIGNMENT_TOP;
-    ash::Shell::GetInstance()->SetShelfAlignment(alignment, *iter);
+    ash::Shell::GetInstance()->SetShelfAlignment(
+        GetShelfAlignmentFromPrefs(profile_, *iter), *iter);
   }
 }
 
@@ -1732,7 +1767,7 @@ void ChromeLauncherController::SetVirtualKeyboardBehaviorFromPrefs() {
 #endif //  defined(OS_CHROMEOS)
 
 ash::ShelfItemStatus ChromeLauncherController::GetAppState(
-    const::std::string& app_id) {
+    const std::string& app_id) {
   ash::ShelfItemStatus status = ash::STATUS_CLOSED;
   for (WebContentsToAppIDMap::iterator it = web_contents_to_app_id_.begin();
        it != web_contents_to_app_id_.end();

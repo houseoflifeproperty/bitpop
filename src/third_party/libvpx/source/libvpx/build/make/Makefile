@@ -19,6 +19,7 @@ ifeq ($(target),)
         done
 all: .DEFAULT
 clean:: .DEFAULT
+exampletest: .DEFAULT
 install:: .DEFAULT
 test:: .DEFAULT
 testdata:: .DEFAULT
@@ -105,6 +106,8 @@ distclean: clean
 
 .PHONY: dist
 dist:
+.PHONY: exampletest
+exampletest:
 .PHONY: install
 install::
 .PHONY: test
@@ -327,7 +330,10 @@ endef
 ifneq ($(target),)
 include $(SRC_PATH_BARE)/$(target:-$(TOOLCHAIN)=).mk
 endif
-ifeq ($(filter %clean,$(MAKECMDGOALS)),)
+
+skip_deps := $(filter %clean,$(MAKECMDGOALS))
+skip_deps += $(findstring testdata,$(MAKECMDGOALS))
+ifeq ($(strip $(skip_deps)),)
   # Older versions of make don't like -include directives with no arguments
   ifneq ($(filter %.d,$(OBJS-yes:.o=.d)),)
     -include $(filter %.d,$(OBJS-yes:.o=.d))

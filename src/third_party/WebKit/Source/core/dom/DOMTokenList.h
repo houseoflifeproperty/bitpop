@@ -25,12 +25,12 @@
 #ifndef DOMTokenList_h
 #define DOMTokenList_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Vector.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 class ExceptionState;
@@ -83,6 +83,6 @@ protected:
     static AtomicString removeTokens(const AtomicString&, const Vector<String>&);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMTokenList_h

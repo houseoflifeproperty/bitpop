@@ -36,6 +36,10 @@
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
 
+#if defined(OS_ANDROID)
+#include "ui/base/resource/resource_bundle_android.h"
+#endif
+
 #if defined(OS_CHROMEOS)
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/platform_font_pango.h"
@@ -65,10 +69,14 @@ const size_t kPngChunkMetadataSize = 12;  // length, type, crc32
 const unsigned char kPngScaleChunkType[4] = { 'c', 's', 'C', 'l' };
 const unsigned char kPngDataChunkType[4] = { 'I', 'D', 'A', 'T' };
 
+#if !defined(OS_MACOSX)
+const char kPakFileSuffix[] = ".pak";
+#endif
+
 ResourceBundle* g_shared_instance_ = NULL;
 
 void InitDefaultFontList() {
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) && defined(USE_PANGO)
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   std::string font_family = base::UTF16ToUTF8(
       rb.GetLocalizedString(IDS_UI_FONT_FAMILY_CROS));
@@ -156,33 +164,24 @@ class ResourceBundle::ResourceBundleImageSource : public gfx::ImageSkiaSource {
 
 // static
 std::string ResourceBundle::InitSharedInstanceWithLocale(
-    const std::string& pref_locale, Delegate* delegate) {
+    const std::string& pref_locale,
+    Delegate* delegate,
+    LoadResources load_resources) {
   InitSharedInstance(delegate);
-  g_shared_instance_->LoadCommonResources();
-  std::string result = g_shared_instance_->LoadLocaleResources(pref_locale);
-  InitDefaultFontList();
-  return result;
-}
-
-// static
-std::string ResourceBundle::InitSharedInstanceLocaleOnly(
-    const std::string& pref_locale, Delegate* delegate) {
-  InitSharedInstance(delegate);
-  std::string result = g_shared_instance_->LoadLocaleResources(pref_locale);
-  InitDefaultFontList();
-  return result;
-}
-
-// static
-void ResourceBundle::InitSharedInstanceWithPakFile(
-    base::File pak_file, bool should_load_common_resources) {
-  InitSharedInstance(NULL);
-  if (should_load_common_resources)
+  if (load_resources == LOAD_COMMON_RESOURCES)
     g_shared_instance_->LoadCommonResources();
+  std::string result = g_shared_instance_->LoadLocaleResources(pref_locale);
+  InitDefaultFontList();
+  return result;
+}
 
-  scoped_ptr<DataPack> data_pack(
-      new DataPack(SCALE_FACTOR_100P));
-  if (!data_pack->LoadFromFile(pak_file.Pass())) {
+// static
+void ResourceBundle::InitSharedInstanceWithPakFileRegion(
+    base::File pak_file,
+    const base::MemoryMappedFile::Region& region) {
+  InitSharedInstance(NULL);
+  scoped_ptr<DataPack> data_pack(new DataPack(SCALE_FACTOR_100P));
+  if (!data_pack->LoadFromFileRegion(pak_file.Pass(), region)) {
     NOTREACHED() << "failed to load pak file";
     return;
   }
@@ -219,7 +218,16 @@ ResourceBundle& ResourceBundle::GetSharedInstance() {
 }
 
 bool ResourceBundle::LocaleDataPakExists(const std::string& locale) {
-  return !GetLocaleFilePath(locale, true).empty();
+  bool locale_file_path_exists = !GetLocaleFilePath(locale, true).empty();
+#if defined(OS_ANDROID)
+  // TODO(mkosiba,primiano): Chrome should mmap the .pak files too, in which
+  // case we'd not need to check if locale_file_path_exists here.
+  // http://crbug.com/394502.
+  return locale_file_path_exists ||
+      AssetContainedInApk(locale + kPakFileSuffix);
+#else
+  return locale_file_path_exists;
+#endif
 }
 
 void ResourceBundle::AddDataPackFromPath(const base::FilePath& path,
@@ -234,9 +242,17 @@ void ResourceBundle::AddOptionalDataPackFromPath(const base::FilePath& path,
 
 void ResourceBundle::AddDataPackFromFile(base::File file,
                                          ScaleFactor scale_factor) {
+  AddDataPackFromFileRegion(
+      file.Pass(), base::MemoryMappedFile::Region::kWholeFile, scale_factor);
+}
+
+void ResourceBundle::AddDataPackFromFileRegion(
+    base::File file,
+    const base::MemoryMappedFile::Region& region,
+    ScaleFactor scale_factor) {
   scoped_ptr<DataPack> data_pack(
       new DataPack(scale_factor));
-  if (data_pack->LoadFromFile(file.Pass())) {
+  if (data_pack->LoadFromFileRegion(file.Pass(), region)) {
     AddDataPack(data_pack.release());
   } else {
     LOG(ERROR) << "Failed to load data pack from file."
@@ -254,8 +270,10 @@ base::FilePath ResourceBundle::GetLocaleFilePath(const std::string& app_locale,
 
   PathService::Get(ui::DIR_LOCALES, &locale_file_path);
 
-  if (!locale_file_path.empty())
-    locale_file_path = locale_file_path.AppendASCII(app_locale + ".pak");
+  if (!locale_file_path.empty()) {
+    locale_file_path =
+        locale_file_path.AppendASCII(app_locale + kPakFileSuffix);
+  }
 
   if (delegate_) {
     locale_file_path =
@@ -324,6 +342,12 @@ void ResourceBundle::OverrideLocalePakForTest(const base::FilePath& pak_path) {
   overridden_pak_path_ = pak_path;
 }
 
+void ResourceBundle::OverrideLocaleStringResource(
+    int message_id,
+    const base::string16& string) {
+  overridden_locale_strings_[message_id] = string;
+}
+
 const base::FilePath& ResourceBundle::GetOverriddenPakPath() {
   return overridden_pak_path_;
 }
@@ -331,6 +355,10 @@ const base::FilePath& ResourceBundle::GetOverriddenPakPath() {
 std::string ResourceBundle::ReloadLocaleResources(
     const std::string& pref_locale) {
   base::AutoLock lock_scope(*locale_resources_data_lock_);
+
+  // Remove all overriden strings, as they will not be valid for the new locale.
+  overridden_locale_strings_.clear();
+
   UnloadLocaleResources();
   return LoadLocaleResources(pref_locale);
 }
@@ -455,6 +483,11 @@ base::string16 ResourceBundle::GetLocalizedString(int message_id) {
   // Ensure that ReloadLocaleResources() doesn't drop the resources while
   // we're using them.
   base::AutoLock lock_scope(*locale_resources_data_lock_);
+
+  IdToStringMap::const_iterator it =
+      overridden_locale_strings_.find(message_id);
+  if (it != overridden_locale_strings_.end())
+    return it->second;
 
   // If for some reason we were unable to load the resources , return an empty
   // string (better than crashing).
@@ -774,8 +807,7 @@ gfx::Image& ResourceBundle::GetEmptyImage() {
   if (empty_image_.IsEmpty()) {
     // The placeholder bitmap is bright red so people notice the problem.
     SkBitmap bitmap;
-    bitmap.setConfig(SkBitmap::kARGB_8888_Config, 32, 32);
-    bitmap.allocPixels();
+    bitmap.allocN32Pixels(32, 32);
     bitmap.eraseARGB(255, 255, 0, 0);
     empty_image_ = gfx::Image::CreateFrom1xBitmap(bitmap);
   }

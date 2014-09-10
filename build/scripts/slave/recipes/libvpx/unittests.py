@@ -26,7 +26,7 @@ def GenSteps(api):
   libvpx_git_url = api.properties['libvpx_git_url']
   libvpx_root = build_root.join('libvpx')
 
-  yield api.python.inline(
+  api.python.inline(
       'clean_build', r"""
           import os, sys, shutil
           root = sys.argv[1]
@@ -40,12 +40,12 @@ def GenSteps(api):
       """, args=[build_root, 'libs', 'obj', 'vp8', 'vp9', 'vpx', 'vpx_mem',
                  'vpx_ports', 'vpx_scale', 'third_party'])
 
-  yield api.git.checkout(
+  api.git.checkout(
       libvpx_git_url, dir_path=libvpx_root, recursive=True)
 
-  yield api.step('configure', [CONFIGURE_PATH_REL])
+  api.step('configure', [CONFIGURE_PATH_REL])
 
-  yield api.step('run tests', ['make', 'test', '-j8'], can_fail_build=True)
+  api.step('run tests', ['make', 'test', '-j8'])
 
 def GenTests(api):
   # Right now we just support linux, but one day we will have mac and windows

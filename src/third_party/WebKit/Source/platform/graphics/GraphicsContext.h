@@ -37,7 +37,7 @@
 #include "platform/graphics/ImageOrientation.h"
 #include "platform/graphics/GraphicsContextAnnotation.h"
 #include "platform/graphics/GraphicsContextState.h"
-#include "platform/graphics/skia/OpaqueRegionSkia.h"
+#include "platform/graphics/RegionTracker.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
@@ -49,7 +49,7 @@ class SkPath;
 class SkRRect;
 struct SkRect;
 
-namespace WebCore {
+namespace blink {
 
 class DisplayList;
 class ImageBuffer;
@@ -71,8 +71,7 @@ public:
 
     enum DisabledMode {
         NothingDisabled = 0, // Run as normal.
-        PaintingDisabled = 1, // Do not issue painting calls to the canvas but maintain state correctly.
-        FullyDisabled = 2 // Do absolutely minimal work to remove the cost of the context from performance tests.
+        FullyDisabled = 1 // Do absolutely minimal work to remove the cost of the context from performance tests.
     };
 
     explicit GraphicsContext(SkCanvas*, DisabledMode = NothingDisabled);
@@ -83,8 +82,6 @@ public:
     // so it should be avoided. Use the corresponding draw/matrix/clip methods instead.
     SkCanvas* canvas()
     {
-        ASSERT(!paintingDisabled());
-
         // Flush any pending saves.
         realizeCanvasSave();
 
@@ -92,32 +89,25 @@ public:
     }
     const SkCanvas* canvas() const
     {
-        ASSERT(!paintingDisabled());
         return m_canvas;
     }
-    bool paintingDisabled() const { return m_disabledState & PaintingDisabled; }
-    bool contextDisabled() const { return m_disabledState; }
 
-    // This is just a heuristic that currently happens to work. We need either
-    // a more reliable way to know that we are recording, or (better) we need
-    // to obviate the need for this query, and address whatever the caller
-    // needed in some other way.
-    // See bug# 372110
-    bool isRecordingCanvas() const
-    {
-        return m_canvas->imageInfo().colorType() == kUnknown_SkColorType;
-    }
+    void resetCanvas(SkCanvas*);
+
+    bool contextDisabled() const { return m_disabledState; }
 
     // ---------- State management methods -----------------
     void save();
     void restore();
     unsigned saveCount() { return m_canvasStateStack.size(); }
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     void disableDestructionChecks() { m_disableDestructionChecks = true; }
 #endif
 
     void saveLayer(const SkRect* bounds, const SkPaint*);
     void restoreLayer();
+
+    bool hasStroke() const { return strokeStyle() != NoStroke && strokeThickness() > 0; }
 
     float strokeThickness() const { return immutableState()->strokeData().thickness(); }
     void setStrokeThickness(float thickness) { mutableState()->setStrokeThickness(thickness); }
@@ -191,13 +181,14 @@ public:
     void setImageInterpolationQuality(InterpolationQuality quality) { mutableState()->setInterpolationQuality(quality); }
     InterpolationQuality imageInterpolationQuality() const { return immutableState()->interpolationQuality(); }
 
-    void setCompositeOperation(CompositeOperator, blink::WebBlendMode = blink::WebBlendModeNormal);
+    void setCompositeOperation(CompositeOperator, WebBlendMode = WebBlendModeNormal);
     CompositeOperator compositeOperation() const { return immutableState()->compositeOperator(); }
-    blink::WebBlendMode blendModeOperation() const { return immutableState()->blendMode(); }
+    WebBlendMode blendModeOperation() const { return immutableState()->blendMode(); }
 
-    // Change the way document markers are rendered.
-    // Any deviceScaleFactor higher than 1.5 is enough to justify setting this flag.
-    void setUseHighResMarkers(bool isHighRes) { m_useHighResMarker = isHighRes; }
+    // Speicy the device scale factor which may change the way document markers
+    // and fonts are rendered.
+    void setDeviceScaleFactor(float factor) { m_deviceScaleFactor = factor; }
+    float deviceScaleFactor() const { return m_deviceScaleFactor; }
 
     // If true we are (most likely) rendering to a web page and the
     // canvas has been prepared with an opaque background. If false,
@@ -217,21 +208,24 @@ public:
 
     // The opaque region is empty until tracking is turned on.
     // It is never clerared by the context.
-    void setTrackOpaqueRegion(bool track) { m_trackOpaqueRegion = track; }
-    const OpaqueRegionSkia& opaqueRegion() const { return m_opaqueRegion; }
+    enum RegionTrackingMode {
+        RegionTrackingDisabled = 0,
+        RegionTrackingOpaque,
+        RegionTrackingOverwrite
+    };
+    void setRegionTrackingMode(RegionTrackingMode);
+    bool regionTrackingEnabled() { return m_regionTrackingMode != RegionTrackingDisabled; }
+    const RegionTracker& opaqueRegion() const { return m_trackedRegion; }
 
     // The text region is empty until tracking is turned on.
     // It is never clerared by the context.
     void setTrackTextRegion(bool track) { m_trackTextRegion = track; }
     const SkRect& textRegion() const { return m_textRegion; }
 
-    bool updatingControlTints() const { return m_updatingControlTints; }
-    void setUpdatingControlTints(bool updatingTints) { m_updatingControlTints = updatingTints; }
-
     AnnotationModeFlags annotationMode() const { return m_annotationMode; }
     void setAnnotationMode(const AnnotationModeFlags mode) { m_annotationMode = mode; }
 
-    SkColorFilter* colorFilter();
+    SkColorFilter* colorFilter() const;
     void setColorFilter(ColorFilter);
     // ---------- End state management methods -----------------
 
@@ -279,15 +273,17 @@ public:
     void drawImage(Image*, const IntRect&, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation);
     void drawImage(Image*, const FloatRect& destRect);
     void drawImage(Image*, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation);
-    void drawImage(Image*, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator, blink::WebBlendMode, RespectImageOrientationEnum = DoNotRespectImageOrientation);
+    void drawImage(Image*, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator, WebBlendMode, RespectImageOrientationEnum = DoNotRespectImageOrientation);
 
     void drawTiledImage(Image*, const IntRect& destRect, const IntPoint& srcPoint, const IntSize& tileSize,
-        CompositeOperator = CompositeSourceOver, blink::WebBlendMode = blink::WebBlendModeNormal, const IntSize& repeatSpacing = IntSize());
+        CompositeOperator = CompositeSourceOver, WebBlendMode = WebBlendModeNormal, const IntSize& repeatSpacing = IntSize());
     void drawTiledImage(Image*, const IntRect& destRect, const IntRect& srcRect,
         const FloatSize& tileScaleFactor, Image::TileRule hRule = Image::StretchTile, Image::TileRule vRule = Image::StretchTile,
         CompositeOperator = CompositeSourceOver);
 
-    void drawImageBuffer(ImageBuffer*, const FloatRect& destRect, const FloatRect* srcRect = 0, CompositeOperator = CompositeSourceOver);
+    void drawImageBuffer(ImageBuffer*, const FloatRect& destRect, const FloatRect* srcRect = 0, CompositeOperator = CompositeSourceOver, WebBlendMode = WebBlendModeNormal);
+
+    void drawPicture(PassRefPtr<SkPicture>, const FloatRect& dest, const FloatRect& src, CompositeOperator, WebBlendMode);
 
     // These methods write to the canvas and modify the opaque region, if tracked.
     // Also drawLine(const IntPoint& point1, const IntPoint& point2) and fillRoundedRect
@@ -304,6 +300,7 @@ public:
     void didDrawRect(const SkRect&, const SkPaint&, const SkBitmap* = 0);
     void drawRect(const SkRect&, const SkPaint&);
     void drawPosText(const void* text, size_t byteLength, const SkPoint pos[], const SkRect& textRect, const SkPaint&);
+    void drawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[], SkScalar constY, const SkRect& textRect, const SkPaint&);
 
     void clip(const IntRect& rect) { clipRect(rect); }
     void clip(const FloatRect& rect) { clipRect(rect); }
@@ -395,12 +392,26 @@ public:
 
     // Create an image buffer compatible with this context, with suitable resolution
     // for drawing into the buffer and then into this context.
-    PassOwnPtr<ImageBuffer> createCompatibleBuffer(const IntSize&, OpacityMode = NonOpaque) const;
+    PassOwnPtr<ImageBuffer> createRasterBuffer(const IntSize&, OpacityMode = NonOpaque) const;
 
     static void adjustLineToPixelBoundaries(FloatPoint& p1, FloatPoint& p2, float strokeWidth, StrokeStyle);
 
-    void beginAnnotation(const char*, const char*, const String&, const String&, const String&);
+    void beginAnnotation(const AnnotationList&);
     void endAnnotation();
+
+    void preparePaintForDrawRectToRect(
+        SkPaint*,
+        const SkRect& srcRect,
+        const SkRect& destRect,
+        CompositeOperator,
+        WebBlendMode,
+        bool isLazyDecoded = false,
+        bool isDataComplete = true) const;
+
+    static int focusRingOutsetExtent(int offset, int width)
+    {
+        return focusRingOutset(offset) + (focusRingWidth(width) + 1) / 2;
+    }
 
 private:
     const GraphicsContextState* immutableState() const { return m_paintState; }
@@ -417,9 +428,11 @@ private:
     static PassRefPtr<SkColorFilter> WebCoreColorFilterToSkiaColorFilter(ColorFilter);
 
 #if OS(MACOSX)
-    static inline int getFocusRingOutset(int offset) { return offset + 2; }
+    static inline int focusRingOutset(int offset) { return offset + 2; }
+    static inline int focusRingWidth(int width) { return width; }
 #else
-    static inline int getFocusRingOutset(int offset) { return 0; }
+    static inline int focusRingOutset(int offset) { return 0; }
+    static inline int focusRingWidth(int width) { return 1; }
     static const SkPMColor lineColors(int);
     static const SkPMColor antiColors1(int);
     static const SkPMColor antiColors2(int);
@@ -428,14 +441,16 @@ private:
 #endif
 
     // Helpers for drawing a focus ring (drawFocusRing)
-    void drawOuterPath(const SkPath&, SkPaint&, int);
-    void drawInnerPath(const SkPath&, SkPaint&, int);
+    float prepareFocusRingPaint(SkPaint&, const Color&, int width) const;
+    void drawFocusRingPath(const SkPath&, const Color&, int width);
+    void drawFocusRingRect(const SkRect&, const Color&, int width);
+
 
     // SkCanvas wrappers.
     void clipPath(const SkPath&, AntiAliasingMode = NotAntiAliased, SkRegion::Op = SkRegion::kIntersect_Op);
     void clipRRect(const SkRRect&, AntiAliasingMode = NotAntiAliased, SkRegion::Op = SkRegion::kIntersect_Op);
-
     void concat(const SkMatrix&);
+    void drawRRect(const SkRRect&, const SkPaint&);
 
     // Apply deferred paint state saves
     void realizePaintSave()
@@ -497,33 +512,31 @@ private:
     struct RecordingState;
     Vector<RecordingState> m_recordingStateStack;
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     unsigned m_annotationCount;
     unsigned m_layerCount;
     bool m_disableDestructionChecks;
 #endif
     // Tracks the region painted opaque via the GraphicsContext.
-    OpaqueRegionSkia m_opaqueRegion;
+    RegionTracker m_trackedRegion;
 
     // Tracks the region where text is painted via the GraphicsContext.
     SkRect m_textRegion;
 
     unsigned m_disabledState;
 
+    float m_deviceScaleFactor;
+
     // Activation for the above region tracking features
-    bool m_trackOpaqueRegion : 1;
+    unsigned m_regionTrackingMode : 2;
     bool m_trackTextRegion : 1;
 
-    // Are we on a high DPI display? If so, spelling and grammar markers are larger.
-    bool m_useHighResMarker : 1;
-    // FIXME: Make this go away: crbug.com/236892
-    bool m_updatingControlTints : 1;
     bool m_accelerated : 1;
     bool m_isCertainlyOpaque : 1;
     bool m_printing : 1;
     bool m_antialiasHairlineImages : 1;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // GraphicsContext_h

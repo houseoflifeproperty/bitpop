@@ -119,6 +119,7 @@ class CONTENT_EXPORT InterstitialPageImpl
                            int32 page_id,
                            const base::string16& title,
                            base::i18n::TextDirection title_direction) OVERRIDE;
+  virtual AccessibilityMode GetAccessibilityMode() const OVERRIDE;
 
   // RenderViewHostDelegate implementation:
   virtual RenderViewHostDelegateView* GetDelegateView() OVERRIDE;
@@ -130,7 +131,7 @@ class CONTENT_EXPORT InterstitialPageImpl
                                     int error_code) OVERRIDE;
   virtual RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const OVERRIDE;
-  virtual WebPreferences GetWebkitPrefs() OVERRIDE;
+  virtual WebPreferences ComputeWebkitPrefs() OVERRIDE;
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
   virtual void CreateNewWindow(
       int render_process_id,

@@ -340,6 +340,10 @@ UIResourceProvider& CompositorImpl::GetUIResourceProvider() {
   return ui_resource_provider_;
 }
 
+ui::SystemUIResourceManager& CompositorImpl::GetSystemUIResourceManager() {
+  return ui_resource_provider_.GetSystemUIResourceManager();
+}
+
 void CompositorImpl::SetRootLayer(scoped_refptr<cc::Layer> root_layer) {
   if (subroot_layer_) {
     subroot_layer_->RemoveFromParent();
@@ -400,6 +404,21 @@ void CompositorImpl::SetSurface(jobject surface) {
 
 void CompositorImpl::SetVisible(bool visible) {
   if (!visible) {
+    DCHECK(host_);
+    // Look for any layers that were attached to the root for readback
+    // and are waiting for Composite() to happen.
+    bool readback_pending = false;
+    for (size_t i = 0; i < root_layer_->children().size(); ++i) {
+      if (root_layer_->children()[i]->HasCopyRequest()) {
+        readback_pending = true;
+        break;
+      }
+    }
+    if (readback_pending) {
+      ignore_schedule_composite_ = true;
+      host_->Composite(base::TimeTicks::Now());
+      ignore_schedule_composite_ = false;
+    }
     if (WillComposite())
       CancelComposite();
     ui_resource_provider_.SetLayerTreeHost(NULL);
@@ -417,14 +436,18 @@ void CompositorImpl::SetVisible(bool visible) {
     settings.top_controls_height = 0.f;
     settings.highp_threshold_min = 2048;
 
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
     settings.initial_debug_state.SetRecordRenderingStats(
         command_line->HasSwitch(cc::switches::kEnableGpuBenchmarking));
     settings.initial_debug_state.show_fps_counter =
         command_line->HasSwitch(cc::switches::kUIShowFPSCounter);
 
     host_ = cc::LayerTreeHost::CreateSingleThreaded(
-        this, this, HostSharedBitmapManager::current(), settings);
+        this,
+        this,
+        HostSharedBitmapManager::current(),
+        settings,
+        base::MessageLoopProxy::current());
     host_->SetRootLayer(root_layer_);
 
     host_->SetVisible(true);

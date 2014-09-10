@@ -34,9 +34,9 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class WebIDBDatabaseCallbacksImpl FINAL : public blink::WebIDBDatabaseCallbacks {
+class WebIDBDatabaseCallbacksImpl FINAL : public WebIDBDatabaseCallbacks {
 public:
     static PassOwnPtr<WebIDBDatabaseCallbacksImpl> create(IDBDatabaseCallbacks*);
 
@@ -44,7 +44,7 @@ public:
 
     virtual void onForcedClose() OVERRIDE;
     virtual void onVersionChange(long long oldVersion, long long newVersion) OVERRIDE;
-    virtual void onAbort(long long transactionId, const blink::WebIDBDatabaseError&) OVERRIDE;
+    virtual void onAbort(long long transactionId, const WebIDBDatabaseError&) OVERRIDE;
     virtual void onComplete(long long transactionId) OVERRIDE;
 
 private:
@@ -53,6 +53,6 @@ private:
     Persistent<IDBDatabaseCallbacks> m_callbacks;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebIDBDatabaseCallbacksImpl_h

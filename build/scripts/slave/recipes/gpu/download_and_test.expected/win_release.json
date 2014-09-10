@@ -19,15 +19,7 @@
       "--git_cmd_path",
       "[DEPOT_TOOLS]\\git.bat"
     ],
-    "name": "git setup (swarming_client)",
-    "seed_steps": [
-      "git setup (swarming_client)",
-      "git fetch (swarming_client)",
-      "git checkout (swarming_client)",
-      "git clean (swarming_client)",
-      "submodule sync (swarming_client)",
-      "submodule update (swarming_client)"
-    ]
+    "name": "git setup (swarming_client)"
   },
   {
     "cmd": [
@@ -84,6 +76,16 @@
     "cmd": [
       "python",
       "-u",
+      "[DEPOT_TOOLS]\\win_toolchain\\get_toolchain_if_necessary.py",
+      "27eac9b2869ef6c89391f305a3f01285ea317867",
+      "9d9a93134b3eabd003b85b4e7dea06c0eae150ed"
+    ],
+    "name": "get_vs_toolchain_if_necessary"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
       "exit()"
     ],
     "name": "copy parent_got_revision to got_revision",
@@ -95,7 +97,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -129,7 +130,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -163,7 +163,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -197,7 +196,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -234,13 +232,13 @@
       "--build-revision",
       "160000",
       "--test-machine-name",
-      "win release tester"
+      "win release tester",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "maps_pixel_test"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -282,13 +280,13 @@
       "--os-type",
       "win",
       "--test-machine-name",
-      "win release tester"
+      "win release tester",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "pixel_test"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -321,13 +319,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "webgl_conformance_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -360,13 +358,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "context_lost_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -399,13 +397,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "memory_test"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -438,13 +436,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "screenshot_sync_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -477,13 +475,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "hardware_accelerated_feature_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -516,13 +514,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "gpu_process_launch_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -559,13 +557,13 @@
       "--build-revision",
       "160000",
       "--test-machine-name",
-      "win release tester"
+      "win release tester",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "gpu_rasterization_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",

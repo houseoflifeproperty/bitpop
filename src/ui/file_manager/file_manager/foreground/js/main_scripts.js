@@ -101,13 +101,11 @@
 //<include src="share_client.js"/>
 //<include src="share_dialog.js"/>
 //<include src="suggest_apps_dialog.js"/>
-//<include src="text_measure.js"/>
 //<include src="tree.css.js"/>
 //<include src="ui/breadcrumbs_controller.js"/>
 //<include src="ui/conflict_dialog.js"/>
 //<include src="ui/file_manager_ui.js"/>
 //<include src="ui/multi_profile_share_dialog.js"/>
-//<include src="ui/navigation_list.js"/>
 //<include src="ui/preview_panel.js"/>
 //<include src="ui/progress_center_panel.js"/>
 //<include src="ui/search_box.js"/>

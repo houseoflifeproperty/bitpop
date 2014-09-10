@@ -6,14 +6,11 @@
 
 #include "chrome/common/extensions/features/chrome_channel_feature_filter.h"
 #include "chrome/common/extensions/features/feature_channel.h"
-#include "extensions/common/features/api_feature.h"
 #include "extensions/common/features/simple_feature.h"
-#include "extensions/common/test_util.h"
 #include "extensions/common/value_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using chrome::VersionInfo;
-using extensions::APIFeature;
 using extensions::ComplexFeature;
 using extensions::DictionaryBuilder;
 using extensions::Feature;
@@ -21,7 +18,6 @@ using extensions::ListBuilder;
 using extensions::Manifest;
 using extensions::ScopedCurrentChannel;
 using extensions::SimpleFeature;
-using extensions::test_util::ParseJsonDictionaryWithSingleQuotes;
 
 namespace {
 
@@ -165,54 +161,56 @@ TEST_F(ExtensionComplexFeatureTest, MultipleRulesChannels) {
   }
 }
 
-// Tests a complex feature with blocked_in_service_worker returns true for
-// IsBlockedInServiceWorker().
-TEST_F(ExtensionComplexFeatureTest, BlockedInServiceWorker) {
+// Tests that dependencies are correctly checked.
+TEST_F(ExtensionComplexFeatureTest, Dependencies) {
   scoped_ptr<ComplexFeature::FeatureList> features(
       new ComplexFeature::FeatureList());
 
-  // Two feature rules, both with blocked_in_service_worker: true.
-  scoped_ptr<SimpleFeature> api_feature(new APIFeature());
-  api_feature->Parse(ParseJsonDictionaryWithSingleQuotes(
-                         "{"
-                         "  'channel': 'trunk',"
-                         "  'blocked_in_service_worker': true"
-                         "}").get());
-  features->push_back(api_feature.release());
+  // Rule which depends on an extension-only feature (omnibox).
+  scoped_ptr<SimpleFeature> simple_feature(CreateFeature());
+  scoped_ptr<base::DictionaryValue> rule =
+      DictionaryBuilder()
+          .Set("dependencies", ListBuilder().Append("manifest:omnibox"))
+          .Build();
+  simple_feature->Parse(rule.get());
+  features->push_back(simple_feature.release());
 
-  api_feature.reset(new APIFeature());
-  api_feature->Parse(ParseJsonDictionaryWithSingleQuotes(
-                         "{"
-                         "  'channel': 'stable',"
-                         "  'blocked_in_service_worker': true"
-                         "}").get());
-  features->push_back(api_feature.release());
+  // Rule which depends on an platform-app-only feature (serial).
+  simple_feature.reset(CreateFeature());
+  rule = DictionaryBuilder()
+             .Set("dependencies", ListBuilder().Append("permission:serial"))
+             .Build();
+  simple_feature->Parse(rule.get());
+  features->push_back(simple_feature.release());
 
-  EXPECT_TRUE(ComplexFeature(features.Pass()).IsBlockedInServiceWorker());
-}
+  scoped_ptr<ComplexFeature> feature(new ComplexFeature(features.Pass()));
 
-// Tests a complex feature without blocked_in_service_worker returns false for
-// IsBlockedInServiceWorker().
-TEST_F(ExtensionComplexFeatureTest, NotBlockedInServiceWorker) {
-  scoped_ptr<ComplexFeature::FeatureList> features(
-      new ComplexFeature::FeatureList());
+  // Available to extensions because of the omnibox rule.
+  EXPECT_EQ(
+      Feature::IS_AVAILABLE,
+      feature->IsAvailableToManifest("extensionid",
+                                     Manifest::TYPE_EXTENSION,
+                                     Manifest::INVALID_LOCATION,
+                                     Feature::UNSPECIFIED_PLATFORM,
+                                     Feature::GetCurrentPlatform()).result());
 
-  // Two feature rules without blocked_in_service_worker.
-  scoped_ptr<SimpleFeature> api_feature(new APIFeature());
-  api_feature->Parse(ParseJsonDictionaryWithSingleQuotes(
-                         "{"
-                         "  'channel': 'trunk'"
-                         "}").get());
-  features->push_back(api_feature.release());
+  // Available to platofrm apps because of the serial rule.
+  EXPECT_EQ(
+      Feature::IS_AVAILABLE,
+      feature->IsAvailableToManifest("platformappid",
+                                     Manifest::TYPE_PLATFORM_APP,
+                                     Manifest::INVALID_LOCATION,
+                                     Feature::UNSPECIFIED_PLATFORM,
+                                     Feature::GetCurrentPlatform()).result());
 
-  api_feature.reset(new APIFeature());
-  api_feature->Parse(ParseJsonDictionaryWithSingleQuotes(
-                         "{"
-                         "  'channel': 'stable'"
-                         "}").get());
-  features->push_back(api_feature.release());
-
-  EXPECT_FALSE(ComplexFeature(features.Pass()).IsBlockedInServiceWorker());
+  // Not available to hosted apps.
+  EXPECT_EQ(
+      Feature::INVALID_TYPE,
+      feature->IsAvailableToManifest("hostedappid",
+                                     Manifest::TYPE_HOSTED_APP,
+                                     Manifest::INVALID_LOCATION,
+                                     Feature::UNSPECIFIED_PLATFORM,
+                                     Feature::GetCurrentPlatform()).result());
 }
 
 }  // namespace

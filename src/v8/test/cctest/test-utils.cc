@@ -27,9 +27,11 @@
 
 #include <stdlib.h>
 
+#include <vector>
+
 #include "src/v8.h"
 
-#include "src/platform.h"
+#include "src/base/platform/platform.h"
 #include "src/utils-inl.h"
 #include "test/cctest/cctest.h"
 
@@ -70,7 +72,7 @@ TEST(Utils1) {
 
   CHECK_EQ(INT_MAX, FastD2IChecked(1.0e100));
   CHECK_EQ(INT_MIN, FastD2IChecked(-1.0e100));
-  CHECK_EQ(INT_MIN, FastD2IChecked(OS::nan_value()));
+  CHECK_EQ(INT_MIN, FastD2IChecked(v8::base::OS::nan_value()));
 }
 
 
@@ -218,3 +220,40 @@ TEST(SequenceCollectorRegression) {
   CHECK_EQ(0, strncmp("0123456789012345678901234567890123",
                       seq.start(), seq.length()));
 }
+
+
+// TODO(svenpanne) Unconditionally test this when our infrastructure is fixed.
+#if !V8_CC_MSVC && !V8_OS_NACL
+TEST(CPlusPlus11Features) {
+  struct S {
+    bool x;
+    struct T {
+      double y;
+      int z[3];
+    } t;
+  };
+  S s{true, {3.1415, {1, 2, 3}}};
+  CHECK_EQ(2, s.t.z[1]);
+
+// TODO(svenpanne) Remove the old-skool code when we ship the new C++ headers.
+#if 0
+  std::vector<int> vec{11, 22, 33, 44};
+#else
+  std::vector<int> vec;
+  vec.push_back(11);
+  vec.push_back(22);
+  vec.push_back(33);
+  vec.push_back(44);
+#endif
+  vec.push_back(55);
+  vec.push_back(66);
+  for (auto& i : vec) {
+    ++i;
+  }
+  int j = 12;
+  for (auto i : vec) {
+    CHECK_EQ(j, i);
+    j += 11;
+  }
+}
+#endif

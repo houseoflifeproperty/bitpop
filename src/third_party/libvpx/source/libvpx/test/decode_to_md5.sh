@@ -34,9 +34,13 @@ decode_to_md5() {
   local expected_md5="$3"
   local output_file="${VPX_TEST_OUTPUT_DIR}/decode_to_md5_${codec}"
 
-  [ -x "${decoder}" ] || return 1
+  if [ ! -x "${decoder}" ]; then
+    elog "${decoder} does not exist or is not executable."
+    return 1
+  fi
 
-  eval "${decoder}" "${input_file}" "${output_file}" ${devnull}
+  eval "${VPX_TEST_PREFIX}" "${decoder}" "${input_file}" "${output_file}" \
+      ${devnull}
 
   [ -e "${output_file}" ] || return 1
 

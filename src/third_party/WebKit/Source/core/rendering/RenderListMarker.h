@@ -25,7 +25,7 @@
 
 #include "core/rendering/RenderBox.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderListItem;
 
@@ -38,6 +38,7 @@ public:
     static RenderListMarker* createAnonymous(RenderListItem*);
 
     virtual ~RenderListMarker();
+    virtual void trace(Visitor*) OVERRIDE;
 
     const String& text() const { return m_text; }
     String suffix() const;
@@ -83,11 +84,11 @@ private:
 
     String m_text;
     RefPtr<StyleImage> m_image;
-    RenderListItem* m_listItem;
+    RawPtrWillBeMember<RenderListItem> m_listItem;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderListMarker, isListMarker());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderListMarker_h

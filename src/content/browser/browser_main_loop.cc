@@ -86,6 +86,7 @@
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 #include "content/browser/bootstrap_sandbox_mac.h"
+#include "content/browser/cocoa/system_hotkey_helper_mac.h"
 #include "content/browser/theme_helper_mac.h"
 #endif
 
@@ -134,7 +135,7 @@ namespace content {
 namespace {
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
-void SetupSandbox(const CommandLine& parsed_command_line) {
+void SetupSandbox(const base::CommandLine& parsed_command_line) {
   TRACE_EVENT0("startup", "SetupSandbox");
   base::FilePath sandbox_binary;
 
@@ -237,6 +238,47 @@ bool ShouldInitializeBrowserGpuChannelAndTransportSurface() {
   return IsDelegatedRendererEnabled();
 }
 #endif
+
+// Disable optimizations for this block of functions so the compiler doesn't
+// merge them all together. This makes it possible to tell what thread was
+// unresponsive by inspecting the callstack.
+MSVC_DISABLE_OPTIMIZE()
+MSVC_PUSH_DISABLE_WARNING(4748)
+
+NOINLINE void ResetThread_DB(scoped_ptr<BrowserProcessSubThread> thread) {
+  thread.reset();
+}
+
+NOINLINE void ResetThread_FILE(scoped_ptr<BrowserProcessSubThread> thread) {
+  thread.reset();
+}
+
+NOINLINE void ResetThread_FILE_USER_BLOCKING(
+    scoped_ptr<BrowserProcessSubThread> thread) {
+  thread.reset();
+}
+
+NOINLINE void ResetThread_PROCESS_LAUNCHER(
+    scoped_ptr<BrowserProcessSubThread> thread) {
+  thread.reset();
+}
+
+NOINLINE void ResetThread_CACHE(scoped_ptr<BrowserProcessSubThread> thread) {
+  thread.reset();
+}
+
+NOINLINE void ResetThread_IO(scoped_ptr<BrowserProcessSubThread> thread) {
+  thread.reset();
+}
+
+#if !defined(OS_IOS)
+NOINLINE void ResetThread_IndexedDb(scoped_ptr<base::Thread> thread) {
+  thread.reset();
+}
+#endif
+
+MSVC_POP_WARNING()
+MSVC_ENABLE_OPTIMIZE();
 
 }  // namespace
 
@@ -598,7 +640,6 @@ void BrowserMainLoop::CreateStartupTasks() {
 int BrowserMainLoop::CreateThreads() {
   TRACE_EVENT0("startup", "BrowserMainLoop::CreateThreads");
 
-  base::Thread::Options default_options;
   base::Thread::Options io_message_loop_options;
   io_message_loop_options.message_loop_type = base::MessageLoop::TYPE_IO;
   base::Thread::Options ui_message_loop_options;
@@ -613,7 +654,7 @@ int BrowserMainLoop::CreateThreads() {
        thread_id < BrowserThread::ID_COUNT;
        ++thread_id) {
     scoped_ptr<BrowserProcessSubThread>* thread_to_start = NULL;
-    base::Thread::Options* options = &default_options;
+    base::Thread::Options options;
 
     switch (thread_id) {
       case BrowserThread::DB:
@@ -621,6 +662,7 @@ int BrowserMainLoop::CreateThreads() {
             "BrowserMainLoop::CreateThreads:start",
             "Thread", "BrowserThread::DB");
         thread_to_start = &db_thread_;
+        options.timer_slack = base::TIMER_SLACK_MAXIMUM;
         break;
       case BrowserThread::FILE_USER_BLOCKING:
         TRACE_EVENT_BEGIN1("startup",
@@ -637,30 +679,33 @@ int BrowserMainLoop::CreateThreads() {
         // On Windows, the FILE thread needs to be have a UI message loop
         // which pumps messages in such a way that Google Update can
         // communicate back to us.
-        options = &ui_message_loop_options;
+        options = ui_message_loop_options;
 #else
-        options = &io_message_loop_options;
+        options = io_message_loop_options;
 #endif
+        options.timer_slack = base::TIMER_SLACK_MAXIMUM;
         break;
       case BrowserThread::PROCESS_LAUNCHER:
         TRACE_EVENT_BEGIN1("startup",
             "BrowserMainLoop::CreateThreads:start",
             "Thread", "BrowserThread::PROCESS_LAUNCHER");
         thread_to_start = &process_launcher_thread_;
+        options.timer_slack = base::TIMER_SLACK_MAXIMUM;
         break;
       case BrowserThread::CACHE:
         TRACE_EVENT_BEGIN1("startup",
             "BrowserMainLoop::CreateThreads:start",
             "Thread", "BrowserThread::CACHE");
         thread_to_start = &cache_thread_;
-        options = &io_message_loop_options;
+        options = io_message_loop_options;
+        options.timer_slack = base::TIMER_SLACK_MAXIMUM;
         break;
       case BrowserThread::IO:
         TRACE_EVENT_BEGIN1("startup",
             "BrowserMainLoop::CreateThreads:start",
             "Thread", "BrowserThread::IO");
         thread_to_start = &io_thread_;
-        options = &io_message_loop_options;
+        options = io_message_loop_options;
         break;
       case BrowserThread::UI:
       case BrowserThread::ID_COUNT:
@@ -673,7 +718,7 @@ int BrowserMainLoop::CreateThreads() {
 
     if (thread_to_start) {
       (*thread_to_start).reset(new BrowserProcessSubThread(id));
-      (*thread_to_start)->StartWithOptions(*options);
+      (*thread_to_start)->StartWithOptions(options);
     } else {
       NOTREACHED();
     }
@@ -803,42 +848,42 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     // - (Not sure why DB stops last.)
     switch (thread_id) {
       case BrowserThread::DB: {
-          TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:DBThread");
-          db_thread_.reset();
-        }
+        TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:DBThread");
+        ResetThread_DB(db_thread_.Pass());
         break;
-      case BrowserThread::FILE_USER_BLOCKING: {
-          TRACE_EVENT0("shutdown",
-                       "BrowserMainLoop::Subsystem:FileUserBlockingThread");
-          file_user_blocking_thread_.reset();
-        }
-        break;
+      }
       case BrowserThread::FILE: {
-          TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:FileThread");
+        TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:FileThread");
 #if !defined(OS_IOS)
-          // Clean up state that lives on or uses the file_thread_ before
-          // it goes away.
-          if (resource_dispatcher_host_)
-            resource_dispatcher_host_.get()->save_file_manager()->Shutdown();
+        // Clean up state that lives on or uses the file_thread_ before
+        // it goes away.
+        if (resource_dispatcher_host_)
+          resource_dispatcher_host_.get()->save_file_manager()->Shutdown();
 #endif  // !defined(OS_IOS)
-          file_thread_.reset();
-        }
+        ResetThread_FILE(file_thread_.Pass());
         break;
+      }
+      case BrowserThread::FILE_USER_BLOCKING: {
+        TRACE_EVENT0("shutdown",
+                      "BrowserMainLoop::Subsystem:FileUserBlockingThread");
+        ResetThread_FILE_USER_BLOCKING(file_user_blocking_thread_.Pass());
+        break;
+      }
       case BrowserThread::PROCESS_LAUNCHER: {
-          TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:LauncherThread");
-          process_launcher_thread_.reset();
-        }
+        TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:LauncherThread");
+        ResetThread_PROCESS_LAUNCHER(process_launcher_thread_.Pass());
         break;
+      }
       case BrowserThread::CACHE: {
-          TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:CacheThread");
-          cache_thread_.reset();
-        }
+        TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:CacheThread");
+        ResetThread_CACHE(cache_thread_.Pass());
         break;
+      }
       case BrowserThread::IO: {
-          TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:IOThread");
-          io_thread_.reset();
-        }
+        TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:IOThread");
+        ResetThread_IO(io_thread_.Pass());
         break;
+      }
       case BrowserThread::UI:
       case BrowserThread::ID_COUNT:
       default:
@@ -850,7 +895,7 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
 #if !defined(OS_IOS)
   {
     TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:IndexedDBThread");
-    indexed_db_thread_.reset();
+    ResetThread_IndexedDb(indexed_db_thread_.Pass());
   }
 #endif
 
@@ -898,6 +943,10 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:PostDestroyThreads");
     parts_->PostDestroyThreads();
   }
+}
+
+void BrowserMainLoop::StopStartupTracingTimer() {
+  startup_trace_timer_.Stop();
 }
 
 void BrowserMainLoop::InitializeMainThread() {
@@ -1041,6 +1090,7 @@ int BrowserMainLoop::BrowserThreadsStarted() {
 
 #if defined(OS_MACOSX)
   ThemeHelperMac::GetInstance();
+  SystemHotkeyHelperMac::GetInstance()->DeferredLoadSystemHotkeys();
   if (ShouldEnableBootstrapSandbox()) {
     TRACE_EVENT0("startup",
         "BrowserMainLoop::BrowserThreadsStarted:BootstrapSandbox");
@@ -1104,16 +1154,15 @@ void BrowserMainLoop::MainMessageLoopRun() {
 #endif
 }
 
-void BrowserMainLoop::InitStartupTracing(const CommandLine& command_line) {
-  DCHECK(is_tracing_startup_);
-
+base::FilePath BrowserMainLoop::GetStartupTraceFileName(
+    const base::CommandLine& command_line) const {
   base::FilePath trace_file = command_line.GetSwitchValuePath(
       switches::kTraceStartupFile);
   // trace_file = "none" means that startup events will show up for the next
   // begin/end tracing (via about:tracing or AutomationProxy::BeginTracing/
   // EndTracing, for example).
   if (trace_file == base::FilePath().AppendASCII("none"))
-    return;
+    return trace_file;
 
   if (trace_file.empty()) {
 #if defined(OS_ANDROID)
@@ -1124,6 +1173,15 @@ void BrowserMainLoop::InitStartupTracing(const CommandLine& command_line) {
 #endif
   }
 
+  return trace_file;
+}
+
+void BrowserMainLoop::InitStartupTracing(
+    const base::CommandLine& command_line) {
+  DCHECK(is_tracing_startup_);
+
+  startup_trace_file_ = GetStartupTraceFileName(parsed_command_line_);
+
   std::string delay_str = command_line.GetSwitchValueASCII(
       switches::kTraceStartupDuration);
   int delay_secs = 5;
@@ -1133,17 +1191,16 @@ void BrowserMainLoop::InitStartupTracing(const CommandLine& command_line) {
     delay_secs = 5;
   }
 
-  BrowserThread::PostDelayedTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&BrowserMainLoop::EndStartupTracing,
-                 base::Unretained(this), trace_file),
-      base::TimeDelta::FromSeconds(delay_secs));
+  startup_trace_timer_.Start(FROM_HERE,
+                             base::TimeDelta::FromSeconds(delay_secs),
+                             this,
+                             &BrowserMainLoop::EndStartupTracing);
 }
 
-void BrowserMainLoop::EndStartupTracing(const base::FilePath& trace_file) {
+void BrowserMainLoop::EndStartupTracing() {
   is_tracing_startup_ = false;
   TracingController::GetInstance()->DisableRecording(
-      trace_file, base::Bind(&OnStoppedStartupTracing));
+      startup_trace_file_, base::Bind(&OnStoppedStartupTracing));
 }
 
 }  // namespace content

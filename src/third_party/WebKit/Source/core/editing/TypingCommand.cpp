@@ -44,7 +44,7 @@
 #include "core/html/HTMLBRElement.h"
 #include "core/rendering/RenderObject.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -303,8 +303,14 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
     // get this by being at the end of a word and typing a space.
     VisiblePosition start(endingSelection().start(), endingSelection().affinity());
     VisiblePosition previous = start.previous();
-    if (previous.isNotNull()) {
-        VisiblePosition p1 = startOfWord(previous, LeftWordIfOnBoundary);
+
+    VisiblePosition p1 = startOfWord(previous, LeftWordIfOnBoundary);
+
+    if (commandType == InsertParagraphSeparator) {
+        VisiblePosition p2 = nextWordPosition(start);
+        VisibleSelection words(p1, endOfWord(p2));
+        frame->spellChecker().markMisspellingsAfterLineBreak(words);
+    } else if (previous.isNotNull()) {
         VisiblePosition p2 = startOfWord(start, LeftWordIfOnBoundary);
         if (p1 != p2)
             frame->spellChecker().markMisspellingsAfterTypingToWord(p1, endingSelection());
@@ -380,7 +386,7 @@ void TypingCommand::insertParagraphSeparatorInQuotedContent()
 bool TypingCommand::makeEditableRootEmpty()
 {
     Element* root = endingSelection().rootEditableElement();
-    if (!root || !root->firstChild())
+    if (!root || !root->hasChildren())
         return false;
 
     if (root->firstChild() == root->lastChild()) {
@@ -458,7 +464,7 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
             // Extend the selection backward into the last cell, then deletion will handle the move.
             selection->modify(FrameSelection::AlterationExtend, DirectionBackward, granularity);
         // If the caret is just after a table, select the table and don't delete anything.
-        } else if (Node* table = isFirstPositionAfterTable(visibleStart)) {
+        } else if (Element* table = isFirstPositionAfterTable(visibleStart)) {
             setEndingSelection(VisibleSelection(positionBeforeNode(table), endingSelection().start(), DOWNSTREAM, endingSelection().isDirectional()));
             typingAddedToOpenCommand(DeleteKey);
             return;
@@ -541,7 +547,7 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
         if (visibleEnd == endOfParagraph(visibleEnd))
             downstreamEnd = visibleEnd.next(CannotCrossEditingBoundary).deepEquivalent().downstream();
         // When deleting tables: Select the table first, then perform the deletion
-        if (isRenderedTable(downstreamEnd.containerNode()) && downstreamEnd.computeOffsetInContainerNode() <= caretMinOffset(downstreamEnd.containerNode())) {
+        if (isRenderedTableElement(downstreamEnd.containerNode()) && downstreamEnd.computeOffsetInContainerNode() <= caretMinOffset(downstreamEnd.containerNode())) {
             setEndingSelection(VisibleSelection(endingSelection().end(), positionAfterNode(downstreamEnd.containerNode()), DOWNSTREAM, endingSelection().isDirectional()));
             typingAddedToOpenCommand(ForwardDeleteKey);
             return;
@@ -625,4 +631,4 @@ bool TypingCommand::isTypingCommand() const
     return true;
 }
 
-} // namespace WebCore
+} // namespace blink

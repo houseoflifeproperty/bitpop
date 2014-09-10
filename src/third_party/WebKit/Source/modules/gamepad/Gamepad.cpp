@@ -26,7 +26,7 @@
 #include "config.h"
 #include "modules/gamepad/Gamepad.h"
 
-namespace WebCore {
+namespace blink {
 
 Gamepad::Gamepad()
 {
@@ -37,7 +37,7 @@ Gamepad::~Gamepad()
 {
 }
 
-void Gamepad::setButtons(unsigned count, const blink::WebGamepadButton* data)
+void Gamepad::setButtons(unsigned count, const WebGamepadButton* data)
 {
     if (m_buttons.size() != count) {
         m_buttons.resize(count);
@@ -55,4 +55,4 @@ void Gamepad::trace(Visitor* visitor)
     visitor->trace(m_buttons);
 }
 
-} // namespace WebCore
+} // namespace blink

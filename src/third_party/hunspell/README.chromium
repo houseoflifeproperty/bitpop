@@ -21,9 +21,10 @@ The patch is in google.patch.
   replacement table from the bdict file for the secondary suggestion mechanism.
 * Avoid crash in SuggestMgr::forgotchar_utf() and SuggestMgr::forgotchar() on
   Windows by using a one-character larger buffer.
+* calloc buffers in SuggestMgr::lcs to avoid reads from uninintialized buffers.
 
 Chromium-specific changes are in google.patch. To update the patch, follow these
-steps:
+steps, or simply run update_google_patch.sh from the commandline.
 1) Checkout hunspell:
    $ cvs -z3 \
          -d:pserver:anonymous@hunspell.cvs.sourceforge.net:/cvsroot/hunspell \
@@ -31,7 +32,7 @@ steps:
 2) Apply the existing patch:
    $ cd hunspell
    $ patch -p0 -i ~/src/third_party/hunspell/google.patch
-3) Make your new changes.
+3) Make your new changes inside the CVS hunspell directory.
 4) Generate the updated patch:
    $ cvs diff -u > ~/src/third_party/hunspell/google.patch
 

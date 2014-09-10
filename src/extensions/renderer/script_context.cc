@@ -16,6 +16,7 @@
 #include "extensions/common/extension_api.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/features/base_feature_provider.h"
+#include "gin/per_context_data.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
@@ -41,7 +42,9 @@ ScriptContext::ScriptContext(const v8::Handle<v8::Context>& v8_context,
   VLOG(1) << "Created context:\n"
           << "  extension id: " << GetExtensionID() << "\n"
           << "  frame:        " << web_frame_ << "\n"
+          << "  URL:          " << GetURL() << "\n"
           << "  context type: " << GetContextTypeDescription();
+  gin::PerContextData::From(v8_context)->set_runner(this);
 }
 
 ScriptContext::~ScriptContext() {
@@ -118,6 +121,8 @@ void ScriptContext::DispatchEvent(const char* event_name,
 }
 
 void ScriptContext::DispatchOnUnloadEvent() {
+  v8::HandleScope handle_scope(isolate());
+  v8::Context::Scope context_scope(v8_context());
   module_system_->CallModuleMethod("unload_event", "dispatch");
 }
 
@@ -135,6 +140,8 @@ std::string ScriptContext::GetContextTypeDescription() {
       return "WEB_PAGE";
     case Feature::BLESSED_WEB_PAGE_CONTEXT:
       return "BLESSED_WEB_PAGE";
+    case Feature::WEBUI_CONTEXT:
+      return "WEBUI";
   }
   NOTREACHED();
   return std::string();
@@ -162,8 +169,7 @@ GURL ScriptContext::GetDataSourceURLForFrame(const blink::WebFrame* frame) {
   blink::WebDataSource* data_source = frame->provisionalDataSource()
                                           ? frame->provisionalDataSource()
                                           : frame->dataSource();
-  CHECK(data_source);
-  return GURL(data_source->request().url());
+  return data_source ? GURL(data_source->request().url()) : GURL();
 }
 
 // static
@@ -182,10 +188,10 @@ GURL ScriptContext::GetEffectiveDocumentURL(const blink::WebFrame* frame,
   const blink::WebFrame* parent = frame;
   do {
     parent = parent->parent() ? parent->parent() : parent->opener();
-  } while (parent != NULL &&
+  } while (parent != NULL && !parent->document().isNull() &&
            GURL(parent->document().url()).SchemeIs(url::kAboutScheme));
 
-  if (parent) {
+  if (parent && !parent->document().isNull()) {
     // Only return the parent URL if the frame can access it.
     const blink::WebDocument& parent_document = parent->document();
     if (frame->document().securityOrigin().canAccess(
@@ -219,6 +225,23 @@ void ScriptContext::OnResponseReceived(const std::string& name,
   // string if a validation error has occured.
   DCHECK(retval.IsEmpty() || retval->IsUndefined())
       << *v8::String::Utf8Value(retval);
+}
+
+void ScriptContext::Run(const std::string& source,
+                        const std::string& resource_name) {
+  module_system_->RunString(source, resource_name);
+}
+
+v8::Handle<v8::Value> ScriptContext::Call(v8::Handle<v8::Function> function,
+                                          v8::Handle<v8::Value> receiver,
+                                          int argc,
+                                          v8::Handle<v8::Value> argv[]) {
+  return CallFunction(function, argc, argv);
+}
+
+gin::ContextHolder* ScriptContext::GetContextHolder() {
+  v8::HandleScope handle_scope(isolate());
+  return gin::PerContextData::From(v8_context())->context_holder();
 }
 
 }  // namespace extensions

@@ -134,12 +134,15 @@ def main():
   if not os.path.exists('src'):
     raise Exception('ERROR: no src directory to package, exiting')
 
-  revision = options.build_properties.get('got_revision', '')
-  if revision == '':
-    revision = 'NONE'
+  try:
+    revision_upload_path = chromium_utils.GetSortableUploadPathForSortKey(
+        *chromium_utils.GetBuildSortKey(options)
+    )
+  except chromium_utils.NoIdentifiedRevision:
+    revision_upload_path = 'NONE'
   completed_filename = '%s-%s.%s' % (
       options.factory_properties.get('package_filename', FILENAME),
-      revision,
+      revision_upload_path,
       EXT)
   partial_filename = '%s.partial' % completed_filename
 

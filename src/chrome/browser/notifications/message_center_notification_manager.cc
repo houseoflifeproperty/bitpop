@@ -8,24 +8,30 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
+#include "base/stl_util.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/api/notification_provider/notification_provider_api.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/notifications/fullscreen_notification_blocker.h"
 #include "chrome/browser/notifications/message_center_settings_controller.h"
 #include "chrome/browser/notifications/notification.h"
+#include "chrome/browser/notifications/notification_conversion_helper.h"
 #include "chrome/browser/notifications/screen_lock_notification_blocker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "chrome/common/extensions/api/notification_provider.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/info_map.h"
 #include "extensions/common/extension_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/message_center_tray.h"
@@ -91,6 +97,10 @@ MessageCenterNotificationManager::MessageCenterNotificationManager(
 MessageCenterNotificationManager::~MessageCenterNotificationManager() {
   message_center_->SetNotifierSettingsProvider(NULL);
   message_center_->RemoveObserver(this);
+
+  STLDeleteContainerPairSecondPointers(profile_notifications_.begin(),
+                                       profile_notifications_.end());
+  profile_notifications_.clear();
 }
 
 void MessageCenterNotificationManager::RegisterPrefs(
@@ -112,8 +122,28 @@ void MessageCenterNotificationManager::Add(const Notification& notification,
   DesktopNotificationServiceFactory::GetForProfile(profile)->
       ShowWelcomeNotificationIfNecessary(notification);
 
-  AddProfileNotification(
+  // WARNING: You MUST update the message center via the notification within a
+  // ProfileNotification object or the profile ID will not be correctly set for
+  // ChromeOS.
+  ProfileNotification* profile_notification(
       new ProfileNotification(profile, notification, message_center_));
+  AddProfileNotification(profile_notification);
+
+  // TODO(liyanhou): Change the logic to only send notifications to one party.
+  // Currently, if there is an app with notificationProvider permission,
+  // notifications will go to both message center and the app.
+  // Change it to send notifications to message center only when the user chose
+  // default message center (extension_id.empty()).
+
+  // If there exist apps/extensions that have notificationProvider permission,
+  // route notifications to one of the apps/extensions.
+  std::string extension_id = GetExtensionTakingOverNotifications(profile);
+  if (!extension_id.empty())
+    profile_notification->AddToAlternateProvider(extension_id);
+
+  message_center_->AddNotification(make_scoped_ptr(
+      new message_center::Notification(profile_notification->notification())));
+  profile_notification->StartDownloads();
 }
 
 bool MessageCenterNotificationManager::Update(const Notification& notification,
@@ -138,7 +168,6 @@ bool MessageCenterNotificationManager::Update(const Notification& notification,
       // the immediate update allowed in the message center.
       std::string old_id =
           old_notification->notification().delegate_id();
-      DCHECK(message_center_->FindVisibleNotificationById(old_id));
 
       // Add/remove notification in the local list but just update the same
       // one in MessageCenter.
@@ -148,11 +177,16 @@ bool MessageCenterNotificationManager::Update(const Notification& notification,
           new ProfileNotification(profile, notification, message_center_);
       profile_notifications_[notification.delegate_id()] = new_notification;
 
-      // Now pass a copy to message center.
-      scoped_ptr<message_center::Notification> message_center_notification(
-          make_scoped_ptr(new message_center::Notification(notification)));
-      message_center_->UpdateNotification(old_id,
-                                          message_center_notification.Pass());
+      // TODO(liyanhou): Add routing updated notifications to alternative
+      // providers.
+
+      // WARNING: You MUST use AddProfileNotification or update the message
+      // center via the notification within a ProfileNotification object or the
+      // profile ID will not be correctly set for ChromeOS.
+      message_center_->UpdateNotification(
+          old_id,
+          make_scoped_ptr(new message_center::Notification(
+              new_notification->notification())));
 
       new_notification->StartDownloads();
       return true;
@@ -451,8 +485,10 @@ std::string
       extensions::ExtensionSystem::Get(profile())->info_map();
   extensions::ExtensionSet extensions;
   extension_info_map->GetExtensionsWithAPIPermissionForSecurityOrigin(
-      notification().origin_url(), notification().process_id(),
-      extensions::APIPermission::kNotification, &extensions);
+      notification().origin_url(),
+      notification().process_id(),
+      extensions::APIPermission::kNotifications,
+      &extensions);
 
   DesktopNotificationService* desktop_service =
       DesktopNotificationServiceFactory::GetForProfile(profile());
@@ -466,23 +502,31 @@ std::string
   return std::string();
 }
 
+void
+MessageCenterNotificationManager::ProfileNotification::AddToAlternateProvider(
+    const std::string extension_id) {
+  // Convert data from Notification type to NotificationOptions type.
+  extensions::api::notifications::NotificationOptions options;
+  NotificationConversionHelper::NotificationToNotificationOptions(notification_,
+                                                                  &options);
+
+  // Send the notification to the alternate provider extension/app.
+  extensions::NotificationProviderEventRouter event_router(profile_);
+  event_router.CreateNotification(extension_id,
+                                  notification_.notifier_id().id,
+                                  notification_.delegate_id(),
+                                  options);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // private
 
 void MessageCenterNotificationManager::AddProfileNotification(
     ProfileNotification* profile_notification) {
-  const Notification& notification = profile_notification->notification();
-  std::string id = notification.delegate_id();
+  std::string id = profile_notification->notification().delegate_id();
   // Notification ids should be unique.
   DCHECK(profile_notifications_.find(id) == profile_notifications_.end());
   profile_notifications_[id] = profile_notification;
-
-  // Create the copy for message center, and ensure the extension ID is correct.
-  scoped_ptr<message_center::Notification> message_center_notification(
-      new message_center::Notification(notification));
-  message_center_->AddNotification(message_center_notification.Pass());
-
-  profile_notification->StartDownloads();
 }
 
 void MessageCenterNotificationManager::RemoveProfileNotification(
@@ -500,4 +544,26 @@ MessageCenterNotificationManager::ProfileNotification*
     return NULL;
 
   return (*iter).second;
+}
+
+std::string
+MessageCenterNotificationManager::GetExtensionTakingOverNotifications(
+    Profile* profile) {
+  // TODO(liyanhou): When additional settings in Chrome Settings is implemented,
+  // change choosing the last app with permission to a user selected app.
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(profile);
+  DCHECK(registry);
+  std::string extension_id;
+  for (extensions::ExtensionSet::const_iterator it =
+           registry->enabled_extensions().begin();
+       it != registry->enabled_extensions().end();
+       ++it) {
+    if ((*it->get()).permissions_data()->HasAPIPermission(
+            extensions::APIPermission::ID::kNotificationProvider)) {
+      extension_id = (*it->get()).id();
+      return extension_id;
+    }
+  }
+  return extension_id;
 }

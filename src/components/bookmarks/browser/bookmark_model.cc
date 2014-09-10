@@ -26,10 +26,12 @@
 #include "ui/gfx/favicon_size.h"
 
 using base::Time;
+using bookmarks::BookmarkClient;
 using bookmarks::BookmarkExpandedStateTracker;
 using bookmarks::BookmarkIndex;
 using bookmarks::BookmarkLoadDetails;
 using bookmarks::BookmarkMatch;
+using bookmarks::BookmarkNodeData;
 using bookmarks::BookmarkStorage;
 
 namespace {
@@ -146,13 +148,13 @@ void BookmarkModel::Load(
       new BookmarkExpandedStateTracker(this, pref_service));
 
   // Load the bookmarks. BookmarkStorage notifies us when done.
-  store_ = new BookmarkStorage(this, profile_path, io_task_runner.get());
+  store_ .reset(new BookmarkStorage(this, profile_path, io_task_runner.get()));
   store_->LoadBookmarks(CreateLoadDetails(accept_languages), ui_task_runner);
 }
 
 const BookmarkNode* BookmarkModel::GetParentForNewNodes() {
   std::vector<const BookmarkNode*> nodes =
-      bookmark_utils::GetMostRecentlyModifiedUserFolders(this, 1);
+      bookmarks::GetMostRecentlyModifiedUserFolders(this, 1);
   DCHECK(!nodes.empty());  // This list is always padded with default folders.
   return nodes[0];
 }
@@ -292,7 +294,7 @@ void BookmarkModel::Copy(const BookmarkNode* node,
   std::vector<BookmarkNodeData::Element> elements(drag_data.elements);
   // CloneBookmarkNode will use BookmarkModel methods to do the job, so we
   // don't need to send notifications here.
-  bookmark_utils::CloneBookmarkNode(this, elements, new_parent, index, true);
+  bookmarks::CloneBookmarkNode(this, elements, new_parent, index, true);
 
   if (store_.get())
     store_->ScheduleSave();
@@ -509,7 +511,7 @@ const BookmarkNode* BookmarkModel::GetMostRecentlyAddedUserNodeForURL(
     const GURL& url) {
   std::vector<const BookmarkNode*> nodes;
   GetNodesByURL(url, &nodes);
-  std::sort(nodes.begin(), nodes.end(), &bookmark_utils::MoreRecentlyAdded);
+  std::sort(nodes.begin(), nodes.end(), &bookmarks::MoreRecentlyAdded);
 
   // Look for the first node that the user can edit.
   for (size_t i = 0; i < nodes.size(); ++i) {
@@ -699,7 +701,7 @@ void BookmarkModel::GetBookmarksMatching(
 }
 
 void BookmarkModel::ClearStore() {
-  store_ = NULL;
+  store_.reset();
 }
 
 void BookmarkModel::SetPermanentNodeVisible(BookmarkNode::Type type,
@@ -958,16 +960,16 @@ void BookmarkModel::LoadFavicon(
 
   DCHECK(node->url().is_valid());
   node->set_favicon_state(BookmarkNode::LOADING_FAVICON);
-  base::CancelableTaskTracker::TaskId taskId = client_->GetFaviconImageForURL(
-      node->url(),
-      icon_type,
-      icon_type == favicon_base::FAVICON ? gfx::kFaviconSize : 0,
-      base::Bind(
-          &BookmarkModel::OnFaviconDataAvailable,
-          base::Unretained(this),
-          node,
-          icon_type),
-      &cancelable_task_tracker_);
+  base::CancelableTaskTracker::TaskId taskId =
+      client_->GetFaviconImageForPageURL(
+          node->url(),
+          icon_type,
+          base::Bind(
+              &BookmarkModel::OnFaviconDataAvailable,
+              base::Unretained(this),
+              node,
+              icon_type),
+          &cancelable_task_tracker_);
   if (taskId != base::CancelableTaskTracker::kBadTaskId)
     node->set_favicon_load_task_id(taskId);
 }

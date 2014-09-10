@@ -42,7 +42,7 @@ class WebDevToolsAgentClient;
 class WebDevToolsAgentImpl;
 class WebViewImpl;
 
-class InspectorClientImpl FINAL : public WebCore::InspectorClient, public WebCore::InspectorFrontendChannel {
+class InspectorClientImpl FINAL : public InspectorClient, public InspectorFrontendChannel {
 public:
     explicit InspectorClientImpl(WebViewImpl*);
     virtual ~InspectorClientImpl();
@@ -51,12 +51,12 @@ public:
     virtual void highlight() OVERRIDE;
     virtual void hideHighlight() OVERRIDE;
 
-    virtual void sendMessageToFrontend(PassRefPtr<WebCore::JSONObject>) OVERRIDE;
+    virtual void sendMessageToFrontend(PassRefPtr<JSONObject>) OVERRIDE;
     virtual void flush() OVERRIDE;
 
     virtual void updateInspectorStateCookie(const WTF::String&) OVERRIDE;
 
-    virtual void setDeviceMetricsOverride(int, int, float, bool, bool) OVERRIDE;
+    virtual void setDeviceMetricsOverride(int, int, float, bool, bool, float, float, float) OVERRIDE;
     virtual void clearDeviceMetricsOverride() OVERRIDE;
     virtual void setTouchEventEmulationEnabled(bool) OVERRIDE;
 
@@ -66,13 +66,14 @@ public:
     virtual void setShowFPSCounter(bool) OVERRIDE;
     virtual void setContinuousPaintingEnabled(bool) OVERRIDE;
     virtual void setShowScrollBottleneckRects(bool) OVERRIDE;
-    virtual void requestPageScaleFactor(float scale, const WebCore::IntPoint& origin) OVERRIDE;
+    virtual void resetScrollAndPageScaleFactor() OVERRIDE;
+    virtual void showContextMenu(float x, float y, PassRefPtr<ContextMenuProvider>) OVERRIDE;
 
     virtual void getAllocatedObjects(HashSet<const void*>&) OVERRIDE;
     virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&) OVERRIDE;
 
-    virtual void dispatchKeyEvent(const WebCore::PlatformKeyboardEvent&) OVERRIDE;
-    virtual void dispatchMouseEvent(const WebCore::PlatformMouseEvent&) OVERRIDE;
+    virtual void dispatchKeyEvent(const PlatformKeyboardEvent&) OVERRIDE;
+    virtual void dispatchMouseEvent(const PlatformMouseEvent&) OVERRIDE;
 
     virtual void setTraceEventCallback(const String& categoryFilter, TraceEventCallback) OVERRIDE;
     virtual void resetTraceEventCallback() OVERRIDE;

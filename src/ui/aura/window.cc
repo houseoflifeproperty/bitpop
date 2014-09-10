@@ -257,8 +257,8 @@ Window::~Window() {
   if (delegate_)
     delegate_->OnWindowDestroyed(this);
   ObserverListBase<WindowObserver>::Iterator iter(observers_);
-  WindowObserver* observer;
-  while ((observer = iter.GetNext())) {
+  for (WindowObserver* observer = iter.GetNext(); observer;
+       observer = iter.GetNext()) {
     RemoveObserver(observer);
     observer->OnWindowDestroyed(this);
   }
@@ -303,6 +303,13 @@ void Window::SetName(const std::string& name) {
 
   if (layer())
     UpdateLayerName();
+}
+
+void Window::SetTitle(const base::string16& title) {
+  title_ = title;
+  FOR_EACH_OBSERVER(WindowObserver,
+                    observers_,
+                    OnWindowTitleChanged(this));
 }
 
 void Window::SetTransparent(bool transparent) {
@@ -746,12 +753,18 @@ void Window::SetCapture() {
   Window* root_window = GetRootWindow();
   if (!root_window)
     return;
+  client::CaptureClient* capture_client = client::GetCaptureClient(root_window);
+  if (!capture_client)
+    return;
   client::GetCaptureClient(root_window)->SetCapture(this);
 }
 
 void Window::ReleaseCapture() {
   Window* root_window = GetRootWindow();
   if (!root_window)
+    return;
+  client::CaptureClient* capture_client = client::GetCaptureClient(root_window);
+  if (!capture_client)
     return;
   client::GetCaptureClient(root_window)->ReleaseCapture(this);
 }
@@ -782,8 +795,6 @@ void* Window::GetNativeWindowProperty(const char* key) const {
 
 void Window::OnDeviceScaleFactorChanged(float device_scale_factor) {
   ScopedCursorHider hider(this);
-  if (IsRootWindow())
-    host_->OnDeviceScaleFactorChanged(device_scale_factor);
   if (delegate_)
     delegate_->OnDeviceScaleFactorChanged(device_scale_factor);
 }

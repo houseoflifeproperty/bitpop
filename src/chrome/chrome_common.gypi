@@ -4,6 +4,7 @@
 
 {
   'variables': {
+    # File lists shared with GN build.
     'chrome_common_sources': [
       '../apps/app_shim/app_shim_launch.h',
       '../apps/app_shim/app_shim_messages.h',
@@ -11,8 +12,6 @@
       'common/attrition_experiments.h',
       'common/auto_start_linux.cc',
       'common/auto_start_linux.h',
-      'common/autocomplete_match_type.cc',
-      'common/autocomplete_match_type.h',
       'common/badge_util.cc',
       'common/badge_util.h',
       'common/child_process_logging.h',
@@ -23,6 +22,7 @@
       'common/chrome_content_client_ios.mm',
       'common/chrome_result_codes.h',
       'common/chrome_utility_messages.h',
+      'common/chrome_utility_printing_messages.h',
       'common/chrome_version_info.cc',
       'common/chrome_version_info_android.cc',
       'common/chrome_version_info_chromeos.cc',
@@ -48,13 +48,10 @@
       'common/content_restriction.h',
       'common/content_settings.cc',
       'common/content_settings.h',
-      'common/content_settings_helper.cc',
-      'common/content_settings_helper.h',
       'common/content_settings_pattern.cc',
       'common/content_settings_pattern.h',
       'common/content_settings_pattern_parser.cc',
       'common/content_settings_pattern_parser.h',
-      'common/content_settings_types.h',
       'common/crash_keys.cc',
       'common/crash_keys.h',
       'common/custom_handlers/protocol_handler.cc',
@@ -66,17 +63,18 @@
       'common/extensions/api/i18n/default_locale_handler.h',
       'common/extensions/api/identity/oauth2_manifest_handler.cc',
       'common/extensions/api/identity/oauth2_manifest_handler.h',
-      'common/extensions/api/managed_mode_private/managed_mode_handler.cc',
-      'common/extensions/api/managed_mode_private/managed_mode_handler.h',
       'common/extensions/api/plugins/plugins_handler.cc',
       'common/extensions/api/plugins/plugins_handler.h',
       'common/extensions/api/storage/storage_schema_manifest_handler.cc',
       'common/extensions/api/storage/storage_schema_manifest_handler.h',
+      'common/extensions/api/supervised_user_private/supervised_user_handler.cc',
+      'common/extensions/api/supervised_user_private/supervised_user_handler.h',
       'common/extensions/chrome_extension_messages.h',
       'common/extensions/chrome_extensions_client.cc',
       'common/extensions/chrome_extensions_client.h',
       'common/extensions/chrome_manifest_handlers.cc',
       'common/extensions/chrome_manifest_handlers.h',
+      'common/extensions/chrome_utility_extensions_messages.h',
       'common/extensions/command.cc',
       'common/extensions/command.h',
       'common/extensions/extension_constants.cc',
@@ -89,6 +87,8 @@
       'common/extensions/features/chrome_channel_feature_filter.h',
       'common/extensions/features/feature_channel.cc',
       'common/extensions/features/feature_channel.h',
+      'common/extensions/image_writer/image_writer_util_mac.cc',
+      'common/extensions/image_writer/image_writer_util_mac.h',
       'common/extensions/manifest_handlers/app_isolation_info.cc',
       'common/extensions/manifest_handlers/app_isolation_info.h',
       'common/extensions/manifest_handlers/app_launch_info.cc',
@@ -101,10 +101,10 @@
       'common/extensions/manifest_handlers/mime_types_handler.h',
       'common/extensions/manifest_handlers/minimum_chrome_version_checker.cc',
       'common/extensions/manifest_handlers/minimum_chrome_version_checker.h',
-      'common/extensions/manifest_handlers/nacl_modules_handler.cc',
-      'common/extensions/manifest_handlers/nacl_modules_handler.h',
       'common/extensions/manifest_handlers/settings_overrides_handler.cc',
       'common/extensions/manifest_handlers/settings_overrides_handler.h',
+      'common/extensions/manifest_handlers/synthesize_browser_action_handler.cc',
+      'common/extensions/manifest_handlers/synthesize_browser_action_handler.h',
       'common/extensions/manifest_handlers/theme_handler.cc',
       'common/extensions/manifest_handlers/theme_handler.h',
       'common/extensions/manifest_handlers/ui_overrides_handler.cc',
@@ -117,36 +117,12 @@
       'common/extensions/permissions/chrome_permission_message_provider.h',
       'common/extensions/sync_helper.cc',
       'common/extensions/sync_helper.h',
-      'common/extensions/update_manifest.cc',
-      'common/extensions/update_manifest.h',
       'common/favicon/favicon_url_parser.cc',
       'common/favicon/favicon_url_parser.h',
       'common/icon_with_badge_image_source.cc',
       'common/icon_with_badge_image_source.h',
-      'common/importer/firefox_importer_utils.cc',
-      'common/importer/firefox_importer_utils.h',
-      'common/importer/firefox_importer_utils_linux.cc',
-      'common/importer/firefox_importer_utils_mac.mm',
-      'common/importer/firefox_importer_utils_win.cc',
-      'common/importer/ie_importer_test_registry_overrider_win.cc',
-      'common/importer/ie_importer_test_registry_overrider_win.h',
-      'common/importer/ie_importer_utils_win.cc',
-      'common/importer/ie_importer_utils_win.h',
-      'common/importer/imported_bookmark_entry.cc',
-      'common/importer/imported_bookmark_entry.h',
-      'common/importer/imported_favicon_usage.cc',
-      'common/importer/imported_favicon_usage.h',
-      'common/importer/importer_bridge.cc',
-      'common/importer/importer_bridge.h',
-      'common/importer/importer_data_types.cc',
-      'common/importer/importer_data_types.h',
-      'common/importer/importer_type.h',
-      'common/importer/importer_url_row.cc',
-      'common/importer/importer_url_row.h',
-      'common/importer/profile_import_process_messages.cc',
-      'common/importer/profile_import_process_messages.h',
-      'common/importer/safari_importer_utils.h',
-      'common/importer/safari_importer_utils.mm',
+      'common/ini_parser.cc',
+      'common/ini_parser.h',
       'common/instant_restricted_id_cache.h',
       'common/instant_types.cc',
       'common/instant_types.h',
@@ -160,8 +136,6 @@
       'common/mac/cfbundle_blocker.mm',
       'common/mac/launchd.h',
       'common/mac/launchd.mm',
-      'common/mac/objc_method_swizzle.h',
-      'common/mac/objc_method_swizzle.mm',
       'common/mac/objc_zombie.h',
       'common/mac/objc_zombie.mm',
       'common/media/webrtc_logging_messages.h',
@@ -189,23 +163,11 @@
       'common/ref_counted_util.h',
       'common/render_messages.cc',
       'common/render_messages.h',
-      'common/safe_browsing/download_protection_util.cc',
-      'common/safe_browsing/download_protection_util.h',
       'common/safe_browsing/safebrowsing_messages.h',
-      'common/safe_browsing/zip_analyzer.cc',
-      'common/safe_browsing/zip_analyzer.h',
       'common/search_provider.h',
       'common/search_types.h',
       'common/search_urls.cc',
       'common/search_urls.h',
-      'common/service_messages.h',
-      'common/service_process_util.cc',
-      'common/service_process_util.h',
-      'common/service_process_util_linux.cc',
-      'common/service_process_util_mac.mm',
-      'common/service_process_util_posix.cc',
-      'common/service_process_util_posix.h',
-      'common/service_process_util_win.cc',
       'common/spellcheck_common.cc',
       'common/spellcheck_common.h',
       'common/spellcheck_marker.h',
@@ -213,6 +175,8 @@
       'common/spellcheck_result.h',
       'common/switch_utils.cc',
       'common/switch_utils.h',
+      'common/terminate_on_heap_corruption_experiment_win.cc',
+      'common/terminate_on_heap_corruption_experiment_win.h',
       'common/tts_messages.h',
       'common/tts_utterance_request.cc',
       'common/tts_utterance_request.h',
@@ -261,6 +225,63 @@
       'common/extensions/api/webstore/webstore_api_constants.cc',
       'common/extensions/api/webstore/webstore_api_constants.h',
     ],
+    'chrome_common_full_safe_browsing_sources': [
+      'common/safe_browsing/download_protection_util.cc',
+      'common/safe_browsing/download_protection_util.h',
+      'common/safe_browsing/zip_analyzer.cc',
+      'common/safe_browsing/zip_analyzer.h',
+    ],
+    'chrome_common_importer_sources': [
+      'common/importer/firefox_importer_utils.cc',
+      'common/importer/firefox_importer_utils.h',
+      'common/importer/firefox_importer_utils_linux.cc',
+      'common/importer/firefox_importer_utils_mac.mm',
+      'common/importer/firefox_importer_utils_win.cc',
+      'common/importer/ie_importer_test_registry_overrider_win.cc',
+      'common/importer/ie_importer_test_registry_overrider_win.h',
+      'common/importer/ie_importer_utils_win.cc',
+      'common/importer/ie_importer_utils_win.h',
+      'common/importer/imported_bookmark_entry.cc',
+      'common/importer/imported_bookmark_entry.h',
+      'common/importer/imported_favicon_usage.cc',
+      'common/importer/imported_favicon_usage.h',
+      'common/importer/importer_bridge.cc',
+      'common/importer/importer_bridge.h',
+      'common/importer/importer_data_types.cc',
+      'common/importer/importer_data_types.h',
+      'common/importer/importer_type.h',
+      'common/importer/importer_url_row.cc',
+      'common/importer/importer_url_row.h',
+      'common/importer/profile_import_process_messages.cc',
+      'common/importer/profile_import_process_messages.h',
+      'common/importer/safari_importer_utils.h',
+      'common/importer/safari_importer_utils.mm',
+    ],
+    'chrome_common_service_process_sources': [
+      'common/service_messages.h',
+      'common/service_process_util.cc',
+      'common/service_process_util.h',
+      'common/service_process_util_linux.cc',
+      'common/service_process_util_mac.mm',
+      'common/service_process_util_posix.cc',
+      'common/service_process_util_posix.h',
+      'common/service_process_util_win.cc',
+    ],
+    'chrome_common_win_mac_sources': [
+      'common/extensions/api/networking_private/networking_private_crypto_nss.cc',
+      'common/extensions/api/networking_private/networking_private_crypto_openssl.cc',
+      'common/extensions/api/networking_private/networking_private_crypto.cc',
+      'common/extensions/api/networking_private/networking_private_crypto.h',
+      'common/media_galleries/itunes_library.cc',
+      'common/media_galleries/itunes_library.h',
+      'common/media_galleries/picasa_types.cc',
+      'common/media_galleries/picasa_types.h',
+      'common/media_galleries/pmp_constants.h',
+    ],
+    'chrome_common_mac_sources': [
+      'common/media_galleries/iphoto_library.cc',
+      'common/media_galleries/iphoto_library.h',
+    ]
   },
   'targets': [
     {
@@ -286,7 +307,6 @@
         'common_net',
         'common_version',
         'installer_util',
-        'metrics_proto',
         'safe_browsing_proto',
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/base.gyp:base_i18n',
@@ -297,6 +317,8 @@
         '<(DEPTH)/chrome/chrome_resources.gyp:theme_resources',
         '<(DEPTH)/chrome/common_constants.gyp:common_constants',
         '<(DEPTH)/components/components.gyp:cloud_devices_common',
+        '<(DEPTH)/components/components.gyp:component_updater',
+        '<(DEPTH)/components/components.gyp:content_settings_core_common',
         '<(DEPTH)/components/components.gyp:json_schema',
         '<(DEPTH)/components/components.gyp:metrics',
         '<(DEPTH)/components/components.gyp:policy_component_common',
@@ -306,7 +328,7 @@
         '<(DEPTH)/crypto/crypto.gyp:crypto',
         '<(DEPTH)/extensions/extensions_resources.gyp:extensions_resources',
         '<(DEPTH)/extensions/extensions_strings.gyp:extensions_strings',
-        '<(DEPTH)/media/cast/cast.gyp:cast_transport',
+        '<(DEPTH)/media/cast/cast.gyp:cast_net',
         '<(DEPTH)/net/net.gyp:net',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
@@ -314,6 +336,7 @@
         '<(DEPTH)/third_party/libxml/libxml.gyp:libxml',
         '<(DEPTH)/third_party/sqlite/sqlite.gyp:sqlite',
         '<(DEPTH)/third_party/zlib/google/zip.gyp:zip',
+        '<(DEPTH)/ui/gfx/ipc/gfx_ipc.gyp:gfx_ipc',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
         '<(DEPTH)/url/url.gyp:url_lib',
       ],
@@ -322,41 +345,32 @@
       ],
       'conditions': [
         ['enable_extensions==1', {
-          'sources': [
-            '<@(chrome_common_extensions_sources)',
-          ],
+          'sources': [ '<@(chrome_common_extensions_sources)' ],
           'dependencies': [
             '../device/bluetooth/bluetooth.gyp:device_bluetooth',
             '../device/usb/usb.gyp:device_usb',
           ],
         }],
         ['OS=="win" or OS=="mac"', {
-          'sources': [
-            'common/extensions/api/networking_private/networking_private_crypto.cc',
-            'common/extensions/api/networking_private/networking_private_crypto.h',
-            'common/media_galleries/itunes_library.cc',
-            'common/media_galleries/itunes_library.h',
-            'common/media_galleries/picasa_types.cc',
-            'common/media_galleries/picasa_types.h',
-            'common/media_galleries/pmp_constants.h',
+          'sources': [ '<@(chrome_common_win_mac_sources)' ],
+        }],
+        ['(OS=="win" or OS=="mac") and use_openssl==1', {
+          # networking_private_crypto_openssl.cc depends on boringssl.
+          'dependencies': [
+            '../third_party/boringssl/boringssl.gyp:boringssl',
           ],
         }],
         ['OS=="mac"', {
-          'sources': [
-            'common/media_galleries/iphoto_library.cc',
-            'common/media_galleries/iphoto_library.h',
-          ],
+          'sources': [ '<@(chrome_common_mac_sources)' ],
         }],
         ['OS != "ios"', {
           'dependencies': [
-            '<(DEPTH)/apps/common/api/api.gyp:apps_api',
             '<(DEPTH)/chrome/common/extensions/api/api.gyp:chrome_api',
             '<(DEPTH)/components/components.gyp:autofill_core_common',
             '<(DEPTH)/components/components.gyp:autofill_content_common',
             '<(DEPTH)/components/components.gyp:password_manager_core_common',
             '<(DEPTH)/components/components.gyp:signin_core_common',
             '<(DEPTH)/components/components.gyp:translate_content_common',
-            '<(DEPTH)/components/nacl.gyp:nacl_common',
             '<(DEPTH)/components/components.gyp:visitedlink_common',
             '<(DEPTH)/extensions/common/api/api.gyp:extensions_api',
             '<(DEPTH)/extensions/extensions.gyp:extensions_common',
@@ -380,7 +394,6 @@
             ['exclude', '^common/logging_chrome\\.'],
             ['exclude', '^common/media_galleries/'],
             ['exclude', '^common/multi_process_'],
-            ['exclude', '^common/nacl_'],
             ['exclude', '^common/pepper_flash\\.'],
             ['exclude', '^common/profiling\\.'],
             ['exclude', '^common/spellcheck_'],
@@ -400,6 +413,12 @@
             '<(DEPTH)/breakpad/src',
           ],
         }],
+        ['disable_nacl==0', {
+          'dependencies': [
+            '<(DEPTH)/components/nacl.gyp:nacl_common',
+            '<(DEPTH)/ppapi/native_client/src/trusted/plugin/plugin.gyp:nacl_trusted_plugin',
+          ],
+        }],
         ['enable_printing==0', {
           'sources!': [
             'common/print_messages.cc',
@@ -410,13 +429,8 @@
             '<(DEPTH)/printing/printing.gyp:printing',
           ],
         }],
-        ['enable_printing!=1', {
-          'sources!' : [
-            'common/service_messages.h',
-          ],
-          'sources/': [
-            ['exclude', '^common/service_process_util_'],
-          ],
+        ['enable_printing==1', {
+          'sources': [ '<@(chrome_common_service_process_sources)' ],
         }],
         ['enable_service_discovery==1', {
           'sources' : [
@@ -431,30 +445,29 @@
           ]
         }],
         ['OS=="android"', {
-          'sources/': [
-            ['exclude', '^common/chrome_version_info_posix.cc'],
-            ['exclude', '^common/importer/'],
-            ['include', '^common/importer/imported_favicon_usage.cc$'],
-            ['include', '^common/importer/imported_favicon_usage.h$'],
-            ['exclude', '^common/media_galleries/'],
-            ['exclude', '^common/service_'],
-          ],
           'sources!': [
             'common/badge_util.cc',
+            'common/chrome_version_info_posix.cc',
             'common/extensions/api/extension_action/browser_action_handler.cc',
             'common/extensions/api/extension_action/page_action_handler.cc',
             'common/extensions/api/spellcheck/spellcheck_handler.cc',
             'common/extensions/manifest_handlers/minimum_chrome_version_checker.cc',
-            'common/extensions/manifest_handlers/nacl_modules_handler.cc',
             'common/icon_with_badge_image_source.cc',
+            'common/media_galleries/metadata_types.h',
             'common/net/url_util.cc',
             'common/spellcheck_common.cc',
           ],
+        }, {
+          # Non-Android.
+          'sources': [ '<@(chrome_common_importer_sources)' ]
         }],
         ['OS=="win"', {
           'include_dirs': [
             '<(DEPTH)/breakpad/src',
             '<(DEPTH)/third_party/wtl/include',
+          ],
+          'dependencies': [
+            '<(DEPTH)/components/components.gyp:dom_distiller_core',  # Needed by chrome_content_client.cc.
           ],
         }],
         ['enable_mdns == 1', {
@@ -476,18 +489,12 @@
             '<(DEPTH)/breakpad/src',
           ],
           'sources!': [
-            'common/child_process_logging_posix.cc',
             'common/chrome_version_info_posix.cc',
           ],
         }],
         ['remoting==1', {
           'dependencies': [
             '../remoting/remoting.gyp:remoting_client_plugin',
-          ],
-        }],
-        ['enable_plugins==0', {
-          'source!' : [
-            'common/pepper_permission_util.cc',
           ],
         }],
         ['enable_webrtc==0', {
@@ -500,6 +507,24 @@
             '<(DEPTH)/components/components.gyp:policy',
           ],
         }],
+        ['safe_browsing==1', {
+          'defines': [ 'FULL_SAFE_BROWSING' ],
+          'sources': [ '<@(chrome_common_full_safe_browsing_sources)', ],
+        }],
+        ['safe_browsing==2', {
+          'defines': [ 'MOBILE_SAFE_BROWSING' ],
+        }],
+        ['use_openssl==1', {
+           'sources!': [
+             'common/extensions/api/networking_private/networking_private_crypto_nss.cc',
+           ],
+         },
+         {  # else !use_openssl
+           'sources!': [
+             'common/extensions/api/networking_private/networking_private_crypto_openssl.cc',
+           ],
+         },
+        ],
       ],
       'target_conditions': [
         ['OS == "ios"', {
@@ -512,10 +537,10 @@
       ],
       'export_dependent_settings': [
         '../base/base.gyp:base',
-        'metrics_proto',
       ],
     },
     {
+      # GN version: //chrome/common:version
       'target_name': 'common_version',
       'type': 'none',
       'conditions': [
@@ -575,7 +600,7 @@
       ],
     },
     {
-      # GN version: //chrome/common/net:net
+      # GN version: //chrome/common/net
       'target_name': 'common_net',
       'type': 'static_library',
       'sources': [
@@ -627,7 +652,7 @@
         ],
         ['OS == "android"', {
             'dependencies': [
-              '../third_party/openssl/openssl.gyp:openssl',
+              '../third_party/boringssl/boringssl.gyp:boringssl',
             ],
             'sources!': [
               'common/net/x509_certificate_model.cc',
@@ -636,9 +661,10 @@
         }],
         ['use_openssl==1', {
             'sources!': [
-              # networking_private_crypto.cc uses NSS functions.
-              'common/extensions/api/networking_private/networking_private_crypto.cc',
               'common/net/x509_certificate_model_nss.cc',
+            ],
+            'dependencies': [
+              '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
             ],
           },
           {  # else !use_openssl: remove the unneeded files
@@ -670,21 +696,6 @@
       'variables': {
         'proto_in_dir': 'common/safe_browsing',
         'proto_out_dir': 'chrome/common/safe_browsing',
-      },
-      'includes': [ '../build/protoc.gypi' ],
-    },
-    {
-      # Protobuf compiler / generator for UMA (User Metrics Analysis).
-
-      # GN version: //chrome/common/metrics/proto:proto
-      'target_name': 'metrics_proto',
-      'type': 'static_library',
-      'sources': [
-        'common/metrics/proto/chrome_experiments.proto',
-      ],
-      'variables': {
-        'proto_in_dir': 'common/metrics/proto',
-        'proto_out_dir': 'chrome/common/metrics/proto',
       },
       'includes': [ '../build/protoc.gypi' ],
     },

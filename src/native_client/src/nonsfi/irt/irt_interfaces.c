@@ -16,16 +16,17 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <sys/syscall.h>
 #include <unistd.h>
 
 #if defined(__linux__)
 # include <linux/futex.h>
+# include <sys/syscall.h>
 #endif
 
 #include "native_client/src/include/elf32.h"
 #include "native_client/src/include/elf_auxv.h"
 #include "native_client/src/include/nacl_macros.h"
+#include "native_client/src/public/irt_core.h"
 #include "native_client/src/trusted/service_runtime/include/machine/_types.h"
 #include "native_client/src/trusted/service_runtime/include/sys/mman.h"
 #include "native_client/src/trusted/service_runtime/include/sys/stat.h"
@@ -33,6 +34,7 @@
 #include "native_client/src/trusted/service_runtime/include/sys/unistd.h"
 #include "native_client/src/untrusted/irt/irt.h"
 #include "native_client/src/untrusted/irt/irt_dev.h"
+#include "native_client/src/untrusted/irt/irt_interfaces.h"
 
 /*
  * This is an implementation of NaCl's IRT interfaces that runs
@@ -79,6 +81,45 @@ void _start(void *info);
 #endif
 static __thread void *g_tls_value;
 
+/*
+ * When the host is NaCl (i.e., for NaCl newlib based nonsfi_loader),
+ * the following structs/macros are not defined. We just map to NaCl
+ * newlib's.
+ */
+#if defined(__native_client__)
+# define nacl_abi_timespec timespec
+# define nacl_abi_timeval timeval
+# define nacl_abi_tv_sec tv_sec
+# define nacl_abi_tv_usec tv_usec
+# define nacl_abi_stat stat
+# define nacl_abi_st_dev st_dev
+# define nacl_abi_st_ino st_ino
+# define nacl_abi_st_mode st_mode
+# define nacl_abi_st_nlink st_nlink
+# define nacl_abi_st_uid st_uid
+# define nacl_abi_st_gid st_gid
+# define nacl_abi_st_rdev st_rdev
+# define nacl_abi_st_size st_size
+# define nacl_abi_st_blksize st_blksize
+# define nacl_abi_st_blocks st_blocks
+# define nacl_abi_st_atime st_atime
+# define nacl_abi_st_atimensec st_atimensec
+# define nacl_abi_st_mtime st_mtime
+# define nacl_abi_st_mtimensec st_mtimensec
+# define nacl_abi_st_ctime st_ctime
+# define nacl_abi_st_ctimensec st_ctimensec
+# define nacl_abi_off_t off_t
+# define NACL_ABI_PROT_MASK PROT_MASK
+# define NACL_ABI_PROT_READ PROT_READ
+# define NACL_ABI_PROT_WRITE PROT_WRITE
+# define NACL_ABI_PROT_EXEC PROT_EXEC
+# define NACL_ABI_MAP_SHARED MAP_SHARED
+# define NACL_ABI_MAP_PRIVATE MAP_PRIVATE
+# define NACL_ABI_MAP_FIXED MAP_FIXED
+# define NACL_ABI_MAP_ANON MAP_ANONYMOUS
+# define NACL_ABI__SC_PAGESIZE _SC_PAGESIZE
+# define NACL_ABI__SC_NPROCESSORS_ONLN _SC_NPROCESSORS_ONLN
+#endif
 
 /*
  * The IRT functions in irt.h are declared as taking "struct timespec"
@@ -222,9 +263,12 @@ static int irt_seek(int fd, nacl_abi_off_t offset, int whence,
   return 0;
 }
 
-static int irt_fstat(int fd, struct stat *st) {
-  /* TODO(mseaborn): Implement this and convert "struct stat". */
-  return ENOSYS;
+static int irt_fstat(int fd, struct stat *st_nacl) {
+  struct stat st;
+  if (fstat(fd, &st) != 0)
+    return errno;
+  convert_to_nacl_stat(st_nacl, &st);
+  return 0;
 }
 
 static void irt_exit(int status) {
@@ -304,6 +348,14 @@ static int irt_munmap(void *addr, size_t len) {
   return check_error(munmap(addr, len));
 }
 
+static int irt_mprotect(void *addr, size_t len, int prot) {
+  int host_prot;
+  if (!convert_from_nacl_mmap_prot(&host_prot, prot)) {
+    return EINVAL;
+  }
+  return check_error(mprotect(addr, len, host_prot));
+}
+
 static int tls_init(void *ptr) {
   g_tls_value = ptr;
   return 0;
@@ -313,9 +365,12 @@ static void *tls_get(void) {
   return g_tls_value;
 }
 
+/* For newlib based nonsfi_loader, we use the one defined in pnacl_irt.c. */
+#if !defined(__native_client__)
 void *__nacl_read_tp(void) {
   return g_tls_value;
 }
+#endif
 
 struct thread_args {
   void (*start_func)(void);
@@ -412,12 +467,19 @@ static int futex_wake(volatile int *addr, int nwake, int *count) {
   *count = result;
   return 0;
 }
+#endif
 
+#if defined(__linux__) || defined(__native_client__)
 static int irt_clock_getres(nacl_irt_clockid_t clk_id,
                             struct timespec *time_nacl) {
   struct timespec time;
   int result = check_error(clock_getres(clk_id, &time));
-  convert_to_nacl_timespec(time_nacl, &time);
+  /*
+   * The timespec pointer is allowed to be NULL for clock_getres() though
+   * not for clock_gettime().
+   */
+  if (time_nacl != NULL)
+    convert_to_nacl_timespec(time_nacl, &time);
   return result;
 }
 
@@ -510,7 +572,7 @@ static void irt_stub_func(const char *name) {
     static void irt_stub_##name() { irt_stub_func(#name); }
 #define USE_STUB(s, name) (__typeof__(s.name)) irt_stub_##name
 
-static const struct nacl_irt_basic irt_basic = {
+const struct nacl_irt_basic nacl_irt_basic = {
   irt_exit,
   irt_gettod,
   irt_clock_func,
@@ -520,7 +582,7 @@ static const struct nacl_irt_basic irt_basic = {
 };
 
 DEFINE_STUB(getdents)
-static const struct nacl_irt_fdio irt_fdio = {
+const struct nacl_irt_fdio nacl_irt_fdio = {
   irt_close,
   irt_dup,
   irt_dup2,
@@ -528,50 +590,51 @@ static const struct nacl_irt_fdio irt_fdio = {
   irt_write,
   irt_seek,
   irt_fstat,
-  USE_STUB(irt_fdio, getdents),
+  USE_STUB(nacl_irt_fdio, getdents),
 };
 
-DEFINE_STUB(mprotect)
-static const struct nacl_irt_memory irt_memory = {
+const struct nacl_irt_memory nacl_irt_memory = {
   irt_mmap,
   irt_munmap,
-  USE_STUB(irt_memory, mprotect),
+  irt_mprotect,
 };
 
-static const struct nacl_irt_tls irt_tls = {
+const struct nacl_irt_tls nacl_irt_tls = {
   tls_init,
   tls_get,
 };
 
-static const struct nacl_irt_thread irt_thread = {
+const struct nacl_irt_thread nacl_irt_thread = {
   thread_create,
   thread_exit,
   thread_nice,
 };
 
 #if defined(__linux__)
-static const struct nacl_irt_futex irt_futex = {
+const struct nacl_irt_futex nacl_irt_futex = {
   futex_wait_abs,
   futex_wake,
 };
-
-static const struct nacl_irt_clock irt_clock = {
-  irt_clock_getres,
-  irt_clock_gettime,
-};
-#else
+#elif !defined(__native_client__)
 DEFINE_STUB(futex_wait_abs)
 DEFINE_STUB(futex_wake)
-static const struct nacl_irt_futex irt_futex = {
-  USE_STUB(irt_futex, futex_wait_abs),
-  USE_STUB(irt_futex, futex_wake),
+const struct nacl_irt_futex nacl_irt_futex = {
+  USE_STUB(nacl_irt_futex, futex_wait_abs),
+  USE_STUB(nacl_irt_futex, futex_wake),
+};
+#endif
+
+#if defined(__linux__) || defined(__native_client__)
+const struct nacl_irt_clock nacl_irt_clock = {
+  irt_clock_getres,
+  irt_clock_gettime,
 };
 #endif
 
 DEFINE_STUB(symlink)
 DEFINE_STUB(readlink)
 DEFINE_STUB(utimes)
-static const struct nacl_irt_dev_filename irt_dev_filename = {
+const struct nacl_irt_dev_filename nacl_irt_dev_filename = {
   irt_open,
   irt_stat,
   irt_mkdir,
@@ -583,53 +646,37 @@ static const struct nacl_irt_dev_filename irt_dev_filename = {
   irt_lstat,
   irt_link,
   irt_rename,
-  USE_STUB(irt_dev_filename, symlink),
+  USE_STUB(nacl_irt_dev_filename, symlink),
   irt_chmod,
   irt_access,
-  USE_STUB(irt_dev_filename, readlink),
-  USE_STUB(irt_dev_filename, utimes),
+  USE_STUB(nacl_irt_dev_filename, readlink),
+  USE_STUB(nacl_irt_dev_filename, utimes),
 };
 
-static const struct nacl_irt_dev_getpid irt_dev_getpid = {
+const struct nacl_irt_dev_getpid nacl_irt_dev_getpid = {
   irt_getpid,
 };
 
-struct nacl_interface_table {
-  const char *name;
-  const void *table;
-  size_t size;
-};
-
-static const struct nacl_interface_table irt_interfaces[] = {
-  { NACL_IRT_BASIC_v0_1, &irt_basic, sizeof(irt_basic) },
-  { NACL_IRT_FDIO_v0_1, &irt_fdio, sizeof(irt_fdio) },
-  { NACL_IRT_MEMORY_v0_3, &irt_memory, sizeof(irt_memory) },
-  { NACL_IRT_TLS_v0_1, &irt_tls, sizeof(irt_tls) },
-  { NACL_IRT_THREAD_v0_1, &irt_thread, sizeof(irt_thread) },
-  { NACL_IRT_FUTEX_v0_1, &irt_futex, sizeof(irt_futex) },
-#if defined(__linux__)
-  { NACL_IRT_CLOCK_v0_1, &irt_clock, sizeof(irt_clock) },
+static const struct nacl_irt_interface irt_interfaces[] = {
+  { NACL_IRT_BASIC_v0_1, &nacl_irt_basic, sizeof(nacl_irt_basic), NULL },
+  { NACL_IRT_FDIO_v0_1, &nacl_irt_fdio, sizeof(nacl_irt_fdio), NULL },
+  { NACL_IRT_MEMORY_v0_3, &nacl_irt_memory, sizeof(nacl_irt_memory), NULL },
+  { NACL_IRT_TLS_v0_1, &nacl_irt_tls, sizeof(nacl_irt_tls), NULL },
+  { NACL_IRT_THREAD_v0_1, &nacl_irt_thread, sizeof(nacl_irt_thread), NULL },
+  { NACL_IRT_FUTEX_v0_1, &nacl_irt_futex, sizeof(nacl_irt_futex), NULL },
+#if defined(__linux__) || defined(__native_client__)
+  { NACL_IRT_CLOCK_v0_1, &nacl_irt_clock, sizeof(nacl_irt_clock), NULL },
 #endif
-  { NACL_IRT_DEV_FILENAME_v0_3, &irt_dev_filename, sizeof(irt_dev_filename) },
-  { NACL_IRT_DEV_GETPID_v0_1, &irt_dev_getpid, sizeof(irt_dev_getpid) },
+  { NACL_IRT_DEV_FILENAME_v0_3, &nacl_irt_dev_filename,
+    sizeof(nacl_irt_dev_filename), NULL },
+  { NACL_IRT_DEV_GETPID_v0_1, &nacl_irt_dev_getpid,
+    sizeof(nacl_irt_dev_getpid), NULL },
 };
 
-static size_t irt_interface_query(const char *interface_ident,
-                                  void *table, size_t tablesize) {
-  unsigned i;
-  for (i = 0; i < NACL_ARRAY_SIZE(irt_interfaces); ++i) {
-    if (0 == strcmp(interface_ident, irt_interfaces[i].name)) {
-      const size_t size = irt_interfaces[i].size;
-      if (size <= tablesize) {
-        memcpy(table, irt_interfaces[i].table, size);
-        return size;
-      }
-      break;
-    }
-  }
-  fprintf(stderr, "Warning: unavailable IRT interface queried: %s\n",
-          interface_ident);
-  return 0;
+size_t nacl_irt_query_core(const char *interface_ident,
+                           void *table, size_t tablesize) {
+  return nacl_irt_query_list(interface_ident, table, tablesize,
+                             irt_interfaces, sizeof(irt_interfaces));
 }
 
 int nacl_irt_nonsfi_entry(int argc, char **argv, char **environ,
@@ -664,7 +711,7 @@ int nacl_irt_nonsfi_entry(int argc, char **argv, char **environ,
   data[pos++] = 0;
   /* auxv[0] */
   data[pos++] = AT_SYSINFO;
-  data[pos++] = (uintptr_t) irt_interface_query;
+  data[pos++] = (uintptr_t) nacl_irt_query_core;
   /* auxv[1] */
   data[pos++] = 0;
   data[pos++] = 0;

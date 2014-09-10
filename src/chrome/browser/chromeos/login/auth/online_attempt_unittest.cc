@@ -7,13 +7,13 @@
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
-#include "chrome/browser/chromeos/login/auth/auth_attempt_state.h"
-#include "chrome/browser/chromeos/login/auth/mock_auth_attempt_state_resolver.h"
 #include "chrome/browser/chromeos/login/auth/mock_url_fetchers.h"
 #include "chrome/browser/chromeos/login/auth/online_attempt.h"
-#include "chrome/browser/chromeos/login/auth/test_attempt_state.h"
-#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chromeos/login/auth/auth_attempt_state.h"
+#include "chromeos/login/auth/mock_auth_attempt_state_resolver.h"
+#include "chromeos/login/auth/test_attempt_state.h"
+#include "chromeos/login/auth/user_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
@@ -98,12 +98,11 @@ TEST_F(OnlineAttemptTest, LoginCancelRetry) {
   run_loop.Run();
 
   EXPECT_TRUE(error == state_.online_outcome().error());
-  EXPECT_EQ(LoginFailure::NETWORK_AUTH_FAILED,
-            state_.online_outcome().reason());
+  EXPECT_EQ(AuthFailure::NETWORK_AUTH_FAILED, state_.online_outcome().reason());
 }
 
 TEST_F(OnlineAttemptTest, LoginTimeout) {
-  LoginFailure error(LoginFailure::LOGIN_TIMED_OUT);
+  AuthFailure error(AuthFailure::LOGIN_TIMED_OUT);
   TestingProfile profile;
 
   base::RunLoop run_loop;
@@ -123,14 +122,12 @@ TEST_F(OnlineAttemptTest, LoginTimeout) {
 
   run_loop.Run();
 
-  EXPECT_EQ(LoginFailure::LOGIN_TIMED_OUT, state_.online_outcome().reason());
+  EXPECT_EQ(AuthFailure::LOGIN_TIMED_OUT, state_.online_outcome().reason());
 }
 
 TEST_F(OnlineAttemptTest, HostedLoginRejected) {
-  LoginFailure error(
-      LoginFailure::FromNetworkAuthFailure(
-          GoogleServiceAuthError(
-              GoogleServiceAuthError::HOSTED_NOT_ALLOWED)));
+  AuthFailure error(AuthFailure::FromNetworkAuthFailure(
+      GoogleServiceAuthError(GoogleServiceAuthError::HOSTED_NOT_ALLOWED)));
   TestingProfile profile;
 
   base::RunLoop run_loop;
@@ -148,7 +145,7 @@ TEST_F(OnlineAttemptTest, HostedLoginRejected) {
   run_loop.Run();
 
   EXPECT_EQ(error, local_state.online_outcome());
-  EXPECT_EQ(LoginFailure::NETWORK_AUTH_FAILED,
+  EXPECT_EQ(AuthFailure::NETWORK_AUTH_FAILED,
             local_state.online_outcome().reason());
 }
 
@@ -169,7 +166,7 @@ TEST_F(OnlineAttemptTest, FullLogin) {
 
   run_loop.Run();
 
-  EXPECT_EQ(LoginFailure::LoginFailureNone(), local_state.online_outcome());
+  EXPECT_EQ(AuthFailure::AuthFailureNone(), local_state.online_outcome());
 }
 
 TEST_F(OnlineAttemptTest, LoginNetFailure) {

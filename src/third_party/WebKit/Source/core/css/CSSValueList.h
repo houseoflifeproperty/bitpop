@@ -25,9 +25,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
-
-class CSSParserValueList;
+namespace blink {
 
 class CSSValueList : public CSSValue {
 public:
@@ -43,15 +41,11 @@ public:
     {
         return adoptRefWillBeNoop(new CSSValueList(SlashSeparator));
     }
-    static PassRefPtrWillBeRawPtr<CSSValueList> createFromParserValueList(CSSParserValueList* list)
-    {
-        return adoptRefWillBeNoop(new CSSValueList(list));
-    }
 
     size_t length() const { return m_values.size(); }
-    CSSValue* item(size_t index) { return index < m_values.size() ? m_values[index].get() : 0; }
-    const CSSValue* item(size_t index) const { return index < m_values.size() ? m_values[index].get() : 0; }
-    CSSValue* itemWithoutBoundsCheck(size_t index) { return m_values[index].get(); }
+    CSSValue* item(size_t index) { return m_values[index].get(); }
+    const CSSValue* item(size_t index) const { return m_values[index].get(); }
+    CSSValue* itemWithBoundsCheck(size_t index) { return index < m_values.size() ? m_values[index].get() : 0; }
 
     void append(PassRefPtrWillBeRawPtr<CSSValue> value) { m_values.append(value); }
     void prepend(PassRefPtrWillBeRawPtr<CSSValue> value) { m_values.prepend(value); }
@@ -75,7 +69,6 @@ protected:
 
 private:
     explicit CSSValueList(ValueListSeparator);
-    explicit CSSValueList(CSSParserValueList*);
 
     WillBeHeapVector<RefPtrWillBeMember<CSSValue>, 4> m_values;
 };
@@ -88,7 +81,7 @@ class CSSValueListInspector {
     STACK_ALLOCATED();
 public:
     CSSValueListInspector(CSSValue* value) : m_list((value && value->isValueList()) ? toCSSValueList(value) : 0) { }
-    CSSValue* item(size_t index) const { ASSERT_WITH_SECURITY_IMPLICATION(index < length()); return m_list->itemWithoutBoundsCheck(index); }
+    CSSValue* item(size_t index) const { ASSERT_WITH_SECURITY_IMPLICATION(index < length()); return m_list->item(index); }
     CSSValue* first() const { return item(0); }
     CSSValue* second() const { return item(1); }
     size_t length() const { return m_list ? m_list->length() : 0; }
@@ -113,6 +106,6 @@ private:
     size_t m_position;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSValueList_h

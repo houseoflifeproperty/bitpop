@@ -1,0 +1,43 @@
+[
+  {
+    "cmd": [
+      "git",
+      "diff",
+      "--cached",
+      "--name-only"
+    ],
+    "cwd": "[SLAVE_BUILD]",
+    "name": "git diff to analyze patch",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/build/gyp_chromium",
+      "--analyzer",
+      "{\"files\": [\"foo.cc\"], \"targets\": [\"foo\", \"bar\"]}",
+      "/path/to/tmp/json"
+    ],
+    "env": {
+      "GYP_DEFINES": "component=static_library gomadir='[BUILD]/goma' target_arch=x64 use_goma=1"
+    },
+    "name": "analyze",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"status\": \"Found dependency (all)\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"targets\": [@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"foo\"@@@",
+      "@@@STEP_LOG_LINE@json.output@  ]@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "echo",
+      "Why hello, there."
+    ],
+    "name": "hello"
+  }
+]

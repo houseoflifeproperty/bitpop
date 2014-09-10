@@ -22,7 +22,7 @@
 #include "config.h"
 #include "core/html/forms/FileInputType.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/InputTypeNames.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -43,7 +43,7 @@
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 using blink::WebLocalizedString;
 using namespace HTMLNames;
@@ -89,8 +89,11 @@ FormControlState FileInputType::saveFormControlState() const
     FormControlState state;
     unsigned numFiles = m_fileList->length();
     for (unsigned i = 0; i < numFiles; ++i) {
-        state.append(m_fileList->item(i)->path());
-        state.append(m_fileList->item(i)->name());
+        if (m_fileList->item(i)->hasBackingFile()) {
+            state.append(m_fileList->item(i)->path());
+            state.append(m_fileList->item(i)->name());
+        }
+        // FIXME: handle Blob-backed File instances, see http://crbug.com/394948
     }
     return state;
 }
@@ -156,10 +159,8 @@ void FileInputType::handleDOMActivateEvent(Event* event)
         settings.allowsMultipleFiles = settings.allowsDirectoryUpload || input.fastHasAttribute(multipleAttr);
         settings.acceptMIMETypes = input.acceptMIMETypes();
         settings.acceptFileExtensions = input.acceptFileExtensions();
-        settings.selectedFiles = m_fileList->paths();
-#if ENABLE(MEDIA_CAPTURE)
-        settings.useMediaCapture = input.isFileUpload() && input.fastHasAttribute(captureAttr);
-#endif
+        settings.selectedFiles = m_fileList->pathsForUserVisibleFiles();
+        settings.useMediaCapture = RuntimeEnabledFeatures::mediaCaptureEnabled() && input.isFileUpload() && input.fastHasAttribute(captureAttr);
         chrome->runOpenPanel(input.document().frame(), newFileChooser(settings));
     }
     event->setDefaultHandled();
@@ -245,7 +246,7 @@ PassRefPtrWillBeRawPtr<FileList> FileInputType::createFileList(const Vector<File
     }
 
     for (size_t i = 0; i < size; i++)
-        fileList->append(File::createWithName(files[i].path, files[i].displayName, File::AllContentTypes));
+        fileList->append(File::createForUserProvidedFile(files[i].path, files[i].displayName));
     return fileList;
 }
 
@@ -383,4 +384,4 @@ String FileInputType::defaultToolTip() const
     return names.toString();
 }
 
-} // namespace WebCore
+} // namespace blink

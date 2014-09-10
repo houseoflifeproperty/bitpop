@@ -4,10 +4,12 @@
 
 package org.chromium.ui.autofill;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.view.View;
 import android.widget.AdapterView;
 
+import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.ui.DropdownAdapter;
 import org.chromium.ui.DropdownItem;
 import org.chromium.ui.DropdownPopupWindow;
@@ -75,7 +77,8 @@ public class AutofillPopup extends DropdownPopupWindow implements AdapterView.On
      * Filters the Autofill suggestions to the ones that we support and shows the popup.
      * @param suggestions Autofill suggestion data.
      */
-    public void filterAndShow(AutofillSuggestion[] suggestions) {
+    @SuppressLint("InlinedApi")
+    public void filterAndShow(AutofillSuggestion[] suggestions, boolean isRtl) {
         mSuggestions = new ArrayList<AutofillSuggestion>(Arrays.asList(suggestions));
         // Remove the AutofillSuggestions with IDs that are not supported by Android
         ArrayList<DropdownItem> cleanedData = new ArrayList<DropdownItem>();
@@ -91,6 +94,8 @@ public class AutofillPopup extends DropdownPopupWindow implements AdapterView.On
         }
         setAdapter(new DropdownAdapter(mContext, cleanedData, separators));
         show();
+        ApiCompatibilityUtils.setLayoutDirection(getListView(),
+                isRtl ? View.LAYOUT_DIRECTION_RTL : View.LAYOUT_DIRECTION_LTR);
     }
 
     /**

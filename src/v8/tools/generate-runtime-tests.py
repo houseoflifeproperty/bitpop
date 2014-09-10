@@ -20,7 +20,7 @@ import time
 FILENAME = "src/runtime.cc"
 HEADERFILENAME = "src/runtime.h"
 FUNCTION = re.compile("^RUNTIME_FUNCTION\(Runtime_(\w+)")
-ARGSLENGTH = re.compile(".*ASSERT\(.*args\.length\(\) == (\d+)\);")
+ARGSLENGTH = re.compile(".*DCHECK\(.*args\.length\(\) == (\d+)\);")
 FUNCTIONEND = "}\n"
 MACRO = re.compile(r"^#define ([^ ]+)\(([^)]*)\) *([^\\]*)\\?\n$")
 FIRST_WORD = re.compile("^\s*(.*?)[\s({\[]")
@@ -47,18 +47,18 @@ EXPAND_MACROS = [
 # that the parser doesn't bit-rot. Change the values as needed when you add,
 # remove or change runtime functions, but make sure we don't lose our ability
 # to parse them!
-EXPECTED_FUNCTION_COUNT = 358
-EXPECTED_FUZZABLE_COUNT = 326
-EXPECTED_CCTEST_COUNT = 6
-EXPECTED_UNKNOWN_COUNT = 4
-EXPECTED_BUILTINS_COUNT = 798
+EXPECTED_FUNCTION_COUNT = 428
+EXPECTED_FUZZABLE_COUNT = 331
+EXPECTED_CCTEST_COUNT = 7
+EXPECTED_UNKNOWN_COUNT = 16
+EXPECTED_BUILTINS_COUNT = 809
 
 
 # Don't call these at all.
 BLACKLISTED = [
   "Abort",  # Kills the process.
   "AbortJS",  # Kills the process.
-  "CompileForOnStackReplacement",  # Riddled with ASSERTs.
+  "CompileForOnStackReplacement",  # Riddled with DCHECK.
   "IS_VAR",  # Not implemented in the runtime.
   "ListNatives",  # Not available in Release mode.
   "SetAllocationTimeout",  # Too slow for fuzzing.
@@ -86,6 +86,91 @@ BLACKLISTED = [
   # TODO(jkummerow): Fix these and un-blacklist them!
   "CreateDateTimeFormat",
   "CreateNumberFormat",
+
+  # TODO(danno): Fix these internal function that are only callable form stubs
+  # and un-blacklist them!
+  "NumberToString",
+  "RxegExpConstructResult",
+  "RegExpExec",
+  "StringAdd",
+  "SubString",
+  "StringCompare",
+  "StringCharCodeAt",
+  "GetFromCache",
+
+  # Compilation
+  "CompileUnoptimized",
+  "CompileOptimized",
+  "TryInstallOptimizedCode",
+  "NotifyDeoptimized",
+  "NotifyStubFailure",
+
+  # Utilities
+  "AllocateInNewSpace",
+  "AllocateInTargetSpace",
+  "AllocateHeapNumber",
+  "NumberToSmi",
+  "NumberToStringSkipCache",
+
+  "NewSloppyArguments",
+  "NewStrictArguments",
+
+  # Harmony
+  "CreateJSGeneratorObject",
+  "SuspendJSGeneratorObject",
+  "ResumeJSGeneratorObject",
+  "ThrowGeneratorStateError",
+
+  # Arrays
+  "ArrayConstructor",
+  "InternalArrayConstructor",
+  "NormalizeElements",
+
+  # Literals
+  "MaterializeRegExpLiteral",
+  "CreateObjectLiteral",
+  "CreateArrayLiteral",
+  "CreateArrayLiteralStubBailout",
+
+  # Statements
+  "NewClosure",
+  "NewClosureFromStubFailure",
+  "NewObject",
+  "NewObjectWithAllocationSite",
+  "FinalizeInstanceSize",
+  "Throw",
+  "ReThrow",
+  "ThrowReferenceError",
+  "ThrowNotDateError",
+  "StackGuard",
+  "Interrupt",
+  "PromoteScheduledException",
+
+  # Contexts
+  "NewGlobalContext",
+  "NewFunctionContext",
+  "PushWithContext",
+  "PushCatchContext",
+  "PushBlockContext",
+  "PushModuleContext",
+  "DeleteLookupSlot",
+  "LoadLookupSlot",
+  "LoadLookupSlotNoReferenceError",
+  "StoreLookupSlot",
+
+  # Declarations
+  "DeclareGlobals",
+  "DeclareModules",
+  "DeclareContextSlot",
+  "InitializeConstGlobal",
+  "InitializeConstContextSlot",
+
+  # Eval
+  "ResolvePossiblyDirectEval",
+
+  # Maths
+  "MathPowSlow",
+  "MathPowRT"
 ]
 
 
@@ -127,6 +212,8 @@ _NUMBER_FORMAT = (
 # Format: "FunctionName": ["arg0", "arg1", ..., argslength].
 # None means "fall back to autodetected value".
 CUSTOM_KNOWN_GOOD_INPUT = {
+  "AddNamedProperty": [None, "\"bla\"", None, None, None],
+  "AddPropertyForTemplate": [None, 10, None, None, None],
   "Apply": ["function() {}", None, None, None, None, None],
   "ArrayBufferSliceImpl": [None, None, 0, None],
   "ArrayConcat": ["[1, 'a']", None],
@@ -141,8 +228,8 @@ CUSTOM_KNOWN_GOOD_INPUT = {
   "CreatePrivateSymbol": ["\"foo\"", None],
   "CreateSymbol": ["\"foo\"", None],
   "DateParseString": [None, "new Array(8)", None],
-  "DefineOrRedefineAccessorProperty": [None, None, "function() {}",
-                                       "function() {}", 2, None],
+  "DefineAccessorPropertyUnchecked": [None, None, "function() {}",
+                                      "function() {}", 2, None],
   "FunctionBindArguments": [None, None, "undefined", None, None],
   "GetBreakLocations": [None, 0, None],
   "GetDefaultReceiver": ["function() {}", None],
@@ -158,11 +245,10 @@ CUSTOM_KNOWN_GOOD_INPUT = {
   "NumberToRadixString": [None, "2", None],
   "ParseJson": ["\"{}\"", 1],
   "RegExpExecMultiple": [None, None, "['a']", "['a']", None],
-  "SetAccessorProperty": [None, None, "undefined", "undefined", None, None,
-                          None],
+  "DefineApiAccessorProperty": [None, None, "undefined", "undefined", None, None],
   "SetIteratorInitialize": [None, None, "2", None],
   "SetDebugEventListener": ["undefined", None, None],
-  "SetFunctionBreakPoint": [None, 200, None, None],
+  "SetFunctionBreakPoint": [None, 218, None, None],
   "StringBuilderConcat": ["[1, 2, 3]", 3, None, None],
   "StringBuilderJoin": ["['a', 'b']", 4, None, None],
   "StringMatch": [None, None, "['a', 'b']", None],
@@ -171,6 +257,7 @@ CUSTOM_KNOWN_GOOD_INPUT = {
   "TypedArrayInitialize": [None, 6, "new ArrayBuffer(8)", None, 4, None],
   "TypedArrayInitializeFromArrayLike": [None, 6, None, None, None],
   "TypedArraySetFastCases": [None, None, "0", None],
+  "FunctionIsArrow": ["() => null", None],
 }
 
 
@@ -1045,7 +1132,8 @@ def _GetKnownGoodArgs(function, generator):
 def _GenerateTestcase(function, definitions, argslist, throws):
   s = ["// Copyright 2014 the V8 project authors. All rights reserved.",
        "// AUTO-GENERATED BY tools/generate-runtime-tests.py, DO NOT MODIFY",
-       "// Flags: --allow-natives-syntax --harmony"] + definitions
+       "// Flags: --allow-natives-syntax --harmony --harmony-proxies"
+      ] + definitions
   call = "%%%s%s(%s);" % (function.inline, function.name, ", ".join(argslist))
   if throws:
     s.append("try {")
@@ -1125,7 +1213,7 @@ def RunFuzzer(process_id, options, stop_running):
         with open(stderr_file_name, "w") as stderr:
           process = subprocess.Popen(
               [options.binary, "--allow-natives-syntax", "--harmony",
-               "--enable-slow-asserts", test_file_name],
+               "--harmony-proxies", "--enable-slow-asserts", test_file_name],
               stdout=devnull, stderr=stderr)
           end_time = time.time() + options.timeout
           timed_out = False

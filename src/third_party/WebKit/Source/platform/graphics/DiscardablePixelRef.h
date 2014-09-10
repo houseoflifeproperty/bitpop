@@ -34,7 +34,7 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 // Class for allocating the DiscardablePixelRef object.
 class PLATFORM_EXPORT DiscardablePixelRefAllocator : public SkBitmap::Allocator {
@@ -53,8 +53,6 @@ public:
     static bool isDiscardable(SkPixelRef*);
     bool allocAndLockDiscardableMemory(size_t);
 
-    SK_DECLARE_UNFLATTENABLE_OBJECT()
-
 protected:
     // SkPixelRef implementation.
     virtual bool onNewLockPixels(LockRec*) OVERRIDE;
@@ -62,11 +60,11 @@ protected:
 
 private:
     void* m_lockedMemory;
-    OwnPtr<blink::WebDiscardableMemory> m_discardable;
+    OwnPtr<WebDiscardableMemory> m_discardable;
     OwnPtr<SkMutex> m_mutex;
     size_t m_rowBytes;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

@@ -11,7 +11,11 @@
 #ifndef WEBRTC_VIDEO_VIDEO_SEND_STREAM_H_
 #define WEBRTC_VIDEO_VIDEO_SEND_STREAM_H_
 
+#include <map>
+#include <vector>
+
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
+#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
 #include "webrtc/video/encoded_frame_callback_adapter.h"
 #include "webrtc/video/send_statistics_proxy.h"
 #include "webrtc/video/transport_adapter.h"
@@ -35,8 +39,7 @@ class ViERTP_RTCP;
 namespace internal {
 
 class VideoSendStream : public webrtc::VideoSendStream,
-                        public VideoSendStreamInput,
-                        public SendStatisticsProxy::StatsProvider {
+                        public VideoSendStreamInput {
  public:
   VideoSendStream(newapi::Transport* transport,
                   CpuOveruseObserver* overuse_observer,
@@ -44,6 +47,7 @@ class VideoSendStream : public webrtc::VideoSendStream,
                   const VideoSendStream::Config& config,
                   const std::vector<VideoStream> video_streams,
                   const void* encoder_settings,
+                  const std::map<uint32_t, RtpState>& suspended_ssrcs,
                   int base_channel,
                   int start_bitrate);
 
@@ -65,16 +69,16 @@ class VideoSendStream : public webrtc::VideoSendStream,
   // From webrtc::VideoSendStream.
   virtual VideoSendStreamInput* Input() OVERRIDE;
 
- protected:
-  // From SendStatisticsProxy::StreamStatsProvider.
-  virtual bool GetSendSideDelay(VideoSendStream::Stats* stats) OVERRIDE;
-  virtual std::string GetCName() OVERRIDE;
+  typedef std::map<uint32_t, RtpState> RtpStateMap;
+  RtpStateMap GetRtpStates() const;
 
  private:
+  void ConfigureSsrcs();
   TransportAdapter transport_adapter_;
   EncodedFrameCallbackAdapter encoded_frame_proxy_;
   const VideoSendStream::Config config_;
   const int start_bitrate_bps_;
+  std::map<uint32_t, RtpState> suspended_ssrcs_;
 
   ViEBase* video_engine_base_;
   ViECapture* capture_;
@@ -88,7 +92,7 @@ class VideoSendStream : public webrtc::VideoSendStream,
   int channel_;
   int capture_id_;
 
-  const scoped_ptr<SendStatisticsProxy> stats_proxy_;
+  SendStatisticsProxy stats_proxy_;
 };
 }  // namespace internal
 }  // namespace webrtc

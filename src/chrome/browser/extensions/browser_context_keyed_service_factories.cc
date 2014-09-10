@@ -35,13 +35,11 @@
 #include "chrome/browser/extensions/api/media_galleries_private/media_galleries_private_api.h"
 #include "chrome/browser/extensions/api/networking_private/networking_private_event_router_factory.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
-#include "chrome/browser/extensions/api/power/power_api_manager.h"
 #include "chrome/browser/extensions/api/preference/chrome_direct_setting_api.h"
 #include "chrome/browser/extensions/api/preference/preference_api.h"
 #include "chrome/browser/extensions/api/processes/processes_api.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_api.h"
 #include "chrome/browser/extensions/api/screenlock_private/screenlock_private_api.h"
-#include "chrome/browser/extensions/api/serial/serial_connection.h"
 #include "chrome/browser/extensions/api/sessions/sessions_api.h"
 #include "chrome/browser/extensions/api/settings_overrides/settings_overrides_api.h"
 #include "chrome/browser/extensions/api/signed_in_devices/signed_in_devices_manager.h"
@@ -65,6 +63,7 @@
 #include "chrome/browser/extensions/token_cache/token_cache_service_factory.h"
 #include "chrome/browser/speech/extension_api/tts_extension_api.h"
 #include "extensions/browser/api/api_resource_manager.h"
+#include "extensions/browser/api/power/power_api_manager.h"
 #include "extensions/browser/api/usb/usb_device_resource.h"
 
 #if defined(OS_CHROMEOS)
@@ -85,8 +84,6 @@ void EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::ActivityLog::GetFactoryInstance();
   extensions::ActivityLogAPI::GetFactoryInstance();
   extensions::AlarmManager::GetFactoryInstance();
-  extensions::ApiResourceManager<
-      extensions::SerialConnection>::GetFactoryInstance();
   extensions::ApiResourceManager<
       extensions::UsbDeviceResource>::GetFactoryInstance();
   extensions::AudioAPI::GetFactoryInstance();

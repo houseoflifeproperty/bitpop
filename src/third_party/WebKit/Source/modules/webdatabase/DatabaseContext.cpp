@@ -38,7 +38,7 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Assertions.h"
 
-namespace WebCore {
+namespace blink {
 
 // How the DatabaseContext Life-Cycle works?
 // ========================================
@@ -118,8 +118,10 @@ DatabaseContext::~DatabaseContext()
 
 void DatabaseContext::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_databaseThread);
     visitor->trace(m_openSyncDatabases);
+#endif
 }
 
 // This is called if the associated ExecutionContext is destructing while
@@ -264,4 +266,4 @@ bool DatabaseContext::isContextThread() const
     return executionContext()->isContextThread();
 }
 
-} // namespace WebCore
+} // namespace blink

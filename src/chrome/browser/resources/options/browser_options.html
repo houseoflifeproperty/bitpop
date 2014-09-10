@@ -2,7 +2,6 @@
   <header>
     <h1 i18n-content="settingsTitle"></h1>
   </header>
-  <include src="reset_profile_settings_banner.html">
   <include src="automatic_settings_reset_banner.html">
 <if expr="chromeos">
   <include src="secondary_user_banner.html">
@@ -34,7 +33,7 @@
     <div id="proxy-section-content"></div>
   </section>
 
-  <section>
+  <section id="appearance-section">
     <h3 i18n-content="sectionTitleAppearance"></h3>
     <div class="settings-row">
 <if expr="chromeos">
@@ -110,12 +109,12 @@
       <span i18n-content="deviceGroupDescription"></span>
       <div id="touchpad-settings" class="settings-row" hidden>
         <span class="option-name" i18n-content="touchpadSpeed"></span>
-        <input id="sensitivity-range" type="range" min="1" max="5"
+        <input id="touchpad-sensitivity-range" type="range" min="1" max="5"
             pref="settings.touchpad.sensitivity2" class="touch-slider">
       </div>
       <div id="mouse-settings" class="settings-row" hidden>
         <span class="option-name" i18n-content="mouseSpeed"></span>
-        <input id="sensitivity-range" type="range" min="1" max="5"
+        <input id="mouse-sensitivity-range" type="range" min="1" max="5"
             pref="settings.mouse.sensitivity2" class="touch-slider">
       </div>
       <div id="no-pointing-devices" i18n-content="noPointingDevices"
@@ -151,6 +150,53 @@
           </button>
         </div>
       </div>
+  </section>
+  <section>
+    <h3 id="voice-section-title" i18n-content="sectionTitleVoice" hidden></h3>
+    <div id="voice-section-content">
+      <div id="hotword-search" hidden>
+        <div class="checkbox">
+          <span class="controlled-setting-with-label">
+            <input id="hotword-search-enable" pref="hotword.search_enabled_2"
+                metric="Options_HotwordCheckbox" type="checkbox" dialog-pref>
+            <span>
+              <label for="hotword-search-enable"
+                  i18n-values=".innerHTML:hotwordSearchEnable">
+              </label>
+              <span id="hotword-search-setting-indicator"
+                  pref="hotword.search_enabled_2" dialog-pref>
+              </span>
+            </span>
+          </span>
+        </div>
+      </div>
+      <div id="hotword-always-on-search" hidden>
+        <div class="checkbox">
+          <span class="controlled-setting-with-label">
+            <input id="hotword-always-on-search-enable"
+                pref="hotword.always_on_search_enabled" type="checkbox">
+            <span>
+              <label for="hotword-always-on-search-enable"
+                  i18n-content="hotwordAlwaysOnSearchEnable">
+              </label>
+            </span>
+          </span>
+        </div>
+      </div>
+      <div id="audio-logging" hidden>
+        <div class="checkbox">
+          <span class="controlled-setting-with-label">
+            <input id="audio-logging-enable"
+                pref="hotword.audio_logging_enabled" type="checkbox">
+            <span>
+              <label for="audio-logging-enable"
+                  i18n-content="hotwordAudioHistoryEnable">
+              </label>
+            </span>
+          </span>
+        </div>
+      </div>
+    </div>
   </section>
   <section id="sync-users-section" guest-visibility="hidden">
     <h3 i18n-content="sectionTitleUsers"></h3>
@@ -231,14 +277,18 @@
     </div>
   </section>
 
-  <section id="security-section" hidden>
-    <h3 i18n-content="securityTitle"></h3>
-    <div class="settings-row">
-      <span i18n-content="consumerManagementEnrollDescription"></span>
-    </div>
-    <div class="settings-row">
-      <button id="consumer-management-enroll-button"
-          i18n-content="consumerManagementEnrollButton"></button>
+  <section id="device-control-section" hidden>
+    <h3 i18n-content="deviceControlTitle"></h3>
+    <div id="consumer-management-section">
+      <div class="settings-row">
+        <span i18n-content="consumerManagementDescription"></span>
+      </div>
+      <div id="consumer-management-enroll" class="settings-row">
+        <button i18n-content="consumerManagementEnrollButton"></button>
+      </div>
+      <div id="consumer-management-unenroll" class="settings-row" hidden>
+        <button i18n-content="consumerManagementUnenrollButton"></button>
+      </div>
     </div>
   </section>
 </if>
@@ -287,14 +337,14 @@
       </div>
       <div class="checkbox" guest-visibility="disabled">
         <span class="controlled-setting-with-label">
-          <input id="dnsPrefetchingEnabled" pref="dns_prefetching.enabled"
+          <input id="networkPredictionOptions"
               metric="Options_DnsPrefetchCheckbox" type="checkbox">
           <span>
-            <label for="dnsPrefetchingEnabled"
+            <label for="networkPredictionOptions"
                 i18n-content="networkPredictionEnabledDescription">
             </label>
             <span class="controlled-setting-indicator"
-                pref="dns_prefetching.enabled">
+                pref="net.network_prediction_options">
             </span>
           </span>
         </span>
@@ -367,6 +417,11 @@
             <span class="controlled-setting-indicator"
                 pref="user_experience_metrics.reporting_enabled">
             </span>
+            <span id="metrics-reporting-reset-restart">
+              <!-- Text filled by JavaScript -->
+              <span></span><button class=
+                  "link-button standalone-link-button"></button><span></span>
+            </span>
           </span>
 </if>
         </span>
@@ -398,22 +453,6 @@
         </span>
       </div>
 </if>
-      <div id="hotword-search" hidden>
-        <div class="checkbox">
-          <span class="controlled-setting-with-label">
-            <input id="hotword-search-enable" pref="hotword.search_enabled_2"
-                metric="Options_HotwordCheckbox" type="checkbox" dialog-pref>
-            <span>
-              <label for="hotword-search-enable"
-                  i18n-values=".innerHTML:hotwordSearchEnable">
-              </label>
-              <span id="hotword-search-setting-indicator"
-                  pref="hotword.search_enabled_2" dialog-pref>
-              </span>
-            </span>
-          </span>
-        </div>
-      </div>
     </div>
   </section>
 <if expr="chromeos">
@@ -487,41 +526,32 @@
     <h3 i18n-content="easyUnlockSectionTitle"></h3>
     <!-- Options shown when the user has not set up Easy Unlock -->
     <div id='easy-unlock-setup' hidden>
-      <button id="easy-unlock-setup-button"
-          i18n-content="easyUnlockSetupButton"></button>
-      <div>
+      <div class="controlled-setting-with-label">
+        <span i18n-content="easyUnlockSetupIntro"></span>
         <a target="_blank" i18n-content="learnMore"
             i18n-values="href:easyUnlockLearnMoreURL"></a>
       </div>
+      <button id="easy-unlock-setup-button"
+          i18n-content="easyUnlockSetupButton"></button>
     </div>
     <!-- Options shown when the user has set up Easy Unlock -->
     <div id='easy-unlock-enable' hidden>
-      <div class="checkbox">
-        <span class="controlled-setting-with-label">
-          <input id="easy-unlock-check" type="checkbox"
-              pref="easy_unlock.enabled"
-              metric="EasyUnlock_Enabled">
-          <span>
-            <label for="easy-unlock-checkbox">
-              <span i18n-content="easyUnlockCheckboxLabel"></span>
-              <a target="_blank" i18n-content="learnMore"
-                  i18n-values="href:easyUnlockLearnMoreURL"></a>
-            </label>
-            <span class="controlled-setting-indicator"
-                pref="easy_unlock.enabled">
-            </span>
-          </span>
-        </span>
+      <div class="controlled-setting-with-label">
+        <span i18n-content="easyUnlockDescription"></span>
+        <a target="_blank" i18n-content="learnMore"
+            i18n-values="href:easyUnlockLearnMoreURL"></a>
       </div>
-      <div>
-        <a target="_blank" i18n-content="easyUnlockManagement"
-            i18n-values="href:easyUnlockManagementURL"></a>
-      </div>
+      <button id="easy-unlock-turn-off-button"
+          i18n-content="easyUnlockTurnOffButton"></button>
     </div>
   </section>
   <section id="web-content-section">
     <h3 i18n-content="advancedSectionTitleContent"></h3>
     <div>
+      <div id="website-settings-section" class="settings-row" hidden>
+        <button id="website-management-button"
+            i18n-content="websitesManage"></button>
+      </div>
       <div class="settings-row">
         <label class="web-content-select-label">
           <span i18n-content="defaultFontSizeLabel"></span>
@@ -931,7 +961,7 @@
     </div>
   </section>
 </if>
-  <section id="reset-profile-settings-section" hidden>
+  <section id="reset-profile-settings-section">
     <h3 i18n-content="resetProfileSettingsSectionTitle"></h3>
     <div>
       <span class="settings-row" i18n-content="resetProfileSettingsDescription">
@@ -946,5 +976,10 @@
     <button id="advanced-settings-expander" class="link-button"
         i18n-content="showAdvancedSettings">
     </button>
+<if expr="chromeos">
+    <button id="version-button" class="link-button" hidden
+        i18n-content="browserVersion">
+    </button>
+</if>
   </footer>
-  </div>
+</div>

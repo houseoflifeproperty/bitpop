@@ -15,6 +15,7 @@
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/c/system/types.h"
 #include "mojo/system/dispatcher.h"
+#include "mojo/system/memory.h"
 #include "mojo/system/message_in_transit.h"
 #include "mojo/system/system_impl_export.h"
 
@@ -36,10 +37,7 @@ class MOJO_SYSTEM_IMPL_EXPORT MessagePipeEndpoint {
  public:
   virtual ~MessagePipeEndpoint() {}
 
-  enum Type {
-    kTypeLocal,
-    kTypeProxy
-  };
+  enum Type { kTypeLocal, kTypeProxy };
   virtual Type GetType() const = 0;
 
   // All implementations must implement these.
@@ -61,15 +59,17 @@ class MOJO_SYSTEM_IMPL_EXPORT MessagePipeEndpoint {
   // operation involves both endpoints.
   virtual void Close();
   virtual void CancelAllWaiters();
-  virtual MojoResult ReadMessage(void* bytes,
-                                 uint32_t* num_bytes,
+  virtual MojoResult ReadMessage(UserPointer<void> bytes,
+                                 UserPointer<uint32_t> num_bytes,
                                  DispatcherVector* dispatchers,
                                  uint32_t* num_dispatchers,
                                  MojoReadMessageFlags flags);
+  virtual HandleSignalsState GetHandleSignalsState() const;
   virtual MojoResult AddWaiter(Waiter* waiter,
                                MojoHandleSignals signals,
-                               uint32_t context);
-  virtual void RemoveWaiter(Waiter* waiter);
+                               uint32_t context,
+                               HandleSignalsState* signals_state);
+  virtual void RemoveWaiter(Waiter* waiter, HandleSignalsState* signals_state);
 
   // Implementations must override these if they represent a proxy endpoint. An
   // implementation for a local endpoint needs not override these methods, since

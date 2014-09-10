@@ -9,11 +9,12 @@ each command match the expected machine states. For more details, take a look at
 the design documentation at http://goo.gl/Q0rGM6
 """
 
+import argparse
 import json
-import optparse
 import os
 import subprocess
 import sys
+import time
 import unittest
 
 from variable_expander import VariableExpander
@@ -39,16 +40,18 @@ class Config:
 class InstallerTest(unittest.TestCase):
   """Tests a test case in the config file."""
 
-  def __init__(self, test, config, variable_expander):
+  def __init__(self, name, test, config, variable_expander):
     """Constructor.
 
     Args:
+      name: The name of this test.
       test: An array of alternating state names and action names, starting and
           ending with state names.
       config: The Config object.
       variable_expander: A VariableExpander object.
     """
     super(InstallerTest, self).__init__()
+    self._name = name
     self._test = test
     self._config = config
     self._variable_expander = variable_expander
@@ -62,7 +65,14 @@ class InstallerTest(unittest.TestCase):
       A string created by joining state names and action names together with
       ' -> ', for example, 'Test: clean -> install chrome -> chrome_installed'.
     """
-    return 'Test: %s\n' % (' -> '.join(self._test))
+    return '%s: %s\n' % (self._name, ' -> '.join(self._test))
+
+  def id(self):
+    """Returns the name of the test."""
+    # Overridden from unittest.TestCase so that id() contains the name of the
+    # test case from the config file in place of the name of this class's test
+    # function.
+    return unittest.TestCase.id(self).replace(self._testMethodName, self._name)
 
   def runTest(self):
     """Run the test case."""
@@ -208,7 +218,8 @@ def ParseConfigFile(filename):
   Returns:
     A Config object.
   """
-  config_data = json.load(open(filename, 'r'))
+  with open(filename, 'r') as fp:
+    config_data = json.load(fp)
   directory = os.path.dirname(os.path.abspath(filename))
 
   config = Config()
@@ -221,27 +232,6 @@ def ParseConfigFile(filename):
   return config
 
 
-def RunTests(mini_installer_path, config, force_clean):
-  """Tests the installer using the given Config object.
-
-  Args:
-    mini_installer_path: The path to mini_installer.exe.
-    config: A Config object.
-    force_clean: A boolean indicating whether to force cleaning existing
-        installations.
-
-  Returns:
-    True if all the tests passed, or False otherwise.
-  """
-  suite = unittest.TestSuite()
-  variable_expander = VariableExpander(mini_installer_path)
-  RunCleanCommand(force_clean, variable_expander)
-  for test in config.tests:
-    suite.addTest(InstallerTest(test, config, variable_expander))
-  result = unittest.TextTestRunner(verbosity=2).run(suite)
-  return result.wasSuccessful()
-
-
 def IsComponentBuild(mini_installer_path):
   """ Invokes the mini_installer asking whether it is a component build.
 
@@ -251,43 +241,132 @@ def IsComponentBuild(mini_installer_path):
   Returns:
     True if the mini_installer is a component build, False otherwise.
   """
-  query_command = mini_installer_path + ' --query-component-build'
-  script_dir = os.path.dirname(os.path.abspath(__file__))
-  exit_status = subprocess.call(query_command, shell=True, cwd=script_dir)
-  return exit_status != 0
+  query_command = [ mini_installer_path, '--query-component-build' ]
+  exit_status = subprocess.call(query_command)
+  return exit_status == 0
 
 
 def main():
-  usage = 'usage: %prog [options] config_filename'
-  parser = optparse.OptionParser(usage, description='Test the installer.')
-  parser.add_option('--build-dir', default='out',
-                    help='Path to main build directory (the parent of the '
-                         'Release or Debug directory)')
-  parser.add_option('--target', default='Release',
-                    help='Build target (Release or Debug)')
-  parser.add_option('--force-clean', action='store_true', dest='force_clean',
-                    default=False, help='Force cleaning existing installations')
-  options, args = parser.parse_args()
-  if len(args) != 1:
-    parser.error('Incorrect number of arguments.')
-  config_filename = args[0]
+  parser = argparse.ArgumentParser()
+  parser.add_argument('--build-dir', default='out',
+                      help='Path to main build directory (the parent of the '
+                      'Release or Debug directory)')
+  parser.add_argument('--target', default='Release',
+                      help='Build target (Release or Debug)')
+  parser.add_argument('--force-clean', action='store_true', default=False,
+                      help='Force cleaning existing installations')
+  parser.add_argument('-v', '--verbose', action='count', default=0,
+                      help='Increase test runner verbosity level')
+  parser.add_argument('--write-full-results-to', metavar='FILENAME',
+                      help='Path to write the list of full results to.')
+  parser.add_argument('--config', metavar='FILENAME',
+                      help='Path to test configuration file')
+  parser.add_argument('test', nargs='*',
+                      help='Name(s) of tests to run.')
+  args = parser.parse_args()
+  if not args.config:
+    parser.error('missing mandatory --config FILENAME argument')
 
-  mini_installer_path = os.path.join(options.build_dir, options.target,
+  mini_installer_path = os.path.join(args.build_dir, args.target,
                                      'mini_installer.exe')
   assert os.path.exists(mini_installer_path), ('Could not find file %s' %
                                                mini_installer_path)
 
+  suite = unittest.TestSuite()
+
   # Set the env var used by mini_installer.exe to decide to not show UI.
   os.environ['MINI_INSTALLER_TEST'] = '1'
-  if IsComponentBuild(mini_installer_path):
+  is_component_build = IsComponentBuild(mini_installer_path)
+  if not is_component_build:
+    config = ParseConfigFile(args.config)
+
+    variable_expander = VariableExpander(mini_installer_path)
+    RunCleanCommand(args.force_clean, variable_expander)
+    for test in config.tests:
+      # If tests were specified via |tests|, their names are formatted like so:
+      test_name = '%s.%s.%s' % (InstallerTest.__module__,
+                                InstallerTest.__name__,
+                                test['name'])
+      if not args.test or test_name in args.test:
+        suite.addTest(InstallerTest(test['name'], test['traversal'], config,
+                                    variable_expander))
+
+  result = unittest.TextTestRunner(verbosity=(args.verbose + 1)).run(suite)
+  if is_component_build:
     print ('Component build is currently unsupported by the mini_installer: '
            'http://crbug.com/377839')
-    return 0
+  if args.write_full_results_to:
+    with open(args.write_full_results_to, 'w') as fp:
+      json.dump(_FullResults(suite, result, {}), fp, indent=2)
+      fp.write("\n")
+  return 0 if result.wasSuccessful() else 1
 
-  config = ParseConfigFile(config_filename)
-  if not RunTests(mini_installer_path, config, options.force_clean):
-    return 1
-  return 0
+
+# TODO(dpranke): Find a way for this to be shared with the mojo and other tests.
+TEST_SEPARATOR = '.'
+
+
+def _FullResults(suite, result, metadata):
+  """Convert the unittest results to the Chromium JSON test result format.
+
+  This matches run-webkit-tests (the layout tests) and the flakiness dashboard.
+  """
+
+  full_results = {}
+  full_results['interrupted'] = False
+  full_results['path_delimiter'] = TEST_SEPARATOR
+  full_results['version'] = 3
+  full_results['seconds_since_epoch'] = time.time()
+  for md in metadata:
+    key, val = md.split('=', 1)
+    full_results[key] = val
+
+  all_test_names = _AllTestNames(suite)
+  failed_test_names = _FailedTestNames(result)
+
+  full_results['num_failures_by_type'] = {
+      'FAIL': len(failed_test_names),
+      'PASS': len(all_test_names) - len(failed_test_names),
+  }
+
+  full_results['tests'] = {}
+
+  for test_name in all_test_names:
+    value = {}
+    value['expected'] = 'PASS'
+    if test_name in failed_test_names:
+      value['actual'] = 'FAIL'
+      value['is_unexpected'] = True
+    else:
+      value['actual'] = 'PASS'
+    _AddPathToTrie(full_results['tests'], test_name, value)
+
+  return full_results
+
+
+def _AllTestNames(suite):
+  test_names = []
+  # _tests is protected  pylint: disable=W0212
+  for test in suite._tests:
+    if isinstance(test, unittest.suite.TestSuite):
+      test_names.extend(_AllTestNames(test))
+    else:
+      test_names.append(test.id())
+  return test_names
+
+
+def _FailedTestNames(result):
+  return set(test.id() for test, _ in result.failures + result.errors)
+
+
+def _AddPathToTrie(trie, path, value):
+  if TEST_SEPARATOR not in path:
+    trie[path] = value
+    return
+  directory, rest = path.split(TEST_SEPARATOR, 1)
+  if directory not in trie:
+    trie[directory] = {}
+  _AddPathToTrie(trie[directory], rest, value)
 
 
 if __name__ == '__main__':

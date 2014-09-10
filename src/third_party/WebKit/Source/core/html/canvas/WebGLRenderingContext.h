@@ -26,10 +26,10 @@
 #ifndef WebGLRenderingContext_h
 #define WebGLRenderingContext_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLRenderingContextBase.h"
 
-namespace WebCore {
+namespace blink {
 
 class WebGLRenderingContext FINAL : public WebGLRenderingContextBase, public ScriptWrappable {
 public:
@@ -40,37 +40,39 @@ public:
     virtual String contextName() const OVERRIDE { return "WebGLRenderingContext"; }
     virtual void registerContextExtensions() OVERRIDE;
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     WebGLRenderingContext(HTMLCanvasElement*, PassOwnPtr<blink::WebGraphicsContext3D>, WebGLContextAttributes*);
 
     // Enabled extension objects.
-    RefPtr<ANGLEInstancedArrays> m_angleInstancedArrays;
-    RefPtr<EXTBlendMinMax> m_extBlendMinMax;
-    RefPtr<EXTFragDepth> m_extFragDepth;
-    RefPtr<EXTShaderTextureLOD> m_extShaderTextureLOD;
-    RefPtr<EXTTextureFilterAnisotropic> m_extTextureFilterAnisotropic;
-    RefPtr<OESTextureFloat> m_oesTextureFloat;
-    RefPtr<OESTextureFloatLinear> m_oesTextureFloatLinear;
-    RefPtr<OESTextureHalfFloat> m_oesTextureHalfFloat;
-    RefPtr<OESTextureHalfFloatLinear> m_oesTextureHalfFloatLinear;
-    RefPtr<OESStandardDerivatives> m_oesStandardDerivatives;
-    RefPtr<OESVertexArrayObject> m_oesVertexArrayObject;
-    RefPtr<OESElementIndexUint> m_oesElementIndexUint;
-    RefPtr<WebGLLoseContext> m_webglLoseContext;
-    RefPtr<WebGLDebugRendererInfo> m_webglDebugRendererInfo;
-    RefPtr<WebGLDebugShaders> m_webglDebugShaders;
-    RefPtr<WebGLDrawBuffers> m_webglDrawBuffers;
-    RefPtr<WebGLCompressedTextureATC> m_webglCompressedTextureATC;
-    RefPtr<WebGLCompressedTextureETC1> m_webglCompressedTextureETC1;
-    RefPtr<WebGLCompressedTexturePVRTC> m_webglCompressedTexturePVRTC;
-    RefPtr<WebGLCompressedTextureS3TC> m_webglCompressedTextureS3TC;
-    RefPtr<WebGLDepthTexture> m_webglDepthTexture;
+    RefPtrWillBeMember<ANGLEInstancedArrays> m_angleInstancedArrays;
+    RefPtrWillBeMember<EXTBlendMinMax> m_extBlendMinMax;
+    RefPtrWillBeMember<EXTFragDepth> m_extFragDepth;
+    RefPtrWillBeMember<EXTShaderTextureLOD> m_extShaderTextureLOD;
+    RefPtrWillBeMember<EXTTextureFilterAnisotropic> m_extTextureFilterAnisotropic;
+    RefPtrWillBeMember<OESTextureFloat> m_oesTextureFloat;
+    RefPtrWillBeMember<OESTextureFloatLinear> m_oesTextureFloatLinear;
+    RefPtrWillBeMember<OESTextureHalfFloat> m_oesTextureHalfFloat;
+    RefPtrWillBeMember<OESTextureHalfFloatLinear> m_oesTextureHalfFloatLinear;
+    RefPtrWillBeMember<OESStandardDerivatives> m_oesStandardDerivatives;
+    RefPtrWillBeMember<OESVertexArrayObject> m_oesVertexArrayObject;
+    RefPtrWillBeMember<OESElementIndexUint> m_oesElementIndexUint;
+    RefPtrWillBeMember<WebGLLoseContext> m_webglLoseContext;
+    RefPtrWillBeMember<WebGLDebugRendererInfo> m_webglDebugRendererInfo;
+    RefPtrWillBeMember<WebGLDebugShaders> m_webglDebugShaders;
+    RefPtrWillBeMember<WebGLDrawBuffers> m_webglDrawBuffers;
+    RefPtrWillBeMember<WebGLCompressedTextureATC> m_webglCompressedTextureATC;
+    RefPtrWillBeMember<WebGLCompressedTextureETC1> m_webglCompressedTextureETC1;
+    RefPtrWillBeMember<WebGLCompressedTexturePVRTC> m_webglCompressedTexturePVRTC;
+    RefPtrWillBeMember<WebGLCompressedTextureS3TC> m_webglCompressedTextureS3TC;
+    RefPtrWillBeMember<WebGLDepthTexture> m_webglDepthTexture;
 };
 
 DEFINE_TYPE_CASTS(WebGLRenderingContext, CanvasRenderingContext, context,
     context->is3d() && WebGLRenderingContextBase::getWebGLVersion(context) == 1,
     context.is3d() && WebGLRenderingContextBase::getWebGLVersion(&context) == 1);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

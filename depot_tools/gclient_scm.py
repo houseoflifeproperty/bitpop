@@ -300,9 +300,7 @@ class GitWrapper(SCMWrapper):
       quiet = ['--quiet']
     self._UpdateBranchHeads(options, fetch=False)
 
-    cfg = gclient_utils.DefaultIndexPackConfig(self.url)
-    fetch_cmd = cfg + ['fetch', self.remote, '--prune']
-    self._Run(fetch_cmd + quiet, options, retry=True)
+    self._Fetch(options, prune=True, quiet=options.verbose)
     self._Run(['reset', '--hard', revision] + quiet, options)
     if file_list is not None:
       files = self._Capture(['ls-files']).splitlines()
@@ -395,7 +393,7 @@ class GitWrapper(SCMWrapper):
       if deps_revision and deps_revision.startswith('branch-heads/'):
         deps_branch = deps_revision.replace('branch-heads/', '')
         self._Capture(['branch', deps_branch, deps_revision])
-        self._Capture(['checkout', '--quiet', deps_branch])
+        self._Checkout(options, deps_branch, quiet=True)
       if file_list is not None:
         files = self._Capture(['ls-files']).splitlines()
         file_list.extend([os.path.join(self.checkout_path, f) for f in files])
@@ -500,10 +498,12 @@ class GitWrapper(SCMWrapper):
       else:
         # 'git checkout' may need to overwrite existing untracked files. Allow
         # it only when nuclear options are enabled.
-        if options.force and options.delete_unversioned_trees:
-          self._Capture(['checkout', '--force', '--quiet', '%s' % revision])
-        else:
-          self._Capture(['checkout', '--quiet', '%s' % revision])
+        self._Checkout(
+            options,
+            revision,
+            force=(options.force and options.delete_unversioned_trees),
+            quiet=True,
+        )
       if not printed_path:
         self.Print('_____ %s%s' % (self.relpath, rev_str), timestamp=False)
     elif current_type == 'hash':
@@ -720,7 +720,7 @@ class GitWrapper(SCMWrapper):
             logging.debug('Looking for git-svn configuration optimizations.')
             if scm.GIT.Capture(['config', '--get', 'svn-remote.svn.fetch'],
                              cwd=self.checkout_path):
-              scm.GIT.Capture(['fetch'], cwd=self.checkout_path)
+              self._Fetch(options)
           except subprocess2.CalledProcessError:
             logging.debug('git config --get svn-remote.svn.fetch failed, '
                           'ignoring possible optimization.')
@@ -748,7 +748,7 @@ class GitWrapper(SCMWrapper):
       else:
         # May exist in origin, but we don't have it yet, so fetch and look
         # again.
-        scm.GIT.Capture(['fetch', self.remote], cwd=self.checkout_path)
+        self._Fetch(options)
         if scm.GIT.IsValidRevision(cwd=self.checkout_path, rev=rev):
           sha1 = rev
 
@@ -798,7 +798,8 @@ class GitWrapper(SCMWrapper):
         depth = 10000
     else:
       depth = None
-    mirror.populate(verbose=options.verbose, bootstrap=True, depth=depth)
+    mirror.populate(verbose=options.verbose, bootstrap=True, depth=depth,
+                    ignore_lock=options.ignore_locks)
     mirror.unlock()
 
   def _Clone(self, revision, url, options):
@@ -824,6 +825,25 @@ class GitWrapper(SCMWrapper):
     # create it, so we need to do it manually.
     parent_dir = os.path.dirname(self.checkout_path)
     gclient_utils.safe_makedirs(parent_dir)
+
+    template_dir = None
+    if hasattr(options, 'no_history') and options.no_history:
+      if gclient_utils.IsGitSha(revision):
+        # In the case of a subproject, the pinned sha is not necessarily the
+        # head of the remote branch (so we can't just use --depth=N). Instead,
+        # we tell git to fetch all the remote objects from SHA..HEAD by means of
+        # a template git dir which has a 'shallow' file pointing to the sha.
+        template_dir = tempfile.mkdtemp(
+            prefix='_gclient_gittmp_%s' % os.path.basename(self.checkout_path),
+            dir=parent_dir)
+        self._Run(['init', '--bare', template_dir], options, cwd=self._root_dir)
+        with open(os.path.join(template_dir, 'shallow'), 'w') as template_file:
+          template_file.write(revision)
+        clone_cmd.append('--template=' + template_dir)
+      else:
+        # Otherwise, we're just interested in the HEAD. Just use --depth.
+        clone_cmd.append('--depth=1')
+
     tmp_dir = tempfile.mkdtemp(
         prefix='_gclient_%s_' % os.path.basename(self.checkout_path),
         dir=parent_dir)
@@ -840,9 +860,10 @@ class GitWrapper(SCMWrapper):
       if os.listdir(tmp_dir):
         self.Print('_____ removing non-empty tmp dir %s' % tmp_dir)
       gclient_utils.rmtree(tmp_dir)
+      if template_dir:
+        gclient_utils.rmtree(template_dir)
     self._UpdateBranchHeads(options, fetch=True)
-    self._Run(['checkout', '--quiet', revision.replace('refs/heads/', '')],
-              options)
+    self._Checkout(options, revision.replace('refs/heads/', ''), quiet=True)
     if self._GetCurrentBranch() is None:
       # Squelch git's very verbose detached HEAD warning and use our own
       self.Print(
@@ -1015,6 +1036,44 @@ class GitWrapper(SCMWrapper):
     env = scm.GIT.ApplyEnvVars(kwargs)
     return subprocess2.check_output(['git'] + args, env=env, **kwargs).strip()
 
+  def _Checkout(self, options, ref, force=False, quiet=None):
+    """Performs a 'git-checkout' operation.
+
+    Args:
+      options: The configured option set
+      ref: (str) The branch/commit to checkout
+      quiet: (bool/None) Whether or not the checkout shoud pass '--quiet'; if
+          'None', the behavior is inferred from 'options.verbose'.
+    Returns: (str) The output of the checkout operation
+    """
+    if quiet is None:
+      quiet = (not options.verbose)
+    checkout_args = ['checkout']
+    if force:
+      checkout_args.append('--force')
+    if quiet:
+      checkout_args.append('--quiet')
+    checkout_args.append(ref)
+    return self._Capture(checkout_args)
+
+  def _Fetch(self, options, remote=None, prune=False, quiet=False):
+    cfg = gclient_utils.DefaultIndexPackConfig(self.url)
+    fetch_cmd =  cfg + [
+        'fetch',
+        remote or self.remote,
+    ]
+
+    if prune:
+      fetch_cmd.append('--prune')
+    if options.verbose:
+      fetch_cmd.append('--verbose')
+    elif quiet:
+      fetch_cmd.append('--quiet')
+    self._Run(fetch_cmd, options, show_header=options.verbose, retry=True)
+
+    # Return the revision that was fetched; this will be stored in 'FETCH_HEAD'
+    return self._Capture(['rev-parse', '--verify', 'FETCH_HEAD'])
+
   def _UpdateBranchHeads(self, options, fetch=False):
     """Adds, and optionally fetches, "branch-heads" refspecs if requested."""
     if hasattr(options, 'with_branch_heads') and options.with_branch_heads:
@@ -1023,21 +1082,19 @@ class GitWrapper(SCMWrapper):
                     '^\\+refs/branch-heads/\\*:.*$']
       self._Run(config_cmd, options)
       if fetch:
-        cfg = gclient_utils.DefaultIndexPackConfig(self.url)
-        fetch_cmd =  cfg + ['fetch', self.remote]
-        if options.verbose:
-          fetch_cmd.append('--verbose')
-        self._Run(fetch_cmd, options, retry=True)
+        self._Fetch(options)
 
-  def _Run(self, args, options, **kwargs):
+  def _Run(self, args, options, show_header=True, **kwargs):
+    # Disable 'unused options' warning | pylint: disable=W0613
     cwd = kwargs.setdefault('cwd', self.checkout_path)
     kwargs.setdefault('stdout', self.out_fh)
     kwargs['filter_fn'] = self.filter
     kwargs.setdefault('print_stdout', False)
     env = scm.GIT.ApplyEnvVars(kwargs)
     cmd = ['git'] + args
-    header = "running '%s' in '%s'" % (' '.join(cmd), cwd)
-    self.filter(header)
+    if show_header:
+      header = "running '%s' in '%s'" % (' '.join(cmd), cwd)
+      self.filter(header)
     return gclient_utils.CheckCallAndFilter(cmd, env=env, **kwargs)
 
 

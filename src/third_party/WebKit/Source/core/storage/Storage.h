@@ -26,8 +26,8 @@
 #ifndef Storage_h
 #define Storage_h
 
-#include "bindings/v8/ScriptWrappable.h"
-#include "bindings/v8/V8Binding.h"
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "bindings/core/v8/V8Binding.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "core/storage/StorageArea.h"
 #include "platform/heap/Handle.h"
@@ -35,7 +35,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class LocalFrame;
@@ -72,6 +72,6 @@ private:
     OwnPtrWillBeMember<StorageArea> m_storageArea;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Storage_h

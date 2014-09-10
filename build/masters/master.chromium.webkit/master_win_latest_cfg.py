@@ -45,7 +45,6 @@ sharded_tests = [
   'ui_unittests',
   'unit_tests',
   'views_unittests',
-  'webkit_compositor_bindings_unittests',
 ]
 
 ################################################################################
@@ -53,9 +52,8 @@ sharded_tests = [
 ################################################################################
 
 # Archive location
-rel_archive = master_config.GetArchiveUrl('ChromiumWebkit',
-                                          'Win Builder',
-                                          'win-latest-rel', 'win32')
+rel_archive = master_config.GetGSUtilUrl('chromium-build-transfer',
+                                         'win-latest-rel')
 
 # Triggerable scheduler for testers
 T('s7_webkit_builder_rel_trigger')
@@ -66,7 +64,10 @@ T('s7_webkit_builder_rel_trigger')
 #
 B('Win Builder', 'f_win_rel', scheduler='global_scheduler',
   builddir='win-latest-rel', auto_reboot=False)
+# Note: This step both uploads the build to transfer to its triggered builder
+# AND archives the build to chromium-webkit-snapshots for prosperity.
 F('f_win_rel', win().ChromiumFactory(
+    build_url=rel_archive,
     slave_type='Builder',
     options=['--build-tool=ninja', '--compiler=goma', 'chromium_builder'],
     factory_properties={
@@ -101,6 +102,7 @@ F('f_win_rel_tests', win().ChromiumFactory(
     factory_properties={
         'perf_id': 'chromium-rel-win7-webkit',
         'show_perf_results': True,
+        'generate_gtest_json': True,
         'start_crash_handler': True,
         'test_results_server': 'test-results.appspot.com',
         'blink_config': 'blink',

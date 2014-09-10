@@ -49,7 +49,7 @@ WebInspector.installDragHandle = function(element, elementDragStart, elementDrag
  * @param {function(!MouseEvent)} elementDrag
  * @param {?function(!MouseEvent)} elementDragEnd
  * @param {string} cursor
- * @param {?Event} event
+ * @param {!Event} event
  */
 WebInspector.elementDragStart = function(elementDragStart, elementDrag, elementDragEnd, cursor, event)
 {
@@ -157,13 +157,13 @@ WebInspector.GlassPane.prototype = {
     {
         delete WebInspector._glassPane;
         if (WebInspector.GlassPane.DefaultFocusedViewStack.length)
-            WebInspector.GlassPane.DefaultFocusedViewStack[0].focus();
+            WebInspector.GlassPane.DefaultFocusedViewStack.peekLast().focus();
         this.element.remove();
     }
 }
 
 /**
- * @type {!Array.<!WebInspector.View>}
+ * @type {!Array.<!WebInspector.View|!WebInspector.Dialog>}
  */
 WebInspector.GlassPane.DefaultFocusedViewStack = [];
 
@@ -313,11 +313,11 @@ WebInspector._modifiedFloatNumber = function(number, event)
 }
 
 /**
-  * @param {?Event} event
+  * @param {!Event} event
   * @param {!Element} element
   * @param {function(string,string)=} finishHandler
   * @param {function(string)=} suggestionHandler
-  * @param {function(number):number=} customNumberHandler
+  * @param {function(string, number, string):string=} customNumberHandler
   * @return {boolean}
  */
 WebInspector.handleElementValueModifications = function(event, element, finishHandler, suggestionHandler, customNumberHandler)
@@ -352,10 +352,7 @@ WebInspector.handleElementValueModifications = function(event, element, finishHa
         suffix = matches[3];
         number = WebInspector._modifiedHexValue(matches[2], event);
 
-        if (customNumberHandler)
-            number = customNumberHandler(number);
-
-        replacementString = prefix + number + suffix;
+        replacementString = customNumberHandler ? customNumberHandler(prefix, number, suffix) : prefix + number + suffix;
     } else {
         matches = /(.*?)(-?(?:\d+(?:\.\d+)?|\.\d+))(.*)/.exec(wordString);
         if (matches && matches.length) {
@@ -367,10 +364,7 @@ WebInspector.handleElementValueModifications = function(event, element, finishHa
             if (number === null)
                 return false;
 
-            if (customNumberHandler)
-                number = customNumberHandler(number);
-
-            replacementString = prefix + number + suffix;
+            replacementString = customNumberHandler ? customNumberHandler(prefix, number, suffix) : prefix + number + suffix;
         }
     }
 
@@ -528,6 +522,33 @@ WebInspector.copyLinkAddressLabel = function()
     return WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Copy link address" : "Copy Link Address");
 }
 
+/**
+ * @return {string}
+ */
+WebInspector.anotherProfilerActiveLabel = function()
+{
+    return WebInspector.UIString("Another profiler is already active");
+}
+
+/**
+ * @param {string|undefined} description
+ * @return {string}
+ */
+WebInspector.asyncStackTraceLabel = function(description)
+{
+    if (description)
+        return description + " " + WebInspector.UIString("(async)");
+    return WebInspector.UIString("Async Call");
+}
+
+/**
+ * @return {string}
+ */
+WebInspector.manageBlackboxingButtonLabel = function()
+{
+    return WebInspector.UIString("Manage framework blackboxing...");
+}
+
 WebInspector.installPortStyles = function()
 {
     var platform = WebInspector.platform();
@@ -637,17 +658,17 @@ WebInspector.setToolbarColors = function(backgroundColor, color)
     var prefix = WebInspector.isMac() ? "body:not(.undocked)" : "";
     WebInspector._themeStyleElement.textContent =
         String.sprintf(
-            "%s .toolbar-background {\
+            "%s .toolbar-colors {\
                  background-image: none !important;\
                  background-color: %s !important;\
                  color: %s !important;\
              }", prefix, backgroundColor, color) +
         String.sprintf(
-             "%s .toolbar-background button.status-bar-item .glyph, %s .toolbar-background button.status-bar-item .long-click-glyph {\
+             "%s .toolbar-colors button.status-bar-item .glyph, %s .toolbar-colors button.status-bar-item .long-click-glyph {\
                  background-color: %s;\
              }", prefix, prefix, color) +
         String.sprintf(
-             "%s .toolbar-background button.status-bar-item .glyph.shadow, %s .toolbar-background button.status-bar-item .long-click-glyph.shadow {\
+             "%s .toolbar-colors button.status-bar-item .glyph.shadow, %s .toolbar-colors button.status-bar-item .long-click-glyph.shadow {\
                  background-color: %s;\
              }", prefix, prefix, shadowColor);
 }
@@ -893,6 +914,51 @@ WebInspector.invokeOnceAfterBatchUpdate = function(object, method)
     if (!WebInspector._postUpdateHandlers)
         WebInspector._postUpdateHandlers = new WebInspector.InvokeOnceHandlers(true);
     WebInspector._postUpdateHandlers.add(object, method);
+}
+
+/**
+ * @param {!Function} func
+ * @param {!Array.<{from:number, to:number}>} params
+ * @param {number} frames
+ * @param {function()=} animationComplete
+ * @return {function()}
+ */
+WebInspector.animateFunction = function(func, params, frames, animationComplete)
+{
+    var values = new Array(params.length);
+    var deltas = new Array(params.length);
+    for (var i = 0; i < params.length; ++i) {
+        values[i] = params[i].from;
+        deltas[i] = (params[i].to - params[i].from) / frames;
+    }
+
+    var raf = requestAnimationFrame(animationStep);
+
+    var framesLeft = frames;
+
+    function animationStep()
+    {
+        if (--framesLeft < 0) {
+            if (animationComplete)
+                animationComplete();
+            return;
+        }
+        for (var i = 0; i < params.length; ++i) {
+            if (params[i].to > params[i].from)
+                values[i] = Number.constrain(values[i] + deltas[i], params[i].from, params[i].to);
+            else
+                values[i] = Number.constrain(values[i] + deltas[i], params[i].to, params[i].from);
+        }
+        func.apply(null, values);
+        raf = window.requestAnimationFrame(animationStep);
+    }
+
+    function cancelAnimation()
+    {
+        window.cancelAnimationFrame(raf);
+    }
+
+    return cancelAnimation;
 }
 
 ;(function() {

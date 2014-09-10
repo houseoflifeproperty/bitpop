@@ -31,12 +31,11 @@
 #include "config.h"
 #include "public/web/WebDocument.h"
 
-#include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptState.h"
-#include "bindings/v8/ScriptValue.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ScriptState.h"
+#include "bindings/core/v8/ScriptValue.h"
 #include "core/accessibility/AXObjectCache.h"
-#include "core/css/CSSParserMode.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/CSSSelectorWatch.h"
 #include "core/dom/Document.h"
@@ -66,7 +65,7 @@
 #include "wtf/PassRefPtr.h"
 #include <v8.h>
 
-using namespace WebCore;
+using namespace blink;
 
 namespace blink {
 
@@ -231,7 +230,7 @@ void WebDocument::watchCSSSelectors(const WebVector<WebString>& webSelectors)
 void WebDocument::cancelFullScreen()
 {
     if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(*unwrap<Document>()))
-        fullscreen->webkitCancelFullScreen();
+        fullscreen->fullyExitFullscreen();
 }
 
 WebElement WebDocument::fullScreenElement() const
@@ -265,6 +264,19 @@ WebElement WebDocument::createElement(const WebString& tagName)
     return element;
 }
 
+void WebDocument::setIsTransitionDocument()
+{
+    // This ensures the transition UA stylesheet gets applied.
+    unwrap<Document>()->setIsTransitionDocument();
+}
+
+void WebDocument::beginExitTransition(const WebString& cssSelector)
+{
+    RefPtrWillBeRawPtr<Document> document = unwrap<Document>();
+    document->hideTransitionElements(cssSelector);
+    document->styleEngine()->enableExitTransitionStylesheets();
+}
+
 WebAXObject WebDocument::accessibilityObject() const
 {
     const Document* document = constUnwrap<Document>();
@@ -287,7 +299,7 @@ WebVector<WebDraggableRegion> WebDocument::draggableRegions() const
         for (size_t i = 0; i < regions.size(); i++) {
             const AnnotatedRegionValue& value = regions[i];
             draggableRegions[i].draggable = value.draggable;
-            draggableRegions[i].bounds = WebCore::IntRect(value.bounds);
+            draggableRegions[i].bounds = blink::IntRect(value.bounds);
         }
     }
     return draggableRegions;

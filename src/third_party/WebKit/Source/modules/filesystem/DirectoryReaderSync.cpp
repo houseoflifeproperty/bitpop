@@ -31,7 +31,7 @@
 #include "config.h"
 #include "modules/filesystem/DirectoryReaderSync.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/filesystem/DirectoryEntry.h"
 #include "modules/filesystem/DirectoryEntrySync.h"
@@ -40,7 +40,7 @@
 #include "modules/filesystem/ErrorCallback.h"
 #include "modules/filesystem/FileEntrySync.h"
 
-namespace WebCore {
+namespace blink {
 
 class DirectoryReaderSync::EntriesCallbackHelper : public EntriesCallback {
 public:

@@ -9,61 +9,62 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/ozone/ozone_export.h"
+#include "ui/ozone/platform/dri/hardware_cursor_delegate.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
-
-typedef struct _drmModeModeInfo drmModeModeInfo;
-
-namespace gfx {
-class SurfaceOzoneCanvas;
-}
 
 namespace ui {
 
-class DriSurface;
+class DriBuffer;
 class DriWrapper;
-class HardwareDisplayController;
 class ScreenManager;
+class SurfaceOzoneCanvas;
 
 // SurfaceFactoryOzone implementation on top of DRM/KMS using dumb buffers.
 // This implementation is used in conjunction with the software rendering
 // path.
-class OZONE_EXPORT DriSurfaceFactory : public ui::SurfaceFactoryOzone {
+class DriSurfaceFactory : public ui::SurfaceFactoryOzone,
+                          public HardwareCursorDelegate {
  public:
   static const gfx::AcceleratedWidget kDefaultWidgetHandle;
 
   DriSurfaceFactory(DriWrapper* drm, ScreenManager* screen_manager);
   virtual ~DriSurfaceFactory();
 
-  // SurfaceFactoryOzone overrides:
-  virtual HardwareState InitializeHardware() OVERRIDE;
-  virtual void ShutdownHardware() OVERRIDE;
+  // Describes the state of the hardware after initialization.
+  enum HardwareState {
+    UNINITIALIZED,
+    INITIALIZED,
+    FAILED,
+  };
 
-  virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
+  // Open the display device.
+  virtual HardwareState InitializeHardware();
+
+  // Close the display device.
+  virtual void ShutdownHardware();
 
   virtual scoped_ptr<ui::SurfaceOzoneCanvas> CreateCanvasForWidget(
       gfx::AcceleratedWidget w) OVERRIDE;
-
   virtual bool LoadEGLGLES2Bindings(
       AddGLLibraryCallback add_gl_library,
       SetGLGetProcAddressProcCallback set_gl_get_proc_address) OVERRIDE;
 
+  // Create a new window/surface/widget identifier.
+  gfx::AcceleratedWidget GetAcceleratedWidget();
+
+  // Determine dimensions of a widget.
   gfx::Size GetWidgetSize(gfx::AcceleratedWidget w);
 
-  void SetHardwareCursor(gfx::AcceleratedWidget window,
-                         const SkBitmap& image,
-                         const gfx::Point& location);
-
-  void MoveHardwareCursor(gfx::AcceleratedWidget window,
-                          const gfx::Point& location);
-
-  void UnsetHardwareCursor(gfx::AcceleratedWidget window);
+  // HardwareCursorDelegate:
+  virtual void SetHardwareCursor(gfx::AcceleratedWidget window,
+                                 const SkBitmap& image,
+                                 const gfx::Point& location) OVERRIDE;
+  virtual void MoveHardwareCursor(gfx::AcceleratedWidget window,
+                                  const gfx::Point& location) OVERRIDE;
 
  protected:
   // Draw the last set cursor & update the cursor plane.
   void ResetCursor(gfx::AcceleratedWidget w);
-
-  virtual DriSurface* CreateSurface(const gfx::Size& size);
 
   DriWrapper* drm_;  // Not owned.
   ScreenManager* screen_manager_;  // Not owned.
@@ -72,7 +73,8 @@ class OZONE_EXPORT DriSurfaceFactory : public ui::SurfaceFactoryOzone {
   // Active outputs.
   int allocated_widgets_;
 
-  scoped_ptr<DriSurface> cursor_surface_;
+  scoped_refptr<DriBuffer> cursor_buffers_[2];
+  int cursor_frontbuffer_;
 
   SkBitmap cursor_bitmap_;
   gfx::Point cursor_location_;

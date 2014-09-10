@@ -14,44 +14,44 @@ RemoteFrameClient::RemoteFrameClient(WebRemoteFrameImpl* webFrame)
 {
 }
 
-WebCore::Frame* RemoteFrameClient::opener() const
+Frame* RemoteFrameClient::opener() const
 {
-    return toWebCoreFrame(m_webFrame->opener());
+    return toCoreFrame(m_webFrame->opener());
 }
 
-void RemoteFrameClient::setOpener(WebCore::Frame*)
+void RemoteFrameClient::setOpener(Frame*)
 {
     // FIXME: Implement.
 }
 
-WebCore::Frame* RemoteFrameClient::parent() const
+Frame* RemoteFrameClient::parent() const
 {
-    return toWebCoreFrame(m_webFrame->parent());
+    return toCoreFrame(m_webFrame->parent());
 }
 
-WebCore::Frame* RemoteFrameClient::top() const
+Frame* RemoteFrameClient::top() const
 {
-    return toWebCoreFrame(m_webFrame->top());
+    return toCoreFrame(m_webFrame->top());
 }
 
-WebCore::Frame* RemoteFrameClient::previousSibling() const
+Frame* RemoteFrameClient::previousSibling() const
 {
-    return toWebCoreFrame(m_webFrame->previousSibling());
+    return toCoreFrame(m_webFrame->previousSibling());
 }
 
-WebCore::Frame* RemoteFrameClient::nextSibling() const
+Frame* RemoteFrameClient::nextSibling() const
 {
-    return toWebCoreFrame(m_webFrame->nextSibling());
+    return toCoreFrame(m_webFrame->nextSibling());
 }
 
-WebCore::Frame* RemoteFrameClient::firstChild() const
+Frame* RemoteFrameClient::firstChild() const
 {
-    return toWebCoreFrame(m_webFrame->firstChild());
+    return toCoreFrame(m_webFrame->firstChild());
 }
 
-WebCore::Frame* RemoteFrameClient::lastChild() const
+Frame* RemoteFrameClient::lastChild() const
 {
-    return toWebCoreFrame(m_webFrame->lastChild());
+    return toCoreFrame(m_webFrame->lastChild());
 }
 
 } // namespace blink

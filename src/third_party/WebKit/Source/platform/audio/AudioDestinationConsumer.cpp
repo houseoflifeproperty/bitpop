@@ -31,10 +31,10 @@
 #include "config.h"
 #include "platform/audio/AudioDestinationConsumer.h"
 
-namespace WebCore {
+namespace blink {
 
 AudioDestinationConsumer::~AudioDestinationConsumer()
 {
 }
 
-}
+} // namespace blink

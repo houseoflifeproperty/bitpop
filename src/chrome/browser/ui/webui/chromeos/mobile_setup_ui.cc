@@ -33,6 +33,7 @@
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_state_handler_observer.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -89,10 +90,10 @@ void GetDeviceInfo(const base::DictionaryValue& properties,
                    base::DictionaryValue* value) {
   std::string name;
   properties.GetStringWithoutPathExpansion(shill::kNameProperty, &name);
-  bool activate_over_non_cellular_networks = false;
-  properties.GetBooleanWithoutPathExpansion(
-      shill::kActivateOverNonCellularNetworkProperty,
-      &activate_over_non_cellular_networks);
+  std::string activation_type;
+  properties.GetStringWithoutPathExpansion(
+      shill::kActivationTypeProperty,
+      &activation_type);
   const base::DictionaryValue* payment_dict;
   std::string payment_url, post_method, post_data;
   if (properties.GetDictionaryWithoutPathExpansion(
@@ -105,8 +106,7 @@ void GetDeviceInfo(const base::DictionaryValue& properties,
         shill::kPaymentPortalPostData, &post_data);
   }
 
-  value->SetBoolean("activate_over_non_cellular_network",
-                    activate_over_non_cellular_networks);
+  value->SetString("activation_type", activation_type);
   value->SetString("carrier", name);
   value->SetString("payment_url", payment_url);
   if (LowerCaseEqualsASCII(post_method, "post") && !post_data.empty())
@@ -636,13 +636,10 @@ MobileSetupUI::MobileSetupUI(content::WebUI* web_ui)
 }
 
 void MobileSetupUI::DidCommitProvisionalLoadForFrame(
-    int64 frame_id,
-    const base::string16& frame_unique_name,
-    bool is_main_frame,
+    content::RenderFrameHost* render_frame_host,
     const GURL& url,
-    content::PageTransition transition_type,
-    content::RenderViewHost* render_view_host) {
-  if (frame_unique_name != base::UTF8ToUTF16("paymentForm"))
+    content::PageTransition transition_type) {
+  if (render_frame_host->GetFrameName() != "paymentForm")
     return;
 
   web_ui()->CallJavascriptFunction(
@@ -650,14 +647,11 @@ void MobileSetupUI::DidCommitProvisionalLoadForFrame(
 }
 
 void MobileSetupUI::DidFailProvisionalLoad(
-    int64 frame_id,
-    const base::string16& frame_unique_name,
-    bool is_main_frame,
+    content::RenderFrameHost* render_frame_host,
     const GURL& validated_url,
     int error_code,
-    const base::string16& error_description,
-    content::RenderViewHost* render_view_host) {
-  if (frame_unique_name != base::UTF8ToUTF16("paymentForm"))
+    const base::string16& error_description) {
+  if (render_frame_host->GetFrameName() != "paymentForm")
     return;
 
   base::FundamentalValue result_value(-error_code);

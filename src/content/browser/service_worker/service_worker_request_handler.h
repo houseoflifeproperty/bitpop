@@ -10,8 +10,8 @@
 #include "base/supports_user_data.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
+#include "content/public/common/resource_type.h"
 #include "net/url_request/url_request_job_factory.h"
-#include "webkit/common/resource_type.h"
 
 namespace net {
 class NetworkDelegate;
@@ -46,7 +46,7 @@ class CONTENT_EXPORT ServiceWorkerRequestHandler
       webkit_blob::BlobStorageContext* blob_storage_context,
       int process_id,
       int provider_id,
-      ResourceType::Type resource_type);
+      ResourceType resource_type);
 
   // Returns the handler attached to |request|. This may return NULL
   // if no handler is attached.
@@ -63,18 +63,23 @@ class CONTENT_EXPORT ServiceWorkerRequestHandler
       net::URLRequest* request,
       net::NetworkDelegate* network_delegate) = 0;
 
+  virtual void GetExtraResponseInfo(
+      bool* was_fetched_via_service_worker,
+      GURL* original_url_via_service_worker) const = 0;
+
  protected:
   ServiceWorkerRequestHandler(
       base::WeakPtr<ServiceWorkerContextCore> context,
       base::WeakPtr<ServiceWorkerProviderHost> provider_host,
       base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context,
-      ResourceType::Type resource_type);
+      ResourceType resource_type);
 
   base::WeakPtr<ServiceWorkerContextCore> context_;
   base::WeakPtr<ServiceWorkerProviderHost> provider_host_;
   base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context_;
-  ResourceType::Type resource_type_;
+  ResourceType resource_type_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerRequestHandler);
 };
 

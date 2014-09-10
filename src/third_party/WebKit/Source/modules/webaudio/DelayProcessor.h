@@ -30,7 +30,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioDSPKernel;
 
@@ -38,6 +38,7 @@ class DelayProcessor FINAL : public AudioDSPKernelProcessor {
 public:
     DelayProcessor(AudioContext*, float sampleRate, unsigned numberOfChannels, double maxDelayTime);
     virtual ~DelayProcessor();
+    virtual void trace(Visitor*) OVERRIDE;
 
     virtual PassOwnPtr<AudioDSPKernel> createKernel() OVERRIDE;
 
@@ -46,10 +47,10 @@ public:
     double maxDelayTime() { return m_maxDelayTime; }
 private:
 
-    RefPtrWillBePersistent<AudioParam> m_delayTime;
+    RefPtrWillBeMember<AudioParam> m_delayTime;
     double m_maxDelayTime;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DelayProcessor_h

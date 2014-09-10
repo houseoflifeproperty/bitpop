@@ -70,6 +70,10 @@
 #include "components/storage_monitor/test_storage_monitor.h"
 #endif
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
+#endif
+
 namespace {
 
 // Passed as value of kTestType.
@@ -112,6 +116,7 @@ void SingleDesktopTestObserver::OnBrowserAdded(Browser* browser) {
 InProcessBrowserTest::InProcessBrowserTest()
     : browser_(NULL),
       exit_when_last_browser_closes_(true),
+      open_about_blank_on_browser_launch_(true),
       multi_desktop_test_(false)
 #if defined(OS_MACOSX)
       , autorelease_pool_(NULL)
@@ -175,6 +180,8 @@ void InProcessBrowserTest::SetUp() {
   // Make sure that the log directory exists.
   base::FilePath log_dir = logging::GetSessionLogFile(*command_line).DirName();
   base::CreateDirectory(log_dir);
+  // Disable IME extension loading to avoid many browser tests failures.
+  chromeos::input_method::DisableExtensionLoading();
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_MACOSX)
@@ -248,7 +255,7 @@ void InProcessBrowserTest::PrepareTestCommandLine(CommandLine* command_line) {
   if (exit_when_last_browser_closes_)
     command_line->AppendSwitch(switches::kDisableZeroBrowsersOpenForTests);
 
-  if (command_line->GetArgs().empty())
+  if (open_about_blank_on_browser_launch_ && command_line->GetArgs().empty())
     command_line->AppendArg(url::kAboutBlankURL);
 }
 
@@ -431,7 +438,7 @@ void InProcessBrowserTest::RunTestOnMainThreadLoop() {
 
   // Invoke cleanup and quit even if there are failures. This is similar to
   // gtest in that it invokes TearDown even if Setup fails.
-  CleanUpOnMainThread();
+  TearDownOnMainThread();
 #if defined(OS_MACOSX)
   autorelease_pool_->Recycle();
 #endif

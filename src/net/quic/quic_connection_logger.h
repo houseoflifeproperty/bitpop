@@ -16,6 +16,7 @@
 namespace net {
 
 class CryptoHandshakeMessage;
+class CertVerifyResult;
 
 // This class is a debug visitor of a QuicConnection which logs
 // events to |net_log|.
@@ -61,16 +62,17 @@ class NET_EXPORT_PRIVATE QuicConnectionLogger
       const QuicVersionNegotiationPacket& packet) OVERRIDE;
   virtual void OnRevivedPacket(const QuicPacketHeader& revived_header,
                                base::StringPiece payload) OVERRIDE;
+  virtual void OnConnectionClosed(QuicErrorCode error, bool from_peer) OVERRIDE;
 
   void OnCryptoHandshakeMessageReceived(
       const CryptoHandshakeMessage& message);
   void OnCryptoHandshakeMessageSent(
       const CryptoHandshakeMessage& message);
-  void OnConnectionClosed(QuicErrorCode error, bool from_peer);
   void OnSuccessfulVersionNegotiation(const QuicVersion& version);
   void UpdateReceivedFrameCounts(QuicStreamId stream_id,
                                  int num_frames_received,
                                  int num_duplicate_frames_received);
+  void OnCertificateVerified(const CertVerifyResult& result);
 
  private:
   // Do a factory get for a histogram for recording data, about individual

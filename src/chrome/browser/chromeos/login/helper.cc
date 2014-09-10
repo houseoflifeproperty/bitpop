@@ -7,17 +7,14 @@
 #include "ash/shell.h"
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/grit/generated_resources.h"
+#include "chrome/grit/theme_resources.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/network/network_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
-#include "google_apis/gaia/gaia_auth_util.h"
-#include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/screen.h"
 
@@ -44,12 +41,6 @@ int GetCurrentUserImageSize() {
 }
 
 namespace login {
-
-std::string CanonicalizeUserID(const std::string& user_id) {
-  if (user_id == UserManager::kGuestUserName)
-    return user_id;
-  return gaia::CanonicalizeEmail(user_id);
-}
 
 bool LoginScrollIntoViewEnabled() {
   return !CommandLine::ForCurrentProcess()->HasSwitch(

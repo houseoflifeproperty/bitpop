@@ -259,6 +259,10 @@ uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
   return static_cast<uint32>(native_event.wParam);
 }
 
+bool IsCharFromNative(const base::NativeEvent& native_event) {
+  return native_event.message == WM_CHAR;
+}
+
 int GetChangedMouseButtonFlagsFromNative(
     const base::NativeEvent& native_event) {
   switch (GetNativeMouseKey(native_event)) {
@@ -288,6 +292,10 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
 }
 
 void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
+}
+
+void IncrementTouchIdRefCount(const base::NativeEvent& event) {
+  NOTIMPLEMENTED();
 }
 
 void ClearTouchIdIfReleased(const base::NativeEvent& xev) {
@@ -339,29 +347,6 @@ bool GetFlingData(const base::NativeEvent& native_event,
                   float* vy_ordinal,
                   bool* is_cancel) {
   // Not supported in Windows.
-  NOTIMPLEMENTED();
-  return false;
-}
-
-bool GetGestureTimes(const base::NativeEvent& native_event,
-                     double* start_time,
-                     double* end_time) {
-  // Not supported in Windows.
-  *start_time = 0;
-  *end_time = 0;
-  return false;
-}
-
-void SetNaturalScroll(bool enabled) {
-  NOTIMPLEMENTED();
-}
-
-bool IsNaturalScrollEnabled() {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-bool IsTouchpadEvent(const base::NativeEvent& event) {
   NOTIMPLEMENTED();
   return false;
 }

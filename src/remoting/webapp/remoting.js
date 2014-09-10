@@ -94,14 +94,16 @@ remoting.init = function() {
   var sandbox = /** @type {HTMLIFrameElement} */
       document.getElementById('wcs-sandbox');
   remoting.wcsSandbox = new remoting.WcsSandboxContainer(sandbox.contentWindow);
-  var menuFeedback = new remoting.Feedback(
-      document.getElementById('help-feedback-main'),
-      document.getElementById('help-main'),
-      document.getElementById('send-feedback-main'));
-  var toolbarFeedback = new remoting.Feedback(
-      document.getElementById('help-feedback-toolbar'),
-      document.getElementById('help-toolbar'),
-      document.getElementById('send-feedback-toolbar'));
+  var homeFeedback = new remoting.MenuButton(
+      document.getElementById('help-feedback-main'));
+  var toolbarFeedback = new remoting.MenuButton(
+      document.getElementById('help-feedback-toolbar'));
+  remoting.manageHelpAndFeedback(
+      document.getElementById('title-bar'));
+  remoting.manageHelpAndFeedback(
+      document.getElementById('help-feedback-toolbar'));
+  remoting.manageHelpAndFeedback(
+      document.getElementById('help-feedback-main'));
 
   /** @param {remoting.Error} error */
   var onGetEmailError = function(error) {
@@ -131,13 +133,52 @@ remoting.init = function() {
     button.disabled = true;
   }
 
+  /**
+   * @return {Promise} A promise that resolves to the id of the current
+   * containing tab/window.
+   */
+  var getCurrentId = function () {
+    if (remoting.isAppsV2) {
+      return Promise.resolve(chrome.app.window.current().id);
+    }
+
+    /**
+     * @param {function(*=):void} resolve
+     * @param {function(*=):void} reject
+     */
+    return new Promise(function(resolve, reject) {
+      /** @param {chrome.Tab} tab */
+      chrome.tabs.getCurrent(function(tab){
+        if (tab) {
+          resolve(String(tab.id));
+        }
+        reject('Cannot retrieve the current tab.');
+      });
+    });
+  };
+
   var onLoad = function() {
     // Parse URL parameters.
     var urlParams = getUrlParameters_();
     if ('mode' in urlParams) {
-      if (urlParams['mode'] == 'me2me') {
+      if (urlParams['mode'] === 'me2me') {
         var hostId = urlParams['hostId'];
         remoting.connectMe2Me(hostId);
+        return;
+      } else if (urlParams['mode'] === 'hangout') {
+        /** @param {*} id */
+        getCurrentId().then(function(id) {
+          /** @type {string} */
+          var accessCode = urlParams['accessCode'];
+          remoting.ensureSessionConnector_();
+          remoting.setMode(remoting.AppMode.CLIENT_CONNECTING);
+          remoting.connector.connectIT2Me(accessCode);
+
+          document.body.classList.add('hangout-remote-desktop');
+          var senderId = /** @type {string} */ String(id);
+          var hangoutSession = new remoting.HangoutSession(senderId);
+          hangoutSession.init();
+        });
         return;
       }
     }
@@ -148,7 +189,7 @@ remoting.init = function() {
 
   // For Apps v1, check the tab type to warn the user if they are not getting
   // the best keyboard experience.
-  if (!remoting.isAppsV2 && navigator.platform.indexOf('Mac') == -1) {
+  if (!remoting.isAppsV2 && !remoting.platformIsMac()) {
     /** @param {boolean} isWindowed */
     var onIsWindowed = function(isWindowed) {
       if (!isWindowed) {
@@ -166,6 +207,8 @@ remoting.init = function() {
     uiModeChanged: 'uiModeChanged'
   };
   remoting.testEvents.defineEvents(base.values(remoting.testEvents.Names));
+
+  remoting.ClientPlugin.preload();
 };
 
 /**
@@ -187,14 +230,12 @@ function isIT2MeSupported_() {
  * @return {boolean}
  */
 remoting.isMe2MeInstallable = function() {
-  /** @type {string} */
-  var platform = navigator.platform;
   // The chromoting host is currently not installable on ChromeOS.
   // For Linux, we have a install package for Ubuntu but not other distros.
   // Since we cannot tell from javascript alone the Linux distro the client is
   // on, we don't show the daemon-control UI for Linux unless the host is
   // installed.
-  return platform == 'Win32' || platform == 'MacIntel';
+  return remoting.platformIsWindows() || remoting.platformIsMac();
 }
 
 /**
@@ -525,3 +566,40 @@ remoting.generateXsrfToken = function() {
   var base64Token = window.btoa(String.fromCharCode.apply(null, random));
   return base64Token.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 };
+
+/**
+ * Tests whether we are running on Mac.
+ *
+ * @return {boolean} True if the platform is Mac.
+ */
+remoting.platformIsMac = function() {
+  return navigator.platform.indexOf('Mac') != -1;
+}
+
+/**
+ * Tests whether we are running on Windows.
+ *
+ * @return {boolean} True if the platform is Windows.
+ */
+remoting.platformIsWindows = function() {
+  return navigator.platform.indexOf('Win32') != -1;
+}
+
+/**
+ * Tests whether we are running on Linux.
+ *
+ * @return {boolean} True if the platform is Linux.
+ */
+remoting.platformIsLinux = function() {
+  return (navigator.platform.indexOf('Linux') != -1) &&
+         !remoting.platformIsChromeOS();
+}
+
+/**
+ * Tests whether we are running on ChromeOS.
+ *
+ * @return {boolean} True if the platform is ChromeOS.
+ */
+remoting.platformIsChromeOS = function() {
+  return navigator.userAgent.match(/\bCrOS\b/) != null;
+}

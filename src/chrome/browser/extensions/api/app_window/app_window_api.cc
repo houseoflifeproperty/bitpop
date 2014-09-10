@@ -7,7 +7,7 @@
 #include "apps/app_window.h"
 #include "apps/app_window_contents.h"
 #include "apps/app_window_registry.h"
-#include "apps/apps_client.h"
+#include "apps/ui/apps_client.h"
 #include "apps/ui/native_app_window.h"
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
@@ -26,6 +26,7 @@
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/image_util.h"
+#include "extensions/common/features/simple_feature.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/switches.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -54,6 +55,12 @@ const char kAlwaysOnTopPermission[] =
     "The \"app.window.alwaysOnTop\" permission is required.";
 const char kInvalidUrlParameter[] =
     "The URL used for window creation must be local for security reasons.";
+const char kAlphaEnabledWrongChannel[] =
+    "The alphaEnabled option requires dev channel or newer.";
+const char kAlphaEnabledMissingPermission[] =
+    "The alphaEnabled option requires app.window.alpha permission.";
+const char kAlphaEnabledNeedsFrameNone[] =
+    "The alphaEnabled option can only be used with \"frame: 'none'\".";
 }  // namespace app_window_constants
 
 const char kNoneFrameOption[] = "none";
@@ -68,13 +75,12 @@ namespace {
 class DevToolsRestorer : public base::RefCounted<DevToolsRestorer> {
  public:
   DevToolsRestorer(AppWindowCreateFunction* delayed_create_function,
-                   content::RenderViewHost* created_view)
+                   content::WebContents* web_contents)
       : delayed_create_function_(delayed_create_function) {
     AddRef();  // Balanced in LoadCompleted.
-    DevToolsWindow* devtools_window =
-        DevToolsWindow::OpenDevToolsWindow(
-            created_view,
-            DevToolsToggleAction::ShowConsole());
+    DevToolsWindow* devtools_window = DevToolsWindow::OpenDevToolsWindow(
+        web_contents,
+        DevToolsToggleAction::ShowConsole());
     devtools_window->SetLoadCompletedCallback(
         base::Bind(&DevToolsRestorer::LoadCompleted, this));
   }
@@ -151,12 +157,12 @@ bool AppWindowCreateFunction::RunAsync() {
   scoped_ptr<Create::Params> params(Create::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  GURL url = GetExtension()->GetResourceURL(params->url);
+  GURL url = extension()->GetResourceURL(params->url);
   // Allow absolute URLs for component apps, otherwise prepend the extension
   // path.
   GURL absolute = GURL(params->url);
   if (absolute.has_scheme()) {
-    if (GetExtension()->location() == extensions::Manifest::COMPONENT) {
+    if (extension()->location() == extensions::Manifest::COMPONENT) {
       url = absolute;
     } else {
       // Show error when url passed isn't local.
@@ -201,10 +207,12 @@ bool AppWindowCreateFunction::RunAsync() {
             view_id = created_view->GetRoutingID();
           }
 
-          if (options->focused.get() && !*options->focused.get())
-            window->Show(AppWindow::SHOW_INACTIVE);
-          else
-            window->Show(AppWindow::SHOW_ACTIVE);
+          if (options->hidden.get() && !*options->hidden.get()) {
+            if (options->focused.get() && !*options->focused.get())
+              window->Show(AppWindow::SHOW_INACTIVE);
+            else
+              window->Show(AppWindow::SHOW_ACTIVE);
+          }
 
           base::DictionaryValue* result = new base::DictionaryValue;
           result->Set("viewId", new base::FundamentalValue(view_id));
@@ -223,7 +231,7 @@ bool AppWindowCreateFunction::RunAsync() {
       return false;
 
     if (GetCurrentChannel() <= chrome::VersionInfo::CHANNEL_DEV ||
-        GetExtension()->location() == extensions::Manifest::COMPONENT) {
+        extension()->location() == extensions::Manifest::COMPONENT) {
       if (options->type == extensions::api::app_window::WINDOW_TYPE_PANEL) {
         create_params.window_type = AppWindow::WINDOW_TYPE_PANEL;
       }
@@ -232,12 +240,38 @@ bool AppWindowCreateFunction::RunAsync() {
     if (!GetFrameOptions(*options, &create_params))
       return false;
 
-    if (options->transparent_background.get() &&
-        (GetExtension()->permissions_data()->HasAPIPermission(
-             APIPermission::kExperimental) ||
-         CommandLine::ForCurrentProcess()->HasSwitch(
-             switches::kEnableExperimentalExtensionApis))) {
-      create_params.transparent_background = *options->transparent_background;
+    if (options->alpha_enabled.get()) {
+      const char* whitelist[] = {
+        "0F42756099D914A026DADFA182871C015735DD95",  // http://crbug.com/323773
+        "2D22CDB6583FD0A13758AEBE8B15E45208B4E9A7",
+        "E7E2461CE072DF036CF9592740196159E2D7C089",  // http://crbug.com/356200
+        "A74A4D44C7CFCD8844830E6140C8D763E12DD8F3",
+        "312745D9BF916161191143F6490085EEA0434997",
+        "53041A2FA309EECED01FFC751E7399186E860B2C"
+      };
+      if (GetCurrentChannel() > chrome::VersionInfo::CHANNEL_DEV &&
+          !extensions::SimpleFeature::IsIdInList(
+              extension_id(),
+              std::set<std::string>(whitelist,
+                                    whitelist + arraysize(whitelist)))) {
+        error_ = app_window_constants::kAlphaEnabledWrongChannel;
+        return false;
+      }
+      if (!extension()->permissions_data()->HasAPIPermission(
+              APIPermission::kAlphaEnabled)) {
+        error_ = app_window_constants::kAlphaEnabledMissingPermission;
+        return false;
+      }
+      if (create_params.frame != AppWindow::FRAME_NONE) {
+        error_ = app_window_constants::kAlphaEnabledNeedsFrameNone;
+        return false;
+      }
+#if defined(USE_AURA)
+      create_params.alpha_enabled = *options->alpha_enabled;
+#else
+      // Transparency is only supported on Aura.
+      // Fallback to creating an opaque window (by ignoring alphaEnabled).
+#endif
     }
 
     if (options->hidden.get())
@@ -250,7 +284,7 @@ bool AppWindowCreateFunction::RunAsync() {
       create_params.always_on_top = *options->always_on_top.get();
 
       if (create_params.always_on_top &&
-          !GetExtension()->permissions_data()->HasAPIPermission(
+          !extension()->permissions_data()->HasAPIPermission(
               APIPermission::kAlwaysOnTopWindows)) {
         error_ = app_window_constants::kAlwaysOnTopPermission;
         return false;
@@ -281,8 +315,8 @@ bool AppWindowCreateFunction::RunAsync() {
   create_params.creator_process_id =
       render_view_host_->GetProcess()->GetID();
 
-  AppWindow* app_window = apps::AppsClient::Get()->CreateAppWindow(
-      browser_context(), GetExtension());
+  AppWindow* app_window =
+      apps::AppsClient::Get()->CreateAppWindow(browser_context(), extension());
   app_window->Init(
       url, new apps::AppWindowContentsImpl(app_window), create_params);
 
@@ -305,7 +339,7 @@ bool AppWindowCreateFunction::RunAsync() {
 
   if (apps::AppWindowRegistry::Get(browser_context())
           ->HadDevToolsAttached(created_view)) {
-    new DevToolsRestorer(this, created_view);
+    new DevToolsRestorer(this, app_window->web_contents());
     return true;
   }
 
@@ -430,7 +464,7 @@ bool AppWindowCreateFunction::GetBoundsSpec(
 AppWindow::Frame AppWindowCreateFunction::GetFrameFromString(
     const std::string& frame_string) {
   if (frame_string == kHtmlFrameOption &&
-      (GetExtension()->permissions_data()->HasAPIPermission(
+      (extension()->permissions_data()->HasAPIPermission(
            APIPermission::kExperimental) ||
        CommandLine::ForCurrentProcess()->HasSwitch(
            switches::kEnableExperimentalExtensionApis))) {

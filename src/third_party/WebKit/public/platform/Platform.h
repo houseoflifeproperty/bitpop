@@ -36,14 +36,18 @@
 #endif
 
 #include "WebAudioDevice.h"
+#include "WebBatteryStatusListener.h"
 #include "WebCommon.h"
 #include "WebData.h"
+#include "WebDeviceLightListener.h"
+#include "WebDeviceMotionListener.h"
+#include "WebDeviceOrientationListener.h"
 #include "WebGamepadListener.h"
 #include "WebGamepads.h"
 #include "WebGestureDevice.h"
 #include "WebGraphicsContext3D.h"
 #include "WebLocalizedString.h"
-#include "WebLockOrientationCallback.h"
+#include "WebPlatformEventType.h"
 #include "WebSpeechSynthesizer.h"
 #include "WebStorageQuotaCallbacks.h"
 #include "WebStorageQuotaType.h"
@@ -56,19 +60,17 @@ class GrContext;
 namespace blink {
 
 class WebAudioBus;
-class WebBatteryStatusListener;
 class WebBlobRegistry;
 class WebContentDecryptionModule;
 class WebClipboard;
 class WebCompositorSupport;
 class WebConvertableToTraceFormat;
 class WebCookieJar;
+class WebCredentialManager;
 class WebCrypto;
 class WebDatabaseObserver;
-class WebDeviceLightListener;
-class WebDeviceMotionListener;
-class WebDeviceOrientationListener;
 class WebDiscardableMemory;
+class WebPlatformEventListener;
 class WebFallbackThemeEngine;
 class WebFileSystem;
 class WebFileUtilities;
@@ -83,12 +85,14 @@ class WebMediaStreamCenter;
 class WebMediaStreamCenterClient;
 class WebMessagePortChannel;
 class WebMimeRegistry;
+class WebNotificationPresenter;
 class WebPluginListBuilder;
 class WebPrescientNetworking;
 class WebPublicSuffixList;
 class WebRTCPeerConnectionHandler;
 class WebRTCPeerConnectionHandlerClient;
 class WebSandboxSupport;
+class WebSecurityOrigin;
 class WebScrollbarBehavior;
 class WebSocketHandle;
 class WebSocketStreamHandle;
@@ -162,17 +166,14 @@ public:
     virtual WebMIDIAccessor* createMIDIAccessor(WebMIDIAccessorClient*) { return 0; }
 
 
-    // Battery -------------------------------------------------------------
-
-    // Sets the listener for watching battery status updates.
-    virtual void setBatteryStatusListener(blink::WebBatteryStatusListener*) { }
-
-
     // Blob ----------------------------------------------------------------
 
     // Must return non-null.
     virtual WebBlobRegistry* blobRegistry() { return 0; }
 
+    // Credential Management -----------------------------------------------
+
+    virtual WebCredentialManager* credentialManager() { return 0; }
 
     // Database ------------------------------------------------------------
 
@@ -190,7 +191,7 @@ public:
     virtual long long databaseGetFileSize(const WebString& vfsFileName) { return 0; }
 
     // Returns the space available for the given origin
-    virtual long long databaseGetSpaceAvailableForOrigin(const blink::WebString& originIdentifier) { return 0; }
+    virtual long long databaseGetSpaceAvailableForOrigin(const WebString& originIdentifier) { return 0; }
 
 
     // DOM Storage --------------------------------------------------
@@ -219,8 +220,6 @@ public:
     // Gamepad -------------------------------------------------------------
 
     virtual void sampleGamepads(WebGamepads& into) { into.length = 0; }
-
-    virtual void setGamepadListener(WebGamepadListener*) { }
 
 
     // History -------------------------------------------------------------
@@ -269,18 +268,6 @@ public:
     // memory currently allocated to this process that cannot be shared. Returns
     // false on platform specific error conditions.
     virtual bool processMemorySizesInBytes(size_t* privateBytes, size_t* sharedBytes) { return false; }
-
-    // A callback interface for requestProcessMemorySizes
-    class ProcessMemorySizesCallback {
-    public:
-        virtual ~ProcessMemorySizesCallback() { }
-        virtual void dataReceived(size_t privateBytes, size_t sharedBytes) = 0;
-    };
-
-    // Requests private and shared usage, in bytes. Private bytes is the amount of
-    // memory currently allocated to this process that cannot be shared.
-    // The callback ownership is passed to the callee.
-    virtual void requestProcessMemorySizes(ProcessMemorySizesCallback* requestCallback) { }
 
     // Reports number of bytes used by memory allocator for internal needs.
     // Returns true if the size has been reported, or false otherwise.
@@ -341,6 +328,8 @@ public:
 
     virtual WebURLError cancelledError(const WebURL&) const { return WebURLError(); }
 
+    virtual bool isReservedIPAddress(const WebURL&) const { return false; }
+    virtual bool isReservedIPAddress(const WebSecurityOrigin&) const { return false; }
 
     // Plugins -------------------------------------------------------------
 
@@ -608,26 +597,21 @@ public:
     virtual void didStartWorkerRunLoop(const WebWorkerRunLoop&) { }
     virtual void didStopWorkerRunLoop(const WebWorkerRunLoop&) { }
 
-
     // WebCrypto ----------------------------------------------------------
 
     virtual WebCrypto* crypto() { return 0; }
 
 
-    // Device Motion / Orientation / Light ----------------------------------------
+    // Platform events -----------------------------------------------------
+    // Device Orientation, Device Motion, Device Light, Battery, Gamepad.
 
-    // Sets a Listener to listen for device motion data updates.
-    // If null, the platform stops providing device motion data to the current listener.
-    virtual void setDeviceMotionListener(blink::WebDeviceMotionListener*) { }
+    // Request the platform to start listening to the events of the specified
+    // type and notify the given listener (if not null) when there is an update.
+    virtual void startListening(WebPlatformEventType type, WebPlatformEventListener* listener) { }
 
-    // Sets a Listener to listen for device orientation data updates.
-    // If null, the platform stops providing device orientation data to the current listener.
-    virtual void setDeviceOrientationListener(blink::WebDeviceOrientationListener*) { }
-
-    // Sets a Listener to listen for device light data updates.
-    // If null, the platform stops providing device light data to the current listener.
-    virtual void setDeviceLightListener(blink::WebDeviceLightListener*) { }
-
+    // Request the platform to stop listening to the specified event and no
+    // longer notify the listener, if any.
+    virtual void stopListening(WebPlatformEventType type) { }
 
     // Quota -----------------------------------------------------------
 
@@ -645,6 +629,11 @@ public:
     // WebDatabase --------------------------------------------------------
 
     virtual WebDatabaseObserver* databaseObserver() { return 0; }
+
+
+    // Web Notifications --------------------------------------------------
+
+    virtual WebNotificationPresenter* notificationPresenter() { return 0; }
 
 
 protected:

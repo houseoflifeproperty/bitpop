@@ -33,7 +33,7 @@
 
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalFrame;
 class FrameLoaderClient;
@@ -54,12 +54,10 @@ public:
     {
         return canRunInsecureContentInternal(securityOrigin, url, MixedContentChecker::Execution);
     }
-    bool canConnectInsecureWebSocket(SecurityOrigin* securityOrigin, const KURL& url) const
-    {
-        return canRunInsecureContentInternal(securityOrigin, url, MixedContentChecker::WebSocket);
-    }
 
     bool canSubmitToInsecureForm(SecurityOrigin*, const KURL&) const;
+    bool canConnectInsecureWebSocket(SecurityOrigin*, const KURL&) const;
+    bool canFrameInsecureContent(SecurityOrigin*, const KURL&) const;
     static bool isMixedContent(SecurityOrigin*, const KURL&);
 
 private:
@@ -82,6 +80,6 @@ private:
     LocalFrame* m_frame;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MixedContentChecker_h

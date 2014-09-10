@@ -28,19 +28,20 @@
 #define ShadowRoot_h
 
 #include "core/dom/ContainerNode.h"
-#include "core/dom/Document.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/Element.h"
 #include "core/dom/TreeScope.h"
 #include "wtf/DoublyLinkedList.h"
 
-namespace WebCore {
+namespace blink {
 
+class Document;
 class ElementShadow;
 class ExceptionState;
 class HTMLShadowElement;
 class InsertionPoint;
 class ShadowRootRareData;
+class StyleSheetList;
 
 class ShadowRoot FINAL : public DocumentFragment, public TreeScope, public DoublyLinkedListNode<ShadowRoot> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ShadowRoot);
@@ -133,7 +134,7 @@ private:
     virtual void dispose() OVERRIDE;
 #endif
 
-    virtual void childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta) OVERRIDE;
+    virtual void childrenChanged(const ChildrenChange&) OVERRIDE;
 
     ShadowRootRareData* ensureShadowRootRareData();
 

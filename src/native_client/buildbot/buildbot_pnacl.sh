@@ -30,33 +30,21 @@ readonly SCONS_EVERYTHING=""
 readonly SCONS_S_M="small_tests medium_tests"
 readonly SCONS_S_M_IRT="small_tests_irt medium_tests_irt"
 
+# This uses the newlib-based nonsfi_loader.
+readonly SCONS_NONSFI_NEWLIB="\
+    nonsfi_nacl=1 \
+    nonsfi_tests_irt"
+# This uses the host-libc-based nonsfi_loader.
 # Using skip_nonstable_bitcode=1 here disables the tests for zero-cost C++
 # exception handling, which don't pass for Non-SFI mode yet because we
 # don't build libgcc_eh for Non-SFI mode.
-# TODO(mseaborn): Run small_tests_irt with nonsfi_nacl=1 when it passes,
-# instead of the following whitelist of tests.
-readonly SCONS_NONSFI_TESTS="\
-    run_hello_world_test_irt \
-    run_float_test_irt \
-    run_malloc_realloc_calloc_free_test_irt \
-    run_dup_test_irt \
-    run_syscall_test_irt \
-    run_getpid_test_irt \
+readonly SCONS_NONSFI="\
+    nonsfi_nacl=1 \
+    nonsfi_tests \
+    nonsfi_tests_irt \
     toolchain_tests_irt \
-    skip_nonstable_bitcode=1"
-readonly SCONS_NONSFI="nonsfi_nacl=1 ${SCONS_NONSFI_TESTS}"
-# Extra non-IRT-using test to run for x86-32 and ARM on toolchain bots.
-# TODO(mseaborn): Run this on the main bots after the toolchain revision is
-# updated.
-readonly SCONS_NONSFI_TC="\
-    ${SCONS_NONSFI} \
-    run_clock_get_test \
-    run_dup_test \
-    run_hello_world_test \
-    run_mmap_test \
-    run_nanosleep_test \
-    run_printf_test \
-    run_pwrite_test"
+    skip_nonstable_bitcode=1 \
+    use_newlib_nonsfi_loader=0"
 
 # subset of tests used on toolchain builders
 readonly SCONS_TC_TESTS="small_tests medium_tests"
@@ -333,6 +321,7 @@ mode-buildbot-arm() {
     "toolchain_tests"
 
   # Test Non-SFI Mode.
+  scons-stage-irt "arm" "${qemuflags}" "${SCONS_NONSFI_NEWLIB}"
   scons-stage-irt "arm" "${qemuflags}" "${SCONS_NONSFI}"
 }
 
@@ -357,30 +346,16 @@ mode-buildbot-arm-hw() {
     "toolchain_tests"
 
   # Test Non-SFI Mode.
+  scons-stage-irt "arm" "${hwflags}" "${SCONS_NONSFI_NEWLIB}"
   scons-stage-irt "arm" "${hwflags}" "${SCONS_NONSFI}"
 }
 
 mode-trybot-qemu() {
-  # Build and actually run the arm tests under qemu, except
-  # sandboxed translation. Hopefully that's a good tradeoff between
-  # flakiness and cycle time.
-  FAIL_FAST=false
-  local qemuflags="-j4 -k"
   clobber
+  # TODO(dschuff): move the gyp build to buildbot_pnacl.py
   gyp-arm-build
 
-  scons-stage-noirt "arm" "${qemuflags}" "${SCONS_EVERYTHING}"
-  # Large tests cannot be run in parallel
-  scons-stage-noirt "arm" "${qemuflags} -j1" "${SCONS_S_M} large_tests"
-
-  # also run some tests with the irt
-  scons-stage-irt "arm" "${qemuflags}" "${SCONS_S_M_IRT}"
-
-  # non-pexe tests
-  scons-stage-noirt "arm" "${qemuflags} pnacl_generate_pexe=0" "nonpexe_tests"
-
-  # Test Non-SFI Mode.
-  scons-stage-irt "arm" "${qemuflags}" "${SCONS_NONSFI}"
+  buildbot/buildbot_pnacl.py opt arm pnacl
 }
 
 mode-buildbot-arm-dbg() {
@@ -427,38 +402,12 @@ tc-tests-all() {
   # newlib
   for arch in x86-32 x86-64 arm; do
     driver-tests "${arch}"
-    scons-stage-noirt "$arch" "${scons_flags}" "${SCONS_TC_TESTS}"
-    # Large tests cannot be run in parallel
-    scons-stage-noirt "$arch" "${scons_flags} -j1" "large_tests"
-    scons-stage-noirt "$arch" "${scons_flags} pnacl_generate_pexe=0" \
-        "nonpexe_tests"
   done
 
-  # Small set of sbtc tests w/ and without translate_fast=1.
-  scons-stage-irt "x86-32" "${scons_flags} use_sandboxed_translator=1" \
-    "toolchain_tests"
-  scons-stage-irt "x86-32" \
-    "${scons_flags} use_sandboxed_translator=1 translate_fast=1" \
-    "toolchain_tests"
-  scons-stage-irt "x86-64" "${scons_flags} use_sandboxed_translator=1" \
-    "toolchain_tests"
-  scons-stage-irt "x86-64" \
-    "${scons_flags} use_sandboxed_translator=1 translate_fast=1" \
-    "toolchain_tests"
-  # Smaller set of sbtc tests for ARM because qemu is flaky.
-  scons-stage-irt "arm" "${scons_flags} use_sandboxed_translator=1" \
-    "run_hello_world_test"
-  scons-stage-irt "arm" \
-    "${scons_flags} use_sandboxed_translator=1 translate_fast=1" \
-    "run_hello_world_test"
-
-  # Test Non-SFI Mode.
-  scons-stage-irt "x86-32" "${scons_flags}" "${SCONS_NONSFI_TC}"
-  scons-stage-irt "arm" "${scons_flags}" "${SCONS_NONSFI_TC}"
-
-  # Test unsandboxed mode.
-  scons-stage-irt "x86-32" "${scons_flags}" "pnacl_unsandboxed=1" \
-    "run_hello_world_test_irt"
+  # All the SCons tests (the same ones run by the main waterfall bot)
+  for arch in 32 64 arm; do
+    buildbot/buildbot_pnacl.py opt "${arch}" pnacl
+  done
 
   # Run the GCC torture tests just for x86-32.  Testing a single
   # architecture gives good coverage without taking too long.  We
@@ -466,9 +415,11 @@ tc-tests-all() {
   # the x86-64 toolchain trybot (though not the buildbots, apparently
   # due to a hardware difference:
   # https://code.google.com/p/nativeclient/issues/detail?id=3697).
+
   # Build the SDK libs first so that linking will succeed.
   echo "@@@BUILD_STEP sdk libs @@@"
   ${PNACL_BUILD} sdk
+  ./scons --verbose platform=x86-32 -j8 sel_ldr irt_core
 
   echo "@@@BUILD_STEP torture_tests x86-32 @@@"
   tools/toolchain_tester/torture_test.py pnacl x86-32 --verbose \

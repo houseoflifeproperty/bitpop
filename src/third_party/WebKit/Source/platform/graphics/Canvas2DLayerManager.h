@@ -30,9 +30,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 class Canvas2DLayerManagerTest;
 
-namespace WebCore {
+namespace blink {
 
-class PLATFORM_EXPORT Canvas2DLayerManager : public blink::WebThread::TaskObserver {
+class PLATFORM_EXPORT Canvas2DLayerManager : public WebThread::TaskObserver {
 public:
     static Canvas2DLayerManager& get();
 
@@ -49,7 +49,6 @@ private:
     // internal methods
     void freeMemoryIfNecessary();
     void addLayerToList(Canvas2DLayerBridge*);
-    void removeLayerFromList(Canvas2DLayerBridge*);
     virtual void willProcessTask() OVERRIDE;
     virtual void didProcessTask() OVERRIDE;
 
@@ -62,7 +61,7 @@ private:
     friend class ::Canvas2DLayerManagerTest; // for unit testing
 };
 
-}
+} // namespace blink
 
 #endif
 

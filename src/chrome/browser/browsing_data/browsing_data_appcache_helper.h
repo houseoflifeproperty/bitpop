@@ -5,15 +5,17 @@
 #ifndef CHROME_BROWSER_BROWSING_DATA_BROWSING_DATA_APPCACHE_HELPER_H_
 #define CHROME_BROWSER_BROWSING_DATA_BROWSING_DATA_APPCACHE_HELPER_H_
 
+#include <map>
+
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
+#include "content/public/browser/appcache_service.h"
 #include "net/base/completion_callback.h"
 #include "url/gurl.h"
-#include "webkit/browser/appcache/appcache_service.h"
 
 class Profile;
 
-namespace appcache {
+namespace content {
 class AppCacheService;
 }
 
@@ -22,14 +24,14 @@ class AppCacheService;
 class BrowsingDataAppCacheHelper
     : public base::RefCountedThreadSafe<BrowsingDataAppCacheHelper> {
  public:
-  typedef std::map<GURL, appcache::AppCacheInfoVector> OriginAppCacheInfoMap;
+  typedef std::map<GURL, content::AppCacheInfoVector> OriginAppCacheInfoMap;
 
   explicit BrowsingDataAppCacheHelper(Profile* profile);
 
   virtual void StartFetching(const base::Closure& completion_callback);
   virtual void DeleteAppCacheGroup(const GURL& manifest_url);
 
-  appcache::AppCacheInfoCollection* info_collection() const {
+  content::AppCacheInfoCollection* info_collection() const {
     DCHECK(!is_fetching_);
     return info_collection_.get();
   }
@@ -39,13 +41,13 @@ class BrowsingDataAppCacheHelper
   virtual ~BrowsingDataAppCacheHelper();
 
   base::Closure completion_callback_;
-  scoped_refptr<appcache::AppCacheInfoCollection> info_collection_;
+  scoped_refptr<content::AppCacheInfoCollection> info_collection_;
 
  private:
   void OnFetchComplete(int rv);
 
   bool is_fetching_;
-  appcache::AppCacheService* appcache_service_;
+  content::AppCacheService* appcache_service_;
   net::CancelableCompletionCallback appcache_info_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowsingDataAppCacheHelper);

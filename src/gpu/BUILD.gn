@@ -33,19 +33,21 @@
 #     //gpu/command_buffer/common
 #     (Merged in to here because the separate file exists in GYP only to break
 #     a .gyp file dependency cycle which GN doesn't have.)
+#
+# gpu/skia_bindings/skia_bindings.gyp:gpu_skia_bindings => //gpu/skia_bindings
 
 component("gpu") {
   deps = [
     "//gpu/command_buffer/client",
+    "//gpu/command_buffer/client:gles2_cmd_helper_sources",
     "//gpu/command_buffer/common",
     "//gpu/command_buffer/service",
-    "//gpu/command_buffer/client:gles2_cmd_helper",
     "//gpu/config",
     "//gpu/ipc",
   ]
 }
 
-source_set("gpu_unittest_utils") {
+source_set("test_support") {
   sources = [
     "command_buffer/service/gles2_cmd_decoder_mock.cc",
     "command_buffer/service/error_state_mock.cc",
@@ -97,19 +99,17 @@ test("gl_tests") {
 
   deps = [
     ":gpu",
-    ":gpu_unittest_utils",
+    ":test_support",
     "//base",
     "//base/third_party/dynamic_annotations",
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/angle:translator",
     "//ui/gfx",
+    "//ui/gfx:test_support",
     "//ui/gfx/geometry",
     "//ui/gl",
-    #"//gpu/command_buffer/client",  # These are all part of //gpu, needed?
-    #"//gpu/command_buffer/common",
-    #"//gpu/command_buffer/service",
-    #"//gpu/command_buffer/client:gles2_cmd_helper",
+    "//gpu/command_buffer/common:gles2_utils",
     "//gpu/command_buffer/client:gles2_c_lib",
     "//gpu/command_buffer/client:gles2_implementation_client_side_arrays",
   ]
@@ -209,7 +209,6 @@ test("gpu_unittests") {
     "config/gpu_control_list_entry_unittest.cc",
     "config/gpu_control_list_number_info_unittest.cc",
     "config/gpu_control_list_os_info_unittest.cc",
-    "config/gpu_control_list_string_info_unittest.cc",
     "config/gpu_control_list_unittest.cc",
     "config/gpu_control_list_version_info_unittest.cc",
     "config/gpu_driver_bug_list_unittest.cc",
@@ -222,7 +221,7 @@ test("gpu_unittests") {
 
   deps = [
     ":gpu",
-    ":gpu_unittest_utils",
+    ":test_support",
     "//base",
     "//base/test:test_support",
     "//base/third_party/dynamic_annotations",
@@ -230,9 +229,25 @@ test("gpu_unittests") {
     "//testing/gtest",
     "//third_party/angle:translator",
     "//ui/gfx",
+    "//ui/gfx:test_support",
     "//ui/gfx/geometry",
     "//ui/gl",
+    "//gpu/command_buffer/common:gles2_utils",
     "//gpu/command_buffer/client:gles2_c_lib",
     "//gpu/command_buffer/client:gles2_implementation_client_side_arrays",
+  ]
+}
+
+test("angle_unittests") {
+  sources = [
+    "angle_unittest_main.cc",
+  ]
+
+  deps = [
+    "//base",
+    "//base/third_party/dynamic_annotations",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//third_party/angle:translator_static",
   ]
 }

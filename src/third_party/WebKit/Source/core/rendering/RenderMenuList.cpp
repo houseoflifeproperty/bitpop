@@ -47,16 +47,14 @@
 #include "platform/text/PlatformLocale.h"
 #include <math.h>
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 RenderMenuList::RenderMenuList(Element* element)
     : RenderFlexibleBox(element)
-    , m_buttonText(0)
-    , m_innerBlock(0)
+    , m_buttonText(nullptr)
+    , m_innerBlock(nullptr)
     , m_optionsChanged(true)
     , m_optionsWidth(0)
     , m_lastActiveIndex(-1)
@@ -67,9 +65,22 @@ RenderMenuList::RenderMenuList(Element* element)
 
 RenderMenuList::~RenderMenuList()
 {
+    ASSERT(!m_popup);
+}
+
+void RenderMenuList::destroy()
+{
     if (m_popup)
         m_popup->disconnectClient();
     m_popup = nullptr;
+    RenderFlexibleBox::destroy();
+}
+
+void RenderMenuList::trace(Visitor* visitor)
+{
+    visitor->trace(m_buttonText);
+    visitor->trace(m_innerBlock);
+    RenderFlexibleBox::trace(visitor);
 }
 
 // FIXME: Instead of this hack we should add a ShadowRoot to <select> with no insertion point
@@ -141,7 +152,7 @@ void RenderMenuList::removeChild(RenderObject* oldChild)
 {
     if (oldChild == m_innerBlock || !m_innerBlock) {
         RenderFlexibleBox::removeChild(oldChild);
-        m_innerBlock = 0;
+        m_innerBlock = nullptr;
     } else
         m_innerBlock->removeChild(oldChild);
 }
@@ -181,9 +192,10 @@ void RenderMenuList::updateOptionsWidth()
                 optionWidth += minimumValueForLength(optionStyle->textIndent(), 0);
             if (!text.isEmpty())
                 optionWidth += style()->font().width(text);
-            maxOptionWidth = max(maxOptionWidth, optionWidth);
-        } else if (!text.isEmpty())
-            maxOptionWidth = max(maxOptionWidth, style()->font().width(text));
+            maxOptionWidth = std::max(maxOptionWidth, optionWidth);
+        } else if (!text.isEmpty()) {
+            maxOptionWidth = std::max(maxOptionWidth, style()->font().width(text));
+        }
     }
 
     int width = static_cast<int>(ceilf(maxOptionWidth));
@@ -245,7 +257,7 @@ void RenderMenuList::setTextFromOption(int optionIndex)
         } else {
             Locale& locale = select->locale();
             String localizedNumberString = locale.convertToLocalizedNumber(String::number(selectedCount));
-            text = locale.queryString(blink::WebLocalizedString::SelectMenuListText, localizedNumberString);
+            text = locale.queryString(WebLocalizedString::SelectMenuListText, localizedNumberString);
             ASSERT(!m_optionStyle);
         }
     } else {
@@ -323,7 +335,7 @@ LayoutRect RenderMenuList::controlClipRect(const LayoutPoint& additionalOffset) 
 
 void RenderMenuList::computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const
 {
-    maxLogicalWidth = max(m_optionsWidth, RenderTheme::theme().minimumMenuListSize(style())) + m_innerBlock->paddingLeft() + m_innerBlock->paddingRight();
+    maxLogicalWidth = std::max(m_optionsWidth, RenderTheme::theme().minimumMenuListSize(style())) + m_innerBlock->paddingLeft() + m_innerBlock->paddingRight();
     if (!style()->width().isPercent())
         minLogicalWidth = maxLogicalWidth;
 }
@@ -340,13 +352,13 @@ void RenderMenuList::computePreferredLogicalWidths()
         computeIntrinsicLogicalWidths(m_minPreferredLogicalWidth, m_maxPreferredLogicalWidth);
 
     if (styleToUse->minWidth().isFixed() && styleToUse->minWidth().value() > 0) {
-        m_maxPreferredLogicalWidth = max(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->minWidth().value()));
-        m_minPreferredLogicalWidth = max(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->minWidth().value()));
+        m_maxPreferredLogicalWidth = std::max(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->minWidth().value()));
+        m_minPreferredLogicalWidth = std::max(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->minWidth().value()));
     }
 
     if (styleToUse->maxWidth().isFixed()) {
-        m_maxPreferredLogicalWidth = min(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->maxWidth().value()));
-        m_minPreferredLogicalWidth = min(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->maxWidth().value()));
+        m_maxPreferredLogicalWidth = std::min(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->maxWidth().value()));
+        m_minPreferredLogicalWidth = std::min(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->maxWidth().value()));
     }
 
     LayoutUnit toAdd = borderAndPaddingWidth();
@@ -504,7 +516,8 @@ PopupMenuStyle RenderMenuList::itemStyle(unsigned listIndex) const
 
     RenderStyle* style = element->renderStyle() ? element->renderStyle() : element->computedStyle();
     return style ? PopupMenuStyle(resolveColor(style, CSSPropertyColor), itemBackgroundColor, style->font(), style->visibility() == VISIBLE,
-        style->display() == NONE, style->textIndent(), style->direction(), isOverride(style->unicodeBidi()),
+        isHTMLOptionElement(*element) ? toHTMLOptionElement(*element).isDisplayNone() : style->display() == NONE,
+        style->textIndent(), style->direction(), isOverride(style->unicodeBidi()),
         itemHasCustomBackgroundColor ? PopupMenuStyle::CustomBackgroundColor : PopupMenuStyle::DefaultBackgroundColor) : menuStyle();
 }
 
@@ -541,7 +554,7 @@ void RenderMenuList::getItemBackgroundColor(unsigned listIndex, Color& itemBackg
 
 PopupMenuStyle RenderMenuList::menuStyle() const
 {
-    const RenderObject* o = m_innerBlock ? m_innerBlock : this;
+    const RenderObject* o = m_innerBlock ? m_innerBlock.get() : this;
     const RenderStyle* s = o->style();
     return PopupMenuStyle(o->resolveColor(CSSPropertyColor), o->resolveColor(CSSPropertyBackgroundColor), s->font(), s->visibility() == VISIBLE,
         s->display() == NONE, s->textIndent(), style()->direction(), isOverride(style()->unicodeBidi()));
@@ -610,4 +623,4 @@ void RenderMenuList::setTextFromItem(unsigned listIndex)
     setTextFromOption(selectElement()->listToOptionIndex(listIndex));
 }
 
-}
+} // namespace blink

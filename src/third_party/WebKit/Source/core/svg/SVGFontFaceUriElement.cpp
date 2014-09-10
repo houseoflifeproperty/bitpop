@@ -30,7 +30,7 @@
 #include "core/fetch/ResourceFetcher.h"
 #include "core/svg/SVGFontFaceElement.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace SVGNames;
 
@@ -64,9 +64,9 @@ void SVGFontFaceUriElement::parseAttribute(const QualifiedName& name, const Atom
         SVGElement::parseAttribute(name, value);
 }
 
-void SVGFontFaceUriElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void SVGFontFaceUriElement::childrenChanged(const ChildrenChange& change)
 {
-    SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    SVGElement::childrenChanged(change);
 
     if (!isSVGFontFaceSrcElement(parentNode()))
         return;

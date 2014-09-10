@@ -8,13 +8,21 @@
 #include "core/css/CSSHelper.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSToLengthConversionData.h"
+#include "core/css/MediaValuesCached.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 
-namespace WebCore {
+namespace blink {
+
+PassRefPtr<MediaValues> MediaValuesDynamic::create(Document& document)
+{
+    return MediaValuesDynamic::create(frameFrom(document));
+}
 
 PassRefPtr<MediaValues> MediaValuesDynamic::create(LocalFrame* frame)
 {
+    if (!frame || !frame->view() || !frame->document() || !frame->document()->renderView())
+        return MediaValuesCached::create();
     return adoptRef(new MediaValuesDynamic(frame));
 }
 
@@ -99,19 +107,9 @@ bool MediaValuesDynamic::threeDEnabled() const
     return calculateThreeDEnabled(m_frame);
 }
 
-bool MediaValuesDynamic::scanMediaType() const
+const String MediaValuesDynamic::mediaType() const
 {
-    return calculateScanMediaType(m_frame);
-}
-
-bool MediaValuesDynamic::screenMediaType() const
-{
-    return calculateScreenMediaType(m_frame);
-}
-
-bool MediaValuesDynamic::printMediaType() const
-{
-    return calculatePrintMediaType(m_frame);
+    return calculateMediaType(m_frame);
 }
 
 bool MediaValuesDynamic::strictMode() const

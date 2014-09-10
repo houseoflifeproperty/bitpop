@@ -17,11 +17,11 @@
 #include "base/path_service.h"
 #include "base/pending_task.h"
 #include "base/strings/string_util.h"
+#include "base/sys_info.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "base/timer/hi_res_timer_manager.h"
 #include "content/child/child_process.h"
-#include "content/child/content_child_helpers.h"
 #include "content/common/content_constants_internal.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
@@ -34,7 +34,6 @@
 #include "ui/base/ui_base_switches.h"
 
 #if defined(OS_ANDROID)
-#include "base/android/sys_utils.h"
 #include "third_party/skia/include/core/SkGraphics.h"
 #endif  // OS_ANDROID
 
@@ -95,22 +94,6 @@ class RendererMessageLoopObserver : public base::MessageLoop::TaskObserver {
   DISALLOW_COPY_AND_ASSIGN(RendererMessageLoopObserver);
 };
 
-// For measuring memory usage after each task. Behind a command line flag.
-class MemoryObserver : public base::MessageLoop::TaskObserver {
- public:
-  MemoryObserver() {}
-  virtual ~MemoryObserver() {}
-
-  virtual void WillProcessTask(const base::PendingTask& pending_task) OVERRIDE {
-  }
-
-  virtual void DidProcessTask(const base::PendingTask& pending_task) OVERRIDE {
-    HISTOGRAM_MEMORY_KB("Memory.RendererUsed", GetMemoryUsageKB());
-  }
- private:
-  DISALLOW_COPY_AND_ASSIGN(MemoryObserver);
-};
-
 }  // namespace
 
 // mainline routine for running as the Renderer process
@@ -141,7 +124,7 @@ int RendererMain(const MainFunctionParams& parameters) {
 #if defined(OS_ANDROID)
   const int kMB = 1024 * 1024;
   size_t font_cache_limit =
-      base::android::SysUtils::IsLowEndDevice() ? kMB : 8 * kMB;
+      base::SysInfo::IsLowEndDevice() ? kMB : 8 * kMB;
   SkGraphics::SetFontCacheLimit(font_cache_limit);
 #endif
 
@@ -169,12 +152,6 @@ int RendererMain(const MainFunctionParams& parameters) {
   base::MessageLoop main_message_loop;
 #endif
   main_message_loop.AddTaskObserver(&task_observer);
-
-  scoped_ptr<MemoryObserver> memory_observer;
-  if (parsed_command_line.HasSwitch(switches::kMemoryMetrics)) {
-    memory_observer.reset(new MemoryObserver());
-    main_message_loop.AddTaskObserver(memory_observer.get());
-  }
 
   base::PlatformThread::SetName("CrRendererMain");
 

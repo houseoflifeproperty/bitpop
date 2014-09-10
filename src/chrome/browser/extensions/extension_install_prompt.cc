@@ -132,30 +132,25 @@ SkBitmap GetDefaultIconBitmapForMaxScaleFactor(bool is_app) {
 // If auto confirm is enabled then posts a task to proceed with or cancel the
 // install and returns true. Otherwise returns false.
 bool AutoConfirmPrompt(ExtensionInstallPrompt::Delegate* delegate) {
-  const CommandLine* cmdline = CommandLine::ForCurrentProcess();
-  if (!cmdline->HasSwitch(switches::kAppsGalleryInstallAutoConfirmForTests))
-    return false;
-  std::string value = cmdline->GetSwitchValueASCII(
-      switches::kAppsGalleryInstallAutoConfirmForTests);
-
-  // We use PostTask instead of calling the delegate directly here, because in
-  // the real implementations it's highly likely the message loop will be
-  // pumping a few times before the user clicks accept or cancel.
-  if (value == "accept") {
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&ExtensionInstallPrompt::Delegate::InstallUIProceed,
-                   base::Unretained(delegate)));
-    return true;
-  }
-
-  if (value == "cancel") {
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&ExtensionInstallPrompt::Delegate::InstallUIAbort,
-                   base::Unretained(delegate),
-                   true));
-    return true;
+  switch (ExtensionInstallPrompt::g_auto_confirm_for_tests) {
+    case ExtensionInstallPrompt::NONE:
+      return false;
+    // We use PostTask instead of calling the delegate directly here, because in
+    // the real implementations it's highly likely the message loop will be
+    // pumping a few times before the user clicks accept or cancel.
+    case ExtensionInstallPrompt::ACCEPT:
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&ExtensionInstallPrompt::Delegate::InstallUIProceed,
+                     base::Unretained(delegate)));
+      return true;
+    case ExtensionInstallPrompt::CANCEL:
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&ExtensionInstallPrompt::Delegate::InstallUIAbort,
+                     base::Unretained(delegate),
+                     true));
+      return true;
   }
 
   NOTREACHED();
@@ -176,6 +171,38 @@ gfx::NativeWindow NativeWindowForWebContents(content::WebContents* contents) {
 }
 
 }  // namespace
+
+// static
+ExtensionInstallPrompt::AutoConfirmForTests
+ExtensionInstallPrompt::g_auto_confirm_for_tests = ExtensionInstallPrompt::NONE;
+
+// This should match the PromptType enum.
+std::string ExtensionInstallPrompt::PromptTypeToString(PromptType type) {
+  switch (type) {
+    case ExtensionInstallPrompt::INSTALL_PROMPT:
+      return "INSTALL_PROMPT";
+    case ExtensionInstallPrompt::INLINE_INSTALL_PROMPT:
+      return "INLINE_INSTALL_PROMPT";
+    case ExtensionInstallPrompt::BUNDLE_INSTALL_PROMPT:
+      return "BUNDLE_INSTALL_PROMPT";
+    case ExtensionInstallPrompt::RE_ENABLE_PROMPT:
+      return "RE_ENABLE_PROMPT";
+    case ExtensionInstallPrompt::PERMISSIONS_PROMPT:
+      return "PERMISSIONS_PROMPT";
+    case ExtensionInstallPrompt::EXTERNAL_INSTALL_PROMPT:
+      return "EXTERNAL_INSTALL_PROMPT";
+    case ExtensionInstallPrompt::POST_INSTALL_PERMISSIONS_PROMPT:
+      return "POST_INSTALL_PERMISSIONS_PROMPT";
+    case ExtensionInstallPrompt::LAUNCH_PROMPT:
+      return "LAUNCH_PROMPT";
+    case ExtensionInstallPrompt::REMOTE_INSTALL_PROMPT:
+      return "REMOTE_INSTALL_PROMPT";
+    case ExtensionInstallPrompt::UNSET_PROMPT_TYPE:
+    case ExtensionInstallPrompt::NUM_PROMPT_TYPES:
+      break;
+  }
+  return "OTHER";
+}
 
 ExtensionInstallPrompt::Prompt::Prompt(PromptType type)
     : type_(type),

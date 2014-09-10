@@ -52,14 +52,16 @@
 #include "public/platform/WebExternalTextureMailbox.h"
 #include "public/platform/WebGraphicsContext3D.h"
 #include "public/platform/WebGraphicsContext3DProvider.h"
+#include "third_party/skia/include/core/SkPicture.h"
 #include "third_party/skia/include/effects/SkTableColorFilter.h"
 #include "wtf/MathExtras.h"
+#include "wtf/Vector.h"
 #include "wtf/text/Base64.h"
 #include "wtf/text/WTFString.h"
 
 using namespace std;
 
-namespace WebCore {
+namespace blink {
 
 PassOwnPtr<ImageBuffer> ImageBuffer::create(PassOwnPtr<ImageBufferSurface> surface)
 {
@@ -80,12 +82,12 @@ ImageBuffer::ImageBuffer(PassOwnPtr<ImageBufferSurface> surface)
     : m_surface(surface)
     , m_client(0)
 {
-    m_surface->setImageBuffer(this);
     if (m_surface->canvas()) {
         m_context = adoptPtr(new GraphicsContext(m_surface->canvas()));
         m_context->setCertainlyOpaque(m_surface->opacityMode() == Opaque);
         m_context->setAccelerated(m_surface->isAccelerated());
     }
+    m_surface->setImageBuffer(this);
 }
 
 ImageBuffer::~ImageBuffer()
@@ -96,20 +98,35 @@ GraphicsContext* ImageBuffer::context() const
 {
     if (!isSurfaceValid())
         return 0;
-    m_surface->willUse();
     ASSERT(m_context.get());
     return m_context.get();
 }
 
 const SkBitmap& ImageBuffer::bitmap() const
 {
-    m_surface->willUse();
     return m_surface->bitmap();
 }
 
 bool ImageBuffer::isSurfaceValid() const
 {
     return m_surface->isValid();
+}
+
+bool ImageBuffer::isDirty()
+{
+    return m_client ? m_client->isDirty() : false;
+}
+
+void ImageBuffer::didFinalizeFrame()
+{
+    if (m_client)
+        m_client->didFinalizeFrame();
+}
+
+void ImageBuffer::finalizeFrame(const FloatRect &dirtyRect)
+{
+    m_surface->finalizeFrame(dirtyRect);
+    didFinalizeFrame();
 }
 
 bool ImageBuffer::restoreSurface() const
@@ -146,12 +163,12 @@ BackingStoreCopy ImageBuffer::fastCopyImageMode()
     return DontCopyBackingStore;
 }
 
-blink::WebLayer* ImageBuffer::platformLayer() const
+WebLayer* ImageBuffer::platformLayer() const
 {
     return m_surface->layer();
 }
 
-bool ImageBuffer::copyToPlatformTexture(blink::WebGraphicsContext3D* context, Platform3DObject texture, GLenum internalFormat, GLenum destType, GLint level, bool premultiplyAlpha, bool flipY)
+bool ImageBuffer::copyToPlatformTexture(WebGraphicsContext3D* context, Platform3DObject texture, GLenum internalFormat, GLenum destType, GLint level, bool premultiplyAlpha, bool flipY)
 {
     if (!m_surface->isAccelerated() || !platformLayer() || !isSurfaceValid())
         return false;
@@ -159,14 +176,14 @@ bool ImageBuffer::copyToPlatformTexture(blink::WebGraphicsContext3D* context, Pl
     if (!Extensions3DUtil::canUseCopyTextureCHROMIUM(internalFormat, destType, level))
         return false;
 
-    OwnPtr<blink::WebGraphicsContext3DProvider> provider = adoptPtr(blink::Platform::current()->createSharedOffscreenGraphicsContext3DProvider());
+    OwnPtr<WebGraphicsContext3DProvider> provider = adoptPtr(Platform::current()->createSharedOffscreenGraphicsContext3DProvider());
     if (!provider)
         return false;
-    blink::WebGraphicsContext3D* sharedContext = provider->context3d();
+    WebGraphicsContext3D* sharedContext = provider->context3d();
     if (!sharedContext || !sharedContext->makeContextCurrent())
         return false;
 
-    OwnPtr<blink::WebExternalTextureMailbox> mailbox = adoptPtr(new blink::WebExternalTextureMailbox);
+    OwnPtr<WebExternalTextureMailbox> mailbox = adoptPtr(new WebExternalTextureMailbox);
 
     // Contexts may be in a different share group. We must transfer the texture through a mailbox first
     sharedContext->genMailboxCHROMIUM(mailbox->name);
@@ -217,10 +234,10 @@ bool ImageBuffer::copyRenderingResultsFromDrawingBuffer(DrawingBuffer* drawingBu
 {
     if (!drawingBuffer)
         return false;
-    OwnPtr<blink::WebGraphicsContext3DProvider> provider = adoptPtr(blink::Platform::current()->createSharedOffscreenGraphicsContext3DProvider());
+    OwnPtr<WebGraphicsContext3DProvider> provider = adoptPtr(Platform::current()->createSharedOffscreenGraphicsContext3DProvider());
     if (!provider)
         return false;
-    blink::WebGraphicsContext3D* context3D = provider->context3d();
+    WebGraphicsContext3D* context3D = provider->context3d();
     Platform3DObject tex = m_surface->getBackingTexture();
     if (!context3D || !tex)
         return false;
@@ -230,12 +247,18 @@ bool ImageBuffer::copyRenderingResultsFromDrawingBuffer(DrawingBuffer* drawingBu
         GL_UNSIGNED_BYTE, 0, true, false, fromFrontBuffer);
 }
 
-void ImageBuffer::draw(GraphicsContext* context, const FloatRect& destRect, const FloatRect* srcPtr, CompositeOperator op)
+void ImageBuffer::draw(GraphicsContext* context, const FloatRect& destRect, const FloatRect* srcPtr, CompositeOperator op, WebBlendMode blendMode)
 {
     if (!isSurfaceValid())
         return;
 
     FloatRect srcRect = srcPtr ? *srcPtr : FloatRect(FloatPoint(), size());
+    RefPtr<SkPicture> picture = m_surface->getPicture();
+    if (picture) {
+        context->drawPicture(picture.release(), destRect, srcRect, op, blendMode);
+        return;
+    }
+
     SkBitmap bitmap = m_surface->bitmap();
     // For ImageBufferSurface that enables cachedBitmap, Use the cached Bitmap for CPU side usage
     // if it is available, otherwise generate and use it.
@@ -246,7 +269,7 @@ void ImageBuffer::draw(GraphicsContext* context, const FloatRect& destRect, cons
 
     RefPtr<Image> image = BitmapImage::create(NativeImageSkia::create(drawNeedsCopy(m_context.get(), context) ? deepSkBitmapCopy(bitmap) : bitmap));
 
-    context->drawImage(image.get(), destRect, srcRect, op, blink::WebBlendModeNormal, DoNotRespectImageOrientation);
+    context->drawImage(image.get(), destRect, srcRect, op, blendMode, DoNotRespectImageOrientation);
 }
 
 void ImageBuffer::flush()
@@ -257,7 +280,7 @@ void ImageBuffer::flush()
 }
 
 void ImageBuffer::drawPattern(GraphicsContext* context, const FloatRect& srcRect, const FloatSize& scale,
-    const FloatPoint& phase, CompositeOperator op, const FloatRect& destRect, blink::WebBlendMode blendMode, const IntSize& repeatSpacing)
+    const FloatPoint& phase, CompositeOperator op, const FloatRect& destRect, WebBlendMode blendMode, const IntSize& repeatSpacing)
 {
     if (!isSurfaceValid())
         return;
@@ -281,7 +304,7 @@ void ImageBuffer::transformColorSpace(ColorSpace srcColorSpace, ColorSpace dstCo
     if (bitmap.isNull())
         return;
 
-    ASSERT(bitmap.colorType() == kPMColor_SkColorType);
+    ASSERT(bitmap.colorType() == kN32_SkColorType);
     IntSize size = m_surface->size();
     SkAutoLockPixels bitmapLock(bitmap);
     for (int y = 0; y < size.height(); ++y) {
@@ -307,9 +330,11 @@ PassRefPtr<SkColorFilter> ImageBuffer::createColorSpaceFilter(ColorSpace srcColo
     return adoptRef(SkTableColorFilter::CreateARGB(0, lut, lut, lut));
 }
 
-template <Multiply multiplied>
-PassRefPtr<Uint8ClampedArray> getImageData(const IntRect& rect, GraphicsContext* context, const IntSize& size)
+PassRefPtr<Uint8ClampedArray> ImageBuffer::getImageData(Multiply multiplied, const IntRect& rect) const
 {
+    if (!isSurfaceValid())
+        return Uint8ClampedArray::create(rect.width() * rect.height() * 4);
+
     float area = 4.0f * rect.width() * rect.height();
     if (area > static_cast<float>(std::numeric_limits<int>::max()))
         return nullptr;
@@ -318,29 +343,16 @@ PassRefPtr<Uint8ClampedArray> getImageData(const IntRect& rect, GraphicsContext*
 
     if (rect.x() < 0
         || rect.y() < 0
-        || rect.maxX() > size.width()
-        || rect.maxY() > size.height())
+        || rect.maxX() > m_surface->size().width()
+        || rect.maxY() > m_surface->size().height())
         result->zeroFill();
 
     SkAlphaType alphaType = (multiplied == Premultiplied) ? kPremul_SkAlphaType : kUnpremul_SkAlphaType;
     SkImageInfo info = SkImageInfo::Make(rect.width(), rect.height(), kRGBA_8888_SkColorType, alphaType);
 
-    context->readPixels(info, result->data(), 4 * rect.width(), rect.x(), rect.y());
+    m_surface->willAccessPixels();
+    context()->readPixels(info, result->data(), 4 * rect.width(), rect.x(), rect.y());
     return result.release();
-}
-
-PassRefPtr<Uint8ClampedArray> ImageBuffer::getUnmultipliedImageData(const IntRect& rect) const
-{
-    if (!isSurfaceValid())
-        return Uint8ClampedArray::create(rect.width() * rect.height() * 4);
-    return getImageData<Unmultiplied>(rect, context(), m_surface->size());
-}
-
-PassRefPtr<Uint8ClampedArray> ImageBuffer::getPremultipliedImageData(const IntRect& rect) const
-{
-    if (!isSurfaceValid())
-        return Uint8ClampedArray::create(rect.width() * rect.height() * 4);
-    return getImageData<Premultiplied>(rect, context(), m_surface->size());
 }
 
 void ImageBuffer::putByteArray(Multiply multiplied, Uint8ClampedArray* source, const IntSize& sourceSize, const IntRect& sourceRect, const IntPoint& destPoint)
@@ -367,8 +379,10 @@ void ImageBuffer::putByteArray(Multiply multiplied, Uint8ClampedArray* source, c
 
     const size_t srcBytesPerRow = 4 * sourceSize.width();
     const void* srcAddr = source->data() + originY * srcBytesPerRow + originX * 4;
-    const SkAlphaType alphaType = (multiplied == Premultiplied) ? kPremul_SkAlphaType : kUnpremul_SkAlphaType;
+    SkAlphaType alphaType = (multiplied == Premultiplied) ? kPremul_SkAlphaType : kUnpremul_SkAlphaType;
     SkImageInfo info = SkImageInfo::Make(sourceRect.width(), sourceRect.height(), kRGBA_8888_SkColorType, alphaType);
+
+    m_surface->willAccessPixels();
 
     context()->writePixels(info, srcAddr, srcBytesPerRow, destX, destY);
 }
@@ -426,4 +440,4 @@ String ImageDataToDataURL(const ImageDataBuffer& imageData, const String& mimeTy
     return "data:" + mimeType + ";base64," + base64Data;
 }
 
-} // namespace WebCore
+} // namespace blink

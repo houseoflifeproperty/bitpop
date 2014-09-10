@@ -8,13 +8,15 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <cmath>
 
+#include "include/v8.h"
 #include "src/allocation.h"
+#include "src/base/logging.h"
 #include "src/base/macros.h"
-#include "src/checks.h"
+#include "src/base/platform/platform.h"
 #include "src/globals.h"
 #include "src/list.h"
-#include "src/platform.h"
 #include "src/vector.h"
 
 namespace v8 {
@@ -23,17 +25,9 @@ namespace internal {
 // ----------------------------------------------------------------------------
 // General helper functions
 
-// Returns true iff x is a power of 2. Cannot be used with the maximally
-// negative value of the type T (the -1 overflows).
-template <typename T>
-inline bool IsPowerOf2(T x) {
-  return IS_POWER_OF_TWO(x);
-}
-
-
 // X must be a power of 2.  Returns the number of trailing zeros.
 inline int WhichPowerOf2(uint32_t x) {
-  ASSERT(IsPowerOf2(x));
+  DCHECK(IsPowerOf2(x));
   int bits = 0;
 #ifdef DEBUG
   int original_x = x;
@@ -57,7 +51,7 @@ inline int WhichPowerOf2(uint32_t x) {
     case 2: bits++;  // Fall through.
     case 1: break;
   }
-  ASSERT_EQ(1 << bits, original_x);
+  DCHECK_EQ(1 << bits, original_x);
   return bits;
   return 0;
 }
@@ -90,50 +84,6 @@ inline int ArithmeticShiftRight(int x, int s) {
 }
 
 
-// Compute the 0-relative offset of some absolute value x of type T.
-// This allows conversion of Addresses and integral types into
-// 0-relative int offsets.
-template <typename T>
-inline intptr_t OffsetFrom(T x) {
-  return x - static_cast<T>(0);
-}
-
-
-// Compute the absolute value of type T for some 0-relative offset x.
-// This allows conversion of 0-relative int offsets into Addresses and
-// integral types.
-template <typename T>
-inline T AddressFrom(intptr_t x) {
-  return static_cast<T>(static_cast<T>(0) + x);
-}
-
-
-// Return the largest multiple of m which is <= x.
-template <typename T>
-inline T RoundDown(T x, intptr_t m) {
-  ASSERT(IsPowerOf2(m));
-  return AddressFrom<T>(OffsetFrom(x) & -m);
-}
-
-
-// Return the smallest multiple of m which is >= x.
-template <typename T>
-inline T RoundUp(T x, intptr_t m) {
-  return RoundDown<T>(static_cast<T>(x + m - 1), m);
-}
-
-
-// Increment a pointer until it has the specified alignment.
-// This works like RoundUp, but it works correctly on pointer types where
-// sizeof(*pointer) might not be 1.
-template<class T>
-T AlignUp(T pointer, size_t alignment) {
-  ASSERT(sizeof(pointer) == sizeof(uintptr_t));
-  uintptr_t pointer_raw = reinterpret_cast<uintptr_t>(pointer);
-  return reinterpret_cast<T>(RoundUp(pointer_raw, alignment));
-}
-
-
 template <typename T>
 int Compare(const T& a, const T& b) {
   if (a == b)
@@ -158,35 +108,6 @@ template<typename T> class Handle;  // Forward declaration.
 template <typename T>
 int HandleObjectPointerCompare(const Handle<T>* a, const Handle<T>* b) {
   return Compare<T*>(*(*a), *(*b));
-}
-
-
-// Returns the smallest power of two which is >= x. If you pass in a
-// number that is already a power of two, it is returned as is.
-// Implementation is from "Hacker's Delight" by Henry S. Warren, Jr.,
-// figure 3-3, page 48, where the function is called clp2.
-inline uint32_t RoundUpToPowerOf2(uint32_t x) {
-  ASSERT(x <= 0x80000000u);
-  x = x - 1;
-  x = x | (x >> 1);
-  x = x | (x >> 2);
-  x = x | (x >> 4);
-  x = x | (x >> 8);
-  x = x | (x >> 16);
-  return x + 1;
-}
-
-
-inline uint32_t RoundDownToPowerOf2(uint32_t x) {
-  uint32_t rounded_up = RoundUpToPowerOf2(x);
-  if (rounded_up > x) return rounded_up >> 1;
-  return rounded_up;
-}
-
-
-template <typename T, typename U>
-inline bool IsAligned(T value, U alignment) {
-  return (value & (alignment - 1)) == 0;
 }
 
 
@@ -220,10 +141,12 @@ T Abs(T a) {
 }
 
 
-// Returns the negative absolute value of its argument.
-template <typename T>
-T NegAbs(T a) {
-  return a < 0 ? a : -a;
+// Floor(-0.0) == 0.0
+inline double Floor(double x) {
+#ifdef _MSC_VER
+  if (x == 0) return x;  // Fix for issue 3477.
+#endif
+  return std::floor(x);
 }
 
 
@@ -278,7 +201,7 @@ class BitFieldBase {
 
   // Returns a type U with the bit field value encoded.
   static U encode(T value) {
-    ASSERT(is_valid(value));
+    DCHECK(is_valid(value));
     return static_cast<U>(value) << shift;
   }
 
@@ -445,7 +368,7 @@ class Access {
   explicit Access(StaticResource<T>* resource)
     : resource_(resource)
     , instance_(&resource->instance_) {
-    ASSERT(!resource->is_reserved_);
+    DCHECK(!resource->is_reserved_);
     resource->is_reserved_ = true;
   }
 
@@ -473,12 +396,12 @@ class SetOncePointer {
   bool is_set() const { return pointer_ != NULL; }
 
   T* get() const {
-    ASSERT(pointer_ != NULL);
+    DCHECK(pointer_ != NULL);
     return pointer_;
   }
 
   void set(T* value) {
-    ASSERT(pointer_ == NULL && value != NULL);
+    DCHECK(pointer_ == NULL && value != NULL);
     pointer_ = value;
   }
 
@@ -502,7 +425,7 @@ class EmbeddedVector : public Vector<T> {
   EmbeddedVector(const EmbeddedVector& rhs)
       : Vector<T>(rhs) {
     MemCopy(buffer_, rhs.buffer_, sizeof(T) * kSize);
-    set_start(buffer_);
+    this->set_start(buffer_);
   }
 
   EmbeddedVector& operator=(const EmbeddedVector& rhs) {
@@ -558,7 +481,7 @@ class Collector {
   // A basic Collector will keep this vector valid as long as the Collector
   // is alive.
   inline Vector<T> AddBlock(int size, T initial_value) {
-    ASSERT(size > 0);
+    DCHECK(size > 0);
     if (size > current_chunk_.length() - index_) {
       Grow(size);
     }
@@ -592,7 +515,7 @@ class Collector {
 
   // Write the contents of the collector into the provided vector.
   void WriteTo(Vector<T> destination) {
-    ASSERT(size_ <= destination.length());
+    DCHECK(size_ <= destination.length());
     int position = 0;
     for (int i = 0; i < chunks_.length(); i++) {
       Vector<T> chunk = chunks_.at(i);
@@ -632,7 +555,7 @@ class Collector {
 
   // Creates a new current chunk, and stores the old chunk in the chunks_ list.
   void Grow(int min_capacity) {
-    ASSERT(growth_factor > 1);
+    DCHECK(growth_factor > 1);
     int new_capacity;
     int current_length = current_chunk_.length();
     if (current_length < kMinCapacity) {
@@ -650,7 +573,7 @@ class Collector {
       }
     }
     NewChunk(new_capacity);
-    ASSERT(index_ + min_capacity <= current_chunk_.length());
+    DCHECK(index_ + min_capacity <= current_chunk_.length());
   }
 
   // Before replacing the current chunk, give a subclass the option to move
@@ -689,12 +612,12 @@ class SequenceCollector : public Collector<T, growth_factor, max_growth> {
   virtual ~SequenceCollector() {}
 
   void StartSequence() {
-    ASSERT(sequence_start_ == kNoSequence);
+    DCHECK(sequence_start_ == kNoSequence);
     sequence_start_ = this->index_;
   }
 
   Vector<T> EndSequence() {
-    ASSERT(sequence_start_ != kNoSequence);
+    DCHECK(sequence_start_ != kNoSequence);
     int sequence_start = sequence_start_;
     sequence_start_ = kNoSequence;
     if (sequence_start == this->index_) return Vector<T>();
@@ -703,7 +626,7 @@ class SequenceCollector : public Collector<T, growth_factor, max_growth> {
 
   // Drops the currently added sequence, and all collected elements in it.
   void DropSequence() {
-    ASSERT(sequence_start_ != kNoSequence);
+    DCHECK(sequence_start_ != kNoSequence);
     int sequence_length = this->index_ - sequence_start_;
     this->index_ = sequence_start_;
     this->size_ -= sequence_length;
@@ -728,7 +651,7 @@ class SequenceCollector : public Collector<T, growth_factor, max_growth> {
     }
     int sequence_length = this->index_ - sequence_start_;
     Vector<T> new_chunk = Vector<T>::New(sequence_length + new_capacity);
-    ASSERT(sequence_length < new_chunk.length());
+    DCHECK(sequence_length < new_chunk.length());
     for (int i = 0; i < sequence_length; i++) {
       new_chunk[i] = this->current_chunk_[sequence_start_ + i];
     }
@@ -775,8 +698,8 @@ inline int CompareCharsUnsigned(const lchar* lhs,
 
 template<typename lchar, typename rchar>
 inline int CompareChars(const lchar* lhs, const rchar* rhs, int chars) {
-  ASSERT(sizeof(lchar) <= 2);
-  ASSERT(sizeof(rchar) <= 2);
+  DCHECK(sizeof(lchar) <= 2);
+  DCHECK(sizeof(rchar) <= 2);
   if (sizeof(lchar) == 1) {
     if (sizeof(rchar) == 1) {
       return CompareCharsUnsigned(reinterpret_cast<const uint8_t*>(lhs),
@@ -803,8 +726,8 @@ inline int CompareChars(const lchar* lhs, const rchar* rhs, int chars) {
 
 // Calculate 10^exponent.
 inline int TenToThe(int exponent) {
-  ASSERT(exponent <= 9);
-  ASSERT(exponent >= 1);
+  DCHECK(exponent <= 9);
+  DCHECK(exponent >= 1);
   int answer = 10;
   for (int i = 1; i < exponent; i++) answer *= 10;
   return answer;
@@ -874,11 +797,11 @@ class EmbeddedContainer {
 
   int length() const { return NumElements; }
   const ElementType& operator[](int i) const {
-    ASSERT(i < length());
+    DCHECK(i < length());
     return elems_[i];
   }
   ElementType& operator[](int i) {
-    ASSERT(i < length());
+    DCHECK(i < length());
     return elems_[i];
   }
 
@@ -924,7 +847,7 @@ class SimpleStringBuilder {
 
   // Get the current position in the builder.
   int position() const {
-    ASSERT(!is_finalized());
+    DCHECK(!is_finalized());
     return position_;
   }
 
@@ -935,8 +858,8 @@ class SimpleStringBuilder {
   // 0-characters; use the Finalize() method to terminate the string
   // instead.
   void AddCharacter(char c) {
-    ASSERT(c != '\0');
-    ASSERT(!is_finalized() && position_ < buffer_.length());
+    DCHECK(c != '\0');
+    DCHECK(!is_finalized() && position_ < buffer_.length());
     buffer_[position_++] = c;
   }
 
@@ -995,9 +918,9 @@ class EnumSet {
 
  private:
   T Mask(E element) const {
-    // The strange typing in ASSERT is necessary to avoid stupid warnings, see:
+    // The strange typing in DCHECK is necessary to avoid stupid warnings, see:
     // http://gcc.gnu.org/bugzilla/show_bug.cgi?id=43680
-    ASSERT(static_cast<int>(element) < static_cast<int>(sizeof(T) * CHAR_BIT));
+    DCHECK(static_cast<int>(element) < static_cast<int>(sizeof(T) * CHAR_BIT));
     return static_cast<T>(1) << element;
   }
 
@@ -1024,19 +947,19 @@ inline int signed_bitextract_64(int msb, int lsb, int x) {
 
 // Check number width.
 inline bool is_intn(int64_t x, unsigned n) {
-  ASSERT((0 < n) && (n < 64));
+  DCHECK((0 < n) && (n < 64));
   int64_t limit = static_cast<int64_t>(1) << (n - 1);
   return (-limit <= x) && (x < limit);
 }
 
 inline bool is_uintn(int64_t x, unsigned n) {
-  ASSERT((0 < n) && (n < (sizeof(x) * kBitsPerByte)));
+  DCHECK((0 < n) && (n < (sizeof(x) * kBitsPerByte)));
   return !(x >> n);
 }
 
 template <class T>
 inline T truncate_to_intn(T x, unsigned n) {
-  ASSERT((0 < n) && (n < (sizeof(x) * kBitsPerByte)));
+  DCHECK((0 < n) && (n < (sizeof(x) * kBitsPerByte)));
   return (x & ((static_cast<T>(1) << n) - 1));
 }
 
@@ -1242,9 +1165,9 @@ inline void CopyWords(T* dst, const T* src, size_t num_words) {
   // TODO(mvstanton): disabled because mac builds are bogus failing on this
   // assert. They are doing a signed comparison. Investigate in
   // the morning.
-  // ASSERT(Min(dst, const_cast<T*>(src)) + num_words <=
+  // DCHECK(Min(dst, const_cast<T*>(src)) + num_words <=
   //       Max(dst, const_cast<T*>(src)));
-  ASSERT(num_words > 0);
+  DCHECK(num_words > 0);
 
   // Use block copying MemCopy if the segment we're copying is
   // enough to justify the extra call/setup overhead.
@@ -1265,7 +1188,7 @@ inline void CopyWords(T* dst, const T* src, size_t num_words) {
 template <typename T>
 inline void MoveWords(T* dst, const T* src, size_t num_words) {
   STATIC_ASSERT(sizeof(T) == kPointerSize);
-  ASSERT(num_words > 0);
+  DCHECK(num_words > 0);
 
   // Use block copying MemCopy if the segment we're copying is
   // enough to justify the extra call/setup overhead.
@@ -1288,7 +1211,7 @@ inline void MoveWords(T* dst, const T* src, size_t num_words) {
 template <typename T>
 inline void CopyBytes(T* dst, const T* src, size_t num_bytes) {
   STATIC_ASSERT(sizeof(T) == 1);
-  ASSERT(Min(dst, const_cast<T*>(src)) + num_bytes <=
+  DCHECK(Min(dst, const_cast<T*>(src)) + num_bytes <=
          Max(dst, const_cast<T*>(src)));
   if (num_bytes == 0) return;
 
@@ -1318,7 +1241,11 @@ inline void MemsetPointer(T** dest, U* value, int counter) {
 #if V8_HOST_ARCH_IA32
 #define STOS "stosl"
 #elif V8_HOST_ARCH_X64
+#if V8_HOST_ARCH_32_BIT
+#define STOS "addr32 stosl"
+#else
 #define STOS "stosq"
+#endif
 #endif
 #if defined(__native_client__)
   // This STOS sequence does not validate for x86_64 Native Client.
@@ -1395,8 +1322,8 @@ INLINE(void CopyChars(sinkchar* dest, const sourcechar* src, int chars));
 
 template<typename sourcechar, typename sinkchar>
 void CopyChars(sinkchar* dest, const sourcechar* src, int chars) {
-  ASSERT(sizeof(sourcechar) <= 2);
-  ASSERT(sizeof(sinkchar) <= 2);
+  DCHECK(sizeof(sourcechar) <= 2);
+  DCHECK(sizeof(sinkchar) <= 2);
   if (sizeof(sinkchar) == 1) {
     if (sizeof(sourcechar) == 1) {
       CopyCharsUnsigned(reinterpret_cast<uint8_t*>(dest),
@@ -1431,7 +1358,7 @@ void CopyCharsUnsigned(sinkchar* dest, const sourcechar* src, int chars) {
     }
     // Number of characters in a uintptr_t.
     static const int kStepSize = sizeof(uintptr_t) / sizeof(*dest);  // NOLINT
-    ASSERT(dest + kStepSize > dest);  // Check for overflow.
+    DCHECK(dest + kStepSize > dest);  // Check for overflow.
     while (dest + kStepSize <= limit) {
       *reinterpret_cast<uintptr_t*>(dest) =
           *reinterpret_cast<const uintptr_t*>(src);
@@ -1576,6 +1503,36 @@ class StringBuilder : public SimpleStringBuilder {
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(StringBuilder);
 };
+
+
+bool DoubleToBoolean(double d);
+
+template <typename Stream>
+bool StringToArrayIndex(Stream* stream, uint32_t* index) {
+  uint16_t ch = stream->GetNext();
+
+  // If the string begins with a '0' character, it must only consist
+  // of it to be a legal array index.
+  if (ch == '0') {
+    *index = 0;
+    return !stream->HasMore();
+  }
+
+  // Convert string to uint32 array index; character by character.
+  int d = ch - '0';
+  if (d < 0 || d > 9) return false;
+  uint32_t result = d;
+  while (stream->HasMore()) {
+    d = stream->GetNext() - '0';
+    if (d < 0 || d > 9) return false;
+    // Check that the new result is below the 32 bit limit.
+    if (result > 429496729U - ((d > 5) ? 1 : 0)) return false;
+    result = (result * 10) + d;
+  }
+
+  *index = result;
+  return true;
+}
 
 
 } }  // namespace v8::internal

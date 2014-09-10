@@ -178,15 +178,6 @@
     display: flex;
 }
 
-.sidebar-pane-subtitle {
-    position: absolute;
-    right: 0;
-}
-
-body.platform-windows .sidebar-pane-subtitle {
-    padding-top: 1px;
-}
-
 .section > .header input[type=checkbox] {
     height: 1em;
     width: 1em;
@@ -202,4 +193,23 @@ body.platform-windows .sidebar-pane-subtitle {
     padding: 4px;
     color: #888;
     background-color: #FFFFC2;
+}
+
+.sidebar-pane-button-new-rule {
+    background-image: url(Images/paneAddButtons.png);
+    background-position: 0 0;
+    position: absolute;
+    height: 16px;
+    width: 23px;
+    right: 10px;
+    bottom: 1px;
+    visibility: hidden;
+}
+
+.styles-section.matched-styles:not(.read-only):hover .sidebar-pane-button-new-rule {
+    visibility: visible;
+}
+
+.sidebar-pane-button-new-rule:hover {
+    background-position: -23px 0;
 }

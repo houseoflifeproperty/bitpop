@@ -34,7 +34,8 @@ class ImageTransportSurfaceFBO
     // Allocate the storage for the color buffer. The specified context is
     // current, and there is a texture bound to GL_TEXTURE_RECTANGLE_ARB.
     virtual bool AllocateColorBufferStorage(
-        CGLContextObj context, gfx::Size size) = 0;
+        CGLContextObj context, GLuint texture,
+        gfx::Size size, float scale_factor) = 0;
 
     // Free the storage allocated in the AllocateColorBufferStorage call. The
     // GL texture that was bound has already been deleted by the caller.
@@ -43,10 +44,20 @@ class ImageTransportSurfaceFBO
     // Retrieve the handle for the surface to send to the browser process to
     // display.
     virtual uint64 GetSurfaceHandle() const = 0;
+
+    // Called when a new frame has been rendered into the texture, and the
+    // browser is about to be sent the surface to display.
+    virtual void WillSwapBuffers() = 0;
+
+    // Called once for every WillSwapBuffers call when the buffer that was sent
+    // to the browser may be released by the GPU process (this may be because
+    // the browser is holding a reference, in which case this will come
+    // quickly, or it may be because the browser is done with the surface, in
+    // which case it will come much later).
+    virtual void CanFreeSwappedBuffer() = 0;
   };
 
-  ImageTransportSurfaceFBO(StorageProvider* storage_provider,
-                           GpuChannelManager* manager,
+  ImageTransportSurfaceFBO(GpuChannelManager* manager,
                            GpuCommandBufferStub* stub,
                            gfx::PluginWindowHandle handle);
 
@@ -65,6 +76,9 @@ class ImageTransportSurfaceFBO
   virtual unsigned int GetBackingFrameBufferObject() OVERRIDE;
   virtual bool SetBackbufferAllocation(bool allocated) OVERRIDE;
   virtual void SetFrontbufferAllocation(bool allocated) OVERRIDE;
+
+  // Called when the context may continue to make forward progress after a swap.
+  void UnblockContextAfterPendingSwap();
 
  protected:
   // ImageTransportSurface implementation

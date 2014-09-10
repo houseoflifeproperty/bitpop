@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/chromeos/file_system_provider/operations/get_metadata.h"
+
 #include <string>
 
 #include "base/files/file.h"
@@ -10,7 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/file_system_provider/operations/get_metadata.h"
+#include "chrome/browser/chromeos/file_system_provider/operations/test_util.h"
 #include "chrome/common/extensions/api/file_system_provider.h"
 #include "chrome/common/extensions/api/file_system_provider_internal.h"
 #include "extensions/browser/event_router.h"
@@ -24,68 +26,41 @@ namespace {
 
 const char kExtensionId[] = "mbflcebpggnecokmikipoihdbecnjfoj";
 const char kFileSystemId[] = "testing-file-system";
+const char kMimeType[] = "text/plain";
 const int kRequestId = 2;
 const base::FilePath::CharType kDirectoryPath[] = "/directory";
-
-// Fake event dispatcher implementation with extra logging capability. Acts as
-// a providing extension end-point.
-class LoggingDispatchEventImpl {
- public:
-  explicit LoggingDispatchEventImpl(bool dispatch_reply)
-      : dispatch_reply_(dispatch_reply) {}
-  virtual ~LoggingDispatchEventImpl() {}
-
-  bool OnDispatchEventImpl(scoped_ptr<extensions::Event> event) {
-    events_.push_back(event->DeepCopy());
-    return dispatch_reply_;
-  }
-
-  ScopedVector<extensions::Event>& events() { return events_; }
-
- private:
-  ScopedVector<extensions::Event> events_;
-  bool dispatch_reply_;
-
-  DISALLOW_COPY_AND_ASSIGN(LoggingDispatchEventImpl);
-};
 
 // Callback invocation logger. Acts as a fileapi end-point.
 class CallbackLogger {
  public:
   class Event {
    public:
-    Event(base::File::Error result, const base::File::Info& file_info)
-        : result_(result), file_info_(file_info) {}
+    Event(const EntryMetadata& metadata, base::File::Error result)
+        : metadata_(metadata), result_(result) {}
     virtual ~Event() {}
 
+    const EntryMetadata& metadata() { return metadata_; }
     base::File::Error result() { return result_; }
-    const base::File::Info& file_info() { return file_info_; }
 
    private:
+    EntryMetadata metadata_;
     base::File::Error result_;
-    base::File::Info file_info_;
 
     DISALLOW_COPY_AND_ASSIGN(Event);
   };
 
-  CallbackLogger() : weak_ptr_factory_(this) {}
+  CallbackLogger() {}
   virtual ~CallbackLogger() {}
 
-  void OnGetMetadata(base::File::Error result,
-                     const base::File::Info& file_info) {
-    events_.push_back(new Event(result, file_info));
+  void OnGetMetadata(const EntryMetadata& metadata, base::File::Error result) {
+    events_.push_back(new Event(metadata, result));
   }
 
   ScopedVector<Event>& events() { return events_; }
 
-  base::WeakPtr<CallbackLogger> GetWeakPtr() {
-    return weak_ptr_factory_.GetWeakPtr();
-  }
-
  private:
   ScopedVector<Event> events_;
   bool dispatch_reply_;
-  base::WeakPtrFactory<CallbackLogger> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CallbackLogger);
 };
@@ -101,7 +76,8 @@ class FileSystemProviderOperationsGetMetadataTest : public testing::Test {
     file_system_info_ =
         ProvidedFileSystemInfo(kExtensionId,
                                kFileSystemId,
-                               "" /* file_system_name */,
+                               "" /* display_name */,
+                               false /* writable */,
                                base::FilePath() /* mount_path */);
   }
 
@@ -109,16 +85,16 @@ class FileSystemProviderOperationsGetMetadataTest : public testing::Test {
 };
 
 TEST_F(FileSystemProviderOperationsGetMetadataTest, Execute) {
-  LoggingDispatchEventImpl dispatcher(true /* dispatch_reply */);
+  util::LoggingDispatchEventImpl dispatcher(true /* dispatch_reply */);
   CallbackLogger callback_logger;
 
-  GetMetadata get_metadata(
-      NULL,
-      file_system_info_,
-      base::FilePath::FromUTF8Unsafe(kDirectoryPath),
-      base::Bind(&CallbackLogger::OnGetMetadata, callback_logger.GetWeakPtr()));
+  GetMetadata get_metadata(NULL,
+                           file_system_info_,
+                           base::FilePath::FromUTF8Unsafe(kDirectoryPath),
+                           base::Bind(&CallbackLogger::OnGetMetadata,
+                                      base::Unretained(&callback_logger)));
   get_metadata.SetDispatchEventImplForTesting(
-      base::Bind(&LoggingDispatchEventImpl::OnDispatchEventImpl,
+      base::Bind(&util::LoggingDispatchEventImpl::OnDispatchEventImpl,
                  base::Unretained(&dispatcher)));
 
   EXPECT_TRUE(get_metadata.Execute(kRequestId));
@@ -148,36 +124,35 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, Execute) {
 }
 
 TEST_F(FileSystemProviderOperationsGetMetadataTest, Execute_NoListener) {
-  LoggingDispatchEventImpl dispatcher(false /* dispatch_reply */);
+  util::LoggingDispatchEventImpl dispatcher(false /* dispatch_reply */);
   CallbackLogger callback_logger;
 
-  GetMetadata get_metadata(
-      NULL,
-      file_system_info_,
-      base::FilePath::FromUTF8Unsafe(kDirectoryPath),
-      base::Bind(&CallbackLogger::OnGetMetadata, callback_logger.GetWeakPtr()));
+  GetMetadata get_metadata(NULL,
+                           file_system_info_,
+                           base::FilePath::FromUTF8Unsafe(kDirectoryPath),
+                           base::Bind(&CallbackLogger::OnGetMetadata,
+                                      base::Unretained(&callback_logger)));
   get_metadata.SetDispatchEventImplForTesting(
-      base::Bind(&LoggingDispatchEventImpl::OnDispatchEventImpl,
+      base::Bind(&util::LoggingDispatchEventImpl::OnDispatchEventImpl,
                  base::Unretained(&dispatcher)));
 
   EXPECT_FALSE(get_metadata.Execute(kRequestId));
 }
 
 TEST_F(FileSystemProviderOperationsGetMetadataTest, OnSuccess) {
-  using extensions::api::file_system_provider::EntryMetadata;
   using extensions::api::file_system_provider_internal::
       GetMetadataRequestedSuccess::Params;
 
-  LoggingDispatchEventImpl dispatcher(true /* dispatch_reply */);
+  util::LoggingDispatchEventImpl dispatcher(true /* dispatch_reply */);
   CallbackLogger callback_logger;
 
-  GetMetadata get_metadata(
-      NULL,
-      file_system_info_,
-      base::FilePath::FromUTF8Unsafe(kDirectoryPath),
-      base::Bind(&CallbackLogger::OnGetMetadata, callback_logger.GetWeakPtr()));
+  GetMetadata get_metadata(NULL,
+                           file_system_info_,
+                           base::FilePath::FromUTF8Unsafe(kDirectoryPath),
+                           base::Bind(&CallbackLogger::OnGetMetadata,
+                                      base::Unretained(&callback_logger)));
   get_metadata.SetDispatchEventImplForTesting(
-      base::Bind(&LoggingDispatchEventImpl::OnDispatchEventImpl,
+      base::Bind(&util::LoggingDispatchEventImpl::OnDispatchEventImpl,
                  base::Unretained(&dispatcher)));
 
   EXPECT_TRUE(get_metadata.Execute(kRequestId));
@@ -195,8 +170,10 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, OnSuccess) {
       "    \"size\": 4096,\n"
       "    \"modificationTime\": {\n"
       "      \"value\": \"Thu Apr 24 00:46:52 UTC 2014\"\n"
-      "    }\n"
-      "  }\n"
+      "    },\n"
+      "    \"mimeType\": \"text/plain\"\n"  // kMimeType
+      "  },\n"
+      "  0\n"  // execution_time
       "]\n";
 
   int json_error_code;
@@ -220,35 +197,34 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, OnSuccess) {
   CallbackLogger::Event* event = callback_logger.events()[0];
   EXPECT_EQ(base::File::FILE_OK, event->result());
 
-  const base::File::Info& file_info = event->file_info();
-  EXPECT_FALSE(file_info.is_directory);
-  EXPECT_EQ(4096, file_info.size);
+  const EntryMetadata& metadata = event->metadata();
+  EXPECT_FALSE(metadata.is_directory);
+  EXPECT_EQ(4096, metadata.size);
   base::Time expected_time;
   EXPECT_TRUE(
       base::Time::FromString("Thu Apr 24 00:46:52 UTC 2014", &expected_time));
-  EXPECT_EQ(expected_time, file_info.last_modified);
+  EXPECT_EQ(expected_time, metadata.modification_time);
+  EXPECT_EQ(kMimeType, metadata.mime_type);
 }
 
 TEST_F(FileSystemProviderOperationsGetMetadataTest, OnError) {
-  using extensions::api::file_system_provider::EntryMetadata;
-  using extensions::api::file_system_provider_internal::
-      GetMetadataRequestedError::Params;
-
-  LoggingDispatchEventImpl dispatcher(true /* dispatch_reply */);
+  util::LoggingDispatchEventImpl dispatcher(true /* dispatch_reply */);
   CallbackLogger callback_logger;
 
-  GetMetadata get_metadata(
-      NULL,
-      file_system_info_,
-      base::FilePath::FromUTF8Unsafe(kDirectoryPath),
-      base::Bind(&CallbackLogger::OnGetMetadata, callback_logger.GetWeakPtr()));
+  GetMetadata get_metadata(NULL,
+                           file_system_info_,
+                           base::FilePath::FromUTF8Unsafe(kDirectoryPath),
+                           base::Bind(&CallbackLogger::OnGetMetadata,
+                                      base::Unretained(&callback_logger)));
   get_metadata.SetDispatchEventImplForTesting(
-      base::Bind(&LoggingDispatchEventImpl::OnDispatchEventImpl,
+      base::Bind(&util::LoggingDispatchEventImpl::OnDispatchEventImpl,
                  base::Unretained(&dispatcher)));
 
   EXPECT_TRUE(get_metadata.Execute(kRequestId));
 
-  get_metadata.OnError(kRequestId, base::File::FILE_ERROR_TOO_MANY_OPENED);
+  get_metadata.OnError(kRequestId,
+                       scoped_ptr<RequestValue>(new RequestValue()),
+                       base::File::FILE_ERROR_TOO_MANY_OPENED);
 
   ASSERT_EQ(1u, callback_logger.events().size());
   CallbackLogger::Event* event = callback_logger.events()[0];

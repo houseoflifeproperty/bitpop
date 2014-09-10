@@ -8,35 +8,80 @@
 #include <string>
 
 #include "base/gtest_prod_util.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
+#include "components/translate/content/renderer/renderer_cld_data_provider.h"
 #include "components/translate/core/common/translate_errors.h"
 #include "content/public/renderer/render_view_observer.h"
-
-#if defined(CLD2_DYNAMIC_MODE)
-#include "base/files/file.h"
-#include "base/files/memory_mapped_file.h"
-#include "base/lazy_instance.h"
-#include "ipc/ipc_platform_file.h"
 #include "url/gurl.h"
-#endif
 
 namespace blink {
 class WebDocument;
 class WebFrame;
 }
 
+namespace content {
+class RendererCldDataProvider;
+}
+
 // This class deals with page translation.
 // There is one TranslateHelper per RenderView.
-
+//
+// This class provides metrics that allow tracking the user experience impact
+// of non-static CldDataProvider implementations. For background on the data
+// providers, please refer to the following documentation:
+// http://www.chromium.org/developers/how-tos/compact-language-detector-cld-data-source-configuration
+//
+// Available metrics (from the LanguageDetectionTiming enum):
+// 1. ON_TIME
+//    Recorded if PageCaptured(...) is invoked after CLD is available. This is
+//    the ideal case, indicating that CLD is available before it is needed.
+// 2. DEFERRED
+//    Recorded if PageCaptured(...) is invoked before CLD is available.
+//    Sub-optimal case indicating that CLD wasn't available when it was needed,
+//    so the request for detection has been deferred until CLD is available or
+//    until the user navigates to a different page.
+// 3. RESUMED
+//    Recorded if CLD becomes available after a language detection request was
+//    deferred, but before the user navigated to a different page. Language
+//    detection is ultimately completed, it just didn't happen on time.
+//
+// Note that there is NOT a metric that records the number of times that
+// language detection had to be aborted because CLD never became available in
+// time. This is because there is no reasonable way to cover all the cases
+// under which this could occur, particularly the destruction of the renderer
+// for which this object was created. However, this value can be synthetically
+// derived, using the logic below.
+//
+// Every page load that triggers language detection will result in the
+// recording of exactly one of the first two events: ON_TIME or DEFERRED. If
+// CLD is available in time to satisfy the request, the third event (RESUMED)
+// will be recorded; thus, the number of times when language detection
+// ultimately fails because CLD isn't ever available is implied as the number of
+// times that detection is deferred minus the number of times that language
+// detection is late:
+//
+//   count(FAILED) ~= count(DEFERRED) - count(RESUMED)
+//
+// Note that this is not 100% accurate: some renderer process are so short-lived
+// that language detection wouldn't have been relevant anyway, and so a failure
+// to detect the language in a timely manner might be completely innocuous. The
+// overall problem with language detection is that it isn't possible to know
+// whether it was required or not until after it has been performed!
+//
+// We use histograms for recording these metrics. On Android, the renderer can
+// be killed without the chance to clean up or transmit these histograms,
+// leading to dropped metrics. To work around this, this method forces an IPC
+// message to be sent to the browser process immediately.
 class TranslateHelper : public content::RenderViewObserver {
  public:
   explicit TranslateHelper(content::RenderView* render_view);
   virtual ~TranslateHelper();
 
   // Informs us that the page's text has been extracted.
-  void PageCaptured(int page_id, const base::string16& contents);
+  void PageCaptured(const base::string16& contents);
 
   // Lets the translation system know that we are preparing to navigate to
   // the specified URL. If there is anything that can or should be done before
@@ -46,11 +91,11 @@ class TranslateHelper : public content::RenderViewObserver {
  protected:
   // The following methods are protected so they can be overridden in
   // unit-tests.
-  void OnTranslatePage(int page_id,
+  void OnTranslatePage(int page_seq_no,
                        const std::string& translate_script,
                        const std::string& source_lang,
                        const std::string& target_lang);
-  void OnRevertTranslation(int page_id);
+  void OnRevertTranslation(int page_seq_no);
 
   // Returns true if the translate library is available, meaning the JavaScript
   // has already been injected in that page.
@@ -114,6 +159,13 @@ class TranslateHelper : public content::RenderViewObserver {
   FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest, SimilarLanguageCode);
   FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest, WellKnownWrongConfiguration);
 
+  enum LanguageDetectionTiming {
+    ON_TIME,   // Language detection was performed as soon as it was requested
+    DEFERRED,  // Language detection couldn't be performed when it was requested
+    RESUMED,   // A deferred language detection attempt was completed later
+    LANGUAGE_DETECTION_TIMING_MAX_VALUE  // The bounding value for this enum
+  };
+
   // Converts language code to the one used in server supporting list.
   static void ConvertLanguageCodeSynonym(std::string* code);
 
@@ -125,6 +177,9 @@ class TranslateHelper : public content::RenderViewObserver {
   // RenderViewObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
+  // Informs us that the page's text has been extracted.
+  void PageCapturedImpl(int page_seq_no, const base::string16& contents);
+
   // Cancels any translation that is currently being performed.  This does not
   // revert existing translations.
   void CancelPendingTranslation();
@@ -132,23 +187,47 @@ class TranslateHelper : public content::RenderViewObserver {
   // Checks if the current running page translation is finished or errored and
   // notifies the browser accordingly.  If the translation has not terminated,
   // posts a task to check again later.
-  void CheckTranslateStatus();
+  void CheckTranslateStatus(int page_seq_no);
 
   // Called by TranslatePage to do the actual translation.  |count| is used to
   // limit the number of retries.
-  void TranslatePageImpl(int count);
+  void TranslatePageImpl(int page_seq_no, int count);
 
   // Sends a message to the browser to notify it that the translation failed
   // with |error|.
-  void NotifyBrowserTranslationFailed(TranslateErrors::Type error);
+  void NotifyBrowserTranslationFailed(translate::TranslateErrors::Type error);
 
   // Convenience method to access the main frame.  Can return NULL, typically
   // if the page is being closed.
   blink::WebFrame* GetMainFrame();
 
-  // ID to represent a page which TranslateHelper captured and determined a
-  // content language.
-  int page_id_;
+  // Do not ask for CLD data any more.
+  void CancelCldDataPolling();
+
+  // Invoked when PageCaptured is called prior to obtaining CLD data. This
+  // method stores the page ID into deferred_page_id_ and COPIES the contents
+  // of the page, then sets deferred_page_capture_ to true. When CLD data is
+  // eventually received (in OnCldDataAvailable), any deferred request will be
+  // "resurrected" and allowed to proceed automatically, assuming that the
+  // page ID has not changed.
+  void DeferPageCaptured(const int page_id, const base::string16& contents);
+
+  // Start polling for CLD data.
+  // Polling will automatically halt as soon as the renderer obtains a
+  // reference to the data file.
+  void SendCldDataRequest(const int delay_millis, const int next_delay_millis);
+
+  // Callback triggered when CLD data becomes available.
+  void OnCldDataAvailable();
+
+  // Record the timing of language detection, immediately sending an IPC-based
+  // histogram delta update to the browser process in case the hosting renderer
+  // process terminates before the metrics would otherwise be transferred.
+  void RecordLanguageDetectionTiming(LanguageDetectionTiming timing);
+
+  // An ever-increasing sequence number of the current page, used to match up
+  // translation requests with responses.
+  int page_seq_no_;
 
   // The states associated with the current translation.
   bool translation_pending_;
@@ -162,72 +241,26 @@ class TranslateHelper : public content::RenderViewObserver {
   // Method factory used to make calls to TranslatePageImpl.
   base::WeakPtrFactory<TranslateHelper> weak_method_factory_;
 
-#if defined(CLD2_DYNAMIC_MODE)
-  // Do not ask for CLD data any more.
-  void CancelCLD2DataFilePolling();
-
-  // Invoked when PageCaptured is called prior to obtaining CLD data. This
-  // method stores the page ID into deferred_page_id_ and COPIES the contents
-  // of the page, then sets deferred_page_capture_ to true. When CLD data is
-  // eventually received (in OnCLDDataAvailable), any deferred request will be
-  // "resurrected" and allowed to proceed automatically, assuming that the
-  // page ID has not changed.
-  void DeferPageCaptured(const int page_id, const base::string16& contents);
-
-  // Immediately send an IPC request to the browser process to get the CLD
-  // data file. In most cases, the file will already exist and we will only
-  // poll once; but since the file might need to be downloaded first, poll
-  // indefinitely until a ChromeViewMsg_CLDDataAvailable message is received
-  // from the browser process.
-  // Polling will automatically halt as soon as the renderer obtains a
-  // reference to the data file.
-  void SendCLD2DataFileRequest(const int delay_millis,
-                               const int next_delay_millis);
-
-  // Invoked when a ChromeViewMsg_CLDDataAvailable message is received from
-  // the browser process, providing a file handle for the CLD data file. If a
-  // PageCaptured request was previously deferred with DeferPageCaptured and
-  // the page ID has not yet changed, the PageCaptured is reinvoked to
-  // "resurrect" the language detection pathway.
-  void OnCLDDataAvailable(const IPC::PlatformFileForTransit ipc_file_handle,
-                          const uint64 data_offset,
-                          const uint64 data_length);
-
-  // After receiving data in OnCLDDataAvailable, loads the data into CLD2.
-  void LoadCLDDData(base::File file,
-                    const uint64 data_offset,
-                    const uint64 data_length);
-
-  // A struct that contains the pointer to the CLD mmap. Used so that we can
-  // leverage LazyInstance:Leaky to properly scope the lifetime of the mmap.
-  struct CLDMmapWrapper {
-    CLDMmapWrapper() {
-      value = NULL;
-    }
-    base::MemoryMappedFile* value;
-  };
-  static base::LazyInstance<CLDMmapWrapper>::Leaky s_cld_mmap_;
+  // Provides CLD data for this process.
+  scoped_ptr<translate::RendererCldDataProvider> cld_data_provider_;
 
   // Whether or not polling for CLD2 data has started.
-  bool cld2_data_file_polling_started_;
+  bool cld_data_polling_started_;
 
-  // Whether or not CancelCLD2DataFilePolling has been called.
-  bool cld2_data_file_polling_canceled_;
+  // Whether or not CancelCldDataPolling has been called.
+  bool cld_data_polling_canceled_;
 
   // Whether or not a PageCaptured event arrived prior to CLD data becoming
-  // available. If true, deferred_page_id_ contains the most recent page ID
-  // and deferred_contents_ contains the most recent contents.
+  // available. If true, deferred_contents_ contains the most recent contents.
   bool deferred_page_capture_;
 
   // The ID of the page most recently reported to PageCaptured if
   // deferred_page_capture_ is true.
-  int deferred_page_id_;
+  int deferred_page_seq_no_;
 
   // The contents of the page most recently reported to PageCaptured if
   // deferred_page_capture_ is true.
   base::string16 deferred_contents_;
-
-#endif
 
   DISALLOW_COPY_AND_ASSIGN(TranslateHelper);
 };

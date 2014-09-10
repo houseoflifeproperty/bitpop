@@ -53,10 +53,10 @@ media::VideoCodecProfile PepperToMediaVideoProfile(PP_VideoProfile profile) {
       return media::H264PROFILE_STEREOHIGH;
     case PP_VIDEOPROFILE_H264MULTIVIEWHIGH:
       return media::H264PROFILE_MULTIVIEWHIGH;
-    case PP_VIDEOPROFILE_VP8MAIN:
-      return media::VP8PROFILE_MAIN;
-    case PP_VIDEOPROFILE_VP9MAIN:
-      return media::VP9PROFILE_MAIN;
+    case PP_VIDEOPROFILE_VP8_ANY:
+      return media::VP8PROFILE_ANY;
+    case PP_VIDEOPROFILE_VP9_ANY:
+      return media::VP9PROFILE_ANY;
     // No default case, to catch unhandled PP_VideoProfile values.
   }
 
@@ -139,6 +139,9 @@ int32_t PepperVideoDecoderHost::OnHostMsgInitialize(
   }
   decoder_.reset();
 
+#if defined(OS_ANDROID)
+  return PP_ERROR_NOTSUPPORTED;
+#else
   if (!allow_software_fallback)
     return PP_ERROR_NOTSUPPORTED;
 
@@ -147,6 +150,7 @@ int32_t PepperVideoDecoderHost::OnHostMsgInitialize(
   decoder_->Initialize(media_profile, this);
 
   return PP_OK_COMPLETIONPENDING;
+#endif
 }
 
 int32_t PepperVideoDecoderHost::OnHostMsgGetShm(
@@ -309,6 +313,8 @@ void PepperVideoDecoderHost::ProvidePictureBuffers(
 }
 
 void PepperVideoDecoderHost::PictureReady(const media::Picture& picture) {
+  // So far picture.visible_rect is not used. If used, visible_rect should
+  // be validated since it comes from GPU process and may not be trustworthy.
   host()->SendUnsolicitedReply(
       pp_resource(),
       PpapiPluginMsg_VideoDecoder_PictureReady(picture.bitstream_buffer_id(),

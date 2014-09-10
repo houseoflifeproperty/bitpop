@@ -17,6 +17,10 @@
 #ifndef SkUserConfig_DEFINED
 #define SkUserConfig_DEFINED
 
+// Turns SkPicture::clone() into a simple "return SkRef(this);" as a way to
+// test the threadsafety of SkPicture playback.
+#define SK_PICTURE_CLONE_NOOP 1
+
 /*  SkTypes.h, the root of the public header files, does the following trick:
 
     #include <SkPreConfig.h>
@@ -242,6 +246,19 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #  else
 #    define SK_MUTEX_PLATFORM_H "third_party/skia/src/ports/SkMutex_pthread.h"
 #  endif
+#endif
+
+// These flags are no longer defined in Skia, but we have them (temporarily)
+// until we update our call-sites (typically these are for API changes).
+//
+// Remove these as we update our sites.
+//
+#ifndef SK_SUPPORT_LEGACY_GETTOPDEVICE
+    #define SK_SUPPORT_LEGACY_GETTOPDEVICE
+#endif
+
+#ifndef SK_SUPPORT_LEGACY_GETDEVICE
+    #define SK_SUPPORT_LEGACY_GETDEVICE
 #endif
 
 // ===== End Chrome-specific definitions =====

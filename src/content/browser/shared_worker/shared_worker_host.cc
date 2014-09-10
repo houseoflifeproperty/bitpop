@@ -12,7 +12,7 @@
 #include "content/browser/shared_worker/shared_worker_instance.h"
 #include "content/browser/shared_worker/shared_worker_message_filter.h"
 #include "content/browser/shared_worker/shared_worker_service_impl.h"
-#include "content/browser/worker_host/worker_document_set.h"
+#include "content/browser/shared_worker/worker_document_set.h"
 #include "content/common/view_messages.h"
 #include "content/common/worker_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -63,6 +63,7 @@ SharedWorkerHost::SharedWorkerHost(SharedWorkerInstance* instance,
                                    int worker_route_id)
     : instance_(instance),
       worker_document_set_(new WorkerDocumentSet()),
+      weak_factory_(this),
       container_render_filter_(filter),
       worker_process_id_(filter->render_process_id()),
       worker_route_id_(worker_route_id),
@@ -221,11 +222,25 @@ void SharedWorkerHost::AllowDatabase(const GURL& url,
 }
 
 void SharedWorkerHost::AllowFileSystem(const GURL& url,
-                                       bool* result) {
+                                       scoped_ptr<IPC::Message> reply_msg) {
   if (!instance_)
     return;
-  *result = GetContentClient()->browser()->AllowWorkerFileSystem(
-      url, instance_->resource_context(), GetRenderFrameIDsForWorker());
+  GetContentClient()->browser()->AllowWorkerFileSystem(
+      url,
+      instance_->resource_context(),
+      GetRenderFrameIDsForWorker(),
+      base::Bind(&SharedWorkerHost::AllowFileSystemResponse,
+                 weak_factory_.GetWeakPtr(),
+                 base::Passed(&reply_msg)));
+}
+
+void SharedWorkerHost::AllowFileSystemResponse(
+    scoped_ptr<IPC::Message> reply_msg,
+    bool allowed) {
+  WorkerProcessHostMsg_RequestFileSystemAccessSync::WriteReplyParams(
+      reply_msg.get(),
+      allowed);
+  Send(reply_msg.release());
 }
 
 void SharedWorkerHost::AllowIndexedDB(const GURL& url,

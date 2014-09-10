@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_VIEWS_PASSWORDS_MANAGE_PASSWORDS_BUBBLE_VIEW_H_
 
 #include "base/basictypes.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/ui/passwords/manage_passwords_bubble.h"
 #include "chrome/browser/ui/views/passwords/save_password_refusal_combobox_model.h"
 #include "ui/views/bubble/bubble_delegate.h"
@@ -14,6 +15,7 @@
 #include "ui/views/controls/combobox/combobox_listener.h"
 #include "ui/views/controls/link.h"
 #include "ui/views/controls/link_listener.h"
+#include "ui/views/controls/styled_label_listener.h"
 
 class ManagePasswordsIconView;
 
@@ -128,6 +130,29 @@ class ManagePasswordsBubbleView : public ManagePasswordsBubble,
     views::LabelButton* done_button_;
   };
 
+  // A view confirming to the user that a password was saved and offering a link
+  // to the Google account manager.
+  class SaveConfirmationView : public views::View,
+                               public views::ButtonListener,
+                               public views::StyledLabelListener {
+   public:
+    explicit SaveConfirmationView(ManagePasswordsBubbleView* parent);
+    virtual ~SaveConfirmationView();
+
+   private:
+    // views::ButtonListener:
+    virtual void ButtonPressed(views::Button* sender,
+                               const ui::Event& event) OVERRIDE;
+
+    // views::StyledLabelListener implementation
+    virtual void StyledLabelLinkClicked(const gfx::Range& range,
+                                        int event_flags) OVERRIDE;
+
+    ManagePasswordsBubbleView* parent_;
+
+    views::LabelButton* ok_button_;
+  };
+
   // Shows the bubble.
   static void ShowBubble(content::WebContents* web_contents,
                          DisplayReason reason);
@@ -135,8 +160,24 @@ class ManagePasswordsBubbleView : public ManagePasswordsBubble,
   // Closes any existing bubble.
   static void CloseBubble();
 
+  // Makes the bubble the foreground window.
+  static void ActivateBubble();
+
   // Whether the bubble is currently showing.
   static bool IsShowing();
+
+  // Returns a pointer to the bubble.
+  static const ManagePasswordsBubbleView* manage_password_bubble() {
+    return manage_passwords_bubble_;
+  }
+
+  const View* initially_focused_view() const {
+    return initially_focused_view_;
+  }
+
+  bool IsTimerRunning() const {
+    return timer_.IsRunning();
+  }
 
  private:
   ManagePasswordsBubbleView(content::WebContents* web_contents,
@@ -169,9 +210,26 @@ class ManagePasswordsBubbleView : public ManagePasswordsBubble,
   // undo the action and refresh to PendingView.
   void NotifyUndoNeverForThisSite();
 
+  // Starts a timer which will close the bubble if it's inactive.
+  void StartTimerIfNecessary();
+
   // views::BubbleDelegateView:
   virtual void Init() OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
+  virtual void OnWidgetActivationChanged(views::Widget* widget,
+                                         bool active) OVERRIDE;
+
+  // views::WidgetDelegate
+  virtual views::View* GetInitiallyFocusedView() OVERRIDE;
+
+  // views::View methods.
+  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
+
+  void set_initially_focused_view(views::View* view) {
+    DCHECK(!initially_focused_view_);
+    initially_focused_view_ = view;
+  }
 
   // Singleton instance of the Password bubble. The Password bubble can only be
   // shown on the active browser window, so there is no case in which it will be
@@ -183,6 +241,11 @@ class ManagePasswordsBubbleView : public ManagePasswordsBubble,
   // If true upon destruction, the user has confirmed that she never wants to
   // save passwords for a particular site.
   bool never_save_passwords_;
+
+  views::View* initially_focused_view_;
+
+  // Timer used to close the bubble after timeout.
+  base::OneShotTimer<ManagePasswordsBubbleView> timer_;
 
   DISALLOW_COPY_AND_ASSIGN(ManagePasswordsBubbleView);
 };

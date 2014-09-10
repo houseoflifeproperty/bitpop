@@ -281,6 +281,10 @@ class ContentSettingBubbleWebContentsObserverBridge
     case CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC:
     case CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA:
     case CONTENT_SETTINGS_NUM_TYPES:
+    // TODO(miguelg): Remove this nib content settings support
+    // is implemented
+    case CONTENT_SETTINGS_TYPE_PUSH_MESSAGING:
+    case CONTENT_SETTINGS_TYPE_SSL_CERT_DECISIONS:
       NOTREACHED();
   }
   if ((self = [super initWithWindowNibPath:nibPath

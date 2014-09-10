@@ -31,14 +31,14 @@
 #include "config.h"
 #include "modules/filesystem/DirectoryEntrySync.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/filesystem/DirectoryReaderSync.h"
 #include "modules/filesystem/FileEntrySync.h"
 #include "modules/filesystem/SyncCallbackHelper.h"
 
-namespace WebCore {
+namespace blink {
 
 DirectoryEntrySync::DirectoryEntrySync(DOMFileSystemBase* fileSystem, const String& fullPath)
     : EntrySync(fileSystem, fullPath)

@@ -5,23 +5,22 @@
 #ifndef MIDIAccessInitializer_h
 #define MIDIAccessInitializer_h
 
-#include "bindings/v8/ScriptPromise.h"
-#include "bindings/v8/ScriptPromiseResolverWithContext.h"
+#include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "modules/webmidi/MIDIAccessor.h"
 #include "modules/webmidi/MIDIAccessorClient.h"
 #include "modules/webmidi/MIDIOptions.h"
 #include "modules/webmidi/MIDIPort.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/RawPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class MIDIAccess;
 class Navigator;
 class ScriptState;
 
-class MIDIAccessInitializer : public ScriptPromiseResolverWithContext, public MIDIAccessorClient {
+class MIDIAccessInitializer : public ScriptPromiseResolver, public MIDIAccessorClient {
 public:
     struct PortDescriptor {
         String id;
@@ -70,7 +69,7 @@ private:
     Vector<PortDescriptor> m_portDescriptors;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // MIDIAccessInitializer_h

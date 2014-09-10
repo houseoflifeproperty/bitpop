@@ -22,7 +22,7 @@
 
 #include "core/rendering/RenderBlockFlow.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGElement;
 
@@ -32,17 +32,17 @@ public:
 
     virtual LayoutRect visualOverflowRect() const OVERRIDE FINAL;
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE FINAL;
-    virtual void computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect&, bool fixed = false) const OVERRIDE FINAL;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const OVERRIDE FINAL;
+    virtual void computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect&, const PaintInvalidationState*) const OVERRIDE FINAL;
 
-    virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const OVERRIDE FINAL;
+    virtual void mapLocalToContainer(const RenderLayerModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = 0) const OVERRIDE FINAL;
     virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const OVERRIDE FINAL;
 
     virtual AffineTransform localTransform() const OVERRIDE FINAL { return m_localTransform; }
 
     virtual LayerType layerTypeRequired() const OVERRIDE FINAL { return NoLayer; }
 
-    virtual void invalidateTreeAfterLayout(const RenderLayerModelObject&) OVERRIDE;
+    virtual void invalidateTreeIfNeeded(const PaintInvalidationState&) OVERRIDE;
 
 protected:
     virtual void willBeDestroyed() OVERRIDE;

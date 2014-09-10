@@ -27,7 +27,7 @@
 
 #include "platform/PlatformExport.h"
 
-namespace WebCore {
+namespace blink {
 namespace AudioUtilities {
 
 // Standard functions for converting to and from decibel values from linear.
@@ -43,6 +43,6 @@ PLATFORM_EXPORT double discreteTimeConstantForSampleRate(double timeConstant, do
 PLATFORM_EXPORT size_t timeToSampleFrame(double time, double sampleRate);
 
 } // AudioUtilites
-} // WebCore
+} // namespace blink
 
 #endif // AudioUtilities_h

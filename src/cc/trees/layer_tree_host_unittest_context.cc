@@ -200,45 +200,53 @@ class LayerTreeHostContextTestLostContextSucceeds
     static const TestCase kTests[] = {
         // Losing the context and failing to recreate it (or losing it again
         // immediately) a small number of times should succeed.
-        {1,      // times_to_lose_during_commit
+        {
+         1,      // times_to_lose_during_commit
          0,      // times_to_lose_during_draw
          0,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
-        {0,      // times_to_lose_during_commit
+        {
+         0,      // times_to_lose_during_commit
          1,      // times_to_lose_during_draw
          0,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
-        {1,      // times_to_lose_during_commit
+        {
+         1,      // times_to_lose_during_commit
          0,      // times_to_lose_during_draw
          3,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
-        {0,      // times_to_lose_during_commit
+        {
+         0,      // times_to_lose_during_commit
          1,      // times_to_lose_during_draw
          3,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
         // Losing the context and recreating it any number of times should
         // succeed.
-        {10,     // times_to_lose_during_commit
+        {
+         10,     // times_to_lose_during_commit
          0,      // times_to_lose_during_draw
          0,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
-        {0,      // times_to_lose_during_commit
+        {
+         0,      // times_to_lose_during_commit
          10,     // times_to_lose_during_draw
          0,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
         // Losing the context, failing to reinitialize it, and making a fallback
         // context should work.
-        {0,     // times_to_lose_during_commit
+        {
+         0,     // times_to_lose_during_commit
          1,     // times_to_lose_during_draw
          0,     // times_to_fail_recreate
          true,  // fallback_context_works
-        }, };
+        },
+    };
 
     if (test_case_ >= arraysize(kTests))
       return false;
@@ -761,19 +769,19 @@ class LayerTreeHostContextTestDontUseLostResources
     root->AddChild(content_with_mask);
 
     scoped_refptr<VideoLayer> video_color =
-        VideoLayer::Create(&color_frame_provider_);
+        VideoLayer::Create(&color_frame_provider_, media::VIDEO_ROTATION_0);
     video_color->SetBounds(gfx::Size(10, 10));
     video_color->SetIsDrawable(true);
     root->AddChild(video_color);
 
     scoped_refptr<VideoLayer> video_hw =
-        VideoLayer::Create(&hw_frame_provider_);
+        VideoLayer::Create(&hw_frame_provider_, media::VIDEO_ROTATION_0);
     video_hw->SetBounds(gfx::Size(10, 10));
     video_hw->SetIsDrawable(true);
     root->AddChild(video_hw);
 
     scoped_refptr<VideoLayer> video_scaled_hw =
-        VideoLayer::Create(&scaled_hw_frame_provider_);
+        VideoLayer::Create(&scaled_hw_frame_provider_, media::VIDEO_ROTATION_0);
     video_scaled_hw->SetBounds(gfx::Size(10, 10));
     video_scaled_hw->SetIsDrawable(true);
     root->AddChild(video_scaled_hw);

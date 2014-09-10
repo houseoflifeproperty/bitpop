@@ -35,16 +35,11 @@ WebInspector.NavigatorView = function()
     WebInspector.VBox.call(this);
     this.registerRequiredCSS("navigatorView.css");
 
-    var scriptsTreeElement = document.createElement("ol");
+    this.element.classList.add("navigator-container");
+    var scriptsOutlineElement = this.element.createChild("div", "outline-disclosure navigator");
+    var scriptsTreeElement = scriptsOutlineElement.createChild("ol");
     this._scriptsTree = new WebInspector.NavigatorTreeOutline(scriptsTreeElement);
 
-    var scriptsOutlineElement = document.createElement("div");
-    scriptsOutlineElement.classList.add("outline-disclosure");
-    scriptsOutlineElement.classList.add("navigator");
-    scriptsOutlineElement.appendChild(scriptsTreeElement);
-
-    this.element.classList.add("navigator-container");
-    this.element.appendChild(scriptsOutlineElement);
     this.setDefaultFocusedElement(this._scriptsTree.element);
 
     /** @type {!Map.<!WebInspector.UISourceCode, !WebInspector.NavigatorUISourceCodeTreeNode>} */
@@ -277,7 +272,7 @@ WebInspector.NavigatorView.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     handleContextMenu: function(event)
     {
@@ -529,7 +524,7 @@ WebInspector.SourcesNavigatorView.prototype = {
        var nodes = this._uiSourceCodeNodes.values();
        for (var i = 0; i < nodes.length; ++i) {
            var uiSourceCode = nodes[i].uiSourceCode();
-           if (uiSourceCode.url === WebInspector.resourceTreeModel.inspectedPageURL())
+           if (WebInspector.resourceTreeModel.inspectedPageURL() && uiSourceCode.url === WebInspector.resourceTreeModel.inspectedPageURL())
               this.revealUISourceCode(uiSourceCode, true);
        }
     },
@@ -678,24 +673,18 @@ WebInspector.BaseNavigatorTreeElement.prototype = {
                 this.listItemElement.classList.add(this._iconClasses[i]);
         }
 
-        var selectionElement = document.createElement("div");
-        selectionElement.className = "selection";
-        this.listItemElement.appendChild(selectionElement);
+        this.listItemElement.createChild("div", "selection");
 
-        if (!this._noIcon) {
-            this.imageElement = document.createElement("img");
-            this.imageElement.className = "icon";
-            this.listItemElement.appendChild(this.imageElement);
-        }
+        if (!this._noIcon)
+            this.imageElement = this.listItemElement.createChild("img", "icon");
 
-        this.titleElement = document.createElement("div");
-        this.titleElement.className = "base-navigator-tree-element-title";
-        this._titleTextNode = document.createTextNode("");
-        this._titleTextNode.textContent = this._titleText;
-        this.titleElement.appendChild(this._titleTextNode);
-        this.listItemElement.appendChild(this.titleElement);
+        this.titleElement = this.listItemElement.createChild("div", "base-navigator-tree-element-title");
+        this.titleElement.textContent = this._titleText
     },
 
+    /**
+     * @param {!Array.<string>} iconClasses
+     */
     updateIconClasses: function(iconClasses)
     {
         for (var i = 0; i < this._iconClasses.length; ++i)
@@ -782,14 +771,14 @@ WebInspector.NavigatorFolderTreeElement.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _handleContextMenuEvent: function(event)
     {
         if (!this._node)
             return;
         this.select();
-        this._navigatorView.handleFolderContextMenu(/** @type {!Event} */ (event), this._node);
+        this._navigatorView.handleFolderContextMenu(event, this._node);
     },
 
     __proto__: WebInspector.BaseNavigatorTreeElement.prototype

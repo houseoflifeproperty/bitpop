@@ -49,7 +49,7 @@
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/TextEncoding.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -282,7 +282,7 @@ void FormSubmission::populateFrameLoadRequest(FrameLoadRequest& frameRequest)
     }
 
     frameRequest.resourceRequest().setURL(requestURL());
-    FrameLoader::addHTTPOriginIfNeeded(frameRequest.resourceRequest(), AtomicString(m_origin));
+    frameRequest.resourceRequest().addHTTPOriginIfNeeded(AtomicString(m_origin));
 }
 
 }

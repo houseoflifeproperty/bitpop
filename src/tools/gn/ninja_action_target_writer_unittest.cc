@@ -6,56 +6,61 @@
 #include <sstream>
 
 #include "testing/gtest/include/gtest/gtest.h"
-#include "tools/gn/file_template.h"
 #include "tools/gn/ninja_action_target_writer.h"
+#include "tools/gn/substitution_list.h"
 #include "tools/gn/test_with_scope.h"
 
 TEST(NinjaActionTargetWriter, WriteOutputFilesForBuildLine) {
   TestWithScope setup;
   setup.build_settings()->SetBuildDir(SourceDir("//out/Debug/"));
   Target target(setup.settings(), Label(SourceDir("//foo/"), "bar"));
-
-  target.action_values().outputs().push_back(
-      SourceFile("//out/Debug/gen/a b{{source_name_part}}.h"));
-  target.action_values().outputs().push_back(
-      SourceFile("//out/Debug/gen/{{source_name_part}}.cc"));
+  target.action_values().outputs() = SubstitutionList::MakeForTest(
+      "//out/Debug/gen/a b{{source_name_part}}.h",
+      "//out/Debug/gen/{{source_name_part}}.cc");
 
   std::ostringstream out;
   NinjaActionTargetWriter writer(&target, setup.toolchain(), out);
 
-  FileTemplate output_template = writer.GetOutputTemplate();
-
   SourceFile source("//foo/bar.in");
   std::vector<OutputFile> output_files;
-  writer.WriteOutputFilesForBuildLine(output_template, source, &output_files);
+  writer.WriteOutputFilesForBuildLine(source, &output_files);
 
   EXPECT_EQ(" gen/a$ bbar.h gen/bar.cc", out.str());
 }
 
-TEST(NinjaActionTargetWriter, WriteArgsSubstitutions) {
+// Tests an action with no sources.
+TEST(NinjaActionTargetWriter, ActionNoSources) {
   TestWithScope setup;
   setup.build_settings()->SetBuildDir(SourceDir("//out/Debug/"));
   Target target(setup.settings(), Label(SourceDir("//foo/"), "bar"));
+  target.set_output_type(Target::ACTION);
+
+  target.action_values().set_script(SourceFile("//foo/script.py"));
+  target.inputs().push_back(SourceFile("//foo/included.txt"));
+
+  target.action_values().outputs() =
+      SubstitutionList::MakeForTest("//out/Debug/foo.out");
+
+  setup.settings()->set_target_os(Settings::LINUX);
+  setup.build_settings()->set_python_path(base::FilePath(FILE_PATH_LITERAL(
+      "/usr/bin/python")));
 
   std::ostringstream out;
   NinjaActionTargetWriter writer(&target, setup.toolchain(), out);
+  writer.Run();
 
-  std::vector<std::string> args;
-  args.push_back("-i");
-  args.push_back("{{source}}");
-  args.push_back("--out=foo bar{{source_name_part}}.o");
-  FileTemplate args_template(setup.settings(), args);
-
-  writer.WriteArgsSubstitutions(SourceFile("//foo/b ar.in"), args_template);
-#if defined(OS_WIN)
-  EXPECT_EQ("  source = \"../../foo/b$ ar.in\"\n"
-            "  source_name_part = \"b$ ar\"\n",
-            out.str());
-#else
-  EXPECT_EQ("  source = ../../foo/b\\$ ar.in\n"
-            "  source_name_part = b\\$ ar\n",
-            out.str());
-#endif
+  const char expected[] =
+      "rule __foo_bar___rule\n"
+      "  command = /usr/bin/python ../../foo/script.py\n"
+      "  description = ACTION //foo:bar()\n"
+      "  restat = 1\n"
+      "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/script.py "
+          "../../foo/included.txt\n"
+      "\n"
+      "build foo.out: __foo_bar___rule | obj/foo/bar.inputdeps.stamp\n"
+      "\n"
+      "build obj/foo/bar.stamp: stamp foo.out\n";
+  EXPECT_EQ(expected, out.str());
 }
 
 // Makes sure that we write sources as input dependencies for actions with
@@ -71,8 +76,8 @@ TEST(NinjaActionTargetWriter, ActionWithSources) {
   target.sources().push_back(SourceFile("//foo/source.txt"));
   target.inputs().push_back(SourceFile("//foo/included.txt"));
 
-  target.action_values().outputs().push_back(
-      SourceFile("//out/Debug/foo.out"));
+  target.action_values().outputs() =
+      SubstitutionList::MakeForTest("//out/Debug/foo.out");
 
   // Posix.
   {
@@ -150,13 +155,12 @@ TEST(NinjaActionTargetWriter, ForEach) {
 
   target.action_values().set_script(SourceFile("//foo/script.py"));
 
-  target.action_values().args().push_back("-i");
-  target.action_values().args().push_back("{{source}}");
-  target.action_values().args().push_back(
+  target.action_values().args() = SubstitutionList::MakeForTest(
+      "-i",
+      "{{source}}",
       "--out=foo bar{{source_name_part}}.o");
-
-  target.action_values().outputs().push_back(
-      SourceFile("//out/Debug/{{source_name_part}}.out"));
+  target.action_values().outputs() = SubstitutionList::MakeForTest(
+      "//out/Debug/{{source_name_part}}.out");
 
   target.inputs().push_back(SourceFile("//foo/included.txt"));
 
@@ -172,7 +176,7 @@ TEST(NinjaActionTargetWriter, ForEach) {
 
     const char expected_linux[] =
         "rule __foo_bar___rule\n"
-        "  command = /usr/bin/python ../../foo/script.py -i ${source} "
+        "  command = /usr/bin/python ../../foo/script.py -i ${in} "
             // Escaping is different between Windows and Posix.
 #if defined(OS_WIN)
             "\"--out=foo$ bar${source_name_part}.o\"\n"
@@ -186,11 +190,9 @@ TEST(NinjaActionTargetWriter, ForEach) {
         "\n"
         "build input1.out: __foo_bar___rule ../../foo/input1.txt | "
             "obj/foo/bar.inputdeps.stamp\n"
-        "  source = ../../foo/input1.txt\n"
         "  source_name_part = input1\n"
         "build input2.out: __foo_bar___rule ../../foo/input2.txt | "
             "obj/foo/bar.inputdeps.stamp\n"
-        "  source = ../../foo/input2.txt\n"
         "  source_name_part = input2\n"
         "\n"
         "build obj/foo/bar.stamp: "
@@ -222,9 +224,9 @@ TEST(NinjaActionTargetWriter, ForEach) {
         "  rspfile = __foo_bar___rule.$unique_name.rsp\n"
         "  rspfile_content = C$:/python/python.exe ../../foo/script.py -i "
 #if defined(OS_WIN)
-            "${source} \"--out=foo$ bar${source_name_part}.o\"\n"
+            "${in} \"--out=foo$ bar${source_name_part}.o\"\n"
 #else
-            "${source} --out=foo\\$ bar${source_name_part}.o\n"
+            "${in} --out=foo\\$ bar${source_name_part}.o\n"
 #endif
         "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/script.py "
             "../../foo/included.txt obj/foo/dep.stamp\n"
@@ -232,12 +234,10 @@ TEST(NinjaActionTargetWriter, ForEach) {
         "build input1.out: __foo_bar___rule ../../foo/input1.txt | "
             "obj/foo/bar.inputdeps.stamp\n"
         "  unique_name = 0\n"
-        "  source = ../../foo/input1.txt\n"
         "  source_name_part = input1\n"
         "build input2.out: __foo_bar___rule ../../foo/input2.txt | "
             "obj/foo/bar.inputdeps.stamp\n"
         "  unique_name = 1\n"
-        "  source = ../../foo/input2.txt\n"
         "  source_name_part = input2\n"
         "\n"
         "build obj/foo/bar.stamp: "
@@ -256,16 +256,19 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
   target.sources().push_back(SourceFile("//foo/input2.txt"));
 
   target.action_values().set_script(SourceFile("//foo/script.py"));
-  target.action_values().set_depfile(
-      SourceFile("//out/Debug/gen/{{source_name_part}}.d"));
 
-  target.action_values().args().push_back("-i");
-  target.action_values().args().push_back("{{source}}");
-  target.action_values().args().push_back(
+  SubstitutionPattern depfile;
+  Err err;
+  ASSERT_TRUE(
+      depfile.Parse("//out/Debug/gen/{{source_name_part}}.d", NULL, &err));
+  target.action_values().set_depfile(depfile);
+
+  target.action_values().args() = SubstitutionList::MakeForTest(
+      "-i",
+      "{{source}}",
       "--out=foo bar{{source_name_part}}.o");
-
-  target.action_values().outputs().push_back(
-      SourceFile("//out/Debug/{{source_name_part}}.out"));
+  target.action_values().outputs() = SubstitutionList::MakeForTest(
+      "//out/Debug/{{source_name_part}}.out");
 
   target.inputs().push_back(SourceFile("//foo/included.txt"));
 
@@ -281,7 +284,7 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
 
     const char expected_linux[] =
         "rule __foo_bar___rule\n"
-        "  command = /usr/bin/python ../../foo/script.py -i ${source} "
+        "  command = /usr/bin/python ../../foo/script.py -i ${in} "
 #if defined(OS_WIN)
             "\"--out=foo$ bar${source_name_part}.o\"\n"
 #else
@@ -294,12 +297,10 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
         "\n"
         "build input1.out: __foo_bar___rule ../../foo/input1.txt"
             " | obj/foo/bar.inputdeps.stamp\n"
-        "  source = ../../foo/input1.txt\n"
         "  source_name_part = input1\n"
         "  depfile = gen/input1.d\n"
         "build input2.out: __foo_bar___rule ../../foo/input2.txt"
             " | obj/foo/bar.inputdeps.stamp\n"
-        "  source = ../../foo/input2.txt\n"
         "  source_name_part = input2\n"
         "  depfile = gen/input2.d\n"
         "\n"
@@ -326,9 +327,9 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
         "  rspfile = __foo_bar___rule.$unique_name.rsp\n"
         "  rspfile_content = C$:/python/python.exe ../../foo/script.py -i "
 #if defined(OS_WIN)
-            "${source} \"--out=foo$ bar${source_name_part}.o\"\n"
+            "${in} \"--out=foo$ bar${source_name_part}.o\"\n"
 #else
-            "${source} --out=foo\\$ bar${source_name_part}.o\n"
+            "${in} --out=foo\\$ bar${source_name_part}.o\n"
 #endif
         "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/script.py "
             "../../foo/included.txt\n"
@@ -336,13 +337,11 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
         "build input1.out: __foo_bar___rule ../../foo/input1.txt"
             " | obj/foo/bar.inputdeps.stamp\n"
         "  unique_name = 0\n"
-        "  source = ../../foo/input1.txt\n"
         "  source_name_part = input1\n"
         "  depfile = gen/input1.d\n"
         "build input2.out: __foo_bar___rule ../../foo/input2.txt"
             " | obj/foo/bar.inputdeps.stamp\n"
         "  unique_name = 1\n"
-        "  source = ../../foo/input2.txt\n"
         "  source_name_part = input2\n"
         "  depfile = gen/input2.d\n"
         "\n"

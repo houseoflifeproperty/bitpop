@@ -31,10 +31,12 @@
 #include "config.h"
 #include "web/ServiceWorkerGlobalScopeProxy.h"
 
-#include "bindings/v8/WorkerScriptController.h"
+#include "bindings/core/v8/WorkerScriptController.h"
+#include "core/dom/CrossThreadTask.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/MessagePort.h"
 #include "core/events/MessageEvent.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "modules/push_messaging/PushEvent.h"
 #include "modules/serviceworkers/FetchEvent.h"
@@ -42,13 +44,12 @@
 #include "modules/serviceworkers/InstallPhaseEvent.h"
 #include "modules/serviceworkers/WaitUntilObserver.h"
 #include "platform/NotImplemented.h"
+#include "public/platform/WebServiceWorkerRequest.h"
 #include "public/web/WebSerializedScriptValue.h"
 #include "public/web/WebServiceWorkerContextClient.h"
 #include "web/WebEmbeddedWorkerImpl.h"
 #include "wtf/Functional.h"
 #include "wtf/PassOwnPtr.h"
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -83,8 +84,10 @@ void ServiceWorkerGlobalScopeProxy::dispatchFetchEvent(int eventID, const WebSer
 {
     ASSERT(m_workerGlobalScope);
     RefPtr<RespondWithObserver> observer = RespondWithObserver::create(m_workerGlobalScope, eventID);
-    RefPtr<Request> request = Request::create(webRequest);
-    m_workerGlobalScope->dispatchEvent(FetchEvent::create(observer, request));
+    RefPtrWillBeRawPtr<Request> request = Request::create(webRequest);
+    RefPtrWillBeRawPtr<FetchEvent> fetchEvent(FetchEvent::create(observer, request));
+    fetchEvent->setIsReload(webRequest.isReload());
+    m_workerGlobalScope->dispatchEvent(fetchEvent.release());
     observer->didDispatchEvent();
 }
 
@@ -92,7 +95,7 @@ void ServiceWorkerGlobalScopeProxy::dispatchMessageEvent(const WebString& messag
 {
     ASSERT(m_workerGlobalScope);
 
-    OwnPtr<MessagePortArray> ports = MessagePort::toMessagePortArray(m_workerGlobalScope, webChannels);
+    OwnPtrWillBeRawPtr<MessagePortArray> ports = MessagePort::toMessagePortArray(m_workerGlobalScope, webChannels);
     WebSerializedScriptValue value = WebSerializedScriptValue::fromString(message);
     m_workerGlobalScope->dispatchEvent(MessageEvent::create(ports.release(), value));
 }
@@ -115,9 +118,9 @@ void ServiceWorkerGlobalScopeProxy::reportException(const String& errorMessage, 
     m_client.reportException(errorMessage, lineNumber, columnNumber, sourceURL);
 }
 
-void ServiceWorkerGlobalScopeProxy::reportConsoleMessage(MessageSource source, MessageLevel level, const String& message, int lineNumber, const String& sourceURL)
+void ServiceWorkerGlobalScopeProxy::reportConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage> consoleMessage)
 {
-    m_client.reportConsoleMessage(source, level, message, lineNumber, sourceURL);
+    m_client.reportConsoleMessage(consoleMessage->source(), consoleMessage->level(), consoleMessage->message(), consoleMessage->lineNumber(), consoleMessage->url());
 }
 
 void ServiceWorkerGlobalScopeProxy::postMessageToPageInspector(const String& message)
@@ -139,7 +142,7 @@ void ServiceWorkerGlobalScopeProxy::workerGlobalScopeStarted(WorkerGlobalScope* 
 
 void ServiceWorkerGlobalScopeProxy::workerGlobalScopeClosed()
 {
-    m_executionContext.postTask(bind(&WebEmbeddedWorkerImpl::terminateWorkerContext, &m_embeddedWorker));
+    m_executionContext.postTask(createCrossThreadTask(&WebEmbeddedWorkerImpl::terminateWorkerContext, &m_embeddedWorker));
 }
 
 void ServiceWorkerGlobalScopeProxy::willDestroyWorkerGlobalScope()
@@ -148,7 +151,7 @@ void ServiceWorkerGlobalScopeProxy::willDestroyWorkerGlobalScope()
     m_client.willDestroyWorkerContext();
 }
 
-void ServiceWorkerGlobalScopeProxy::workerGlobalScopeDestroyed()
+void ServiceWorkerGlobalScopeProxy::workerThreadTerminated()
 {
     m_client.workerContextDestroyed();
 }

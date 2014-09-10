@@ -33,10 +33,9 @@
 #include "modules/webdatabase/SQLCallbackWrapper.h"
 #include "modules/webdatabase/SQLResultSet.h"
 #include "wtf/Forward.h"
-#include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class AbstractSQLStatementBackend;
 class Database;
@@ -70,6 +69,6 @@ private:
     SQLCallbackWrapper<SQLStatementErrorCallback> m_statementErrorCallbackWrapper;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SQLStatement_h

@@ -313,7 +313,6 @@ void CPDF_TextObject::SetText(int nChars, FX_DWORD* pCharCodes, FX_FLOAT* pKerni
             }
         }
     } else {
-        int offset = 0;
         m_pCharCodes = (FX_DWORD*)(FX_UINTPTR)pCharCodes[0];
     }
     RecalcPositionData();
@@ -354,7 +353,6 @@ FX_FLOAT CPDF_TextObject::GetSpaceCharWidth() const
 }
 void CPDF_TextObject::GetCharRect(int index, CFX_FloatRect& rect) const
 {
-    FX_FLOAT curpos = 0;
     CPDF_Font* pFont = m_TextState.GetFont();
     FX_BOOL bVertWriting = FALSE;
     CPDF_CIDFont* pCIDFont = pFont->GetCIDFont();
@@ -526,8 +524,6 @@ void CPDF_TextObject::CalcPositionData(FX_FLOAT* pTextAdvanceX, FX_FLOAT* pTextA
 }
 void CPDF_TextObject::CalcCharPos(FX_FLOAT* pPosArray) const
 {
-    FX_FLOAT curpos = 0;
-    int count = 0;
     CPDF_Font* pFont = m_TextState.GetFont();
     FX_BOOL bVertWriting = FALSE;
     CPDF_CIDFont* pCIDFont = pFont->GetCIDFont();
@@ -841,7 +837,8 @@ void CPDF_Page::Load(CPDF_Document* pDocument, CPDF_Dictionary* pPageDict, FX_BO
         m_pPageResources = m_pResources = NULL;
         return;
     }
-    m_pResources = GetPageAttr(FX_BSTRC("Resources"))->GetDict();
+    CPDF_Object* pageAttr = GetPageAttr(FX_BSTRC("Resources"));
+    m_pResources = pageAttr ? pageAttr->GetDict() : NULL;
     m_pPageResources = m_pResources;
     CPDF_Object* pRotate = GetPageAttr(FX_BSTRC("Rotate"));
     int rotate = 0;
@@ -946,7 +943,7 @@ CPDF_Form::CPDF_Form(CPDF_Document* pDoc, CPDF_Dictionary* pPageResources, CPDF_
 {
     m_pDocument = pDoc;
     m_pFormStream = pFormStream;
-    m_pFormDict = pFormStream->GetDict();
+    m_pFormDict = pFormStream ? pFormStream->GetDict() : NULL;
     m_pResources = m_pFormDict->GetDict(FX_BSTRC("Resources"));
     m_pPageResources = pPageResources;
     if (m_pResources == NULL) {

@@ -25,11 +25,12 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/SliderThumbElement.h"
+#include "core/rendering/RenderSliderThumb.h"
 #include "wtf/MathExtras.h"
 
 using std::min;
 
-namespace WebCore {
+namespace blink {
 
 const int RenderSlider::defaultTrackLength = 129;
 
@@ -107,4 +108,4 @@ bool RenderSlider::inDragMode() const
     return sliderThumbElement()->active();
 }
 
-} // namespace WebCore
+} // namespace blink

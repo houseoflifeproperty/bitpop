@@ -25,7 +25,7 @@
 #include "CSSPropertyNames.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class StylePropertyShorthand {
     WTF_MAKE_FAST_ALLOCATED;
@@ -67,8 +67,7 @@ private:
 };
 
 {% for property_id, property in properties.items() %}
-{% set camel_case_name = property.camel_case_name %}
-const StylePropertyShorthand& {{camel_case_name}}Shorthand();
+const StylePropertyShorthand& {{property.lower_camel_name}}Shorthand();
 {% endfor %}
 
 // Returns an empty list if the property is not a shorthand, otherwise the list of longhands for parsing.
@@ -87,6 +86,6 @@ bool isExpandedShorthand(CSSPropertyID);
 
 bool isExpandedShorthandForAll(CSSPropertyID);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // StylePropertyShorthand_h

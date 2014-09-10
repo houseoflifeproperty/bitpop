@@ -54,7 +54,6 @@ WebInspector.FilteredItemSelectionDialog = function(delegate)
 
     this._filteredItems = [];
     this._viewportControl = new WebInspector.ViewportControl(this);
-    this._viewportControl.element.classList.add("fill");
     this._itemElementsContainer = this._viewportControl.element;
     this._itemElementsContainer.classList.add("container");
     this._itemElementsContainer.classList.add("monospace");
@@ -91,6 +90,7 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
         this._dialogHeight = height;
 
         this._updateShowMatchingItems();
+        this._viewportControl.refresh();
     },
 
     focus: function()
@@ -325,6 +325,8 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
      */
     _updateSelection: function(index, makeLast)
     {
+        if (!this._filteredItems.length)
+            return;
         var element = this._viewportControl.renderedElementAt(this._selectedIndexInFiltered);
         if (element)
             element.classList.remove("selected");
@@ -533,7 +535,7 @@ WebInspector.JavaScriptOutlineDialog = function(uiSourceCode, selectItemCallback
 
     this._functionItems = [];
     this._selectItemCallback = selectItemCallback;
-    this._outlineWorker = new Worker("script_formatter_worker/ScriptFormatterWorker.js");
+    this._outlineWorker = Runtime.startWorker("script_formatter_worker");
     this._outlineWorker.onmessage = this._didBuildOutlineChunk.bind(this);
     this._outlineWorker.postMessage({ method: "javaScriptOutline", params: { content: uiSourceCode.workingCopy() } });
 }
@@ -877,9 +879,9 @@ WebInspector.OpenResourceDialog.show = function(sourcesView, relativeToElement, 
 
     var filteredItemSelectionDialog = new WebInspector.FilteredItemSelectionDialog(new WebInspector.OpenResourceDialog(sourcesView, defaultScores));
     filteredItemSelectionDialog.renderAsTwoRows();
+    WebInspector.Dialog.show(relativeToElement, filteredItemSelectionDialog);
     if (query)
         filteredItemSelectionDialog.setQuery(query);
-    WebInspector.Dialog.show(relativeToElement, filteredItemSelectionDialog);
 }
 
 /**

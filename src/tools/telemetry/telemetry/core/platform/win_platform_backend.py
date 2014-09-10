@@ -3,29 +3,51 @@
 # found in the LICENSE file.
 
 import collections
+import contextlib
 import ctypes
 import platform
 import re
 import subprocess
 import time
-try:
-  import pywintypes  # pylint: disable=F0401
-  import win32api  # pylint: disable=F0401
-  import win32con  # pylint: disable=F0401
-  import win32process  # pylint: disable=F0401
-except ImportError:
-  pywintypes = None
-  win32api = None
-  win32con = None
-  win32process = None
 
 from telemetry import decorators
 from telemetry.core import exceptions
 from telemetry.core.platform import desktop_platform_backend
 from telemetry.core.platform import platform_backend
+from telemetry.core.platform.power_monitor import ippet_power_monitor
+
+try:
+  import pywintypes  # pylint: disable=F0401
+  import win32api  # pylint: disable=F0401
+  from win32com.shell import shell  # pylint: disable=F0401
+  from win32com.shell import shellcon  # pylint: disable=F0401
+  import win32con  # pylint: disable=F0401
+  import win32process  # pylint: disable=F0401
+  import win32security  # pylint: disable=F0401
+except ImportError:
+  pywintypes = None
+  shell = None
+  shellcon = None
+  win32api = None
+  win32con = None
+  win32process = None
+  win32security = None
+
+
+
+def IsCurrentProcessElevated():
+  handle = win32process.GetCurrentProcess()
+  with contextlib.closing(
+      win32security.OpenProcessToken(handle, win32con.TOKEN_QUERY)) as token:
+    return bool(
+        win32security.GetTokenInformation(token, win32security.TokenElevation))
 
 
 class WinPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
+  def __init__(self):
+    super(WinPlatformBackend, self).__init__()
+    self._power_monitor = ippet_power_monitor.IppetPowerMonitor(self)
+
   # pylint: disable=W0613
   def StartRawDisplayFrameRateMeasurement(self):
     raise NotImplementedError()
@@ -201,3 +223,39 @@ class WinPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
     ctypes.windll.psapi.GetPerformanceInfo(
         ctypes.byref(performance_info), performance_info.size)
     return performance_info
+
+  def LaunchApplication(
+      self, application, parameters=None, elevate_privilege=False):
+    """Launch an application. Returns a PyHANDLE object."""
+
+    parameters = ' '.join(parameters) if parameters else ''
+    if elevate_privilege and not IsCurrentProcessElevated():
+      # Use ShellExecuteEx() instead of subprocess.Popen()/CreateProcess() to
+      # elevate privileges. A new console will be created if the new process has
+      # different permissions than this process.
+      proc_info = shell.ShellExecuteEx(
+          fMask=shellcon.SEE_MASK_NOCLOSEPROCESS | shellcon.SEE_MASK_NO_CONSOLE,
+          lpVerb='runas' if elevate_privilege else '',
+          lpFile=application,
+          lpParameters=parameters,
+          nShow=win32con.SW_HIDE)
+      if proc_info['hInstApp'] <= 32:
+        raise Exception('Unable to launch %s' % application)
+      return proc_info['hProcess']
+    else:
+      handle, _, _, _ = win32process.CreateProcess(
+          None, application + ' ' + parameters, None, None, False,
+          win32process.CREATE_NO_WINDOW, None, None, win32process.STARTUPINFO())
+      return handle
+
+  def CanMonitorPower(self):
+    return self._power_monitor.CanMonitorPower()
+
+  def CanMeasurePerApplicationPower(self):
+    return self._power_monitor.CanMeasurePerApplicationPower()
+
+  def StartMonitoringPower(self, browser):
+    self._power_monitor.StartMonitoringPower(browser)
+
+  def StopMonitoringPower(self):
+    return self._power_monitor.StopMonitoringPower()

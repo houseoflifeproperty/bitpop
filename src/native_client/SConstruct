@@ -141,6 +141,9 @@ ACCEPTABLE_ARGUMENTS = set([
     # If the replacement memcheck command only works for trusted code,
     # set memcheck_trusted_only to non-zero.
     'memcheck_trusted_only',
+    # When building with MSan, this can be set to values 0 (fastest, least
+    # useful reports) through 2 (slowest, most useful reports). Default is 1.
+    'msan_track_origins',
     # colon-separated list of linker flags, e.g. "-lfoo:-Wl,-u,bar".
     'nacl_linkflags',
     # colon-separated list of pnacl bcld flags, e.g. "-lfoo:-Wl,-u,bar".
@@ -332,6 +335,11 @@ def SetUpArgumentBits(env):
       'nonsfi_loader instead of sel_ldr, and it tells the PNaCl toolchain '
       'to translate pexes to Non-SFI nexes.')
 
+  BitFromArgument(env, 'use_newlib_nonsfi_loader', default=True,
+    desc='Test nonsfi_loader linked against NaCl newlib instead of the one '
+      'linked against host libc. This flag makes sense only with '
+      'nonsfi_nacl=1.')
+
   BitFromArgument(env, 'browser_headless', default=False,
     desc='Where possible, set up a dummy display to run the browser on '
       'when running browser tests.  On Linux, this runs the browser through '
@@ -506,6 +514,11 @@ pre_base_env.SetBitFromOption('asan', False)
 if pre_base_env.Bit('asan'):
   pre_base_env.SetBits('clang')
 
+DeclareBit('msan',
+           'Use MemorySanitizer to build trusted code (implies --clang)')
+pre_base_env.SetBitFromOption('msan', False)
+if pre_base_env.Bit('msan'):
+  pre_base_env.SetBits('clang')
 
 # CODE COVERAGE
 DeclareBit('coverage_enabled', 'The build should be instrumented to generate'
@@ -646,6 +659,33 @@ nacl_glibc_skiplist = set([
     ])
 nacl_glibc_skiplist.update(['%s_irt' % test for test in nacl_glibc_skiplist])
 
+# Whitelist of tests to run for Non-SFI Mode.  Note that typos here will
+# not be caught automatically!
+# TODO(mseaborn): Eventually we should run all of small_tests instead of
+# this whitelist.
+nonsfi_test_whitelist = set([
+    'run_clock_get_test',
+    'run_dup_test',
+    'run_fcntl_test',
+    'run_float_test',
+    'run_fork_test',
+    'run_getpid_test',
+    'run_hello_world_test',
+    'run_irt_futex_test',
+    'run_malloc_realloc_calloc_free_test',
+    'run_mmap_test',
+    'run_nanosleep_test',
+    'run_prctl_test',
+    'run_printf_test',
+    'run_pwrite_test',
+    'run_sigaction_test',
+    'run_signal_test',
+    'run_socket_test',
+    'run_stack_alignment_test',
+    'run_syscall_test',
+    'run_thread_test',
+    ])
+
 
 # If a test is not in one of these suites, it will probally not be run on a
 # regular basis.  These are the suites that will be run by the try bot or that
@@ -666,6 +706,8 @@ MAJOR_TEST_SUITES = set([
   'ncval_testing',
   # Environment for validator difference testing
   'validator_diff_tests',
+  # Subset of tests enabled for Non-SFI Mode.
+  'nonsfi_tests',
 ])
 
 # These are the test suites we know exist, but aren't run on a regular basis.
@@ -834,6 +876,12 @@ def ShouldSkipTest(env, node_name):
 pre_base_env.AddMethod(ShouldSkipTest)
 
 
+def AddImplicitTestSuites(suite_list, node_name):
+  if node_name in nonsfi_test_whitelist:
+    suite_list = suite_list + ['nonsfi_tests']
+  return suite_list
+
+
 def AddNodeToTestSuite(env, node, suite_name, node_name, is_broken=False,
                        is_flaky=False):
   global BROKEN_TEST_COUNT
@@ -848,6 +896,7 @@ def AddNodeToTestSuite(env, node, suite_name, node_name, is_broken=False,
       'test %r does not match "run_..._test" naming convention '
       '(precise regex is %s)' % (node_name, test_name_regex))
 
+  suite_name = AddImplicitTestSuites(suite_name, node_name)
   ValidateTestSuiteNames(suite_name, node_name)
 
   AlwaysBuild(node)
@@ -1272,6 +1321,10 @@ pre_base_env.AddMethod(SupportsSeccompBpfSandbox)
 
 
 def GetBootstrap(env):
+  if env.Bit('msan'):
+    # Bootstrap doens't currently work with MSan. However, MSan is only
+    # available on x86_64 where we don't need bootstrap anyway.
+    return None, None
   if 'TRUSTED_ENV' in env:
     trusted_env = env['TRUSTED_ENV']
     if trusted_env.Bit('linux'):
@@ -1294,6 +1347,10 @@ pre_base_env.AddMethod(AddBootstrap)
 
 
 def GetNonSfiLoader(env):
+  if env.Bit('use_newlib_nonsfi_loader'):
+    return nacl_env.GetTranslatedNexe(nacl_env.File(
+        '${STAGING_DIR}/${PROGPREFIX}nonsfi_loader${PROGSUFFIX}'))
+
   if 'TRUSTED_ENV' not in env:
     return None
   return env['TRUSTED_ENV'].File(
@@ -2173,7 +2230,6 @@ def MakeBaseTrustedEnv(platform=None):
       'src/trusted/nonnacl_util/build.scons',
       'src/trusted/perf_counter/build.scons',
       'src/trusted/platform_qualify/build.scons',
-      'src/trusted/python_bindings/build.scons',
       'src/trusted/reverse_service/build.scons',
       'src/trusted/seccomp_bpf/build.scons',
       'src/trusted/sel_universal/build.scons',
@@ -2298,7 +2354,10 @@ def SetUpClang(env):
   if env.Bit('asan'):
     if not (env.Bit('host_linux') or env.Bit('host_mac')):
       raise UserError("ERROR: ASan is only available for Linux and Mac")
-    env['CLANG_OPTS'].append('-fsanitize=address')
+    env.Append(CLANG_OPTS=['-fsanitize=address',
+                           '-gline-tables-only',
+                           '-fno-omit-frame-pointer',
+                           '-DADDRESS_SANITIZER'])
     if env.Bit('host_mac'):
       # The built executables will try to find this library at runtime
       # in the directory containing the executable itself.  In the
@@ -2314,6 +2373,16 @@ def SetUpClang(env):
       if 'PROPAGATE_ENV' not in env:
         env['PROPAGATE_ENV'] = []
       env['PROPAGATE_ENV'].append('DYLD_LIBRARY_PATH')
+
+  if env.Bit('msan'):
+    if not env.Bit('host_linux') or not env.Bit('build_x86_64'):
+      raise UserError('ERROR: MSan is only available for x86-64 Linux')
+    track_origins = ARGUMENTS.get('msan_track_origins', '1')
+    env.Append(CLANG_OPTS=['-fsanitize=memory',
+                           '-fsanitize-memory-track-origins=%s' % track_origins,
+                           '-gline-tables-only',
+                           '-fno-omit-frame-pointer',
+                           '-DMEMORY_SANITIZER'])
 
   env['CC'] = '${CLANG_DIR}/clang ${CLANG_OPTS}'
   env['CXX'] = '${CLANG_DIR}/clang++ ${CLANG_OPTS}'
@@ -2562,12 +2631,10 @@ def SetUpLinuxEnvArm(env):
                 CXX='arm-linux-%s-g++%s' % (arm_abi, arm_suffix),
                 LD='arm-linux-%s-ld%s' % (arm_abi, arm_suffix),
                 ASFLAGS=[],
-                LIBPATH=['${LIB_DIR}',
-                         '%s/usr/lib' % jail,
-                         '%s/lib' % jail,
-                         '%s/usr/lib/arm-linux-%s' % (jail, arm_abi),
-                         '%s/lib/arm-linux-%s' % (jail, arm_abi),
-                         ],
+                # The -rpath-link argument is needed on Ubuntu/Precise to
+                # avoid linker warnings about missing ld.linux.so.3.
+                # TODO(sbc): remove this once we stop supporting Precise
+                # as a build environment.
                 LINKFLAGS=['-Wl,-rpath-link=' + jail +
                            '/lib/arm-linux-' + arm_abi]
                 )
@@ -2575,13 +2642,6 @@ def SetUpLinuxEnvArm(env):
     # default.  The hope is this will have the best chance of testing
     # the prevailing compilation mode used for Chromium et al.
     env.Prepend(CCFLAGS=['-march=armv7-a'])
-    if not env.Bit('android'):
-      env.Prepend(CCFLAGS=['-isystem', jail + '/usr/include'])
-    # /usr/lib makes sense for most configuration except this one
-    # No ARM compatible libs can be found there.
-    # So this just makes the command lines longer and sometimes results
-    # in linker warnings referring to this directory.
-    env.FilterOut(LIBPATH=['/usr/lib'])
 
   # get_plugin_dirname.cc has a dependency on dladdr
   env.Append(LIBS=['dl'])
@@ -3155,7 +3215,9 @@ if not nacl_env.Bit('nacl_glibc'):
 nacl_env.Append(
     BUILD_SCONSCRIPTS = [
     ####  ALPHABETICALLY SORTED ####
+    'src/nonsfi/irt/build.scons',
     'src/nonsfi/linux/nacl.scons',
+    'src/nonsfi/loader/build.scons',
     'src/shared/gio/nacl.scons',
     'src/shared/imc/nacl.scons',
     'src/shared/ldr/nacl.scons',
@@ -3234,6 +3296,7 @@ irt_variant_tests = [
     'tests/nacl_log/nacl.scons',
     'tests/nameservice/nacl.scons',
     'tests/nanosleep/nacl.scons',
+    'tests/nonsfi/nacl.scons',
     'tests/noop/nacl.scons',
     'tests/nrd_xfer/nacl.scons',
     'tests/nthread_nice/nacl.scons',
@@ -3242,6 +3305,7 @@ irt_variant_tests = [
     'tests/pagesize/nacl.scons',
     'tests/performance/nacl.scons',
     'tests/pnacl_abi/nacl.scons',
+    'tests/pnacl_dynamic_loading/nacl.scons',
     'tests/pnacl_native_objects/nacl.scons',
     'tests/process_create/nacl.scons',
     'tests/random/nacl.scons',
@@ -3416,6 +3480,10 @@ if nacl_irt_env.Bit('bitcode'):
     nacl_irt_env.Append(LINKFLAGS=['--target=x86_64-unknown-nacl',
                                    '--pnacl-allow-translate',
                                    '-arch', 'x86-64'])
+  elif nacl_irt_env.Bit('target_mips32'):
+    # Disable the PNaCl IRT verifier since it will complain about
+    # __executable_start symbol not being a valid external symbol.
+    nacl_irt_env.Append(LINKFLAGS=['--pnacl-disable-abi-check'])
 
 # The IRT is C only, don't link with the C++ linker so that it doesn't
 # start depending on the C++ standard library and (in the case of
@@ -3610,6 +3678,7 @@ def IrtTestAddNodeToTestSuite(env, node, suite_name, node_name=None,
   # (rather than part of chrome_browser_tests_irt).
   # TODO(mseaborn): But really, all of chrome_browser_tests should be
   # placed in nacl_irt_test_env rather than in nacl_env.
+  suite_name = AddImplicitTestSuites(suite_name, node_name)
   if not disable_irt_suffix:
     if node_name is not None:
       node_name += '_irt'

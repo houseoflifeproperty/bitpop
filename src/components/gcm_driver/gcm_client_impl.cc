@@ -24,6 +24,7 @@
 #include "google_apis/gcm/protocol/checkin.pb.h"
 #include "google_apis/gcm/protocol/mcs.pb.h"
 #include "net/http/http_network_session.h"
+#include "net/http/http_transaction_factory.h"
 #include "net/url_request/url_request_context.h"
 #include "url/gurl.h"
 
@@ -236,15 +237,42 @@ scoped_ptr<MCSClient> GCMInternalsBuilder::BuildMCSClient(
 scoped_ptr<ConnectionFactory> GCMInternalsBuilder::BuildConnectionFactory(
       const std::vector<GURL>& endpoints,
       const net::BackoffEntry::Policy& backoff_policy,
-      scoped_refptr<net::HttpNetworkSession> network_session,
+      const scoped_refptr<net::HttpNetworkSession>& gcm_network_session,
+      const scoped_refptr<net::HttpNetworkSession>& http_network_session,
       net::NetLog* net_log,
       GCMStatsRecorder* recorder) {
   return make_scoped_ptr<ConnectionFactory>(
       new ConnectionFactoryImpl(endpoints,
                                 backoff_policy,
-                                network_session,
+                                gcm_network_session,
+                                http_network_session,
                                 net_log,
                                 recorder));
+}
+
+GCMClientImpl::CheckinInfo::CheckinInfo()
+    : android_id(0), secret(0), accounts_set(false) {
+}
+
+GCMClientImpl::CheckinInfo::~CheckinInfo() {
+}
+
+void GCMClientImpl::CheckinInfo::SnapshotCheckinAccounts() {
+  last_checkin_accounts.clear();
+  for (std::map<std::string, std::string>::iterator iter =
+           account_tokens.begin();
+       iter != account_tokens.end();
+       ++iter) {
+    last_checkin_accounts.insert(iter->first);
+  }
+}
+
+void GCMClientImpl::CheckinInfo::Reset() {
+  android_id = 0;
+  secret = 0;
+  accounts_set = false;
+  account_tokens.clear();
+  last_checkin_accounts.clear();
 }
 
 GCMClientImpl::GCMClientImpl(scoped_ptr<GCMInternalsBuilder> internals_builder)
@@ -314,6 +342,14 @@ void GCMClientImpl::OnLoadCompleted(scoped_ptr<GCMStore::LoadResult> result) {
   registrations_ = result->registrations;
   device_checkin_info_.android_id = result->device_android_id;
   device_checkin_info_.secret = result->device_security_token;
+  device_checkin_info_.last_checkin_accounts = result->last_checkin_accounts;
+  // A case where there were previously no accounts reported with checkin is
+  // considered to be the same as when the list of accounts is empty. It enables
+  // scheduling a periodic checkin for devices with no signed in users
+  // immediately after restart, while keeping |accounts_set == false| delays the
+  // checkin until the list of accounts is set explicitly.
+  if (result->last_checkin_accounts.size() == 0)
+    device_checkin_info_.accounts_set = true;
   last_checkin_time_ = result->last_checkin_time;
   gservices_settings_.UpdateFromLoadResult(*result);
   InitializeMCSClient(result.Pass());
@@ -338,6 +374,9 @@ void GCMClientImpl::InitializeMCSClient(
       endpoints,
       kDefaultBackoffPolicy,
       network_session_,
+      url_request_context_getter_->GetURLRequestContext()
+          ->http_transaction_factory()
+          ->GetSession(),
       net_log_.net_log(),
       &recorder_);
   connection_factory_->SetConnectionListener(this);
@@ -363,6 +402,9 @@ void GCMClientImpl::OnFirstTimeDeviceCheckinCompleted(
 
   device_checkin_info_.android_id = checkin_info.android_id;
   device_checkin_info_.secret = checkin_info.secret;
+  // If accounts were not set by now, we can consider them set (to empty list)
+  // to make sure periodic checkins get scheduled after initial checkin.
+  device_checkin_info_.accounts_set = true;
   gcm_store_->SetDeviceCredentials(
       checkin_info.android_id, checkin_info.secret,
       base::Bind(&GCMClientImpl::SetDeviceCredentialsCallback,
@@ -390,6 +432,43 @@ void GCMClientImpl::ResetState() {
   // TODO(fgorski): reset all of the necessart objects and start over.
 }
 
+void GCMClientImpl::SetAccountsForCheckin(
+    const std::map<std::string, std::string>& account_tokens) {
+  bool accounts_set_before = device_checkin_info_.accounts_set;
+  device_checkin_info_.account_tokens = account_tokens;
+  device_checkin_info_.accounts_set = true;
+
+  DVLOG(1) << "Set account called with: " << account_tokens.size()
+           << " accounts.";
+
+  if (state_ != READY && state_ != INITIAL_DEVICE_CHECKIN)
+    return;
+
+  bool account_removed = false;
+  for (std::set<std::string>::iterator iter =
+           device_checkin_info_.last_checkin_accounts.begin();
+       iter != device_checkin_info_.last_checkin_accounts.end();
+       ++iter) {
+    if (account_tokens.find(*iter) == account_tokens.end())
+      account_removed = true;
+  }
+
+  // Checkin will be forced when any of the accounts was removed during the
+  // current Chrome session or if there has been an account removed between the
+  // restarts of Chrome. If there is a checkin in progress, it will be canceled.
+  // We only force checkin when user signs out. When there is a new account
+  // signed in, the periodic checkin will take care of adding the association in
+  // reasonable time.
+  if (account_removed) {
+    DVLOG(1) << "Detected that account has been removed. Forcing checkin.";
+    checkin_request_.reset();
+    StartCheckin();
+  } else if (!accounts_set_before) {
+    SchedulePeriodicCheckin();
+    DVLOG(1) << "Accounts set for the first time. Scheduled periodic checkin.";
+  }
+}
+
 void GCMClientImpl::StartCheckin() {
   // Make sure no checkin is in progress.
   if (checkin_request_.get())
@@ -399,6 +478,7 @@ void GCMClientImpl::StartCheckin() {
   ToCheckinProtoVersion(chrome_build_info_, &chrome_build_proto);
   CheckinRequest::RequestInfo request_info(device_checkin_info_.android_id,
                                            device_checkin_info_.secret,
+                                           device_checkin_info_.account_tokens,
                                            gservices_settings_.digest(),
                                            chrome_build_proto);
   checkin_request_.reset(
@@ -409,6 +489,9 @@ void GCMClientImpl::StartCheckin() {
                                     weak_ptr_factory_.GetWeakPtr()),
                          url_request_context_getter_,
                          &recorder_));
+  // Taking a snapshot of the accounts count here, as there might be an asynch
+  // update of the account tokens while checkin is in progress.
+  device_checkin_info_.SnapshotCheckinAccounts();
   checkin_request_->Start();
 }
 
@@ -448,9 +531,10 @@ void GCMClientImpl::OnCheckinCompleted(
     }
 
     last_checkin_time_ = clock_->Now();
-    gcm_store_->SetLastCheckinTime(
+    gcm_store_->SetLastCheckinInfo(
         last_checkin_time_,
-        base::Bind(&GCMClientImpl::SetLastCheckinTimeCallback,
+        device_checkin_info_.last_checkin_accounts,
+        base::Bind(&GCMClientImpl::SetLastCheckinInfoCallback,
                    weak_ptr_factory_.GetWeakPtr()));
     SchedulePeriodicCheckin();
   }
@@ -462,7 +546,7 @@ void GCMClientImpl::SetGServicesSettingsCallback(bool success) {
 
 void GCMClientImpl::SchedulePeriodicCheckin() {
   // Make sure no checkin is in progress.
-  if (checkin_request_.get())
+  if (checkin_request_.get() || !device_checkin_info_.accounts_set)
     return;
 
   // There should be only one periodic checkin pending at a time. Removing
@@ -485,7 +569,7 @@ base::TimeDelta GCMClientImpl::GetTimeToNextCheckin() const {
          clock_->Now();
 }
 
-void GCMClientImpl::SetLastCheckinTimeCallback(bool success) {
+void GCMClientImpl::SetLastCheckinInfoCallback(bool success) {
   // TODO(fgorski): This is one of the signals that store needs a rebuild.
   DCHECK(success);
 }
@@ -773,15 +857,15 @@ void GCMClientImpl::OnMessageSentToMCS(int64 user_serial_number,
   // All other errors will be raised immediately, through asynchronous callback.
   // It is expected that TTL_EXCEEDED will be issued for a message that was
   // previously issued |OnSendFinished| with status SUCCESS.
-  // For now, we do not report that the message has been sent and acked
-  // successfully.
   // TODO(jianli): Consider adding UMA for this status.
   if (status == MCSClient::TTL_EXCEEDED) {
     SendErrorDetails send_error_details;
     send_error_details.message_id = message_id;
     send_error_details.result = GCMClient::TTL_EXCEEDED;
     delegate_->OnMessageSendError(app_id, send_error_details);
-  } else if (status != MCSClient::SENT) {
+  } else if (status == MCSClient::SENT) {
+    delegate_->OnSendAcknowledged(app_id, message_id);
+  } else {
     delegate_->OnSendFinished(app_id, message_id, ToGCMClientResult(status));
   }
 }

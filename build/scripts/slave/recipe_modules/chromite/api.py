@@ -13,10 +13,8 @@ class ChromiteApi(recipe_api.RecipeApi):
     manifest_url = manifest_url or self.manifest_url
     repo_url = repo_url or self.repo_url
 
-    return (
-      self.m.repo.init(manifest_url, '--repo-url', repo_url),
-      self.m.repo.sync(),
-    )
+    self.m.repo.init(manifest_url, '--repo-url', repo_url)
+    self.m.repo.sync()
 
   def cbuildbot(self, name, config, flags=None, chromite_path=None, **kwargs):
     """Return a step to run a command inside the cros_sdk."""
@@ -34,8 +32,8 @@ class ChromiteApi(recipe_api.RecipeApi):
     cmd = self.m.path.join(chromite_path, 'bin', 'cbuildbot')
 
     # TODO(petermayo): Wrap this nested annotation in a stabilizing wrapper.
-    return self.m.python(name, cmd, arg_list, allow_subannotations=True,
-                         **kwargs)
+    self.m.python(name, cmd, arg_list, allow_subannotations=True,
+                  **kwargs)
 
 
   def cros_sdk(self, name, cmd, flags=None, environ=None, chromite_path=None,
@@ -54,16 +52,16 @@ class ChromiteApi(recipe_api.RecipeApi):
     arg_list.append('--')
     arg_list.extend(cmd)
 
-    return self.m.python(name, chroot_cmd, arg_list, **kwargs)
+    self.m.python(name, chroot_cmd, arg_list, **kwargs)
 
   def setup_board(self, board, flags=None, **kwargs):
     """Run the setup_board script inside the chroot."""
-    return self.cros_sdk('setup board',
-                         ['./setup_board', '--board', board],
-                         flags, **kwargs)
+    self.cros_sdk('setup board',
+                  ['./setup_board', '--board', board],
+                  flags, **kwargs)
 
   def build_packages(self, board, flags=None, **kwargs):
     """Run the build_packages script inside the chroot."""
-    return self.cros_sdk('build packages',
-                         ['./build_packages', '--board', board],
-                         flags, **kwargs)
+    self.cros_sdk('build packages',
+                  ['./build_packages', '--board', board],
+                  flags, **kwargs)

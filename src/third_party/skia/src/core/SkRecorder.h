@@ -62,9 +62,9 @@ public:
                       int indexCount,
                       const SkPaint& paint) SK_OVERRIDE;
 
-    void willSave(SkCanvas::SaveFlags) SK_OVERRIDE;
+    void willSave() SK_OVERRIDE;
     SaveLayerStrategy willSaveLayer(const SkRect*, const SkPaint*, SkCanvas::SaveFlags) SK_OVERRIDE;
-    void willRestore() SK_OVERRIDE;
+    void didRestore() SK_OVERRIDE;
 
     void didConcat(const SkMatrix&) SK_OVERRIDE;
     void didSetMatrix(const SkMatrix&) SK_OVERRIDE;
@@ -89,12 +89,16 @@ public:
                           const SkPath& path,
                           const SkMatrix* matrix,
                           const SkPaint& paint) SK_OVERRIDE;
+    void onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
+                     const SkPoint texCoords[4], SkXfermode* xmode,
+                     const SkPaint& paint) SK_OVERRIDE;
+
     void onClipRect(const SkRect& rect, SkRegion::Op op, ClipEdgeStyle edgeStyle) SK_OVERRIDE;
     void onClipRRect(const SkRRect& rrect, SkRegion::Op op, ClipEdgeStyle edgeStyle) SK_OVERRIDE;
     void onClipPath(const SkPath& path, SkRegion::Op op, ClipEdgeStyle edgeStyle) SK_OVERRIDE;
     void onClipRegion(const SkRegion& deviceRgn, SkRegion::Op op) SK_OVERRIDE;
 
-    void onDrawPicture(const SkPicture* picture) SK_OVERRIDE;
+    void onDrawPicture(const SkPicture*, const SkMatrix*, const SkPaint*) SK_OVERRIDE;
 
     void onPushCull(const SkRect& cullRect) SK_OVERRIDE;
     void onPopCull() SK_OVERRIDE;
@@ -104,7 +108,7 @@ private:
     T* copy(const T*);
 
     template <typename T>
-    T* copy(const T[], unsigned count);
+    T* copy(const T[], size_t count);
 
     SkRecord* fRecord;
 };

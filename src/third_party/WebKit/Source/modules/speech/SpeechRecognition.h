@@ -26,7 +26,6 @@
 #ifndef SpeechRecognition_h
 #define SpeechRecognition_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "modules/EventTargetModules.h"
 #include "modules/speech/SpeechGrammarList.h"
@@ -35,14 +34,14 @@
 #include "wtf/Compiler.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class ExecutionContext;
 class SpeechRecognitionController;
 class SpeechRecognitionError;
 
-class SpeechRecognition FINAL : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<SpeechRecognition>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData {
+class SpeechRecognition FINAL : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<SpeechRecognition>, public ActiveDOMObject, public EventTargetWithInlineData {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<SpeechRecognition>);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SpeechRecognition);
 public:
@@ -117,6 +116,6 @@ private:
     HeapVector<Member<SpeechRecognitionResult> > m_finalResults;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SpeechRecognition_h

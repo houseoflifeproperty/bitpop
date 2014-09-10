@@ -31,14 +31,16 @@
 #ifndef InspectorFrontendClient_h
 #define InspectorFrontendClient_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class InspectorFrontendClient {
+class InspectorFrontendClient : public NoBaseWillBeGarbageCollectedFinalized<InspectorFrontendClient> {
 public:
     virtual ~InspectorFrontendClient() { }
+
+    virtual void trace(Visitor*) { }
 
     virtual void windowObjectCleared() = 0;
 
@@ -47,8 +49,10 @@ public:
     virtual void sendMessageToEmbedder(const String&) = 0;
 
     virtual bool isUnderTest() = 0;
+
+    virtual void dispose() = 0;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

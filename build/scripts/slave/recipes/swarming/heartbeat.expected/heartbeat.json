@@ -9,22 +9,14 @@
       "--url",
       "https://chromium.googlesource.com/external/swarming.client.git"
     ],
-    "name": "git setup (swarming_client)",
-    "seed_steps": [
-      "git setup (swarming_client)",
-      "git fetch (swarming_client)",
-      "git checkout (swarming_client)",
-      "git clean (swarming_client)",
-      "submodule sync (swarming_client)",
-      "submodule update (swarming_client)"
-    ]
+    "name": "git setup (swarming_client)"
   },
   {
     "cmd": [
       "git",
       "fetch",
       "origin",
-      "master"
+      "stable"
     ],
     "cwd": "[SLAVE_BUILD]/swarming.client",
     "name": "git fetch (swarming_client)"
@@ -80,7 +72,7 @@
     "name": "swarming.py --version",
     "stdout": "/path/to/tmp/",
     "~followup_annotations": [
-      "@@@STEP_TEXT@0.4.8@@@"
+      "@@@STEP_TEXT@0.4.10@@@"
     ]
   },
   {

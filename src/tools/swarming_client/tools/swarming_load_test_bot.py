@@ -89,6 +89,10 @@ def calculate_version(url):
   return generate_version(StringIO.StringIO(net.url_read(url)))
 
 
+def get_hostname():
+  return socket.getfqdn().lower().split('.', 1)[0]
+
+
 class FakeSwarmBot(object):
   """This is a Fake swarm_bot implementation simulating it is running
   Comodore64.
@@ -97,8 +101,8 @@ class FakeSwarmBot(object):
   result.
   """
   def __init__(
-      self, swarming_url, dimensions, swarm_bot_version_hash, index, progress,
-      duration, events, kill_event):
+      self, swarming_url, dimensions, swarm_bot_version_hash, hostname, index,
+      progress, duration, events, kill_event):
     self._lock = threading.Lock()
     self._swarming = swarming_url
     self._index = index
@@ -106,20 +110,13 @@ class FakeSwarmBot(object):
     self._duration = duration
     self._events = events
     self._kill_event = kill_event
-    # Use an impossible hostname.
-    self._machine_id = '%s-%d' % (socket.getfqdn().lower(), index)
-
-    # See
-    # https://code.google.com/p/swarming/source/browse/src/swarm_bot/slave_machine.py?repo=swarming-server
-    # and
-    # https://chromium.googlesource.com/chromium/tools/build.git/ \
-    #    +/master/scripts/tools/swarm_bootstrap/swarm_bootstrap.py
-    # for more details.
+    self._bot_id = '%s-%d' % (hostname, index)
     self._attributes = {
       'dimensions': dimensions,
-      'id': self._machine_id,
+      'id': self._bot_id,
+      # TODO(maruel): Use os_utilities.py.
+      'ip': '127.0.0.1',
       'try_count': 0,
-      'tag': self._machine_id,
       'version': swarm_bot_version_hash,
     }
 
@@ -134,6 +131,7 @@ class FakeSwarmBot(object):
     return self._thread.is_alive()
 
   def _run(self):
+    """Polls the server and fake execution."""
     try:
       self._progress.update_item('%d alive' % self._index, bots=1)
       while True:
@@ -168,25 +166,26 @@ class FakeSwarmBot(object):
           self._events.put('update_slave')
           continue
 
-        if commands != ['StoreFiles', 'RunManifest']:
+        if commands != ['RunManifest']:
           self._progress.update_item(
               'Unexpected RPC call %s\n%s' % (commands, manifest))
           self._events.put('unknown_rpc')
           break
 
-        # The normal way Swarming works is that it 'stores' a test_run.swarm
-        # file and then defer control to swarm_bot/local_test_runner.py.
         store_cmd = manifest['commands'][0]
-        assert len(store_cmd['args']) == 1, store_cmd['args']
-        filepath, filename, test_run_content = store_cmd['args'][0]
-        assert filepath == ''
-        assert filename == 'test_run.swarm'
+        if not isinstance(store_cmd['args'], unicode):
+          self._progress.update_item('Unexpected RPC manifest\n%s' % manifest)
+          self._events.put('unknown_args')
+          break
 
-        assert manifest['commands'][1]['args'] == 'test_run.swarm', (
-            manifest['commands'][1]['args'])
         result_url = manifest['result_url']
-        test_run = json.loads(test_run_content)
-        assert result_url == test_run['result_url']
+        test_run = json.loads(store_cmd['args'])
+        if result_url != test_run['result_url']:
+          self._progress.update_item(
+              'Unexpected result url: %s != %s' %
+              (result_url, test_run['result_url']))
+          self._events.put('invalid_result_url')
+          break
         ping_url = test_run['ping_url']
         ping_delay = test_run['ping_delay']
         self._progress.update_item('%d processing' % self._index, processing=1)
@@ -203,12 +202,9 @@ class FakeSwarmBot(object):
             break
           time.sleep(remaining)
 
+        # In the old API, r=<task_id>&id=<bot_id> is passed as the url.
         data = {
-          'c': test_run['configuration']['config_name'],
-          'n': test_run['test_run_name'],
-          'o': False,
-          'result_output': TASK_OUTPUT,
-          's': True,
+          'o': TASK_OUTPUT,
           'x': '0',
         }
         result = net.url_read(manifest['result_url'], data=data)
@@ -225,7 +221,7 @@ class FakeSwarmBot(object):
         # that the admin will have to remove manually.
         response = net.url_open(
             self._swarming + '/delete_machine_stats',
-            data=[('r', self._machine_id)])
+            data=[('r', self._bot_id)])
         if not response:
           self._events.put('failed_unregister')
         else:
@@ -241,6 +237,8 @@ def main():
       '-S', '--swarming',
       metavar='URL', default='',
       help='Swarming server to use')
+  parser.add_option(
+      '--suffix', metavar='NAME', default='', help='Bot suffix name to use')
   swarming.add_filter_options(parser)
   # Use improbable values to reduce the chance of interferring with real slaves.
   parser.set_defaults(
@@ -296,10 +294,13 @@ def main():
   kill_event = threading.Event()
   swarm_bot_version_hash = calculate_version(
       options.swarming + '/get_slave_code')
+  hostname = get_hostname()
+  if options.suffix:
+    hostname += '-' + options.suffix
   slaves = [
     FakeSwarmBot(
-      options.swarming, options.dimensions, swarm_bot_version_hash, i, progress,
-      options.consume, events, kill_event)
+      options.swarming, options.dimensions, swarm_bot_version_hash, hostname, i,
+      progress, options.consume, events, kill_event)
     for i in range(options.slaves)
   ]
   try:
@@ -324,7 +325,7 @@ def main():
   print('')
   print('Ran for %.1fs.' % (time.time() - start))
   print('')
-  results = events.queue
+  results = list(events.queue)
   print_results(results, options.columns, options.buckets)
   if options.dump:
     with open(options.dump, 'w') as f:

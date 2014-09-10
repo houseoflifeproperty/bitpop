@@ -7,10 +7,10 @@
 #include "config.h"
 #include "V8TestInterfaceCustomConstructor.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/V8DOMConfiguration.h"
-#include "bindings/v8/V8HiddenValue.h"
-#include "bindings/v8/V8ObjectConstructor.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/V8DOMConfiguration.h"
+#include "bindings/core/v8/V8HiddenValue.h"
+#include "bindings/core/v8/V8ObjectConstructor.h"
 #include "core/dom/ContextFeatures.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalDOMWindow.h"
@@ -19,7 +19,7 @@
 #include "wtf/GetPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 static void initializeScriptWrappableForInterface(TestInterfaceCustomConstructor* object)
 {
@@ -29,15 +29,15 @@ static void initializeScriptWrappableForInterface(TestInterfaceCustomConstructor
         ASSERT_NOT_REACHED();
 }
 
-} // namespace WebCore
+} // namespace blink
 
-void webCoreInitializeScriptWrappableForInterface(WebCore::TestInterfaceCustomConstructor* object)
+void webCoreInitializeScriptWrappableForInterface(blink::TestInterfaceCustomConstructor* object)
 {
-    WebCore::initializeScriptWrappableForInterface(object);
+    blink::initializeScriptWrappableForInterface(object);
 }
 
-namespace WebCore {
-const WrapperTypeInfo V8TestInterfaceCustomConstructor::wrapperTypeInfo = { gin::kEmbedderBlink, V8TestInterfaceCustomConstructor::domTemplate, V8TestInterfaceCustomConstructor::derefObject, 0, 0, 0, V8TestInterfaceCustomConstructor::installPerContextEnabledMethods, 0, WrapperTypeObjectPrototype, RefCountedObject };
+namespace blink {
+const WrapperTypeInfo V8TestInterfaceCustomConstructor::wrapperTypeInfo = { gin::kEmbedderBlink, V8TestInterfaceCustomConstructor::domTemplate, V8TestInterfaceCustomConstructor::derefObject, 0, 0, 0, V8TestInterfaceCustomConstructor::installConditionallyEnabledMethods, 0, WrapperTypeObjectPrototype, RefCountedObject };
 
 namespace TestInterfaceCustomConstructorV8Internal {
 
@@ -47,9 +47,9 @@ template <typename T> void V8_USE(T) { }
 
 void V8TestInterfaceCustomConstructor::constructorCallback(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    TRACE_EVENT_SCOPED_SAMPLING_STATE("Blink", "DOMConstructor");
+    TRACE_EVENT_SCOPED_SAMPLING_STATE("blink", "DOMConstructor");
     if (!info.IsConstructCall()) {
-        throwTypeError(ExceptionMessages::constructorNotCallableAsFunction("TestInterfaceCustomConstructor"), info.GetIsolate());
+        V8ThrowException::throwTypeError(ExceptionMessages::constructorNotCallableAsFunction("TestInterfaceCustomConstructor"), info.GetIsolate());
         return;
     }
 
@@ -61,7 +61,7 @@ void V8TestInterfaceCustomConstructor::constructorCallback(const v8::FunctionCal
     V8TestInterfaceCustomConstructor::constructorCustom(info);
 }
 
-static void configureV8TestInterfaceCustomConstructorTemplate(v8::Handle<v8::FunctionTemplate> functionTemplate, v8::Isolate* isolate)
+static void installV8TestInterfaceCustomConstructorTemplate(v8::Handle<v8::FunctionTemplate> functionTemplate, v8::Isolate* isolate)
 {
     functionTemplate->ReadOnlyPrototype();
 
@@ -82,7 +82,7 @@ static void configureV8TestInterfaceCustomConstructorTemplate(v8::Handle<v8::Fun
 
 v8::Handle<v8::FunctionTemplate> V8TestInterfaceCustomConstructor::domTemplate(v8::Isolate* isolate)
 {
-    return V8DOMConfiguration::domClassTemplate(isolate, const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), configureV8TestInterfaceCustomConstructorTemplate);
+    return V8DOMConfiguration::domClassTemplate(isolate, const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), installV8TestInterfaceCustomConstructorTemplate);
 }
 
 bool V8TestInterfaceCustomConstructor::hasInstance(v8::Handle<v8::Value> v8Value, v8::Isolate* isolate)
@@ -97,7 +97,7 @@ v8::Handle<v8::Object> V8TestInterfaceCustomConstructor::findInstanceInPrototype
 
 TestInterfaceCustomConstructor* V8TestInterfaceCustomConstructor::toNativeWithTypeCheck(v8::Isolate* isolate, v8::Handle<v8::Value> value)
 {
-    return hasInstance(value, isolate) ? fromInternalPointer(v8::Handle<v8::Object>::Cast(value)->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex)) : 0;
+    return hasInstance(value, isolate) ? fromInternalPointer(blink::toInternalPointer(v8::Handle<v8::Object>::Cast(value))) : 0;
 }
 
 v8::Handle<v8::Object> wrap(TestInterfaceCustomConstructor* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
@@ -122,14 +122,14 @@ v8::Handle<v8::Object> V8TestInterfaceCustomConstructor::createWrapper(PassRefPt
     if (UNLIKELY(wrapper.IsEmpty()))
         return wrapper;
 
-    installPerContextEnabledProperties(wrapper, impl.get(), isolate);
+    installConditionallyEnabledProperties(wrapper, isolate);
     V8DOMWrapper::associateObjectWithWrapper<V8TestInterfaceCustomConstructor>(impl, &wrapperTypeInfo, wrapper, isolate, WrapperConfiguration::Independent);
     return wrapper;
 }
 
-void V8TestInterfaceCustomConstructor::derefObject(void* object)
+void V8TestInterfaceCustomConstructor::derefObject(ScriptWrappableBase* internalPointer)
 {
-    fromInternalPointer(object)->deref();
+    fromInternalPointer(internalPointer)->deref();
 }
 
 template<>
@@ -138,4 +138,4 @@ v8::Handle<v8::Value> toV8NoInline(TestInterfaceCustomConstructor* impl, v8::Han
     return toV8(impl, creationContext, isolate);
 }
 
-} // namespace WebCore
+} // namespace blink

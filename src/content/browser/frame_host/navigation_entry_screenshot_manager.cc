@@ -53,13 +53,9 @@ class ScreenshotData : public base::RefCountedThreadSafe<ScreenshotData> {
 
   void EncodeOnWorker(const SkBitmap& bitmap) {
     std::vector<unsigned char> data;
-    // Paint |bitmap| to a kA8_Config SkBitmap
+    // Paint |bitmap| to a kAlpha_8_SkColorType SkBitmap
     SkBitmap a8Bitmap;
-    a8Bitmap.setConfig(SkBitmap::kA8_Config,
-                       bitmap.width(),
-                       bitmap.height(),
-                       0);
-    a8Bitmap.allocPixels();
+    a8Bitmap.allocPixels(SkImageInfo::MakeA8(bitmap.width(), bitmap.height()));
     SkCanvas canvas(a8Bitmap);
     SkPaint paint;
     SkColorFilter* filter = SkLumaColorFilter::Create();
@@ -87,7 +83,7 @@ NavigationEntryScreenshotManager::~NavigationEntryScreenshotManager() {
 }
 
 void NavigationEntryScreenshotManager::TakeScreenshot() {
-  static bool overscroll_enabled = CommandLine::ForCurrentProcess()->
+  static bool overscroll_enabled = base::CommandLine::ForCurrentProcess()->
       GetSwitchValueASCII(switches::kOverscrollHistoryNavigation) != "0";
   if (!overscroll_enabled)
     return;
@@ -134,7 +130,7 @@ void NavigationEntryScreenshotManager::TakeScreenshotImpl(
     NavigationEntryImpl* entry) {
   DCHECK(host && host->GetView());
   DCHECK(entry);
-  SkBitmap::Config preferred_format = host->PreferredReadbackFormat();
+  SkColorType preferred_format = host->PreferredReadbackFormat();
   host->CopyFromBackingStore(
       gfx::Rect(),
       host->GetView()->GetViewBounds().size(),

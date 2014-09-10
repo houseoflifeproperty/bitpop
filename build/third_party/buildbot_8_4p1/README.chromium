@@ -3981,3 +3981,179 @@ index 0619977..19d6c4d 100644
                  d.errback(failure.Failure(RuntimeError(msg)))
              self._waiters = {}
 
+
+Date: 2014-07-16 09:52:34 UTC
+Added logging to the status_json.py
+
+BUG=393856
+R=agable@chromium.org
+
+diff --git a/third_party/buildbot_8_4p1/buildbot/status/web/status_json.py b/third_party/buildbot_8_4p1/buildbot/status/web/status_json.py
+index e7cd932d10a0f874175a8b03bd0a9e29436e2278..1047dd55a791479f7be6143bc5992890eb6c4437 100644
+--- a/third_party/buildbot_8_4p1/buildbot/status/web/status_json.py
++++ b/third_party/buildbot_8_4p1/buildbot/status/web/status_json.py
+@@ -22,6 +22,7 @@ import os
+ import re
+
+ from twisted.internet import defer
++from twisted.python import log as twlog
+ from twisted.web import html, resource, server
+
+ from buildbot.status.web.base import HtmlResource
+@@ -162,6 +163,10 @@ class JsonResource(resource.Resource):
+
+     def render_GET(self, request):
+         """Renders a HTTP GET at the http request level."""
++        userAgent = request.requestHeaders.getRawHeaders(
++            'user-agent', ['unknown'])[0]
++        twlog.msg('Received request for %s from %s, id: %s' %
++                  (request.uri, userAgent, id(request)))
+         d = defer.maybeDeferred(lambda : self.content(request))
+         def handle(data):
+             if isinstance(data, unicode):
+@@ -183,6 +188,7 @@ class JsonResource(resource.Resource):
+             return data
+         d.addCallback(handle)
+         def ok(data):
++            twlog.msg('Finished processing request with id: %s' % id(request))
+             request.write(data)
+             request.finish()
+         def fail(f):
+
+Date:   Thu Jul 31 07:57:54 2014 -0400
+
+    Console page: do revision filtering in the database instead of afterward
+    
+    Part of a set of changes split out from https://codereview.chromium.org/417513003/
+
+diff --git a/third_party/buildbot_8_4p1/buildbot/db/changes.py b/third_party/buildbot_8_4p1/buildbot/db/changes.py
+index a5b6482..c6516b6 100644
+--- a/third_party/buildbot_8_4p1/buildbot/db/changes.py
++++ b/third_party/buildbot_8_4p1/buildbot/db/changes.py
+@@ -194,7 +194,8 @@ class ChangesConnectorComponent(base.DBConnectorComponent):
+         d = self.db.pool.do(thd)
+         return d
+ 
+-    def getRecentChanges(self, count):
++    def getRecentChanges(self, count, repository=None, author=None,
++                         branch=None):
+         """
+         Get a list of the C{count} most recent changes, represented as
+         dictionaies; returns fewer if that many do not exist.
+@@ -207,8 +208,15 @@ class ChangesConnectorComponent(base.DBConnectorComponent):
+             # get the changeids from the 'changes' table
+             changes_tbl = self.db.model.changes
+             q = sa.select([changes_tbl.c.changeid],
+-                    order_by=[sa.desc(changes_tbl.c.changeid)],
+-                    limit=count)
++                    order_by=[sa.desc(changes_tbl.c.changeid)])
++            if repository:
++              q = q.where(changes_tbl.c.repository == repository)
++            if author:
++              q = q.where(changes_tbl.c.author == author)
++            if branch:
++              q = q.where(changes_tbl.c.branch == branch)
++            if count:
++              q = q.limit(count)
+             rp = conn.execute(q)
+             changeids = [ row.changeid for row in rp ]
+             rp.close()
+diff --git a/third_party/buildbot_8_4p1/buildbot/status/web/console.py b/third_party/buildbot_8_4p1/buildbot/status/web/console.py
+index de922a4..fd4bd11 100644
+--- a/third_party/buildbot_8_4p1/buildbot/status/web/console.py
++++ b/third_party/buildbot_8_4p1/buildbot/status/web/console.py
+@@ -173,9 +173,10 @@ class ConsoleStatusResource(HtmlResource):
+     Every change is a line in the page, and it shows the result of the first
+     build with this change for each slave."""
+ 
+-    def __init__(self, orderByTime=False):
++    def __init__(self, orderByTime=False, repository=None):
+         HtmlResource.__init__(self)
+ 
++        self.repository = repository
+         self.status = None
+         self.cache = CacheStatus()
+ 
+@@ -244,11 +245,11 @@ class ConsoleStatusResource(HtmlResource):
+         return allChanges
+ 
+     @defer.deferredGenerator
+-    def getAllChanges(self, request, status, debugInfo):
++    def getAllChanges(self, request, status, debugInfo, **kwargs):
+         master = request.site.buildbot_service.master
+         limit = min(100, max(1, int(request.args.get('limit', [25])[0])))
+         wfd = defer.waitForDeferred(
+-                master.db.changes.getRecentChanges(limit))
++                master.db.changes.getRecentChanges(limit, **kwargs))
+         yield wfd
+         chdicts = wfd.getResult()
+ 
+@@ -762,19 +763,14 @@ class ConsoleStatusResource(HtmlResource):
+ 
+         # Get all changes we can find.  This is a DB operation, so it must use
+         # a deferred.
+-        d = self.getAllChanges(request, status, debugInfo)
++        filter_branch = None if branch == ANYBRANCH else branch
++        filter_repo = repository if repository else self.repository
++        filter_author = devName[0] if devName else None
++        d = self.getAllChanges(request, status, debugInfo, author=filter_author,
++                               branch=filter_branch, repository=filter_repo)
+         def got_changes(allChanges):
+             debugInfo["source_all"] = len(allChanges)
+-
+-            revFilter = {}
+-            if branch != ANYBRANCH:
+-                revFilter['branch'] = branch
+-            if devName:
+-                revFilter['who'] = devName
+-            if repository:
+-                revFilter['repository'] = repository
+-            revisions = list(self.filterRevisions(allChanges, max_revs=numRevs,
+-                                                            filter=revFilter))
++            revisions = list(self.filterRevisions(allChanges, max_revs=numRevs))
+             debugInfo["revision_final"] = len(revisions)
+ 
+             # Fetch all the builds for all builders until we get the next build
+
+Date:   Wed Jul 30 12:11:07 2014 -0400
+
+    Add optional builder filter function to console page
+    
+    This is needed for client.skia, where we want to hide trybots from the console.
+
+diff --git a/third_party/buildbot_8_4p1/buildbot/status/web/console.py b/third_party/buildbot_8_4p1/buildbot/status/web/console.py
+index fd4bd11..60383f4 100644
+--- a/third_party/buildbot_8_4p1/buildbot/status/web/console.py
++++ b/third_party/buildbot_8_4p1/buildbot/status/web/console.py
+@@ -173,10 +173,12 @@ class ConsoleStatusResource(HtmlResource):
+     Every change is a line in the page, and it shows the result of the first
+     build with this change for each slave."""
+ 
+-    def __init__(self, orderByTime=False, repository=None):
++    def __init__(self, orderByTime=False, repository=None,
++                 builder_filter_fn=lambda builderName: True):
+         HtmlResource.__init__(self)
+ 
+         self.repository = repository
++        self.builder_filter_fn = builder_filter_fn
+         self.status = None
+         self.cache = CacheStatus()
+ 
+@@ -228,6 +230,8 @@ class ConsoleStatusResource(HtmlResource):
+         allChanges = list()
+         build_count = 0
+         for builderName in status.getBuilderNames()[:]:
++            if not self.builder_filter_fn(builderName):
++                continue
+             if build_count > max_builds:
+                 break
+ 
+@@ -407,6 +411,8 @@ class ConsoleStatusResource(HtmlResource):
+                 continue
+             if builders and builderName not in builders:
+                 continue
++            if not self.builder_filter_fn(builderName):
++                continue
+ 
+             # We want to display this builder.
+             category = builder.category or "default"

@@ -31,7 +31,7 @@
 #include "platform/graphics/ImageDecodingStore.h"
 #include "platform/graphics/ImageFrameGenerator.h"
 
-namespace WebCore {
+namespace blink {
 
 LazyDecodingPixelRef::LazyDecodingPixelRef(const SkImageInfo& info, PassRefPtr<ImageFrameGenerator> frameGenerator, size_t index)
     : LazyPixelRef(info)
@@ -62,7 +62,7 @@ SkData* LazyDecodingPixelRef::onRefEncodedData()
 
 bool LazyDecodingPixelRef::onNewLockPixels(LockRec* rec)
 {
-    TRACE_EVENT_ASYNC_BEGIN0("webkit", "LazyDecodingPixelRef::onNewLockPixels", this);
+    TRACE_EVENT_ASYNC_BEGIN0("blink", "LazyDecodingPixelRef::onNewLockPixels", this);
 
     ASSERT(!m_lockedImageResource);
 
@@ -95,7 +95,7 @@ void LazyDecodingPixelRef::onUnlockPixels()
         m_lockedImageResource = 0;
     }
 
-    TRACE_EVENT_ASYNC_END0("webkit", "LazyDecodingPixelRef::lockPixels", this);
+    TRACE_EVENT_ASYNC_END0("blink", "LazyDecodingPixelRef::lockPixels", this);
 }
 
 bool LazyDecodingPixelRef::onLockPixelsAreWritable() const

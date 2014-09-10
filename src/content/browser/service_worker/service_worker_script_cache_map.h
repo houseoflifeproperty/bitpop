@@ -11,6 +11,7 @@
 #include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/service_worker/service_worker_database.h"
+#include "content/common/content_export.h"
 
 class GURL;
 
@@ -20,8 +21,8 @@ class ServiceWorkerContextCore;
 class ServiceWorkerVersion;
 
 // Class that maintains the mapping between urls and a resource id
-// for a particular versions implicit script resources.
-class ServiceWorkerScriptCacheMap {
+// for a particular version's implicit script resources.
+class CONTENT_EXPORT ServiceWorkerScriptCacheMap {
  public:
   int64 Lookup(const GURL& url);
 
@@ -38,6 +39,8 @@ class ServiceWorkerScriptCacheMap {
   // Used when loading an existing version.
   void SetResources(
      const std::vector<ServiceWorkerDatabase::ResourceRecord>& resources);
+
+  size_t size() const { return resource_ids_.size(); }
 
  private:
   typedef std::map<GURL, int64> ResourceIDMap;

@@ -37,7 +37,7 @@
 #include "platform/graphics/media/MediaPlayer.h"
 #include "public/platform/WebLayer.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -97,7 +97,7 @@ LayoutSize RenderVideo::calculateIntrinsicSize()
     // The intrinsic height of a video element's playback area is the intrinsic height
     // of the video resource, if that is available; otherwise it is the intrinsic
     // height of the poster frame, if that is available; otherwise it is 150 CSS pixels.
-    blink::WebMediaPlayer* webMediaPlayer = mediaElement()->webMediaPlayer();
+    WebMediaPlayer* webMediaPlayer = mediaElement()->webMediaPlayer();
     if (webMediaPlayer && video->readyState() >= HTMLVideoElement::HAVE_METADATA) {
         IntSize size = webMediaPlayer->naturalSize();
         if (!size.isEmpty())
@@ -170,7 +170,7 @@ void RenderVideo::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
     if (displayingPoster)
         paintIntoRect(context, rect);
     else if ((document().view() && document().view()->paintBehavior() & PaintBehaviorFlattenCompositingLayers) || !acceleratedRenderingInUse())
-        mediaPlayer->paint(context, pixelSnappedIntRect(rect));
+        videoElement()->paintCurrentFrameInContext(context, pixelSnappedIntRect(rect));
 
     if (clip)
         context->restore();
@@ -178,7 +178,7 @@ void RenderVideo::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
 
 bool RenderVideo::acceleratedRenderingInUse()
 {
-    blink::WebLayer* webLayer = mediaElement()->platformLayer();
+    WebLayer* webLayer = mediaElement()->platformLayer();
     return webLayer && !webLayer->isOrphan();
 }
 
@@ -274,7 +274,7 @@ LayoutUnit RenderVideo::offsetHeight() const
     return RenderMedia::offsetHeight();
 }
 
-CompositingReasons RenderVideo::additionalCompositingReasons(CompositingTriggerFlags triggers) const
+CompositingReasons RenderVideo::additionalCompositingReasons() const
 {
     if (RuntimeEnabledFeatures::overlayFullscreenVideoEnabled()) {
         HTMLMediaElement* media = toHTMLMediaElement(node());
@@ -282,10 +282,10 @@ CompositingReasons RenderVideo::additionalCompositingReasons(CompositingTriggerF
             return CompositingReasonVideo;
     }
 
-    if ((triggers & VideoTrigger) && shouldDisplayVideo() && supportsAcceleratedRendering())
+    if (shouldDisplayVideo() && supportsAcceleratedRendering())
         return CompositingReasonVideo;
 
     return CompositingReasonNone;
 }
 
-} // namespace WebCore
+} // namespace blink

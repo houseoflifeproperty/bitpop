@@ -22,7 +22,6 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/test/test_utils.h"
-#include "grit/generated_resources.h"
 #include "ui/views/controls/button/label_button.h"
 
 class NewAvatarMenuButtonTest : public InProcessBrowserTest {
@@ -48,11 +47,11 @@ NewAvatarMenuButtonTest::~NewAvatarMenuButtonTest() {
 
 void NewAvatarMenuButtonTest::SetUp() {
   InProcessBrowserTest::SetUp();
-  DCHECK(switches::IsNewProfileManagement());
+  DCHECK(switches::IsNewAvatarMenu());
 }
 
 void NewAvatarMenuButtonTest::SetUpCommandLine(CommandLine* command_line) {
-  switches::EnableNewProfileManagementForTesting(command_line);
+  switches::EnableNewAvatarMenuForTesting(command_line);
 }
 
 void NewAvatarMenuButtonTest::CreateTestingProfile() {

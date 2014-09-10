@@ -31,8 +31,8 @@
 #include "config.h"
 #include "core/inspector/InspectorResourceAgent.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "bindings/v8/ScriptCallStackFactory.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ScriptCallStackFactory.h"
 #include "core/FetchInitiatorTypeNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/ScriptableDocumentParser.h"
@@ -48,6 +48,7 @@
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/NetworkResourcesData.h"
+#include "core/inspector/ScriptAsyncCallStack.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/DocumentThreadableLoader.h"
@@ -64,12 +65,13 @@
 #include "platform/network/WebSocketHandshakeRequest.h"
 #include "platform/network/WebSocketHandshakeResponse.h"
 #include "platform/weborigin/KURL.h"
+#include "public/platform/WebURLRequest.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/RefPtr.h"
 
-typedef WebCore::InspectorBackendDispatcher::NetworkCommandHandler::LoadResourceForFrontendCallback LoadResourceForFrontendCallback;
+typedef blink::InspectorBackendDispatcher::NetworkCommandHandler::LoadResourceForFrontendCallback LoadResourceForFrontendCallback;
 
-namespace WebCore {
+namespace blink {
 
 namespace ResourceAgentState {
 static const char resourceAgentEnabled[] = "resourceAgentEnabled";
@@ -287,11 +289,24 @@ static PassRefPtr<TypeBuilder::Network::Response> buildObjectForResourceResponse
 
 InspectorResourceAgent::~InspectorResourceAgent()
 {
+#if !ENABLE(OILPAN)
     if (m_state->getBoolean(ResourceAgentState::resourceAgentEnabled)) {
         ErrorString error;
         disable(&error);
     }
     ASSERT(!m_instrumentingAgents->inspectorResourceAgent());
+#endif
+}
+
+void InspectorResourceAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_pageAgent);
+#if ENABLE(OILPAN)
+    visitor->trace(m_pendingXHRReplayData);
+    visitor->trace(m_replayXHRs);
+    visitor->trace(m_replayXHRsToBeDeleted);
+#endif
+    InspectorBaseAgent::trace(visitor);
 }
 
 void InspectorResourceAgent::willSendRequest(unsigned long identifier, DocumentLoader* loader, ResourceRequest& request, const ResourceResponse& redirectResponse, const FetchInitiatorInfo& initiatorInfo)
@@ -467,21 +482,38 @@ void InspectorResourceAgent::documentThreadableLoaderStartedLoadingForClient(uns
 void InspectorResourceAgent::willLoadXHR(XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const KURL& url, bool async, FormData* formData, const HTTPHeaderMap& headers, bool includeCredentials)
 {
     ASSERT(xhr);
-    RefPtr<XHRReplayData> xhrReplayData = XHRReplayData::create(xhr->executionContext(), method, urlWithoutFragment(url), async, formData, includeCredentials);
+    RefPtrWillBeRawPtr<XHRReplayData> xhrReplayData = XHRReplayData::create(xhr->executionContext(), method, urlWithoutFragment(url), async, formData, includeCredentials);
     HTTPHeaderMap::const_iterator end = headers.end();
     for (HTTPHeaderMap::const_iterator it = headers.begin(); it!= end; ++it)
         xhrReplayData->addHeader(it->key, it->value);
     m_pendingXHRReplayData.set(client, xhrReplayData);
 }
 
-void InspectorResourceAgent::didFailXHRLoading(XMLHttpRequest*, ThreadableLoaderClient* client)
+void InspectorResourceAgent::delayedRemoveReplayXHR(XMLHttpRequest* xhr)
 {
-    m_pendingXHRReplayData.remove(client);
+    if (!m_replayXHRs.contains(xhr))
+        return;
+
+    m_replayXHRsToBeDeleted.add(xhr);
+    m_replayXHRs.remove(xhr);
+    m_removeFinishedReplayXHRTimer.startOneShot(0, FROM_HERE);
 }
 
-void InspectorResourceAgent::didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient* client, unsigned long identifier, ScriptString sourceString, const AtomicString&, const String&, const String&, unsigned)
+void InspectorResourceAgent::didFailXHRLoading(XMLHttpRequest* xhr, ThreadableLoaderClient* client)
 {
     m_pendingXHRReplayData.remove(client);
+
+    // This method will be called from the XHR.
+    // We delay deleting the replay XHR, as deleting here may delete the caller.
+    delayedRemoveReplayXHR(xhr);
+}
+
+void InspectorResourceAgent::didFinishXHRLoading(XMLHttpRequest* xhr, ThreadableLoaderClient* client, unsigned long identifier, ScriptString sourceString, const AtomicString&, const String&, const String&, unsigned)
+{
+    m_pendingXHRReplayData.remove(client);
+
+    // See comments on |didFailXHRLoading| for why we are delaying delete.
+    delayedRemoveReplayXHR(xhr);
 }
 
 void InspectorResourceAgent::willDestroyResource(Resource* cachedResource)
@@ -530,6 +562,9 @@ PassRefPtr<TypeBuilder::Network::Initiator> InspectorResourceAgent::buildInitiat
         RefPtr<TypeBuilder::Network::Initiator> initiatorObject = TypeBuilder::Network::Initiator::create()
             .setType(TypeBuilder::Network::Initiator::Type::Script);
         initiatorObject->setStackTrace(stackTrace->buildInspectorArray());
+        RefPtrWillBeRawPtr<ScriptAsyncCallStack> asyncStackTrace = stackTrace->asyncCallStack();
+        if (asyncStackTrace)
+            initiatorObject->setAsyncStackTrace(asyncStackTrace->buildInspectorObject());
         return initiatorObject;
     }
 
@@ -706,6 +741,8 @@ void InspectorResourceAgent::replayXHR(ErrorString*, const String& requestId)
     for (HTTPHeaderMap::const_iterator it = xhrReplayData->headers().begin(); it!= end; ++it)
         xhr->setRequestHeader(it->key, it->value, IGNORE_EXCEPTION);
     xhr->sendForInspectorXHRReplay(xhrReplayData->formData(), IGNORE_EXCEPTION);
+
+    m_replayXHRs.add(xhr);
 }
 
 void InspectorResourceAgent::canClearBrowserCache(ErrorString*, bool* result)
@@ -729,6 +766,10 @@ void InspectorResourceAgent::setCacheDisabled(ErrorString*, bool cacheDisabled)
     }
 }
 
+void InspectorResourceAgent::emulateNetworkConditions(ErrorString*, bool, double, double, double)
+{
+}
+
 void InspectorResourceAgent::loadResourceForFrontend(ErrorString* errorString, const String& frameId, const String& url, const RefPtr<JSONObject>* requestHeaders, PassRefPtr<LoadResourceForFrontendCallback> prpCallback)
 {
     RefPtr<LoadResourceForFrontendCallback> callback = prpCallback;
@@ -744,6 +785,7 @@ void InspectorResourceAgent::loadResourceForFrontend(ErrorString* errorString, c
 
     ResourceRequest request(url);
     request.setHTTPMethod("GET");
+    request.setRequestContext(blink::WebURLRequest::RequestContextInternal);
     request.setCachePolicy(ReloadIgnoringCacheData);
     if (requestHeaders) {
         for (JSONObject::iterator it = (*requestHeaders)->begin(); it != (*requestHeaders)->end(); ++it) {
@@ -803,10 +845,10 @@ void InspectorResourceAgent::setHostId(const String& hostId)
     m_hostId = hostId;
 }
 
-bool InspectorResourceAgent::fetchResourceContent(LocalFrame* frame, const KURL& url, String* content, bool* base64Encoded)
+bool InspectorResourceAgent::fetchResourceContent(Document* document, const KURL& url, String* content, bool* base64Encoded)
 {
     // First try to fetch content from the cached resource.
-    Resource* cachedResource = frame->document()->fetcher()->cachedResource(url);
+    Resource* cachedResource = document->fetcher()->cachedResource(url);
     if (!cachedResource)
         cachedResource = memoryCache()->resourceForURL(url);
     if (cachedResource && InspectorPageAgent::cachedResourceContent(cachedResource, content, base64Encoded))
@@ -824,13 +866,19 @@ bool InspectorResourceAgent::fetchResourceContent(LocalFrame* frame, const KURL&
     return false;
 }
 
+void InspectorResourceAgent::removeFinishedReplayXHRFired(Timer<InspectorResourceAgent>*)
+{
+    m_replayXHRsToBeDeleted.clear();
+}
+
 InspectorResourceAgent::InspectorResourceAgent(InspectorPageAgent* pageAgent)
     : InspectorBaseAgent<InspectorResourceAgent>("Network")
     , m_pageAgent(pageAgent)
     , m_frontend(0)
     , m_resourcesData(adoptPtr(new NetworkResourcesData()))
     , m_isRecalculatingStyle(false)
+    , m_removeFinishedReplayXHRTimer(this, &InspectorResourceAgent::removeFinishedReplayXHRFired)
 {
 }
 
-} // namespace WebCore
+} // namespace blink

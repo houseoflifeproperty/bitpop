@@ -46,7 +46,9 @@ int CPDF_Dest::GetZoomMode()
     if (m_pObj == NULL || m_pObj->GetType() != PDFOBJ_ARRAY) {
         return 0;
     }
-    CFX_ByteString mode = ((CPDF_Array*)m_pObj)->GetElementValue(1)->GetString();
+    CFX_ByteString mode;
+    CPDF_Object* pObj = ((CPDF_Array*)m_pObj)->GetElementValue(1);
+    mode = pObj ? pObj->GetString() : CFX_ByteString();
     int i = 0;
     while (g_sZoomModes[i][0] != '\0') {
         if (mode == g_sZoomModes[i]) {
@@ -72,7 +74,10 @@ CFX_ByteString CPDF_Dest::GetRemoteName()
 }
 CPDF_NameTree::CPDF_NameTree(CPDF_Document* pDoc, FX_BSTR category)
 {
-    m_pRoot = pDoc->GetRoot()->GetDict(FX_BSTRC("Names"))->GetDict(category);
+    if (pDoc->GetRoot() && pDoc->GetRoot()->GetDict(FX_BSTRC("Names")))
+        m_pRoot = pDoc->GetRoot()->GetDict(FX_BSTRC("Names"))->GetDict(category);
+    else
+        m_pRoot = NULL;
 }
 static CPDF_Object* SearchNameNode(CPDF_Dictionary* pNode, const CFX_ByteString& csName,
                                    int& nIndex, CPDF_Array** ppFind, int nLevel = 0)

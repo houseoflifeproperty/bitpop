@@ -30,8 +30,7 @@
  */
 WebInspector.View = function()
 {
-    this.element = document.createElement("div");
-    this.element.className = "view";
+    this.element = document.createElementWithClass("div", "view");
     this.element.__view = this;
     this._visible = true;
     this._isRoot = false;
@@ -67,7 +66,7 @@ WebInspector.View.createStyleElement = function(cssFile)
 WebInspector.View.prototype = {
     markAsRoot: function()
     {
-        WebInspector.View._assert(!this.element.parentElement, "Attempt to mark as root attached node");
+        WebInspector.View.__assert(!this.element.parentElement, "Attempt to mark as root attached node");
         this._isRoot = true;
     },
 
@@ -205,7 +204,7 @@ WebInspector.View.prototype = {
      */
     show: function(parentElement, insertBefore)
     {
-        WebInspector.View._assert(parentElement, "Attempt to attach view with no parent element");
+        WebInspector.View.__assert(parentElement, "Attempt to attach view with no parent element");
 
         // Update view hierarchy
         if (this.element.parentElement !== parentElement) {
@@ -221,7 +220,7 @@ WebInspector.View.prototype = {
                 this._parentView._children.push(this);
                 this._isRoot = false;
             } else
-                WebInspector.View._assert(this._isRoot, "Attempt to attach view to orphan node");
+                WebInspector.View.__assert(this._isRoot, "Attempt to attach view to orphan node");
         } else if (this._visible) {
             return;
         }
@@ -284,14 +283,14 @@ WebInspector.View.prototype = {
         // Update view hierarchy
         if (this._parentView) {
             var childIndex = this._parentView._children.indexOf(this);
-            WebInspector.View._assert(childIndex >= 0, "Attempt to remove non-child view");
+            WebInspector.View.__assert(childIndex >= 0, "Attempt to remove non-child view");
             this._parentView._children.splice(childIndex, 1);
             var parent = this._parentView;
             this._parentView = null;
             if (this._hasNonZeroConstraints())
                 parent.invalidateConstraints();
         } else
-            WebInspector.View._assert(this._isRoot, "Removing non-root view from DOM");
+            WebInspector.View.__assert(this._isRoot, "Removing non-root view from DOM");
     },
 
     detachChildViews: function()
@@ -562,7 +561,7 @@ WebInspector.View._decrementViewCounter = function(parentElement, childElement)
     }
 }
 
-WebInspector.View._assert = function(condition, message)
+WebInspector.View.__assert = function(condition, message)
 {
     if (!condition) {
         console.trace();
@@ -669,35 +668,35 @@ WebInspector.VBoxWithResizeCallback.prototype = {
  */
 Element.prototype.appendChild = function(child)
 {
-    WebInspector.View._assert(!child.__view || child.parentElement === this, "Attempt to add view via regular DOM operation.");
+    WebInspector.View.__assert(!child.__view || child.parentElement === this, "Attempt to add view via regular DOM operation.");
     return WebInspector.View._originalAppendChild.call(this, child);
 }
 
 /**
  * @param {?Node} child
  * @param {?Node} anchor
- * @return {?Node}
+ * @return {!Node}
  * @suppress {duplicate}
  */
 Element.prototype.insertBefore = function(child, anchor)
 {
-    WebInspector.View._assert(!child.__view || child.parentElement === this, "Attempt to add view via regular DOM operation.");
+    WebInspector.View.__assert(!child.__view || child.parentElement === this, "Attempt to add view via regular DOM operation.");
     return WebInspector.View._originalInsertBefore.call(this, child, anchor);
 }
 
 /**
  * @param {?Node} child
- * @return {?Node}
+ * @return {!Node}
  * @suppress {duplicate}
  */
 Element.prototype.removeChild = function(child)
 {
-    WebInspector.View._assert(!child.__viewCounter && !child.__view, "Attempt to remove element containing view via regular DOM operation");
+    WebInspector.View.__assert(!child.__viewCounter && !child.__view, "Attempt to remove element containing view via regular DOM operation");
     return WebInspector.View._originalRemoveChild.call(this, child);
 }
 
 Element.prototype.removeChildren = function()
 {
-    WebInspector.View._assert(!this.__viewCounter, "Attempt to remove element containing view via regular DOM operation");
+    WebInspector.View.__assert(!this.__viewCounter, "Attempt to remove element containing view via regular DOM operation");
     WebInspector.View._originalRemoveChildren.call(this);
 }

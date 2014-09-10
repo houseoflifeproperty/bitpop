@@ -36,12 +36,6 @@ WebInspector.SourcesView = function(workspace, sourcesPanel)
 
     this._historyManager = new WebInspector.EditingLocationHistoryManager(this, this.currentSourceFrame.bind(this));
 
-    this._scriptViewStatusBarItemsContainer = document.createElement("div");
-    this._scriptViewStatusBarItemsContainer.className = "inline-block";
-
-    this._scriptViewStatusBarTextContainer = document.createElement("div");
-    this._scriptViewStatusBarTextContainer.className = "hbox";
-
     this._statusBarContainerElement = this.element.createChild("div", "sources-status-bar");
 
     /**
@@ -52,11 +46,11 @@ WebInspector.SourcesView = function(workspace, sourcesPanel)
     {
         this._statusBarContainerElement.appendChild(EditorAction.button(this));
     }
-    var editorActions = /** @type {!Array.<!WebInspector.SourcesView.EditorAction>} */ (WebInspector.moduleManager.instances(WebInspector.SourcesView.EditorAction));
+    var editorActions = /** @type {!Array.<!WebInspector.SourcesView.EditorAction>} */ (self.runtime.instances(WebInspector.SourcesView.EditorAction));
     editorActions.forEach(appendButtonForExtension.bind(this));
 
-    this._statusBarContainerElement.appendChild(this._scriptViewStatusBarItemsContainer);
-    this._statusBarContainerElement.appendChild(this._scriptViewStatusBarTextContainer);
+    this._scriptViewStatusBarItemsContainer = this._statusBarContainerElement.createChild("div", "inline-block");
+    this._scriptViewStatusBarTextContainer = this._statusBarContainerElement.createChild("div", "hbox");
 
     WebInspector.startBatchUpdate();
     this._workspace.uiSourceCodes().forEach(this._addUISourceCode.bind(this));
@@ -92,14 +86,14 @@ WebInspector.SourcesView.Events = {
 
 WebInspector.SourcesView.prototype = {
     /**
-     * @param {function(!Array.<!WebInspector.KeyboardShortcut.Descriptor>, function(?Event=):boolean)} registerShortcutDelegate
+     * @param {function(!Array.<!WebInspector.KeyboardShortcut.Descriptor>, function(!Event=):boolean)} registerShortcutDelegate
      */
     registerShortcuts: function(registerShortcutDelegate)
     {
         /**
          * @this {WebInspector.SourcesView}
          * @param {!Array.<!WebInspector.KeyboardShortcut.Descriptor>} shortcuts
-         * @param {function(?Event=):boolean} handler
+         * @param {function(!Event=):boolean} handler
          */
         function registerShortcut(shortcuts, handler)
         {
@@ -120,7 +114,7 @@ WebInspector.SourcesView.prototype = {
 
     /**
      * @param {!Array.<!WebInspector.KeyboardShortcut.Descriptor>} keys
-     * @param {function(?Event=):boolean} handler
+     * @param {function(!Event=):boolean} handler
      */
     _registerShortcuts: function(keys, handler)
     {
@@ -134,6 +128,18 @@ WebInspector.SourcesView.prototype = {
         var handler = this._shortcuts[shortcutKey];
         if (handler && handler())
             event.consume(true);
+    },
+
+    wasShown: function()
+    {
+        WebInspector.VBox.prototype.wasShown.call(this);
+        WebInspector.context.setFlavor(WebInspector.SourcesView, this);
+    },
+
+    willHide: function()
+    {
+        WebInspector.context.setFlavor(WebInspector.SourcesView, null);
+        WebInspector.VBox.prototype.willHide.call(this);
     },
 
     /**
@@ -188,7 +194,7 @@ WebInspector.SourcesView.prototype = {
     },
 
     /**
-     * @param {?Event=} event
+     * @param {!Event=} event
      */
     _onCloseEditorTab: function(event)
     {
@@ -200,7 +206,7 @@ WebInspector.SourcesView.prototype = {
     },
 
     /**
-     * @param {?Event=} event
+     * @param {!Event=} event
      */
     _onJumpToPreviousLocation: function(event)
     {
@@ -209,7 +215,7 @@ WebInspector.SourcesView.prototype = {
     },
 
     /**
-     * @param {?Event=} event
+     * @param {!Event=} event
      */
     _onJumpToNextLocation: function(event)
     {
@@ -588,7 +594,7 @@ WebInspector.SourcesView.prototype = {
     },
 
     /**
-     * @param {?Event=} event
+     * @param {!Event=} event
      * @return {boolean}
      */
     _showOutlineDialog: function(event)
@@ -605,8 +611,10 @@ WebInspector.SourcesView.prototype = {
         case WebInspector.resourceTypes.Stylesheet:
             WebInspector.StyleSheetOutlineDialog.show(this, uiSourceCode, this.showSourceLocation.bind(this, uiSourceCode));
             return true;
+        default:
+            // We don't want default browser shortcut to be executed, so pretend to handle this event.
+            return true;
         }
-        return false;
     },
 
     /**
@@ -623,7 +631,7 @@ WebInspector.SourcesView.prototype = {
     },
 
     /**
-     * @param {?Event=} event
+     * @param {!Event=} event
      * @return {boolean}
      */
     _showGoToLineDialog: function(event)
@@ -705,4 +713,69 @@ WebInspector.SourcesView.EditorAction.prototype = {
      * @return {!Element}
      */
     button: function(sourcesView) { }
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.ActionDelegate}
+ */
+WebInspector.SourcesView.SwitchFileActionDelegate = function()
+{
+}
+
+/**
+ * @param {!WebInspector.UISourceCode} currentUISourceCode
+ * @return {?WebInspector.UISourceCode}
+ */
+WebInspector.SourcesView.SwitchFileActionDelegate._nextFile = function(currentUISourceCode)
+{
+    /**
+     * @param {string} name
+     * @return {string}
+     */
+    function fileNamePrefix(name)
+    {
+        var lastDotIndex = name.lastIndexOf(".");
+        var namePrefix = name.substr(0, lastDotIndex !== -1 ? lastDotIndex : name.length);
+        return namePrefix.toLowerCase();
+    }
+
+    var uiSourceCodes = currentUISourceCode.project().uiSourceCodes();
+    var candidates = [];
+    var path = currentUISourceCode.parentPath();
+    var name = currentUISourceCode.name();
+    var namePrefix = fileNamePrefix(name);
+    for (var i = 0; i < uiSourceCodes.length; ++i) {
+        var uiSourceCode = uiSourceCodes[i];
+        if (path !== uiSourceCode.parentPath())
+            continue;
+        if (fileNamePrefix(uiSourceCode.name()) === namePrefix)
+            candidates.push(uiSourceCode.name());
+    }
+    candidates.sort(String.naturalOrderComparator);
+    var index = mod(candidates.indexOf(name) + 1, candidates.length);
+    var fullPath = (path ? path + "/" : "") + candidates[index];
+    var nextUISourceCode = currentUISourceCode.project().uiSourceCode(fullPath);
+    return nextUISourceCode !== currentUISourceCode ? nextUISourceCode : null;
+},
+
+
+WebInspector.SourcesView.SwitchFileActionDelegate.prototype = {
+    /**
+     * @return {boolean}
+     */
+    handleAction: function()
+    {
+        var sourcesView = WebInspector.context.flavor(WebInspector.SourcesView);
+        if (!sourcesView)
+            return false;
+        var currentUISourceCode = sourcesView.currentUISourceCode();
+        if (!currentUISourceCode)
+            return true;
+        var nextUISourceCode = WebInspector.SourcesView.SwitchFileActionDelegate._nextFile(currentUISourceCode);
+        if (!nextUISourceCode)
+            return true;
+        sourcesView.showSourceLocation(nextUISourceCode);
+        return true;
+    }
 }

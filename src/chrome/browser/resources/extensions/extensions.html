@@ -68,10 +68,10 @@
         </label>
       </div>
     </div>
-    <div class="page-banner profile-is-managed-banner">
+    <div class="page-banner profile-is-supervised-banner">
       <div class="page-banner-gradient">
         <span class="page-banner-text"
-            i18n-content="extensionSettingsManagedMode"></span>
+            i18n-content="extensionSettingsSupervisedUser"></span>
       </div>
     </div>
   </header>
@@ -161,6 +161,10 @@
             </a>
           </div>
         </div>
+        <div class="dependent-extensions-message" hidden>
+          <span i18n-content="extensionSettingsDependentExtensions"></span>
+          <ul></ul>
+        </div>
         <div class="developer-extras">
           <div>
             <span i18n-content="extensionSettingsExtensionId"></span>
@@ -168,7 +172,7 @@
           </div>
           <div class="load-path" hidden>
             <span i18n-content="extensionSettingsExtensionPath"></span>
-            <span></span>
+            <a href="#"></a>
           </div>
           <div class="managed-message"
               i18n-content="extensionSettingsPolicyControlled" hidden>
@@ -242,6 +246,16 @@
       </div>
     </div>
   </div>
+  <li class="dependent-list-item">
+    <span class="dep-extension-title"></span>
+    <ul class="developer-extras">
+      <li>
+        <span i18n-content="extensionSettingsExtensionId"></span>
+        <span class="dep-extension-id"></span>
+      </li>
+    </ul>
+  </li>
+
 
   <include src="../../../../ui/webui/resources/html/trash.html">
   <include src="extension_error.html">

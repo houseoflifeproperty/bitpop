@@ -34,9 +34,8 @@
 #include "core/html/imports/HTMLImportState.h"
 #include "platform/heap/Handle.h"
 #include "wtf/TreeNode.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class LocalFrame;
@@ -142,6 +141,6 @@ private:
     unsigned m_sync : 1;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLImport_h

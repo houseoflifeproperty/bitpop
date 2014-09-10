@@ -24,12 +24,13 @@
 #include "core/svg/SVGFELightElement.h"
 
 #include "core/SVGNames.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGFEDiffuseLightingElement.h"
 #include "core/svg/SVGFESpecularLightingElement.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGFELightElement::SVGFELightElement(const QualifiedName& tagName, Document& document)
     : SVGElement(tagName, document)
@@ -59,6 +60,16 @@ SVGFELightElement::SVGFELightElement(const QualifiedName& tagName, Document& doc
 SVGFELightElement* SVGFELightElement::findLightElement(const SVGElement& svgElement)
 {
     return Traversal<SVGFELightElement>::firstChild(svgElement);
+}
+
+FloatPoint3D SVGFELightElement::position() const
+{
+    return FloatPoint3D(x()->currentValue()->value(), y()->currentValue()->value(), z()->currentValue()->value());
+}
+
+FloatPoint3D SVGFELightElement::pointsAt() const
+{
+    return FloatPoint3D(pointsAtX()->currentValue()->value(), pointsAtY()->currentValue()->value(), pointsAtZ()->currentValue()->value());
 }
 
 bool SVGFELightElement::isSupportedAttribute(const QualifiedName& attrName)
@@ -154,11 +165,11 @@ void SVGFELightElement::svgAttributeChanged(const QualifiedName& attrName)
     ASSERT_NOT_REACHED();
 }
 
-void SVGFELightElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void SVGFELightElement::childrenChanged(const ChildrenChange& change)
 {
-    SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    SVGElement::childrenChanged(change);
 
-    if (!changedByParser) {
+    if (!change.byParser) {
         if (ContainerNode* parent = parentNode()) {
             RenderObject* renderer = parent->renderer();
             if (renderer && renderer->isSVGResourceFilterPrimitive())

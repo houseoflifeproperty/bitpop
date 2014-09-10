@@ -19,7 +19,7 @@ _BUILD_DIR = os.path.abspath(os.path.join(
 
 class MockOptions(object):
   build_properties = {}
-  factory_properties = {}
+  build_archive_url = None
 
 
 class ExtractBuildTest(unittest.TestCase):
@@ -30,7 +30,7 @@ class ExtractBuildTest(unittest.TestCase):
   def testGetBuildUrl(self):
     options = MockOptions()
 
-    base_filename, _version_suffix = slave_utils.GetZipFileNames(
+    base_filename, version_suffix = slave_utils.GetZipFileNames(
         options.build_properties, build_revision=self._build_revision,
         webkit_revision=self._webkit_revision,
         extract=True)
@@ -41,8 +41,10 @@ class ExtractBuildTest(unittest.TestCase):
     http_url_without_slash = 'http://foo/Win'
     http_url_with_slash = 'http://foo/Win/'
     http_url_with_filename = 'http://foo/Win/%s.zip' % base_filename
-    expected_gs_url = gs_url_with_slash + base_filename + '.zip'
-    expected_http_url = http_url_with_slash + base_filename + '.zip'
+    expected_gs_url = (
+        gs_url_with_slash + base_filename + version_suffix + '.zip')
+    expected_http_url = (
+        http_url_with_slash + base_filename + version_suffix + '.zip')
 
     # Verify that only one slash is added: URL without ending slash.
     self._VerifyBuildUrl(options, gs_url_without_slash, expected_gs_url)
@@ -61,7 +63,7 @@ class ExtractBuildTest(unittest.TestCase):
 
     # The versioned_url part of the tuple returned is not tested, since it would
     # just be to copy implementation from extract_build.py into this test.
-    url, _versioned_url = extract_build.GetBuildUrl(
+    url, _archive_name = extract_build.GetBuildUrl(
         options, build_revision=self._build_revision,
         webkit_revision=self._webkit_revision)
     self.assertEquals(url, expected_url)

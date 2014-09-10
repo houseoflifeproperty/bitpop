@@ -68,15 +68,12 @@ class _W3CTestConverter(HTMLParser):
 
         resources_path = self.path_from_webkit_root('LayoutTests', 'resources')
         resources_relpath = self._filesystem.relpath(resources_path, new_path)
-        self.new_test_harness_path = resources_relpath
+        self.resources_relpath = resources_relpath
 
         # These settings might vary between WebKit and Blink
-        self._css_property_file = self.path_from_webkit_root('Source', 'core', 'css', 'CSSPropertyNames.in')
-        self._css_property_split_string = 'alias_for='
+        self._css_property_file = self.path_from_webkit_root('Source', 'core', 'css', 'CSSProperties.in')
 
         self.prefixed_properties = self.read_webkit_prefixed_css_property_list()
-
-        self.test_harness_re = re.compile('/resources/testharness')
 
         self.prefixed_properties = self.read_webkit_prefixed_css_property_list()
         prop_regex = '([\s{]|^)(' + "|".join(prop.replace('-webkit-', '') for prop in self.prefixed_properties) + ')(\s+:|:)'
@@ -94,17 +91,16 @@ class _W3CTestConverter(HTMLParser):
 
         contents = self._filesystem.read_text_file(self._css_property_file)
         for line in contents.splitlines():
-            if re.match('^(#|//)', line):
+            if re.match('^(#|//|$)', line):
                 # skip comments and preprocessor directives
                 continue
-            fields = line.split(self._css_property_split_string)
-            for prop in fields:
-                # Find properties starting with the -webkit- prefix.
-                match = re.match('-webkit-([\w|-]*)', prop)
-                if match:
-                    prefixed_properties.append(match.group(1))
-                else:
-                    unprefixed_properties.add(prop.strip())
+            prop = line.split()[0]
+            # Find properties starting with the -webkit- prefix.
+            match = re.match('-webkit-([\w|-]*)', prop)
+            if match:
+                prefixed_properties.append(match.group(1))
+            else:
+                unprefixed_properties.add(prop.strip())
 
         # Ignore any prefixed properties for which an unprefixed version is supported
         return [prop for prop in prefixed_properties if prop not in unprefixed_properties]
@@ -138,18 +134,28 @@ class _W3CTestConverter(HTMLParser):
     def convert_attributes_if_needed(self, tag, attrs):
         converted = self.get_starttag_text()
         if tag in ('script', 'link'):
-            attr_name = 'src'
+            target_attr = 'src'
             if tag != 'script':
-                attr_name = 'href'
-            for attr in attrs:
-                if attr[0] == attr_name:
-                    new_path = re.sub(self.test_harness_re, self.new_test_harness_path + '/testharness', attr[1])
-                    converted = re.sub(attr[1], new_path, converted)
+                target_attr = 'href'
+            for attr_name, attr_value in attrs:
+                if attr_name == target_attr:
+                    new_path = re.sub('/resources/testharness',
+                                      self.resources_relpath + '/testharness',
+                                      attr_value)
+                    converted = re.sub(attr_value, new_path, converted)
+                    new_path = re.sub('/common/vendor-prefix',
+                                      self.resources_relpath + '/vendor-prefix',
+                                      attr_value)
+                    converted = re.sub(attr_value, new_path, converted)
 
-        for attr in attrs:
-            if attr[0] == 'style':
-                new_style = self.convert_style_data(attr[1])
-                converted = re.sub(attr[1], new_style, converted)
+        for attr_name, attr_value in attrs:
+            if attr_name == 'style':
+                new_style = self.convert_style_data(attr_value)
+                converted = re.sub(attr_value, new_style, converted)
+            if attr_name == 'class' and 'instructions' in attr_value:
+                # Always hide instructions, they're for manual testers.
+                converted = re.sub(' style=".*?"', '', converted)
+                converted = re.sub('\>', ' style="display:none">', converted)
 
         self.converted_data.append(converted)
 

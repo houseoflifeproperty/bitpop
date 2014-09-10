@@ -31,7 +31,7 @@
 #include "platform/graphics/CompositingReasons.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class CompositingReasonFinder;
 class RenderLayer;
@@ -59,12 +59,11 @@ private:
     class RecursionData;
 
     void updateRecursive(RenderLayer* ancestorLayer, RenderLayer* currentLayer, OverlapMap&, RecursionData&, bool& descendantHas3DTransform, Vector<RenderLayer*>& unclippedDescendants, IntRect& absoluteDecendantBoundingBox);
-    bool isRunningAcceleratedTransformAnimation(RenderObject*) const;
 
     RenderView& m_renderView;
     CompositingReasonFinder& m_compositingReasonFinder;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CompositingRequirementsUpdater_h

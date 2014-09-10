@@ -16,7 +16,7 @@ DEPS = [
 # TODO(nodir): pass these arguments from builder to tester once triggering from
 # recipes lands. This is needed for ARM testers http://crbug.com/359338
 test_args = {
-    'browser_tests': ['--gtest-filter="*NaCl*"'],
+    'browser_tests': ['--gtest_filter="*NaCl*"'],
     'sandbox_linux_unittests': ['--test-launcher-print-test-stdio=always'],
 }
 
@@ -25,13 +25,13 @@ def GenSteps(api):
   config_name = api.properties.get('chromium_config') or 'chromium'
   api.chromium.set_config(config_name)
 
-  yield api.swarming_client.checkout()
+  api.swarming_client.checkout()
 
   revision = api.properties['parent_got_revision']
   webkit_revision = api.properties['parent_got_webkit_revision']
   for test in sorted(api.isolate.isolated_tests):
-    yield api.isolate.runtest(test, revision, webkit_revision,
-                              args=test_args.get(test))
+    api.isolate.runtest(test, revision, webkit_revision,
+                        args=test_args.get(test))
 
 
 def GenTests(api):

@@ -52,7 +52,7 @@
 #include <map>
 #include <string>
 
-namespace WebCore {
+namespace blink {
 
 template<typename T>
 class HarfBuzzScopedPtr {
@@ -305,6 +305,7 @@ int HarfBuzzShaper::HarfBuzzRun::characterIndexForXPosition(float targetX)
     if (targetX <= currentAdvance)
         return rtl() ? m_numCharacters : 0;
 
+    currentX = currentAdvance;
     ++glyphIndex;
     while (glyphIndex < m_numGlyphs) {
         unsigned prevCharacterIndex = m_glyphToCharacterIndexes[glyphIndex - 1];
@@ -518,6 +519,23 @@ void HarfBuzzShaper::setFontFeatures()
         // calt is on by default
         break;
     case FontDescription::NormalLigaturesState:
+        break;
+    }
+
+    static hb_feature_t hwid = { HB_TAG('h', 'w', 'i', 'd'), 1, 0, static_cast<unsigned>(-1) };
+    static hb_feature_t twid = { HB_TAG('t', 'w', 'i', 'd'), 1, 0, static_cast<unsigned>(-1) };
+    static hb_feature_t qwid = { HB_TAG('d', 'w', 'i', 'd'), 1, 0, static_cast<unsigned>(-1) };
+    switch (description.widthVariant()) {
+    case HalfWidth:
+        m_features.append(hwid);
+        break;
+    case ThirdWidth:
+        m_features.append(twid);
+        break;
+    case QuarterWidth:
+        m_features.append(qwid);
+        break;
+    case RegularWidth:
         break;
     }
 
@@ -1129,4 +1147,4 @@ FloatRect HarfBuzzShaper::selectionRect(const FloatPoint& point, int height, int
         point.y(), height);
 }
 
-} // namespace WebCore
+} // namespace blink

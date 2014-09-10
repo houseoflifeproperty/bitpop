@@ -30,17 +30,17 @@
 #include "wtf/HashSet.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioContext;
 class AudioNodeOutput;
 
 // An AudioSummingJunction represents a point where zero, one, or more AudioNodeOutputs connect.
 
-class AudioSummingJunction {
+class AudioSummingJunction : public NoBaseWillBeGarbageCollectedFinalized<AudioSummingJunction> {
 public:
-    explicit AudioSummingJunction(AudioContext*);
     virtual ~AudioSummingJunction();
+    virtual void trace(Visitor*);
 
     // Can be called from any thread.
     AudioContext* context() { return m_context.get(); }
@@ -61,22 +61,28 @@ public:
     virtual void didUpdate() = 0;
 
 protected:
-    RefPtrWillBePersistent<AudioContext> m_context;
+    explicit AudioSummingJunction(AudioContext*);
+
+    RefPtrWillBeMember<AudioContext> m_context;
 
     // m_outputs contains the AudioNodeOutputs representing current connections which are not disabled.
     // The rendering code should never use this directly, but instead uses m_renderingOutputs.
+    // Oilpan: Since items are added to the hash set by the audio thread (not registered to Oilpan),
+    // we cannot use a HeapHashSet.
     HashSet<AudioNodeOutput*> m_outputs;
 
     // m_renderingOutputs is a copy of m_outputs which will never be modified during the graph rendering on the audio thread.
     // This is the list which is used by the rendering code.
     // Whenever m_outputs is modified, the context is told so it can later update m_renderingOutputs from m_outputs at a safe time.
     // Most of the time, m_renderingOutputs is identical to m_outputs.
+    // Oilpan: Since items are added to the vector by the audio thread (not registered to Oilpan),
+    // we cannot use a HeapVector.
     Vector<AudioNodeOutput*> m_renderingOutputs;
 
     // m_renderingStateNeedUpdating keeps track if m_outputs is modified.
     bool m_renderingStateNeedUpdating;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioSummingJunction_h

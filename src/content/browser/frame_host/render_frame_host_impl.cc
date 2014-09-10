@@ -8,7 +8,12 @@
 #include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "base/metrics/user_metrics_action.h"
+#include "base/time/time.h"
+#include "content/browser/accessibility/accessibility_mode_helper.h"
+#include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
+#include "content/browser/cross_site_request_manager.h"
 #include "content/browser/frame_host/cross_process_frame_connector.h"
 #include "content/browser/frame_host/cross_site_transferring_request.h"
 #include "content/browser/frame_host/frame_tree.h"
@@ -18,13 +23,21 @@
 #include "content/browser/frame_host/render_frame_proxy_host.h"
 #include "content/browser/renderer_host/input/input_router.h"
 #include "content/browser/renderer_host/input/timeout_monitor.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
+#include "content/browser/transition_request_manager.h"
+#include "content/common/accessibility_messages.h"
 #include "content/common/desktop_notification_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/inter_process_time_ticks_converter.h"
+#include "content/common/platform_notification_messages.h"
+#include "content/common/render_frame_setup.mojom.h"
 #include "content/common/swapped_out_messages.h"
+#include "content/public/browser/ax_event_notification_details.h"
+#include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/desktop_notification_delegate.h"
@@ -34,6 +47,7 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
+#include "ui/accessibility/ax_tree.h"
 #include "url/gurl.h"
 
 using base::TimeDelta;
@@ -77,7 +91,6 @@ class DesktopNotificationDelegateImpl : public DesktopNotificationDelegate {
 
     rfh->Send(new DesktopNotificationMsg_PostError(
         rfh->GetRoutingID(), notification_id_));
-    delete this;
   }
 
   virtual void NotificationClosed(bool by_user) OVERRIDE {
@@ -90,7 +103,6 @@ class DesktopNotificationDelegateImpl : public DesktopNotificationDelegate {
         rfh->GetRoutingID(), notification_id_, by_user));
     static_cast<RenderFrameHostImpl*>(rfh)->NotificationClosed(
         notification_id_);
-    delete this;
   }
 
   virtual void NotificationClick() OVERRIDE {
@@ -131,8 +143,8 @@ RenderFrameHost* RenderFrameHost::FromID(int render_process_id,
 }
 
 // static
-RenderFrameHostImpl* RenderFrameHostImpl::FromID(
-    int process_id, int routing_id) {
+RenderFrameHostImpl* RenderFrameHostImpl::FromID(int process_id,
+                                                 int routing_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   RoutingIDFrameMap* frames = g_routing_id_frame_map.Pointer();
   RoutingIDFrameMap::iterator it = frames->find(
@@ -140,13 +152,12 @@ RenderFrameHostImpl* RenderFrameHostImpl::FromID(
   return it == frames->end() ? NULL : it->second;
 }
 
-RenderFrameHostImpl::RenderFrameHostImpl(
-    RenderViewHostImpl* render_view_host,
-    RenderFrameHostDelegate* delegate,
-    FrameTree* frame_tree,
-    FrameTreeNode* frame_tree_node,
-    int routing_id,
-    bool is_swapped_out)
+RenderFrameHostImpl::RenderFrameHostImpl(RenderViewHostImpl* render_view_host,
+                                         RenderFrameHostDelegate* delegate,
+                                         FrameTree* frame_tree,
+                                         FrameTreeNode* frame_tree_node,
+                                         int routing_id,
+                                         bool is_swapped_out)
     : render_view_host_(render_view_host),
       delegate_(delegate),
       cross_process_frame_connector_(NULL),
@@ -155,18 +166,34 @@ RenderFrameHostImpl::RenderFrameHostImpl(
       frame_tree_node_(frame_tree_node),
       routing_id_(routing_id),
       is_swapped_out_(is_swapped_out),
+      renderer_initialized_(false),
+      navigations_suspended_(false),
       weak_ptr_factory_(this) {
   frame_tree_->RegisterRenderFrameHost(this);
   GetProcess()->AddRoute(routing_id_, this);
   g_routing_id_frame_map.Get().insert(std::make_pair(
       RenderFrameHostID(GetProcess()->GetID(), routing_id_),
       this));
+
+  if (GetProcess()->GetServiceRegistry()) {
+    RenderFrameSetupPtr setup;
+    GetProcess()->GetServiceRegistry()->ConnectToRemoteService(&setup);
+    mojo::ServiceProviderPtr service_provider;
+    setup->GetServiceProviderForFrame(routing_id_,
+                                      mojo::Get(&service_provider));
+    service_registry_.BindRemoteServiceProvider(
+        service_provider.PassMessagePipe());
+  }
 }
 
 RenderFrameHostImpl::~RenderFrameHostImpl() {
   GetProcess()->RemoveRoute(routing_id_);
   g_routing_id_frame_map.Get().erase(
       RenderFrameHostID(GetProcess()->GetID(), routing_id_));
+  // Clean up any leftover state from cross-site requests.
+  CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
+      GetProcess()->GetID(), routing_id_, false);
+
   if (delegate_)
     delegate_->RenderFrameDeleted(this);
 
@@ -241,13 +268,21 @@ RenderViewHost* RenderFrameHostImpl::GetRenderViewHost() {
   return render_view_host_;
 }
 
+ServiceRegistry* RenderFrameHostImpl::GetServiceRegistry() {
+  static_cast<RenderProcessHostImpl*>(GetProcess())->EnsureMojoActivated();
+  return &service_registry_;
+}
+
 bool RenderFrameHostImpl::Send(IPC::Message* message) {
   if (IPC_MESSAGE_ID_CLASS(message->type()) == InputMsgStart) {
     return render_view_host_->input_router()->SendInput(
         make_scoped_ptr(message));
   }
 
-  if (render_view_host_->IsSwappedOut()) {
+  // Route IPCs through the RenderFrameProxyHost when in swapped out state.
+  // Note: For subframes in --site-per-process mode, we don't use swapped out
+  // RenderFrameHosts.
+  if (frame_tree_node_->IsMainFrame() && render_view_host_->IsSwappedOut()) {
     DCHECK(render_frame_proxy_host_);
     return render_frame_proxy_host_->Send(message);
   }
@@ -317,17 +352,129 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidDisownOpener, OnDidDisownOpener)
     IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateTitle, OnUpdateTitle)
     IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateEncoding, OnUpdateEncoding)
-    IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_RequestPermission,
-                        OnRequestDesktopNotificationPermission)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_BeginNavigation,
+                        OnBeginNavigation)
+    IPC_MESSAGE_HANDLER(PlatformNotificationHostMsg_RequestPermission,
+                        OnRequestPlatformNotificationPermission)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Show,
                         OnShowDesktopNotification)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Cancel,
                         OnCancelDesktopNotification)
     IPC_MESSAGE_HANDLER(FrameHostMsg_TextSurroundingSelectionResponse,
                         OnTextSurroundingSelectionResponse)
+    IPC_MESSAGE_HANDLER(AccessibilityHostMsg_Events, OnAccessibilityEvents)
+    IPC_MESSAGE_HANDLER(AccessibilityHostMsg_LocationChanges,
+                        OnAccessibilityLocationChanges)
   IPC_END_MESSAGE_MAP()
 
   return handled;
+}
+
+void RenderFrameHostImpl::AccessibilitySetFocus(int object_id) {
+  Send(new AccessibilityMsg_SetFocus(routing_id_, object_id));
+}
+
+void RenderFrameHostImpl::AccessibilityDoDefaultAction(int object_id) {
+  Send(new AccessibilityMsg_DoDefaultAction(routing_id_, object_id));
+}
+
+void RenderFrameHostImpl::AccessibilityShowMenu(
+    const gfx::Point& global_point) {
+  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+      render_view_host_->GetView());
+  if (view)
+    view->AccessibilityShowMenu(global_point);
+}
+
+void RenderFrameHostImpl::AccessibilityScrollToMakeVisible(
+    int acc_obj_id, const gfx::Rect& subfocus) {
+  Send(new AccessibilityMsg_ScrollToMakeVisible(
+      routing_id_, acc_obj_id, subfocus));
+}
+
+void RenderFrameHostImpl::AccessibilityScrollToPoint(
+    int acc_obj_id, const gfx::Point& point) {
+  Send(new AccessibilityMsg_ScrollToPoint(
+      routing_id_, acc_obj_id, point));
+}
+
+void RenderFrameHostImpl::AccessibilitySetTextSelection(
+    int object_id, int start_offset, int end_offset) {
+  Send(new AccessibilityMsg_SetTextSelection(
+      routing_id_, object_id, start_offset, end_offset));
+}
+
+bool RenderFrameHostImpl::AccessibilityViewHasFocus() const {
+  RenderWidgetHostView* view = render_view_host_->GetView();
+  if (view)
+    return view->HasFocus();
+  return false;
+}
+
+gfx::Rect RenderFrameHostImpl::AccessibilityGetViewBounds() const {
+  RenderWidgetHostView* view = render_view_host_->GetView();
+  if (view)
+    return view->GetViewBounds();
+  return gfx::Rect();
+}
+
+gfx::Point RenderFrameHostImpl::AccessibilityOriginInScreen(
+    const gfx::Rect& bounds) const {
+  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+      render_view_host_->GetView());
+  if (view)
+    return view->AccessibilityOriginInScreen(bounds);
+  return gfx::Point();
+}
+
+void RenderFrameHostImpl::AccessibilityHitTest(const gfx::Point& point) {
+  Send(new AccessibilityMsg_HitTest(routing_id_, point));
+}
+
+void RenderFrameHostImpl::AccessibilityFatalError() {
+  Send(new AccessibilityMsg_FatalError(routing_id_));
+  browser_accessibility_manager_.reset(NULL);
+}
+
+gfx::AcceleratedWidget
+    RenderFrameHostImpl::AccessibilityGetAcceleratedWidget() {
+  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+      render_view_host_->GetView());
+  if (view)
+    return view->AccessibilityGetAcceleratedWidget();
+  return gfx::kNullAcceleratedWidget;
+}
+
+gfx::NativeViewAccessible
+    RenderFrameHostImpl::AccessibilityGetNativeViewAccessible() {
+  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+      render_view_host_->GetView());
+  if (view)
+    return view->AccessibilityGetNativeViewAccessible();
+  return NULL;
+}
+
+bool RenderFrameHostImpl::CreateRenderFrame(int parent_routing_id) {
+  TRACE_EVENT0("frame_host", "RenderFrameHostImpl::CreateRenderFrame");
+  DCHECK(!IsRenderFrameLive()) << "Creating frame twice";
+
+  // The process may (if we're sharing a process with another host that already
+  // initialized it) or may not (we have our own process or the old process
+  // crashed) have been initialized. Calling Init multiple times will be
+  // ignored, so this is safe.
+  if (!GetProcess()->Init())
+    return false;
+
+  DCHECK(GetProcess()->HasConnection());
+
+  renderer_initialized_ = true;
+  Send(new FrameMsg_NewFrame(routing_id_, parent_routing_id));
+
+  return true;
+}
+
+bool RenderFrameHostImpl::IsRenderFrameLive() {
+  return GetProcess()->HasConnection() && renderer_initialized_;
 }
 
 void RenderFrameHostImpl::Init() {
@@ -385,10 +532,10 @@ void RenderFrameHostImpl::OnDocumentOnLoadCompleted() {
 }
 
 void RenderFrameHostImpl::OnDidStartProvisionalLoadForFrame(
-    int parent_routing_id,
-    const GURL& url) {
+    const GURL& url,
+    bool is_transition_navigation) {
   frame_tree_node_->navigator()->DidStartProvisionalLoad(
-      this, parent_routing_id, url);
+      this, url, is_transition_navigation);
 }
 
 void RenderFrameHostImpl::OnDidFailProvisionalLoadWithError(
@@ -512,6 +659,18 @@ void RenderFrameHostImpl::OnCrossSiteResponse(
       this, global_request_id, cross_site_transferring_request.Pass(),
       transfer_url_chain, referrer, page_transition,
       should_replace_current_entry);
+}
+
+void RenderFrameHostImpl::OnDeferredAfterResponseStarted(
+    const GlobalRequestID& global_request_id,
+    const TransitionLayerData& transition_data) {
+  frame_tree_node_->render_manager()->OnDeferredAfterResponseStarted(
+      global_request_id, this);
+
+  if (GetParent() || !delegate_->WillHandleDeferAfterResponseStarted())
+    frame_tree_node_->render_manager()->ResumeResponseDeferredAtStart();
+  else
+    delegate_->DidDeferAfterResponseStarted(transition_data);
 }
 
 void RenderFrameHostImpl::SwapOut(RenderFrameProxyHost* proxy) {
@@ -673,22 +832,29 @@ void RenderFrameHostImpl::OnRunBeforeUnloadConfirm(
   delegate_->RunBeforeUnloadConfirm(this, message, is_reload, reply_msg);
 }
 
-void RenderFrameHostImpl::OnRequestDesktopNotificationPermission(
-    const GURL& source_origin, int callback_context) {
-  base::Closure done_callback = base::Bind(
-      &RenderFrameHostImpl::DesktopNotificationPermissionRequestDone,
-      weak_ptr_factory_.GetWeakPtr(), callback_context);
+void RenderFrameHostImpl::OnRequestPlatformNotificationPermission(
+    const GURL& origin, int request_id) {
+  base::Callback<void(blink::WebNotificationPermission)> done_callback =
+      base::Bind(
+          &RenderFrameHostImpl::PlatformNotificationPermissionRequestDone,
+          weak_ptr_factory_.GetWeakPtr(),
+          request_id);
+
   GetContentClient()->browser()->RequestDesktopNotificationPermission(
-      source_origin, this, done_callback);
+      origin, this, done_callback);
 }
 
 void RenderFrameHostImpl::OnShowDesktopNotification(
     int notification_id,
     const ShowDesktopNotificationHostMsgParams& params) {
+  scoped_ptr<DesktopNotificationDelegateImpl> delegate(
+      new DesktopNotificationDelegateImpl(this, notification_id));
+
   base::Closure cancel_callback;
   GetContentClient()->browser()->ShowDesktopNotification(
-      params, this,
-      new DesktopNotificationDelegateImpl(this, notification_id),
+      params,
+      this,
+      delegate.PassAs<DesktopNotificationDelegate>(),
       &cancel_callback);
   cancel_notification_callbacks_[notification_id] = cancel_callback;
 }
@@ -742,6 +908,84 @@ void RenderFrameHostImpl::OnUpdateEncoding(const std::string& encoding_name) {
   delegate_->UpdateEncoding(this, encoding_name);
 }
 
+void RenderFrameHostImpl::OnBeginNavigation(
+    const FrameHostMsg_BeginNavigation_Params& params) {
+#if defined(USE_BROWSER_SIDE_NAVIGATION)
+  frame_tree_node()->render_manager()->OnBeginNavigation(params);
+#endif
+}
+
+void RenderFrameHostImpl::OnAccessibilityEvents(
+    const std::vector<AccessibilityHostMsg_EventParams>& params) {
+  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+      render_view_host_->GetView());
+
+  AccessibilityMode accessibility_mode = delegate_->GetAccessibilityMode();
+  if ((accessibility_mode != AccessibilityModeOff) && view &&
+      RenderViewHostImpl::IsRVHStateActive(render_view_host_->rvh_state())) {
+    if (accessibility_mode & AccessibilityModeFlagPlatform) {
+      GetOrCreateBrowserAccessibilityManager();
+      if (browser_accessibility_manager_)
+        browser_accessibility_manager_->OnAccessibilityEvents(params);
+    }
+
+    std::vector<AXEventNotificationDetails> details;
+    details.reserve(params.size());
+    for (size_t i = 0; i < params.size(); ++i) {
+      const AccessibilityHostMsg_EventParams& param = params[i];
+      AXEventNotificationDetails detail(param.update.node_id_to_clear,
+                                        param.update.nodes,
+                                        param.event_type,
+                                        param.id,
+                                        GetProcess()->GetID(),
+                                        routing_id_);
+      details.push_back(detail);
+    }
+
+    delegate_->AccessibilityEventReceived(details);
+  }
+
+  // Always send an ACK or the renderer can be in a bad state.
+  Send(new AccessibilityMsg_Events_ACK(routing_id_));
+
+  // The rest of this code is just for testing; bail out if we're not
+  // in that mode.
+  if (accessibility_testing_callback_.is_null())
+    return;
+
+  for (size_t i = 0; i < params.size(); i++) {
+    const AccessibilityHostMsg_EventParams& param = params[i];
+    if (static_cast<int>(param.event_type) < 0)
+      continue;
+    if (!ax_tree_for_testing_) {
+      ax_tree_for_testing_.reset(new ui::AXTree(param.update));
+    } else {
+      CHECK(ax_tree_for_testing_->Unserialize(param.update))
+          << ax_tree_for_testing_->error();
+    }
+    accessibility_testing_callback_.Run(param.event_type, param.id);
+  }
+}
+
+void RenderFrameHostImpl::OnAccessibilityLocationChanges(
+    const std::vector<AccessibilityHostMsg_LocationChangeParams>& params) {
+  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+      render_view_host_->GetView());
+  if (view &&
+      RenderViewHostImpl::IsRVHStateActive(render_view_host_->rvh_state())) {
+    AccessibilityMode accessibility_mode = delegate_->GetAccessibilityMode();
+    if (accessibility_mode & AccessibilityModeFlagPlatform) {
+      if (!browser_accessibility_manager_) {
+        browser_accessibility_manager_.reset(
+            view->CreateBrowserAccessibilityManager(this));
+      }
+      if (browser_accessibility_manager_)
+        browser_accessibility_manager_->OnLocationChanges(params);
+    }
+    // TODO(aboxhall): send location change events to web contents observers too
+  }
+}
+
 void RenderFrameHostImpl::SetPendingShutdown(const base::Closure& on_swap_out) {
   render_view_host_->SetPendingShutdown(on_swap_out);
 }
@@ -773,14 +1017,13 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
 
   // Only send the message if we aren't suspended at the start of a cross-site
   // request.
-  if (render_view_host_->navigations_suspended_) {
+  if (navigations_suspended_) {
     // Shouldn't be possible to have a second navigation while suspended, since
     // navigations will only be suspended during a cross-site request.  If a
     // second navigation occurs, RenderFrameHostManager will cancel this pending
     // RFH and create a new pending RFH.
-    DCHECK(!render_view_host_->suspended_nav_params_.get());
-    render_view_host_->suspended_nav_params_.reset(
-        new FrameMsg_Navigate_Params(params));
+    DCHECK(!suspended_nav_params_.get());
+    suspended_nav_params_.reset(new FrameMsg_Navigate_Params(params));
   } else {
     // Get back to a clean state, in case we start a new navigation without
     // completing a RVH swap or unload handler.
@@ -813,6 +1056,7 @@ void RenderFrameHostImpl::NavigateToURL(const GURL& url) {
   params.url = url;
   params.transition = PAGE_TRANSITION_LINK;
   params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params.browser_navigation_start = base::TimeTicks::Now();
   Navigate(params);
 }
 
@@ -859,7 +1103,7 @@ void RenderFrameHostImpl::DispatchBeforeUnload(bool for_cross_site_transition) {
 
 void RenderFrameHostImpl::ExtendSelectionAndDelete(size_t before,
                                                    size_t after) {
-  Send(new FrameMsg_ExtendSelectionAndDelete(routing_id_, before, after));
+  Send(new InputMsg_ExtendSelectionAndDelete(routing_id_, before, after));
 }
 
 void RenderFrameHostImpl::JavaScriptDialogClosed(
@@ -902,10 +1146,99 @@ void RenderFrameHostImpl::NotificationClosed(int notification_id) {
   cancel_notification_callbacks_.erase(notification_id);
 }
 
-void RenderFrameHostImpl::DesktopNotificationPermissionRequestDone(
-    int callback_context) {
-  Send(new DesktopNotificationMsg_PermissionRequestDone(
-      routing_id_, callback_context));
+bool RenderFrameHostImpl::HasPendingCrossSiteRequest() {
+  return CrossSiteRequestManager::GetInstance()->HasPendingCrossSiteRequest(
+      GetProcess()->GetID(), routing_id_);
+}
+
+void RenderFrameHostImpl::SetHasPendingCrossSiteRequest(
+    bool has_pending_request) {
+  CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
+      GetProcess()->GetID(), routing_id_, has_pending_request);
+}
+
+void RenderFrameHostImpl::PlatformNotificationPermissionRequestDone(
+    int request_id, blink::WebNotificationPermission permission) {
+  Send(new PlatformNotificationMsg_PermissionRequestComplete(
+      routing_id_, request_id, permission));
+}
+
+void RenderFrameHostImpl::SetAccessibilityMode(AccessibilityMode mode) {
+  Send(new FrameMsg_SetAccessibilityMode(routing_id_, mode));
+}
+
+void RenderFrameHostImpl::SetAccessibilityCallbackForTesting(
+    const base::Callback<void(ui::AXEvent, int)>& callback) {
+  accessibility_testing_callback_ = callback;
+}
+
+const ui::AXTree* RenderFrameHostImpl::GetAXTreeForTesting() {
+  return ax_tree_for_testing_.get();
+}
+
+BrowserAccessibilityManager*
+    RenderFrameHostImpl::GetOrCreateBrowserAccessibilityManager() {
+  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+      render_view_host_->GetView());
+  if (view &&
+      !browser_accessibility_manager_) {
+    browser_accessibility_manager_.reset(
+        view->CreateBrowserAccessibilityManager(this));
+  }
+  return browser_accessibility_manager_.get();
+}
+
+#if defined(OS_WIN)
+void RenderFrameHostImpl::SetParentNativeViewAccessible(
+    gfx::NativeViewAccessible accessible_parent) {
+  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+      render_view_host_->GetView());
+  if (view)
+    view->SetParentNativeViewAccessible(accessible_parent);
+}
+
+gfx::NativeViewAccessible
+RenderFrameHostImpl::GetParentNativeViewAccessible() const {
+  return delegate_->GetParentNativeViewAccessible();
+}
+#endif  // defined(OS_WIN)
+
+void RenderFrameHostImpl::ClearPendingTransitionRequestData() {
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(
+          &TransitionRequestManager::ClearPendingTransitionRequestData,
+          base::Unretained(TransitionRequestManager::GetInstance()),
+          GetProcess()->GetID(),
+          routing_id_));
+}
+
+void RenderFrameHostImpl::SetNavigationsSuspended(
+    bool suspend,
+    const base::TimeTicks& proceed_time) {
+  // This should only be called to toggle the state.
+  DCHECK(navigations_suspended_ != suspend);
+
+  navigations_suspended_ = suspend;
+  if (!suspend && suspended_nav_params_) {
+    // There's navigation message params waiting to be sent. Now that we're not
+    // suspended anymore, resume navigation by sending them. If we were swapped
+    // out, we should also stop filtering out the IPC messages now.
+    render_view_host_->SetState(RenderViewHostImpl::STATE_DEFAULT);
+
+    DCHECK(!proceed_time.is_null());
+    suspended_nav_params_->browser_navigation_start = proceed_time;
+    Send(new FrameMsg_Navigate(routing_id_, *suspended_nav_params_));
+    suspended_nav_params_.reset();
+  }
+}
+
+void RenderFrameHostImpl::CancelSuspendedNavigations() {
+  // Clear any state if a pending navigation is canceled or preempted.
+  if (suspended_nav_params_)
+    suspended_nav_params_.reset();
+  navigations_suspended_ = false;
 }
 
 }  // namespace content

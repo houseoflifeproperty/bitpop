@@ -30,7 +30,7 @@ import logging
 import optparse
 import sys
 import tempfile
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.system.executive import Executive, ScriptError
 from webkitpy.common.system import executive_mock
@@ -328,7 +328,7 @@ class PortTest(unittest.TestCase):
         port.host.platform.os_name = 'cygwin'
         self.assertFalse(port.http_server_supports_ipv6())
         port.host.platform.os_name = 'win'
-        self.assertTrue(port.http_server_supports_ipv6())
+        self.assertFalse(port.http_server_supports_ipv6())
 
     def test_check_httpd_success(self):
         port = self.make_port(executive=MockExecutive2())

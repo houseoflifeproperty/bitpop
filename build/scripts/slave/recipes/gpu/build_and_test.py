@@ -6,7 +6,7 @@
 #   chromium.gpu
 #   chromium.gpu.fyi
 #   The GPU bots on the chromium.webkit waterfall
-#   The GPU bots on the tryserver.chromium waterfall
+#   The GPU bots on the tryserver.chromium.* waterfalls
 
 DEPS = [
   'buildbot',
@@ -18,13 +18,13 @@ DEPS = [
 
 def GenSteps(api):
   api.gpu.setup()
-  yield api.buildbot.prep()
+  api.buildbot.prep()
 
   # For local testing: pass 'skip_checkout=True' to run_recipe to skip the
   # checkout step. A full checkout via the recipe must have been done
   # previously.
   if not api.properties.get('skip_checkout', False):
-    yield api.gpu.checkout_steps()
+    api.gpu.checkout_steps()
   else:
     api.path['checkout'] = api.path['slave_build'].join('src')
 
@@ -32,9 +32,9 @@ def GenSteps(api):
   # runhooks and compile steps. A checkout and build via the recipe must have
   # been done previously.
   if not api.properties.get('skip_compile', False):
-    yield api.gpu.compile_steps()
+    api.gpu.compile_steps()
 
-  yield api.gpu.test_steps()
+  api.gpu.test_steps()
 
 def GenTests(api):
   for build_config in ['Release', 'Debug']:
@@ -122,4 +122,14 @@ def GenTests(api):
       mastername='chromium.gpu.fyi',
     ) +
     api.platform.name('win')
+  )
+
+  yield (
+    api.test('killall_gnome_keyring_failure') +
+    api.properties.scheduled(
+      build_config='Release',
+      mastername='chromium.gpu.fyi',
+    ) +
+    api.platform.name('linux') +
+    api.step_data('killall gnome-keyring-daemon', retcode=1)
   )

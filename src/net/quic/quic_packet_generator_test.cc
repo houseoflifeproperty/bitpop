@@ -136,13 +136,13 @@ class QuicPacketGeneratorTest : public ::testing::Test {
 
   QuicAckFrame* CreateAckFrame() {
     // TODO(rch): Initialize this so it can be verified later.
-    return new QuicAckFrame(MakeAckFrame(0, 0));
+    return new QuicAckFrame(MakeAckFrame(0));
   }
 
   QuicCongestionFeedbackFrame* CreateFeedbackFrame() {
     QuicCongestionFeedbackFrame* frame = new QuicCongestionFeedbackFrame;
-    frame->type = kFixRate;
-    frame->fix_rate.bitrate = QuicBandwidth::FromBytesPerSecond(42);
+    frame->type = kTCP;
+    frame->tcp.receive_window = 0x4030;
     return frame;
   }
 
@@ -526,10 +526,8 @@ TEST_F(QuicPacketGeneratorTest, ConsumeData_FramesPreviouslyQueued) {
                           NOT_IN_FEC_GROUP) +
       // Add an extra 3 bytes for the payload and 1 byte so BytesFree is larger
       // than the GetMinStreamFrameSize.
-      QuicFramer::GetMinStreamFrameSize(framer_.version(), 1, 0, false,
-                                        NOT_IN_FEC_GROUP) + 3 +
-      QuicFramer::GetMinStreamFrameSize(framer_.version(), 1, 0, true,
-                                        NOT_IN_FEC_GROUP) + 1;
+      QuicFramer::GetMinStreamFrameSize(1, 0, false, NOT_IN_FEC_GROUP) + 3 +
+      QuicFramer::GetMinStreamFrameSize(1, 0, true, NOT_IN_FEC_GROUP) + 1;
   creator_->set_max_packet_length(length);
   delegate_.SetCanWriteAnything();
   {
@@ -563,9 +561,75 @@ TEST_F(QuicPacketGeneratorTest, ConsumeData_FramesPreviouslyQueued) {
   CheckPacketContains(contents, packet2_);
 }
 
+TEST_F(QuicPacketGeneratorTest, FecGroupSizeOnCongestionWindowChange) {
+  delegate_.SetCanWriteAnything();
+  creator_->set_max_packets_per_fec_group(50);
+  EXPECT_EQ(50u, creator_->max_packets_per_fec_group());
+  EXPECT_FALSE(creator_->IsFecGroupOpen());
+
+  // On reduced cwnd.
+  generator_.OnCongestionWindowChange(7 * kDefaultTCPMSS);
+  EXPECT_EQ(3u, creator_->max_packets_per_fec_group());
+
+  // On increased cwnd.
+  generator_.OnCongestionWindowChange(100 * kDefaultTCPMSS);
+  EXPECT_EQ(50u, creator_->max_packets_per_fec_group());
+
+  // On collapsed cwnd.
+  generator_.OnCongestionWindowChange(1 * kDefaultTCPMSS);
+  EXPECT_EQ(2u, creator_->max_packets_per_fec_group());
+}
+
+TEST_F(QuicPacketGeneratorTest, FecGroupSizeChangeWithOpenGroup) {
+  delegate_.SetCanWriteAnything();
+  // TODO(jri): This starting of batch mode should not be required when
+  // FEC sending is separated from batching operations.
+  generator_.StartBatchOperations();
+  creator_->set_max_packets_per_fec_group(50);
+  EXPECT_EQ(50u, creator_->max_packets_per_fec_group());
+  EXPECT_FALSE(creator_->IsFecGroupOpen());
+
+  // Send enough data to create 4 packets with MUST_FEC_PROTECT flag.
+  // 3 packets are sent, one is queued in the creator.
+  {
+    InSequence dummy;
+    EXPECT_CALL(delegate_, OnSerializedPacket(_)).WillOnce(
+        DoAll(SaveArg<0>(&packet_), Return(true)));
+    EXPECT_CALL(delegate_, OnSerializedPacket(_)).WillOnce(
+        DoAll(SaveArg<0>(&packet2_), Return(true)));
+    EXPECT_CALL(delegate_, OnSerializedPacket(_)).WillOnce(
+        DoAll(SaveArg<0>(&packet3_), Return(true)));
+  }
+  size_t data_len = 3 * kDefaultMaxPacketSize + 1;
+  QuicConsumedData consumed = generator_.ConsumeData(
+      7, CreateData(data_len), 0, true, MUST_FEC_PROTECT, NULL);
+  EXPECT_EQ(data_len, consumed.bytes_consumed);
+  EXPECT_TRUE(creator_->IsFecGroupOpen());
+
+  // Change FEC groupsize.
+  generator_.OnCongestionWindowChange(2 * kDefaultTCPMSS);
+  EXPECT_EQ(2u, creator_->max_packets_per_fec_group());
+
+  // Send enough data to trigger one unprotected data packet,
+  // causing the FEC packet to also be sent.
+  {
+    InSequence dummy;
+    EXPECT_CALL(delegate_, OnSerializedPacket(_)).WillOnce(
+        DoAll(SaveArg<0>(&packet4_), Return(true)));
+    EXPECT_CALL(delegate_, OnSerializedPacket(_)).WillOnce(
+        DoAll(SaveArg<0>(&packet5_), Return(true)));
+  }
+  consumed = generator_.ConsumeData(7, CreateData(kDefaultMaxPacketSize), 0,
+                                    true, MAY_FEC_PROTECT, NULL);
+  EXPECT_EQ(kDefaultMaxPacketSize, consumed.bytes_consumed);
+  // Verify that one FEC packet was sent.
+  CheckPacketIsFec(packet5_, /*fec_group=*/1u);
+  EXPECT_FALSE(creator_->IsFecGroupOpen());
+  EXPECT_FALSE(creator_->IsFecProtected());
+}
+
 TEST_F(QuicPacketGeneratorTest, SwitchFecOnOff) {
   delegate_.SetCanWriteAnything();
-  // Enable FEC.
   creator_->set_max_packets_per_fec_group(2);
   EXPECT_FALSE(creator_->IsFecProtected());
 

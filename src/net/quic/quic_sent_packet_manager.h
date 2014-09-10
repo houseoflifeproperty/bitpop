@@ -52,6 +52,36 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
     virtual void OnSpuriousPacketRetransmition(
         TransmissionType transmission_type,
         QuicByteCount byte_size) {}
+
+    virtual void OnSentPacket(
+        QuicPacketSequenceNumber sequence_number,
+        QuicTime sent_time,
+        QuicByteCount bytes) {}
+
+    virtual void OnRetransmittedPacket(
+        QuicPacketSequenceNumber old_sequence_number,
+        QuicPacketSequenceNumber new_sequence_number,
+        TransmissionType transmission_type,
+        QuicTime time) {}
+
+    virtual void OnIncomingAck(
+        const QuicAckFrame& ack_frame,
+        QuicTime ack_receive_time,
+        QuicPacketSequenceNumber largest_observed,
+        bool largest_observed_acked,
+        QuicPacketSequenceNumber least_unacked_sent_packet) {}
+  };
+
+  // Interface which gets callbacks from the QuicSentPacketManager when
+  // network-related state changes. Implementations must not mutate the
+  // state of the packet manager as a result of these callbacks.
+  class NET_EXPORT_PRIVATE NetworkChangeVisitor {
+   public:
+    virtual ~NetworkChangeVisitor() {}
+
+    // Called when congestion window may have changed.
+    virtual void OnCongestionWindowChange(QuicByteCount congestion_window) = 0;
+    // TODO(jri): Add OnRttStatsChange() to this class as well.
   };
 
   // Struct to store the pending retransmission information.
@@ -75,11 +105,13 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   QuicSentPacketManager(bool is_server,
                         const QuicClock* clock,
                         QuicConnectionStats* stats,
-                        CongestionFeedbackType congestion_type,
+                        CongestionControlType congestion_control_type,
                         LossDetectionType loss_type);
   virtual ~QuicSentPacketManager();
 
   virtual void SetFromConfig(const QuicConfig& config);
+
+  void SetHandshakeConfirmed() { handshake_confirmed_ = true; }
 
   // Called when a new packet is serialized.  If the packet contains
   // retransmittable data, it will be added to the unacked packet map.
@@ -92,7 +124,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
                              QuicPacketSequenceNumber new_sequence_number);
 
   // Processes the incoming ack.
-  void OnIncomingAck(const ReceivedPacketInfo& received_info,
+  void OnIncomingAck(const QuicAckFrame& ack_frame,
                      QuicTime ack_receive_time);
 
   // Returns true if the non-FEC packet |sequence_number| is unacked.
@@ -165,10 +197,18 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // Returns the estimated bandwidth calculated by the congestion algorithm.
   QuicBandwidth BandwidthEstimate() const;
 
+  // Returns true if the current bandwidth estimate is reliable.
+  bool HasReliableBandwidthEstimate() const;
+
   // Returns the size of the current congestion window in bytes.  Note, this is
   // not the *available* window.  Some send algorithms may not use a congestion
   // window and will return 0.
   QuicByteCount GetCongestionWindow() const;
+
+  // Returns the size of the slow start congestion window in bytes,
+  // aka ssthresh.  Some send algorithms do not define a slow start
+  // threshold and will return 0.
+  QuicByteCount GetSlowStartThreshold() const;
 
   // Enables pacing if it has not already been enabled, and if
   // FLAGS_enable_quic_pacing is set.
@@ -178,6 +218,16 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   void set_debug_delegate(DebugDelegate* debug_delegate) {
     debug_delegate_ = debug_delegate;
+  }
+
+  QuicPacketSequenceNumber largest_observed() const {
+    return largest_observed_;
+  }
+
+  void set_network_change_visitor(NetworkChangeVisitor* visitor) {
+    DCHECK(!network_change_visitor_);
+    DCHECK(visitor);
+    network_change_visitor_ = visitor;
   }
 
  private:
@@ -202,7 +252,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
                           TransmissionType> PendingRetransmissionMap;
 
   // Process the incoming ack looking for newly ack'd data packets.
-  void HandleAckForSentPackets(const ReceivedPacketInfo& received_info);
+  void HandleAckForSentPackets(const QuicAckFrame& ack_frame);
 
   // Returns the current retransmission mode.
   RetransmissionTimeoutMode GetRetransmissionMode() const;
@@ -224,7 +274,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Update the RTT if the ack is for the largest acked sequence number.
   // Returns true if the rtt was updated.
-  bool MaybeUpdateRTT(const ReceivedPacketInfo& received_info,
+  bool MaybeUpdateRTT(const QuicAckFrame& ack_frame,
                       const QuicTime& ack_receive_time);
 
   // Invokes the loss detection algorithm and loses and retransmits packets if
@@ -286,11 +336,18 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   const QuicClock* clock_;
   QuicConnectionStats* stats_;
   DebugDelegate* debug_delegate_;
+  NetworkChangeVisitor* network_change_visitor_;
   RttStats rtt_stats_;
   scoped_ptr<SendAlgorithmInterface> send_algorithm_;
   scoped_ptr<LossDetectionInterface> loss_algorithm_;
 
-  QuicPacketSequenceNumber largest_observed_;  // From the most recent ACK.
+  // The largest sequence number which we have sent and received an ACK for
+  // from the peer.
+  QuicPacketSequenceNumber largest_observed_;
+
+  // Tracks the first RTO packet.  If any packet before that packet gets acked,
+  // it indicates the RTO was spurious and should be reversed(F-RTO).
+  QuicPacketSequenceNumber first_rto_transmission_;
   // Number of times the RTO timer has fired in a row without receiving an ack.
   size_t consecutive_rto_count_;
   // Number of times the tail loss probe has been sent.
@@ -306,6 +363,12 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // Sets of packets acked and lost as a result of the last congestion event.
   SendAlgorithmInterface::CongestionMap packets_acked_;
   SendAlgorithmInterface::CongestionMap packets_lost_;
+
+  // Set to true after the crypto handshake has successfully completed. After
+  // this is true we no longer use HANDSHAKE_MODE, and further frames sent on
+  // the crypto stream (i.e. SCUP messages) are treated like normal
+  // retransmittable frames.
+  bool handshake_confirmed_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicSentPacketManager);
 };

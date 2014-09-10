@@ -36,9 +36,7 @@
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "wtf/MathExtras.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 static void fixNANs(double &x)
 {
@@ -65,11 +63,11 @@ PannerNode::PannerNode(AudioContext* context, float sampleRate)
 {
     // Load the HRTF database asynchronously so we don't block the Javascript thread while creating the HRTF database.
     // The HRTF panner will return zeroes until the database is loaded.
-    m_hrtfDatabaseLoader = HRTFDatabaseLoader::createAndLoadAsynchronouslyIfNecessary(context->sampleRate());
+    listener()->createAndLoadHRTFDatabaseLoader(context->sampleRate());
 
     ScriptWrappable::init(this);
-    addInput(adoptPtr(new AudioNodeInput(this)));
-    addOutput(adoptPtr(new AudioNodeOutput(this, 2)));
+    addInput();
+    addOutput(AudioNodeOutput::create(this, 2));
 
     // Node-specific default mixing rules.
     m_channelCount = 2;
@@ -83,7 +81,13 @@ PannerNode::PannerNode(AudioContext* context, float sampleRate)
 
 PannerNode::~PannerNode()
 {
+    ASSERT(!isInitialized());
+}
+
+void PannerNode::dispose()
+{
     uninitialize();
+    AudioNode::dispose();
 }
 
 void PannerNode::pullInputs(size_t framesToProcess)
@@ -125,9 +129,9 @@ void PannerNode::process(size_t framesToProcess)
 
     if (tryLocker.locked() && tryListenerLocker.locked()) {
         // HRTFDatabase should be loaded before proceeding for offline audio context when the panning model is HRTF.
-        if (m_panningModel == Panner::PanningModelHRTF && !m_hrtfDatabaseLoader->isLoaded()) {
+        if (m_panningModel == Panner::PanningModelHRTF && !listener()->isHRTFDatabaseLoaded()) {
             if (context()->isOfflineContext()) {
-                m_hrtfDatabaseLoader->waitForLoaderThreadCompletion();
+                listener()->waitForHRTFDatabaseLoaderThreadCompletion();
             } else {
                 destination->zero();
                 return;
@@ -162,7 +166,7 @@ void PannerNode::initialize()
     if (isInitialized())
         return;
 
-    m_panner = Panner::create(m_panningModel, sampleRate(), m_hrtfDatabaseLoader.get());
+    m_panner = Panner::create(m_panningModel, sampleRate(), listener()->hrtfDatabaseLoader());
     listener()->addPanner(this);
 
     AudioNode::initialize();
@@ -213,7 +217,7 @@ bool PannerNode::setPanningModel(unsigned model)
         if (!m_panner.get() || model != m_panningModel) {
             // This synchronizes with process().
             MutexLocker processLocker(m_processLock);
-            OwnPtr<Panner> newPanner = Panner::create(model, sampleRate(), m_hrtfDatabaseLoader.get());
+            OwnPtr<Panner> newPanner = Panner::create(model, sampleRate(), listener()->hrtfDatabaseLoader());
             m_panner = newPanner.release();
             m_panningModel = model;
         }
@@ -467,8 +471,8 @@ double PannerNode::calculateDopplerRate()
                 sourceProjection = -sourceProjection;
 
                 double scaledSpeedOfSound = speedOfSound / dopplerFactor;
-                listenerProjection = min(listenerProjection, scaledSpeedOfSound);
-                sourceProjection = min(sourceProjection, scaledSpeedOfSound);
+                listenerProjection = std::min(listenerProjection, scaledSpeedOfSound);
+                sourceProjection = std::min(sourceProjection, scaledSpeedOfSound);
 
                 dopplerShift = ((speedOfSound - dopplerFactor * listenerProjection) / (speedOfSound - dopplerFactor * sourceProjection));
                 fixNANs(dopplerShift); // avoid illegal values
@@ -577,6 +581,6 @@ void PannerNode::notifyAudioSourcesConnectedToNode(AudioNode* node, HashMap<Audi
     }
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

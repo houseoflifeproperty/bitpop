@@ -35,9 +35,9 @@
 #include <dl/sp/api/armSP.h>
 #include <dl/sp/api/omxSP.h>
 
-namespace WebCore {
+namespace blink {
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 const unsigned kMaxFFTPow2Size = 15;
 #endif
 
@@ -180,7 +180,7 @@ OMXFFTSpec_R_F32* FFTFrame::contextForSize(unsigned log2FFTSize)
     return 0;
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // #if OS(ANDROID) && !USE(WEBAUDIO_OPENMAX_DL_FFT)
 

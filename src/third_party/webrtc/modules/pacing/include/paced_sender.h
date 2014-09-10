@@ -16,11 +16,13 @@
 
 #include "webrtc/modules/interface/module.h"
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
-#include "webrtc/system_wrappers/interface/tick_util.h"
+#include "webrtc/system_wrappers/interface/thread_annotations.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
+class Clock;
 class CriticalSectionWrapper;
+
 namespace paced_sender {
 class IntervalBudget;
 struct Packet;
@@ -48,6 +50,7 @@ class PacedSender : public Module {
                                   int64_t capture_time_ms,
                                   bool retransmission) = 0;
     // Called when it's a good time to send a padding data.
+    // Returns the number of bytes sent.
     virtual int TimeToSendPadding(int bytes) = 0;
 
    protected:
@@ -55,8 +58,17 @@ class PacedSender : public Module {
   };
 
   static const int kDefaultMaxQueueLengthMs = 2000;
+  // Pace in kbits/s until we receive first estimate.
+  static const int kDefaultInitialPaceKbps = 2000;
+  // Pacing-rate relative to our target send rate.
+  // Multiplicative factor that is applied to the target bitrate to calculate
+  // the number of bytes that can be transmitted per interval.
+  // Increasing this factor will result in lower delays in cases of bitrate
+  // overshoots from the encoder.
+  static const float kDefaultPaceMultiplier;
 
-  PacedSender(Callback* callback, int max_bitrate_kbps, int min_bitrate_kbps);
+  PacedSender(Clock* clock, Callback* callback, int max_bitrate_kbps,
+              int min_bitrate_kbps);
 
   virtual ~PacedSender();
 
@@ -101,40 +113,50 @@ class PacedSender : public Module {
  private:
   // Return true if next packet in line should be transmitted.
   // Return packet list that contains the next packet.
-  bool ShouldSendNextPacket(paced_sender::PacketList** packet_list);
+  bool ShouldSendNextPacket(paced_sender::PacketList** packet_list)
+      EXCLUSIVE_LOCKS_REQUIRED(critsect_);
 
   // Local helper function to GetNextPacket.
-  paced_sender::Packet GetNextPacketFromList(paced_sender::PacketList* packets);
+  paced_sender::Packet GetNextPacketFromList(paced_sender::PacketList* packets)
+      EXCLUSIVE_LOCKS_REQUIRED(critsect_);
 
-  bool SendPacketFromList(paced_sender::PacketList* packet_list);
+  bool SendPacketFromList(paced_sender::PacketList* packet_list)
+      EXCLUSIVE_LOCKS_REQUIRED(critsect_);
 
   // Updates the number of bytes that can be sent for the next time interval.
-  void UpdateBytesPerInterval(uint32_t delta_time_in_ms);
+  void UpdateBytesPerInterval(uint32_t delta_time_in_ms)
+      EXCLUSIVE_LOCKS_REQUIRED(critsect_);
 
   // Updates the buffers with the number of bytes that we sent.
-  void UpdateMediaBytesSent(int num_bytes);
+  void UpdateMediaBytesSent(int num_bytes) EXCLUSIVE_LOCKS_REQUIRED(critsect_);
 
-  Callback* callback_;
-  bool enabled_;
-  bool paused_;
-  int max_queue_length_ms_;
+  Clock* const clock_;
+  Callback* const callback_;
+
   scoped_ptr<CriticalSectionWrapper> critsect_;
+  bool enabled_ GUARDED_BY(critsect_);
+  bool paused_ GUARDED_BY(critsect_);
+  int max_queue_length_ms_ GUARDED_BY(critsect_);
   // This is the media budget, keeping track of how many bits of media
   // we can pace out during the current interval.
-  scoped_ptr<paced_sender::IntervalBudget> media_budget_;
+  scoped_ptr<paced_sender::IntervalBudget> media_budget_ GUARDED_BY(critsect_);
   // This is the padding budget, keeping track of how many bits of padding we're
   // allowed to send out during the current interval. This budget will be
   // utilized when there's no media to send.
-  scoped_ptr<paced_sender::IntervalBudget> padding_budget_;
+  scoped_ptr<paced_sender::IntervalBudget> padding_budget_
+      GUARDED_BY(critsect_);
 
-  TickTime time_last_update_;
-  TickTime time_last_send_;
-  int64_t capture_time_ms_last_queued_;
-  int64_t capture_time_ms_last_sent_;
+  int64_t time_last_update_us_ GUARDED_BY(critsect_);
+  int64_t time_last_send_us_ GUARDED_BY(critsect_);
+  int64_t capture_time_ms_last_queued_ GUARDED_BY(critsect_);
+  int64_t capture_time_ms_last_sent_ GUARDED_BY(critsect_);
 
-  scoped_ptr<paced_sender::PacketList> high_priority_packets_;
-  scoped_ptr<paced_sender::PacketList> normal_priority_packets_;
-  scoped_ptr<paced_sender::PacketList> low_priority_packets_;
+  scoped_ptr<paced_sender::PacketList> high_priority_packets_
+      GUARDED_BY(critsect_);
+  scoped_ptr<paced_sender::PacketList> normal_priority_packets_
+      GUARDED_BY(critsect_);
+  scoped_ptr<paced_sender::PacketList> low_priority_packets_
+      GUARDED_BY(critsect_);
 };
 }  // namespace webrtc
 #endif  // WEBRTC_MODULES_PACED_SENDER_H_

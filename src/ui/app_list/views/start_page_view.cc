@@ -9,6 +9,7 @@
 #include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_view_delegate.h"
+#include "ui/app_list/search_result.h"
 #include "ui/app_list/views/app_list_main_view.h"
 #include "ui/app_list/views/search_box_view.h"
 #include "ui/app_list/views/search_result_list_view.h"
@@ -19,6 +20,7 @@
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/box_layout.h"
+#include "ui/views/widget/widget.h"
 
 namespace app_list {
 
@@ -29,7 +31,7 @@ const int kTopMargin = 30;
 const int kInstantContainerSpacing = 20;
 
 // WebView constants.
-const int kWebViewWidth = 200;
+const int kWebViewWidth = 500;
 const int kWebViewHeight = 105;
 
 // DummySearchBoxView constants.
@@ -94,14 +96,15 @@ class DummySearchBoxView : public SearchBoxView {
 StartPageView::StartPageView(AppListMainView* app_list_main_view,
                              AppListViewDelegate* view_delegate)
     : app_list_main_view_(app_list_main_view),
-      model_(NULL),
+      search_results_model_(NULL),
       view_delegate_(view_delegate),
       search_box_view_(new DummySearchBoxView(this, view_delegate_)),
       results_view_(
           new SearchResultListView(app_list_main_view, view_delegate)),
       instant_container_(new views::View),
       tiles_container_(new views::View),
-      show_state_(SHOW_START_PAGE) {
+      show_state_(SHOW_START_PAGE),
+      update_factory_(this) {
   // The view containing the start page WebContents and DummySearchBoxView.
   InitInstantContainer();
   AddChildView(instant_container_);
@@ -119,8 +122,8 @@ StartPageView::StartPageView(AppListMainView* app_list_main_view,
 
 StartPageView::~StartPageView() {
   view_delegate_->RemoveObserver(this);
-  if (model_)
-    model_->RemoveObserver(this);
+  if (search_results_model_)
+    search_results_model_->RemoveObserver(this);
 }
 
 void StartPageView::InitInstantContainer() {
@@ -130,6 +133,8 @@ void StartPageView::InitInstantContainer() {
       gfx::Insets(kTopMargin, 0, kInstantContainerSpacing, 0));
   instant_layout_manager->set_main_axis_alignment(
       views::BoxLayout::MAIN_AXIS_ALIGNMENT_END);
+  instant_layout_manager->set_cross_axis_alignment(
+      views::BoxLayout::CROSS_AXIS_ALIGNMENT_CENTER);
   instant_container_->SetLayoutManager(instant_layout_manager);
 
   views::View* web_view = view_delegate_->CreateStartPageWebView(
@@ -165,42 +170,40 @@ void StartPageView::InitTilesContainer() {
 
 void StartPageView::SetModel(AppListModel* model) {
   DCHECK(model);
-  if (model_)
-    model_->RemoveObserver(this);
-  model_ = model;
-  model_->AddObserver(this);
-  results_view_->SetResults(model_->results());
+  if (search_results_model_)
+    search_results_model_->RemoveObserver(this);
+  search_results_model_ = model->results();
+  search_results_model_->AddObserver(this);
+  results_view_->SetResults(search_results_model_);
   Reset();
 }
 
 void StartPageView::Reset() {
   SetShowState(SHOW_START_PAGE);
-  if (!model_ || !model_->top_level_item_list())
-    return;
-
-  for (size_t i = 0; i < kNumStartPageTiles; ++i) {
-    AppListItem* item = NULL;
-    if (i < model_->top_level_item_list()->item_count())
-      item = model_->top_level_item_list()->item_at(i);
-    tile_views_[i]->SetAppListItem(item);
-  }
+  Update();
 }
 
 void StartPageView::ShowSearchResults() {
   SetShowState(SHOW_SEARCH_RESULTS);
+  Update();
 }
 
 void StartPageView::SetShowState(ShowState show_state) {
   instant_container_->SetVisible(show_state == SHOW_START_PAGE);
   results_view_->SetVisible(show_state == SHOW_SEARCH_RESULTS);
 
-  if (show_state == SHOW_START_PAGE)
+  // This can be called when the app list is closing (widget is invisible). In
+  // that case, do not steal focus from other elements.
+  if (show_state == SHOW_START_PAGE && GetWidget() && GetWidget()->IsVisible())
     search_box_view_->search_box()->RequestFocus();
 
   if (show_state_ == show_state)
     return;
 
   show_state_ = show_state;
+
+  if (show_state_ == SHOW_START_PAGE)
+    search_box_view_->ClearSearch();
 
   results_view_->UpdateAutoLaunchState();
   if (show_state == SHOW_SEARCH_RESULTS)
@@ -209,6 +212,10 @@ void StartPageView::SetShowState(ShowState show_state) {
 
 bool StartPageView::IsShowingSearchResults() const {
   return show_state_ == SHOW_SEARCH_RESULTS;
+}
+
+void StartPageView::UpdateForTesting() {
+  Update();
 }
 
 bool StartPageView::OnKeyPressed(const ui::KeyEvent& event) {
@@ -231,6 +238,32 @@ void StartPageView::Layout() {
   tiles_container_->SetBoundsRect(bounds);
 }
 
+void StartPageView::Update() {
+  std::vector<SearchResult*> display_results =
+      AppListModel::FilterSearchResultsByDisplayType(search_results_model_,
+                                                     SearchResult::DISPLAY_TILE,
+                                                     kNumStartPageTiles);
+  for (size_t i = 0; i < kNumStartPageTiles; ++i) {
+    SearchResult* item = NULL;
+    if (i < display_results.size())
+      item = display_results[i];
+    tile_views_[i]->SetSearchResult(item);
+  }
+  tiles_container_->Layout();
+  Layout();
+  update_factory_.InvalidateWeakPtrs();
+}
+
+void StartPageView::ScheduleUpdate() {
+  // When search results are added one by one, each addition generates an update
+  // request. Consolidates those update requests into one Update call.
+  if (!update_factory_.HasWeakPtrs()) {
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&StartPageView::Update, update_factory_.GetWeakPtr()));
+  }
+}
+
 void StartPageView::QueryChanged(SearchBoxView* sender) {
   // Forward the search terms on to the real search box and clear the dummy
   // search box.
@@ -243,20 +276,20 @@ void StartPageView::OnProfilesChanged() {
   SetModel(view_delegate_->GetModel());
 }
 
-void StartPageView::OnAppListModelStatusChanged() {
-  Reset();
+void StartPageView::ListItemsAdded(size_t start, size_t count) {
+  ScheduleUpdate();
 }
 
-void StartPageView::OnAppListItemAdded(AppListItem* item) {
-  Reset();
+void StartPageView::ListItemsRemoved(size_t start, size_t count) {
+  ScheduleUpdate();
 }
 
-void StartPageView::OnAppListItemDeleted() {
-  Reset();
+void StartPageView::ListItemMoved(size_t index, size_t target_index) {
+  ScheduleUpdate();
 }
 
-void StartPageView::OnAppListItemUpdated(AppListItem* item) {
-  Reset();
+void StartPageView::ListItemsChanged(size_t start, size_t count) {
+  ScheduleUpdate();
 }
 
 }  // namespace app_list

@@ -11,6 +11,7 @@
 #include "base/callback_forward.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
 #include "base/scoped_observer.h"
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
@@ -22,6 +23,10 @@
 
 class AppListControllerDelegate;
 class Profile;
+
+namespace apps {
+class CustomLauncherPageContents;
+}
 
 namespace app_list {
 class SearchController;
@@ -85,6 +90,8 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
       const base::FilePath& profile_path) OVERRIDE;
 #if defined(TOOLKIT_VIEWS)
   virtual views::View* CreateStartPageWebView(const gfx::Size& size) OVERRIDE;
+  virtual std::vector<views::View*> CreateCustomPageWebViews(
+      const gfx::Size& size) OVERRIDE;
 #endif
   virtual bool IsSpeechRecognitionEnabled() OVERRIDE;
   virtual const Users& GetUsers() const OVERRIDE;
@@ -148,6 +155,9 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   // Used to track the SigninManagers that this instance is observing so that
   // this instance can be removed as an observer on its destruction.
   ScopedObserver<SigninManagerBase, AppListViewDelegate> scoped_observer_;
+
+  // Window contents of additional custom launcher pages.
+  ScopedVector<apps::CustomLauncherPageContents> custom_page_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListViewDelegate);
 };

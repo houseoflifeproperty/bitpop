@@ -35,16 +35,18 @@ def _get_master_status():
   ms = mock.Mock()
   ms.getTitle.return_value = 'Fake master'
   ms.getBuildbotURL.return_value = 'http://somewhere'
+  ms.getSlaveNames.return_value = ['slave1', 'slave2']
   return ms
 
 
-def _get_gatekeeper(tree_status_url, mock_interesting):
+def _get_gatekeeper(tree_status_url, mock_interesting, branches=None):
   """Returns a partially mocked GateKeeper instance."""
   mn = gatekeeper.GateKeeper(
       tree_status_url,
       fromaddr='from@example.org',
       mode='all',
       builders=['builder1'],
+      branches=branches,
       use_getname=True,
       lookup=None)
   mn.master_status = _get_master_status()
@@ -125,6 +127,25 @@ class GateKeeperTest(auto_stub.TestCase):
         status_header='Failure on test.',
         tree_status_url='http://localhost/')
     self.assertTrue(notifier)
+
+  def test_branchname_mismatch(self):
+    mn = _get_gatekeeper(tree_status_url='url',
+                         mock_interesting=False,
+                         branches=['bar'])
+    build = _get_build()
+    build.getProperty.return_value = 'foo'
+    step = _get_step()
+    self.assertFalse(mn.isInterestingStep(build, step, [FAILURE]))
+
+  def test_branchname_match(self):
+    mn = _get_gatekeeper(tree_status_url='url',
+                         mock_interesting=False,
+                         branches=['foo'])
+    build = _get_build()
+    build.getProperty.return_value = 'foo'
+    build.getPreviousBuild.return_value = None
+    step = _get_step()
+    self.assertTrue(mn.isInterestingStep(build, step, [FAILURE]))
 
   def test_buildMessage(self):
     # Make sure the code flows up to buildMessage with isInterestingStep mocked

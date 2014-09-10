@@ -25,7 +25,7 @@
 #include "config.h"
 #include "core/html/HTMLKeygenElement.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Text.h"
@@ -36,9 +36,9 @@
 #include "platform/SSLKeyGenerator.h"
 #include "wtf/StdLibExtras.h"
 
-using namespace WebCore;
+using namespace blink;
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 

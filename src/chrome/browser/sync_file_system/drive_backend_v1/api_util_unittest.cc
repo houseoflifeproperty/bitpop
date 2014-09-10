@@ -7,7 +7,6 @@
 #include "base/file_util.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/drive/drive_uploader.h"
@@ -116,10 +115,11 @@ class APIUtilTest : public testing::Test {
                   entry));
   }
 
-  void VerifyTitleUniqueness(const std::string& parent_resource_id,
-                             const std::string& title,
-                             const std::string& resource_id,
-                             google_apis::DriveEntryKind kind) {
+  void VerifyTitleUniqueness(
+      const std::string& parent_resource_id,
+      const std::string& title,
+      const std::string& resource_id,
+      google_apis::ResourceEntry::ResourceEntryKind kind) {
     ScopedVector<ResourceEntry> entries;
     EXPECT_EQ(google_apis::HTTP_SUCCESS,
               fake_drive_helper_->SearchByTitle(
@@ -257,7 +257,7 @@ void APIUtilTest::TestCreateSyncRoot() {
   VerifyTitleUniqueness(std::string(),  // directory_resource_id
                         APIUtil::GetSyncRootDirectoryName(),
                         output.resource_id,
-                        google_apis::ENTRY_KIND_FOLDER);
+                        google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
 }
 
 void APIUtilTest::TestCreateSyncRoot_Conflict() {
@@ -275,7 +275,7 @@ void APIUtilTest::TestCreateSyncRoot_Conflict() {
   VerifyTitleUniqueness(std::string(),  // directory_resource_id
                         APIUtil::GetSyncRootDirectoryName(),
                         output.resource_id,
-                        google_apis::ENTRY_KIND_FOLDER);
+                        google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
 }
 
 void APIUtilTest::TestGetOriginDirectory() {
@@ -309,7 +309,7 @@ void APIUtilTest::TestCreateOriginDirectory() {
   VerifyTitleUniqueness(sync_root_id,
                         kOriginDirectoryName,
                         output.resource_id,
-                        google_apis::ENTRY_KIND_FOLDER);
+                        google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
 }
 
 void APIUtilTest::TestCreateOriginDirectory_Conflict() {
@@ -330,7 +330,7 @@ void APIUtilTest::TestCreateOriginDirectory_Conflict() {
   VerifyTitleUniqueness(sync_root_id,
                         kOriginDirectoryName,
                         output.resource_id,
-                        google_apis::ENTRY_KIND_FOLDER);
+                        google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
 }
 
 void APIUtilTest::TestGetLargestChangeStamp() {
@@ -483,7 +483,7 @@ void APIUtilTest::TestUploadNewFile() {
   VerifyTitleUniqueness(origin_root_id,
                         kFileTitle,
                         output.resource_id,
-                        google_apis::ENTRY_KIND_FILE);
+                        google_apis::ResourceEntry::ENTRY_KIND_FILE);
 }
 
 void APIUtilTest::TestUploadNewFile_ConflictWithFile() {
@@ -510,7 +510,7 @@ void APIUtilTest::TestUploadNewFile_ConflictWithFile() {
   VerifyTitleUniqueness(origin_root_id,
                         kFileTitle,
                         output.resource_id,
-                        google_apis::ENTRY_KIND_FILE);
+                        google_apis::ResourceEntry::ENTRY_KIND_FILE);
 }
 
 void APIUtilTest::TestUploadExistingFile() {
@@ -537,7 +537,7 @@ void APIUtilTest::TestUploadExistingFile() {
   VerifyTitleUniqueness(origin_root_id,
                         file->title(),
                         file->file_id(),
-                        google_apis::ENTRY_KIND_FILE);
+                        google_apis::ResourceEntry::ENTRY_KIND_FILE);
 }
 
 void APIUtilTest::TestUploadExistingFileInConflict() {
@@ -569,7 +569,7 @@ void APIUtilTest::TestUploadExistingFileInConflict() {
   VerifyTitleUniqueness(origin_root_id,
                         file->title(),
                         file->file_id(),
-                        google_apis::ENTRY_KIND_FILE);
+                        google_apis::ResourceEntry::ENTRY_KIND_FILE);
 }
 
 void APIUtilTest::TestDeleteFile() {
@@ -617,7 +617,7 @@ void APIUtilTest::TestDeleteFileInConflict() {
   VerifyTitleUniqueness(origin_root_id,
                         file->title(),
                         file->file_id(),
-                        google_apis::ENTRY_KIND_FILE);
+                        google_apis::ResourceEntry::ENTRY_KIND_FILE);
 }
 
 void APIUtilTest::TestCreateDirectory() {
@@ -638,7 +638,7 @@ void APIUtilTest::TestCreateDirectory() {
   VerifyTitleUniqueness(origin_root_id,
                         kDirectoryTitle,
                         output.resource_id,
-                        google_apis::ENTRY_KIND_FOLDER);
+                        google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
 }
 
 TEST_F(APIUtilTest, GetSyncRoot) {

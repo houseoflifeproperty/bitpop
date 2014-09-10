@@ -61,13 +61,13 @@ scoped_refptr<StreamParserBuffer> StreamParserBuffer::CopyFrom(
                              is_keyframe, type, track_id));
 }
 
-base::TimeDelta StreamParserBuffer::GetDecodeTimestamp() const {
-  if (decode_timestamp_ == kNoTimestamp())
-    return timestamp();
+DecodeTimestamp StreamParserBuffer::GetDecodeTimestamp() const {
+  if (decode_timestamp_ == kNoDecodeTimestamp())
+    return DecodeTimestamp::FromPresentationTime(timestamp());
   return decode_timestamp_;
 }
 
-void StreamParserBuffer::SetDecodeTimestamp(base::TimeDelta timestamp) {
+void StreamParserBuffer::SetDecodeTimestamp(DecodeTimestamp timestamp) {
   decode_timestamp_ = timestamp;
   if (preroll_buffer_)
     preroll_buffer_->SetDecodeTimestamp(timestamp);
@@ -79,7 +79,7 @@ StreamParserBuffer::StreamParserBuffer(const uint8* data, int data_size,
                                        Type type, TrackId track_id)
     : DecoderBuffer(data, data_size, side_data, side_data_size),
       is_keyframe_(is_keyframe),
-      decode_timestamp_(kNoTimestamp()),
+      decode_timestamp_(kNoDecodeTimestamp()),
       config_id_(kInvalidConfigId),
       type_(type),
       track_id_(track_id) {
@@ -106,6 +106,11 @@ void StreamParserBuffer::SetConfigId(int config_id) {
 void StreamParserBuffer::ConvertToSpliceBuffer(
     const BufferQueue& pre_splice_buffers) {
   DCHECK(splice_buffers_.empty());
+  DCHECK(duration() > base::TimeDelta())
+      << "Only buffers with a valid duration can convert to a splice buffer."
+      << " pts " << timestamp().InSecondsF()
+      << " dts " << GetDecodeTimestamp().InSecondsF()
+      << " dur " << duration().InSecondsF();
   DCHECK(!end_of_stream());
 
   // Make a copy of this first, before making any changes.
@@ -139,6 +144,8 @@ void StreamParserBuffer::ConvertToSpliceBuffer(
 
   // The splice duration is the duration of all buffers before the splice plus
   // the highest ending timestamp after the splice point.
+  DCHECK(overlapping_buffer->duration() > base::TimeDelta());
+  DCHECK(pre_splice_buffers.back()->duration() > base::TimeDelta());
   set_duration(
       std::max(overlapping_buffer->timestamp() + overlapping_buffer->duration(),
                pre_splice_buffers.back()->timestamp() +

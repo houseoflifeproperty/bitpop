@@ -41,8 +41,8 @@ void ScrollbarLayerImplBase::PushPropertiesTo(LayerImpl* layer) {
 
 void ScrollbarLayerImplBase::PushScrollClipPropertiesTo(LayerImpl* layer) {
   DCHECK(layer->ToScrollbarLayer());
-  layer->ToScrollbarLayer()->SetScrollLayerById(ScrollLayerId());
-  layer->ToScrollbarLayer()->SetClipLayerById(ClipLayerId());
+  layer->ToScrollbarLayer()->SetScrollLayerAndClipLayerByIds(ScrollLayerId(),
+                                                             ClipLayerId());
 }
 
 ScrollbarLayerImplBase* ScrollbarLayerImplBase::ToScrollbarLayer() {
@@ -77,28 +77,22 @@ void RegisterScrollbarWithLayers(ScrollbarLayerImplBase* scrollbar,
 }
 }  // namespace
 
-void ScrollbarLayerImplBase::SetScrollLayerById(int id) {
-  LayerImpl* scroll_layer = layer_tree_impl()->LayerById(id);
-  if (scroll_layer_ == scroll_layer)
+void ScrollbarLayerImplBase::SetScrollLayerAndClipLayerByIds(
+    int scroll_layer_id,
+    int clip_layer_id) {
+  LayerImpl* scroll_layer = layer_tree_impl()->LayerById(scroll_layer_id);
+  LayerImpl* clip_layer = layer_tree_impl()->LayerById(clip_layer_id);
+  if (scroll_layer_ == scroll_layer && clip_layer_ == clip_layer)
     return;
 
   RegisterScrollbarWithLayers(
       this, clip_layer_, scroll_layer_, &LayerImpl::RemoveScrollbar);
   scroll_layer_ = scroll_layer;
-  RegisterScrollbarWithLayers(
-      this, clip_layer_, scroll_layer_, &LayerImpl::AddScrollbar);
-}
-
-void ScrollbarLayerImplBase::SetClipLayerById(int id) {
-  LayerImpl* clip_layer = layer_tree_impl()->LayerById(id);
-  if (clip_layer_ == clip_layer)
-    return;
-
-  RegisterScrollbarWithLayers(
-      this, clip_layer_, scroll_layer_, &LayerImpl::RemoveScrollbar);
   clip_layer_ = clip_layer;
   RegisterScrollbarWithLayers(
       this, clip_layer_, scroll_layer_, &LayerImpl::AddScrollbar);
+
+  ScrollbarParametersDidChange();
 }
 
 gfx::Rect ScrollbarLayerImplBase::ScrollbarLayerRectToContentRect(
@@ -218,9 +212,13 @@ gfx::Rect ScrollbarLayerImplBase::ComputeThumbQuadRect() const {
   // With the length known, we can compute the thumb's position.
   float clamped_current_pos =
       std::min(std::max(current_pos_, 0.f), static_cast<float>(maximum_));
-  float ratio = clamped_current_pos / maximum_;
-  float max_offset = track_length - thumb_length;
-  int thumb_offset = static_cast<int>(ratio * max_offset) + TrackStart();
+
+  int thumb_offset = TrackStart();
+  if (maximum_ > 0) {
+    float ratio = clamped_current_pos / maximum_;
+    float max_offset = track_length - thumb_length;
+    thumb_offset += static_cast<int>(ratio * max_offset);
+  }
 
   float thumb_thickness_adjustment =
       thumb_thickness * (1.f - thumb_thickness_scale_factor_);

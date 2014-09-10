@@ -12,9 +12,10 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
+#include "base/memory/scoped_ptr.h"
 #include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
+#include "mojo/services/view_manager/access_policy_delegate.h"
 #include "mojo/services/view_manager/ids.h"
-#include "mojo/services/view_manager/node_delegate.h"
 #include "mojo/services/view_manager/view_manager_export.h"
 
 namespace gfx {
@@ -22,12 +23,11 @@ class Rect;
 }
 
 namespace mojo {
-namespace view_manager {
 namespace service {
 
+class AccessPolicy;
 class Node;
 class RootNodeManager;
-class View;
 
 #if defined(OS_WIN)
 // Equivalent of NON_EXPORTED_BASE which does not work with the template snafu
@@ -39,12 +39,14 @@ class View;
 // Manages a connection from the client.
 class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
     : public InterfaceImpl<ViewManagerService>,
-      public NodeDelegate {
+      public AccessPolicyDelegate {
  public:
   ViewManagerServiceImpl(RootNodeManager* root_node_manager,
                          ConnectionSpecificId creator_id,
                          const std::string& creator_url,
-                         const std::string& url);
+                         const std::string& url,
+                         const NodeId& root_id,
+                         InterfaceRequest<ServiceProvider> service_provider);
   virtual ~ViewManagerServiceImpl();
 
   // Used to mark this connection as originating from a call to
@@ -62,14 +64,8 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   }
   const Node* GetNode(const NodeId& id) const;
 
-  // Returns the View with the specified id.
-  View* GetView(const ViewId& id) {
-    return const_cast<View*>(
-        const_cast<const ViewManagerServiceImpl*>(this)->GetView(id));
-  }
-  const View* GetView(const ViewId& id) const;
-
-  void SetRoots(const Array<Id>& node_ids);
+  // Returns true if this has |id| as a root.
+  bool HasRoot(const NodeId& id) const;
 
   // Invoked when a connection is destroyed.
   void OnViewManagerServiceImplDestroyed(ConnectionSpecificId id);
@@ -84,21 +80,12 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   void ProcessNodeHierarchyChanged(const Node* node,
                                    const Node* new_parent,
                                    const Node* old_parent,
-                                   Id server_change_id,
                                    bool originated_change);
   void ProcessNodeReorder(const Node* node,
                           const Node* relative_node,
                           OrderDirection direction,
-                          Id server_change_id,
                           bool originated_change);
-  void ProcessNodeViewReplaced(const Node* node,
-                               const View* new_view,
-                               const View* old_view,
-                               bool originated_change);
-  void ProcessNodeDeleted(const NodeId& node,
-                          Id server_change_id,
-                          bool originated_change);
-  void ProcessViewDeleted(const ViewId& view, bool originated_change);
+  void ProcessNodeDeleted(const NodeId& node, bool originated_change);
 
   // TODO(sky): move this to private section (currently can't because of
   // bindings).
@@ -107,120 +94,91 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
 
  private:
   typedef std::map<ConnectionSpecificId, Node*> NodeMap;
-  typedef std::map<ConnectionSpecificId, View*> ViewMap;
   typedef base::hash_set<Id> NodeIdSet;
+
+  bool IsNodeKnown(const Node* node) const;
 
   // These functions return true if the corresponding mojom function is allowed
   // for this connection.
-  bool CanRemoveNodeFromParent(const Node* node) const;
-  bool CanAddNode(const Node* parent, const Node* child) const;
   bool CanReorderNode(const Node* node,
                       const Node* relative_node,
                       OrderDirection direction) const;
-  bool CanDeleteNode(const NodeId& node_id) const;
-  bool CanDeleteView(const ViewId& view_id) const;
-  bool CanSetView(const Node* node, const ViewId& view_id) const;
-  bool CanSetFocus(const Node* node) const;
-  bool CanGetNodeTree(const Node* node) const;
-  bool CanEmbed(const mojo::Array<uint32_t>& node_ids) const;
 
   // Deletes a node owned by this connection. Returns true on success. |source|
   // is the connection that originated the change.
-  bool DeleteNodeImpl(ViewManagerServiceImpl* source, const NodeId& node_id);
-
-  // Deletes a view owned by this connection. Returns true on success. |source|
-  // is the connection that originated the change.
-  bool DeleteViewImpl(ViewManagerServiceImpl* source, const ViewId& view_id);
-
-  // Sets the view associated with a node.
-  bool SetViewImpl(Node* node, const ViewId& view_id);
+  bool DeleteNodeImpl(ViewManagerServiceImpl* source, Node* node);
 
   // If |node| is known (in |known_nodes_|) does nothing. Otherwise adds |node|
   // to |nodes|, marks |node| as known and recurses.
   void GetUnknownNodesFrom(const Node* node, std::vector<const Node*>* nodes);
 
   // Removes |node| and all its descendants from |known_nodes_|. This does not
-  // recurse through nodes that were created by this connection.
-  void RemoveFromKnown(const Node* node);
+  // recurse through nodes that were created by this connection. All nodes owned
+  // by this connection are added to |local_nodes|.
+  void RemoveFromKnown(const Node* node, std::vector<Node*>* local_nodes);
 
-  // Adds |node_ids| to roots, returning true if at least one of the nodes was
-  // not already a root. If at least one of the nodes was not already a root
-  // the client is told of the new roots.
-  bool AddRoots(const std::vector<Id>& node_ids);
+  // Adds |node_id| to the set of roots this connection knows about. The caller
+  // should have verified |node_id| is not among the roots of this connection.
+  void AddRoot(const NodeId& node_id,
+               InterfaceRequest<ServiceProvider> service_provider);
 
-  // Returns true if |node| is a non-null and a descendant of |roots_| (or
-  // |roots_| is empty).
-  bool IsNodeDescendantOfRoots(const Node* node) const;
+  // Removes |node_id| from the set of roots this connection knows about.
+  void RemoveRoot(const NodeId& node_id);
 
-  // Returns true if notification should be sent of a hierarchy change. If true
-  // is returned, any nodes that need to be sent to the client are added to
-  // |to_send|.
-  bool ShouldNotifyOnHierarchyChange(const Node* node,
-                                     const Node** new_parent,
-                                     const Node** old_parent,
-                                     std::vector<const Node*>* to_send);
+  void RemoveChildrenAsPartOfEmbed(const NodeId& node_id);
 
-  // Converts an array of Nodes to NodeDatas. This assumes all the nodes are
-  // valid for the client. The parent of nodes the client is not allowed to see
-  // are set to NULL (in the returned NodeDatas).
-  Array<NodeDataPtr> NodesToNodeDatas(const std::vector<const Node*>& nodes);
+  // Converts Node(s) to ViewData(s) for transport. This assumes all the nodes
+  // are valid for the client. The parent of nodes the client is not allowed to
+  // see are set to NULL (in the returned ViewData(s)).
+  Array<ViewDataPtr> NodesToViewDatas(const std::vector<const Node*>& nodes);
+  ViewDataPtr NodeToViewData(const Node* node);
 
-  // Overridden from ViewManagerService:
-  virtual void CreateNode(Id transport_node_id,
-                          const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void DeleteNode(Id transport_node_id,
-                          Id server_change_id,
-                          const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void AddNode(Id parent_id,
-                       Id child_id,
-                       Id server_change_id,
-                       const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void RemoveNodeFromParent(
-      Id node_id,
-      Id server_change_id,
-      const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void ReorderNode(Id node_id,
-                           Id relative_node_id,
-                           OrderDirection direction,
-                           Id server_change_id,
-                           const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void GetNodeTree(
-      Id node_id,
-      const Callback<void(Array<NodeDataPtr>)>& callback) OVERRIDE;
+  // Implementation of GetNodeTree(). Adds |node| to |nodes| and recurses if
+  // CanDescendIntoNodeForNodeTree() returns true.
+  void GetNodeTreeImpl(const Node* node, std::vector<const Node*>* nodes) const;
+
+  // ViewManagerService:
   virtual void CreateView(Id transport_view_id,
-                          const Callback<void(bool)>& callback) OVERRIDE;
+                          const Callback<void(ErrorCode)>& callback) OVERRIDE;
   virtual void DeleteView(Id transport_view_id,
                           const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void SetView(Id transport_node_id,
-                       Id transport_view_id,
+  virtual void AddView(Id parent_id,
+                       Id child_id,
                        const Callback<void(bool)>& callback) OVERRIDE;
+  virtual void RemoveViewFromParent(
+      Id node_id,
+      const Callback<void(bool)>& callback) OVERRIDE;
+  virtual void ReorderView(Id view_id,
+                           Id relative_view_id,
+                           OrderDirection direction,
+                           const Callback<void(bool)>& callback) OVERRIDE;
+  virtual void GetViewTree(
+      Id view_id,
+      const Callback<void(Array<ViewDataPtr>)>& callback) OVERRIDE;
   virtual void SetViewContents(Id view_id,
                                ScopedSharedBufferHandle buffer,
                                uint32_t buffer_size,
                                const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void SetFocus(Id node_id,
-                        const Callback<void(bool)> & callback) OVERRIDE;
-  virtual void SetNodeBounds(Id node_id,
+  virtual void SetViewBounds(Id view_id,
                              RectPtr bounds,
                              const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void Embed(const mojo::String& url,
-                     mojo::Array<uint32_t> node_ids,
-                     const mojo::Callback<void(bool)>& callback) OVERRIDE;
-  virtual void DispatchOnViewInputEvent(Id transport_view_id,
-                                        EventPtr event) OVERRIDE;
+  virtual void SetViewVisibility(Id view_id,
+                                 bool visible,
+                                 const Callback<void(bool)>& callback) OVERRIDE;
+  virtual void Embed(const String& url,
+                     Id view_id,
+                     ServiceProviderPtr service_provider,
+                     const Callback<void(bool)>& callback) OVERRIDE;
+  virtual void DispatchOnViewInputEvent(Id view_id, EventPtr event) OVERRIDE;
 
-  // Overridden from NodeDelegate:
-  virtual void OnNodeHierarchyChanged(const Node* node,
-                                      const Node* new_parent,
-                                      const Node* old_parent) OVERRIDE;
-  virtual void OnNodeViewReplaced(const Node* node,
-                                  const View* new_view,
-                                  const View* old_view) OVERRIDE;
-  virtual void OnViewInputEvent(const View* view,
-                                const ui::Event* event) OVERRIDE;
-
-  // InterfaceImp overrides:
+  // InterfaceImpl:
   virtual void OnConnectionEstablished() MOJO_OVERRIDE;
+
+  // AccessPolicyDelegate:
+  virtual const base::hash_set<Id>& GetRootsForAccessPolicy() const OVERRIDE;
+  virtual bool IsNodeKnownForAccessPolicy(const Node* node) const OVERRIDE;
+  virtual bool IsNodeRootOfAnotherConnectionForAccessPolicy(
+      const Node* node) const OVERRIDE;
 
   RootNodeManager* root_node_manager_;
 
@@ -237,23 +195,27 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   // The URL of the app that embedded the app this connection was created for.
   const std::string creator_url_;
 
-  NodeMap node_map_;
+  scoped_ptr<AccessPolicy> access_policy_;
 
-  ViewMap view_map_;
+  // The nodes and views created by this connection. This connection owns these
+  // objects.
+  NodeMap node_map_;
 
   // The set of nodes that has been communicated to the client.
   NodeIdSet known_nodes_;
 
-  // This is the set of nodes the connection can parent nodes to (in addition to
-  // any nodes created by this connection). If empty the connection can
-  // manipulate any nodes (except for deleting other connections nodes/views).
-  // The connection can not delete or move these. If this is set to a non-empty
-  // value and all the nodes are deleted (by another connection), then an
-  // invalid node is added here to ensure this connection is still constrained.
+  // Set of root nodes from other connections. More specifically any time
+  // Embed() is invoked the id of the node is added to this set for the child
+  // connection. The connection Embed() was invoked on (the parent) doesn't
+  // directly track which connections are attached to which of its nodes. That
+  // information can be found by looking through the |roots_| of all
+  // connections.
   NodeIdSet roots_;
 
   // See description above setter.
   bool delete_on_connection_error_;
+
+  InterfaceRequest<ServiceProvider> service_provider_;
 
   DISALLOW_COPY_AND_ASSIGN(ViewManagerServiceImpl);
 };
@@ -263,7 +225,6 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
 #endif
 
 }  // namespace service
-}  // namespace view_manager
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_VIEW_MANAGER_VIEW_MANAGER_SERVICE_IMPL_H_

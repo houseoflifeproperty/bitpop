@@ -21,16 +21,15 @@
 #ifndef DOMMimeTypeArray_h
 #define DOMMimeTypeArray_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "core/plugins/DOMMimeType.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalFrame;
 class PluginData;
@@ -55,6 +54,6 @@ private:
     PluginData* getPluginData() const;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MimeTypeArray_h

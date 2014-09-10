@@ -22,7 +22,6 @@
 #include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSAnimation+Duration.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia_paint.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
@@ -52,9 +51,9 @@ class ExtensionActionIconFactoryBridge
       : owner_(owner),
         browser_action_([[owner cell] extensionAction]),
         icon_factory_(profile, extension, browser_action_, this) {
-    registrar_.Add(
-        this, chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
-        content::Source<ExtensionAction>(browser_action_));
+    registrar_.Add(this,
+                   extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
+                   content::Source<ExtensionAction>(browser_action_));
   }
 
   virtual ~ExtensionActionIconFactoryBridge() {}
@@ -69,7 +68,7 @@ class ExtensionActionIconFactoryBridge
       int type,
       const content::NotificationSource& source,
       const content::NotificationDetails& details) OVERRIDE {
-    if (type == chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED)
+    if (type == extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED)
       [owner_ updateState];
     else
       NOTREACHED();

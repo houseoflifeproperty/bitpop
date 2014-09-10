@@ -26,6 +26,7 @@
 #include "config.h"
 #include "core/page/NetworkStateNotifier.h"
 
+#include "core/dom/CrossThreadTask.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/page/Page.h"
 #include "wtf/Assertions.h"
@@ -34,7 +35,7 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/Threading.h"
 
-namespace WebCore {
+namespace blink {
 
 NetworkStateNotifier& networkStateNotifier()
 {
@@ -77,7 +78,7 @@ void NetworkStateNotifier::setWebConnectionTypeImpl(blink::WebConnectionType typ
 
     for (ObserverListMap::iterator it = m_observers.begin(); it != m_observers.end(); ++it) {
         ExecutionContext* context = it->key;
-        context->postTask(bind(&NetworkStateNotifier::notifyObserversOnContext, this, context, type));
+        context->postTask(createCrossThreadTask(&NetworkStateNotifier::notifyObserversOnContext, this, AllowCrossThreadAccess(context), type));
     }
 }
 
@@ -177,4 +178,4 @@ void NetworkStateNotifier::collectZeroedObservers(ObserverList* list, ExecutionC
     }
 }
 
-} // namespace WebCore
+} // namespace blink

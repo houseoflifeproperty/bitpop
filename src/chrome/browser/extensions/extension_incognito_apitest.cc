@@ -6,7 +6,6 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -120,12 +119,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, Incognito) {
 
 // Tests that the APIs in an incognito-enabled split-mode extension work
 // properly.
-#if defined(OS_WIN)
 // http://crbug.com/120484
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_IncognitoSplitMode) {
-#else
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, IncognitoSplitMode) {
-#endif
   host_resolver()->AddRule("*", "127.0.0.1");
   ASSERT_TRUE(StartEmbeddedTestServer());
 
@@ -188,14 +183,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, IncognitoDisabled) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-#if defined(OS_WIN) || defined(OS_MACOSX)
-// http://crbug.com/104438.
-#define MAYBE_IncognitoPopup DISABLED_IncognitoPopup
-#else
-#define MAYBE_IncognitoPopup IncognitoPopup
-#endif
 // Test that opening a popup from an incognito browser window works properly.
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_IncognitoPopup) {
+// http://crbug.com/180759.
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_IncognitoPopup) {
   host_resolver()->AddRule("*", "127.0.0.1");
   ASSERT_TRUE(StartEmbeddedTestServer());
 

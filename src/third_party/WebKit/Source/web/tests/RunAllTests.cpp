@@ -32,38 +32,28 @@
 #include "config.h"
 #endif
 
-// FIXME: Avoid this source dependency on Chromium's base module.
-#include <base/test/test_suite.h>
-
 #include "public/platform/Platform.h"
 #include "public/web/WebKit.h"
-#include <content/test/webkit_unit_test_support.h>
-
-#if defined(BLINK_DLL_UNITTEST)
 #include "web/tests/WebUnitTests.h"
-#endif
+#include <content/test/blink_test_environment.h>
 
-#include <gmock/gmock.h>
+namespace {
 
-// TestSuite must be created before SetUpTestEnvironment so it performs
-// initializations needed by WebKit support. This is slightly complicated by the
-// fact that chromium multi-dll build requires that the TestSuite object be created
-// and run inside webkit.dll.
+// Test helpers to support the fact that blink tests are gloriously complicated
+// in a shared library build. See WebUnitTests.h for more details.
+void preTestHook()
+{
+    content::SetUpBlinkTestEnvironment();
+}
+
+void postTestHook()
+{
+    content::TearDownBlinkTestEnvironment();
+}
+
+} // namespace
+
 int main(int argc, char** argv)
 {
-#if defined(BLINK_DLL_UNITTEST)
-    blink::InitTestSuite(argc, argv);
-    content::SetUpTestEnvironmentForWebKitUnitTests();
-    int result = blink::RunAllUnitTests();
-    content::TearDownEnvironmentForWebKitUnitTests();
-    blink::DeleteTestSuite();
-#else
-    ::testing::InitGoogleMock(&argc, argv);
-    TestSuite testSuite(argc, argv);
-    content::SetUpTestEnvironmentForWebKitUnitTests();
-    int result = testSuite.Run();
-    content::TearDownEnvironmentForWebKitUnitTests();
-#endif
-
-    return result;
+    return blink::runWebTests(argc, argv, &preTestHook, &postTestHook);
 }

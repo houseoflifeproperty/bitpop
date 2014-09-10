@@ -35,54 +35,18 @@ class TestUtilsApi(recipe_api.RecipeApi):
             'Expected a one or two-element list, got %r instead.' % section)
     return ''.join(step_text)
 
-  class Test(object):
-    """
-    Base class for tests that can be retried after deapplying a previously
-    applied patch.
-    """
-
-    @property
-    def name(self):  # pragma: no cover
-      """Name of the test."""
-      raise NotImplementedError()
-
-    def pre_run(self, suffix):  # pragma: no cover
-      """Steps to execute before running the test."""
-      return []
-
-    def run(self, suffix):  # pragma: no cover
-      """Run the test. suffix is 'with patch' or 'without patch'."""
-      raise NotImplementedError()
-
-    def post_run(self, suffix):  # pragma: no cover
-      """Steps to execute after running the test."""
-      return []
-
-    def has_valid_results(self, suffix):  # pragma: no cover
-      """
-      Returns True if results (failures) are valid.
-
-      This makes it possible to distinguish between the case of no failures
-      and the test failing to even report its results in machine-readable
-      format.
-      """
-      raise NotImplementedError()
-
-    def failures(self, suffix):  # pragma: no cover
-      """Return list of failures (list of strings)."""
-      raise NotImplementedError()
-
-    def _step_name(self, suffix):
-      """Helper to uniformly combine tests's name with a suffix."""
-      return '%s (%s)' % (self.name, suffix)
-
-  def determine_new_failures(self, tests, deapply_patch_fn):
+  # TODO(martinis) rewrite this. can be written better using 1.5 syntax.
+  def determine_new_failures(self, caller_api, tests, deapply_patch_fn):
     """
     Utility function for running steps with a patch applied, and retrying
     failing steps without the patch. Failures from the run without the patch are
     ignored.
 
     Args:
+      caller_api - caller's recipe API; this is needed because self.m here
+                   is different than in the caller (different recipe modules
+                   get injected depending on caller's DEPS vs. this module's
+                   DEPS)
       tests - iterable of objects implementing the Test interface above
       deapply_patch_fn - function that takes a list of failing tests
                          and undoes any effect of the previously applied patch
@@ -90,69 +54,66 @@ class TestUtilsApi(recipe_api.RecipeApi):
     # Convert iterable to list, since it is enumerated multiple times.
     tests = list(tests)
 
-    if self.m.step_history.failed:
-      yield self.m.python.inline(
-        'Aborting due to failed build state',
-        "import sys; sys.exit(1)",
-        always_run=True, abort_on_failure=True)
-      return  # won't actually hit this, but be explicit
-
-    def run(prefix, tests):
-      yield (t.pre_run(prefix) for t in tests)
-      yield (t.run(prefix) for t in tests)
-      yield (t.post_run(prefix) for t in tests)
-
-    yield run('with patch', tests)
-
     failing_tests = []
+    #TODO(martiniss) convert loop
+    def run(prefix, tests):
+      for t in tests:
+        try:
+          t.pre_run(caller_api, prefix)
+        # TODO(iannucci): Write a test.
+        except caller_api.step.StepFailure:  # pragma: no cover
+          pass
+      for t in tests:
+        try:
+          t.run(caller_api, prefix)
+        # TODO(iannucci): How should exceptions be accumulated/handled here?
+        except caller_api.step.StepFailure:
+          pass
+      for t in tests:
+        try:
+          t.post_run(caller_api, prefix)
+        # TODO(iannucci): Write a test.
+        except caller_api.step.StepFailure:  # pragma: no cover
+          pass
+
+    run('with patch', tests)
+
     for t in tests:
-      if not t.has_valid_results('with patch'):
-        yield self.m.python.inline(
+      if not t.has_valid_results(caller_api, 'with patch'):
+        self.m.python.inline(
           t.name,
           r"""
           import sys
           print 'TEST RESULTS WERE INVALID'
           sys.exit(1)
-          """,
-          always_run=True)
-      elif t.failures('with patch'):
+          """)
+      elif t.failures(caller_api, 'with patch'):
         failing_tests.append(t)
     if not failing_tests:
       return
 
-    yield deapply_patch_fn(failing_tests)
+    try:
+      return deapply_patch_fn(failing_tests)
+    finally:
+      run('without patch', failing_tests)
+      for t in failing_tests:
+        self._summarize_retried_test(caller_api, t)
 
-    yield run('without patch', failing_tests)
-    yield (self._summarize_retried_test(t) for t in failing_tests)
-
-  def _summarize_retried_test(self, test):
-    if not test.has_valid_results('without patch'):
-      return self.m.python.inline(
+  def _summarize_retried_test(self, caller_api, test):
+    if not test.has_valid_results(caller_api, 'without patch'):
+      self.m.python.inline(
         test.name,
         r"""
         import sys
         print 'TEST RESULTS WERE INVALID'
         sys.exit(1)
-        """,
-        always_run=True)
+        """)
+      return
 
-    ignored_failures = set(test.failures('without patch'))
-    new_failures = set(test.failures('with patch')) - ignored_failures
+    ignored_failures = set(test.failures(caller_api, 'without patch'))
+    new_failures = set(test.failures(caller_api, 'with patch')) - ignored_failures
 
-    def followup_fn(step_result):
-      p = step_result.presentation
-
-      p.step_text += self.format_step_text([
-          ['failures:', new_failures],
-          ['ignored:', ignored_failures]
-      ])
-
-      if new_failures:
-        p.status = 'FAILURE'
-      elif ignored_failures:
-        p.status = 'WARNING'
-
-    return self.m.python.inline(
+    step_result = self.m.python.inline(
       test.name,
       r"""
       import sys, json
@@ -179,6 +140,16 @@ class TestUtilsApi(recipe_api.RecipeApi):
           'ignored': list(ignored_failures),
         })
       ],
-      followup_fn=followup_fn,
-      always_run=True,
     )
+
+    p = step_result.presentation
+
+    p.step_text += self.format_step_text([
+        ['failures:', new_failures],
+        ['ignored:', ignored_failures]
+    ])
+
+    if new_failures:
+      p.status = self.m.step.FAILURE
+    elif ignored_failures:
+      p.status = self.m.step.WARNING

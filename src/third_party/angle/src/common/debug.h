@@ -62,7 +62,7 @@ namespace gl
 // A macro to log a performance event around a scope.
 #if defined(ANGLE_ENABLE_TRACE) || defined(ANGLE_ENABLE_PERF)
 #if defined(_MSC_VER)
-#define EVENT(message, ...) gl::ScopedPerfEventHelper scopedPerfEventHelper ## __LINE__(__FUNCTION__ message "\n", __VA_ARGS__);
+#define EVENT(message, ...) gl::ScopedPerfEventHelper scopedPerfEventHelper ## __LINE__("%s" message "\n", __FUNCTION__, __VA_ARGS__);
 #else
 #define EVENT(message, ...) gl::ScopedPerfEventHelper scopedPerfEventHelper(message "\n", ##__VA_ARGS__);
 #endif // _MSC_VER
@@ -81,6 +81,12 @@ namespace gl
 #else
 #define ASSERT(expression) (void(0))
 #define UNUSED_ASSERTION_VARIABLE(variable) ((void)variable)
+#endif
+
+#ifndef ANGLE_ENABLE_TRACE
+#define UNUSED_TRACE_VARIABLE(variable) ((void)variable)
+#else
+#define UNUSED_TRACE_VARIABLE(variable)
 #endif
 
 // A macro to indicate unimplemented functionality

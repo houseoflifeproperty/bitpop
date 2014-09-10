@@ -3,35 +3,29 @@
 
 #include "config.h"
 
-#ifdef SKIP_STATIC_CONSTRUCTORS_ON_GCC
-#define {{namespace|to_macro_style}}_NAMES_HIDE_GLOBALS 1
-#else
-#define QNAME_DEFAULT_CONSTRUCTOR 1
-#endif
-
 #include "{{namespace}}Names.h"
 
 #include "wtf/StaticConstructors.h"
 
-namespace WebCore {
+namespace blink {
 namespace {{namespace}}Names {
 
-using namespace WebCore;
+using namespace blink;
 
 DEFINE_GLOBAL(AtomicString, {{namespace_prefix}}NamespaceURI)
 
 {% if tags %}
 // Tags
 {% for tag in tags|sort %}
-DEFINE_GLOBAL(QualifiedName, {{tag|symbol}}Tag)
+DEFINE_GLOBAL({{namespace}}QualifiedName, {{tag|symbol}}Tag)
 {% endfor %}
 
 
-PassOwnPtr<const QualifiedName*[]> get{{namespace}}Tags()
+PassOwnPtr<const {{namespace}}QualifiedName*[]> get{{namespace}}Tags()
 {
-    OwnPtr<const QualifiedName*[]> tags = adoptArrayPtr(new const QualifiedName*[{{namespace}}TagsCount]);
+    OwnPtr<const {{namespace}}QualifiedName*[]> tags = adoptArrayPtr(new const {{namespace}}QualifiedName*[{{namespace}}TagsCount]);
     {% for tag in tags|sort %}
-    tags[{{loop.index0}}] = reinterpret_cast<const QualifiedName*>(&{{tag|symbol}}Tag);
+    tags[{{loop.index0}}] = reinterpret_cast<const {{namespace}}QualifiedName*>(&{{tag|symbol}}Tag);
     {% endfor %}
     return tags.release();
 }
@@ -46,7 +40,7 @@ PassOwnPtr<const QualifiedName*[]> get{{namespace}}Attrs()
 {
     OwnPtr<const QualifiedName*[]> attrs = adoptArrayPtr(new const QualifiedName*[{{namespace}}AttrsCount]);
     {% for attr in attrs|sort %}
-    attrs[{{loop.index0}}] = reinterpret_cast<const WebCore::QualifiedName*>(&{{attr|symbol}}Attr);
+    attrs[{{loop.index0}}] = reinterpret_cast<const blink::QualifiedName*>(&{{attr|symbol}}Attr);
     {% endfor %}
     return attrs.release();
 }
@@ -78,4 +72,4 @@ void init()
 }
 
 } // {{namespace}}
-} // WebCore
+} // namespace blink

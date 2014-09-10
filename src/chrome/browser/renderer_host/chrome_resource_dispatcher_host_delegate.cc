@@ -12,15 +12,11 @@
 #include "base/logging.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/component_updater/component_updater_service.h"
+#include "chrome/browser/component_updater/component_updater_resource_throttle.h"
 #include "chrome/browser/component_updater/pnacl/pnacl_component_installer.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/download/download_request_limiter.h"
 #include "chrome/browser/download/download_resource_throttle.h"
-#include "chrome/browser/extensions/api/streams_private/streams_private_api.h"
-#include "chrome/browser/extensions/extension_renderer_state.h"
-#include "chrome/browser/extensions/user_script_listener.h"
-#include "chrome/browser/metrics/variations/variations_http_header_provider.h"
 #include "chrome/browser/prefetch/prefetch.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
@@ -37,10 +33,10 @@
 #include "chrome/browser/ui/login/login_prompt.h"
 #include "chrome/browser/ui/sync/one_click_signin_helper.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/manifest_handlers/mime_types_handler.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "components/google/core/browser/google_util.h"
+#include "components/variations/variations_http_header_provider.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
@@ -51,9 +47,6 @@
 #include "content/public/browser/stream_handle.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/resource_response.h"
-#include "extensions/browser/info_map.h"
-#include "extensions/common/constants.h"
-#include "extensions/common/user_script.h"
 #include "net/base/load_flags.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/request_priority.h"
@@ -62,6 +55,18 @@
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "components/policy/core/common/cloud/policy_header_io_helper.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/apps/app_url_redirector.h"
+#include "chrome/browser/apps/ephemeral_app_throttle.h"
+#include "chrome/browser/extensions/api/streams_private/streams_private_api.h"
+#include "chrome/browser/extensions/user_script_listener.h"
+#include "chrome/browser/guest_view/web_view/web_view_renderer_state.h"
+#include "chrome/common/extensions/manifest_handlers/mime_types_handler.h"
+#include "extensions/browser/info_map.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/user_script.h"
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
@@ -78,9 +83,6 @@
 #include "chrome/browser/android/intercept_download_resource_throttle.h"
 #include "chrome/browser/ui/android/infobars/auto_login_prompter.h"
 #include "components/navigation_interception/intercept_navigation_delegate.h"
-#else
-#include "chrome/browser/apps/app_url_redirector.h"
-#include "chrome/browser/apps/ephemeral_app_throttle.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -93,8 +95,12 @@ using content::BrowserThread;
 using content::RenderViewHost;
 using content::ResourceDispatcherHostLoginDelegate;
 using content::ResourceRequestInfo;
+using content::ResourceType;
+
+#if defined(ENABLE_EXTENSIONS)
 using extensions::Extension;
 using extensions::StreamsPrivateAPI;
+#endif
 
 #if defined(OS_ANDROID)
 using navigation_interception::InterceptNavigationDelegate;
@@ -156,7 +162,7 @@ void UpdatePrerenderNetworkBytesCallback(int render_process_id,
     prerender_manager->AddProfileNetworkBytesIfEnabled(bytes);
 }
 
-#if !defined(OS_ANDROID)
+#if defined(ENABLE_EXTENSIONS)
 void SendExecuteMimeTypeHandlerEvent(scoped_ptr<content::StreamHandle> stream,
                                      int64 expected_content_size,
                                      int render_process_id,
@@ -189,7 +195,9 @@ void SendExecuteMimeTypeHandlerEvent(scoped_ptr<content::StreamHandle> stream,
       extension_id, web_contents, stream.Pass(), view_id,
       expected_content_size);
 }
+#endif  // !defined(ENABLE_EXTENSIONS)
 
+#if !defined(OS_ANDROID)
 void LaunchURL(const GURL& url, int render_process_id, int render_view_id) {
   // If there is no longer a WebContents, the request may have raced with tab
   // closing. Don't fire the external request. (It may have been a prerender.)
@@ -218,7 +226,7 @@ void LaunchURL(const GURL& url, int render_process_id, int render_view_id) {
 void AppendComponentUpdaterThrottles(
     net::URLRequest* request,
     content::ResourceContext* resource_context,
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     ScopedVector<content::ResourceThrottle>* throttles) {
   const char* crx_id = NULL;
   component_updater::ComponentUpdateService* cus =
@@ -226,7 +234,7 @@ void AppendComponentUpdaterThrottles(
   if (!cus)
     return;
   // Check for PNaCl pexe request.
-  if (resource_type == ResourceType::OBJECT) {
+  if (resource_type == content::RESOURCE_TYPE_OBJECT) {
     const net::HttpRequestHeaders& headers = request->extra_request_headers();
     std::string accept_headers;
     if (headers.GetHeader("Accept", &accept_headers)) {
@@ -240,7 +248,7 @@ void AppendComponentUpdaterThrottles(
     // We got a component we need to install, so throttle the resource
     // until the component is installed.
     throttles->push_back(
-        cus->GetOnDemandUpdater().GetOnDemandResourceThrottle(request, crx_id));
+        component_updater::GetOnDemandResourceThrottle(cus, crx_id));
   }
 }
 
@@ -250,12 +258,16 @@ ChromeResourceDispatcherHostDelegate::ChromeResourceDispatcherHostDelegate(
     prerender::PrerenderTracker* prerender_tracker)
     : download_request_limiter_(g_browser_process->download_request_limiter()),
       safe_browsing_(g_browser_process->safe_browsing_service()),
+#if defined(ENABLE_EXTENSIONS)
       user_script_listener_(new extensions::UserScriptListener()),
+#endif
       prerender_tracker_(prerender_tracker) {
 }
 
 ChromeResourceDispatcherHostDelegate::~ChromeResourceDispatcherHostDelegate() {
+#if defined(ENABLE_EXTENSIONS)
   CHECK(stream_target_info_.empty());
+#endif
 }
 
 bool ChromeResourceDispatcherHostDelegate::ShouldBeginRequest(
@@ -263,13 +275,13 @@ bool ChromeResourceDispatcherHostDelegate::ShouldBeginRequest(
     int route_id,
     const std::string& method,
     const GURL& url,
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     content::ResourceContext* resource_context) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   // Handle a PREFETCH resource type. If prefetch is disabled, squelch the
   // request.  Otherwise, do a normal request to warm the cache.
-  if (resource_type == ResourceType::PREFETCH) {
+  if (resource_type == content::RESOURCE_TYPE_PREFETCH) {
     // All PREFETCH requests should be GETs, but be defensive about it.
     if (method != "GET")
       return false;
@@ -285,8 +297,8 @@ bool ChromeResourceDispatcherHostDelegate::ShouldBeginRequest(
 void ChromeResourceDispatcherHostDelegate::RequestBeginning(
     net::URLRequest* request,
     content::ResourceContext* resource_context,
-    appcache::AppCacheService* appcache_service,
-    ResourceType::Type resource_type,
+    content::AppCacheService* appcache_service,
+    ResourceType resource_type,
     int child_id,
     int route_id,
     ScopedVector<content::ResourceThrottle>* throttles) {
@@ -309,12 +321,12 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
 #if defined(OS_ANDROID)
   // TODO(davidben): This is insufficient to integrate with prerender properly.
   // https://crbug.com/370595
-  if (resource_type == ResourceType::MAIN_FRAME && !is_prerendering) {
+  if (resource_type == content::RESOURCE_TYPE_MAIN_FRAME && !is_prerendering) {
     throttles->push_back(
         InterceptNavigationDelegate::CreateThrottleFor(request));
   }
 #else
-  if (resource_type == ResourceType::MAIN_FRAME) {
+  if (resource_type == content::RESOURCE_TYPE_MAIN_FRAME) {
     // Redirect some navigations to apps that have registered matching URL
     // handlers ('url_handlers' in the manifest).
     content::ResourceThrottle* url_to_app_throttle =
@@ -336,7 +348,7 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
 #if defined(OS_CHROMEOS)
   // Check if we need to add offline throttle. This should be done only
   // for main frames.
-  if (resource_type == ResourceType::MAIN_FRAME) {
+  if (resource_type == content::RESOURCE_TYPE_MAIN_FRAME) {
     // We check offline first, then check safe browsing so that we still can
     // block unsafe site after we remove offline page.
     throttles->push_back(new OfflineResourceThrottle(request,
@@ -345,8 +357,8 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
 
   // Check if we need to add merge session throttle. This throttle will postpone
   // loading of main frames and XHR request.
-  if (resource_type == ResourceType::MAIN_FRAME ||
-      resource_type == ResourceType::XHR) {
+  if (resource_type == content::RESOURCE_TYPE_MAIN_FRAME ||
+      resource_type == content::RESOURCE_TYPE_XHR) {
     // Add interstitial page while merge session process (cookie
     // reconstruction from OAuth2 refresh token in ChromeOS login) is still in
     // progress while we are attempting to load a google property.
@@ -364,7 +376,7 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
     net::HttpRequestHeaders headers;
     headers.CopyFrom(request->extra_request_headers());
     bool is_off_the_record = io_data->IsOffTheRecord();
-    chrome_variations::VariationsHttpHeaderProvider::GetInstance()->
+    variations::VariationsHttpHeaderProvider::GetInstance()->
         AppendHeaders(request->url(),
                       is_off_the_record,
                       !is_off_the_record &&
@@ -431,7 +443,7 @@ void ChromeResourceDispatcherHostDelegate::DownloadStarting(
   if (!request->is_pending()) {
     AppendStandardResourceThrottles(request,
                                     resource_context,
-                                    ResourceType::MAIN_FRAME,
+                                    content::RESOURCE_TYPE_MAIN_FRAME,
                                     throttles);
   }
 }
@@ -452,12 +464,11 @@ bool ChromeResourceDispatcherHostDelegate::HandleExternalProtocol(
   return false;
 #else
 
-  ExtensionRendererState::WebViewInfo info;
-  if (ExtensionRendererState::GetInstance()->GetWebViewInfo(child_id,
-                                                            route_id,
-                                                            &info)) {
+#if defined(ENABLE_EXTENSIONS)
+  if (extensions::WebViewRendererState::GetInstance()->IsGuest(child_id))
     return false;
-  }
+
+#endif  // defined(ENABLE_EXTENSIONS)
 
   BrowserThread::PostTask(BrowserThread::UI,
                           FROM_HERE,
@@ -469,7 +480,7 @@ bool ChromeResourceDispatcherHostDelegate::HandleExternalProtocol(
 void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
     net::URLRequest* request,
     content::ResourceContext* resource_context,
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     ScopedVector<content::ResourceThrottle>* throttles) {
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(resource_context);
 #if defined(FULL_SAFE_BROWSING) || defined(MOBILE_SAFE_BROWSING)
@@ -477,10 +488,11 @@ void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
   // policies first.
   if (io_data->safe_browsing_enabled()->GetValue()
 #if defined(OS_ANDROID)
-      || io_data->data_reduction_proxy_enabled()->GetValue()
+      || io_data->IsDataReductionProxyEnabled()
 #endif
   ) {
-    bool is_subresource_request = resource_type != ResourceType::MAIN_FRAME;
+    bool is_subresource_request =
+        resource_type != content::RESOURCE_TYPE_MAIN_FRAME;
     content::ResourceThrottle* throttle =
         SafeBrowsingResourceThrottleFactory::Create(request,
                                                     resource_context,
@@ -492,17 +504,20 @@ void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
-  bool is_subresource_request = resource_type != ResourceType::MAIN_FRAME;
+  bool is_subresource_request =
+      resource_type != content::RESOURCE_TYPE_MAIN_FRAME;
   throttles->push_back(new SupervisedUserResourceThrottle(
         request, !is_subresource_request,
         io_data->supervised_user_url_filter()));
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
   content::ResourceThrottle* throttle =
       user_script_listener_->CreateResourceThrottle(request->url(),
                                                     resource_type);
   if (throttle)
     throttles->push_back(throttle);
+#endif
 
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
   if (info->GetVisibilityState() == blink::WebPageVisibilityStatePrerender) {
@@ -539,8 +554,12 @@ void ChromeResourceDispatcherHostDelegate::AppendChromeSyncGaiaHeader(
 
 bool ChromeResourceDispatcherHostDelegate::ShouldForceDownloadResource(
     const GURL& url, const std::string& mime_type) {
+#if defined(ENABLE_EXTENSIONS)
   // Special-case user scripts to get downloaded instead of viewed.
   return extensions::UserScript::IsURLUserScript(url, mime_type);
+#else
+  return false;
+#endif
 }
 
 bool ChromeResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
@@ -548,7 +567,7 @@ bool ChromeResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
     const std::string& mime_type,
     GURL* origin,
     std::string* payload) {
-#if !defined(OS_ANDROID)
+#if defined(ENABLE_EXTENSIONS)
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
   ProfileIOData* io_data =
       ProfileIOData::FromResourceContext(info->GetContext());
@@ -591,7 +610,7 @@ bool ChromeResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
 void ChromeResourceDispatcherHostDelegate::OnStreamCreated(
     net::URLRequest* request,
     scoped_ptr<content::StreamHandle> stream) {
-#if !defined(OS_ANDROID)
+#if defined(ENABLE_EXTENSIONS)
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
   std::map<net::URLRequest*, StreamTargetInfo>::iterator ix =
       stream_target_info_.find(request);

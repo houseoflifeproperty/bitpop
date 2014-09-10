@@ -45,7 +45,7 @@
 
 #include "wtf/TerminatedArrayBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -131,7 +131,7 @@ RuleData::RuleData(StyleRule* rule, unsigned selectorIndex, unsigned position, A
     , m_specificity(selector().specificity())
     , m_hasMultipartSelector(!!selector().tagHistory())
     , m_hasRightmostSelectorMatchingHTMLBasedOnRuleHash(isSelectorMatchingHTMLBasedOnRuleHash(selector()))
-    , m_containsUncommonAttributeSelector(WebCore::containsUncommonAttributeSelector(selector()))
+    , m_containsUncommonAttributeSelector(blink::containsUncommonAttributeSelector(selector()))
     , m_linkMatchType(SelectorChecker::determineLinkMatchType(selector()))
     , m_hasDocumentSecurityOrigin(addRuleFlags & RuleHasDocumentSecurityOrigin)
     , m_propertyWhitelistType(determinePropertyWhitelistType(addRuleFlags, selector()))
@@ -308,7 +308,7 @@ void RuleSet::addChildRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleB
 
 void RuleSet::addRulesFromSheet(StyleSheetContents* sheet, const MediaQueryEvaluator& medium, AddRuleFlags addRuleFlags)
 {
-    TRACE_EVENT0("webkit", "RuleSet::addRulesFromSheet");
+    TRACE_EVENT0("blink", "RuleSet::addRulesFromSheet");
 
     ASSERT(sheet);
 
@@ -379,10 +379,12 @@ void RuleData::trace(Visitor* visitor)
 
 void RuleSet::PendingRuleMaps::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(idRules);
     visitor->trace(classRules);
     visitor->trace(tagRules);
     visitor->trace(shadowPseudoElementRules);
+#endif
 }
 
 void RuleSet::trace(Visitor* visitor)
@@ -419,4 +421,4 @@ void RuleSet::show()
 }
 #endif
 
-} // namespace WebCore
+} // namespace blink

@@ -9,7 +9,7 @@
 
 #include <GL/glu.h>
 
-#define GLX_1_3 1
+/* Note: Skia requires glx 1.3 or newer */
 
 SkNativeGLContext::AutoContextRestore::AutoContextRestore() {
     fOldGLXContext = glXGetCurrentContext();
@@ -66,7 +66,7 @@ void SkNativeGLContext::destroyGLContext() {
     }
 }
 
-const GrGLInterface* SkNativeGLContext::createGLContext() {
+const GrGLInterface* SkNativeGLContext::createGLContext(GrGLStandard forcedGpuAPI) {
     fDisplay = XOpenDisplay(0);
 
     if (!fDisplay) {
@@ -82,7 +82,16 @@ const GrGLInterface* SkNativeGLContext::createGLContext() {
         None
     };
 
-#ifdef GLX_1_3
+    int glx_major, glx_minor;
+
+    // FBConfigs were added in GLX version 1.3.
+    if (!glXQueryVersion(fDisplay, &glx_major, &glx_minor) ||
+            ((glx_major == 1) && (glx_minor < 3)) || (glx_major < 1)) {
+        SkDebugf("GLX version 1.3 or higher required.\n");
+        this->destroyGLContext();
+        return NULL;
+    }
+
     //SkDebugf("Getting matching framebuffer configs.\n");
     int fbcount;
     GLXFBConfig *fbc = glXChooseFBConfig(fDisplay, DefaultScreen(fDisplay),
@@ -124,36 +133,6 @@ const GrGLInterface* SkNativeGLContext::createGLContext() {
     // Get a visual
     XVisualInfo *vi = glXGetVisualFromFBConfig(fDisplay, bestFbc);
     //SkDebugf("Chosen visual ID = 0x%x\n", (unsigned int)vi->visualid);
-#else
-    int numVisuals;
-    XVisualInfo visTemplate, *visReturn;
-
-    visReturn = XGetVisualInfo(fDisplay, VisualNoMask, &visTemplate, &numVisuals);
-    if (NULL == visReturn)
-    {
-        SkDebugf("Failed to get visual information.\n");
-        this->destroyGLContext();
-        return NULL;
-    }
-
-    int best = -1, best_num_samp = -1;
-
-    for (int i = 0; i < numVisuals; ++i)
-    {
-        int samp_buf, samples;
-
-        glXGetConfig(fDisplay, &visReturn[i], GLX_SAMPLE_BUFFERS, &samp_buf);
-        glXGetConfig(fDisplay, &visReturn[i], GLX_SAMPLES, &samples);
-
-        if (best < 0 || (samp_buf && samples > best_num_samp))
-            best = i, best_num_samp = samples;
-    }
-
-    XVisualInfo temp = visReturn[best];
-    XVisualInfo *vi = &temp;
-
-    XFree(visReturn);
-#endif
 
     fPixmap = XCreatePixmap(fDisplay, RootWindow(fDisplay, vi->screen), 10, 10, vi->depth);
 
@@ -165,10 +144,8 @@ const GrGLInterface* SkNativeGLContext::createGLContext() {
 
     fGlxPixmap = glXCreateGLXPixmap(fDisplay, vi, fPixmap);
 
-#ifdef GLX_1_3
     // Done with the visual info data
     XFree(vi);
-#endif
 
     // Create the context
 
@@ -187,63 +164,83 @@ const GrGLInterface* SkNativeGLContext::createGLContext() {
     const char *glxExts = glXQueryExtensionsString(
         fDisplay, DefaultScreen(fDisplay)
     );
+
+
     // Check for the GLX_ARB_create_context extension string and the function.
     // If either is not present, use GLX 1.3 context creation method.
-    if (!gluCheckExtension(
-          reinterpret_cast<const GLubyte*>("GLX_ARB_create_context")
-          , reinterpret_cast<const GLubyte*>(glxExts)))
-    {
-        //SkDebugf("GLX_ARB_create_context not found."
-        //       " Using old-style GLX context.\n");
-#ifdef GLX_1_3
-        fContext = glXCreateNewContext(fDisplay, bestFbc, GLX_RGBA_TYPE, 0, True);
-#else
-        fContext = glXCreateContext(fDisplay, vi, 0, True);
-#endif
-
-    }
-#ifdef GLX_1_3
-    else {
+    if (!gluCheckExtension(reinterpret_cast<const GLubyte*>("GLX_ARB_create_context"),
+                           reinterpret_cast<const GLubyte*>(glxExts))) {
+        if (kGLES_GrGLStandard != forcedGpuAPI) {
+            fContext = glXCreateNewContext(fDisplay, bestFbc, GLX_RGBA_TYPE, 0, True);
+        }
+    } else {
         //SkDebugf("Creating context.\n");
-
         PFNGLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB =
             (PFNGLXCREATECONTEXTATTRIBSARBPROC) glXGetProcAddressARB((GrGLubyte*)"glXCreateContextAttribsARB");
-        int context_attribs[] = {
-            GLX_CONTEXT_MAJOR_VERSION_ARB, 3,
-            GLX_CONTEXT_MINOR_VERSION_ARB, 0,
-            //GLX_CONTEXT_FLAGS_ARB        , GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
-            None
-        };
-        fContext = glXCreateContextAttribsARB(
-            fDisplay, bestFbc, 0, True, context_attribs
-        );
 
-        // Sync to ensure any errors generated are processed.
-        XSync(fDisplay, False);
-        if (!ctxErrorOccurred && fContext) {
-           //SkDebugf( "Created GL 3.0 context.\n" );
+        if (kGLES_GrGLStandard == forcedGpuAPI) {
+            if (gluCheckExtension(
+                    reinterpret_cast<const GLubyte*>("GLX_EXT_create_context_es2_profile"),
+                    reinterpret_cast<const GLubyte*>(glxExts))) {
+                static const int context_attribs_gles[] = {
+                    GLX_CONTEXT_MAJOR_VERSION_ARB, 3,
+                    GLX_CONTEXT_MINOR_VERSION_ARB, 0,
+                    GLX_CONTEXT_PROFILE_MASK_ARB, GLX_CONTEXT_ES2_PROFILE_BIT_EXT,
+                    None
+                };
+                fContext = glXCreateContextAttribsARB(fDisplay, bestFbc, 0, True,
+                                                      context_attribs_gles);
+            }
         } else {
+            // Well, unfortunately GLX will not just give us the highest context so instead we have
+            // to do this nastiness
+            for (i = NUM_GL_VERSIONS - 2; i > 0 ; i--) {
+                /* don't bother below GL 3.0 */
+                if (gl_versions[i].major == 3 && gl_versions[i].minor == 0) {
+                    break;
+                }
+                // On Nvidia GPUs, to use Nv Path rendering we need a compatibility profile for the
+                // time being.
+                // TODO when Nvidia implements NVPR on Core profiles, we should start requesting
+                // core here
+                static const int context_attribs_gl[] = {
+                      GLX_CONTEXT_MAJOR_VERSION_ARB, gl_versions[i].major,
+                      GLX_CONTEXT_MINOR_VERSION_ARB, gl_versions[i].minor,
+                      GLX_CONTEXT_PROFILE_MASK_ARB, GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
+                      None
+                };
+                fContext =
+                        glXCreateContextAttribsARB(fDisplay, bestFbc, 0, True, context_attribs_gl);
+
+                // Sync to ensure any errors generated are processed.
+                XSync(fDisplay, False);
+
+                if (!ctxErrorOccurred && fContext) {
+                    break;
+                }
+                // try again
+                ctxErrorOccurred = false;
+            }
+
             // Couldn't create GL 3.0 context.
             // Fall back to old-style 2.x context.
             // When a context version below 3.0 is requested,
-            // implementations will return the newest context version compatible
-            // with OpenGL versions less than version 3.0.
+            // implementations will return the newest context version
+            // compatible with OpenGL versions less than version 3.0.
+            if (ctxErrorOccurred || !fContext) {
+                static const int context_attribs_gl_fallback[] = {
+                    GLX_CONTEXT_MAJOR_VERSION_ARB, 1,
+                    GLX_CONTEXT_MINOR_VERSION_ARB, 0,
+                    None
+                };
 
-            // GLX_CONTEXT_MAJOR_VERSION_ARB = 1
-            context_attribs[1] = 1;
-            // GLX_CONTEXT_MINOR_VERSION_ARB = 0
-            context_attribs[3] = 0;
+                ctxErrorOccurred = false;
 
-            ctxErrorOccurred = false;
-
-            //SkDebugf("Failed to create GL 3.0 context."
-            //       " Using old-style GLX context.\n");
-            fContext = glXCreateContextAttribsARB(
-                fDisplay, bestFbc, 0, True, context_attribs
-            );
+                fContext = glXCreateContextAttribsARB(fDisplay, bestFbc, 0, True,
+                                                      context_attribs_gl_fallback);
+            }
         }
     }
-#endif
 
     // Sync to ensure any errors generated are processed.
     XSync(fDisplay, False);

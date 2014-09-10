@@ -53,6 +53,10 @@ class MockAccountReconcilor : public testing::StrictMock<AccountReconcilor> {
                         SigninClient* client);
   virtual ~MockAccountReconcilor() {}
 
+  virtual void StartFetchingExternalCcResult() OVERRIDE {
+    // Don't do this in tests.
+  }
+
   MOCK_METHOD1(PerformMergeAction, void(const std::string& account_id));
   MOCK_METHOD1(PerformStartRemoveAction, void(const std::string& account_id));
   MOCK_METHOD3(
@@ -60,8 +64,10 @@ class MockAccountReconcilor : public testing::StrictMock<AccountReconcilor> {
       void(const std::string& account_id,
            const GoogleServiceAuthError& error,
            const std::vector<std::pair<std::string, bool> >& accounts));
-  MOCK_METHOD2(PerformAddToChromeAction, void(const std::string& account_id,
-                                              int session_index));
+  MOCK_METHOD3(PerformAddToChromeAction,
+               void(const std::string& account_id,
+                    int session_index,
+                    const std::string& signin_scoped_device_id));
   MOCK_METHOD0(PerformLogoutAllAccountsAction, void());
 };
 
@@ -630,7 +636,7 @@ TEST_P(AccountReconcilorTest, StartReconcileAddToChrome) {
   token_service()->UpdateCredentials("user@gmail.com", "refresh_token");
 
   EXPECT_CALL(*GetMockReconcilor(),
-              PerformAddToChromeAction("other@gmail.com", 1));
+              PerformAddToChromeAction("other@gmail.com", 1, ""));
 
   SetFakeResponse(GaiaUrls::GetInstance()->list_accounts_url().spec(),
       "[\"f\", [[\"b\", 0, \"n\", \"user@gmail.com\", \"p\", 0, 0, 0, 0, 1], "
@@ -761,6 +767,41 @@ TEST_P(AccountReconcilorTest, StartReconcileWithSessionInfoExpiredDefault) {
   ASSERT_FALSE(reconcilor->is_reconcile_started_);
 }
 
+TEST_F(AccountReconcilorTest, MergeSessionCompletedWithBogusAccount) {
+  signin_manager()->SetAuthenticatedUsername("user@gmail.com");
+  token_service()->UpdateCredentials("user@gmail.com", "refresh_token");
+
+  EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction("user@gmail.com"));
+
+  SetFakeResponse(GaiaUrls::GetInstance()->list_accounts_url().spec(),
+      "[\"f\", [[\"b\", 0, \"n\", \"user@gmail.com\", \"p\", 0, 0, 0, 0, 0]]]",
+      net::HTTP_OK, net::URLRequestStatus::SUCCESS);
+  SetFakeResponse("https://www.googleapis.com/oauth2/v1/userinfo",
+      "{\"id\":\"foo\"}", net::HTTP_OK, net::URLRequestStatus::SUCCESS);
+
+  AccountReconcilor* reconcilor =
+      AccountReconcilorFactory::GetForProfile(profile());
+  ASSERT_TRUE(reconcilor);
+
+  ASSERT_FALSE(reconcilor->is_reconcile_started_);
+  reconcilor->StartReconcile();
+  ASSERT_TRUE(reconcilor->is_reconcile_started_);
+
+  token_service()->IssueAllTokensForAccount("user@gmail.com", "access_token",
+      base::Time::Now() + base::TimeDelta::FromHours(1));
+  base::RunLoop().RunUntilIdle();
+
+  // If an unknown account id is sent, it should not upset the state.
+  SimulateMergeSessionCompleted(reconcilor, "bogus@gmail.com",
+                                GoogleServiceAuthError::AuthErrorNone());
+  ASSERT_TRUE(reconcilor->is_reconcile_started_);
+
+  SimulateMergeSessionCompleted(reconcilor, "user@gmail.com",
+                                GoogleServiceAuthError::AuthErrorNone());
+  ASSERT_FALSE(reconcilor->is_reconcile_started_);
+}
+
 INSTANTIATE_TEST_CASE_P(AccountReconcilorMaybeEnabled,
                         AccountReconcilorTest,
                         testing::Bool());
+

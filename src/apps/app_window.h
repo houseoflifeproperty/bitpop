@@ -5,15 +5,18 @@
 #ifndef APPS_APP_WINDOW_H_
 #define APPS_APP_WINDOW_H_
 
+#include <string>
+#include <vector>
+
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/sessions/session_id.h"
+#include "components/web_modal/popup_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/common/console_message_level.h"
 #include "extensions/browser/extension_icon_image.h"
 #include "ui/base/ui_base_types.h"  // WindowShowState
 #include "ui/gfx/image/image.h"
@@ -45,6 +48,8 @@ class BaseWindow;
 
 namespace apps {
 
+class AppDelegate;
+class AppWebContentsHelper;
 class NativeAppWindow;
 
 // Manages the web contents for app windows. The implementation for this
@@ -147,7 +152,7 @@ class AppWindow : public content::NotificationObserver,
     bool has_frame_color;
     SkColor active_frame_color;
     SkColor inactive_frame_color;
-    bool transparent_background;  // Only supported on ash.
+    bool alpha_enabled;
 
     // The initial content/inner bounds specification (excluding any window
     // decorations).
@@ -191,47 +196,6 @@ class AppWindow : public content::NotificationObserver,
     gfx::Size GetWindowMaximumSize(const gfx::Insets& frame_insets) const;
   };
 
-  class Delegate {
-   public:
-    virtual ~Delegate();
-
-    // General initialization.
-    virtual void InitWebContents(content::WebContents* web_contents) = 0;
-    virtual NativeAppWindow* CreateNativeAppWindow(
-        AppWindow* window,
-        const CreateParams& params) = 0;
-
-    // Link handling.
-    virtual content::WebContents* OpenURLFromTab(
-        content::BrowserContext* context,
-        content::WebContents* source,
-        const content::OpenURLParams& params) = 0;
-    virtual void AddNewContents(content::BrowserContext* context,
-                                content::WebContents* new_contents,
-                                WindowOpenDisposition disposition,
-                                const gfx::Rect& initial_pos,
-                                bool user_gesture,
-                                bool* was_blocked) = 0;
-
-    // Feature support.
-    virtual content::ColorChooser* ShowColorChooser(
-        content::WebContents* web_contents,
-        SkColor initial_color) = 0;
-    virtual void RunFileChooser(content::WebContents* tab,
-                                const content::FileChooserParams& params) = 0;
-    virtual void RequestMediaAccessPermission(
-        content::WebContents* web_contents,
-        const content::MediaStreamRequest& request,
-        const content::MediaResponseCallback& callback,
-        const extensions::Extension* extension) = 0;
-    virtual int PreferredIconSize() = 0;
-
-    // Web contents modal dialog support.
-    virtual void SetWebContentsBlocked(content::WebContents* web_contents,
-                                       bool blocked) = 0;
-    virtual bool IsWebContentsVisible(content::WebContents* web_contents) = 0;
-  };
-
   // Convert draggable regions in raw format to SkRegion format. Caller is
   // responsible for deleting the returned SkRegion instance.
   static SkRegion* RawDraggableRegionsToSkRegion(
@@ -240,9 +204,9 @@ class AppWindow : public content::NotificationObserver,
   // The constructor and Init methods are public for constructing a AppWindow
   // with a non-standard render interface (e.g. v1 apps using Ash Panels).
   // Normally AppWindow::Create should be used.
-  // The constructed app window takes ownership of |delegate|.
+  // Takes ownership of |app_delegate| and |delegate|.
   AppWindow(content::BrowserContext* context,
-            Delegate* delegate,
+            AppDelegate* app_delegate,
             const extensions::Extension* extension);
 
   // Initializes the render interface, web contents, and native window.
@@ -309,6 +273,24 @@ class AppWindow : public content::NotificationObserver,
   // callback. Also called externally for v1 apps using Ash Panels.
   void UpdateAppIcon(const gfx::Image& image);
 
+  // Enable or disable fullscreen mode. |type| specifies which type of
+  // fullscreen mode to change (note that disabling one type of fullscreen may
+  // not exit fullscreen mode because a window may have a different type of
+  // fullscreen enabled). If |type| is not FORCED, checks that the extension has
+  // the required permission.
+  void SetFullscreen(FullscreenType type, bool enable);
+
+  // Returns true if the app window is in a fullscreen state.
+  bool IsFullscreen() const;
+
+  // Returns true if the app window is in a forced fullscreen state (one that
+  // cannot be exited by the user).
+  bool IsForcedFullscreen() const;
+
+  // Returns true if the app window is in a fullscreen state entered from an
+  // HTML API request.
+  bool IsHtmlApiFullscreen() const;
+
   // Transitions window into fullscreen, maximized, minimized or restores based
   // on chrome.app.window API.
   void Fullscreen();
@@ -362,10 +344,8 @@ class AppWindow : public content::NotificationObserver,
   // app.
   void WindowEventsReady();
 
-  // Whether the app window wants a transparent background.
-  bool requested_transparent_background() const {
-    return requested_transparent_background_;
-  }
+  // Whether the app window wants to be alpha enabled.
+  bool requested_alpha_enabled() const { return requested_alpha_enabled_; }
 
  protected:
   virtual ~AppWindow();
@@ -388,8 +368,9 @@ class AppWindow : public content::NotificationObserver,
       const OVERRIDE;
   virtual void MoveContents(content::WebContents* source,
                             const gfx::Rect& pos) OVERRIDE;
-  virtual void NavigationStateChanged(const content::WebContents* source,
-                                      unsigned changed_flags) OVERRIDE;
+  virtual void NavigationStateChanged(
+      const content::WebContents* source,
+      content::InvalidateTypes changed_flags) OVERRIDE;
   virtual void ToggleFullscreenModeForTab(content::WebContents* source,
                                           bool enter_fullscreen) OVERRIDE;
   virtual bool IsFullscreenForTabOrPending(const content::WebContents* source)
@@ -434,10 +415,6 @@ class AppWindow : public content::NotificationObserver,
                                      bool blocked) OVERRIDE;
   virtual bool IsWebContentsVisible(content::WebContents* web_contents)
       OVERRIDE;
-
-  // Helper method to add a message to the renderer's DevTools console.
-  void AddMessageToDevToolsConsole(content::ConsoleMessageLevel level,
-                                   const std::string& message);
 
   // Saves the window geometry/position/screen bounds.
   void SaveWindowPosition();
@@ -525,7 +502,12 @@ class AppWindow : public content::NotificationObserver,
 
   scoped_ptr<NativeAppWindow> native_app_window_;
   scoped_ptr<AppWindowContents> app_window_contents_;
-  scoped_ptr<Delegate> delegate_;
+  scoped_ptr<AppDelegate> app_delegate_;
+  scoped_ptr<AppWebContentsHelper> helper_;
+
+  // Manages popup windows (bubbles, tab-modals) visible overlapping the
+  // app window.
+  scoped_ptr<web_modal::PopupManager> popup_manager_;
 
   base::WeakPtrFactory<AppWindow> image_loader_ptr_factory_;
 
@@ -563,8 +545,8 @@ class AppWindow : public content::NotificationObserver,
   // taskbar.
   bool cached_always_on_top_;
 
-  // Whether |transparent_background| was set in the CreateParams.
-  bool requested_transparent_background_;
+  // Whether |alpha_enabled| was set in the CreateParams.
+  bool requested_alpha_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(AppWindow);
 };

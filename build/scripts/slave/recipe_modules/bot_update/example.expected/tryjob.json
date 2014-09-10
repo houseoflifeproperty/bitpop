@@ -1,12 +1,11 @@
 [
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
       "[BUILD]/scripts/slave/bot_update.py",
       "--master",
-      "tryserver.chromium",
+      "tryserver.chromium.linux",
       "--builder",
       "linux_rel",
       "--slave",
@@ -27,6 +26,7 @@
       "@@@STEP_TEXT@Some step text@@@",
       "@@@STEP_LOG_LINE@json.output@{@@@",
       "@@@STEP_LOG_LINE@json.output@  \"did_run\": true, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_failure\": false, @@@",
       "@@@STEP_LOG_LINE@json.output@  \"patch_root\": \"src\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"properties\": {}, @@@",
       "@@@STEP_LOG_LINE@json.output@  \"root\": \"src\", @@@",

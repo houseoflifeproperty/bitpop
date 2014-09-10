@@ -31,7 +31,7 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class HitTestLocation {
 public:
@@ -64,6 +64,7 @@ public:
     bool intersects(const LayoutRect&) const;
     bool intersects(const FloatRect&) const;
     bool intersects(const RoundedRect&) const;
+    bool containsPoint(const FloatPoint&) const;
 
     const FloatPoint& transformedPoint() const { return m_transformedPoint; }
     const FloatQuad& transformedRect() const { return m_transformedRect; }
@@ -84,6 +85,6 @@ private:
     bool m_isRectilinear;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HitTestLocation_h

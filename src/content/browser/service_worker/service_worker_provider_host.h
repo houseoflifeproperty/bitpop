@@ -10,9 +10,10 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "content/browser/service_worker/service_worker_registration.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_types.h"
-#include "webkit/common/resource_type.h"
+#include "content/public/common/resource_type.h"
 
 namespace IPC {
 class Sender;
@@ -38,13 +39,14 @@ class ServiceWorkerVersion;
 // Note this class can also host a running service worker, in which
 // case it will observe resource loads made directly by the service worker.
 class CONTENT_EXPORT ServiceWorkerProviderHost
-    : public base::SupportsWeakPtr<ServiceWorkerProviderHost> {
+    : public ServiceWorkerRegistration::Listener,
+      public base::SupportsWeakPtr<ServiceWorkerProviderHost> {
  public:
   ServiceWorkerProviderHost(int process_id,
                             int provider_id,
                             base::WeakPtr<ServiceWorkerContextCore> context,
                             ServiceWorkerDispatcherHost* dispatcher_host);
-  ~ServiceWorkerProviderHost();
+  virtual ~ServiceWorkerProviderHost();
 
   int process_id() const { return process_id_; }
   int provider_id() const { return provider_id_; }
@@ -53,16 +55,18 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
     return running_hosted_version_ != NULL;
   }
 
-  // The service worker version that corresponds with
-  // navigator.serviceWorker.active for our document.
+  // Getters for the navigator.serviceWorker attribute values.
+  ServiceWorkerVersion* controlling_version() const {
+    return controlling_version_.get();
+  }
   ServiceWorkerVersion* active_version() const {
     return active_version_.get();
   }
-
-  // The service worker version that corresponds with
-  // navigate.serviceWorker.waiting for our document.
   ServiceWorkerVersion* waiting_version() const {
     return waiting_version_.get();
+  }
+  ServiceWorkerVersion* installing_version() const {
+    return installing_version_.get();
   }
 
   // The running version, if any, that this provider is providing resource
@@ -74,11 +78,11 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   void SetDocumentUrl(const GURL& url);
   const GURL& document_url() const { return document_url_; }
 
-  // Associates |version| to this provider as its '.active' or '.waiting'
-  // version.
-  // Giving NULL to this method will unset the corresponding field.
-  void SetActiveVersion(ServiceWorkerVersion* version);
-  void SetWaitingVersion(ServiceWorkerVersion* version);
+  // Associates to |registration| to listen for its version change events.
+  void AssociateRegistration(ServiceWorkerRegistration* registration);
+
+  // Clears the associated registration and stop listening to it.
+  void UnassociateRegistration();
 
   // Returns false if the version is not in the expected STARTING in our
   // process state. That would be indicative of a bad IPC message.
@@ -87,12 +91,11 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // Returns a handler for a request, the handler may return NULL if
   // the request doesn't require special handling.
   scoped_ptr<ServiceWorkerRequestHandler> CreateRequestHandler(
-      ResourceType::Type resource_type,
+      ResourceType resource_type,
       base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context);
 
-  // Returns true if |version| has the same registration as active and waiting
-  // versions.
-  bool ValidateVersionForAssociation(ServiceWorkerVersion* version);
+  // Returns true if |registration| can be associated with this provider.
+  bool CanAssociateRegistration(ServiceWorkerRegistration* registration);
 
   // Returns true if the context referred to by this host (i.e. |context_|) is
   // still alive.
@@ -103,6 +106,37 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
                    const std::vector<int>& sent_message_port_ids);
 
  private:
+  friend class ServiceWorkerProviderHostTest;
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerContextRequestHandlerTest,
+                           UpdateBefore24Hours);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerContextRequestHandlerTest,
+                           UpdateAfter24Hours);
+
+  // ServiceWorkerRegistration::Listener overrides.
+  virtual void OnVersionAttributesChanged(
+      ServiceWorkerRegistration* registration,
+      ChangedVersionAttributesMask changed_mask,
+      const ServiceWorkerRegistrationInfo& info) OVERRIDE;
+  virtual void OnRegistrationFailed(
+      ServiceWorkerRegistration* registration) OVERRIDE;
+
+  // Sets the corresponding version field to the given version or if the given
+  // version is NULL, clears the field.
+  void SetVersionAttributes(
+      ServiceWorkerVersion* installing_version,
+      ServiceWorkerVersion* waiting_version,
+      ServiceWorkerVersion* active_version);
+  void SetVersionAttributesInternal(
+      ServiceWorkerVersion* version,
+      scoped_refptr<ServiceWorkerVersion>* data_member);
+
+  // Sets the controller version field to |version| or if |version| is NULL,
+  // clears the field.
+  void SetControllerVersionAttribute(ServiceWorkerVersion* version);
+
+  // Clears all version fields.
+  void ClearVersionAttributes();
+
   // Creates a ServiceWorkerHandle to retain |version| and returns a
   // ServiceWorkerInfo with the handle ID to pass to the provider. The
   // provider is responsible for releasing the handle.
@@ -111,8 +145,13 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   const int process_id_;
   const int provider_id_;
   GURL document_url_;
+
+  scoped_refptr<ServiceWorkerRegistration> associated_registration_;
+
+  scoped_refptr<ServiceWorkerVersion> controlling_version_;
   scoped_refptr<ServiceWorkerVersion> active_version_;
   scoped_refptr<ServiceWorkerVersion> waiting_version_;
+  scoped_refptr<ServiceWorkerVersion> installing_version_;
   scoped_refptr<ServiceWorkerVersion> running_hosted_version_;
   base::WeakPtr<ServiceWorkerContextCore> context_;
   ServiceWorkerDispatcherHost* dispatcher_host_;

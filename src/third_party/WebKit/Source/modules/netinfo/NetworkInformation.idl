@@ -8,12 +8,13 @@ enum ConnectionType {
     "ethernet",
     "wifi",
     "other",
-    "none"
+    "none",
+    "unknown"
 };
 
 [
     RuntimeEnabled=NetworkInformation,
-    Exposed=Window&Worker,
+    Exposed=(Window,Worker),
     WillBeGarbageCollected,
     ActiveDOMObject
 ] interface NetworkInformation : EventTarget {

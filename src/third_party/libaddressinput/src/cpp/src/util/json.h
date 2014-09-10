@@ -39,32 +39,24 @@ class Json {
   // object.
   bool ParseObject(const std::string& json);
 
-  // Returns the list of keys in the parsed JSON. The JSON object must be parsed
-  // successfully in ParseObject() before invoking this method.
-  const std::vector<std::string>& GetKeys() const;
+  // Returns the list of sub dictionaries. The JSON object must be parsed
+  // successfully in ParseObject() before invoking this method. The caller does
+  // not own the result.
+  const std::vector<const Json*>& GetSubDictionaries() const;
 
-  // Returns true if the parsed JSON contains a string value for |key|. The JSON
-  // object must be parsed successfully in ParseObject() before invoking this
-  // method.
-  bool HasStringValueForKey(const std::string& key) const;
-
-  // Returns the string value for the |key|. The |key| must be present and its
-  // value must be of string type, i.e., HasStringValueForKey(key) must return
-  // true before invoking this method.
-  std::string GetStringValueForKey(const std::string& key) const;
-
-  // Returns true if the parsed JSON contains a dictionary value for |key|. The
-  // JSON object must be parsed successfully in ParseObject() before invoking
-  // this method.
-  bool HasDictionaryValueForKey(const std::string& key) const;
-
-  // Returns the dictionary value for the |key|. The |key| must be present and
-  // its value must be of the dictionary type, i.e., HasDictionaryValueForKey()
-  // must return true before invoking this method.
-  const Json& GetDictionaryValueForKey(const std::string& key) const;
+  // Returns true if the parsed JSON contains a string value for |key|. Sets
+  // |value| to the string value of the |key|. The JSON object must be parsed
+  // successfully in ParseObject() before invoking this method. The |value|
+  // parameter should not be NULL.
+  bool GetStringValueForKey(const std::string& key, std::string* value) const;
 
  private:
   class JsonImpl;
+  friend class JsonImpl;
+
+  // Constructor to be called by JsonImpl.
+  explicit Json(JsonImpl* impl);
+
   scoped_ptr<JsonImpl> impl_;
 
   DISALLOW_COPY_AND_ASSIGN(Json);

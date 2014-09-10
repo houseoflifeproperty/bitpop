@@ -31,25 +31,20 @@
 #include "config.h"
 #include "core/inspector/InspectorRuntimeAgent.h"
 
-#include "bindings/v8/ScriptDebugServer.h"
-#include "bindings/v8/ScriptState.h"
+#include "bindings/core/v8/ScriptDebugServer.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorState.h"
 #include "platform/JSONValues.h"
 
-using WebCore::TypeBuilder::Runtime::ExecutionContextDescription;
+using blink::TypeBuilder::Runtime::ExecutionContextDescription;
 
-namespace WebCore {
+namespace blink {
 
 namespace InspectorRuntimeAgentState {
 static const char runtimeEnabled[] = "runtimeEnabled";
 };
-
-static bool asBool(const bool* const b)
-{
-    return b ? *b : false;
-}
 
 InspectorRuntimeAgent::InspectorRuntimeAgent(InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer)
     : InspectorBaseAgent<InspectorRuntimeAgent>("Runtime")
@@ -64,6 +59,12 @@ InspectorRuntimeAgent::~InspectorRuntimeAgent()
 {
 }
 
+void InspectorRuntimeAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_injectedScriptManager);
+    InspectorBaseAgent::trace(visitor);
+}
+
 static ScriptDebugServer::PauseOnExceptionsState setPauseOnExceptionsState(ScriptDebugServer* scriptDebugServer, ScriptDebugServer::PauseOnExceptionsState newState)
 {
     ASSERT(scriptDebugServer);
@@ -73,7 +74,7 @@ static ScriptDebugServer::PauseOnExceptionsState setPauseOnExceptionsState(Scrip
     return presentState;
 }
 
-void InspectorRuntimeAgent::evaluate(ErrorString* errorString, const String& expression, const String* const objectGroup, const bool* const includeCommandLineAPI, const bool* const doNotPauseOnExceptionsAndMuteConsole, const int* executionContextId, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown)
+void InspectorRuntimeAgent::evaluate(ErrorString* errorString, const String& expression, const String* const objectGroup, const bool* const includeCommandLineAPI, const bool* const doNotPauseOnExceptionsAndMuteConsole, const int* executionContextId, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown, RefPtr<TypeBuilder::Debugger::ExceptionDetails>& exceptionDetails)
 {
     InjectedScript injectedScript = injectedScriptForEval(errorString, executionContextId);
     if (injectedScript.isEmpty())
@@ -84,7 +85,7 @@ void InspectorRuntimeAgent::evaluate(ErrorString* errorString, const String& exp
     if (asBool(doNotPauseOnExceptionsAndMuteConsole))
         muteConsole();
 
-    injectedScript.evaluate(errorString, expression, objectGroup ? *objectGroup : "", asBool(includeCommandLineAPI), asBool(returnByValue), asBool(generatePreview), &result, wasThrown);
+    injectedScript.evaluate(errorString, expression, objectGroup ? *objectGroup : "", asBool(includeCommandLineAPI), asBool(returnByValue), asBool(generatePreview), &result, wasThrown, &exceptionDetails);
 
     if (asBool(doNotPauseOnExceptionsAndMuteConsole)) {
         unmuteConsole();
@@ -128,10 +129,9 @@ void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String
     ScriptDebugServer::PauseOnExceptionsState previousPauseOnExceptionsState = setPauseOnExceptionsState(m_scriptDebugServer, ScriptDebugServer::DontPauseOnExceptions);
     muteConsole();
 
-    bool accessorPropertiesOnlyValue = accessorPropertiesOnly && *accessorPropertiesOnly;
-    injectedScript.getProperties(errorString, objectId, ownProperties && *ownProperties, accessorPropertiesOnlyValue, &result);
+    injectedScript.getProperties(errorString, objectId, asBool(ownProperties), asBool(accessorPropertiesOnly), &result);
 
-    if (!accessorPropertiesOnlyValue)
+    if (!asBool(accessorPropertiesOnly))
         injectedScript.getInternalProperties(errorString, objectId, &internalProperties);
 
     unmuteConsole();
@@ -212,5 +212,5 @@ void InspectorRuntimeAgent::addExecutionContextToFrontend(ScriptState* scriptSta
         .release());
 }
 
-} // namespace WebCore
+} // namespace blink
 

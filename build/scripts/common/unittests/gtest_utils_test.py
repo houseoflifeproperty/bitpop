@@ -5,12 +5,17 @@
 
 """Unit tests for classes in gtest_command.py."""
 
+import os
+import tempfile
 import unittest
 
 import test_env  # pylint: disable=W0611
 
+from common import chromium_utils
+from common import find_depot_tools  # pylint: disable=W0611
 from common import gtest_utils
 
+from testing_support import auto_stub
 
 FAILURES = ['NavigationControllerTest.Reload',
             'NavigationControllerTest/SpdyNetworkTransTest.Constructor/0',
@@ -437,7 +442,7 @@ End output from shard index 0 (machine tag: swarm12.c, id: swarm12). Return 1
 """
 
 
-class TestGTestLogParserTests(unittest.TestCase):
+class TestGTestLogParserTests(auto_stub.TestCase):
 
   def testGTestLogParserNoSharing(self):
     # Tests for log parsing without sharding.
@@ -638,7 +643,7 @@ class TestGTestLogParserTests(unittest.TestCase):
     self.assertEqual(['Foo.Bar'], parser.FailedTests(True, True))
 
 
-class TestGTestJSONParserTests(unittest.TestCase):
+class TestGTestJSONParserTests(auto_stub.TestCase):
   def testPassedTests(self):
     parser = gtest_utils.GTestJSONParser()
     parser.ProcessJSONData({
@@ -708,6 +713,52 @@ class TestGTestJSONParserTests(unittest.TestCase):
     self.assertEqual([], parser.FailedTests())
     self.assertEqual(0, parser.FlakyTests())
     self.assertEqual(1, parser.DisabledTests())
+
+  def testIngoredFailedTests(self):
+    TEST_IGNORED_FAILED_TESTS_SPEC = """
+      # A comment.
+
+      crbug.com/12345 [ OS_WIN  , OS_LINUX] Test.One
+      crbug.com/12345 [OS_WIN CPU_64_BITS MODE_RELEASE] Test.Two/2
+      crbug.com/12345 [,OS_MACOSX, OS_WIN CPU_64_BITS, ] Perf/Test.Three
+      crbug.com/12345 [ invalid.platform.spec ] Test.Four
+      crbug.com/12345 [ OS_WIN CPU_32_BITS MODE_RELEASE ] Test.Five
+      invalid line
+    """
+
+    _, spec_filename = tempfile.mkstemp()
+    spec_fd = open(spec_filename, 'w')
+    spec_fd.write(TEST_IGNORED_FAILED_TESTS_SPEC)
+    spec_fd.close()
+
+    self.mock(chromium_utils, 'FindUpward', lambda *_: spec_filename)
+    parser = gtest_utils.GTestJSONParser()
+
+    try:
+      parser.ProcessJSONData({
+        'disabled_tests': ['Test.Six'],
+        'per_iteration_data': [
+          {
+            'Test.One': [{'status': 'FAILURE', 'output_snippet': ''}],
+            'Test.Two/2': [{'status': 'FAILURE', 'output_snippet': ''}],
+            'Perf/Test.Three': [{'status': 'FAILURE', 'output_snippet': ''}],
+            'Test.Four': [{'status': 'FAILURE', 'output_snippet': ''}],
+            'Test.Five': [{'status': 'FAILURE', 'output_snippet': ''}],
+          }
+        ],
+        'global_tags': ['OS_WIN', 'CPU_64_BITS', 'MODE_RELEASE', 'OTHER_FLAG']
+      }, '/fake/path/to/build')
+    finally:
+      os.remove(spec_filename)
+
+    self.assertEqual(['Test.Five', 'Test.Four'], parser.FailedTests())
+    self.assertEqual(['Perf/Test.Three', 'Test.One', 'Test.Two/2'],
+                     parser.IgnoredFailedTests())
+
+  # pylint: disable=R0201
+  def testDoesNotThrowExceptionOnMissingIgnoredFailedTestsFile(self):
+    parser = gtest_utils.GTestJSONParser()
+    parser.ProcessJSONData({'per_iteration_data': []}, tempfile.gettempdir())
 
   def testCompressList(self):
     CompressList = gtest_utils.CompressList

@@ -2,10 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "sandbox/linux/seccomp-bpf/syscall.h"
+
 #include <asm/unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include <vector>
@@ -15,7 +18,6 @@
 #include "build/build_config.h"
 #include "sandbox/linux/seccomp-bpf/bpf_tests.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
-#include "sandbox/linux/seccomp-bpf/syscall.h"
 #include "sandbox/linux/tests/unit_tests.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -30,6 +32,10 @@ const int kMMapNr = __NR_mmap2;
 #else
 const int kMMapNr = __NR_mmap;
 #endif
+
+TEST(Syscall, InvalidCallReturnsENOSYS) {
+  EXPECT_EQ(-ENOSYS, Syscall::InvalidCall());
+}
 
 TEST(Syscall, WellKnownEntryPoint) {
 // Test that Syscall::Call(-1) is handled specially. Don't do this on ARM,
@@ -52,6 +58,9 @@ TEST(Syscall, WellKnownEntryPoint) {
 #else
   EXPECT_EQ(0xEF000000u, ((uint32_t*)Syscall::Call(-1))[-1]);  // SVC 0
 #endif
+#elif defined(__mips__)
+  // Opcode for MIPS sycall is in the lower 16-bits
+  EXPECT_EQ(0x0cu, (((uint32_t*)Syscall::Call(-1))[-1]) & 0x0000FFFF);
 #else
 #warning Incomplete test case; need port for target platform
 #endif

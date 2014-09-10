@@ -164,7 +164,11 @@ public:
      *  the bitmap of the pixels that the canvas draws into. The reference count
      *  of the returned device is not changed by this call.
      */
+#ifndef SK_SUPPORT_LEGACY_GETDEVICE
+protected:  // Can we make this private?
+#endif
     SkBaseDevice* getDevice() const;
+public:
 
     /**
      *  saveLayer() can create another device (which is later drawn onto
@@ -294,8 +298,10 @@ public:
 
     enum SaveFlags {
         /** save the matrix state, restoring it on restore() */
+        // [deprecated] kMatrix_SaveFlag            = 0x01,
         kMatrix_SaveFlag            = 0x01,
         /** save the clip state, restoring it on restore() */
+        // [deprecated] kClip_SaveFlag              = 0x02,
         kClip_SaveFlag              = 0x02,
         /** the layer needs to support per-pixel alpha */
         kHasAlphaLayer_SaveFlag     = 0x04,
@@ -309,6 +315,7 @@ public:
         kClipToLayer_SaveFlag       = 0x10,
 
         // helper masks for common choices
+        // [deprecated] kMatrixClip_SaveFlag        = 0x03,
         kMatrixClip_SaveFlag        = 0x03,
 #ifdef SK_SUPPORT_LEGACY_CLIPTOLAYERFLAG
         kARGB_NoClipLayer_SaveFlag  = 0x0F,
@@ -326,22 +333,6 @@ public:
         @return The value to pass to restoreToCount() to balance this save()
     */
     int save();
-
-    /** DEPRECATED - use save() instead.
-
-        This behaves the same as save(), but it allows fine-grained control of
-        which state bits to be saved (and subsequently restored).
-
-        @param flags The flags govern what portion of the Matrix/Clip/drawFilter
-                     state the save (and matching restore) effect. For example,
-                     if only kMatrix is specified, then only the matrix state
-                     will be pushed and popped. Likewise for the clip if kClip
-                     is specified.  However, the drawFilter is always affected
-                     by calls to save/restore.
-        @return The value to pass to restoreToCount() to balance this save()
-    */
-    SK_ATTR_EXTERNALLY_DEPRECATED("SaveFlags use is deprecated")
-    int save(SaveFlags flags);
 
     /** This behaves the same as save(), but in addition it allocates an
         offscreen bitmap. All drawing calls are directed there, and only when
@@ -973,12 +964,6 @@ public:
     */
     void EXPERIMENTAL_optimize(const SkPicture* picture);
 
-    /** PRIVATE / EXPERIMENTAL -- do not call
-        Purge all the discardable optimization information associated with
-        'picture'. If NULL is passed in, purge all discardable information.
-    */
-    void EXPERIMENTAL_purge(const SkPicture* picture);
-
     /** Draw the picture into this canvas. This method effective brackets the
         playback of the picture's draw calls with save/restore, so the state
         of this canvas will be unchanged after this call.
@@ -986,6 +971,20 @@ public:
                        canvas.
     */
     void drawPicture(const SkPicture* picture);
+
+    /**
+     *  Draw the picture into this canvas.
+     *
+     *  If matrix is non-null, apply that matrix to the CTM when drawing this picture. This is
+     *  logically equivalent to
+     *      save/concat/drawPicture/restore
+     *
+     *  If paint is non-null, draw the picture into a temporary buffer, and then apply the paint's
+     *  alpha/colorfilter/imagefilter/xfermode to that buffer as it is drawn to the canvas.
+     *  This is logically equivalent to
+     *      saveLayer(paint)/drawPicture/restore
+     */
+    void drawPicture(const SkPicture*, const SkMatrix* matrix, const SkPaint* paint);
 
     enum VertexMode {
         kTriangles_VertexMode,
@@ -1021,6 +1020,22 @@ public:
                               const SkColor colors[], SkXfermode* xmode,
                               const uint16_t indices[], int indexCount,
                               const SkPaint& paint);
+
+    /**
+     Draw a cubic coons patch
+
+     @param cubic specifies the 4 bounding cubic bezier curves of a patch with clockwise order
+                    starting at the top left corner.
+     @param colors specifies the colors for the corners which will be bilerp across the patch,
+                    their order is clockwise starting at the top left corner.
+     @param texCoords specifies the texture coordinates that will be bilerp across the patch,
+                    their order is the same as the colors.
+     @param xmode specifies how are the colors and the textures combined if both of them are
+                    present.
+     @param paint Specifies the shader/texture if present.
+     */
+    void drawPatch(const SkPoint cubics[12], const SkColor colors[4],
+                   const SkPoint texCoords[4], SkXfermode* xmode, const SkPaint& paint);
 
     /** Send a blob of data to the canvas.
         For canvases that draw, this call is effectively a no-op, as the data
@@ -1112,15 +1127,6 @@ public:
     virtual ClipType getClipType() const;
 #endif
 
-#ifdef SK_SUPPORT_LEGACY_GETTOTALCLIP
-    /** DEPRECATED -- need to move this guy to private/friend
-     *  Return the current device clip (concatenation of all clip calls).
-     *  This does not account for the translate in any of the devices.
-     *  @return the current device clip (concatenation of all clip calls).
-     */
-    const SkRegion& getTotalClip() const;
-#endif
-
     /** Return the clip stack. The clip stack stores all the individual
      *  clips organized by the save/restore frame in which they were
      *  added.
@@ -1201,14 +1207,12 @@ protected:
         kNoLayer_SaveLayerStrategy
     };
 
-    // Transitional, pending external clients cleanup.
-    virtual void willSave(SaveFlags) { this->willSave(); }
-
     virtual void willSave() {}
     virtual SaveLayerStrategy willSaveLayer(const SkRect*, const SkPaint*, SaveFlags) {
         return kFullLayer_SaveLayerStrategy;
     }
     virtual void willRestore() {}
+    virtual void didRestore() {}
     virtual void didConcat(const SkMatrix&) {}
     virtual void didSetMatrix(const SkMatrix&) {}
 
@@ -1228,6 +1232,9 @@ protected:
                                   const SkPath& path, const SkMatrix* matrix,
                                   const SkPaint& paint);
 
+    virtual void onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
+                           const SkPoint texCoords[4], SkXfermode* xmode, const SkPaint& paint);
+
     enum ClipEdgeStyle {
         kHard_ClipEdgeStyle,
         kSoft_ClipEdgeStyle
@@ -1240,7 +1247,7 @@ protected:
 
     virtual void onDiscard();
 
-    virtual void onDrawPicture(const SkPicture* picture);
+    virtual void onDrawPicture(const SkPicture*, const SkMatrix*, const SkPaint*);
 
     // Returns the canvas to be used by DrawIter. Default implementation
     // returns this. Subclasses that encapsulate an indirect canvas may
@@ -1299,6 +1306,7 @@ private:
     friend class SkLua;             // needs top layer size and offset
     friend class SkDebugCanvas;     // needs experimental fAllowSimplifyClip
     friend class SkDeferredDevice;  // needs getTopDevice()
+    friend class SkSurface_Raster;  // needs getDevice()
 
     SkBaseDevice* createLayerDevice(const SkImageInfo&);
 
@@ -1334,7 +1342,7 @@ private:
     void internalDrawDevice(SkBaseDevice*, int x, int y, const SkPaint*);
 
     // shared by save() and saveLayer()
-    int internalSave(SaveFlags flags);
+    int internalSave();
     void internalRestore();
     static void DrawRect(const SkDraw& draw, const SkPaint& paint,
                          const SkRect& r, SkScalar textSize);

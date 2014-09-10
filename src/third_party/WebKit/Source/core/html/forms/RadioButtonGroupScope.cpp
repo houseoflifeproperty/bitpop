@@ -24,7 +24,7 @@
 #include "core/html/HTMLInputElement.h"
 #include "wtf/HashSet.h"
 
-namespace WebCore {
+namespace blink {
 
 class RadioButtonGroup : public NoBaseWillBeGarbageCollected<RadioButtonGroup> {
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
@@ -175,8 +175,10 @@ bool RadioButtonGroup::contains(HTMLInputElement* button) const
 
 void RadioButtonGroup::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_members);
     visitor->trace(m_checkedButton);
+#endif
 }
 
 // ----------------------------------------------------------------

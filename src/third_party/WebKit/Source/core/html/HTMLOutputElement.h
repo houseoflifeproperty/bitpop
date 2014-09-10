@@ -34,7 +34,7 @@
 #include "core/dom/DOMSettableTokenList.h"
 #include "core/html/HTMLFormControlElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLOutputElement FINAL : public HTMLFormControlElement {
 public:
@@ -61,7 +61,7 @@ private:
     virtual bool isEnumeratable() const OVERRIDE { return true; }
     virtual bool supportLabels() const OVERRIDE { return true; }
     virtual bool supportsFocus() const OVERRIDE;
-    virtual void childrenChanged(bool createdByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
+    virtual void childrenChanged(const ChildrenChange&) OVERRIDE;
     virtual void resetImpl() OVERRIDE;
 
     bool m_isDefaultValueMode;

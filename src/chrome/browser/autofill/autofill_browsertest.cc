@@ -120,7 +120,7 @@ class AutofillTest : public InProcessBrowserTest {
     test::DisableSystemServices(browser()->profile()->GetPrefs());
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     // Make sure to close any showing popups prior to tearing down the UI.
     content::WebContents* web_contents =
         browser()->tab_strip_model()->GetActiveWebContents();
@@ -621,18 +621,16 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, ProfileSavedWithValidCountryPhone) {
     FillFormAndSubmit("autofill_test_form.html", profiles[i]);
 
   ASSERT_EQ(2u, personal_data_manager()->GetProfiles().size());
-  ASSERT_EQ(ASCIIToUTF16("(408) 871-4567"),
+  ASSERT_EQ(ASCIIToUTF16("408-871-4567"),
             personal_data_manager()->GetProfiles()[0]->GetRawInfo(
                 PHONE_HOME_WHOLE_NUMBER));
-  ASSERT_EQ(ASCIIToUTF16("+49 40 808179000"),
+  ASSERT_EQ(ASCIIToUTF16("+49 40-80-81-79-000"),
             personal_data_manager()->GetProfiles()[1]->GetRawInfo(
                 PHONE_HOME_WHOLE_NUMBER));
 }
 
-// Test Autofill appends country codes to aggregated phone numbers.
-// The country code is added for the following case:
-//   The phone number contains the correct national number size and
-//   is a valid format.
+// Prepend country codes when formatting phone numbers, but only if the user
+// provided one in the first place.
 IN_PROC_BROWSER_TEST_F(AutofillTest, AppendCountryCodeForAggregatedPhones) {
   ASSERT_TRUE(test_server()->Start());
   FormMap data;
@@ -643,13 +641,94 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, AppendCountryCodeForAggregatedPhones) {
   data["ADDRESS_HOME_STATE"] = "CA";
   data["ADDRESS_HOME_ZIP"] = "95110";
   data["ADDRESS_HOME_COUNTRY"] = "Germany";
-  data["PHONE_HOME_WHOLE_NUMBER"] = "(08) 450 777-777";
+  data["PHONE_HOME_WHOLE_NUMBER"] = "+4908450777777";
   FillFormAndSubmit("autofill_test_form.html", data);
 
-  ASSERT_EQ(1u, personal_data_manager()->GetProfiles().size());
-  base::string16 phone = personal_data_manager()->GetProfiles()[0]->GetRawInfo(
-      PHONE_HOME_WHOLE_NUMBER);
-  ASSERT_TRUE(StartsWith(phone, ASCIIToUTF16("+49"), true));
+  data["ADDRESS_HOME_LINE1"] = "4321 H St.";
+  data["PHONE_HOME_WHOLE_NUMBER"] = "08450777777";
+  FillFormAndSubmit("autofill_test_form.html", data);
+
+  ASSERT_EQ(2u, personal_data_manager()->GetProfiles().size());
+  EXPECT_EQ(ASCIIToUTF16("+49 8450 777777"),
+            personal_data_manager()->GetProfiles()[0]->GetRawInfo(
+                PHONE_HOME_WHOLE_NUMBER));
+
+  FillFormAndSubmit("autofill_test_form.html", data);
+  EXPECT_EQ(ASCIIToUTF16("08450 777777"),
+            personal_data_manager()->GetProfiles()[1]->GetRawInfo(
+                PHONE_HOME_WHOLE_NUMBER));
+}
+
+// Test that Autofill uses '+' sign for international numbers.
+// This applies to the following cases:
+//   The phone number has a leading '+'.
+//   The phone number does not have a leading '+'.
+//   The phone number has a leading international direct dialing (IDD) code.
+// This does not apply to US numbers. For US numbers, '+' is removed.
+IN_PROC_BROWSER_TEST_F(AutofillTest, UsePlusSignForInternaltionalNumber) {
+  ASSERT_TRUE(test_server()->Start());
+  std::vector<FormMap> profiles;
+
+  FormMap data1;
+  data1["NAME_FIRST"] = "Bonnie";
+  data1["NAME_LAST"] = "Smith";
+  data1["ADDRESS_HOME_LINE1"] = "6723 Roadway Rd";
+  data1["ADDRESS_HOME_CITY"] = "Reading";
+  data1["ADDRESS_HOME_STATE"] = "Berkshire";
+  data1["ADDRESS_HOME_ZIP"] = "RG12 3BR";
+  data1["ADDRESS_HOME_COUNTRY"] = "United Kingdom";
+  data1["PHONE_HOME_WHOLE_NUMBER"] = "+44 7624-123456";
+  profiles.push_back(data1);
+
+  FormMap data2;
+  data2["NAME_FIRST"] = "John";
+  data2["NAME_LAST"] = "Doe";
+  data2["ADDRESS_HOME_LINE1"] = "987 H St";
+  data2["ADDRESS_HOME_CITY"] = "Reading";
+  data2["ADDRESS_HOME_STATE"] = "BerkShire";
+  data2["ADDRESS_HOME_ZIP"] = "RG12 3BR";
+  data2["ADDRESS_HOME_COUNTRY"] = "United Kingdom";
+  data2["PHONE_HOME_WHOLE_NUMBER"] = "44 7624 123456";
+  profiles.push_back(data2);
+
+  FormMap data3;
+  data3["NAME_FIRST"] = "Jane";
+  data3["NAME_LAST"] = "Doe";
+  data3["ADDRESS_HOME_LINE1"] = "1523 Garcia St";
+  data3["ADDRESS_HOME_CITY"] = "Reading";
+  data3["ADDRESS_HOME_STATE"] = "BerkShire";
+  data3["ADDRESS_HOME_ZIP"] = "RG12 3BR";
+  data3["ADDRESS_HOME_COUNTRY"] = "United Kingdom";
+  data3["PHONE_HOME_WHOLE_NUMBER"] = "0044 7624 123456";
+  profiles.push_back(data3);
+
+  FormMap data4;
+  data4["NAME_FIRST"] = "Bob";
+  data4["NAME_LAST"] = "Smith";
+  data4["ADDRESS_HOME_LINE1"] = "123 Cherry Ave";
+  data4["ADDRESS_HOME_CITY"] = "Mountain View";
+  data4["ADDRESS_HOME_STATE"] = "CA";
+  data4["ADDRESS_HOME_ZIP"] = "94043";
+  data4["ADDRESS_HOME_COUNTRY"] = "United States";
+  data4["PHONE_HOME_WHOLE_NUMBER"] = "+1 (408) 871-4567";
+  profiles.push_back(data4);
+
+  for (size_t i = 0; i < profiles.size(); ++i)
+    FillFormAndSubmit("autofill_test_form.html", profiles[i]);
+
+  ASSERT_EQ(4u, personal_data_manager()->GetProfiles().size());
+  ASSERT_EQ(ASCIIToUTF16("+447624123456"),
+            personal_data_manager()->GetProfiles()[0]->GetInfo(
+                AutofillType(PHONE_HOME_WHOLE_NUMBER), ""));
+  ASSERT_EQ(ASCIIToUTF16("+447624123456"),
+            personal_data_manager()->GetProfiles()[1]->GetInfo(
+                AutofillType(PHONE_HOME_WHOLE_NUMBER), ""));
+  ASSERT_EQ(ASCIIToUTF16("+447624123456"),
+            personal_data_manager()->GetProfiles()[2]->GetInfo(
+                AutofillType(PHONE_HOME_WHOLE_NUMBER), ""));
+  ASSERT_EQ(ASCIIToUTF16("14088714567"),
+            personal_data_manager()->GetProfiles()[3]->GetInfo(
+                AutofillType(PHONE_HOME_WHOLE_NUMBER), ""));
 }
 
 // Test CC info not offered to be saved when autocomplete=off for CC field.
@@ -707,7 +786,7 @@ IN_PROC_BROWSER_TEST_F(AutofillTest,
   ASSERT_EQ(3u, personal_data_manager()->GetProfiles().size());
 }
 
-// Test profiles are not merged without mininum address values.
+// Test profiles are not merged without minimum address values.
 // Mininum address values needed during aggregation are: address line 1, city,
 // state, and zip code.
 // Profiles are merged when data for address line 1 and city match.

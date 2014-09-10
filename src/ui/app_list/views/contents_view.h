@@ -65,14 +65,15 @@ class APP_LIST_EXPORT ContentsView : public views::View,
   void SetDragAndDropHostOfCurrentAppList(
       ApplicationDragAndDropHost* drag_and_drop_host);
 
-  void set_contents_switcher_view(
-      ContentsSwitcherView* contents_switcher_view) {
-    contents_switcher_view_ = contents_switcher_view;
-  }
+  void SetContentsSwitcherView(ContentsSwitcherView* contents_switcher_view);
 
+  // Shows/hides the search results. Hiding the search results will cause the
+  // app list to return to the page that was displayed before
+  // ShowSearchResults(true) was invoked.
   void ShowSearchResults(bool show);
-  void ShowFolderContent(AppListFolderItem* folder);
   bool IsShowingSearchResults() const;
+
+  void ShowFolderContent(AppListFolderItem* folder);
 
   // Sets the active launcher page and animates the pages into place.
   void SetActivePage(int page_index);
@@ -109,6 +110,9 @@ class APP_LIST_EXPORT ContentsView : public views::View,
   virtual void SelectedPageChanged(int old_selected, int new_selected) OVERRIDE;
   virtual void TransitionStarted() OVERRIDE;
   virtual void TransitionChanged() OVERRIDE;
+
+  // Returns the pagination model for the ContentsView.
+  const PaginationModel& pagination_model() { return pagination_model_; }
 
  private:
   // Sets the active launcher page, accounting for whether the change is for
@@ -155,6 +159,9 @@ class APP_LIST_EXPORT ContentsView : public views::View,
   scoped_ptr<views::ViewModel> view_model_;
   // Maps NamedPage onto |view_model_| indices.
   std::map<NamedPage, int> named_page_to_view_;
+
+  // The page that was showing before ShowSearchResults(true) was invoked.
+  int page_before_search_;
 
   // Manages the pagination for the launcher pages.
   PaginationModel pagination_model_;

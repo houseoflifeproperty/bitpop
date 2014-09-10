@@ -21,6 +21,10 @@ const char kConsumerDeviceManagementUrl[] = "consumer-device-management-url";
 // Forces the stub implementation of dbus clients.
 const char kDbusStub[] = "dbus-stub";
 
+// Comma-spearated list of dbus clients that should be unstubbed.
+// See chromeos/dbus/dbus_client_bundle.cc for the names of the dbus clients.
+const char kDbusUnstubClients[] = "dbus-unstub-clients";
+
 // Time before a machine at OOBE is considered derelict.
 const char kDerelictDetectionTimeout[] = "derelict-detection-timeout";
 
@@ -37,14 +41,14 @@ const char kDisableDemoMode[] = "disable-demo-mode";
 const char kDisableGeniusApp[] = "disable-genius-app";
 
 // Disable HID-detection OOBE screen.
-const char kDisableHIDDetectionOnOOBE[]      = "disable-hid-detection-on-oobe";
+const char kDisableHIDDetectionOnOOBE[] = "disable-hid-detection-on-oobe";
 
 // Avoid doing expensive animations upon login.
 const char kDisableLoginAnimations[] = "disable-login-animations";
 
 // Disable login/lock UI (user pods) scrolling into view on JS side when virtual
 // keyboard is shown.
-const char kDisableLoginScrollIntoView[]    = "disable-login-scroll-into-view";
+const char kDisableLoginScrollIntoView[] = "disable-login-scroll-into-view";
 
 // Disable new channel switcher UI.
 const char kDisableNewChannelSwitcherUI[] = "disable-new-channel-switcher-ui";
@@ -52,10 +56,11 @@ const char kDisableNewChannelSwitcherUI[] = "disable-new-channel-switcher-ui";
 // Disables new Kiosk UI when kiosk apps are represented as user pods.
 const char kDisableNewKioskUI[] = "disable-new-kiosk-ui";
 
-// Disable Quickoffice component app thus handlers won't be registered so
-// it will be possible to install another version as normal app for testing.
-const char kDisableQuickofficeComponentApp[] =
-    "disable-quickoffice-component-app";
+// Disable Office Editing for Docs, Sheets & Slides component app so handlers
+// won't be registered, making it possible to install another version for
+// testing.
+const char kDisableOfficeEditingComponentApp[] =
+    "disable-office-editing-component-extension";
 
 // Disables volume adjust sound.
 const char kDisableVolumeAdjustSound[] = "disable-volume-adjust-sound";
@@ -89,16 +94,20 @@ const char kEnableFileManagerMTP[] = "enable-filemanager-mtp";
 const char kEnableNetworkPortalNotification[] =
     "enable-network-portal-notification";
 
+// Enables rollback option on reset screen.
+const char kEnableRollbackOption[] = "enable-rollback-option";
+
 // Enables touchpad three-finger-click as middle button.
 const char kEnableTouchpadThreeFingerClick[]
     = "enable-touchpad-three-finger-click";
 
+// Enables using screenshots in tests and seets mode.
+const char kEnableScreenshotTestingWithMode[] =
+    "enable-screenshot-testing-with-mode";
+
 // Enable Kiosk mode for ChromeOS. Note this switch refers to retail mode rather
 // than the kiosk app mode.
 const char kEnableKioskMode[] = "enable-kiosk-mode";
-
-// Enables rollback option for resetting ChromeOS.
-const char kEnableRollbackOption[] = "enable-rollback-option";
 
 // Enables request of tablet site (via user agent override).
 const char kEnableRequestTabletSite[] = "enable-request-tablet-site";
@@ -126,9 +135,9 @@ const char kEnterpriseEnrollmentSkipRobotAuth[] =
 const char kFileManagerEnableNewGallery[] =
     "file-manager-enable-new-gallery";
 
-// Enables the new audio player in the Files.app.
-const char kFileManagerEnableNewAudioPlayer[] =
-    "file-manager-enable-new-audio-player";
+// Enables the chromecast support for video player app.
+const char kEnableVideoPlayerChromecastSupport[] =
+    "enable-video-player-chromecast-support";
 
 // Passed to Chrome the first time that it's run after the system boots.
 // Not passed on restart after sign out.
@@ -165,11 +174,11 @@ const char kKioskModeScreensaverPath[] = "kiosk-mode-screensaver-path";
 // Enables Chrome-as-a-login-manager behavior.
 const char kLoginManager[] = "login-manager";
 
-// Specifies a password to be used to login (along with login-user).
-const char kLoginPassword[] = "login-password";
-
-// Specifies the profile to use once a chromeos user is logged in. This is
-// required unless --multi-profile is set.
+// Specifies the profile to use once a chromeos user is logged in.
+// This parameter is ignored if user goes through login screen since user_id
+// hash defines which profile directory to use.
+// In case of browser restart within active session this parameter is used
+// to pass user_id hash for primary user.
 const char kLoginProfile[] = "login-profile";
 
 // Specifies the user which is already logged in.
@@ -180,6 +189,10 @@ const char kNaturalScrollDefault[] = "enable-natural-scroll-default";
 
 // Skips all other OOBE pages after user login.
 const char kOobeSkipPostLogin[] = "oobe-skip-postlogin";
+
+// Disable GAIA services such as enrollment and OAuth session restore. Used by
+// 'fake' telemetry login.
+const char kDisableGaiaServices[] = "disable-gaia-services";
 
 // Interval at which we check for total time on OOBE.
 const char kOobeTimerInterval[] = "oobe-timer-interval";
@@ -192,11 +205,12 @@ const char kOobeGuestSession[] = "oobe-guest-session";
 // See FakeDBusThreadManager::ParsePowerCommandLineSwitch for full details.
 const char kPowerStub[] = "power-stub";
 
-// Specifies network stub behavior. If this switch is not specified,
-// ethernet, wifi and vpn are enabled by default, and transitions occur
-// instantaneously. Multiple options can be comma separated (no spaces).
+// Overrides network stub behavior. By default, ethernet, wifi and vpn are
+// enabled, and transitions occur instantaneously. Multiple options can be
+// comma separated (no spaces). Note: all options are in the format 'foo=x'.
 // See FakeShillManagerClient::SetInitialNetworkState for implementation.
 // Examples:
+//  'clear=1' - Clears all default configurations
 //  'wifi=on' - A wifi network is initially connected ('1' also works)
 //  'wifi=off' - Wifi networks are all initially disconnected ('0' also works)
 //  'wifi=disabled' - Wifi is initially disabled
@@ -206,6 +220,14 @@ const char kPowerStub[] = "power-stub";
 //  'interactive=3' - Interactive mode, connect/scan/etc requests take 3 secs
 const char kShillStub[] = "shill-stub";
 
+// If this switch is set, controller pairing process is displayed after update
+// stage of OOBE.
+const char kShowControllerPairingDemo[] = "show-controller-pairing-demo";
+
+// If this switch is set, controller pairing process is displayed after update
+// stage of OOBE.
+const char kShowHostPairingDemo[] = "show-host-pairing-demo";
+
 // Sends test messages on first call to RequestUpdate (stub only).
 const char kSmsTestMessages[] = "sms-test-messages";
 
@@ -213,9 +235,6 @@ const char kSmsTestMessages[] = "sms-test-messages";
 // memory without signing should be used, treating current user as the owner.
 // This option is for testing the chromeos build of chrome on the desktop only.
 const char kStubCrosSettings[] = "stub-cros-settings";
-
-// Disables SAML sigin support.
-const char kDisableSamlSignin[] = "disable-saml-signin";
 
 // Enables animated transitions during first-run tutorial.
 const char kEnableFirstRunUITransitions[] = "enable-first-run-ui-transitions";
@@ -225,6 +244,13 @@ const char kForceFirstRunUI[] = "force-first-run-ui";
 
 // Enables testing for auto update UI.
 const char kTestAutoUpdateUI[] = "test-auto-update-ui";
+
+// Screenshot testing: specifies the directory where the golden screenshots are
+// stored.
+const char kGoldenScreenshotsDir[] = "golden-screenshots-dir";
+
+// Screenshot testing: specifies the directoru where artifacts will be stored.
+const char kArtifactsDir[] = "artifacts-dir";
 
 }  // namespace switches
 }  // namespace chromeos

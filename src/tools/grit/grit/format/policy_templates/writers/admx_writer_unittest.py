@@ -369,6 +369,33 @@ class AdmxWriterUnittest(xml_writer_base_unittest.XmlWriterBaseTest):
 
     self.AssertXMLEquals(output, expected_output)
 
+  def testStringEnumListPolicy(self):
+    list_policy = {
+      'name': 'SampleListPolicy',
+      'type': 'string-enum-list',
+      'items': [
+        {'name': 'item_1', 'value': 'one'},
+        {'name': 'item_2', 'value': 'two'},
+      ]
+    }
+    self._initWriterForPolicy(self.writer, list_policy)
+    self.writer.WritePolicy(list_policy)
+    output = self.GetXMLOfChildren(self._GetPoliciesElement(self.writer._doc))
+    expected_output = (
+        '<policy class="TestClass" displayName="$(string.SampleListPolicy)"'
+        ' explainText="$(string.SampleListPolicy_Explain)"'
+        ' key="Software\\Policies\\Test" name="SampleListPolicy"'
+        ' presentation="$(presentation.SampleListPolicy)">\n'
+        '  <parentCategory ref="PolicyGroup"/>\n'
+        '  <supportedOn ref="SUPPORTED_TESTOS"/>\n'
+        '  <elements>\n'
+        '    <list id="SampleListPolicyDesc"'
+        ' key="Software\Policies\Test\SampleListPolicy" valuePrefix=""/>\n'
+        '  </elements>\n'
+        '</policy>')
+
+    self.AssertXMLEquals(output, expected_output)
+
   def testDictionaryPolicy(self):
     dict_policy = {
       'name': 'SampleDictionaryPolicy',

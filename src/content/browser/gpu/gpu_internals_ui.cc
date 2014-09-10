@@ -166,6 +166,10 @@ base::DictionaryValue* GpuInfoAsDictionaryValue() {
   basic_info->Append(NewDescriptionValuePair(
       "Reset notification strategy", reset_strategy));
 
+  basic_info->Append(NewDescriptionValuePair(
+      "GPU process crash count",
+      new base::FundamentalValue(gpu_info.process_crash_count)));
+
   base::DictionaryValue* info = new base::DictionaryValue();
   info->Set("basic_info", basic_info);
 
@@ -324,7 +328,7 @@ base::Value* GpuMessageHandler::OnRequestClientInfo(
 
   dict->SetString("version", GetContentClient()->GetProduct());
   dict->SetString("command_line",
-      CommandLine::ForCurrentProcess()->GetCommandLineString());
+      base::CommandLine::ForCurrentProcess()->GetCommandLineString());
   dict->SetString("operating_system",
                   base::SysInfo::OperatingSystemName() + " " +
                   base::SysInfo::OperatingSystemVersion());

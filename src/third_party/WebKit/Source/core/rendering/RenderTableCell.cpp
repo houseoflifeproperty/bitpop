@@ -37,9 +37,7 @@
 #include "platform/geometry/TransformState.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -75,7 +73,7 @@ unsigned RenderTableCell::parseColSpanFromDOM() const
 {
     ASSERT(node());
     if (isHTMLTableCellElement(*node()))
-        return min<unsigned>(toHTMLTableCellElement(*node()).colSpan(), maxColumnIndex);
+        return std::min<unsigned>(toHTMLTableCellElement(*node()).colSpan(), maxColumnIndex);
     return 1;
 }
 
@@ -83,7 +81,7 @@ unsigned RenderTableCell::parseRowSpanFromDOM() const
 {
     ASSERT(node());
     if (isHTMLTableCellElement(*node()))
-        return min<unsigned>(toHTMLTableCellElement(*node()).rowSpan(), maxRowIndex);
+        return std::min<unsigned>(toHTMLTableCellElement(*node()).rowSpan(), maxRowIndex);
     return 1;
 }
 
@@ -137,7 +135,7 @@ Length RenderTableCell::logicalWidthFromColumns(RenderTableCol* firstColForThisC
     // Column widths specified on <col> apply to the border box of the cell, see bug 8126.
     // FIXME: Why is border/padding ignored in the negative width case?
     if (colWidthSum > 0)
-        return Length(max(0, colWidthSum - borderAndPaddingLogicalWidth().ceil()), Fixed);
+        return Length(std::max(0, colWidthSum - borderAndPaddingLogicalWidth().ceil()), Fixed);
     return Length(colWidthSum, Fixed);
 }
 
@@ -153,13 +151,14 @@ void RenderTableCell::computePreferredLogicalWidths()
         // See if nowrap was set.
         Length w = styleOrColLogicalWidth();
         const AtomicString& nowrap = toElement(node())->getAttribute(nowrapAttr);
-        if (!nowrap.isNull() && w.isFixed())
+        if (!nowrap.isNull() && w.isFixed()) {
             // Nowrap is set, but we didn't actually use it because of the
             // fixed width set on the cell.  Even so, it is a WinIE/Moz trait
             // to make the minwidth of the cell into the fixed width.  They do this
             // even in strict mode, so do not make this a quirk.  Affected the top
             // of hiptop.com.
-            m_minPreferredLogicalWidth = max<LayoutUnit>(w.value(), m_minPreferredLogicalWidth);
+            m_minPreferredLogicalWidth = std::max<LayoutUnit>(w.value(), m_minPreferredLogicalWidth);
+        }
     }
 }
 
@@ -225,9 +224,6 @@ void RenderTableCell::setCellLogicalWidth(int tableLayoutLogicalWidth, SubtreeLa
 
     layouter.setNeedsLayout(this);
 
-    if (!table()->selfNeedsLayout() && checkForPaintInvalidationDuringLayout())
-        paintInvalidationForWholeRenderer();
-
     setLogicalWidth(tableLayoutLogicalWidth);
     setCellWidthChanged(true);
 }
@@ -246,7 +242,7 @@ void RenderTableCell::layout()
     // of them wrong. So if our content's intrinsic height has changed push the new content up into the intrinsic padding and relayout so that the rest of
     // table and row layout can use the correct baseline and height for this cell.
     if (isBaselineAligned() && section()->rowBaseline(rowIndex()) && cellBaselinePosition() > section()->rowBaseline(rowIndex())) {
-        int newIntrinsicPaddingBefore = max<LayoutUnit>(0, intrinsicPaddingBefore() - max<LayoutUnit>(0, cellBaselinePosition() - oldCellBaseline));
+        int newIntrinsicPaddingBefore = std::max<LayoutUnit>(0, intrinsicPaddingBefore() - std::max<LayoutUnit>(0, cellBaselinePosition() - oldCellBaseline));
         setIntrinsicPaddingBefore(newIntrinsicPaddingBefore);
         SubtreeLayoutScope layouter(*this);
         layouter.setNeedsLayout(this);
@@ -305,7 +301,7 @@ LayoutUnit RenderTableCell::paddingAfter() const
 void RenderTableCell::setOverrideLogicalContentHeightFromRowHeight(LayoutUnit rowHeight)
 {
     clearIntrinsicPadding();
-    setOverrideLogicalContentHeight(max<LayoutUnit>(0, rowHeight - borderAndPaddingLogicalHeight()));
+    setOverrideLogicalContentHeight(std::max<LayoutUnit>(0, rowHeight - borderAndPaddingLogicalHeight()));
 }
 
 LayoutSize RenderTableCell::offsetFromContainer(const RenderObject* o, const LayoutPoint& point, bool* offsetDependsOnPoint) const
@@ -319,68 +315,60 @@ LayoutSize RenderTableCell::offsetFromContainer(const RenderObject* o, const Lay
     return offset;
 }
 
-LayoutRect RenderTableCell::clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const
+LayoutRect RenderTableCell::clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
 {
     // If the table grid is dirty, we cannot get reliable information about adjoining cells,
     // so we ignore outside borders. This should not be a problem because it means that
     // the table is going to recalculate the grid, relayout and repaint its current rect, which
     // includes any outside borders of this cell.
     if (!table()->collapseBorders() || table()->needsSectionRecalc())
-        return RenderBlockFlow::clippedOverflowRectForPaintInvalidation(paintInvalidationContainer);
+        return RenderBlockFlow::clippedOverflowRectForPaintInvalidation(paintInvalidationContainer, paintInvalidationState);
 
     bool rtl = !styleForCellFlow()->isLeftToRightDirection();
     int outlineSize = style()->outlineSize();
-    int left = max(borderHalfLeft(true), outlineSize);
-    int right = max(borderHalfRight(true), outlineSize);
-    int top = max(borderHalfTop(true), outlineSize);
-    int bottom = max(borderHalfBottom(true), outlineSize);
+    int left = std::max(borderHalfLeft(true), outlineSize);
+    int right = std::max(borderHalfRight(true), outlineSize);
+    int top = std::max(borderHalfTop(true), outlineSize);
+    int bottom = std::max(borderHalfBottom(true), outlineSize);
     if ((left && !rtl) || (right && rtl)) {
         if (RenderTableCell* before = table()->cellBefore(this)) {
-            top = max(top, before->borderHalfTop(true));
-            bottom = max(bottom, before->borderHalfBottom(true));
+            top = std::max(top, before->borderHalfTop(true));
+            bottom = std::max(bottom, before->borderHalfBottom(true));
         }
     }
     if ((left && rtl) || (right && !rtl)) {
         if (RenderTableCell* after = table()->cellAfter(this)) {
-            top = max(top, after->borderHalfTop(true));
-            bottom = max(bottom, after->borderHalfBottom(true));
+            top = std::max(top, after->borderHalfTop(true));
+            bottom = std::max(bottom, after->borderHalfBottom(true));
         }
     }
     if (top) {
         if (RenderTableCell* above = table()->cellAbove(this)) {
-            left = max(left, above->borderHalfLeft(true));
-            right = max(right, above->borderHalfRight(true));
+            left = std::max(left, above->borderHalfLeft(true));
+            right = std::max(right, above->borderHalfRight(true));
         }
     }
     if (bottom) {
         if (RenderTableCell* below = table()->cellBelow(this)) {
-            left = max(left, below->borderHalfLeft(true));
-            right = max(right, below->borderHalfRight(true));
+            left = std::max(left, below->borderHalfLeft(true));
+            right = std::max(right, below->borderHalfRight(true));
         }
     }
-    LayoutPoint location(max<LayoutUnit>(left, -visualOverflowRect().x()), max<LayoutUnit>(top, -visualOverflowRect().y()));
-    LayoutRect r(-location.x(), -location.y(), location.x() + max(width() + right, visualOverflowRect().maxX()), location.y() + max(height() + bottom, visualOverflowRect().maxY()));
+    LayoutPoint location(std::max<LayoutUnit>(left, -visualOverflowRect().x()), std::max<LayoutUnit>(top, -visualOverflowRect().y()));
+    LayoutRect r(-location.x(), -location.y(), location.x() + std::max(width() + right, visualOverflowRect().maxX()), location.y() + std::max(height() + bottom, visualOverflowRect().maxY()));
 
-    if (!RuntimeEnabledFeatures::repaintAfterLayoutEnabled()) {
-        if (RenderView* v = view()) {
-            // FIXME: layoutDelta needs to be applied in parts before/after transforms and
-            // repaint containers. https://bugs.webkit.org/show_bug.cgi?id=23308
-            r.move(v->layoutDelta());
-        }
-    }
-    mapRectToPaintInvalidationBacking(paintInvalidationContainer, r);
+    mapRectToPaintInvalidationBacking(paintInvalidationContainer, r, ViewportConstraintDoesNotMatter, paintInvalidationState);
     return r;
 }
 
-void RenderTableCell::mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect& r, bool fixed) const
+void RenderTableCell::mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect& r, ViewportConstrainedPosition, const PaintInvalidationState* paintInvalidationState) const
 {
     if (paintInvalidationContainer == this)
         return;
     r.setY(r.y());
-    RenderView* v = view();
-    if ((!v || !v->canMapUsingLayoutStateForContainer(paintInvalidationContainer)) && parent())
+    if ((!paintInvalidationState || !paintInvalidationState->canMapToContainer(paintInvalidationContainer)) && parent())
         r.moveBy(-parentBox()->location()); // Rows are in the same coordinate space, so don't add their offset in.
-    RenderBlockFlow::mapRectToPaintInvalidationBacking(paintInvalidationContainer, r, fixed);
+    RenderBlockFlow::mapRectToPaintInvalidationBacking(paintInvalidationContainer, r, ViewportConstraintDoesNotMatter, paintInvalidationState);
 }
 
 LayoutUnit RenderTableCell::cellBaselinePosition() const
@@ -400,7 +388,7 @@ void RenderTableCell::styleDidChange(StyleDifference diff, const RenderStyle* ol
     ASSERT(!row() || row()->rowIndexWasSet());
 
     RenderBlockFlow::styleDidChange(diff, oldStyle);
-    setHasBoxDecorations(true);
+    setHasBoxDecorationBackground(true);
 
     if (parent() && section() && oldStyle && style()->height() != oldStyle->height())
         section()->rowLogicalHeightChanged(rowIndex());
@@ -1115,8 +1103,7 @@ void RenderTableCell::paintCollapsedBorders(PaintInfo& paintInfo, const LayoutPo
     if (paintRect.maxY() + table()->outerBorderBottom() <= paintInfo.rect.y())
         return;
 
-    GraphicsContext* graphicsContext = paintInfo.context;
-    if (!table()->currentBorderValue() || graphicsContext->paintingDisabled())
+    if (!table()->currentBorderValue())
         return;
 
     const RenderStyle* styleForCellFlow = this->styleForCellFlow();
@@ -1154,6 +1141,7 @@ void RenderTableCell::paintCollapsedBorders(PaintInfo& paintInfo, const LayoutPo
     borders.addBorder(leftVal, BSLeft, renderLeft, borderRect.x(), borderRect.y(), borderRect.x() + leftWidth, borderRect.maxY(), leftStyle);
     borders.addBorder(rightVal, BSRight, renderRight, borderRect.maxX() - rightWidth, borderRect.y(), borderRect.maxX(), borderRect.maxY(), rightStyle);
 
+    GraphicsContext* graphicsContext = paintInfo.context;
     bool antialias = shouldAntialiasLines(graphicsContext);
 
     for (CollapsedBorder* border = borders.nextBorder(); border; border = borders.nextBorder()) {
@@ -1184,9 +1172,9 @@ void RenderTableCell::paintBackgroundsBehindCell(PaintInfo& paintInfo, const Lay
         adjustedPaintOffset.moveBy(location());
 
     Color c = backgroundObject->resolveColor(CSSPropertyBackgroundColor);
-    const FillLayer* bgLayer = backgroundObject->style()->backgroundLayers();
+    const FillLayer& bgLayer = backgroundObject->style()->backgroundLayers();
 
-    if (bgLayer->hasImage() || c.alpha()) {
+    if (bgLayer.hasImage() || c.alpha()) {
         // We have to clip here because the background would paint
         // on top of the borders otherwise.  This only matters for cells and rows.
         bool shouldClip = backgroundObject->hasLayer() && (backgroundObject == this || backgroundObject == parent()) && tableElt->collapseBorders();
@@ -1200,7 +1188,7 @@ void RenderTableCell::paintBackgroundsBehindCell(PaintInfo& paintInfo, const Lay
     }
 }
 
-void RenderTableCell::paintBoxDecorations(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void RenderTableCell::paintBoxDecorationBackground(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     if (!paintInfo.shouldPaintWithinRoot(this))
         return;
@@ -1279,4 +1267,4 @@ RenderTableCell* RenderTableCell::createAnonymousWithParentRenderer(const Render
     return newCell;
 }
 
-} // namespace WebCore
+} // namespace blink

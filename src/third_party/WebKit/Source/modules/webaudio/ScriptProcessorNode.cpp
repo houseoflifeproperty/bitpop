@@ -28,7 +28,8 @@
 
 #include "modules/webaudio/ScriptProcessorNode.h"
 
-#include "core/dom/Document.h"
+#include "core/dom/CrossThreadTask.h"
+#include "core/dom/ExecutionContext.h"
 #include "modules/webaudio/AudioBuffer.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioNodeInput.h"
@@ -36,16 +37,22 @@
 #include "modules/webaudio/AudioProcessingEvent.h"
 #include "public/platform/Platform.h"
 #include "wtf/Float32Array.h"
-#include "wtf/MainThread.h"
 
-namespace WebCore {
+namespace blink {
+
+#if !ENABLE(OILPAN)
+// We need a dedicated specialization for ScriptProcessorNode because it doesn't
+// inherit from RefCounted.
+template<> struct CrossThreadCopierBase<false, false, false, PassRefPtr<ScriptProcessorNode> > : public CrossThreadCopierPassThrough<PassRefPtr<ScriptProcessorNode> > {
+};
+#endif
 
 static size_t chooseBufferSize()
 {
     // Choose a buffer size based on the audio hardware buffer size. Arbitarily make it a power of
     // two that is 4 times greater than the hardware buffer size.
     // FIXME: What is the best way to choose this?
-    size_t hardwareBufferSize = blink::Platform::current()->audioHardwareBufferSize();
+    size_t hardwareBufferSize = Platform::current()->audioHardwareBufferSize();
     size_t bufferSize = 1 << static_cast<unsigned>(log2(4 * hardwareBufferSize) + 0.5);
 
     if (bufferSize < 256)
@@ -104,8 +111,8 @@ ScriptProcessorNode::ScriptProcessorNode(AudioContext* context, float sampleRate
 
     ASSERT(numberOfInputChannels <= AudioContext::maxNumberOfChannels());
 
-    addInput(adoptPtr(new AudioNodeInput(this)));
-    addOutput(adoptPtr(new AudioNodeOutput(this, numberOfOutputChannels)));
+    addInput();
+    addOutput(AudioNodeOutput::create(this, numberOfOutputChannels));
 
     setNodeType(NodeTypeJavaScript);
 
@@ -114,7 +121,13 @@ ScriptProcessorNode::ScriptProcessorNode(AudioContext* context, float sampleRate
 
 ScriptProcessorNode::~ScriptProcessorNode()
 {
+    ASSERT(!isInitialized());
+}
+
+void ScriptProcessorNode::dispose()
+{
     uninitialize();
+    AudioNode::dispose();
 }
 
 void ScriptProcessorNode::initialize()
@@ -219,30 +232,14 @@ void ScriptProcessorNode::process(size_t framesToProcess)
             // We're late in handling the previous request. The main thread must be very busy.
             // The best we can do is clear out the buffer ourself here.
             outputBuffer->zero();
-        } else {
-            // Reference ourself so we don't accidentally get deleted before fireProcessEvent() gets called.
-            ref();
-
+        } else if (context()->executionContext()) {
             // Fire the event on the main thread, not this one (which is the realtime audio thread).
             m_doubleBufferIndexForEvent = m_doubleBufferIndex;
-            callOnMainThread(fireProcessEventDispatch, this);
+            context()->executionContext()->postTask(createCrossThreadTask(&ScriptProcessorNode::fireProcessEvent, PassRefPtrWillBeRawPtr<ScriptProcessorNode>(this)));
         }
 
         swapBuffers();
     }
-}
-
-void ScriptProcessorNode::fireProcessEventDispatch(void* userData)
-{
-    ScriptProcessorNode* jsAudioNode = static_cast<ScriptProcessorNode*>(userData);
-    ASSERT(jsAudioNode);
-    if (!jsAudioNode)
-        return;
-
-    jsAudioNode->fireProcessEvent();
-
-    // De-reference to match the ref() call in process().
-    jsAudioNode->deref();
 }
 
 void ScriptProcessorNode::fireProcessEvent()
@@ -291,6 +288,6 @@ void ScriptProcessorNode::trace(Visitor* visitor)
     AudioNode::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

@@ -5,21 +5,21 @@
 #ifndef RegistrationOptionList_h
 #define RegistrationOptionList_h
 
-#include "bindings/v8/Dictionary.h"
+#include "bindings/core/v8/Dictionary.h"
 
-namespace WebCore {
+namespace blink {
 
 struct RegistrationOptionList  {
     explicit RegistrationOptionList(const Dictionary& options)
-        : scope("/*")
+        : scope("/")
     {
         // FIXME: Should be ScalarValueString. http://crbug.com/379009
-        options.get("scope", scope);
+        DictionaryHelper::get(options, "scope", scope);
     }
 
     String scope;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RegistrationOptionList_h

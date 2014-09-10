@@ -21,9 +21,9 @@
 #import "config.h"
 #import "core/rendering/RenderThemeChromiumMac.h"
 
-#import "CSSValueKeywords.h"
-#import "HTMLNames.h"
-#import "UserAgentStyleSheets.h"
+#import "core/CSSValueKeywords.h"
+#import "core/HTMLNames.h"
+#import "core/UserAgentStyleSheets.h"
 #import "core/css/CSSValueList.h"
 #import "core/dom/Document.h"
 #import "core/dom/Element.h"
@@ -63,8 +63,6 @@
 #import <wtf/RetainPtr.h>
 #import <wtf/StdLibExtras.h>
 
-using namespace std;
-
 // The methods in this file are specific to the Mac OS X platform.
 
 // We estimate the animation rate of a Mac OS X progress bar is 33 fps.
@@ -76,17 +74,17 @@ const double progressAnimationNumFrames = 256;
 
 @interface WebCoreRenderThemeNotificationObserver : NSObject
 {
-    WebCore::RenderTheme *_theme;
+    blink::RenderTheme *_theme;
 }
 
-- (id)initWithTheme:(WebCore::RenderTheme *)theme;
+- (id)initWithTheme:(blink::RenderTheme *)theme;
 - (void)systemColorsDidChange:(NSNotification *)notification;
 
 @end
 
 @implementation WebCoreRenderThemeNotificationObserver
 
-- (id)initWithTheme:(WebCore::RenderTheme *)theme
+- (id)initWithTheme:(blink::RenderTheme *)theme
 {
     if (!(self = [super init]))
         return nil;
@@ -149,7 +147,7 @@ void _NSDrawCarbonThemeBezel(NSRect frame, BOOL enabled, BOOL flipped);
 void _NSDrawCarbonThemeListBox(NSRect frame, BOOL enabled, BOOL flipped, BOOL always_yes);
 }
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -513,7 +511,7 @@ Color RenderThemeChromiumMac::systemColor(CSSValueID cssValueId) const
 bool RenderThemeChromiumMac::isControlStyled(const RenderStyle* style, const CachedUAStyle* uaStyle) const
 {
     ASSERT(uaStyle);
-    if (style->appearance() == TextFieldPart || style->appearance() == TextAreaPart || style->appearance() == ListboxPart)
+    if (style->appearance() == TextFieldPart || style->appearance() == TextAreaPart)
         return style->border() != uaStyle->border || style->boxShadow();
 
     // FIXME: This is horrible, but there is not much else that can be done.  Menu lists cannot draw properly when
@@ -640,24 +638,6 @@ void RenderThemeChromiumMac::updatePressedState(NSCell* cell, const RenderObject
     bool pressed = (o->node() && o->node()->active());
     if (pressed != oldPressed)
         [cell setHighlighted:pressed];
-}
-
-bool RenderThemeChromiumMac::controlSupportsTints(const RenderObject* o) const
-{
-    // An alternate way to implement this would be to get the appropriate cell object
-    // and call the private _needRedrawOnWindowChangedKeyState method. An advantage of
-    // that would be that we would match AppKit behavior more closely, but a disadvantage
-    // would be that we would rely on an AppKit SPI method.
-
-    if (!isEnabled(o))
-        return false;
-
-    // Checkboxes only have tint when checked.
-    if (o->style()->appearance() == CheckboxPart)
-        return isChecked(o);
-
-    // For now assume other controls have tint if enabled.
-    return true;
 }
 
 NSControlSize RenderThemeChromiumMac::controlSizeForFont(RenderStyle* style) const
@@ -790,9 +770,6 @@ bool RenderThemeChromiumMac::paintTextField(RenderObject* o, const PaintInfo& pa
 
 bool RenderThemeChromiumMac::paintCapsLockIndicator(RenderObject*, const PaintInfo& paintInfo, const IntRect& r)
 {
-    if (paintInfo.context->paintingDisabled())
-        return true;
-
     // This draws the caps lock indicator as it was done by WKDrawCapsLockIndicator.
     LocalCurrentGraphicsContext localContext(paintInfo.context);
     CGContextRef c = localContext.cgContext();
@@ -1084,7 +1061,7 @@ bool RenderThemeChromiumMac::paintProgressBar(RenderObject* renderObject, const 
 
     trackInfo.bounds = IntRect(IntPoint(), inflatedRect.size());
     trackInfo.min = 0;
-    trackInfo.max = numeric_limits<SInt32>::max();
+    trackInfo.max = std::numeric_limits<SInt32>::max();
     trackInfo.value = lround(renderProgress->position() * nextafter(trackInfo.max, 0));
     trackInfo.trackInfo.progress.phase = lround(renderProgress->animationProgress() * nextafter(progressAnimationNumFrames, 0));
     trackInfo.attributes = kThemeTrackHorizontal;
@@ -1131,7 +1108,7 @@ bool RenderThemeChromiumMac::paintMenuListButton(RenderObject* o, const PaintInf
                              r.width() - o->style()->borderLeftWidth() - o->style()->borderRightWidth(),
                              r.height() - o->style()->borderTopWidth() - o->style()->borderBottomWidth());
     // Since we actually know the size of the control here, we restrict the font scale to make sure the arrows will fit vertically in the bounds
-    float fontScale = min(o->style()->fontSize() / baseFontSize, bounds.height() / (baseArrowHeight * 2 + baseSpaceBetweenArrows));
+    float fontScale = std::min(o->style()->fontSize() / baseFontSize, bounds.height() / (baseArrowHeight * 2 + baseSpaceBetweenArrows));
     float centerY = bounds.y() + bounds.height() / 2.0f;
     float arrowHeight = baseArrowHeight * fontScale;
     float arrowWidth = baseArrowWidth * fontScale;
@@ -1763,15 +1740,19 @@ String RenderThemeChromiumMac::fileListNameForWidth(Locale& locale, const FileLi
 
     String strToTruncate;
     if (fileList->isEmpty()) {
-        strToTruncate = locale.queryString(blink::WebLocalizedString::FileButtonNoFileSelectedLabel);
+        strToTruncate = locale.queryString(WebLocalizedString::FileButtonNoFileSelectedLabel);
     } else if (fileList->length() == 1) {
-        strToTruncate = [[NSFileManager defaultManager] displayNameAtPath:(fileList->item(0)->path())];
+        File* file = fileList->item(0);
+        if (file->userVisibility() == File::IsUserVisible)
+            strToTruncate = [[NSFileManager defaultManager] displayNameAtPath:(fileList->item(0)->path())];
+        else
+            strToTruncate = file->name();
     } else {
         // FIXME: Localization of fileList->length().
-        return StringTruncator::rightTruncate(locale.queryString(blink::WebLocalizedString::MultipleFileUploadText, String::number(fileList->length())), width, font, StringTruncator::EnableRoundingHacks);
+        return StringTruncator::rightTruncate(locale.queryString(WebLocalizedString::MultipleFileUploadText, String::number(fileList->length())), width, font);
     }
 
-    return StringTruncator::centerTruncate(strToTruncate, width, font, StringTruncator::EnableRoundingHacks);
+    return StringTruncator::centerTruncate(strToTruncate, width, font);
 }
 
 NSView* FlippedView()
@@ -1793,7 +1774,7 @@ PassRefPtr<RenderTheme> RenderThemeChromiumMac::create()
 
 bool RenderThemeChromiumMac::usesTestModeFocusRingColor() const
 {
-    return isRunningLayoutTest();
+    return LayoutTestSupport::isRunningLayoutTest();
 }
 
 NSView* RenderThemeChromiumMac::documentViewFor(RenderObject*) const
@@ -1859,8 +1840,9 @@ String RenderThemeChromiumMac::extraFullScreenStyleSheet()
 String RenderThemeChromiumMac::extraDefaultStyleSheet()
 {
     return RenderTheme::extraDefaultStyleSheet() +
-           String(themeChromiumUserAgentStyleSheet, sizeof(themeChromiumUserAgentStyleSheet)) +
-           String(themeMacUserAgentStyleSheet, sizeof(themeMacUserAgentStyleSheet));
+        String(themeChromiumCss, sizeof(themeChromiumCss)) +
+        String(themeInputMultipleFieldsCss, sizeof(themeInputMultipleFieldsCss)) +
+        String(themeMacCss, sizeof(themeMacCss));
 }
 
 bool RenderThemeChromiumMac::paintMediaVolumeSliderContainer(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
@@ -1911,4 +1893,4 @@ bool RenderThemeChromiumMac::shouldUseFallbackTheme(RenderStyle* style) const
     return false;
 }
 
-} // namespace WebCore
+} // namespace blink

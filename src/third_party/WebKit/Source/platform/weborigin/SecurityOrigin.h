@@ -33,7 +33,7 @@
 #include "wtf/ThreadSafeRefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class KURL;
 class SecurityOriginCache;
@@ -118,7 +118,7 @@ public:
     // cryptographically-authenticated server.
     //
     // [1] http://www.chromium.org/Home/chromium-security/security-faq#TOC-Which-origins-are-secure-
-    bool canAccessFeatureRequiringSecureOrigin() const;
+    bool canAccessFeatureRequiringSecureOrigin(String& errorMessage) const;
 
     // Returns true if this SecurityOrigin can load local resources, such
     // as images, iframes, and style sheets, and can link to local URLs.
@@ -225,6 +225,6 @@ private:
     bool m_needsDatabaseIdentifierQuirkForFiles;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SecurityOrigin_h

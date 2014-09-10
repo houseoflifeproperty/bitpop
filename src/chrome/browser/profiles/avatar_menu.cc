@@ -119,7 +119,7 @@ void AvatarMenu::SwitchToProfile(size_t index,
          index == GetActiveProfileIndex());
   const Item& item = GetItemAt(index);
 
-  if (switches::IsNewProfileManagement()) {
+  if (switches::IsNewAvatarMenu()) {
     // Don't open a browser window for signed-out profiles.
     if (item.signin_required) {
       chrome::ShowUserManager(item.profile_path);
@@ -193,7 +193,7 @@ base::string16 AvatarMenu::GetSupervisedUserInformation() const {
         SupervisedUserServiceFactory::GetForProfile(browser_->profile());
     base::string16 custodian =
         base::UTF8ToUTF16(service->GetCustodianEmailAddress());
-    return l10n_util::GetStringFUTF16(IDS_MANAGED_USER_INFO, custodian);
+    return l10n_util::GetStringFUTF16(IDS_SUPERVISED_USER_INFO, custodian);
 #endif
   }
   return base::string16();
@@ -201,7 +201,7 @@ base::string16 AvatarMenu::GetSupervisedUserInformation() const {
 
 const gfx::Image& AvatarMenu::GetSupervisedUserIcon() const {
   return ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-      IDR_MANAGED_USER_ICON);
+      IDR_SUPERVISED_USER_ICON);
 }
 
 void AvatarMenu::ActiveBrowserChanged(Browser* browser) {

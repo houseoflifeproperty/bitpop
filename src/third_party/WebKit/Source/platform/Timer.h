@@ -33,7 +33,7 @@
 #include "wtf/Threading.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 // Time intervals are all in seconds.
 
@@ -106,7 +106,7 @@ private:
     Vector<TimerBase*>* m_cachedThreadGlobalTimerHeap;
     TraceLocation m_location;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     ThreadIdentifier m_thread;
 #endif
 

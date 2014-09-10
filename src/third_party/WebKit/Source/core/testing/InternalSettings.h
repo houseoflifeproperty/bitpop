@@ -35,7 +35,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class ExceptionState;
@@ -55,9 +55,9 @@ public:
         explicit Backup(Settings*);
         void restoreTo(Settings*);
 
-        bool m_originalCSSExclusionsEnabled;
         bool m_originalAuthorShadowDOMForAnyElementEnabled;
         bool m_originalCSP;
+        bool m_originalLaxMixedContentCheckingEnabled;
         bool m_originalOverlayScrollbarsEnabled;
         EditingBehaviorType m_originalEditingBehavior;
         bool m_originalTextAutosizingEnabled;
@@ -65,6 +65,7 @@ public:
         float m_originalAccessibilityFontScaleFactor;
         String m_originalMediaTypeOverride;
         bool m_originalMockScrollbarsEnabled;
+        bool m_originalMockGestureTapHighlightsEnabled;
         bool m_langAttributeAwareFormControlUIEnabled;
         bool m_imagesEnabled;
         String m_defaultVideoPosterURL;
@@ -98,6 +99,7 @@ public:
     void setImagesEnabled(bool, ExceptionState&);
     void setMediaTypeOverride(const String& mediaType, ExceptionState&);
     void setMockScrollbarsEnabled(bool, ExceptionState&);
+    void setMockGestureTapHighlightsEnabled(bool, ExceptionState&);
     void setTextAutosizingEnabled(bool, ExceptionState&);
     void setAccessibilityFontScaleFactor(float fontScaleFactor, ExceptionState&);
     void setTextAutosizingWindowSizeOverride(int width, int height, ExceptionState&);
@@ -111,11 +113,11 @@ public:
     // cannot be changed after process start. These setters should
     // be removed or moved onto internals.runtimeFlags:
     void setAuthorShadowDOMForAnyElementEnabled(bool);
-    void setCSSExclusionsEnabled(bool);
     void setLangAttributeAwareFormControlUIEnabled(bool);
     void setOverlayScrollbarsEnabled(bool);
     void setExperimentalContentSecurityPolicyFeaturesEnabled(bool);
     void setPseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled(bool);
+    void setLaxMixedContentCheckingEnabled(bool);
 
     virtual void trace(Visitor*) OVERRIDE;
 
@@ -130,6 +132,6 @@ private:
     Backup m_backup;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

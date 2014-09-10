@@ -10,6 +10,7 @@
 
 #include "base/base64.h"
 #include "base/debug/trace_event.h"
+#include "base/debug/trace_event_argument.h"
 #include "base/values.h"
 #include "cc/base/math_util.h"
 #include "cc/base/util.h"
@@ -231,15 +232,12 @@ void Picture::CloneForDrawing(int num_threads) {
   raster_thread_checker_.DetachFromThread();
 
   if (num_threads > 1) {
-    scoped_ptr<SkPicture[]> clones(new SkPicture[num_threads - 1]);
-    picture_->clone(&clones[0], num_threads - 1);
-
     for (int i = 0; i < num_threads - 1; i++) {
-      scoped_refptr<Picture> clone = make_scoped_refptr(
-          new Picture(skia::AdoptRef(new SkPicture(clones[i])),
+      scoped_refptr<Picture> clone =
+          new Picture(skia::AdoptRef(picture_->clone()),
                       layer_rect_,
                       opaque_rect_,
-                      pixel_refs_));
+                      pixel_refs_);
       clones_.push_back(clone);
 
       clone->EmitTraceSnapshotAlias(this);
@@ -589,18 +587,22 @@ Picture::PixelRefIterator& Picture::PixelRefIterator::operator++() {
 
 scoped_refptr<base::debug::ConvertableToTraceFormat>
     Picture::AsTraceableRasterData(float scale) const {
-  scoped_ptr<base::DictionaryValue> raster_data(new base::DictionaryValue());
-  raster_data->Set("picture_id", TracedValue::CreateIDRef(this).release());
+  scoped_refptr<base::debug::TracedValue> raster_data =
+      new base::debug::TracedValue();
+  TracedValue::SetIDRef(this, raster_data.get(), "picture_id");
   raster_data->SetDouble("scale", scale);
-  return TracedValue::FromValue(raster_data.release());
+  return raster_data;
 }
 
 scoped_refptr<base::debug::ConvertableToTraceFormat>
     Picture::AsTraceableRecordData() const {
-  scoped_ptr<base::DictionaryValue> record_data(new base::DictionaryValue());
-  record_data->Set("picture_id", TracedValue::CreateIDRef(this).release());
-  record_data->Set("layer_rect", MathUtil::AsValue(layer_rect_).release());
-  return TracedValue::FromValue(record_data.release());
+  scoped_refptr<base::debug::TracedValue> record_data =
+      new base::debug::TracedValue();
+  TracedValue::SetIDRef(this, record_data.get(), "picture_id");
+  record_data->BeginArray("layer_rect");
+  MathUtil::AddToTracedValue(layer_rect_, record_data.get());
+  record_data->EndArray();
+  return record_data;
 }
 
 }  // namespace cc

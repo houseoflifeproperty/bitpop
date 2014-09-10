@@ -14,16 +14,17 @@ def GenSteps(api):
     'https://android.googlesource.com/platform/manifest')
   api.android.c.repo.branch = 'master'
 
-  yield api.android.sync_chromium()
+  spec = api.android.create_spec()
+  api.android.sync_chromium(spec)
 
-  yield api.android.repo_init_steps()
-  yield api.android.repo_sync_steps()
-  yield api.android.update_defaut_props_step({'ro.adb.secure': '0'})
+  api.android.repo_init_steps()
+  api.android.repo_sync_steps()
+  api.android.update_defaut_props_step({'ro.adb.secure': '0'})
 
-  yield api.android.rsync_chromium_into_android_tree_step()
+  api.android.rsync_chromium_into_android_tree_step()
 
   make_vars = {'CC': 'foo', 'CXX': 'bar'}
-  yield api.android.compile_step(
+  api.android.compile_step(
       build_tool='make-android',
       step_name='compile android',
       targets=['droid'],

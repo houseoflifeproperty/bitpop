@@ -51,30 +51,19 @@ DataPipeProducerDispatcher::CreateEquivalentDispatcherAndCloseImplNoLock() {
 }
 
 MojoResult DataPipeProducerDispatcher::WriteDataImplNoLock(
-    const void* elements,
-    uint32_t* num_bytes,
+    UserPointer<const void> elements,
+    UserPointer<uint32_t> num_bytes,
     MojoWriteDataFlags flags) {
   lock().AssertAcquired();
-
-  if (!VerifyUserPointer<uint32_t>(num_bytes))
-    return MOJO_RESULT_INVALID_ARGUMENT;
-  if (!VerifyUserPointerWithSize<1>(elements, *num_bytes))
-    return MOJO_RESULT_INVALID_ARGUMENT;
-
   return data_pipe_->ProducerWriteData(
       elements, num_bytes, (flags & MOJO_WRITE_DATA_FLAG_ALL_OR_NONE));
 }
 
 MojoResult DataPipeProducerDispatcher::BeginWriteDataImplNoLock(
-    void** buffer,
-    uint32_t* buffer_num_bytes,
+    UserPointer<void*> buffer,
+    UserPointer<uint32_t> buffer_num_bytes,
     MojoWriteDataFlags flags) {
   lock().AssertAcquired();
-
-  if (!VerifyUserPointerWithCount<void*>(buffer, 1))
-    return MOJO_RESULT_INVALID_ARGUMENT;
-  if (!VerifyUserPointer<uint32_t>(buffer_num_bytes))
-    return MOJO_RESULT_INVALID_ARGUMENT;
 
   return data_pipe_->ProducerBeginWriteData(
       buffer, buffer_num_bytes, (flags & MOJO_WRITE_DATA_FLAG_ALL_OR_NONE));
@@ -87,17 +76,26 @@ MojoResult DataPipeProducerDispatcher::EndWriteDataImplNoLock(
   return data_pipe_->ProducerEndWriteData(num_bytes_written);
 }
 
+HandleSignalsState DataPipeProducerDispatcher::GetHandleSignalsStateImplNoLock()
+    const {
+  lock().AssertAcquired();
+  return data_pipe_->ProducerGetHandleSignalsState();
+}
+
 MojoResult DataPipeProducerDispatcher::AddWaiterImplNoLock(
     Waiter* waiter,
     MojoHandleSignals signals,
-    uint32_t context) {
+    uint32_t context,
+    HandleSignalsState* signals_state) {
   lock().AssertAcquired();
-  return data_pipe_->ProducerAddWaiter(waiter, signals, context);
+  return data_pipe_->ProducerAddWaiter(waiter, signals, context, signals_state);
 }
 
-void DataPipeProducerDispatcher::RemoveWaiterImplNoLock(Waiter* waiter) {
+void DataPipeProducerDispatcher::RemoveWaiterImplNoLock(
+    Waiter* waiter,
+    HandleSignalsState* signals_state) {
   lock().AssertAcquired();
-  data_pipe_->ProducerRemoveWaiter(waiter);
+  data_pipe_->ProducerRemoveWaiter(waiter, signals_state);
 }
 
 bool DataPipeProducerDispatcher::IsBusyNoLock() const {

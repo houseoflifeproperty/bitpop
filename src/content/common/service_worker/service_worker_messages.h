@@ -4,11 +4,15 @@
 
 // Message definition file, included multiple times, hence no include guard.
 
+#include <string>
+#include <vector>
+
 #include "base/strings/string16.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_param_traits.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerCacheError.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerError.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerEventResult.h"
 #include "url/gurl.h"
@@ -31,12 +35,15 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerFetchRequest)
   IPC_STRUCT_TRAITS_MEMBER(url)
   IPC_STRUCT_TRAITS_MEMBER(method)
   IPC_STRUCT_TRAITS_MEMBER(headers)
+  IPC_STRUCT_TRAITS_MEMBER(referrer)
+  IPC_STRUCT_TRAITS_MEMBER(is_reload)
 IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS_MAX_VALUE(content::ServiceWorkerFetchEventResult,
                           content::SERVICE_WORKER_FETCH_EVENT_LAST)
 
 IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerResponse)
+  IPC_STRUCT_TRAITS_MEMBER(url)
   IPC_STRUCT_TRAITS_MEMBER(status_code)
   IPC_STRUCT_TRAITS_MEMBER(status_text)
   IPC_STRUCT_TRAITS_MEMBER(headers)
@@ -49,6 +56,16 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerObjectInfo)
   IPC_STRUCT_TRAITS_MEMBER(url)
   IPC_STRUCT_TRAITS_MEMBER(state)
 IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerVersionAttributes)
+  IPC_STRUCT_TRAITS_MEMBER(installing)
+  IPC_STRUCT_TRAITS_MEMBER(waiting)
+  IPC_STRUCT_TRAITS_MEMBER(active)
+IPC_STRUCT_TRAITS_END()
+
+IPC_ENUM_TRAITS_MAX_VALUE(
+    blink::WebServiceWorkerCacheError,
+    blink::WebServiceWorkerCacheErrorLast)
 
 //---------------------------------------------------------------------------
 // Messages sent from the child process to the browser.
@@ -85,8 +102,16 @@ IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_ProviderDestroyed,
 // counting in the browser side. The ServiceWorker object is created
 // with ref-count==1 initially.
 IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_IncrementServiceWorkerRefCount,
-                     int /* handle_id */)
+                     int /* registration_handle_id */)
 IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_DecrementServiceWorkerRefCount,
+                     int /* registration_handle_id */)
+
+// Increments and decrements the ServiceWorkerRegistration object's reference
+// counting in the browser side. The registration object is created with
+// ref-count==1 initially.
+IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_IncrementRegistrationRefCount,
+                     int /* handle_id */)
+IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_DecrementRegistrationRefCount,
                      int /* handle_id */)
 
 // Informs the browser that |provider_id| is associated
@@ -103,7 +128,7 @@ IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_InstallEventFinished,
                     blink::WebServiceWorkerEventResult)
 IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_ActivateEventFinished,
                     int /* request_id */,
-                    blink::WebServiceWorkerEventResult);
+                    blink::WebServiceWorkerEventResult)
 IPC_MESSAGE_ROUTED3(ServiceWorkerHostMsg_FetchEventFinished,
                     int /* request_id */,
                     content::ServiceWorkerFetchEventResult,
@@ -124,6 +149,26 @@ IPC_MESSAGE_ROUTED3(ServiceWorkerHostMsg_PostMessageToDocument,
                     base::string16 /* message */,
                     std::vector<int> /* sent_message_port_ids */)
 
+// CacheStorage operations in the browser.
+IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_CacheStorageGet,
+                    int /* request_id */,
+                    base::string16 /* fetch_store_name */)
+
+IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_CacheStorageHas,
+                    int /* request_id */,
+                    base::string16 /* fetch_store_name */)
+
+IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_CacheStorageCreate,
+                    int /* request_id */,
+                    base::string16 /* fetch_store_name */)
+
+IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_CacheStorageDelete,
+                    int /* request_id */,
+                    base::string16 /* fetch_store_name */)
+
+IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_CacheStorageKeys,
+                    int /* request_id */)
+
 //---------------------------------------------------------------------------
 // Messages sent from the browser to the child process.
 //
@@ -133,9 +178,10 @@ IPC_MESSAGE_ROUTED3(ServiceWorkerHostMsg_PostMessageToDocument,
 // on the correct thread.
 
 // Response to ServiceWorkerMsg_RegisterServiceWorker.
-IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_ServiceWorkerRegistered,
+IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_ServiceWorkerRegistered,
                      int /* thread_id */,
                      int /* request_id */,
+                     int /* registration_handle_id */,
                      content::ServiceWorkerObjectInfo)
 
 // Response to ServiceWorkerMsg_UnregisterServiceWorker.
@@ -157,16 +203,17 @@ IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_ServiceWorkerStateChanged,
                      int /* handle_id */,
                      blink::WebServiceWorkerState)
 
-// Tells the child process to set the waiting ServiceWorker for the given
-// provider.
-IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetWaitingServiceWorker,
+// Tells the child process to set service workers for the given provider.
+IPC_MESSAGE_CONTROL5(ServiceWorkerMsg_SetVersionAttributes,
                      int /* thread_id */,
                      int /* provider_id */,
-                     content::ServiceWorkerObjectInfo)
+                     int /* registration_handle_id */,
+                     int /* changed_mask */,
+                     content::ServiceWorkerVersionAttributes)
 
-// Tells the child process to set the current ServiceWorker for the given
+// Tells the child process to set the controller ServiceWorker for the given
 // provider.
-IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetCurrentServiceWorker,
+IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetControllerServiceWorker,
                      int /* thread_id */,
                      int /* provider_id */,
                      content::ServiceWorkerObjectInfo)
@@ -202,3 +249,35 @@ IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_MessageToWorker,
 IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_DidGetClientDocuments,
                      int /* request_id */,
                      std::vector<int> /* client_ids */)
+
+// Sent via EmbeddedWorker at successful completion of CacheStorage operations.
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CacheStorageGetSuccess,
+                     int /* request_id */,
+                     int /* fetch_store_id */)
+IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_CacheStorageHasSuccess,
+                     int /* request_id */)
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CacheStorageCreateSuccess,
+                     int /* request_id */,
+                     int /* fetch_store_id */)
+IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_CacheStorageDeleteSuccess,
+                     int /* request_id */)
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CacheStorageKeysSuccess,
+                     int /* request_id */,
+                     std::vector<base::string16> /* keys */)
+
+// Sent via EmbeddedWorker at erroneous completion of CacheStorage operations.
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CacheStorageGetError,
+                     int /* request_id */,
+                     blink::WebServiceWorkerCacheError /* reason */)
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CacheStorageHasError,
+                     int /* request_id */,
+                     blink::WebServiceWorkerCacheError /* reason */)
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CacheStorageCreateError,
+                     int /* request_id */,
+                     blink::WebServiceWorkerCacheError /* reason */)
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CacheStorageDeleteError,
+                     int /* request_id */,
+                     blink::WebServiceWorkerCacheError /* reason */)
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CacheStorageKeysError,
+                     int /* request_id */,
+                     blink::WebServiceWorkerCacheError /* reason */)

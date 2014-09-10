@@ -38,12 +38,12 @@
 #include "third_party/skia/include/core/SkPixelRef.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 WebGLImageBufferSurface::WebGLImageBufferSurface(const IntSize& size, OpacityMode opacityMode)
     : ImageBufferSurface(size, opacityMode)
 {
-    m_contextProvider = adoptPtr(blink::Platform::current()->createSharedOffscreenGraphicsContext3DProvider());
+    m_contextProvider = adoptPtr(Platform::current()->createSharedOffscreenGraphicsContext3DProvider());
     if (!m_contextProvider)
         return;
     GrContext* gr = m_contextProvider->grContext();
@@ -76,4 +76,4 @@ void WebGLImageBufferSurface::updateCachedBitmapIfNeeded()
     }
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -33,7 +33,7 @@
 #include "platform/TraceEvent.h"
 #include "platform/graphics/ImageFrameGenerator.h"
 
-namespace WebCore {
+namespace blink {
 
 DecodingImageGenerator::DecodingImageGenerator(PassRefPtr<ImageFrameGenerator> frameGenerator, const SkImageInfo& info, size_t index)
     : m_frameGenerator(frameGenerator)
@@ -68,7 +68,7 @@ bool DecodingImageGenerator::onGetInfo(SkImageInfo* info)
 
 bool DecodingImageGenerator::onGetPixels(const SkImageInfo& info, void* pixels, size_t rowBytes, SkPMColor ctable[], int* ctableCount)
 {
-    TRACE_EVENT1("webkit", "DecodingImageGenerator::getPixels", "index", static_cast<int>(m_frameIndex));
+    TRACE_EVENT1("blink", "DecodingImageGenerator::getPixels", "index", static_cast<int>(m_frameIndex));
 
     // Implementation doesn't support scaling yet so make sure we're not given
     // a different size.

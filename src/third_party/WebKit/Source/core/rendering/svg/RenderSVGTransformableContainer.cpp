@@ -28,7 +28,7 @@
 #include "core/svg/SVGGraphicsElement.h"
 #include "core/svg/SVGUseElement.h"
 
-namespace WebCore {
+namespace blink {
 
 RenderSVGTransformableContainer::RenderSVGTransformableContainer(SVGGraphicsElement* node)
     : RenderSVGContainer(node)
@@ -40,7 +40,7 @@ RenderSVGTransformableContainer::RenderSVGTransformableContainer(SVGGraphicsElem
 static bool hasValidPredecessor(const Node* node)
 {
     ASSERT(node);
-    while ((node = node->previousSibling())) {
+    for (node = node->previousSibling(); node; node = node->previousSibling()) {
         if (node->isSVGElement() && toSVGElement(node)->isValid())
             return true;
     }

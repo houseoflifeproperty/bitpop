@@ -11,7 +11,7 @@ from telemetry import decorators
 from telemetry.core.platform import platform_backend
 from telemetry.core.platform import posix_platform_backend
 from telemetry.core.platform import proc_supporting_platform_backend
-from telemetry.page import cloud_storage
+from telemetry.util import cloud_storage
 from telemetry.util import support_binaries
 
 
@@ -93,7 +93,7 @@ class LinuxPlatformBackend(
       changed |= cloud_storage.GetIfChanged(
           ipfw_mod, cloud_storage.INTERNAL_BUCKET)
     except cloud_storage.CloudStorageError, e:
-      logging.error(e)
+      logging.error(str(e))
       logging.error('You may proceed by manually installing dummynet. See: '
                     'http://info.iet.unipi.it/~luigi/dummynet/')
       sys.exit(1)
@@ -114,7 +114,7 @@ class LinuxPlatformBackend(
       cloud_storage.GetIfChanged(bin_path, cloud_storage.INTERNAL_BUCKET)
       os.chmod(bin_path, 0755)
     except cloud_storage.CloudStorageError, e:
-      logging.error(e)
+      logging.error(str(e))
       if fallback_package:
         logging.error('You may proceed by manually installing %s via:\n'
                       'sudo apt-get install %s' % (bin_name, fallback_package))

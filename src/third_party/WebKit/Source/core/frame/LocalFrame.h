@@ -35,8 +35,9 @@
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 #include "platform/scroll/ScrollTypes.h"
+#include "wtf/HashSet.h"
 
-namespace WebCore {
+namespace blink {
 
     class Color;
     class Document;
@@ -45,7 +46,9 @@ namespace WebCore {
     class EventHandler;
     class FetchContext;
     class FloatSize;
+    class FloatRect;
     class FrameConsole;
+    class FrameDestructionObserver;
     class FrameSelection;
     class FrameView;
     class InputMethodController;
@@ -74,8 +77,13 @@ namespace WebCore {
 
         virtual ~LocalFrame();
 
-        virtual void willDetachFrameHost() OVERRIDE;
-        virtual void detachFromFrameHost() OVERRIDE;
+        virtual void detach() OVERRIDE;
+
+        void addDestructionObserver(FrameDestructionObserver*);
+        void removeDestructionObserver(FrameDestructionObserver*);
+
+        void willDetachFrameHost();
+        void detachFromFrameHost();
 
         virtual void disconnectOwnerElement() OVERRIDE;
 
@@ -111,7 +119,6 @@ namespace WebCore {
 
         // See GraphicsLayerClient.h for accepted flags.
         String layerTreeAsText(unsigned flags = 0) const;
-        String trackedRepaintRectsAsText() const;
 
         void setPrinting(bool printing, const FloatSize& pageSize, const FloatSize& originalPageSize, float maximumShrinkRatio);
         bool shouldUsePrintingLayout() const;
@@ -128,8 +135,6 @@ namespace WebCore {
 
         void deviceOrPageScaleFactorChanged();
         double devicePixelRatio() const;
-
-        void sendOrientationChangeEvent();
 
         String documentTypeString() const;
 
@@ -152,6 +157,7 @@ namespace WebCore {
 
         String localLayerTreeAsText(unsigned flags) const;
 
+        HashSet<FrameDestructionObserver*> m_destructionObservers;
         mutable FrameLoader m_loader;
         mutable NavigationScheduler m_navigationScheduler;
 
@@ -239,7 +245,7 @@ namespace WebCore {
 
     DEFINE_TYPE_CASTS(LocalFrame, Frame, localFrame, localFrame->isLocalFrame(), localFrame.isLocalFrame());
 
-} // namespace WebCore
+} // namespace blink
 
 // During refactoring, there are some places where we need to do type conversions that
 // will not be needed once all instances of LocalFrame and RemoteFrame are sorted out.

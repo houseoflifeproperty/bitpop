@@ -4,11 +4,11 @@
 
 #include "ui/ozone/platform/caca/ozone_platform_caca.h"
 
-#include "ui/ozone/ozone_platform.h"
-#include "ui/ozone/platform/caca/caca_connection.h"
 #include "ui/ozone/platform/caca/caca_event_factory.h"
-#include "ui/ozone/platform/caca/caca_surface_factory.h"
+#include "ui/ozone/platform/caca/caca_window.h"
+#include "ui/ozone/platform/caca/caca_window_manager.h"
 #include "ui/ozone/public/cursor_factory_ozone.h"
+#include "ui/ozone/public/ozone_platform.h"
 
 #if defined(OS_CHROMEOS)
 #include "ui/ozone/common/chromeos/native_display_delegate_ozone.h"
@@ -26,7 +26,7 @@ class OzonePlatformCaca : public OzonePlatform {
 
   // OzonePlatform:
   virtual ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() OVERRIDE {
-    return surface_factory_ozone_.get();
+    return window_manager_.get();
   }
   virtual EventFactoryOzone* GetEventFactoryOzone() OVERRIDE {
     return event_factory_ozone_.get();
@@ -39,6 +39,15 @@ class OzonePlatformCaca : public OzonePlatform {
   }
   virtual GpuPlatformSupportHost* GetGpuPlatformSupportHost() OVERRIDE {
     return NULL;  // no GPU support
+  }
+  virtual scoped_ptr<PlatformWindow> CreatePlatformWindow(
+      PlatformWindowDelegate* delegate,
+      const gfx::Rect& bounds) OVERRIDE {
+    scoped_ptr<CacaWindow> caca_window(new CacaWindow(
+        delegate, window_manager_.get(), event_factory_ozone_.get(), bounds));
+    if (!caca_window->Initialize())
+      return scoped_ptr<PlatformWindow>();
+    return caca_window.PassAs<PlatformWindow>();
   }
 
 #if defined(OS_CHROMEOS)
@@ -54,16 +63,15 @@ class OzonePlatformCaca : public OzonePlatform {
 #endif
 
   virtual void InitializeUI() OVERRIDE {
-    surface_factory_ozone_.reset(new CacaSurfaceFactory(&connection_));
-    event_factory_ozone_.reset(new CacaEventFactory(&connection_));
+    window_manager_.reset(new CacaWindowManager);
+    event_factory_ozone_.reset(new CacaEventFactory());
     cursor_factory_ozone_.reset(new CursorFactoryOzone());
   }
 
   virtual void InitializeGPU() OVERRIDE {}
 
  private:
-  CacaConnection connection_;
-  scoped_ptr<CacaSurfaceFactory> surface_factory_ozone_;
+  scoped_ptr<CacaWindowManager> window_manager_;
   scoped_ptr<CacaEventFactory> event_factory_ozone_;
   scoped_ptr<CursorFactoryOzone> cursor_factory_ozone_;
 

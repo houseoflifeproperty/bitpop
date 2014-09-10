@@ -23,11 +23,13 @@ typedef ServiceWorkerVersion::MessageCallback MessageCallback;
 
 namespace {
 
-// Default delay to stop the worker context after all documents that
-// are associated to the worker are closed.
+// Default delay for scheduled stop.
 // (Note that if all references to the version is dropped the worker
 // is also stopped without delay)
 const int64 kStopWorkerDelay = 30;  // 30 secs.
+
+// Default delay for scheduled update.
+const int kUpdateDelaySeconds = 10;
 
 void RunSoon(const base::Closure& callback) {
   if (!callback.is_null())
@@ -96,6 +98,7 @@ ServiceWorkerVersion::ServiceWorkerVersion(
       status_(NEW),
       context_(context),
       script_cache_map_(this, context),
+      is_doomed_(false),
       weak_factory_(this) {
   DCHECK(context_);
   DCHECK(registration);
@@ -107,6 +110,8 @@ ServiceWorkerVersion::ServiceWorkerVersion(
   context_->AddLiveVersion(this);
   embedded_worker_ = context_->embedded_worker_registry()->CreateWorker();
   embedded_worker_->AddListener(this);
+  cache_listener_.reset(new ServiceWorkerCacheListener(this, context));
+  embedded_worker_->AddListener(cache_listener_.get());
 }
 
 ServiceWorkerVersion::~ServiceWorkerVersion() {
@@ -119,6 +124,10 @@ ServiceWorkerVersion::~ServiceWorkerVersion() {
 void ServiceWorkerVersion::SetStatus(Status status) {
   if (status_ == status)
     return;
+
+  // Schedule to stop worker after registration successfully completed.
+  if (status_ == ACTIVATING && status == ACTIVATED && !HasControllee())
+    ScheduleStopWorker();
 
   status_ = status;
 
@@ -149,11 +158,12 @@ ServiceWorkerVersionInfo ServiceWorkerVersion::GetInfo() {
 }
 
 void ServiceWorkerVersion::StartWorker(const StatusCallback& callback) {
-  StartWorkerWithCandidateProcesses(std::vector<int>(), callback);
+  StartWorkerWithCandidateProcesses(std::vector<int>(), false, callback);
 }
 
 void ServiceWorkerVersion::StartWorkerWithCandidateProcesses(
     const std::vector<int>& possible_process_ids,
+    bool pause_after_download,
     const StatusCallback& callback) {
   switch (running_status()) {
     case RUNNING:
@@ -170,6 +180,7 @@ void ServiceWorkerVersion::StartWorkerWithCandidateProcesses(
             version_id_,
             scope_,
             script_url_,
+            pause_after_download,
             possible_process_ids,
             base::Bind(&ServiceWorkerVersion::RunStartWorkerCallbacksOnError,
                        weak_factory_.GetWeakPtr()));
@@ -193,6 +204,33 @@ void ServiceWorkerVersion::StopWorker(const StatusCallback& callback) {
   stop_callbacks_.push_back(callback);
 }
 
+void ServiceWorkerVersion::ScheduleUpdate() {
+  if (update_timer_.IsRunning()) {
+    update_timer_.Reset();
+    return;
+  }
+  update_timer_.Start(
+      FROM_HERE, base::TimeDelta::FromSeconds(kUpdateDelaySeconds),
+      base::Bind(&ServiceWorkerVersion::StartUpdate,
+                 weak_factory_.GetWeakPtr()));
+}
+
+void ServiceWorkerVersion::DeferScheduledUpdate() {
+  if (update_timer_.IsRunning())
+    update_timer_.Reset();
+}
+
+void ServiceWorkerVersion::StartUpdate() {
+  update_timer_.Stop();
+  if (!context_)
+    return;
+  ServiceWorkerRegistration* registration =
+      context_->GetLiveRegistration(registration_id_);
+  if (!registration)
+    return;
+  context_->UpdateServiceWorker(registration);
+}
+
 void ServiceWorkerVersion::SendMessage(
     const IPC::Message& message, const StatusCallback& callback) {
   if (running_status() != RUNNING) {
@@ -212,8 +250,7 @@ void ServiceWorkerVersion::SendMessage(
 void ServiceWorkerVersion::DispatchInstallEvent(
     int active_version_id,
     const StatusCallback& callback) {
-  DCHECK_EQ(NEW, status()) << status();
-  SetStatus(INSTALLING);
+  DCHECK_EQ(INSTALLING, status()) << status();
 
   if (running_status() != RUNNING) {
     // Schedule calling this method after starting the worker.
@@ -232,8 +269,7 @@ void ServiceWorkerVersion::DispatchInstallEvent(
 
 void ServiceWorkerVersion::DispatchActivateEvent(
     const StatusCallback& callback) {
-  DCHECK_EQ(INSTALLED, status()) << status();
-  SetStatus(ACTIVATING);
+  DCHECK_EQ(ACTIVATING, status()) << status();
 
   if (running_status() != RUNNING) {
     // Schedule calling this method after starting the worker.
@@ -252,7 +288,7 @@ void ServiceWorkerVersion::DispatchActivateEvent(
 void ServiceWorkerVersion::DispatchFetchEvent(
     const ServiceWorkerFetchRequest& request,
     const FetchCallback& callback) {
-  DCHECK_EQ(ACTIVE, status()) << status();
+  DCHECK_EQ(ACTIVATED, status()) << status();
 
   if (running_status() != RUNNING) {
     // Schedule calling this method after starting the worker.
@@ -277,7 +313,7 @@ void ServiceWorkerVersion::DispatchFetchEvent(
 }
 
 void ServiceWorkerVersion::DispatchSyncEvent(const StatusCallback& callback) {
-  DCHECK_EQ(ACTIVE, status()) << status();
+  DCHECK_EQ(ACTIVATED, status()) << status();
 
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableServiceWorkerSync)) {
@@ -306,7 +342,7 @@ void ServiceWorkerVersion::DispatchSyncEvent(const StatusCallback& callback) {
 
 void ServiceWorkerVersion::DispatchPushEvent(const StatusCallback& callback,
                                              const std::string& data) {
-  DCHECK_EQ(ACTIVE, status()) << status();
+  DCHECK_EQ(ACTIVATED, status()) << status();
 
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableExperimentalWebPlatformFeatures)) {
@@ -362,22 +398,22 @@ void ServiceWorkerVersion::RemoveControllee(
   controllee_by_id_.Remove(found->second);
   controllee_map_.erase(found);
   RemoveProcessFromWorker(provider_host->process_id());
-  if (!HasControllee())
-    ScheduleStopWorker();
-  // TODO(kinuko): Fire NoControllees notification when the # of controllees
-  // reaches 0, so that a new pending version can be activated (which will
-  // deactivate this version).
-  // TODO(michaeln): On no controllees call storage DeleteVersionResources
-  // if this version has been deactivated. Probably storage can listen for
-  // NoControllees for versions that have been deleted.
+  if (HasControllee())
+    return;
+  FOR_EACH_OBSERVER(Listener, listeners_, OnNoControllees(this));
+  if (is_doomed_) {
+    DoomInternal();
+    return;
+  }
+  ScheduleStopWorker();
 }
 
-void ServiceWorkerVersion::AddWaitingControllee(
+void ServiceWorkerVersion::AddPotentialControllee(
     ServiceWorkerProviderHost* provider_host) {
   AddProcessToWorker(provider_host->process_id());
 }
 
-void ServiceWorkerVersion::RemoveWaitingControllee(
+void ServiceWorkerVersion::RemovePotentialControllee(
     ServiceWorkerProviderHost* provider_host) {
   RemoveProcessFromWorker(provider_host->process_id());
 }
@@ -390,8 +426,18 @@ void ServiceWorkerVersion::RemoveListener(Listener* listener) {
   listeners_.RemoveObserver(listener);
 }
 
+void ServiceWorkerVersion::Doom() {
+  if (is_doomed_)
+    return;
+  is_doomed_ = true;
+  if (!HasControllee())
+    DoomInternal();
+}
+
 void ServiceWorkerVersion::OnStarted() {
   DCHECK_EQ(RUNNING, running_status());
+  if (status() == ACTIVATED && !HasControllee())
+    ScheduleStopWorker();
   // Fire all start callbacks.
   RunCallbacks(this, &start_callbacks_, SERVICE_WORKER_OK);
   FOR_EACH_OBSERVER(Listener, listeners_, OnWorkerStarted(this));
@@ -492,6 +538,7 @@ void ServiceWorkerVersion::DispatchInstallEventAfterStartWorker(
     const StatusCallback& callback) {
   DCHECK_EQ(RUNNING, running_status())
       << "Worker stopped too soon after it was started.";
+
   int request_id = install_callbacks_.Add(new StatusCallback(callback));
   ServiceWorkerStatusCode status = embedded_worker_->SendMessage(
       ServiceWorkerMsg_InstallEvent(request_id, active_version_id));
@@ -505,6 +552,7 @@ void ServiceWorkerVersion::DispatchActivateEventAfterStartWorker(
     const StatusCallback& callback) {
   DCHECK_EQ(RUNNING, running_status())
       << "Worker stopped too soon after it was started.";
+
   int request_id = activate_callbacks_.Add(new StatusCallback(callback));
   ServiceWorkerStatusCode status =
       embedded_worker_->SendMessage(ServiceWorkerMsg_ActivateEvent(request_id));
@@ -531,25 +579,30 @@ void ServiceWorkerVersion::OnGetClientDocuments(int request_id) {
 void ServiceWorkerVersion::OnActivateEventFinished(
     int request_id,
     blink::WebServiceWorkerEventResult result) {
+  DCHECK(ACTIVATING == status() ||
+         REDUNDANT == status()) << status();
+
   StatusCallback* callback = activate_callbacks_.Lookup(request_id);
   if (!callback) {
     NOTREACHED() << "Got unexpected message: " << request_id;
     return;
   }
-  ServiceWorkerStatusCode status = SERVICE_WORKER_OK;
-  if (result == blink::WebServiceWorkerEventResultRejected)
-    status = SERVICE_WORKER_ERROR_ACTIVATE_WORKER_FAILED;
-  else
-    SetStatus(ACTIVE);
+  ServiceWorkerStatusCode rv = SERVICE_WORKER_OK;
+  if (result == blink::WebServiceWorkerEventResultRejected ||
+      status() != ACTIVATING) {
+    rv = SERVICE_WORKER_ERROR_ACTIVATE_WORKER_FAILED;
+  }
 
   scoped_refptr<ServiceWorkerVersion> protect(this);
-  callback->Run(status);
+  callback->Run(rv);
   activate_callbacks_.Remove(request_id);
 }
 
 void ServiceWorkerVersion::OnInstallEventFinished(
     int request_id,
     blink::WebServiceWorkerEventResult result) {
+  DCHECK_EQ(INSTALLING, status()) << status();
+
   StatusCallback* callback = install_callbacks_.Lookup(request_id);
   if (!callback) {
     NOTREACHED() << "Got unexpected message: " << request_id;
@@ -558,8 +611,6 @@ void ServiceWorkerVersion::OnInstallEventFinished(
   ServiceWorkerStatusCode status = SERVICE_WORKER_OK;
   if (result == blink::WebServiceWorkerEventResultRejected)
     status = SERVICE_WORKER_ERROR_INSTALL_WORKER_FAILED;
-  else
-    SetStatus(INSTALLED);
 
   scoped_refptr<ServiceWorkerVersion> protect(this);
   callback->Run(status);
@@ -632,6 +683,17 @@ void ServiceWorkerVersion::ScheduleStopWorker() {
       base::Bind(&ServiceWorkerVersion::StopWorker,
                  weak_factory_.GetWeakPtr(),
                  base::Bind(&ServiceWorkerUtils::NoOpStatusCallback)));
+}
+
+void ServiceWorkerVersion::DoomInternal() {
+  DCHECK(!HasControllee());
+  SetStatus(REDUNDANT);
+  StopWorker(base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
+  if (!context_)
+    return;
+  std::vector<ServiceWorkerDatabase::ResourceRecord> resources;
+  script_cache_map_.GetResources(&resources);
+  context_->storage()->PurgeResources(resources);
 }
 
 }  // namespace content

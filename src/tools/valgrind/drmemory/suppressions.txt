@@ -254,7 +254,7 @@ igdumd32.dll!*
 UNADDRESSABLE ACCESS
 name=http://code.google.com/p/drmemory/issues/detail?id=582 bizarre cl-generated read-beyond-TOS
 instruction=mov    0xfffffffc(%esp) -> %eax
-chrome.dll!WebCore::RenderStyle::resetBorder*
+chrome.dll!blink::RenderStyle::resetBorder*
 
 INVALID HEAP ARGUMENT
 name=http://crbug.com/101537, http://crbug.com/101717 (1)
@@ -524,9 +524,9 @@ system call NtGdiCreateCompatibleDC
 ...
 *!SkPaint::descriptorProc
 ...
-*!WebCore::RenderBlockFlow::layoutBlockFlow
-*!WebCore::RenderBlockFlow::layoutBlock
-*!WebCore::RenderBlock::layout
+*!blink::RenderBlockFlow::layoutBlockFlow
+*!blink::RenderBlockFlow::layoutBlock
+*!blink::RenderBlock::layout
 
 HANDLE LEAK
 name=https://code.google.com/p/drmemory/issues/detail?id=1545
@@ -558,9 +558,9 @@ UNADDRESSABLE ACCESS
 name=http://crbug.com/379204
 ...
 *!WTF::MessageQueue<>::waitForMessageWithTimeout
-*!WebCore::WorkerRunLoop::run
-*!WebCore::WorkerRunLoop::run
-*!WebCore::WorkerThread::workerThread
+*!blink::WorkerRunLoop::run
+*!blink::WorkerRunLoop::run
+*!blink::WorkerThread::workerThread
 *!WTF::threadEntryPoint
 
 GDI USAGE ERROR
@@ -614,10 +614,34 @@ name=http://crbug.com/313788
 *!ChromeBrowserMainParts::PreMainMessageLoopRunImpl
 *!ChromeBrowserMainParts::PreMainMessageLoopRun
 
+# This suppression is deliberately general, as bugs reported in
+# v8 generated code are difficult to track down. Xref Dr. Memory issue
+# https://code.google.com/p/drmemory/issues/detail?id=1582
 UNADDRESSABLE ACCESS
-name=http://crbug.com/386711
-*!IntranetRedirectDetector::FinishSleep
+name=https://code.google.com/p/drmemory/issues/detail?id=1582
+...
+*!v8::internal::Invoke
+*!v8::internal::Execution::Call
+*!v8::Function::Call
+
+HANDLE LEAK
+name=http://crbug.com/387394
+system call NtCreateTimer
+KERNELBASE.dll!CreateWaitableTimerExW
+KERNEL32.dll!CreateWaitableTimerW
+*!rtc::Timing::Timing
+...
+*!content::RenderProcessHostImpl::CreateMessageFilters
+*!content::RenderProcessHostImpl::Init
+*!content::RenderViewHostImpl::CreateRenderView
 
 UNADDRESSABLE ACCESS
-name=http://crbug.com/386741
-*!WebResourceService::StartFetch
+name=http://code.google.com/p/dynamorio/issues/detail?id=1443
+dynamorio.dll!*
+
+UNADDRESSABLE ACCESS
+name=http://crbug.com/400511
+content.dll!content::WebThreadBase::TaskObserverAdapter::WillProcessTask
+base.dll!base::MessageLoop::RunTask
+base.dll!base::Thread::StopSoon
+base.dll!base::MessageLoop::DeferOrRunPendingTask

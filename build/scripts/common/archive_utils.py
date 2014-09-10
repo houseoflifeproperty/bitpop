@@ -43,11 +43,7 @@ class Config(object):
   installer_exe = 'mini_installer.exe'
 
   # Test files to archive.
-  tests_to_archive = ['reliability_tests.exe',
-                      'test_shell.exe',
-                      'automated_ui_tests.exe',
-                      'ui_tests.exe',  # For syzygy (binary reorder) test bot
-                      'icudt.dll',
+  tests_to_archive = ['icudt.dll',
                       'icudt38.dll',
                       'icudt42.dll',
                       'icudt46.dll',

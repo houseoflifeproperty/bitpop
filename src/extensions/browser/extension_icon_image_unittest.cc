@@ -7,11 +7,11 @@
 #include "base/json/json_file_value_serializer.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
-#include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
 #include "extensions/browser/image_loader.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_paths.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "skia/ext/image_operations.h"
@@ -30,10 +30,8 @@ namespace {
 SkBitmap CreateBlankBitmapForScale(int size_dip, ui::ScaleFactor scale_factor) {
   SkBitmap bitmap;
   const float scale = ui::GetScaleForScaleFactor(scale_factor);
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                   static_cast<int>(size_dip * scale),
-                   static_cast<int>(size_dip * scale));
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(static_cast<int>(size_dip * scale),
+                        static_cast<int>(size_dip * scale));
   bitmap.eraseColor(SkColorSetARGB(0, 0, 0, 0));
   return bitmap;
 }
@@ -143,14 +141,14 @@ class ExtensionIconImageTest : public testing::Test,
                                            Manifest::Location location) {
     // Create and load an extension.
     base::FilePath test_file;
-    if (!PathService::Get(chrome::DIR_TEST_DATA, &test_file)) {
+    if (!PathService::Get(extensions::DIR_TEST_DATA, &test_file)) {
       EXPECT_FALSE(true);
       return NULL;
     }
-    test_file = test_file.AppendASCII("extensions").AppendASCII(name);
+    test_file = test_file.AppendASCII(name);
     int error_code = 0;
     std::string error;
-    JSONFileValueSerializer serializer(test_file.AppendASCII("app.json"));
+    JSONFileValueSerializer serializer(test_file.AppendASCII("manifest.json"));
     scoped_ptr<base::DictionaryValue> valid_value(
         static_cast<base::DictionaryValue*>(serializer.Deserialize(&error_code,
                                                                    &error)));

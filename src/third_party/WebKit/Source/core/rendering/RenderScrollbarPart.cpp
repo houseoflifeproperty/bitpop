@@ -32,9 +32,7 @@
 #include "core/rendering/RenderView.h"
 #include "platform/LengthFunctions.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 RenderScrollbarPart::RenderScrollbarPart(RenderScrollbar* scrollbar, ScrollbarPart part)
     : RenderBlock(0)
@@ -104,7 +102,7 @@ void RenderScrollbarPart::computeScrollbarWidth()
     int w = calcScrollbarThicknessUsing(MainOrPreferredSize, style()->width(), visibleSize);
     int minWidth = calcScrollbarThicknessUsing(MinSize, style()->minWidth(), visibleSize);
     int maxWidth = style()->maxWidth().isUndefined() ? w : calcScrollbarThicknessUsing(MaxSize, style()->maxWidth(), visibleSize);
-    setWidth(max(minWidth, min(maxWidth, w)));
+    setWidth(std::max(minWidth, std::min(maxWidth, w)));
 
     // Buttons and track pieces can all have margins along the axis of the scrollbar.
     m_marginBox.setLeft(minimumValueForLength(style()->marginLeft(), visibleSize));
@@ -121,7 +119,7 @@ void RenderScrollbarPart::computeScrollbarHeight()
     int h = calcScrollbarThicknessUsing(MainOrPreferredSize, style()->height(), visibleSize);
     int minHeight = calcScrollbarThicknessUsing(MinSize, style()->minHeight(), visibleSize);
     int maxHeight = style()->maxHeight().isUndefined() ? h : calcScrollbarThicknessUsing(MaxSize, style()->maxHeight(), visibleSize);
-    setHeight(max(minHeight, min(maxHeight, h)));
+    setHeight(std::max(minHeight, std::min(maxHeight, h)));
 
     // Buttons and track pieces can all have margins along the axis of the scrollbar.
     m_marginBox.setTop(minimumValueForLength(style()->marginTop(), visibleSize));
@@ -151,7 +149,7 @@ void RenderScrollbarPart::styleDidChange(StyleDifference diff, const RenderStyle
     clearPositionedState();
     setFloating(false);
     setHasOverflowClip(false);
-    if (oldStyle && m_scrollbar && m_part != NoPart && (diff.needsRepaint() || diff.needsLayout()))
+    if (oldStyle && m_scrollbar && m_part != NoPart && (diff.needsPaintInvalidation() || diff.needsLayout()))
         m_scrollbar->theme()->invalidatePart(m_scrollbar, m_part);
 }
 
@@ -177,9 +175,6 @@ void RenderScrollbarPart::paintIntoRect(GraphicsContext* graphicsContext, const 
     setLocation(rect.location() - toSize(paintOffset));
     setWidth(rect.width());
     setHeight(rect.height());
-
-    if (graphicsContext->paintingDisabled())
-        return;
 
     // Now do the paint.
     PaintInfo paintInfo(graphicsContext, pixelSnappedIntRect(rect), PaintPhaseBlockBackground, PaintBehaviorNormal);

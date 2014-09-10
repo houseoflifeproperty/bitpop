@@ -15,17 +15,17 @@
 #ifndef I18N_ADDRESSINPUT_ADDRESS_INPUT_HELPER_H_
 #define I18N_ADDRESSINPUT_ADDRESS_INPUT_HELPER_H_
 
-#include <vector>
-
 #include <libaddressinput/util/basictypes.h>
+
+#include <vector>
 
 namespace i18n {
 namespace addressinput {
 
 class LookupKey;
-class Node;
 class PreloadSupplier;
 struct AddressData;
+struct Node;
 
 class AddressInputHelper {
  public:

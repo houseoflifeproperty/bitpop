@@ -34,10 +34,11 @@
 
 #include "platform/fonts/SimpleFontData.h"
 #include "platform/fonts/FontDescription.h"
+#include "platform/fonts/FontFaceCreationParams.h"
+#include "third_party/skia/include/core/SkTypeface.h"
+#include "third_party/skia/include/ports/SkFontMgr.h"
 
-#include "SkTypeface_android.h"
-
-namespace WebCore {
+namespace blink {
 
 static AtomicString getFamilyNameForCharacter(UChar32 c, UScriptCode script)
 {
@@ -62,10 +63,13 @@ static AtomicString getFamilyNameForCharacter(UChar32 c, UScriptCode script)
         break;
     }
 
-    SkString skiaFamilyName;
-    if (!SkGetFallbackFamilyNameForChar(c, locale, &skiaFamilyName) || skiaFamilyName.isEmpty())
+    RefPtr<SkFontMgr> fm = adoptRef(SkFontMgr::RefDefault());
+    RefPtr<SkTypeface> typeface = adoptRef(fm->matchFamilyStyleCharacter(0, SkFontStyle(), locale, c));
+    if (!typeface)
         return emptyAtom;
 
+    SkString skiaFamilyName;
+    typeface->getFamilyName(&skiaFamilyName);
     return skiaFamilyName.c_str();
 }
 
@@ -74,7 +78,7 @@ PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(const FontDescrip
     AtomicString familyName = getFamilyNameForCharacter(c, fontDescription.script());
     if (familyName.isEmpty())
         return getLastResortFallbackFont(fontDescription, DoNotRetain);
-    return fontDataFromFontPlatformData(getFontPlatformData(fontDescription, familyName), DoNotRetain);
+    return fontDataFromFontPlatformData(getFontPlatformData(fontDescription, FontFaceCreationParams(familyName)), DoNotRetain);
 }
 
 // static
@@ -100,4 +104,4 @@ AtomicString FontCache::getGenericFamilyNameForScript(const AtomicString& family
     return getFamilyNameForCharacter(examplerChar, script);
 }
 
-} // namespace WebCore
+} // namespace blink

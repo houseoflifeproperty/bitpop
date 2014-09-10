@@ -31,6 +31,7 @@
 #include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
@@ -42,7 +43,7 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/weborigin/SecurityPolicy.h"
 
-namespace WebCore {
+namespace blink {
 
 static LocalFrame* createWindow(LocalFrame& openerFrame, LocalFrame& lookupFrame, const FrameLoadRequest& request, const WindowFeatures& features, NavigationPolicy policy, ShouldSendReferrer shouldSendReferrer, bool& created)
 {
@@ -60,7 +61,7 @@ static LocalFrame* createWindow(LocalFrame& openerFrame, LocalFrame& lookupFrame
     // Sandboxed frames cannot open new auxiliary browsing contexts.
     if (openerFrame.document()->isSandboxed(SandboxPopups)) {
         // FIXME: This message should be moved off the console once a solution to https://bugs.webkit.org/show_bug.cgi?id=103274 exists.
-        openerFrame.document()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, "Blocked opening '" + request.resourceRequest().url().elidedString() + "' in a new window because the request was made in a sandboxed frame whose 'allow-popups' permission is not set.");
+        openerFrame.document()->addConsoleMessage(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, "Blocked opening '" + request.resourceRequest().url().elidedString() + "' in a new window because the request was made in a sandboxed frame whose 'allow-popups' permission is not set."));
         return 0;
     }
 
@@ -131,7 +132,7 @@ LocalFrame* createWindow(const String& urlString, const AtomicString& frameName,
     Referrer referrer(SecurityPolicy::generateReferrerHeader(firstFrame.document()->referrerPolicy(), completedURL, firstFrame.document()->outgoingReferrer()), firstFrame.document()->referrerPolicy());
 
     ResourceRequest request(completedURL, referrer);
-    FrameLoader::addHTTPOriginIfNeeded(request, AtomicString(firstFrame.document()->outgoingOrigin()));
+    request.addHTTPOriginIfNeeded(AtomicString(firstFrame.document()->outgoingOrigin()));
     FrameLoadRequest frameRequest(callingWindow.document(), request, frameName);
 
     // We pass the opener frame for the lookupFrame in case the active frame is different from
@@ -189,4 +190,4 @@ void createWindowForRequest(const FrameLoadRequest& request, LocalFrame& openerF
     newFrame->loader().load(newRequest);
 }
 
-} // namespace WebCore
+} // namespace blink

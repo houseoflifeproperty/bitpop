@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "base/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
@@ -23,6 +24,7 @@
 struct PrintMsg_Print_Params;
 struct PrintMsg_PrintPage_Params;
 struct PrintMsg_PrintPages_Params;
+struct PrintHostMsg_SetOptionsFromDocument_Params;
 
 namespace base {
 class DictionaryValue;
@@ -177,6 +179,10 @@ class PrintWebViewHelper
   bool CalculateNumberOfPages(blink::WebLocalFrame* frame,
                               const blink::WebNode& node,
                               int* number_of_pages);
+
+  // Set options for print preset from source PDF document.
+  void SetOptionsFromDocument(
+      PrintHostMsg_SetOptionsFromDocument_Params& params);
 
   // Update the current print settings with new |passed_job_settings|.
   // |passed_job_settings| dictionary contains print job details such as printer
@@ -456,6 +462,12 @@ class PrintWebViewHelper
   bool is_loading_;
   bool is_scripted_preview_delayed_;
   base::WeakPtrFactory<PrintWebViewHelper> weak_ptr_factory_;
+
+  // Used to fix a race condition where the source is a PDF and print preview
+  // hangs because RequestPrintPreview is called before DidStopLoading() is
+  // called. This is a store for the RequestPrintPreview() call and its
+  // parameters so that it can be invoked after DidStopLoading.
+  base::Closure on_stop_loading_closure_;
   DISALLOW_COPY_AND_ASSIGN(PrintWebViewHelper);
 };
 

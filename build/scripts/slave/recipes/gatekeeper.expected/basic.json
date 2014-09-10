@@ -1,8 +1,52 @@
 [
   {
     "cmd": [
-      "[BUILD]/scripts/slave/gatekeeper_launch.py"
+      "python",
+      "-u",
+      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "[BUILD]/scripts/slave/gatekeeper_trees.json",
+      "/path/to/tmp/json"
     ],
-    "name": "gatekeeper_launch"
+    "name": "reading gatekeeper_trees.json",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"blink\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"build-db\": \"blink_build_db.json\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"masters\": [@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"https://build.chromium.org/p/chromium.webkit\"@@@",
+      "@@@STEP_LOG_LINE@json.output@    ], @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"open-tree\": true, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"password-file\": \".blink_status_password\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"revision-properties\": \"got_revision,got_webkit_revision\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"set-status\": true, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"status-url\": \"https://blink-status.appspot.com\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"track-revisions\": true@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/gatekeeper_ng.py",
+      "-v",
+      "--json",
+      "[BUILD]/scripts/slave/gatekeeper.json",
+      "--status-url",
+      "https://blink-status.appspot.com",
+      "--set-status",
+      "--open-tree",
+      "--track-revisions",
+      "--revision-properties",
+      "got_revision,got_webkit_revision",
+      "--build-db",
+      "blink_build_db.json",
+      "--password-file",
+      ".blink_status_password",
+      "https://build.chromium.org/p/chromium.webkit"
+    ],
+    "name": "gatekeeper: blink"
   }
 ]

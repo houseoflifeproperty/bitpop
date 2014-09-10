@@ -27,13 +27,14 @@
 #include "core/html/HTMLStyleElement.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 StyleSheetList::StyleSheetList(TreeScope* treeScope)
     : m_treeScope(treeScope)
 {
+    ScriptWrappable::init(this);
 }
 
 StyleSheetList::~StyleSheetList()
@@ -98,4 +99,4 @@ void StyleSheetList::trace(Visitor* visitor)
     visitor->trace(m_treeScope);
 }
 
-} // namespace WebCore
+} // namespace blink

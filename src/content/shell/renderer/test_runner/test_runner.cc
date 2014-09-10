@@ -8,11 +8,11 @@
 
 #include "base/logging.h"
 #include "content/shell/common/test_runner/test_preferences.h"
-#include "content/shell/renderer/test_runner/MockWebSpeechRecognizer.h"
-#include "content/shell/renderer/test_runner/TestInterfaces.h"
 #include "content/shell/renderer/test_runner/WebTestDelegate.h"
 #include "content/shell/renderer/test_runner/mock_web_push_client.h"
+#include "content/shell/renderer/test_runner/mock_web_speech_recognizer.h"
 #include "content/shell/renderer/test_runner/notification_presenter.h"
+#include "content/shell/renderer/test_runner/test_interfaces.h"
 #include "content/shell/renderer/test_runner/web_permissions.h"
 #include "content/shell/renderer/test_runner/web_test_proxy.h"
 #include "gin/arguments.h"
@@ -193,6 +193,8 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
                             int max_width,
                             int max_height);
   bool DisableAutoResizeMode(int new_width, int new_height);
+  void SetMockDeviceLight(double value);
+  void ResetDeviceLight();
   void SetMockDeviceMotion(gin::Arguments* args);
   void SetMockDeviceOrientation(gin::Arguments* args);
   void SetMockScreenOrientation(const std::string& orientation);
@@ -246,6 +248,7 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void DumpBackForwardList();
   void DumpSelectionRect();
   void SetPrinting();
+  void ClearPrinting();
   void SetShouldStayOnPageAfterHandlingBeforeUnload(bool value);
   void SetWillSendRequestClearHeader(const std::string& header);
   void DumpResourceRequestPriorities();
@@ -267,6 +270,7 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void SetMIDIAccessorResult(bool result);
   void SetMIDISysexPermission(bool value);
   void GrantWebNotificationPermission(gin::Arguments* args);
+  void ClearWebNotificationPermissions();
   bool SimulateWebNotificationClick(const std::string& value);
   void AddMockSpeechRecognitionResult(const std::string& transcript,
                                       double confidence);
@@ -278,11 +282,14 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void DisplayAsync();
   void DisplayAsyncThen(v8::Handle<v8::Function> callback);
   void CapturePixelsAsyncThen(v8::Handle<v8::Function> callback);
+  void CopyImageAtAndCapturePixelsAsyncThen(int x,
+                                            int y,
+                                            v8::Handle<v8::Function> callback);
   void SetCustomTextOutput(std::string output);
   void SetViewSourceForFrame(const std::string& name, bool enabled);
-  void setMockPushClientSuccess(const std::string& end_point,
+  void SetMockPushClientSuccess(const std::string& endpoint,
                                 const std::string& registration_id);
-  void setMockPushClientError(const std::string& message);
+  void SetMockPushClientError(const std::string& message);
 
   bool GlobalFlag();
   void SetGlobalFlag(bool value);
@@ -394,6 +401,8 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::EnableAutoResizeMode)
       .SetMethod("disableAutoResizeMode",
                  &TestRunnerBindings::DisableAutoResizeMode)
+      .SetMethod("setMockDeviceLight", &TestRunnerBindings::SetMockDeviceLight)
+      .SetMethod("resetDeviceLight", &TestRunnerBindings::ResetDeviceLight)
       .SetMethod("setMockDeviceMotion",
                  &TestRunnerBindings::SetMockDeviceMotion)
       .SetMethod("setMockDeviceOrientation",
@@ -402,8 +411,7 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::SetMockScreenOrientation)
       .SetMethod("didChangeBatteryStatus",
                  &TestRunnerBindings::DidChangeBatteryStatus)
-      .SetMethod("resetBatteryStatus",
-                 &TestRunnerBindings::ResetBatteryStatus)
+      .SetMethod("resetBatteryStatus", &TestRunnerBindings::ResetBatteryStatus)
       .SetMethod("didAcquirePointerLock",
                  &TestRunnerBindings::DidAcquirePointerLock)
       .SetMethod("didNotAcquirePointerLock",
@@ -476,6 +484,7 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::DumpBackForwardList)
       .SetMethod("dumpSelectionRect", &TestRunnerBindings::DumpSelectionRect)
       .SetMethod("setPrinting", &TestRunnerBindings::SetPrinting)
+      .SetMethod("clearPrinting", &TestRunnerBindings::ClearPrinting)
       .SetMethod(
            "setShouldStayOnPageAfterHandlingBeforeUnload",
            &TestRunnerBindings::SetShouldStayOnPageAfterHandlingBeforeUnload)
@@ -500,8 +509,7 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::PathToLocalResource)
       .SetMethod("setBackingScaleFactor",
                  &TestRunnerBindings::SetBackingScaleFactor)
-      .SetMethod("setColorProfile",
-                 &TestRunnerBindings::SetColorProfile)
+      .SetMethod("setColorProfile", &TestRunnerBindings::SetColorProfile)
       .SetMethod("setPOSIXLocale", &TestRunnerBindings::SetPOSIXLocale)
       .SetMethod("setMIDIAccessorResult",
                  &TestRunnerBindings::SetMIDIAccessorResult)
@@ -509,6 +517,8 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::SetMIDISysexPermission)
       .SetMethod("grantWebNotificationPermission",
                  &TestRunnerBindings::GrantWebNotificationPermission)
+      .SetMethod("clearWebNotificationPermissions",
+                 &TestRunnerBindings::ClearWebNotificationPermissions)
       .SetMethod("simulateWebNotificationClick",
                  &TestRunnerBindings::SimulateWebNotificationClick)
       .SetMethod("addMockSpeechRecognitionResult",
@@ -522,15 +532,18 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::RemoveWebPageOverlay)
       .SetMethod("displayAsync", &TestRunnerBindings::DisplayAsync)
       .SetMethod("displayAsyncThen", &TestRunnerBindings::DisplayAsyncThen)
-      .SetMethod("capturePixelsAsyncThen", &TestRunnerBindings::CapturePixelsAsyncThen)
+      .SetMethod("capturePixelsAsyncThen",
+                 &TestRunnerBindings::CapturePixelsAsyncThen)
+      .SetMethod("copyImageAtAndCapturePixelsAsyncThen",
+                 &TestRunnerBindings::CopyImageAtAndCapturePixelsAsyncThen)
       .SetMethod("setCustomTextOutput",
                  &TestRunnerBindings::SetCustomTextOutput)
       .SetMethod("setViewSourceForFrame",
                  &TestRunnerBindings::SetViewSourceForFrame)
       .SetMethod("setMockPushClientSuccess",
-                 &TestRunnerBindings::setMockPushClientSuccess)
+                 &TestRunnerBindings::SetMockPushClientSuccess)
       .SetMethod("setMockPushClientError",
-                 &TestRunnerBindings::setMockPushClientError)
+                 &TestRunnerBindings::SetMockPushClientError)
 
       // Properties.
       .SetProperty("globalFlag",
@@ -818,6 +831,17 @@ bool TestRunnerBindings::DisableAutoResizeMode(int new_width, int new_height) {
   if (runner_)
     return runner_->DisableAutoResizeMode(new_width, new_height);
   return false;
+}
+
+void TestRunnerBindings::SetMockDeviceLight(double value) {
+  if (!runner_)
+    return;
+  runner_->SetMockDeviceLight(value);
+}
+
+void TestRunnerBindings::ResetDeviceLight() {
+  if (runner_)
+    runner_->ResetDeviceLight();
 }
 
 void TestRunnerBindings::SetMockDeviceMotion(gin::Arguments* args) {
@@ -1161,6 +1185,11 @@ void TestRunnerBindings::SetPrinting() {
     runner_->SetPrinting();
 }
 
+void TestRunnerBindings::ClearPrinting() {
+  if (runner_)
+    runner_->ClearPrinting();
+}
+
 void TestRunnerBindings::SetShouldStayOnPageAfterHandlingBeforeUnload(
     bool value) {
   if (runner_)
@@ -1274,8 +1303,14 @@ void TestRunnerBindings::GrantWebNotificationPermission(gin::Arguments* args) {
     bool permission_granted = true;
     args->GetNext(&origin);
     args->GetNext(&permission_granted);
-    return runner_->GrantWebNotificationPermission(origin, permission_granted);
+    return runner_->GrantWebNotificationPermission(GURL(origin),
+                                                   permission_granted);
   }
+}
+
+void TestRunnerBindings::ClearWebNotificationPermissions() {
+  if (runner_)
+    runner_->ClearWebNotificationPermissions();
 }
 
 bool TestRunnerBindings::SimulateWebNotificationClick(
@@ -1329,6 +1364,12 @@ void TestRunnerBindings::CapturePixelsAsyncThen(
     runner_->CapturePixelsAsyncThen(callback);
 }
 
+void TestRunnerBindings::CopyImageAtAndCapturePixelsAsyncThen(
+    int x, int y, v8::Handle<v8::Function> callback) {
+  if (runner_)
+    runner_->CopyImageAtAndCapturePixelsAsyncThen(x, y, callback);
+}
+
 void TestRunnerBindings::SetCustomTextOutput(std::string output) {
   runner_->setCustomTextOutput(output);
 }
@@ -1343,14 +1384,15 @@ void TestRunnerBindings::SetViewSourceForFrame(const std::string& name,
   }
 }
 
-void TestRunnerBindings::setMockPushClientSuccess(
-  const std::string& end_point, const std::string& registration_id) {
+void TestRunnerBindings::SetMockPushClientSuccess(
+    const std::string& endpoint,
+    const std::string& registration_id) {
   if (!runner_)
     return;
-  runner_->SetMockPushClientSuccess(end_point, registration_id);
+  runner_->SetMockPushClientSuccess(endpoint, registration_id);
 }
 
-void TestRunnerBindings::setMockPushClientError(const std::string& message) {
+void TestRunnerBindings::SetMockPushClientError(const std::string& message) {
   if (!runner_)
     return;
   runner_->SetMockPushClientError(message);
@@ -1558,6 +1600,7 @@ void TestRunner::Reset() {
     delegate_->deleteAllCookies();
     delegate_->resetScreenOrientation();
     ResetBatteryStatus();
+    ResetDeviceLight();
   }
 
   dump_editting_callbacks_ = false;
@@ -2033,7 +2076,7 @@ void TestRunner::WaitForPolicyDelegate() {
 }
 
 int TestRunner::WindowCount() {
-  return test_interfaces_->windowList().size();
+  return test_interfaces_->GetWindowList().size();
 }
 
 void TestRunner::SetCloseRemainingWindowsWhenComplete(
@@ -2042,7 +2085,7 @@ void TestRunner::SetCloseRemainingWindowsWhenComplete(
 }
 
 void TestRunner::ResetTestHelperControllers() {
-  test_interfaces_->resetTestHelperControllers();
+  test_interfaces_->ResetTestHelperControllers();
 }
 
 void TestRunner::SetTabKeyCyclesThroughElements(
@@ -2261,6 +2304,14 @@ bool TestRunner::DisableAutoResizeMode(int new_width, int new_height) {
   WebSize new_size(new_width, new_height);
   delegate_->disableAutoResizeMode(new_size);
   return true;
+}
+
+void TestRunner::SetMockDeviceLight(double value) {
+  delegate_->setDeviceLightData(value);
+}
+
+void TestRunner::ResetDeviceLight() {
+  delegate_->setDeviceLightData(-1);
 }
 
 void TestRunner::SetMockDeviceMotion(
@@ -2608,6 +2659,10 @@ void TestRunner::SetPrinting() {
   is_printing_ = true;
 }
 
+void TestRunner::ClearPrinting() {
+  is_printing_ = false;
+}
+
 void TestRunner::SetShouldStayOnPageAfterHandlingBeforeUnload(bool value) {
   should_stay_on_page_after_handling_before_unload_ = value;
 }
@@ -2689,14 +2744,18 @@ void TestRunner::SetMIDIAccessorResult(bool result) {
 
 void TestRunner::SetMIDISysexPermission(bool value) {
   const std::vector<WebTestProxyBase*>& windowList =
-      test_interfaces_->windowList();
+      test_interfaces_->GetWindowList();
   for (unsigned i = 0; i < windowList.size(); ++i)
     windowList.at(i)->GetMIDIClientMock()->setSysexPermission(value);
 }
 
-void TestRunner::GrantWebNotificationPermission(const std::string& origin,
+void TestRunner::GrantWebNotificationPermission(const GURL& origin,
                                                 bool permission_granted) {
-  notification_presenter_->GrantPermission(origin, permission_granted);
+  delegate_->grantWebNotificationPermission(origin, permission_granted);
+}
+
+void TestRunner::ClearWebNotificationPermissions() {
+  delegate_->clearWebNotificationPermissions();
 }
 
 bool TestRunner::SimulateWebNotificationClick(const std::string& value) {
@@ -2705,18 +2764,18 @@ bool TestRunner::SimulateWebNotificationClick(const std::string& value) {
 
 void TestRunner::AddMockSpeechRecognitionResult(const std::string& transcript,
                                                 double confidence) {
-  proxy_->GetSpeechRecognizerMock()->addMockResult(
+  proxy_->GetSpeechRecognizerMock()->AddMockResult(
       WebString::fromUTF8(transcript), confidence);
 }
 
 void TestRunner::SetMockSpeechRecognitionError(const std::string& error,
                                                const std::string& message) {
-  proxy_->GetSpeechRecognizerMock()->setError(WebString::fromUTF8(error),
-                                           WebString::fromUTF8(message));
+  proxy_->GetSpeechRecognizerMock()->SetError(WebString::fromUTF8(error),
+                                              WebString::fromUTF8(message));
 }
 
 bool TestRunner::WasMockSpeechRecognitionAborted() {
-  return proxy_->GetSpeechRecognizerMock()->wasAborted();
+  return proxy_->GetSpeechRecognizerMock()->WasAborted();
 }
 
 void TestRunner::AddWebPageOverlay() {
@@ -2754,6 +2813,16 @@ void TestRunner::CapturePixelsAsyncThen(v8::Handle<v8::Function> callback) {
                                         base::Passed(&task)));
 }
 
+void TestRunner::CopyImageAtAndCapturePixelsAsyncThen(
+    int x, int y, v8::Handle<v8::Function> callback) {
+  scoped_ptr<InvokeCallbackTask> task(
+      new InvokeCallbackTask(this, callback));
+  proxy_->CopyImageAtAndCapturePixels(
+      x, y, base::Bind(&TestRunner::CapturePixelsCallback,
+                       base::Unretained(this),
+                       base::Passed(&task)));
+}
+
 void TestRunner::CapturePixelsCallback(scoped_ptr<InvokeCallbackTask> task,
                                        const SkBitmap& snapshot) {
   v8::Isolate* isolate = blink::mainThreadIsolate();
@@ -2768,17 +2837,29 @@ void TestRunner::CapturePixelsCallback(scoped_ptr<InvokeCallbackTask> task,
   v8::Handle<v8::Value> argv[3];
   SkAutoLockPixels snapshot_lock(snapshot);
 
+  // Size can be 0 for cases where copyImageAt was called on position
+  // that doesn't have an image.
   int width = snapshot.info().fWidth;
-  DCHECK_NE(0, width);
   argv[0] = v8::Number::New(isolate, width);
 
   int height = snapshot.info().fHeight;
-  DCHECK_NE(0, height);
   argv[1] = v8::Number::New(isolate, height);
 
   blink::WebArrayBuffer buffer =
       blink::WebArrayBuffer::create(snapshot.getSize(), 1);
   memcpy(buffer.data(), snapshot.getPixels(), buffer.byteLength());
+#if (SK_R32_SHIFT == 16) && !SK_B32_SHIFT
+  {
+    // Skia's internal byte order is BGRA. Must swap the B and R channels in
+    // order to provide a consistent ordering to the layout tests.
+    unsigned char* pixels = static_cast<unsigned char*>(buffer.data());
+    unsigned len = buffer.byteLength();
+    for (unsigned i = 0; i < len; i += 4) {
+      std::swap(pixels[i], pixels[i + 2]);
+    }
+  }
+#endif
+
   argv[2] = blink::WebArrayBufferConverter::toV8Value(
       &buffer, context->Global(), isolate);
 
@@ -2786,9 +2867,9 @@ void TestRunner::CapturePixelsCallback(scoped_ptr<InvokeCallbackTask> task,
   InvokeCallback(task.Pass());
 }
 
-void TestRunner::SetMockPushClientSuccess(
-  const std::string& end_point, const std::string& registration_id) {
-  proxy_->GetPushClientMock()->SetMockSuccessValues(end_point, registration_id);
+void TestRunner::SetMockPushClientSuccess(const std::string& endpoint,
+                                          const std::string& registration_id) {
+  proxy_->GetPushClientMock()->SetMockSuccessValues(endpoint, registration_id);
 }
 
 void TestRunner::SetMockPushClientError(const std::string& message) {

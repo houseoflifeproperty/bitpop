@@ -22,6 +22,8 @@
 #ifndef TypeTraits_h
 #define TypeTraits_h
 
+#include <utility>
+
 namespace WTF {
 
     // The following are provided in this file:
@@ -289,17 +291,17 @@ namespace WTF {
 
 } // namespace WTF
 
-namespace WebCore {
+namespace blink {
 
 class JSONValue;
 
-} // namespace WebCore
+} // namespace blink
 
 namespace WTF {
 
     // FIXME: Disable pointer conversion checking against JSONValue.
     // The current CodeGeneratorInspector.py generates code which upcasts to JSONValue from undefined types.
-    template<typename From> class IsPointerConvertible<From, WebCore::JSONValue> {
+    template<typename From> class IsPointerConvertible<From, blink::JSONValue> {
     public:
         enum {
             Value = true
@@ -312,7 +314,6 @@ class NeedsTracing {
     typedef struct NoType {
         char padding[8];
     } NoType;
-
 #if COMPILER(MSVC)
     template<typename V> static YesType checkHasTraceMethod(char[&V::trace != 0]);
 #else
@@ -321,7 +322,10 @@ class NeedsTracing {
 #endif // COMPILER(MSVC)
     template<typename V> static NoType checkHasTraceMethod(...);
 public:
-    static const bool value = sizeof(YesType) == sizeof(checkHasTraceMethod<T>(0));
+    // We add sizeof(T) to both sides here, because we want it to fail for
+    // incomplete types. Otherwise it just assumes that incomplete types do not
+    // have a trace method, which may not be true.
+    static const bool value = sizeof(YesType) + sizeof(T) == sizeof(checkHasTraceMethod<T>(0)) + sizeof(T);
 };
 
 // Convenience template wrapping the NeedsTracingLazily template in
@@ -330,6 +334,11 @@ template<typename Traits>
 class ShouldBeTraced {
 public:
     static const bool value = Traits::template NeedsTracingLazily<>::value;
+};
+
+template<typename T, typename U>
+struct NeedsTracing<std::pair<T, U> > {
+    static const bool value = NeedsTracing<T>::value || NeedsTracing<U>::value || IsWeak<T>::value || IsWeak<U>::value;
 };
 
 } // namespace WTF

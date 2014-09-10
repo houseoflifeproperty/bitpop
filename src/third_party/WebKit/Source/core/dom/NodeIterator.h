@@ -25,18 +25,18 @@
 #ifndef NodeIterator_h
 #define NodeIterator_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/NodeFilter.h"
 #include "core/dom/NodeIteratorBase.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
-class NodeIterator FINAL : public RefCountedWillBeGarbageCollectedFinalized<NodeIterator>, public ScriptWrappable, public NodeIteratorBase {
+class NodeIterator FINAL : public RefCountedWillBeGarbageCollected<NodeIterator>, public ScriptWrappable, public NodeIteratorBase {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NodeIterator);
 public:
     static PassRefPtrWillBeRawPtr<NodeIterator> create(PassRefPtrWillBeRawPtr<Node> rootNode, unsigned whatToShow, PassRefPtrWillBeRawPtr<NodeFilter> filter)
@@ -44,7 +44,9 @@ public:
         return adoptRefWillBeNoop(new NodeIterator(rootNode, whatToShow, filter));
     }
 
-    virtual ~NodeIterator();
+#if !ENABLE(OILPAN)
+    ~NodeIterator();
+#endif
 
     PassRefPtrWillBeRawPtr<Node> nextNode(ExceptionState&);
     PassRefPtrWillBeRawPtr<Node> previousNode(ExceptionState&);
@@ -86,6 +88,6 @@ private:
     NodePointer m_candidateNode;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NodeIterator_h

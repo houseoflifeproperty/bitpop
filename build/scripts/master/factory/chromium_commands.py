@@ -67,7 +67,6 @@ class ChromiumCommands(commands.FactoryCommands):
     self._lint_test_files_tool = J(s_dir, 'lint_test_files_wrapper.py')
     self._test_webkitpy_tool = J(s_dir, 'test_webkitpy_wrapper.py')
     self._archive_coverage = J(s_dir, 'archive_coverage.py')
-    self._gpu_archive_tool = J(s_dir, 'archive_gpu_pixel_test_results.py')
     self._cf_archive_tool = J(s_dir, 'cf_archive_build.py')
     self._archive_tool = J(s_dir, 'archive_build.py')
     self._sizes_tool = J(s_dir, 'sizes.py')
@@ -107,10 +106,6 @@ class ChromiumCommands(commands.FactoryCommands):
     self._telemetry_tool = self.PathJoin(self._script_dir, 'telemetry.py')
     self._telemetry_unit_tests = J('src', 'tools', 'telemetry', 'run_tests')
     self._telemetry_perf_unit_tests = J('src', 'tools', 'perf', 'run_tests')
-
-    # Virtual webcam check script.
-    self._virtual_webcam_script = J(self._script_dir, 'webrtc',
-                                    'ensure_webcam_is_running.py')
 
   def AddArchiveStep(self, data_description, base_url, link_text, command,
                      more_link_url=None, more_link_text=None,
@@ -392,11 +387,6 @@ class ChromiumCommands(commands.FactoryCommands):
     self.AddTestStep(shell.ShellCommand, 'check_bins', cmd,
                      do_step_if=self.TestStepFilter)
 
-  def AddVirtualWebcamCheck(self):
-    cmd = [self._python, self._virtual_webcam_script]
-    self.AddTestStep(shell.ShellCommand, 'ensure_virtual_webcam_is_up', cmd,
-                     do_step_if=self.TestStepFilter, usePTY=False)
-
   def AddBuildrunnerCheckBinsStep(self):
     cmd = [self._python, self._checkbins_tool, '--target', self._target]
     self.AddBuildrunnerTestStep(shell.ShellCommand, 'check_bins', cmd,
@@ -507,7 +497,9 @@ class ChromiumCommands(commands.FactoryCommands):
         py_script=True, factory_properties=factory_properties)
 
   def AddTabCapturePerformanceTests(self, factory_properties=None):
-    options = ['--enable-gpu']
+    options = ['--enable-gpu',
+               '--test-launcher-jobs=1',
+               '--test-launcher-print-test-stdio=always']
     tool_options = ['--no-xvfb']
 
     self.AddAnnotatedPerfStep('tab_capture_performance',
@@ -898,92 +890,6 @@ class ChromiumCommands(commands.FactoryCommands):
                                 test_command=cmd,
                                 do_step_if=self.TestStepFilter)
 
-  def AddWebRTCTests(self, tests, factory_properties, timeout=1200):
-    """Adds a list of tests, possibly prefixed for running within a tool.
-
-    To run a test under memcheck, prefix the test name with 'memcheck_'.
-    To run a test under tsan, prefix the test name with 'tsan_'.
-    The following prefixes are supported:
-    - 'memcheck_' for memcheck
-    - 'tsan_' for Thread Sanitizer (tsan)
-    - 'tsan_gcc_' for Thread Sanitizer (GCC)
-    - 'tsan_rv_' for Thread Sanitizer (RaceVerifier)
-    - 'drmemory_full_' for Dr Memory (full)
-    - 'drmemory_light_' for Dr Memory (light)
-    - 'drmemory_pattern_' for Dr Memory (pattern)
-
-    To run a test with perf measurements; add a key 'perf_measuring_tests'
-    mapped to a list of test names in the factory properties.
-
-    To run a test using the buildbot_tests.py script in WebRTC; add a key
-    'custom_cmd_line_tests' mapped to a list of test names in the factory
-    properties.
-
-    Args:
-      tests: List of test names, possibly prefixed as described above.
-      factory_properties: Dict of properties to be used during execution.
-      timeout: Max time a test may run before it is killed.
-    """
-
-    def M(test, prefix, fp, timeout):
-      """If the prefix matches the test name it is added and True is returned.
-      """
-      if test.startswith(prefix):
-        # Normally buildrunner tests would be added in chromium_factory. We need
-        # to add that logic here since we're in chromium_commands.
-        if test.endswith('_br'):
-          real_test = test[:-3]
-          self.AddBuildrunnerMemoryTest(
-              real_test[len(prefix):], prefix[:-1], timeout, fp)
-        else:
-          self.AddMemoryTest(test[len(prefix):], prefix[:-1], timeout, fp)
-        return True
-      return False
-
-    def IsPerf(test_name, factory_properties):
-      perf_measuring_tests = factory_properties.get('perf_measuring_tests', [])
-      return test_name in perf_measuring_tests
-
-    custom_cmd_line_tests = factory_properties.get('custom_cmd_line_tests', [])
-    for test in tests:
-      if M(test, 'memcheck_', factory_properties, timeout):
-        continue
-      if M(test, 'tsan_rv_', factory_properties, timeout):
-        continue
-      if M(test, 'tsan_', factory_properties, timeout):
-        continue
-      if M(test, 'drmemory_full_', factory_properties, timeout):
-        continue
-      if M(test, 'drmemory_light_', factory_properties, timeout):
-        continue
-      if M(test, 'drmemory_pattern_', factory_properties, timeout):
-        continue
-
-      if test in custom_cmd_line_tests:
-        # This hardcoded path is not pretty but it's better than duplicating
-        # the output-path-finding code that only seems to exist in runtest.py.
-        test_run_script = 'src/out/%s/buildbot_tests.py' % self._target
-        args_list = ['--test', test]
-        if IsPerf(test, factory_properties):
-          self.AddAnnotatedPerfStep(test_name=test, gtest_filter=None,
-                                    log_type='graphing',
-                                    factory_properties=factory_properties,
-                                    cmd_name=test_run_script,
-                                    cmd_options=args_list, step_name=test,
-                                    py_script=True)
-        else:
-          cmd = self.GetPythonTestCommand(test_run_script, arg_list=args_list)
-          self.AddTestStep(chromium_step.AnnotatedCommand, test, cmd)
-      else:
-        if IsPerf(test, factory_properties):
-          self.AddAnnotatedPerfStep(test_name=test, gtest_filter=None,
-                                    log_type='graphing',
-                                    factory_properties=factory_properties,
-                                    cmd_name=test)
-        else:
-          self.AddGTestTestStep(test_name=test,
-                                factory_properties=factory_properties)
-
   def AddWebkitTests(self, factory_properties=None):
     """Adds a step to the factory to run the WebKit layout tests.
 
@@ -1167,111 +1073,6 @@ class ChromiumCommands(commands.FactoryCommands):
                      'Download and extract official build', cmd,
                      halt_on_failure=True)
 
-  def AddGpuContentTests(self, factory_properties):
-    """Runs content_browsertests binary with selected gpu tests.
-
-    This binary contains content side browser tests that should be run on the
-    gpu bots.
-    """
-    # Put gpu data in /b/build/slave/SLAVE_NAME/gpu_data
-    gpu_data = self.PathJoin('..', 'content_gpu_data')
-    gen_dir = self.PathJoin(gpu_data, 'generated')
-    ref_dir = self.PathJoin(gpu_data, 'reference')
-
-    revision_arg = WithProperties('--build-revision=%(got_revision)s')
-
-    tests = ':'.join(['WebGLConformanceTest.*', 'Gpu*.*'])
-
-    self.AddGTestTestStep('content_browsertests', factory_properties,
-                          arg_list=['--use-gpu-in-tests',
-                                    '--generated-dir=%s' % gen_dir,
-                                    '--reference-dir=%s' % ref_dir,
-                                    revision_arg,
-                                    '--gtest_filter=%s' % tests,
-                                    '--ui-test-action-max-timeout=45000',
-                                    '--run-manual'],
-                          test_tool_arg_list=['--no-xvfb'])
-
-    # Setup environment for running gsutil, a Google Storage utility.
-    env = {}
-    env['GSUTIL'] = self._gsutil
-
-    cmd = [self._python,
-           self._gpu_archive_tool,
-           '--run-id', WithProperties('%(got_revision)s_%(buildername)s'),
-           '--generated-dir', gen_dir,
-           '--gpu-reference-dir', ref_dir]
-    self.AddTestStep(shell.ShellCommand, 'archive test results', cmd, env=env)
-
-  def AddBuildrunnerGpuContentTests(self, factory_properties):
-    """Runs content_browsertests with selected gpu tests under Buildrunner.
-
-    This binary contains content side browser tests that should be run on the
-    gpu bots.
-    """
-    # Put gpu data in /b/build/slave/SLAVE_NAME/gpu_data
-    gpu_data = self.PathJoin('..', 'content_gpu_data')
-    gen_dir = self.PathJoin(gpu_data, 'generated')
-    ref_dir = self.PathJoin(gpu_data, 'reference')
-
-    revision_arg = WithProperties('--build-revision=%(got_revision)s')
-
-    tests = ':'.join(['WebGLConformanceTest.*', 'Gpu*.*'])
-
-    self.AddBuildrunnerGTest('content_browsertests', factory_properties,
-                          arg_list=['--use-gpu-in-tests',
-                                    '--generated-dir=%s' % gen_dir,
-                                    '--reference-dir=%s' % ref_dir,
-                                    revision_arg,
-                                    '--gtest_filter=%s' % tests,
-                                    '--ui-test-action-max-timeout=45000',
-                                    '--run-manual'],
-                          test_tool_arg_list=['--no-xvfb'])
-
-    # Setup environment for running gsutil, a Google Storage utility.
-    env = {}
-    env['GSUTIL'] = self._gsutil
-
-    cmd = [self._python,
-           self._gpu_archive_tool,
-           '--run-id', WithProperties('%(got_revision)s_%(buildername)s'),
-           '--generated-dir', gen_dir,
-           '--gpu-reference-dir', ref_dir]
-    self.AddBuildrunnerTestStep(shell.ShellCommand, 'archive test results', cmd,
-                                env=env)
-
-  def AddGLTests(self, factory_properties=None):
-    """Runs gl_tests binary.
-
-    This binary contains unit tests that should be run on the gpu bots.
-    """
-    factory_properties = factory_properties or {}
-
-    self.AddGTestTestStep('gl_tests', factory_properties,
-                          test_tool_arg_list=['--no-xvfb'])
-
-  def AddContentGLTests(self, factory_properties=None):
-    """Runs content_gl_tests binary.
-
-    This binary contains unit tests from the content directory
-    that should be run on the gpu bots.
-    """
-    factory_properties = factory_properties or {}
-
-    self.AddGTestTestStep('content_gl_tests', factory_properties,
-                          test_tool_arg_list=['--no-xvfb'])
-
-  def AddGLES2ConformTest(self, factory_properties=None):
-    """Runs gles2_conform_test binary.
-
-    This binary contains the OpenGL ES 2.0 Conformance tests to be run on the
-    gpu bots.
-    """
-    factory_properties = factory_properties or {}
-
-    self.AddGTestTestStep('gles2_conform_test', factory_properties,
-                          test_tool_arg_list=['--no-xvfb'])
-
   def AddNaClIntegrationTestStep(self, factory_properties, target=None,
                                  buildbot_preset=None, timeout=1200):
     target = target or self._target
@@ -1341,28 +1142,6 @@ class ChromiumCommands(commands.FactoryCommands):
                           env=env,
                           maxTime=maxTime,
                           factory_properties=factory_properties)
-
-  def AddWebRtcPerfManualContentBrowserTests(self, factory_properties=None):
-    cmd_options = ['--run-manual', '--test-launcher-print-test-stdio=always']
-    self.AddAnnotatedPerfStep(test_name='webrtc_manual_content_browsertests',
-                              gtest_filter="WebRtc*",
-                              log_type='graphing',
-                              factory_properties=factory_properties,
-                              cmd_name='content_browsertests',
-                              cmd_options=cmd_options)
-
-  def AddWebRtcPerfManualBrowserTests(self, factory_properties=None):
-    # These tests needs --test-launcher-jobs=1 since some of them are not able
-    # to run in parallel (due to the usage of the peerconnection server).
-    cmd_options = ['--run-manual', '--ui-test-action-max-timeout=300000',
-                   '--test-launcher-jobs=1',
-                   '--test-launcher-print-test-stdio=always']
-    self.AddAnnotatedPerfStep(test_name='webrtc_manual_browser_tests',
-                              gtest_filter="WebRtc*",
-                              log_type='graphing',
-                              factory_properties=factory_properties,
-                              cmd_name='browser_tests',
-                              cmd_options=cmd_options)
 
   def AddMiniInstallerTestStep(self, factory_properties):
     cmd = [self._python, self._mini_installer_tests_tool,

@@ -12,7 +12,6 @@
 #include "chrome/browser/download/download_crx_util.h"
 #include "chrome/browser/download/download_extensions.h"
 #include "chrome/browser/download/download_prefs.h"
-#include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -21,11 +20,15 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "extensions/common/constants.h"
-#include "extensions/common/feature_switch.h"
 #include "grit/generated_resources.h"
 #include "net/base/filename_util.h"
 #include "net/base/mime_util.h"
 #include "ui/base/l10n/l10n_util.h"
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/webstore_installer.h"
+#include "extensions/common/feature_switch.h"
+#endif
 
 #if defined(ENABLE_PLUGINS)
 #include "chrome/browser/plugins/plugin_prefs.h"
@@ -51,7 +54,6 @@ const base::FilePath::CharType kCrdownloadSuffix[] =
 // midnight.
 void VisitCountsToVisitedBefore(
     const base::Callback<void(bool)>& callback,
-    HistoryService::Handle unused_handle,
     bool found_visits,
     int count,
     base::Time first_visit) {
@@ -517,8 +519,10 @@ DownloadTargetDeterminer::Result
 #if defined(OS_WIN)
   if (!local_path_.MatchesExtension(FILE_PATH_LITERAL(".pdf")))
     return CONTINUE;
-  if (!IsAdobeReaderDefaultPDFViewer())
+  if (!IsAdobeReaderDefaultPDFViewer()) {
+    g_is_adobe_reader_up_to_date_ = false;
     return CONTINUE;
+  }
 
   base::PostTaskAndReplyWithResult(
       BrowserThread::GetBlockingPool(),
@@ -592,10 +596,13 @@ DownloadTargetDeterminer::Result
 
       if (history_service && download_->GetReferrerUrl().is_valid()) {
         history_service->GetVisibleVisitCountToHost(
-            download_->GetReferrerUrl(), &history_consumer_,
-            base::Bind(&VisitCountsToVisitedBefore, base::Bind(
-                &DownloadTargetDeterminer::CheckVisitedReferrerBeforeDone,
-                weak_ptr_factory_.GetWeakPtr())));
+            download_->GetReferrerUrl(),
+            base::Bind(
+                &VisitCountsToVisitedBefore,
+                base::Bind(
+                    &DownloadTargetDeterminer::CheckVisitedReferrerBeforeDone,
+                    weak_ptr_factory_.GetWeakPtr())),
+            &history_tracker_);
         return QUIT_DOLOOP;
       }
     }
@@ -811,6 +818,7 @@ bool DownloadTargetDeterminer::IsDangerousFile(PriorVisitsToReferrer visits) {
     return false;
   }
 
+#if defined(ENABLE_EXTENSIONS)
   // Extensions that are not from the gallery are considered dangerous.
   // When off-store install is disabled we skip this, since in this case, we
   // will not offer to install the extension.
@@ -819,6 +827,7 @@ bool DownloadTargetDeterminer::IsDangerousFile(PriorVisitsToReferrer visits) {
       !extensions::WebstoreInstaller::GetAssociatedApproval(*download_)) {
     return true;
   }
+#endif
 
   // Anything the user has marked auto-open is OK if it's user-initiated.
   if (download_prefs_->IsAutoOpenEnabledBasedOnExtension(virtual_path_) &&

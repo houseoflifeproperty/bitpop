@@ -2,12 +2,6 @@
 # Copyright (c) 2013 The Native Client Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-#
-# IMPORTANT NOTE: If you make local mods to this file, you must run:
-#   %  pnacl/build.sh driver
-# in order for them to take effect in the scons build.  This command
-# updates the copy in the toolchain/ tree.
-#
 
 from driver_env import env
 import driver_tools
@@ -30,6 +24,7 @@ def main(argv):
   input = pathtools.normalize(args[-1])
   if filetype.IsPNaClBitcode(input):
     env.append('ARGS', '--bitcode-format=pnacl')
+  driver_tools.CheckPathLength(input)
   driver_tools.Run('"${PNACL_ABICHECK}" ${ARGS}')
   return 0;
 

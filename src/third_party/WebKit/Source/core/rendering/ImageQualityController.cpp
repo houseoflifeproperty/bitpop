@@ -35,7 +35,7 @@
 #include "core/frame/LocalFrame.h"
 #include "platform/graphics/GraphicsContext.h"
 
-namespace WebCore {
+namespace blink {
 
 static const double cLowQualityTimeThreshold = 0.500; // 500 ms
 
@@ -62,6 +62,12 @@ void ImageQualityController::remove(RenderObject* renderer)
 
 InterpolationQuality ImageQualityController::chooseInterpolationQuality(GraphicsContext* context, RenderObject* object, Image* image, const void* layer, const LayoutSize& layoutSize)
 {
+    if (object->style()->imageRendering() == ImageRenderingPixelated
+        && image
+        && (layoutSize.width() > image->width() || layoutSize.height() > image->height() || layoutSize == image->size())) {
+        return InterpolationNone;
+    }
+
     if (InterpolationDefault == InterpolationLow)
         return InterpolationLow;
 
@@ -146,7 +152,7 @@ bool ImageQualityController::shouldPaintAtLowQuality(GraphicsContext* context, R
 {
     // If the image is not a bitmap image, then none of this is relevant and we just paint at high
     // quality.
-    if (!image || !image->isBitmapImage() || context->paintingDisabled())
+    if (!image || !image->isBitmapImage())
         return false;
 
     if (object->style()->imageRendering() == ImageRenderingOptimizeContrast)
@@ -227,4 +233,4 @@ bool ImageQualityController::shouldPaintAtLowQuality(GraphicsContext* context, R
     return true;
 }
 
-} // namespace WebCore
+} // namespace blink

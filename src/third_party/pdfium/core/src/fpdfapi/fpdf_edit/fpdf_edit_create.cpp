@@ -1,7 +1,7 @@
 // Copyright 2014 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
- 
+
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "../../../include/fpdfapi/fpdf_serial.h"
@@ -334,7 +334,7 @@ void CPDF_FlateEncoder::CloneDict()
 FX_BOOL CPDF_FlateEncoder::Initialize(CPDF_Stream* pStream, FX_BOOL bFlateEncode)
 {
     m_Acc.LoadAllData(pStream, TRUE);
-    if (pStream->GetDict()->KeyExist("Filter") || !bFlateEncode) {
+    if ((pStream && pStream->GetDict() && pStream->GetDict()->KeyExist("Filter")) || !bFlateEncode) {
         if (pStream->GetDict()->KeyExist("Filter") && !bFlateEncode) {
             CPDF_StreamAcc destAcc;
             destAcc.LoadAllData(pStream);
@@ -544,8 +544,8 @@ FX_FILESIZE CPDF_ObjectStream::End(CPDF_Creator* pCreator)
 }
 CPDF_XRefStream::CPDF_XRefStream()
     : m_PrevOffset(0)
-    , m_iSeg(0)
     , m_dwTempObjNum(0)
+    , m_iSeg(0)
 {
 }
 FX_BOOL CPDF_XRefStream::Start()
@@ -1482,7 +1482,8 @@ FX_INT32 CPDF_Creator::WriteDoc_Stage1(IFX_Pause *pPause)
         if (m_bSecurityChanged && (m_dwFlags & FPDFCREATE_NO_ORIGINAL) == 0) {
             m_dwFlags &= ~FPDFCREATE_INCREMENTAL;
         }
-        m_pMetadata = m_pDocument->GetRoot()->GetElementValue(FX_BSTRC("Metadata"));
+        CPDF_Dictionary* pDict = m_pDocument->GetRoot();
+        m_pMetadata = pDict ? pDict->GetElementValue(FX_BSTRC("Metadata")) : NULL;
         if (m_dwFlags & FPDFCREATE_OBJECTSTREAM) {
             m_pXRefStream = FX_NEW CPDF_XRefStream;
             m_pXRefStream->Start();
@@ -2032,7 +2033,7 @@ void CPDF_Creator::InitID(FX_BOOL bDefault )
     if (!m_pIDArray) {
         FX_LPDWORD pBuffer = NULL;
         m_pIDArray = CPDF_Array::Create();
-        CPDF_Object* pID1 = pOldIDArray->GetElement(0);
+        CPDF_Object* pID1 = pOldIDArray ? pOldIDArray->GetElement(0) : NULL;
         if (pID1) {
             m_pIDArray->Add(pID1->Clone());
         } else {
@@ -2112,6 +2113,13 @@ FX_BOOL CPDF_Creator::SetFileVersion(FX_INT32 fileVersion )
     }
     m_FileVersion = fileVersion;
     return TRUE;
+}
+void CPDF_Creator::RemoveSecurity()
+{
+    ResetStandardSecurity();
+    m_bSecurityChanged = TRUE;
+    m_pEncryptDict = NULL;
+    m_pCryptoHandler = NULL;
 }
 void CPDF_Creator::ResetStandardSecurity()
 {

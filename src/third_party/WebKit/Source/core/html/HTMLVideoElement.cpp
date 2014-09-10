@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/html/HTMLVideoElement.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
@@ -40,8 +40,12 @@
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderVideo.h"
 #include "platform/UserGestureIndicator.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/gpu/Extensions3DUtil.h"
+#include "public/platform/WebCanvas.h"
+#include "public/platform/WebGraphicsContext3D.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -117,14 +121,14 @@ void HTMLVideoElement::parseAttribute(const QualifiedName& name, const AtomicStr
         if (shouldDisplayPosterImage()) {
             if (!m_imageLoader)
                 m_imageLoader = HTMLImageLoader::create(this);
-            m_imageLoader->updateFromElementIgnoringPreviousError();
+            m_imageLoader->updateFromElement(ImageLoader::UpdateIgnorePreviousError);
         } else {
             if (renderer())
                 toRenderImage(renderer())->imageResource()->setImageResource(0);
         }
         // Notify the player when the poster image URL changes.
-        if (player())
-            player()->setPoster(posterImageURL());
+        if (webMediaPlayer())
+            webMediaPlayer()->setPoster(posterImageURL());
     } else
         HTMLMediaElement::parseAttribute(name, value);
 }
@@ -197,17 +201,22 @@ void HTMLVideoElement::updateDisplayState()
 
 void HTMLVideoElement::paintCurrentFrameInContext(GraphicsContext* context, const IntRect& destRect) const
 {
-    MediaPlayer* player = HTMLMediaElement::player();
-    if (!player)
+    if (!webMediaPlayer())
         return;
-    player->paint(context, destRect);
+
+    WebCanvas* canvas = context->canvas();
+    webMediaPlayer()->paint(canvas, destRect, context->getNormalizedAlpha());
 }
 
-bool HTMLVideoElement::copyVideoTextureToPlatformTexture(blink::WebGraphicsContext3D* context, Platform3DObject texture, GLint level, GLenum type, GLenum internalFormat, bool premultiplyAlpha, bool flipY)
+bool HTMLVideoElement::copyVideoTextureToPlatformTexture(WebGraphicsContext3D* context, Platform3DObject texture, GLint level, GLenum internalFormat, GLenum type, bool premultiplyAlpha, bool flipY)
 {
-    if (!player())
+    if (!webMediaPlayer())
         return false;
-    return player()->copyVideoTextureToPlatformTexture(context, texture, level, type, internalFormat, premultiplyAlpha, flipY);
+
+    if (!Extensions3DUtil::canUseCopyTextureCHROMIUM(internalFormat, type, level) || !context->makeContextCurrent())
+        return false;
+
+    return webMediaPlayer()->copyVideoTextureToPlatformTexture(context, texture, level, internalFormat, type, premultiplyAlpha, flipY);
 }
 
 bool HTMLVideoElement::hasAvailableVideoFrame() const

@@ -32,13 +32,13 @@
 #ifndef SocketStreamHandleClient_h
 #define SocketStreamHandleClient_h
 
-namespace WebCore {
+namespace blink {
 
 class KURL;
 class SocketStreamError;
 class SocketStreamHandle;
 
-class SocketStreamHandleClient {
+class SocketStreamHandleClient : public GarbageCollectedMixin {
 public:
     virtual ~SocketStreamHandleClient() { }
 
@@ -48,8 +48,10 @@ public:
     virtual void didConsumeBufferedAmount(SocketStreamHandle*, size_t consumed) { }
 
     virtual void didFailSocketStream(SocketStreamHandle*, const SocketStreamError&) { }
+
+    virtual void trace(Visitor*) { }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SocketStreamHandleClient_h

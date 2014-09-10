@@ -20,6 +20,7 @@
 #import "chrome/browser/chrome_browser_application_mac.h"
 #include "chrome/browser/mac/install_from_dmg.h"
 #import "chrome/browser/mac/keystone_glue.h"
+#include "chrome/browser/mac/mac_startup_profiler.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -175,6 +176,8 @@ void ChromeBrowserMainPartsMac::PreEarlyInitialization() {
 }
 
 void ChromeBrowserMainPartsMac::PreMainMessageLoopStart() {
+  MacStartupProfiler::GetInstance()->Profile(
+      MacStartupProfiler::PRE_MAIN_MESSAGE_LOOP_START);
   ChromeBrowserMainPartsPosix::PreMainMessageLoopStart();
 
   // Tell Cocoa to finish its initialization, which we want to do manually
@@ -200,7 +203,8 @@ void ChromeBrowserMainPartsMac::PreMainMessageLoopStart() {
   // TODO(markusheintz): Read preference pref::kApplicationLocale in order
   // to enforce the application locale.
   const std::string loaded_locale =
-      ResourceBundle::InitSharedInstanceWithLocale(std::string(), NULL);
+      ui::ResourceBundle::InitSharedInstanceWithLocale(
+          std::string(), NULL, ui::ResourceBundle::LOAD_COMMON_RESOURCES);
   CHECK(!loaded_locale.empty()) << "Default locale could not be found";
 
   base::FilePath resources_pack_path;
@@ -257,7 +261,15 @@ void ChromeBrowserMainPartsMac::PreMainMessageLoopStart() {
   }];
 }
 
+void ChromeBrowserMainPartsMac::PostMainMessageLoopStart() {
+  MacStartupProfiler::GetInstance()->Profile(
+      MacStartupProfiler::POST_MAIN_MESSAGE_LOOP_START);
+  ChromeBrowserMainPartsPosix::PostMainMessageLoopStart();
+}
+
 void ChromeBrowserMainPartsMac::PreProfileInit() {
+  MacStartupProfiler::GetInstance()->Profile(
+      MacStartupProfiler::PRE_PROFILE_INIT);
   ChromeBrowserMainPartsPosix::PreProfileInit();
   // This is called here so that the app shim socket is only created after
   // taking the singleton lock.
@@ -266,6 +278,8 @@ void ChromeBrowserMainPartsMac::PreProfileInit() {
 }
 
 void ChromeBrowserMainPartsMac::PostProfileInit() {
+  MacStartupProfiler::GetInstance()->Profile(
+      MacStartupProfiler::POST_PROFILE_INIT);
   ChromeBrowserMainPartsPosix::PostProfileInit();
   g_browser_process->metrics_service()->RecordBreakpadRegistration(
       breakpad::IsCrashReporterEnabled());

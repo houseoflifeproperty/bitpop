@@ -40,7 +40,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class InjectedScriptManager;
 class HeapStatsUpdateTask;
@@ -49,10 +49,12 @@ class ScriptHeapSnapshot;
 typedef String ErrorString;
 
 class InspectorHeapProfilerAgent FINAL : public InspectorBaseAgent<InspectorHeapProfilerAgent>, public InspectorBackendDispatcher::HeapProfilerCommandHandler {
-    WTF_MAKE_NONCOPYABLE(InspectorHeapProfilerAgent); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(InspectorHeapProfilerAgent);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassOwnPtr<InspectorHeapProfilerAgent> create(InjectedScriptManager*);
+    static PassOwnPtrWillBeRawPtr<InspectorHeapProfilerAgent> create(InjectedScriptManager*);
     virtual ~InspectorHeapProfilerAgent();
+    virtual void trace(Visitor*) OVERRIDE;
 
     virtual void collectGarbage(ErrorString*) OVERRIDE;
 
@@ -82,13 +84,13 @@ private:
     void startTrackingHeapObjectsInternal(bool trackAllocations);
     void stopTrackingHeapObjectsInternal();
 
-    InjectedScriptManager* m_injectedScriptManager;
+    RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
     InspectorFrontend::HeapProfiler* m_frontend;
     unsigned m_nextUserInitiatedHeapSnapshotNumber;
-    OwnPtr<HeapStatsUpdateTask> m_heapStatsUpdateTask;
+    OwnPtrWillBeMember<HeapStatsUpdateTask> m_heapStatsUpdateTask;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // !defined(InspectorHeapProfilerAgent_h)

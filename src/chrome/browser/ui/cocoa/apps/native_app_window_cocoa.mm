@@ -16,7 +16,6 @@
 #import "chrome/browser/ui/cocoa/custom_frame_view.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_keybinding_registry_cocoa.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_view_mac.h"
-#import "chrome/browser/ui/cocoa/nsview_additions.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -191,9 +190,10 @@ std::vector<gfx::Rect> CalculateNonDraggableRegions(
   // No-op, swallow the event.
 }
 
-- (BOOL)handledByExtensionCommand:(NSEvent*)event {
+- (BOOL)handledByExtensionCommand:(NSEvent*)event
+    priority:(ui::AcceleratorManager::HandlerPriority)priority {
   if (appWindow_)
-    return appWindow_->HandledByExtensionCommand(event);
+    return appWindow_->HandledByExtensionCommand(event, priority);
   return NO;
 }
 
@@ -211,29 +211,10 @@ std::vector<gfx::Rect> CalculateNonDraggableRegions(
 @end
 @implementation ShellNSWindow
 
-- (instancetype)initWithContentRect:(NSRect)contentRect
-                          styleMask:(NSUInteger)windowStyle
-                            backing:(NSBackingStoreType)bufferingType
-                              defer:(BOOL)deferCreation {
-  if ((self = [super initWithContentRect:contentRect
-                               styleMask:windowStyle
-                                 backing:bufferingType
-                                   defer:deferCreation])) {
-    if ([self respondsToSelector:@selector(setTitleVisibility:)])
-      self.titleVisibility = NSWindowTitleHidden;
-  }
-
-  return self;
-}
-
 // Similar to ChromeBrowserWindow, don't draw the title, but allow it to be seen
 // in menus, Expose, etc.
 - (BOOL)_isTitleHidden {
-  // Only intervene with 10.6-10.9.
-  if ([self respondsToSelector:@selector(setTitleVisibility:)])
-    return [super _isTitleHidden];
-  else
-    return YES;
+  return YES;
 }
 
 - (void)drawCustomFrameRect:(NSRect)frameRect forView:(NSView*)view {
@@ -384,7 +365,7 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
   if (extension)
     name = extension->name();
   [window setTitle:base::SysUTF8ToNSString(name)];
-  [[window contentView] cr_setWantsLayer:YES];
+  [[window contentView] setWantsLayer:YES];
   if (has_frame_ && has_frame_color_) {
     [base::mac::ObjCCastStrict<ShellCustomFrameNSWindow>(window)
              setColor:gfx::SkColorToSRGBNSColor(active_frame_color_)
@@ -607,7 +588,7 @@ void NativeAppWindowCocoa::Hide() {
 }
 
 void NativeAppWindowCocoa::Close() {
-  [window() performClose:nil];
+  [window() close];
 }
 
 void NativeAppWindowCocoa::Activate() {
@@ -916,9 +897,11 @@ void NativeAppWindowCocoa::WindowWillZoom() {
     Maximize();
 }
 
-bool NativeAppWindowCocoa::HandledByExtensionCommand(NSEvent* event) {
+bool NativeAppWindowCocoa::HandledByExtensionCommand(
+    NSEvent* event,
+    ui::AcceleratorManager::HandlerPriority priority) {
   return extension_keybinding_registry_->ProcessKeyEvent(
-      content::NativeWebKeyboardEvent(event));
+      content::NativeWebKeyboardEvent(event), priority);
 }
 
 void NativeAppWindowCocoa::ShowWithApp() {

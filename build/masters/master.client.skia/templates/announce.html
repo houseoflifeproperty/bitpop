@@ -1,0 +1,342 @@
+{% extends "layout.html" %}
+{% from "tree_status.html" import treestatus %}
+
+{% block header -%}
+{{ super() }}
+<hr/>
+<script>
+  /**
+   * Pseudo namespace for chromium - keep it short because we are in a very
+   * narrow scope for this file.
+   * @type {Object}
+   */
+  var c = {};
+
+  /**
+   * Replaces html references with anchor tags to the same.
+   * @param {String} className CSS class to operate on.
+   */
+  function autoLink(className) {
+    var comments = document.querySelectorAll(className);
+    for(var i = 0; i < comments.length; i++) {
+      comments[i].innerHTML = comments[i].innerHTML.replace(
+          /https?:\/\/[^ \t\n<]*/g, '<a href="$&">$&</a>');
+    }
+  };
+
+  window.addEventListener("load", function() {
+    autoLink('.DevComment');
+  }, false);
+
+  /**
+   * This is the indicator for whether we are in console or waterfall
+   * mode, or some future resource.
+   * @type {String}
+   */
+  c.viewtype = location.pathname.split('/').slice(-1);
+
+  /**
+   * Returns a search string portion including marker, or an empty string.
+   * optional.
+   * @param {String} opt_s A search string, or some form of emptiness.
+   * @returns {!String}
+   */
+  function search(opt_s) {
+    return opt_s ? '?' + opt_s.replace(/^[?]/, '') : '';
+  };
+
+  /**
+   * Replicates a string.
+   * @param {Number} i A whole number of repetitions.
+   * @param {String} x The string to be repeated.
+   * @returns {!String}
+   */
+  function repeat(i, x){
+    var t = ''
+    for (j = 0; j < i; j++) { t += x; }
+    return t;
+  };
+
+  /**
+   * A simple HTML table string.
+   * @param {String} attributes A set of HTML attributes for the table.
+   * @param {String} contents The contents.
+   * @returns {!String}
+   */
+  function table(attributes, contents) {
+      return '<table ' + attributes + '>' + contents + '</table>\n';
+  };
+
+  /**
+   * A simple HTML div string.
+   * @param {String} attributes A set of HTML attributes for the div.
+   * @param {String} contents The contents.
+   * @returns {!String}
+   */
+  function div(attributes, contents) {
+    return '<div ' + attributes + '>' + contents + '</div>';
+  };
+
+  /**
+   * A simple HTML table row string.
+   * @param {String} attributes A set of HTML attributes for the table row.
+   * @param {String} contents The contents.
+   * @returns {!String}
+   */
+  function tr(contents) {
+    return '<tr>' + contents + '</tr>\n';
+  };
+
+  /**
+   * A simple HTML table cell string.
+   * @param {String} attributes A set of HTML attributes for the table cell.
+   * @param {String} contents The contents.
+   * @returns {!String}
+   */
+  function td(attributes, contents) {
+    return '<td ' + attributes + '>' + contents + '</td>';
+  };
+
+  /**
+   * A simple HTML anchor string.
+   * @param {String} url The value for the href.
+   * @param {String} attributes A set of HTML attributes for the table.
+   * @param {String} contents The contents.
+   * @returns {!String}
+   */
+  function a(url, contents, attributes) {
+    return '<a href="' + url + '" ' + attributes + '>' + contents + '</a>';
+  };
+
+  /**
+   * Gives an HTML anchor string to the specified URL, but of the same view
+   * type as the current page.
+   * @param {String} url The URL portion up to the view.
+   * @param {String} search_opt A the query portion.
+   * @param {String} contents The contents for the tag.
+   * @returns {!String}
+   */
+  function aView(url, search_opt, contents) {
+      return a((url ? url + '/' : '') + c.viewtype + search(search_opt),
+               contents, '')
+  };
+
+  /**
+   * A simple HTML iframe string.
+   * @param {String} attributes A set of HTML attributes for the table.
+   * @param {String} url The source of the iframe.
+   * @returns {!String} the iframe or an empty string if noframe is specified.
+   */
+  function iFrame(attributes, url) {
+      if (window.location.href.search('noframe') == -1) {
+          return '<iframe ' + attributes + ' src="' + url + '"></iframe>';
+      }
+      return ''
+  };
+</script>
+
+<div class="Announcement">
+
+{{ treestatus() }}
+
+<center style="padding: 0 7px">
+  <table width="100%" valign="top" bgcolor="#efefef" style="-webkit-border-bottom-left-radius: 24px; -webkit-border-bottom-right-radius: 24px; -moz-border-bottom-right-radius: 24px; -moz-border-bottom-right-radius: 24px;   box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.6); -moz-box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.6); -webkit-box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.6);">
+    <tr>
+      <td width="29%">
+        <table valign="top" width="100%">
+          <tr>
+            <td style="text-align: right;">
+               <b>External Links:</b>
+            </td>
+            <td style="text-align: left;">
+              <nobr><a href="https://sites.google.com/site/skiadocs/developer-documentation/the-skia-buildbots/1-overview" target="_blank">Full Skia documentation</a></nobr><br/>
+              <nobr><a href="https://skia-tree-status.appspot.com" target="_blank">Skia Tree Status Manager</a></nobr><br/>
+              <nobr><a href="https://code.google.com/p/skia/issues/list?can=2&amp;q=label%3ABreakingTheBuildbots" target="_blank">Current build-breaking bugs</a></nobr><br/>
+              <nobr><a href="http://go/skpdash" target="_blank">Bench Dashboard Internal</a></nobr><br/>
+              <nobr><a href="https://skia-tree-status.appspot.com/redirect/buildbots/bug_graphs.html" target="_blank">Open Bugs Graph</a></nobr><br/>
+              <nobr><a href="https://storage.cloud.google.com/chromium-skia-gm/static_analyzers/clang_static_analyzer/index.html" target="_blank">Clang Static Analyzer</a></nobr><br/>
+              <nobr><a href="https://skia-tree-status.appspot.com/redirect/buildbots/buildbots_self_analysis.html" target="_blank">Buildbot Self-Dashboard</a></nobr><br/>
+              <nobr><a href="https://skia-tree-status.appspot.com/redirect/buildbots/buildslave_idle.html" target="_blank">Buildslave Idle Time Analysis</a></nobr><br/>
+              <nobr><a href="https://skia-tree-status.appspot.com/sheriff" target="_blank">Sheriff Schedule</a></nobr><br/>
+              <nobr><a href="https://skia-tree-status.appspot.com/skia-telemetry/lua_script" target="_blank">Run Lua Scripts on SKP Repo</a></nobr><br/>
+              <nobr><a href="https://skia-tree-status.appspot.com/skia-telemetry/skia_try" target="_blank">Run Patches on SKP Repo</a></nobr><br/>
+              <nobr><a href="http://skia-tree-status.appspot.com/redirect/rebaseline-server/static/view.html#/view.html?resultsToLoad=/results/failures" target="_blank">Recent GM Failures</a></nobr><br/>
+              <nobr><a href="http://chromium-skia-gm.commondatastorage.googleapis.com/depsroll.html" target="_blank">Current DEPS roll attempt</a></nobr><br/>
+            </td>
+          </tr>
+        </table>
+      </td>
+      <td width="1" bgcolor="#CCCCCC">
+      </td>
+      <td width="1%">
+      </td>
+      <td width="70%">
+        <table width="100%">
+          <script language="javascript">
+            c.skia = '';
+            c.skia_old = '';
+            c.skia_fyi = '';
+            c.skia_android = '';
+            c.skia_compile = '';
+
+            c.status_skia = '../client.skia';
+            c.status_skia_old = 'https://skia-tree-status.appspot.com/redirect/buildbots/';
+            c.status_skia_fyi = 'https://skia-tree-status.appspot.com/redirect/fyi-buildbots/';
+            c.status_skia_android = 'https://skia-tree-status.appspot.com/redirect/android-buildbots/';
+            c.status_skia_compile = 'https://skia-tree-status.appspot.com/redirect/compile-buildbots/';
+
+            /**
+             * Builds a reference for the iframe with boxes.
+             * @param {String} x the name of the waterfall.
+             * @param {?Array.<String>} opt_builders an optional array of
+             *   builder names to use as a filter.
+             * @returns {String} The URL.
+             */
+            function BarUrl(x, opt_builders) {
+              builders = '';
+              if (opt_builders) {
+                for (var ii = 0; ii < opt_builders.length; ++ii) {
+                  if (ii == 0) {
+                    builders += '?';
+                  } else {
+                    builders += '&';
+                  }
+                  builders += 'builder=' + encodeURIComponent(opt_builders[ii]);
+                }
+              }
+              return 'https://build.chromium.org/p/' + x +
+                     '/horizontal_one_box_per_builder' + builders;
+            }
+            c.bar_skia = BarUrl('client.skia')
+            c.bar_skia_old = c.status_skia_old + "horizontal_one_box_per_builder";
+            c.bar_skia_fyi = c.status_skia_fyi + "horizontal_one_box_per_builder";
+            c.bar_skia_android = c.status_skia_android + "horizontal_one_box_per_builder";
+            c.bar_skia_compile = c.status_skia_compile + "horizontal_one_box_per_builder";
+
+            /**
+             * Joins URL and search terms.
+             * @param {String} type The Url without the cgi search portion.
+             * @param {String} content The parameters for the sub-selection
+             *                         inside the master.  Optional.
+             * @returns {String} A completed URL.
+             */
+            function GetUrl(type, content) {
+              return type + search(content);
+            }
+
+            /**
+             * Callback to replace the LKGR link with one that identifies
+             * the current revision for the LKGR.
+             */
+            function DisplayLKGR() {
+              var xmlHttp = new XMLHttpRequest();
+              var lkgrPath = c.status_lkgr +
+                             '/json/builders/Linux%20x64/builds/-1?as_text=1';
+              var lkgrLink = document.getElementById('LKGRLink');
+              xmlHttp.open('GET', lkgrPath, false);
+              xmlHttp.send(null);
+              if (xmlHttp.readyState == 4 && xmlHttp.status == 200) {
+                var buildData;
+                if (typeof (JSON) !== 'undefined' &&
+                    typeof (JSON.parse) === 'function') {
+                  buildData = JSON.parse(xmlHttp.responseText);
+                } else {
+                  buildData = eval('(' + xmlHttp.responseText + ')');
+                }
+                var properties = buildData['properties'];
+                for (var i = 0; i < properties.length; i++) {
+                  if (properties[i][0] == 'got_revision') {
+                    lkgrLink.innerHTML = 'LKGR<br>(' + properties[i][1] + ')';
+                    return;
+                  }
+                }
+              }
+            }
+
+            c.default_iframe_properties = [
+                'width="100%"',
+                'height="20"',
+                'frameborder="0"',
+                'scrolling="no"',
+            ].join(' ');
+
+            /**
+             * The most detailed specification of a builder bar with boxes.
+             * Reutrns an HTMLstring with 2 <td>s
+             * @param {String} status_url URL portion for the title link.
+             * @param {String} bar_url URL portion for the array of boxes.
+             * @param {String} content specification for the references, e.g..
+             * @param {String} name what to call this bar.
+             * @param {String} bar_properties extra attributes for the array
+             *                 of boxes portion.
+             * @param {String} link_properties extra attributes for the name
+             *                 portion that is a link.
+             * @returns {String}
+             */
+            function HTMLBaseBar(status_url, bar_url, content, name,
+                                 bar_properties, link_properties) {
+              return td('',
+                        a(GetUrl(status_url, content), name,
+                          link_properties)) +
+                     td(bar_properties,
+                        iFrame(c.default_iframe_properties,
+                               GetUrl(bar_url, content)));
+            }
+
+            /**
+             * The more common specification of a builder bar with boxes.
+             * Presume to take an entire row.
+             * @param {String} status_url URL portion for the title link.
+             * @param {String} bar_url URL portion for the array of boxes.
+             * @param {String} content specification for the references, e.g..
+             * @param {String} name what to call this bar.
+             * @returns {String}
+             */
+            function HTMLBar(status_url, bar_url, content, name) {
+              return tr(HTMLBaseBar(status_url, bar_url, content, name,
+                                    'width="99%" colspan=9', ''));
+            }
+
+            /**
+             * A specification of a builder bar with boxes, which is one of
+             * multiple in a row.
+             * Note that since these are elements of a table, percents
+             * can be irrelevant to the final layout.
+             * @param {String} status_url URL portion for the title link.
+             * @param {String} bar_url URL portion for the array of boxes.
+             * @param {String} content specification for the references, e.g..
+             * @param {String} name what to call this bar.
+             * @param {String} pc percent of the line to allocat to the boxes.
+             * @returns {String}
+             */
+            function HTMLSubBar(status_url, bar_url, content, name, pc) {
+              return HTMLBaseBar(status_url, bar_url, content, name,
+                                 'width="' + pc + '"', '');
+            }
+
+            document.write(tr(td(
+                'colspan=10 width="99%"',
+                  table(
+                    'width="100%"',
+                    tr(HTMLBaseBar(c.status_skia, c.bar_skia, c.skia, 'client.skia', 'width="100%"')) +
+                    tr(HTMLBaseBar(c.status_skia_old + "console", c.bar_skia_old, c.skia_old, 'client.skia.old', 'width="100%"')) +
+                    tr(HTMLBaseBar(c.status_skia_fyi + "console", c.bar_skia_fyi, c.skia_fyi, 'client.skia.fyi', 'width="100%"')) +
+                    tr(HTMLBaseBar(c.status_skia_android + "console", c.bar_skia_android, c.skia_android, 'client.skia.android', 'width="100%"')) +
+                    tr(HTMLBaseBar(c.status_skia_compile + "console", c.bar_skia_compile, c.skia_compile, 'client.skia.compile', 'width="100%"'))
+                  )
+            )));
+          </script>
+        </table>
+      </td>
+    </tr>
+  </table>
+</center>
+
+</div>
+{% endblock header %}
+
+{% block footer %}
+
+{{ super() }}
+{# <p>Debug info: {{ debuginfo }}</p> #}
+{% endblock %}

@@ -39,7 +39,7 @@ class ImageLayerDelegate : public ui::LayerDelegate {
   // Overridden from ui::LayerDelegate:
   virtual void OnPaintLayer(gfx::Canvas* canvas) OVERRIDE {
     if (image_.IsEmpty()) {
-      canvas->DrawColor(SK_ColorGRAY);
+      canvas->DrawColor(SK_ColorWHITE);
     } else {
       SkISize size = canvas->sk_canvas()->getDeviceSize();
       if (size.width() != image_size_.width() ||
@@ -197,8 +197,7 @@ ui::Layer* OverscrollNavigationOverlay::CreateSlideLayer(int offset) {
   gfx::Image image;
   if (entry && entry->screenshot().get()) {
     std::vector<gfx::ImagePNGRep> image_reps;
-    image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(),
-        ui::GetScaleFactorForNativeView(window_.get())));
+    image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(), 1.0f));
     image = gfx::Image(image_reps);
   }
   if (!layer_delegate_)

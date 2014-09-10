@@ -31,7 +31,6 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/base/hit_test.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
@@ -296,32 +295,6 @@ const char* BrowserNonClientFrameViewAsh::GetClassName() const {
   return kViewClassName;
 }
 
-bool BrowserNonClientFrameViewAsh::HitTestRect(const gfx::Rect& rect) const {
-  if (!views::View::HitTestRect(rect)) {
-    // |rect| is outside BrowserNonClientFrameViewAsh's bounds.
-    return false;
-  }
-
-  TabStrip* tabstrip = browser_view()->tabstrip();
-  if (tabstrip && browser_view()->IsTabStripVisible()) {
-    // Claim |rect| only if it is above the bottom of the tabstrip in a non-tab
-    // portion.
-    gfx::RectF rect_in_tabstrip_coords_f(rect);
-    View::ConvertRectToTarget(this, tabstrip, &rect_in_tabstrip_coords_f);
-    gfx::Rect rect_in_tabstrip_coords = gfx::ToEnclosingRect(
-        rect_in_tabstrip_coords_f);
-
-     if (rect_in_tabstrip_coords.y() > tabstrip->height())
-       return false;
-
-    return !tabstrip->HitTestRect(rect_in_tabstrip_coords) ||
-        tabstrip->IsRectInWindowCaption(rect_in_tabstrip_coords);
-  }
-
-  // Claim |rect| if it is above the top of the topmost view in the client area.
-  return rect.y() < GetTopInset();
-}
-
 void BrowserNonClientFrameViewAsh::GetAccessibleState(
     ui::AXViewState* state) {
   state->role = ui::AX_ROLE_TITLE_BAR;
@@ -340,6 +313,17 @@ gfx::Size BrowserNonClientFrameViewAsh::GetMinimumSize() const {
         min_tabstrip_width + GetTabStripLeftInset() + GetTabStripRightInset());
   }
   return gfx::Size(min_width, min_client_view_size.height());
+}
+
+void BrowserNonClientFrameViewAsh::
+  ChildPreferredSizeChanged(views::View* child) {
+  // FrameCaptionButtonContainerView animates the visibility changes in
+  // UpdateSizeButtonVisibility(false). Due to this a new size is not available
+  // until the completion of the animation. Layout in response to the preferred
+  // size changes.
+  if (child != caption_button_container_)
+    return;
+  frame()->GetRootView()->Layout();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -379,6 +363,36 @@ gfx::ImageSkia BrowserNonClientFrameViewAsh::GetFaviconForTabIconView() {
 
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserNonClientFrameViewAsh, private:
+
+// views::NonClientFrameView:
+bool BrowserNonClientFrameViewAsh::DoesIntersectRect(
+    const views::View* target,
+    const gfx::Rect& rect) const {
+  CHECK_EQ(target, this);
+  if (!views::ViewTargeterDelegate::DoesIntersectRect(this, rect)) {
+    // |rect| is outside BrowserNonClientFrameViewAsh's bounds.
+    return false;
+  }
+
+  TabStrip* tabstrip = browser_view()->tabstrip();
+  if (tabstrip && browser_view()->IsTabStripVisible()) {
+    // Claim |rect| only if it is above the bottom of the tabstrip in a non-tab
+    // portion.
+    gfx::RectF rect_in_tabstrip_coords_f(rect);
+    View::ConvertRectToTarget(this, tabstrip, &rect_in_tabstrip_coords_f);
+    gfx::Rect rect_in_tabstrip_coords = gfx::ToEnclosingRect(
+        rect_in_tabstrip_coords_f);
+
+     if (rect_in_tabstrip_coords.y() > tabstrip->height())
+       return false;
+
+    return !tabstrip->HitTestRect(rect_in_tabstrip_coords) ||
+        tabstrip->IsRectInWindowCaption(rect_in_tabstrip_coords);
+  }
+
+  // Claim |rect| if it is above the top of the topmost view in the client area.
+  return rect.y() < GetTopInset();
+}
 
 int BrowserNonClientFrameViewAsh::GetTabStripLeftInset() const {
   return avatar_button() ? kAvatarSideSpacing +

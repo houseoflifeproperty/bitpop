@@ -5,13 +5,12 @@
 #ifndef WebKitGamepad_h
 #define WebKitGamepad_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/gamepad/GamepadCommon.h"
 #include "platform/heap/Handle.h"
-#include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class WebKitGamepad FINAL : public GarbageCollectedFinalized<WebKitGamepad>, public GamepadCommon, public ScriptWrappable {
 public:
@@ -24,7 +23,7 @@ public:
     typedef Vector<float> FloatVector;
 
     const FloatVector& buttons() const { return m_buttons; }
-    void setButtons(unsigned count, const blink::WebGamepadButton* data);
+    void setButtons(unsigned count, const WebGamepadButton* data);
 
     void trace(Visitor*) { }
 
@@ -33,6 +32,6 @@ private:
     FloatVector m_buttons;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebKitGamepad_h

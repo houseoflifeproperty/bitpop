@@ -31,6 +31,7 @@
   'variables': {
     'webrtc_root%': '<(DEPTH)/webrtc',
     # TODO(ronghuawu): Chromium build will need a different libjingle_root.
+    'libjingle_tests_additional_deps%': [],
     'libjingle_root%': '<(DEPTH)',
     # TODO(ronghuawu): For now, disable the Chrome plugins, which causes a
     # flood of chromium-style warnings.
@@ -64,14 +65,10 @@
       'FEATURE_ENABLE_SSL',
       'FEATURE_ENABLE_VOICEMAIL',
       'FEATURE_ENABLE_PSTN',
-      # TODO(eric): enable HAVE_NSS_SSL_H and SSL_USE_NSS once they are ready.
-      # 'HAVE_NSS_SSL_H=1',
+      'HAVE_SCTP',
       'HAVE_SRTP',
       'HAVE_WEBRTC_VIDEO',
       'HAVE_WEBRTC_VOICE',
-      # 'SSL_USE_NSS',
-      # TODO(ronghuawu): Remove this once libjingle is updated to use the new
-      # webrtc.
       'USE_WEBRTC_DEV_BRANCH',
     ],
     'conditions': [
@@ -82,6 +79,7 @@
       ['OS=="linux"', {
         'defines': [
           'LINUX',
+          'WEBRTC_LINUX',
         ],
         'conditions': [
           ['clang==1', {
@@ -100,15 +98,25 @@
       ['OS=="mac"', {
         'defines': [
           'OSX',
+          'WEBRTC_MAC',
+        ],
+      }],
+      ['OS=="win"', {
+        'defines': [
+          'WEBRTC_WIN',
+        ],
+        'msvs_disabled_warnings': [
+          # https://code.google.com/p/chromium/issues/detail?id=372451#c20
+          # Warning 4702 ("Unreachable code") should be re-enabled once
+          # users are updated to VS2013 Update 2.
+            4702,
         ],
       }],
       ['OS=="ios"', {
         'defines': [
           'IOS',
-        ],
-      }, {
-        'defines': [
-          'HAVE_SCTP',
+          'WEBRTC_MAC',
+          'WEBRTC_IOS',
         ],
       }],
       ['OS=="ios" or (OS=="mac" and target_arch!="ia32")', {
@@ -130,40 +138,10 @@
         'defines': [
           'HASH_NAMESPACE=__gnu_cxx',
           'POSIX',
+          'WEBRTC_POSIX',
           'DISABLE_DYNAMIC_CAST',
           # The POSIX standard says we have to define this.
           '_REENTRANT',
-        ],
-      }],
-      # TODO(jiayl): collapse the following 5 defines into 2, one for NSS and
-      # one for OPENSSL, and update the relevant code.
-      ['use_openssl==1', {
-        'defines': [
-          'SSL_USE_OPENSSL',
-          'HAVE_OPENSSL_SSL_H',
-        ],
-        'dependencies': [
-          '<(DEPTH)/third_party/openssl/openssl.gyp:openssl',
-        ],
-      }, {
-        'defines': [
-          'SSL_USE_NSS',
-          'HAVE_NSS_SSL_H',
-          'SSL_USE_NSS_RNG',
-        ],
-        'conditions': [
-          ['os_posix == 1 and OS != "mac" and OS != "ios" and OS != "android"', {
-            'dependencies': [
-              '<(DEPTH)/build/linux/system.gyp:ssl',
-            ],
-          }],
-          ['OS == "mac" or OS == "ios" or OS == "win"', {
-            'dependencies': [
-              '<(DEPTH)/net/third_party/nss/ssl.gyp:libssl',
-              '<(DEPTH)/third_party/nss/nss.gyp:nspr',
-              '<(DEPTH)/third_party/nss/nss.gyp:nss',
-            ],
-          }],
         ],
       }],
     ],

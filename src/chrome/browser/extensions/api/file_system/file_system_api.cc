@@ -6,7 +6,6 @@
 
 #include "apps/app_window.h"
 #include "apps/app_window_registry.h"
-#include "apps/browser/file_handler_util.h"
 #include "apps/saved_files_service.h"
 #include "base/bind.h"
 #include "base/file_util.h"
@@ -21,6 +20,7 @@
 #include "base/values.h"
 #include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/path_util.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/apps/directory_access_confirmation_dialog.h"
@@ -34,6 +34,7 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/granted_file_entry.h"
 #include "extensions/common/permissions/api_permission.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "grit/generated_resources.h"
@@ -77,68 +78,6 @@ namespace ChooseEntry = file_system::ChooseEntry;
 
 namespace {
 
-#if defined(OS_MACOSX)
-// Retrieves the localized display name for the base name of the given path.
-// If the path is not localized, this will just return the base name.
-std::string GetDisplayBaseName(const base::FilePath& path) {
-  base::ScopedCFTypeRef<CFURLRef> url(CFURLCreateFromFileSystemRepresentation(
-      NULL, (const UInt8*)path.value().c_str(), path.value().length(), true));
-  if (!url)
-    return path.BaseName().value();
-
-  CFStringRef str;
-  if (LSCopyDisplayNameForURL(url, &str) != noErr)
-    return path.BaseName().value();
-
-  std::string result(base::SysCFStringRefToUTF8(str));
-  CFRelease(str);
-  return result;
-}
-
-// Prettifies |source_path| for OS X, by localizing every component of the
-// path. Additionally, if the path is inside the user's home directory, then
-// replace the home directory component with "~".
-base::FilePath PrettifyPath(const base::FilePath& source_path) {
-  base::FilePath home_path;
-  PathService::Get(base::DIR_HOME, &home_path);
-  DCHECK(source_path.IsAbsolute());
-
-  // Break down the incoming path into components, and grab the display name
-  // for every component. This will match app bundles, ".localized" folders,
-  // and localized subfolders of the user's home directory.
-  // Don't grab the display name of the first component, i.e., "/", as it'll
-  // show up as the HDD name.
-  std::vector<base::FilePath::StringType> components;
-  source_path.GetComponents(&components);
-  base::FilePath display_path = base::FilePath(components[0]);
-  base::FilePath actual_path = display_path;
-  for (std::vector<base::FilePath::StringType>::iterator i =
-           components.begin() + 1; i != components.end(); ++i) {
-    actual_path = actual_path.Append(*i);
-    if (actual_path == home_path) {
-      display_path = base::FilePath("~");
-      home_path = base::FilePath();
-      continue;
-    }
-    std::string display = GetDisplayBaseName(actual_path);
-    display_path = display_path.Append(display);
-  }
-  DCHECK_EQ(actual_path.value(), source_path.value());
-  return display_path;
-}
-#else  // defined(OS_MACOSX)
-// Prettifies |source_path|, by replacing the user's home directory with "~"
-// (if applicable).
-base::FilePath PrettifyPath(const base::FilePath& source_path) {
-  base::FilePath home_path;
-  base::FilePath display_path = base::FilePath::FromUTF8Unsafe("~");
-  if (PathService::Get(base::DIR_HOME, &home_path)
-      && home_path.AppendRelativePath(source_path, &display_path))
-    return display_path;
-  return source_path;
-}
-#endif  // defined(OS_MACOSX)
-
 bool g_skip_picker_for_test = false;
 bool g_use_suggested_path_for_test = false;
 base::FilePath* g_path_to_be_picked_for_test;
@@ -163,7 +102,7 @@ bool GetFileTypesFromAcceptOption(
          iter != list->end(); ++iter) {
       std::vector<base::FilePath::StringType> inner;
       std::string accept_type = *iter;
-      StringToLowerASCII(&accept_type);
+      base::StringToLowerASCII(&accept_type);
       net::GetExtensionsForMimeType(accept_type, &inner);
       if (inner.empty())
         continue;
@@ -188,7 +127,7 @@ bool GetFileTypesFromAcceptOption(
     for (std::vector<std::string>::const_iterator iter = list->begin();
          iter != list->end(); ++iter) {
       std::string extension = *iter;
-      StringToLowerASCII(&extension);
+      base::StringToLowerASCII(&extension);
 #if defined(OS_WIN)
       extension_set.insert(base::UTF8ToWide(*iter));
 #else
@@ -274,7 +213,7 @@ bool FileSystemGetDisplayPathFunction::RunSync() {
                                                           &error_))
     return false;
 
-  file_path = PrettifyPath(file_path);
+  file_path = path_util::PrettifyPath(file_path);
   SetResult(new base::StringValue(file_path.value()));
   return true;
 }
@@ -324,13 +263,12 @@ void FileSystemEntryFunction::AddEntryToResponse(
     const base::FilePath& path,
     const std::string& id_override) {
   DCHECK(response_);
-  apps::file_handler_util::GrantedFileEntry file_entry =
-      extensions::app_file_handler_util::CreateFileEntry(
-          GetProfile(),
-          GetExtension(),
-          render_view_host_->GetProcess()->GetID(),
-          path,
-          is_directory_);
+  GrantedFileEntry file_entry = app_file_handler_util::CreateFileEntry(
+      GetProfile(),
+      extension(),
+      render_view_host_->GetProcess()->GetID(),
+      path,
+      is_directory_);
   base::ListValue* entries;
   bool success = response_->GetList("entries", &entries);
   DCHECK(success);
@@ -666,7 +604,7 @@ void FileSystemChooseEntryFunction::FilesSelected(
   }
   file_system_api::SetLastChooseEntryDirectory(
       ExtensionPrefs::Get(GetProfile()),
-      GetExtension()->id(),
+      extension()->id(),
       last_choose_directory);
   if (is_directory_) {
     // Get the WebContents for the app window to be the parent window of the
@@ -894,7 +832,7 @@ bool FileSystemChooseEntryFunction::RunAsync() {
   file_type_info.support_drive = true;
 
   base::FilePath previous_path = file_system_api::GetLastChooseEntryDirectory(
-      ExtensionPrefs::Get(GetProfile()), GetExtension()->id());
+      ExtensionPrefs::Get(GetProfile()), extension()->id());
 
   content::BrowserThread::PostTaskAndReply(
       content::BrowserThread::FILE,
@@ -990,6 +928,24 @@ bool FileSystemRestoreEntryFunction::RunAsync() {
   }
   SendResponse(true);
   return true;
+}
+
+bool FileSystemObserveDirectoryFunction::RunSync() {
+  NOTIMPLEMENTED();
+  error_ = kUnknownIdError;
+  return false;
+}
+
+bool FileSystemUnobserveEntryFunction::RunSync() {
+  NOTIMPLEMENTED();
+  error_ = kUnknownIdError;
+  return false;
+}
+
+bool FileSystemGetObservedEntriesFunction::RunSync() {
+  NOTIMPLEMENTED();
+  error_ = kUnknownIdError;
+  return false;
 }
 
 }  // namespace extensions

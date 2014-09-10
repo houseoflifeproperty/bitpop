@@ -23,6 +23,8 @@ It can happen in following cases:
   * Test failed to start (missing *.dll/*.so dependency for example)
   * Test crashed or hung
   * Swarming service experiences problems
+
+Please examine logs to figure out what happened.
 """
 
 
@@ -78,9 +80,10 @@ def merge_shard_results(output_dir):
   # should be red anyway, since swarming.py return non-zero exit code in that
   # case.
   if merged['missing_shards']:
-    as_str = ' ,'.join(map(str, merged['missing_shards']))
+    as_str = ', '.join(map(str, merged['missing_shards']))
     emit_warning(
-        'some shards did not complete', MISSING_SHARDS_MSG % as_str)
+        'some shards did not complete: %s' % as_str,
+        MISSING_SHARDS_MSG % as_str)
     # Not all tests run, combined JSON summary can not be trusted.
     merged['global_tags'].add('UNRELIABLE_RESULTS')
 

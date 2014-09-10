@@ -35,7 +35,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Page;
 
@@ -46,6 +46,7 @@ public:
     static void provideTo(Page*);
 
     virtual ~InspectorIndexedDBAgent();
+    virtual void trace(Visitor*) OVERRIDE;
 
     virtual void clearFrontend() OVERRIDE;
     virtual void restore() OVERRIDE;
@@ -59,11 +60,11 @@ public:
     virtual void clearObjectStore(ErrorString*, const String& in_securityOrigin, const String& in_databaseName, const String& in_objectStoreName, PassRefPtr<ClearObjectStoreCallback>) OVERRIDE;
 
 private:
-    InspectorIndexedDBAgent(Page*);
+    explicit InspectorIndexedDBAgent(Page*);
 
-    Page* m_page;
+    RawPtrWillBeMember<Page> m_page;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InspectorIndexedDBAgent_h)

@@ -6,6 +6,12 @@ import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//content/browser/browser.gni")
 
+config("storage_config") {
+  if (is_android) {
+    defines = [ "APPCACHE_USE_SIMPLE_CACHE" ]
+  }
+}
+
 source_set("browser") {
   # Only targets in the content tree can depend directly on this target.
   visibility = [ "//content/*" ]
@@ -17,8 +23,9 @@ source_set("browser") {
   # Shared deps. See also non-iOS deps below.
   deps = [
     "//base",
+    "//base:base_static",
     "//content:resources",
-    "//content/browser/service_worker:database_proto",
+    "//content/browser/service_worker:proto",
     "//content/browser/speech/proto",
     "//crypto",
     "//google_apis",
@@ -74,34 +81,33 @@ source_set("browser") {
       "$root_gen_dir/webkit/grit/devtools_resources_map.cc",
       "$root_gen_dir/webkit/grit/devtools_resources_map.h",
       "$root_gen_dir/content/browser/tracing/grit/tracing_resources.h",
-      "$root_gen_dir/ui/ui_resources/grit/webui_resources_map.cc",
+      "$root_gen_dir/ui/resources/grit/webui_resources_map.cc",
       "$root_gen_dir/content/browser/devtools/devtools_protocol_constants.cc",
       "$root_gen_dir/content/browser/devtools/devtools_protocol_constants.h",
     ], ".")
 
     # Non-iOS deps.
     deps += [
+      "//cc",
+      "//cc/surfaces",
+      "//content/app/strings",
       "//content/browser/devtools:resources",
       "//content/common:mojo_bindings",
-      "//cc",
-      "//cc:cc_surfaces",
       "//mojo/public/cpp/bindings",
-      "//mojo/public/interfaces/service_provider:service_provider",
+      "//mojo/public/interfaces/application",
       "//mojo/public/js/bindings",
       "//net:http_server",
+      "//third_party/WebKit/public:resources",
+      "//third_party/angle:commit_id",
       "//third_party/icu",
       "//third_party/leveldatabase",
       "//third_party/libyuv",
       "//ui/resources",
       "//ui/surface",
-      "//ui/webui/resources",
-      "//webkit:resources",
-      "//webkit:strings",
       "//webkit/browser:storage",
       "//webkit/common",
       "//webkit/common:storage",
-      # TODO(GYP)
-      #"//third_party/angle:commit_id",
+      "//webkit/glue/resources",
     ]
   }
 
@@ -130,7 +136,7 @@ source_set("browser") {
     sources += [ "gamepad/gamepad_platform_data_fetcher.cc" ]
   }
 
-  if (enable_printing != 0) {
+  if (printing_mode != 0) {
     deps += [ "//printing" ]
   }
 
@@ -160,11 +166,15 @@ source_set("browser") {
       sources += [
         "media/capture/desktop_capture_device.cc",
         "media/capture/desktop_capture_device.h",
-        "media/capture/desktop_capture_device_aura.cc",
-        "media/capture/desktop_capture_device_aura.h",
         "media/capture/desktop_capture_device_uma_types.cc",
         "media/capture/desktop_capture_device_uma_types.h",
       ]
+      if (use_aura) {
+        sources += [
+          "media/capture/desktop_capture_device_aura.cc",
+          "media/capture/desktop_capture_device_aura.h",
+        ]
+      }
       defines += [ "ENABLE_SCREEN_CAPTURE=1" ]
       # TODO(GYP)
       #deps += [ "//third_party/webrtc/modules:desktop_capture" ]
@@ -235,6 +245,9 @@ source_set("browser") {
     if (!use_ozone || use_pango) {
       sources -= [ "renderer_host/pepper/pepper_truetype_font_list_ozone.cc" ]
     }
+    if (!use_pango) {
+      sources -= [ "renderer_host/pepper/pepper_truetype_font_list_pango.cc" ]
+    }
   }
 
   if (is_linux && use_aura) {
@@ -262,8 +275,6 @@ source_set("browser") {
       "browser_ipc_logging.cc",
       "device_sensors/data_fetcher_shared_memory_default.cc",
       "font_list_async.cc",
-      "geolocation/device_data_provider.cc",
-      "geolocation/empty_device_data_provider.cc",
       "geolocation/network_location_provider.cc",
       "geolocation/network_location_provider.h",
       "geolocation/network_location_request.cc",
@@ -297,7 +308,7 @@ source_set("browser") {
     ]
     deps += [
       #"//content:jni_headers",  TODO(GYP)
-      #"//media",  TODO(GYP)
+      "//media",
     ]
     libs += [ "jnigraphics" ]
   }
@@ -313,11 +324,17 @@ source_set("browser") {
 
   if (is_chromeos) {
     sources -= [
+      "battery_status/battery_status_manager_default.cc",
       "geolocation/wifi_data_provider_linux.cc",
-      "power_save_blocker_ozone.cc",
       "power_save_blocker_x11.cc",
     ]
     deps += [ "//chromeos:power_manager_proto" ]
+  }
+
+  if (!use_ozone || is_chromeos) {
+    sources -= [
+      "power_save_blocker_ozone.cc",
+    ]
   }
 
   if (use_aura) {
@@ -327,12 +344,29 @@ source_set("browser") {
     ]
   } else {  # Not aura.
     sources -= [
+      "renderer_host/input/synthetic_gesture_target_aura.cc",
+      "renderer_host/input/synthetic_gesture_target_aura.h",
+      "renderer_host/native_web_keyboard_event_aura.cc",
       "renderer_host/render_widget_host_view_aura.cc",
       "renderer_host/render_widget_host_view_aura.h",
-      "web_contents/touch_editable_impl_aura.cc",
-      "web_contents/touch_editable_impl_aura.h",
       "renderer_host/ui_events_helper.cc",
       "renderer_host/ui_events_helper.h",
+      "renderer_host/web_input_event_aura.cc",
+      "renderer_host/web_input_event_aura.h",
+      "web_contents/aura/gesture_nav_simple.cc",
+      "web_contents/aura/gesture_nav_simple.h",
+      "web_contents/aura/image_window_delegate.cc",
+      "web_contents/aura/image_window_delegate.h",
+      "web_contents/aura/overscroll_navigation_overlay.cc",
+      "web_contents/aura/overscroll_navigation_overlay.h",
+      "web_contents/aura/shadow_layer_delegate.cc",
+      "web_contents/aura/shadow_layer_delegate.h",
+      "web_contents/aura/window_slider.cc",
+      "web_contents/aura/window_slider.h",
+      "web_contents/touch_editable_impl_aura.cc",
+      "web_contents/touch_editable_impl_aura.h",
+      "web_contents/web_contents_view_aura.cc",
+      "web_contents/web_contents_view_aura.h",
     ]
   }
 
@@ -346,10 +380,19 @@ source_set("browser") {
         "compositor/software_output_device_x11.h",
       ]
     }
+
+    if (!use_ozone) {
+      sources -= [
+        "compositor/overlay_candidate_validator_ozone.cc",
+        "compositor/overlay_candidate_validator_ozone.h",
+        "compositor/software_output_device_ozone.cc",
+        "compositor/software_output_device_ozone.h",
+      ]
+    }
     deps += [ "//ui/compositor" ]
   }
 
-  if (enable_speech_input) {
+  if (enable_web_speech) {
     deps += [
       "//third_party/flac",
       "//third_party/speex",
@@ -359,12 +402,16 @@ source_set("browser") {
   if (is_linux) {
     if (use_dbus) {
       sources -= [
+        "battery_status/battery_status_manager_default.cc",
         "geolocation/empty_wifi_data_provider.cc",
       ]
       deps += [ "//dbus" ]
     } else {
       # This will already have gotten removed for all non-Linux cases.
-       sources -= [ "geolocation/wifi_data_provider_linux.cc" ]
+       sources -= [
+         "battery_status/battery_status_manager_linux.cc",
+         "geolocation/wifi_data_provider_linux.cc",
+       ]
     }
   }
 }

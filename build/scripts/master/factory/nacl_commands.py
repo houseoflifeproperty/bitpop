@@ -6,7 +6,6 @@
 
 Contains the Native Client specific commands. Based on commands.py"""
 
-from buildbot.steps import trigger
 from buildbot.process.properties import WithProperties
 
 from master import chromium_step
@@ -21,11 +20,9 @@ class NativeClientCommands(commands.FactoryCommands):
                                       target_platform)
 
   def AddTrigger(self, trigger_who):
-    self._factory.addStep(trigger.Trigger(
-        schedulerNames=[trigger_who],
-        updateSourceStamp=False,
-        waitForFinish=True,
-        set_properties={
+    self._factory.addStep(commands.CreateTriggerStep(
+        trigger_name=trigger_who,
+        trigger_set_properties={
             'triggered_by_buildername': WithProperties(
                 '%(buildername:-None)s'),
             'triggered_by_buildnumber': WithProperties(
@@ -34,7 +31,8 @@ class NativeClientCommands(commands.FactoryCommands):
                 '%(slavename:-None)s'),
             'triggered_by_revision': WithProperties(
                 '%(revision:-None)s'),
-        }))
+        },
+        waitForFinish=True))
 
   def AddAnnotatedStep(self, command, timeout=1200,
                        workdir='build/native_client', haltOnFailure=True,

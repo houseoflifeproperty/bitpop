@@ -26,7 +26,7 @@
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<MorphologyOperatorType>()
 {
@@ -52,13 +52,6 @@ inline SVGFEMorphologyElement::SVGFEMorphologyElement(Document& document)
 }
 
 DEFINE_NODE_FACTORY(SVGFEMorphologyElement)
-
-void SVGFEMorphologyElement::setRadius(float x, float y)
-{
-    radiusX()->baseValue()->setValue(x);
-    radiusY()->baseValue()->setValue(y);
-    invalidate();
-}
 
 bool SVGFEMorphologyElement::isSupportedAttribute(const QualifiedName& attrName)
 {
@@ -147,4 +140,4 @@ PassRefPtr<FilterEffect> SVGFEMorphologyElement::build(SVGFilterBuilder* filterB
     return effect.release();
 }
 
-} // namespace WebCore
+} // namespace blink

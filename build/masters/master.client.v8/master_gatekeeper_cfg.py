@@ -28,6 +28,7 @@ categories_steps = {
 exclusions = {
   'V8 Linux - mips - sim': ['compile'],
   'V8 Linux - x87 - nosnap - debug': [],
+  'V8 Linux - git': [],
 }
 
 forgiving_steps = ['update_scripts', 'update', 'svnkill', 'taskkill',

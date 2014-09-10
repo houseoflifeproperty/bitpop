@@ -45,10 +45,6 @@
 
 struct NPObject;
 
-#if BLINK_IMPLEMENTATION
-namespace WebCore { class Frame; }
-#endif
-
 namespace v8 {
 class Context;
 class Function;
@@ -60,6 +56,7 @@ template <class T> class Local;
 
 namespace blink {
 
+class Frame;
 class OpenedFrameTracker;
 class WebData;
 class WebDataSource;
@@ -150,7 +147,7 @@ public:
     // For a WebFrame with contents being rendered in another process, this
     // sets a layer for use by the in-process compositor. WebLayer should be
     // null if the content is being rendered in the current process.
-    virtual void setRemoteWebLayer(blink::WebLayer*) = 0;
+    virtual void setRemoteWebLayer(WebLayer*) = 0;
 
     // Initializes the various client interfaces.
     virtual void setPermissionClient(WebPermissionClient*) = 0;
@@ -500,6 +497,9 @@ public:
     // return true, otherwise return false.
     virtual bool isPrintScalingDisabledForPlugin(const WebNode& = WebNode()) = 0;
 
+    // Returns the number of copies to be printed.
+    virtual int getPrintCopiesForPlugin(const WebNode& = WebNode()) = 0;
+
     // CSS3 Paged Media ----------------------------------------------------
 
     // Returns true if page box (margin boxes and page borders) is visible.
@@ -674,7 +674,7 @@ public:
     virtual WebString layerTreeAsText(bool showDebugInfo = false) const = 0;
 
 #if BLINK_IMPLEMENTATION
-    static WebFrame* fromFrame(WebCore::Frame*);
+    static WebFrame* fromFrame(Frame*);
 #endif
 
 protected:
@@ -695,7 +695,7 @@ private:
 };
 
 #if BLINK_IMPLEMENTATION
-WebCore::Frame* toWebCoreFrame(const WebFrame*);
+Frame* toCoreFrame(const WebFrame*);
 #endif
 
 } // namespace blink

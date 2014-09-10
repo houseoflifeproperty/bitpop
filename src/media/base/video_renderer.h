@@ -8,6 +8,7 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
+#include "media/base/buffering_state.h"
 #include "media/base/media_export.h"
 #include "media/base/pipeline_status.h"
 
@@ -26,15 +27,20 @@ class MEDIA_EXPORT VideoRenderer {
   typedef base::Callback<base::TimeDelta()> TimeDeltaCB;
 
   VideoRenderer();
+
+  // Stops all operations and fires all pending callbacks.
   virtual ~VideoRenderer();
 
-  // Initialize a VideoRenderer with |stream|, executing |init_cb| upon
+  // Initializes a VideoRenderer with |stream|, executing |init_cb| upon
   // completion.
   //
   // |statistics_cb| is executed periodically with video rendering stats, such
   // as dropped frames.
   //
   // |time_cb| is executed whenever time has advanced by way of video rendering.
+  //
+  // |buffering_state_cb| is executed when video rendering has either run out of
+  // data or has enough data to continue playback.
   //
   // |ended_cb| is executed when video rendering has reached the end of stream.
   //
@@ -48,35 +54,23 @@ class MEDIA_EXPORT VideoRenderer {
                           const PipelineStatusCB& init_cb,
                           const StatisticsCB& statistics_cb,
                           const TimeCB& time_cb,
+                          const BufferingStateCB& buffering_state_cb,
                           const base::Closure& ended_cb,
                           const PipelineStatusCB& error_cb,
                           const TimeDeltaCB& get_time_cb,
                           const TimeDeltaCB& get_duration_cb) = 0;
 
-  // Start audio decoding and rendering at the current playback rate, executing
-  // |callback| when playback is underway.
-  virtual void Play(const base::Closure& callback) = 0;
-
-  // Discard any video data and stop reading from |stream|, executing |callback|
-  // when completed.
+  // Discards any video data and stops reading from |stream|, executing
+  // |callback| when completed.
+  //
+  // Clients should expect |buffering_state_cb| to be called with
+  // BUFFERING_HAVE_NOTHING while flushing is in progress.
   virtual void Flush(const base::Closure& callback) = 0;
 
-  // Start prerolling video data. If |time| equals kNoTimestamp() then all
-  // samples delivered to the renderer are used to complete preroll. If |time|
-  // does not equal kNoTimestamp(), then any samples delivered to the renderer
-  // with timestamps less than |time| are silently dropped and not used to
-  // satisfy preroll. |callback| is executed when preroll has completed.
+  // Starts playback by reading from |stream| and decoding and rendering video.
   //
-  // Only valid to call after a successful Initialize(), Pause(), or Flush().
-  virtual void Preroll(base::TimeDelta time,
-                       const PipelineStatusCB& callback) = 0;
-
-  // Stop all operations in preparation for being deleted, executing |callback|
-  // when complete.
-  virtual void Stop(const base::Closure& callback) = 0;
-
-  // Updates the current playback rate.
-  virtual void SetPlaybackRate(float playback_rate) = 0;
+  // Only valid to call after a successful Initialize() or Flush().
+  virtual void StartPlaying() = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(VideoRenderer);

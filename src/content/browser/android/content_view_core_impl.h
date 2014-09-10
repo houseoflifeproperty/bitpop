@@ -28,7 +28,7 @@ class WindowAndroid;
 }
 
 namespace content {
-class JavaBridgeDispatcherHostManager;
+class GinJavaBridgeDispatcherHost;
 class RenderWidgetHostViewAndroid;
 struct MenuItem;
 
@@ -54,7 +54,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   virtual void ShowPastePopup(int x, int y) OVERRIDE;
   virtual void GetScaledContentBitmap(
       float scale,
-      jobject bitmap_config,
+      SkColorType color_type,
       gfx::Rect src_subrect,
       const base::Callback<void(bool, const SkBitmap&)>& result_callback)
       OVERRIDE;
@@ -94,8 +94,6 @@ class ContentViewCoreImpl : public ContentViewCore,
       jstring virtual_url_for_data_url,
       jboolean can_load_local_resources,
       jboolean is_renderer_initiated);
-  base::android::ScopedJavaLocalRef<jstring> GetURL(JNIEnv* env, jobject) const;
-  jboolean IsIncognito(JNIEnv* env, jobject obj);
   void SendOrientationChangeEvent(JNIEnv* env, jobject obj, jint orientation);
   jboolean OnTouchEvent(JNIEnv* env,
                         jobject obj,
@@ -117,7 +115,8 @@ class ContentViewCoreImpl : public ContentViewCore,
                         jfloat raw_pos_y,
                         jint android_tool_type_0,
                         jint android_tool_type_1,
-                        jint android_button_state);
+                        jint android_button_state,
+                        jboolean is_touch_handle_event);
   jboolean SendMouseMoveEvent(JNIEnv* env,
                               jobject obj,
                               jlong time_ms,
@@ -151,6 +150,7 @@ class ContentViewCoreImpl : public ContentViewCore,
                                 jfloat x1, jfloat y1,
                                 jfloat x2, jfloat y2);
   void MoveCaret(JNIEnv* env, jobject obj, jfloat x, jfloat y);
+  void HideTextHandles(JNIEnv* env, jobject obj);
 
   void ResetGestureDetection(JNIEnv* env, jobject obj);
   void SetDoubleTapSupportEnabled(JNIEnv* env, jobject obj, jboolean enabled);
@@ -158,36 +158,20 @@ class ContentViewCoreImpl : public ContentViewCore,
                                        jobject obj,
                                        jboolean enabled);
 
-  void LoadIfNecessary(JNIEnv* env, jobject obj);
-  void RequestRestoreLoad(JNIEnv* env, jobject obj);
-  void Reload(JNIEnv* env, jobject obj, jboolean check_for_repost);
-  void ReloadIgnoringCache(JNIEnv* env, jobject obj, jboolean check_for_repost);
-  void CancelPendingReload(JNIEnv* env, jobject obj);
-  void ContinuePendingReload(JNIEnv* env, jobject obj);
-  void AddStyleSheetByURL(JNIEnv* env, jobject obj, jstring url);
   void ClearHistory(JNIEnv* env, jobject obj);
-  void EvaluateJavaScript(JNIEnv* env,
-                          jobject obj,
-                          jstring script,
-                          jobject callback,
-                          jboolean start_renderer);
+  void PostMessageToFrame(JNIEnv* env, jobject obj, jstring frame_id,
+      jstring message, jstring source_origin, jstring target_origin);
   long GetNativeImeAdapter(JNIEnv* env, jobject obj);
   void SetFocus(JNIEnv* env, jobject obj, jboolean focused);
-  void ScrollFocusedEditableNodeIntoView(JNIEnv* env, jobject obj);
-  void SelectWordAroundCaret(JNIEnv* env, jobject obj);
 
   jint GetBackgroundColor(JNIEnv* env, jobject obj);
   void SetBackgroundColor(JNIEnv* env, jobject obj, jint color);
-  void OnShow(JNIEnv* env, jobject obj);
-  void OnHide(JNIEnv* env, jobject obj);
   void ClearSslPreferences(JNIEnv* env, jobject /* obj */);
   void SetUseDesktopUserAgent(JNIEnv* env,
                               jobject /* obj */,
                               jboolean state,
                               jboolean reload_on_state_change);
   bool GetUseDesktopUserAgent(JNIEnv* env, jobject /* obj */);
-  void Show();
-  void Hide();
   void SetAllowJavascriptInterfacesInspection(JNIEnv* env,
                                               jobject obj,
                                               jboolean allow);
@@ -206,20 +190,6 @@ class ContentViewCoreImpl : public ContentViewCore,
   base::android::ScopedJavaLocalRef<jstring>
       GetOriginalUrlForActiveNavigationEntry(JNIEnv* env, jobject obj);
   void WasResized(JNIEnv* env, jobject obj);
-  jboolean IsRenderWidgetHostViewReady(JNIEnv* env, jobject obj);
-  void ExitFullscreen(JNIEnv* env, jobject obj);
-  void UpdateTopControlsState(JNIEnv* env,
-                              jobject obj,
-                              bool enable_hiding,
-                              bool enable_showing,
-                              bool animate);
-  void ShowImeIfNeeded(JNIEnv* env, jobject obj);
-
-  void ShowInterstitialPage(JNIEnv* env,
-                            jobject obj,
-                            jstring jurl,
-                            jlong delegate);
-  jboolean IsShowingInterstitialPage(JNIEnv* env, jobject obj);
 
   void SetAccessibilityEnabled(JNIEnv* env, jobject obj, bool enabled);
 
@@ -263,11 +233,16 @@ class ContentViewCoreImpl : public ContentViewCore,
                        const gfx::Vector2dF& content_offset,
                        float overdraw_bottom_height);
 
-  void UpdateImeAdapter(long native_ime_adapter, int text_input_type,
+  void UpdateImeAdapter(long native_ime_adapter,
+                        int text_input_type,
+                        int text_input_flags,
                         const std::string& text,
-                        int selection_start, int selection_end,
-                        int composition_start, int composition_end,
-                        bool show_ime_if_needed, bool is_non_ime_change);
+                        int selection_start,
+                        int selection_end,
+                        int composition_start,
+                        int composition_end,
+                        bool show_ime_if_needed,
+                        bool is_non_ime_change);
   void SetTitle(const base::string16& title);
   void OnBackgroundColorChanged(SkColor color);
 
@@ -276,8 +251,9 @@ class ContentViewCoreImpl : public ContentViewCore,
                          InputEventAckState ack_result);
   bool FilterInputEvent(const blink::WebInputEvent& event);
   void OnSelectionChanged(const std::string& text);
-  void OnSelectionBoundsChanged(
-      const ViewHostMsg_SelectionBounds_Params& params);
+  void OnSelectionEvent(SelectionEventType event,
+                        const gfx::PointF& anchor_position);
+  scoped_ptr<TouchHandleDrawable> CreatePopupTouchHandleDrawable();
 
   void StartContentIntent(const GURL& content_url);
 
@@ -307,7 +283,7 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   void SetAccessibilityEnabledInternal(bool enabled);
 
-  void ShowSelectionHandlesAutomatically() const;
+  bool IsFullscreenRequiredForOrientationLock() const;
 
   // --------------------------------------------------------------------------
   // Methods called from native code
@@ -320,6 +296,9 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   void AttachLayer(scoped_refptr<cc::Layer> layer);
   void RemoveLayer(scoped_refptr<cc::Layer> layer);
+
+  void SelectBetweenCoordinates(const gfx::PointF& start,
+                                const gfx::PointF& end);
 
  private:
   class ContentViewUserData;
@@ -387,8 +366,8 @@ class ContentViewCoreImpl : public ContentViewCore,
   bool accessibility_enabled_;
 
   // Manages injecting Java objects.
-  scoped_ptr<JavaBridgeDispatcherHostManager>
-      java_bridge_dispatcher_host_manager_;
+  scoped_ptr<GinJavaBridgeDispatcherHost>
+      java_bridge_dispatcher_host_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentViewCoreImpl);
 };

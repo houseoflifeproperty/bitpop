@@ -20,6 +20,7 @@
 #include "net/dns/single_request_host_resolver.h"
 #include "net/http/http_server_properties.h"
 #include "net/quic/congestion_control/tcp_receiver.h"
+#include "net/quic/crypto/channel_id_chromium.h"
 #include "net/quic/crypto/proof_verifier_chromium.h"
 #include "net/quic/crypto/quic_random.h"
 #include "net/quic/crypto/quic_server_info.h"
@@ -84,16 +85,16 @@ bool IsEcdsaSupported() {
   return true;
 }
 
-QuicConfig InitializeQuicConfig(bool enable_pacing,
-                                bool enable_time_based_loss_detection) {
+QuicConfig InitializeQuicConfig(bool enable_time_based_loss_detection,
+                                const QuicTagVector& connection_options) {
   QuicConfig config;
   config.SetDefaults();
-  config.EnablePacing(enable_pacing);
   if (enable_time_based_loss_detection)
     config.SetLossDetectionToSend(kTIME);
   config.set_idle_connection_state_lifetime(
       QuicTime::Delta::FromSeconds(kIdleConnectionTimeoutSeconds),
       QuicTime::Delta::FromSeconds(kIdleConnectionTimeoutSeconds));
+  config.SetConnectionOptionsToSend(connection_options);
   return config;
 }
 
@@ -450,6 +451,7 @@ QuicStreamFactory::QuicStreamFactory(
     ClientSocketFactory* client_socket_factory,
     base::WeakPtr<HttpServerProperties> http_server_properties,
     CertVerifier* cert_verifier,
+    ChannelIDService* channel_id_service,
     TransportSecurityState* transport_security_state,
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
     QuicRandom* random_generator,
@@ -458,30 +460,33 @@ QuicStreamFactory::QuicStreamFactory(
     const std::string& user_agent_id,
     const QuicVersionVector& supported_versions,
     bool enable_port_selection,
-    bool enable_pacing,
-    bool enable_time_based_loss_detection)
+    bool enable_time_based_loss_detection,
+    const QuicTagVector& connection_options)
     : require_confirmation_(true),
       host_resolver_(host_resolver),
       client_socket_factory_(client_socket_factory),
       http_server_properties_(http_server_properties),
-      cert_verifier_(cert_verifier),
+      transport_security_state_(transport_security_state),
       quic_server_info_factory_(NULL),
       quic_crypto_client_stream_factory_(quic_crypto_client_stream_factory),
       random_generator_(random_generator),
       clock_(clock),
       max_packet_length_(max_packet_length),
-      config_(InitializeQuicConfig(enable_pacing,
-                                   enable_time_based_loss_detection)),
+      config_(InitializeQuicConfig(enable_time_based_loss_detection,
+                                   connection_options)),
       supported_versions_(supported_versions),
       enable_port_selection_(enable_port_selection),
       port_seed_(random_generator_->RandUint64()),
       weak_factory_(this) {
+  DCHECK(transport_security_state_);
   crypto_config_.SetDefaults();
   crypto_config_.set_user_agent_id(user_agent_id);
   crypto_config_.AddCanonicalSuffix(".c.youtube.com");
   crypto_config_.AddCanonicalSuffix(".googlevideo.com");
   crypto_config_.SetProofVerifier(
       new ProofVerifierChromium(cert_verifier, transport_security_state));
+  crypto_config_.SetChannelIDSource(
+      new ChannelIDSourceChromium(channel_id_service));
   base::CPU cpu;
   if (cpu.has_aesni() && cpu.has_avx())
     crypto_config_.PreferAesGcm();
@@ -824,9 +829,13 @@ int QuicStreamFactory::CreateSession(
         clock_.get(), random_generator_));
   }
 
-  QuicConnection* connection =
-      new QuicConnection(connection_id, addr, helper_.get(), writer.get(),
-                         false, supported_versions_);
+  QuicConnection* connection = new QuicConnection(connection_id,
+                                                  addr,
+                                                  helper_.get(),
+                                                  writer.get(),
+                                                  false  /* owns_writer */,
+                                                  false  /* is_server */,
+                                                  supported_versions_);
   writer->SetConnection(connection);
   connection->set_max_packet_length(max_packet_length_);
 
@@ -850,10 +859,11 @@ int QuicStreamFactory::CreateSession(
 
   *session = new QuicClientSession(
       connection, socket.Pass(), writer.Pass(), this,
-      quic_crypto_client_stream_factory_, server_info.Pass(), server_id,
-      config, &crypto_config_,
+      quic_crypto_client_stream_factory_, transport_security_state_,
+      server_info.Pass(), server_id, config, &crypto_config_,
       base::MessageLoop::current()->message_loop_proxy().get(),
       net_log.net_log());
+  (*session)->InitializeSession();
   all_sessions_[*session] = server_id;  // owning pointer
   return OK;
 }
@@ -934,7 +944,7 @@ void QuicStreamFactory::ProcessGoingAwaySession(
   // session connected until the handshake has been confirmed.
   HistogramBrokenAlternateProtocolLocation(
       BROKEN_ALTERNATE_PROTOCOL_LOCATION_QUIC_STREAM_FACTORY);
-  PortAlternateProtocolPair alternate =
+  AlternateProtocolInfo alternate =
       http_server_properties_->GetAlternateProtocol(server);
   DCHECK_EQ(QUIC, alternate.protocol);
 
@@ -947,7 +957,7 @@ void QuicStreamFactory::ProcessGoingAwaySession(
   http_server_properties_->SetBrokenAlternateProtocol(server);
   http_server_properties_->ClearAlternateProtocol(server);
   http_server_properties_->SetAlternateProtocol(
-      server, alternate.port, alternate.protocol);
+      server, alternate.port, alternate.protocol, 1);
   DCHECK_EQ(QUIC,
             http_server_properties_->GetAlternateProtocol(server).protocol);
   DCHECK(http_server_properties_->WasAlternateProtocolRecentlyBroken(

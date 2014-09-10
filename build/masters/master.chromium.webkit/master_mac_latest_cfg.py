@@ -38,7 +38,6 @@ F('f_mac_tests_rel', mac_out().ChromiumFactory(
       'interactive_ui_tests',
       'telemetry_unittests',
       'unit',
-      'webkit_compositor_bindings_unittests',
     ],
     factory_properties={
         'generate_gtest_json': True,

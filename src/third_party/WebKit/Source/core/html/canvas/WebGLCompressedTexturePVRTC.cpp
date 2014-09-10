@@ -29,7 +29,7 @@
 
 #include "core/html/canvas/WebGLRenderingContextBase.h"
 
-namespace WebCore {
+namespace blink {
 
 WebGLCompressedTexturePVRTC::WebGLCompressedTexturePVRTC(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
@@ -50,9 +50,9 @@ WebGLExtensionName WebGLCompressedTexturePVRTC::name() const
     return WebGLCompressedTexturePVRTCName;
 }
 
-PassRefPtr<WebGLCompressedTexturePVRTC> WebGLCompressedTexturePVRTC::create(WebGLRenderingContextBase* context)
+PassRefPtrWillBeRawPtr<WebGLCompressedTexturePVRTC> WebGLCompressedTexturePVRTC::create(WebGLRenderingContextBase* context)
 {
-    return adoptRef(new WebGLCompressedTexturePVRTC(context));
+    return adoptRefWillBeNoop(new WebGLCompressedTexturePVRTC(context));
 }
 
 bool WebGLCompressedTexturePVRTC::supported(WebGLRenderingContextBase* context)
@@ -65,4 +65,4 @@ const char* WebGLCompressedTexturePVRTC::extensionName()
     return "WEBGL_compressed_texture_pvrtc";
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -8,7 +8,6 @@ DEPS = [
   'python',
   'raw_io',
   'step',
-  'step_history',
   'swarming',
   'swarming_client',
 ]
@@ -16,10 +15,10 @@ DEPS = [
 
 def GenSteps(api):
   # Checkout swarming client.
-  yield api.swarming_client.checkout('master')
+  api.swarming_client.checkout('master')
 
   # Ensure swarming_client version is fresh enough.
-  yield api.swarming.check_client_version()
+  api.swarming.check_client_version()
 
   # Configure isolate & swarming modules (this is optional).
   api.isolate.isolate_server = 'https://isolateserver-dev.appspot.com'
@@ -36,7 +35,7 @@ def GenSteps(api):
   for platform in ('win', 'linux', 'mac'):
     # Isolate example hello_world.isolate from swarming client repo.
     # TODO(vadimsh): Add a thin wrapper around isolate.py to 'isolate' module?
-    yield api.python(
+    step_result = api.python(
         'archive for %s' % platform,
         api.swarming_client.path.join('isolate.py'),
         [
@@ -49,26 +48,31 @@ def GenSteps(api):
           '--verbose',
         ], stdout=api.raw_io.output())
     # TODO(vadimsh): Pass result from isolate.py though --output-json option.
-    isolated_hash = api.step_history.last_step().stdout.split()[0].strip()
+    isolated_hash = step_result.stdout.split()[0].strip()
 
     # Create a task to run the isolated file on swarming, set OS dimension.
+    # Also generate code coverage for multi-shard case by triggering multiple
+    # shards on Linux.
     task = api.swarming.task('hello_world', isolated_hash, make_unique=True)
     task.dimensions['os'] = api.swarming.platform_to_os_dimension(platform)
     task.env['TESTING'] = '1'
+    task.shards = 2 if platform == 'linux' else 1
     tasks.append(task)
 
   # Launch all tasks.
-  yield api.swarming.trigger(tasks)
+  for step_result in api.swarming.trigger(tasks):
+    assert step_result.swarming_task in tasks
 
   # Recipe can do something useful here locally while tasks are
   # running on swarming.
-  yield api.step('local step', ['echo', 'running something locally'])
+  api.step('local step', ['echo', 'running something locally'])
 
   # Wait for all tasks to complete.
-  yield api.swarming.collect(tasks)
+  for step_result in api.swarming.collect(tasks):
+    assert step_result.swarming_task in tasks
 
   # Cleanup.
-  yield api.path.rmtree('remove temp dir', temp_dir)
+  api.path.rmtree('remove temp dir', temp_dir)
 
 
 def GenTests(api):

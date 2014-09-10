@@ -113,7 +113,7 @@ void ExtensionAccessibilityEventRouter::HandleControlEvent(
 
   switch (event) {
     case ui::AX_EVENT_TEXT_CHANGED:
-    case ui::AX_EVENT_SELECTION_CHANGED:
+    case ui::AX_EVENT_TEXT_SELECTION_CHANGED:
       OnTextChanged(info);
       break;
     case ui::AX_EVENT_VALUE_CHANGED:
@@ -194,8 +194,8 @@ void ExtensionAccessibilityEventRouter::OnChromeVoxLoadStateChanged(
     bool loading,
     bool make_announcements) {
   scoped_ptr<base::ListValue> event_args(new base::ListValue());
-  event_args->Append(base::Value::CreateBooleanValue(loading));
-  event_args->Append(base::Value::CreateBooleanValue(make_announcements));
+  event_args->AppendBoolean(loading);
+  event_args->AppendBoolean(make_announcements);
   ExtensionAccessibilityEventRouter::DispatchEventToChromeVox(
       profile,
       accessibility_private::OnChromeVoxLoadStateChanged::kEventName,

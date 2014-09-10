@@ -33,34 +33,26 @@
 
 #include "public/web/WebSettings.h"
 
-namespace WebCore {
+namespace blink {
+
 class InspectorController;
 class Settings;
-}
-
-namespace blink {
 
 class WebSettingsImpl FINAL : public WebSettings {
 public:
-    explicit WebSettingsImpl(WebCore::Settings*, WebCore::InspectorController*);
+    explicit WebSettingsImpl(Settings*, InspectorController*);
     virtual ~WebSettingsImpl() { }
 
     virtual bool mainFrameResizesAreOrientationChanges() const OVERRIDE;
     virtual bool shrinksViewportContentToFit() const OVERRIDE;
-    virtual bool scrollAnimatorEnabled() const OVERRIDE;
-    virtual bool touchEditingEnabled() const OVERRIDE;
     virtual bool viewportEnabled() const OVERRIDE;
-    virtual bool viewportMetaEnabled() const OVERRIDE;
     virtual void setAccelerated2dCanvasEnabled(bool) OVERRIDE;
     virtual void setAccelerated2dCanvasMSAASampleCount(int) OVERRIDE;
     virtual void setAcceleratedCompositingEnabled(bool) OVERRIDE;
-    virtual void setAcceleratedCompositingForCanvasEnabled(bool) OVERRIDE;
-    virtual void setAcceleratedCompositingForFiltersEnabled(bool) OVERRIDE;
     virtual void setAcceleratedCompositingForFixedPositionEnabled(bool) OVERRIDE;
     virtual void setAcceleratedCompositingForOverflowScrollEnabled(bool) OVERRIDE;
     virtual void setCompositorDrivenAcceleratedScrollingEnabled(bool) OVERRIDE;
     virtual void setAcceleratedCompositingForFixedRootBackgroundEnabled(bool) OVERRIDE;
-    virtual void setAcceleratedCompositingForVideoEnabled(bool) OVERRIDE;
     virtual void setAllowDisplayOfInsecureContent(bool) OVERRIDE;
     virtual void setAllowFileAccessFromFileURLs(bool) OVERRIDE;
     virtual void setAllowCustomScrollbarInMainFrame(bool) OVERRIDE;
@@ -74,7 +66,6 @@ public:
     virtual void setCaretBrowsingEnabled(bool) OVERRIDE;
     virtual void setClobberUserAgentInitialScaleQuirk(bool) OVERRIDE;
     virtual void setCompositedScrollingForFramesEnabled(bool) OVERRIDE;
-    virtual void setCompositorTouchHitTesting(bool) OVERRIDE;
     virtual void setContainerCullingEnabled(bool) OVERRIDE;
     virtual void setCookieEnabled(bool) OVERRIDE;
     virtual void setNavigateOnDragDrop(bool) OVERRIDE;
@@ -90,6 +81,7 @@ public:
     virtual void setDeviceScaleAdjustment(float) OVERRIDE;
     virtual void setDeviceSupportsMouse(bool) OVERRIDE;
     virtual void setDeviceSupportsTouch(bool) OVERRIDE;
+    virtual void setDisallowFullscreenForNonMediaElements(bool) OVERRIDE;
     virtual void setDoubleTapToZoomEnabled(bool) OVERRIDE;
     virtual void setDownloadableBinaryFontsEnabled(bool) OVERRIDE;
     virtual void setEditingBehavior(EditingBehavior) OVERRIDE;
@@ -99,8 +91,8 @@ public:
     virtual void setExperimentalWebGLEnabled(bool) OVERRIDE;
     virtual void setFantasyFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) OVERRIDE;
     virtual void setFixedFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) OVERRIDE;
-    virtual void setGestureTapHighlightEnabled(bool) OVERRIDE;
     virtual void setForceZeroLayoutHeight(bool) OVERRIDE;
+    virtual void setFullscreenSupported(bool) OVERRIDE;
     virtual void setHyperlinkAuditingEnabled(bool) OVERRIDE;
     virtual void setIgnoreMainFrameOverflowHiddenQuirk(bool) OVERRIDE;
     virtual void setImagesEnabled(bool) OVERRIDE;
@@ -121,7 +113,6 @@ public:
     virtual void setMinimumFontSize(int) OVERRIDE;
     virtual void setMinimumLogicalFontSize(int) OVERRIDE;
     virtual void setMockScrollbarsEnabled(bool) OVERRIDE;
-    virtual void setNeedsSiteSpecificQuirks(bool) OVERRIDE;
     virtual void setOfflineWebApplicationCacheEnabled(bool) OVERRIDE;
     virtual void setOpenGLMultisamplingEnabled(bool) OVERRIDE;
     virtual void setPasswordEchoDurationInSeconds(double) OVERRIDE;
@@ -162,6 +153,7 @@ public:
     virtual void setUseLegacyBackgroundSizeShorthandBehavior(bool) OVERRIDE;
     virtual void setUseSolidColorScrollbars(bool) OVERRIDE;
     virtual void setUseWideViewport(bool) OVERRIDE;
+    virtual void setV8CacheOptions(V8CacheOptions) OVERRIDE;
     virtual void setValidationMessageTimerMagnification(int) OVERRIDE;
     virtual void setViewportEnabled(bool) OVERRIDE;
     virtual void setViewportMetaEnabled(bool) OVERRIDE;
@@ -179,7 +171,6 @@ public:
     bool showPaintRects() const { return m_showPaintRects; }
     bool renderVSyncNotificationEnabled() const { return m_renderVSyncNotificationEnabled; }
     bool autoZoomFocusedNodeToLegibleScale() const { return m_autoZoomFocusedNodeToLegibleScale; }
-    bool gestureTapHighlightEnabled() const { return m_gestureTapHighlightEnabled; }
     bool doubleTapToZoomEnabled() const { return m_doubleTapToZoomEnabled; }
     bool perTilePaintingEnabled() const { return m_perTilePaintingEnabled; }
     bool supportDeprecatedTargetDensityDPI() const { return m_supportDeprecatedTargetDensityDPI; }
@@ -188,13 +179,15 @@ public:
     bool viewportMetaNonUserScalableQuirk() const { return m_viewportMetaNonUserScalableQuirk; }
     bool clobberUserAgentInitialScaleQuirk() const { return m_clobberUserAgentInitialScaleQuirk; }
 
+    void setMockGestureTapHighlightsEnabled(bool);
+    bool mockGestureTapHighlightsEnabled() const;
+
 private:
-    WebCore::Settings* m_settings;
-    WebCore::InspectorController* m_inspectorController;
+    Settings* m_settings;
+    InspectorController* m_inspectorController;
     bool m_showFPSCounter;
     bool m_showPaintRects;
     bool m_renderVSyncNotificationEnabled;
-    bool m_gestureTapHighlightEnabled;
     bool m_autoZoomFocusedNodeToLegibleScale;
     bool m_deferredImageDecodingEnabled;
     bool m_doubleTapToZoomEnabled;

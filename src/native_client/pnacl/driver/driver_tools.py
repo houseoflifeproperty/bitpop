@@ -2,15 +2,10 @@
 # Copyright (c) 2012 The Native Client Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-#
-# IMPORTANT NOTE: If you make local mods to this file, you must run:
-#   %  pnacl/build.sh driver
-# in order for them to take effect in the scons build.  This command
-# updates the copy in the toolchain/ tree.
-#
 
 import platform
 import os
+import random
 import re
 import shlex
 import signal
@@ -19,7 +14,6 @@ import sys
 import tempfile
 
 import elftools
-import ldtools
 # filetype needs to be imported here because pnacl-driver injects calls to
 # filetype.ForceFileType into argument parse actions.
 # TODO(dschuff): That's ugly. Find a better way.
@@ -452,6 +446,44 @@ def PathSplit(f):
   paths.reverse()
   return paths
 
+
+def CheckPathLength(filename, exit_on_failure=True):
+  '''Check that the length of the path is short enough for Windows.
+
+  On Windows, MAX_PATH is ~260 and applies to absolute paths, and to relative
+  paths and the absolute paths they expand to (except for specific uses of
+  some APIs; see link below). Most applications don't bother to support long
+  paths properly (including LLVM, GNU binutils, and ninja). If a path is too
+  long, ERROR_PATH_NOT_FOUND is returned, which isn't very useful or clear for
+  users. In addition the Chrome build has deep directory hierarchies with long
+  names.
+  This function checks that the path is valid, so we can throw meaningful
+  errors.
+
+  http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
+  '''
+  if not IsWindowsPython() and not env.has('PNACL_RUNNING_UNITTESTS'):
+    return True
+
+  # First check the name as-is (it's usually a relative path)
+  if len(filename) > 255:
+    if exit_on_failure:
+      Log.Fatal('Path name %s is too long (%d characters)' %
+                (filename, len(filename)))
+    return False
+  if os.path.isabs(filename):
+    return True
+
+  # Don't assume that the underlying tools or windows APIs will normalize
+  # the path before using it. Conservatively count the length of CWD + filename
+  appended_name = os.path.join(os.getcwd(), filename)
+  if len(appended_name) > 255:
+    if exit_on_failure:
+      Log.Fatal('Path name %s (expanded from %s) is too long (%d characters)' %
+                (appended_name, filename, len(appended_name)))
+    return False
+  return True
+
 # Generate a unique identifier for each input file.
 # Start with the basename, and if that is not unique enough,
 # add parent directories. Rinse, repeat.
@@ -461,6 +493,7 @@ class TempNameGen(object):
     output = pathtools.abspath(output)
 
     self.TempBase = output + '---linked'
+    self.OutputDir = pathtools.dirname(output)
 
     # TODO(pdox): Figure out if there's a less confusing way
     #             to simplify the intermediate filename in this case.
@@ -507,8 +540,22 @@ class TempNameGen(object):
     self.TempMap = NewMap
     return
 
+  def ValidatePathLength(self, temp, imtype):
+    # If the temp name is too long, just pick a random one instead.
+    if not CheckPathLength(temp, exit_on_failure=False):
+      # imtype is sometimes just an extension, and sometimes a compound
+      # extension (e.g. pre_opt.pexe). To keep name length shorter,
+      # only take the last extension
+      if '.' in imtype:
+        imtype = imtype[imtype.rfind('.') + 1:]
+      temp = pathtools.join(
+          self.OutputDir,
+          str(random.randrange(100000, 1000000)) + '.' + imtype)
+      CheckPathLength(temp)
+    return temp
+
   def TempNameForOutput(self, imtype):
-    temp = self.TempBase + '.' + imtype
+    temp = self.ValidatePathLength(self.TempBase + '.' + imtype, imtype)
     TempFiles.add(temp)
     return temp
 
@@ -521,6 +568,7 @@ class TempNameGen(object):
       # Source file
       temp = self.TempMap[fullpath] + '.' + imtype
 
+    temp = self.ValidatePathLength(temp, imtype)
     TempFiles.add(temp)
     return temp
 
@@ -800,7 +848,14 @@ class DriverChain(object):
     # If we're compiling for a single file, then we use
     # TempNameForInput. If there are multiple files
     # (e.g. linking), then we use TempNameForOutput.
-    self.use_names_for_input = isinstance(input, str)
+    if isinstance(input, str):
+      self.use_names_for_input = True
+      CheckPathLength(input)
+    else:
+      self.use_names_for_input = False
+      for path in input:
+        CheckPathLength(path)
+    CheckPathLength(output)
 
   def add(self, callback, output_type, **extra):
     step = (callback, output_type, extra)

@@ -31,14 +31,15 @@
 #include "config.h"
 #include "modules/mediasource/SourceBuffer.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/events/Event.h"
 #include "core/events/GenericEventQueue.h"
 #include "core/fileapi/FileReaderLoader.h"
-#include "core/fileapi/Stream.h"
 #include "core/html/TimeRanges.h"
+#include "core/streams/Stream.h"
 #include "modules/mediasource/MediaSource.h"
 #include "platform/Logging.h"
 #include "platform/TraceEvent.h"
@@ -51,7 +52,7 @@
 
 using blink::WebSourceBuffer;
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
@@ -71,11 +72,11 @@ static bool throwExceptionIfRemovedOrUpdating(bool isRemoved, bool isUpdating, E
 
 } // namespace
 
-PassRefPtrWillBeRawPtr<SourceBuffer> SourceBuffer::create(PassOwnPtr<WebSourceBuffer> webSourceBuffer, MediaSource* source, GenericEventQueue* asyncEventQueue)
+SourceBuffer* SourceBuffer::create(PassOwnPtr<WebSourceBuffer> webSourceBuffer, MediaSource* source, GenericEventQueue* asyncEventQueue)
 {
-    RefPtrWillBeRawPtr<SourceBuffer> sourceBuffer(adoptRefWillBeRefCountedGarbageCollected(new SourceBuffer(webSourceBuffer, source, asyncEventQueue)));
+    SourceBuffer* sourceBuffer(adoptRefCountedGarbageCollectedWillBeNoop(new SourceBuffer(webSourceBuffer, source, asyncEventQueue)));
     sourceBuffer->suspendIfNeeded();
-    return sourceBuffer.release();
+    return sourceBuffer;
 }
 
 SourceBuffer::SourceBuffer(PassOwnPtr<WebSourceBuffer> webSourceBuffer, MediaSource* source, GenericEventQueue* asyncEventQueue)
@@ -104,9 +105,14 @@ SourceBuffer::SourceBuffer(PassOwnPtr<WebSourceBuffer> webSourceBuffer, MediaSou
 
 SourceBuffer::~SourceBuffer()
 {
+    // Oilpan: a SourceBuffer might be finalized without having been
+    // explicitly removed first, hence the asserts below will not
+    // hold.
+#if !ENABLE(OILPAN)
     ASSERT(isRemoved());
     ASSERT(!m_loader);
     ASSERT(!m_stream);
+#endif
 }
 
 const AtomicString& SourceBuffer::segmentsKeyword()
@@ -150,7 +156,7 @@ void SourceBuffer::setMode(const AtomicString& newMode, ExceptionState& exceptio
     m_mode = newMode;
 }
 
-PassRefPtr<TimeRanges> SourceBuffer::buffered(ExceptionState& exceptionState) const
+PassRefPtrWillBeRawPtr<TimeRanges> SourceBuffer::buffered(ExceptionState& exceptionState) const
 {
     // Section 3.1 buffered attribute steps.
     // 1. If this object has been removed from the sourceBuffers attribute of the parent media source then throw an
@@ -318,38 +324,41 @@ void SourceBuffer::abort(ExceptionState& exceptionState)
 void SourceBuffer::remove(double start, double end, ExceptionState& exceptionState)
 {
     // Section 3.2 remove() method steps.
-    // 1. If start is negative or greater than duration, then throw an InvalidAccessError exception and abort these steps.
-    // 2. If end is less than or equal to start, then throw an InvalidAccessError exception and abort these steps.
+    // 1. If duration equals NaN, then throw an InvalidAccessError exception and abort these steps.
+    // 2. If start is negative or greater than duration, then throw an InvalidAccessError exception and abort these steps.
 
     if (start < 0 || (m_source && (std::isnan(m_source->duration()) || start > m_source->duration()))) {
         exceptionState.throwDOMException(InvalidAccessError, ExceptionMessages::indexOutsideRange("start", start, 0.0, ExceptionMessages::ExclusiveBound, !m_source || std::isnan(m_source->duration()) ? 0 : m_source->duration(), ExceptionMessages::ExclusiveBound));
         return;
     }
-    if (end <= start) {
+
+    // 3. If end is less than or equal to start or end equals NaN, then throw an InvalidAccessError exception and abort these steps.
+    if (end <= start || std::isnan(end)) {
         exceptionState.throwDOMException(InvalidAccessError, "The end value provided (" + String::number(end) + ") must be greater than the start value provided (" + String::number(start) + ").");
         return;
     }
 
-    // 3. If this object has been removed from the sourceBuffers attribute of the parent media source then throw an
+    // 4. If this object has been removed from the sourceBuffers attribute of the parent media source then throw an
     //    InvalidStateError exception and abort these steps.
-    // 4. If the updating attribute equals true, then throw an InvalidStateError exception and abort these steps.
+    // 5. If the updating attribute equals true, then throw an InvalidStateError exception and abort these steps.
     if (throwExceptionIfRemovedOrUpdating(isRemoved(), m_updating, exceptionState))
         return;
 
     TRACE_EVENT_ASYNC_BEGIN0("media", "SourceBuffer::remove", this);
 
-    // 5. If the readyState attribute of the parent media source is in the "ended" state then run the following steps:
-    // 5.1. Set the readyState attribute of the parent media source to "open"
-    // 5.2. Queue a task to fire a simple event named sourceopen at the parent media source .
+    // 6. If the readyState attribute of the parent media source is in the "ended" state then run the following steps:
+    // 6.1. Set the readyState attribute of the parent media source to "open"
+    // 6.2. Queue a task to fire a simple event named sourceopen at the parent media source .
     m_source->openIfInEndedState();
 
-    // 6. Set the updating attribute to true.
+    // 7. Run the range removal algorithm with start and end as the start and end of the removal range.
+    // 7.3. Set the updating attribute to true.
     m_updating = true;
 
-    // 7. Queue a task to fire a simple event named updatestart at this SourceBuffer object.
+    // 7.4. Queue a task to fire a simple event named updatestart at this SourceBuffer object.
     scheduleEvent(EventTypeNames::updatestart);
 
-    // 8. Return control to the caller and run the rest of the steps asynchronously.
+    // 7.5. Return control to the caller and run the rest of the steps asynchronously.
     m_pendingRemoveStart = start;
     m_pendingRemoveEnd = end;
     m_removeAsyncPartRunner.runAsync();
@@ -715,4 +724,4 @@ void SourceBuffer::trace(Visitor* visitor)
     EventTargetWithInlineData::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

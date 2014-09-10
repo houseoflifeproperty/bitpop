@@ -22,11 +22,12 @@
 #include <libaddressinput/util/basictypes.h>
 #include <libaddressinput/util/scoped_ptr.h>
 
+#include <string>
+
 namespace i18n {
 namespace addressinput {
 
 class LookupKey;
-class Rule;
 struct AddressData;
 
 // A ValidationTask object encapsulates the information necessary to perform
@@ -64,16 +65,14 @@ class ValidationTask {
   void CheckMissingRequiredField(const std::string& region_code) const;
 
   // Checks the hierarchical fields for UNKNOWN_VALUE problems.
-  void CheckUnknownValue(
-      const Supplier::RuleHierarchy& hierarchy) const;
+  void CheckUnknownValue(const Supplier::RuleHierarchy& hierarchy) const;
 
   // Checks the POSTAL_CODE field for problems.
   void CheckPostalCodeFormatAndValue(
       const Supplier::RuleHierarchy& hierarchy) const;
 
   // Checks the STREET_ADDRESS field for USES_P_O_BOX problems.
-  void CheckUsesPoBox(
-      const Supplier::RuleHierarchy& hierarchy) const;
+  void CheckUsesPoBox(const Supplier::RuleHierarchy& hierarchy) const;
 
   // Writes (|field|,|problem|) to |problems_|.
   void ReportProblem(AddressField field, AddressProblem problem) const;

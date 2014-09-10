@@ -23,12 +23,26 @@
 #include "config.h"
 #include "core/dom/LiveNodeList.h"
 
-namespace WebCore {
+namespace blink {
 
-static inline bool isMatchingElement(const LiveNodeList& nodeList, const Element& element)
-{
-    return nodeList.elementMatches(element);
-}
+namespace {
+
+class IsMatch {
+public:
+    IsMatch(const LiveNodeList& list)
+        : m_list(list)
+    { }
+
+    bool operator() (const Element& element) const
+    {
+        return m_list.elementMatches(element);
+    }
+
+private:
+    const LiveNodeList& m_list;
+};
+
+} // namespace
 
 Node* LiveNodeList::virtualOwnerNode() const
 {
@@ -40,24 +54,34 @@ void LiveNodeList::invalidateCache(Document*) const
     m_collectionIndexCache.invalidate();
 }
 
+unsigned LiveNodeList::length() const
+{
+    return m_collectionIndexCache.nodeCount(*this);
+}
+
+Element* LiveNodeList::item(unsigned offset) const
+{
+    return m_collectionIndexCache.nodeAt(*this, offset);
+}
+
 Element* LiveNodeList::traverseToFirstElement() const
 {
-    return firstMatchingElement(*this);
+    return ElementTraversal::firstWithin(rootNode(), IsMatch(*this));
 }
 
 Element* LiveNodeList::traverseToLastElement() const
 {
-    return lastMatchingElement(*this);
+    return ElementTraversal::lastWithin(rootNode(), IsMatch(*this));
 }
 
-Element* LiveNodeList::traverseForwardToOffset(unsigned offset, Element& currentNode, unsigned& currentOffset) const
+Element* LiveNodeList::traverseForwardToOffset(unsigned offset, Element& currentElement, unsigned& currentOffset) const
 {
-    return traverseMatchingElementsForwardToOffset(*this, offset, currentNode, currentOffset);
+    return traverseMatchingElementsForwardToOffset(currentElement, &rootNode(), offset, currentOffset, IsMatch(*this));
 }
 
-Element* LiveNodeList::traverseBackwardToOffset(unsigned offset, Element& currentNode, unsigned& currentOffset) const
+Element* LiveNodeList::traverseBackwardToOffset(unsigned offset, Element& currentElement, unsigned& currentOffset) const
 {
-    return traverseMatchingElementsBackwardToOffset(*this, offset, currentNode, currentOffset);
+    return traverseMatchingElementsBackwardToOffset(currentElement, &rootNode(), offset, currentOffset, IsMatch(*this));
 }
 
 void LiveNodeList::trace(Visitor* visitor)
@@ -67,4 +91,4 @@ void LiveNodeList::trace(Visitor* visitor)
     NodeList::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

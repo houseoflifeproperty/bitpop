@@ -43,21 +43,18 @@
     'variables': {
       # Enables the Oilpan garbage-collection infrastructure.
       'enable_oilpan%': 0,
-      'gc_tracing%': 0
+      'gc_profile_heap%': 0,
+      'gc_profile_marking%': 0,
+      'blink_asserts_always_on%': 0,
     },
     'conditions': [
       ['use_concatenated_impulse_responses==1', {
         # Use concatenated HRTF impulse responses
         'feature_defines': ['WTF_USE_CONCATENATED_IMPULSE_RESPONSES=1'],
       }],
-      ['OS=="android"', {
-        'feature_defines': [
-          'ENABLE_MEDIA_CAPTURE=1'
-        ],
-      }, { # OS!="android"
+      ['OS!="android"', {
         'feature_defines': [
           'ENABLE_INPUT_MULTIPLE_FIELDS_UI=1',
-          'ENABLE_MEDIA_CAPTURE=0',
           'ENABLE_WEB_AUDIO=1'
         ],
       }],
@@ -91,9 +88,21 @@
           'ENABLE_OILPAN=1',
         ],
       }],
-      ['gc_tracing==1', {
+      ['gc_profile_heap==1', {
         'feature_defines': [
-          'ENABLE_GC_TRACING=1',
+          'ENABLE_GC_PROFILING=1',
+          'ENABLE_GC_PROFILE_HEAP=1',
+        ],
+      }],
+      ['gc_profile_marking==1', {
+        'feature_defines': [
+          'ENABLE_GC_PROFILING=1',
+          'ENABLE_GC_PROFILE_MARKING=1',
+        ],
+      }],
+      ['blink_asserts_always_on==1', {
+        'feature_defines': [
+          'ENABLE_ASSERT=1',
         ],
       }],
     ],

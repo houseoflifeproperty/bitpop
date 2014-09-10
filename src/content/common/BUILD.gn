@@ -36,19 +36,19 @@ source_set("common") {
     "//ui/base",
     "//ui/gfx",
     "//ui/gfx/geometry",
+    "//ui/gfx/ipc",
+    "//ui/shell_dialogs",
     "//url",
     "//third_party/WebKit/public:blink_headers",
     # TODO(GYP) convert these dependencies.
     #'../third_party/libjingle/libjingle.gyp:libjingle',
-    #'../ui/shell_dialogs/shell_dialogs.gyp:shell_dialogs',
   ]
 
   if (!is_ios) {
     deps += [
       "//cc",
       "//ipc",
-      "//mojo/environment:chromium",
-      "//mojo/system",
+      "//ipc/mojo",
       # TODO: the dependency on gl_in_process_context should be decoupled from
       # content and moved to android_webview. See crbug.com/365797.
       "//gpu/command_buffer/client:gl_in_process_context",
@@ -56,16 +56,19 @@ source_set("common") {
       "//gpu/command_buffer/client:gles2_implementation",
       "//gpu/command_buffer/service",
       "//gpu/ipc",
+      "//gpu/skia_bindings",
+      "//media",
+      "//media:shared_memory_support",
+      "//mojo/environment:chromium",
+      "//mojo/public/interfaces/application",
+      "//mojo/system",
+      "//sandbox",
+      "//third_party/WebKit/public:blink",
       "//ui/gl",
       "//webkit/browser:storage",
       "//webkit/common",
       "//webkit/common:storage",
       "//webkit/common/gpu",
-      #'../gpu/gpu.gyp:gl_in_process_context',
-      #'../gpu/skia_bindings/skia_bindings.gyp:gpu_skia_bindings',
-      #'../media/media.gyp:media',
-      #'../media/media.gyp:shared_memory_support',
-      #'../third_party/WebKit/public/blink.gyp:blink',
     ]
   }
 
@@ -92,10 +95,11 @@ source_set("common") {
       "plugin_list_posix.cc",
     ]
 
-    # TODO(GYP) enable when converted to GN.
-    #deps += [
-    #  "//webkit:webkit_resources",
-    #]
+    deps += [
+      "//content:resources",
+      "//third_party/WebKit/public:resources",
+      "//webkit/glue/resources",
+    ]
     libs += [ "QuartzCore.framework" ]
   }
 
@@ -123,7 +127,12 @@ source_set("common") {
     sources -= [
       "cursors/webcursor_ozone.cc",
       "font_list_ozone.cc",
+      "gpu/gpu_memory_buffer_factory_ozone.cc",
     ]
+  }
+
+  if (!use_aura) {
+    sources -= [ "cursors/webcursor_aura.cc" ]
   }
 
   if (!use_aura || !use_x11) {
@@ -144,6 +153,10 @@ source_set("common") {
   }
 
   if (use_x11) {
+    sources += [
+      "gpu/gpu_memory_buffer_factory_x11_pixmap.cc",
+      "common/gpu/gpu_memory_buffer_factory_x11_pixmap.h",
+    ]
     include_dirs += [ "//third_party/khronos" ]
     configs += [ "//build/config/linux:xcomposite" ]
 
@@ -153,6 +166,10 @@ source_set("common") {
         "gpu/x_util.h",
       ]
     }
+  } else {
+    sources -= [
+      "gpu/gpu_memory_buffer_factory_x11.cc",
+    ]
   }
 
   if (enable_plugins) {
@@ -171,10 +188,6 @@ source_set("common") {
     sources += [
       "gpu/media/android_video_decode_accelerator.cc",
       "gpu/media/android_video_decode_accelerator.h",
-    ]
-    deps += [
-      # TODO(GYP) enable once supported in the GN build.
-      #"//media",
     ]
 
     if (enable_webrtc) {
@@ -198,8 +211,6 @@ source_set("common") {
         "gpu/media/v4l2_video_encode_accelerator.cc",
         "gpu/media/v4l2_video_encode_accelerator.h",
       ]
-      # TODO(GYP) enable once supported in the GN build.
-      #deps += [ "//media" ]
       libs = [ "EGL", "GLESv2" ]
     } else {  # !arm
       sources += [
@@ -224,8 +235,6 @@ source_set("common") {
     ]
     include_dirs += [ "//third_party/khronos" ]
     deps += [
-      # TODO(GYP) enable once supported in the GN build.
-      #"//media",
       "//ui/gl",
     ]
 
@@ -249,6 +258,8 @@ source_set("common") {
         "sandbox_linux/bpf_ppapi_policy_linux.h",
         "sandbox_linux/bpf_renderer_policy_linux.cc",
         "sandbox_linux/bpf_renderer_policy_linux.h",
+        "sandbox_linux/bpf_utility_policy_linux.cc",
+        "sandbox_linux/bpf_utility_policy_linux.h",
         "sandbox_linux/sandbox_bpf_base_policy_linux.cc",
         "sandbox_linux/sandbox_bpf_base_policy_linux.h",
       ]
@@ -264,6 +275,10 @@ source_set("common") {
 
 mojom("mojo_bindings") {
   sources = [
-    "web_ui_setup.mojom",
+    "render_frame_setup.mojom",
+  ]
+
+  deps = [
+    "//mojo/public/interfaces/application:application",
   ]
 }

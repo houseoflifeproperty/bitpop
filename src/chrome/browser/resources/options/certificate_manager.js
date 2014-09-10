@@ -4,6 +4,8 @@
 
 cr.define('options', function() {
   var OptionsPage = options.OptionsPage;
+  var Page = cr.ui.pageManager.Page;
+  var PageManager = cr.ui.pageManager.PageManager;
 
   /////////////////////////////////////////////////////////////////////////////
   // CertificateManagerTab class:
@@ -26,7 +28,7 @@ cr.define('options', function() {
     this.viewButton.onclick = function(e) {
       var selected = tree.selectedItem;
       chrome.send('viewCertificate', [selected.data.id]);
-    }
+    };
 
     this.editButton = $(id + '-edit');
     if (this.editButton !== null) {
@@ -34,12 +36,12 @@ cr.define('options', function() {
         this.editButton.onclick = function(e) {
           var selected = tree.selectedItem;
           chrome.send('editServerCertificate', [selected.data.id]);
-        }
+        };
       } else if (id == 'caCertsTab') {
         this.editButton.onclick = function(e) {
           var data = tree.selectedItem.data;
           CertificateEditCaTrustOverlay.show(data.id, data.name);
-        }
+        };
       }
     }
 
@@ -51,7 +53,7 @@ cr.define('options', function() {
         this.backupButton.onclick = function(e) {
           var selected = tree.selectedItem;
           chrome.send('exportPersonalCertificate', [selected.data.id]);
-        }
+        };
       }
     }
 
@@ -62,7 +64,7 @@ cr.define('options', function() {
       } else {
         this.backupAllButton.onclick = function(e) {
           chrome.send('exportAllPersonalCertificates');
-        }
+        };
       }
     }
 
@@ -74,16 +76,16 @@ cr.define('options', function() {
         } else {
           this.importButton.onclick = function(e) {
             chrome.send('importPersonalCertificate', [false]);
-          }
+          };
         }
       } else if (id == 'serverCertsTab') {
         this.importButton.onclick = function(e) {
           chrome.send('importServerCertificate');
-        }
+        };
       } else if (id == 'caCertsTab') {
         this.importButton.onclick = function(e) {
           chrome.send('importCaCertificate');
-        }
+        };
       }
     }
 
@@ -92,7 +94,7 @@ cr.define('options', function() {
       if (id == 'personalCertsTab') {
         this.importAndBindButton.onclick = function(e) {
           chrome.send('importPersonalCertificate', [true]);
-        }
+        };
       }
     }
 
@@ -104,7 +106,7 @@ cr.define('options', function() {
         this.exportButton.onclick = function(e) {
           var selected = tree.selectedItem;
           chrome.send('exportCertificate', [selected.data.id]);
-        }
+        };
       }
     }
 
@@ -120,11 +122,10 @@ cr.define('options', function() {
             tree.selectedItem = null;
             chrome.send('deleteCertificate', [data.id]);
           });
-    }
+    };
   }
 
   CertificateManagerTab.prototype = {
-
     /**
      * Update button state.
      * @private
@@ -155,9 +156,8 @@ cr.define('options', function() {
      */
     handleCertificatesTreeChange_: function(e) {
       var data = null;
-      if (this.tree.selectedItem) {
+      if (this.tree.selectedItem)
         data = this.tree.selectedItem.data;
-      }
 
       this.updateButtonState(data);
     },
@@ -171,18 +171,19 @@ cr.define('options', function() {
    * @constructor
    */
   function CertificateManager(model) {
-    OptionsPage.call(this, 'certificates',
-                     loadTimeData.getString('certificateManagerPageTabTitle'),
-                     'certificateManagerPage');
+    Page.call(this, 'certificates',
+              loadTimeData.getString('certificateManagerPageTabTitle'),
+              'certificateManagerPage');
   }
 
   cr.addSingletonGetter(CertificateManager);
 
   CertificateManager.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
+    /** @override */
     initializePage: function(isKiosk) {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       this.personalTab = new CertificateManagerTab('personalCertsTab',
                                                    !!isKiosk);
@@ -193,14 +194,14 @@ cr.define('options', function() {
       this.addEventListener('visibleChange', this.handleVisibleChange_);
 
       $('certificate-confirm').onclick = function() {
-        OptionsPage.closeOverlay();
+        PageManager.closeOverlay();
       };
     },
 
     initalized_: false,
 
     /**
-     * Handler for OptionsPage's visible property change event.
+     * Handler for Page's visible property change event.
      * @private
      * @param {Event} e Property change event.
      */

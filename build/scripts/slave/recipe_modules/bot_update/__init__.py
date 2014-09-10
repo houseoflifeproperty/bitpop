@@ -6,6 +6,5 @@ DEPS = [
   'properties',
   'python',
   'step',
-  'step_history',
   'tryserver',
 ]

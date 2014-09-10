@@ -14,7 +14,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/browsertest_util.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/crx_installer.h"
@@ -43,6 +42,8 @@
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/notification_types.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_set.h"
 #include "sync/api/string_ordinal.h"
@@ -150,7 +151,7 @@ ExtensionBrowserTest::LoadExtensionWithInstallParam(
   ExtensionService* service = extensions::ExtensionSystem::Get(
       profile())->extension_service();
   {
-    observer_->Watch(chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+    observer_->Watch(extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                      content::NotificationService::AllSources());
 
     scoped_refptr<extensions::UnpackedInstaller> installer(
@@ -182,8 +183,8 @@ ExtensionBrowserTest::LoadExtensionWithInstallParam(
         install_warnings_message += "  " + it->message + "\n";
       }
 
-      EXPECT_TRUE(extension->install_warnings().empty()) <<
-          install_warnings_message;
+      EXPECT_EQ(0u, extension->install_warnings().size())
+          << install_warnings_message;
       return NULL;
     }
   }
@@ -196,7 +197,7 @@ ExtensionBrowserTest::LoadExtensionWithInstallParam(
     // Re-enable the extension if needed.
     if (service->extensions()->Contains(extension_id)) {
       content::WindowedNotificationObserver load_signal(
-          chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+          extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
           content::Source<Profile>(profile()));
       // Reload the extension so that the
       // NOTIFICATION_EXTENSION_LOADED_DEPRECATED
@@ -214,7 +215,7 @@ ExtensionBrowserTest::LoadExtensionWithInstallParam(
   // cases.
   {
     content::WindowedNotificationObserver load_signal(
-        chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+        extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
         content::Source<Profile>(profile()));
     CHECK(!extensions::util::IsIncognitoEnabled(extension_id, profile()));
 
@@ -228,7 +229,7 @@ ExtensionBrowserTest::LoadExtensionWithInstallParam(
 
   {
     content::WindowedNotificationObserver load_signal(
-        chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+        extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
         content::Source<Profile>(profile()));
     CHECK(extensions::util::AllowFileAccess(extension_id, profile()));
     if (!(flags & kFlagEnableFileAccess)) {
@@ -455,7 +456,8 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
     Extension::InitFromValueFlags creation_flags,
     bool install_immediately,
     bool is_ephemeral) {
-  ExtensionService* service = profile()->GetExtensionService();
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile())->extension_service();
   service->set_show_extensions_prompts(false);
   size_t num_before = service->extensions()->size();
 
@@ -493,7 +495,7 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
     }
 
     observer_->Watch(
-        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+        extensions::NOTIFICATION_CRX_INSTALLER_DONE,
         content::Source<extensions::CrxInstaller>(installer.get()));
 
     installer->InstallCrx(crx_path);
@@ -529,7 +531,7 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
 }
 
 void ExtensionBrowserTest::ReloadExtension(const std::string extension_id) {
-  observer_->Watch(chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+  observer_->Watch(extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                    content::NotificationService::AllSources());
 
   ExtensionService* service =
@@ -550,7 +552,10 @@ void ExtensionBrowserTest::UnloadExtension(const std::string& extension_id) {
 void ExtensionBrowserTest::UninstallExtension(const std::string& extension_id) {
   ExtensionService* service = extensions::ExtensionSystem::Get(
       profile())->extension_service();
-  service->UninstallExtension(extension_id, false, NULL);
+  service->UninstallExtension(extension_id,
+                              extensions::UNINSTALL_REASON_FOR_TESTING,
+                              base::Bind(&base::DoNothing),
+                              NULL);
 }
 
 void ExtensionBrowserTest::DisableExtension(const std::string& extension_id) {

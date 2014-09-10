@@ -1,0 +1,16 @@
+[
+  {
+    "cmd": [
+      "echo",
+      "testa"
+    ],
+    "name": "testa"
+  },
+  {
+    "cmd": [
+      "echo",
+      "testb"
+    ],
+    "name": "testb"
+  }
+]

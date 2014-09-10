@@ -28,7 +28,6 @@
 #include "platform/audio/AudioBus.h"
 #include "platform/audio/Cone.h"
 #include "platform/audio/Distance.h"
-#include "platform/audio/HRTFDatabaseLoader.h"
 #include "platform/audio/Panner.h"
 #include "modules/webaudio/AudioListener.h"
 #include "modules/webaudio/AudioNode.h"
@@ -36,7 +35,7 @@
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 // PannerNode is an AudioNode with one input and one output.
 // It positions a sound in 3D space, with the exact effect dependent on the panning model.
@@ -62,6 +61,7 @@ public:
     virtual ~PannerNode();
 
     // AudioNode
+    virtual void dispose() OVERRIDE;
     virtual void process(size_t framesToProcess) OVERRIDE;
     virtual void pullInputs(size_t framesToProcess) OVERRIDE;
     virtual void initialize() OVERRIDE;
@@ -155,8 +155,6 @@ private:
     float m_cachedDistanceConeGain;
     double m_cachedDopplerRate;
 
-    RefPtr<HRTFDatabaseLoader> m_hrtfDatabaseLoader;
-
     // AudioContext's connection count
     unsigned m_connectionCount;
 
@@ -164,6 +162,6 @@ private:
     mutable Mutex m_processLock;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PannerNode_h

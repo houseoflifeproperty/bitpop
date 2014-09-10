@@ -20,15 +20,17 @@
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/io_thread.h"
+#include "chrome/browser/net/chrome_url_request_context_getter.h"
 #include "chrome/browser/net/pref_proxy_config_tracker.h"
 #include "chrome/browser/net/proxy_service_factory.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
+#include "chrome/browser/ssl/chrome_ssl_host_state_delegate.h"
+#include "chrome/browser/ssl/chrome_ssl_host_state_delegate_factory.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/chrome_constants.h"
@@ -44,8 +46,6 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
-#include "extensions/browser/extension_system.h"
-#include "extensions/common/extension.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/transport_security_state.h"
 #include "webkit/browser/database/database_tracker.h"
@@ -70,11 +70,10 @@
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
-#include "chrome/browser/guest_view/guest_view_manager.h"
-#endif
-
-#if defined(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/guest_view/guest_view_manager.h"
+#include "extensions/common/extension.h"
 #endif
 
 using content::BrowserThread;
@@ -125,8 +124,10 @@ void OffTheRecordProfileImpl::Init() {
   BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
       this);
 
-  DCHECK_NE(IncognitoModePrefs::DISABLED,
-            IncognitoModePrefs::GetAvailability(profile_->GetPrefs()));
+  // Guest profiles may always be OTR. Check IncognitoModePrefs otherwise.
+  DCHECK(profile_->IsGuestSession() ||
+         IncognitoModePrefs::GetAvailability(profile_->GetPrefs()) !=
+             IncognitoModePrefs::DISABLED);
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
   UseSystemProxy();
@@ -142,11 +143,6 @@ void OffTheRecordProfileImpl::Init() {
 
   InitHostZoomMap();
 
-  // Make the chrome//extension-icon/ resource available.
-  extensions::ExtensionIconSource* icon_source =
-      new extensions::ExtensionIconSource(profile_);
-  content::URLDataSource::Add(this, icon_source);
-
 #if defined(ENABLE_PLUGINS)
   ChromePluginServiceFilter::GetInstance()->RegisterResourceContext(
       PluginPrefs::GetForProfile(this).get(),
@@ -154,6 +150,11 @@ void OffTheRecordProfileImpl::Init() {
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
+  // Make the chrome//extension-icon/ resource available.
+  extensions::ExtensionIconSource* icon_source =
+      new extensions::ExtensionIconSource(profile_);
+  content::URLDataSource::Add(this, icon_source);
+
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&NotifyOTRProfileCreatedOnIOThread, profile_, this));
@@ -259,10 +260,6 @@ Profile* OffTheRecordProfileImpl::GetOriginalProfile() {
   return profile_;
 }
 
-ExtensionService* OffTheRecordProfileImpl::GetExtensionService() {
-  return extensions::ExtensionSystem::Get(this)->extension_service();
-}
-
 ExtensionSpecialStoragePolicy*
     OffTheRecordProfileImpl::GetExtensionSpecialStoragePolicy() {
   return GetOriginalProfile()->GetExtensionSpecialStoragePolicy();
@@ -358,7 +355,8 @@ HostContentSettingsMap* OffTheRecordProfileImpl::GetHostContentSettingsMap() {
   if (!host_content_settings_map_.get()) {
     host_content_settings_map_ = new HostContentSettingsMap(GetPrefs(), true);
 #if defined(ENABLE_EXTENSIONS)
-    ExtensionService* extension_service = GetExtensionService();
+    ExtensionService* extension_service =
+        extensions::ExtensionSystem::Get(this)->extension_service();
     if (extension_service)
       host_content_settings_map_->RegisterExtensionService(extension_service);
 #endif
@@ -366,17 +364,16 @@ HostContentSettingsMap* OffTheRecordProfileImpl::GetHostContentSettingsMap() {
   return host_content_settings_map_.get();
 }
 
-content::BrowserPluginGuestManager*
-    OffTheRecordProfileImpl::GetGuestManager() {
+content::BrowserPluginGuestManager* OffTheRecordProfileImpl::GetGuestManager() {
 #if defined(ENABLE_EXTENSIONS)
-  return GuestViewManager::FromBrowserContext(this);
+  return extensions::GuestViewManager::FromBrowserContext(this);
 #else
   return NULL;
 #endif
 }
 
 quota::SpecialStoragePolicy*
-    OffTheRecordProfileImpl::GetSpecialStoragePolicy() {
+OffTheRecordProfileImpl::GetSpecialStoragePolicy() {
   return GetExtensionSpecialStoragePolicy();
 }
 
@@ -384,6 +381,11 @@ content::PushMessagingService*
 OffTheRecordProfileImpl::GetPushMessagingService() {
   // TODO(johnme): Support push messaging in incognito if possible.
   return NULL;
+}
+
+content::SSLHostStateDelegate*
+OffTheRecordProfileImpl::GetSSLHostStateDelegate() {
+  return ChromeSSLHostStateDelegateFactory::GetForProfile(this);
 }
 
 bool OffTheRecordProfileImpl::IsSameProfile(Profile* profile) {
@@ -470,16 +472,6 @@ void OffTheRecordProfileImpl::ClearNetworkingHistorySince(
   }
 }
 
-void OffTheRecordProfileImpl::ClearDomainReliabilityMonitor(
-    domain_reliability::DomainReliabilityClearMode mode,
-    const base::Closure& completion) {
-  // Incognito profiles don't have Domain Reliability Monitors, so there's
-  // nothing to do here.
-  if (!completion.is_null()) {
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, completion);
-  }
-}
-
 GURL OffTheRecordProfileImpl::GetHomePage() {
   return profile_->GetHomePage();
 }
@@ -499,8 +491,9 @@ class GuestSessionProfile : public OffTheRecordProfileImpl {
 
   virtual void InitChromeOSPreferences() OVERRIDE {
     chromeos_preferences_.reset(new chromeos::Preferences());
-    chromeos_preferences_->Init(static_cast<PrefServiceSyncable*>(GetPrefs()),
-                                chromeos::UserManager::Get()->GetActiveUser());
+    chromeos_preferences_->Init(
+        static_cast<PrefServiceSyncable*>(GetPrefs()),
+        user_manager::UserManager::Get()->GetActiveUser());
   }
 
  private:

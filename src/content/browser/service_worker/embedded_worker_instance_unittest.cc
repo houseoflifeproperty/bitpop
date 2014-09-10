@@ -44,6 +44,7 @@ class EmbeddedWorkerInstanceTest : public testing::Test {
   TestBrowserThreadBundle thread_bundle_;
   scoped_ptr<EmbeddedWorkerTestHelper> helper_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(EmbeddedWorkerInstanceTest);
 };
 
@@ -61,7 +62,7 @@ TEST_F(EmbeddedWorkerInstanceTest, StartAndStop) {
 
   const int embedded_worker_id = worker->embedded_worker_id();
   const int64 service_worker_version_id = 55L;
-  const GURL scope("http://example.com/*");
+  const GURL scope("http://example.com/");
   const GURL url("http://example.com/worker.js");
 
   // Simulate adding one process to the worker.
@@ -74,6 +75,7 @@ TEST_F(EmbeddedWorkerInstanceTest, StartAndStop) {
       service_worker_version_id,
       scope,
       url,
+      false,
       std::vector<int>(),
       base::Bind(&SaveStatusAndCall, &status, run_loop.QuitClosure()));
   run_loop.Run();
@@ -106,7 +108,7 @@ TEST_F(EmbeddedWorkerInstanceTest, InstanceDestroyedBeforeStartFinishes) {
   EXPECT_EQ(EmbeddedWorkerInstance::STOPPED, worker->status());
 
   const int64 service_worker_version_id = 55L;
-  const GURL scope("http://example.com/*");
+  const GURL scope("http://example.com/");
   const GURL url("http://example.com/worker.js");
 
   ServiceWorkerStatusCode status;
@@ -118,6 +120,7 @@ TEST_F(EmbeddedWorkerInstanceTest, InstanceDestroyedBeforeStartFinishes) {
       service_worker_version_id,
       scope,
       url,
+      false,
       available_process,
       base::Bind(&SaveStatusAndCall, &status, run_loop.QuitClosure()));
   // But destroy it before it gets a chance to complete.

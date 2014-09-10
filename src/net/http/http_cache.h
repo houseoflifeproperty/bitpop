@@ -44,6 +44,8 @@ class Entry;
 namespace net {
 
 class CertVerifier;
+class ChannelIDService;
+class DiskBasedCertCache;
 class HostResolver;
 class HttpAuthHandlerFactory;
 class HttpNetworkSession;
@@ -52,7 +54,6 @@ class HttpServerProperties;
 class IOBuffer;
 class NetLog;
 class NetworkDelegate;
-class ServerBoundCertService;
 class ProxyService;
 class SSLConfigService;
 class TransportSecurityState;
@@ -142,6 +143,8 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
 
   HttpTransactionFactory* network_layer() { return network_layer_.get(); }
 
+  DiskBasedCertCache* cert_cache() const { return cert_cache_.get(); }
+
   // Retrieves the cache backend for this HttpCache instance. If the backend
   // is not initialized yet, this method will initialize it. The return value is
   // a network error code, and it could be ERR_IO_PENDING, in which case the
@@ -186,6 +189,12 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
 
   // Initializes the Infinite Cache, if selected by the field trial.
   void InitializeInfiniteCache(const base::FilePath& path);
+
+  // Causes all transactions created after this point to effectively bypass
+  // the cache lock whenever there is lock contention.
+  void BypassLockForTest() {
+    bypass_lock_for_test_ = true;
+  }
 
   // HttpTransactionFactory implementation:
   virtual int CreateTransaction(RequestPriority priority,
@@ -389,6 +398,7 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   // Used when lazily constructing the disk_cache_.
   scoped_ptr<BackendFactory> backend_factory_;
   bool building_backend_;
+  bool bypass_lock_for_test_;
 
   Mode mode_;
 
@@ -397,6 +407,8 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   scoped_ptr<HttpTransactionFactory> network_layer_;
 
   scoped_ptr<disk_cache::Backend> disk_cache_;
+
+  scoped_ptr<DiskBasedCertCache> cert_cache_;
 
   // The set of active entries indexed by cache key.
   ActiveEntriesMap active_entries_;

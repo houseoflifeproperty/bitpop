@@ -33,7 +33,6 @@
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/download_prefs.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
@@ -41,10 +40,8 @@
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/extensions/extension_basic_info.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/logging_chrome.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/onc/onc_constants.h"
@@ -56,9 +53,6 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "extensions/browser/extension_registry.h"
-#include "extensions/browser/extension_system.h"
-#include "extensions/common/extension_set.h"
 #include "grit/generated_resources.h"
 #include "grit/net_internals_resources.h"
 #include "net/base/net_errors.h"
@@ -76,21 +70,31 @@
 #include "net/proxy/proxy_service.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/users/user.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/file_manager/filesystem_api_util.h"
 #include "chrome/browser/chromeos/net/onc_utils.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/system/syslogs_provider.h"
+#include "chrome/browser/chromeos/system_logs/debug_log_writer.h"
 #include "chrome/browser/net/nss_context.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/debug_daemon_client.h"
 #include "chromeos/network/onc/onc_certificate_importer_impl.h"
 #include "chromeos/network/onc/onc_utils.h"
+#include "components/user_manager/user.h"
 #endif
+
 #if defined(OS_WIN)
 #include "chrome/browser/net/service_providers_win.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/ui/webui/extensions/extension_basic_info.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension_set.h"
 #endif
 
 using base::StringValue;
@@ -206,77 +210,6 @@ content::WebUIDataSource* CreateNetInternalsHTMLSource() {
   source->SetJsonPath("strings.js");
   return source;
 }
-
-#if defined(OS_CHROMEOS)
-// Following functions are used for getting debug logs. Logs are
-// fetched from /var/log/* and put on the fileshelf.
-
-// Called once StoreDebugLogs is complete. Takes two parameters:
-// - log_path: where the log file was saved in the case of success;
-// - succeeded: was the log file saved successfully.
-typedef base::Callback<void(const base::FilePath& log_path,
-                            bool succeded)> StoreDebugLogsCallback;
-
-// Called upon completion of |WriteDebugLogToFile|. Closes file
-// descriptor, deletes log file in the case of failure and calls
-// |callback|.
-void WriteDebugLogToFileCompleted(const StoreDebugLogsCallback& callback,
-                                  const base::FilePath& file_path,
-                                  bool succeeded) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  if (!succeeded) {
-    bool posted = BrowserThread::PostBlockingPoolTaskAndReply(
-        FROM_HERE,
-        base::Bind(base::IgnoreResult(&base::DeleteFile), file_path, false),
-        base::Bind(callback, file_path, false));
-    DCHECK(posted);
-    return;
-  }
-  callback.Run(file_path, true);
-}
-
-// Stores into |file_path| debug logs in the .tgz format. Calls
-// |callback| upon completion.
-void WriteDebugLogToFile(const StoreDebugLogsCallback& callback,
-                         base::File* file,
-                         const base::FilePath& file_path) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  if (!file->IsValid()) {
-    LOG(ERROR) <<
-        "Can't create debug log file: " << file_path.AsUTF8Unsafe() << ", " <<
-        "error: " << file->error_details();
-    return;
-  }
-  chromeos::DBusThreadManager::Get()->GetDebugDaemonClient()->GetDebugLogs(
-      file->Pass(),
-      base::Bind(&WriteDebugLogToFileCompleted, callback, file_path));
-}
-
-// Stores debug logs in the .tgz archive on the |fileshelf|. The file
-// is created on the worker pool, then writing to it is triggered from
-// the UI thread, and finally it is closed (on success) or deleted (on
-// failure) on the worker pool, prior to calling |callback|.
-void StoreDebugLogs(const base::FilePath& fileshelf,
-                    const StoreDebugLogsCallback& callback) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK(!callback.is_null());
-
-  const base::FilePath::CharType kLogFileName[] =
-      FILE_PATH_LITERAL("debug-log.tgz");
-
-  base::FilePath file_path = fileshelf.Append(kLogFileName);
-  file_path = logging::GenerateTimestampedName(file_path, base::Time::Now());
-
-  int flags =  base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE;
-  base::File* file = new base::File;
-  bool posted = BrowserThread::PostBlockingPoolTaskAndReply(
-      FROM_HERE,
-      base::Bind(&base::File::Initialize,
-                 base::Unretained(file), file_path, flags),
-      base::Bind(&WriteDebugLogToFile, callback, base::Owned(file), file_path));
-  DCHECK(posted);
-}
-#endif  // defined(OS_CHROMEOS)
 
 // This class receives javascript messages from the renderer.
 // Note that the WebUI infrastructure runs on the UI thread, therefore all of
@@ -781,6 +714,7 @@ void NetInternalsMessageHandler::OnGetExtensionInfo(
     const base::ListValue* list) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   base::ListValue* extension_list = new base::ListValue();
+#if defined(ENABLE_EXTENSIONS)
   Profile* profile = Profile::FromWebUI(web_ui());
   extensions::ExtensionSystem* extension_system =
       extensions::ExtensionSystem::Get(profile);
@@ -799,6 +733,7 @@ void NetInternalsMessageHandler::OnGetExtensionInfo(
       }
     }
   }
+#endif
   SendJavascriptCommand("receivedExtensionInfo", extension_list);
 }
 
@@ -1360,18 +1295,15 @@ void NetInternalsMessageHandler::IOThreadImpl::OnGetSpdyStatus(
   net::HttpNetworkSession* http_network_session =
       GetHttpNetworkSession(GetMainContext());
 
-  status_dict->Set("spdy_enabled",
-                   base::Value::CreateBooleanValue(
-                       net::HttpStreamFactory::spdy_enabled()));
-  status_dict->Set("use_alternate_protocols",
-                   base::Value::CreateBooleanValue(
-                       http_network_session->params().use_alternate_protocols));
-  status_dict->Set("force_spdy_over_ssl",
-                   base::Value::CreateBooleanValue(
-                       http_network_session->params().force_spdy_over_ssl));
-  status_dict->Set("force_spdy_always",
-                   base::Value::CreateBooleanValue(
-                       http_network_session->params().force_spdy_always));
+  status_dict->SetBoolean("spdy_enabled",
+                          net::HttpStreamFactory::spdy_enabled());
+  status_dict->SetBoolean(
+      "use_alternate_protocols",
+      http_network_session->params().use_alternate_protocols);
+  status_dict->SetBoolean("force_spdy_over_ssl",
+                          http_network_session->params().force_spdy_over_ssl);
+  status_dict->SetBoolean("force_spdy_always",
+                          http_network_session->params().force_spdy_always);
 
   std::vector<std::string> next_protos;
   http_network_session->GetNextProtos(&next_protos);
@@ -1477,7 +1409,7 @@ void NetInternalsMessageHandler::ImportONCFileToNSSDB(
     const std::string& passcode,
     net::NSSCertDatabase* nssdb) {
   std::string error;
-  chromeos::User* user = chromeos::UserManager::Get()->GetUserByProfile(
+  user_manager::User* user = chromeos::ProfileHelper::Get()->GetUserByProfile(
       Profile::FromWebUI(web_ui()));
 
   if (user) {
@@ -1532,9 +1464,14 @@ void NetInternalsMessageHandler::OnStoreDebugLogs(const base::ListValue* list) {
 
   SendJavascriptCommand("receivedStoreDebugLogs",
                         new base::StringValue("Creating log file..."));
-  const DownloadPrefs* const prefs =
-      DownloadPrefs::FromBrowserContext(Profile::FromWebUI(web_ui()));
-  StoreDebugLogs(prefs->DownloadPath(),
+  Profile* profile = Profile::FromWebUI(web_ui());
+  const DownloadPrefs* const prefs = DownloadPrefs::FromBrowserContext(profile);
+  base::FilePath path = prefs->DownloadPath();
+  if (file_manager::util::IsUnderNonNativeLocalPath(profile, path))
+    path = prefs->GetDefaultDownloadDirectoryForProfile();
+  chromeos::DebugLogWriter::StoreLogs(
+      path,
+      true,  // should_compress
       base::Bind(&NetInternalsMessageHandler::OnStoreDebugLogsCompleted,
                  AsWeakPtr()));
 }

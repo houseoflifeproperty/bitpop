@@ -31,11 +31,11 @@
 #ifndef SVGAngleTearOff_h
 #define SVGAngleTearOff_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/svg/SVGAngle.h"
 #include "core/svg/properties/SVGPropertyTearOff.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGAngleTearOff FINAL : public SVGPropertyTearOff<SVGAngle>, public ScriptWrappable {
 public:
@@ -74,6 +74,6 @@ private:
     bool hasExposedAngleUnit() { return target()->unitType() <= SVGAngle::SVG_ANGLETYPE_GRAD; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGAngleTearOff_h_

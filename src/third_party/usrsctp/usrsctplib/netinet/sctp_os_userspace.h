@@ -217,11 +217,6 @@ typedef HANDLE userland_thread_t;
 
 typedef char* caddr_t;
 
-int Win_getifaddrs(struct ifaddrs**);
-#define getifaddrs(interfaces)  (int)Win_getifaddrs(interfaces)
-int win_if_nametoindex(const char *);
-#define if_nametoindex(x) win_if_nametoindex(x)
-
 #define bzero(buf, len) memset(buf, 0, len)
 #define bcopy(srcKey, dstKey, len) memcpy(dstKey, srcKey, len)
 #define snprintf(data, size, format, ...) _snprintf_s(data, size, _TRUNCATE, format, __VA_ARGS__)
@@ -399,6 +394,11 @@ struct udphdr {
 	unsigned __int16 uh_sum;
 };
 
+int Win_getifaddrs(struct ifaddrs**);
+#define getifaddrs(interfaces)  (int)Win_getifaddrs(interfaces)
+int win_if_nametoindex(const char *);
+#define if_nametoindex(x) win_if_nametoindex(x)
+
 #else /* !defined(Userspace_os_Windows) */
 #include <sys/cdefs.h> /* needed? added from old __FreeBSD__ */
 #include <sys/socket.h>
@@ -474,9 +474,13 @@ struct sx {int dummy;};
 #include <netinet/in.h>
 #include <netinet/in_systm.h>
 #include <netinet/ip.h>
-#include <netinet/ip_icmp.h>
-#else
+#endif
+#if defined INET
+#if defined(__Userspace_os_Windows)
 #include <user_ip_icmp.h>
+#else
+#include <netinet/ip_icmp.h>
+#endif
 #endif
 /* #include <netinet/in_pcb.h> ported to userspace */
 #include <user_inpcb.h>

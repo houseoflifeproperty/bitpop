@@ -20,7 +20,7 @@
 #include "ppapi/shared_impl/media_stream_buffer.h"
 
 // IS_ALIGNED is also defined in
-// third_party/libjingle/overrides/talk/base/basictypes.h
+// third_party/webrtc/overrides/webrtc/base/basictypes.h
 // TODO(ronghuawu): Avoid undef.
 #undef IS_ALIGNED
 #include "third_party/libyuv/include/libyuv.h"
@@ -426,6 +426,7 @@ void PepperMediaStreamVideoTrackHost::OnVideoFrame(
 
 void PepperMediaStreamVideoTrackHost::GetCurrentSupportedFormats(
     int max_requested_width, int max_requested_height,
+    double max_requested_frame_rate,
     const VideoCaptureDeviceFormatsCB& callback) {
   if (type_ != kWrite) {
     DVLOG(1) << "GetCurrentSupportedFormats is only supported in output mode.";
@@ -538,8 +539,10 @@ void PepperMediaStreamVideoTrackHost::InitBlinkTrack() {
 }
 
 void PepperMediaStreamVideoTrackHost::OnTrackStarted(
-    MediaStreamSource* source, bool success) {
-  DVLOG(3) << "OnTrackStarted result: " << success;
+    MediaStreamSource* source,
+    MediaStreamRequestResult result,
+    const blink::WebString& result_name) {
+  DVLOG(3) << "OnTrackStarted result: " << result;
 }
 
 }  // namespace content

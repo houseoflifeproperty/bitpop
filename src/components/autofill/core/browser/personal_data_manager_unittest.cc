@@ -34,6 +34,8 @@ namespace {
 
 enum UserMode { USER_MODE_NORMAL, USER_MODE_INCOGNITO };
 
+bool ReturnTrue(const AutofillProfile&) { return true; }
+
 ACTION(QuitMainMessageLoop) { base::MessageLoop::current()->Quit(); }
 
 class PersonalDataLoadedObserverMock : public PersonalDataManagerObserver {
@@ -1097,13 +1099,17 @@ TEST_F(PersonalDataManagerTest, AggregateTwoProfilesWithMultiValue) {
   const std::vector<AutofillProfile*>& results2 = personal_data_->GetProfiles();
 
   // Modify expected to include multi-valued fields.
-  std::vector<base::string16> values;
-  expected.GetRawMultiInfo(NAME_FULL, &values);
-  values.push_back(ASCIIToUTF16("John Adams"));
-  expected.SetRawMultiInfo(NAME_FULL, values);
-  expected.GetRawMultiInfo(EMAIL_ADDRESS, &values);
-  values.push_back(ASCIIToUTF16("second@gmail.com"));
-  expected.SetRawMultiInfo(EMAIL_ADDRESS, values);
+  std::vector<base::string16> first_names, last_names, emails;
+  expected.GetRawMultiInfo(NAME_FIRST, &first_names);
+  first_names.push_back(ASCIIToUTF16("John"));
+  expected.GetRawMultiInfo(NAME_LAST, &last_names);
+  last_names.push_back(ASCIIToUTF16("Adams"));
+  expected.SetRawMultiInfo(NAME_FIRST, first_names);
+  expected.SetRawMultiInfo(NAME_LAST, last_names);
+
+  expected.GetRawMultiInfo(EMAIL_ADDRESS, &emails);
+  emails.push_back(ASCIIToUTF16("second@gmail.com"));
+  expected.SetRawMultiInfo(EMAIL_ADDRESS, emails);
 
   ASSERT_EQ(1U, results2.size());
   EXPECT_EQ(0, expected.Compare(*results2[0]));
@@ -2119,10 +2125,16 @@ TEST_F(PersonalDataManagerTest, SaveImportedProfileWithExistingVerifiedData) {
   // The new profile should be merged into the existing one.
   AutofillProfile expected_profile = new_verified_profile;
   expected_profile.set_guid(profile.guid());
-  std::vector<base::string16> names;
-  expected_profile.GetRawMultiInfo(NAME_FULL, &names);
-  names.insert(names.begin(), ASCIIToUTF16("Marion Mitchell Morrison"));
-  expected_profile.SetRawMultiInfo(NAME_FULL, names);
+  std::vector<base::string16> first_names, middle_names, last_names;
+  expected_profile.GetRawMultiInfo(NAME_FIRST, &first_names);
+  expected_profile.GetRawMultiInfo(NAME_MIDDLE, &middle_names);
+  expected_profile.GetRawMultiInfo(NAME_LAST, &last_names);
+  first_names.insert(first_names.begin(), ASCIIToUTF16("Marion"));
+  middle_names.insert(middle_names.begin(), ASCIIToUTF16("Mitchell"));
+  last_names.insert(last_names.begin(), ASCIIToUTF16("Morrison"));
+  expected_profile.SetRawMultiInfo(NAME_FIRST, first_names);
+  expected_profile.SetRawMultiInfo(NAME_MIDDLE, middle_names);
+  expected_profile.SetRawMultiInfo(NAME_LAST, last_names);
 
   const std::vector<AutofillProfile*>& results = personal_data_->GetProfiles();
   ASSERT_EQ(1U, results.size());
@@ -2327,9 +2339,19 @@ TEST_F(PersonalDataManagerTest, CaseInsensitiveMultiValueAggregation) {
   base::MessageLoop::current()->Run();
 
   AutofillProfile expected(base::GenerateGUID(), "https://www.example.com");
-  test::SetProfileInfo(&expected, "George", NULL,
-      "Washington", "theprez@gmail.com", NULL, "21 Laussat St", NULL,
-      "San Francisco", "California", "94102", NULL, "(817) 555-6789");
+  test::SetProfileInfo(&expected,
+                       "George",
+                       NULL,
+                       "Washington",
+                       "theprez@gmail.com",
+                       NULL,
+                       "21 Laussat St",
+                       NULL,
+                       "San Francisco",
+                       "California",
+                       "94102",
+                       NULL,
+                       "817-555-6789");
   const std::vector<AutofillProfile*>& results1 = personal_data_->GetProfiles();
   ASSERT_EQ(1U, results1.size());
   EXPECT_EQ(0, expected.Compare(*results1[0]));
@@ -2374,7 +2396,7 @@ TEST_F(PersonalDataManagerTest, CaseInsensitiveMultiValueAggregation) {
   // Modify expected to include multi-valued fields.
   std::vector<base::string16> values;
   expected.GetRawMultiInfo(PHONE_HOME_WHOLE_NUMBER, &values);
-  values.push_back(ASCIIToUTF16("(214) 555-1234"));
+  values.push_back(ASCIIToUTF16("214-555-1234"));
   expected.SetRawMultiInfo(PHONE_HOME_WHOLE_NUMBER, values);
 
   ASSERT_EQ(1U, results2.size());
@@ -2562,6 +2584,95 @@ TEST_F(PersonalDataManagerTest, UpdateLanguageCodeInProfile) {
   ASSERT_EQ(1U, results.size());
   EXPECT_EQ(0, profile.Compare(*results[0]));
   EXPECT_EQ("en", results[0]->language_code());
+}
+
+TEST_F(PersonalDataManagerTest, GetProfileSuggestions) {
+  AutofillProfile profile(base::GenerateGUID(), "https://www.example.com");
+  test::SetProfileInfo(&profile,
+      "Marion", "Mitchell", "Morrison",
+      "johnwayne@me.xyz", "Fox",
+      "123 Zoo St.\nSecond Line\nThird line", "unit 5", "Hollywood", "CA",
+      "91601", "US", "12345678910");
+  personal_data_->AddProfile(profile);
+  ResetPersonalDataManager(USER_MODE_NORMAL);
+
+  std::vector<base::string16> values;
+  std::vector<base::string16> labels;
+  std::vector<base::string16> icons;
+  std::vector<PersonalDataManager::GUIDPair> guid_pairs;
+  personal_data_->GetProfileSuggestions(
+      AutofillType(ADDRESS_HOME_STREET_ADDRESS),
+      base::UTF8ToUTF16("123"),
+      false,
+      std::vector<ServerFieldType>(),
+      base::Bind(ReturnTrue),
+      &values,
+      &labels,
+      &icons,
+      &guid_pairs);
+  ASSERT_FALSE(values.empty());
+  EXPECT_EQ(values[0],
+      base::UTF8ToUTF16("123 Zoo St., Second Line, Third line, unit 5"));
+}
+
+TEST_F(PersonalDataManagerTest, GetCreditCardSuggestions) {
+  CreditCard credit_card0(base::GenerateGUID(), "https://www.example.com");
+  test::SetCreditCardInfo(&credit_card0,
+      "Clyde Barrow", "347666888555" /* American Express */, "04", "2015");
+  personal_data_->AddCreditCard(credit_card0);
+
+  CreditCard credit_card1(base::GenerateGUID(), "https://www.example.com");
+  test::SetCreditCardInfo(&credit_card1, "John Dillinger", "", "01", "2010");
+  personal_data_->AddCreditCard(credit_card1);
+
+  CreditCard credit_card2(base::GenerateGUID(), "https://www.example.com");
+  test::SetCreditCardInfo(&credit_card2,
+      "Bonnie Parker", "518765432109" /* Mastercard */, "", "");
+  personal_data_->AddCreditCard(credit_card2);
+
+  EXPECT_CALL(personal_data_observer_, OnPersonalDataChanged())
+      .WillOnce(QuitMainMessageLoop());
+  base::MessageLoop::current()->Run();
+
+  // Sublabel is card number when filling name.
+  std::vector<base::string16> values;
+  std::vector<base::string16> labels;
+  std::vector<base::string16> icons;
+  std::vector<PersonalDataManager::GUIDPair> guid_pairs;
+  personal_data_->GetCreditCardSuggestions(
+      AutofillType(CREDIT_CARD_NAME),
+      base::string16(),
+      &values,
+      &labels,
+      &icons,
+      &guid_pairs);
+  ASSERT_EQ(3U, values.size());
+  ASSERT_EQ(values.size(), labels.size());
+  EXPECT_EQ(ASCIIToUTF16("Clyde Barrow"), values[0]);
+  EXPECT_EQ(ASCIIToUTF16("*8555"), labels[0]);
+  EXPECT_EQ(ASCIIToUTF16("John Dillinger"), values[1]);
+  EXPECT_EQ(base::string16(), labels[1]);
+  EXPECT_EQ(ASCIIToUTF16("Bonnie Parker"), values[2]);
+  EXPECT_EQ(ASCIIToUTF16("*2109"), labels[2]);
+
+  // Sublabel is expiration date when filling card number.
+  values.clear();
+  labels.clear();
+  icons.clear();
+  guid_pairs.clear();
+  personal_data_->GetCreditCardSuggestions(
+      AutofillType(CREDIT_CARD_NUMBER),
+      base::string16(),
+      &values,
+      &labels,
+      &icons,
+      &guid_pairs);
+  ASSERT_EQ(2U, values.size());
+  ASSERT_EQ(values.size(), labels.size());
+  EXPECT_EQ(ASCIIToUTF16("********8555"), values[0]);
+  EXPECT_EQ(ASCIIToUTF16("04/15"), labels[0]);
+  EXPECT_EQ(ASCIIToUTF16("********2109"), values[1]);
+  EXPECT_EQ(base::string16(), labels[1]);
 }
 
 }  // namespace autofill

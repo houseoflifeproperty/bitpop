@@ -10,30 +10,40 @@
 
 namespace cc {
 
-FakePictureLayerImpl::FakePictureLayerImpl(
-    LayerTreeImpl* tree_impl,
-    int id,
-    scoped_refptr<PicturePileImpl> pile)
+FakePictureLayerImpl::FakePictureLayerImpl(LayerTreeImpl* tree_impl,
+                                           int id,
+                                           scoped_refptr<PicturePileImpl> pile)
     : PictureLayerImpl(tree_impl, id),
-      append_quads_count_(0) {
+      append_quads_count_(0),
+      did_become_active_call_count_(0),
+      has_valid_tile_priorities_(false),
+      use_set_valid_tile_priorities_flag_(false) {
   pile_ = pile;
-  CHECK(pile->tiling_rect().origin() == gfx::Point());
-  SetBounds(pile_->tiling_rect().size());
-  SetContentBounds(pile_->tiling_rect().size());
+  SetBounds(pile_->tiling_size());
+  SetContentBounds(pile_->tiling_size());
 }
 
 FakePictureLayerImpl::FakePictureLayerImpl(LayerTreeImpl* tree_impl,
                                            int id,
                                            scoped_refptr<PicturePileImpl> pile,
                                            const gfx::Size& layer_bounds)
-    : PictureLayerImpl(tree_impl, id), append_quads_count_(0) {
+    : PictureLayerImpl(tree_impl, id),
+      append_quads_count_(0),
+      did_become_active_call_count_(0),
+      has_valid_tile_priorities_(false),
+      use_set_valid_tile_priorities_flag_(false) {
   pile_ = pile;
   SetBounds(layer_bounds);
   SetContentBounds(layer_bounds);
 }
 
 FakePictureLayerImpl::FakePictureLayerImpl(LayerTreeImpl* tree_impl, int id)
-    : PictureLayerImpl(tree_impl, id), append_quads_count_(0) {}
+    : PictureLayerImpl(tree_impl, id),
+      append_quads_count_(0),
+      did_become_active_call_count_(0),
+      has_valid_tile_priorities_(false),
+      use_set_valid_tile_priorities_flag_(false) {
+}
 
 scoped_ptr<LayerImpl> FakePictureLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
@@ -41,9 +51,12 @@ scoped_ptr<LayerImpl> FakePictureLayerImpl::CreateLayerImpl(
       new FakePictureLayerImpl(tree_impl, id())).PassAs<LayerImpl>();
 }
 
-void FakePictureLayerImpl::AppendQuads(QuadSink* quad_sink,
-                                       AppendQuadsData* append_quads_data) {
-  PictureLayerImpl::AppendQuads(quad_sink, append_quads_data);
+void FakePictureLayerImpl::AppendQuads(
+    RenderPass* render_pass,
+    const OcclusionTracker<LayerImpl>& occlusion_tracker,
+    AppendQuadsData* append_quads_data) {
+  PictureLayerImpl::AppendQuads(
+      render_pass, occlusion_tracker, append_quads_data);
   ++append_quads_count_;
 }
 
@@ -149,6 +162,17 @@ void FakePictureLayerImpl::CreateDefaultTilingsAndTiles() {
   } else {
     DCHECK_EQ(tilings()->num_tilings(), 0u);
   }
+}
+
+void FakePictureLayerImpl::DidBecomeActive() {
+  PictureLayerImpl::DidBecomeActive();
+  ++did_become_active_call_count_;
+}
+
+bool FakePictureLayerImpl::HasValidTilePriorities() const {
+  return use_set_valid_tile_priorities_flag_
+             ? has_valid_tile_priorities_
+             : PictureLayerImpl::HasValidTilePriorities();
 }
 
 }  // namespace cc

@@ -26,11 +26,10 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/v8.h"
-
-#include "src/platform.h"
-#include "src/isolate.h"
-
 #include "test/cctest/cctest.h"
+
+#include "src/base/platform/platform.h"
+#include "src/isolate.h"
 
 
 enum Turn {
@@ -43,9 +42,9 @@ enum Turn {
 static Turn turn = FILL_CACHE;
 
 
-class ThreadA : public v8::internal::Thread {
+class ThreadA : public v8::base::Thread {
  public:
-  ThreadA() : Thread("ThreadA") { }
+  ThreadA() : Thread(Options("ThreadA")) {}
   void Run() {
     v8::Isolate* isolate = CcTest::isolate();
     v8::Locker locker(isolate);
@@ -83,9 +82,9 @@ class ThreadA : public v8::internal::Thread {
 };
 
 
-class ThreadB : public v8::internal::Thread {
+class ThreadB : public v8::base::Thread {
  public:
-  ThreadB() : Thread("ThreadB") { }
+  ThreadB() : Thread(Options("ThreadB")) {}
   void Run() {
     do {
       {
@@ -123,16 +122,16 @@ TEST(JSFunctionResultCachesInTwoThreads) {
   CHECK_EQ(DONE, turn);
 }
 
-class ThreadIdValidationThread : public v8::internal::Thread {
+class ThreadIdValidationThread : public v8::base::Thread {
  public:
-  ThreadIdValidationThread(i::Thread* thread_to_start,
-                           i::List<i::ThreadId>* refs,
-                           unsigned int thread_no,
-                           i::Semaphore* semaphore)
-    : Thread("ThreadRefValidationThread"),
-      refs_(refs), thread_no_(thread_no), thread_to_start_(thread_to_start),
-      semaphore_(semaphore) {
-  }
+  ThreadIdValidationThread(v8::base::Thread* thread_to_start,
+                           i::List<i::ThreadId>* refs, unsigned int thread_no,
+                           v8::base::Semaphore* semaphore)
+      : Thread(Options("ThreadRefValidationThread")),
+        refs_(refs),
+        thread_no_(thread_no),
+        thread_to_start_(thread_to_start),
+        semaphore_(semaphore) {}
 
   void Run() {
     i::ThreadId thread_id = i::ThreadId::Current();
@@ -150,8 +149,8 @@ class ThreadIdValidationThread : public v8::internal::Thread {
  private:
   i::List<i::ThreadId>* refs_;
   int thread_no_;
-  i::Thread* thread_to_start_;
-  i::Semaphore* semaphore_;
+  v8::base::Thread* thread_to_start_;
+  v8::base::Semaphore* semaphore_;
 };
 
 
@@ -159,7 +158,7 @@ TEST(ThreadIdValidation) {
   const int kNThreads = 100;
   i::List<ThreadIdValidationThread*> threads(kNThreads);
   i::List<i::ThreadId> refs(kNThreads);
-  i::Semaphore semaphore(0);
+  v8::base::Semaphore semaphore(0);
   ThreadIdValidationThread* prev = NULL;
   for (int i = kNThreads - 1; i >= 0; i--) {
     ThreadIdValidationThread* newThread =
@@ -175,20 +174,4 @@ TEST(ThreadIdValidation) {
   for (int i = 0; i < kNThreads; i++) {
     delete threads[i];
   }
-}
-
-
-class ThreadC : public v8::internal::Thread {
- public:
-  ThreadC() : Thread("ThreadC") { }
-  void Run() {
-    Join();
-  }
-};
-
-
-TEST(ThreadJoinSelf) {
-  ThreadC thread;
-  thread.Start();
-  thread.Join();
 }

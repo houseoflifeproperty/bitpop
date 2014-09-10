@@ -38,7 +38,7 @@
 #include "platform/graphics/GraphicsContext.h"
 #include <windows.h>
 
-namespace WebCore {
+namespace blink {
 
 // Maximum font size, in pixels, at which embedded bitmaps will be used
 // if available.
@@ -63,7 +63,14 @@ void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context) cons
         flags |= SkPaint::kEmbeddedBitmapText_Flag;
 
     if (ts >= m_minSizeForAntiAlias) {
-        if (m_useSubpixelPositioning)
+
+        // Subpixel text positioning looks pretty bad without font smoothing.
+        // Disable it unless some type of font smoothing is used. As most tests
+        // run without font smoothing we enable it for tests to ensure we get
+        // good test coverage matching the more common smoothing enabled
+        // behavior.
+        if (m_useSubpixelPositioning
+            && ((textFlags & SkPaint::kAntiAlias_Flag) || LayoutTestSupport::isRunningLayoutTest()))
             flags |= SkPaint::kSubpixelText_Flag;
 
         // Only set painting flags when we're actually painting.
@@ -126,8 +133,8 @@ static bool isWebFont(const String& familyName)
 
 static int computePaintTextFlags(String fontFamilyName)
 {
-    if (isRunningLayoutTest())
-        return isFontAntialiasingEnabledForTest() ? SkPaint::kAntiAlias_Flag : 0;
+    if (LayoutTestSupport::isRunningLayoutTest())
+        return LayoutTestSupport::isFontAntialiasingEnabledForTest() ? SkPaint::kAntiAlias_Flag : 0;
 
     int textFlags = getSystemTextFlags();
 
@@ -151,4 +158,4 @@ bool FontPlatformData::defaultUseSubpixelPositioning()
     return FontCache::fontCache()->useSubpixelPositioning();
 }
 
-} // namespace WebCore
+} // namespace blink

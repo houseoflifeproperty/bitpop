@@ -211,7 +211,7 @@ uint32 IndexedDBDispatcherHost::TransactionIdToProcessId(
 
 void IndexedDBDispatcherHost::HoldBlobDataHandle(
     const std::string& uuid,
-    scoped_ptr<webkit_blob::BlobDataHandle>& blob_data_handle) {
+    scoped_ptr<webkit_blob::BlobDataHandle> blob_data_handle) {
   DCHECK(!ContainsKey(blob_data_handle_map_, uuid));
   blob_data_handle_map_[uuid] = blob_data_handle.release();
 }
@@ -475,6 +475,8 @@ bool IndexedDBDispatcherHost::DatabaseDispatcherHost::OnMessageReceived(
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseCreateTransaction,
                         OnCreateTransaction)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseClose, OnClose)
+    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseVersionChangeIgnored,
+                        OnVersionChangeIgnored)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseDestroyed, OnDestroyed)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseGet, OnGet)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabasePut, OnPutWrapper)
@@ -566,6 +568,17 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnClose(
   if (!connection || !connection->IsConnected())
     return;
   connection->Close();
+}
+
+void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnVersionChangeIgnored(
+    int32 ipc_database_id) {
+  DCHECK(
+      parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
+  IndexedDBConnection* connection =
+      parent_->GetOrTerminateProcess(&map_, ipc_database_id);
+  if (!connection || !connection->IsConnected())
+    return;
+  connection->VersionChangeIgnored();
 }
 
 void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnDestroyed(
@@ -664,15 +677,14 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnPut(
   IndexedDBValue value;
   value.bits = params.value;
   value.blob_info.swap(blob_info);
-  connection->database()->Put(
-      host_transaction_id,
-      params.object_store_id,
-      &value,
-      &scoped_handles,
-      make_scoped_ptr(new IndexedDBKey(params.key)),
-      static_cast<IndexedDBDatabase::PutMode>(params.put_mode),
-      callbacks,
-      params.index_keys);
+  connection->database()->Put(host_transaction_id,
+                              params.object_store_id,
+                              &value,
+                              &scoped_handles,
+                              make_scoped_ptr(new IndexedDBKey(params.key)),
+                              params.put_mode,
+                              callbacks,
+                              params.index_keys);
   TransactionIDToSizeMap* map =
       &parent_->database_dispatcher_host_->transaction_size_map_;
   // Size can't be big enough to overflow because it represents the
@@ -729,9 +741,9 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnOpenCursor(
       params.object_store_id,
       params.index_id,
       make_scoped_ptr(new IndexedDBKeyRange(params.key_range)),
-      static_cast<indexed_db::CursorDirection>(params.direction),
+      params.direction,
       params.key_only,
-      static_cast<IndexedDBDatabase::TaskType>(params.task_type),
+      params.task_type,
       callbacks);
 }
 

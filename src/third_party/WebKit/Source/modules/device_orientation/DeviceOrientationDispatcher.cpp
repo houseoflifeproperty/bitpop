@@ -35,7 +35,7 @@
 #include "modules/device_orientation/DeviceOrientationData.h"
 #include "public/platform/Platform.h"
 
-namespace WebCore {
+namespace blink {
 
 DeviceOrientationDispatcher& DeviceOrientationDispatcher::instance()
 {
@@ -53,16 +53,16 @@ DeviceOrientationDispatcher::~DeviceOrientationDispatcher()
 
 void DeviceOrientationDispatcher::startListening()
 {
-    blink::Platform::current()->setDeviceOrientationListener(this);
+    Platform::current()->startListening(WebPlatformEventDeviceOrientation, this);
 }
 
 void DeviceOrientationDispatcher::stopListening()
 {
-    blink::Platform::current()->setDeviceOrientationListener(0);
+    Platform::current()->stopListening(WebPlatformEventDeviceOrientation);
     m_lastDeviceOrientationData.clear();
 }
 
-void DeviceOrientationDispatcher::didChangeDeviceOrientation(const blink::WebDeviceOrientationData& motion)
+void DeviceOrientationDispatcher::didChangeDeviceOrientation(const WebDeviceOrientationData& motion)
 {
     m_lastDeviceOrientationData = DeviceOrientationData::create(motion);
     notifyControllers();
@@ -73,4 +73,4 @@ DeviceOrientationData* DeviceOrientationDispatcher::latestDeviceOrientationData(
     return m_lastDeviceOrientationData.get();
 }
 
-} // namespace WebCore
+} // namespace blink

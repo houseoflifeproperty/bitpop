@@ -4,7 +4,6 @@
 
 #include "chrome/browser/extensions/component_loader.h"
 
-#include <map>
 #include <string>
 
 #include "base/command_line.h"
@@ -12,18 +11,14 @@
 #include "base/json/json_string_value_serializer.h"
 #include "base/metrics/field_trial.h"
 #include "base/path_service.h"
-#include "base/prefs/pref_change_registrar.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/search/hotword_service_factory.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/pref_names.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
 #include "content/public/browser/plugin_service.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/file_util.h"
@@ -46,7 +41,6 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/chromeos_switches.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
@@ -65,30 +59,6 @@ namespace extensions {
 namespace {
 
 static bool enable_background_extensions_during_testing = false;
-
-std::string LookupWebstoreName() {
-  const char kWebStoreNameFieldTrialName[] = "WebStoreName";
-  const char kStoreControl[] = "StoreControl";
-  const char kWebStore[] = "WebStore";
-  const char kGetApps[] = "GetApps";
-  const char kAddApps[] = "AddApps";
-  const char kMoreApps[] = "MoreApps";
-
-  typedef std::map<std::string, int> NameMap;
-  CR_DEFINE_STATIC_LOCAL(NameMap, names, ());
-  if (names.empty()) {
-    names.insert(std::make_pair(kStoreControl, IDS_WEBSTORE_NAME_STORE));
-    names.insert(std::make_pair(kWebStore, IDS_WEBSTORE_NAME_WEBSTORE));
-    names.insert(std::make_pair(kGetApps, IDS_WEBSTORE_NAME_GET_APPS));
-    names.insert(std::make_pair(kAddApps, IDS_WEBSTORE_NAME_ADD_APPS));
-    names.insert(std::make_pair(kMoreApps, IDS_WEBSTORE_NAME_MORE_APPS));
-  }
-  std::string field_trial_name =
-      base::FieldTrialList::FindFullName(kWebStoreNameFieldTrialName);
-  NameMap::iterator it = names.find(field_trial_name);
-  int string_id = it == names.end() ? names[kStoreControl] : it->second;
-  return l10n_util::GetStringUTF8(string_id);
-}
 
 std::string GenerateId(const base::DictionaryValue* manifest,
                        const base::FilePath& path) {
@@ -297,12 +267,17 @@ void ComponentLoader::AddFileManagerExtension() {
   if (command_line->HasSwitch(switches::kFileManagerExtensionPath)) {
     base::FilePath filemgr_extension_path(
         command_line->GetSwitchValuePath(switches::kFileManagerExtensionPath));
-    Add(IDR_FILEMANAGER_MANIFEST, filemgr_extension_path);
+    AddWithNameAndDescription(IDR_FILEMANAGER_MANIFEST,
+                              filemgr_extension_path,
+                              IDS_FILEMANAGER_APP_NAME,
+                              IDS_FILEMANAGER_APP_DESCRIPTION);
     return;
   }
 #endif  // NDEBUG
-  Add(IDR_FILEMANAGER_MANIFEST,
-      base::FilePath(FILE_PATH_LITERAL("file_manager")));
+  AddWithNameAndDescription(IDR_FILEMANAGER_MANIFEST,
+                            base::FilePath(FILE_PATH_LITERAL("file_manager")),
+                            IDS_FILEMANAGER_APP_NAME,
+                            IDS_FILEMANAGER_APP_DESCRIPTION);
 #endif  // defined(OS_CHROMEOS)
 }
 
@@ -328,8 +303,14 @@ void ComponentLoader::AddHangoutServicesExtension() {
 
 void ComponentLoader::AddHotwordHelperExtension() {
   if (HotwordServiceFactory::IsHotwordAllowed(browser_context_)) {
-    Add(IDR_HOTWORD_HELPER_MANIFEST,
-        base::FilePath(FILE_PATH_LITERAL("hotword_helper")));
+    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    if (command_line->HasSwitch(switches::kEnableExperimentalHotwording)) {
+      Add(IDR_HOTWORD_MANIFEST,
+          base::FilePath(FILE_PATH_LITERAL("hotword")));
+    } else {
+      Add(IDR_HOTWORD_HELPER_MANIFEST,
+          base::FilePath(FILE_PATH_LITERAL("hotword_helper")));
+    }
   }
 }
 
@@ -391,9 +372,11 @@ std::string ComponentLoader::AddChromeOsSpeechSynthesisExtension() {
 }
 #endif
 
-void ComponentLoader::AddWithName(int manifest_resource_id,
-                                  const base::FilePath& root_directory,
-                                  const std::string& name) {
+void ComponentLoader::AddWithNameAndDescription(
+    int manifest_resource_id,
+    const base::FilePath& root_directory,
+    int name_string_id,
+    int description_string_id) {
   std::string manifest_contents =
       ResourceBundle::GetSharedInstance().GetRawDataResource(
           manifest_resource_id).as_string();
@@ -403,17 +386,20 @@ void ComponentLoader::AddWithName(int manifest_resource_id,
   base::DictionaryValue* manifest = ParseManifest(manifest_contents);
 
   if (manifest) {
-    // Update manifest to use a proper name.
-    manifest->SetString(manifest_keys::kName, name);
+    manifest->SetString(manifest_keys::kName,
+                        l10n_util::GetStringUTF8(name_string_id));
+    manifest->SetString(manifest_keys::kDescription,
+                        l10n_util::GetStringUTF8(description_string_id));
     Add(manifest, root_directory);
   }
 }
 
 void ComponentLoader::AddChromeApp() {
 #if defined(ENABLE_APP_LIST)
-  AddWithName(IDR_CHROME_APP_MANIFEST,
-              base::FilePath(FILE_PATH_LITERAL("chrome_app")),
-              l10n_util::GetStringUTF8(IDS_SHORT_PRODUCT_NAME));
+  AddWithNameAndDescription(IDR_CHROME_APP_MANIFEST,
+                            base::FilePath(FILE_PATH_LITERAL("chrome_app")),
+                            IDS_SHORT_PRODUCT_NAME,
+                            IDS_CHROME_SHORTCUT_DESCRIPTION);
 #endif
 }
 
@@ -424,9 +410,10 @@ void ComponentLoader::AddKeyboardApp() {
 }
 
 void ComponentLoader::AddWebStoreApp() {
-  AddWithName(IDR_WEBSTORE_MANIFEST,
-              base::FilePath(FILE_PATH_LITERAL("web_store")),
-              LookupWebstoreName());
+  AddWithNameAndDescription(IDR_WEBSTORE_MANIFEST,
+                            base::FilePath(FILE_PATH_LITERAL("web_store")),
+                            IDS_WEBSTORE_NAME_STORE,
+                            IDS_WEBSTORE_APP_DESCRIPTION);
 }
 
 // static
@@ -509,10 +496,11 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
 #if defined(OS_CHROMEOS) && defined(GOOGLE_CHROME_BUILD)
   // Since this is a v2 app it has a background page.
   if (!command_line->HasSwitch(chromeos::switches::kDisableGeniusApp)) {
-    AddWithName(IDR_GENIUS_APP_MANIFEST,
-                base::FilePath(FILE_PATH_LITERAL(
-                    "/usr/share/chromeos-assets/genius_app")),
-                l10n_util::GetStringUTF8(IDS_GENIUS_APP_NAME));
+    AddWithNameAndDescription(IDR_GENIUS_APP_MANIFEST,
+                              base::FilePath(FILE_PATH_LITERAL(
+                                  "/usr/share/chromeos-assets/genius_app")),
+                              IDS_GENIUS_APP_NAME,
+                              IDS_GENIUS_APP_DESCRIPTION);
   }
 #endif
 
@@ -544,7 +532,7 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   if (!skip_session_components) {
 #if defined(GOOGLE_CHROME_BUILD)
     if (!command_line->HasSwitch(
-            chromeos::switches::kDisableQuickofficeComponentApp)) {
+            chromeos::switches::kDisableOfficeEditingComponentApp)) {
       std::string id = Add(IDR_QUICKOFFICE_MANIFEST, base::FilePath(
           FILE_PATH_LITERAL("/usr/share/chromeos-assets/quickoffice")));
       EnableFileSystemInGuestMode(id);
@@ -605,20 +593,6 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   AddNetworkSpeechSynthesisExtension();
 #endif
 
-  if (!skip_session_components &&
-      command_line->HasSwitch(switches::kEnableEasyUnlock)) {
-    if (command_line->HasSwitch(switches::kEasyUnlockAppPath)) {
-      base::FilePath easy_unlock_path(
-          command_line->GetSwitchValuePath(switches::kEasyUnlockAppPath));
-      Add(IDR_EASY_UNLOCK_MANIFEST, easy_unlock_path);
-    } else {
-#if defined(OS_CHROMEOS)
-      Add(IDR_EASY_UNLOCK_MANIFEST,
-          base::FilePath(
-              FILE_PATH_LITERAL("/usr/share/chromeos-assets/easy_unlock")));
-#endif
-    }
-  }
 #endif  // defined(GOOGLE_CHROME_BUILD)
 
 #if defined(ENABLE_PLUGINS)

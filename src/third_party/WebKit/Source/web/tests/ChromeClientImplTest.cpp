@@ -31,6 +31,7 @@
 #include "config.h"
 
 #include "core/page/Chrome.h"
+#include "core/page/Page.h"
 #include "public/web/WebFrameClient.h"
 #include "public/web/WebInputEvent.h"
 #include "public/web/WebLocalFrame.h"
@@ -104,14 +105,14 @@ protected:
         event.button = button;
         setCurrentInputEventForTest(&event);
         m_chromeClientImpl->setScrollbarsVisible(!asPopup);
-        m_chromeClientImpl->show(WebCore::NavigationPolicyIgnore);
+        m_chromeClientImpl->show(blink::NavigationPolicyIgnore);
         setCurrentInputEventForTest(0);
         return m_result;
     }
 
     bool isNavigationPolicyPopup()
     {
-        m_chromeClientImpl->show(WebCore::NavigationPolicyIgnore);
+        m_chromeClientImpl->show(blink::NavigationPolicyIgnore);
         return m_result == WebNavigationPolicyNewPopup;
     }
 

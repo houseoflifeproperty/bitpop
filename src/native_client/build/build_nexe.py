@@ -9,6 +9,7 @@ This module will take a set of source files, include paths, library paths, and
 additional arguments, and use them to build.
 """
 
+import hashlib
 from optparse import OptionParser
 import os
 import re
@@ -66,7 +67,8 @@ def OpenFile(path, mode='r'):
 
 def RemoveQuotes(opt):
   if opt and opt[0] == '"':
-    return opt[1:-1]
+    assert opt[-1] == '"', opt
+    return opt[1:-1].replace('\\"', '"')
   return opt
 
 
@@ -74,9 +76,9 @@ def ArgToList(opt):
   outlist = []
   if opt is None:
     return outlist
-  optlist = RemoveQuotes(opt).split(' ')
+  optlist = opt.split(' ')
   for optitem in optlist:
-    optitem = RemoveQuotes(optitem).replace('\\"', '"')
+    optitem = RemoveQuotes(optitem)
     if optitem:
       outlist.append(optitem)
   return outlist
@@ -227,7 +229,6 @@ class Builder(object):
     self.BuildLinkOptions(options.link_flags)
     self.BuildArchiveOptions()
     self.verbose = options.verbose
-    self.suffix = options.suffix
     self.strip = options.strip
     self.empty = options.empty
     self.strip_all = options.strip_all
@@ -435,13 +436,19 @@ class Builder(object):
   def GetObjectName(self, src):
     if self.strip:
       src = src.replace(self.strip,'')
+    # Hash the full path of the source file and add 32 bits of that hash onto
+    # the end of the object file name.  This helps disambiguate files with the
+    # same name, because all of the object files are placed into the same
+    # directory.  Technically, the correct solution would be to preserve the
+    # directory structure of the input source files inside the object file
+    # directory, but doing that runs the risk of running into filename length
+    # issues on Windows.
+    h = hashlib.sha1()
+    h.update(src)
+    wart = h.hexdigest()[:8]
     _, filename = os.path.split(src)
     filename, _ = os.path.splitext(filename)
-    if self.suffix:
-      return os.path.join(self.outdir, filename + '.o')
-    else:
-      filename = os.path.split(src)[1]
-      return os.path.join(self.outdir, os.path.splitext(filename)[0] + '.o')
+    return os.path.join(self.outdir, filename + '_' + wart + '.o')
 
   def CleanOutput(self, out):
     if IsFile(out):
@@ -512,7 +519,7 @@ class Builder(object):
 
     if goma_config:
       goma_config['burst'] = IsEnvFlagTrue('NACL_GOMA_BURST')
-      default_threads = 100 if pynacl.platform.IsLinux() else 1
+      default_threads = 100 if pynacl.platform.IsLinux() else 10
       goma_config['threads'] = GetIntegerEnv('NACL_GOMA_THREADS',
                                              default=default_threads)
     return goma_config
@@ -880,8 +887,6 @@ def Main(argv):
                     help='Do not pass sources to library.', action='store_true')
   parser.add_option('--no-suffix', dest='suffix', default=True,
                     help='Do not append arch suffix.', action='store_false')
-  parser.add_option('--sufix', dest='suffix',
-                    help='Do append arch suffix.', action='store_true')
   parser.add_option('--strip-debug', dest='strip_debug', default=False,
                     help='Strip the NEXE for debugging', action='store_true')
   parser.add_option('--strip-all', dest='strip_all', default=False,
@@ -912,6 +917,8 @@ def Main(argv):
                     help='Base path of the object output dir.')
   parser.add_option('-r', '--root', dest='root',
                     help='Set the root directory of the sources')
+  parser.add_option('--product-directory', dest='product_directory',
+                    help='Set the root directory of the build')
   parser.add_option('-b', '--build', dest='build',
                     help='Set build type (<toolchain>_<outtype>, ' +
                     'where toolchain is newlib or glibc and outtype is ' +
@@ -952,7 +959,37 @@ def Main(argv):
       source_list_handle = open(options.source_list, 'r')
       source_list = source_list_handle.read().splitlines()
       source_list_handle.close()
-      files = files + source_list
+
+      for file_name in source_list:
+        file_name = RemoveQuotes(file_name)
+        if "$" in file_name:
+          # Only require product directory if we need to interpolate it.  This
+          # provides backwards compatibility in the cases where we don't need to
+          # interpolate.  The downside is this creates a subtle landmine.
+          if options.product_directory is None:
+            parser.error('--product-dir is required')
+          product_dir = options.product_directory
+          # Normalize to forward slashes because re.sub interprets backslashes
+          # as escape characters. This also simplifies the subsequent regexes.
+          product_dir = product_dir.replace('\\', '/')
+          # Remove fake child that may be apended to the path.
+          # See untrusted.gypi.
+          product_dir = re.sub(r'/+xyz$', '', product_dir)
+          # The "make" backend can have an "obj" interpolation variable.
+          file_name = re.sub(r'\$!?[({]?obj[)}]?', product_dir + '/obj',
+                             file_name)
+          # Expected patterns:
+          # $!PRODUCT_DIR in ninja.
+          # $(builddir) in make.
+          # $(OutDir) in MSVC.
+          # $(BUILT_PRODUCTS_DIR) in xcode.
+          # Also strip off and re-add the trailing directory seperator because
+          # different platforms are inconsistent on if it's there or not.
+          # HACK assume only the product directory is the only var left.
+          file_name = re.sub(r'\$!?[({]?\w+[)}]?/?', product_dir + '/',
+                             file_name)
+          assert "$" not in file_name, file_name
+        files.append(file_name)
 
     # Use set instead of list not to compile the same file twice.
     # To keep in mind that the order of files may differ from the .gypcmd file,

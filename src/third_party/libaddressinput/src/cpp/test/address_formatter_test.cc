@@ -28,6 +28,13 @@ using i18n::addressinput::GetFormattedNationalAddress;
 using i18n::addressinput::GetFormattedNationalAddressLine;
 using i18n::addressinput::GetStreetAddressLinesAsSingleLine;
 
+TEST(AddressFormatterTest, GetStreetAddressLinesAsSingleLine_EmptyAddress) {
+  AddressData address;
+  std::string result;
+  GetStreetAddressLinesAsSingleLine(address, &result);
+  EXPECT_TRUE(result.empty());
+}
+
 TEST(AddressFormatterTest, GetStreetAddressLinesAsSingleLine_1Line) {
   AddressData address;
   address.region_code = "US";  // Not used.
@@ -197,5 +204,164 @@ TEST(AddressFormatterTest, GetFormattedNationalAddressMultilingualCountry) {
   GetFormattedNationalAddress(address, &lines);
   EXPECT_EQ(expected, lines);
 }
+
+TEST(AddressFormatterTest, GetFormattedNationalAddress_InlineStreetAddress) {
+  AddressData address;
+  address.region_code = "CI";
+  address.address_line.push_back("32 Boulevard Carde");
+  address.locality = "Abidjan";
+  address.sorting_code = "64";
+
+  std::vector<std::string> expected;
+  expected.push_back("64 32 Boulevard Carde Abidjan 64");
+
+  std::vector<std::string> lines;
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+}
+
+TEST(AddressFormatterTest,
+     GetFormattedNationalAddressMissingFields_LiteralsAroundField) {
+  AddressData address;
+  address.region_code = "CH";
+  std::vector<std::string> expected;
+  std::vector<std::string> lines;
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.locality = "Zurich";
+  expected.push_back("Zurich");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.postal_code = "8001";
+  expected.back().assign("CH-8001 Zurich");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.locality.clear();
+  expected.back().assign("CH-8001");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+}
+
+TEST(AddressFormatterTest,
+     GetFormattedNationalAddressMissingFields_LiteralsBetweenFields) {
+  AddressData address;
+  address.region_code = "US";
+  std::vector<std::string> expected;
+  std::vector<std::string> lines;
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.administrative_area = "CA";
+  expected.push_back("CA");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.locality = "Los Angeles";
+  expected.back().assign("Los Angeles, CA");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.postal_code = "90291";
+  expected.back().assign("Los Angeles, CA 90291");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.administrative_area.clear();
+  expected.back().assign("Los Angeles 90291");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.locality.clear();
+  address.administrative_area = "CA";
+  expected.back().assign("CA 90291");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+}
+
+TEST(AddressFormatterTest,
+     GetFormattedNationalAddressMissingFields_LiteralOnSeparateLine) {
+  AddressData address;
+  address.region_code = "AX";
+  std::vector<std::string> expected;
+  expected.push_back("\xC3\x85LAND");  /* ÅLAND */
+  std::vector<std::string> lines;
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.locality = "City";
+  expected.insert(expected.begin(), "City");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.postal_code = "123";
+  expected.front().assign("AX-123 City");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+}
+
+TEST(AddressFormatterTest,
+     GetFormattedNationalAddressMissingFields_LiteralBeforeField) {
+  AddressData address;
+  address.region_code = "JP";
+  address.language_code = "ja";
+  std::vector<std::string> expected;
+  std::vector<std::string> lines;
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.postal_code = "123";
+  expected.push_back("\xE3\x80\x92" "123");  /* 〒123 */
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.administrative_area = "Prefecture";
+  expected.push_back("Prefecture");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.postal_code.clear();
+  expected.erase(expected.begin());
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+}
+
+TEST(AddressFormatterTest,
+     GetFormattedNationalAddressMissingFields_DuplicateField) {
+  AddressData address;
+  address.region_code = "CI";
+  std::vector<std::string> expected;
+  std::vector<std::string> lines;
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.sorting_code = "123";
+  expected.push_back("123 123");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.address_line.push_back("456 Main St");
+  expected.back().assign("123 456 Main St 123");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.locality = "Yamoussoukro";
+  expected.back().assign("123 456 Main St Yamoussoukro 123");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.sorting_code.erase();
+  expected.back().assign("456 Main St Yamoussoukro");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+
+  address.address_line.clear();
+  expected.back().assign("Yamoussoukro");
+  GetFormattedNationalAddress(address, &lines);
+  EXPECT_EQ(expected, lines);
+}
+
 
 }  // namespace

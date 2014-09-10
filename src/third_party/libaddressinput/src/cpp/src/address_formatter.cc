@@ -14,20 +14,22 @@
 
 #include <libaddressinput/address_formatter.h>
 
-#include <strings.h>
-
-#include <algorithm>
-#include <cstddef>
-#include <string>
-#include <vector>
-
 #include <libaddressinput/address_data.h>
 #include <libaddressinput/address_field.h>
+#include <libaddressinput/util/basictypes.h>
+
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <functional>
+#include <string>
+#include <vector>
 
 #include "format_element.h"
 #include "language.h"
 #include "region_data_constants.h"
 #include "rule.h"
+#include "util/cctype_tolower_equal.h"
 
 namespace i18n {
 namespace addressinput {
@@ -66,15 +68,6 @@ const char* kLanguagesThatUseAnArabicComma[] = {
   "uz"
 };
 
-// Case insensitive matcher for language tags.
-struct LanguageMatcher {
-  LanguageMatcher(const std::string& tag) : tag(tag) {}
-  std::string tag;
-  bool operator() (const std::string& s) {
-    return strcasecmp(tag.c_str(), s.c_str()) == 0;
-  }
-};
-
 std::string GetLineSeparatorForLanguage(const std::string& language_tag) {
   Language address_language(language_tag);
 
@@ -87,42 +80,45 @@ std::string GetLineSeparatorForLanguage(const std::string& language_tag) {
   const std::string& base_language = address_language.base;
   if (std::find_if(kLanguagesThatUseSpace,
                    kLanguagesThatUseSpace + arraysize(kLanguagesThatUseSpace),
-                   LanguageMatcher(base_language)) !=
+                   std::bind2nd(EqualToTolowerString(), base_language)) !=
       kLanguagesThatUseSpace + arraysize(kLanguagesThatUseSpace)) {
     return kSpaceSeparator;
-  } else if (std::find_if(kLanguagesThatHaveNoSeparator,
-                          kLanguagesThatHaveNoSeparator +
-                              arraysize(kLanguagesThatHaveNoSeparator),
-                          LanguageMatcher(base_language)) !=
+  } else if (std::find_if(
+                 kLanguagesThatHaveNoSeparator,
+                 kLanguagesThatHaveNoSeparator +
+                     arraysize(kLanguagesThatHaveNoSeparator),
+                 std::bind2nd(EqualToTolowerString(), base_language)) !=
              kLanguagesThatHaveNoSeparator +
                  arraysize(kLanguagesThatHaveNoSeparator)) {
     return "";
-  } else if (std::find_if(kLanguagesThatUseAnArabicComma,
-                          kLanguagesThatUseAnArabicComma +
-                              arraysize(kLanguagesThatUseAnArabicComma),
-                          LanguageMatcher(base_language)) !=
+  } else if (std::find_if(
+                 kLanguagesThatUseAnArabicComma,
+                 kLanguagesThatUseAnArabicComma +
+                     arraysize(kLanguagesThatUseAnArabicComma),
+                 std::bind2nd(EqualToTolowerString(), base_language)) !=
              kLanguagesThatUseAnArabicComma +
                  arraysize(kLanguagesThatUseAnArabicComma)) {
     return kArabicCommaSeparator;
   }
-  // Either the language is a latin-script language, or no language was
+  // Either the language is a Latin-script language, or no language was
   // specified. In the latter case we still return ", " as the most common
   // separator in use. In countries that don't use this, e.g. Thailand,
-  // addresses are often written in latin script where this would still be
+  // addresses are often written in Latin script where this would still be
   // appropriate, so this is a reasonable default in the absence of information.
   return kCommaSeparator;
 }
 
-void CombineLinesForLanguage(
-    const std::vector<std::string>& lines, const std::string& language_tag,
-    std::string *line) {
-  if (lines.size() > 0) {
-    line->assign(lines[0]);
-  }
+void CombineLinesForLanguage(const std::vector<std::string>& lines,
+                             const std::string& language_tag,
+                             std::string* line) {
+  line->clear();
   std::string separator = GetLineSeparatorForLanguage(language_tag);
-  for (std::vector<std::string>::const_iterator it = lines.begin() + 1;
-       it < lines.end(); ++it) {
-    line->append(separator);
+  for (std::vector<std::string>::const_iterator it = lines.begin();
+       it != lines.end();
+       ++it) {
+    if (it != lines.begin()) {
+      line->append(separator);
+    }
     line->append(*it);
   }
 }
@@ -143,36 +139,73 @@ void GetFormattedNationalAddress(
 
   Language language(address_data.language_code);
 
-  // If latinized rules are available and the |language_code| of this address is
-  // explicitly tagged as being Latin, then use the latinized formatting rules.
+  // If Latin-script rules are available and the |language_code| of this address
+  // is explicitly tagged as being Latin, then use the Latin-script formatting
+  // rules.
   const std::vector<FormatElement>& format =
       language.has_latin_script && !rule.GetLatinFormat().empty()
-          ? rule.GetLatinFormat() : rule.GetFormat();
+          ? rule.GetLatinFormat()
+          : rule.GetFormat();
+
+  // Address format without the unnecessary elements (based on which address
+  // fields are empty). We assume all literal strings that are not at the start
+  // or end of a line are separators, and therefore only relevant if the
+  // surrounding fields are filled in. This works with the data we have
+  // currently.
+  std::vector<FormatElement> pruned_format;
+  for (std::vector<FormatElement>::const_iterator
+       element_it = format.begin();
+       element_it != format.end();
+       ++element_it) {
+    // Always keep the newlines.
+    if (element_it->IsNewline() ||
+        // Always keep the non-empty address fields.
+        (element_it->IsField() &&
+         !address_data.IsFieldEmpty(element_it->GetField())) ||
+        // Only keep literals that satisfy these 2 conditions:
+        (!element_it->IsField() &&
+         // (1) Not preceding an empty field.
+         (element_it + 1 == format.end() ||
+          !(element_it + 1)->IsField() ||
+          !address_data.IsFieldEmpty((element_it + 1)->GetField())) &&
+         // (2) Not following a removed field.
+         (element_it == format.begin() ||
+          !(element_it - 1)->IsField() ||
+          (!pruned_format.empty() && pruned_format.back().IsField())))) {
+      pruned_format.push_back(*element_it);
+    }
+  }
 
   std::string line;
-  for (size_t i = 0; i < format.size(); ++i) {
-    FormatElement element = format[i];
-    if (element.IsNewline()) {
+  for (std::vector<FormatElement>::const_iterator
+       element_it = pruned_format.begin();
+       element_it != pruned_format.end();
+       ++element_it) {
+    if (element_it->IsNewline()) {
       if (!line.empty()) {
         lines->push_back(line);
         line.clear();
       }
-    } else if (element.IsField()) {
-      AddressField field = element.GetField();
+    } else if (element_it->IsField()) {
+      AddressField field = element_it->GetField();
       if (field == STREET_ADDRESS) {
         // The field "street address" represents the street address lines of an
         // address, so there can be multiple values.
-        if (!line.empty()) {
-          lines->push_back(line);
-          line.clear();
+        if (!address_data.IsFieldEmpty(field)) {
+          line.append(address_data.address_line.front());
+          if (address_data.address_line.size() > 1U) {
+            lines->push_back(line);
+            line.clear();
+            lines->insert(lines->end(),
+                          address_data.address_line.begin() + 1,
+                          address_data.address_line.end());
+          }
         }
-        lines->insert(lines->end(), address_data.address_line.begin(),
-                      address_data.address_line.end());
       } else {
         line.append(address_data.GetFieldValue(field));
       }
     } else {
-      line.append(element.GetLiteral());
+      line.append(element_it->GetLiteral());
     }
   }
   if (!line.empty()) {

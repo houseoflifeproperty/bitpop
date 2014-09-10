@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2011, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2003-2008, 2011, 2012, 2014 Apple Inc. All rights reserved.
  * Copyright (C) 2014 Samsung Electronics. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
@@ -32,10 +32,11 @@
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/HTMLOptionElement.h"
+#include "core/html/HTMLTagCollection.h"
 #include "core/html/WindowNameCollection.h"
 #include "wtf/HashSet.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -190,70 +191,52 @@ void HTMLCollection::invalidateCache(Document* oldDocument) const
     invalidateIdNameCacheMaps(oldDocument);
 }
 
-template <class NodeListType>
-inline bool isMatchingElement(const NodeListType&, const Element&);
-
-template <> inline bool isMatchingElement(const HTMLCollection& htmlCollection, const Element& element)
+unsigned HTMLCollection::length() const
 {
-    CollectionType type = htmlCollection.type();
+    return m_collectionIndexCache.nodeCount(*this);
+}
 
-    // These collections apply to any kind of Elements, not just HTMLElements.
-    switch (type) {
-    case DocAll:
-    case NodeChildren:
-        return true;
-    case ClassCollectionType:
-        return toClassCollection(htmlCollection).elementMatches(element);
-    case TagCollectionType:
-        return toTagCollection(htmlCollection).elementMatches(element);
-    case HTMLTagCollectionType:
-        return toHTMLTagCollection(htmlCollection).elementMatches(element);
-    case DocumentNamedItems:
-        return toDocumentNameCollection(htmlCollection).elementMatches(element);
-    case WindowNamedItems:
-        return toWindowNameCollection(htmlCollection).elementMatches(element);
-    default:
-        break;
-    }
+Element* HTMLCollection::item(unsigned offset) const
+{
+    return m_collectionIndexCache.nodeAt(*this, offset);
+}
 
-    // The following only applies to HTMLElements.
-    if (!element.isHTMLElement())
-        return false;
-
-    switch (type) {
+static inline bool isMatchingHTMLElement(const HTMLCollection& htmlCollection, const HTMLElement& element)
+{
+    switch (htmlCollection.type()) {
     case DocImages:
-        return element.hasLocalName(imgTag);
+        return element.hasTagName(imgTag);
     case DocScripts:
-        return element.hasLocalName(scriptTag);
+        return element.hasTagName(scriptTag);
     case DocForms:
-        return element.hasLocalName(formTag);
+        return element.hasTagName(formTag);
     case TableTBodies:
-        return element.hasLocalName(tbodyTag);
+        return element.hasTagName(tbodyTag);
     case TRCells:
-        return element.hasLocalName(tdTag) || element.hasLocalName(thTag);
+        return element.hasTagName(tdTag) || element.hasTagName(thTag);
     case TSectionRows:
-        return element.hasLocalName(trTag);
+        return element.hasTagName(trTag);
     case SelectOptions:
-        return element.hasLocalName(optionTag);
+        return element.hasTagName(optionTag);
     case SelectedOptions:
-        return element.hasLocalName(optionTag) && toHTMLOptionElement(element).selected();
+        return isHTMLOptionElement(element) && toHTMLOptionElement(element).selected();
     case DataListOptions:
-        if (element.hasLocalName(optionTag)) {
+        if (isHTMLOptionElement(element)) {
             const HTMLOptionElement& option = toHTMLOptionElement(element);
             if (!option.isDisabledFormControl() && !option.value().isEmpty())
                 return true;
         }
         return false;
     case MapAreas:
-        return element.hasLocalName(areaTag);
+        return element.hasTagName(areaTag);
     case DocApplets:
-        return element.hasLocalName(appletTag) || (element.hasLocalName(objectTag) && toHTMLObjectElement(element).containsJavaApplet());
+        return element.hasTagName(appletTag) || (isHTMLObjectElement(element) && toHTMLObjectElement(element).containsJavaApplet());
     case DocEmbeds:
-        return element.hasLocalName(embedTag);
+        return element.hasTagName(embedTag);
     case DocLinks:
-        return (element.hasLocalName(aTag) || element.hasLocalName(areaTag)) && element.fastHasAttribute(hrefAttr);
+        return (element.hasTagName(aTag) || element.hasTagName(areaTag)) && element.fastHasAttribute(hrefAttr);
     case DocAnchors:
-        return element.hasLocalName(aTag) && element.fastHasAttribute(nameAttr);
+        return element.hasTagName(aTag) && element.fastHasAttribute(nameAttr);
     case ClassCollectionType:
     case TagCollectionType:
     case HTMLTagCollectionType:
@@ -272,15 +255,53 @@ template <> inline bool isMatchingElement(const HTMLCollection& htmlCollection, 
     return false;
 }
 
-template <> inline bool isMatchingElement(const ClassCollection& collection, const Element& element)
+inline bool HTMLCollection::elementMatches(const Element& element) const
 {
-    return collection.elementMatches(element);
+    // These collections apply to any kind of Elements, not just HTMLElements.
+    switch (type()) {
+    case DocAll:
+    case NodeChildren:
+        return true;
+    case ClassCollectionType:
+        return toClassCollection(*this).elementMatches(element);
+    case TagCollectionType:
+        return toTagCollection(*this).elementMatches(element);
+    case HTMLTagCollectionType:
+        return toHTMLTagCollection(*this).elementMatches(element);
+    case DocumentNamedItems:
+        return toDocumentNameCollection(*this).elementMatches(element);
+    case WindowNamedItems:
+        return toWindowNameCollection(*this).elementMatches(element);
+    default:
+        break;
+    }
+
+    // The following only applies to HTMLElements.
+    return element.isHTMLElement() && isMatchingHTMLElement(*this, toHTMLElement(element));
 }
 
-template <> inline bool isMatchingElement(const HTMLTagCollection& collection, const Element& element)
-{
-    return collection.elementMatches(element);
-}
+namespace {
+
+template <class HTMLCollectionType>
+class IsMatch {
+public:
+    IsMatch(const HTMLCollectionType& list)
+        : m_list(list)
+    { }
+
+    bool operator() (const Element& element) const
+    {
+        return m_list.elementMatches(element);
+    }
+
+private:
+    const HTMLCollectionType& m_list;
+};
+
+} // namespace
+
+template <class HTMLCollectionType>
+static inline IsMatch<HTMLCollectionType> makeIsMatch(const HTMLCollectionType& list) { return IsMatch<HTMLCollectionType>(list); }
 
 Element* HTMLCollection::virtualItemAfter(Element*) const
 {
@@ -293,67 +314,33 @@ static inline bool nameShouldBeVisibleInDocumentAll(const HTMLElement& element)
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/common-dom-interfaces.html#dom-htmlallcollection-nameditem:
     // The document.all collection returns only certain types of elements by name,
     // although it returns any type of element by id.
-    return element.hasLocalName(aTag)
-        || element.hasLocalName(appletTag)
-        || element.hasLocalName(areaTag)
-        || element.hasLocalName(embedTag)
-        || element.hasLocalName(formTag)
-        || element.hasLocalName(frameTag)
-        || element.hasLocalName(framesetTag)
-        || element.hasLocalName(iframeTag)
-        || element.hasLocalName(imgTag)
-        || element.hasLocalName(inputTag)
-        || element.hasLocalName(objectTag)
-        || element.hasLocalName(selectTag);
-}
-
-inline Element* firstMatchingChildElement(const HTMLCollection& nodeList)
-{
-    Element* element = ElementTraversal::firstChild(nodeList.rootNode());
-    while (element && !isMatchingElement(nodeList, *element))
-        element = ElementTraversal::nextSibling(*element);
-    return element;
-}
-
-inline Element* lastMatchingChildElement(const HTMLCollection& nodeList)
-{
-    Element* element = ElementTraversal::lastChild(nodeList.rootNode());
-    while (element && !isMatchingElement(nodeList, *element))
-        element = ElementTraversal::previousSibling(*element);
-    return element;
-}
-
-inline Element* nextMatchingChildElement(const HTMLCollection& nodeList, Element& current)
-{
-    Element* next = &current;
-    do {
-        next = ElementTraversal::nextSibling(*next);
-    } while (next && !isMatchingElement(nodeList, *next));
-    return next;
-}
-
-inline Element* previousMatchingChildElement(const HTMLCollection& nodeList, Element& current)
-{
-    Element* previous = &current;
-    do {
-        previous = ElementTraversal::previousSibling(*previous);
-    } while (previous && !isMatchingElement(nodeList, *previous));
-    return previous;
+    return element.hasTagName(aTag)
+        || element.hasTagName(appletTag)
+        || element.hasTagName(areaTag)
+        || element.hasTagName(embedTag)
+        || element.hasTagName(formTag)
+        || element.hasTagName(frameTag)
+        || element.hasTagName(framesetTag)
+        || element.hasTagName(iframeTag)
+        || element.hasTagName(imgTag)
+        || element.hasTagName(inputTag)
+        || element.hasTagName(objectTag)
+        || element.hasTagName(selectTag);
 }
 
 Element* HTMLCollection::traverseToFirstElement() const
 {
     switch (type()) {
     case HTMLTagCollectionType:
-        return firstMatchingElement(toHTMLTagCollection(*this));
+        return ElementTraversal::firstWithin(rootNode(), makeIsMatch(toHTMLTagCollection(*this)));
     case ClassCollectionType:
-        return firstMatchingElement(toClassCollection(*this));
+        return ElementTraversal::firstWithin(rootNode(), makeIsMatch(toClassCollection(*this)));
     default:
         if (overridesItemAfter())
             return virtualItemAfter(0);
         if (shouldOnlyIncludeDirectChildren())
-            return firstMatchingChildElement(*this);
-        return firstMatchingElement(*this);
+            return ElementTraversal::firstChild(rootNode(), makeIsMatch(*this));
+        return ElementTraversal::firstWithin(rootNode(), makeIsMatch(*this));
     }
 }
 
@@ -361,8 +348,8 @@ Element* HTMLCollection::traverseToLastElement() const
 {
     ASSERT(canTraverseBackward());
     if (shouldOnlyIncludeDirectChildren())
-        return lastMatchingChildElement(*this);
-    return lastMatchingElement(*this);
+        return ElementTraversal::lastChild(rootNode(), makeIsMatch(*this));
+    return ElementTraversal::lastWithin(rootNode(), makeIsMatch(*this));
 }
 
 Element* HTMLCollection::traverseForwardToOffset(unsigned offset, Element& currentElement, unsigned& currentOffset) const
@@ -370,27 +357,26 @@ Element* HTMLCollection::traverseForwardToOffset(unsigned offset, Element& curre
     ASSERT(currentOffset < offset);
     switch (type()) {
     case HTMLTagCollectionType:
-        return traverseMatchingElementsForwardToOffset(toHTMLTagCollection(*this), offset, currentElement, currentOffset);
+        return traverseMatchingElementsForwardToOffset(currentElement, &rootNode(), offset, currentOffset, makeIsMatch(toHTMLTagCollection(*this)));
     case ClassCollectionType:
-        return traverseMatchingElementsForwardToOffset(toClassCollection(*this), offset, currentElement, currentOffset);
+        return traverseMatchingElementsForwardToOffset(currentElement, &rootNode(), offset, currentOffset, makeIsMatch(toClassCollection(*this)));
     default:
         if (overridesItemAfter()) {
-            Element* next = &currentElement;
-            while ((next = virtualItemAfter(next))) {
+            for (Element* next = virtualItemAfter(&currentElement); next; next = virtualItemAfter(next)) {
                 if (++currentOffset == offset)
                     return next;
             }
             return 0;
         }
         if (shouldOnlyIncludeDirectChildren()) {
-            Element* next = &currentElement;
-            while ((next = nextMatchingChildElement(*this, *next))) {
+            IsMatch<HTMLCollection> isMatch(*this);
+            for (Element* next = ElementTraversal::nextSibling(currentElement, isMatch); next; next = ElementTraversal::nextSibling(*next, isMatch)) {
                 if (++currentOffset == offset)
                     return next;
             }
             return 0;
         }
-        return traverseMatchingElementsForwardToOffset(*this, offset, currentElement, currentOffset);
+        return traverseMatchingElementsForwardToOffset(currentElement, &rootNode(), offset, currentOffset, makeIsMatch(*this));
     }
 }
 
@@ -399,14 +385,14 @@ Element* HTMLCollection::traverseBackwardToOffset(unsigned offset, Element& curr
     ASSERT(currentOffset > offset);
     ASSERT(canTraverseBackward());
     if (shouldOnlyIncludeDirectChildren()) {
-        Element* previous = &currentElement;
-        while ((previous = previousMatchingChildElement(*this, *previous))) {
+        IsMatch<HTMLCollection> isMatch(*this);
+        for (Element* previous = ElementTraversal::previousSibling(currentElement, isMatch); previous; previous = ElementTraversal::previousSibling(*previous, isMatch)) {
             if (--currentOffset == offset)
                 return previous;
         }
         return 0;
     }
-    return traverseMatchingElementsBackwardToOffset(*this, offset, currentElement, currentOffset);
+    return traverseMatchingElementsBackwardToOffset(currentElement, &rootNode(), offset, currentOffset, makeIsMatch(*this));
 }
 
 Element* HTMLCollection::namedItem(const AtomicString& name) const
@@ -523,4 +509,4 @@ void HTMLCollection::trace(Visitor* visitor)
     LiveNodeListBase::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

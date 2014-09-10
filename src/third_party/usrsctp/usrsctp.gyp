@@ -28,7 +28,7 @@
           'SCTP_USE_OPENSSL_SHA1',
         ],
         'dependencies': [
-          '<(DEPTH)/third_party/openssl/openssl.gyp:openssl',
+          '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
         ],
       },
       {  # else use_openssl==0, use NSS.
@@ -127,7 +127,7 @@
           'cflags!': [ '-Werror', '-Wall' ],
           'cflags': [ '-w' ],
         }],
-        ['OS=="mac"', {
+        ['OS=="mac" or OS=="ios"', {
           'defines': [
             'HAVE_SA_LEN',
             'HAVE_SCONN_LEN',

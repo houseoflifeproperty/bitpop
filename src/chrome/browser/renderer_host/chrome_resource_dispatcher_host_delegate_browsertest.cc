@@ -22,6 +22,8 @@
 #include "net/test/embedded_test_server/http_response.h"
 #include "net/url_request/url_request.h"
 
+using content::ResourceType;
+
 namespace {
 static const char kTestPolicyHeader[] = "test_header";
 static const char kServerRedirectUrl[] = "/server-redirect";
@@ -60,8 +62,8 @@ class TestDispatcherHostDelegate : public ChromeResourceDispatcherHostDelegate {
   virtual void RequestBeginning(
       net::URLRequest* request,
       content::ResourceContext* resource_context,
-      appcache::AppCacheService* appcache_service,
-      ResourceType::Type resource_type,
+      content::AppCacheService* appcache_service,
+      ResourceType resource_type,
       int child_id,
       int route_id,
       ScopedVector<content::ResourceThrottle>* throttles) OVERRIDE {
@@ -132,10 +134,9 @@ class ChromeResourceDispatcherHostDelegateBrowserTest :
     }
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     content::ResourceDispatcherHost::Get()->SetDelegate(NULL);
     dispatcher_host_delegate_.reset();
-    InProcessBrowserTest::CleanUpOnMainThread();
   }
 
  protected:

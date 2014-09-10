@@ -286,7 +286,7 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
     elif policy_type in ('int-enum', 'string-enum'):
       parent = self._GetElements(policy_elem)
       self._AddEnumPolicy(parent, policy)
-    elif policy_type == 'list':
+    elif policy_type in ('list', 'string-enum-list'):
       parent = self._GetElements(policy_elem)
       self._AddListPolicy(parent, key, policy_name)
     elif policy_type == 'group':

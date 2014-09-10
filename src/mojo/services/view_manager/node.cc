@@ -5,7 +5,6 @@
 #include "mojo/services/view_manager/node.h"
 
 #include "mojo/services/view_manager/node_delegate.h"
-#include "mojo/services/view_manager/view.h"
 #include "ui/aura/window_property.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/hit_test.h"
@@ -13,10 +12,9 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/native_widget_types.h"
 
-DECLARE_WINDOW_PROPERTY_TYPE(mojo::view_manager::service::Node*);
+DECLARE_WINDOW_PROPERTY_TYPE(mojo::service::Node*);
 
 namespace mojo {
-namespace view_manager {
 namespace service {
 
 DEFINE_WINDOW_PROPERTY_KEY(Node*, kNodeKey, NULL);
@@ -24,7 +22,6 @@ DEFINE_WINDOW_PROPERTY_KEY(Node*, kNodeKey, NULL);
 Node::Node(NodeDelegate* delegate, const NodeId& id)
     : delegate_(delegate),
       id_(id),
-      view_(NULL),
       window_(this) {
   DCHECK(delegate);  // Must provide a delegate.
   window_.set_owned_by_parent(false);
@@ -37,11 +34,17 @@ Node::Node(NodeDelegate* delegate, const NodeId& id)
 }
 
 Node::~Node() {
-  SetView(NULL);
   // This is implicitly done during deletion of the window, but we do it here so
   // that we're in a known state.
   if (window_.parent())
     window_.parent()->RemoveChild(&window_);
+
+  delegate_->OnNodeDestroyed(this);
+}
+
+// static
+Node* Node::NodeForWindow(aura::Window* window) {
+  return window->GetProperty(kNodeKey);
 }
 
 const Node* Node::GetParent() const {
@@ -59,9 +62,9 @@ void Node::Remove(Node* child) {
 }
 
 void Node::Reorder(Node* child, Node* relative, OrderDirection direction) {
-  if (direction == ORDER_ABOVE)
+  if (direction == ORDER_DIRECTION_ABOVE)
     window_.StackChildAbove(child->window(), relative->window());
-  else if (direction == ORDER_BELOW)
+  else if (direction == ORDER_DIRECTION_BELOW)
     window_.StackChildBelow(child->window(), relative->window());
 }
 
@@ -92,21 +95,20 @@ bool Node::Contains(const Node* node) const {
   return node && window_.Contains(&(node->window_));
 }
 
-void Node::SetView(View* view) {
-  if (view == view_)
-    return;
+bool Node::IsVisible() const {
+  return window_.TargetVisibility();
+}
 
-  // Detach view from existing node. This way notifications are sent out.
-  if (view && view->node())
-    view->node()->SetView(NULL);
+void Node::SetVisible(bool value) {
+  if (value)
+    window_.Show();
+  else
+    window_.Hide();
+}
 
-  View* old_view = view_;
-  if (view_)
-    view_->set_node(NULL);
-  view_ = view;
-  if (view)
-    view->set_node(this);
-  delegate_->OnNodeViewReplaced(this, view, old_view);
+void Node::SetBitmap(const SkBitmap& bitmap) {
+  bitmap_ = bitmap;
+  window_.SchedulePaintInRect(gfx::Rect(window_.bounds().size()));
 }
 
 void Node::OnWindowHierarchyChanged(
@@ -117,7 +119,12 @@ void Node::OnWindowHierarchyChanged(
       params.new_parent->GetProperty(kNodeKey) : NULL;
   const Node* old_parent = params.old_parent ?
       params.old_parent->GetProperty(kNodeKey) : NULL;
-  delegate_->OnNodeHierarchyChanged(this, new_parent, old_parent);
+  // This check is needed because even the root Node's aura::Window has a
+  // parent, but the Node itself has no parent (so it's possible for us to
+  // receive this notification from aura when no logical Node hierarchy change
+  // has actually ocurred).
+  if (new_parent != old_parent)
+    delegate_->OnNodeHierarchyChanged(this, new_parent, old_parent);
 }
 
 gfx::Size Node::GetMinimumSize() const {
@@ -130,6 +137,7 @@ gfx::Size Node::GetMaximumSize() const {
 
 void Node::OnBoundsChanged(const gfx::Rect& old_bounds,
                            const gfx::Rect& new_bounds) {
+  delegate_->OnNodeBoundsChanged(this, old_bounds, new_bounds);
 }
 
 gfx::NativeCursor Node::GetCursor(const gfx::Point& point) {
@@ -154,10 +162,7 @@ void Node::OnCaptureLost() {
 }
 
 void Node::OnPaint(gfx::Canvas* canvas) {
-  if (view_) {
-    canvas->DrawImageInt(
-        gfx::ImageSkia::CreateFrom1xBitmap(view_->bitmap()), 0, 0);
-  }
+  canvas->DrawImageInt(gfx::ImageSkia::CreateFrom1xBitmap(bitmap_), 0, 0);
 }
 
 void Node::OnDeviceScaleFactorChanged(float device_scale_factor) {
@@ -179,11 +184,5 @@ bool Node::HasHitTestMask() const {
 void Node::GetHitTestMask(gfx::Path* mask) const {
 }
 
-void Node::OnEvent(ui::Event* event) {
-  if (view_)
-    delegate_->OnViewInputEvent(view_, event);
-}
-
 }  // namespace service
-}  // namespace view_manager
 }  // namespace mojo

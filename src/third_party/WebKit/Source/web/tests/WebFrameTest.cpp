@@ -35,11 +35,13 @@
 #include "SkBitmap.h"
 #include "SkCanvas.h"
 #include "core/UserAgentStyleSheets.h"
-#include "core/clipboard/Clipboard.h"
+#include "core/clipboard/DataTransfer.h"
 #include "core/css/StyleSheetContents.h"
+#include "core/css/resolver/StyleResolver.h"
 #include "core/css/resolver/ViewportStyleResolver.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/FullscreenElementStack.h"
+#include "core/dom/NodeRenderStyle.h"
 #include "core/dom/Range.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
@@ -49,12 +51,16 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/html/HTMLDocument.h"
 #include "core/html/HTMLFormElement.h"
+#include "core/loader/DocumentThreadableLoader.h"
+#include "core/loader/DocumentThreadableLoaderClient.h"
 #include "core/loader/FrameLoadRequest.h"
+#include "core/loader/ThreadableLoader.h"
 #include "core/page/EventHandler.h"
+#include "core/page/Page.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/TextAutosizer.h"
 #include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "platform/DragImage.h"
 #include "platform/RuntimeEnabledFeatures.h"
@@ -62,8 +68,10 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/network/ResourceError.h"
 #include "platform/scroll/ScrollbarTheme.h"
+#include "platform/weborigin/SchemeRegistry.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebFloatRect.h"
+#include "public/platform/WebSelectionBound.h"
 #include "public/platform/WebThread.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLResponse.h"
@@ -74,7 +82,9 @@
 #include "public/web/WebFormElement.h"
 #include "public/web/WebFrameClient.h"
 #include "public/web/WebHistoryItem.h"
+#include "public/web/WebPrintParams.h"
 #include "public/web/WebRange.h"
+#include "public/web/WebRemoteFrame.h"
 #include "public/web/WebScriptSource.h"
 #include "public/web/WebSearchableFormData.h"
 #include "public/web/WebSecurityOrigin.h"
@@ -96,12 +106,12 @@
 #include <v8.h>
 
 using namespace blink;
-using WebCore::Document;
-using WebCore::DocumentMarker;
-using WebCore::Element;
-using WebCore::FloatRect;
-using WebCore::HitTestRequest;
-using WebCore::Range;
+using blink::Document;
+using blink::DocumentMarker;
+using blink::Element;
+using blink::FloatRect;
+using blink::HitTestRequest;
+using blink::Range;
 using blink::URLTestHelpers::toKURL;
 using blink::FrameTestHelpers::runPendingTasks;
 
@@ -145,13 +155,13 @@ protected:
 
     void applyViewportStyleOverride(FrameTestHelpers::WebViewHelper* webViewHelper)
     {
-        RefPtrWillBeRawPtr<WebCore::StyleSheetContents> styleSheet = WebCore::StyleSheetContents::create(WebCore::CSSParserContext(WebCore::UASheetMode, 0));
-        styleSheet->parseString(String(WebCore::viewportAndroidUserAgentStyleSheet, sizeof(WebCore::viewportAndroidUserAgentStyleSheet)));
-        OwnPtrWillBeRawPtr<WebCore::RuleSet> ruleSet = WebCore::RuleSet::create();
-        ruleSet->addRulesFromSheet(styleSheet.get(), WebCore::MediaQueryEvaluator("screen"));
+        RefPtrWillBeRawPtr<blink::StyleSheetContents> styleSheet = blink::StyleSheetContents::create(blink::CSSParserContext(blink::UASheetMode, 0));
+        styleSheet->parseString(String(blink::viewportAndroidCss, sizeof(blink::viewportAndroidCss)));
+        OwnPtrWillBeRawPtr<blink::RuleSet> ruleSet = blink::RuleSet::create();
+        ruleSet->addRulesFromSheet(styleSheet.get(), blink::MediaQueryEvaluator("screen"));
 
         Document* document = toLocalFrame(webViewHelper->webViewImpl()->page()->mainFrame())->document();
-        document->ensureStyleResolver().viewportStyleResolver()->collectViewportRules(ruleSet.get(), WebCore::ViewportStyleResolver::UserAgentOrigin);
+        document->ensureStyleResolver().viewportStyleResolver()->collectViewportRules(ruleSet.get(), blink::ViewportStyleResolver::UserAgentOrigin);
         document->ensureStyleResolver().viewportStyleResolver()->resolve();
     }
 
@@ -170,14 +180,14 @@ protected:
         webViewHelper->webView()->resize(WebSize(640, 480));
     }
 
-    PassOwnPtr<WebCore::DragImage> nodeImageTestSetup(FrameTestHelpers::WebViewHelper* webViewHelper, const std::string& testcase)
+    PassOwnPtr<blink::DragImage> nodeImageTestSetup(FrameTestHelpers::WebViewHelper* webViewHelper, const std::string& testcase)
     {
         registerMockedHttpURLLoad("nodeimage.html");
         webViewHelper->initializeAndLoad(m_baseURL + "nodeimage.html");
         webViewHelper->webView()->resize(WebSize(640, 480));
         webViewHelper->webView()->layout();
-        RefPtr<WebCore::LocalFrame> frame = toLocalFrame(webViewHelper->webViewImpl()->page()->mainFrame());
-        WebCore::Element* element = frame->document()->getElementById(testcase.c_str());
+        RefPtr<blink::LocalFrame> frame = toLocalFrame(webViewHelper->webViewImpl()->page()->mainFrame());
+        blink::Element* element = frame->document()->getElementById(testcase.c_str());
         return frame->nodeImage(*element);
     }
 
@@ -189,15 +199,15 @@ class UseMockScrollbarSettings {
 public:
     UseMockScrollbarSettings()
     {
-        WebCore::Settings::setMockScrollbarsEnabled(true);
-        WebCore::RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(true);
-        EXPECT_TRUE(WebCore::ScrollbarTheme::theme()->usesOverlayScrollbars());
+        blink::Settings::setMockScrollbarsEnabled(true);
+        blink::RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(true);
+        EXPECT_TRUE(blink::ScrollbarTheme::theme()->usesOverlayScrollbars());
     }
 
     ~UseMockScrollbarSettings()
     {
-        WebCore::Settings::setMockScrollbarsEnabled(false);
-        WebCore::RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(false);
+        blink::Settings::setMockScrollbarsEnabled(false);
+        blink::RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(false);
     }
 };
 
@@ -632,9 +642,9 @@ TEST_F(WebFrameTest, PostMessageThenDetach)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad("about:blank");
 
-    RefPtr<WebCore::LocalFrame> frame = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame());
-    WebCore::NonThrowableExceptionState exceptionState;
-    frame->domWindow()->postMessage(WebCore::SerializedScriptValue::create("message"), 0, "*", frame->domWindow(), exceptionState);
+    RefPtr<blink::LocalFrame> frame = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame());
+    blink::NonThrowableExceptionState exceptionState;
+    frame->domWindow()->postMessage(blink::SerializedScriptValue::create("message"), 0, "*", frame->domWindow(), exceptionState);
     webViewHelper.reset();
     EXPECT_FALSE(exceptionState.hadException());
 
@@ -674,11 +684,11 @@ TEST_F(WebFrameTest, FrameViewNeedsLayoutOnFixedLayoutResize)
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
     webViewHelper.webView()->layout();
 
-    webViewHelper.webViewImpl()->setFixedLayoutSize(WebCore::IntSize(100, 100));
+    webViewHelper.webViewImpl()->setFixedLayoutSize(blink::IntSize(100, 100));
     EXPECT_TRUE(webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->needsLayout());
 
     int prevLayoutCount = webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutCount();
-    webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->setFrameRect(WebCore::IntRect(0, 0, 641, 481));
+    webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->setFrameRect(blink::IntRect(0, 0, 641, 481));
     EXPECT_EQ(prevLayoutCount, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutCount());
 
     webViewHelper.webViewImpl()->layout();
@@ -688,7 +698,7 @@ TEST_F(WebFrameTest, FrameViewNeedsLayoutOnFixedLayoutResize)
 static bool checkOrSetTextAutosizingMultiplier(Document* document, float multiplier, bool setMultiplier)
 {
     bool multiplierCheckedOrSetAtLeastOnce = false;
-    for (WebCore::RenderObject* renderer = document->renderView(); renderer; renderer = renderer->nextInPreOrder()) {
+    for (blink::RenderObject* renderer = document->renderView(); renderer; renderer = renderer->nextInPreOrder()) {
         if (renderer->style()) {
             if (setMultiplier)
                 renderer->style()->setTextAutosizingMultiplier(multiplier);
@@ -722,7 +732,7 @@ TEST_F(WebFrameTest, ChangeInFixedLayoutResetsTextAutosizingMultipliers)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad(m_baseURL + "fixed_layout.html", true, 0, &client, enableViewportSettings);
 
-    WebCore::Document* document = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document();
+    blink::Document* document = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document();
     document->settings()->setTextAutosizingEnabled(true);
     EXPECT_TRUE(document->settings()->textAutosizingEnabled());
     webViewHelper.webViewImpl()->resize(WebSize(viewportWidth, viewportHeight));
@@ -730,10 +740,10 @@ TEST_F(WebFrameTest, ChangeInFixedLayoutResetsTextAutosizingMultipliers)
 
     EXPECT_TRUE(setTextAutosizingMultiplier(document, 2));
 
-    WebCore::ViewportDescription description = document->viewportDescription();
+    blink::ViewportDescription description = document->viewportDescription();
     // Choose a width that's not going match the viewport width of the loaded document.
-    description.minWidth = WebCore::Length(100, WebCore::Fixed);
-    description.maxWidth = WebCore::Length(100, WebCore::Fixed);
+    description.minWidth = blink::Length(100, blink::Fixed);
+    description.maxWidth = blink::Length(100, blink::Fixed);
     webViewHelper.webViewImpl()->updatePageDefinedViewportConstraints(description);
 
     EXPECT_TRUE(checkTextAutosizingMultiplier(document, 1));
@@ -752,29 +762,29 @@ TEST_F(WebFrameTest, SetFrameRectInvalidatesTextAutosizingMultipliers)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad(m_baseURL + "iframe_reload.html", true, 0, &client, enableViewportSettings);
 
-    WebCore::LocalFrame* mainFrame = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame());
-    WebCore::Document* document = mainFrame->document();
-    WebCore::FrameView* frameView = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
+    blink::LocalFrame* mainFrame = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame());
+    blink::Document* document = mainFrame->document();
+    blink::FrameView* frameView = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
     document->settings()->setTextAutosizingEnabled(true);
     EXPECT_TRUE(document->settings()->textAutosizingEnabled());
     webViewHelper.webViewImpl()->resize(WebSize(viewportWidth, viewportHeight));
     webViewHelper.webViewImpl()->layout();
 
-    for (WebCore::Frame* frame = mainFrame; frame; frame = frame->tree().traverseNext()) {
+    for (blink::Frame* frame = mainFrame; frame; frame = frame->tree().traverseNext()) {
         if (!frame->isLocalFrame())
             continue;
         EXPECT_TRUE(setTextAutosizingMultiplier(toLocalFrame(frame)->document(), 2));
-        for (WebCore::RenderObject* renderer = toLocalFrame(frame)->document()->renderView(); renderer; renderer = renderer->nextInPreOrder()) {
+        for (blink::RenderObject* renderer = toLocalFrame(frame)->document()->renderView(); renderer; renderer = renderer->nextInPreOrder()) {
             if (renderer->isText())
                 EXPECT_FALSE(renderer->needsLayout());
         }
     }
 
-    frameView->setFrameRect(WebCore::IntRect(0, 0, 200, 200));
-    for (WebCore::Frame* frame = mainFrame; frame; frame = frame->tree().traverseNext()) {
+    frameView->setFrameRect(blink::IntRect(0, 0, 200, 200));
+    for (blink::Frame* frame = mainFrame; frame; frame = frame->tree().traverseNext()) {
         if (!frame->isLocalFrame())
             continue;
-        for (WebCore::RenderObject* renderer = toLocalFrame(frame)->document()->renderView(); renderer; renderer = renderer->nextInPreOrder()) {
+        for (blink::RenderObject* renderer = toLocalFrame(frame)->document()->renderView(); renderer; renderer = renderer->nextInPreOrder()) {
             if (renderer->isText())
                 EXPECT_TRUE(renderer->needsLayout());
         }
@@ -1041,8 +1051,8 @@ TEST_F(WebFrameTest, DelayedViewportInitialScale)
 
     EXPECT_EQ(0.25f, webViewHelper.webView()->pageScaleFactor());
 
-    WebCore::Document* document = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document();
-    WebCore::ViewportDescription description = document->viewportDescription();
+    blink::Document* document = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document();
+    blink::ViewportDescription description = document->viewportDescription();
     description.zoom = 2;
     document->setViewportDescription(description);
     webViewHelper.webView()->layout();
@@ -1524,27 +1534,27 @@ TEST_F(WebFrameTest, LayoutSize320Quirk)
 
     // The magic number to snap to device-width is 320, so test that 321 is
     // respected.
-    WebCore::Document* document = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document();
-    WebCore::ViewportDescription description = document->viewportDescription();
-    description.minWidth = WebCore::Length(321, WebCore::Fixed);
-    description.maxWidth = WebCore::Length(321, WebCore::Fixed);
+    blink::Document* document = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document();
+    blink::ViewportDescription description = document->viewportDescription();
+    description.minWidth = blink::Length(321, blink::Fixed);
+    description.maxWidth = blink::Length(321, blink::Fixed);
     document->setViewportDescription(description);
     webViewHelper.webView()->layout();
     EXPECT_EQ(321, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutSize().width());
 
-    description.minWidth = WebCore::Length(320, WebCore::Fixed);
-    description.maxWidth = WebCore::Length(320, WebCore::Fixed);
+    description.minWidth = blink::Length(320, blink::Fixed);
+    description.maxWidth = blink::Length(320, blink::Fixed);
     document->setViewportDescription(description);
     webViewHelper.webView()->layout();
     EXPECT_EQ(600, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutSize().width());
 
     description = document->viewportDescription();
-    description.maxHeight = WebCore::Length(1000, WebCore::Fixed);
+    description.maxHeight = blink::Length(1000, blink::Fixed);
     document->setViewportDescription(description);
     webViewHelper.webView()->layout();
     EXPECT_EQ(1000, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutSize().height());
 
-    description.maxHeight = WebCore::Length(320, WebCore::Fixed);
+    description.maxHeight = blink::Length(320, blink::Fixed);
     document->setViewportDescription(description);
     webViewHelper.webView()->layout();
     EXPECT_EQ(800, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutSize().height());
@@ -1591,8 +1601,8 @@ TEST_F(WebFrameTest, OverflowHiddenDisablesScrolling)
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "body-overflow-hidden.html");
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
 
-    WebCore::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
-    EXPECT_FALSE(view->userInputScrollable(WebCore::VerticalScrollbar));
+    blink::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
+    EXPECT_FALSE(view->userInputScrollable(blink::VerticalScrollbar));
 }
 
 TEST_F(WebFrameTest, IgnoreOverflowHiddenQuirk)
@@ -1610,8 +1620,8 @@ TEST_F(WebFrameTest, IgnoreOverflowHiddenQuirk)
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "body-overflow-hidden.html");
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
 
-    WebCore::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
-    EXPECT_TRUE(view->userInputScrollable(WebCore::VerticalScrollbar));
+    blink::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
+    EXPECT_TRUE(view->userInputScrollable(blink::VerticalScrollbar));
 }
 
 TEST_F(WebFrameTest, NonZeroValuesNoQuirk)
@@ -1741,21 +1751,21 @@ TEST_F(WebFrameTest, pageScaleFactorShrinksViewport)
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
     webViewHelper.webView()->layout();
 
-    WebCore::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
+    blink::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
     int viewportWidthMinusScrollbar = viewportWidth - (view->verticalScrollbar()->isOverlayScrollbar() ? 0 : 15);
     int viewportHeightMinusScrollbar = viewportHeight - (view->horizontalScrollbar()->isOverlayScrollbar() ? 0 : 15);
 
     webViewHelper.webView()->setPageScaleFactor(2);
 
-    WebCore::IntSize unscaledSize = view->unscaledVisibleContentSize(WebCore::IncludeScrollbars);
+    blink::IntSize unscaledSize = view->unscaledVisibleContentSize(blink::IncludeScrollbars);
     EXPECT_EQ(viewportWidth, unscaledSize.width());
     EXPECT_EQ(viewportHeight, unscaledSize.height());
 
-    WebCore::IntSize unscaledSizeMinusScrollbar = view->unscaledVisibleContentSize(WebCore::ExcludeScrollbars);
+    blink::IntSize unscaledSizeMinusScrollbar = view->unscaledVisibleContentSize(blink::ExcludeScrollbars);
     EXPECT_EQ(viewportWidthMinusScrollbar, unscaledSizeMinusScrollbar.width());
     EXPECT_EQ(viewportHeightMinusScrollbar, unscaledSizeMinusScrollbar.height());
 
-    WebCore::IntSize scaledSize = view->visibleContentRect().size();
+    blink::IntSize scaledSize = view->visibleContentRect().size();
     EXPECT_EQ(ceil(viewportWidthMinusScrollbar / 2.0), scaledSize.width());
     EXPECT_EQ(ceil(viewportHeightMinusScrollbar / 2.0), scaledSize.height());
 }
@@ -2024,9 +2034,9 @@ TEST_F(WebFrameTest, DesktopPageCanBeZoomedInWhenWideViewportIsTurnedOff)
 class WebFrameResizeTest : public WebFrameTest {
 protected:
 
-    static WebCore::FloatSize computeRelativeOffset(const WebCore::IntPoint& absoluteOffset, const WebCore::LayoutRect& rect)
+    static blink::FloatSize computeRelativeOffset(const blink::IntPoint& absoluteOffset, const blink::LayoutRect& rect)
     {
-        WebCore::FloatSize relativeOffset = WebCore::FloatPoint(absoluteOffset) - rect.location();
+        blink::FloatSize relativeOffset = blink::FloatPoint(absoluteOffset) - rect.location();
         relativeOffset.scale(1.f / rect.width(), 1.f / rect.height());
         return relativeOffset;
     }
@@ -2081,16 +2091,16 @@ protected:
             EXPECT_NEAR(expectedPageScaleFactor, webViewHelper.webViewImpl()->pageScaleFactor(), 0.05f);
             webViewHelper.webViewImpl()->mainFrame()->setScrollOffset(scrollOffset);
 
-            WebCore::IntPoint anchorPoint = WebCore::IntPoint(scrollOffset) + WebCore::IntPoint(viewportSize.width / 2, 0);
-            RefPtrWillBeRawPtr<WebCore::Node> anchorNode = webViewHelper.webViewImpl()->mainFrameImpl()->frame()->eventHandler().hitTestResultAtPoint(anchorPoint, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent).innerNode();
+            blink::IntPoint anchorPoint = blink::IntPoint(scrollOffset) + blink::IntPoint(viewportSize.width / 2, 0);
+            RefPtrWillBeRawPtr<blink::Node> anchorNode = webViewHelper.webViewImpl()->mainFrameImpl()->frame()->eventHandler().hitTestResultAtPoint(anchorPoint, HitTestRequest::ReadOnly | HitTestRequest::Active).innerNode();
             ASSERT(anchorNode);
 
             pageScaleFactor = webViewHelper.webViewImpl()->pageScaleFactor();
-            const WebCore::FloatSize preResizeRelativeOffset
+            const blink::FloatSize preResizeRelativeOffset
                 = computeRelativeOffset(anchorPoint, anchorNode->boundingBox());
             webViewHelper.webViewImpl()->resize(WebSize(viewportSize.height, viewportSize.width));
-            WebCore::IntPoint newAnchorPoint = WebCore::IntPoint(webViewHelper.webViewImpl()->mainFrame()->scrollOffset()) + WebCore::IntPoint(viewportSize.height / 2, 0);
-            const WebCore::FloatSize postResizeRelativeOffset
+            blink::IntPoint newAnchorPoint = blink::IntPoint(webViewHelper.webViewImpl()->mainFrame()->scrollOffset()) + blink::IntPoint(viewportSize.height / 2, 0);
+            const blink::FloatSize postResizeRelativeOffset
                 = computeRelativeOffset(newAnchorPoint, anchorNode->boundingBox());
             EXPECT_NEAR(preResizeRelativeOffset.width(), postResizeRelativeOffset.width(), 0.15f);
             expectedPageScaleFactor = pageScaleFactor * (shouldScaleRelativeToViewportWidth ? 1 / aspectRatio : 1);
@@ -2108,6 +2118,22 @@ TEST_F(WebFrameResizeTest, ResizeYieldsCorrectScrollAndScaleForWidthEqualsDevice
     const WebSize scrollOffset(0, 50);
     const WebSize viewportSize(120, 160);
     const bool shouldScaleRelativeToViewportWidth = true;
+
+    testResizeYieldsCorrectScrollAndScale(
+        url, initialPageScaleFactor, scrollOffset, viewportSize, shouldScaleRelativeToViewportWidth);
+}
+
+TEST_F(WebFrameResizeTest, ResizeYieldsCorrectScrollAndScaleForMinimumScale)
+{
+    // This tests a scenario where minimum-scale is set to 1.0, but some element
+    // on the page is slightly larger than the portrait width, so our "natural"
+    // minimum-scale would be lower. In that case, we should stick to 1.0 scale
+    // on rotation and not do anything strange.
+    const char* url = "resize_scroll_minimum_scale.html";
+    const float initialPageScaleFactor = 1;
+    const WebSize scrollOffset(0, 0);
+    const WebSize viewportSize(240, 320);
+    const bool shouldScaleRelativeToViewportWidth = false;
 
     testResizeYieldsCorrectScrollAndScale(
         url, initialPageScaleFactor, scrollOffset, viewportSize, shouldScaleRelativeToViewportWidth);
@@ -2167,13 +2193,13 @@ TEST_F(WebFrameTest, pageScaleFactorScalesPaintClip)
     bitmap.eraseColor(0);
     SkCanvas canvas(bitmap);
 
-    WebCore::GraphicsContext context(&canvas);
-    context.setTrackOpaqueRegion(true);
+    blink::GraphicsContext context(&canvas);
+    context.setRegionTrackingMode(GraphicsContext::RegionTrackingOpaque);
 
-    EXPECT_EQ_RECT(WebCore::IntRect(0, 0, 0, 0), context.opaqueRegion().asRect());
+    EXPECT_EQ_RECT(blink::IntRect(0, 0, 0, 0), context.opaqueRegion().asRect());
 
-    WebCore::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
-    WebCore::IntRect paintRect(0, 0, 200, 200);
+    blink::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
+    blink::IntRect paintRect(0, 0, 200, 200);
     view->paint(&context, paintRect);
 
     // FIXME: This test broke in release builds when changing the FixedLayoutTestWebViewClient
@@ -2183,7 +2209,7 @@ TEST_F(WebFrameTest, pageScaleFactorScalesPaintClip)
 #ifndef NDEBUG
     int viewportWidthMinusScrollbar = 50 - (view->verticalScrollbar()->isOverlayScrollbar() ? 0 : 15);
     int viewportHeightMinusScrollbar = 50 - (view->horizontalScrollbar()->isOverlayScrollbar() ? 0 : 15);
-    WebCore::IntRect clippedRect(0, 0, viewportWidthMinusScrollbar * 2, viewportHeightMinusScrollbar * 2);
+    blink::IntRect clippedRect(0, 0, viewportWidthMinusScrollbar * 2, viewportHeightMinusScrollbar * 2);
     EXPECT_EQ_RECT(clippedRect, context.opaqueRegion().asRect());
 #endif
 }
@@ -2203,14 +2229,14 @@ TEST_F(WebFrameTest, pageScaleFactorUpdatesScrollbars)
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
     webViewHelper.webView()->layout();
 
-    WebCore::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
-    EXPECT_EQ(view->scrollSize(WebCore::HorizontalScrollbar), view->contentsSize().width() - view->visibleContentRect().width());
-    EXPECT_EQ(view->scrollSize(WebCore::VerticalScrollbar), view->contentsSize().height() - view->visibleContentRect().height());
+    blink::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
+    EXPECT_EQ(view->scrollSize(blink::HorizontalScrollbar), view->contentsSize().width() - view->visibleContentRect().width());
+    EXPECT_EQ(view->scrollSize(blink::VerticalScrollbar), view->contentsSize().height() - view->visibleContentRect().height());
 
     webViewHelper.webView()->setPageScaleFactor(10);
 
-    EXPECT_EQ(view->scrollSize(WebCore::HorizontalScrollbar), view->contentsSize().width() - view->visibleContentRect().width());
-    EXPECT_EQ(view->scrollSize(WebCore::VerticalScrollbar), view->contentsSize().height() - view->visibleContentRect().height());
+    EXPECT_EQ(view->scrollSize(blink::HorizontalScrollbar), view->contentsSize().width() - view->visibleContentRect().width());
+    EXPECT_EQ(view->scrollSize(blink::VerticalScrollbar), view->contentsSize().height() - view->visibleContentRect().height());
 }
 
 TEST_F(WebFrameTest, CanOverrideScaleLimits)
@@ -2261,7 +2287,7 @@ TEST_F(WebFrameTest, updateOverlayScrollbarLayers)
     webViewHelper.webView()->resize(WebSize(viewWidth, viewHeight));
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "large-div.html");
 
-    WebCore::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
+    blink::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
     EXPECT_TRUE(view->renderView()->compositor()->layerForHorizontalScrollbar());
     EXPECT_TRUE(view->renderView()->compositor()->layerForVerticalScrollbar());
 
@@ -2339,7 +2365,7 @@ TEST_F(WebFrameTest, DivAutoZoomParamsTest)
 
 void simulatePageScale(WebViewImpl* webViewImpl, float& scale)
 {
-    WebCore::IntSize scrollDelta = webViewImpl->fakePageScaleAnimationTargetPositionForTesting() - webViewImpl->mainFrameImpl()->frameView()->scrollPosition();
+    blink::IntSize scrollDelta = webViewImpl->fakePageScaleAnimationTargetPositionForTesting() - webViewImpl->mainFrameImpl()->frameView()->scrollPosition();
     float scaleDelta = webViewImpl->fakePageScaleAnimationPageScaleForTesting() / webViewImpl->pageScaleFactor();
     webViewImpl->applyScrollAndScale(scrollDelta, scaleDelta);
     scale = webViewImpl->pageScaleFactor();
@@ -2673,7 +2699,7 @@ TEST_F(WebFrameTest, DivScrollIntoEditableTest)
     webViewHelper.webViewImpl()->selectionBounds(caret, rect);
 
     float scale;
-    WebCore::IntPoint scroll;
+    blink::IntPoint scroll;
     bool needAnimation;
     webViewHelper.webViewImpl()->computeScaleAndScrollForFocusedNode(webViewHelper.webViewImpl()->focusedElement(), scale, scroll, needAnimation);
     EXPECT_TRUE(needAnimation);
@@ -2721,11 +2747,9 @@ TEST_F(WebFrameTest, DivScrollIntoEditableTest)
 
 class TestReloadDoesntRedirectWebFrameClient : public FrameTestHelpers::TestWebFrameClient {
 public:
-    virtual WebNavigationPolicy decidePolicyForNavigation(
-        WebLocalFrame*, WebDataSource::ExtraData*, const WebURLRequest&, WebNavigationType,
-        WebNavigationPolicy defaultPolicy, bool isRedirect) OVERRIDE
+    virtual WebNavigationPolicy decidePolicyForNavigation(const NavigationPolicyInfo& info) OVERRIDE
     {
-        EXPECT_FALSE(isRedirect);
+        EXPECT_FALSE(info.isRedirect);
         return WebNavigationPolicyCurrentTab;
     }
 };
@@ -2747,7 +2771,7 @@ TEST_F(WebFrameTest, ReloadDoesntSetRedirect)
 
 class ReloadWithOverrideURLTask : public WebThread::Task {
 public:
-    ReloadWithOverrideURLTask(WebFrame* frame, const WebCore::KURL& url, bool ignoreCache)
+    ReloadWithOverrideURLTask(WebFrame* frame, const blink::KURL& url, bool ignoreCache)
         : m_frame(frame), m_url(url), m_ignoreCache(ignoreCache)
     {
     }
@@ -2759,7 +2783,7 @@ public:
 
 private:
     WebFrame* const m_frame;
-    const WebCore::KURL m_url;
+    const blink::KURL m_url;
     const bool m_ignoreCache;
 };
 
@@ -3125,7 +3149,7 @@ TEST_F(WebFrameTest, GetContentAsPlainText)
 
     // Generate a simple test case.
     const char simpleSource[] = "<div>Foo bar</div><div></div>baz";
-    WebCore::KURL testURL = toKURL("about:blank");
+    blink::KURL testURL = toKURL("about:blank");
     FrameTestHelpers::loadHTMLString(frame, simpleSource, testURL);
 
     // Make sure it comes out OK.
@@ -3164,7 +3188,7 @@ TEST_F(WebFrameTest, GetFullHtmlOfPage)
 
     // Generate a simple test case.
     const char simpleSource[] = "<p>Hello</p><p>World</p>";
-    WebCore::KURL testURL = toKURL("about:blank");
+    blink::KURL testURL = toKURL("about:blank");
     FrameTestHelpers::loadHTMLString(frame, simpleSource, testURL);
 
     WebString text = frame->contentAsText(std::numeric_limits<size_t>::max());
@@ -3406,7 +3430,7 @@ TEST_F(WebFrameTest, FindOnDetachedFrame)
     WebString searchText = WebString::fromUTF8(kFindString);
     WebLocalFrameImpl* mainFrame = toWebLocalFrameImpl(webViewHelper.webView()->mainFrame());
     RefPtr<WebLocalFrameImpl> secondFrame = toWebLocalFrameImpl(mainFrame->traverseNext(false));
-    RefPtr<WebCore::LocalFrame> holdSecondFrame = secondFrame->frame();
+    RefPtr<blink::LocalFrame> holdSecondFrame = secondFrame->frame();
 
     // Detach the frame before finding.
     EXPECT_TRUE(mainFrame->document().getElementById("frame").remove());
@@ -3447,7 +3471,7 @@ TEST_F(WebFrameTest, FindDetachFrameBeforeScopeStrings)
     WebString searchText = WebString::fromUTF8(kFindString);
     WebLocalFrameImpl* mainFrame = toWebLocalFrameImpl(webViewHelper.webView()->mainFrame());
     WebLocalFrameImpl* secondFrame = toWebLocalFrameImpl(mainFrame->traverseNext(false));
-    RefPtr<WebCore::LocalFrame> holdSecondFrame = secondFrame->frame();
+    RefPtr<blink::LocalFrame> holdSecondFrame = secondFrame->frame();
 
     for (WebFrame* frame = mainFrame; frame; frame = frame->traverseNext(false))
         EXPECT_TRUE(frame->find(kFindIdentifier, searchText, options, false, 0));
@@ -3488,7 +3512,7 @@ TEST_F(WebFrameTest, FindDetachFrameWhileScopingStrings)
     WebString searchText = WebString::fromUTF8(kFindString);
     WebLocalFrameImpl* mainFrame = toWebLocalFrameImpl(webViewHelper.webView()->mainFrame());
     WebLocalFrameImpl* secondFrame = toWebLocalFrameImpl(mainFrame->traverseNext(false));
-    RefPtr<WebCore::LocalFrame> holdSecondFrame = secondFrame->frame();
+    RefPtr<blink::LocalFrame> holdSecondFrame = secondFrame->frame();
 
     for (WebFrame* frame = mainFrame; frame; frame = frame->traverseNext(false))
         EXPECT_TRUE(frame->find(kFindIdentifier, searchText, options, false, 0));
@@ -3567,30 +3591,30 @@ TEST_F(WebFrameTest, SetTickmarks)
     EXPECT_TRUE(client.findResultsAreReady());
 
     // Get the tickmarks for the original find request.
-    WebCore::FrameView* frameView = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
-    RefPtr<WebCore::Scrollbar> scrollbar = frameView->createScrollbar(WebCore::HorizontalScrollbar);
-    Vector<WebCore::IntRect> originalTickmarks;
+    blink::FrameView* frameView = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
+    RefPtr<blink::Scrollbar> scrollbar = frameView->createScrollbar(blink::HorizontalScrollbar);
+    Vector<blink::IntRect> originalTickmarks;
     scrollbar->getTickmarks(originalTickmarks);
     EXPECT_EQ(4u, originalTickmarks.size());
 
     // Override the tickmarks.
-    Vector<WebCore::IntRect> overridingTickmarksExpected;
-    overridingTickmarksExpected.append(WebCore::IntRect(0, 0, 100, 100));
-    overridingTickmarksExpected.append(WebCore::IntRect(0, 20, 100, 100));
-    overridingTickmarksExpected.append(WebCore::IntRect(0, 30, 100, 100));
+    Vector<blink::IntRect> overridingTickmarksExpected;
+    overridingTickmarksExpected.append(blink::IntRect(0, 0, 100, 100));
+    overridingTickmarksExpected.append(blink::IntRect(0, 20, 100, 100));
+    overridingTickmarksExpected.append(blink::IntRect(0, 30, 100, 100));
     mainFrame->setTickmarks(overridingTickmarksExpected);
 
     // Check the tickmarks are overriden correctly.
-    Vector<WebCore::IntRect> overridingTickmarksActual;
+    Vector<blink::IntRect> overridingTickmarksActual;
     scrollbar->getTickmarks(overridingTickmarksActual);
     EXPECT_EQ(overridingTickmarksExpected, overridingTickmarksActual);
 
     // Reset the tickmark behavior.
-    Vector<WebCore::IntRect> resetTickmarks;
+    Vector<blink::IntRect> resetTickmarks;
     mainFrame->setTickmarks(resetTickmarks);
 
     // Check that the original tickmarks are returned
-    Vector<WebCore::IntRect> originalTickmarksAfterReset;
+    Vector<blink::IntRect> originalTickmarksAfterReset;
     scrollbar->getTickmarks(originalTickmarksAfterReset);
     EXPECT_EQ(originalTickmarks, originalTickmarksAfterReset);
 }
@@ -3834,9 +3858,9 @@ TEST_F(WebFrameTest, SelectRangeCanMoveSelectionEnd)
     // EXPECT_EQ("Editable 1. Editable 2. ]", selectionAsString(frame));
 }
 
-static int computeOffset(WebCore::RenderObject* renderer, int x, int y)
+static int computeOffset(blink::RenderObject* renderer, int x, int y)
 {
-    return WebCore::VisiblePosition(renderer->positionForPoint(WebCore::LayoutPoint(x, y))).deepEquivalent().computeOffsetInContainerNode();
+    return blink::VisiblePosition(renderer->positionForPoint(blink::LayoutPoint(x, y))).deepEquivalent().computeOffsetInContainerNode();
 }
 
 // positionForPoint returns the wrong values for contenteditable spans. See
@@ -3847,7 +3871,7 @@ TEST_F(WebFrameTest, DISABLED_PositionForPointTest)
     FrameTestHelpers::WebViewHelper webViewHelper;
     initializeTextSelectionWebView(m_baseURL + "select_range_span_editable.html", &webViewHelper);
     WebLocalFrameImpl* mainFrame = toWebLocalFrameImpl(webViewHelper.webView()->mainFrame());
-    WebCore::RenderObject* renderer = mainFrame->frame()->selection().rootEditableElement()->renderer();
+    blink::RenderObject* renderer = mainFrame->frame()->selection().rootEditableElement()->renderer();
     EXPECT_EQ(0, computeOffset(renderer, -1, -1));
     EXPECT_EQ(64, computeOffset(renderer, 1000, 1000));
 
@@ -3935,6 +3959,124 @@ TEST_F(WebFrameTest, MoveCaretStaysHorizontallyAlignedWhenMoved)
     EXPECT_EQ(endRect, initialEndRect);
 }
 #endif
+
+class CompositedSelectionBoundsTestLayerTreeView : public WebLayerTreeView {
+public:
+    CompositedSelectionBoundsTestLayerTreeView() : m_selectionCleared(false) { }
+    virtual ~CompositedSelectionBoundsTestLayerTreeView() { }
+
+    virtual void setSurfaceReady()  OVERRIDE { }
+    virtual void setRootLayer(const WebLayer&)  OVERRIDE { }
+    virtual void clearRootLayer()  OVERRIDE { }
+    virtual void setViewportSize(const WebSize& deviceViewportSize)  OVERRIDE { }
+    virtual WebSize deviceViewportSize() const  OVERRIDE { return WebSize(); }
+    virtual void setDeviceScaleFactor(float) OVERRIDE { }
+    virtual float deviceScaleFactor() const  OVERRIDE { return 1.f; }
+    virtual void setBackgroundColor(WebColor)  OVERRIDE { }
+    virtual void setHasTransparentBackground(bool)  OVERRIDE { }
+    virtual void setVisible(bool)  OVERRIDE { }
+    virtual void setPageScaleFactorAndLimits(float pageScaleFactor, float minimum, float maximum)  OVERRIDE { }
+    virtual void startPageScaleAnimation(const WebPoint& destination, bool useAnchor, float newPageScale, double durationSec)  OVERRIDE { }
+    virtual void setNeedsAnimate()  OVERRIDE { }
+    virtual bool commitRequested() const  OVERRIDE { return false; }
+    virtual void finishAllRendering()  OVERRIDE { }
+    virtual void registerSelection(const WebSelectionBound& start, const WebSelectionBound& end) OVERRIDE
+    {
+        m_start = adoptPtr(new WebSelectionBound(start));
+        m_end = adoptPtr(new WebSelectionBound(end));
+    }
+    virtual void clearSelection() OVERRIDE
+    {
+        m_selectionCleared = true;
+        m_start.clear();
+        m_end.clear();
+    }
+
+    bool getAndResetSelectionCleared()
+    {
+        bool selectionCleared  = m_selectionCleared;
+        m_selectionCleared = false;
+        return selectionCleared;
+    }
+
+    const WebSelectionBound* start() const { return m_start.get(); }
+    const WebSelectionBound* end() const { return m_start.get(); }
+
+private:
+    bool m_selectionCleared;
+    OwnPtr<WebSelectionBound> m_start;
+    OwnPtr<WebSelectionBound> m_end;
+};
+
+class CompositedSelectionBoundsTestWebViewClient : public FrameTestHelpers::TestWebViewClient {
+public:
+    virtual ~CompositedSelectionBoundsTestWebViewClient() { }
+    virtual WebLayerTreeView* layerTreeView() OVERRIDE { return &m_testLayerTreeView; }
+
+    CompositedSelectionBoundsTestLayerTreeView& selectionLayerTreeView() { return m_testLayerTreeView; }
+
+private:
+    CompositedSelectionBoundsTestLayerTreeView m_testLayerTreeView;
+};
+
+TEST_F(WebFrameTest, CompositedSelectionBoundsCleared)
+{
+    blink::RuntimeEnabledFeatures::setCompositedSelectionUpdatesEnabled(true);
+
+    registerMockedHttpURLLoad("select_range_basic.html");
+    registerMockedHttpURLLoad("select_range_scroll.html");
+
+    int viewWidth = 500;
+    int viewHeight = 500;
+
+    CompositedSelectionBoundsTestWebViewClient fakeSelectionWebViewClient;
+    CompositedSelectionBoundsTestLayerTreeView& fakeSelectionLayerTreeView = fakeSelectionWebViewClient.selectionLayerTreeView();
+
+    FrameTestHelpers::WebViewHelper webViewHelper;
+    webViewHelper.initialize(true, 0, &fakeSelectionWebViewClient);
+    webViewHelper.webView()->settings()->setDefaultFontSize(12);
+    webViewHelper.webView()->setPageScaleFactorLimits(1, 1);
+    webViewHelper.webView()->resize(WebSize(viewWidth, viewHeight));
+    FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "select_range_basic.html");
+
+    // The frame starts with a non-empty selection.
+    WebFrame* frame = webViewHelper.webView()->mainFrame();
+    ASSERT_TRUE(frame->hasSelection());
+    EXPECT_FALSE(fakeSelectionLayerTreeView.getAndResetSelectionCleared());
+
+    // The selection cleared notification should be triggered upon layout.
+    frame->executeCommand(WebString::fromUTF8("Unselect"));
+    ASSERT_FALSE(frame->hasSelection());
+    EXPECT_FALSE(fakeSelectionLayerTreeView.getAndResetSelectionCleared());
+    webViewHelper.webView()->layout();
+    EXPECT_TRUE(fakeSelectionLayerTreeView.getAndResetSelectionCleared());
+
+    frame->executeCommand(WebString::fromUTF8("SelectAll"));
+    webViewHelper.webView()->layout();
+    ASSERT_TRUE(frame->hasSelection());
+    EXPECT_FALSE(fakeSelectionLayerTreeView.getAndResetSelectionCleared());
+
+    FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "select_range_scroll.html");
+    ASSERT_TRUE(frame->hasSelection());
+    EXPECT_FALSE(fakeSelectionLayerTreeView.getAndResetSelectionCleared());
+
+    // Transitions between non-empty selections should not trigger a clearing.
+    WebRect startWebRect;
+    WebRect endWebRect;
+    webViewHelper.webViewImpl()->selectionBounds(startWebRect, endWebRect);
+    WebPoint movedEnd(bottomRightMinusOne(endWebRect));
+    endWebRect.x -= 20;
+    frame->selectRange(topLeft(startWebRect), movedEnd);
+    webViewHelper.webView()->layout();
+    ASSERT_TRUE(frame->hasSelection());
+    EXPECT_FALSE(fakeSelectionLayerTreeView.getAndResetSelectionCleared());
+
+    frame = webViewHelper.webView()->mainFrame();
+    frame->executeCommand(WebString::fromUTF8("Unselect"));
+    webViewHelper.webView()->layout();
+    ASSERT_FALSE(frame->hasSelection());
+    EXPECT_TRUE(fakeSelectionLayerTreeView.getAndResetSelectionCleared());
+}
 
 class DisambiguationPopupTestWebViewClient : public FrameTestHelpers::TestWebViewClient {
 public:
@@ -4276,6 +4418,27 @@ TEST_F(WebFrameTest, MoveCaretSelectionTowardsWindowPointWithNoSelection)
 
     // This test passes if this doesn't crash.
     frame->moveCaretSelection(WebPoint(0, 0));
+}
+
+TEST_F(WebFrameTest, NavigateToSandboxedMarkup)
+{
+    FrameTestHelpers::WebViewHelper webViewHelper;
+    WebViewImpl* webViewImpl = webViewHelper.initializeAndLoad("about:blank", true);
+    WebLocalFrameImpl* frame = toWebLocalFrameImpl(webViewHelper.webView()->mainFrame());
+
+    frame->document().setIsTransitionDocument();
+
+    std::string markup("<div id='foo'></div><script>document.getElementById('foo').setAttribute('dir', 'rtl')</script>");
+    frame->navigateToSandboxedMarkup(WebData(markup.data(), markup.length()));
+    FrameTestHelpers::runPendingTasks();
+
+    WebDocument document = webViewImpl->mainFrame()->document();
+    WebElement transitionElement = document.getElementById("foo");
+    // Check that the markup got navigated to successfully.
+    EXPECT_FALSE(transitionElement.isNull());
+
+    // Check that the inline script was not executed.
+    EXPECT_FALSE(transitionElement.hasAttribute("dir"));
 }
 
 class SpellCheckClient : public WebSpellCheckClient {
@@ -4738,7 +4901,7 @@ public:
         if (frame->parent())
             return;
         EXPECT_FALSE(m_didScrollMainFrame);
-        WebCore::FrameView* view = toWebLocalFrameImpl(frame)->frameView();
+        blink::FrameView* view = toWebLocalFrameImpl(frame)->frameView();
         // FrameView can be scrolled in FrameView::setFixedVisibleContentRect
         // which is called from LocalFrame::createView (before the frame is associated
         // with the the view).
@@ -4869,13 +5032,13 @@ TEST_F(WebFrameTest, SimulateFragmentAnchorMiddleClick)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad(m_baseURL + "fragment_middle_click.html", true, &client);
 
-    WebCore::Document* document = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document();
-    WebCore::KURL destination = document->url();
+    blink::Document* document = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document();
+    blink::KURL destination = document->url();
     destination.setFragmentIdentifier("test");
 
-    RefPtrWillBeRawPtr<WebCore::Event> event = WebCore::MouseEvent::create(WebCore::EventTypeNames::click, false, false,
+    RefPtrWillBeRawPtr<blink::Event> event = blink::MouseEvent::create(blink::EventTypeNames::click, false, false,
         document->domWindow(), 0, 0, 0, 0, 0, 0, 0, false, false, false, false, 1, nullptr, nullptr);
-    WebCore::FrameLoadRequest frameRequest(document, WebCore::ResourceRequest(destination));
+    blink::FrameLoadRequest frameRequest(document, blink::ResourceRequest(destination));
     frameRequest.setTriggeringEvent(event);
     toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->loader().load(frameRequest);
 }
@@ -4897,11 +5060,10 @@ public:
     {
     }
 
-    virtual WebNavigationPolicy decidePolicyForNavigation(WebLocalFrame*, WebDataSource::ExtraData*, const WebURLRequest&,
-        WebNavigationType, WebNavigationPolicy policy, bool) OVERRIDE
+    virtual WebNavigationPolicy decidePolicyForNavigation(const NavigationPolicyInfo& info) OVERRIDE
     {
         m_decidePolicyCallCount++;
-        return policy;
+        return info.defaultPolicy;
     }
 
     int decidePolicyCallCount() const { return m_decidePolicyCallCount; }
@@ -4919,15 +5081,15 @@ TEST_F(WebFrameTest, ModifiedClickNewWindow)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad(m_baseURL + "ctrl_click.html", true, &webFrameClient, &webViewClient);
 
-    WebCore::Document* document = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document();
-    WebCore::KURL destination = toKURL(m_baseURL + "hello_world.html");
+    blink::Document* document = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document();
+    blink::KURL destination = toKURL(m_baseURL + "hello_world.html");
 
     // ctrl+click event
-    RefPtrWillBeRawPtr<WebCore::Event> event = WebCore::MouseEvent::create(WebCore::EventTypeNames::click, false, false,
+    RefPtrWillBeRawPtr<blink::Event> event = blink::MouseEvent::create(blink::EventTypeNames::click, false, false,
         document->domWindow(), 0, 0, 0, 0, 0, 0, 0, true, false, false, false, 0, nullptr, nullptr);
-    WebCore::FrameLoadRequest frameRequest(document, WebCore::ResourceRequest(destination));
+    blink::FrameLoadRequest frameRequest(document, blink::ResourceRequest(destination));
     frameRequest.setTriggeringEvent(event);
-    WebCore::UserGestureIndicator gesture(WebCore::DefinitelyProcessingUserGesture);
+    blink::UserGestureIndicator gesture(blink::DefinitelyProcessingUserGesture);
     toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->loader().load(frameRequest);
     FrameTestHelpers::pumpPendingRequestsDoNotUse(webViewHelper.webView()->mainFrame());
 
@@ -4941,8 +5103,8 @@ TEST_F(WebFrameTest, BackToReload)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad(m_baseURL + "fragment_middle_click.html", true);
     WebFrame* frame = webViewHelper.webView()->mainFrame();
-    const WebCore::FrameLoader& mainFrameLoader = webViewHelper.webViewImpl()->mainFrameImpl()->frame()->loader();
-    RefPtr<WebCore::HistoryItem> firstItem = mainFrameLoader.currentItem();
+    const blink::FrameLoader& mainFrameLoader = webViewHelper.webViewImpl()->mainFrameImpl()->frame()->loader();
+    RefPtr<blink::HistoryItem> firstItem = mainFrameLoader.currentItem();
     EXPECT_TRUE(firstItem);
 
     registerMockedHttpURLLoad("white-1x1.png");
@@ -4962,7 +5124,7 @@ TEST_F(WebFrameTest, BackDuringChildFrameReload)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad(m_baseURL + "page_with_blank_iframe.html", true);
     WebFrame* mainFrame = webViewHelper.webView()->mainFrame();
-    const WebCore::FrameLoader& mainFrameLoader = webViewHelper.webViewImpl()->mainFrameImpl()->frame()->loader();
+    const blink::FrameLoader& mainFrameLoader = webViewHelper.webViewImpl()->mainFrameImpl()->frame()->loader();
     WebFrame* childFrame = mainFrame->firstChild();
     ASSERT_TRUE(childFrame);
 
@@ -5006,8 +5168,8 @@ TEST_F(WebFrameTest, LoadHistoryItemReload)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad(m_baseURL + "fragment_middle_click.html", true);
     WebFrame* frame = webViewHelper.webView()->mainFrame();
-    const WebCore::FrameLoader& mainFrameLoader = webViewHelper.webViewImpl()->mainFrameImpl()->frame()->loader();
-    RefPtr<WebCore::HistoryItem> firstItem = mainFrameLoader.currentItem();
+    const blink::FrameLoader& mainFrameLoader = webViewHelper.webViewImpl()->mainFrameImpl()->frame()->loader();
+    RefPtr<blink::HistoryItem> firstItem = mainFrameLoader.currentItem();
     EXPECT_TRUE(firstItem);
 
     registerMockedHttpURLLoad("white-1x1.png");
@@ -5117,7 +5279,7 @@ public:
 
     virtual void willSendRequest(WebLocalFrame* frame, unsigned, WebURLRequest&, const WebURLResponse&)
     {
-        if (toWebLocalFrameImpl(frame)->frame()->loader().loadType() == WebCore::FrameLoadTypeSame)
+        if (toWebLocalFrameImpl(frame)->frame()->loader().loadType() == blink::FrameLoadTypeSame)
             m_frameLoadTypeSameSeen = true;
     }
 
@@ -5135,7 +5297,7 @@ TEST_F(WebFrameTest, NavigateToSame)
     webViewHelper.initializeAndLoad(m_baseURL + "navigate_to_same.html", true, &client);
     EXPECT_FALSE(client.frameLoadTypeSameSeen());
 
-    WebCore::FrameLoadRequest frameRequest(0, WebCore::ResourceRequest(toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document()->url()));
+    blink::FrameLoadRequest frameRequest(0, blink::ResourceRequest(toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document()->url()));
     toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->loader().load(frameRequest);
     FrameTestHelpers::pumpPendingRequestsDoNotUse(webViewHelper.webView()->mainFrame());
 
@@ -5151,7 +5313,7 @@ TEST_F(WebFrameTest, WebNodeImageContents)
     static const char bluePNG[] = "<img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAGElEQVQYV2NkYPj/n4EIwDiqEF8oUT94AFIQE/cCn90IAAAAAElFTkSuQmCC\">";
 
     // Load up the image and test that we can extract the contents.
-    WebCore::KURL testURL = toKURL("about:blank");
+    blink::KURL testURL = toKURL("about:blank");
     FrameTestHelpers::loadHTMLString(frame, bluePNG, testURL);
 
     WebNode node = frame->document().body().firstChild();
@@ -5237,10 +5399,10 @@ TEST_F(WebFrameTest, SameDocumentHistoryNavigationCommitType)
     TestDidNavigateCommitTypeWebFrameClient client;
     FrameTestHelpers::WebViewHelper webViewHelper;
     WebViewImpl* webViewImpl = webViewHelper.initializeAndLoad(m_baseURL + "push_state.html", true, &client);
-    RefPtr<WebCore::HistoryItem> item = toLocalFrame(webViewImpl->page()->mainFrame())->loader().currentItem();
+    RefPtr<blink::HistoryItem> item = toLocalFrame(webViewImpl->page()->mainFrame())->loader().currentItem();
     runPendingTasks();
 
-    toLocalFrame(webViewImpl->page()->mainFrame())->loader().loadHistoryItem(item.get(), WebCore::HistorySameDocumentLoad);
+    toLocalFrame(webViewImpl->page()->mainFrame())->loader().loadHistoryItem(item.get(), blink::HistorySameDocumentLoad);
     EXPECT_EQ(WebBackForwardCommit, client.lastCommitType());
 }
 
@@ -5251,7 +5413,8 @@ public:
         m_replacesCurrentHistoryItem = false;
         m_frame = 0;
     }
-    void didStartProvisionalLoad(WebLocalFrame* frame)
+
+    void didStartProvisionalLoad(WebLocalFrame* frame, bool isTransitionNavigation)
     {
         WebDataSource* ds = frame->provisionalDataSource();
         m_replacesCurrentHistoryItem = ds->replacesCurrentHistoryItem();
@@ -5325,11 +5488,11 @@ TEST_F(WebFrameTest, overflowHiddenRewrite)
     webViewHelper.webView()->resize(WebSize(100, 100));
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "non-scrollable.html");
 
-    WebCore::RenderLayerCompositor* compositor =  webViewHelper.webViewImpl()->compositor();
+    blink::RenderLayerCompositor* compositor =  webViewHelper.webViewImpl()->compositor();
     ASSERT_TRUE(compositor->scrollLayer());
 
     // Verify that the WebLayer is not scrollable initially.
-    WebCore::GraphicsLayer* scrollLayer = compositor->scrollLayer();
+    blink::GraphicsLayer* scrollLayer = compositor->scrollLayer();
     WebLayer* webScrollLayer = scrollLayer->platformLayer();
     ASSERT_FALSE(webScrollLayer->userScrollableHorizontal());
     ASSERT_FALSE(webScrollLayer->userScrollableVertical());
@@ -5351,7 +5514,7 @@ TEST_F(WebFrameTest, CurrentHistoryItem)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initialize();
     WebFrame* frame = webViewHelper.webView()->mainFrame();
-    const WebCore::FrameLoader& mainFrameLoader = webViewHelper.webViewImpl()->mainFrameImpl()->frame()->loader();
+    const blink::FrameLoader& mainFrameLoader = webViewHelper.webViewImpl()->mainFrameImpl()->frame()->loader();
     WebURLRequest request;
     request.initialize();
     request.setURL(toKURL(url));
@@ -5363,7 +5526,7 @@ TEST_F(WebFrameTest, CurrentHistoryItem)
     FrameTestHelpers::pumpPendingRequestsDoNotUse(frame);
 
     // After commit, there is.
-    WebCore::HistoryItem* item = mainFrameLoader.currentItem();
+    blink::HistoryItem* item = mainFrameLoader.currentItem();
     ASSERT_TRUE(item);
     EXPECT_EQ(WTF::String(url.data()), item->urlString());
 }
@@ -5438,11 +5601,11 @@ TEST_F(WebFrameTest, FrameViewSetFrameRect)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad("about:blank");
 
-    WebCore::FrameView* frameView = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
-    frameView->setFrameRect(WebCore::IntRect(0, 0, 200, 200));
-    EXPECT_EQ_RECT(WebCore::IntRect(0, 0, 200, 200), frameView->frameRect());
-    frameView->setFrameRect(WebCore::IntRect(100, 100, 200, 200));
-    EXPECT_EQ_RECT(WebCore::IntRect(100, 100, 200, 200), frameView->frameRect());
+    blink::FrameView* frameView = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
+    frameView->setFrameRect(blink::IntRect(0, 0, 200, 200));
+    EXPECT_EQ_RECT(blink::IntRect(0, 0, 200, 200), frameView->frameRect());
+    frameView->setFrameRect(blink::IntRect(100, 100, 200, 200));
+    EXPECT_EQ_RECT(blink::IntRect(100, 100, 200, 200), frameView->frameRect());
 }
 
 TEST_F(WebFrameTest, FullscreenLayerNonScrollable)
@@ -5457,15 +5620,15 @@ TEST_F(WebFrameTest, FullscreenLayerNonScrollable)
     webViewImpl->layout();
 
     Document* document = toWebLocalFrameImpl(webViewImpl->mainFrame())->frame()->document();
-    WebCore::UserGestureIndicator gesture(WebCore::DefinitelyProcessingUserGesture);
+    blink::UserGestureIndicator gesture(blink::DefinitelyProcessingUserGesture);
     Element* divFullscreen = document->getElementById("div1");
-    divFullscreen->webkitRequestFullscreen();
+    FullscreenElementStack::from(*document).requestFullscreen(*divFullscreen, FullscreenElementStack::PrefixedRequest);
     webViewImpl->willEnterFullScreen();
     webViewImpl->didEnterFullScreen();
     webViewImpl->layout();
 
     // Verify that the main frame is not scrollable.
-    ASSERT_TRUE(WebCore::FullscreenElementStack::isFullScreen(*document));
+    ASSERT_TRUE(blink::FullscreenElementStack::isFullScreen(*document));
     WebLayer* webScrollLayer = webViewImpl->compositor()->scrollLayer()->platformLayer();
     ASSERT_FALSE(webScrollLayer->scrollable());
 
@@ -5473,7 +5636,7 @@ TEST_F(WebFrameTest, FullscreenLayerNonScrollable)
     webViewImpl->willExitFullScreen();
     webViewImpl->didExitFullScreen();
     webViewImpl->layout();
-    ASSERT_FALSE(WebCore::FullscreenElementStack::isFullScreen(*document));
+    ASSERT_FALSE(blink::FullscreenElementStack::isFullScreen(*document));
     webScrollLayer = webViewImpl->compositor()->scrollLayer()->platformLayer();
     ASSERT_TRUE(webScrollLayer->scrollable());
 }
@@ -5490,14 +5653,14 @@ TEST_F(WebFrameTest, FullscreenMainFrameScrollable)
     webViewImpl->layout();
 
     Document* document = toWebLocalFrameImpl(webViewImpl->mainFrame())->frame()->document();
-    WebCore::UserGestureIndicator gesture(WebCore::DefinitelyProcessingUserGesture);
-    document->documentElement()->webkitRequestFullscreen();
+    blink::UserGestureIndicator gesture(blink::DefinitelyProcessingUserGesture);
+    FullscreenElementStack::from(*document).requestFullscreen(*document->documentElement(), FullscreenElementStack::PrefixedRequest);
     webViewImpl->willEnterFullScreen();
     webViewImpl->didEnterFullScreen();
     webViewImpl->layout();
 
     // Verify that the main frame is still scrollable.
-    ASSERT_TRUE(WebCore::FullscreenElementStack::isFullScreen(*document));
+    ASSERT_TRUE(blink::FullscreenElementStack::isFullScreen(*document));
     WebLayer* webScrollLayer = webViewImpl->compositor()->scrollLayer()->platformLayer();
     ASSERT_TRUE(webScrollLayer->scrollable());
 }
@@ -5513,12 +5676,12 @@ TEST_F(WebFrameTest, RenderBlockPercentHeightDescendants)
     webView->layout();
 
     Document* document = toWebLocalFrameImpl(webView->mainFrame())->frame()->document();
-    WebCore::RenderBlock* container = WebCore::toRenderBlock(document->getElementById("container")->renderer());
-    WebCore::RenderBox* percentHeightInAnonymous = WebCore::toRenderBox(document->getElementById("percent-height-in-anonymous")->renderer());
-    WebCore::RenderBox* percentHeightDirectChild = WebCore::toRenderBox(document->getElementById("percent-height-direct-child")->renderer());
+    blink::RenderBlock* container = blink::toRenderBlock(document->getElementById("container")->renderer());
+    blink::RenderBox* percentHeightInAnonymous = blink::toRenderBox(document->getElementById("percent-height-in-anonymous")->renderer());
+    blink::RenderBox* percentHeightDirectChild = blink::toRenderBox(document->getElementById("percent-height-direct-child")->renderer());
 
-    EXPECT_TRUE(WebCore::RenderBlock::hasPercentHeightDescendant(percentHeightInAnonymous));
-    EXPECT_TRUE(WebCore::RenderBlock::hasPercentHeightDescendant(percentHeightDirectChild));
+    EXPECT_TRUE(blink::RenderBlock::hasPercentHeightDescendant(percentHeightInAnonymous));
+    EXPECT_TRUE(blink::RenderBlock::hasPercentHeightDescendant(percentHeightDirectChild));
 
     ASSERT_TRUE(container->percentHeightDescendants());
     ASSERT_TRUE(container->hasPercentHeightDescendants());
@@ -5526,7 +5689,7 @@ TEST_F(WebFrameTest, RenderBlockPercentHeightDescendants)
     EXPECT_TRUE(container->percentHeightDescendants()->contains(percentHeightInAnonymous));
     EXPECT_TRUE(container->percentHeightDescendants()->contains(percentHeightDirectChild));
 
-    WebCore::RenderBlock* anonymousBlock = percentHeightInAnonymous->containingBlock();
+    blink::RenderBlock* anonymousBlock = percentHeightInAnonymous->containingBlock();
     EXPECT_TRUE(anonymousBlock->isAnonymous());
     EXPECT_FALSE(anonymousBlock->hasPercentHeightDescendants());
 }
@@ -5588,7 +5751,7 @@ TEST_F(WebFrameTest, ReloadBypassingCache)
     EXPECT_EQ(WebURLRequest::ReloadBypassingCache, frame->dataSource()->request().cachePolicy());
 }
 
-static void nodeImageTestValidation(const WebCore::IntSize& referenceBitmapSize, WebCore::DragImage* dragImage)
+static void nodeImageTestValidation(const blink::IntSize& referenceBitmapSize, blink::DragImage* dragImage)
 {
     // Prepare the reference bitmap.
     SkBitmap bitmap;
@@ -5606,37 +5769,58 @@ static void nodeImageTestValidation(const WebCore::IntSize& referenceBitmapSize,
 TEST_F(WebFrameTest, NodeImageTestCSSTransform)
 {
     FrameTestHelpers::WebViewHelper webViewHelper;
-    OwnPtr<WebCore::DragImage> dragImage = nodeImageTestSetup(&webViewHelper, std::string("case-css-transform"));
+    OwnPtr<blink::DragImage> dragImage = nodeImageTestSetup(&webViewHelper, std::string("case-css-transform"));
     EXPECT_TRUE(dragImage);
 
-    nodeImageTestValidation(WebCore::IntSize(40, 40), dragImage.get());
+    nodeImageTestValidation(blink::IntSize(40, 40), dragImage.get());
 }
 
 TEST_F(WebFrameTest, NodeImageTestCSS3DTransform)
 {
     FrameTestHelpers::WebViewHelper webViewHelper;
-    OwnPtr<WebCore::DragImage> dragImage = nodeImageTestSetup(&webViewHelper, std::string("case-css-3dtransform"));
+    OwnPtr<blink::DragImage> dragImage = nodeImageTestSetup(&webViewHelper, std::string("case-css-3dtransform"));
     EXPECT_TRUE(dragImage);
 
-    nodeImageTestValidation(WebCore::IntSize(20, 40), dragImage.get());
+    nodeImageTestValidation(blink::IntSize(20, 40), dragImage.get());
 }
 
 TEST_F(WebFrameTest, NodeImageTestInlineBlock)
 {
     FrameTestHelpers::WebViewHelper webViewHelper;
-    OwnPtr<WebCore::DragImage> dragImage = nodeImageTestSetup(&webViewHelper, std::string("case-inlineblock"));
+    OwnPtr<blink::DragImage> dragImage = nodeImageTestSetup(&webViewHelper, std::string("case-inlineblock"));
     EXPECT_TRUE(dragImage);
 
-    nodeImageTestValidation(WebCore::IntSize(40, 40), dragImage.get());
+    nodeImageTestValidation(blink::IntSize(40, 40), dragImage.get());
 }
 
 TEST_F(WebFrameTest, NodeImageTestFloatLeft)
 {
     FrameTestHelpers::WebViewHelper webViewHelper;
-    OwnPtr<WebCore::DragImage> dragImage = nodeImageTestSetup(&webViewHelper, std::string("case-float-left-overflow-hidden"));
+    OwnPtr<blink::DragImage> dragImage = nodeImageTestSetup(&webViewHelper, std::string("case-float-left-overflow-hidden"));
     EXPECT_TRUE(dragImage);
 
-    nodeImageTestValidation(WebCore::IntSize(40, 40), dragImage.get());
+    nodeImageTestValidation(blink::IntSize(40, 40), dragImage.get());
+}
+
+// Crashes on Android: http://crbug.com/403804
+#if OS(ANDROID)
+TEST_F(WebFrameTest, DISABLED_PrintingBasic)
+#else
+TEST_F(WebFrameTest, PrintingBasic)
+#endif
+{
+    FrameTestHelpers::WebViewHelper webViewHelper;
+    webViewHelper.initializeAndLoad("data:text/html,Hello, world.");
+
+    WebFrame* frame = webViewHelper.webView()->mainFrame();
+
+    WebPrintParams printParams;
+    printParams.printContentArea.width = 500;
+    printParams.printContentArea.height = 500;
+
+    int pageCount = frame->printBegin(printParams);
+    EXPECT_EQ(1, pageCount);
+    frame->printEnd();
 }
 
 class ThemeColorTestWebFrameClient : public FrameTestHelpers::TestWebFrameClient {
@@ -5690,6 +5874,181 @@ TEST_F(WebFrameTest, ThemeColor)
     frame->executeScript(WebScriptSource("document.getElementById('tc2').setAttribute('content', '#00FF00');"));
     EXPECT_TRUE(client.didNotify());
     EXPECT_EQ(0xff0000ff, frame->document().themeColor());
+}
+
+class WebFrameSwapTest : public WebFrameTest {
+protected:
+    WebFrameSwapTest()
+    {
+        registerMockedHttpURLLoad("frame-a-b-c.html");
+        registerMockedHttpURLLoad("subframe-a.html");
+        registerMockedHttpURLLoad("subframe-b.html");
+        registerMockedHttpURLLoad("subframe-c.html");
+        registerMockedHttpURLLoad("subframe-hello.html");
+
+        m_webViewHelper.initializeAndLoad(m_baseURL + "frame-a-b-c.html");
+    }
+
+    void reset() { m_webViewHelper.reset(); }
+    WebFrame* mainFrame() const { return m_webViewHelper.webView()->mainFrame(); }
+
+private:
+    FrameTestHelpers::WebViewHelper m_webViewHelper;
+};
+
+// FIXME: We should have tests for main frame swaps, but it interacts poorly
+// with the geolocation inspector agent, since the lifetime of the inspector
+// agent is tied to the Page, but the inspector agent is created by the
+// instantiation of the main frame.
+
+void swapAndVerifyFirstChildConsistency(const char* const message, WebFrame* parent, WebFrame* newChild)
+{
+    SCOPED_TRACE(message);
+    parent->firstChild()->swap(newChild);
+
+    EXPECT_EQ(newChild, parent->firstChild());
+    EXPECT_EQ(newChild->parent(), parent);
+    EXPECT_EQ(newChild, parent->lastChild()->previousSibling()->previousSibling());
+    EXPECT_EQ(newChild->nextSibling(), parent->lastChild()->previousSibling());
+}
+
+TEST_F(WebFrameSwapTest, SwapFirstChild)
+{
+    WebFrame* remoteFrame = WebRemoteFrame::create(0);
+    swapAndVerifyFirstChildConsistency("local->remote", mainFrame(), remoteFrame);
+
+    FrameTestHelpers::TestWebFrameClient client;
+    WebFrame* localFrame = WebLocalFrame::create(&client);
+    swapAndVerifyFirstChildConsistency("remote->local", mainFrame(), localFrame);
+
+    // FIXME: This almost certainly fires more load events on the iframe element
+    // than it should.
+    // Finally, make sure an embedder triggered load in the local frame swapped
+    // back in works.
+    FrameTestHelpers::loadFrame(localFrame, m_baseURL + "subframe-hello.html");
+    std::string content = localFrame->contentAsText(1024).utf8();
+    EXPECT_EQ("hello", content);
+
+    // Manually reset to break WebViewHelper's dependency on the stack allocated
+    // TestWebFrameClient.
+    reset();
+    remoteFrame->close();
+}
+
+void swapAndVerifyMiddleChildConsistency(const char* const message, WebFrame* parent, WebFrame* newChild)
+{
+    SCOPED_TRACE(message);
+    parent->firstChild()->nextSibling()->swap(newChild);
+
+    EXPECT_EQ(newChild, parent->firstChild()->nextSibling());
+    EXPECT_EQ(newChild, parent->lastChild()->previousSibling());
+    EXPECT_EQ(newChild->parent(), parent);
+    EXPECT_EQ(newChild, parent->firstChild()->nextSibling());
+    EXPECT_EQ(newChild->previousSibling(), parent->firstChild());
+    EXPECT_EQ(newChild, parent->lastChild()->previousSibling());
+    EXPECT_EQ(newChild->nextSibling(), parent->lastChild());
+}
+
+TEST_F(WebFrameSwapTest, SwapMiddleChild)
+{
+    WebFrame* remoteFrame = WebRemoteFrame::create(0);
+    swapAndVerifyMiddleChildConsistency("local->remote", mainFrame(), remoteFrame);
+
+    FrameTestHelpers::TestWebFrameClient client;
+    WebFrame* localFrame = WebLocalFrame::create(&client);
+    swapAndVerifyMiddleChildConsistency("remote->local", mainFrame(), localFrame);
+
+    // FIXME: This almost certainly fires more load events on the iframe element
+    // than it should.
+    // Finally, make sure an embedder triggered load in the local frame swapped
+    // back in works.
+    FrameTestHelpers::loadFrame(localFrame, m_baseURL + "subframe-hello.html");
+    std::string content = localFrame->contentAsText(1024).utf8();
+    EXPECT_EQ("hello", content);
+
+    // Manually reset to break WebViewHelper's dependency on the stack allocated
+    // TestWebFrameClient.
+    reset();
+    remoteFrame->close();
+}
+
+void swapAndVerifyLastChildConsistency(const char* const message, WebFrame* parent, WebFrame* newChild)
+{
+    SCOPED_TRACE(message);
+    parent->lastChild()->swap(newChild);
+
+    EXPECT_EQ(newChild, parent->lastChild());
+    EXPECT_EQ(newChild->parent(), parent);
+    EXPECT_EQ(newChild, parent->firstChild()->nextSibling()->nextSibling());
+    EXPECT_EQ(newChild->previousSibling(), parent->firstChild()->nextSibling());
+}
+
+TEST_F(WebFrameSwapTest, SwapLastChild)
+{
+    WebFrame* remoteFrame = WebRemoteFrame::create(0);
+    swapAndVerifyLastChildConsistency("local->remote", mainFrame(), remoteFrame);
+
+    FrameTestHelpers::TestWebFrameClient client;
+    WebFrame* localFrame = WebLocalFrame::create(&client);
+    swapAndVerifyLastChildConsistency("remote->local", mainFrame(), localFrame);
+
+    // FIXME: This almost certainly fires more load events on the iframe element
+    // than it should.
+    // Finally, make sure an embedder triggered load in the local frame swapped
+    // back in works.
+    FrameTestHelpers::loadFrame(localFrame, m_baseURL + "subframe-hello.html");
+    std::string content = localFrame->contentAsText(1024).utf8();
+    EXPECT_EQ("hello", content);
+
+    // Manually reset to break WebViewHelper's dependency on the stack allocated
+    // TestWebFrameClient.
+    reset();
+    remoteFrame->close();
+}
+
+class MockDocumentThreadableLoaderClient : public blink::DocumentThreadableLoaderClient {
+public:
+    MockDocumentThreadableLoaderClient() : m_failed(false) { }
+    virtual void didFail(const blink::ResourceError&) OVERRIDE { m_failed = true;}
+
+    void reset() { m_failed = false; }
+    bool failed() { return m_failed; }
+
+    bool m_failed;
+};
+
+// FIXME: This would be better as a unittest on DocumentThreadableLoader but it
+// requires spin-up of a frame. It may be possible to remove that requirement
+// and convert it to a unittest.
+TEST_F(WebFrameTest, LoaderOriginAccess)
+{
+    FrameTestHelpers::WebViewHelper webViewHelper;
+    webViewHelper.initializeAndLoad("about:blank");
+
+    blink::SchemeRegistry::registerURLSchemeAsDisplayIsolated("chrome");
+
+    // Cross-origin request.
+    blink::KURL resourceUrl(blink::ParsedURLString, "chrome://test.pdf");
+    registerMockedChromeURLLoad("test.pdf");
+
+    RefPtr<blink::LocalFrame> frame = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame());
+
+    MockDocumentThreadableLoaderClient client;
+    blink::ThreadableLoaderOptions options;
+
+    // First try to load the request with regular access. Should fail.
+    options.crossOriginRequestPolicy = blink::UseAccessControl;
+    blink::ResourceLoaderOptions resourceLoaderOptions;
+    blink::DocumentThreadableLoader::loadResourceSynchronously(
+        *frame->document(), blink::ResourceRequest(resourceUrl), client, options, resourceLoaderOptions);
+    EXPECT_TRUE(client.failed());
+
+    client.reset();
+    // Try to load the request with cross origin access. Should succeed.
+    options.crossOriginRequestPolicy = blink::AllowCrossOriginRequests;
+    blink::DocumentThreadableLoader::loadResourceSynchronously(
+        *frame->document(), blink::ResourceRequest(resourceUrl), client, options, resourceLoaderOptions);
+    EXPECT_FALSE(client.failed());
 }
 
 } // namespace

@@ -36,9 +36,9 @@ import subprocess
 import sys
 import tempfile
 try:
-    import json
-except ImportError:
     import simplejson as json
+except ImportError:
+    import json
 
 scripts_path = path.dirname(path.abspath(__file__))
 devtools_path = path.dirname(scripts_path)
@@ -57,33 +57,26 @@ java_exec = "java -Xms1024m -server -XX:+TieredCompilation"
 generate_protocol_externs.generate_protocol_externs(protocol_externs_file, path.join(devtools_path, "protocol.json"))
 
 jsmodule_name_prefix = "jsmodule_"
-js_modules_name = "frontend_modules.json"
+frontend_modules_name = "frontend_modules.json"
+runtime_module_name = "_runtime"
+module_initializer_name = "_module.js"
+
+
+def log_error(message):
+    print "ERROR: " + message
+
+
+def error_excepthook(exctype, value, traceback):
+    print "ERROR:"
+    sys.__excepthook__(exctype, value, traceback)
+sys.excepthook = error_excepthook
 
 try:
-    with open(path.join(scripts_path, js_modules_name), "rt") as js_modules_file:
+    with open(path.join(scripts_path, frontend_modules_name), "rt") as js_modules_file:
         modules = json.loads(js_modules_file.read())
 except:
-    print "ERROR: Failed to read %s" % js_modules_name
+    log_error("Failed to read %s" % frontend_modules_name)
     raise
-
-# `importScript` function must not be used in any files
-# except module headers. Refer to devtools.gyp file for
-# the module header list.
-allowed_import_statements_files = [
-    "search/AdvancedSearchView.js",
-    "console/ConsolePanel.js",
-    "elements/ElementsPanel.js",
-    "resources/ResourcesPanel.js",
-    "network/NetworkPanel.js",
-    "settings/SettingsScreen.js",
-    "sources/SourcesPanel.js",
-    "timeline/TimelinePanel.js",
-    "profiler/ProfilesPanel.js",
-    "audits/AuditsPanel.js",
-    "layers/LayersPanel.js",
-    "extensions/ExtensionServer.js",
-    "source_frame/SourceFrame.js",
-]
 
 type_checked_jsdoc_tags_list = ["param", "return", "type", "enum"]
 
@@ -100,6 +93,10 @@ error_warning_regex = re.compile(r"(?:WARNING|ERROR)")
 errors_found = False
 
 
+def run_in_shell(command_line):
+    return subprocess.Popen(command_line, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+
+
 def hasErrors(output):
     return re.search(error_warning_regex, output) != None
 
@@ -107,17 +104,19 @@ def hasErrors(output):
 def verify_importScript_usage():
     errors_found = False
     for module in modules:
-        for file_name in module['sources']:
-            if file_name in allowed_import_statements_files:
+        for file_name in module["sources"]:
+            if path.basename(file_name) == module_initializer_name:
+                log_error("Module initializer (%s) may not be listed among module's scripts; found in '%s'" % (module_initializer_name, module["name"]))
+                errors_found = True
                 continue
             try:
                 with open(path.join(devtools_frontend_path, file_name), "r") as sourceFile:
                     source = sourceFile.read()
                     if re.search(importscript_regex, source):
-                        print "ERROR: importScript function call is allowed in module header files only (found in %s)" % file_name
+                        log_error("importScript() call only allowed in module initializers (%s); found in %s" % (module_initializer_name, file_name))
                         errors_found = True
             except:
-                print "ERROR: Failed to access %s" % file_name
+                log_error("Failed to access %s" % file_name)
                 raise
     return errors_found
 
@@ -127,27 +126,34 @@ def dump_all_checked_files():
     for module in modules:
         for source in module["sources"]:
             files[path.join(devtools_frontend_path, source)] = True
-    return " ".join(files.keys())
+    return files.keys()
 
 
-def verify_jsdoc_extra():
-    return subprocess.Popen("%s -jar %s %s" % (java_exec, jsdoc_validator_jar, dump_all_checked_files()), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+def verify_jsdoc_extra(additional_files):
+    return run_in_shell("%s -jar %s %s" % (java_exec, jsdoc_validator_jar, " ".join(dump_all_checked_files() + additional_files)))
 
 
-def verify_jsdoc():
+def verify_jsdoc(additional_files):
+    def file_list():
+        result = []
+        for module in modules:
+            for file_name in module["sources"]:
+                result.append(path.join(devtools_frontend_path, file_name))
+        for file in additional_files:
+            result.append(file)
+        return result
+
     errors_found = False
-    for module in modules:
-        for file_name in module["sources"]:
-            lineIndex = 0
-            full_file_name = path.join(devtools_frontend_path, file_name)
-            with open(full_file_name, "r") as sourceFile:
-                for line in sourceFile:
-                    line = line.rstrip()
-                    lineIndex += 1
-                    if not line:
-                        continue
-                    if verify_jsdoc_line(full_file_name, lineIndex, line):
-                        errors_found = True
+    for full_file_name in file_list():
+        lineIndex = 0
+        with open(full_file_name, "r") as sourceFile:
+            for line in sourceFile:
+                line = line.rstrip()
+                lineIndex += 1
+                if not line:
+                    continue
+                if verify_jsdoc_line(full_file_name, lineIndex, line):
+                    errors_found = True
     return errors_found
 
 
@@ -182,12 +188,8 @@ check_java_path()
 print "Verifying 'importScript' function usage..."
 errors_found |= verify_importScript_usage()
 
-print "Verifying JSDoc comments..."
-errors_found |= verify_jsdoc()
-jsdocValidatorProc = verify_jsdoc_extra()
-
 modules_dir = tempfile.mkdtemp()
-common_closure_args = " --summary_detail_level 3 --compilation_level SIMPLE_OPTIMIZATIONS --warning_level VERBOSE --language_in ECMASCRIPT5 --accept_const_keyword --module_output_path_prefix %s/" % modules_dir
+common_closure_args = " --summary_detail_level 3 --jscomp_error visibility --compilation_level SIMPLE_OPTIMIZATIONS --warning_level VERBOSE --language_in ECMASCRIPT5 --accept_const_keyword --module_output_path_prefix %s/" % modules_dir
 
 spawned_compiler_command = "%s -jar %s %s \\\n" % (java_exec, closure_compiler_jar, common_closure_args)
 
@@ -212,7 +214,7 @@ def verify_standalone_modules():
     for module in modules:
         for dependency in module["dependencies"]:
             if dependency in standalone_modules_by_name:
-                print "ERROR: Standalone module %s may not be present among the dependencies of %s" % (dependency, module["name"])
+                log_error("Standalone module '%s' may not be present among the dependencies of '%s'" % (dependency, module["name"]))
                 errors_found = True
 
 verify_standalone_modules()
@@ -229,7 +231,7 @@ def check_duplicate_files():
         for source in module["sources"]:
             referencing_module = seen_files.get(source)
             if referencing_module:
-                print "ERROR: Duplicate use of %s in '%s' (previously seen in '%s')" % (source, name, referencing_module)
+                log_error("Duplicate use of %s in '%s' (previously seen in '%s')" % (source, name, referencing_module))
             seen_files[source] = name
 
     for module_name in standalone_modules_by_name:
@@ -237,6 +239,10 @@ def check_duplicate_files():
 
 print "Checking duplicate files across modules..."
 check_duplicate_files()
+
+
+def module_arg(module_name):
+    return " --module " + jsmodule_name_prefix + module_name
 
 
 def dump_module(name, recursively, processed_modules):
@@ -248,10 +254,10 @@ def dump_module(name, recursively, processed_modules):
     if recursively:
         for dependency in module["dependencies"]:
             command += dump_module(dependency, recursively, processed_modules)
-    command += " --module " + jsmodule_name_prefix + module["name"] + ":"
+    command += module_arg(module["name"]) + ":"
     command += str(len(module["sources"]))
     firstDependency = True
-    for dependency in module["dependencies"]:
+    for dependency in module["dependencies"] + [runtime_module_name]:
         if firstDependency:
             command += ":"
         else:
@@ -271,11 +277,12 @@ for module in modules:
     closure_args = common_closure_args
     closure_args += " --externs " + global_externs_file
     closure_args += " --externs " + protocol_externs_file
-    closure_args += dump_module(module["name"], True, {})
+    runtime_module = module_arg(runtime_module_name) + ":1 --js " + path.join(devtools_frontend_path, "Runtime.js")
+    closure_args += runtime_module + dump_module(module["name"], True, {})
     compiler_args_file.write("%s %s\n" % (module["name"], closure_args))
 
 compiler_args_file.close()
-modular_compiler_proc = subprocess.Popen(closure_runner_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+modular_compiler_proc = run_in_shell(closure_runner_command)
 
 
 def unclosure_injected_script(sourceFileName, outFileName):
@@ -313,15 +320,20 @@ command += "    --module " + jsmodule_name_prefix + "injected_canvas_script" + "
 command += "        --js " + injectedScriptCanvasModuleSourceTmpFile + " \\\n"
 command += "\n"
 
-injectedScriptCompileProc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+injectedScriptCompileProc = run_in_shell(command)
+
+print "Verifying JSDoc comments..."
+additional_jsdoc_check_files = [injectedScriptSourceTmpFile, injectedScriptCanvasModuleSourceTmpFile]
+errors_found |= verify_jsdoc(additional_jsdoc_check_files)
+jsdocValidatorProc = verify_jsdoc_extra(additional_jsdoc_check_files)
 
 print "Checking generated code in InjectedScriptCanvasModuleSource.js..."
 check_injected_webgl_calls_command = "%s/check_injected_webgl_calls_info.py %s %s" % (scripts_path, webgl_rendering_context_idl_path, canvas_injected_script_source_name)
-canvasModuleCompileProc = subprocess.Popen(check_injected_webgl_calls_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+canvasModuleCompileProc = run_in_shell(check_injected_webgl_calls_command)
 
 print "Validating InjectedScriptSource.js..."
 check_injected_script_command = "%s/check_injected_script_source.py %s" % (scripts_path, injected_script_source_name)
-validateInjectedScriptProc = subprocess.Popen(check_injected_script_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+validateInjectedScriptProc = run_in_shell(check_injected_script_command)
 
 print
 

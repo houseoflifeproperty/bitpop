@@ -6,6 +6,8 @@
 
 #include "android_webview/browser/gl_view_renderer_manager.h"
 #include "android_webview/browser/shared_renderer_state.h"
+#include "base/debug/trace_event.h"
+#include "base/lazy_instance.h"
 #include "base/synchronization/lock.h"
 #include "content/public/browser/android/synchronous_compositor.h"
 #include "gpu/command_buffer/service/shader_translator_cache.h"
@@ -13,36 +15,6 @@
 namespace android_webview {
 
 namespace {
-
-// TODO(boliu): Consider using base/atomicops.h.
-class ThreadSafeBool {
- public:
-  ThreadSafeBool();
-  void Set(bool boolean);
-  bool Get();
-
- private:
-  base::Lock lock_;
-  bool boolean_;
-  DISALLOW_COPY_AND_ASSIGN(ThreadSafeBool);
-};
-
-ThreadSafeBool::ThreadSafeBool() : boolean_(false) {
-}
-
-void ThreadSafeBool::Set(bool boolean) {
-  base::AutoLock lock(lock_);
-  boolean_ = boolean;
-}
-
-bool ThreadSafeBool::Get() {
-  base::AutoLock lock(lock_);
-  return boolean_;
-}
-
-base::LazyInstance<ThreadSafeBool> g_request_pending =
-    LAZY_INSTANCE_INITIALIZER;
-
 base::LazyInstance<scoped_refptr<DeferredGpuCommandService> >
     g_service = LAZY_INSTANCE_INITIALIZER;
 }  // namespace
@@ -64,10 +36,14 @@ ScopedAllowGL::ScopedAllowGL() {
 
 ScopedAllowGL::~ScopedAllowGL() {
   allow_gl.Get().Set(false);
-  g_request_pending.Get().Set(false);
 
-  if (g_service.Get())
-    g_service.Get()->RunTasks();
+  DeferredGpuCommandService* service = g_service.Get();
+  if (service) {
+    service->RunTasks();
+    if (service->IdleQueueSize()) {
+      service->RequestProcessGL();
+    }
+  }
 }
 
 // static
@@ -75,9 +51,6 @@ void DeferredGpuCommandService::SetInstance() {
   if (!g_service.Get()) {
     g_service.Get() = new DeferredGpuCommandService;
     content::SynchronousCompositor::SetGpuService(g_service.Get());
-
-    // Initialize global booleans.
-    g_request_pending.Get().Set(false);
   }
 }
 
@@ -103,11 +76,7 @@ void DeferredGpuCommandService::RequestProcessGL() {
     LOG(ERROR) << "No hardware renderer. Deadlock likely";
     return;
   }
-
-  if (!g_request_pending.Get().Get()) {
-    g_request_pending.Get().Set(true);
-    renderer_state->ClientRequestDrawGL();
-  }
+  renderer_state->ClientRequestDrawGL();
 }
 
 // Called from different threads!
@@ -123,9 +92,54 @@ void DeferredGpuCommandService::ScheduleTask(const base::Closure& task) {
   }
 }
 
+size_t DeferredGpuCommandService::IdleQueueSize() {
+  base::AutoLock lock(tasks_lock_);
+  return idle_tasks_.size();
+}
+
 void DeferredGpuCommandService::ScheduleIdleWork(
     const base::Closure& callback) {
-  // TODO(sievers): Should this do anything?
+  {
+    base::AutoLock lock(tasks_lock_);
+    idle_tasks_.push(std::make_pair(base::Time::Now(), callback));
+  }
+  RequestProcessGL();
+}
+
+void DeferredGpuCommandService::PerformIdleWork(bool is_idle) {
+  TRACE_EVENT1("android_webview",
+               "DeferredGpuCommandService::PerformIdleWork",
+               "is_idle",
+               is_idle);
+  DCHECK(ScopedAllowGL::IsAllowed());
+  static const base::TimeDelta kMaxIdleAge =
+      base::TimeDelta::FromMilliseconds(16);
+
+  const base::Time now = base::Time::Now();
+  size_t queue_size = IdleQueueSize();
+  while (queue_size--) {
+    base::Closure task;
+    {
+      base::AutoLock lock(tasks_lock_);
+      if (!is_idle) {
+        // Only run old tasks if we are not really idle right now.
+        base::TimeDelta age(now - idle_tasks_.front().first);
+        if (age < kMaxIdleAge)
+          break;
+      }
+      task = idle_tasks_.front().second;
+      idle_tasks_.pop();
+    }
+    task.Run();
+  }
+}
+
+void DeferredGpuCommandService::PerformAllIdleWork() {
+  TRACE_EVENT0("android_webview",
+               "DeferredGpuCommandService::PerformAllIdleWork");
+  while (IdleQueueSize()) {
+    PerformIdleWork(true);
+  }
 }
 
 bool DeferredGpuCommandService::UseVirtualizedGLContexts() { return true; }

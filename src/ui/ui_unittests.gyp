@@ -13,6 +13,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:test_support_base',
+        '../net/net.gyp:net',
         '../skia/skia.gyp:skia',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
@@ -40,7 +41,6 @@
         'base/resource/data_pack_unittest.cc',
         'base/resource/resource_bundle_unittest.cc',
         'base/test/run_all_unittests.cc',
-        'gfx/screen_unittest.cc',
       ],
       'all_sources': [
         '<@(_common_sources)',
@@ -59,6 +59,14 @@
         'base/cocoa/nsgraphics_context_additions_unittest.mm',
         'base/cocoa/tracking_area_unittest.mm',
         'base/dragdrop/os_exchange_data_provider_aurax11_unittest.cc',
+        'base/ime/candidate_window_unittest.cc',
+        'base/ime/chromeos/character_composer_unittest.cc',
+        'base/ime/composition_text_util_pango_unittest.cc',
+        'base/ime/input_method_base_unittest.cc',
+        'base/ime/input_method_chromeos_unittest.cc',
+        'base/ime/remote_input_method_win_unittest.cc',
+        'base/ime/win/imm32_manager_unittest.cc',
+        'base/ime/win/tsf_input_scope_unittest.cc',
         'base/models/list_model_unittest.cc',
         'base/models/list_selection_model_unittest.cc',
         'base/models/tree_node_model_unittest.cc',
@@ -66,12 +74,7 @@
         'base/text/bytes_formatting_unittest.cc',
         'base/view_prop_unittest.cc',
         'base/webui/web_ui_util_unittest.cc',
-        'gfx/canvas_unittest_mac.mm',
-        'gfx/platform_font_mac_unittest.mm',
-        'gfx/render_text_unittest.cc',
-      ],
-      'includes': [
-        'display/display_unittests.gypi',
+        'base/x/selection_requestor_unittest.cc',
       ],
       'include_dirs': [
         '../',
@@ -79,9 +82,6 @@
       'conditions': [
         ['OS!="ios"', {
           'sources' : ['<@(_all_sources)'],
-          'includes': [
-            'base/ime/ime_unittests.gypi',
-          ],
         }, {  # OS=="ios"
           'sources' : [
             '<@(_common_sources)',
@@ -109,6 +109,7 @@
           'sources': [
             'base/dragdrop/os_exchange_data_win_unittest.cc',
             'base/win/hwnd_subclass_unittest.cc',
+            'base/win/open_file_name_win_unittest.cc',
             'gfx/color_profile_win_unittest.cc',
             'gfx/font_fallback_win_unittest.cc',
             'gfx/icon_util_unittest.cc',
@@ -159,13 +160,10 @@
         }],
         ['use_x11==1', {
           'dependencies': [
+            '../build/linux/system.gyp:x11',
             '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
             'events/platform/x11/x11_events_platform.gyp:x11_events_platform',
-          ],
-        }],
-        ['OS=="android" or OS=="ios"', {
-          'sources!': [
-            'gfx/render_text_unittest.cc',
+            'gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }],
         ['OS!="win" or use_aura==0', {
@@ -180,9 +178,15 @@
         }],
         ['OS=="mac"',  {
           'dependencies': [
+            '../third_party/mozilla/mozilla.gyp:mozilla',
             'events/events.gyp:events_test_support',
-            'gfx/gfx.gyp:gfx_test_support',
             'ui_unittests_bundle',
+          ],
+          'conditions': [
+            ['component=="static_library"', {
+              # Needed for mozilla.gyp.
+              'xcode_settings': {'OTHER_LDFLAGS': ['-Wl,-ObjC']},
+            }],
           ],
         }],
         ['use_aura==1 or toolkit_views==1',  {
@@ -199,12 +203,6 @@
         ['use_aura==1', {
           'sources!': [
             'base/dragdrop/os_exchange_data_win_unittest.cc',
-            'gfx/screen_unittest.cc',
-          ],
-        }],
-        ['use_ozone==1 and use_pango==0', {
-          'sources!': [
-            'gfx/render_text_unittest.cc',
           ],
         }],
         ['chromeos==1', {
@@ -219,6 +217,18 @@
           ],
           'sources!': [
             'base/dragdrop/os_exchange_data_provider_aurax11_unittest.cc',
+            'base/x/selection_requestor_unittest.cc',
+          ],
+        }],
+        ['chromeos==0 or use_x11==0', {
+          'sources!': [
+            'base/ime/chromeos/character_composer_unittest.cc',
+            'base/ime/input_method_chromeos_unittest.cc',
+          ],
+        }],
+        ['use_x11==0', {
+          'sources!': [
+            'base/ime/composition_text_util_pango_unittest.cc',
           ],
         }],
       ],

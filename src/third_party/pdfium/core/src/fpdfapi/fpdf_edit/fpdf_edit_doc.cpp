@@ -543,8 +543,7 @@ static void _CFString2CFXByteString(CFStringRef src, CFX_ByteString &dest)
     SInt32 len =  CFStringGetLength(src);
     CFRange range = CFRangeMake(0, len);
     CFIndex used = 0;
-    UInt8* pBuffer = (UInt8*)malloc(sizeof(UInt8) * (len + 1));
-    FXSYS_memset32(pBuffer, 0, sizeof(UInt8) * (len + 1));
+    UInt8* pBuffer = (UInt8*)calloc(len+1, sizeof(UInt8));
     CFStringGetBytes(src, range, kCFStringEncodingASCII, 0, false, pBuffer, len, &used);
     dest = (FX_LPSTR)pBuffer;
     free(pBuffer);
@@ -686,7 +685,7 @@ CPDF_Font* CPDF_Document::AddMacFont(CTFontRef pFont, FX_BOOL bVert, FX_BOOL bTr
             pBaseDict->SetAtName(FX_BSTRC("Encoding"), "WinAnsiEncoding");
         } else {
             flags |= PDFFONT_NONSYMBOLIC;
-            int i;
+            size_t i;
             for (i = 0; i < sizeof g_FX_CharsetUnicodes / sizeof(FX_CharsetUnicodes); i ++) {
                 charSets.RemoveAll();
                 charSets.Add(g_FX_CharsetUnicodes[i].m_Charset);
@@ -914,7 +913,7 @@ CPDF_Font* CPDF_Document::AddFont(CFX_Font* pFont, int charset, FX_BOOL bVert)
             }
         } else {
             flags |= PDFFONT_NONSYMBOLIC;
-            int i;
+            size_t i;
             for (i = 0; i < sizeof g_FX_CharsetUnicodes / sizeof(FX_CharsetUnicodes); i ++)
                 if (g_FX_CharsetUnicodes[i].m_Charset == charset) {
                     break;
@@ -1053,26 +1052,6 @@ CPDF_Font* CPDF_Document::AddFont(CFX_Font* pFont, int charset, FX_BOOL bVert)
     AddIndirectObject(pFontDesc);
     pFontDict->SetAtReference("FontDescriptor", this, pFontDesc);
     return LoadFont(pBaseDict);
-}
-static CPDF_Stream* GetFormStream(CPDF_Document* pDoc, CPDF_Object* pResObj)
-{
-    if (pResObj->GetType() != PDFOBJ_REFERENCE) {
-        return NULL;
-    }
-    CPDF_Reference* pRef = (CPDF_Reference*)pResObj;
-    FX_BOOL bForm;
-    if (pDoc->IsFormStream(pRef->GetRefObjNum(), bForm) && !bForm) {
-        return NULL;
-    }
-    pResObj = pRef->GetDirect();
-    if (pResObj->GetType() != PDFOBJ_STREAM) {
-        return NULL;
-    }
-    CPDF_Stream* pXObject = (CPDF_Stream*)pResObj;
-    if (pXObject->GetDict()->GetString(FX_BSTRC("Subtype")) != FX_BSTRC("Form")) {
-        return NULL;
-    }
-    return pXObject;
 }
 static int InsertDeletePDFPage(CPDF_Document* pDoc, CPDF_Dictionary* pPages,
                                int nPagesToGo, CPDF_Dictionary* pPage, FX_BOOL bInsert, CFX_PtrArray& stackList)

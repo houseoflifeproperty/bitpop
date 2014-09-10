@@ -18,7 +18,7 @@ def GenSteps(api):
   soln.url = 'svn://svn.chromium.org/chrome/trunk/src'
   api.gclient.c = src_cfg
   force = True if api.properties.get('force') else False
-  yield api.bot_update.ensure_checkout(force=force)
+  api.bot_update.ensure_checkout(force=force)
 
 
 def GenTests(api):
@@ -28,22 +28,30 @@ def GenTests(api):
       slavename='totallyaslave-m1',
   )
   yield api.test('tryjob') + api.properties(
-      mastername='tryserver.chromium',
+      mastername='tryserver.chromium.linux',
       buildername='linux_rel',
       slavename='totallyaslave-c4',
       issue=12345,
       patchset=654321,
       patch_url='http://src.chromium.org/foo/bar'
   )
+  yield api.test('tryjob_fail') + api.properties(
+      mastername='tryserver.chromium.linux',
+      buildername='linux_rel',
+      slavename='totallyaslave-c4',
+      issue=12345,
+      patchset=654321,
+      patch_url='http://src.chromium.org/foo/bar',
+  ) + api.step_data('bot_update', retcode=1)
   yield api.test('tryjob_fail_patch') + api.properties(
-      mastername='tryserver.chromium',
+      mastername='tryserver.chromium.linux',
       buildername='linux_rel',
       slavename='totallyaslave-c4',
       issue=12345,
       patchset=654321,
       patch_url='http://src.chromium.org/foo/bar',
       fail_patch=True,
-  )
+  ) + api.step_data('bot_update', retcode=1)
   yield api.test('forced') + api.properties(
       mastername='experimental',
       buildername='Experimental Builder',

@@ -15,9 +15,6 @@ import re
 import sys
 
 
-UNMODIFIED_DIR=['nacl','abi']
-
-
 def ProcessStream(instr, outstr):
   """Read internal version of header file from instr, write exported
   version to outstr.  The two transformations are to remove nacl_abi_
@@ -34,59 +31,31 @@ def ProcessStream(instr, outstr):
          r'/include/([^"]*)"')
   cinc = re.compile(inc)
 
-  nostrip_beg = r'^#define NACL_NO_STRIP'
-  cnostrip_beg = re.compile(nostrip_beg)
-
-  nostrip_end = r'^#undef NACL_NO_STRIP'
-  cnostrip_end = re.compile(nostrip_end)
-
-  nostrip = False
-
   for line in instr:
     if cinc.search(line):
       print >>outstr, cinc.sub(r'#include <\1>', line)
     else:
-      if nostrip:
-        if cnostrip_end.search(line):
-          nostrip = False
-        print >>outstr, line,
-      else:
-        if cnostrip_beg.search(line):
-          nostrip = True
-        print >>outstr, cpat.sub(r'\1', line),
+      print >>outstr, cpat.sub(r'\1', line),
     # endif
   # endfor
 # enddef
 
 
-def CopyStream(instr, outstr):
-  for line in instr:
-    outstr.write(line)
-  # endfor
-# enddef
-
-
-def ProcessDir(srcdir, dstdir, unmodified_dstdir):
+def ProcessDir(srcdir, dstdir):
   if not os.path.isdir(srcdir):
     return
   # endif
   if not os.path.isdir(dstdir):
     os.makedirs(dstdir)
   # endif
-  if not os.path.isdir(unmodified_dstdir):
-    os.makedirs(unmodified_dstdir)
-  # endif
   for fn in os.listdir(srcdir):
     srcpath = os.path.join(srcdir, fn)
     dstpath = os.path.join(dstdir, fn)
-    undstpath = os.path.join(unmodified_dstdir, fn)
     if os.path.isfile(srcpath) and fn.endswith('.h'):
       ProcessStream(open(srcpath),
                     open(dstpath, 'w'))
-      CopyStream(open(srcpath),
-                 open(undstpath, 'w'))
     elif os.path.isdir(srcpath):
-      ProcessDir(srcpath, dstpath, undstpath)
+      ProcessDir(srcpath, dstpath)
     # endif
   # endfor
 # enddef
@@ -97,8 +66,7 @@ def main(argv):
                          ' dest/include/path')
     return 1
   # endif
-  ProcessDir(argv[1], argv[2],
-             reduce(os.path.join, UNMODIFIED_DIR, argv[2]))
+  ProcessDir(argv[1], argv[2])
   return 0
 # enddef
 

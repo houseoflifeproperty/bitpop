@@ -179,6 +179,7 @@
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/time/time.h"
 #include "base/tracked_objects.h"
 #include "base/values.h"
 #include "components/metrics/metrics_log.h"
@@ -286,6 +287,8 @@ void MetricsService::RegisterPrefs(PrefRegistrySimple* registry) {
   metrics::MetricsStateManager::RegisterPrefs(registry);
   MetricsLog::RegisterPrefs(registry);
 
+  registry->RegisterInt64Pref(metrics::prefs::kInstallDate, 0);
+
   registry->RegisterInt64Pref(metrics::prefs::kStabilityLaunchTimeSec, 0);
   registry->RegisterInt64Pref(metrics::prefs::kStabilityLastTimestampSec, 0);
   registry->RegisterStringPref(metrics::prefs::kStabilityStatsVersion,
@@ -329,6 +332,13 @@ MetricsService::MetricsService(metrics::MetricsStateManager* state_manager,
   DCHECK(state_manager_);
   DCHECK(client_);
   DCHECK(local_state_);
+
+  // Set the install date if this is our first run.
+  int64 install_date = local_state_->GetInt64(metrics::prefs::kInstallDate);
+  if (install_date == 0) {
+    local_state_->SetInt64(metrics::prefs::kInstallDate,
+                           base::Time::Now().ToTimeT());
+  }
 }
 
 MetricsService::~MetricsService() {
@@ -383,6 +393,10 @@ std::string MetricsService::GetClientId() {
   return state_manager_->client_id();
 }
 
+int64 MetricsService::GetInstallDate() {
+  return local_state_->GetInt64(metrics::prefs::kInstallDate);
+}
+
 scoped_ptr<const base::FieldTrial::EntropyProvider>
 MetricsService::CreateEntropyProvider() {
   // TODO(asvitkine): Refactor the code so that MetricsService does not expose
@@ -398,7 +412,7 @@ void MetricsService::EnableRecording() {
   recording_active_ = true;
 
   state_manager_->ForceClientIdCreation();
-  client_->SetClientID(state_manager_->client_id());
+  client_->SetMetricsClientId(state_manager_->client_id());
   if (!log_manager_.current_log())
     OpenNewLog();
 
@@ -424,7 +438,6 @@ void MetricsService::DisableRecording() {
     metrics_providers_[i]->OnRecordingDisabled();
 
   PushPendingLogsToPersistentStorage();
-  DCHECK(!log_manager_.has_staged_log());
 }
 
 bool MetricsService::recording_active() const {
@@ -550,6 +563,8 @@ void MetricsService::InitializeMetricsState() {
                           client_->GetVersionString());
   local_state_->SetInt64(metrics::prefs::kStabilityStatsBuildTime,
                          MetricsLog::GetBuildTime());
+
+  log_manager_.LoadPersistedUnsentLogs();
 
   session_id_ = local_state_->GetInteger(metrics::prefs::kMetricsSessionID);
 
@@ -735,12 +750,12 @@ void MetricsService::CloseCurrentLog() {
   // end of all log transmissions (initial log handles this separately).
   // RecordIncrementalStabilityElements only exists on the derived
   // MetricsLog class.
-  MetricsLog* current_log =
-      static_cast<MetricsLog*>(log_manager_.current_log());
+  MetricsLog* current_log = log_manager_.current_log();
   DCHECK(current_log);
   std::vector<variations::ActiveGroupId> synthetic_trials;
   GetCurrentSyntheticFieldTrials(&synthetic_trials);
-  current_log->RecordEnvironment(metrics_providers_.get(), synthetic_trials);
+  current_log->RecordEnvironment(
+      metrics_providers_.get(), synthetic_trials, GetInstallDate());
   base::TimeDelta incremental_uptime;
   base::TimeDelta uptime;
   GetUptimes(local_state_, &incremental_uptime, &uptime);
@@ -757,16 +772,6 @@ void MetricsService::PushPendingLogsToPersistentStorage() {
   if (state_ < SENDING_INITIAL_STABILITY_LOG)
     return;  // We didn't and still don't have time to get plugin list etc.
 
-  if (log_manager_.has_staged_log()) {
-    // We may race here, and send second copy of the log later.
-    metrics::PersistedLogs::StoreType store_type;
-    if (log_upload_in_progress_)
-      store_type = metrics::PersistedLogs::PROVISIONAL_STORE;
-    else
-      store_type = metrics::PersistedLogs::NORMAL_STORE;
-    log_manager_.StoreStagedLogAsUnsent(store_type);
-  }
-  DCHECK(!log_manager_.has_staged_log());
   CloseCurrentLog();
   log_manager_.PersistUnsentLogs();
 
@@ -881,13 +886,9 @@ void MetricsService::StageNewLog() {
         // There's an initial stability log, ready to send.
         log_manager_.StageNextLogForUpload();
         has_initial_stability_log_ = false;
-        // Note: No need to call LoadPersistedUnsentLogs() here because unsent
-        // logs have already been loaded by PrepareInitialStabilityLog().
         state_ = SENDING_INITIAL_STABILITY_LOG;
       } else {
         PrepareInitialMetricsLog();
-        // Load unsent logs (if any) from local state.
-        log_manager_.LoadPersistedUnsentLogs();
         state_ = SENDING_INITIAL_METRICS_LOG;
       }
       break;
@@ -923,8 +924,6 @@ void MetricsService::PrepareInitialStabilityLog() {
   if (!initial_stability_log->LoadSavedEnvironmentFromPrefs())
     return;
 
-  log_manager_.LoadPersistedUnsentLogs();
-
   log_manager_.PauseCurrentLog();
   log_manager_.BeginLoggingWithLog(initial_stability_log.Pass());
 
@@ -953,7 +952,8 @@ void MetricsService::PrepareInitialMetricsLog() {
   std::vector<variations::ActiveGroupId> synthetic_trials;
   GetCurrentSyntheticFieldTrials(&synthetic_trials);
   initial_metrics_log_->RecordEnvironment(metrics_providers_.get(),
-                                          synthetic_trials);
+                                          synthetic_trials,
+                                          GetInstallDate());
   base::TimeDelta incremental_uptime;
   base::TimeDelta uptime;
   GetUptimes(local_state_, &incremental_uptime, &uptime);
@@ -965,8 +965,7 @@ void MetricsService::PrepareInitialMetricsLog() {
 
   // Note: Some stability providers may record stability stats via histograms,
   //       so this call has to be after BeginLoggingWithLog().
-  MetricsLog* current_log =
-      static_cast<MetricsLog*>(log_manager_.current_log());
+  MetricsLog* current_log = log_manager_.current_log();
   current_log->RecordStabilityMetrics(metrics_providers_.get(),
                                       base::TimeDelta(), base::TimeDelta());
   RecordCurrentHistograms();
@@ -975,6 +974,10 @@ void MetricsService::PrepareInitialMetricsLog() {
 
   log_manager_.FinishCurrentLog();
   log_manager_.ResumePausedLog();
+
+  // Store unsent logs, including the initial log that was just saved, so
+  // that they're not lost in case of a crash before upload time.
+  log_manager_.PersistUnsentLogs();
 
   DCHECK(!log_manager_.has_staged_log());
   log_manager_.StageNextLogForUpload();
@@ -1021,10 +1024,6 @@ void MetricsService::OnLogUploadComplete(int response_code) {
                             ResponseCodeToStatus(response_code),
                             NUM_RESPONSE_STATUSES);
 
-  // If the upload was provisionally stored, drop it now that the upload is
-  // known to have gone through.
-  log_manager_.DiscardLastProvisionalStore();
-
   bool upload_succeeded = response_code == 200;
 
   // Provide boolean for error recovery (allow us to ignore response_code).
@@ -1039,31 +1038,26 @@ void MetricsService::OnLogUploadComplete(int response_code) {
     discard_log = true;
   }
 
-  if (upload_succeeded || discard_log)
+  if (upload_succeeded || discard_log) {
     log_manager_.DiscardStagedLog();
+    // Store the updated list to disk now that the removed log is uploaded.
+    log_manager_.PersistUnsentLogs();
+  }
 
   if (!log_manager_.has_staged_log()) {
     switch (state_) {
       case SENDING_INITIAL_STABILITY_LOG:
-        // Store the updated list to disk now that the removed log is uploaded.
-        log_manager_.PersistUnsentLogs();
         PrepareInitialMetricsLog();
         SendStagedLog();
         state_ = SENDING_INITIAL_METRICS_LOG;
         break;
 
       case SENDING_INITIAL_METRICS_LOG:
-        // The initial metrics log never gets persisted to local state, so it's
-        // not necessary to call log_manager_.PersistUnsentLogs() here.
-        // TODO(asvitkine): It should be persisted like the initial stability
-        // log and old unsent logs. http://crbug.com/328417
         state_ = log_manager_.has_unsent_logs() ? SENDING_OLD_LOGS
                                                 : SENDING_CURRENT_LOGS;
         break;
 
       case SENDING_OLD_LOGS:
-        // Store the updated list to disk now that the removed log is uploaded.
-        log_manager_.PersistUnsentLogs();
         if (!log_manager_.has_unsent_logs())
           state_ = SENDING_CURRENT_LOGS;
         break;
@@ -1143,8 +1137,7 @@ void MetricsService::GetCurrentSyntheticFieldTrials(
     std::vector<variations::ActiveGroupId>* synthetic_trials) {
   DCHECK(synthetic_trials);
   synthetic_trials->clear();
-  const MetricsLog* current_log =
-      static_cast<const MetricsLog*>(log_manager_.current_log());
+  const MetricsLog* current_log = log_manager_.current_log();
   for (size_t i = 0; i < synthetic_trial_groups_.size(); ++i) {
     if (synthetic_trial_groups_[i].start_time <= current_log->creation_time())
       synthetic_trials->push_back(synthetic_trial_groups_[i].id);
@@ -1200,7 +1193,4 @@ void MetricsService::RecordBooleanPrefValue(const char* path, bool value) {
 void MetricsService::RecordCurrentState(PrefService* pref) {
   pref->SetInt64(metrics::prefs::kStabilityLastTimestampSec,
                  Time::Now().ToTimeT());
-
-  for (size_t i = 0; i < metrics_providers_.size(); ++i)
-    metrics_providers_[i]->RecordCurrentState();
 }

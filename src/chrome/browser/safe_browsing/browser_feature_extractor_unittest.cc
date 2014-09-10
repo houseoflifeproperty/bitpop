@@ -35,6 +35,7 @@
 #include "url/gurl.h"
 
 using content::BrowserThread;
+using content::ResourceType;
 using content::WebContentsTester;
 
 using testing::DoAll;
@@ -133,14 +134,14 @@ class BrowserFeatureExtractorTest : public ChromeRenderViewHostTestHarness {
         type, std::string());
 
     static int page_id = 0;
-    content::RenderViewHost* rvh =
-        WebContentsTester::For(web_contents())->GetPendingRenderViewHost();
-    if (!rvh) {
-      rvh = web_contents()->GetRenderViewHost();
+    content::RenderFrameHost* rfh =
+        WebContentsTester::For(web_contents())->GetPendingMainFrame();
+    if (!rfh) {
+      rfh = web_contents()->GetMainFrame();
     }
     WebContentsTester::For(web_contents())->ProceedWithCrossSiteNavigation();
     WebContentsTester::For(web_contents())->TestDidNavigateWithReferrer(
-        rvh, ++page_id, url,
+        rfh, ++page_id, url,
         content::Referrer(referrer, blink::WebReferrerPolicyDefault), type);
   }
 
@@ -210,9 +211,13 @@ class BrowserFeatureExtractorTest : public ChromeRenderViewHostTestHarness {
   scoped_refptr<StrictMock<MockSafeBrowsingDatabaseManager> > db_manager_;
 
  private:
-  void ExtractFeaturesDone(bool success, ClientPhishingRequest* request) {
-    ASSERT_EQ(0U, success_.count(request));
-    success_[request] = success;
+  void ExtractFeaturesDone(bool success,
+                           scoped_ptr<ClientPhishingRequest> request) {
+    EXPECT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    ASSERT_EQ(0U, success_.count(request.get()));
+    // The pointer doesn't really belong to us.  It belongs to
+    // the test case which passed it to ExtractFeatures above.
+    success_[request.release()] = success;
     if (--num_pending_ == 0) {
       base::MessageLoop::current()->Quit();
     }
@@ -594,15 +599,15 @@ TEST_F(BrowserFeatureExtractorTest, MalwareFeatures) {
   request.set_url("http://www.foo.com/");
 
   std::vector<IPUrlInfo> bad_urls;
-  bad_urls.push_back(IPUrlInfo("http://bad.com", "GET", "",
-                               ResourceType::SCRIPT));
-  bad_urls.push_back(IPUrlInfo("http://evil.com", "GET", "",
-                               ResourceType::SCRIPT));
+  bad_urls.push_back(
+      IPUrlInfo("http://bad.com", "GET", "", content::RESOURCE_TYPE_SCRIPT));
+  bad_urls.push_back(
+      IPUrlInfo("http://evil.com", "GET", "", content::RESOURCE_TYPE_SCRIPT));
   browse_info_->ips.insert(std::make_pair("193.5.163.8", bad_urls));
   browse_info_->ips.insert(std::make_pair("92.92.92.92", bad_urls));
   std::vector<IPUrlInfo> good_urls;
-  good_urls.push_back(IPUrlInfo("http://ok.com", "GET", "",
-                                ResourceType::SCRIPT));
+  good_urls.push_back(
+      IPUrlInfo("http://ok.com", "GET", "", content::RESOURCE_TYPE_SCRIPT));
   browse_info_->ips.insert(std::make_pair("23.94.78.1", good_urls));
   EXPECT_CALL(*db_manager_, MatchMalwareIP("193.5.163.8"))
       .WillOnce(Return(true));
@@ -634,8 +639,8 @@ TEST_F(BrowserFeatureExtractorTest, MalwareFeatures_ExceedLimit) {
   request.set_url("http://www.foo.com/");
 
   std::vector<IPUrlInfo> bad_urls;
-  bad_urls.push_back(IPUrlInfo("http://bad.com", "GET", "",
-                               ResourceType::SCRIPT));
+  bad_urls.push_back(
+      IPUrlInfo("http://bad.com", "GET", "", content::RESOURCE_TYPE_SCRIPT));
   std::vector<std::string> ips;
   for (int i = 0; i < 7; ++i) {  // Add 7 ips
     std::string ip = base::StringPrintf("%d.%d.%d.%d", i, i, i, i);

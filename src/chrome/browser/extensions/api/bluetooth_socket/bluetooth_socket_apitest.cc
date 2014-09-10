@@ -45,10 +45,6 @@ class BluetoothSocketApiTest : public ExtensionApiTest {
     SetUpMockAdapter();
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
-    ExtensionApiTest::CleanUpOnMainThread();
-  }
-
   void SetUpMockAdapter() {
     // The browser will clean this up when it is torn down.
     mock_adapter_ = new testing::StrictMock<MockBluetoothAdapter>();
@@ -133,7 +129,13 @@ IN_PROC_BROWSER_TEST_F(BluetoothSocketApiTest, Connect) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-IN_PROC_BROWSER_TEST_F(BluetoothSocketApiTest, Listen) {
+#if defined(_LIBCPP_VERSION)
+// This test fails in libc++ builds, see http://crbug.com/392205.
+#define MAYBE_Listen DISABLED_Listen
+#else
+#define MAYBE_Listen Listen
+#endif
+IN_PROC_BROWSER_TEST_F(BluetoothSocketApiTest, MAYBE_Listen) {
   ResultCatcher catcher;
   catcher.RestrictToProfile(browser()->profile());
 
@@ -142,10 +144,15 @@ IN_PROC_BROWSER_TEST_F(BluetoothSocketApiTest, Listen) {
   BluetoothUUID service_uuid("2de497f9-ab28-49db-b6d2-066ea69f1737");
   scoped_refptr<testing::StrictMock<MockBluetoothSocket> > mock_server_socket
       = new testing::StrictMock<MockBluetoothSocket>();
-  EXPECT_CALL(*mock_adapter_,
-              CreateRfcommService(service_uuid,
-                                  BluetoothAdapter::kChannelAuto,
-                                  testing::_, testing::_))
+  BluetoothAdapter::ServiceOptions service_options;
+  service_options.name.reset(new std::string("MyServiceName"));
+  EXPECT_CALL(
+      *mock_adapter_,
+      CreateRfcommService(
+          service_uuid,
+          testing::Field(&BluetoothAdapter::ServiceOptions::name,
+                         testing::Pointee(testing::Eq("MyServiceName"))),
+          testing::_, testing::_))
       .WillOnce(InvokeCallbackArgument<2>(mock_server_socket));
 
   // Since the socket is unpaused, expect a call to Accept() from the socket

@@ -27,7 +27,7 @@
 
 #include "core/html/canvas/WebGLDebugRendererInfo.h"
 
-namespace WebCore {
+namespace blink {
 
 WebGLDebugRendererInfo::WebGLDebugRendererInfo(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
@@ -44,9 +44,9 @@ WebGLExtensionName WebGLDebugRendererInfo::name() const
     return WebGLDebugRendererInfoName;
 }
 
-PassRefPtr<WebGLDebugRendererInfo> WebGLDebugRendererInfo::create(WebGLRenderingContextBase* context)
+PassRefPtrWillBeRawPtr<WebGLDebugRendererInfo> WebGLDebugRendererInfo::create(WebGLRenderingContextBase* context)
 {
-    return adoptRef(new WebGLDebugRendererInfo(context));
+    return adoptRefWillBeNoop(new WebGLDebugRendererInfo(context));
 }
 
 bool WebGLDebugRendererInfo::supported(WebGLRenderingContextBase*)
@@ -59,4 +59,4 @@ const char* WebGLDebugRendererInfo::extensionName()
     return "WEBGL_debug_renderer_info";
 }
 
-} // namespace WebCore
+} // namespace blink

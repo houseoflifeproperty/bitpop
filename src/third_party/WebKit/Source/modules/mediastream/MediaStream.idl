@@ -25,7 +25,7 @@
 // http://dev.w3.org/2011/webrtc/editor/getusermedia.html#idl-def-MediaStream
 
 [
-    WillBeGarbageCollected,
+    GarbageCollected,
     Constructor,
     Constructor(MediaStream stream),
     Constructor(MediaStreamTrack[] tracks),
@@ -39,6 +39,7 @@
 
     sequence<MediaStreamTrack> getAudioTracks();
     sequence<MediaStreamTrack> getVideoTracks();
+    sequence<MediaStreamTrack> getTracks();
 
     [RaisesException] void addTrack(MediaStreamTrack track);
     [RaisesException] void removeTrack(MediaStreamTrack track);

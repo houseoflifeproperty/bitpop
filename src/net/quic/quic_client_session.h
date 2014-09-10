@@ -35,6 +35,7 @@ class QuicServerId;
 class QuicServerInfo;
 class QuicStreamFactory;
 class SSLInfo;
+class TransportSecurityState;
 
 namespace test {
 class QuicClientSessionPeer;
@@ -87,14 +88,15 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
     DISALLOW_COPY_AND_ASSIGN(StreamRequest);
   };
 
-  // Constructs a new session which will own |connection| and |helper|, but
-  // not |stream_factory|, which must outlive this session.
+  // Constructs a new session connected to |server_id| which will own
+  // |connection|, but not |stream_factory|, which must outlive this session.
   // TODO(rch): decouple the factory from the session via a Delegate interface.
   QuicClientSession(QuicConnection* connection,
                     scoped_ptr<DatagramClientSocket> socket,
                     scoped_ptr<QuicDefaultPacketWriter> writer,
                     QuicStreamFactory* stream_factory,
                     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
+                    TransportSecurityState* transport_security_state,
                     scoped_ptr<QuicServerInfo> server_info,
                     const QuicServerId& server_id,
                     const QuicConfig& config,
@@ -219,12 +221,14 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
 
   void OnConnectTimeout();
 
+  const HostPortPair server_host_port_;
   bool require_confirmation_;
   scoped_ptr<QuicCryptoClientStream> crypto_stream_;
   QuicStreamFactory* stream_factory_;
   scoped_ptr<DatagramClientSocket> socket_;
   scoped_ptr<QuicDefaultPacketWriter> writer_;
   scoped_refptr<IOBufferWithSize> read_buffer_;
+  TransportSecurityState* transport_security_state_;
   scoped_ptr<QuicServerInfo> server_info_;
   scoped_ptr<CertVerifyResult> cert_verify_result_;
   std::string pinning_failure_log_;
@@ -236,7 +240,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
   base::TaskRunner* task_runner_;
   BoundNetLog net_log_;
   base::TimeTicks handshake_start_;  // Time the handshake was started.
-  QuicConnectionLogger logger_;
+  QuicConnectionLogger* logger_;  // Owned by |connection_|.
   // Number of packets read in the current read loop.
   size_t num_packets_read_;
   // True when the session is going away, and streams may no longer be created

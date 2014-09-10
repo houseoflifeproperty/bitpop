@@ -21,31 +21,16 @@ namespace content {
 // Indicates invalid request ID (i.e. the sender does not expect it gets
 // response for the message) for messaging between browser process
 // and embedded worker.
-const static int kInvalidServiceWorkerRequestId = -1;
+static const int kInvalidServiceWorkerRequestId = -1;
 
 // Constants for invalid identifiers.
-const static int kInvalidServiceWorkerHandleId = -1;
-const static int kInvalidServiceWorkerProviderId = -1;
-const static int64 kInvalidServiceWorkerRegistrationId = -1;
-const static int64 kInvalidServiceWorkerVersionId = -1;
-const static int64 kInvalidServiceWorkerResourceId = -1;
-const static int64 kInvalidServiceWorkerResponseId = -1;
-
-// To dispatch fetch request from browser to child process.
-// TODO(kinuko): This struct will definitely need more fields and
-// we'll probably want to have response struct/class too.
-struct CONTENT_EXPORT ServiceWorkerFetchRequest {
-  ServiceWorkerFetchRequest();
-  ServiceWorkerFetchRequest(
-      const GURL& url,
-      const std::string& method,
-      const std::map<std::string, std::string>& headers);
-  ~ServiceWorkerFetchRequest();
-
-  GURL url;
-  std::string method;
-  std::map<std::string, std::string> headers;
-};
+static const int kInvalidServiceWorkerHandleId = -1;
+static const int kInvalidServiceWorkerRegistrationHandleId = -1;
+static const int kInvalidServiceWorkerProviderId = -1;
+static const int64 kInvalidServiceWorkerRegistrationId = -1;
+static const int64 kInvalidServiceWorkerVersionId = -1;
+static const int64 kInvalidServiceWorkerResourceId = -1;
+static const int64 kInvalidServiceWorkerResponseId = -1;
 
 // Indicates how the service worker handled a fetch event.
 enum ServiceWorkerFetchEventResult {
@@ -56,15 +41,36 @@ enum ServiceWorkerFetchEventResult {
   SERVICE_WORKER_FETCH_EVENT_LAST = SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE
 };
 
+// To dispatch fetch request from browser to child process.
+// TODO(kinuko): This struct will definitely need more fields and
+// we'll probably want to have response struct/class too.
+struct CONTENT_EXPORT ServiceWorkerFetchRequest {
+  ServiceWorkerFetchRequest();
+  ServiceWorkerFetchRequest(const GURL& url,
+                            const std::string& method,
+                            const std::map<std::string, std::string>& headers,
+                            const GURL& referrer,
+                            bool is_reload);
+  ~ServiceWorkerFetchRequest();
+
+  GURL url;
+  std::string method;
+  std::map<std::string, std::string> headers;
+  GURL referrer;
+  bool is_reload;
+};
+
 // Represents a response to a fetch.
 struct CONTENT_EXPORT ServiceWorkerResponse {
   ServiceWorkerResponse();
-  ServiceWorkerResponse(int status_code,
+  ServiceWorkerResponse(const GURL& url,
+                        int status_code,
                         const std::string& status_text,
                         const std::map<std::string, std::string>& headers,
                         const std::string& blob_uuid);
   ~ServiceWorkerResponse();
 
+  GURL url;
   int status_code;
   std::string status_text;
   std::map<std::string, std::string> headers;
@@ -78,6 +84,36 @@ struct CONTENT_EXPORT ServiceWorkerObjectInfo {
   GURL scope;
   GURL url;
   blink::WebServiceWorkerState state;
+};
+
+struct ServiceWorkerVersionAttributes {
+  ServiceWorkerObjectInfo installing;
+  ServiceWorkerObjectInfo waiting;
+  ServiceWorkerObjectInfo active;
+};
+
+class ChangedVersionAttributesMask {
+ public:
+  enum {
+    INSTALLING_VERSION = 1 << 0,
+    WAITING_VERSION = 1 << 1,
+    ACTIVE_VERSION = 1 << 2,
+    CONTROLLING_VERSION = 1 << 3,
+  };
+
+  ChangedVersionAttributesMask() : changed_(0) {}
+  explicit ChangedVersionAttributesMask(int changed) : changed_(changed) {}
+
+  int changed() const { return changed_; }
+
+  void add(int changed_versions) { changed_ |= changed_versions; }
+  bool installing_changed() const { return !!(changed_ & INSTALLING_VERSION); }
+  bool waiting_changed() const { return !!(changed_ & WAITING_VERSION); }
+  bool active_changed() const { return !!(changed_ & ACTIVE_VERSION); }
+  bool controller_changed() const { return !!(changed_ & CONTROLLING_VERSION); }
+
+ private:
+  int changed_;
 };
 
 }  // namespace content

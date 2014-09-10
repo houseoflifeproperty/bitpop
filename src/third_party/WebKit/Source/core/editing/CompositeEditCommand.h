@@ -31,11 +31,13 @@
 #include "core/editing/UndoStep.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class EditingStyle;
 class Element;
+class HTMLBRElement;
 class HTMLElement;
+class HTMLSpanElement;
 class Text;
 
 class EditCommandComposition FINAL : public UndoStep {
@@ -118,10 +120,10 @@ protected:
     bool canRebalance(const Position&) const;
     bool shouldRebalanceLeadingWhitespaceFor(const String&) const;
     void removeCSSProperty(PassRefPtrWillBeRawPtr<Element>, CSSPropertyID);
-    void removeNodeAttribute(PassRefPtrWillBeRawPtr<Element>, const QualifiedName& attribute);
+    void removeElementAttribute(PassRefPtrWillBeRawPtr<Element>, const QualifiedName& attribute);
     void removeChildrenInRange(PassRefPtrWillBeRawPtr<Node>, unsigned from, unsigned to);
     virtual void removeNode(PassRefPtrWillBeRawPtr<Node>, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable);
-    HTMLElement* replaceElementWithSpanPreservingChildrenAndAttributes(PassRefPtrWillBeRawPtr<HTMLElement>);
+    HTMLSpanElement* replaceElementWithSpanPreservingChildrenAndAttributes(PassRefPtrWillBeRawPtr<HTMLElement>);
     void removeNodePreservingChildren(PassRefPtrWillBeRawPtr<Node>, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable);
     void removeNodeAndPruneAncestors(PassRefPtrWillBeRawPtr<Node>, Node* excludeNode = 0);
     void moveRemainingSiblingsToNewParent(Node*, Node* pastLastNodeToMove, PassRefPtrWillBeRawPtr<Element> prpNewParent);
@@ -141,21 +143,21 @@ protected:
     void deleteInsignificantText(const Position& start, const Position& end);
     void deleteInsignificantTextDownstream(const Position&);
 
-    PassRefPtrWillBeRawPtr<Node> appendBlockPlaceholder(PassRefPtrWillBeRawPtr<Element>);
-    PassRefPtrWillBeRawPtr<Node> insertBlockPlaceholder(const Position&);
-    PassRefPtrWillBeRawPtr<Node> addBlockPlaceholderIfNeeded(Element*);
+    PassRefPtrWillBeRawPtr<HTMLBRElement> appendBlockPlaceholder(PassRefPtrWillBeRawPtr<Element>);
+    PassRefPtrWillBeRawPtr<HTMLBRElement> insertBlockPlaceholder(const Position&);
+    PassRefPtrWillBeRawPtr<HTMLBRElement> addBlockPlaceholderIfNeeded(Element*);
     void removePlaceholderAt(const Position&);
 
-    PassRefPtrWillBeRawPtr<Element> insertNewDefaultParagraphElementAt(const Position&);
+    PassRefPtrWillBeRawPtr<HTMLElement> insertNewDefaultParagraphElementAt(const Position&);
 
-    PassRefPtrWillBeRawPtr<Element> moveParagraphContentsToNewBlockIfNecessary(const Position&);
+    PassRefPtrWillBeRawPtr<HTMLElement> moveParagraphContentsToNewBlockIfNecessary(const Position&);
 
-    void pushAnchorElementDown(Node*);
+    void pushAnchorElementDown(Element*);
 
     // FIXME: preserveSelection and preserveStyle should be enums
     void moveParagraph(const VisiblePosition&, const VisiblePosition&, const VisiblePosition&, bool preserveSelection = false, bool preserveStyle = true, Node* constrainingAncestor = 0);
     void moveParagraphs(const VisiblePosition&, const VisiblePosition&, const VisiblePosition&, bool preserveSelection = false, bool preserveStyle = true, Node* constrainingAncestor = 0);
-    void moveParagraphWithClones(const VisiblePosition& startOfParagraphToMove, const VisiblePosition& endOfParagraphToMove, Element* blockElement, Node* outerNode);
+    void moveParagraphWithClones(const VisiblePosition& startOfParagraphToMove, const VisiblePosition& endOfParagraphToMove, HTMLElement* blockElement, Node* outerNode);
     void cloneParagraphUnderNewElement(const Position& start, const Position& end, Node* outerNode, Element* blockElement);
     void cleanupAfterDeletion(VisiblePosition destination = VisiblePosition());
 
@@ -176,6 +178,6 @@ private:
 
 DEFINE_TYPE_CASTS(CompositeEditCommand, EditCommand, command, command->isCompositeEditCommand(), command.isCompositeEditCommand());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CompositeEditCommand_h

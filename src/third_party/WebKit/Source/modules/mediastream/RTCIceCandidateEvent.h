@@ -28,7 +28,7 @@
 #include "modules/EventModules.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 class RTCIceCandidate;
 
 class RTCIceCandidateEvent FINAL : public Event {
@@ -36,7 +36,7 @@ public:
     virtual ~RTCIceCandidateEvent();
 
     static PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> create();
-    static PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> create(bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCIceCandidate>);
+    static PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> create(bool canBubble, bool cancelable, RTCIceCandidate*);
 
     RTCIceCandidate* candidate() const;
 
@@ -46,11 +46,11 @@ public:
 
 private:
     RTCIceCandidateEvent();
-    RTCIceCandidateEvent(bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCIceCandidate>);
+    RTCIceCandidateEvent(bool canBubble, bool cancelable, RTCIceCandidate*);
 
-    RefPtrWillBeMember<RTCIceCandidate> m_candidate;
+    PersistentWillBeMember<RTCIceCandidate> m_candidate;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCIceCandidateEvent_h

@@ -19,8 +19,6 @@
 #include <map>
 #include <string>
 
-#include <libaddressinput/util/scoped_ptr.h>
-
 #include "lookup_key.h"
 #include "ondemand_supply_task.h"
 #include "region_data_constants.h"
@@ -30,10 +28,8 @@
 namespace i18n {
 namespace addressinput {
 
-OndemandSupplier::OndemandSupplier(const std::string& validation_data_url,
-                                   const Downloader* downloader,
-                                   Storage* storage)
-    : retriever_(new Retriever(validation_data_url, downloader, storage)) {
+OndemandSupplier::OndemandSupplier(const Source* source, Storage* storage)
+    : retriever_(new Retriever(source, storage)) {
 }
 
 OndemandSupplier::~OndemandSupplier() {

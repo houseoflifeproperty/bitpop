@@ -239,7 +239,6 @@
         'message_loop/message_pump_glib.h',
         'message_loop/message_pump_io_ios.cc',
         'message_loop/message_pump_io_ios.h',
-        'message_loop/message_pump_observer.h',
         'message_loop/message_pump_libevent.cc',
         'message_loop/message_pump_libevent.h',
         'message_loop/message_pump_mac.h',
@@ -448,6 +447,8 @@
         'debug/leak_tracker_unittest.cc',
         'debug/proc_maps_linux_unittest.cc',
         'debug/stack_trace_unittest.cc',
+        'debug/task_annotator_unittest.cc',
+        'debug/trace_event_argument_unittest.cc',
         'debug/trace_event_memory_unittest.cc',
         'debug/trace_event_synthetic_delay_unittest.cc',
         'debug/trace_event_system_stats_monitor_unittest.cc',
@@ -456,14 +457,15 @@
         'debug/trace_event_win_unittest.cc',
         'deferred_sequenced_task_runner_unittest.cc',
         'environment_unittest.cc',
-        'file_util_unittest.cc',
         'file_version_info_unittest.cc',
         'files/dir_reader_posix_unittest.cc',
         'files/file_path_unittest.cc',
         'files/file_proxy_unittest.cc',
         'files/file_unittest.cc',
         'files/file_util_proxy_unittest.cc',
+        'files/file_util_unittest.cc',
         'files/important_file_writer_unittest.cc',
+        'files/memory_mapped_file_unittest.cc',
         'files/scoped_temp_dir_unittest.cc',
         'gmock_unittest.cc',
         'guid_unittest.cc',
@@ -480,7 +482,6 @@
         'i18n/string_search_unittest.cc',
         'i18n/time_formatting_unittest.cc',
         'i18n/timezone_unittest.cc',
-        'ini_parser_unittest.cc',
         'ios/device_util_unittest.mm',
         'json/json_parser_unittest.cc',
         'json/json_reader_unittest.cc',
@@ -496,6 +497,7 @@
         'mac/mac_util_unittest.mm',
         'mac/objc_property_releaser_unittest.mm',
         'mac/scoped_nsobject_unittest.mm',
+        'mac/scoped_objc_class_swizzler_unittest.mm',
         'mac/scoped_sending_event_unittest.mm',
         'md5_unittest.cc',
         'memory/aligned_memory_unittest.cc',
@@ -532,7 +534,6 @@
         'os_compat_android_unittest.cc',
         'path_service_unittest.cc',
         'pickle_unittest.cc',
-        'platform_file_unittest.cc',
         'posix/file_descriptor_shuffle_unittest.cc',
         'posix/unix_domain_socket_linux_unittest.cc',
         'power_monitor/power_monitor_unittest.cc',
@@ -559,7 +560,6 @@
         'scoped_clear_errno_unittest.cc',
         'scoped_generic_unittest.cc',
         'scoped_native_library_unittest.cc',
-        'scoped_observer.h',
         'security_unittest.cc',
         'sequence_checker_unittest.cc',
         'sha1_unittest.cc',
@@ -1006,11 +1006,9 @@
           ],
         }],
       ],
-      'cflags!': [
-        '-fsanitize=address',
-        '-fsanitize=thread',
-        '-fsanitize=memory',
-        '-fsanitize-memory-track-origins',
+      'cflags/': [
+        ['exclude', '-fsanitize='],
+        ['exclude', '-fsanitize-'],
       ],
       'direct_dependent_settings': {
         'ldflags': [
@@ -1129,7 +1127,6 @@
             'linux_util.h',
             'md5.cc',
             'md5.h',
-            'message_loop/message_pump_observer.h',
             'message_loop/message_pump_libevent.cc',
             'message_loop/message_pump_libevent.h',
             'metrics/field_trial.cc',
@@ -1283,6 +1280,7 @@
             'android/java/src/org/chromium/base/ContentUriUtils.java',
             'android/java/src/org/chromium/base/CpuFeatures.java',
             'android/java/src/org/chromium/base/EventLog.java',
+            'android/java/src/org/chromium/base/FieldTrialList.java',
             'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java',
             'android/java/src/org/chromium/base/library_loader/LibraryLoader.java',
             'android/java/src/org/chromium/base/MemoryPressureListener.java',
@@ -1413,12 +1411,10 @@
           'target_name': 'chromium_android_linker',
           'type': 'shared_library',
           'conditions': [
-            ['android_webview_build == 0 and target_arch != "x64" and \
-               target_arch != "arm64"', {
-              # Avoid breaking the webview/64-bit build because they
-              # don't have <(android_ndk_root)/crazy_linker.gyp.
-              # Note that webview never uses the linker anyway.
-              # Note there is no 64-bit support in the linker.
+            # Avoid breaking the webview build because it
+            # does not have <(android_ndk_root)/crazy_linker.gyp.
+            # Note that webview never uses the linker anyway.
+            ['android_webview_build == 0', {
               'sources': [
                 'android/linker/linker_jni.cc',
               ],
@@ -1499,6 +1495,13 @@
           ],
           'sources': [
             'base_unittests.isolate',
+          ],
+          'conditions': [
+            ['use_x11 == 1', {
+              'dependencies': [
+                '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
+              ],
+            }],
           ],
         },
       ],

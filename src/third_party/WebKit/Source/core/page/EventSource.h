@@ -32,7 +32,6 @@
 #ifndef EventSource_h
 #define EventSource_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
 #include "core/loader/ThreadableLoaderClient.h"
@@ -42,7 +41,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Dictionary;
 class ExceptionState;
@@ -51,7 +50,7 @@ class ResourceResponse;
 class TextResourceDecoder;
 class ThreadableLoader;
 
-class EventSource FINAL : public RefCountedWillBeRefCountedGarbageCollected<EventSource>, public ScriptWrappable, public EventTargetWithInlineData, private ThreadableLoaderClient, public ActiveDOMObject {
+class EventSource FINAL : public RefCountedWillBeRefCountedGarbageCollected<EventSource>, public EventTargetWithInlineData, private ThreadableLoaderClient, public ActiveDOMObject {
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
     REFCOUNTED_EVENT_TARGET(EventSource);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(EventSource);
@@ -87,6 +86,8 @@ public:
     // loader, and therefore the methods of this class for receiving
     // asynchronous events from the loader won't be invoked.
     virtual void stop() OVERRIDE;
+
+    virtual bool hasPendingActivity() const OVERRIDE;
 
 private:
     EventSource(ExecutionContext*, const KURL&, const Dictionary&);
@@ -127,6 +128,6 @@ private:
     String m_eventStreamOrigin;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // EventSource_h

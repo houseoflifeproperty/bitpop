@@ -32,7 +32,7 @@
 #include "config.h"
 #include "core/workers/SharedWorker.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/MessageChannel.h"
@@ -46,10 +46,11 @@
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SharedWorker::SharedWorker(ExecutionContext* context)
     : AbstractWorker(context)
+    , m_isBeingConnected(false)
 {
     ScriptWrappable::init(this);
 }
@@ -96,20 +97,16 @@ const AtomicString& SharedWorker::interfaceName() const
     return EventTargetNames::SharedWorker;
 }
 
-void SharedWorker::setPreventGC()
+bool SharedWorker::hasPendingActivity() const
 {
-    setPendingActivity(this);
-}
-
-void SharedWorker::unsetPreventGC()
-{
-    unsetPendingActivity(this);
+    return m_isBeingConnected;
 }
 
 void SharedWorker::trace(Visitor* visitor)
 {
+    visitor->trace(m_port);
     AbstractWorker::trace(visitor);
     WillBeHeapSupplementable<SharedWorker>::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

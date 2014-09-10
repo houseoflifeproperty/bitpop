@@ -35,6 +35,7 @@ from pylib.perf import test_options as perf_test_options
 from pylib.perf import test_runner as perf_test_runner
 from pylib.uiautomator import setup as uiautomator_setup
 from pylib.uiautomator import test_options as uiautomator_test_options
+from pylib.utils import apk_helper
 from pylib.utils import command_option_parser
 from pylib.utils import report_results
 from pylib.utils import reraiser_thread
@@ -200,7 +201,7 @@ def ProcessJavaTestOptions(options):
     options.annotations = []
   else:
     options.annotations = ['Smoke', 'SmallTest', 'MediumTest', 'LargeTest',
-                           'EnormousTest']
+                           'EnormousTest', 'IntegrationTest']
 
   if options.exclude_annotation_str:
     options.exclude_annotations = options.exclude_annotation_str.split(',')
@@ -236,6 +237,9 @@ def AddInstrumentationTestOptions(option_parser):
   option_parser.add_option('--coverage-dir',
                            help=('Directory in which to place all generated '
                                  'EMMA coverage files.'))
+  option_parser.add_option('--device-flags', dest='device_flags', default='',
+                           help='The relative filepath to a file containing '
+                                'command-line flags to set on the device')
 
 
 def ProcessInstrumentationOptions(options, error_func):
@@ -269,13 +273,18 @@ def ProcessInstrumentationOptions(options, error_func):
     error_func('--test-apk must be specified.')
 
 
-  options.test_apk_path = os.path.join(constants.GetOutDirectory(),
-                                       constants.SDK_BUILD_APKS_DIR,
-                                       '%s.apk' % options.test_apk)
+  options.test_apk_path = os.path.join(
+      constants.GetOutDirectory(),
+      constants.SDK_BUILD_APKS_DIR,
+      '%s.apk' % options.test_apk)
   options.test_apk_jar_path = os.path.join(
       constants.GetOutDirectory(),
       constants.SDK_BUILD_TEST_JAVALIB_DIR,
       '%s.jar' %  options.test_apk)
+  options.test_support_apk_path = '%sSupport%s' % (
+      os.path.splitext(options.test_apk_path))
+
+  options.test_runner = apk_helper.GetInstrumentationName(options.test_apk_path)
 
   return instrumentation_test_options.InstrumentationOptions(
       options.tool,
@@ -291,7 +300,11 @@ def ProcessInstrumentationOptions(options, error_func):
       options.coverage_dir,
       options.test_apk,
       options.test_apk_path,
-      options.test_apk_jar_path)
+      options.test_apk_jar_path,
+      options.test_runner,
+      options.test_support_apk_path,
+      options.device_flags
+      )
 
 
 def AddUIAutomatorTestOptions(option_parser):
@@ -587,6 +600,10 @@ def _RunInstrumentationTests(options, error_func, devices):
       # Only allow exit code escalation
       if test_exit_code and exit_code != constants.ERROR_EXIT_CODE:
         exit_code = test_exit_code
+
+  if options.device_flags:
+    options.device_flags = os.path.join(constants.DIR_SOURCE_ROOT,
+                                        options.device_flags)
 
   report_results.LogFull(
       results=results,

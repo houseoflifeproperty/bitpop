@@ -7,7 +7,7 @@ import os
 from tvcm import module
 from tvcm import style_sheet as style_sheet_module
 from tvcm import resource as resource_module
-from tvcm import js_module
+from tvcm import html_module
 from tvcm import strip_js_comments
 
 class ResourceLoader(object):
@@ -24,7 +24,6 @@ class ResourceLoader(object):
     self.loaded_modules = {}
     self.loaded_raw_scripts = {}
     self.loaded_style_sheets = {}
-    self.loaded_html_templates = {}
     self.loaded_images = {}
 
   @property
@@ -92,19 +91,10 @@ class ResourceLoader(object):
 
   def FindModuleResource(self, requested_module_name):
     """Finds a module javascript file and returns a Resource, or none."""
-    # TODO(nduca): Look for name/__init__.js as well as name.js
     js_resource = self._FindResourceGivenNameAndSuffix(requested_module_name, '.js', return_resource=True)
-    if not js_resource:
-      js_resource = self._FindResourceGivenNameAndSuffix(requested_module_name + '.__init__', '.js', return_resource=True)
-    else:
-      # Verify that no __init__.js exists.
-      init_resource = self._FindResourceGivenNameAndSuffix(requested_module_name + '.__init__', '.js', return_resource=True)
-      if init_resource:
-        raise module.DepsException('While loading "%s", found a __init__.js form as well', requested_module_name)
-
     html_resource = self._FindResourceGivenNameAndSuffix(requested_module_name, '.html', return_resource=True)
     if js_resource and html_resource:
-      if module.Module.html_contents_is_polymer_module(html_resource.contents):
+      if html_module.IsHTMLResourceTheModuleGivenConflictingResourceNames(js_resource, html_resource):
         return html_resource
       return js_resource
     elif js_resource:
@@ -119,11 +109,6 @@ class ResourceLoader(object):
         raise Exception('Could not find %s in %s' % (
             module_filename, repr(self.source_paths)))
       module_name = resource.name
-      if resource.absolute_path.endswith('__init__.js'):
-        old_style_filename = os.path.dirname(resource.absolute_path) + '.js'
-        if os.path.exists(old_style_filename):
-          raise module.DepsException('While loading __init__.js of %s, found %s which should never exist',
-                                     module_name, old_style_filename)
     else:
       resource = None # Will be set if we end up needing to load.
 
@@ -136,7 +121,9 @@ class ResourceLoader(object):
       if not resource:
         raise module.DepsException('No resource for module "%s"' % module_name)
 
-    m = js_module.JSModule(self, module_name, resource)
+    if resource.absolute_path.endswith('.js'):
+      raise Exception(".js modules are deprecated")
+    m = html_module.HTMLModule(self, module_name, resource)
     m.Parse()
     self.loaded_modules[module_name] = m
     m.Load()
@@ -151,8 +138,9 @@ class ResourceLoader(object):
         break
     if not resource:
       raise module.DepsException('Could not find a file for raw script %s in %s' % (
-        relative_raw_script_path, self.source_paths))
-    assert relative_raw_script_path == resource.unix_style_relative_path
+        self.source_paths, relative_raw_script_path))
+    assert relative_raw_script_path == resource.unix_style_relative_path, \
+        'Expected %s == %s' % (relative_raw_script_path, resource.unix_style_relative_path)
 
     if resource.absolute_path in self.loaded_raw_scripts:
       return self.loaded_raw_scripts[resource.absolute_path]
@@ -173,19 +161,6 @@ class ResourceLoader(object):
     style_sheet.load()
     self.loaded_style_sheets[name] = style_sheet
     return style_sheet
-
-  def LoadHTMLTemplate(self, name):
-    if name in self.loaded_html_templates:
-      return self.loaded_html_templates[name]
-
-    resource = self._FindResourceGivenNameAndSuffix(name, '.html', return_resource=True)
-    if not resource:
-      raise module.DepsException(
-          'Could not find a file for html template named %s' % name)
-
-    html_template = module.HTMLTemplate(name, resource.absolute_path, resource.contents)
-    self.loaded_html_templates[name] = html_template
-    return html_template
 
   def LoadImage(self, abs_path):
     if abs_path in self.loaded_images:

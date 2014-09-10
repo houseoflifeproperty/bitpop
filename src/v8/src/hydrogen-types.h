@@ -15,6 +15,7 @@ namespace internal {
 // Forward declarations.
 template <typename T> class Handle;
 class Object;
+class OStream;
 
 #define HTYPE_LIST(V)                                 \
   V(Any, 0x0)              /* 0000 0000 0000 0000 */  \
@@ -64,7 +65,7 @@ class HType V8_FINAL {
   static HType FromType(typename T::TypeHandle type) V8_WARN_UNUSED_RESULT;
   static HType FromValue(Handle<Object> value) V8_WARN_UNUSED_RESULT;
 
-  const char* ToString() const V8_WARN_UNUSED_RESULT;
+  friend OStream& operator<<(OStream& os, const HType& t);
 
  private:
   enum Kind {
@@ -82,6 +83,8 @@ class HType V8_FINAL {
   int16_t kind_;
 };
 
+
+OStream& operator<<(OStream& os, const HType& t);
 } }  // namespace v8::internal
 
 #endif  // HYDROGEN_TYPES_H_

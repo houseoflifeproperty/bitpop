@@ -61,9 +61,10 @@ static jint WaitMany(JNIEnv* env,
                      jobject jcaller,
                      jobject buffer,
                      jlong deadline) {
-  // Buffer contains first the list of handles, then the list of flags.
+  // Buffer contains first the list of handles, then the list of signals.
   const void* buffer_start = env->GetDirectBufferAddress(buffer);
   DCHECK(buffer_start);
+  DCHECK_EQ(reinterpret_cast<const uintptr_t>(buffer_start) % 8, 0u);
   const size_t record_size = 8;
   const size_t buffer_size = env->GetDirectBufferCapacity(buffer);
   DCHECK_EQ(buffer_size % record_size, 0u);
@@ -75,11 +76,22 @@ static jint WaitMany(JNIEnv* env,
   return MojoWaitMany(handle_start, signals_start, nb_handles, deadline);
 }
 
-static jobject CreateMessagePipe(JNIEnv* env, jobject jcaller) {
+static jobject CreateMessagePipe(JNIEnv* env,
+                                 jobject jcaller,
+                                 jobject options_buffer) {
+  const MojoCreateMessagePipeOptions* options = NULL;
+  if (options_buffer) {
+    const void* buffer_start = env->GetDirectBufferAddress(options_buffer);
+    DCHECK(buffer_start);
+    DCHECK_EQ(reinterpret_cast<const uintptr_t>(buffer_start) % 8, 0u);
+    const size_t buffer_size = env->GetDirectBufferCapacity(options_buffer);
+    DCHECK_EQ(buffer_size, sizeof(MojoCreateMessagePipeOptions));
+    options = static_cast<const MojoCreateMessagePipeOptions*>(buffer_start);
+    DCHECK_EQ(options->struct_size, buffer_size);
+  }
   MojoHandle handle1;
   MojoHandle handle2;
-  // TODO(vtl): Add support for the options struct.
-  MojoResult result = MojoCreateMessagePipe(NULL, &handle1, &handle2);
+  MojoResult result = MojoCreateMessagePipe(options, &handle1, &handle2);
   return Java_CoreImpl_newNativeCreationResult(env, result, handle1, handle2)
       .Release();
 }
@@ -91,6 +103,7 @@ static jobject CreateDataPipe(JNIEnv* env,
   if (options_buffer) {
     const void* buffer_start = env->GetDirectBufferAddress(options_buffer);
     DCHECK(buffer_start);
+    DCHECK_EQ(reinterpret_cast<const uintptr_t>(buffer_start) % 8, 0u);
     const size_t buffer_size = env->GetDirectBufferCapacity(options_buffer);
     DCHECK_EQ(buffer_size, sizeof(MojoCreateDataPipeOptions));
     options = static_cast<const MojoCreateDataPipeOptions*>(buffer_start);
@@ -111,6 +124,7 @@ static jobject CreateSharedBuffer(JNIEnv* env,
   if (options_buffer) {
     const void* buffer_start = env->GetDirectBufferAddress(options_buffer);
     DCHECK(buffer_start);
+    DCHECK_EQ(reinterpret_cast<const uintptr_t>(buffer_start) % 8, 0u);
     const size_t buffer_size = env->GetDirectBufferCapacity(options_buffer);
     DCHECK_EQ(buffer_size, sizeof(MojoCreateSharedBufferOptions));
     options = static_cast<const MojoCreateSharedBufferOptions*>(buffer_start);

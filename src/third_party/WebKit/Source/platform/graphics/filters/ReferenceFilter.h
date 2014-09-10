@@ -36,7 +36,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class SourceGraphic;
 class FilterEffect;
@@ -63,6 +63,6 @@ private:
     RefPtr<FilterEffect> m_lastEffect;
 };
 
-}
+} // namespace blink
 
 #endif // ReferenceFilter_h

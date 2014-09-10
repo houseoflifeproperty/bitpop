@@ -162,7 +162,7 @@ TEST_F(MediaStreamAudioProcessorTest, WithoutAudioProcessing) {
   scoped_refptr<WebRtcAudioDeviceImpl> webrtc_audio_device(
       new WebRtcAudioDeviceImpl());
   scoped_refptr<MediaStreamAudioProcessor> audio_processor(
-      new talk_base::RefCountedObject<MediaStreamAudioProcessor>(
+      new rtc::RefCountedObject<MediaStreamAudioProcessor>(
           constraint_factory.CreateWebMediaConstraints(), 0,
           webrtc_audio_device.get()));
   EXPECT_FALSE(audio_processor->has_audio_processing());
@@ -182,7 +182,7 @@ TEST_F(MediaStreamAudioProcessorTest, WithAudioProcessing) {
   scoped_refptr<WebRtcAudioDeviceImpl> webrtc_audio_device(
       new WebRtcAudioDeviceImpl());
   scoped_refptr<MediaStreamAudioProcessor> audio_processor(
-      new talk_base::RefCountedObject<MediaStreamAudioProcessor>(
+      new rtc::RefCountedObject<MediaStreamAudioProcessor>(
           constraint_factory.CreateWebMediaConstraints(), 0,
           webrtc_audio_device.get()));
   EXPECT_TRUE(audio_processor->has_audio_processing());
@@ -207,7 +207,7 @@ TEST_F(MediaStreamAudioProcessorTest, VerifyTabCaptureWithoutAudioProcessing) {
   tab_constraint_factory.AddMandatory(kMediaStreamSource,
                                       tab_string);
   scoped_refptr<MediaStreamAudioProcessor> audio_processor(
-      new talk_base::RefCountedObject<MediaStreamAudioProcessor>(
+      new rtc::RefCountedObject<MediaStreamAudioProcessor>(
           tab_constraint_factory.CreateWebMediaConstraints(), 0,
           webrtc_audio_device.get()));
   EXPECT_FALSE(audio_processor->has_audio_processing());
@@ -224,7 +224,7 @@ TEST_F(MediaStreamAudioProcessorTest, VerifyTabCaptureWithoutAudioProcessing) {
   const std::string system_string = kMediaStreamSourceSystem;
   system_constraint_factory.AddMandatory(kMediaStreamSource,
                                          system_string);
-  audio_processor = new talk_base::RefCountedObject<MediaStreamAudioProcessor>(
+  audio_processor = new rtc::RefCountedObject<MediaStreamAudioProcessor>(
       system_constraint_factory.CreateWebMediaConstraints(), 0,
       webrtc_audio_device.get());
   EXPECT_FALSE(audio_processor->has_audio_processing());
@@ -241,7 +241,7 @@ TEST_F(MediaStreamAudioProcessorTest, TurnOffDefaultConstraints) {
   scoped_refptr<WebRtcAudioDeviceImpl> webrtc_audio_device(
       new WebRtcAudioDeviceImpl());
   scoped_refptr<MediaStreamAudioProcessor> audio_processor(
-      new talk_base::RefCountedObject<MediaStreamAudioProcessor>(
+      new rtc::RefCountedObject<MediaStreamAudioProcessor>(
           constraint_factory.CreateWebMediaConstraints(), 0,
           webrtc_audio_device.get()));
   EXPECT_FALSE(audio_processor->has_audio_processing());
@@ -357,7 +357,7 @@ TEST_F(MediaStreamAudioProcessorTest, TestAllSampleRates) {
   scoped_refptr<WebRtcAudioDeviceImpl> webrtc_audio_device(
       new WebRtcAudioDeviceImpl());
   scoped_refptr<MediaStreamAudioProcessor> audio_processor(
-      new talk_base::RefCountedObject<MediaStreamAudioProcessor>(
+      new rtc::RefCountedObject<MediaStreamAudioProcessor>(
           constraint_factory.CreateWebMediaConstraints(), 0,
           webrtc_audio_device.get()));
   EXPECT_TRUE(audio_processor->has_audio_processing());
@@ -385,6 +385,28 @@ TEST_F(MediaStreamAudioProcessorTest, TestAllSampleRates) {
   audio_processor = NULL;
 }
 
+// Test that if we have an AEC dump message filter created, we are getting it
+// correctly in MSAP. Any IPC messages will be deleted since no sender in the
+// filter will be created.
+TEST_F(MediaStreamAudioProcessorTest, GetAecDumpMessageFilter) {
+  base::MessageLoopForUI message_loop;
+  scoped_refptr<AecDumpMessageFilter> aec_dump_message_filter_(
+      new AecDumpMessageFilter(message_loop.message_loop_proxy(),
+                               message_loop.message_loop_proxy()));
+
+  MockMediaConstraintFactory constraint_factory;
+  scoped_refptr<WebRtcAudioDeviceImpl> webrtc_audio_device(
+      new WebRtcAudioDeviceImpl());
+  scoped_refptr<MediaStreamAudioProcessor> audio_processor(
+      new rtc::RefCountedObject<MediaStreamAudioProcessor>(
+          constraint_factory.CreateWebMediaConstraints(), 0,
+          webrtc_audio_device.get()));
+
+  EXPECT_TRUE(audio_processor->aec_dump_message_filter_);
+
+  audio_processor = NULL;
+}
+
 TEST_F(MediaStreamAudioProcessorTest, TestStereoAudio) {
   // Set up the correct constraints to turn off the audio processing and turn
   // on the stereo channels mirroring.
@@ -396,7 +418,7 @@ TEST_F(MediaStreamAudioProcessorTest, TestStereoAudio) {
   scoped_refptr<WebRtcAudioDeviceImpl> webrtc_audio_device(
       new WebRtcAudioDeviceImpl());
   scoped_refptr<MediaStreamAudioProcessor> audio_processor(
-      new talk_base::RefCountedObject<MediaStreamAudioProcessor>(
+      new rtc::RefCountedObject<MediaStreamAudioProcessor>(
           constraint_factory.CreateWebMediaConstraints(), 0,
           webrtc_audio_device.get()));
   EXPECT_FALSE(audio_processor->has_audio_processing());

@@ -36,7 +36,7 @@
 #include "core/workers/WorkerGlobalScope.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class DedicatedWorkerThread;
 class WorkerThreadStartupData;
@@ -57,7 +57,7 @@ public:
     // EventTarget
     virtual const AtomicString& interfaceName() const OVERRIDE;
 
-    void postMessage(PassRefPtr<SerializedScriptValue>, const MessagePortArray*, ExceptionState&);
+    void postMessage(ExecutionContext*, PassRefPtr<SerializedScriptValue>, const MessagePortArray*, ExceptionState&);
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(message);
 
@@ -69,6 +69,6 @@ private:
     DedicatedWorkerGlobalScope(const KURL&, const String& userAgent, DedicatedWorkerThread*, double timeOrigin, PassOwnPtrWillBeRawPtr<WorkerClients>);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DedicatedWorkerGlobalScope_h

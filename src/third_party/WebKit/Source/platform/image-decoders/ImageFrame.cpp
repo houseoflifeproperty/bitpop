@@ -27,7 +27,7 @@
 #include "config.h"
 #include "platform/image-decoders/ImageDecoder.h"
 
-namespace WebCore {
+namespace blink {
 
 ImageFrame::ImageFrame()
     : m_allocator(0)
@@ -39,7 +39,7 @@ ImageFrame::ImageFrame()
     , m_premultiplyAlpha(true)
     , m_pixelsChanged(false)
     , m_requiredPreviousFrameIndex(kNotFound)
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     , m_requiredPreviousFrameIndexValid(false)
 #endif
 {
@@ -69,7 +69,7 @@ ImageFrame& ImageFrame::operator=(const ImageFrame& other)
     setHasAlpha(other.hasAlpha());
     // Copy raw fields to avoid ASSERT failure in requiredPreviousFrameIndex().
     m_requiredPreviousFrameIndex = other.m_requiredPreviousFrameIndex;
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     m_requiredPreviousFrameIndexValid = other.m_requiredPreviousFrameIndexValid;
 #endif
     return *this;
@@ -157,4 +157,4 @@ void ImageFrame::zeroFillFrameRect(const IntRect& rect)
     setHasAlpha(true);
 }
 
-} // namespace WebCore
+} // namespace blink

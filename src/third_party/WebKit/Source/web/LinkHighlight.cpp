@@ -34,6 +34,7 @@
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderLayerModelObject.h"
 #include "core/rendering/RenderObject.h"
+#include "core/rendering/RenderPart.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/compositing/CompositedLayerMapping.h"
 #include "core/rendering/style/ShadowData.h"
@@ -47,10 +48,9 @@
 #include "public/platform/WebSize.h"
 #include "public/web/WebKit.h"
 #include "web/WebLocalFrameImpl.h"
+#include "web/WebSettingsImpl.h"
 #include "web/WebViewImpl.h"
 #include "wtf/CurrentTime.h"
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -114,7 +114,7 @@ RenderLayer* LinkHighlight::computeEnclosingCompositingLayer()
     RenderObject* renderer = m_node->renderer();
     RenderLayer* renderLayer;
     do {
-        renderLayer = renderer->enclosingLayer()->enclosingCompositingLayerForRepaint();
+        renderLayer = renderer->enclosingLayer()->enclosingLayerForPaintInvalidation();
         if (!renderLayer) {
             renderer = renderer->frame()->ownerRenderer();
             if (!renderer)
@@ -122,17 +122,14 @@ RenderLayer* LinkHighlight::computeEnclosingCompositingLayer()
         }
     } while (!renderLayer);
 
-    CompositedLayerMappingPtr compositedLayerMapping = renderLayer->compositingState() == PaintsIntoGroupedBacking ? renderLayer->groupedMapping() : renderLayer->compositedLayerMapping();
-    GraphicsLayer* newGraphicsLayer = renderLayer->compositingState() == PaintsIntoGroupedBacking ? compositedLayerMapping->squashingLayer() : compositedLayerMapping->mainGraphicsLayer();
+    ASSERT(renderLayer->compositingState() != NotComposited);
+
+    GraphicsLayer* newGraphicsLayer = renderLayer->graphicsLayerBacking();
+    if (!newGraphicsLayer->drawsContent()) {
+        newGraphicsLayer = renderLayer->graphicsLayerBackingForScrolling();
+    }
 
     m_clipLayer->setTransform(SkMatrix44(SkMatrix44::kIdentity_Constructor));
-
-    if (!newGraphicsLayer->drawsContent()) {
-        if (renderLayer->scrollableArea() && renderLayer->scrollableArea()->usesCompositedScrolling()) {
-            ASSERT(renderLayer->hasCompositedLayerMapping() && renderLayer->compositedLayerMapping()->scrollingContentsLayer());
-            newGraphicsLayer = compositedLayerMapping->scrollingContentsLayer();
-        }
-    }
 
     if (m_currentGraphicsLayer != newGraphicsLayer) {
         if (m_currentGraphicsLayer)
@@ -231,7 +228,8 @@ bool LinkHighlight::computeHighlightLayerPathAndPosition(RenderLayer* compositin
         // we may sometimes get a chain of adjacent boxes (e.g. for text nodes) which end up looking like sausage
         // links: these should ideally be merged into a single rect before creating the path, but that's
         // another CL.
-        if (quads.size() == 1 && transformedQuad.isRectilinear()) {
+        if (quads.size() == 1 && transformedQuad.isRectilinear()
+            && !m_owningWebViewImpl->settingsImpl()->mockGestureTapHighlightsEnabled()) {
             FloatSize rectRoundingRadii(3, 3);
             newPath.addRoundedRect(transformedQuad.boundingBox(), rectRoundingRadii);
         } else
@@ -360,4 +358,4 @@ WebLayer* LinkHighlight::layer()
     return clipLayer();
 }
 
-} // namespace WeKit
+} // namespace blink

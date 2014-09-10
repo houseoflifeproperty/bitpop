@@ -42,7 +42,7 @@
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 
-namespace WebCore {
+namespace blink {
 
 bool FontPlatformFeatures::canReturnFallbackFontsForComplexText()
 {
@@ -101,9 +101,9 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
         break;
     }
 
-    if (isRunningLayoutTest()) {
+    if (LayoutTestSupport::isRunningLayoutTest()) {
         shouldSmoothFonts = false;
-        shouldAntialias = shouldAntialias && isFontAntialiasingEnabledForTest();
+        shouldAntialias = shouldAntialias && LayoutTestSupport::isFontAntialiasingEnabledForTest();
     }
 
     const Glyph* glyphs = glyphBuffer.glyphs(from);
@@ -112,6 +112,9 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
 
     if (font->platformData().orientation() == Vertical)
         y += SkFloatToScalar(font->fontMetrics().floatAscent(IdeographicBaseline) - font->fontMetrics().floatAscent());
+
+    // FIXME: implement a no-vertical-advances fast path like FontHarfBuzz has.
+
     // FIXME: text rendering speed:
     // Android has code in their WebCore fork to special case when the
     // GlyphBuffer has no advances other than the defaults. In that case the
@@ -169,4 +172,4 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
         gc->restore();
 }
 
-} // namespace WebCore
+} // namespace blink

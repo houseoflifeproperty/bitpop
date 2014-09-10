@@ -36,10 +36,10 @@
 #include "chrome/browser/extensions/updater/manifest_fetch_data.h"
 #include "chrome/browser/extensions/updater/request_queue_impl.h"
 #include "chrome/browser/google/google_brand.h"
-#include "chrome/browser/omaha_query_params/omaha_query_params.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/omaha_query_params/omaha_query_params.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -53,10 +53,13 @@
 #include "extensions/common/extension.h"
 #include "extensions/common/id_util.h"
 #include "extensions/common/manifest_constants.h"
+#include "google_apis/gaia/fake_identity_provider.h"
+#include "google_apis/gaia/fake_oauth2_token_service.h"
 #include "libxml/globals.h"
 #include "net/base/backoff_entry.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
+#include "net/http/http_request_headers.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_status.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -64,7 +67,7 @@
 #include "url/third_party/mozilla/url_parse.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/scoped_test_user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
@@ -122,7 +125,11 @@ int kExpectedLoadFlags =
     net::LOAD_DO_NOT_SAVE_COOKIES |
     net::LOAD_DISABLE_CACHE;
 
-int kExpectedLoadFlagsForProtectedDownload = net::LOAD_DISABLE_CACHE;
+int kExpectedLoadFlagsForDownloadWithCookies = net::LOAD_DISABLE_CACHE;
+
+// Fake authentication constants
+const char kFakeAccountId[] = "bobloblaw@lawblog.example.com";
+const char kFakeOAuth2Token[] = "ce n'est pas un jeton";
 
 const ManifestFetchData::PingData kNeverPingedData(
     ManifestFetchData::kNeverPinged, ManifestFetchData::kNeverPinged, true);
@@ -185,8 +192,8 @@ class MockExtensionDownloaderDelegate : public ExtensionDownloaderDelegate {
 };
 
 const int kNotificationsObserved[] = {
-  chrome::NOTIFICATION_EXTENSION_UPDATING_STARTED,
-  chrome::NOTIFICATION_EXTENSION_UPDATE_FOUND,
+    extensions::NOTIFICATION_EXTENSION_UPDATING_STARTED,
+    extensions::NOTIFICATION_EXTENSION_UPDATE_FOUND,
 };
 
 // A class that observes the notifications sent by the ExtensionUpdater and
@@ -234,7 +241,7 @@ class NotificationsObserver : public content::NotificationObserver {
     for (size_t i = 0; i < arraysize(kNotificationsObserved); ++i) {
       if (kNotificationsObserved[i] == type) {
         count_[i]++;
-        if (type == chrome::NOTIFICATION_EXTENSION_UPDATE_FOUND) {
+        if (type == extensions::NOTIFICATION_EXTENSION_UPDATE_FOUND) {
           updated_.insert(
               content::Details<UpdateDetails>(details)->id);
         }
@@ -277,7 +284,10 @@ int GetAuthUserQueryValue(const GURL& url) {
 class MockService : public TestExtensionService {
  public:
   explicit MockService(TestExtensionPrefs* prefs)
-      : prefs_(prefs), pending_extension_manager_(&profile_) {}
+      : prefs_(prefs),
+        pending_extension_manager_(&profile_),
+        downloader_delegate_override_(NULL) {
+  }
 
   virtual ~MockService() {}
 
@@ -296,6 +306,10 @@ class MockService : public TestExtensionService {
   ExtensionPrefs* extension_prefs() { return prefs_->prefs(); }
 
   PrefService* pref_service() { return prefs_->pref_service(); }
+
+  FakeOAuth2TokenService* fake_token_service() {
+    return fake_token_service_.get();
+  }
 
   // Creates test extensions and inserts them into list. The name and
   // version are all based on their index. If |update_url| is non-null, it
@@ -320,12 +334,54 @@ class MockService : public TestExtensionService {
     }
   }
 
+  ExtensionDownloader::Factory GetDownloaderFactory() {
+    return base::Bind(&MockService::CreateExtensionDownloader,
+                      base::Unretained(this));
+  }
+
+  ExtensionDownloader::Factory GetAuthenticatedDownloaderFactory() {
+    return base::Bind(&MockService::CreateExtensionDownloaderWithIdentity,
+                      base::Unretained(this));
+  }
+
+  void OverrideDownloaderDelegate(ExtensionDownloaderDelegate* delegate) {
+    downloader_delegate_override_ = delegate;
+  }
+
  protected:
   TestExtensionPrefs* const prefs_;
   TestingProfile profile_;
   PendingExtensionManager pending_extension_manager_;
 
  private:
+  scoped_ptr<ExtensionDownloader> CreateExtensionDownloader(
+      ExtensionDownloaderDelegate* delegate) {
+    return make_scoped_ptr(new ExtensionDownloader(
+        downloader_delegate_override_ ? downloader_delegate_override_
+            : delegate,
+        request_context()));
+  }
+
+  scoped_ptr<ExtensionDownloader> CreateExtensionDownloaderWithIdentity(
+      ExtensionDownloaderDelegate* delegate) {
+    scoped_ptr<FakeIdentityProvider> fake_identity_provider;
+    fake_token_service_.reset(new FakeOAuth2TokenService());
+    fake_identity_provider.reset(new FakeIdentityProvider(
+          fake_token_service_.get()));
+    fake_identity_provider->LogIn(kFakeAccountId);
+    fake_token_service_->AddAccount(kFakeAccountId);
+
+    scoped_ptr<ExtensionDownloader> downloader(
+        CreateExtensionDownloader(delegate));
+    downloader->SetWebstoreIdentityProvider(
+        fake_identity_provider.PassAs<IdentityProvider>());
+    return downloader.Pass();
+  }
+
+  scoped_ptr<FakeOAuth2TokenService> fake_token_service_;
+
+  ExtensionDownloaderDelegate* downloader_delegate_override_;
+
   DISALLOW_COPY_AND_ASSIGN(MockService);
 };
 
@@ -374,7 +430,9 @@ void SetupPendingExtensionManagerForTest(
 class ServiceForManifestTests : public MockService {
  public:
   explicit ServiceForManifestTests(TestExtensionPrefs* prefs)
-      : MockService(prefs), registry_(ExtensionRegistry::Get(profile())) {}
+      : MockService(prefs),
+        registry_(ExtensionRegistry::Get(profile())) {
+  }
 
   virtual ~ServiceForManifestTests() {}
 
@@ -508,8 +566,8 @@ static void VerifyQueryAndExtractParameters(
   std::map<std::string, std::string> params;
   ExtractParameters(query, &params);
 
-  std::string omaha_params =
-      chrome::OmahaQueryParams::Get(chrome::OmahaQueryParams::CRX);
+  std::string omaha_params = omaha_query_params::OmahaQueryParams::Get(
+      omaha_query_params::OmahaQueryParams::CRX);
   std::map<std::string, std::string> expected;
   ExtractParameters(omaha_params, &expected);
 
@@ -568,12 +626,6 @@ class ExtensionUpdaterTest : public testing::Test {
     results->list.push_back(result);
   }
 
-  void ResetDownloader(ExtensionUpdater* updater,
-                       ExtensionDownloader* downloader) {
-    EXPECT_FALSE(updater->downloader_.get());
-    updater->downloader_.reset(downloader);
-  }
-
   void StartUpdateCheck(ExtensionDownloader* downloader,
                         ManifestFetchData* fetch_data) {
     downloader->StartUpdateCheck(scoped_ptr<ManifestFetchData>(fetch_data));
@@ -603,9 +655,13 @@ class ExtensionUpdaterTest : public testing::Test {
 
     // Set up and start the updater.
     net::TestURLFetcherFactory factory;
-    ExtensionUpdater updater(
-        &service, service.extension_prefs(), service.pref_service(),
-        service.profile(), 60*60*24, NULL);
+    ExtensionUpdater updater(&service,
+                             service.extension_prefs(),
+                             service.pref_service(),
+                             service.profile(),
+                             60 * 60 * 24,
+                             NULL,
+                             service.GetDownloaderFactory());
     updater.Start();
 
     // Tell the update that it's time to do update checks.
@@ -1029,17 +1085,18 @@ class ExtensionUpdaterTest : public testing::Test {
     net::TestURLFetcher* fetcher = NULL;
     scoped_ptr<ServiceForDownloadTests> service(
         new ServiceForDownloadTests(prefs_.get()));
-    ExtensionUpdater updater(service.get(), service->extension_prefs(),
+    ExtensionUpdater updater(service.get(),
+                             service->extension_prefs(),
                              service->pref_service(),
                              service->profile(),
                              kUpdateFrequencySecs,
-                             NULL);
-    updater.Start();
+                             NULL,
+                             service->GetDownloaderFactory());
     MockExtensionDownloaderDelegate delegate;
     delegate.DelegateTo(&updater);
-    ResetDownloader(
-        &updater,
-        new ExtensionDownloader(&delegate, service->request_context()));
+    service->OverrideDownloaderDelegate(&delegate);
+    updater.Start();
+    updater.EnsureDownloaderCreated();
     updater.downloader_->extensions_queue_.set_backoff_policy(
         &kNoBackoffPolicy);
 
@@ -1125,34 +1182,40 @@ class ExtensionUpdaterTest : public testing::Test {
   }
 
   // Update a single extension in an environment where the download request
-  // initially responds with a 403 status. Expect the fetcher to automatically
-  // retry with cookies enabled.
-  void TestSingleProtectedExtensionDownloading(bool use_https,
-                                               bool fail,
-                                               int max_authuser,
-                                               int valid_authuser) {
+  // initially responds with a 403 status. If |identity_provider| is not NULL,
+  // this will first expect a request which includes an Authorization header
+  // with an OAuth2 bearer token; otherwise, or if OAuth2 failure is simulated,
+  // this expects the downloader to fall back onto cookie-based credentials.
+  void TestProtectedDownload(
+      const std::string& url_prefix,
+      bool enable_oauth2,
+      bool succeed_with_oauth2,
+      int valid_authuser,
+      int max_authuser) {
     net::TestURLFetcherFactory factory;
     net::TestURLFetcher* fetcher = NULL;
     scoped_ptr<ServiceForDownloadTests> service(
         new ServiceForDownloadTests(prefs_.get()));
-    ExtensionUpdater updater(service.get(), service->extension_prefs(),
-                             service->pref_service(),
-                             service->profile(),
-                             kUpdateFrequencySecs,
-                             NULL);
+    const ExtensionDownloader::Factory& downloader_factory =
+        enable_oauth2 ? service->GetAuthenticatedDownloaderFactory()
+            : service->GetDownloaderFactory();
+    ExtensionUpdater updater(
+        service.get(),
+        service->extension_prefs(),
+        service->pref_service(),
+        service->profile(),
+        kUpdateFrequencySecs,
+        NULL,
+        downloader_factory);
     updater.Start();
-    ResetDownloader(
-        &updater,
-        new ExtensionDownloader(&updater, service->request_context()));
+    updater.EnsureDownloaderCreated();
     updater.downloader_->extensions_queue_.set_backoff_policy(
         &kNoBackoffPolicy);
 
-    GURL test_url(use_https ? "https://localhost/extension.crx" :
-                              "http://localhost/extension.crx");
-
+    GURL test_url(base::StringPrintf("%s/extension.crx", url_prefix.c_str()));
     std::string id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     std::string hash;
-    Version version("0.0.1");
+  Version version("0.0.1");
     std::set<int> requests;
     requests.insert(0);
     scoped_ptr<ExtensionDownloader::ExtensionFetch> fetch(
@@ -1162,64 +1225,134 @@ class ExtensionUpdaterTest : public testing::Test {
 
     fetcher = factory.GetFetcherByID(ExtensionDownloader::kExtensionFetcherId);
     EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
-    EXPECT_TRUE(fetcher->GetLoadFlags() == kExpectedLoadFlags);
+    EXPECT_EQ(kExpectedLoadFlags, fetcher->GetLoadFlags());
 
     // Fake a 403 response.
     fetcher->set_url(test_url);
     fetcher->set_status(net::URLRequestStatus());
     fetcher->set_response_code(403);
     fetcher->delegate()->OnURLFetchComplete(fetcher);
+
+    if (service->fake_token_service()) {
+      service->fake_token_service()->IssueAllTokensForAccount(
+          kFakeAccountId, kFakeOAuth2Token, base::Time::Now());
+    }
     RunUntilIdle();
 
-    // Verify that the fetcher has been switched to protected download mode
-    // so that cookies would be sent with the next request (https only).
+    bool using_oauth2 = false;
+    int expected_load_flags = kExpectedLoadFlags;
+    // Verify that the fetch has had its credentials properly incremented.
     fetcher = factory.GetFetcherByID(ExtensionDownloader::kExtensionFetcherId);
     EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
-    if (use_https) {
-      EXPECT_TRUE(
-          fetcher->GetLoadFlags() == kExpectedLoadFlagsForProtectedDownload);
+    net::HttpRequestHeaders fetch_headers;
+    fetcher->GetExtraRequestHeaders(&fetch_headers);
+    // If the download URL is not https, no credentials should be provided.
+    if (!test_url.SchemeIsSecure()) {
+      // No cookies.
+      EXPECT_EQ(kExpectedLoadFlags, fetcher->GetLoadFlags());
+      // No Authorization header.
+      EXPECT_FALSE(fetch_headers.HasHeader(
+          net::HttpRequestHeaders::kAuthorization));
+      expected_load_flags = kExpectedLoadFlags;
     } else {
-      EXPECT_TRUE(fetcher->GetLoadFlags() == kExpectedLoadFlags);
+      // HTTPS is in use, so credentials are allowed.
+      if (enable_oauth2 && test_url.DomainIs("google.com")) {
+        // If an IdentityProvider is present and the URL is a google.com
+        // URL, the fetcher should be in OAuth2 mode after the intitial
+        // challenge.
+        EXPECT_TRUE(fetch_headers.HasHeader(
+            net::HttpRequestHeaders::kAuthorization));
+        std::string expected_header_value = base::StringPrintf("Bearer %s",
+            kFakeOAuth2Token);
+        std::string actual_header_value;
+        fetch_headers.GetHeader(net::HttpRequestHeaders::kAuthorization,
+                                &actual_header_value);
+        EXPECT_EQ(expected_header_value, actual_header_value);
+        using_oauth2 = true;
+      } else {
+        // No IdentityProvider (or no google.com), so expect cookies instead of
+        // an Authorization header.
+        EXPECT_FALSE(fetch_headers.HasHeader(
+            net::HttpRequestHeaders::kAuthorization));
+        EXPECT_EQ(kExpectedLoadFlagsForDownloadWithCookies,
+            fetcher->GetLoadFlags());
+        expected_load_flags = kExpectedLoadFlagsForDownloadWithCookies;
+      }
     }
 
-    // Attempt to fetch again after the auth failure.
-    bool succeed = !fail;
-    if (fail) {
-      // Do not simulate incremental authuser retries.
-      if (max_authuser == 0) {
-        // Fail and verify that the fetch queue is cleared.
+    bool success = false;
+    if (using_oauth2) {
+      if (succeed_with_oauth2) {
+        success = true;
+      } else {
+        // Simulate OAuth2 failure and ensure that we fall back on cookies.
         fetcher->set_url(test_url);
         fetcher->set_status(net::URLRequestStatus());
-        fetcher->set_response_code(401);
+        fetcher->set_response_code(403);
         fetcher->delegate()->OnURLFetchComplete(fetcher);
         RunUntilIdle();
 
-        EXPECT_EQ(0U, updater.downloader_->extensions_queue_.active_request());
-        return;
-      }
+        const ExtensionDownloader::ExtensionFetch& fetch =
+            *updater.downloader_->extensions_queue_.active_request();
+        EXPECT_EQ(0, GetAuthUserQueryValue(fetch.url));
+        EXPECT_EQ(ExtensionDownloader::ExtensionFetch::CREDENTIALS_COOKIES,
+                  fetch.credentials);
 
-      // Simulate incremental authuser retries.
-      for (int user_index = 0; user_index <= max_authuser; ++user_index) {
+        fetcher = factory.GetFetcherByID(
+            ExtensionDownloader::kExtensionFetcherId);
+        EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
+        fetcher->GetExtraRequestHeaders(&fetch_headers);
+        EXPECT_FALSE(fetch_headers.HasHeader(
+            net::HttpRequestHeaders::kAuthorization));
+        EXPECT_EQ(kExpectedLoadFlagsForDownloadWithCookies,
+            fetcher->GetLoadFlags());
+        expected_load_flags = kExpectedLoadFlagsForDownloadWithCookies;
+      }
+    }
+
+    if (!success) {
+      // Not yet ready to simulate a successful fetch. At this point we begin
+      // simulating cookie-based authentication with increasing values of
+      // authuser (starting from 0.)
+      int user_index = 0;
+      for (; user_index <= max_authuser; ++user_index) {
         const ExtensionDownloader::ExtensionFetch& fetch =
             *updater.downloader_->extensions_queue_.active_request();
         EXPECT_EQ(user_index, GetAuthUserQueryValue(fetch.url));
         if (user_index == valid_authuser) {
-          succeed = true;
+          success = true;
           break;
         }
+        // Simulate an authorization failure which should elicit an increment
+        // of the authuser value.
         fetcher =
             factory.GetFetcherByID(ExtensionDownloader::kExtensionFetcherId);
         EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
+        EXPECT_EQ(expected_load_flags, fetcher->GetLoadFlags());
         fetcher->set_url(fetch.url);
         fetcher->set_status(net::URLRequestStatus());
         fetcher->set_response_code(403);
         fetcher->delegate()->OnURLFetchComplete(fetcher);
         RunUntilIdle();
       }
+
+      // Simulate exhaustion of all available authusers.
+      if (!success && user_index > max_authuser) {
+        const ExtensionDownloader::ExtensionFetch& fetch =
+            *updater.downloader_->extensions_queue_.active_request();
+        fetcher =
+            factory.GetFetcherByID(ExtensionDownloader::kExtensionFetcherId);
+        EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
+        fetcher->set_url(fetch.url);
+        fetcher->set_status(net::URLRequestStatus());
+        fetcher->set_response_code(401);
+        fetcher->delegate()->OnURLFetchComplete(fetcher);
+        RunUntilIdle();
+      }
     }
 
-    // Succeed
-    if (succeed) {
+    // Simulate successful authorization with a 200 response.
+    if (success) {
       fetcher =
           factory.GetFetcherByID(ExtensionDownloader::kExtensionFetcherId);
       EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
@@ -1247,13 +1380,15 @@ class ExtensionUpdaterTest : public testing::Test {
     net::TestURLFetcherFactory factory;
     net::TestURLFetcher* fetcher = NULL;
     ServiceForDownloadTests service(prefs_.get());
-    ExtensionUpdater updater(
-        &service, service.extension_prefs(), service.pref_service(),
-        service.profile(), kUpdateFrequencySecs, NULL);
+    ExtensionUpdater updater(&service,
+                             service.extension_prefs(),
+                             service.pref_service(),
+                             service.profile(),
+                             kUpdateFrequencySecs,
+                             NULL,
+                             service.GetDownloaderFactory());
     updater.Start();
-    ResetDownloader(
-        &updater,
-        new ExtensionDownloader(&updater, service.request_context()));
+    updater.EnsureDownloaderCreated();
     updater.downloader_->extensions_queue_.set_backoff_policy(
         &kNoBackoffPolicy);
 
@@ -1458,9 +1593,13 @@ class ExtensionUpdaterTest : public testing::Test {
     if (active_bit)
       prefs->SetActiveBit(id, true);
 
-    ExtensionUpdater updater(
-        &service, service.extension_prefs(), service.pref_service(),
-        service.profile(), kUpdateFrequencySecs, NULL);
+    ExtensionUpdater updater(&service,
+                             service.extension_prefs(),
+                             service.pref_service(),
+                             service.profile(),
+                             kUpdateFrequencySecs,
+                             NULL,
+                             service.GetDownloaderFactory());
     ExtensionUpdater::CheckParams params;
     updater.Start();
     updater.CheckNow(params);
@@ -1551,13 +1690,15 @@ class ExtensionUpdaterTest : public testing::Test {
                                  Manifest::INTERNAL);
     service.set_extensions(tmp, ExtensionList());
 
-    ExtensionUpdater updater(
-        &service, service.extension_prefs(), service.pref_service(),
-        service.profile(), kUpdateFrequencySecs, NULL);
+    ExtensionUpdater updater(&service,
+                             service.extension_prefs(),
+                             service.pref_service(),
+                             service.profile(),
+                             kUpdateFrequencySecs,
+                             NULL,
+                             service.GetDownloaderFactory());
     updater.Start();
-    ResetDownloader(
-        &updater,
-        new ExtensionDownloader(&updater, service.request_context()));
+    updater.EnsureDownloaderCreated();
 
     ManifestFetchData fetch_data(update_url, 0);
     const Extension* extension = tmp[0].get();
@@ -1655,31 +1796,58 @@ TEST_F(ExtensionUpdaterTest, TestSingleExtensionDownloadingFailurePending) {
   TestSingleExtensionDownloading(true, false, true);
 }
 
-TEST_F(ExtensionUpdaterTest, SingleProtectedExtensionDownloading) {
-  TestSingleProtectedExtensionDownloading(true, false, 0, 0);
+TEST_F(ExtensionUpdaterTest, ProtectedDownloadCookieAuth) {
+  TestProtectedDownload(
+      "https://chrome.google.com/webstore/download",
+      false, false,  // No OAuth2 support
+      0, 0);
 }
 
-TEST_F(ExtensionUpdaterTest, SingleProtectedExtensionDownloadingFailure) {
-  TestSingleProtectedExtensionDownloading(true, true, 0, 0);
+TEST_F(ExtensionUpdaterTest, ProtectedDownloadCookieFailure) {
+  TestProtectedDownload(
+      "https://chrome.google.com/webstore/download",
+      false, false,  // No OAuth2 support
+      0, -1);  // max_authuser=-1 simulates no valid authuser value.
 }
 
-TEST_F(ExtensionUpdaterTest, SingleProtectedExtensionDownloadingNoHTTPS) {
-  TestSingleProtectedExtensionDownloading(false, false, 0, 0);
+TEST_F(ExtensionUpdaterTest, ProtectedDownloadWithNonDefaultAuthUser1) {
+  TestProtectedDownload("https://google.com", false, false, 1, 1);
 }
 
-TEST_F(ExtensionUpdaterTest,
-       SingleProtectedExtensionDownloadingWithNonDefaultAuthUser1) {
-  TestSingleProtectedExtensionDownloading(true, true, 2, 1);
+TEST_F(ExtensionUpdaterTest, ProtectedDownloadWithNonDefaultAuthUser2) {
+  TestProtectedDownload("https://google.com", false, false, 2, 2);
 }
 
-TEST_F(ExtensionUpdaterTest,
-       SingleProtectedExtensionDownloadingWithNonDefaultAuthUser2) {
-  TestSingleProtectedExtensionDownloading(true, true, 2, 2);
+TEST_F(ExtensionUpdaterTest, ProtectedDownloadAuthUserExhaustionFailure) {
+  TestProtectedDownload("https://google.com", false, false, 2, 5);
 }
 
-TEST_F(ExtensionUpdaterTest,
-       SingleProtectedExtensionDownloadingAuthUserExhaustionFailure) {
-  TestSingleProtectedExtensionDownloading(true, true, 2, 5);
+TEST_F(ExtensionUpdaterTest, ProtectedDownloadWithOAuth2Token) {
+  TestProtectedDownload(
+      "https://google.com",
+      true, true,
+      0, -1);
+}
+
+TEST_F(ExtensionUpdaterTest, ProtectedDownloadWithOAuth2Failure) {
+  TestProtectedDownload(
+      "https://google.com",
+      true, false,
+      0, -1);
+}
+
+TEST_F(ExtensionUpdaterTest, ProtectedDownloadNoOAuth2WithNonGoogleDomain) {
+  TestProtectedDownload(
+      "https://not-google.com",
+      true, true,
+      0, -1);
+}
+
+TEST_F(ExtensionUpdaterTest, ProtectedDownloadFailWithoutHTTPS) {
+  TestProtectedDownload(
+      "http://google.com",
+      true, true,
+      0, 0);
 }
 
 TEST_F(ExtensionUpdaterTest, TestMultipleExtensionDownloadingUpdatesFail) {
@@ -1708,15 +1876,15 @@ TEST_F(ExtensionUpdaterTest, TestHandleManifestResults) {
 TEST_F(ExtensionUpdaterTest, TestNonAutoUpdateableLocations) {
   net::TestURLFetcherFactory factory;
   ServiceForManifestTests service(prefs_.get());
-  ExtensionUpdater updater(&service, service.extension_prefs(),
-                           service.pref_service(), service.profile(),
-                           kUpdateFrequencySecs, NULL);
+  ExtensionUpdater updater(&service,
+                           service.extension_prefs(),
+                           service.pref_service(),
+                           service.profile(),
+                           kUpdateFrequencySecs,
+                           NULL,
+                           service.GetDownloaderFactory());
   MockExtensionDownloaderDelegate delegate;
-  // Set the downloader directly, so that all its events end up in the mock
-  // |delegate|.
-  ExtensionDownloader* downloader =
-      new ExtensionDownloader(&delegate, service.request_context());
-  ResetDownloader(&updater, downloader);
+  service.OverrideDownloaderDelegate(&delegate);
 
   // Non-internal non-external extensions should be rejected.
   ExtensionList extensions;
@@ -1728,7 +1896,8 @@ TEST_F(ExtensionUpdaterTest, TestNonAutoUpdateableLocations) {
 
   // These expectations fail if the delegate's methods are invoked for the
   // first extension, which has a non-matching id.
-  EXPECT_CALL(delegate, GetUpdateUrlData(updateable_id)).WillOnce(Return(""));
+  EXPECT_CALL(delegate,
+              GetUpdateUrlData(updateable_id)).WillOnce(Return(""));
   EXPECT_CALL(delegate, GetPingDataForExtension(updateable_id, _));
 
   service.set_extensions(extensions, ExtensionList());
@@ -1740,15 +1909,15 @@ TEST_F(ExtensionUpdaterTest, TestNonAutoUpdateableLocations) {
 TEST_F(ExtensionUpdaterTest, TestUpdatingDisabledExtensions) {
   net::TestURLFetcherFactory factory;
   ServiceForManifestTests service(prefs_.get());
-  ExtensionUpdater updater(&service, service.extension_prefs(),
-                           service.pref_service(), service.profile(),
-                           kUpdateFrequencySecs, NULL);
+  ExtensionUpdater updater(&service,
+                           service.extension_prefs(),
+                           service.pref_service(),
+                           service.profile(),
+                           kUpdateFrequencySecs,
+                           NULL,
+                           service.GetDownloaderFactory());
   MockExtensionDownloaderDelegate delegate;
-  // Set the downloader directly, so that all its events end up in the mock
-  // |delegate|.
-  ExtensionDownloader* downloader =
-      new ExtensionDownloader(&delegate, service.request_context());
-  ResetDownloader(&updater, downloader);
+  service.OverrideDownloaderDelegate(&delegate);
 
   // Non-internal non-external extensions should be rejected.
   ExtensionList enabled_extensions;
@@ -1765,7 +1934,8 @@ TEST_F(ExtensionUpdaterTest, TestUpdatingDisabledExtensions) {
   // We expect that both enabled and disabled extensions are auto-updated.
   EXPECT_CALL(delegate, GetUpdateUrlData(enabled_id)).WillOnce(Return(""));
   EXPECT_CALL(delegate, GetPingDataForExtension(enabled_id, _));
-  EXPECT_CALL(delegate, GetUpdateUrlData(disabled_id)).WillOnce(Return(""));
+  EXPECT_CALL(delegate,
+              GetUpdateUrlData(disabled_id)).WillOnce(Return(""));
   EXPECT_CALL(delegate, GetPingDataForExtension(disabled_id, _));
 
   service.set_extensions(enabled_extensions, disabled_extensions);
@@ -1845,9 +2015,13 @@ TEST_F(ExtensionUpdaterTest, TestStartUpdateCheckMemory) {
 TEST_F(ExtensionUpdaterTest, TestCheckSoon) {
   ServiceForManifestTests service(prefs_.get());
   net::TestURLFetcherFactory factory;
-  ExtensionUpdater updater(
-      &service, service.extension_prefs(), service.pref_service(),
-      service.profile(), kUpdateFrequencySecs, NULL);
+  ExtensionUpdater updater(&service,
+                           service.extension_prefs(),
+                           service.pref_service(),
+                           service.profile(),
+                           kUpdateFrequencySecs,
+                           NULL,
+                           service.GetDownloaderFactory());
   EXPECT_FALSE(updater.WillCheckSoon());
   updater.Start();
   EXPECT_FALSE(updater.WillCheckSoon());

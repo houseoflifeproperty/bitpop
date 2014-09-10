@@ -32,14 +32,14 @@
 #define JavaScriptCallFrame_h
 
 
-#include "bindings/v8/ScopedPersistent.h"
-#include "bindings/v8/ScriptState.h"
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScopedPersistent.h"
+#include "bindings/core/v8/ScriptState.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 #include <v8.h>
 
-namespace WebCore {
+namespace blink {
 
 class ScriptValue;
 
@@ -57,6 +57,7 @@ public:
     int sourceID() const;
     int line() const;
     int column() const;
+    String scriptName() const;
     String functionName() const;
 
     v8::Handle<v8::Value> scopeChain() const;
@@ -66,9 +67,11 @@ public:
     bool isAtReturn() const;
     v8::Handle<v8::Value> returnValue() const;
 
-    v8::Handle<v8::Value> evaluate(const String& expression);
+    v8::Handle<v8::Value> evaluateWithExceptionDetails(const String& expression);
     v8::Handle<v8::Value> restart();
     ScriptValue setVariableValue(ScriptState*, int scopeNumber, const String& variableName, const ScriptValue& newValue);
+
+    static v8::Handle<v8::Object> createExceptionDetails(v8::Handle<v8::Message>, v8::Isolate*);
 
 private:
     JavaScriptCallFrame(v8::Handle<v8::Context> debuggerContext, v8::Handle<v8::Object> callFrame);
@@ -82,7 +85,7 @@ private:
     ScopedPersistent<v8::Object> m_callFrame;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // JavaScriptCallFrame_h

@@ -31,12 +31,12 @@
 #ifndef ErrorEvent_h
 #define ErrorEvent_h
 
-#include "bindings/v8/DOMWrapperWorld.h"
+#include "bindings/core/v8/DOMWrapperWorld.h"
 #include "core/events/Event.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 struct ErrorEventInit : public EventInit {
     ErrorEventInit();
@@ -98,6 +98,6 @@ private:
     RefPtr<DOMWrapperWorld> m_world;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ErrorEvent_h

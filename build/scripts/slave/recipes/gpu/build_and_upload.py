@@ -17,9 +17,9 @@ DEPS = [
 
 def GenSteps(api):
   api.gpu.setup()
-  yield api.buildbot.prep()
-  yield api.gpu.checkout_steps()
-  yield api.gpu.compile_steps()
+  api.buildbot.prep()
+  api.gpu.checkout_steps()
+  api.gpu.compile_steps()
 
 def GenTests(api):
   # The majority of the tests are in the build_and_test recipe.
@@ -67,6 +67,17 @@ def GenTests(api):
   yield (
     api.test('clobber_after_tryserver_failed_compile') +
     api.properties.tryserver(build_config='Release') +
+    api.platform.name('linux') +
+    api.step_data('compile', retcode=1)
+  )
+
+  yield (
+    api.test('compile_fail_is_critical_on_main') +
+    api.properties.scheduled(
+      build_config='Release',
+      mastername='chromium.gpu.testing',
+      buildername='linux release builder',
+      buildnumber=571) +
     api.platform.name('linux') +
     api.step_data('compile', retcode=1)
   )

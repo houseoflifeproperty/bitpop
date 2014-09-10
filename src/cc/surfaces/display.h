@@ -6,11 +6,10 @@
 #define CC_SURFACES_DISPLAY_H_
 
 #include "base/memory/scoped_ptr.h"
-
 #include "cc/output/output_surface_client.h"
 #include "cc/output/renderer.h"
+#include "cc/resources/returned_resource.h"
 #include "cc/surfaces/surface_aggregator.h"
-#include "cc/surfaces/surface_client.h"
 #include "cc/surfaces/surface_id.h"
 #include "cc/surfaces/surfaces_export.h"
 
@@ -26,10 +25,15 @@ class OutputSurface;
 class ResourceProvider;
 class SharedBitmapManager;
 class Surface;
+class SurfaceAggregator;
+class SurfaceIdAllocator;
+class SurfaceFactory;
 class SurfaceManager;
 
-class CC_SURFACES_EXPORT Display : public SurfaceClient,
-                                   public OutputSurfaceClient,
+// A Display produces a surface that can be used to draw to a physical display
+// (OutputSurface). The client is responsible for creating and sizing the
+// surface IDs used to draw into the display and deciding when to draw.
+class CC_SURFACES_EXPORT Display : public OutputSurfaceClient,
                                    public RendererClient {
  public:
   Display(DisplayClient* client,
@@ -37,7 +41,7 @@ class CC_SURFACES_EXPORT Display : public SurfaceClient,
           SharedBitmapManager* bitmap_manager);
   virtual ~Display();
 
-  void Resize(const gfx::Size& new_size);
+  void Resize(SurfaceId id, const gfx::Size& new_size);
   bool Draw();
 
   SurfaceId CurrentSurfaceId();
@@ -57,7 +61,9 @@ class CC_SURFACES_EXPORT Display : public SurfaceClient,
       const gfx::Transform& transform,
       const gfx::Rect& viewport,
       const gfx::Rect& clip,
-      bool valid_for_tile_management) OVERRIDE {}
+      const gfx::Rect& viewport_rect_for_tile_priority,
+      const gfx::Transform& transform_for_tile_priority,
+      bool resourceless_software_draw) OVERRIDE {}
   virtual void SetMemoryPolicy(const ManagedMemoryPolicy& policy) OVERRIDE {}
   virtual void SetTreeActivationCallback(
       const base::Closure& callback) OVERRIDE {}
@@ -66,22 +72,19 @@ class CC_SURFACES_EXPORT Display : public SurfaceClient,
   virtual void SetFullRootLayerDamage() OVERRIDE {}
   virtual void RunOnDemandRasterTask(Task* on_demand_raster_task) OVERRIDE {}
 
-  // SurfaceClient implementation.
-  virtual void ReturnResources(const ReturnedResourceArray& resources) OVERRIDE;
-
  private:
   void InitializeOutputSurface();
 
   DisplayClient* client_;
   SurfaceManager* manager_;
-  SurfaceAggregator aggregator_;
   SharedBitmapManager* bitmap_manager_;
+  SurfaceId current_surface_id_;
+  gfx::Size current_surface_size_;
   LayerTreeSettings settings_;
-  scoped_ptr<Surface> current_surface_;
   scoped_ptr<OutputSurface> output_surface_;
   scoped_ptr<ResourceProvider> resource_provider_;
+  scoped_ptr<SurfaceAggregator> aggregator_;
   scoped_ptr<DirectRenderer> renderer_;
-  int child_id_;
 
   DISALLOW_COPY_AND_ASSIGN(Display);
 };

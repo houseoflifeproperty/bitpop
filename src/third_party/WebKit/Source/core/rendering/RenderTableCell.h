@@ -30,7 +30,7 @@
 #include "core/rendering/RenderTableSection.h"
 #include "platform/LengthFunctions.h"
 
-namespace WebCore {
+namespace blink {
 
 static const unsigned unsetColumnIndex = 0x1FFFFFFF;
 static const unsigned maxColumnIndex = 0x1FFFFFFE; // 536,870,910
@@ -211,7 +211,7 @@ public:
         return style()->borderEnd();
     }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool isFirstOrLastCellInRow() const
     {
         return !table()->cellAfter(this) || !table()->cellBefore(this);
@@ -232,14 +232,14 @@ private:
 
     virtual void updateLogicalWidth() OVERRIDE;
 
-    virtual void paintBoxDecorations(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void paintBoxDecorationBackground(PaintInfo&, const LayoutPoint&) OVERRIDE;
     virtual void paintMask(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
     virtual bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox*) const OVERRIDE;
 
     virtual LayoutSize offsetFromContainer(const RenderObject*, const LayoutPoint&, bool* offsetDependsOnPoint = 0) const OVERRIDE;
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE;
-    virtual void mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect&, bool fixed = false) const OVERRIDE;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const OVERRIDE;
+    virtual void mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect&, ViewportConstrainedPosition, const PaintInvalidationState*) const OVERRIDE;
 
     int borderHalfLeft(bool outer) const;
     int borderHalfRight(bool outer) const;
@@ -316,6 +316,6 @@ inline RenderTableCell* RenderTableRow::lastCell() const
     return toRenderTableCell(children()->lastChild());
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderTableCell_h

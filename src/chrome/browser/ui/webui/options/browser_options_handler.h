@@ -16,11 +16,11 @@
 #include "base/prefs/pref_member.h"
 #include "base/scoped_observer.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url_service_observer.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
+#include "components/search_engines/template_url_service_observer.h"
 #include "components/signin/core/browser/signin_manager_base.h"
 #include "content/public/browser/notification_observer.h"
 #include "extensions/browser/extension_registry_observer.h"
@@ -275,9 +275,6 @@ class BrowserOptionsHandler
   // Callback for "requestHotwordAvailable" message.
   void HandleRequestHotwordAvailable(const base::ListValue* args);
 
-  // Callback for "requestHotwordSetupRetry" message.
-  void HandleRequestHotwordSetupRetry(const base::ListValue* args);
-
   // Callback for "launchEasyUnlockSetup" message.
   void HandleLaunchEasyUnlockSetup(const base::ListValue* args);
 
@@ -296,13 +293,13 @@ class BrowserOptionsHandler
   // Called when the user confirmed factory reset. Chrome will
   // initiate asynchronous file operation and then log out.
   void PerformFactoryResetRestart(const base::ListValue* args);
-
-  // Called when the consumer management enroll button is clicked.
-  void HandleEnrollConsumerManagement(const base::ListValue* args);
 #endif
 
   // Setup the visibility for the metrics reporting setting.
   void SetupMetricsReportingSettingVisibility();
+
+  // Update value of predictive network actions UI element.
+  void SetupNetworkPredictionControl();
 
   // Setup the font size selector control.
   void SetupFontSizeSelector();

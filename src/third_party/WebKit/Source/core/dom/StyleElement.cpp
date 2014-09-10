@@ -21,7 +21,7 @@
 #include "config.h"
 #include "core/dom/StyleElement.h"
 
-#include "bindings/v8/ScriptController.h"
+#include "bindings/core/v8/ScriptController.h"
 #include "core/css/MediaList.h"
 #include "core/css/MediaQueryEvaluator.h"
 #include "core/css/StyleSheetContents.h"
@@ -35,7 +35,7 @@
 #include "platform/TraceEvent.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 static bool isCSS(Element* element, const AtomicString& type)
 {
@@ -62,7 +62,7 @@ StyleElement::~StyleElement()
 
 void StyleElement::processStyleSheet(Document& document, Element* element)
 {
-    TRACE_EVENT0("webkit", "StyleElement::processStyleSheet");
+    TRACE_EVENT0("blink", "StyleElement::processStyleSheet");
     ASSERT(element);
     ASSERT(element->inDocument());
 
@@ -152,11 +152,16 @@ void StyleElement::createSheet(Element* e, const String& text)
     // Inline style added from an isolated world should bypass the main world's
     // CSP just as an inline script would.
     LocalFrame* frame = document.frame();
-    bool shouldBypassMainWorldContentSecurityPolicy = frame && frame->script().shouldBypassMainWorldContentSecurityPolicy();
+    bool shouldBypassMainWorldCSP = frame && frame->script().shouldBypassMainWorldCSP();
+
+    const ContentSecurityPolicy* csp = document.contentSecurityPolicy();
+    bool passesContentSecurityPolicyChecks = shouldBypassMainWorldCSP
+        || csp->allowStyleWithHash(text)
+        || csp->allowStyleWithNonce(e->fastGetAttribute(HTMLNames::nonceAttr))
+        || csp->allowInlineStyle(e->document().url(), m_startPosition.m_line);
 
     // If type is empty or CSS, this is a CSS style sheet.
     const AtomicString& type = this->type();
-    bool passesContentSecurityPolicyChecks = shouldBypassMainWorldContentSecurityPolicy || document.contentSecurityPolicy()->allowStyleHash(text) || document.contentSecurityPolicy()->allowStyleNonce(e->fastGetAttribute(HTMLNames::nonceAttr)) || document.contentSecurityPolicy()->allowInlineStyle(e->document().url(), m_startPosition.m_line);
     if (isCSS(e, type) && passesContentSecurityPolicyChecks) {
         RefPtrWillBeRawPtr<MediaQuerySet> mediaQueries = MediaQuerySet::create(media());
 

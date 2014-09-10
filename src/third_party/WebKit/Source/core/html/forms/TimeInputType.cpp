@@ -43,7 +43,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -73,14 +73,8 @@ const AtomicString& TimeInputType::formControlType() const
 
 Decimal TimeInputType::defaultValueForStepUp() const
 {
-    double current = currentTimeMS();
-    double utcOffset = calculateUTCOffset();
-    double dstOffset = calculateDSTOffset(current, utcOffset);
-    int offset = static_cast<int>((utcOffset + dstOffset) / msPerMinute);
-    current += offset * msPerMinute;
-
     DateComponents date;
-    date.setMillisecondsSinceMidnight(current);
+    date.setMillisecondsSinceMidnight(convertToLocalTime(currentTimeMS()));
     double milliseconds = date.millisecondsSinceEpoch();
     ASSERT(std::isfinite(milliseconds));
     return Decimal::fromDouble(milliseconds);
@@ -166,4 +160,4 @@ bool TimeInputType::isValidFormat(bool hasYear, bool hasMonth, bool hasWeek, boo
 }
 #endif
 
-} // namespace WebCore
+} // namespace blink

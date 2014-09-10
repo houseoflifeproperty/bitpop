@@ -43,10 +43,10 @@ namespace {
 // For more information about how this list is generated, and how to get off
 // of it, see:
 // https://sites.google.com/a/chromium.org/dev/Home/third-party-developers
-// If the size of this list exceeds 64, change kTroublesomeDllsMaxCount.
 const wchar_t* const kTroublesomeDlls[] = {
   L"adialhk.dll",                 // Kaspersky Internet Security.
   L"acpiz.dll",                   // Unknown.
+  L"airfoilinject3.dll",          // Airfoil.
   L"akinsofthook32.dll",          // Akinsoft Software Engineering.
   L"assistant_x64.dll",           // Unknown.
   L"avcuf64.dll",                 // Bit Defender Internet Security x64.
@@ -243,7 +243,7 @@ base::string16 PrependWindowsSessionPath(const base::char16* object) {
 }
 
 // Checks if the sandbox should be let to run without a job object assigned.
-bool ShouldSetJobLevel(const CommandLine& cmd_line) {
+bool ShouldSetJobLevel(const base::CommandLine& cmd_line) {
   if (!cmd_line.HasSwitch(switches::kAllowNoSandboxJob))
     return true;
 
@@ -349,7 +349,18 @@ bool AddPolicyForSandboxedProcess(sandbox::TargetPolicy* policy) {
 
   // Win8+ adds a device DeviceApi that we don't need.
   if (base::win::GetVersion() > base::win::VERSION_WIN7)
-    policy->AddKernelObjectToClose(L"File", L"\\Device\\DeviceApi");
+    result = policy->AddKernelObjectToClose(L"File", L"\\Device\\DeviceApi");
+  if (result != sandbox::SBOX_ALL_OK)
+    return false;
+
+  // Close the proxy settings on XP.
+  if (base::win::GetVersion() <= base::win::VERSION_SERVER_2003)
+    result = policy->AddKernelObjectToClose(L"Key",
+                 L"HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\" \
+                     L"CurrentVersion\\Internet Settings");
+  if (result != sandbox::SBOX_ALL_OK)
+    return false;
+
 
   sandbox::TokenLevel initial_token = sandbox::USER_UNPROTECTED;
   if (base::win::GetVersion() > base::win::VERSION_XP) {
@@ -361,6 +372,7 @@ bool AddPolicyForSandboxedProcess(sandbox::TargetPolicy* policy) {
   policy->SetTokenLevel(initial_token, sandbox::USER_LOCKDOWN);
   // Prevents the renderers from manipulating low-integrity processes.
   policy->SetDelayedIntegrityLevel(sandbox::INTEGRITY_LEVEL_UNTRUSTED);
+  policy->SetIntegrityLevel(sandbox::INTEGRITY_LEVEL_LOW);
 
   if (sandbox::SBOX_ALL_OK !=  policy->SetAlternateDesktop(true)) {
     DLOG(WARNING) << "Failed to apply desktop security to the renderer";
@@ -372,8 +384,9 @@ bool AddPolicyForSandboxedProcess(sandbox::TargetPolicy* policy) {
 // Updates the command line arguments with debug-related flags. If debug flags
 // have been used with this process, they will be filtered and added to
 // command_line as needed.
-void ProcessDebugFlags(CommandLine* command_line) {
-  const CommandLine& current_cmd_line = *CommandLine::ForCurrentProcess();
+void ProcessDebugFlags(base::CommandLine* command_line) {
+  const base::CommandLine& current_cmd_line =
+      *base::CommandLine::ForCurrentProcess();
   std::string type = command_line->GetSwitchValueASCII(switches::kProcessType);
   if (current_cmd_line.HasSwitch(switches::kWaitForDebuggerChildren)) {
     // Look to pass-on the kWaitForDebugger flag.
@@ -430,8 +443,8 @@ void CheckDuplicateHandle(HANDLE handle) {
       kDuplicateHandleWarning;
 
   if (0 == _wcsicmp(type_info->Name.Buffer, L"Process")) {
-    const ACCESS_MASK kDangerousMask = ~(PROCESS_QUERY_LIMITED_INFORMATION |
-                                         SYNCHRONIZE);
+    const ACCESS_MASK kDangerousMask =
+        ~static_cast<DWORD>(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE);
     CHECK(!(basic_info.GrantedAccess & kDangerousMask)) <<
         kDuplicateHandleWarning;
   }
@@ -493,7 +506,7 @@ BOOL WINAPI DuplicateHandlePatch(HANDLE source_process_handle,
 
 }  // namespace
 
-void SetJobLevel(const CommandLine& cmd_line,
+void SetJobLevel(const base::CommandLine& cmd_line,
                  sandbox::JobLevel job_level,
                  uint32 ui_exceptions,
                  sandbox::TargetPolicy* policy) {
@@ -579,7 +592,8 @@ bool ShouldUseDirectWrite() {
   }
 
   // If forced off, don't use it.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kDisableDirectWrite))
     return false;
 
@@ -597,8 +611,9 @@ bool ShouldUseDirectWrite() {
 
 base::ProcessHandle StartSandboxedProcess(
     SandboxedProcessLauncherDelegate* delegate,
-    CommandLine* cmd_line) {
-  const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
+    base::CommandLine* cmd_line) {
+  const base::CommandLine& browser_command_line =
+      *base::CommandLine::ForCurrentProcess();
   std::string type_str = cmd_line->GetSwitchValueASCII(switches::kProcessType);
 
   TRACE_EVENT_BEGIN_ETW("StartProcessWithAccess", 0, type_str);
@@ -738,6 +753,7 @@ base::ProcessHandle StartSandboxedProcess(
     delegate->PostSpawnTarget(target.process_handle());
 
   ResumeThread(target.thread_handle());
+  TRACE_EVENT_END_ETW("StartProcessWithAccess", 0, type_str);
   return target.TakeProcessHandle();
 }
 

@@ -28,8 +28,8 @@
 #include "net/http/http_server_properties_impl.h"
 #include "net/http/transport_security_state.h"
 #include "net/proxy/proxy_service.h"
-#include "net/ssl/default_server_bound_cert_store.h"
-#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/channel_id_service.h"
+#include "net/ssl/default_channel_id_store.h"
 #include "net/ssl/ssl_config_service_defaults.h"
 #include "net/url_request/data_protocol_handler.h"
 #include "net/url_request/file_protocol_handler.h"
@@ -106,8 +106,8 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
     storage_.reset(
         new net::URLRequestContextStorage(url_request_context_.get()));
     storage_->set_cookie_store(CreateCookieStore(CookieStoreConfig()));
-    storage_->set_server_bound_cert_service(new net::ServerBoundCertService(
-        new net::DefaultServerBoundCertStore(NULL),
+    storage_->set_channel_id_service(new net::ChannelIDService(
+        new net::DefaultChannelIDStore(NULL),
         base::WorkerPool::GetTaskRunner(true)));
     storage_->set_http_user_agent_settings(
         new net::StaticHttpUserAgentSettings(
@@ -157,8 +157,8 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
         url_request_context_->cert_verifier();
     network_session_params.transport_security_state =
         url_request_context_->transport_security_state();
-    network_session_params.server_bound_cert_service =
-        url_request_context_->server_bound_cert_service();
+    network_session_params.channel_id_service =
+        url_request_context_->channel_id_service();
     network_session_params.proxy_service =
         url_request_context_->proxy_service();
     network_session_params.ssl_config_service =
@@ -210,12 +210,14 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
     bool set_protocol = job_factory->SetProtocolHandler(
         url::kDataScheme, new net::DataProtocolHandler);
     DCHECK(set_protocol);
+#if !defined(DISABLE_FILE_SUPPORT)
     set_protocol = job_factory->SetProtocolHandler(
         url::kFileScheme,
         new net::FileProtocolHandler(
             BrowserThread::GetBlockingPool()->GetTaskRunnerWithShutdownBehavior(
                 base::SequencedWorkerPool::SKIP_ON_SHUTDOWN)));
     DCHECK(set_protocol);
+#endif
 
     // Set up interceptors in the reverse order.
     scoped_ptr<net::URLRequestJobFactory> top_job_factory =

@@ -54,9 +54,11 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
   // their previous filled state. Return false if no login information was
   // found for the form.
   bool DidClearAutofillSelection(const blink::WebNode& node);
-  // Shows an Autofill popup with username suggestions for |element|.
+  // Shows an Autofill popup with username suggestions for |element|. If
+  // |show_all| is |true|, will show all possible suggestions for that element,
+  // otherwise shows suggestions based on current value of |element|.
   // Returns true if any suggestions were shown, false otherwise.
-  bool ShowSuggestions(const blink::WebInputElement& element);
+  bool ShowSuggestions(const blink::WebInputElement& element, bool show_all);
 
   // Called when new form controls are inserted.
   void OnDynamicFormsSeen(blink::WebFrame* frame);
@@ -80,6 +82,12 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
     OTHER_POSSIBLE_USERNAME_SHOWN,
     OTHER_POSSIBLE_USERNAME_SELECTED,
     OTHER_POSSIBLE_USERNAMES_MAX
+  };
+
+  // Ways to restrict which passwords are saved in ProvisionallySavePassword.
+  enum ProvisionallySaveRestriction {
+    RESTRICTION_NONE,
+    RESTRICTION_NON_EMPTY_PASSWORD
   };
 
   struct PasswordInfo {
@@ -127,6 +135,7 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
   virtual void DidStartLoading() OVERRIDE;
   virtual void DidFinishDocumentLoad(blink::WebLocalFrame* frame) OVERRIDE;
   virtual void DidFinishLoad(blink::WebLocalFrame* frame) OVERRIDE;
+  virtual void DidStopLoading() OVERRIDE;
   virtual void FrameDetached(blink::WebFrame* frame) OVERRIDE;
   virtual void FrameWillClose(blink::WebFrame* frame) OVERRIDE;
   virtual void WillSendSubmitEvent(blink::WebLocalFrame* frame,
@@ -145,10 +154,12 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
   void GetSuggestions(const PasswordFormFillData& fill_data,
                       const base::string16& input,
                       std::vector<base::string16>* suggestions,
-                      std::vector<base::string16>* realms);
+                      std::vector<base::string16>* realms,
+                      bool show_all);
 
   bool ShowSuggestionPopup(const PasswordFormFillData& fill_data,
-                           const blink::WebInputElement& user_input);
+                           const blink::WebInputElement& user_input,
+                           bool show_all);
 
   // Attempts to fill |username_element| and |password_element| with the
   // |fill_data|.  Will use the data corresponding to the preferred username,
@@ -191,6 +202,12 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
   blink::WebFrame* CurrentOrChildFrameWithSavedForms(
       const blink::WebFrame* current_frame);
 
+  // Extracts a PasswordForm from |form| and saves it as
+  // |provisionally_saved_forms_[frame]|, as long as it satisfies |restriction|.
+  void ProvisionallySavePassword(blink::WebLocalFrame* frame,
+                                 const blink::WebFormElement& form,
+                                 ProvisionallySaveRestriction restriction);
+
   // The logins we have filled so far with their associated info.
   LoginToPasswordInfoMap login_to_password_info_;
 
@@ -217,6 +234,9 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
   // Records original starting point of username element's selection range
   // before preview.
   int username_selection_start_;
+
+  // True indicates that all frames in a page have been rendered.
+  bool did_stop_loading_;
 
   base::WeakPtrFactory<PasswordAutofillAgent> weak_ptr_factory_;
 

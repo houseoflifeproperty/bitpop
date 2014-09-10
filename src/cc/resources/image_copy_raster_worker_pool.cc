@@ -7,9 +7,11 @@
 #include <algorithm>
 
 #include "base/debug/trace_event.h"
+#include "base/debug/trace_event_argument.h"
 #include "cc/debug/traced_value.h"
 #include "cc/resources/resource_pool.h"
 #include "cc/resources/scoped_resource.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 
 namespace cc {
 
@@ -17,26 +19,35 @@ namespace cc {
 scoped_ptr<RasterWorkerPool> ImageCopyRasterWorkerPool::Create(
     base::SequencedTaskRunner* task_runner,
     TaskGraphRunner* task_graph_runner,
+    ContextProvider* context_provider,
     ResourceProvider* resource_provider,
     ResourcePool* resource_pool) {
-  return make_scoped_ptr<RasterWorkerPool>(new ImageCopyRasterWorkerPool(
-      task_runner, task_graph_runner, resource_provider, resource_pool));
+  return make_scoped_ptr<RasterWorkerPool>(
+      new ImageCopyRasterWorkerPool(task_runner,
+                                    task_graph_runner,
+                                    context_provider,
+                                    resource_provider,
+                                    resource_pool));
 }
 
 ImageCopyRasterWorkerPool::ImageCopyRasterWorkerPool(
     base::SequencedTaskRunner* task_runner,
     TaskGraphRunner* task_graph_runner,
+    ContextProvider* context_provider,
     ResourceProvider* resource_provider,
     ResourcePool* resource_pool)
     : task_runner_(task_runner),
       task_graph_runner_(task_graph_runner),
       namespace_token_(task_graph_runner->GetNamespaceToken()),
+      context_provider_(context_provider),
       resource_provider_(resource_provider),
       resource_pool_(resource_pool),
       has_performed_copy_since_last_flush_(false),
       raster_tasks_pending_(false),
       raster_tasks_required_for_activation_pending_(false),
-      raster_finished_weak_ptr_factory_(this) {}
+      raster_finished_weak_ptr_factory_(this) {
+  DCHECK(context_provider_);
+}
 
 ImageCopyRasterWorkerPool::~ImageCopyRasterWorkerPool() {
   DCHECK_EQ(0u, raster_task_states_.size());
@@ -131,12 +142,7 @@ void ImageCopyRasterWorkerPool::ScheduleTasks(RasterTaskQueue* queue) {
   resource_pool_->ReduceResourceUsage();
 
   TRACE_EVENT_ASYNC_STEP_INTO1(
-      "cc",
-      "ScheduledTasks",
-      this,
-      "rasterizing",
-      "state",
-      TracedValue::FromValue(StateAsValue().release()));
+      "cc", "ScheduledTasks", this, "rasterizing", "state", StateAsValue());
 }
 
 void ImageCopyRasterWorkerPool::CheckForCompletedTasks() {
@@ -213,12 +219,7 @@ void ImageCopyRasterWorkerPool::OnRasterRequiredForActivationFinished() {
   DCHECK(raster_tasks_required_for_activation_pending_);
   raster_tasks_required_for_activation_pending_ = false;
   TRACE_EVENT_ASYNC_STEP_INTO1(
-      "cc",
-      "ScheduledTasks",
-      this,
-      "rasterizing",
-      "state",
-      TracedValue::FromValue(StateAsValue().release()));
+      "cc", "ScheduledTasks", this, "rasterizing", "state", StateAsValue());
   client_->DidFinishRunningTasksRequiredForActivation();
 }
 
@@ -226,23 +227,26 @@ void ImageCopyRasterWorkerPool::FlushCopies() {
   if (!has_performed_copy_since_last_flush_)
     return;
 
-  resource_provider_->ShallowFlushIfSupported();
+  context_provider_->ContextGL()->ShallowFlushCHROMIUM();
   has_performed_copy_since_last_flush_ = false;
 }
 
-scoped_ptr<base::Value> ImageCopyRasterWorkerPool::StateAsValue() const {
-  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue);
+scoped_refptr<base::debug::ConvertableToTraceFormat>
+ImageCopyRasterWorkerPool::StateAsValue() const {
+  scoped_refptr<base::debug::TracedValue> state =
+      new base::debug::TracedValue();
 
   state->SetInteger("pending_count", raster_task_states_.size());
   state->SetBoolean("tasks_required_for_activation_pending",
                     raster_tasks_required_for_activation_pending_);
-  state->Set("staging_state", StagingStateAsValue().release());
+  state->BeginDictionary("staging_state");
+  StagingStateAsValueInto(state.get());
+  state->EndDictionary();
 
-  return state.PassAs<base::Value>();
+  return state;
 }
-scoped_ptr<base::Value> ImageCopyRasterWorkerPool::StagingStateAsValue() const {
-  scoped_ptr<base::DictionaryValue> staging_state(new base::DictionaryValue);
-
+void ImageCopyRasterWorkerPool::StagingStateAsValueInto(
+    base::debug::TracedValue* staging_state) const {
   staging_state->SetInteger("staging_resource_count",
                             resource_pool_->total_resource_count());
   staging_state->SetInteger("bytes_used_for_staging_resources",
@@ -253,8 +257,6 @@ scoped_ptr<base::Value> ImageCopyRasterWorkerPool::StagingStateAsValue() const {
   staging_state->SetInteger("bytes_pending_copy",
                             resource_pool_->total_memory_usage_bytes() -
                                 resource_pool_->acquired_memory_usage_bytes());
-
-  return staging_state.PassAs<base::Value>();
 }
 
 }  // namespace cc

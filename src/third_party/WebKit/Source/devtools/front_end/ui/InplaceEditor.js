@@ -17,7 +17,7 @@ WebInspector.InplaceEditor = function()
 WebInspector.InplaceEditor.startEditing = function(element, config)
 {
     if (config.multiline)
-        return WebInspector.moduleManager.instance(WebInspector.InplaceEditor).startEditing(element, config);
+        return self.runtime.instance(WebInspector.InplaceEditor).startEditing(element, config);
 
     if (!WebInspector.InplaceEditor._defaultInstance)
         WebInspector.InplaceEditor._defaultInstance = new WebInspector.InplaceEditor();
@@ -95,7 +95,7 @@ WebInspector.InplaceEditor.prototype = {
         var self = this;
 
         /**
-         * @param {?Event} e
+         * @param {!Event} e
          */
         function consumeCopy(e)
         {
@@ -107,7 +107,7 @@ WebInspector.InplaceEditor.prototype = {
         editingContext.oldText = isMultiline ? config.initialValue : this.editorContent(editingContext);
 
         /**
-         * @param {?Event=} e
+         * @param {!Event=} e
          */
         function blurEventListener(e) {
             if (!isMultiline || !e || !e.relatedTarget || !e.relatedTarget.isSelfOrDescendant(element))

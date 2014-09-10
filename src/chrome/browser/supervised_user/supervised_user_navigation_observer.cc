@@ -23,8 +23,8 @@
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
-#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -127,7 +127,7 @@ void SupervisedUserWarningInfoBarDelegate::InfoBarDismissed() {
 }
 
 base::string16 SupervisedUserWarningInfoBarDelegate::GetMessageText() const {
-  return l10n_util::GetStringUTF16(IDS_MANAGED_USER_WARN_INFOBAR_MESSAGE);
+  return l10n_util::GetStringUTF16(IDS_SUPERVISED_USER_WARN_INFOBAR_MESSAGE);
 }
 
 int SupervisedUserWarningInfoBarDelegate::GetButtons() const {
@@ -137,7 +137,7 @@ int SupervisedUserWarningInfoBarDelegate::GetButtons() const {
 base::string16 SupervisedUserWarningInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   DCHECK_EQ(BUTTON_OK, button);
-  return l10n_util::GetStringUTF16(IDS_MANAGED_USER_WARN_INFOBAR_GO_BACK);
+  return l10n_util::GetStringUTF16(IDS_SUPERVISED_USER_WARN_INFOBAR_GO_BACK);
 }
 
 bool SupervisedUserWarningInfoBarDelegate::Accept() {
@@ -193,13 +193,10 @@ void SupervisedUserNavigationObserver::ProvisionalChangeToMainFrameUrl(
 }
 
 void SupervisedUserNavigationObserver::DidCommitProvisionalLoadForFrame(
-    int64 frame_id,
-    const base::string16& frame_unique_name,
-    bool is_main_frame,
+    content::RenderFrameHost* render_frame_host,
     const GURL& url,
-    content::PageTransition transition_type,
-    content::RenderViewHost* render_view_host) {
-  if (!is_main_frame)
+    content::PageTransition transition_type) {
+  if (render_frame_host->GetParent())
     return;
 
   DVLOG(1) << "DidCommitProvisionalLoadForFrame " << url.spec();

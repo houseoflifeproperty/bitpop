@@ -27,8 +27,8 @@ class StoreBufferOverflowStub: public PlatformCodeStub {
  private:
   SaveFPRegsMode save_doubles_;
 
-  Major MajorKey() { return StoreBufferOverflow; }
-  int MinorKey() { return (save_doubles_ == kSaveFPRegs) ? 1 : 0; }
+  Major MajorKey() const { return StoreBufferOverflow; }
+  int MinorKey() const { return (save_doubles_ == kSaveFPRegs) ? 1 : 0; }
 };
 
 
@@ -68,8 +68,8 @@ class SubStringStub: public PlatformCodeStub {
   explicit SubStringStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
 
  private:
-  Major MajorKey() { return SubString; }
-  int MinorKey() { return 0; }
+  Major MajorKey() const { return SubString; }
+  int MinorKey() const { return 0; }
 
   void Generate(MacroAssembler* masm);
 };
@@ -99,8 +99,8 @@ class StringCompareStub: public PlatformCodeStub {
                                             Register scratch3);
 
  private:
-  virtual Major MajorKey() { return StringCompare; }
-  virtual int MinorKey() { return 0; }
+  virtual Major MajorKey() const { return StringCompare; }
+  virtual int MinorKey() const { return 0; }
   virtual void Generate(MacroAssembler* masm);
 
   static void GenerateAsciiCharsCompareLoop(MacroAssembler* masm,
@@ -139,8 +139,8 @@ class WriteInt32ToHeapNumberStub : public PlatformCodeStub {
   class HeapNumberRegisterBits: public BitField<int, 4, 4> {};
   class ScratchRegisterBits: public BitField<int, 8, 4> {};
 
-  Major MajorKey() { return WriteInt32ToHeapNumber; }
-  int MinorKey() {
+  Major MajorKey() const { return WriteInt32ToHeapNumber; }
+  int MinorKey() const {
     // Encode the parameters in a unique 16 bit value.
     return IntRegisterBits::encode(the_int_.code())
            | HeapNumberRegisterBits::encode(the_heap_number_.code())
@@ -180,12 +180,12 @@ class RecordWriteStub: public PlatformCodeStub {
 
   static void PatchBranchIntoNop(MacroAssembler* masm, int pos) {
     masm->instr_at_put(pos, (masm->instr_at(pos) & ~B27) | (B24 | B20));
-    ASSERT(Assembler::IsTstImmediate(masm->instr_at(pos)));
+    DCHECK(Assembler::IsTstImmediate(masm->instr_at(pos)));
   }
 
   static void PatchNopIntoBranch(MacroAssembler* masm, int pos) {
     masm->instr_at_put(pos, (masm->instr_at(pos) & ~(B24 | B20)) | B27);
-    ASSERT(Assembler::IsBranch(masm->instr_at(pos)));
+    DCHECK(Assembler::IsBranch(masm->instr_at(pos)));
   }
 
   static Mode GetMode(Code* stub) {
@@ -197,13 +197,13 @@ class RecordWriteStub: public PlatformCodeStub {
       return INCREMENTAL;
     }
 
-    ASSERT(Assembler::IsTstImmediate(first_instruction));
+    DCHECK(Assembler::IsTstImmediate(first_instruction));
 
     if (Assembler::IsBranch(second_instruction)) {
       return INCREMENTAL_COMPACTION;
     }
 
-    ASSERT(Assembler::IsTstImmediate(second_instruction));
+    DCHECK(Assembler::IsTstImmediate(second_instruction));
 
     return STORE_BUFFER_ONLY;
   }
@@ -214,22 +214,23 @@ class RecordWriteStub: public PlatformCodeStub {
                         stub->instruction_size());
     switch (mode) {
       case STORE_BUFFER_ONLY:
-        ASSERT(GetMode(stub) == INCREMENTAL ||
+        DCHECK(GetMode(stub) == INCREMENTAL ||
                GetMode(stub) == INCREMENTAL_COMPACTION);
         PatchBranchIntoNop(&masm, 0);
         PatchBranchIntoNop(&masm, Assembler::kInstrSize);
         break;
       case INCREMENTAL:
-        ASSERT(GetMode(stub) == STORE_BUFFER_ONLY);
+        DCHECK(GetMode(stub) == STORE_BUFFER_ONLY);
         PatchNopIntoBranch(&masm, 0);
         break;
       case INCREMENTAL_COMPACTION:
-        ASSERT(GetMode(stub) == STORE_BUFFER_ONLY);
+        DCHECK(GetMode(stub) == STORE_BUFFER_ONLY);
         PatchNopIntoBranch(&masm, Assembler::kInstrSize);
         break;
     }
-    ASSERT(GetMode(stub) == mode);
-    CPU::FlushICache(stub->instruction_start(), 2 * Assembler::kInstrSize);
+    DCHECK(GetMode(stub) == mode);
+    CpuFeatures::FlushICache(stub->instruction_start(),
+                             2 * Assembler::kInstrSize);
   }
 
  private:
@@ -244,12 +245,12 @@ class RecordWriteStub: public PlatformCodeStub {
         : object_(object),
           address_(address),
           scratch0_(scratch0) {
-      ASSERT(!AreAliased(scratch0, object, address, no_reg));
+      DCHECK(!AreAliased(scratch0, object, address, no_reg));
       scratch1_ = GetRegisterThatIsNotOneOf(object_, address_, scratch0_);
     }
 
     void Save(MacroAssembler* masm) {
-      ASSERT(!AreAliased(object_, address_, scratch1_, scratch0_));
+      DCHECK(!AreAliased(object_, address_, scratch1_, scratch0_));
       // We don't have to save scratch0_ because it was given to us as
       // a scratch register.
       masm->push(scratch1_);
@@ -304,9 +305,9 @@ class RecordWriteStub: public PlatformCodeStub {
       Mode mode);
   void InformIncrementalMarker(MacroAssembler* masm);
 
-  Major MajorKey() { return RecordWrite; }
+  Major MajorKey() const { return RecordWrite; }
 
-  int MinorKey() {
+  int MinorKey() const {
     return ObjectBits::encode(object_.code()) |
         ValueBits::encode(value_.code()) |
         AddressBits::encode(address_.code()) |
@@ -346,8 +347,8 @@ class DirectCEntryStub: public PlatformCodeStub {
   void GenerateCall(MacroAssembler* masm, Register target);
 
  private:
-  Major MajorKey() { return DirectCEntry; }
-  int MinorKey() { return 0; }
+  Major MajorKey() const { return DirectCEntry; }
+  int MinorKey() const { return 0; }
 
   bool NeedsImmovableCode() { return true; }
 };
@@ -392,11 +393,9 @@ class NameDictionaryLookupStub: public PlatformCodeStub {
       NameDictionary::kHeaderSize +
       NameDictionary::kElementsStartIndex * kPointerSize;
 
-  Major MajorKey() { return NameDictionaryLookup; }
+  Major MajorKey() const { return NameDictionaryLookup; }
 
-  int MinorKey() {
-    return LookupModeBits::encode(mode_);
-  }
+  int MinorKey() const { return LookupModeBits::encode(mode_); }
 
   class LookupModeBits: public BitField<LookupMode, 0, 1> {};
 
@@ -404,8 +403,9 @@ class NameDictionaryLookupStub: public PlatformCodeStub {
 };
 
 
-struct PlatformCallInterfaceDescriptor {
-  explicit PlatformCallInterfaceDescriptor(
+class PlatformInterfaceDescriptor {
+ public:
+  explicit PlatformInterfaceDescriptor(
       TargetAddressStorageMode storage_mode)
       : storage_mode_(storage_mode) { }
 

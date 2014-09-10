@@ -10,6 +10,7 @@ import android.view.View;
 
 import junit.framework.Assert;
 
+import org.chromium.android_webview.test.util.JavascriptEventObserver;
 import org.chromium.android_webview.test.util.VideoTestWebServer;
 import org.chromium.base.CommandLine;
 import org.chromium.base.test.util.Feature;
@@ -24,25 +25,26 @@ import org.chromium.content.common.ContentSwitches;
 public class AwContentsClientFullScreenVideoTest extends AwTestBase {
     private FullScreenVideoTestAwContentsClient mContentsClient;
     private ContentViewCore mContentViewCore;
-    private VideoTestWebServer webServer;
-    private AwTestContainerView testContainerView;
+    private VideoTestWebServer mWebServer;
+    private AwTestContainerView mTestContainerView;
 
     @Override
     protected void setUp() throws Exception {
         super.setUp();
         mContentsClient = new FullScreenVideoTestAwContentsClient(getActivity());
-        testContainerView =
+        mTestContainerView =
                 createAwTestContainerViewOnMainSync(mContentsClient);
-        mContentViewCore = testContainerView.getContentViewCore();
-        enableJavaScriptOnUiThread(testContainerView.getAwContents());
-        webServer = new VideoTestWebServer(
+        mContentViewCore = mTestContainerView.getContentViewCore();
+        enableJavaScriptOnUiThread(mTestContainerView.getAwContents());
+        mTestContainerView.getAwContents().getSettings().setFullscreenSupported(true);
+        mWebServer = new VideoTestWebServer(
                 getInstrumentation().getTargetContext());
     }
 
     @Override
     protected void tearDown() throws Exception {
         super.tearDown();
-        if (webServer != null) webServer.getTestWebServer().shutdown();
+        if (mWebServer != null) mWebServer.getTestWebServer().shutdown();
     }
 
     @MediumTest
@@ -109,6 +111,25 @@ public class AwContentsClientFullScreenVideoTest extends AwTestBase {
                 mContentViewCore, VideoTestWebServer.VIDEO_ID));
     }
 
+    @MediumTest
+    @Feature({"AndroidWebView"})
+    public void testFullscreenNotSupported() throws Throwable {
+        mTestContainerView.getAwContents().getSettings().setFullscreenSupported(false);
+
+        final JavascriptEventObserver fullScreenErrorObserver = new JavascriptEventObserver();
+        getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                fullScreenErrorObserver.register(mContentViewCore, "javaFullScreenErrorObserver");
+            }
+        });
+
+        loadTestPageAndClickFullscreen();
+
+        Assert.assertTrue(fullScreenErrorObserver.waitForEvent(500));
+        Assert.assertFalse(mContentsClient.wasCustomViewShownCalled());
+    }
+
     private static boolean areHtmlControlsEnabled() {
         return !CommandLine.getInstance().hasSwitch(
                 ContentSwitches.DISABLE_OVERLAY_FULLSCREEN_VIDEO_SUBTITLE);
@@ -122,13 +143,17 @@ public class AwContentsClientFullScreenVideoTest extends AwTestBase {
     }
 
     private void doOnShowCustomViewTest() throws Exception {
-        loadUrlSync(testContainerView.getAwContents(),
+        loadTestPageAndClickFullscreen();
+        mContentsClient.waitForCustomViewShown();
+    }
+
+    private void loadTestPageAndClickFullscreen() throws Exception {
+        loadUrlSync(mTestContainerView.getAwContents(),
                 mContentsClient.getOnPageFinishedHelper(),
-                webServer.getFullScreenVideoTestURL());
+                mWebServer.getFullScreenVideoTestURL());
 
         // Click the button in full_screen_video_test.html to enter fullscreen.
         TouchCommon touchCommon = new TouchCommon(this);
-        touchCommon.singleClickView(testContainerView);
-        mContentsClient.waitForCustomViewShown();
+        touchCommon.singleClickView(mTestContainerView);
     }
 }

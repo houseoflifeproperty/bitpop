@@ -31,7 +31,7 @@
 #ifndef Blob_h
 #define Blob_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/URLRegistry.h"
 #include "platform/blob/BlobData.h"
 #include "platform/heap/Handle.h"
@@ -40,7 +40,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class ExecutionContext;
@@ -106,6 +106,6 @@ private:
     bool m_hasBeenClosed;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Blob_h

@@ -13,15 +13,17 @@
 #include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_member.h"
+#include "base/scoped_observer.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/content_settings/content_settings_provider.h"
+#include "chrome/browser/content_settings/permission_context_base.h"
 #include "chrome/browser/notifications/extension_welcome_notification.h"
 #include "chrome/common/content_settings.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "third_party/WebKit/public/web/WebNotificationPresenter.h"
+#include "extensions/browser/extension_registry_observer.h"
+#include "third_party/WebKit/public/platform/WebNotificationPermission.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "ui/message_center/notifier_settings.h"
 #include "url/gurl.h"
@@ -38,6 +40,10 @@ class RenderFrameHost;
 struct ShowDesktopNotificationHostMsgParams;
 }
 
+namespace extensions {
+class ExtensionRegistry;
+}
+
 namespace gfx {
 class Image;
 }
@@ -46,10 +52,15 @@ namespace user_prefs {
 class PrefRegistrySyncable;
 }
 
+// Callback to be invoked when the result of a permission request is known.
+typedef base::Callback<void(blink::WebNotificationPermission)>
+    NotificationPermissionCallback;
+
 // The DesktopNotificationService is an object, owned by the Profile,
 // which provides the creation of desktop "toasts" to web pages and workers.
-class DesktopNotificationService : public KeyedService,
-                                   public content::NotificationObserver {
+class DesktopNotificationService
+    : public PermissionContextBase,
+      public extensions::ExtensionRegistryObserver {
  public:
   // Register profile-specific prefs of notifications.
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* prefs);
@@ -58,23 +69,22 @@ class DesktopNotificationService : public KeyedService,
                              NotificationUIManager* ui_manager);
   virtual ~DesktopNotificationService();
 
-  // Requests permission for a given origin. |callback| is run when the UI
-  // finishes.
-  void RequestPermission(const GURL& origin,
-                         content::RenderFrameHost* render_frame_host,
-                         const base::Closure& callback);
+  // Requests Web Notification permission for |requesting_frame|. The |callback|
+  // will be invoked after the user has made a decision.
+  void RequestNotificationPermission(
+      content::WebContents* web_contents,
+      const PermissionRequestID& request_id,
+      const GURL& requesting_frame,
+      bool user_gesture,
+      const NotificationPermissionCallback& callback);
 
   // Show a desktop notification. If |cancel_callback| is non-null, it's set to
   // a callback which can be used to cancel the notification.
   void ShowDesktopNotification(
       const content::ShowDesktopNotificationHostMsgParams& params,
       content::RenderFrameHost* render_frame_host,
-      content::DesktopNotificationDelegate* delegate,
+      scoped_ptr<content::DesktopNotificationDelegate> delegate,
       base::Closure* cancel_callback);
-
-  // Methods to setup and modify permission preferences.
-  void GrantPermission(const GURL& origin);
-  void DenyPermission(const GURL& origin);
 
   // Creates a data:xxxx URL which contains the full HTML for a notification
   // using supplied icon, title, and text, run through a template which contains
@@ -99,27 +109,6 @@ class DesktopNotificationService : public KeyedService,
                                          NotificationDelegate* delegate,
                                          Profile* profile);
 
-  // The default content setting determines how to handle origins that haven't
-  // been allowed or denied yet. If |provider_id| is not NULL, the id of the
-  // provider which provided the default setting is assigned to it.
-  ContentSetting GetDefaultContentSetting(std::string* provider_id);
-  void SetDefaultContentSetting(ContentSetting setting);
-
-  // NOTE: This should only be called on the UI thread.
-  void ResetToDefaultContentSetting();
-
-  // Returns all notifications settings. |settings| is cleared before
-  // notifications setting are passed to it.
-  void GetNotificationsSettings(ContentSettingsForOneType* settings);
-
-  // Clears the notifications setting for the given pattern.
-  void ClearSetting(const ContentSettingsPattern& pattern);
-
-  // Clears the sets of explicitly allowed and denied origins.
-  void ResetAllOrigins();
-
-  ContentSetting GetContentSetting(const GURL& origin);
-
   // Returns true if the notifier with |notifier_id| is allowed to send
   // notifications.
   bool IsNotifierEnabled(const message_center::NotifierId& notifier_id);
@@ -138,10 +127,6 @@ class DesktopNotificationService : public KeyedService,
   // from the origin itself when dealing with extensions.
   base::string16 DisplayNameForOriginInProcessId(const GURL& origin,
                                                  int process_id);
-
-  // Notifies the observers when permissions settings change.
-  void NotifySettingsChange();
-
   NotificationUIManager* GetUIManager();
 
   // Called when the string list pref has been changed.
@@ -151,20 +136,21 @@ class DesktopNotificationService : public KeyedService,
   // Called when the disabled_extension_id pref has been changed.
   void OnDisabledExtensionIdsChanged();
 
-  // Called when the disabled_system_component_id pref has been changed.
-  void OnDisabledSystemComponentIdsChanged();
-
-  // Called when the enabled_sync_notifier_id pref has been changed.
-  void OnEnabledSyncNotifierIdsChanged();
+  // Used as a callback once a permission has been decided to convert |allowed|
+  // to one of the blink::WebNotificationPermission values.
+  void OnNotificationPermissionRequested(
+      const base::Callback<void(blink::WebNotificationPermission)>& callback,
+      bool allowed);
 
   void FirePermissionLevelChangedEvent(
       const message_center::NotifierId& notifier_id,
       bool enabled);
 
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // extensions::ExtensionRegistryObserver:
+  virtual void OnExtensionUninstalled(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension,
+      extensions::UninstallReason reason) OVERRIDE;
 
   // The profile which owns this object.
   Profile* profile_;
@@ -179,23 +165,21 @@ class DesktopNotificationService : public KeyedService,
   // Prefs listener for disabled_system_component_id.
   StringListPrefMember disabled_system_component_id_pref_;
 
-  // Prefs listener for enabled_sync_notifier_id.
-  StringListPrefMember enabled_sync_notifier_id_pref_;
-
   // On-memory data for the availability of extensions.
   std::set<std::string> disabled_extension_ids_;
 
   // On-memory data for the availability of system_component.
   std::set<std::string> disabled_system_component_ids_;
 
-  // On-memory data for the availability of sync notifiers.
-  std::set<std::string> enabled_sync_notifier_ids_;
-
-  // Registrar for the other kind of notifications (event signaling).
-  content::NotificationRegistrar registrar_;
+  // An observer to listen when extension is uninstalled.
+  ScopedObserver<extensions::ExtensionRegistry,
+                 extensions::ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   // Welcome Notification
   scoped_ptr<ExtensionWelcomeNotification> chrome_now_welcome_notification_;
+
+  base::WeakPtrFactory<DesktopNotificationService> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopNotificationService);
 };

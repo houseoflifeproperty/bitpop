@@ -30,6 +30,8 @@
 
 #include "src/v8.h"
 
+#include "src/isolate-inl.h"
+
 #ifndef TEST
 #define TEST(Name)                                                             \
   static void Test##Name();                                                    \
@@ -83,7 +85,6 @@ typedef v8::internal::EnumSet<CcTestExtensionIds> CcTestExtensionFlags;
 // Use this to expose protected methods in i::Heap.
 class TestHeap : public i::Heap {
  public:
-  using i::Heap::AllocateArgumentsObject;
   using i::Heap::AllocateByteArray;
   using i::Heap::AllocateFixedArray;
   using i::Heap::AllocateHeapNumber;
@@ -113,6 +114,11 @@ class CcTest {
     return isolate_;
   }
 
+  static i::Isolate* InitIsolateOnce() {
+    if (!initialize_called_) InitializeVM();
+    return i_isolate();
+  }
+
   static i::Isolate* i_isolate() {
     return reinterpret_cast<i::Isolate*>(isolate());
   }
@@ -123,6 +129,10 @@ class CcTest {
 
   static TestHeap* test_heap() {
     return reinterpret_cast<TestHeap*>(i_isolate()->heap());
+  }
+
+  static v8::base::RandomNumberGenerator* random_number_generator() {
+    return InitIsolateOnce()->random_number_generator();
   }
 
   static v8::Local<v8::Object> global() {
@@ -177,7 +187,7 @@ class CcTest {
 // thread fuzzing test.  In the thread fuzzing test it will
 // pseudorandomly select a successor thread and switch execution
 // to that thread, suspending the current test.
-class ApiTestFuzzer: public v8::internal::Thread {
+class ApiTestFuzzer: public v8::base::Thread {
  public:
   void CallTest();
 
@@ -199,11 +209,10 @@ class ApiTestFuzzer: public v8::internal::Thread {
 
  private:
   explicit ApiTestFuzzer(int num)
-      : Thread("ApiTestFuzzer"),
+      : Thread(Options("ApiTestFuzzer")),
         test_number_(num),
         gate_(0),
-        active_(true) {
-  }
+        active_(true) {}
   ~ApiTestFuzzer() {}
 
   static bool fuzzing_;
@@ -212,11 +221,11 @@ class ApiTestFuzzer: public v8::internal::Thread {
   static int active_tests_;
   static bool NextThread();
   int test_number_;
-  v8::internal::Semaphore gate_;
+  v8::base::Semaphore gate_;
   bool active_;
   void ContextSwitch();
   static int GetNextTestNumber();
-  static v8::internal::Semaphore all_tests_done_;
+  static v8::base::Semaphore all_tests_done_;
 };
 
 
@@ -372,14 +381,20 @@ static inline v8::Local<v8::Value> CompileRun(v8::Local<v8::String> source) {
 }
 
 
-static inline v8::Local<v8::Value> PreCompileCompileRun(const char* source) {
+static inline v8::Local<v8::Value> ParserCacheCompileRun(const char* source) {
   // Compile once just to get the preparse data, then compile the second time
   // using the data.
   v8::Isolate* isolate = v8::Isolate::GetCurrent();
   v8::ScriptCompiler::Source script_source(v8_str(source));
   v8::ScriptCompiler::Compile(isolate, &script_source,
-                              v8::ScriptCompiler::kProduceDataToCache);
-  return v8::ScriptCompiler::Compile(isolate, &script_source)->Run();
+                              v8::ScriptCompiler::kProduceParserCache);
+
+  // Check whether we received cached data, and if so use it.
+  v8::ScriptCompiler::CompileOptions options =
+      script_source.GetCachedData() ? v8::ScriptCompiler::kConsumeParserCache
+                                    : v8::ScriptCompiler::kNoCompileOptions;
+
+  return v8::ScriptCompiler::Compile(isolate, &script_source, options)->Run();
 }
 
 
@@ -479,6 +494,26 @@ static inline void SimulateFullSpace(v8::internal::PagedSpace* space) {
 }
 
 
+// Helper function that simulates many incremental marking steps until
+// marking is completed.
+static inline void SimulateIncrementalMarking(i::Heap* heap) {
+  i::MarkCompactCollector* collector = heap->mark_compact_collector();
+  i::IncrementalMarking* marking = heap->incremental_marking();
+  if (collector->sweeping_in_progress()) {
+    collector->EnsureSweepingCompleted();
+  }
+  CHECK(marking->IsMarking() || marking->IsStopped());
+  if (marking->IsStopped()) {
+    marking->Start();
+  }
+  CHECK(marking->IsMarking());
+  while (!marking->IsComplete()) {
+    marking->Step(i::MB, i::IncrementalMarking::NO_GC_VIA_STACK_GUARD);
+  }
+  CHECK(marking->IsComplete());
+}
+
+
 // Helper class for new allocations tracking and checking.
 // To use checking of JS allocations tracking in a test,
 // just create an instance of this class.
@@ -500,5 +535,31 @@ class HeapObjectsTracker {
   i::HeapProfiler* heap_profiler_;
 };
 
+
+class InitializedHandleScope {
+ public:
+  InitializedHandleScope()
+      : main_isolate_(CcTest::InitIsolateOnce()),
+        handle_scope_(main_isolate_) {}
+
+  // Prefixing the below with main_ reduces a lot of naming clashes.
+  i::Isolate* main_isolate() { return main_isolate_; }
+
+ private:
+  i::Isolate* main_isolate_;
+  i::HandleScope handle_scope_;
+};
+
+
+class HandleAndZoneScope : public InitializedHandleScope {
+ public:
+  HandleAndZoneScope() : main_zone_(main_isolate()) {}
+
+  // Prefixing the below with main_ reduces a lot of naming clashes.
+  i::Zone* main_zone() { return &main_zone_; }
+
+ private:
+  i::Zone main_zone_;
+};
 
 #endif  // ifndef CCTEST_H_

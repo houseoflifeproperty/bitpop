@@ -26,7 +26,7 @@
 #include "core/rendering/svg/SVGTextLayoutAttributesBuilder.h"
 #include "platform/transforms/AffineTransform.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderSVGInlineText;
 class SVGTextElement;
@@ -68,7 +68,7 @@ private:
 
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const OVERRIDE;
 
-    virtual void mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect&, bool fixed = false) const OVERRIDE;
+    virtual void mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect&, ViewportConstrainedPosition, const PaintInvalidationState*) const OVERRIDE;
 
     virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) OVERRIDE;
     virtual void removeChild(RenderObject*) OVERRIDE;
@@ -79,9 +79,6 @@ private:
 
     virtual const AffineTransform& localToParentTransform() const OVERRIDE { return m_localTransform; }
     virtual RootInlineBox* createRootInlineBox() OVERRIDE;
-
-    virtual RenderBlock* firstLineBlock() const OVERRIDE;
-    virtual void updateFirstLetter() OVERRIDE;
 
     bool shouldHandleSubtreeMutations() const;
 

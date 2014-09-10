@@ -26,7 +26,7 @@
 #include "core/css/CSSStyleSheet.h"
 #include "wtf/StdLibExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGStyleElement::SVGStyleElement(Document& document, bool createdByParser)
     : SVGElement(SVGNames::styleTag, document)
@@ -144,9 +144,9 @@ void SVGStyleElement::removedFrom(ContainerNode* rootParent)
         StyleElement::removedFromDocument(document(), this);
 }
 
-void SVGStyleElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void SVGStyleElement::childrenChanged(const ChildrenChange& change)
 {
-    SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    SVGElement::childrenChanged(change);
     StyleElement::childrenChanged(this);
 }
 

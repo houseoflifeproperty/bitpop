@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 #include "config.h"
-
 #include "core/testing/NullExecutionContext.h"
 
-namespace WebCore {
+#include "core/events/Event.h"
+
+namespace blink {
 
 namespace {
 
@@ -27,4 +28,4 @@ NullExecutionContext::NullExecutionContext()
 {
 }
 
-} // namespace WebCore
+} // namespace blink

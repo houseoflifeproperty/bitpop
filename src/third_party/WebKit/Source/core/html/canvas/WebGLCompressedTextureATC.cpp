@@ -27,7 +27,7 @@
 
 #include "core/html/canvas/WebGLCompressedTextureATC.h"
 
-namespace WebCore {
+namespace blink {
 
 WebGLCompressedTextureATC::WebGLCompressedTextureATC(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
@@ -47,9 +47,9 @@ WebGLExtensionName WebGLCompressedTextureATC::name() const
     return WebGLCompressedTextureATCName;
 }
 
-PassRefPtr<WebGLCompressedTextureATC> WebGLCompressedTextureATC::create(WebGLRenderingContextBase* context)
+PassRefPtrWillBeRawPtr<WebGLCompressedTextureATC> WebGLCompressedTextureATC::create(WebGLRenderingContextBase* context)
 {
-    return adoptRef(new WebGLCompressedTextureATC(context));
+    return adoptRefWillBeNoop(new WebGLCompressedTextureATC(context));
 }
 
 bool WebGLCompressedTextureATC::supported(WebGLRenderingContextBase* context)
@@ -62,4 +62,4 @@ const char* WebGLCompressedTextureATC::extensionName()
     return "WEBGL_compressed_texture_atc";
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -27,14 +27,14 @@
 #ifndef DOMTimer_h
 #define DOMTimer_h
 
-#include "bindings/v8/ScheduledAction.h"
+#include "bindings/core/v8/ScheduledAction.h"
 #include "core/frame/SuspendableTimer.h"
 #include "platform/UserGestureIndicator.h"
 #include "wtf/Compiler.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 
@@ -77,6 +77,6 @@ private:
     RefPtr<UserGestureToken> m_userGestureToken;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMTimer_h

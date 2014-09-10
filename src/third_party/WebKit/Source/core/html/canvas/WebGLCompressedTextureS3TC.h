@@ -26,17 +26,17 @@
 #ifndef WebGLCompressedTextureS3TC_h
 #define WebGLCompressedTextureS3TC_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class WebGLTexture;
 
 class WebGLCompressedTextureS3TC FINAL : public WebGLExtension, public ScriptWrappable {
 public:
-    static PassRefPtr<WebGLCompressedTextureS3TC> create(WebGLRenderingContextBase*);
+    static PassRefPtrWillBeRawPtr<WebGLCompressedTextureS3TC> create(WebGLRenderingContextBase*);
     static bool supported(WebGLRenderingContextBase*);
     static const char* extensionName();
 
@@ -44,9 +44,9 @@ public:
     virtual WebGLExtensionName name() const OVERRIDE;
 
 private:
-    WebGLCompressedTextureS3TC(WebGLRenderingContextBase*);
+    explicit WebGLCompressedTextureS3TC(WebGLRenderingContextBase*);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebGLCompressedTextureS3TC_h

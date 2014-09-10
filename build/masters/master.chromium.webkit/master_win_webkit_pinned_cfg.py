@@ -26,9 +26,8 @@ defaults['category'] = 'deps'
 ################################################################################
 
 # Archive location
-rel_archive = master_config.GetArchiveUrl('ChromiumWebkit',
-                                          'WebKit Win Builder (deps)',
-                                          'webkit-win-pinned-rel', 'win32')
+rel_archive = master_config.GetGSUtilUrl('chromium-build-transfer',
+                                         'WebKit Win Builder (deps)')
 
 #
 # Trigger scheduler for the dbg builder
@@ -39,10 +38,11 @@ T('s1_chromium_rel_trigger')
 # Win Rel Builder
 #
 B('WebKit Win Builder (deps)', 'f_webkit_win_rel',
-  scheduler='global_scheduler', builddir='webkit-win-pinned-rel',
+  scheduler='global_deps_scheduler', builddir='webkit-win-pinned-rel',
   auto_reboot=False)
 F('f_webkit_win_rel', win().ChromiumFactory(
     slave_type='Builder',
+    build_url=rel_archive,
     project='all.sln;blink_tests',
     factory_properties={
         'trigger': 's1_chromium_rel_trigger',

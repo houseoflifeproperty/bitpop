@@ -31,14 +31,14 @@
 #include "config.h"
 #include "core/dom/custom/CustomElementRegistry.h"
 
-#include "bindings/v8/CustomElementConstructorBuilder.h"
+#include "bindings/core/v8/CustomElementConstructorBuilder.h"
 #include "core/HTMLNames.h"
 #include "core/SVGNames.h"
 #include "core/dom/DocumentLifecycleObserver.h"
 #include "core/dom/custom/CustomElementException.h"
 #include "core/dom/custom/CustomElementRegistrationContext.h"
 
-namespace WebCore {
+namespace blink {
 
 class RegistrationContextObserver : public DocumentLifecycleObserver {
 public:
@@ -126,4 +126,4 @@ CustomElementDefinition* CustomElementRegistry::find(const CustomElementDescript
     return m_definitions.get(descriptor);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -115,7 +115,7 @@ PROJECT_CONFIGS = {
             str(int(before_rev) + 1), after_rev),
   },
   'skia': {
-    'cq_extra_trybots': ['tryserver.chromium:linux_layout_rel'],
+    'cq_extra_trybots': ['tryserver.chromium.linux:linux_layout_rel'],
     'extra_emails_fn': lambda: [_get_skia_sheriff()],
     'git_mode': True,
     'path_to_project': os.path.join('third_party', 'skia'),

@@ -39,21 +39,21 @@
 #include "wtf/RefPtr.h"
 #include "wtf/text/AtomicStringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class ExecutionContext;
 class WorkerGlobalScopeProxy;
 class WorkerScriptLoader;
 
-class Worker FINAL : public AbstractWorker, public ScriptWrappable, private WorkerScriptLoaderClient {
+class Worker FINAL : public AbstractWorker, private WorkerScriptLoaderClient {
 public:
     static PassRefPtrWillBeRawPtr<Worker> create(ExecutionContext*, const String& url, ExceptionState&);
     virtual ~Worker();
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
 
-    void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, ExceptionState&);
+    void postMessage(ExecutionContext*, PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, ExceptionState&);
 
     void terminate();
 
@@ -75,6 +75,6 @@ private:
     WorkerGlobalScopeProxy* m_contextProxy; // The proxy outlives the worker to perform thread shutdown.
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Worker_h

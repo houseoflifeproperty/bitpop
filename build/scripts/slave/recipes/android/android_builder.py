@@ -6,7 +6,9 @@ DEPS = [
   'chromium_android',
   'bot_update',
   'gclient',
+  'path',
   'properties',
+  'step',
   'tryserver',
 ]
 
@@ -14,18 +16,30 @@ BUILDERS = {
   'chromium.fyi': {
     'Android ARM64 Builder (dbg)': {
       'recipe_config': 'arm64_builder',
+      'check_licenses': True,
+      'findbugs': True,
+      'gclient_apply_config': ['android', 'chrome_internal'],
     },
     'Android x64 Builder (dbg)': {
       'recipe_config': 'x64_builder',
+      'check_licenses': True,
+      'findbugs': True,
+      'gclient_apply_config': ['android', 'chrome_internal'],
     },
     'Android MIPS Builder (dbg)': {
       'recipe_config': 'mipsel_builder',
+      'check_licenses': True,
+      'findbugs': True,
+      'gclient_apply_config': ['android', 'chrome_internal'],
     }
   },
-  'tryserver.chromium': {
+  'tryserver.chromium.linux': {
     'android_dbg_recipe': {
-      'recipe_config': 'android_shared',
+      'recipe_config': 'main_builder',
+      'gclient_apply_config': ['android', 'chrome_internal'],
       'try': True,
+      'check_licenses': True,
+      'findbugs': True,
       'upload': {
         'bucket': 'chromium-android',
         'path': lambda api: ('android_try_dbg_recipe/full-build-linux_%s.zip'
@@ -33,6 +47,35 @@ BUILDERS = {
       },
     }
   },
+  'chromium.perf.fyi': {
+    'android_oilpan_builder': {
+      'recipe_config': 'oilpan_builder',
+      'gclient_apply_config': ['android', 'chrome_internal'],
+      'kwargs': {
+        'BUILD_CONFIG': 'Release',
+      },
+      'upload': {
+        'bucket': 'chromium-android',
+        'path': lambda api: (
+          '%s/build_product_%s.zip' % (api.properties['buildername'],
+                                       api.properties['revision'])),
+      }
+    },
+  },
+  'chromium.perf': {
+    'Android Builder': {
+      'recipe_config': 'perf',
+      'gclient_apply_config': ['android', 'perf'],
+      'kwargs': {
+        'BUILD_CONFIG': 'Release',
+      },
+      'upload': {
+        'bucket': 'chrome-perf',
+        'path': lambda api: ('android_perf_rel/full-build-linux_%s.zip'
+                             % api.properties['revision']),
+      }
+    }
+  }
 }
 
 def GenSteps(api):
@@ -47,29 +90,38 @@ def GenSteps(api):
     'REPO_NAME': 'src',
     'BUILD_CONFIG': 'Debug'
   }
+  default_kwargs.update(bot_config.get('kwargs', {}))
   droid.configure_from_properties(bot_config['recipe_config'], **default_kwargs)
   droid.c.set_val({'deps_file': 'DEPS'})
 
   api.gclient.set_config('chromium')
-  api.gclient.apply_config('android')
-  api.gclient.apply_config('chrome_internal')
+  for c in bot_config.get('gclient_apply_config', []):
+    api.gclient.apply_config(c)
 
-  yield api.bot_update.ensure_checkout()
-  yield droid.clean_local_files()
-  yield droid.runhooks()
+  api.bot_update.ensure_checkout()
+  api.chromium_android.clean_local_files()
+
+  droid.runhooks()
 
   if bot_config.get('try', False):
-    yield api.tryserver.maybe_apply_issue()
+    api.tryserver.maybe_apply_issue()
 
-  yield droid.compile()
-  yield droid.check_webview_licenses()
-  yield droid.findbugs()
+  droid.compile()
+  if bot_config.get('check_licenses'):
+    try:
+      droid.check_webview_licenses()
+    except api.step.StepFailure:
+      pass
+  if bot_config.get('findbugs'):
+    try:
+      droid.findbugs()
+    except api.step.StepFailure:
+      pass
 
   upload_config = bot_config.get('upload')
   if upload_config:
-    yield droid.upload_build(upload_config['bucket'],
+    droid.upload_build(upload_config['bucket'],
                              upload_config['path'](api))
-  yield droid.cleanup_build()
 
 
 def _sanitize_nonalpha(text):
@@ -88,4 +140,17 @@ def GenTests(api):
             mastername=mastername,
             issue='8675309',
             patchset='1',
-            revision='267739'))
+            revision='267739',
+            got_revision='267739'))
+  yield (
+    api.test('findbugs_failure') +
+    api.properties.generic(mastername='chromium.fyi',
+                           buildername='Android x64 Builder (dbg)') +
+    api.step_data('findbugs', retcode=1)
+  )
+  yield (
+    api.test('check_licenses_failure') +
+    api.properties.generic(mastername='chromium.fyi',
+                           buildername='Android x64 Builder (dbg)') +
+    api.step_data('check licenses', retcode=1)
+  )

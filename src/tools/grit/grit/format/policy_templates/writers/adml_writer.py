@@ -99,7 +99,7 @@ class ADMLWriter(xml_formatted_writer.XMLFormattedWriter):
       dropdownlist_elem = self.AddElement(presentation_elem, 'dropdownList',
                                           {'refId': policy_name})
       dropdownlist_elem.appendChild(self._doc.createTextNode(policy_label))
-    elif policy_type == 'list':
+    elif policy_type in ('list', 'string-enum-list'):
       self._AddString(self._string_table_elem,
                       policy_name + 'Desc',
                       policy_caption)

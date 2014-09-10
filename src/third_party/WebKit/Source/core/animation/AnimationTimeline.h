@@ -31,23 +31,23 @@
 #ifndef AnimationTimeline_h
 #define AnimationTimeline_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/animation/AnimationEffect.h"
 #include "core/animation/AnimationPlayer.h"
 #include "core/dom/Element.h"
-#include "core/events/Event.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class AnimationNode;
 
 // AnimationTimeline is constructed and owned by Document, and tied to its lifecycle.
-class AnimationTimeline : public RefCountedWillBeGarbageCollectedFinalized<AnimationTimeline> {
+class AnimationTimeline : public RefCountedWillBeGarbageCollectedFinalized<AnimationTimeline>, public ScriptWrappable {
 public:
     class PlatformTiming : public NoBaseWillBeGarbageCollectedFinalized<PlatformTiming> {
 
@@ -68,6 +68,7 @@ public:
     // Creates a player attached to this timeline, but without a start time.
     AnimationPlayer* createAnimationPlayer(AnimationNode*);
     AnimationPlayer* play(AnimationNode*);
+    WillBeHeapVector<RefPtrWillBeMember<AnimationPlayer> > getAnimationPlayers();
 
 #if !ENABLE(OILPAN)
     void playerDestroyed(AnimationPlayer* player)
@@ -85,7 +86,6 @@ public:
     double currentTimeInternal();
     double effectiveTime();
     void pauseAnimationsForTesting(double);
-    size_t numberOfActiveAnimationsForTesting() const;
 
     void setOutdatedAnimationPlayer(AnimationPlayer*);
     bool hasOutdatedAnimationPlayer() const;

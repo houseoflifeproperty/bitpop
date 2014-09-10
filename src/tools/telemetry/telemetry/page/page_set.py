@@ -7,10 +7,9 @@ import inspect
 import os
 
 from telemetry.core import util
-from telemetry.page import cloud_storage
 from telemetry.page import page as page_module
 from telemetry.page import page_set_archive_info
-
+from telemetry.util import cloud_storage
 
 PUBLIC_BUCKET = cloud_storage.PUBLIC_BUCKET
 PARTNER_BUCKET = cloud_storage.PARTNER_BUCKET
@@ -95,7 +94,7 @@ class PageSet(object):
         page_set_classes.append(getattr(module, m))
     if len(page_set_classes) != 1:
       raise PageSetError("Pageset file needs to contain exactly 1 pageset class"
-                         " with prefix 'PageSet'")
+                         " with suffix 'PageSet'")
     page_set = page_set_classes[0]()
     for page in page_set.pages:
       page_class = page.__class__

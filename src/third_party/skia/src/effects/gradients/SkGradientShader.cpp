@@ -12,8 +12,8 @@
 #include "SkTwoPointConicalGradient.h"
 #include "SkSweepGradient.h"
 
-SkGradientShaderBase::SkGradientShaderBase(const Descriptor& desc, const SkMatrix* localMatrix)
-    : INHERITED(localMatrix)
+SkGradientShaderBase::SkGradientShaderBase(const Descriptor& desc)
+    : INHERITED(desc.fLocalMatrix)
 {
     SkASSERT(desc.fCount > 1);
 
@@ -570,6 +570,7 @@ SkGradientShaderBase::GradientShaderCache* SkGradientShaderBase::refCache(U8CPU 
     return fCache;
 }
 
+SK_DECLARE_STATIC_MUTEX(gGradientCacheMutex);
 /*
  *  Because our caller might rebuild the same (logically the same) gradient
  *  over and over, we'd like to return exactly the same "bitmap" if possible,
@@ -605,11 +606,10 @@ void SkGradientShaderBase::getGradientTableBitmap(SkBitmap* bitmap) const {
 
     ///////////////////////////////////
 
-    SK_DECLARE_STATIC_MUTEX(gMutex);
     static SkBitmapCache* gCache;
     // each cache cost 1K of RAM, since each bitmap will be 1x256 at 32bpp
     static const int MAX_NUM_CACHED_GRADIENT_BITMAPS = 32;
-    SkAutoMutexAcquire ama(gMutex);
+    SkAutoMutexAcquire ama(gGradientCacheMutex);
 
     if (NULL == gCache) {
         gCache = SkNEW_ARGS(SkBitmapCache, (MAX_NUM_CACHED_GRADIENT_BITMAPS));
@@ -698,8 +698,6 @@ void SkGradientShaderBase::toString(SkString* str) const {
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-#include "SkEmptyShader.h"
-
 // assumes colors is SkColor* and pos is SkScalar*
 #define EXPAND_1_COLOR(count)               \
     SkColor tmp[2];                         \
@@ -713,14 +711,14 @@ void SkGradientShaderBase::toString(SkString* str) const {
     } while (0)
 
 static void desc_init(SkGradientShaderBase::Descriptor* desc,
-                      const SkColor colors[],
-                      const SkScalar pos[], int colorCount,
-                      SkShader::TileMode mode, uint32_t flags) {
+                      const SkColor colors[], const SkScalar pos[], int colorCount,
+                      SkShader::TileMode mode, uint32_t flags, const SkMatrix* localMatrix) {
     desc->fColors       = colors;
     desc->fPos          = pos;
     desc->fCount        = colorCount;
     desc->fTileMode     = mode;
     desc->fGradFlags    = flags;
+    desc->fLocalMatrix  = localMatrix;
 }
 
 SkShader* SkGradientShader::CreateLinear(const SkPoint pts[2],
@@ -735,8 +733,8 @@ SkShader* SkGradientShader::CreateLinear(const SkPoint pts[2],
     EXPAND_1_COLOR(colorCount);
 
     SkGradientShaderBase::Descriptor desc;
-    desc_init(&desc, colors, pos, colorCount, mode, flags);
-    return SkNEW_ARGS(SkLinearGradient, (pts, desc, localMatrix));
+    desc_init(&desc, colors, pos, colorCount, mode, flags, localMatrix);
+    return SkNEW_ARGS(SkLinearGradient, (pts, desc));
 }
 
 SkShader* SkGradientShader::CreateRadial(const SkPoint& center, SkScalar radius,
@@ -751,8 +749,8 @@ SkShader* SkGradientShader::CreateRadial(const SkPoint& center, SkScalar radius,
     EXPAND_1_COLOR(colorCount);
 
     SkGradientShaderBase::Descriptor desc;
-    desc_init(&desc, colors, pos, colorCount, mode, flags);
-    return SkNEW_ARGS(SkRadialGradient, (center, radius, desc, localMatrix));
+    desc_init(&desc, colors, pos, colorCount, mode, flags, localMatrix);
+    return SkNEW_ARGS(SkRadialGradient, (center, radius, desc));
 }
 
 SkShader* SkGradientShader::CreateTwoPointRadial(const SkPoint& start,
@@ -771,9 +769,9 @@ SkShader* SkGradientShader::CreateTwoPointRadial(const SkPoint& start,
     EXPAND_1_COLOR(colorCount);
 
     SkGradientShaderBase::Descriptor desc;
-    desc_init(&desc, colors, pos, colorCount, mode, flags);
+    desc_init(&desc, colors, pos, colorCount, mode, flags, localMatrix);
     return SkNEW_ARGS(SkTwoPointRadialGradient,
-                      (start, startRadius, end, endRadius, desc, localMatrix));
+                      (start, startRadius, end, endRadius, desc));
 }
 
 SkShader* SkGradientShader::CreateTwoPointConical(const SkPoint& start,
@@ -790,7 +788,7 @@ SkShader* SkGradientShader::CreateTwoPointConical(const SkPoint& start,
         return NULL;
     }
     if (start == end && startRadius == endRadius) {
-        return SkNEW(SkEmptyShader);
+        return SkShader::CreateEmptyShader();
     }
 
     EXPAND_1_COLOR(colorCount);
@@ -800,9 +798,9 @@ SkShader* SkGradientShader::CreateTwoPointConical(const SkPoint& start,
     SkGradientShaderBase::Descriptor desc;
 
     if (!flipGradient) {
-        desc_init(&desc, colors, pos, colorCount, mode, flags);
+        desc_init(&desc, colors, pos, colorCount, mode, flags, localMatrix);
         return SkNEW_ARGS(SkTwoPointConicalGradient,
-                          (start, startRadius, end, endRadius, flipGradient, desc, localMatrix));
+                          (start, startRadius, end, endRadius, flipGradient, desc));
     } else {
         SkAutoSTArray<8, SkColor> colorsNew(colorCount);
         SkAutoSTArray<8, SkScalar> posNew(colorCount);
@@ -814,13 +812,13 @@ SkShader* SkGradientShader::CreateTwoPointConical(const SkPoint& start,
             for (int i = 0; i < colorCount; ++i) {
                 posNew[i] = 1 - pos[colorCount - i - 1];
             }
-            desc_init(&desc, colorsNew.get(), posNew.get(), colorCount, mode, flags);
+            desc_init(&desc, colorsNew.get(), posNew.get(), colorCount, mode, flags, localMatrix);
         } else {
-            desc_init(&desc, colorsNew.get(), NULL, colorCount, mode, flags);
+            desc_init(&desc, colorsNew.get(), NULL, colorCount, mode, flags, localMatrix);
         }
 
         return SkNEW_ARGS(SkTwoPointConicalGradient,
-                          (end, endRadius, start, startRadius, flipGradient, desc, localMatrix));
+                          (end, endRadius, start, startRadius, flipGradient, desc));
     }
 }
 
@@ -836,8 +834,8 @@ SkShader* SkGradientShader::CreateSweep(SkScalar cx, SkScalar cy,
     EXPAND_1_COLOR(colorCount);
 
     SkGradientShaderBase::Descriptor desc;
-    desc_init(&desc, colors, pos, colorCount, SkShader::kClamp_TileMode, flags);
-    return SkNEW_ARGS(SkSweepGradient, (cx, cy, desc, localMatrix));
+    desc_init(&desc, colors, pos, colorCount, SkShader::kClamp_TileMode, flags, localMatrix);
+    return SkNEW_ARGS(SkSweepGradient, (cx, cy, desc));
 }
 
 SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_START(SkGradientShader)
@@ -854,6 +852,7 @@ SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_END
 
 #include "effects/GrTextureStripAtlas.h"
 #include "GrTBackendEffectFactory.h"
+#include "gl/GrGLShaderBuilder.h"
 #include "SkGr.h"
 
 GrGLGradientEffect::GrGLGradientEffect(const GrBackendEffectFactory& factory)
@@ -863,15 +862,15 @@ GrGLGradientEffect::GrGLGradientEffect(const GrBackendEffectFactory& factory)
 
 GrGLGradientEffect::~GrGLGradientEffect() { }
 
-void GrGLGradientEffect::emitUniforms(GrGLShaderBuilder* builder, EffectKey key) {
+void GrGLGradientEffect::emitUniforms(GrGLShaderBuilder* builder, uint32_t baseKey) {
 
-    if (SkGradientShaderBase::kTwo_GpuColorType == ColorTypeFromKey(key)) { // 2 Color case
+    if (SkGradientShaderBase::kTwo_GpuColorType == ColorTypeFromKey(baseKey)) { // 2 Color case
         fColorStartUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                              kVec4f_GrSLType, "GradientStartColor");
         fColorEndUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                            kVec4f_GrSLType, "GradientEndColor");
 
-    } else if (SkGradientShaderBase::kThree_GpuColorType == ColorTypeFromKey(key)){ // 3 Color Case
+    } else if (SkGradientShaderBase::kThree_GpuColorType == ColorTypeFromKey(baseKey)){ // 3 Color Case
         fColorStartUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                              kVec4f_GrSLType, "GradientStartColor");
         fColorMidUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
@@ -885,29 +884,29 @@ void GrGLGradientEffect::emitUniforms(GrGLShaderBuilder* builder, EffectKey key)
     }
 }
 
-static inline void set_color_uni(const GrGLUniformManager& uman,
-                                 const GrGLUniformManager::UniformHandle uni,
+static inline void set_color_uni(const GrGLProgramDataManager& pdman,
+                                 const GrGLProgramDataManager::UniformHandle uni,
                                  const SkColor* color) {
-       uman.set4f(uni,
-                  SkColorGetR(*color) / 255.f,
-                  SkColorGetG(*color) / 255.f,
-                  SkColorGetB(*color) / 255.f,
-                  SkColorGetA(*color) / 255.f);
+       pdman.set4f(uni,
+                   SkColorGetR(*color) / 255.f,
+                   SkColorGetG(*color) / 255.f,
+                   SkColorGetB(*color) / 255.f,
+                   SkColorGetA(*color) / 255.f);
 }
 
-static inline void set_mul_color_uni(const GrGLUniformManager& uman,
-                                     const GrGLUniformManager::UniformHandle uni,
+static inline void set_mul_color_uni(const GrGLProgramDataManager& pdman,
+                                     const GrGLProgramDataManager::UniformHandle uni,
                                      const SkColor* color){
        float a = SkColorGetA(*color) / 255.f;
        float aDiv255 = a / 255.f;
-       uman.set4f(uni,
-                  SkColorGetR(*color) * aDiv255,
-                  SkColorGetG(*color) * aDiv255,
-                  SkColorGetB(*color) * aDiv255,
-                  a);
+       pdman.set4f(uni,
+                   SkColorGetR(*color) * aDiv255,
+                   SkColorGetG(*color) * aDiv255,
+                   SkColorGetB(*color) * aDiv255,
+                   a);
 }
 
-void GrGLGradientEffect::setData(const GrGLUniformManager& uman,
+void GrGLGradientEffect::setData(const GrGLProgramDataManager& pdman,
                                  const GrDrawEffect& drawEffect) {
 
     const GrGradientEffect& e = drawEffect.castEffect<GrGradientEffect>();
@@ -916,39 +915,39 @@ void GrGLGradientEffect::setData(const GrGLUniformManager& uman,
     if (SkGradientShaderBase::kTwo_GpuColorType == e.getColorType()){
 
         if (GrGradientEffect::kBeforeInterp_PremulType == e.getPremulType()) {
-            set_mul_color_uni(uman, fColorStartUni, e.getColors(0));
-            set_mul_color_uni(uman, fColorEndUni,   e.getColors(1));
+            set_mul_color_uni(pdman, fColorStartUni, e.getColors(0));
+            set_mul_color_uni(pdman, fColorEndUni,   e.getColors(1));
         } else {
-            set_color_uni(uman, fColorStartUni, e.getColors(0));
-            set_color_uni(uman, fColorEndUni,   e.getColors(1));
+            set_color_uni(pdman, fColorStartUni, e.getColors(0));
+            set_color_uni(pdman, fColorEndUni,   e.getColors(1));
         }
 
     } else if (SkGradientShaderBase::kThree_GpuColorType == e.getColorType()){
 
         if (GrGradientEffect::kBeforeInterp_PremulType == e.getPremulType()) {
-            set_mul_color_uni(uman, fColorStartUni, e.getColors(0));
-            set_mul_color_uni(uman, fColorMidUni,   e.getColors(1));
-            set_mul_color_uni(uman, fColorEndUni,   e.getColors(2));
+            set_mul_color_uni(pdman, fColorStartUni, e.getColors(0));
+            set_mul_color_uni(pdman, fColorMidUni,   e.getColors(1));
+            set_mul_color_uni(pdman, fColorEndUni,   e.getColors(2));
         } else {
-            set_color_uni(uman, fColorStartUni, e.getColors(0));
-            set_color_uni(uman, fColorMidUni,   e.getColors(1));
-            set_color_uni(uman, fColorEndUni,   e.getColors(2));
+            set_color_uni(pdman, fColorStartUni, e.getColors(0));
+            set_color_uni(pdman, fColorMidUni,   e.getColors(1));
+            set_color_uni(pdman, fColorEndUni,   e.getColors(2));
         }
     } else {
 
         SkScalar yCoord = e.getYCoord();
         if (yCoord != fCachedYCoord) {
-            uman.set1f(fFSYUni, yCoord);
+            pdman.set1f(fFSYUni, yCoord);
             fCachedYCoord = yCoord;
         }
     }
 }
 
 
-GrGLEffect::EffectKey GrGLGradientEffect::GenBaseGradientKey(const GrDrawEffect& drawEffect) {
+uint32_t GrGLGradientEffect::GenBaseGradientKey(const GrDrawEffect& drawEffect) {
     const GrGradientEffect& e = drawEffect.castEffect<GrGradientEffect>();
 
-    EffectKey key = 0;
+    uint32_t key = 0;
 
     if (SkGradientShaderBase::kTwo_GpuColorType == e.getColorType()) {
         key |= kTwoColorKey;
@@ -965,11 +964,11 @@ GrGLEffect::EffectKey GrGLGradientEffect::GenBaseGradientKey(const GrDrawEffect&
 
 void GrGLGradientEffect::emitColor(GrGLShaderBuilder* builder,
                                    const char* gradientTValue,
-                                   EffectKey key,
+                                   uint32_t baseKey,
                                    const char* outputColor,
                                    const char* inputColor,
                                    const TextureSamplerArray& samplers) {
-    if (SkGradientShaderBase::kTwo_GpuColorType == ColorTypeFromKey(key)){
+    if (SkGradientShaderBase::kTwo_GpuColorType == ColorTypeFromKey(baseKey)){
         builder->fsCodeAppendf("\tvec4 colorTemp = mix(%s, %s, clamp(%s, 0.0, 1.0));\n",
                                builder->getUniformVariable(fColorStartUni).c_str(),
                                builder->getUniformVariable(fColorEndUni).c_str(),
@@ -979,13 +978,13 @@ void GrGLGradientEffect::emitColor(GrGLShaderBuilder* builder,
         // The gradient SkShader reporting opaque is more restrictive than necessary in the two pt
         // case. Make sure the key reflects this optimization (and note that it can use the same
         // shader as thekBeforeIterp case). This same optimization applies to the 3 color case below.
-        if (GrGradientEffect::kAfterInterp_PremulType == PremulTypeFromKey(key)) {
+        if (GrGradientEffect::kAfterInterp_PremulType == PremulTypeFromKey(baseKey)) {
             builder->fsCodeAppend("\tcolorTemp.rgb *= colorTemp.a;\n");
         }
 
         builder->fsCodeAppendf("\t%s = %s;\n", outputColor,
                                (GrGLSLExpr4(inputColor) * GrGLSLExpr4("colorTemp")).c_str());
-    } else if (SkGradientShaderBase::kThree_GpuColorType == ColorTypeFromKey(key)){
+    } else if (SkGradientShaderBase::kThree_GpuColorType == ColorTypeFromKey(baseKey)){
         builder->fsCodeAppendf("\tfloat oneMinus2t = 1.0 - (2.0 * (%s));\n",
                                gradientTValue);
         builder->fsCodeAppendf("\tvec4 colorTemp = clamp(oneMinus2t, 0.0, 1.0) * %s;\n",
@@ -1003,7 +1002,7 @@ void GrGLGradientEffect::emitColor(GrGLShaderBuilder* builder,
         }
         builder->fsCodeAppendf("\tcolorTemp += clamp(-oneMinus2t, 0.0, 1.0) * %s;\n",
                                builder->getUniformVariable(fColorEndUni).c_str());
-        if (GrGradientEffect::kAfterInterp_PremulType == PremulTypeFromKey(key)) {
+        if (GrGradientEffect::kAfterInterp_PremulType == PremulTypeFromKey(baseKey)) {
             builder->fsCodeAppend("\tcolorTemp.rgb *= colorTemp.a;\n");
         }
 

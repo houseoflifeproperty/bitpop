@@ -28,16 +28,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-importScript("ApplicationCacheItemsView.js");
-importScript("CookieItemsView.js");
-importScript("DOMStorageItemsView.js");
-importScript("DatabaseQueryView.js");
-importScript("DatabaseTableView.js");
-importScript("DirectoryContentView.js");
-importScript("IndexedDBViews.js");
-importScript("FileContentView.js");
-importScript("FileSystemView.js");
-
 /**
  * @constructor
  * @extends {WebInspector.PanelWithSidebarTree}
@@ -144,7 +134,7 @@ WebInspector.ResourcesPanel.prototype = {
     _initialize: function()
     {
         if (!this._initialized && this.isShowing() && this._cachedResourcesWereLoaded) {
-            var target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget());
+            var target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.mainTarget());
             this._populateResourceTree();
             this._populateDOMStorageTree();
             this._populateApplicationCacheTree(target);
@@ -790,8 +780,11 @@ WebInspector.ResourcesPanel.ResourceRevealer.prototype = {
      */
     reveal: function(resource, lineNumber)
     {
-        if (resource instanceof WebInspector.Resource)
-            /** @type {!WebInspector.ResourcesPanel} */ (WebInspector.inspectorView.showPanel("resources")).showResource(resource, lineNumber);
+        if (resource instanceof WebInspector.Resource) {
+            var panel = /** @type {?WebInspector.ResourcesPanel} */ (WebInspector.inspectorView.showPanel("resources"));
+            if (panel)
+                panel.showResource(resource, lineNumber);
+        }
     }
 }
 
@@ -823,23 +816,15 @@ WebInspector.BaseStorageTreeElement.prototype = {
                 this.listItemElement.classList.add(this._iconClasses[i]);
         }
 
-        var selectionElement = document.createElement("div");
-        selectionElement.className = "selection";
-        this.listItemElement.appendChild(selectionElement);
+        this.listItemElement.createChild("div", "selection");
 
-        if (!this._noIcon) {
-            this.imageElement = document.createElement("img");
-            this.imageElement.className = "icon";
-            this.listItemElement.appendChild(this.imageElement);
-        }
+        if (!this._noIcon)
+            this.imageElement = this.listItemElement.createChild("img", "icon");
 
-        this.titleElement = document.createElement("div");
-        this.titleElement.className = "base-storage-tree-element-title";
-        this._titleTextNode = document.createTextNode("");
-        this.titleElement.appendChild(this._titleTextNode);
+        this.titleElement = this.listItemElement.createChild("div", "base-storage-tree-element-title");
+        this._titleTextNode = this.titleElement.createTextChild("");
         this._updateTitle();
         this._updateSubtitle();
-        this.listItemElement.appendChild(this.titleElement);
     },
 
     get displayName()
@@ -872,14 +857,11 @@ WebInspector.BaseStorageTreeElement.prototype = {
             return;
 
         if (this._subtitleText) {
-            if (!this._subtitleElement) {
-                this._subtitleElement = document.createElement("span");
-                this._subtitleElement.className = "base-storage-tree-element-subtitle";
-                this.titleElement.appendChild(this._subtitleElement);
-            }
+            if (!this._subtitleElement)
+                this._subtitleElement = this.titleElement.createChild("span", "base-storage-tree-element-subtitle");
             this._subtitleElement.textContent = "(" + this._subtitleText + ")";
         } else if (this._subtitleElement) {
-            this.titleElement.removeChild(this._subtitleElement);
+            this._subtitleElement.remove();
             delete this._subtitleElement;
         }
     },
@@ -947,7 +929,7 @@ WebInspector.StorageCategoryTreeElement = function(storagePanel, categoryName, s
     this._expandedSettingKey = "resources" + settingsKey + "Expanded";
     WebInspector.settings[this._expandedSettingKey] = WebInspector.settings.createSetting(this._expandedSettingKey, settingsKey === "Frames");
     this._categoryName = categoryName;
-    this._target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget());
+    this._target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.mainTarget());
 }
 
 WebInspector.StorageCategoryTreeElement.prototype = {
@@ -1181,18 +1163,13 @@ WebInspector.FrameResourceTreeElement.prototype = {
         WebInspector.BaseStorageTreeElement.prototype.onattach.call(this);
 
         if (this._resource.type === WebInspector.resourceTypes.Image) {
-            var previewImage = document.createElement("img");
-            previewImage.className = "image-resource-icon-preview";
+            var iconElement = document.createElementWithClass("div", "icon");
+            var previewImage = iconElement.createChild("img", "image-resource-icon-preview");
             this._resource.populateImageSource(previewImage);
-
-            var iconElement = document.createElement("div");
-            iconElement.className = "icon";
-            iconElement.appendChild(previewImage);
             this.listItemElement.replaceChild(iconElement, this.imageElement);
         }
 
-        this._statusElement = document.createElement("div");
-        this._statusElement.className = "status";
+        this._statusElement = document.createElementWithClass("div", "status");
         this.listItemElement.insertBefore(this._statusElement, this.titleElement);
 
         this.listItemElement.draggable = true;
@@ -1220,14 +1197,13 @@ WebInspector.FrameResourceTreeElement.prototype = {
         contextMenu.show();
     },
 
+    /**
+     * @param {string} x
+     */
     _setBubbleText: function(x)
     {
-        if (!this._bubbleElement) {
-            this._bubbleElement = document.createElement("div");
-            this._bubbleElement.className = "bubble";
-            this._statusElement.appendChild(this._bubbleElement);
-        }
-
+        if (!this._bubbleElement)
+            this._bubbleElement = this._statusElement.createChild("div", "bubble-repeat-count");
         this._bubbleElement.textContent = x;
     },
 
@@ -1357,7 +1333,7 @@ WebInspector.DatabaseTreeElement.prototype = {
  */
 WebInspector.DatabaseTableTreeElement = function(storagePanel, database, tableName)
 {
-    WebInspector.BaseStorageTreeElement.call(this, storagePanel, null, tableName, ["database-storage-tree-item"]);
+    WebInspector.BaseStorageTreeElement.call(this, storagePanel, null, tableName, ["database-table-storage-tree-item"]);
     this._database = database;
     this._tableName = tableName;
 }

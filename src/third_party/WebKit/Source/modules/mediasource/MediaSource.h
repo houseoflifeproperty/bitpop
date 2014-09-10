@@ -31,7 +31,6 @@
 #ifndef MediaSource_h
 #define MediaSource_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
 #include "core/html/HTMLMediaSource.h"
@@ -40,32 +39,27 @@
 #include "modules/mediasource/SourceBufferList.h"
 #include "public/platform/WebMediaSource.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
 namespace blink {
-class WebSourceBuffer;
-}
-
-namespace WebCore {
 
 class ExceptionState;
 class GenericEventQueue;
+class WebSourceBuffer;
 
 class MediaSource FINAL
-    : public RefCountedWillBeRefCountedGarbageCollected<MediaSource>
+    : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<MediaSource>
     , public HTMLMediaSource
     , public ActiveDOMObject
-    , public EventTargetWithInlineData
-    , public ScriptWrappable {
-    REFCOUNTED_EVENT_TARGET(MediaSource);
+    , public EventTargetWithInlineData {
+    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<MediaSource>);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaSource);
 public:
     static const AtomicString& openKeyword();
     static const AtomicString& closedKeyword();
     static const AtomicString& endedKeyword();
 
-    static PassRefPtrWillBeRawPtr<MediaSource> create(ExecutionContext*);
+    static MediaSource* create(ExecutionContext*);
     virtual ~MediaSource();
 
     // MediaSource.idl methods
@@ -79,15 +73,17 @@ public:
     void endOfStream(ExceptionState&);
     static bool isTypeSupported(const String& type);
 
-        // HTMLMediaSource
+    // HTMLMediaSource
     virtual bool attachToElement(HTMLMediaElement*) OVERRIDE;
-    virtual void setWebMediaSourceAndOpen(PassOwnPtr<blink::WebMediaSource>) OVERRIDE;
+    virtual void setWebMediaSourceAndOpen(PassOwnPtr<WebMediaSource>) OVERRIDE;
     virtual void close() OVERRIDE;
     virtual bool isClosed() const OVERRIDE;
     virtual double duration() const OVERRIDE;
-    virtual PassRefPtr<TimeRanges> buffered() const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<TimeRanges> buffered() const OVERRIDE;
+#if !ENABLE(OILPAN)
     virtual void refHTMLMediaSource() OVERRIDE { ref(); }
     virtual void derefHTMLMediaSource() OVERRIDE { deref(); }
+#endif
 
     // EventTarget interface
     virtual const AtomicString& interfaceName() const OVERRIDE;
@@ -109,6 +105,7 @@ public:
     void removedFromRegistry();
 
     void trace(Visitor*);
+    void clearWeakMembers(Visitor*);
 
 private:
     explicit MediaSource(ExecutionContext*);
@@ -118,24 +115,25 @@ private:
 
     bool isUpdating() const;
 
-    PassOwnPtr<blink::WebSourceBuffer> createWebSourceBuffer(const String& type, const Vector<String>& codecs, ExceptionState&);
+    PassOwnPtr<WebSourceBuffer> createWebSourceBuffer(const String& type, const Vector<String>& codecs, ExceptionState&);
     void scheduleEvent(const AtomicString& eventName);
-    void endOfStreamInternal(const blink::WebMediaSource::EndOfStreamStatus, ExceptionState&);
+    void endOfStreamInternal(const WebMediaSource::EndOfStreamStatus, ExceptionState&);
 
     // Implements the duration change algorithm.
     // https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#duration-change-algorithm
     void durationChangeAlgorithm(double newDuration);
 
-    OwnPtr<blink::WebMediaSource> m_webMediaSource;
+    OwnPtr<WebMediaSource> m_webMediaSource;
     AtomicString m_readyState;
     OwnPtrWillBeMember<GenericEventQueue> m_asyncEventQueue;
-    // FIXME: oilpan: This should become a Member. For now, m_attachedElement will be cleared by the HTMLMediaElement destructor.
-    HTMLMediaElement* m_attachedElement;
+    RawPtrWillBeWeakMember<HTMLMediaElement> m_attachedElement;
 
-    RefPtrWillBeMember<SourceBufferList> m_sourceBuffers;
-    RefPtrWillBeMember<SourceBufferList> m_activeSourceBuffers;
+    Member<SourceBufferList> m_sourceBuffers;
+    Member<SourceBufferList> m_activeSourceBuffers;
+
+    bool m_isAddedToRegistry;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

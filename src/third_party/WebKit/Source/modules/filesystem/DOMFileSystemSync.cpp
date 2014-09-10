@@ -31,7 +31,7 @@
 #include "config.h"
 #include "modules/filesystem/DOMFileSystemSync.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileError.h"
@@ -46,7 +46,7 @@
 #include "public/platform/WebFileSystem.h"
 #include "public/platform/WebFileSystemCallbacks.h"
 
-namespace WebCore {
+namespace blink {
 
 class FileWriterBase;
 
@@ -139,7 +139,7 @@ public:
         // FIXME: We should use the snapshot metadata for all files.
         // https://www.w3.org/Bugs/Public/show_bug.cgi?id=17746
         if (m_type == FileSystemTypeTemporary || m_type == FileSystemTypePersistent) {
-            m_result->m_file = File::createWithName(metadata.platformPath, m_name);
+            m_result->m_file = File::createForFileSystemFile(metadata.platformPath, m_name);
         } else if (!metadata.platformPath.isEmpty()) {
             // If the platformPath in the returned metadata is given, we create a File object for the path.
             m_result->m_file = File::createForFileSystemFile(m_name, metadata).get();

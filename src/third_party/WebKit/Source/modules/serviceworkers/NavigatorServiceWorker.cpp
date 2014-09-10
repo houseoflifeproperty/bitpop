@@ -11,7 +11,7 @@
 #include "core/frame/Navigator.h"
 #include "modules/serviceworkers/ServiceWorkerContainer.h"
 
-namespace WebCore {
+namespace blink {
 
 NavigatorServiceWorker::NavigatorServiceWorker(Navigator& navigator)
     : DOMWindowProperty(navigator.frame())
@@ -69,9 +69,15 @@ ServiceWorkerContainer* NavigatorServiceWorker::serviceWorker()
 void NavigatorServiceWorker::willDetachGlobalObjectFromFrame()
 {
     if (m_serviceWorker) {
-        m_serviceWorker->detachClient();
+        m_serviceWorker->willBeDetachedFromFrame();
         m_serviceWorker = nullptr;
     }
 }
 
-} // namespace WebCore
+void NavigatorServiceWorker::trace(Visitor* visitor)
+{
+    visitor->trace(m_serviceWorker);
+    WillBeHeapSupplement<Navigator>::trace(visitor);
+}
+
+} // namespace blink

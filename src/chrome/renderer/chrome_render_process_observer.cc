@@ -67,7 +67,7 @@ class RendererResourceDelegate : public content::ResourceDispatcherDelegate {
 
   virtual content::RequestPeer* OnRequestComplete(
       content::RequestPeer* current_peer,
-      ResourceType::Type resource_type,
+      content::ResourceType resource_type,
       int error_code) OVERRIDE {
     // Update the browser about our cache.
     // Rate limit informing the host of our cache stats.
@@ -254,9 +254,6 @@ ChromeRenderProcessObserver::ChromeRenderProcessObserver(
       pending_cache_max_dead_capacity_(0),
       pending_cache_capacity_(kUnitializedCacheCapacity) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kEnableWatchdog)) {
-    // TODO(JAR): Need to implement renderer IO msgloop watchdog.
-  }
 
 #if defined(ENABLE_AUTOFILL_DIALOG)
   WebRuntimeFeatures::enableRequestAutocomplete(true);

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/screenlock_private/screenlock_private_api.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -10,13 +9,16 @@
 #include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/notification_service.h"
 #include "extensions/browser/api/test/test_api.h"
+#include "extensions/browser/notification_types.h"
+#include "extensions/common/switches.h"
 
 namespace extensions {
 
 namespace {
 
-const char kTestUser[] = "testuser@gmail.com";
 const char kAttemptClickAuthMessage[] = "attemptClickAuth";
+const char kTestExtensionId[] = "lkegkdgachcnekllcdfkijonogckdnjo";
+const char kTestUser[] = "testuser@gmail.com";
 
 }  // namespace
 
@@ -30,10 +32,12 @@ class ScreenlockPrivateApiTest : public ExtensionApiTest,
   // ExtensionApiTest
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionApiTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitchASCII(
+        extensions::switches::kWhitelistedExtensionID, kTestExtensionId);
 
 #if !defined(OS_CHROMEOS)
     // New profile management needs to be on for non-ChromeOS lock.
-    switches::EnableNewProfileManagementForTesting(command_line);
+    ::switches::EnableNewProfileManagementForTesting(command_line);
 #endif
   }
 
@@ -47,7 +51,7 @@ class ScreenlockPrivateApiTest : public ExtensionApiTest,
   // ExtensionApiTest override:
   virtual void RunTestOnMainThreadLoop() OVERRIDE {
     registrar_.Add(this,
-                   chrome::NOTIFICATION_EXTENSION_TEST_MESSAGE,
+                   extensions::NOTIFICATION_EXTENSION_TEST_MESSAGE,
                    content::NotificationService::AllSources());
     ExtensionApiTest::RunTestOnMainThreadLoop();
     registrar_.RemoveAll();
@@ -67,6 +71,16 @@ class ScreenlockPrivateApiTest : public ExtensionApiTest,
     }
   }
 
+  // Loads |extension_name| as appropriate for the platform and waits for a
+  // pass / fail notification.
+  void RunTest(const std::string& extension_name) {
+#if defined(OS_CHROMEOS)
+    ASSERT_TRUE(RunComponentExtensionTest(extension_name)) << message_;
+#else
+    ASSERT_TRUE(RunExtensionTest(extension_name)) << message_;
+#endif
+  }
+
  private:
   content::NotificationRegistrar registrar_;
 
@@ -74,11 +88,11 @@ class ScreenlockPrivateApiTest : public ExtensionApiTest,
 };
 
 IN_PROC_BROWSER_TEST_F(ScreenlockPrivateApiTest, LockUnlock) {
-  ASSERT_TRUE(RunExtensionTest("screenlock_private/lock_unlock")) << message_;
+  RunTest("screenlock_private/lock_unlock");
 }
 
 IN_PROC_BROWSER_TEST_F(ScreenlockPrivateApiTest, AuthType) {
-  ASSERT_TRUE(RunExtensionTest("screenlock_private/auth_type")) << message_;
+  RunTest("screenlock_private/auth_type");
 }
 
 }  // namespace extensions

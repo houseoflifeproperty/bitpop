@@ -27,14 +27,14 @@
 #include "config.h"
 #include "core/editing/Editor.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/CSSPropertyNames.h"
 #include "core/EventNames.h"
 #include "core/HTMLNames.h"
 #include "core/XLinkNames.h"
 #include "core/accessibility/AXObjectCache.h"
-#include "core/clipboard/Clipboard.h"
 #include "core/clipboard/DataObject.h"
+#include "core/clipboard/DataTransfer.h"
 #include "core/clipboard/Pasteboard.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
 #include "core/css/StylePropertySet.h"
@@ -68,6 +68,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
+#include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTextAreaElement.h"
@@ -84,7 +85,7 @@
 #include "platform/weborigin/KURL.h"
 #include "wtf/unicode/CharacterNames.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 using namespace WTF;
@@ -193,17 +194,17 @@ bool Editor::canEditRichly() const
 
 bool Editor::canDHTMLCut()
 {
-    return !m_frame.selection().isInPasswordField() && !dispatchCPPEvent(EventTypeNames::beforecut, ClipboardNumb);
+    return !m_frame.selection().isInPasswordField() && !dispatchCPPEvent(EventTypeNames::beforecut, DataTransferNumb);
 }
 
 bool Editor::canDHTMLCopy()
 {
-    return !m_frame.selection().isInPasswordField() && !dispatchCPPEvent(EventTypeNames::beforecopy, ClipboardNumb);
+    return !m_frame.selection().isInPasswordField() && !dispatchCPPEvent(EventTypeNames::beforecopy, DataTransferNumb);
 }
 
 bool Editor::canDHTMLPaste()
 {
-    return !dispatchCPPEvent(EventTypeNames::beforepaste, ClipboardNumb);
+    return !dispatchCPPEvent(EventTypeNames::beforepaste, DataTransferNumb);
 }
 
 bool Editor::canCut() const
@@ -254,7 +255,7 @@ bool Editor::canDeleteRange(Range* range) const
     if (!startContainer || !endContainer)
         return false;
 
-    if (!startContainer->rendererIsEditable() || !endContainer->rendererIsEditable())
+    if (!startContainer->hasEditableStyle() || !endContainer->hasEditableStyle())
         return false;
 
     if (range->collapsed()) {
@@ -343,7 +344,7 @@ void Editor::deleteSelectionWithSmartDelete(bool smartDelete)
 
 void Editor::pasteAsPlainText(const String& pastingText, bool smartReplace)
 {
-    Node* target = findEventTargetFromSelection();
+    Element* target = findEventTargetFromSelection();
     if (!target)
         return;
     target->dispatchEvent(TextEvent::createForPlainTextPaste(m_frame.domWindow(), pastingText, smartReplace), IGNORE_EXCEPTION);
@@ -351,7 +352,7 @@ void Editor::pasteAsPlainText(const String& pastingText, bool smartReplace)
 
 void Editor::pasteAsFragment(PassRefPtrWillBeRawPtr<DocumentFragment> pastingFragment, bool smartReplace, bool matchStyle)
 {
-    Node* target = findEventTargetFromSelection();
+    Element* target = findEventTargetFromSelection();
     if (!target)
         return;
     target->dispatchEvent(TextEvent::createForFragmentPaste(m_frame.domWindow(), pastingFragment, smartReplace, matchStyle), IGNORE_EXCEPTION);
@@ -362,7 +363,7 @@ bool Editor::tryDHTMLCopy()
     if (m_frame.selection().isInPasswordField())
         return false;
 
-    return !dispatchCPPEvent(EventTypeNames::copy, ClipboardWritable);
+    return !dispatchCPPEvent(EventTypeNames::copy, DataTransferWritable);
 }
 
 bool Editor::tryDHTMLCut()
@@ -370,12 +371,12 @@ bool Editor::tryDHTMLCut()
     if (m_frame.selection().isInPasswordField())
         return false;
 
-    return !dispatchCPPEvent(EventTypeNames::cut, ClipboardWritable);
+    return !dispatchCPPEvent(EventTypeNames::cut, DataTransferWritable);
 }
 
 bool Editor::tryDHTMLPaste(PasteMode pasteMode)
 {
-    return !dispatchCPPEvent(EventTypeNames::paste, ClipboardReadable, pasteMode);
+    return !dispatchCPPEvent(EventTypeNames::paste, DataTransferReadable, pasteMode);
 }
 
 void Editor::pasteAsPlainTextWithPasteboard(Pasteboard* pasteboard)
@@ -420,59 +421,77 @@ void Editor::writeSelectionToPasteboard(Pasteboard* pasteboard, Range* selectedR
     pasteboard->writeHTML(html, url, plainText, canSmartCopyOrDelete());
 }
 
+static Image* imageFromNode(const Node& node)
+{
+    node.document().updateLayoutIgnorePendingStylesheets();
+    RenderObject* renderer = node.renderer();
+    if (!renderer)
+        return nullptr;
+
+    if (renderer->isCanvas())
+        return toHTMLCanvasElement(node).copiedImage();
+
+    if (renderer->isImage()) {
+        RenderImage* renderImage = toRenderImage(renderer);
+        if (!renderImage)
+            return nullptr;
+
+        ImageResource* cachedImage = renderImage->cachedImage();
+        if (!cachedImage || cachedImage->errorOccurred())
+            return nullptr;
+        return cachedImage->imageForRenderer(renderImage);
+    }
+
+    return nullptr;
+}
+
 static void writeImageNodeToPasteboard(Pasteboard* pasteboard, Node* node, const String& title)
 {
     ASSERT(pasteboard);
     ASSERT(node);
 
-    if (!(node->renderer() && node->renderer()->isImage()))
+    RefPtr<Image> image = imageFromNode(*node);
+    if (!image.get())
         return;
-
-    RenderImage* renderer = toRenderImage(node->renderer());
-    ImageResource* cachedImage = renderer->cachedImage();
-    if (!cachedImage || cachedImage->errorOccurred())
-        return;
-    Image* image = cachedImage->imageForRenderer(renderer);
-    ASSERT(image);
 
     // FIXME: This should probably be reconciled with HitTestResult::absoluteImageURL.
     AtomicString urlString;
     if (isHTMLImageElement(*node) || isHTMLInputElement(*node))
-        urlString = toElement(node)->getAttribute(srcAttr);
+        urlString = toHTMLElement(node)->getAttribute(srcAttr);
     else if (isSVGImageElement(*node))
-        urlString = toElement(node)->getAttribute(XLinkNames::hrefAttr);
-    else if (isHTMLEmbedElement(*node) || isHTMLObjectElement(*node))
-        urlString = toElement(node)->imageSourceURL();
+        urlString = toSVGElement(node)->getAttribute(XLinkNames::hrefAttr);
+    else if (isHTMLEmbedElement(*node) || isHTMLObjectElement(*node) || isHTMLCanvasElement(*node))
+        urlString = toHTMLElement(node)->imageSourceURL();
     KURL url = urlString.isEmpty() ? KURL() : node->document().completeURL(stripLeadingAndTrailingHTMLSpaces(urlString));
 
-    pasteboard->writeImage(image, url, title);
+    pasteboard->writeImage(image.get(), url, title);
 }
 
 // Returns whether caller should continue with "the default processing", which is the same as
 // the event handler NOT setting the return value to false
-bool Editor::dispatchCPPEvent(const AtomicString &eventType, ClipboardAccessPolicy policy, PasteMode pasteMode)
+bool Editor::dispatchCPPEvent(const AtomicString& eventType, DataTransferAccessPolicy policy, PasteMode pasteMode)
 {
-    Node* target = findEventTargetFromSelection();
+    Element* target = findEventTargetFromSelection();
     if (!target)
         return true;
 
-    RefPtrWillBeRawPtr<Clipboard> clipboard = Clipboard::create(
-        Clipboard::CopyAndPaste,
+    RefPtrWillBeRawPtr<DataTransfer> dataTransfer = DataTransfer::create(
+        DataTransfer::CopyAndPaste,
         policy,
-        policy == ClipboardWritable
+        policy == DataTransferWritable
             ? DataObject::create()
             : DataObject::createFromPasteboard(pasteMode));
 
-    RefPtrWillBeRawPtr<Event> evt = ClipboardEvent::create(eventType, true, true, clipboard);
+    RefPtrWillBeRawPtr<Event> evt = ClipboardEvent::create(eventType, true, true, dataTransfer);
     target->dispatchEvent(evt, IGNORE_EXCEPTION);
     bool noDefaultProcessing = evt->defaultPrevented();
-    if (noDefaultProcessing && policy == ClipboardWritable) {
-        RefPtrWillBeRawPtr<DataObject> dataObject = clipboard->dataObject();
+    if (noDefaultProcessing && policy == DataTransferWritable) {
+        RefPtrWillBeRawPtr<DataObject> dataObject = dataTransfer->dataObject();
         Pasteboard::generalPasteboard()->writeDataObject(dataObject.release());
     }
 
     // invalidate clipboard here for security
-    clipboard->setAccessPolicy(ClipboardNumb);
+    dataTransfer->setAccessPolicy(DataTransferNumb);
 
     return !noDefaultProcessing;
 }
@@ -539,36 +558,6 @@ void Editor::respondToChangedContents(const VisibleSelection& endingSelection)
     client().respondToChangedContents();
 }
 
-TriState Editor::selectionUnorderedListState() const
-{
-    if (m_frame.selection().isCaret()) {
-        if (enclosingNodeWithTag(m_frame.selection().selection().start(), ulTag))
-            return TrueTriState;
-    } else if (m_frame.selection().isRange()) {
-        Node* startNode = enclosingNodeWithTag(m_frame.selection().selection().start(), ulTag);
-        Node* endNode = enclosingNodeWithTag(m_frame.selection().selection().end(), ulTag);
-        if (startNode && endNode && startNode == endNode)
-            return TrueTriState;
-    }
-
-    return FalseTriState;
-}
-
-TriState Editor::selectionOrderedListState() const
-{
-    if (m_frame.selection().isCaret()) {
-        if (enclosingNodeWithTag(m_frame.selection().selection().start(), olTag))
-            return TrueTriState;
-    } else if (m_frame.selection().isRange()) {
-        Node* startNode = enclosingNodeWithTag(m_frame.selection().selection().start(), olTag);
-        Node* endNode = enclosingNodeWithTag(m_frame.selection().selection().end(), olTag);
-        if (startNode && endNode && startNode == endNode)
-            return TrueTriState;
-    }
-
-    return FalseTriState;
-}
-
 void Editor::removeFormattingAndStyle()
 {
     ASSERT(m_frame.document());
@@ -580,16 +569,16 @@ void Editor::clearLastEditCommand()
     m_lastEditCommand.clear();
 }
 
-Node* Editor::findEventTargetFrom(const VisibleSelection& selection) const
+Element* Editor::findEventTargetFrom(const VisibleSelection& selection) const
 {
-    Node* target = selection.start().element();
+    Element* target = selection.start().element();
     if (!target)
         target = m_frame.document()->body();
 
     return target;
 }
 
-Node* Editor::findEventTargetFromSelection() const
+Element* Editor::findEventTargetFromSelection() const
 {
     return findEventTargetFrom(m_frame.selection().selection());
 }
@@ -657,18 +646,6 @@ String Editor::selectionStartCSSPropertyValue(CSSPropertyID propertyID)
     if (propertyID == CSSPropertyFontSize)
         return String::number(selectionStyle->legacyFontSize(m_frame.document()));
     return selectionStyle->style()->getPropertyValue(propertyID);
-}
-
-void Editor::indent()
-{
-    ASSERT(m_frame.document());
-    IndentOutdentCommand::create(*m_frame.document(), IndentOutdentCommand::Indent)->apply();
-}
-
-void Editor::outdent()
-{
-    ASSERT(m_frame.document());
-    IndentOutdentCommand::create(*m_frame.document(), IndentOutdentCommand::Outdent)->apply();
 }
 
 static void dispatchEditableContentChangedEvents(PassRefPtrWillBeRawPtr<Element> startRoot, PassRefPtrWillBeRawPtr<Element> endRoot)
@@ -772,7 +749,7 @@ void Editor::clear()
     m_defaultParagraphSeparator = EditorParagraphSeparatorIsDiv;
 }
 
-bool Editor::insertText(const String& text, Event* triggeringEvent)
+bool Editor::insertText(const String& text, KeyboardEvent* triggeringEvent)
 {
     return m_frame.eventHandler().handleTextInputEvent(text, triggeringEvent);
 }
@@ -1307,4 +1284,4 @@ void Editor::trace(Visitor* visitor)
     visitor->trace(m_mark);
 }
 
-} // namespace WebCore
+} // namespace blink

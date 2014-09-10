@@ -39,7 +39,7 @@ Design doc: http://www.chromium.org/developers/design-documents/idl-compiler
 
 import posixpath
 
-from idl_types import IdlType, IdlUnionType
+from idl_types import IdlTypeBase, IdlType, IdlUnionType, IdlArrayOrSequenceType
 import v8_attributes  # for IdlType.constructor_type_name
 from v8_globals import includes
 
@@ -72,10 +72,12 @@ TYPED_ARRAYS = {
     'Uint32Array': ('unsigned int', 'v8::kExternalUnsignedIntArray'),
 }
 
-IdlType.is_typed_array_type = property(
+IdlTypeBase.is_typed_array_element_type = False
+IdlType.is_typed_array_element_type = property(
     lambda self: self.base_type in TYPED_ARRAYS)
 
 
+IdlTypeBase.is_wrapper_type = False
 IdlType.is_wrapper_type = property(
     lambda self: (self.is_interface_type and
                   self.base_type not in NON_WRAPPER_TYPES))
@@ -119,7 +121,7 @@ CPP_SPECIAL_CONVERSION_RULES = {
 }
 
 
-def cpp_type(idl_type, extended_attributes=None, used_as_argument=False, used_as_variadic_argument=False, used_in_cpp_sequence=False):
+def cpp_type(idl_type, extended_attributes=None, raw_type=False, used_as_rvalue_type=False, used_as_variadic_argument=False, used_in_cpp_sequence=False):
     """Returns C++ type corresponding to IDL type.
 
     |idl_type| argument is of type IdlType, while return value is a string
@@ -127,31 +129,40 @@ def cpp_type(idl_type, extended_attributes=None, used_as_argument=False, used_as
     Args:
         idl_type:
             IdlType
-        used_as_argument:
+        raw_type:
             bool, True if idl_type's raw/primitive C++ type should be returned.
+        used_as_rvalue_type:
+            bool, True if the C++ type is used as an argument or the return
+            type of a method.
+        used_as_variadic_argument:
+            bool, True if the C++ type is used as a variadic argument of a method.
         used_in_cpp_sequence:
-            bool, True if the C++ type is used as an element of an array or sequence.
+            bool, True if the C++ type is used as an element of a container.
+            Containers can be an array, a sequence or a dictionary.
     """
     def string_mode():
-        # FIXME: the Web IDL spec requires 'EmptyString', not 'NullString',
-        # but we use NullString for performance.
-        if extended_attributes.get('TreatNullAs') != 'NullString':
-            return ''
-        if extended_attributes.get('TreatUndefinedAs') != 'NullString':
-            return 'WithNullCheck'
-        return 'WithUndefinedOrNullCheck'
+        if extended_attributes.get('TreatNullAs') == 'EmptyString':
+            return 'TreatNullAsEmptyString'
+        if idl_type.is_nullable or extended_attributes.get('TreatNullAs') == 'NullString':
+            if extended_attributes.get('TreatUndefinedAs') == 'NullString':
+                return 'TreatNullAndUndefinedAsNullString'
+            return 'TreatNullAsNullString'
+        return ''
 
     extended_attributes = extended_attributes or {}
     idl_type = idl_type.preprocessed_type
 
-    # Composite types
+    # Array or sequence types
     if used_as_variadic_argument:
-        array_or_sequence_type = idl_type
+        native_array_element_type = idl_type
     else:
-        array_or_sequence_type = idl_type.array_or_sequence_type
-    if array_or_sequence_type:
-        vector_type = cpp_ptr_type('Vector', 'HeapVector', array_or_sequence_type.gc_type)
-        return cpp_template_type(vector_type, array_or_sequence_type.cpp_type_args(used_in_cpp_sequence=True))
+        native_array_element_type = idl_type.native_array_element_type
+    if native_array_element_type:
+        vector_type = cpp_ptr_type('Vector', 'HeapVector', native_array_element_type.gc_type)
+        vector_template_type = cpp_template_type(vector_type, native_array_element_type.cpp_type_args(used_in_cpp_sequence=True))
+        if used_as_rvalue_type:
+            return 'const %s&' % vector_template_type
+        return vector_template_type
 
     # Simple types
     base_idl_type = idl_type.base_type
@@ -166,34 +177,61 @@ def cpp_type(idl_type, extended_attributes=None, used_as_argument=False, used_as
         return CPP_SPECIAL_CONVERSION_RULES[base_idl_type]
 
     if base_idl_type in NON_WRAPPER_TYPES:
-        return 'RefPtr<%s>' % base_idl_type
-    if base_idl_type in ('DOMString', 'ByteString', 'ScalarValueString'):
-        if not used_as_argument:
+        return ('PassRefPtr<%s>' if used_as_rvalue_type else 'RefPtr<%s>') % base_idl_type
+    if idl_type.is_string_type:
+        if not raw_type:
             return 'String'
         return 'V8StringResource<%s>' % string_mode()
 
-    if idl_type.is_typed_array_type and used_as_argument:
+    if idl_type.is_typed_array_element_type and raw_type:
         return base_idl_type + '*'
     if idl_type.is_interface_type:
         implemented_as_class = idl_type.implemented_as
-        if used_as_argument:
+        if raw_type:
             return implemented_as_class + '*'
         new_type = 'Member' if used_in_cpp_sequence else 'RawPtr'
-        ptr_type = cpp_ptr_type('RefPtr', new_type, idl_type.gc_type)
+        ptr_type = cpp_ptr_type(('PassRefPtr' if used_as_rvalue_type else 'RefPtr'), new_type, idl_type.gc_type)
         return cpp_template_type(ptr_type, implemented_as_class)
     # Default, assume native type is a pointer with same type name as idl type
     return base_idl_type + '*'
 
 
-def cpp_type_union(idl_type, extended_attributes=None, used_as_argument=False):
-    return (member_type.cpp_type for member_type in idl_type.member_types)
+def cpp_type_initializer(idl_type):
+    """Returns a string containing a C++ initialization statement for the
+    corresponding type.
+
+    |idl_type| argument is of type IdlType.
+    """
+
+    if (idl_type.is_numeric_type):
+        return ' = 0'
+    if idl_type.base_type == 'boolean':
+        return ' = false'
+    return ''
+
+
+def cpp_type_union(idl_type, extended_attributes=None, raw_type=False):
+    # FIXME: Need to revisit the design of union support.
+    # http://crbug.com/240176
+    return None
+
+
+def cpp_type_initializer_union(idl_type):
+    return (member_type.cpp_type_initializer for member_type in idl_type.member_types)
 
 
 # Allow access as idl_type.cpp_type if no arguments
-IdlType.cpp_type = property(cpp_type)
+IdlTypeBase.cpp_type = property(cpp_type)
+IdlTypeBase.cpp_type_initializer = property(cpp_type_initializer)
+IdlTypeBase.cpp_type_args = cpp_type
 IdlUnionType.cpp_type = property(cpp_type_union)
-IdlType.cpp_type_args = cpp_type
+IdlUnionType.cpp_type_initializer = property(cpp_type_initializer_union)
 IdlUnionType.cpp_type_args = cpp_type_union
+
+
+IdlTypeBase.native_array_element_type = None
+IdlArrayOrSequenceType.native_array_element_type = property(
+    lambda self: self.element_type)
 
 
 def cpp_template_type(template, inner_type):
@@ -247,6 +285,7 @@ IdlType.set_implemented_as_interfaces = classmethod(
 # [GarbageCollected]
 IdlType.garbage_collected_types = set()
 
+IdlTypeBase.is_garbage_collected = False
 IdlType.is_garbage_collected = property(
     lambda self: self.base_type in IdlType.garbage_collected_types)
 
@@ -258,6 +297,7 @@ IdlType.set_garbage_collected_types = classmethod(
 # [WillBeGarbageCollected]
 IdlType.will_be_garbage_collected_types = set()
 
+IdlTypeBase.is_will_be_garbage_collected = False
 IdlType.is_will_be_garbage_collected = property(
     lambda self: self.base_type in IdlType.will_be_garbage_collected_types)
 
@@ -273,7 +313,7 @@ def gc_type(idl_type):
         return 'WillBeGarbageCollectedObject'
     return 'RefCountedObject'
 
-IdlType.gc_type = property(gc_type)
+IdlTypeBase.gc_type = property(gc_type)
 
 
 ################################################################################
@@ -287,11 +327,11 @@ def includes_for_cpp_class(class_name, relative_dir_posix):
 INCLUDES_FOR_TYPE = {
     'object': set(),
     'CompareHow': set(),
-    'Dictionary': set(['bindings/v8/Dictionary.h']),
-    'EventHandler': set(['bindings/v8/V8AbstractEventListener.h',
-                         'bindings/v8/V8EventListenerList.h']),
-    'EventListener': set(['bindings/v8/BindingSecurity.h',
-                          'bindings/v8/V8EventListenerList.h',
+    'Dictionary': set(['bindings/core/v8/Dictionary.h']),
+    'EventHandler': set(['bindings/core/v8/V8AbstractEventListener.h',
+                         'bindings/core/v8/V8EventListenerList.h']),
+    'EventListener': set(['bindings/core/v8/BindingSecurity.h',
+                          'bindings/core/v8/V8EventListenerList.h',
                           'core/frame/LocalDOMWindow.h']),
     'HTMLCollection': set(['bindings/core/v8/V8HTMLCollection.h',
                            'core/dom/ClassCollection.h',
@@ -305,19 +345,14 @@ INCLUDES_FOR_TYPE = {
                      'core/dom/NodeList.h',
                      'core/dom/StaticNodeList.h',
                      'core/html/LabelsNodeList.h']),
-    'Promise': set(['bindings/v8/ScriptPromise.h']),
-    'SerializedScriptValue': set(['bindings/v8/SerializedScriptValue.h']),
-    'ScriptValue': set(['bindings/v8/ScriptValue.h']),
+    'Promise': set(['bindings/core/v8/ScriptPromise.h']),
+    'SerializedScriptValue': set(['bindings/core/v8/SerializedScriptValue.h']),
+    'ScriptValue': set(['bindings/core/v8/ScriptValue.h']),
 }
 
 
 def includes_for_type(idl_type):
     idl_type = idl_type.preprocessed_type
-
-    # Composite types
-    array_or_sequence_type = idl_type.array_or_sequence_type
-    if array_or_sequence_type:
-        return includes_for_type(array_or_sequence_type)
 
     # Simple types
     base_idl_type = idl_type.base_type
@@ -325,8 +360,8 @@ def includes_for_type(idl_type):
         return INCLUDES_FOR_TYPE[base_idl_type]
     if idl_type.is_basic_type:
         return set()
-    if idl_type.is_typed_array_type:
-        return set(['bindings/v8/custom/V8%sCustom.h' % base_idl_type])
+    if idl_type.is_typed_array_element_type:
+        return set(['bindings/core/v8/custom/V8%sCustom.h' % base_idl_type])
     if base_idl_type.endswith('ConstructorConstructor'):
         # FIXME: rename to NamedConstructor
         # FIXME: replace with a [NamedConstructorAttribute] extended attribute
@@ -337,6 +372,8 @@ def includes_for_type(idl_type):
     if base_idl_type.endswith('Constructor'):
         # FIXME: replace with a [ConstructorAttribute] extended attribute
         base_idl_type = idl_type.constructor_type_name
+    if base_idl_type not in component_dir:
+        return set()
     return set(['bindings/%s/v8/V8%s.h' % (component_dir[base_idl_type],
                                            base_idl_type)])
 
@@ -344,13 +381,14 @@ IdlType.includes_for_type = property(includes_for_type)
 IdlUnionType.includes_for_type = property(
     lambda self: set.union(*[includes_for_type(member_type)
                              for member_type in self.member_types]))
+IdlArrayOrSequenceType.includes_for_type = property(
+    lambda self: self.element_type.includes_for_type)
 
 
 def add_includes_for_type(idl_type):
     includes.update(idl_type.includes_for_type)
 
-IdlType.add_includes_for_type = add_includes_for_type
-IdlUnionType.add_includes_for_type = add_includes_for_type
+IdlTypeBase.add_includes_for_type = add_includes_for_type
 
 
 def includes_for_interface(interface_name):
@@ -360,11 +398,41 @@ def includes_for_interface(interface_name):
 def add_includes_for_interface(interface_name):
     includes.update(includes_for_interface(interface_name))
 
+
+def impl_should_use_nullable_container(idl_type):
+    return not(idl_type.cpp_type_has_null_value)
+
+IdlTypeBase.impl_should_use_nullable_container = property(
+    impl_should_use_nullable_container)
+
+
+def impl_includes_for_type(idl_type, interfaces_info):
+    includes_for_type = set()
+    if idl_type.impl_should_use_nullable_container:
+        includes_for_type.add('bindings/core/v8/Nullable.h')
+
+    idl_type = idl_type.preprocessed_type
+    native_array_element_type = idl_type.native_array_element_type
+    if native_array_element_type:
+        includes_for_type.update(impl_includes_for_type(
+                native_array_element_type, interfaces_info))
+        includes_for_type.add('wtf/Vector.h')
+
+    if idl_type.is_string_type:
+        includes_for_type.add('wtf/text/WTFString.h')
+    if idl_type.name in interfaces_info:
+        interface_info = interfaces_info[idl_type.name]
+        includes_for_type.add(interface_info['include_path'])
+    return includes_for_type
+
+IdlTypeBase.impl_includes_for_type = impl_includes_for_type
+
+
 component_dir = {}
 
 
 def set_component_dirs(new_component_dirs):
-        component_dir.update(new_component_dirs)
+    component_dir.update(new_component_dirs)
 
 
 ################################################################################
@@ -392,23 +460,26 @@ V8_VALUE_TO_CPP_VALUE = {
     'unsigned long long': 'toUInt64({arguments})',
     # Interface types
     'CompareHow': 'static_cast<Range::CompareHow>({v8_value}->Int32Value())',
-    'Dictionary': 'Dictionary({v8_value}, info.GetIsolate())',
+    'Dictionary': 'Dictionary({v8_value}, {isolate})',
     'EventTarget': 'V8DOMWrapper::isDOMWrapper({v8_value}) ? toWrapperTypeInfo(v8::Handle<v8::Object>::Cast({v8_value}))->toEventTarget(v8::Handle<v8::Object>::Cast({v8_value})) : 0',
-    'MediaQueryListListener': 'MediaQueryListListener::create(ScriptState::current(info.GetIsolate()), ScriptValue(ScriptState::current(info.GetIsolate()), {v8_value}))',
-    'NodeFilter': 'toNodeFilter({v8_value}, info.Holder(), ScriptState::current(info.GetIsolate()))',
-    'Promise': 'ScriptPromise::cast(ScriptState::current(info.GetIsolate()), {v8_value})',
-    'SerializedScriptValue': 'SerializedScriptValue::create({v8_value}, info.GetIsolate())',
-    'ScriptValue': 'ScriptValue(ScriptState::current(info.GetIsolate()), {v8_value})',
-    'Window': 'toDOMWindow({v8_value}, info.GetIsolate())',
-    'XPathNSResolver': 'toXPathNSResolver({v8_value}, info.GetIsolate())',
+    'MediaQueryListListener': 'MediaQueryListListener::create(ScriptState::current({isolate}), ScriptValue(ScriptState::current({isolate}), {v8_value}))',
+    'NodeFilter': 'toNodeFilter({v8_value}, info.Holder(), ScriptState::current({isolate}))',
+    'Promise': 'ScriptPromise::cast(ScriptState::current({isolate}), {v8_value})',
+    'SerializedScriptValue': 'SerializedScriptValue::create({v8_value}, {isolate})',
+    'ScriptValue': 'ScriptValue(ScriptState::current({isolate}), {v8_value})',
+    'Window': 'toDOMWindow({v8_value}, {isolate})',
+    'XPathNSResolver': 'toXPathNSResolver({v8_value}, {isolate})',
 }
 
 
-def v8_value_to_cpp_value(idl_type, extended_attributes, v8_value, index):
-    # Composite types
-    array_or_sequence_type = idl_type.array_or_sequence_type
-    if array_or_sequence_type:
-        return v8_value_to_cpp_value_array_or_sequence(array_or_sequence_type, v8_value, index)
+def v8_value_to_cpp_value(idl_type, extended_attributes, v8_value, index, isolate):
+    if idl_type.name == 'void':
+        return ''
+
+    # Array or sequence types
+    native_array_element_type = idl_type.native_array_element_type
+    if native_array_element_type:
+        return v8_value_to_cpp_value_array_or_sequence(native_array_element_type, v8_value, index)
 
     # Simple types
     idl_type = idl_type.preprocessed_type
@@ -417,65 +488,79 @@ def v8_value_to_cpp_value(idl_type, extended_attributes, v8_value, index):
 
     if 'EnforceRange' in extended_attributes:
         arguments = ', '.join([v8_value, 'EnforceRange', 'exceptionState'])
-    elif (idl_type.is_integer_type or  # NormalConversion
-          idl_type.name in ('ByteString', 'ScalarValueString')):
+    elif idl_type.may_raise_exception_on_conversion:
         arguments = ', '.join([v8_value, 'exceptionState'])
     else:
         arguments = v8_value
 
     if base_idl_type in V8_VALUE_TO_CPP_VALUE:
         cpp_expression_format = V8_VALUE_TO_CPP_VALUE[base_idl_type]
-    elif idl_type.is_typed_array_type:
+    elif idl_type.is_typed_array_element_type:
         cpp_expression_format = (
             '{v8_value}->Is{idl_type}() ? '
             'V8{idl_type}::toNative(v8::Handle<v8::{idl_type}>::Cast({v8_value})) : 0')
+    elif idl_type.is_dictionary:
+        cpp_expression_format = 'V8{idl_type}::toNative({isolate}, {v8_value})'
     else:
         cpp_expression_format = (
-            'V8{idl_type}::toNativeWithTypeCheck(info.GetIsolate(), {v8_value})')
+            'V8{idl_type}::toNativeWithTypeCheck({isolate}, {v8_value})')
 
-    return cpp_expression_format.format(arguments=arguments, idl_type=base_idl_type, v8_value=v8_value)
+    return cpp_expression_format.format(arguments=arguments, idl_type=base_idl_type, v8_value=v8_value, isolate=isolate)
 
 
-def v8_value_to_cpp_value_array_or_sequence(array_or_sequence_type, v8_value, index):
+def v8_value_to_cpp_value_array_or_sequence(native_array_element_type, v8_value, index, isolate='info.GetIsolate()'):
     # Index is None for setters, index (starting at 0) for method arguments,
     # and is used to provide a human-readable exception message
     if index is None:
         index = 0  # special case, meaning "setter"
     else:
         index += 1  # human-readable index
-    if (array_or_sequence_type.is_interface_type and
-        array_or_sequence_type.name != 'Dictionary'):
+    if (native_array_element_type.is_interface_type and
+        native_array_element_type.name != 'Dictionary'):
         this_cpp_type = None
-        ref_ptr_type = cpp_ptr_type('RefPtr', 'Member', array_or_sequence_type.gc_type)
-        expression_format = '(to{ref_ptr_type}NativeArray<{array_or_sequence_type}, V8{array_or_sequence_type}>({v8_value}, {index}, info.GetIsolate()))'
-        add_includes_for_type(array_or_sequence_type)
+        ref_ptr_type = cpp_ptr_type('RefPtr', 'Member', native_array_element_type.gc_type)
+        expression_format = '(to{ref_ptr_type}NativeArray<{native_array_element_type}, V8{native_array_element_type}>({v8_value}, {index}, {isolate}))'
+        add_includes_for_type(native_array_element_type)
     else:
         ref_ptr_type = None
-        this_cpp_type = array_or_sequence_type.cpp_type
-        expression_format = 'toNativeArray<{cpp_type}>({v8_value}, {index}, info.GetIsolate())'
-    expression = expression_format.format(array_or_sequence_type=array_or_sequence_type.name, cpp_type=this_cpp_type, index=index, ref_ptr_type=ref_ptr_type, v8_value=v8_value)
+        this_cpp_type = native_array_element_type.cpp_type
+        expression_format = 'toNativeArray<{cpp_type}>({v8_value}, {index}, {isolate})'
+    expression = expression_format.format(native_array_element_type=native_array_element_type.name, cpp_type=this_cpp_type, index=index, ref_ptr_type=ref_ptr_type, v8_value=v8_value, isolate=isolate)
     return expression
 
 
-def v8_value_to_local_cpp_value(idl_type, extended_attributes, v8_value, variable_name, index=None, declare_variable=True):
+def v8_value_to_local_cpp_value(idl_type, extended_attributes, v8_value, variable_name, index=None, declare_variable=True, isolate='info.GetIsolate()', used_in_private_script=False, return_promise=False):
     """Returns an expression that converts a V8 value to a C++ value and stores it as a local value."""
-    this_cpp_type = idl_type.cpp_type_args(extended_attributes=extended_attributes, used_as_argument=True)
+
+    # FIXME: Support union type.
+    if idl_type.is_union_type:
+        return ''
+
+    this_cpp_type = idl_type.cpp_type_args(extended_attributes=extended_attributes, raw_type=True)
 
     idl_type = idl_type.preprocessed_type
-    cpp_value = v8_value_to_cpp_value(idl_type, extended_attributes, v8_value, index)
+    cpp_value = v8_value_to_cpp_value(idl_type, extended_attributes, v8_value, index, isolate)
     args = [variable_name, cpp_value]
-    if idl_type.base_type == 'DOMString' and not idl_type.array_or_sequence_type:
-        macro = 'TOSTRING_VOID'
-    elif (idl_type.is_integer_type or
-          idl_type.name in ('ByteString', 'ScalarValueString')):
-        macro = 'TONATIVE_VOID_EXCEPTIONSTATE'
+    if idl_type.base_type == 'DOMString':
+        macro = 'TOSTRING_DEFAULT' if used_in_private_script else 'TOSTRING_VOID'
+    elif idl_type.may_raise_exception_on_conversion:
+        macro = 'TONATIVE_DEFAULT_EXCEPTIONSTATE' if used_in_private_script else 'TONATIVE_VOID_EXCEPTIONSTATE'
         args.append('exceptionState')
     else:
-        macro = 'TONATIVE_VOID'
+        macro = 'TONATIVE_DEFAULT' if used_in_private_script else 'TONATIVE_VOID'
+
+    if used_in_private_script:
+        args.append('false')
 
     # Macros come in several variants, to minimize expensive creation of
     # v8::TryCatch.
     suffix = ''
+
+    if return_promise:
+        suffix += '_PROMISE'
+        args.append('info')
+        if macro == 'TONATIVE_VOID_EXCEPTIONSTATE':
+            args.append('ScriptState::current(%s)' % isolate)
 
     if declare_variable:
         args.insert(0, this_cpp_type)
@@ -484,9 +569,7 @@ def v8_value_to_local_cpp_value(idl_type, extended_attributes, v8_value, variabl
 
     return '%s(%s)' % (macro + suffix, ', '.join(args))
 
-
-IdlType.v8_value_to_local_cpp_value = v8_value_to_local_cpp_value
-IdlUnionType.v8_value_to_local_cpp_value = v8_value_to_local_cpp_value
+IdlTypeBase.v8_value_to_local_cpp_value = v8_value_to_local_cpp_value
 
 
 ################################################################################
@@ -501,8 +584,7 @@ def preprocess_idl_type(idl_type):
         return IdlType('ScriptValue')
     return idl_type
 
-IdlType.preprocessed_type = property(preprocess_idl_type)
-IdlUnionType.preprocessed_type = property(preprocess_idl_type)
+IdlTypeBase.preprocessed_type = property(preprocess_idl_type)
 
 
 def preprocess_idl_type_and_value(idl_type, cpp_value, extended_attributes):
@@ -523,7 +605,7 @@ def preprocess_idl_type_and_value(idl_type, cpp_value, extended_attributes):
         idl_type.base_type in ['unsigned long', 'unsigned short']):
         cpp_value = cpp_value.replace('getUnsignedIntegralAttribute',
                                       'getIntegralAttribute')
-        cpp_value = 'std::max(0, %s)' % cpp_value
+        cpp_value = 'std::max(0, static_cast<int>(%s))' % cpp_value
     return idl_type, cpp_value
 
 
@@ -536,11 +618,15 @@ def v8_conversion_type(idl_type, extended_attributes):
     """
     extended_attributes = extended_attributes or {}
 
-    # Composite types
-    array_or_sequence_type = idl_type.array_or_sequence_type
-    if array_or_sequence_type:
-        if array_or_sequence_type.is_interface_type:
-            add_includes_for_type(array_or_sequence_type)
+    # FIXME: Support union type.
+    if idl_type.is_union_type:
+        return ''
+
+    # Array or sequence types
+    native_array_element_type = idl_type.native_array_element_type
+    if native_array_element_type:
+        if native_array_element_type.is_interface_type:
+            add_includes_for_type(native_array_element_type)
         return 'array'
 
     # Simple types
@@ -550,7 +636,9 @@ def v8_conversion_type(idl_type, extended_attributes):
         return 'int'
     if base_idl_type in CPP_UNSIGNED_TYPES:
         return 'unsigned'
-    if base_idl_type in ('DOMString', 'ByteString', 'ScalarValueString'):
+    if idl_type.is_string_type:
+        if idl_type.is_nullable:
+            return 'StringOrNull'
         if 'TreatReturnedNullStringAs' not in extended_attributes:
             return base_idl_type
         treat_returned_null_string_as = extended_attributes['TreatReturnedNullStringAs']
@@ -558,7 +646,7 @@ def v8_conversion_type(idl_type, extended_attributes):
             return 'StringOrNull'
         if treat_returned_null_string_as == 'Undefined':
             return 'StringOrUndefined'
-        raise 'Unrecognized TreatReturnNullStringAs value: "%s"' % treat_returned_null_string_as
+        raise 'Unrecognized TreatReturnedNullStringAs value: "%s"' % treat_returned_null_string_as
     if idl_type.is_basic_type or base_idl_type == 'ScriptValue':
         return base_idl_type
 
@@ -570,7 +658,7 @@ def v8_conversion_type(idl_type, extended_attributes):
     # Pointer type
     return 'DOMWrapper'
 
-IdlType.v8_conversion_type = v8_conversion_type
+IdlTypeBase.v8_conversion_type = v8_conversion_type
 
 
 V8_SET_RETURN_VALUE = {
@@ -580,7 +668,7 @@ V8_SET_RETURN_VALUE = {
     'DOMString': 'v8SetReturnValueString(info, {cpp_value}, info.GetIsolate())',
     'ByteString': 'v8SetReturnValueString(info, {cpp_value}, info.GetIsolate())',
     'ScalarValueString': 'v8SetReturnValueString(info, {cpp_value}, info.GetIsolate())',
-    # [TreatNullReturnValueAs]
+    # [TreatReturnedNullStringAs]
     'StringOrNull': 'v8SetReturnValueStringOrNull(info, {cpp_value}, info.GetIsolate())',
     'StringOrUndefined': 'v8SetReturnValueStringOrUndefined(info, {cpp_value}, info.GetIsolate())',
     'void': '',
@@ -632,27 +720,19 @@ def v8_set_return_value(idl_type, cpp_value, extended_attributes=None, script_wr
 
 
 def v8_set_return_value_union(idl_type, cpp_value, extended_attributes=None, script_wrappable='', release=False, for_main_world=False):
-    """
-    release: can be either False (False for all member types) or
-             a sequence (list or tuple) of booleans (if specified individually).
-    """
+    # FIXME: Need to revisit the design of union support.
+    # http://crbug.com/240176
+    return None
 
-    return [
-        member_type.v8_set_return_value(cpp_value + str(i),
-                                        extended_attributes,
-                                        script_wrappable,
-                                        release and release[i],
-                                        for_main_world)
-            for i, member_type in
-            enumerate(idl_type.member_types)]
 
-IdlType.v8_set_return_value = v8_set_return_value
+IdlTypeBase.v8_set_return_value = v8_set_return_value
 IdlUnionType.v8_set_return_value = v8_set_return_value_union
 
 IdlType.release = property(lambda self: self.is_interface_type)
 IdlUnionType.release = property(
     lambda self: [member_type.is_interface_type
                   for member_type in self.member_types])
+IdlArrayOrSequenceType.release = False
 
 
 CPP_VALUE_TO_V8_VALUE = {
@@ -669,6 +749,9 @@ CPP_VALUE_TO_V8_VALUE = {
     'double': 'v8::Number::New({isolate}, {cpp_value})',
     'unrestricted double': 'v8::Number::New({isolate}, {cpp_value})',
     'void': 'v8Undefined()',
+    # [TreatReturnedNullStringAs]
+    'StringOrNull': '{cpp_value}.isNull() ? v8::Handle<v8::Value>(v8::Null({isolate})) : v8String({isolate}, {cpp_value})',
+    'StringOrUndefined': '{cpp_value}.isNull() ? v8Undefined() : v8String({isolate}, {cpp_value})',
     # Special cases
     'EventHandler': '{cpp_value} ? v8::Handle<v8::Value>(V8AbstractEventListener::cast({cpp_value})->getListenerObject(impl->executionContext())) : v8::Handle<v8::Value>(v8::Null({isolate}))',
     'ScriptValue': '{cpp_value}.v8Value()',
@@ -688,4 +771,45 @@ def cpp_value_to_v8_value(idl_type, cpp_value, isolate='info.GetIsolate()', crea
     statement = format_string.format(cpp_value=cpp_value, isolate=isolate, creation_context=creation_context)
     return statement
 
-IdlType.cpp_value_to_v8_value = cpp_value_to_v8_value
+IdlTypeBase.cpp_value_to_v8_value = cpp_value_to_v8_value
+
+
+def literal_cpp_value(idl_type, idl_literal):
+    """Converts an expression that is a valid C++ literal for this type."""
+    # FIXME: add validation that idl_type and idl_literal are compatible
+    literal_value = str(idl_literal)
+    if idl_type.base_type in CPP_UNSIGNED_TYPES:
+        return literal_value + 'u'
+    return literal_value
+
+IdlType.literal_cpp_value = literal_cpp_value
+
+
+################################################################################
+# Utility properties for nullable types
+################################################################################
+
+
+def cpp_type_has_null_value(idl_type):
+    # - String types (String/AtomicString) represent null as a null string,
+    #   i.e. one for which String::isNull() returns true.
+    # - Wrapper types (raw pointer or RefPtr/PassRefPtr) represent null as
+    #   a null pointer.
+    return idl_type.is_string_type or idl_type.is_wrapper_type
+
+IdlTypeBase.cpp_type_has_null_value = property(cpp_type_has_null_value)
+
+
+def is_implicit_nullable(idl_type):
+    # Nullable type where the corresponding C++ type supports a null value.
+    return idl_type.is_nullable and idl_type.cpp_type_has_null_value
+
+
+def is_explicit_nullable(idl_type):
+    # Nullable type that isn't implicit nullable (see above.) For such types,
+    # we use Nullable<T> or similar explicit ways to represent a null value.
+    return idl_type.is_nullable and not idl_type.is_implicit_nullable
+
+IdlTypeBase.is_implicit_nullable = property(is_implicit_nullable)
+IdlUnionType.is_implicit_nullable = False
+IdlTypeBase.is_explicit_nullable = property(is_explicit_nullable)

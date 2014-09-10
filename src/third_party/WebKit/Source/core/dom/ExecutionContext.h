@@ -32,10 +32,10 @@
 #include "core/dom/ExecutionContextClient.h"
 #include "core/dom/SandboxFlags.h"
 #include "core/dom/SecurityContext.h"
-#include "core/events/ErrorEvent.h"
 #include "core/fetch/CrossOriginAccessControl.h"
 #include "core/frame/ConsoleTypes.h"
 #include "core/frame/DOMTimer.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "platform/LifecycleContext.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
@@ -44,17 +44,12 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WTF {
-class OrdinalNumber;
-}
-
-namespace WebCore {
+namespace blink {
 
 class ContextLifecycleNotifier;
 class LocalDOMWindow;
-class EventListener;
+class ErrorEvent;
 class EventQueue;
-class EventTarget;
 class ExecutionContextTask;
 class ScriptState;
 class PublicURLManager;
@@ -62,15 +57,17 @@ class SecurityOrigin;
 class ScriptCallStack;
 
 class ExecutionContext
-    : public WillBeGarbageCollectedMixin
-    , public LifecycleContext<ExecutionContext>
-    , public Supplementable<ExecutionContext> {
+    : public LifecycleContext<ExecutionContext>
+    , public WillBeHeapSupplementable<ExecutionContext> {
 public:
-    virtual void trace(Visitor*);
+    virtual void trace(Visitor*) OVERRIDE;
 
     // Delegating to ExecutionContextClient
     bool isDocument() const { return m_client && m_client->isDocument(); }
     bool isWorkerGlobalScope() const { return m_client && m_client->isWorkerGlobalScope(); }
+    bool isDedicatedWorkerGlobalScope() const { return m_client && m_client->isDedicatedWorkerGlobalScope(); }
+    bool isSharedWorkerGlobalScope() const { return m_client && m_client->isSharedWorkerGlobalScope(); }
+    bool isServiceWorkerGlobalScope() const { return m_client && m_client->isServiceWorkerGlobalScope(); }
     bool isJSExecutionForbidden() { return m_client && m_client->isJSExecutionForbidden(); }
     SecurityOrigin* securityOrigin() const;
     ContentSecurityPolicy* contentSecurityPolicy() const;
@@ -80,7 +77,6 @@ public:
     LocalDOMWindow* executingWindow() const;
     String userAgent(const KURL&) const;
     void postTask(PassOwnPtr<ExecutionContextTask>);
-    void postTask(const Closure&);
     double timerAlignmentInterval() const;
 
     virtual void reportBlockedScriptExecutionToInspector(const String& directiveText) = 0;
@@ -92,8 +88,7 @@ public:
     bool shouldSanitizeScriptError(const String& sourceURL, AccessControlStatus);
     void reportException(PassRefPtrWillBeRawPtr<ErrorEvent>, PassRefPtrWillBeRawPtr<ScriptCallStack>, AccessControlStatus);
 
-    void addConsoleMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber);
-    void addConsoleMessage(MessageSource, MessageLevel, const String& message, ScriptState* = 0);
+    void addConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>);
 
     PublicURLManager& publicURLManager();
 
@@ -181,6 +176,6 @@ private:
     OwnPtr<ContextLifecycleNotifier> m_lifecycleNotifier;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ExecutionContext_h

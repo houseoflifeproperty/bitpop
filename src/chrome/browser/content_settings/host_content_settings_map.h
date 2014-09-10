@@ -14,24 +14,27 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
+#include "base/observer_list.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/threading/platform_thread.h"
 #include "base/tuple.h"
 #include "chrome/browser/content_settings/content_settings_observer.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_pattern.h"
-#include "chrome/common/content_settings_types.h"
+#include "components/content_settings/core/common/content_settings_types.h"
 
 class ExtensionService;
 class GURL;
 class PrefService;
 
 namespace base {
+class Clock;
 class Value;
 }
 
 namespace content_settings {
 class ProviderInterface;
+class PrefProvider;
 }
 
 namespace user_prefs {
@@ -199,6 +202,49 @@ class HostContentSettingsMap
     return is_off_the_record_;
   }
 
+  // Returns a single |ContentSetting| which applies to the given URLs, just as
+  // |GetContentSetting| does. If the setting is allowed, it also records the
+  // last usage to preferences.
+  //
+  // This should only be called on the UI thread, unlike |GetContentSetting|.
+  ContentSetting GetContentSettingAndMaybeUpdateLastUsage(
+      const GURL& primary_url,
+      const GURL& secondary_url,
+      ContentSettingsType content_type,
+      const std::string& resource_identifier);
+
+  // Sets the last time that a given content type has been used for the pattern
+  // which matches the URLs to the current time.
+  void UpdateLastUsage(const GURL& primary_url,
+                       const GURL& secondary_url,
+                       ContentSettingsType content_type);
+
+  // Sets the last time that a given content type has been used for a pattern
+  // pair to the current time.
+  void UpdateLastUsageByPattern(const ContentSettingsPattern& primary_pattern,
+                                const ContentSettingsPattern& secondary_pattern,
+                                ContentSettingsType content_type);
+
+  // Returns the last time the pattern that matches the URL has requested
+  // permission for the |content_type| setting.
+  base::Time GetLastUsage(const GURL& primary_url,
+                          const GURL& secondary_url,
+                          ContentSettingsType content_type);
+
+  // Returns the last time the pattern has requested permission for the
+  // |content_type| setting.
+  base::Time GetLastUsageByPattern(
+      const ContentSettingsPattern& primary_pattern,
+      const ContentSettingsPattern& secondary_pattern,
+      ContentSettingsType content_type);
+
+  // Adds/removes an observer for content settings changes.
+  void AddObserver(content_settings::Observer* observer);
+  void RemoveObserver(content_settings::Observer* observer);
+
+  // Passes ownership of |clock|.
+  void SetPrefClockForTesting(scoped_ptr<base::Clock> clock);
+
  private:
   friend class base::RefCountedThreadSafe<HostContentSettingsMap>;
   friend class HostContentSettingsMapTest_NonDefaultSettings_Test;
@@ -236,6 +282,8 @@ class HostContentSettingsMap
   // it is not being called too late.
   void UsedContentSettingsProviders() const;
 
+  content_settings::PrefProvider* GetPrefProvider();
+
 #ifndef NDEBUG
   // This starts as the thread ID of the thread that constructs this
   // object, and remains until used by a different thread, at which
@@ -256,6 +304,8 @@ class HostContentSettingsMap
   // time and by RegisterExtensionService, both of which should happen
   // before any other uses of it.
   ProviderMap content_settings_providers_;
+
+  ObserverList<content_settings::Observer> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(HostContentSettingsMap);
 };

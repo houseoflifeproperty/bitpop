@@ -106,7 +106,7 @@ class CHROMEOS_EXPORT FakeShillManagerClient
       const std::string& service_path) OVERRIDE;
 
   // Constants used for testing.
-  static const char kFakeEthernetNetworkPath[];
+  static const char kFakeEthernetNetworkGuid[];
 
  private:
   void SetDefaultProperties();
@@ -144,6 +144,9 @@ class CHROMEOS_EXPORT FakeShillManagerClient
 
   // Initial state for fake services.
   std::map<std::string, std::string> shill_initial_state_map_;
+  typedef std::map<std::string, base::Value*> ShillPropertyMap;
+  typedef std::map<std::string, ShillPropertyMap> DevicePropertyMap;
+  DevicePropertyMap shill_device_property_map_;
 
   ObserverList<ShillPropertyChangedObserver> observer_list_;
 

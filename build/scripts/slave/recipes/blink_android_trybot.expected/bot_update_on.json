@@ -1,6 +1,5 @@
 [
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -16,7 +15,7 @@
       "--root",
       "src",
       "--revision_mapping_file",
-      "{\"src\": \"got_revision\", \"src/native_client\": \"got_nacl_revision\", \"src/third_party/WebKit\": \"got_webkit_revision\", \"src/third_party/webrtc\": \"got_webrtc_revision\", \"src/tools/swarm_client\": \"got_swarm_client_revision\", \"src/tools/swarming_client\": \"got_swarming_client_revision\", \"src/v8\": \"got_v8_revision\"}",
+      "{\"src\": \"got_revision\", \"src/native_client\": \"got_nacl_revision\", \"src/third_party/WebKit\": \"got_webkit_revision\", \"src/third_party/webrtc\": \"got_webrtc_revision\", \"src/tools/swarming_client\": \"got_swarming_client_revision\", \"src/v8\": \"got_v8_revision\"}",
       "--issue",
       "12853011",
       "--patchset",
@@ -33,14 +32,13 @@
       "@@@STEP_TEXT@Some step text@@@",
       "@@@STEP_LOG_LINE@json.output@{@@@",
       "@@@STEP_LOG_LINE@json.output@  \"did_run\": true, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_failure\": false, @@@",
       "@@@STEP_LOG_LINE@json.output@  \"patch_root\": \"src\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"properties\": {@@@",
       "@@@STEP_LOG_LINE@json.output@    \"got_nacl_revision\": 274981, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"got_nacl_revision_git\": \"d998e125e8253980d76e269b7982aeeefc1b9b50\", @@@",
       "@@@STEP_LOG_LINE@json.output@    \"got_revision\": 170242, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"got_revision_git\": \"f27fede2220bcd326aee3e86ddfd4ebd0fe58cb9\", @@@",
-      "@@@STEP_LOG_LINE@json.output@    \"got_swarm_client_revision\": 200767, @@@",
-      "@@@STEP_LOG_LINE@json.output@    \"got_swarm_client_revision_git\": \"932d037f462c12db1f3210de8ea1b2964f363f47\", @@@",
       "@@@STEP_LOG_LINE@json.output@    \"got_swarming_client_revision\": 276089, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"got_swarming_client_revision_git\": \"a0ee5d99f1d4b38ddaa4c759c837980b63b99566\", @@@",
       "@@@STEP_LOG_LINE@json.output@    \"got_v8_revision\": 43426, @@@",
@@ -59,13 +57,11 @@
       "@@@SET_BUILD_PROPERTY@got_swarming_client_revision@276089@@@",
       "@@@SET_BUILD_PROPERTY@got_webrtc_revision@120644@@@",
       "@@@SET_BUILD_PROPERTY@got_revision@170242@@@",
-      "@@@SET_BUILD_PROPERTY@got_swarm_client_revision_git@\"932d037f462c12db1f3210de8ea1b2964f363f47\"@@@",
       "@@@SET_BUILD_PROPERTY@got_v8_revision@43426@@@",
       "@@@SET_BUILD_PROPERTY@got_nacl_revision_git@\"d998e125e8253980d76e269b7982aeeefc1b9b50\"@@@",
       "@@@SET_BUILD_PROPERTY@got_webkit_revision_git@\"5e2293dffc3cd07d37fbedea3b500f0eb650614d\"@@@",
-      "@@@SET_BUILD_PROPERTY@got_webrtc_revision_git@\"0f90628433546e61d9268596da93418c623137f4\"@@@",
       "@@@SET_BUILD_PROPERTY@got_v8_revision_git@\"801ada225ddc271c132c3a35f03975671d43e399\"@@@",
-      "@@@SET_BUILD_PROPERTY@got_swarm_client_revision@200767@@@",
+      "@@@SET_BUILD_PROPERTY@got_webrtc_revision_git@\"0f90628433546e61d9268596da93418c623137f4\"@@@",
       "@@@SET_BUILD_PROPERTY@got_swarming_client_revision_git@\"a0ee5d99f1d4b38ddaa4c759c837980b63b99566\"@@@",
       "@@@SET_BUILD_PROPERTY@got_revision_git@\"f27fede2220bcd326aee3e86ddfd4ebd0fe58cb9\"@@@"
     ]
@@ -84,8 +80,6 @@
     "name": "gclient runhooks"
   },
   {
-    "abort_on_failure": false,
-    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -131,7 +125,6 @@
     ]
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -147,7 +140,7 @@
       "--root",
       "src",
       "--revision_mapping_file",
-      "{\"src\": \"got_revision\", \"src/native_client\": \"got_nacl_revision\", \"src/third_party/WebKit\": \"got_webkit_revision\", \"src/third_party/webrtc\": \"got_webrtc_revision\", \"src/tools/swarm_client\": \"got_swarm_client_revision\", \"src/tools/swarming_client\": \"got_swarming_client_revision\", \"src/v8\": \"got_v8_revision\"}",
+      "{\"src\": \"got_revision\", \"src/native_client\": \"got_nacl_revision\", \"src/third_party/WebKit\": \"got_webkit_revision\", \"src/third_party/webrtc\": \"got_webrtc_revision\", \"src/tools/swarming_client\": \"got_swarming_client_revision\", \"src/v8\": \"got_v8_revision\"}",
       "--issue",
       "12853011",
       "--patchset",
@@ -164,14 +157,13 @@
       "@@@STEP_TEXT@Some step text@@@",
       "@@@STEP_LOG_LINE@json.output@{@@@",
       "@@@STEP_LOG_LINE@json.output@  \"did_run\": true, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_failure\": false, @@@",
       "@@@STEP_LOG_LINE@json.output@  \"patch_root\": \"src\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"properties\": {@@@",
       "@@@STEP_LOG_LINE@json.output@    \"got_nacl_revision\": 274981, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"got_nacl_revision_git\": \"d998e125e8253980d76e269b7982aeeefc1b9b50\", @@@",
       "@@@STEP_LOG_LINE@json.output@    \"got_revision\": 170242, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"got_revision_git\": \"f27fede2220bcd326aee3e86ddfd4ebd0fe58cb9\", @@@",
-      "@@@STEP_LOG_LINE@json.output@    \"got_swarm_client_revision\": 200767, @@@",
-      "@@@STEP_LOG_LINE@json.output@    \"got_swarm_client_revision_git\": \"932d037f462c12db1f3210de8ea1b2964f363f47\", @@@",
       "@@@STEP_LOG_LINE@json.output@    \"got_swarming_client_revision\": 276089, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"got_swarming_client_revision_git\": \"a0ee5d99f1d4b38ddaa4c759c837980b63b99566\", @@@",
       "@@@STEP_LOG_LINE@json.output@    \"got_v8_revision\": 43426, @@@",
@@ -190,13 +182,11 @@
       "@@@SET_BUILD_PROPERTY@got_swarming_client_revision@276089@@@",
       "@@@SET_BUILD_PROPERTY@got_webrtc_revision@120644@@@",
       "@@@SET_BUILD_PROPERTY@got_revision@170242@@@",
-      "@@@SET_BUILD_PROPERTY@got_swarm_client_revision_git@\"932d037f462c12db1f3210de8ea1b2964f363f47\"@@@",
       "@@@SET_BUILD_PROPERTY@got_v8_revision@43426@@@",
       "@@@SET_BUILD_PROPERTY@got_nacl_revision_git@\"d998e125e8253980d76e269b7982aeeefc1b9b50\"@@@",
       "@@@SET_BUILD_PROPERTY@got_webkit_revision_git@\"5e2293dffc3cd07d37fbedea3b500f0eb650614d\"@@@",
-      "@@@SET_BUILD_PROPERTY@got_webrtc_revision_git@\"0f90628433546e61d9268596da93418c623137f4\"@@@",
       "@@@SET_BUILD_PROPERTY@got_v8_revision_git@\"801ada225ddc271c132c3a35f03975671d43e399\"@@@",
-      "@@@SET_BUILD_PROPERTY@got_swarm_client_revision@200767@@@",
+      "@@@SET_BUILD_PROPERTY@got_webrtc_revision_git@\"0f90628433546e61d9268596da93418c623137f4\"@@@",
       "@@@SET_BUILD_PROPERTY@got_swarming_client_revision_git@\"a0ee5d99f1d4b38ddaa4c759c837980b63b99566\"@@@",
       "@@@SET_BUILD_PROPERTY@got_revision_git@\"f27fede2220bcd326aee3e86ddfd4ebd0fe58cb9\"@@@"
     ]
@@ -215,7 +205,6 @@
     "name": "gclient runhooks (2)"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",

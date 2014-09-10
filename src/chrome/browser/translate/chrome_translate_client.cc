@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_split.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -20,8 +21,10 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/translate/translate_bubble_factory.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "components/infobars/core/infobar.h"
+#include "components/translate/content/common/cld_data_source.h"
 #include "components/translate/content/common/translate_messages.h"
 #include "components/translate/core/browser/language_state.h"
 #include "components/translate/core/browser/page_translated_details.h"
@@ -40,73 +43,79 @@
 #include "net/http/http_status_code.h"
 #include "url/gurl.h"
 
-#if defined(CLD2_DYNAMIC_MODE)
-#include "base/files/file.h"
-#include "base/path_service.h"
-#include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_paths.h"
-#include "content/public/browser/browser_thread.h"
-#include "content/public/browser/render_process_host.h"
-#endif
-
-#if defined(CLD2_IS_COMPONENT)
-#include "chrome/browser/component_updater/cld_component_installer.h"
-#endif
-
 namespace {
 
 // The maximum number of attempts we'll do to see if the page has finshed
 // loading before giving up the translation
 const int kMaxTranslateLoadCheckAttempts = 20;
 
+// TODO(andrewhayden): Make the data file path into a gyp/gn define
+// If you change this, also update standalone_cld_data_harness.cc
+// accordingly!
+const base::FilePath::CharType kCldDataFileName[] =
+    FILE_PATH_LITERAL("cld2_data.bin");
+
+bool g_cld_file_path_initialized_ = false;
+
 }  // namespace
 
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(ChromeTranslateClient);
-
-#if defined(CLD2_DYNAMIC_MODE)
-// Statics defined in the .h file:
-base::File* ChromeTranslateClient::s_cached_file_ = NULL;
-uint64 ChromeTranslateClient::s_cached_data_offset_ = 0;
-uint64 ChromeTranslateClient::s_cached_data_length_ = 0;
-base::LazyInstance<base::Lock> ChromeTranslateClient::s_file_lock_ =
-    LAZY_INSTANCE_INITIALIZER;
-#endif
 
 ChromeTranslateClient::ChromeTranslateClient(content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
       max_reload_check_attempts_(kMaxTranslateLoadCheckAttempts),
       translate_driver_(&web_contents->GetController()),
-      translate_manager_(new TranslateManager(this, prefs::kAcceptLanguages)),
+      translate_manager_(
+          new translate::TranslateManager(this, prefs::kAcceptLanguages)),
+      cld_data_provider_(
+          translate::CreateBrowserCldDataProviderFor(web_contents)),
       weak_pointer_factory_(this) {
+  // Customization: for the standalone data source, we configure the path to
+  // CLD data immediately on startup.
+  if (translate::CldDataSource::ShouldUseStandaloneDataFile() &&
+      !g_cld_file_path_initialized_) {
+    VLOG(1) << "Initializing CLD file path for the first time.";
+    base::FilePath path;
+    if (!PathService::Get(chrome::DIR_USER_DATA, &path)) {
+      // Chrome isn't properly installed
+      LOG(WARNING) << "Unable to locate user data directory";
+    } else {
+      g_cld_file_path_initialized_ = true;
+      path = path.Append(kCldDataFileName);
+      VLOG(1) << "Setting CLD data file path: " << path.value();
+      translate::SetCldDataFilePath(path);
+    }
+  }
 }
 
 ChromeTranslateClient::~ChromeTranslateClient() {
 }
 
-LanguageState& ChromeTranslateClient::GetLanguageState() {
+translate::LanguageState& ChromeTranslateClient::GetLanguageState() {
   return translate_manager_->GetLanguageState();
 }
 
 // static
-scoped_ptr<TranslatePrefs> ChromeTranslateClient::CreateTranslatePrefs(
-    PrefService* prefs) {
+scoped_ptr<translate::TranslatePrefs>
+ChromeTranslateClient::CreateTranslatePrefs(PrefService* prefs) {
 #if defined(OS_CHROMEOS)
   const char* preferred_languages_prefs = prefs::kLanguagePreferredLanguages;
 #else
   const char* preferred_languages_prefs = NULL;
 #endif
-  return scoped_ptr<TranslatePrefs>(new TranslatePrefs(
+  return scoped_ptr<translate::TranslatePrefs>(new translate::TranslatePrefs(
       prefs, prefs::kAcceptLanguages, preferred_languages_prefs));
 }
 
 // static
-TranslateAcceptLanguages* ChromeTranslateClient::GetTranslateAcceptLanguages(
+translate::TranslateAcceptLanguages*
+ChromeTranslateClient::GetTranslateAcceptLanguages(
     content::BrowserContext* browser_context) {
   return TranslateAcceptLanguagesFactory::GetForBrowserContext(browser_context);
 }
 
 // static
-TranslateManager* ChromeTranslateClient::GetManagerFromWebContents(
+translate::TranslateManager* ChromeTranslateClient::GetManagerFromWebContents(
     content::WebContents* web_contents) {
   ChromeTranslateClient* chrome_translate_client =
       FromWebContents(web_contents);
@@ -128,17 +137,19 @@ void ChromeTranslateClient::GetTranslateLanguages(
   if (!chrome_translate_client)
     return;
 
-  *source = TranslateDownloadManager::GetLanguageCode(
+  *source = translate::TranslateDownloadManager::GetLanguageCode(
       chrome_translate_client->GetLanguageState().original_language());
 
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
   Profile* original_profile = profile->GetOriginalProfile();
   PrefService* prefs = original_profile->GetPrefs();
-  scoped_ptr<TranslatePrefs> translate_prefs = CreateTranslatePrefs(prefs);
+  scoped_ptr<translate::TranslatePrefs> translate_prefs =
+      CreateTranslatePrefs(prefs);
   if (!web_contents->GetBrowserContext()->IsOffTheRecord()) {
     std::string auto_translate_language =
-        TranslateManager::GetAutoTargetLanguage(*source, translate_prefs.get());
+        translate::TranslateManager::GetAutoTargetLanguage(
+            *source, translate_prefs.get());
     if (!auto_translate_language.empty()) {
       *target = auto_translate_language;
       return;
@@ -148,10 +159,11 @@ void ChromeTranslateClient::GetTranslateLanguages(
   std::string accept_languages_str = prefs->GetString(prefs::kAcceptLanguages);
   std::vector<std::string> accept_languages_list;
   base::SplitString(accept_languages_str, ',', &accept_languages_list);
-  *target = TranslateManager::GetTargetLanguage(accept_languages_list);
+  *target =
+      translate::TranslateManager::GetTargetLanguage(accept_languages_list);
 }
 
-TranslateManager* ChromeTranslateClient::GetTranslateManager() {
+translate::TranslateManager* ChromeTranslateClient::GetTranslateManager() {
   return translate_manager_.get();
 }
 
@@ -159,13 +171,14 @@ content::WebContents* ChromeTranslateClient::GetWebContents() {
   return web_contents();
 }
 
-void ChromeTranslateClient::ShowTranslateUI(translate::TranslateStep step,
-                                            const std::string source_language,
-                                            const std::string target_language,
-                                            TranslateErrors::Type error_type,
-                                            bool triggered_from_menu) {
+void ChromeTranslateClient::ShowTranslateUI(
+    translate::TranslateStep step,
+    const std::string source_language,
+    const std::string target_language,
+    translate::TranslateErrors::Type error_type,
+    bool triggered_from_menu) {
   DCHECK(web_contents());
-  if (error_type != TranslateErrors::NONE)
+  if (error_type != translate::TranslateErrors::NONE)
     step = translate::TRANSLATE_STEP_TRANSLATE_ERROR;
 
   if (TranslateService::IsTranslateBubbleEnabled()) {
@@ -175,13 +188,20 @@ void ChromeTranslateClient::ShowTranslateUI(translate::TranslateStep step,
       GetLanguageState().SetTranslateEnabled(true);
       if (!GetLanguageState().HasLanguageChanged())
         return;
+
+      if (!triggered_from_menu) {
+        if (web_contents()->GetBrowserContext()->IsOffTheRecord())
+          return;
+        if (GetTranslatePrefs()->IsTooOftenDenied())
+          return;
+      }
     }
     ShowBubble(step, error_type);
     return;
   }
 
   // Infobar UI.
-  TranslateInfoBarDelegate::Create(
+  translate::TranslateInfoBarDelegate::Create(
       step != translate::TRANSLATE_STEP_BEFORE_TRANSLATE,
       translate_manager_->GetWeakPtr(),
       InfoBarService::FromWebContents(web_contents()),
@@ -193,7 +213,7 @@ void ChromeTranslateClient::ShowTranslateUI(translate::TranslateStep step,
       triggered_from_menu);
 }
 
-TranslateDriver* ChromeTranslateClient::GetTranslateDriver() {
+translate::TranslateDriver* ChromeTranslateClient::GetTranslateDriver() {
   return &translate_driver_;
 }
 
@@ -204,14 +224,16 @@ PrefService* ChromeTranslateClient::GetPrefs() {
   return profile->GetOriginalProfile()->GetPrefs();
 }
 
-scoped_ptr<TranslatePrefs> ChromeTranslateClient::GetTranslatePrefs() {
+scoped_ptr<translate::TranslatePrefs>
+ChromeTranslateClient::GetTranslatePrefs() {
   DCHECK(web_contents());
   Profile* profile =
       Profile::FromBrowserContext(web_contents()->GetBrowserContext());
   return CreateTranslatePrefs(profile->GetPrefs());
 }
 
-TranslateAcceptLanguages* ChromeTranslateClient::GetTranslateAcceptLanguages() {
+translate::TranslateAcceptLanguages*
+ChromeTranslateClient::GetTranslateAcceptLanguages() {
   DCHECK(web_contents());
   return GetTranslateAcceptLanguages(web_contents()->GetBrowserContext());
 }
@@ -221,10 +243,11 @@ int ChromeTranslateClient::GetInfobarIconID() const {
 }
 
 // ChromeTranslateClient::CreateInfoBar() is implemented in platform-specific
-// files, except the TOOLKIT_VIEWS implementation, which has been removed.
-#if defined(TOOLKIT_VIEWS)
+// files, except the TOOLKIT_VIEWS implementation, which has been removed. Note
+// for Mac, Cocoa is still providing the infobar in a toolkit-views build.
+#if defined(TOOLKIT_VIEWS) && !defined(OS_MACOSX)
 scoped_ptr<infobars::InfoBar> ChromeTranslateClient::CreateInfoBar(
-    scoped_ptr<TranslateInfoBarDelegate> delegate) const {
+    scoped_ptr<translate::TranslateInfoBarDelegate> delegate) const {
   return scoped_ptr<infobars::InfoBar>();
 }
 #endif
@@ -254,15 +277,17 @@ void ChromeTranslateClient::ShowReportLanguageDetectionErrorUI(
 bool ChromeTranslateClient::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ChromeTranslateClient, message)
+  IPC_MESSAGE_HANDLER(ChromeViewHostMsg_TranslateAssignedSequenceNumber,
+                      OnTranslateAssignedSequenceNumber)
   IPC_MESSAGE_HANDLER(ChromeViewHostMsg_TranslateLanguageDetermined,
                       OnLanguageDetermined)
   IPC_MESSAGE_HANDLER(ChromeViewHostMsg_PageTranslated, OnPageTranslated)
-#if defined(CLD2_DYNAMIC_MODE)
-  IPC_MESSAGE_HANDLER(ChromeViewHostMsg_NeedCLDData, OnCLDDataRequested)
-#endif
   IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
+  if (!handled) {
+    handled = cld_data_provider_->OnMessageReceived(message);
+  }
   return handled;
 }
 
@@ -333,141 +358,6 @@ void ChromeTranslateClient::WebContentsDestroyed() {
   translate_manager_.reset();
 }
 
-#if defined(CLD2_DYNAMIC_MODE)
-void ChromeTranslateClient::OnCLDDataRequested() {
-  // Quickly try to read s_cached_file_. If valid, the file handle is
-  // cached and can be used immediately. Else, queue the caching task to the
-  // blocking pool.
-  base::File* handle = NULL;
-  uint64 data_offset = 0;
-  uint64 data_length = 0;
-  {
-    base::AutoLock lock(s_file_lock_.Get());
-    handle = s_cached_file_;
-    data_offset = s_cached_data_offset_;
-    data_length = s_cached_data_length_;
-  }
-
-  if (handle && handle->IsValid()) {
-    // Cached data available. Respond to the request.
-    SendCLDDataAvailable(handle, data_offset, data_length);
-    return;
-  }
-
-  // Else, we don't have the data file yet. Queue a caching attempt.
-  // The caching attempt happens in the blocking pool because it may involve
-  // arbitrary filesystem access.
-  // After the caching attempt is made, we call MaybeSendCLDDataAvailable
-  // to pass the file handle to the renderer. This only results in an IPC
-  // message if the caching attempt was successful.
-  content::BrowserThread::PostBlockingPoolTaskAndReply(
-      FROM_HERE,
-      base::Bind(&ChromeTranslateClient::HandleCLDDataRequest),
-      base::Bind(&ChromeTranslateClient::MaybeSendCLDDataAvailable,
-                 weak_pointer_factory_.GetWeakPtr()));
-}
-
-void ChromeTranslateClient::MaybeSendCLDDataAvailable() {
-  base::File* handle = NULL;
-  uint64 data_offset = 0;
-  uint64 data_length = 0;
-  {
-    base::AutoLock lock(s_file_lock_.Get());
-    handle = s_cached_file_;
-    data_offset = s_cached_data_offset_;
-    data_length = s_cached_data_length_;
-  }
-
-  if (handle && handle->IsValid())
-    SendCLDDataAvailable(handle, data_offset, data_length);
-}
-
-void ChromeTranslateClient::SendCLDDataAvailable(const base::File* handle,
-                                                 const uint64 data_offset,
-                                                 const uint64 data_length) {
-  // Data available, respond to the request.
-  IPC::PlatformFileForTransit ipc_platform_file = IPC::GetFileHandleForProcess(
-      handle->GetPlatformFile(),
-      GetWebContents()->GetRenderViewHost()->GetProcess()->GetHandle(),
-      false);
-  // In general, sending a response from within the code path that is processing
-  // a request is discouraged because there is potential for deadlock (if the
-  // methods are sent synchronously) or loops (if the response can trigger a
-  // new request). Neither of these concerns is relevant in this code, so
-  // sending the response from within the code path of the request handler is
-  // safe.
-  Send(new ChromeViewMsg_CLDDataAvailable(
-      GetWebContents()->GetRenderViewHost()->GetRoutingID(),
-      ipc_platform_file,
-      data_offset,
-      data_length));
-}
-
-void ChromeTranslateClient::HandleCLDDataRequest() {
-  // Because this function involves arbitrary file system access, it must run
-  // on the blocking pool.
-  DCHECK(!content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
-  DCHECK(!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-
-  {
-    base::AutoLock lock(s_file_lock_.Get());
-    if (s_cached_file_)
-      return;  // Already done, duplicate request
-  }
-
-#if defined(CLD2_IS_COMPONENT)
-  base::FilePath path = component_updater::GetLatestCldDataFile();
-  if (path.empty())
-    return;
-#else  // CLD2 data is at a well-known file path
-  base::FilePath path;
-  if (!PathService::Get(chrome::DIR_USER_DATA, &path)) {
-    LOG(WARNING) << "Unable to locate user data directory";
-    return;  // Chrome isn't properly installed.
-  }
-  path = path.Append(chrome::kCLDDataFilename);
-#endif
-
-  // If the file exists, we can send an IPC-safe construct back to the
-  // renderer process immediately; otherwise, nothing to do here.
-  if (!base::PathExists(path))
-    return;
-
-  // Attempt to open the file for reading.
-  scoped_ptr<base::File> file(
-      new base::File(path, base::File::FLAG_OPEN | base::File::FLAG_READ));
-  if (!file->IsValid()) {
-    LOG(WARNING) << "CLD data file exists but cannot be opened";
-    return;
-  }
-
-  base::File::Info file_info;
-  if (!file->GetInfo(&file_info)) {
-    LOG(WARNING) << "CLD data file exists but cannot be inspected";
-    return;
-  }
-
-  // For now, our offset and length are simply 0 and the length of the file,
-  // respectively. If we later decide to include the CLD2 data file inside of
-  // a larger binary context, these params can be twiddled appropriately.
-  const uint64 data_offset = 0;
-  const uint64 data_length = file_info.size;
-
-  {
-    base::AutoLock lock(s_file_lock_.Get());
-    if (s_cached_file_) {
-      // Idempotence: Racing another request on the blocking pool, abort.
-    } else {
-      // Else, this request has taken care of it all. Cache all info.
-      s_cached_file_ = file.release();
-      s_cached_data_offset_ = data_offset;
-      s_cached_data_length_ = data_length;
-    }
-  }
-}
-
-#endif  // defined(CLD2_DYNAMIC_MODE)
-
 void ChromeTranslateClient::InitiateTranslation(const std::string& page_lang,
                                                 int attempt) {
   if (GetLanguageState().translation_pending())
@@ -484,17 +374,21 @@ void ChromeTranslateClient::InitiateTranslation(const std::string& page_lang,
         base::Bind(&ChromeTranslateClient::InitiateTranslation,
                    weak_pointer_factory_.GetWeakPtr(),
                    page_lang,
-                   ++attempt),
+                   attempt + 1),
         base::TimeDelta::FromMilliseconds(backoff));
     return;
   }
 
   translate_manager_->InitiateTranslation(
-      TranslateDownloadManager::GetLanguageCode(page_lang));
+      translate::TranslateDownloadManager::GetLanguageCode(page_lang));
+}
+
+void ChromeTranslateClient::OnTranslateAssignedSequenceNumber(int page_seq_no) {
+  translate_manager_->set_current_seq_no(page_seq_no);
 }
 
 void ChromeTranslateClient::OnLanguageDetermined(
-    const LanguageDetectionDetails& details,
+    const translate::LanguageDetectionDetails& details,
     bool page_needs_translation) {
   GetLanguageState().LanguageDetermined(details.adopted_language,
                                         page_needs_translation);
@@ -505,29 +399,30 @@ void ChromeTranslateClient::OnLanguageDetermined(
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED,
       content::Source<content::WebContents>(web_contents()),
-      content::Details<const LanguageDetectionDetails>(&details));
+      content::Details<const translate::LanguageDetectionDetails>(&details));
 }
 
-void ChromeTranslateClient::OnPageTranslated(int32 page_id,
-                                             const std::string& original_lang,
-                                             const std::string& translated_lang,
-                                             TranslateErrors::Type error_type) {
+void ChromeTranslateClient::OnPageTranslated(
+    const std::string& original_lang,
+    const std::string& translated_lang,
+    translate::TranslateErrors::Type error_type) {
   DCHECK(web_contents());
   translate_manager_->PageTranslated(
       original_lang, translated_lang, error_type);
 
-  PageTranslatedDetails details;
+  translate::PageTranslatedDetails details;
   details.source_language = original_lang;
   details.target_language = translated_lang;
   details.error_type = error_type;
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_PAGE_TRANSLATED,
       content::Source<content::WebContents>(web_contents()),
-      content::Details<PageTranslatedDetails>(&details));
+      content::Details<translate::PageTranslatedDetails>(&details));
 }
 
-void ChromeTranslateClient::ShowBubble(translate::TranslateStep step,
-                                       TranslateErrors::Type error_type) {
+void ChromeTranslateClient::ShowBubble(
+    translate::TranslateStep step,
+    translate::TranslateErrors::Type error_type) {
 // The bubble is implemented only on the desktop platforms.
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
   Browser* browser = chrome::FindBrowserWithWebContents(web_contents());

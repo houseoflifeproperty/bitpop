@@ -13,20 +13,20 @@ class AdbApi(recipe_api.RecipeApi):
     return str(self.m.path['build_internal'].join('scripts', 'slave',
                                                   'android', 'adb'))
 
-  def list_devices(self):
+  def list_devices(self, **kwargs):
     cmd = [
         self._adb_path(),
         'devices',
     ]
 
-    yield self.m.python(
+    result = self.m.python(
         'List adb devices',
         self.resource('list_devices.py'),
         args=[ repr(cmd), self.m.json.output() ],
-        step_test_data=self.test_api.device_list)
+        step_test_data=self.test_api.device_list,
+        **kwargs)
 
-    step = self.m.step_history.last_step()
-    self._devices = step.json.output
+    self._devices = result.json.output
 
   @property
   def devices(self):
@@ -34,9 +34,9 @@ class AdbApi(recipe_api.RecipeApi):
         "devices is only available after yielding list_devices()")
     return self._devices
 
-  def root_devices(self):
-    yield self.list_devices()
-    yield self.m.python.inline(
+  def root_devices(self, **kwargs):
+    self.list_devices(**kwargs)
+    self.m.python.inline(
         'Root devices',
         """
         import subprocess
@@ -46,4 +46,5 @@ class AdbApi(recipe_api.RecipeApi):
           subprocess.check_call([adb_path, '-s', device, 'root'])
           subprocess.check_call([adb_path, '-s', device, 'wait-for-device'])
         """,
-        args=[self._adb_path()] + self.devices)
+        args=[self._adb_path()] + self.devices,
+        **kwargs)

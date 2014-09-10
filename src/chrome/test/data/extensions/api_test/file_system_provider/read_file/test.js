@@ -5,33 +5,11 @@
 'use strict';
 
 /**
- * @type {DOMFileSystem}
- */
-var fileSystem = null;
-
-/**
  * Map of opened files, from a <code>openRequestId</code> to <code>filePath
  * </code>.
  * @type {Object.<number, string>}
  */
 var openedFiles = {};
-
-/**
- * @type {string}
- * @const
- */
-var FILE_SYSTEM_ID = 'chocolate-id';
-
-/**
- * @type {Object}
- * @const
- */
-var TESTING_ROOT = Object.freeze({
-  isDirectory: true,
-  name: '',
-  size: 0,
-  modificationTime: new Date(2014, 4, 28, 10, 39, 15)
-});
 
 /**
  * Testing contents for files.
@@ -65,103 +43,6 @@ var TESTING_BROKEN_TIRAMISU_FILE = Object.freeze({
 });
 
 /**
- * Gets volume information for the provided file system.
- *
- * @param {string} fileSystemId Id of the provided file system.
- * @param {function(Object)} callback Callback to be called on result, with the
- *     volume information object in case of success, or null if not found.
- */
-function getVolumeInfo(fileSystemId, callback) {
-  chrome.fileBrowserPrivate.getVolumeMetadataList(function(volumeList) {
-    for (var i = 0; i < volumeList.length; i++) {
-      if (volumeList[i].extensionId == chrome.runtime.id &&
-          volumeList[i].fileSystemId == fileSystemId) {
-        callback(volumeList[i]);
-        return;
-      }
-    }
-    callback(null);
-  });
-}
-
-/**
- * Returns metadata for the requested entry.
- *
- * To successfully acquire a DirectoryEntry, or even a DOMFileSystem, this event
- * must be implemented and return correct values.
- *
- * @param {GetMetadataRequestedOptions} options Options.
- * @param {function(Object)} onSuccess Success callback with metadata passed
- *     an argument.
- * @param {function(string)} onError Error callback with an error code.
- */
-function onGetMetadataRequested(options, onSuccess, onError) {
-  if (options.fileSystemId != FILE_SYSTEM_ID) {
-    onError('SECURITY');  // enum ProviderError.
-    return;
-  }
-
-  if (options.entryPath == '/') {
-    onSuccess(TESTING_ROOT);
-    return;
-  }
-
-  if (options.entryPath == '/' + TESTING_TIRAMISU_FILE.name) {
-    onSuccess(TESTING_TIRAMISU_FILE);
-    return;
-  }
-
-  if (options.entryPath == '/' + TESTING_BROKEN_TIRAMISU_FILE.name) {
-    onSuccess(TESTING_BROKEN_TIRAMISU_FILE);
-    return;
-  }
-
-  onError('NOT_FOUND');  // enum ProviderError.
-}
-
-/**
- * Requests opening a file at <code>filePath</code>. Further file operations
- * will be associated with the <code>requestId</code>
- *
- * @param {OpenFileRequestedOptions} options Options.
- * @param {function()} onSuccess Success callback.
- * @param {function(string)} onError Error callback.
- */
-function onOpenFileRequested(options, onSuccess, onError) {
-  if (options.fileSystemId != FILE_SYSTEM_ID || options.mode != 'READ' ||
-      options.create) {
-    onError('SECURITY');  // enum ProviderError.
-    return;
-  }
-
-  if (options.filePath == '/' + TESTING_TIRAMISU_FILE.name ||
-      options.filePath == '/' + TESTING_BROKEN_TIRAMISU_FILE.name) {
-    openedFiles[options.requestId] = options.filePath;
-    onSuccess();
-  } else {
-    onError('NOT_FOUND');  // enum ProviderError.
-  }
-}
-
-/**
- * Requests closing a file previously opened with <code>openRequestId</code>.
- *
- * @param {CloseFileRequestedOptions} options Options.
- * @param {function()} onSuccess Success callback.
- * @param {function(string)} onError Error callback.
- */
-function onCloseFileRequested(options, onSuccess, onError) {
-  if (options.fileSystemId != FILE_SYSTEM_ID ||
-      !openedFiles[options.openRequestId]) {
-    onError('SECURITY');  // enum ProviderError.
-    return;
-  }
-
-  delete openedFiles[options.openRequestId];
-  onSuccess();
-}
-
-/**
  * Requests reading contents of a file, previously opened with <code>
  * openRequestId</code>.
  *
@@ -171,8 +52,8 @@ function onCloseFileRequested(options, onSuccess, onError) {
  * @param {function(string)} onError Error callback.
  */
 function onReadFileRequested(options, onSuccess, onError) {
-  var filePath = openedFiles[options.openRequestId];
-  if (options.fileSystemId != FILE_SYSTEM_ID || !filePath) {
+  var filePath = test_util.openedFiles[options.openRequestId];
+  if (options.fileSystemId != test_util.FILE_SYSTEM_ID || !filePath) {
     onError('SECURITY');  // enum ProviderError.
     return;
   }
@@ -211,33 +92,22 @@ function onReadFileRequested(options, onSuccess, onError) {
  * @param {function()} callback Success callback.
  */
 function setUp(callback) {
-  chrome.fileSystemProvider.mount(
-      {fileSystemId: FILE_SYSTEM_ID, displayName: 'chocolate.zip'},
-      function() {
-        chrome.fileSystemProvider.onGetMetadataRequested.addListener(
-            onGetMetadataRequested);
-        chrome.fileSystemProvider.onOpenFileRequested.addListener(
-            onOpenFileRequested);
-        chrome.fileSystemProvider.onReadFileRequested.addListener(
-            onReadFileRequested);
-        var volumeId =
-            'provided:' + chrome.runtime.id + '-' + FILE_SYSTEM_ID + '-user';
+  chrome.fileSystemProvider.onGetMetadataRequested.addListener(
+      test_util.onGetMetadataRequestedDefault);
+  chrome.fileSystemProvider.onOpenFileRequested.addListener(
+      test_util.onOpenFileRequested);
+  chrome.fileSystemProvider.onCloseFileRequested.addListener(
+      test_util.onCloseFileRequested);
 
-        getVolumeInfo(FILE_SYSTEM_ID, function(volumeInfo) {
-          chrome.test.assertTrue(!!volumeInfo);
-          chrome.fileBrowserPrivate.requestFileSystem(
-              volumeInfo.volumeId,
-              function(inFileSystem) {
-                chrome.test.assertTrue(!!inFileSystem);
+  test_util.defaultMetadata['/' + TESTING_TIRAMISU_FILE.name] =
+      TESTING_TIRAMISU_FILE;
+  test_util.defaultMetadata['/' + TESTING_BROKEN_TIRAMISU_FILE.name] =
+      TESTING_BROKEN_TIRAMISU_FILE;
 
-                fileSystem = inFileSystem;
-                callback();
-              });
-        });
-      },
-      function() {
-        chrome.test.fail();
-      });
+  chrome.fileSystemProvider.onReadFileRequested.addListener(
+      onReadFileRequested);
+
+  test_util.mountFileSystem(callback);
 }
 
 /**
@@ -249,7 +119,7 @@ function runTests() {
     // succeed.
     function readFileSuccess() {
       var onTestSuccess = chrome.test.callbackPass();
-      fileSystem.root.getFile(
+      test_util.fileSystem.root.getFile(
           TESTING_TIRAMISU_FILE.name,
           {create: false},
           function(fileEntry) {
@@ -277,7 +147,7 @@ function runTests() {
     // result in an error.
     function readEntriesError() {
       var onTestSuccess = chrome.test.callbackPass();
-      fileSystem.root.getFile(
+      test_util.fileSystem.root.getFile(
           TESTING_BROKEN_TIRAMISU_FILE.name,
           {create: false},
           function(fileEntry) {

@@ -24,7 +24,7 @@
 #include "core/rendering/svg/RenderSVGInlineText.h"
 #include "core/rendering/svg/SVGTextRunRenderingContext.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGTextMetrics::SVGTextMetrics()
     : m_width(0)
@@ -88,8 +88,6 @@ TextRun SVGTextMetrics::constructTextRun(RenderSVGInlineText* text, unsigned pos
 
     if (textRunNeedsRenderingContext(style->font()))
         run.setRenderingContext(SVGTextRunRenderingContext::create(text));
-
-    run.disableRoundingHacks();
 
     // We handle letter & word spacing ourselves.
     run.disableSpacing();

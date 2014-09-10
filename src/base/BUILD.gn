@@ -2,8 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/android/rules.gni")
 import("//build/config/ui.gni")
+
+if (is_android) {
+  import("//build/config/android/rules.gni")
+}
 
 component("base") {
   sources = [
@@ -30,6 +33,8 @@ component("base") {
     "android/cpu_features.cc",
     "android/event_log.cc",
     "android/event_log.h",
+    "android/field_trial_list.cc",
+    "android/field_trial_list.h",
     "android/fifo_utils.cc",
     "android/fifo_utils.h",
     "android/important_file_writer_android.cc",
@@ -75,6 +80,7 @@ component("base") {
     "atomicops_internals_x86_gcc.cc",
     "atomicops_internals_x86_gcc.h",
     "atomicops_internals_x86_msvc.h",
+    "auto_reset.h",
     "barrier_closure.cc",
     "barrier_closure.h",
     "base_export.h",
@@ -128,6 +134,10 @@ component("base") {
     "debug/debugger.h",
     "debug/debugger_posix.cc",
     "debug/debugger_win.cc",
+    "debug/dump_without_crashing.cc",
+    "debug/dump_without_crashing.h",
+    "debug/gdi_debug_util_win.cc",
+    "debug/gdi_debug_util_win.h",
     # This file depends on files from the "allocator" target,
     # but this target does not depend on "allocator" (see
     # allocator.gyp for details).
@@ -142,8 +152,12 @@ component("base") {
     "debug/stack_trace_android.cc",
     "debug/stack_trace_posix.cc",
     "debug/stack_trace_win.cc",
+    "debug/task_annotator.cc",
+    "debug/task_annotator.h",
     "debug/trace_event.h",
     "debug/trace_event_android.cc",
+    "debug/trace_event_argument.cc",
+    "debug/trace_event_argument.h",
     "debug/trace_event_impl.cc",
     "debug/trace_event_impl.h",
     "debug/trace_event_impl_constants.cc",
@@ -158,14 +172,10 @@ component("base") {
     "deferred_sequenced_task_runner.h",
     "environment.cc",
     "environment.h",
+    "event_recorder.h",
+    "event_recorder_stubs.cc",
+    "event_recorder_win.cc",
     "file_descriptor_posix.h",
-    "file_util.cc",
-    "file_util.h",
-    "file_util_android.cc",
-    "file_util_linux.cc",
-    "file_util_mac.mm",
-    "file_util_posix.cc",
-    "file_util_win.cc",
     "file_version_info.h",
     "file_version_info_mac.h",
     "file_version_info_mac.mm",
@@ -195,8 +205,15 @@ component("base") {
     "files/file_path_watcher_win.cc",
     "files/file_proxy.cc",
     "files/file_proxy.h",
+    "files/file_util.cc",
+    "files/file_util.h",
+    "files/file_util_android.cc",
+    "files/file_util_linux.cc",
+    "files/file_util_mac.mm",
+    "files/file_util_posix.cc",
     "files/file_util_proxy.cc",
     "files/file_util_proxy.h",
+    "files/file_util_win.cc",
     "files/important_file_writer.cc",
     "files/important_file_writer.h",
     "files/memory_mapped_file.cc",
@@ -217,8 +234,6 @@ component("base") {
     "hash.cc",
     "hash.h",
     "id_map.h",
-    "ini_parser.cc",
-    "ini_parser.h",
     "ios/device_util.h",
     "ios/device_util.mm",
     "ios/ios_util.h",
@@ -240,6 +255,8 @@ component("base") {
     "json/string_escape.h",
     "lazy_instance.cc",
     "lazy_instance.h",
+    "linux_util.cc",
+    "linux_util.h",
     "location.cc",
     "location.h",
     "logging.cc",
@@ -286,6 +303,8 @@ component("base") {
     "mac/scoped_nsexception_enabler.h",
     "mac/scoped_nsexception_enabler.mm",
     "mac/scoped_nsobject.h",
+    "mac/scoped_objc_class_swizzler.h",
+    "mac/scoped_objc_class_swizzler.mm",
     "mac/scoped_sending_event.h",
     "mac/scoped_sending_event.mm",
     "mac/sdk_forward_declarations.h",
@@ -316,7 +335,6 @@ component("base") {
     "memory/ref_counted_delete_on_message_loop.h",
     "memory/ref_counted_memory.cc",
     "memory/ref_counted_memory.h",
-    "memory/scoped_handle.h",
     "memory/scoped_open_process.h",
     "memory/scoped_policy.h",
     "memory/scoped_ptr.h",
@@ -352,7 +370,6 @@ component("base") {
     "message_loop/message_pump_libevent.h",
     "message_loop/message_pump_mac.h",
     "message_loop/message_pump_mac.mm",
-    "message_loop/message_pump_observer.h",
     "message_loop/message_pump_win.cc",
     "message_loop/message_pump_win.h",
     "metrics/field_trial.cc",
@@ -410,10 +427,6 @@ component("base") {
     "pending_task.h",
     "pickle.cc",
     "pickle.h",
-    "platform_file.cc",
-    "platform_file.h",
-    "platform_file_posix.cc",
-    "platform_file_win.cc",
     "port.h",
     "posix/eintr_wrapper.h",
     "posix/file_descriptor_shuffle.cc",
@@ -499,6 +512,7 @@ component("base") {
     "scoped_generic.h",
     "scoped_native_library.cc",
     "scoped_native_library.h",
+    "scoped_observer.h",
     "sequence_checker.h",
     "sequence_checker_impl.cc",
     "sequence_checker_impl.h",
@@ -788,7 +802,7 @@ component("base") {
     sources -= [
       "debug/stack_trace_posix.cc",
       "files/file_enumerator_posix.cc",
-      "file_util_posix.cc",
+      "files/file_util_posix.cc",
       "message_loop/message_pump_libevent.cc",
       "process/kill_posix.cc",
       "process/launch_posix.cc",
@@ -813,12 +827,16 @@ component("base") {
   # Windows.
   if (is_win) {
     sources -= [
+      "event_recorder_stubs.cc",
       "message_loop/message_pump_libevent.cc",
       "strings/string16.cc",
       # Not using sha1_win.cc because it may have caused a
       # regression to page cycler moz.
       "sha1_win.cc",
     ]
+
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    #cflags = [ "/wd4267" ]
 
     libs = [
       "netapi32.lib",
@@ -870,6 +888,8 @@ component("base") {
   } else {
     # Non-Linux.
     sources -= [
+      "linux_util.cc",
+      "linux_util.h",
       "nix/mime_util_xdg.cc",
       "nix/mime_util_xdg.h",
       "nix/xdg_util.cc",
@@ -993,6 +1013,7 @@ source_set("prefs") {
 source_set("prefs_test_support") {
   sources = [
     "prefs/mock_pref_change_callback.cc",
+    "prefs/mock_pref_change_callback.h",
     "prefs/pref_store_observer_mock.cc",
     "prefs/pref_store_observer_mock.h",
     "prefs/testing_pref_service.cc",
@@ -1005,6 +1026,7 @@ source_set("prefs_test_support") {
     ":base",
     ":prefs",
     "//testing/gmock",
+    "//testing/gtest",
   ]
 }
 
@@ -1056,6 +1078,8 @@ test("base_unittests") {
     "debug/leak_tracker_unittest.cc",
     "debug/proc_maps_linux_unittest.cc",
     "debug/stack_trace_unittest.cc",
+    "debug/task_annotator_unittest.cc",
+    "debug/trace_event_argument_unittest.cc",
     "debug/trace_event_memory_unittest.cc",
     "debug/trace_event_synthetic_delay_unittest.cc",
     "debug/trace_event_system_stats_monitor_unittest.cc",
@@ -1064,13 +1088,13 @@ test("base_unittests") {
     "debug/trace_event_win_unittest.cc",
     "deferred_sequenced_task_runner_unittest.cc",
     "environment_unittest.cc",
-    "file_util_unittest.cc",
     "file_version_info_unittest.cc",
     "files/dir_reader_posix_unittest.cc",
     "files/file_path_unittest.cc",
     "files/file_proxy_unittest.cc",
     "files/file_unittest.cc",
     "files/file_util_proxy_unittest.cc",
+    "files/file_util_unittest.cc",
     "files/important_file_writer_unittest.cc",
     "files/scoped_temp_dir_unittest.cc",
     "gmock_unittest.cc",
@@ -1088,7 +1112,6 @@ test("base_unittests") {
     "i18n/string_search_unittest.cc",
     "i18n/time_formatting_unittest.cc",
     "i18n/timezone_unittest.cc",
-    "ini_parser_unittest.cc",
     "ios/device_util_unittest.mm",
     "json/json_parser_unittest.cc",
     "json/json_reader_unittest.cc",
@@ -1104,6 +1127,7 @@ test("base_unittests") {
     "mac/mac_util_unittest.mm",
     "mac/objc_property_releaser_unittest.mm",
     "mac/scoped_nsobject_unittest.mm",
+    "mac/scoped_objc_class_swizzler_unittest.mm",
     "mac/scoped_sending_event_unittest.mm",
     "md5_unittest.cc",
     "memory/aligned_memory_unittest.cc",
@@ -1139,13 +1163,11 @@ test("base_unittests") {
     "os_compat_android_unittest.cc",
     "path_service_unittest.cc",
     "pickle_unittest.cc",
-    "platform_file_unittest.cc",
     "posix/file_descriptor_shuffle_unittest.cc",
     "posix/unix_domain_socket_linux_unittest.cc",
     "power_monitor/power_monitor_unittest.cc",
     "prefs/default_pref_store_unittest.cc",
     "prefs/json_pref_store_unittest.cc",
-    "prefs/mock_pref_change_callback.h",
     "prefs/overlay_user_pref_store_unittest.cc",
     "prefs/pref_change_registrar_unittest.cc",
     "prefs/pref_member_unittest.cc",
@@ -1167,7 +1189,6 @@ test("base_unittests") {
     "scoped_clear_errno_unittest.cc",
     "scoped_generic_unittest.cc",
     "scoped_native_library_unittest.cc",
-    "scoped_observer.h",
     "security_unittest.cc",
     "sequence_checker_unittest.cc",
     "sha1_unittest.cc",
@@ -1320,6 +1341,7 @@ if (is_android) {
       "android/java/src/org/chromium/base/ContentUriUtils.java",
       "android/java/src/org/chromium/base/CpuFeatures.java",
       "android/java/src/org/chromium/base/EventLog.java",
+      "android/java/src/org/chromium/base/FieldTrialList.java",
       "android/java/src/org/chromium/base/ImportantFileWriterAndroid.java",
       "android/java/src/org/chromium/base/library_loader/LibraryLoader.java",
       "android/java/src/org/chromium/base/MemoryPressureListener.java",
@@ -1335,13 +1357,69 @@ if (is_android) {
     jni_package = "base"
   }
 
+  android_library("base_java") {
+    srcjar_deps = [
+      ":base_java_application_state",
+      ":base_java_memory_pressure_level_list",
+      ":base_native_libraries_gen",
+    ]
+
+    deps = [
+      "//third_party/jsr-305:jsr_305_javalib"
+    ]
+
+    java_files = [
+      "android/java/src/org/chromium/base/BaseChromiumApplication.java",
+      "android/java/src/org/chromium/base/JavaHandlerThread.java",
+      "android/java/src/org/chromium/base/PathService.java",
+      "android/java/src/org/chromium/base/CollectionUtil.java",
+      "android/java/src/org/chromium/base/PathUtils.java",
+      "android/java/src/org/chromium/base/library_loader/ProcessInitException.java",
+      "android/java/src/org/chromium/base/library_loader/LoaderErrors.java",
+      "android/java/src/org/chromium/base/library_loader/LibraryLoader.java",
+      "android/java/src/org/chromium/base/library_loader/Linker.java",
+      "android/java/src/org/chromium/base/library_loader/LibraryLoaderHelper.java",
+      "android/java/src/org/chromium/base/ThreadUtils.java",
+      "android/java/src/org/chromium/base/CpuFeatures.java",
+      "android/java/src/org/chromium/base/CalledByNative.java",
+      "android/java/src/org/chromium/base/PowerMonitor.java",
+      "android/java/src/org/chromium/base/CommandLine.java",
+      "android/java/src/org/chromium/base/SystemMessageHandler.java",
+      "android/java/src/org/chromium/base/ContentUriUtils.java",
+      "android/java/src/org/chromium/base/WindowCallbackWrapper.java",
+      "android/java/src/org/chromium/base/ImportantFileWriterAndroid.java",
+      "android/java/src/org/chromium/base/BaseSwitches.java",
+      "android/java/src/org/chromium/base/SysUtils.java",
+      "android/java/src/org/chromium/base/PowerStatusReceiver.java",
+      "android/java/src/org/chromium/base/ObserverList.java",
+      "android/java/src/org/chromium/base/PerfTraceEvent.java",
+      "android/java/src/org/chromium/base/BuildInfo.java",
+      "android/java/src/org/chromium/base/TraceEvent.java",
+      "android/java/src/org/chromium/base/AccessedByNative.java",
+      "android/java/src/org/chromium/base/JNINamespace.java",
+      "android/java/src/org/chromium/base/CalledByNativeUnchecked.java",
+      "android/java/src/org/chromium/base/MemoryPressureListener.java",
+      "android/java/src/org/chromium/base/NativeClassQualifiedName.java",
+      "android/java/src/org/chromium/base/ActivityState.java",
+      "android/java/src/org/chromium/base/ApplicationStatus.java",
+      "android/java/src/org/chromium/base/ApiCompatibilityUtils.java",
+    ]
+
+    # A new version of NativeLibraries.java (with the actual correct values)
+    # will be created when creating an apk.
+    jar_excluded_patterns = [
+      "*/NativeLibraries.class",
+      "*/NativeLibraries##*.class",
+    ]
+  }
+
   java_cpp_template("base_java_application_state") {
     sources = [
       "android/java/src/org/chromium/base/ApplicationState.template",
-      ]
-    source_prereqs = [
+    ]
+    inputs = [
       "android/application_state_list.h"
-      ]
+    ]
 
     package_name = "org/chromium/base"
   }
@@ -1349,10 +1427,10 @@ if (is_android) {
   java_cpp_template("base_java_memory_pressure_level_list") {
     sources = [
       "android/java/src/org/chromium/base/MemoryPressureLevelList.template",
-      ]
-    source_prereqs = [
+    ]
+    inputs = [
       "memory/memory_pressure_level_list.h"
-      ]
+    ]
 
     package_name = "org/chromium/base"
   }
@@ -1360,14 +1438,28 @@ if (is_android) {
   java_cpp_template("base_native_libraries_gen") {
     sources = [
       "android/java/templates/NativeLibraries.template",
-      ]
-    source_prereqs = [
+    ]
+    inputs = [
       "android/java/templates/native_libraries_array.h",
-      ]
+    ]
 
     package_name = "org/chromium/base/library_loader"
     include_path = "android/java/templates"
   }
 
+  android_library("base_java_unittest_support") {
+    deps = [":base_java"]
+    java_files = [
+      "test/android/java/src/org/chromium/base/ContentUriTestUtils.java"
+    ]
+  }
 
+  unittest_apk("base_unittests_apk") {
+    deps = [
+      ":base_java",
+      ":base_java_unittest_support",
+      ":base_unittests",
+    ]
+    unittests_dep = ":base_unittests"
+  }
 }

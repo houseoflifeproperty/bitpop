@@ -29,7 +29,7 @@
 #include "wtf/HashTableDeletedValueType.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -294,7 +294,12 @@ class FormKeyGenerator FINAL : public NoBaseWillBeGarbageCollectedFinalized<Form
 
 public:
     static PassOwnPtrWillBeRawPtr<FormKeyGenerator> create() { return adoptPtrWillBeNoop(new FormKeyGenerator); }
-    void trace(Visitor* visitor) { visitor->trace(m_formToKeyMap); }
+    void trace(Visitor* visitor)
+    {
+#if ENABLE(OILPAN)
+        visitor->trace(m_formToKeyMap);
+#endif
+    }
     const AtomicString& formKey(const HTMLFormControlElementWithState&);
     void willDeleteForm(HTMLFormElement*);
 
@@ -386,7 +391,9 @@ DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DocumentState)
 
 void DocumentState::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_formControls);
+#endif
 }
 
 void DocumentState::addControl(HTMLFormControlElementWithState* control)
@@ -559,4 +566,4 @@ void FormController::unregisterStatefulFormControl(HTMLFormControlElementWithSta
     m_documentState->removeControl(&control);
 }
 
-} // namespace WebCore
+} // namespace blink

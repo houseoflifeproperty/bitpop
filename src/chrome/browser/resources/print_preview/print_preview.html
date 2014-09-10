@@ -10,11 +10,15 @@
   <link rel="stylesheet" href="chrome://resources/css/chrome_shared.css">
   <link rel="stylesheet" href="chrome://resources/css/throbber.css">
   <link rel="stylesheet" href="print_header.css">
+  <link rel="stylesheet" href="common/search_box.css">
   <link rel="stylesheet" href="settings/destination_settings.css">
   <link rel="stylesheet" href="settings/copies_settings.css">
   <link rel="stylesheet" href="settings/page_settings.css">
   <link rel="stylesheet" href="settings/margin_settings.css">
   <link rel="stylesheet" href="settings/media_size_settings.css">
+  <link rel="stylesheet" href="settings/advanced_options_settings.css">
+  <link rel="stylesheet" href="settings/advanced_settings/advanced_settings.css">
+  <link rel="stylesheet" href="settings/advanced_settings/advanced_settings_item.css">
   <link rel="stylesheet" href="previewarea/preview_area.css">
   <link rel="stylesheet" href="previewarea/margin_control_container.css">
   <link rel="stylesheet" href="previewarea/margin_control.css">
@@ -24,13 +28,13 @@
   <link rel="stylesheet" href="search/destination_list.css">
   <link rel="stylesheet" href="search/destination_list_item.css">
   <link rel="stylesheet" href="search/destination_search.css">
-  <link rel="stylesheet" href="search/search_box.css">
   <link rel="stylesheet" href="search/fedex_tos.css">
 
   <script src="chrome://print/strings.js"></script>
   <script src="chrome://resources/js/cr.js"></script>
   <script src="chrome://resources/js/cr/event_target.js"></script>
   <script src="chrome://resources/js/cr/ui.js"></script>
+  <script src="chrome://resources/js/cr/ui/focus_manager.js"></script>
   <script src="chrome://resources/js/cr/ui/focus_outline_manager.js"></script>
   <script src="chrome://resources/js/event_tracker.js"></script>
   <script src="chrome://resources/js/local_strings.js"></script>
@@ -55,6 +59,7 @@
         <include src="settings/color_settings.html"/>
         <include src="settings/margin_settings.html"/>
         <include src="settings/other_options_settings.html"/>
+        <include src="settings/advanced_options_settings.html"/>
       </div>
       <div id="link-container">
         <div>
@@ -76,12 +81,15 @@
     </div>
   </div>
   <include src="search/destination_search.html"/>
+  <include src="settings/advanced_settings/advanced_settings.html"/>
   <include src="no_destinations_promo.html"/>
   <div id="main-container">
     <include src="previewarea/preview_area.html"/>
   </div>
 
   <!-- HTML Templates -->
+  <include src="settings/advanced_settings/advanced_settings_item.html"/>
+  <include src="common/search_box.html"/>
   <include src="previewarea/margin_control.html"/>
   <include src="search/destination_list.html"/>
   <include src="search/destination_list_item.html"/>

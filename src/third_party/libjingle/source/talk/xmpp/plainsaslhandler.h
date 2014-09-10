@@ -28,14 +28,16 @@
 #ifndef _PLAINSASLHANDLER_H_
 #define _PLAINSASLHANDLER_H_
 
-#include "talk/xmpp/saslhandler.h"
 #include <algorithm>
+#include "talk/xmpp/saslhandler.h"
+#include "talk/xmpp/saslplainmechanism.h"
+#include "webrtc/base/cryptstring.h"
 
 namespace buzz {
 
 class PlainSaslHandler : public SaslHandler {
 public:
-  PlainSaslHandler(const Jid & jid, const talk_base::CryptString & password, 
+  PlainSaslHandler(const Jid & jid, const rtc::CryptString & password, 
       bool allow_plain) : jid_(jid), password_(password), 
                           allow_plain_(allow_plain) {}
     
@@ -69,7 +71,7 @@ public:
   
 private:
   Jid jid_;
-  talk_base::CryptString password_;
+  rtc::CryptString password_;
   bool allow_plain_;
 };
 
@@ -77,4 +79,3 @@ private:
 }
 
 #endif
-

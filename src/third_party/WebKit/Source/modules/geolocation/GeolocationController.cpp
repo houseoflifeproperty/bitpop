@@ -34,29 +34,32 @@
 #include "modules/geolocation/GeolocationInspectorAgent.h"
 #include "modules/geolocation/GeolocationPosition.h"
 
-namespace WebCore {
+namespace blink {
 
 GeolocationController::GeolocationController(LocalFrame& frame, GeolocationClient* client)
     : PageLifecycleObserver(frame.page())
     , m_client(client)
     , m_hasClientForTest(false)
     , m_isClientUpdating(false)
-    , m_inspectorAgent()
+    , m_inspectorAgent(nullptr)
 {
     // FIXME: Once GeolocationInspectorAgent is per frame, there will be a 1:1 relationship between
     // it and this class. Until then, there's one GeolocationInspectorAgent per page that the main
     // frame is responsible for creating.
     if (frame.isMainFrame()) {
-        OwnPtr<GeolocationInspectorAgent> geolocationAgent(GeolocationInspectorAgent::create());
+        OwnPtrWillBeRawPtr<GeolocationInspectorAgent> geolocationAgent(GeolocationInspectorAgent::create());
         m_inspectorAgent = geolocationAgent.get();
         frame.page()->inspectorController().registerModuleAgent(geolocationAgent.release());
-    } else {
+    } else if (frame.page()->mainFrame()->isLocalFrame()) {
         m_inspectorAgent = GeolocationController::from(frame.page()->deprecatedLocalMainFrame())->m_inspectorAgent;
     }
 
-    m_inspectorAgent->AddController(this);
+    // m_inspectorAgent is 0 for out of process iframe instantiations, since inspector is currently unable
+    // to handle that scenario.
+    if (m_inspectorAgent)
+        m_inspectorAgent->addController(this);
 
-    if (!frame.isMainFrame()) {
+    if (!frame.isMainFrame() && frame.page()->mainFrame()->isLocalFrame()) {
         // internals.setGeolocationClientMock is per page.
         GeolocationController* mainController = GeolocationController::from(frame.page()->deprecatedLocalMainFrame());
         if (mainController->hasClientForTest())
@@ -83,19 +86,33 @@ void GeolocationController::stopUpdatingIfNeeded()
 GeolocationController::~GeolocationController()
 {
     ASSERT(m_observers.isEmpty());
-    if (page())
-        m_inspectorAgent->RemoveController(this);
+    detach();
+}
 
-    if (m_hasClientForTest)
+void GeolocationController::detach()
+{
+#if !ENABLE(OILPAN)
+    if (page() && m_inspectorAgent) {
+        m_inspectorAgent->removeController(this);
+        m_inspectorAgent = nullptr;
+    }
+#endif
+
+    if (m_hasClientForTest) {
         m_client->controllerForTestRemoved(this);
+        m_hasClientForTest = false;
+    }
 }
 
 // FIXME: Oilpan: Once GeolocationClient is on-heap m_client should be a strong
 // pointer and |willBeDestroyed| can potentially be removed from Supplement.
 void GeolocationController::willBeDestroyed()
 {
-    if (m_client)
+    detach();
+    if (m_client) {
         m_client->geolocationDestroyed();
+        m_client = 0;
+    }
 }
 
 void GeolocationController::persistentHostHasBeenDestroyed()
@@ -217,6 +234,7 @@ void GeolocationController::trace(Visitor* visitor)
     visitor->trace(m_lastPosition);
     visitor->trace(m_observers);
     visitor->trace(m_highAccuracyObservers);
+    visitor->trace(m_inspectorAgent);
     WillBeHeapSupplement<LocalFrame>::trace(visitor);
 }
 
@@ -225,4 +243,4 @@ void provideGeolocationTo(LocalFrame& frame, GeolocationClient* client)
     WillBeHeapSupplement<LocalFrame>::provideTo(frame, GeolocationController::supplementName(), GeolocationController::create(frame, client));
 }
 
-} // namespace WebCore
+} // namespace blink

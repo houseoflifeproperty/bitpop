@@ -16,14 +16,14 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/extensions/extension_constants.h"
+// TODO(nona): move this header from this file.
+#include "chrome/grit/generated_resources.h"
 #include "chromeos/ime/component_extension_ime_manager.h"
 #include "chromeos/ime/extension_ime_util.h"
 // For SetHardwareKeyboardLayoutForTesting.
 #include "chromeos/ime/fake_input_method_delegate.h"
 #include "chromeos/ime/input_method_delegate.h"
 #include "chromeos/ime/input_method_whitelist.h"
-// TODO(nona): move this header from this file.
-#include "grit/generated_resources.h"
 
 namespace {
 
@@ -167,6 +167,16 @@ const char* const kExtensionIdMigrationMap[][2] = {
   {"habcdindjejkmepknlhkkloncjcpcnbf", "gjaehgfemfahhmlgpdfknkhdnemmolop"},
 };
 
+// The engine ID map for migration. This migration is for input method IDs from
+// VPD so it's NOT a temporary migration.
+const char* const kEngineIdMigrationMap[][2] = {
+  {"m17n:", "vkd_"},
+  {"ime:zh-t:quick", "zh-hant-t-i0-cangjie-1987-x-m0-simplified"},
+  {"ime:zh-t:zhuyin", "zh-hant-t-i0-und"},
+  {"ime:ko:hangul", "hangul_2set"},
+  {"ime:ko:hangul_2set", "hangul_2set"},
+};
+
 const size_t kExtensionIdLen = 32;
 
 const struct EnglishToResouceId {
@@ -245,16 +255,11 @@ namespace chromeos {
 
 namespace input_method {
 
-InputMethodUtil::InputMethodUtil(
-    InputMethodDelegate* delegate,
-    scoped_ptr<InputMethodDescriptors> supported_input_methods)
+InputMethodUtil::InputMethodUtil(InputMethodDelegate* delegate)
     : delegate_(delegate) {
-  // Makes sure the supported input methods at least have the fallback ime.
-  // So that it won't cause massive test failures.
-  if (supported_input_methods->empty())
-    supported_input_methods->push_back(GetFallbackInputMethodDescriptor());
-
-  ResetInputMethods(*supported_input_methods);
+  InputMethodDescriptors default_input_methods;
+  default_input_methods.push_back(GetFallbackInputMethodDescriptor());
+  ResetInputMethods(default_input_methods);
 
   // Initialize a map from English string to Chrome string resource ID as well.
   for (size_t i = 0; i < kEnglishToResourceIdArraySize; ++i) {
@@ -577,8 +582,16 @@ bool InputMethodUtil::MigrateInputMethods(
   bool rewritten = false;
   std::vector<std::string>& ids = *input_method_ids;
   for (size_t i = 0; i < ids.size(); ++i) {
+    std::string engine_id = ids[i];
+    // Migrates some Engine IDs from VPD.
+    for (size_t j = 0; j < arraysize(kEngineIdMigrationMap); ++j) {
+      size_t pos = engine_id.find(kEngineIdMigrationMap[j][0]);
+      if (pos == 0)
+        engine_id.replace(pos, strlen(kEngineIdMigrationMap[j][0]),
+                          kExtensionIdMigrationMap[j][1]);
+    }
     std::string id =
-        extension_ime_util::GetInputMethodIDByEngineID(ids[i]);
+        extension_ime_util::GetInputMethodIDByEngineID(engine_id);
     // Migrates old ime id's to new ones.
     for (size_t j = 0; j < arraysize(kExtensionIdMigrationMap); ++j) {
       size_t pos = id.find(kExtensionIdMigrationMap[j][0]);

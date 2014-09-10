@@ -28,7 +28,7 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/users/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/scoped_user_manager_enabler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chromeos/chromeos_paths.h"
@@ -393,9 +393,8 @@ void AutomaticRebootManagerBasicTest::SetRebootAfterUpdate(
     bool reboot_after_update,
     bool expect_reboot) {
   reboot_after_update_ = reboot_after_update;
-  local_state_.SetManagedPref(
-      prefs::kRebootAfterUpdate,
-      base::Value::CreateBooleanValue(reboot_after_update));
+  local_state_.SetManagedPref(prefs::kRebootAfterUpdate,
+                              new base::FundamentalValue(reboot_after_update));
   task_runner_->RunUntilIdle();
   EXPECT_EQ(expect_reboot ? 1 : 0,
             power_manager_client_->num_request_restart_calls());
@@ -410,7 +409,7 @@ void AutomaticRebootManagerBasicTest::SetUptimeLimit(
   } else {
     local_state_.SetManagedPref(
         prefs::kUptimeLimit,
-        base::Value::CreateIntegerValue(limit.InSeconds()));
+        new base::FundamentalValue(static_cast<int>(limit.InSeconds())));
   }
   task_runner_->RunUntilIdle();
   EXPECT_EQ(expect_reboot ? 1 : 0,

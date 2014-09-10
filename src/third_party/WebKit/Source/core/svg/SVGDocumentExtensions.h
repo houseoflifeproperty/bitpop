@@ -28,7 +28,7 @@
 #include "wtf/HashSet.h"
 #include "wtf/text/AtomicStringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class RenderSVGResourceContainer;
@@ -41,12 +41,10 @@ class SVGResourcesCache;
 class SVGSVGElement;
 class Element;
 
-typedef WillBeHeapHashSet<RawPtrWillBeMember<SVGElement> > SVGElementSet;
-
 class SVGDocumentExtensions : public NoBaseWillBeGarbageCollectedFinalized<SVGDocumentExtensions> {
     WTF_MAKE_NONCOPYABLE(SVGDocumentExtensions); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    typedef HashSet<Element*> SVGPendingElements;
+    typedef WillBeHeapHashSet<RawPtrWillBeMember<Element> > SVGPendingElements;
     explicit SVGDocumentExtensions(Document*);
     ~SVGDocumentExtensions();
 
@@ -67,12 +65,6 @@ public:
     void reportError(const String&);
 
     SVGResourcesCache* resourcesCache() const { return m_resourcesCache.get(); }
-
-    SVGElementSet* setOfElementsReferencingTarget(SVGElement* referencedElement) const;
-    void addElementReferencingTarget(SVGElement* referencingElement, SVGElement* referencedElement);
-    void removeAllTargetReferencesForElement(SVGElement*);
-    void rebuildAllElementReferencesForTarget(SVGElement*);
-    void removeAllElementReferencesForTarget(SVGElement*);
 
     void addSVGRootWithRelativeLengthDescendents(SVGSVGElement*);
     void removeSVGRootWithRelativeLengthDescendents(SVGSVGElement*);
@@ -107,14 +99,12 @@ private:
     WillBeHeapHashSet<RefPtrWillBeMember<SVGFontFaceElement> > m_pendingSVGFontFaceElementsForRemoval;
 #endif
     HashMap<AtomicString, RenderSVGResourceContainer*> m_resources;
-    HashMap<AtomicString, OwnPtr<SVGPendingElements> > m_pendingResources; // Resources that are pending.
-    HashMap<AtomicString, OwnPtr<SVGPendingElements> > m_pendingResourcesForRemoval; // Resources that are pending and scheduled for removal.
-    typedef WillBeHeapHashMap<RawPtrWillBeMember<SVGElement>, OwnPtrWillBeMember<SVGElementSet> > ElementDependenciesMap;
-    ElementDependenciesMap m_elementDependencies;
+    WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements> > m_pendingResources; // Resources that are pending.
+    WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements> > m_pendingResourcesForRemoval; // Resources that are pending and scheduled for removal.
     OwnPtr<SVGResourcesCache> m_resourcesCache;
     WillBeHeapHashSet<RawPtrWillBeMember<SVGSVGElement> > m_relativeLengthSVGRoots; // Root SVG elements with relative length descendants.
     FloatPoint m_translate;
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     bool m_inRelativeLengthSVGRootsInvalidation;
 #endif
 
@@ -128,7 +118,7 @@ public:
     bool isElementPendingResource(Element*, const AtomicString& id) const;
     void clearHasPendingResourcesIfPossible(Element*);
     void removeElementFromPendingResources(Element*);
-    PassOwnPtr<SVGPendingElements> removePendingResource(const AtomicString& id);
+    PassOwnPtrWillBeRawPtr<SVGPendingElements> removePendingResource(const AtomicString& id);
 
     void serviceAnimations(double monotonicAnimationStartTime);
 
@@ -137,7 +127,7 @@ public:
     Element* removeElementFromPendingResourcesForRemoval(const AtomicString&);
 
 private:
-    PassOwnPtr<SVGPendingElements> removePendingResourceForRemoval(const AtomicString&);
+    PassOwnPtrWillBeRawPtr<SVGPendingElements> removePendingResourceForRemoval(const AtomicString&);
 };
 
 }

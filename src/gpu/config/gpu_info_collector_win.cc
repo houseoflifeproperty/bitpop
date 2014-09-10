@@ -99,10 +99,8 @@ GpuPerformanceStats RetrieveGpuPerformanceStats() {
   }
 
   std::string current_results_string = current_results.MaybeAsASCII();
-  if (current_results_string.empty()) {
-    LOG(ERROR) << "Can't retrieve a valid WinSAT assessment.";
+  if (current_results_string.empty())
     return stats;
-  }
 
   // Get relevant scores from results file. XML schema at:
   // http://msdn.microsoft.com/en-us/library/windows/desktop/aa969210.aspx
@@ -362,15 +360,15 @@ void CollectD3D11Support() {
 }
 }  // namespace anonymous
 
-#if !defined(GOOGLE_CHROME_BUILD)
+#if defined(GOOGLE_CHROME_BUILD) && defined(OFFICIAL_BUILD)
+// This function has a real implementation for official builds that can
+// be found in src/third_party/amd.
+void GetAMDVideocardInfo(GPUInfo* gpu_info);
+#else
 void GetAMDVideocardInfo(GPUInfo* gpu_info) {
   DCHECK(gpu_info);
   return;
 }
-#else
-// This function has a real implementation for official builds that can
-// be found in src/third_party/amd.
-void GetAMDVideocardInfo(GPUInfo* gpu_info);
 #endif
 
 bool CollectDriverInfoD3D(const std::wstring& device_id,

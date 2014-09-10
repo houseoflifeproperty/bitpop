@@ -420,6 +420,14 @@ TEST(DisasmX64) {
     }
   }
 
+  // xchg.
+  {
+    __ xchgq(rax, rax);
+    __ xchgq(rax, rbx);
+    __ xchgq(rbx, rbx);
+    __ xchgq(rbx, Operand(rsp, 12));
+  }
+
   // Nop instructions
   for (int i = 0; i < 16; i++) {
     __ Nop(i);
@@ -433,7 +441,8 @@ TEST(DisasmX64) {
       desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
   USE(code);
 #ifdef OBJECT_PRINT
-  code->Print();
+  OFStream os(stdout);
+  code->Print(os);
   byte* begin = code->instruction_start();
   byte* end = begin + code->instruction_size();
   disasm::Disassembler::Disassemble(stdout, begin, end);

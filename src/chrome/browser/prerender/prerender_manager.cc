@@ -22,9 +22,9 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/net/chrome_cookie_notification_details.h"
+#include "chrome/browser/net/prediction_options.h"
 #include "chrome/browser/predictors/predictor_database.h"
 #include "chrome/browser/predictors/predictor_database_factory.h"
 #include "chrome/browser/prerender/prerender_condition.h"
@@ -1123,26 +1123,20 @@ void PrerenderManager::PendingSwap::ProvisionalChangeToMainFrameUrl(
 }
 
 void PrerenderManager::PendingSwap::DidCommitProvisionalLoadForFrame(
-        int64 frame_id,
-        const base::string16& frame_unique_name,
-        bool is_main_frame,
-        const GURL& validated_url,
-        content::PageTransition transition_type,
-        content::RenderViewHost* render_view_host){
-  if (!is_main_frame)
+    content::RenderFrameHost* render_frame_host,
+    const GURL& validated_url,
+    content::PageTransition transition_type) {
+  if (render_frame_host->GetParent())
     return;
   prerender_data_->ClearPendingSwap();
 }
 
 void PrerenderManager::PendingSwap::DidFailProvisionalLoad(
-        int64 frame_id,
-        const base::string16& frame_unique_name,
-        bool is_main_frame,
-        const GURL& validated_url,
-        int error_code,
-        const base::string16& error_description,
-        content::RenderViewHost* render_view_host) {
-  if (!is_main_frame)
+    content::RenderFrameHost* render_frame_host,
+    const GURL& validated_url,
+    int error_code,
+    const base::string16& error_description) {
+  if (render_frame_host->GetParent())
     return;
   prerender_data_->ClearPendingSwap();
 }
@@ -1867,6 +1861,14 @@ void PrerenderManager::RecordNetworkBytes(Origin origin,
 
 bool PrerenderManager::IsEnabled() const {
   DCHECK(CalledOnValidThread());
+
+  // TODO(bnc): remove conditional as per crbug.com/334602.
+  if (profile_ && profile_->GetPrefs() &&
+        profile_->GetPrefs()->GetInteger(prefs::kNetworkPredictionOptions) !=
+        chrome_browser_net::NETWORK_PREDICTION_UNSET) {
+    return chrome_browser_net::CanPrefetchAndPrerenderUI(profile_->GetPrefs());
+  }
+  // TODO(bnc): remove rest of method as per crbug.com/334602.
   if (!enabled_)
     return false;
   for (std::list<const PrerenderCondition*>::const_iterator it =

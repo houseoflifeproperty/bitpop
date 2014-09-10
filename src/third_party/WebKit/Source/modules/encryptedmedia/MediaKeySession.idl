@@ -27,7 +27,7 @@
     ActiveDOMObject,
     RuntimeEnabled=EncryptedMedia,
     GarbageCollected,
-    TypeChecking=Interface|Nullable
+    TypeChecking=Interface
 ] interface MediaKeySession : EventTarget {
     // error state
     readonly attribute MediaKeyError error;
@@ -35,8 +35,10 @@
     // session properties
     readonly attribute DOMString keySystem;
     readonly attribute DOMString sessionId;
+    [CallWith=ScriptState] readonly attribute Promise closed;
 
     // session operations
-    [RaisesException] void update(Uint8Array response);
-    [RaisesException] void release();
+    [CallWith=ScriptState] Promise update(ArrayBuffer response);
+    [CallWith=ScriptState] Promise update(ArrayBufferView response);
+    [CallWith=ScriptState] Promise release();
 };

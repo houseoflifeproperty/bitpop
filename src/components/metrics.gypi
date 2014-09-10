@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //components/metrics
       'target_name': 'metrics',
       'type': 'static_library',
       'include_dirs': [
@@ -17,10 +18,12 @@
         'variations',
       ],
       'sources': [
-        'metrics/compression_utils.cc',
-        'metrics/compression_utils.h',
+        'metrics/client_info.cc',
+        'metrics/client_info.h',
         'metrics/cloned_install_detector.cc',
         'metrics/cloned_install_detector.h',
+        'metrics/compression_utils.cc',
+        'metrics/compression_utils.h',
         'metrics/machine_id_provider.h',
         'metrics/machine_id_provider_stub.cc',
         'metrics/machine_id_provider_win.cc',
@@ -28,10 +31,10 @@
         'metrics/metrics_hashes.h',
         'metrics/metrics_log.cc',
         'metrics/metrics_log.h',
-        'metrics/metrics_log_uploader.cc',
-        'metrics/metrics_log_uploader.h',
         'metrics/metrics_log_manager.cc',
         'metrics/metrics_log_manager.h',
+        'metrics/metrics_log_uploader.cc',
+        'metrics/metrics_log_uploader.h',
         'metrics/metrics_pref_names.cc',
         'metrics/metrics_pref_names.h',
         'metrics/metrics_provider.h',
@@ -52,7 +55,7 @@
       'conditions': [
         ['chromeos==1', {
           'dependencies': [
-            'metrics_chromeos',
+            'metrics_serialization',
           ],
         }],
         ['OS=="win"', {
@@ -63,6 +66,7 @@
       ],
     },
     {
+      # GN version: //components/metrics:net
       'target_name': 'metrics_net',
       'type': 'static_library',
       'include_dirs': [
@@ -80,7 +84,7 @@
     {
       # Protobuf compiler / generator for UMA (User Metrics Analysis).
       #
-      # GN version: //component/metrics/proto:proto
+      # GN version: //components/metrics/proto:proto
       'target_name': 'component_metrics_proto',
       'type': 'static_library',
       'sources': [
@@ -103,6 +107,7 @@
     {
       # TODO(isherman): Remove all //chrome dependencies on this target, and
       # merge the files in this target with components_unittests.
+      # GN version: //components/metrics:test_support
       'target_name': 'metrics_test_support',
       'type': 'static_library',
       'include_dirs': [
@@ -122,16 +127,16 @@
     },
   ],
   'conditions': [
-    ['chromeos==1', {
+    ['OS=="linux"', {
       'targets': [
         {
-          'target_name': 'metrics_chromeos',
+          'target_name': 'metrics_serialization',
           'type': 'static_library',
           'sources': [
-            'metrics/chromeos/serialization_utils.cc',
-            'metrics/chromeos/serialization_utils.h',
-            'metrics/chromeos/metric_sample.cc',
-            'metrics/chromeos/metric_sample.h',
+            'metrics/serialization/serialization_utils.cc',
+            'metrics/serialization/serialization_utils.h',
+            'metrics/serialization/metric_sample.cc',
+            'metrics/serialization/metric_sample.h',
           ],
           'dependencies': [
             '../base/base.gyp:base',

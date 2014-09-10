@@ -26,17 +26,15 @@
 #ifndef SpeechSynthesisUtterance_h
 #define SpeechSynthesisUtterance_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ContextLifecycleObserver.h"
 #include "modules/EventTargetModules.h"
 #include "modules/speech/SpeechSynthesisVoice.h"
 #include "platform/heap/Handle.h"
 #include "platform/speech/PlatformSpeechSynthesisUtterance.h"
-#include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class SpeechSynthesisUtterance FINAL : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<SpeechSynthesisUtterance>, public PlatformSpeechSynthesisUtteranceClient, public ScriptWrappable, public ContextLifecycleObserver, public EventTargetWithInlineData {
+class SpeechSynthesisUtterance FINAL : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<SpeechSynthesisUtterance>, public PlatformSpeechSynthesisUtteranceClient, public ContextLifecycleObserver, public EventTargetWithInlineData {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<SpeechSynthesisUtterance>);
     USING_GARBAGE_COLLECTED_MIXIN(SpeechSynthesisUtterance);
 public:
@@ -81,13 +79,14 @@ public:
 
 private:
     SpeechSynthesisUtterance(ExecutionContext*, const String&);
-    Member<PlatformSpeechSynthesisUtterance> m_platformUtterance;
-    Member<SpeechSynthesisVoice> m_voice;
 
     // EventTarget
     virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    Member<PlatformSpeechSynthesisUtterance> m_platformUtterance;
+    Member<SpeechSynthesisVoice> m_voice;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SpeechSynthesisUtterance_h

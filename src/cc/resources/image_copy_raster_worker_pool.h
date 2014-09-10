@@ -9,8 +9,16 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
+#include "cc/output/context_provider.h"
 #include "cc/resources/raster_worker_pool.h"
 #include "cc/resources/rasterizer.h"
+
+namespace base {
+namespace debug {
+class ConvertableToTraceFormat;
+class TracedValue;
+}
+}
 
 namespace cc {
 class ResourcePool;
@@ -26,6 +34,7 @@ class CC_EXPORT ImageCopyRasterWorkerPool : public RasterWorkerPool,
   static scoped_ptr<RasterWorkerPool> Create(
       base::SequencedTaskRunner* task_runner,
       TaskGraphRunner* task_graph_runner,
+      ContextProvider* context_provider,
       ResourceProvider* resource_provider,
       ResourcePool* resource_pool);
 
@@ -45,6 +54,7 @@ class CC_EXPORT ImageCopyRasterWorkerPool : public RasterWorkerPool,
  protected:
   ImageCopyRasterWorkerPool(base::SequencedTaskRunner* task_runner,
                             TaskGraphRunner* task_graph_runner,
+                            ContextProvider* context_provider,
                             ResourceProvider* resource_provider,
                             ResourcePool* resource_pool);
 
@@ -74,13 +84,14 @@ class CC_EXPORT ImageCopyRasterWorkerPool : public RasterWorkerPool,
   void OnRasterFinished();
   void OnRasterRequiredForActivationFinished();
   void FlushCopies();
-  scoped_ptr<base::Value> StateAsValue() const;
-  scoped_ptr<base::Value> StagingStateAsValue() const;
+  scoped_refptr<base::debug::ConvertableToTraceFormat> StateAsValue() const;
+  void StagingStateAsValueInto(base::debug::TracedValue* staging_state) const;
 
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
   TaskGraphRunner* task_graph_runner_;
   const NamespaceToken namespace_token_;
   RasterizerClient* client_;
+  ContextProvider* context_provider_;
   ResourceProvider* resource_provider_;
   ResourcePool* resource_pool_;
 

@@ -16,7 +16,6 @@
       'dependencies': [
         'browser_extensions',
         'common/extensions/api/api.gyp:chrome_api',
-        '../apps/common/api/api.gyp:apps_api',
         '../skia/skia.gyp:skia',
       ],
       'include_dirs': [
@@ -24,6 +23,7 @@
         '<(grit_out_dir)',
       ],
       'sources': [
+        'app_delegate.h',
         'app_lifetime_monitor.cc',
         'app_lifetime_monitor.h',
         'app_lifetime_monitor_factory.cc',
@@ -44,14 +44,12 @@
         'app_window_geometry_cache.h',
         'app_window_registry.cc',
         'app_window_registry.h',
-        'apps_client.cc',
-        'apps_client.h',
+        'app_web_contents_helper.cc',
+        'app_web_contents_helper.h',
         'browser_context_keyed_service_factories.cc',
         'browser_context_keyed_service_factories.h',
-        'browser/api/app_runtime/app_runtime_api.cc',
-        'browser/api/app_runtime/app_runtime_api.h',
-        'browser/file_handler_util.cc',
-        'browser/file_handler_util.h',
+        'custom_launcher_page_contents.cc',
+        'custom_launcher_page_contents.h',
         'launcher.cc',
         'launcher.h',
         'metrics_names.h',
@@ -67,6 +65,8 @@
         'size_constraints.h',
         'switches.cc',
         'switches.h',
+        'ui/apps_client.cc',
+        'ui/apps_client.h',
         'ui/native_app_window.h',
         'ui/views/app_window_frame_view.cc',
         'ui/views/app_window_frame_view.h',
@@ -93,6 +93,9 @@
         ],
         ['enable_extensions==0',
           {
+            'dependencies!': [
+              'browser_extensions',
+            ],
             'sources/': [
               ['exclude', '.*'],
               ['include', 'ui/web_contents_sizer\.cc$'],

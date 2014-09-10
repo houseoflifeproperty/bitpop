@@ -23,16 +23,17 @@
 #ifndef RenderInline_h
 #define RenderInline_h
 
-#include "core/animation/ActiveAnimations.h"
+#include "core/editing/PositionWithAffinity.h"
 #include "core/rendering/InlineFlowBox.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderLineBoxList.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderInline : public RenderBoxModelObject {
 public:
     explicit RenderInline(Element*);
+    virtual void trace(Visitor*) OVERRIDE;
 
     static RenderInline* createAnonymous(Document*);
 
@@ -84,14 +85,14 @@ public:
 
     LayoutSize offsetForInFlowPositionedInline(const RenderBox& child) const;
 
-    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE FINAL;
+    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) const OVERRIDE FINAL;
     void paintOutline(PaintInfo&, const LayoutPoint&);
 
     using RenderBoxModelObject::continuation;
     using RenderBoxModelObject::setContinuation;
 
-    bool alwaysCreateLineBoxes() const { return m_alwaysCreateLineBoxes; }
-    void setAlwaysCreateLineBoxes() { m_alwaysCreateLineBoxes = true; }
+    bool alwaysCreateLineBoxes() const { return alwaysCreateLineBoxesForRenderInline(); }
+    void setAlwaysCreateLineBoxes(bool alwaysCreateLineBoxes = true) { setAlwaysCreateLineBoxesForRenderInline(alwaysCreateLineBoxes); }
     void updateAlwaysCreateLineBoxes(bool fullLayout);
 
     virtual LayoutRect localCaretRect(InlineBox*, int, LayoutUnit* extraWidthToEndOfLine) OVERRIDE FINAL;
@@ -138,22 +139,20 @@ private:
 
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE FINAL;
 
-    virtual LayerType layerTypeRequired() const OVERRIDE { return isInFlowPositioned() || createsGroup() || hasClipPath() || style()->shouldCompositeForCurrentAnimations() ? NormalLayer : NoLayer; }
+    virtual LayerType layerTypeRequired() const OVERRIDE { return isRelPositioned() || createsGroup() || hasClipPath() || style()->shouldCompositeForCurrentAnimations() ? NormalLayer : NoLayer; }
 
     virtual LayoutUnit offsetLeft() const OVERRIDE FINAL;
     virtual LayoutUnit offsetTop() const OVERRIDE FINAL;
     virtual LayoutUnit offsetWidth() const OVERRIDE FINAL { return linesBoundingBox().width(); }
     virtual LayoutUnit offsetHeight() const OVERRIDE FINAL { return linesBoundingBox().height(); }
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE;
-    virtual LayoutRect rectWithOutlineForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, LayoutUnit outlineWidth) const OVERRIDE FINAL;
-    virtual void mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect&, bool fixed) const OVERRIDE FINAL;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const OVERRIDE;
+    virtual LayoutRect rectWithOutlineForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, LayoutUnit outlineWidth, const PaintInvalidationState* = 0) const OVERRIDE FINAL;
+    virtual void mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect&, ViewportConstrainedPosition, const PaintInvalidationState*) const OVERRIDE FINAL;
 
-    virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const OVERRIDE;
+    virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = 0) const OVERRIDE;
 
     virtual PositionWithAffinity positionForPoint(const LayoutPoint&) OVERRIDE FINAL;
-
-    virtual LayoutRect frameRectForStickyPositioning() const OVERRIDE FINAL { return linesBoundingBox(); }
 
     virtual IntRect borderBoundingBox() const OVERRIDE FINAL
     {
@@ -186,12 +185,10 @@ private:
 
     RenderObjectChildList m_children;
     RenderLineBoxList m_lineBoxes;   // All of the line boxes created for this inline flow.  For example, <i>Hello<br>world.</i> will have two <i> line boxes.
-
-    bool m_alwaysCreateLineBoxes : 1;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderInline, isRenderInline());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderInline_h

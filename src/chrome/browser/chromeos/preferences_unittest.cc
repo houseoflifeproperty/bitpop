@@ -7,7 +7,7 @@
 #include "base/prefs/pref_member.h"
 #include "chrome/browser/chromeos/input_method/mock_input_method_manager.h"
 #include "chrome/browser/chromeos/login/users/fake_user_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/scoped_user_manager_enabler.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
@@ -50,7 +50,7 @@ TEST(PreferencesTest, TestUpdatePrefOnBrowserScreenDetails) {
   chromeos::FakeUserManager* user_manager = new chromeos::FakeUserManager();
   chromeos::ScopedUserManagerEnabler user_manager_enabler(user_manager);
   const char test_user_email[] = "test_user@example.com";
-  const User* test_user = user_manager->AddUser(test_user_email);
+  const user_manager::User* test_user = user_manager->AddUser(test_user_email);
   user_manager->LoginUser(test_user_email);
 
   TestingPrefServiceSyncable prefs;

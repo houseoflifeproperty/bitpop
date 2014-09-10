@@ -20,7 +20,7 @@
 #include "cc/test/fake_scrollbar.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/layer_tree_test.h"
-#include "cc/test/mock_quad_culler.h"
+#include "cc/test/mock_occlusion_tracker.h"
 #include "cc/test/test_web_graphics_context_3d.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
@@ -274,7 +274,7 @@ TEST(ScrollbarLayerTest, ThumbRect) {
 
 TEST(ScrollbarLayerTest, SolidColorDrawQuads) {
   const int kThumbThickness = 3;
-  const int kTrackStart = 0;
+  const int kTrackStart = 1;
   const int kTrackLength = 100;
 
   LayerTreeSettings layer_tree_settings;
@@ -296,14 +296,14 @@ TEST(ScrollbarLayerTest, SolidColorDrawQuads) {
   {
     MockOcclusionTracker<LayerImpl> occlusion_tracker;
     scoped_ptr<RenderPass> render_pass = RenderPass::Create();
-    MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
     AppendQuadsData data;
-    scrollbar_layer_impl->AppendQuads(&quad_culler, &data);
+    scrollbar_layer_impl->AppendQuads(
+        render_pass.get(), occlusion_tracker, &data);
 
-    const QuadList& quads = quad_culler.quad_list();
+    const QuadList& quads = render_pass->quad_list;
     ASSERT_EQ(1u, quads.size());
     EXPECT_EQ(DrawQuad::SOLID_COLOR, quads[0]->material);
-    EXPECT_RECT_EQ(gfx::Rect(6, 0, 40, 3), quads[0]->rect);
+    EXPECT_RECT_EQ(gfx::Rect(6, 0, 39, 3), quads[0]->rect);
   }
 
   // Contents scale should scale the draw quad.
@@ -312,14 +312,14 @@ TEST(ScrollbarLayerTest, SolidColorDrawQuads) {
   {
     MockOcclusionTracker<LayerImpl> occlusion_tracker;
     scoped_ptr<RenderPass> render_pass = RenderPass::Create();
-    MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
     AppendQuadsData data;
-    scrollbar_layer_impl->AppendQuads(&quad_culler, &data);
+    scrollbar_layer_impl->AppendQuads(
+        render_pass.get(), occlusion_tracker, &data);
 
-    const QuadList& quads = quad_culler.quad_list();
+    const QuadList& quads = render_pass->quad_list;
     ASSERT_EQ(1u, quads.size());
     EXPECT_EQ(DrawQuad::SOLID_COLOR, quads[0]->material);
-    EXPECT_RECT_EQ(gfx::Rect(12, 0, 80, 6), quads[0]->rect);
+    EXPECT_RECT_EQ(gfx::Rect(12, 0, 78, 6), quads[0]->rect);
   }
   scrollbar_layer_impl->draw_properties().contents_scale_x = 1.f;
   scrollbar_layer_impl->draw_properties().contents_scale_y = 1.f;
@@ -330,14 +330,30 @@ TEST(ScrollbarLayerTest, SolidColorDrawQuads) {
   {
     MockOcclusionTracker<LayerImpl> occlusion_tracker;
     scoped_ptr<RenderPass> render_pass = RenderPass::Create();
-    MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
     AppendQuadsData data;
-    scrollbar_layer_impl->AppendQuads(&quad_culler, &data);
+    scrollbar_layer_impl->AppendQuads(
+        render_pass.get(), occlusion_tracker, &data);
 
-    const QuadList& quads = quad_culler.quad_list();
+    const QuadList& quads = render_pass->quad_list;
     ASSERT_EQ(1u, quads.size());
     EXPECT_EQ(DrawQuad::SOLID_COLOR, quads[0]->material);
-    EXPECT_RECT_EQ(gfx::Rect(8, 0, 20, 3), quads[0]->rect);
+    EXPECT_RECT_EQ(gfx::Rect(8, 0, 19, 3), quads[0]->rect);
+  }
+
+  // We shouldn't attempt div-by-zero when the maximum is zero.
+  scrollbar_layer_impl->SetCurrentPos(0.f);
+  scrollbar_layer_impl->SetMaximum(0);
+  {
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+    AppendQuadsData data;
+    scrollbar_layer_impl->AppendQuads(
+        render_pass.get(), occlusion_tracker, &data);
+
+    const QuadList& quads = render_pass->quad_list;
+    ASSERT_EQ(1u, quads.size());
+    EXPECT_EQ(DrawQuad::SOLID_COLOR, quads[0]->material);
+    EXPECT_RECT_EQ(gfx::Rect(1, 0, 19, 3), quads[0]->rect);
   }
 }
 
@@ -389,12 +405,12 @@ TEST(ScrollbarLayerTest, LayerDrivenSolidColorDrawQuads) {
   {
     MockOcclusionTracker<LayerImpl> occlusion_tracker;
     scoped_ptr<RenderPass> render_pass = RenderPass::Create();
-    MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
 
     AppendQuadsData data;
-    scrollbar_layer_impl->AppendQuads(&quad_culler, &data);
+    scrollbar_layer_impl->AppendQuads(
+        render_pass.get(), occlusion_tracker, &data);
 
-    const QuadList& quads = quad_culler.quad_list();
+    const QuadList& quads = render_pass->quad_list;
     ASSERT_EQ(1u, quads.size());
     EXPECT_EQ(DrawQuad::SOLID_COLOR, quads[0]->material);
     EXPECT_RECT_EQ(gfx::Rect(3, 0, 3, 3), quads[0]->rect);
@@ -574,7 +590,7 @@ class MockLayerTreeHost : public LayerTreeHost {
         next_id_(1),
         total_ui_resource_created_(0),
         total_ui_resource_deleted_(0) {
-    InitializeSingleThreaded(client);
+    InitializeSingleThreaded(client, base::MessageLoopProxy::current());
   }
 
   virtual UIResourceId CreateUIResource(UIResourceClient* content) OVERRIDE {

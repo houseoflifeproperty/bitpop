@@ -11,6 +11,7 @@
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/base/upload_data_stream.h"
 #include "net/http/http_response_headers.h"
+#include "net/http/transport_security_state.h"
 #include "net/quic/congestion_control/receive_algorithm_interface.h"
 #include "net/quic/congestion_control/send_algorithm_interface.h"
 #include "net/quic/crypto/crypto_protocol.h"
@@ -59,7 +60,12 @@ class TestQuicConnection : public QuicConnection {
                      IPEndPoint address,
                      QuicConnectionHelper* helper,
                      QuicPacketWriter* writer)
-      : QuicConnection(connection_id, address, helper, writer, false,
+      : QuicConnection(connection_id,
+                       address,
+                       helper,
+                       writer,
+                       false  /* owns_writer */,
+                       false  /* is_server */,
                        versions) {
   }
 
@@ -209,6 +215,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
                               scoped_ptr<DatagramClientSocket>(socket),
                               writer_.Pass(), NULL,
                               &crypto_client_stream_factory_,
+                              &transport_security_state_,
                               make_scoped_ptr((QuicServerInfo*)NULL),
                               QuicServerId(kServerHostname, kServerPort,
                                            false, PRIVACY_MODE_DISABLED),
@@ -216,6 +223,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
                               base::MessageLoop::current()->
                                   message_loop_proxy().get(),
                               NULL));
+    session_->InitializeSession();
     session_->GetCryptoStream()->CryptoConnect();
     EXPECT_TRUE(session_->IsCryptoHandshakeConfirmed());
     stream_.reset(use_closing_stream_ ?
@@ -293,6 +301,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
   testing::StrictMock<MockConnectionVisitor> visitor_;
   scoped_ptr<QuicHttpStream> stream_;
   scoped_ptr<QuicDefaultPacketWriter> writer_;
+  TransportSecurityState transport_security_state_;
   scoped_ptr<QuicClientSession> session_;
   QuicCryptoClientConfig crypto_config_;
   TestCompletionCallback callback_;
@@ -416,6 +425,24 @@ TEST_P(QuicHttpStreamTest, GetRequestLargeResponse) {
                                          callback_.callback()));
   EXPECT_TRUE(stream_->IsResponseBodyComplete());
   EXPECT_TRUE(AtEof());
+}
+
+// Regression test for http://crbug.com/409101
+TEST_P(QuicHttpStreamTest, SessionClosedBeforeSendRequest) {
+  SetRequest("GET", "/", DEFAULT_PRIORITY);
+  Initialize();
+
+  request_.method = "GET";
+  request_.url = GURL("http://www.google.com/");
+
+  EXPECT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                          net_log_, callback_.callback()));
+
+  session_->connection()->CloseConnection(QUIC_NO_ERROR, true);
+
+  EXPECT_EQ(ERR_CONNECTION_CLOSED,
+            stream_->SendRequest(headers_, &response_,
+                                 callback_.callback()));
 }
 
 TEST_P(QuicHttpStreamTest, SendPostRequest) {

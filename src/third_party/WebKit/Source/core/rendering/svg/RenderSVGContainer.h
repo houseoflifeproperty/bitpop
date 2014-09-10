@@ -25,7 +25,7 @@
 
 #include "core/rendering/svg/RenderSVGModelObject.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGElement;
 
@@ -33,6 +33,7 @@ class RenderSVGContainer : public RenderSVGModelObject {
 public:
     explicit RenderSVGContainer(SVGElement*);
     virtual ~RenderSVGContainer();
+    virtual void trace(Visitor*) OVERRIDE;
 
     RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
     RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
@@ -60,11 +61,11 @@ protected:
 
     virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) OVERRIDE FINAL;
     virtual void removeChild(RenderObject*) OVERRIDE FINAL;
-    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE FINAL;
+    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) const OVERRIDE FINAL;
 
     virtual FloatRect objectBoundingBox() const OVERRIDE FINAL { return m_objectBoundingBox; }
     virtual FloatRect strokeBoundingBox() const OVERRIDE FINAL { return m_strokeBoundingBox; }
-    virtual FloatRect paintInvalidationRectInLocalCoordinates() const OVERRIDE FINAL { return m_repaintBoundingBox; }
+    virtual FloatRect paintInvalidationRectInLocalCoordinates() const OVERRIDE FINAL { return m_paintInvalidationBoundingBox; }
 
     virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction) OVERRIDE;
 
@@ -86,12 +87,12 @@ private:
     FloatRect m_objectBoundingBox;
     bool m_objectBoundingBoxValid;
     FloatRect m_strokeBoundingBox;
-    FloatRect m_repaintBoundingBox;
+    FloatRect m_paintInvalidationBoundingBox;
     bool m_needsBoundariesUpdate : 1;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSVGContainer, isSVGContainer());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderSVGContainer_h

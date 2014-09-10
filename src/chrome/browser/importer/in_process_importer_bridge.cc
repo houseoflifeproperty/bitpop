@@ -6,14 +6,16 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_parser.h"
-#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/common/importer/imported_bookmark_entry.h"
 #include "chrome/common/importer/imported_favicon_usage.h"
 #include "components/autofill/core/common/password_form.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_parser.h"
+#include "components/search_engines/template_url_prepopulate_data.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -74,7 +76,7 @@ class FirefoxURLParameterFilter : public TemplateURLParser::ParameterFilter {
   // TemplateURLParser::ParameterFilter method.
   virtual bool KeepParameter(const std::string& key,
                              const std::string& value) OVERRIDE {
-    std::string low_value = StringToLowerASCII(value);
+    std::string low_value = base::StringToLowerASCII(value);
     if (low_value.find("mozilla") != std::string::npos ||
         low_value.find("firefox") != std::string::npos ||
         low_value.find("moz:") != std::string::npos) {
@@ -124,7 +126,8 @@ void ParseSearchEnginesFromFirefoxXMLData(
   SearchEnginesMap::const_iterator default_turl = search_engine_for_url.end();
   for (std::vector<std::string>::const_iterator xml_iter =
            xml_data.begin(); xml_iter != xml_data.end(); ++xml_iter) {
-    TemplateURL* template_url = TemplateURLParser::Parse(NULL, true,
+    TemplateURL* template_url = TemplateURLParser::Parse(
+        UIThreadSearchTermsData(NULL), true,
         xml_iter->data(), xml_iter->length(), &param_filter);
     if (template_url) {
       SearchEnginesMap::iterator iter =

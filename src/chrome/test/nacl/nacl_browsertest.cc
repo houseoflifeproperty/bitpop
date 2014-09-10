@@ -18,6 +18,7 @@
 #include "base/process/launch.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/win/windows_version.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/nacl/nacl_browsertest_util.h"
 #include "components/nacl/browser/nacl_browser.h"
@@ -174,7 +175,7 @@ base::FilePath::StringType NumberOfCoresAsFilePathString() {
   SYSTEM_INFO system_info;
   GetSystemInfo(&system_info);
 #if TELEMETRY
-  fprintf(stderr, "browser says nprocessors = %d\n",
+  fprintf(stderr, "browser says nprocessors = %lu\n",
           system_info.dwNumberOfProcessors);
   fflush(NULL);
 #endif
@@ -263,9 +264,8 @@ class NaClBrowserTestPnaclDebug : public NaClBrowserTestPnacl {
     // lets the app continue, so that the load progress event completes.
     CommandLine cmd(base::FilePath(FILE_PATH_LITERAL("python")));
     base::FilePath script;
-    PathService::Get(base::DIR_SOURCE_ROOT, &script);
-    script = script.AppendASCII(
-        "chrome/browser/nacl_host/test/debug_stub_browser_tests.py");
+    PathService::Get(chrome::DIR_TEST_DATA, &script);
+    script = script.AppendASCII("nacl/debug_stub_browser_tests.py");
     cmd.AppendArgPath(script);
     cmd.AppendArg(base::IntToString(debug_stub_port));
     cmd.AppendArg("continue");
@@ -370,14 +370,10 @@ IN_PROC_BROWSER_TEST_F(NaClBrowserTestPnacl,
 IN_PROC_BROWSER_TEST_F(NaClBrowserTestPnacl,
                        MAYBE_PNACL(PnaclExceptionHandlingDisabled)) {
   RunNaClIntegrationTest(FILE_PATH_LITERAL(
-      "pnacl_exception_handling_disabled.html"));
+      "pnacl_hw_eh_disabled.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(NaClBrowserTestPnacl, PnaclMimeType) {
-  RunLoadTest(FILE_PATH_LITERAL("pnacl_mime_type.html"));
-}
-
-IN_PROC_BROWSER_TEST_F(NaClBrowserTestPnaclDisabled, PnaclMimeType) {
   RunLoadTest(FILE_PATH_LITERAL("pnacl_mime_type.html"));
 }
 
@@ -444,13 +440,8 @@ IN_PROC_BROWSER_TEST_F(NaClBrowserTestNewlibStderrPM, RedirectBg1) {
 }
 
 // TODO(ncbray) support glibc and PNaCl
-#if defined(OS_MACOSX)
-// crbug.com/375894
-#define MAYBE_MimeHandler DISABLED_MimeHandler
-#else
-#define MAYBE_MimeHandler MimeHandler
-#endif
-IN_PROC_BROWSER_TEST_F(NaClBrowserTestNewlibExtension, MAYBE_MimeHandler) {
+// flaky: crbug.com/375894
+IN_PROC_BROWSER_TEST_F(NaClBrowserTestNewlibExtension, DISABLED_MimeHandler) {
   RunNaClIntegrationTest(FILE_PATH_LITERAL(
       "ppapi_extension_mime_handler.html"));
 }

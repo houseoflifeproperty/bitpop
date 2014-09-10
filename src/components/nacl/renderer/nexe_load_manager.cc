@@ -13,9 +13,9 @@
 #include "components/nacl/common/nacl_types.h"
 #include "components/nacl/renderer/histogram.h"
 #include "components/nacl/renderer/manifest_service_channel.h"
+#include "components/nacl/renderer/platform_info.h"
 #include "components/nacl/renderer/pnacl_translation_resource_host.h"
 #include "components/nacl/renderer/progress_event.h"
-#include "components/nacl/renderer/sandbox_arch.h"
 #include "components/nacl/renderer/trusted_plugin_channel.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
@@ -322,7 +322,7 @@ void NexeLoadManager::InitializePlugin(
   }
 
   // Store mime_type_ at initialization time since we make it lowercase.
-  mime_type_ = StringToLowerASCII(LookupAttribute(args_, kTypeAttribute));
+  mime_type_ = base::StringToLowerASCII(LookupAttribute(args_, kTypeAttribute));
 }
 
 void NexeLoadManager::ReportStartupOverhead() const {
@@ -353,6 +353,7 @@ bool NexeLoadManager::RequestNaClManifest(const std::string& url) {
 }
 
 void NexeLoadManager::ProcessNaClManifest(const std::string& program_url) {
+  program_url_ = program_url;
   GURL gurl(program_url);
   DCHECK(gurl.is_valid());
   if (gurl.is_valid())

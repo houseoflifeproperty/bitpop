@@ -17,7 +17,9 @@
 #include <libaddressinput/address_field.h>
 
 #include <algorithm>
+#include <string>
 
+#include "format_element.h"
 #include "region_data_constants.h"
 #include "rule.h"
 

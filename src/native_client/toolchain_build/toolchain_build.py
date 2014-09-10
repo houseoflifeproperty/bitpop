@@ -40,7 +40,7 @@ GIT_REVISIONS = {
         'upstream-base': '237df3fa4a1d939e6fd1af0c3e5029a25a137310',
         },
     'gcc': {
-        'rev': 'faa3cdd0473b7fb82be937e32fd2b474fa0299e6',
+        'rev': '95260f2088fc67f43c329c864f03293a5718269a',
         'upstream-branch': 'upstream/gcc-4_8-branch',
         'upstream-name': 'gcc-4.8.3',
          # Upstream tag gcc-4_8_3-release:
@@ -75,9 +75,11 @@ TAR_FILES = {
 GIT_BASE_URL = 'https://chromium.googlesource.com/native_client'
 GIT_PUSH_URL = 'ssh://gerrit.chromium.org/native_client'
 
-KNOWN_MIRRORS = [('http://git.chromium.org/native_client', GIT_BASE_URL)]
+ALT_GIT_BASE_URL = 'https://chromium.googlesource.com/a/native_client'
 
+KNOWN_MIRRORS = [('http://git.chromium.org/native_client', GIT_BASE_URL)]
 PUSH_MIRRORS = [('http://git.chromium.org/native_client', GIT_PUSH_URL),
+                (ALT_GIT_BASE_URL, GIT_PUSH_URL),
                 (GIT_BASE_URL, GIT_PUSH_URL)]
 
 
@@ -656,12 +658,17 @@ def HostTools(host, target):
   def H(component_name):
     return ForHost(component_name, host)
 
+  def WindowsAlternate(if_windows, if_not_windows, if_mac=None):
+    if if_mac is not None and HostIsMac(host):
+      return if_mac
+    elif HostIsWindows(host):
+      return if_windows
+    else:
+      return if_not_windows
+
   # Return the file name with the appropriate suffix for an executable file.
   def Exe(file):
-    if HostIsWindows(host):
-      return file + '.exe'
-    else:
-      return file
+    return file + WindowsAlternate('.exe', '')
 
   tools = {
       H('binutils_' + target): {
@@ -674,9 +681,7 @@ def HostTools(host, target):
                   ConfigureTargetArgs(target) + [
                       '--enable-deterministic-archives',
                       '--enable-gold',
-                      ] + ([] if HostIsWindows(host) else [
-                          '--enable-plugins',
-                          ])),
+                      ] + WindowsAlternate([], ['--enable-plugins'])),
               command.Command(MakeCommand(host)),
               command.Command(MakeCheckCommand(host)),
               command.Command(MAKE_DESTDIR_CMD + ['install-strip']),
@@ -748,10 +753,16 @@ def HostTools(host, target):
                       '--target=x86_64-nacl',
                       '--enable-targets=arm-none-eabi-nacl',
                       '--with-expat',
+                      # Windows (MinGW) is missing ncurses; we need to
+                      # build one here and link it in statically for
+                      # --enable-tui.  See issue nativeclient:3911.
+                      '--%s-tui' % WindowsAlternate('disable', 'enable'),
                       'CPPFLAGS=-I%(abs_' + H('expat') + ')s/include',
                       'LDFLAGS=-L%(abs_' + H('expat') + ')s/lib',
                       ] +
-                  (['--without-python'] if HostIsWindows(host) else []) +
+                  # TODO(mcgrathr): Should use --with-python to ensure
+                  # we have it on Linux/Mac.
+                  WindowsAlternate(['--without-python'], []) +
                   # TODO(mcgrathr): The default -Werror only breaks because
                   # the OSX default compiler is an old front-end that does
                   # not understand all the GCC options.  Maybe switch to

@@ -180,6 +180,21 @@ class IOSPListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     }
     self._VerifyGeneratedOutput(templates, expected)
 
+  def testStringEnumList(self):
+    templates = self._MakeTemplate('StringEnumListPolicy',
+                                   'string-enum-list', '["a", "b"]',
+        '''
+          'items': [
+            { 'name': 'Foo', 'value': 'a', 'caption': '' },
+            { 'name': 'Bar', 'value': 'b', 'caption': '' },
+          ],
+        ''')
+
+    expected = {
+      'StringEnumListPolicy': [ "a", "b" ],
+    }
+    self._VerifyGeneratedOutput(templates, expected)
+
   def testListOfDictionary(self):
     templates = self._MakeTemplate(
         'ManagedBookmarks', 'dict',

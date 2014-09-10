@@ -17,9 +17,22 @@
 
 namespace content {
 
-EmbeddedWorkerRegistry::EmbeddedWorkerRegistry(
-    base::WeakPtr<ServiceWorkerContextCore> context)
-    : context_(context), next_embedded_worker_id_(0) {
+// static
+scoped_refptr<EmbeddedWorkerRegistry> EmbeddedWorkerRegistry::Create(
+    const base::WeakPtr<ServiceWorkerContextCore>& context) {
+  return make_scoped_refptr(new EmbeddedWorkerRegistry(context, 0));
+}
+
+// static
+scoped_refptr<EmbeddedWorkerRegistry> EmbeddedWorkerRegistry::Create(
+    const base::WeakPtr<ServiceWorkerContextCore>& context,
+    EmbeddedWorkerRegistry* old_registry) {
+  scoped_refptr<EmbeddedWorkerRegistry> registry =
+      new EmbeddedWorkerRegistry(
+          context,
+          old_registry->next_embedded_worker_id_);
+  registry->process_sender_map_.swap(old_registry->process_sender_map_);
+  return registry;
 }
 
 scoped_ptr<EmbeddedWorkerInstance> EmbeddedWorkerRegistry::CreateWorker() {
@@ -115,6 +128,20 @@ void EmbeddedWorkerRegistry::OnWorkerStopped(
   found->second->OnStopped();
 }
 
+void EmbeddedWorkerRegistry::OnPausedAfterDownload(
+    int process_id, int embedded_worker_id) {
+  WorkerInstanceMap::iterator found = worker_map_.find(embedded_worker_id);
+  if (found == worker_map_.end()) {
+    LOG(ERROR) << "Worker " << embedded_worker_id << " not registered";
+    return;
+  }
+  if (found->second->process_id() != process_id) {
+    LOG(ERROR) << "Incorrect embedded_worker_id";
+    return;
+  }
+  found->second->OnPausedAfterDownload();
+}
+
 void EmbeddedWorkerRegistry::OnReportException(
     int embedded_worker_id,
     const base::string16& error_message,
@@ -175,6 +202,22 @@ EmbeddedWorkerInstance* EmbeddedWorkerRegistry::GetWorker(
   if (found == worker_map_.end())
     return NULL;
   return found->second;
+}
+
+bool EmbeddedWorkerRegistry::CanHandle(int embedded_worker_id) const {
+  if (embedded_worker_id < initial_embedded_worker_id_ ||
+      next_embedded_worker_id_ <= embedded_worker_id) {
+    return false;
+  }
+  return true;
+}
+
+EmbeddedWorkerRegistry::EmbeddedWorkerRegistry(
+    const base::WeakPtr<ServiceWorkerContextCore>& context,
+    int initial_embedded_worker_id)
+    : context_(context),
+      next_embedded_worker_id_(initial_embedded_worker_id),
+      initial_embedded_worker_id_(initial_embedded_worker_id) {
 }
 
 EmbeddedWorkerRegistry::~EmbeddedWorkerRegistry() {

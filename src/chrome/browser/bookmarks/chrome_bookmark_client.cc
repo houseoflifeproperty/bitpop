@@ -14,14 +14,12 @@
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/history/url_database.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/startup_task_runner_service.h"
-#include "chrome/browser/profiles/startup_task_runner_service_factory.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node.h"
+#include "components/history/core/browser/url_database.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -38,6 +36,20 @@ void NotifyHistoryOfRemovedURLs(Profile* profile,
       HistoryServiceFactory::GetForProfile(profile, Profile::EXPLICIT_ACCESS);
   if (history_service)
     history_service->URLsNoLongerBookmarked(removed_urls);
+}
+
+void RunCallbackWithImage(
+    const favicon_base::FaviconImageCallback& callback,
+    const favicon_base::FaviconRawBitmapResult& bitmap_result) {
+  favicon_base::FaviconImageResult result;
+  if (bitmap_result.is_valid()) {
+    result.image = gfx::Image::CreateFrom1xPNGBytes(
+        bitmap_result.bitmap_data->front(), bitmap_result.bitmap_data->size());
+    result.icon_url = bitmap_result.icon_url;
+    callback.Run(result);
+    return;
+  }
+  callback.Run(result);
 }
 
 }  // namespace
@@ -99,21 +111,27 @@ bool ChromeBookmarkClient::PreferTouchIcon() {
 #endif
 }
 
-base::CancelableTaskTracker::TaskId ChromeBookmarkClient::GetFaviconImageForURL(
+base::CancelableTaskTracker::TaskId
+ChromeBookmarkClient::GetFaviconImageForPageURL(
     const GURL& page_url,
-    int icon_types,
-    int desired_size_in_dip,
+    favicon_base::IconType type,
     const favicon_base::FaviconImageCallback& callback,
     base::CancelableTaskTracker* tracker) {
   FaviconService* favicon_service =
       FaviconServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
   if (!favicon_service)
     return base::CancelableTaskTracker::kBadTaskId;
-  return favicon_service->GetFaviconImageForPageURL(
-      FaviconService::FaviconForPageURLParams(
-          page_url, icon_types, desired_size_in_dip),
-      callback,
-      tracker);
+  if (type == favicon_base::FAVICON) {
+    return favicon_service->GetFaviconImageForPageURL(
+        page_url, callback, tracker);
+  } else {
+    return favicon_service->GetRawFaviconForPageURL(
+        page_url,
+        type,
+        0,
+        base::Bind(&RunCallbackWithImage, callback),
+        tracker);
+  }
 }
 
 bool ChromeBookmarkClient::SupportsTypedCountForNodes() {
@@ -164,12 +182,14 @@ void ChromeBookmarkClient::RecordAction(const base::UserMetricsAction& action) {
 bookmarks::LoadExtraCallback ChromeBookmarkClient::GetLoadExtraNodesCallback() {
   // Create the managed_node now; it will be populated in the LoadExtraNodes
   // callback.
-  managed_node_ = new BookmarkPermanentNode(0);
+  // The ownership of managed_node_ is in limbo until LoadExtraNodes runs,
+  // so we leave it in the care of the closure meanwhile.
+  scoped_ptr<BookmarkPermanentNode> managed(new BookmarkPermanentNode(0));
+  managed_node_ = managed.get();
+
   return base::Bind(
       &ChromeBookmarkClient::LoadExtraNodes,
-      StartupTaskRunnerServiceFactory::GetForProfile(profile_)
-          ->GetBookmarkTaskRunner(),
-      managed_node_,
+      base::Passed(&managed),
       base::Passed(managed_bookmarks_tracker_->GetInitialManagedBookmarks()));
 }
 
@@ -234,23 +254,23 @@ void ChromeBookmarkClient::BookmarkModelLoaded(BookmarkModel* model,
 
 // static
 bookmarks::BookmarkPermanentNodeList ChromeBookmarkClient::LoadExtraNodes(
-    const scoped_refptr<base::DeferredSequencedTaskRunner>& profile_io_runner,
-    BookmarkPermanentNode* managed_node,
+    scoped_ptr<BookmarkPermanentNode> managed_node,
     scoped_ptr<base::ListValue> initial_managed_bookmarks,
     int64* next_node_id) {
-  DCHECK(profile_io_runner->RunsTasksOnCurrentThread());
   // Load the initial contents of the |managed_node| now, and assign it an
   // unused ID.
   int64 managed_id = *next_node_id;
   managed_node->set_id(managed_id);
   *next_node_id = policy::ManagedBookmarksTracker::LoadInitial(
-      managed_node, initial_managed_bookmarks.get(), managed_id + 1);
+      managed_node.get(), initial_managed_bookmarks.get(), managed_id + 1);
   managed_node->set_visible(!managed_node->empty());
   managed_node->SetTitle(
       l10n_util::GetStringUTF16(IDS_BOOKMARK_BAR_MANAGED_FOLDER_DEFAULT_NAME));
 
   bookmarks::BookmarkPermanentNodeList extra_nodes;
-  extra_nodes.push_back(managed_node);
+  // Ownership of the managed node passed to the caller.
+  extra_nodes.push_back(managed_node.release());
+
   return extra_nodes.Pass();
 }
 

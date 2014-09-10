@@ -31,7 +31,7 @@
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 class LocalFrame;
 class MediaQueryExp;
 class MediaQueryResult;
@@ -65,19 +65,17 @@ public:
     // Evaluator  returns true for acceptedMediaType and returns value of \mediafeatureResult
     // for any media features
 
-    MediaQueryEvaluator(const String& acceptedMediaType, bool mediaFeatureResult = false);
     MediaQueryEvaluator(const char* acceptedMediaType, bool mediaFeatureResult = false);
 
     // Creates evaluator which evaluates full media queries
-    MediaQueryEvaluator(const String& acceptedMediaType, LocalFrame*);
+    explicit MediaQueryEvaluator(LocalFrame*);
 
     // Creates evaluator which evaluates in a thread-safe manner a subset of media values
-    MediaQueryEvaluator(const String& acceptedMediaType, const MediaValues&);
+    explicit MediaQueryEvaluator(const MediaValues&);
 
     ~MediaQueryEvaluator();
 
     bool mediaTypeMatch(const String& mediaTypeToMatch) const;
-    bool mediaTypeMatchSpecific(const char* mediaTypeToMatch) const;
 
     // Evaluates a list of media queries
     bool eval(const MediaQuerySet*, MediaQueryResultList* = 0) const;
@@ -86,6 +84,8 @@ public:
     bool eval(const MediaQueryExp*) const;
 
 private:
+    const String mediaType() const;
+
     String m_mediaType;
     bool m_expectedResult;
     RefPtr<MediaValues> m_mediaValues;

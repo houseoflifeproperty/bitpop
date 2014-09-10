@@ -26,8 +26,8 @@
 #include "config.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 
-#include "bindings/v8/ScriptCallStackFactory.h"
-#include "bindings/v8/ScriptController.h"
+#include "bindings/core/v8/ScriptCallStackFactory.h"
+#include "bindings/core/v8/ScriptController.h"
 #include "core/dom/DOMStringList.h"
 #include "core/dom/Document.h"
 #include "core/events/SecurityPolicyViolationEvent.h"
@@ -39,6 +39,7 @@
 #include "core/frame/csp/CSPSourceList.h"
 #include "core/frame/csp/MediaListDirective.h"
 #include "core/frame/csp/SourceListDirective.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/loader/DocumentLoader.h"
@@ -64,7 +65,7 @@
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/StringUTF8Adaptor.h"
 
-namespace WebCore {
+namespace blink {
 
 // CSP 1.0 Directives
 const char ContentSecurityPolicy::ConnectSrc[] = "connect-src";
@@ -140,6 +141,11 @@ ContentSecurityPolicy::ContentSecurityPolicy(ExecutionContext* executionContext)
 
 ContentSecurityPolicy::~ContentSecurityPolicy()
 {
+}
+
+Document* ContentSecurityPolicy::document() const
+{
+    return m_executionContext->isDocument() ? toDocument(m_executionContext) : 0;
 }
 
 void ContentSecurityPolicy::copyStateFrom(const ContentSecurityPolicy* other)
@@ -386,22 +392,22 @@ bool ContentSecurityPolicy::allowScriptFromSource(const KURL& url, ContentSecuri
     return isAllowedByAllWithURL<&CSPDirectiveList::allowScriptFromSource>(m_policies, url, reportingStatus);
 }
 
-bool ContentSecurityPolicy::allowScriptNonce(const String& nonce) const
+bool ContentSecurityPolicy::allowScriptWithNonce(const String& nonce) const
 {
     return isAllowedByAllWithNonce<&CSPDirectiveList::allowScriptNonce>(m_policies, nonce);
 }
 
-bool ContentSecurityPolicy::allowStyleNonce(const String& nonce) const
+bool ContentSecurityPolicy::allowStyleWithNonce(const String& nonce) const
 {
     return isAllowedByAllWithNonce<&CSPDirectiveList::allowStyleNonce>(m_policies, nonce);
 }
 
-bool ContentSecurityPolicy::allowScriptHash(const String& source) const
+bool ContentSecurityPolicy::allowScriptWithHash(const String& source) const
 {
     return checkDigest<&CSPDirectiveList::allowScriptHash>(source, m_scriptHashAlgorithmsUsed, m_policies);
 }
 
-bool ContentSecurityPolicy::allowStyleHash(const String& source) const
+bool ContentSecurityPolicy::allowStyleWithHash(const String& source) const
 {
     return checkDigest<&CSPDirectiveList::allowStyleHash>(source, m_styleHashAlgorithmsUsed, m_policies);
 }
@@ -474,8 +480,7 @@ bool ContentSecurityPolicy::allowChildContextFromSource(const KURL& url, Content
 bool ContentSecurityPolicy::allowWorkerContextFromSource(const KURL& url, ContentSecurityPolicy::ReportingStatus reportingStatus) const
 {
     // CSP 1.1 moves workers from 'script-src' to the new 'child-src'. Measure the impact of this backwards-incompatible change.
-    if (m_executionContext->isDocument()) {
-        Document* document = static_cast<Document*>(m_executionContext);
+    if (Document* document = this->document()) {
         UseCounter::count(*document, UseCounter::WorkerSubjectToCSP);
         if (isAllowedByAllWithURL<&CSPDirectiveList::allowChildContextFromSource>(m_policies, url, SuppressReport) && !isAllowedByAllWithURL<&CSPDirectiveList::allowScriptFromSource>(m_policies, url, SuppressReport))
             UseCounter::count(*document, UseCounter::WorkerAllowedByChildBlockedByScript);
@@ -588,10 +593,10 @@ static void gatherSecurityPolicyViolationEventData(SecurityPolicyViolationEventI
 void ContentSecurityPolicy::reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const Vector<KURL>& reportURIs, const String& header)
 {
     // FIXME: Support sending reports from worker.
-    if (!m_executionContext->isDocument())
+    Document* document = this->document();
+    if (!document)
         return;
 
-    Document* document = this->document();
     LocalFrame* frame = document->frame();
     if (!frame)
         return;
@@ -675,14 +680,19 @@ void ContentSecurityPolicy::reportUnsupportedDirective(const String& name) const
     DEFINE_STATIC_LOCAL(String, policyURIMessage, ("The 'policy-uri' directive has been removed from the specification. Please specify a complete policy via the Content-Security-Policy header."));
 
     String message = "Unrecognized Content-Security-Policy directive '" + name + "'.\n";
-    if (equalIgnoringCase(name, allow))
+    MessageLevel level = ErrorMessageLevel;
+    if (equalIgnoringCase(name, allow)) {
         message = allowMessage;
-    else if (equalIgnoringCase(name, options))
+    } else if (equalIgnoringCase(name, options)) {
         message = optionsMessage;
-    else if (equalIgnoringCase(name, policyURI))
+    } else if (equalIgnoringCase(name, policyURI)) {
         message = policyURIMessage;
+    } else if (isDirectiveName(name)) {
+        message = "The Content-Security-Policy directive '" + name + "' is implemented behind a flag which is currently disabled.\n";
+        level = InfoMessageLevel;
+    }
 
-    logToConsole(message);
+    logToConsole(message, level);
 }
 
 void ContentSecurityPolicy::reportDirectiveAsSourceExpression(const String& directiveName, const String& sourceExpression) const
@@ -747,9 +757,9 @@ void ContentSecurityPolicy::reportMissingReportURI(const String& policy) const
     logToConsole("The Content Security Policy '" + policy + "' was delivered in report-only mode, but does not specify a 'report-uri'; the policy will have no effect. Please either add a 'report-uri' directive, or deliver the policy via the 'Content-Security-Policy' header.");
 }
 
-void ContentSecurityPolicy::logToConsole(const String& message) const
+void ContentSecurityPolicy::logToConsole(const String& message, MessageLevel level) const
 {
-    m_executionContext->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message);
+    m_executionContext->addConsoleMessage(ConsoleMessage::create(SecurityMessageSource, level, message));
 }
 
 void ContentSecurityPolicy::reportBlockedScriptExecutionToInspector(const String& directiveText) const
@@ -767,7 +777,7 @@ bool ContentSecurityPolicy::shouldBypassMainWorld(ExecutionContext* context)
     if (context && context->isDocument()) {
         Document* document = toDocument(context);
         if (document->frame())
-            return document->frame()->script().shouldBypassMainWorldContentSecurityPolicy();
+            return document->frame()->script().shouldBypassMainWorldCSP();
     }
     return false;
 }
@@ -783,4 +793,4 @@ void ContentSecurityPolicy::didSendViolationReport(const String& report)
     m_violationReportsSent.add(report.impl()->hash());
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -26,10 +26,9 @@
 #include "core/dom/StyleElement.h"
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLStyleElement;
-class StyleSheet;
 
 template<typename T> class EventSender;
 typedef EventSender<HTMLStyleElement> StyleEventSender;
@@ -39,8 +38,6 @@ class HTMLStyleElement FINAL : public HTMLElement, private StyleElement {
 public:
     static PassRefPtrWillBeRawPtr<HTMLStyleElement> create(Document&, bool createdByParser);
     virtual ~HTMLStyleElement();
-
-    void setType(const AtomicString&);
 
     ContainerNode* scopingNode();
 
@@ -62,7 +59,7 @@ private:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void didNotifySubtreeInsertionsToDocument() OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
+    virtual void childrenChanged(const ChildrenChange&) OVERRIDE;
 
     virtual void finishParsingChildren() OVERRIDE;
 

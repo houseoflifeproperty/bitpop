@@ -52,7 +52,14 @@ class TargetGenerator {
   void FillPublic();
   void FillInputs();
   void FillConfigs();
-  void FillOutputs();
+  void FillOutputs(bool allow_substitutions);
+
+  // Rrturns true if the given pattern will expand to a file in the output
+  // directory. If not, returns false and sets the error, blaming the given
+  // Value.
+  bool EnsureSubstitutionIsInOutputDir(
+      const SubstitutionPattern& pattern,
+      const Value& original_value);
 
   Target* target_;
   Scope* scope_;
@@ -66,7 +73,8 @@ class TargetGenerator {
 
   // Reads configs/deps from the given var name, and uses the given setting on
   // the target to save them.
-  void FillGenericConfigs(const char* var_name, LabelConfigVector* dest);
+  void FillGenericConfigs(const char* var_name,
+                          UniqueVector<LabelConfigPair>* dest);
   void FillGenericDeps(const char* var_name, LabelTargetVector* dest);
 
   void FillForwardDependentConfigs();

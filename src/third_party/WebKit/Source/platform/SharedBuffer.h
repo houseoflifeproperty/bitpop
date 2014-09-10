@@ -36,7 +36,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT SharedBuffer : public RefCounted<SharedBuffer> {
 public:
@@ -60,7 +60,7 @@ public:
 
     bool isEmpty() const { return !size(); }
 
-    void append(SharedBuffer*);
+    void append(PassRefPtr<SharedBuffer>);
     void append(const char*, unsigned);
     void append(const Vector<char>&);
 
@@ -116,6 +116,6 @@ private:
     mutable Vector<char*> m_segments;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SharedBuffer_h

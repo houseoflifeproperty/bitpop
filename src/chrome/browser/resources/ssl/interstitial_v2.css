@@ -139,8 +139,8 @@ input[type=checkbox] {
 
 .safe-browsing .icon {
   background-image: -webkit-image-set(
-      url('../safe_browsing/images/1x/stop_sign.png') 1x,
-      url('../safe_browsing/images/2x/stop_sign.png') 2x);
+      url(../safe_browsing/images/1x/stop_sign.png) 1x,
+      url(../safe_browsing/images/2x/stop_sign.png) 2x);
 }
 
 .small-link {
@@ -150,8 +150,8 @@ input[type=checkbox] {
 
 .ssl .icon {
   background-image: -webkit-image-set(
-      url('images/1x/brokenssl_red.png') 1x,
-      url('images/2x/brokenssl_red.png') 2x);
+      url(images/1x/brokenssl_red.png) 1x,
+      url(images/2x/brokenssl_red.png) 2x);
 }
 
 .styled-checkbox {
@@ -167,33 +167,45 @@ input[type=checkbox] {
 }
 
 .styled-checkbox label {
-  background-color: white;
+  background: transparent;
+  border: white solid 1px;
   border-radius: 2px;
-  height: 16px;
+  height: 14px;
   left: 0;
   position: absolute;
   right: 0;
   top: 0;
-  width: 16px;
+  width: 14px;
 }
 
 .styled-checkbox label::after {
   background: transparent;
-  border: 2px solid rgb(217, 69, 61);
+  border: 2px solid white;
   border-right-width: 0;
   border-top-width: 0;
   content: '';
   height: 4px;
-  left: 3px;
+  left: 2px;
   opacity: 0.3;
   position: absolute;
-  top: 4px;
+  top: 3px;
   transform: rotate(-45deg);
   width: 9px;
 }
 
 .styled-checkbox input[type=checkbox]:checked + label::after {
   opacity: 1;
+}
+
+.yellow :-webkit-any(
+    a, #details, #details-button, h1, .small-link) {
+  color: black;
+}
+
+.yellow .icon {
+  background-image: -webkit-image-set(
+      url(images/1x/brokenssl_yellow.png) 1x,
+      url(images/2x/brokenssl_yellow.png) 2x);
 }
 
 @media (max-width: 700px) {

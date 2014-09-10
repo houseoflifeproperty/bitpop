@@ -25,7 +25,6 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --harmony-symbols --harmony-collections
 // Flags: --expose-gc --allow-natives-syntax
 
 var symbols = []
@@ -102,7 +101,9 @@ TestConstructor()
 
 function TestValueOf() {
   for (var i in symbols) {
+    assertTrue(symbols[i] === Object(symbols[i]).valueOf())
     assertTrue(symbols[i] === symbols[i].valueOf())
+    assertTrue(Symbol.prototype.valueOf.call(Object(symbols[i])) === symbols[i])
     assertTrue(Symbol.prototype.valueOf.call(symbols[i]) === symbols[i])
   }
 }
@@ -113,7 +114,7 @@ function TestToString() {
   for (var i in symbols) {
     assertThrows(function() { String(symbols[i]) }, TypeError)
     assertThrows(function() { symbols[i] + "" }, TypeError)
-    assertTrue(isValidSymbolString(String(Object(symbols[i]))))
+    assertThrows(function() { String(Object(symbols[i])) }, TypeError)
     assertTrue(isValidSymbolString(symbols[i].toString()))
     assertTrue(isValidSymbolString(Object(symbols[i]).toString()))
     assertTrue(
@@ -127,6 +128,8 @@ TestToString()
 
 function TestToBoolean() {
   for (var i in symbols) {
+    assertTrue(Boolean(Object(symbols[i])))
+    assertFalse(!Object(symbols[i]))
     assertTrue(Boolean(symbols[i]).valueOf())
     assertFalse(!symbols[i])
     assertTrue(!!symbols[i])
@@ -144,8 +147,10 @@ TestToBoolean()
 
 function TestToNumber() {
   for (var i in symbols) {
-    assertSame(NaN, Number(symbols[i]).valueOf())
-    assertSame(NaN, symbols[i] + 0)
+    assertThrows(function() { Number(Object(symbols[i])) }, TypeError)
+    assertThrows(function() { +Object(symbols[i]) }, TypeError)
+    assertThrows(function() { Number(symbols[i]) }, TypeError)
+    assertThrows(function() { symbols[i] + 0 }, TypeError)
   }
 }
 TestToNumber()
@@ -367,6 +372,34 @@ for (var i in objs) {
 }
 
 
+function TestDefineProperties() {
+  var properties = {}
+  for (var i in symbols) {
+    Object.defineProperty(
+        properties, symbols[i], {value: {value: i}, enumerable: i % 2 === 0})
+  }
+  var o = Object.defineProperties({}, properties)
+  for (var i in symbols) {
+    assertEquals(i % 2 === 0, symbols[i] in o)
+  }
+}
+TestDefineProperties()
+
+
+function TestCreate() {
+  var properties = {}
+  for (var i in symbols) {
+    Object.defineProperty(
+      properties, symbols[i], {value: {value: i}, enumerable: i % 2 === 0})
+  }
+  var o = Object.create(Object.prototype, properties)
+  for (var i in symbols) {
+    assertEquals(i % 2 === 0, symbols[i] in o)
+  }
+}
+TestCreate()
+
+
 function TestCachedKeyAfterScavenge() {
   gc();
   // Keyed property lookup are cached.  Hereby we assume that the keys are
@@ -412,8 +445,9 @@ TestGetOwnPropertySymbolsWithProto()
 
 function TestWellKnown() {
   var symbols = [
-    "create", "hasInstance", "isConcatSpreadable", "isRegExp",
-    "iterator", "toStringTag", "unscopables"
+    // TODO(rossberg): reactivate once implemented.
+    // "hasInstance", "isConcatSpreadable", "isRegExp",
+    "iterator", /* "toStringTag", */ "unscopables"
   ]
 
   for (var i in symbols) {

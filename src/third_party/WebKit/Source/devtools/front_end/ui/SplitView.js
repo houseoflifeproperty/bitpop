@@ -40,16 +40,15 @@ WebInspector.SplitView = function(isVertical, secondIsSidebar, settingName, defa
 {
     WebInspector.View.call(this);
 
-    this.registerRequiredCSS("splitView.css");
     this.element.classList.add("split-view");
 
     this._mainView = new WebInspector.VBox();
     this._mainElement = this._mainView.element;
-    this._mainElement.className = "split-view-contents scroll-target split-view-main vbox"; // Override
+    this._mainElement.className = "split-view-contents split-view-main vbox"; // Override
 
     this._sidebarView = new WebInspector.VBox();
     this._sidebarElement = this._sidebarView.element;
-    this._sidebarElement.className = "split-view-contents scroll-target split-view-sidebar vbox"; // Override
+    this._sidebarElement.className = "split-view-contents split-view-sidebar vbox"; // Override
 
     this._resizerElement = this.element.createChild("div", "split-view-resizer");
     this._resizerElement.createChild("div", "split-view-resizer-border");

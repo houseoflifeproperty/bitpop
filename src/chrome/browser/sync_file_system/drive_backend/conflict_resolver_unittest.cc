@@ -9,6 +9,7 @@
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/run_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "chrome/browser/drive/drive_uploader.h"
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
@@ -72,9 +73,8 @@ class ConflictResolverTest : public testing::Test {
         fake_drive_service.PassAs<drive::DriveServiceInterface>(),
         drive_uploader.Pass(),
         NULL,
-        base::MessageLoopProxy::current(),
-        base::MessageLoopProxy::current(),
-        base::MessageLoopProxy::current()));
+        base::ThreadTaskRunnerHandle::Get(),
+        base::ThreadTaskRunnerHandle::Get()));
     context_->SetRemoteChangeProcessor(remote_change_processor_.get());
 
     RegisterSyncableFileSystem();
@@ -82,7 +82,7 @@ class ConflictResolverTest : public testing::Test {
     sync_task_manager_.reset(new SyncTaskManager(
         base::WeakPtr<SyncTaskManager::Client>(),
         10 /* maximum_background_task */,
-        base::MessageLoopProxy::current()));
+        base::ThreadTaskRunnerHandle::Get()));
     sync_task_manager_->Initialize(SYNC_STATUS_OK);
   }
 
@@ -183,7 +183,8 @@ class ConflictResolverTest : public testing::Test {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     scoped_ptr<RemoteToLocalSyncer> syncer(
         new RemoteToLocalSyncer(context_.get()));
-    syncer->RunExclusive(CreateResultReceiver(&status));
+    syncer->RunPreflight(SyncTaskToken::CreateForTesting(
+        CreateResultReceiver(&status)));
     base::RunLoop().RunUntilIdle();
     return status;
   }
@@ -208,9 +209,18 @@ class ConflictResolverTest : public testing::Test {
   }
 
   void RunRemoteToLocalSyncerUntilIdle() {
-    SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    while (status != SYNC_STATUS_NO_CHANGE_TO_SYNC)
+    const int kRetryLimit = 100;
+    SyncStatusCode status;
+    int retry_count = 0;
+    MetadataDatabase* metadata_database = context_->GetMetadataDatabase();
+    do {
+      if (retry_count++ > kRetryLimit)
+        break;
       status = RunRemoteToLocalSyncer();
+    } while (status == SYNC_STATUS_OK ||
+             status == SYNC_STATUS_RETRY ||
+             metadata_database->PromoteLowerPriorityTrackersToNormal());
+    EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC, status);
   }
 
   SyncStatusCode RunConflictResolver() {
@@ -243,10 +253,11 @@ class ConflictResolverTest : public testing::Test {
     return entries.Pass();
   }
 
-  void VerifyConflictResolution(const std::string& parent_folder_id,
-                                const std::string& title,
-                                const std::string& primary_file_id,
-                                google_apis::DriveEntryKind kind) {
+  void VerifyConflictResolution(
+      const std::string& parent_folder_id,
+      const std::string& title,
+      const std::string& primary_file_id,
+      google_apis::ResourceEntry::ResourceEntryKind kind) {
     ScopedVector<google_apis::ResourceEntry> entries;
     EXPECT_EQ(google_apis::HTTP_SUCCESS,
               fake_drive_helper_->SearchByTitle(
@@ -309,7 +320,7 @@ TEST_F(ConflictResolverTest, ResolveConflict_Files) {
   // Only primary file should survive.
   EXPECT_EQ(SYNC_STATUS_OK, RunConflictResolver());
   VerifyConflictResolution(app_root, kTitle, primary,
-                           google_apis::ENTRY_KIND_FILE);
+                           google_apis::ResourceEntry::ENTRY_KIND_FILE);
 }
 
 TEST_F(ConflictResolverTest, ResolveConflict_Folders) {
@@ -335,7 +346,7 @@ TEST_F(ConflictResolverTest, ResolveConflict_Folders) {
   // Only primary file should survive.
   EXPECT_EQ(SYNC_STATUS_OK, RunConflictResolver());
   VerifyConflictResolution(app_root, kTitle, primary,
-                           google_apis::ENTRY_KIND_FOLDER);
+                           google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
 }
 
 TEST_F(ConflictResolverTest, ResolveConflict_FilesAndFolders) {
@@ -361,7 +372,7 @@ TEST_F(ConflictResolverTest, ResolveConflict_FilesAndFolders) {
   // Only primary file should survive.
   EXPECT_EQ(SYNC_STATUS_OK, RunConflictResolver());
   VerifyConflictResolution(app_root, kTitle, primary,
-                           google_apis::ENTRY_KIND_FOLDER);
+                           google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
 }
 
 TEST_F(ConflictResolverTest, ResolveConflict_RemoteFolderOnLocalFile) {
@@ -393,7 +404,7 @@ TEST_F(ConflictResolverTest, ResolveConflict_RemoteFolderOnLocalFile) {
   // Run conflict resolver. Only primary file should survive.
   EXPECT_EQ(SYNC_STATUS_OK, RunConflictResolver());
   VerifyConflictResolution(app_root, kTitle, primary,
-                           google_apis::ENTRY_KIND_FOLDER);
+                           google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
 
   // Continue to run remote-to-local sync.
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
@@ -441,7 +452,7 @@ TEST_F(ConflictResolverTest, ResolveConflict_RemoteNestedFolderOnLocalFile) {
   // Run conflict resolver. Only primary file should survive.
   EXPECT_EQ(SYNC_STATUS_OK, RunConflictResolver());
   VerifyConflictResolution(app_root, kTitle, primary,
-                           google_apis::ENTRY_KIND_FOLDER);
+                           google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
 
   // Continue to run remote-to-local sync.
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());

@@ -12,7 +12,7 @@ def Update(c):
   c['schedulers'].extend([
       SingleBranchScheduler(name='webrtc_mac_scheduler',
                             branch='trunk',
-                            treeStableTimer=0,
+                            treeStableTimer=30,
                             builderNames=[
           'Mac32 Debug',
           'Mac32 Release',

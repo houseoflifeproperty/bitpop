@@ -271,8 +271,18 @@ String.prototype.hashCode = function()
 {
     var result = 0;
     for (var i = 0; i < this.length; ++i)
-        result = result * 3 + this.charCodeAt(i);
+        result = (result * 3 + this.charCodeAt(i)) | 0;
     return result;
+}
+
+/**
+ * @param {number} index
+ * @return {boolean}
+ */
+String.prototype.isDigitAt = function(index)
+{
+    var c = this.charCodeAt(index);
+    return 48 <= c && c <= 57;
 }
 
 /**
@@ -903,11 +913,6 @@ String.tokenizeFormatString = function(format, formatters)
         tokens.push({ type: "specifier", specifier: specifier, precision: precision, substitutionIndex: substitutionIndex });
     }
 
-    function isDigit(c)
-    {
-        return !!/[0-9]/.exec(c);
-    }
-
     var index = 0;
     for (var precentIndex = format.indexOf("%", index); precentIndex !== -1; precentIndex = format.indexOf("%", index)) {
         addStringToken(format.substring(index, precentIndex));
@@ -920,10 +925,10 @@ String.tokenizeFormatString = function(format, formatters)
             continue;
         }
 
-        if (isDigit(format[index])) {
+        if (format.isDigitAt(index)) {
             // The first character is a number, it might be a substitution index.
             var number = parseInt(format.substring(index), 10);
-            while (isDigit(format[index]))
+            while (format.isDigitAt(index))
                 ++index;
 
             // If the number is greater than zero and ends with a "$",
@@ -943,7 +948,7 @@ String.tokenizeFormatString = function(format, formatters)
             if (isNaN(precision))
                 precision = 0;
 
-            while (isDigit(format[index]))
+            while (format.isDigitAt(index))
                 ++index;
         }
 
@@ -1664,63 +1669,6 @@ function loadXHR(url, async, callback)
     return null;
 }
 
-var _importedScripts = {};
-
-/**
- * @param {string} url
- * @return {string}
- */
-function loadResource(url)
-{
-    var xhr = new XMLHttpRequest();
-    xhr.open("GET", url, false);
-    var stack = new Error().stack;
-    try {
-        xhr.send(null);
-    } catch (e) {
-        console.error(url + " -> " + stack);
-        throw e;
-    }
-    return xhr.responseText;
-}
-
-/**
- * This function behavior depends on the "debug_devtools" flag value.
- * - In debug mode it loads scripts synchronously via xhr request.
- * - In release mode every occurrence of "importScript" in the js files
- *   that have been whitelisted in the build system gets replaced with
- *   the script source code on the compilation phase.
- *   The build system will throw an exception if it finds an importScript() call
- *   in other files.
- *
- * To load scripts lazily in release mode call "loadScript" function.
- * @param {string} scriptName
- */
-function importScript(scriptName)
-{
-    var sourceURL = self._importScriptPathPrefix + scriptName;
-    if (_importedScripts[sourceURL])
-        return;
-    _importedScripts[sourceURL] = true;
-    var scriptSource = loadResource(sourceURL);
-    if (!scriptSource)
-        throw "empty response arrived for script '" + sourceURL + "'";
-    var oldPrefix = self._importScriptPathPrefix;
-    self._importScriptPathPrefix += scriptName.substring(0, scriptName.lastIndexOf("/") + 1);
-    try {
-        self.eval(scriptSource + "\n//# sourceURL=" + sourceURL);
-    } finally {
-        self._importScriptPathPrefix = oldPrefix;
-    }
-}
-
-(function() {
-    var baseUrl = location.origin + location.pathname;
-    self._importScriptPathPrefix = baseUrl.substring(0, baseUrl.lastIndexOf("/") + 1);
-})();
-
-var loadScript = importScript;
-
 /**
  * @constructor
  */
@@ -1773,3 +1721,45 @@ CallbackBarrier.prototype = {
 function suppressUnused(value)
 {
 }
+
+/**
+ * @constructor
+ * @param {!T} targetObject
+ * @template T
+ */
+function WeakReference(targetObject)
+{
+    this._targetObject = targetObject;
+}
+
+WeakReference.prototype = {
+    /**
+     * @return {?T}
+     */
+    get: function()
+    {
+        return this._targetObject;
+    },
+
+    clear: function()
+    {
+        this._targetObject = null;
+    }
+};
+
+/**
+ * @param {function()} callback
+ */
+self.setImmediate = (function() {
+    var callbacks = [];
+    function run() {
+        var cbList = callbacks.slice();
+        callbacks.length = 0;
+        cbList.forEach(function(callback) { callback(); });
+    };
+    return function setImmediate(callback) {
+        if (!callbacks.length)
+            new Promise(function(resolve,reject){ resolve(null);}).then(run);
+        callbacks.push(callback);
+    };
+})();

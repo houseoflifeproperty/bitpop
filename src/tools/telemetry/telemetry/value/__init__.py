@@ -1,4 +1,4 @@
-# Copyright 2013 The Chromium Authors. All rights reserved.
+# Copyright 2014 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """
@@ -11,6 +11,7 @@ The core Value concept provides the basic functionality:
 - naming and units
 - importance tracking [whether a value will show up on a waterfall or output
   file by default]
+- other metadata, such as a description of what was measured
 - default conversion to scalar and string
 - merging properties
 
@@ -19,6 +20,10 @@ Downstream consumers of test results typically want to group these runs
 together, then compute summary statistics across runs. Value provides the
 Merge* family of methods for this kind of aggregation.
 """
+import os
+
+from telemetry.core import discover
+from telemetry.core import util
 
 # When combining a pair of Values togehter, it is sometimes ambiguous whether
 # the values should be concatenated, or one should be picked as representative.
@@ -37,16 +42,26 @@ SUMMARY_RESULT_OUTPUT_CONTEXT = 'summary-result-output-context'
 class Value(object):
   """An abstract value produced by a telemetry page test.
   """
-  def __init__(self, page, name, units, important):
+  def __init__(self, page, name, units, important, description):
     """A generic Value object.
 
-    Note: page may be given as None to indicate that the value represents
-    results multiple pages.
+    Args:
+      page: A Page object, may be given as None to indicate that the value
+          represents results for multiple pages.
+      name: A value name string, may contain a dot. Values from the same test
+          with the same prefix before the dot may be considered to belong to
+          the same chart.
+      units: A units string.
+      important: Whether the value is "important". Causes the value to appear
+          by default in downstream UIs.
+      description: A string explaining in human-understandable terms what this
+          value represents.
     """
     self.page = page
     self.name = name
     self.units = units
     self.important = important
+    self.description = description
 
   def IsMergableWith(self, that):
     return (self.units == that.units and
@@ -149,6 +164,113 @@ class Value(object):
     Returns None if not possible.
     """
     raise NotImplementedError()
+
+  @staticmethod
+  def GetJSONTypeName():
+    """Gets the typename for serialization to JSON using AsDict."""
+    raise NotImplementedError()
+
+  def AsDict(self):
+    """Pre-serializes a value to a dict for output as JSON."""
+    return self._AsDictImpl()
+
+  def _AsDictImpl(self):
+    d = {
+      'name': self.name,
+      'type': self.GetJSONTypeName(),
+      'units': self.units,
+    }
+
+    if self.description:
+      d['description'] = self.description
+
+    if self.page:
+      d['page_id'] = self.page.id
+
+    return d
+
+  def AsDictWithoutBaseClassEntries(self):
+    full_dict = self.AsDict()
+    base_dict_keys = set(self._AsDictImpl().keys())
+
+    # Extracts only entries added by the subclass.
+    return dict([(k, v) for (k, v) in full_dict.iteritems()
+                  if k not in base_dict_keys])
+
+  @staticmethod
+  def FromDict(value_dict, page_dict):
+    """Produces a value from a value dict and a page dict.
+
+    Value dicts are produced by serialization to JSON, and must be accompanied
+    by a dict mapping page IDs to pages, also produced by serialization, in
+    order to be completely deserialized. If deserializing multiple values, use
+    ListOfValuesFromListOfDicts instead.
+
+    value_dict: a dictionary produced by AsDict() on a value subclass.
+    page_dict: a dictionary mapping IDs to page objects.
+    """
+    return Value.ListOfValuesFromListOfDicts([value_dict], page_dict)[0]
+
+  @staticmethod
+  def ListOfValuesFromListOfDicts(value_dicts, page_dict):
+    """Takes a list of value dicts to values.
+
+    Given a list of value dicts produced by AsDict, this method
+    deserializes the dicts given a dict mapping page IDs to pages.
+    This method performs memoization for deserializing a list of values
+    efficiently, where FromDict is meant to handle one-offs.
+
+    values: a list of value dicts produced by AsDict() on a value subclass.
+    page_dict: a dictionary mapping IDs to page objects.
+    """
+    value_dir = os.path.dirname(__file__)
+    value_classes = discover.DiscoverClasses(
+        value_dir, util.GetTelemetryDir(),
+        Value, index_by_class_name=True)
+
+    value_json_types = dict((value_classes[x].GetJSONTypeName(), x) for x in
+        value_classes)
+
+    values = []
+    for value_dict in value_dicts:
+      value_class = value_classes[value_json_types[value_dict['type']]]
+      assert 'FromDict' in value_class.__dict__, \
+             'Subclass doesn\'t override FromDict'
+      values.append(value_class.FromDict(value_dict, page_dict))
+
+    return values
+
+  @staticmethod
+  def GetConstructorKwArgs(value_dict, page_dict):
+    """Produces constructor arguments from a value dict and a page dict.
+
+    Takes a dict parsed from JSON and an index of pages and recovers the
+    keyword arguments to be passed to the constructor for deserializing the
+    dict.
+
+    value_dict: a dictionary produced by AsDict() on a value subclass.
+    page_dict: a dictionary mapping IDs to page objects.
+    """
+    d = {
+      'name': value_dict['name'],
+      'units': value_dict['units']
+    }
+
+    description = value_dict.get('description', None)
+    if description:
+      d['description'] = description
+    else:
+      d['description'] = None
+
+    page_id = value_dict.get('page_id', None)
+    if page_id:
+      d['page'] = page_dict[int(page_id)]
+    else:
+      d['page'] = None
+
+    d['important'] = False
+
+    return d
 
 def ValueNameFromTraceAndChartName(trace_name, chart_name=None):
   """Mangles a trace name plus optional chart name into a standard string.

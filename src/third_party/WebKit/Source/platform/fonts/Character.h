@@ -38,7 +38,7 @@
 #include "wtf/text/WTFString.h"
 #include "wtf/unicode/CharacterNames.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT Character {
 public:
@@ -70,17 +70,10 @@ public:
     static String normalizeSpaces(const LChar*, unsigned length);
     static String normalizeSpaces(const UChar*, unsigned length);
 
-    static bool isRoundingHackCharacter(UChar32 c)
-    {
-        return !(c & ~0xFF) && s_roundingHackCharacterTable[c];
-    }
-
 private:
     Character();
-
-    static const uint8_t s_roundingHackCharacterTable[256];
 };
 
-}
+} // namespace blink
 
 #endif

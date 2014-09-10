@@ -97,7 +97,6 @@ void RtcpFormatRembTest::SetUp() {
   rtcp_receiver_ = new RTCPReceiver(0, system_clock_, dummy_rtp_rtcp_impl_);
   test_transport_ = new TestTransport(rtcp_receiver_);
 
-  EXPECT_EQ(0, rtcp_sender_->Init());
   EXPECT_EQ(0, rtcp_sender_->RegisterSendTransport(test_transport_));
 }
 
@@ -122,7 +121,8 @@ TEST_F(RtcpFormatRembTest, TestNonCompund) {
   uint32_t SSRC = 456789;
   EXPECT_EQ(0, rtcp_sender_->SetRTCPStatus(kRtcpNonCompound));
   EXPECT_EQ(0, rtcp_sender_->SetREMBData(1234, 1, &SSRC));
-  RTCPSender::FeedbackState feedback_state(dummy_rtp_rtcp_impl_);
+  RTCPSender::FeedbackState feedback_state =
+      dummy_rtp_rtcp_impl_->GetFeedbackState();
   EXPECT_EQ(0, rtcp_sender_->SendRTCP(feedback_state, kRtcpRemb));
 }
 
@@ -130,7 +130,8 @@ TEST_F(RtcpFormatRembTest, TestCompund) {
   uint32_t SSRCs[2] = {456789, 98765};
   EXPECT_EQ(0, rtcp_sender_->SetRTCPStatus(kRtcpCompound));
   EXPECT_EQ(0, rtcp_sender_->SetREMBData(1234, 2, SSRCs));
-  RTCPSender::FeedbackState feedback_state(dummy_rtp_rtcp_impl_);
+  RTCPSender::FeedbackState feedback_state =
+      dummy_rtp_rtcp_impl_->GetFeedbackState();
   EXPECT_EQ(0, rtcp_sender_->SendRTCP(feedback_state, kRtcpRemb));
 }
 }  // namespace

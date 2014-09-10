@@ -30,11 +30,13 @@
 
 #include "core/frame/Settings.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtr<WebGLContextAttributes> WebGLContextAttributes::create()
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(WebGLContextAttributes);
+
+PassRefPtrWillBeRawPtr<WebGLContextAttributes> WebGLContextAttributes::create()
 {
-    return adoptRef(new WebGLContextAttributes());
+    return adoptRefWillBeNoop(new WebGLContextAttributes());
 }
 
 WebGLContextAttributes::WebGLContextAttributes()
@@ -63,13 +65,9 @@ WebGLContextAttributes::WebGLContextAttributes(const WebGLContextAttributes& att
     ScriptWrappable::init(this);
 }
 
-WebGLContextAttributes::~WebGLContextAttributes()
+PassRefPtrWillBeRawPtr<WebGLContextAttributes> WebGLContextAttributes::clone() const
 {
-}
-
-PassRefPtr<WebGLContextAttributes> WebGLContextAttributes::clone() const
-{
-    return adoptRef(new WebGLContextAttributes(*this));
+    return adoptRefWillBeNoop(new WebGLContextAttributes(*this));
 }
 
 bool WebGLContextAttributes::alpha() const
@@ -143,7 +141,7 @@ void WebGLContextAttributes::setFailIfMajorPerformanceCaveat(bool failIfMajorPer
 }
 
 blink::WebGraphicsContext3D::Attributes WebGLContextAttributes::attributes(
-    const blink::WebString& topDocumentURL, Settings* settings) const
+    const blink::WebString& topDocumentURL, Settings* settings, unsigned webGLVersion) const
 {
     blink::WebGraphicsContext3D::Attributes attrs;
 
@@ -164,7 +162,10 @@ blink::WebGraphicsContext3D::Attributes WebGLContextAttributes::attributes(
 
     attrs.topDocumentURL = topDocumentURL;
 
+    attrs.webGL = true;
+    attrs.webGLVersion = webGLVersion;
+
     return attrs;
 }
 
-} // namespace WebCore
+} // namespace blink

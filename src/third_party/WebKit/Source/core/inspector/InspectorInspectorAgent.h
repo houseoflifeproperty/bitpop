@@ -35,7 +35,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class DOMWrapperWorld;
 class DocumentLoader;
@@ -51,12 +51,13 @@ typedef String ErrorString;
 class InspectorInspectorAgent FINAL : public InspectorBaseAgent<InspectorInspectorAgent>, public InspectorBackendDispatcher::InspectorCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorInspectorAgent);
 public:
-    static PassOwnPtr<InspectorInspectorAgent> create(Page* page, InjectedScriptManager* injectedScriptManager)
+    static PassOwnPtrWillBeRawPtr<InspectorInspectorAgent> create(Page* page, InjectedScriptManager* injectedScriptManager)
     {
-        return adoptPtr(new InspectorInspectorAgent(page, injectedScriptManager));
+        return adoptPtrWillBeNoop(new InspectorInspectorAgent(page, injectedScriptManager));
     }
 
     virtual ~InspectorInspectorAgent();
+    virtual void trace(Visitor*) OVERRIDE;
 
     // Inspector front-end API.
     virtual void enable(ErrorString*) OVERRIDE;
@@ -83,9 +84,9 @@ public:
 private:
     InspectorInspectorAgent(Page*, InjectedScriptManager*);
 
-    Page* m_inspectedPage;
+    RawPtrWillBeMember<Page> m_inspectedPage;
     InspectorFrontend* m_frontend;
-    InjectedScriptManager* m_injectedScriptManager;
+    RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
 
     Vector<pair<long, String> > m_pendingEvaluateTestCommands;
     pair<RefPtr<TypeBuilder::Runtime::RemoteObject>, RefPtr<JSONObject> > m_pendingInspectData;
@@ -93,6 +94,6 @@ private:
     InjectedScriptForOriginMap m_injectedScriptForOrigin;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InspectorInspectorAgent_h)

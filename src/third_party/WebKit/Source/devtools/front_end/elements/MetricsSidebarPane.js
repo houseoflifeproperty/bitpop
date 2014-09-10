@@ -162,7 +162,7 @@ WebInspector.MetricsSidebarPane.prototype = {
     /**
      * @param {boolean} showHighlight
      * @param {string} mode
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _highlightDOMNode: function(showHighlight, mode, event)
     {
@@ -375,11 +375,17 @@ WebInspector.MetricsSidebarPane.prototype = {
             this._applyUserInput(element, replacementString, originalValue, context, false);
         }
 
-        function customNumberHandler(number)
+        /**
+         * @param {string} prefix
+         * @param {number} number
+         * @param {string} suffix
+         * @return {string}
+         */
+        function customNumberHandler(prefix, number, suffix)
         {
             if (styleProperty !== "margin" && number < 0)
                 number = 0;
-            return number;
+            return prefix + number + suffix;
         }
 
         WebInspector.handleElementValueModifications(event, element, finishHandler.bind(this), undefined, customNumberHandler);
@@ -433,7 +439,7 @@ WebInspector.MetricsSidebarPane.prototype = {
 
         if (computedStyle.getPropertyValue("box-sizing") === "border-box" && (styleProperty === "width" || styleProperty === "height")) {
             if (!userInput.match(/px$/)) {
-                WebInspector.messageSink.addErrorMessage("For elements with box-sizing: border-box, only absolute content area dimensions can be applied", true);
+                WebInspector.console.error("For elements with box-sizing: border-box, only absolute content area dimensions can be applied");
                 return;
             }
 

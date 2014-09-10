@@ -55,7 +55,7 @@ static SizeSpecificPartitionAllocator<kTestMaxAllocation> allocator;
 static PartitionAllocatorGeneric genericAllocator;
 
 static const size_t kTestAllocSize = 16;
-#ifdef NDEBUG
+#if !ENABLE(ASSERT)
 static const size_t kPointerOffset = 0;
 static const size_t kExtraAllocSize = 0;
 #else
@@ -454,7 +454,7 @@ TEST(PartitionAllocTest, GenericAlloc)
     // Check that the realloc copied correctly.
     char* newCharPtr = static_cast<char*>(newPtr);
     EXPECT_EQ(*newCharPtr, 'A');
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     // Subtle: this checks for an old bug where we copied too much from the
     // source of the realloc. The condition can be detected by a trashing of
     // the uninitialized value in the space of the upsized allocation.
@@ -557,13 +557,14 @@ TEST(PartitionAllocTest, GenericAllocSizes)
     EXPECT_EQ(ptr3, newPtr);
     newPtr = partitionAllocGeneric(genericAllocator.root(), size);
     EXPECT_EQ(ptr2, newPtr);
-#if OS(LINUX) && defined(NDEBUG)
+#if OS(LINUX) && !ENABLE(ASSERT)
     // On Linux, we have a guarantee that freelisting a page should cause its
     // contents to be nulled out. We check for null here to detect an bug we
     // had where a large slot size was causing us to not properly free all
     // resources back to the system.
-    // We only run the check in optimized builds because the debug build
-    // writes over the allocated area with an "uninitialized" byte pattern.
+    // We only run the check when asserts are disabled because when they are
+    // enabled, the allocated area is overwritten with an "uninitialized"
+    // byte pattern.
     EXPECT_EQ(0, *(reinterpret_cast<char*>(newPtr) + (size - 1)));
 #endif
     partitionFreeGeneric(genericAllocator.root(), newPtr);
@@ -681,7 +682,7 @@ TEST(PartitionAllocTest, Realloc)
     char* charPtr2 = static_cast<char*>(ptr2);
     EXPECT_EQ('A', charPtr2[0]);
     EXPECT_EQ('A', charPtr2[size - 1]);
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     EXPECT_EQ(WTF::kUninitializedByte, static_cast<unsigned char>(charPtr2[size]));
 #endif
 
@@ -692,7 +693,7 @@ TEST(PartitionAllocTest, Realloc)
     char* charPtr = static_cast<char*>(ptr);
     EXPECT_EQ('A', charPtr[0]);
     EXPECT_EQ('A', charPtr[size - 2]);
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     EXPECT_EQ(WTF::kUninitializedByte, static_cast<unsigned char>(charPtr[size - 1]));
 #endif
 
@@ -1173,10 +1174,10 @@ TEST(PartitionAllocDeathTest, GuardPages)
 // functions working correctly.
 TEST(PartitionAllocTest, CLZWorks)
 {
-    EXPECT_EQ(32u, WTF::countLeadingZeros32(0));
-    EXPECT_EQ(31u, WTF::countLeadingZeros32(1));
-    EXPECT_EQ(1u, WTF::countLeadingZeros32(1 << 30));
-    EXPECT_EQ(0u, WTF::countLeadingZeros32(1 << 31));
+    EXPECT_EQ(32u, WTF::countLeadingZeros32(0u));
+    EXPECT_EQ(31u, WTF::countLeadingZeros32(1u));
+    EXPECT_EQ(1u, WTF::countLeadingZeros32(1u << 30));
+    EXPECT_EQ(0u, WTF::countLeadingZeros32(1u << 31));
 
 #if CPU(64BIT)
     EXPECT_EQ(64u, WTF::countLeadingZerosSizet(0ull));
@@ -1185,10 +1186,10 @@ TEST(PartitionAllocTest, CLZWorks)
     EXPECT_EQ(1u, WTF::countLeadingZerosSizet(1ull << 62));
     EXPECT_EQ(0u, WTF::countLeadingZerosSizet(1ull << 63));
 #else
-    EXPECT_EQ(32u, WTF::countLeadingZerosSizet(0));
-    EXPECT_EQ(31u, WTF::countLeadingZerosSizet(1));
-    EXPECT_EQ(1u, WTF::countLeadingZerosSizet(1 << 30));
-    EXPECT_EQ(0u, WTF::countLeadingZerosSizet(1 << 31));
+    EXPECT_EQ(32u, WTF::countLeadingZerosSizet(0u));
+    EXPECT_EQ(31u, WTF::countLeadingZerosSizet(1u));
+    EXPECT_EQ(1u, WTF::countLeadingZerosSizet(1u << 30));
+    EXPECT_EQ(0u, WTF::countLeadingZerosSizet(1u << 31));
 #endif
 }
 

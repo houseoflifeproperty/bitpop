@@ -10,7 +10,6 @@
 #include "base/time/time.h"
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/canvas.h"
@@ -290,10 +289,12 @@ MenuItemView* MenuController::Run(Widget* parent,
                                   const gfx::Rect& bounds,
                                   MenuAnchorPosition position,
                                   bool context_menu,
+                                  bool is_nested_drag,
                                   int* result_event_flags) {
   exit_type_ = EXIT_NONE;
   possible_drag_ = false;
   drag_in_progress_ = false;
+  did_initiate_drag_ = false;
   closing_event_time_ = base::TimeDelta();
   menu_start_time_ = base::TimeTicks::Now();
   menu_start_mouse_press_loc_ = gfx::Point();
@@ -347,9 +348,11 @@ MenuItemView* MenuController::Run(Widget* parent,
   SetSelection(root, SELECTION_OPEN_SUBMENU | SELECTION_UPDATE_IMMEDIATELY);
 
   if (!blocking_run_) {
-    // Start the timer to hide the menu. This is needed as we get no
-    // notification when the drag has finished.
-    StartCancelAllTimer();
+    if (!is_nested_drag) {
+      // Start the timer to hide the menu. This is needed as we get no
+      // notification when the drag has finished.
+      StartCancelAllTimer();
+    }
     return NULL;
   }
 
@@ -782,6 +785,20 @@ void MenuController::OnDragExitedScrollButton(SubmenuView* source) {
   StopScrolling();
 }
 
+void MenuController::OnDragWillStart() {
+  DCHECK(!drag_in_progress_);
+  drag_in_progress_ = true;
+}
+
+void MenuController::OnDragComplete(bool should_close) {
+  DCHECK(drag_in_progress_);
+  drag_in_progress_ = false;
+  if (showing_ && should_close && GetActiveInstance() == this) {
+    CloseAllNestedMenus();
+    Cancel(EXIT_ALL);
+  }
+}
+
 void MenuController::UpdateSubmenuSelection(SubmenuView* submenu) {
   if (submenu->IsShowing()) {
     gfx::Point point = GetScreen()->GetCursorScreenPoint();
@@ -798,6 +815,10 @@ void MenuController::OnWidgetDestroying(Widget* widget) {
   owner_->RemoveObserver(this);
   owner_ = NULL;
   message_loop_->ClearOwner();
+}
+
+bool MenuController::IsCancelAllTimerRunningForTest() {
+  return cancel_all_timer_.IsRunning();
 }
 
 // static
@@ -970,19 +991,11 @@ void MenuController::StartDrag(SubmenuView* source,
                                        &data);
   StopScrolling();
   int drag_ops = item->GetDelegate()->GetDragOperations(item);
-  drag_in_progress_ = true;
+  did_initiate_drag_ = true;
   // TODO(varunjain): Properly determine and send DRAG_EVENT_SOURCE below.
   item->GetWidget()->RunShellDrag(NULL, data, widget_loc, drag_ops,
       ui::DragDropTypes::DRAG_EVENT_SOURCE_MOUSE);
-  drag_in_progress_ = false;
-
-  if (GetActiveInstance() == this) {
-    if (showing_) {
-      // We're still showing, close all menus.
-      CloseAllNestedMenus();
-      Cancel(EXIT_ALL);
-    }  // else case, drop was on us.
-  }  // else case, someone canceled us, don't do anything
+  did_initiate_drag_ = false;
 }
 
 bool MenuController::OnKeyDown(ui::KeyboardCode key_code) {
@@ -1071,6 +1084,7 @@ MenuController::MenuController(ui::NativeTheme* theme,
       owner_(NULL),
       possible_drag_(false),
       drag_in_progress_(false),
+      did_initiate_drag_(false),
       valid_drop_coordinates_(false),
       last_drop_operation_(MenuDelegate::DROP_UNKNOWN),
       showing_submenu_(false),

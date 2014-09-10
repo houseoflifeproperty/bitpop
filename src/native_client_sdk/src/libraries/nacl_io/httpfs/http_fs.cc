@@ -42,8 +42,6 @@ std::string NormalizeHeaderKey(const std::string& s) {
 }
 
 Error HttpFs::Access(const Path& path, int a_mode) {
-  assert(url_root_.empty() || url_root_[url_root_.length() - 1] == '/');
-
   NodeMap_t::iterator iter = node_cache_.find(path.Join());
   if (iter == node_cache_.end()) {
     // If we can't find the node in the cache, fetch it
@@ -67,7 +65,6 @@ Error HttpFs::Access(const Path& path, int a_mode) {
 
 Error HttpFs::Open(const Path& path, int open_flags, ScopedNode* out_node) {
   out_node->reset(NULL);
-  assert(url_root_.empty() || url_root_[url_root_.length() - 1] == '/');
 
   NodeMap_t::iterator iter = node_cache_.find(path.Join());
   if (iter != node_cache_.end()) {
@@ -214,9 +211,11 @@ Error HttpFs::Init(const FsInitArgs& args) {
        ++iter) {
     if (iter->first == "SOURCE") {
       url_root_ = iter->second;
+      is_blob_url_ = strncmp(url_root_.c_str(), "blob:", 5) == 0;
 
-      // Make sure url_root_ ends with a slash.
-      if (!url_root_.empty() && url_root_[url_root_.length() - 1] != '/') {
+      // Make sure url_root_ ends with a slash, except for blob URLs.
+      if (!is_blob_url_ && !url_root_.empty() &&
+          url_root_[url_root_.length() - 1] != '/') {
         url_root_ += '/';
       }
     } else if (iter->first == "manifest") {
@@ -227,11 +226,11 @@ Error HttpFs::Init(const FsInitArgs& args) {
 
       error = ParseManifest(text);
       if (error) {
-        delete[] text;
+        free(text);
         return error;
       }
 
-      delete[] text;
+      free(text);
     } else if (iter->first == "allow_cross_origin_requests") {
       allow_cors_ = iter->second == "true";
     } else if (iter->first == "allow_credentials") {
@@ -397,7 +396,10 @@ Error HttpFs::LoadManifest(const std::string& manifest_name,
   if (error)
     return error;
 
-  char* text = new char[size + 1];
+  char* text = (char*)malloc(size + 1);
+  assert(text != NULL);
+  if (text == NULL)
+    return ENOMEM;
   int len;
   error = manifest_node->Read(HandleAttr(), text, size, &len);
   if (error)

@@ -13,7 +13,16 @@
 #include "base/message_loop/message_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
+#include "content/browser/appcache/appcache.h"
+#include "content/browser/appcache/appcache_backend_impl.h"
+#include "content/browser/appcache/appcache_database.h"
+#include "content/browser/appcache/appcache_entry.h"
+#include "content/browser/appcache/appcache_group.h"
+#include "content/browser/appcache/appcache_host.h"
 #include "content/browser/appcache/appcache_interceptor.h"
+#include "content/browser/appcache/appcache_request_handler.h"
+#include "content/browser/appcache/appcache_service_impl.h"
+#include "content/browser/appcache/appcache_storage_impl.h"
 #include "net/base/net_errors.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_response_headers.h"
@@ -23,39 +32,7 @@
 #include "net/url_request/url_request_test_util.h"
 #include "sql/test/test_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/appcache/appcache.h"
-#include "webkit/browser/appcache/appcache_backend_impl.h"
-#include "webkit/browser/appcache/appcache_database.h"
-#include "webkit/browser/appcache/appcache_entry.h"
-#include "webkit/browser/appcache/appcache_group.h"
-#include "webkit/browser/appcache/appcache_host.h"
-#include "webkit/browser/appcache/appcache_request_handler.h"
-#include "webkit/browser/appcache/appcache_service_impl.h"
-#include "webkit/browser/appcache/appcache_storage_impl.h"
 #include "webkit/browser/quota/quota_manager.h"
-
-using appcache::APPCACHE_FALLBACK_NAMESPACE;
-using appcache::APPCACHE_NETWORK_NAMESPACE;
-using appcache::AppCacheBackendImpl;
-using appcache::AppCacheDatabase;
-using appcache::AppCacheEntry;
-using appcache::AppCacheFrontend;
-using appcache::AppCacheHost;
-using appcache::AppCacheInfo;
-using appcache::AppCacheGroup;
-using appcache::AppCacheServiceImpl;
-using appcache::AppCacheStorage;
-using appcache::AppCacheStorageImpl;
-using appcache::AppCacheStorageReference;
-using appcache::AppCache;
-using appcache::AppCacheErrorDetails;
-using appcache::AppCacheEventID;
-using appcache::kAppCacheNoCacheId;
-using appcache::kAppCacheNoResponseId;
-using appcache::APPCACHE_INTERCEPT_NAMESPACE;
-using appcache::AppCacheLogLevel;
-using appcache::Namespace;
-using appcache::AppCacheStatus;
 
 namespace content {
 
@@ -1054,12 +1031,12 @@ class AppCacheStorageImplTest : public testing::Test {
     cache_->AddEntry(kEntryUrl, AppCacheEntry(AppCacheEntry::FALLBACK, 1));
     cache_->AddEntry(kEntryUrl2, AppCacheEntry(AppCacheEntry::FALLBACK, 2));
     cache_->fallback_namespaces_.push_back(
-        Namespace(APPCACHE_FALLBACK_NAMESPACE,
+        AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE,
                   kFallbackNamespace2,
                   kEntryUrl2,
                   false));
     cache_->fallback_namespaces_.push_back(
-        Namespace(APPCACHE_FALLBACK_NAMESPACE,
+        AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE,
                   kFallbackNamespace,
                   kEntryUrl,
                   false));
@@ -1132,10 +1109,10 @@ class AppCacheStorageImplTest : public testing::Test {
     cache_->AddEntry(kEntryUrl, AppCacheEntry(AppCacheEntry::INTERCEPT, 1));
     cache_->AddEntry(kEntryUrl2, AppCacheEntry(AppCacheEntry::INTERCEPT, 2));
     cache_->intercept_namespaces_.push_back(
-        Namespace(APPCACHE_INTERCEPT_NAMESPACE, kInterceptNamespace2,
+        AppCacheNamespace(APPCACHE_INTERCEPT_NAMESPACE, kInterceptNamespace2,
                   kEntryUrl2, false));
     cache_->intercept_namespaces_.push_back(
-        Namespace(APPCACHE_INTERCEPT_NAMESPACE, kInterceptNamespace,
+        AppCacheNamespace(APPCACHE_INTERCEPT_NAMESPACE, kInterceptNamespace,
                   kEntryUrl, false));
     AppCacheDatabase::CacheRecord cache_record;
     std::vector<AppCacheDatabase::EntryRecord> entries;
@@ -1202,8 +1179,8 @@ class AppCacheStorageImplTest : public testing::Test {
     MakeCacheAndGroup(kManifestUrl, 2, 1, true);
     cache_->AddEntry(kEntryUrl, AppCacheEntry(AppCacheEntry::INTERCEPT, 1));
     cache_->intercept_namespaces_.push_back(
-        Namespace(APPCACHE_INTERCEPT_NAMESPACE, kInterceptPatternNamespace,
-                  kEntryUrl, true));
+        AppCacheNamespace(APPCACHE_INTERCEPT_NAMESPACE,
+            kInterceptPatternNamespace, kEntryUrl, true));
     AppCacheDatabase::CacheRecord cache_record;
     std::vector<AppCacheDatabase::EntryRecord> entries;
     std::vector<AppCacheDatabase::NamespaceRecord> intercepts;
@@ -1289,8 +1266,8 @@ class AppCacheStorageImplTest : public testing::Test {
     MakeCacheAndGroup(kManifestUrl, 2, 1, true);
     cache_->AddEntry(kEntryUrl, AppCacheEntry(AppCacheEntry::FALLBACK, 1));
     cache_->fallback_namespaces_.push_back(
-        Namespace(APPCACHE_FALLBACK_NAMESPACE, kFallbackPatternNamespace,
-                  kEntryUrl, true));
+        AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE,
+            kFallbackPatternNamespace, kEntryUrl, true));
     AppCacheDatabase::CacheRecord cache_record;
     std::vector<AppCacheDatabase::EntryRecord> entries;
     std::vector<AppCacheDatabase::NamespaceRecord> intercepts;
@@ -1420,7 +1397,7 @@ class AppCacheStorageImplTest : public testing::Test {
     fallback_namespace_record.origin = manifest_url.GetOrigin();
     EXPECT_TRUE(database()->InsertNamespace(&fallback_namespace_record));
     cache_->fallback_namespaces_.push_back(
-        Namespace(APPCACHE_FALLBACK_NAMESPACE,
+        AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE,
                   kFallbackNamespace,
                   kEntryUrl2,
                   false));
@@ -1435,7 +1412,7 @@ class AppCacheStorageImplTest : public testing::Test {
     EXPECT_TRUE(delegate()->found_entry_.IsExplicit());
     EXPECT_FALSE(delegate()->found_fallback_entry_.has_response_id());
 
-    // Conduct another test perferring kManifestUrl
+    // Conduct another test preferring kManifestUrl
     delegate_.reset(new MockStorageDelegate(this));
     PushNextTask(base::Bind(
         &AppCacheStorageImplTest::Verify_FindMainResponseWithMultipleHits2,
@@ -1453,7 +1430,7 @@ class AppCacheStorageImplTest : public testing::Test {
     EXPECT_TRUE(delegate()->found_entry_.IsExplicit());
     EXPECT_FALSE(delegate()->found_fallback_entry_.has_response_id());
 
-    // Conduct the another test perferring kManifestUrl2
+    // Conduct the another test preferring kManifestUrl2
     delegate_.reset(new MockStorageDelegate(this));
     PushNextTask(base::Bind(
         &AppCacheStorageImplTest::Verify_FindMainResponseWithMultipleHits3,
@@ -1535,16 +1512,16 @@ class AppCacheStorageImplTest : public testing::Test {
         AppCacheEntry(AppCacheEntry::EXPLICIT | AppCacheEntry::FOREIGN, 1));
     cache_->AddEntry(kEntryUrl2, AppCacheEntry(AppCacheEntry::FALLBACK, 2));
     cache_->fallback_namespaces_.push_back(
-        Namespace(APPCACHE_FALLBACK_NAMESPACE,
+        AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE,
                   kFallbackNamespace,
                   kEntryUrl2,
                   false));
     cache_->online_whitelist_namespaces_.push_back(
-        Namespace(APPCACHE_NETWORK_NAMESPACE, kOnlineNamespace,
+        AppCacheNamespace(APPCACHE_NETWORK_NAMESPACE, kOnlineNamespace,
                   GURL(), false));
     cache_->online_whitelist_namespaces_.push_back(
-        Namespace(APPCACHE_NETWORK_NAMESPACE, kOnlineNamespaceWithinFallback,
-                  GURL(), false));
+        AppCacheNamespace(APPCACHE_NETWORK_NAMESPACE,
+            kOnlineNamespaceWithinFallback, GURL(), false));
 
     AppCacheDatabase::EntryRecord entry_record;
     entry_record.cache_id = 1;
@@ -1791,7 +1768,7 @@ class AppCacheStorageImplTest : public testing::Test {
       AppCacheInterceptor::SetExtraRequestInfo(
           request_.get(), service_.get(),
           backend_->process_id(), host2->host_id(),
-          ResourceType::MAIN_FRAME);
+          RESOURCE_TYPE_MAIN_FRAME);
       request_->Start();
     }
 

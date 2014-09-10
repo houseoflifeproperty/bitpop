@@ -89,13 +89,10 @@ protected:
     SkAutoDataUnref fPKMData;
 
 private:
-    SkData *loadPKM() {
-        SkString resourcePath = GetResourcePath();
-        SkString filename = SkOSPath::SkPathJoin(resourcePath.c_str(),
-                                                 "mandrill_128.pkm");
-
+    SkData* loadPKM() {
+        SkString pkmFilename = GetResourcePath("mandrill_128.pkm");
         // Expand the data
-        SkAutoDataUnref fileData(SkData::NewFromFileName(filename.c_str()));
+        SkAutoDataUnref fileData(SkData::NewFromFileName(pkmFilename.c_str()));
         if (NULL == fileData) {
             SkDebugf("Could not open the file. Did you forget to set the resourcePath?\n");
             return NULL;
@@ -210,8 +207,11 @@ protected:
     }
 
     virtual void onDraw(const int loops, SkCanvas* canvas) SK_OVERRIDE {
+        SkPixelRef* pr = fBitmap.pixelRef();
         for (int i = 0; i < loops; ++i) {
-            this->fBitmap.pixelRef()->notifyPixelsChanged();
+            if (pr) {
+                pr->notifyPixelsChanged();
+            }
             canvas->drawBitmap(this->fBitmap, 0, 0, NULL);
         }
     }

@@ -37,7 +37,7 @@
 #include "wtf/HashSet.h"
 #include "wtf/TemporaryChange.h"
 
-namespace WebCore {
+namespace blink {
 
 class HostWindow;
 class Scrollbar;
@@ -114,8 +114,6 @@ public:
     // Overridden by FrameView to create custom CSS scrollbars if applicable.
     virtual PassRefPtr<Scrollbar> createScrollbar(ScrollbarOrientation);
 
-    virtual bool shouldAttemptToScrollUsingFastPath() const;
-
     // The visible content rect has a location that is the scrolled offset of the document. The width and height are the viewport width
     // and height. By default the scrollbars themselves are excluded from this rectangle, but an optional boolean argument allows them to be
     // included.
@@ -159,8 +157,11 @@ public:
     IntPoint cachedScrollPosition() const { return m_cachedScrollPosition; }
 
     // Functions for scrolling the view.
-    virtual void setScrollPosition(const IntPoint&);
-    void scrollBy(const IntSize& s) { return setScrollPosition(scrollPosition() + s); }
+    virtual void setScrollPosition(const IntPoint&, ScrollBehavior = ScrollBehaviorInstant);
+    void scrollBy(const IntSize& s, ScrollBehavior behavior = ScrollBehaviorInstant)
+    {
+        return setScrollPosition(scrollPosition() + s, behavior);
+    }
 
     bool scroll(ScrollDirection, ScrollGranularity);
 
@@ -273,7 +274,7 @@ protected:
 
     virtual void scrollContentsIfNeeded();
     // Scroll the content by blitting the pixels.
-    virtual bool scrollContentsFastPath(const IntSize& scrollDelta, const IntRect& rectToScroll, const IntRect& clipRect);
+    virtual bool scrollContentsFastPath(const IntSize& scrollDelta, const IntRect& rectToScroll);
     // Scroll the content by invalidating everything.
     virtual void scrollContentsSlowPath(const IntRect& updateRect);
 
@@ -287,7 +288,7 @@ protected:
         FirstPass,
         Incremental
     };
-    void computeScrollbarExistence(bool& newHasHorizontalScrollbar, bool& newHasVerticalScrollbar, ComputeScrollbarExistenceOption = FirstPass) const;
+    void computeScrollbarExistence(bool& newHasHorizontalScrollbar, bool& newHasVerticalScrollbar, const IntSize& docSize, ComputeScrollbarExistenceOption = FirstPass) const;
     void updateScrollbarGeometry();
 
     // Called to update the scrollbars to accurately reflect the state of the view.
@@ -306,6 +307,7 @@ protected:
 
 private:
     bool adjustScrollbarExistence(ComputeScrollbarExistenceOption = FirstPass);
+    void adjustScrollbarOpacity();
 
     RefPtr<Scrollbar> m_horizontalScrollbar;
     RefPtr<Scrollbar> m_verticalScrollbar;
@@ -344,6 +346,6 @@ private:
 
 DEFINE_TYPE_CASTS(ScrollView, Widget, widget, widget->isScrollView(), widget.isScrollView());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ScrollView_h

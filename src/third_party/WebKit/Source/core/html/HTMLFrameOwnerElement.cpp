@@ -21,8 +21,8 @@
 #include "config.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/events/Event.h"
@@ -36,13 +36,19 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/weborigin/SecurityPolicy.h"
 
-namespace WebCore {
+namespace blink {
 
 typedef HashMap<RefPtr<Widget>, FrameView*> WidgetToParentMap;
 static WidgetToParentMap& widgetNewParentMap()
 {
     DEFINE_STATIC_LOCAL(WidgetToParentMap, map, ());
     return map;
+}
+
+WillBeHeapHashCountedSet<RawPtrWillBeMember<Node> >& SubframeLoadingDisabler::disabledSubtreeRoots()
+{
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<WillBeHeapHashCountedSet<RawPtrWillBeMember<Node> > >, nodes, (adoptPtrWillBeNoop(new WillBeHeapHashCountedSet<RawPtrWillBeMember<Node> >())));
+    return *nodes;
 }
 
 static unsigned s_updateSuspendCount = 0;
@@ -138,8 +144,7 @@ void HTMLFrameOwnerElement::disconnectContentFrame()
     // see if this behavior is really needed as Gecko does not allow this.
     if (Frame* frame = contentFrame()) {
         RefPtr<Frame> protect(frame);
-        if (frame->isLocalFrame())
-            toLocalFrame(frame)->loader().frameDetached();
+        frame->detach();
         frame->disconnectOwnerElement();
     }
 }
@@ -272,4 +277,4 @@ bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const Atomic
 }
 
 
-} // namespace WebCore
+} // namespace blink

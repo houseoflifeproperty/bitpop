@@ -28,6 +28,252 @@ class FakeDateTime(object):
     return time.struct_time((2013, 8, 1, 0, 0, 0, 3, 217, 0))
 
 
+class ResultsDashboardFormatTest(unittest.TestCase):
+  """Tests related to functions which convert data format."""
+
+  def setUp(self):
+    super(ResultsDashboardFormatTest, self).setUp()
+    self.mox = mox.Mox()
+    self.maxDiff = None
+
+  def tearDown(self):
+    self.mox.UnsetStubs()
+
+  def test_MakeListOfPoints_MinimalCase(self):
+    """A very simple test of a call to MakeListOfPoints."""
+
+    # The master name is gotten when making the list of points,
+    # so it must be stubbed out here.
+    self.mox.StubOutWithMock(slave_utils, 'GetActiveMaster')
+    slave_utils.GetActiveMaster().AndReturn('MyMaster')
+    self.mox.ReplayAll()
+
+    actual_points = results_dashboard.MakeListOfPoints(
+        {
+            'bar': {
+                'traces': {'baz': ["100.0", "5.0"]},
+                'rev': '12345',
+            }
+        },
+        'my-bot', 'foo_test', 'my.master', 'Builder', 10, {})
+    expected_points = [
+        {
+            'master': 'MyMaster',
+            'bot': 'my-bot',
+            'test': 'foo_test/bar/baz',
+            'revision': 12345,
+            'value': '100.0',
+            'error': '5.0',
+            'masterid': 'my.master',
+            'buildername': 'Builder',
+            'buildnumber': 10,
+            'supplemental_columns': {},
+        }
+    ]
+    self.assertEqual(expected_points, actual_points)
+
+  def test_MakeListOfPoints_GeneralCase(self):
+    """A test of making a list of points, including all optional data."""
+    # The master name is gotten when making the list of points,
+    # so it must be stubbed out here.
+    self.mox.StubOutWithMock(slave_utils, 'GetActiveMaster')
+    slave_utils.GetActiveMaster().AndReturn('MyMaster')
+    self.mox.ReplayAll()
+
+    actual_points = results_dashboard.MakeListOfPoints(
+        {
+            'bar': {
+                'traces': {
+                    'bar': ['100.0', '5.0'],
+                    'bar_ref': ['98.5', '5.0'],
+                },
+                'rev': '12345',
+                'webkit_rev': '6789',
+                'v8_rev': 'undefined',
+                'units': 'KB',
+            },
+            'x': {
+                'traces': {
+                    'y': [10.0, 0],
+                },
+                'important': ['y'],
+                'rev': '23456',
+                'v8_rev': '2345',
+                'units': 'count',
+            },
+        },
+        'my-bot', 'foo_test', 'my.master', 'Builder', 10,
+        {
+            'r_bar': '89abcdef',
+            'a_stdio_uri': 'http://mylogs.com/Builder/10',
+            # The supplemental columns here are included in all points.
+        })
+    expected_points = [
+        {
+            'master': 'MyMaster',
+            'bot': 'my-bot',
+            'test': 'foo_test/bar', # Note that trace name is omitted.
+            'revision': 12345,
+            'value': '100.0',
+            'error': '5.0',
+            'units': 'KB',
+            'masterid': 'my.master',
+            'buildername': 'Builder',
+            'buildnumber': 10,
+            'supplemental_columns': {
+                'r_webkit_rev': '6789',
+                'r_bar': '89abcdef',
+                'a_stdio_uri': 'http://mylogs.com/Builder/10',
+                # Note that v8 rev is not included since it was 'undefined'.
+            },
+        },
+        {
+            'master': 'MyMaster',
+            'bot': 'my-bot',
+            'test': 'foo_test/bar/ref',  # Note the change in trace name.
+            'revision': 12345,
+            'value': '98.5',
+            'error': '5.0',
+            'units': 'KB',
+            'masterid': 'my.master',
+            'buildername': 'Builder',
+            'buildnumber': 10,
+            'supplemental_columns': {
+                'r_webkit_rev': '6789',
+                'r_bar': '89abcdef',
+                'a_stdio_uri': 'http://mylogs.com/Builder/10',
+            },
+        },
+        {
+            'master': 'MyMaster',
+            'bot': 'my-bot',
+            'test': 'foo_test/x/y',
+            'revision': 23456,
+            'value': 10.0,
+            'error': 0,
+            'units': 'count',
+            'important': True,
+            'masterid': 'my.master',
+            'buildername': 'Builder',
+            'buildnumber': 10,
+            'supplemental_columns': {
+                'r_v8_rev': '2345',
+                'r_bar': '89abcdef',
+                'a_stdio_uri': 'http://mylogs.com/Builder/10',
+            },
+        },
+    ]
+    self.assertEqual(expected_points, actual_points)
+
+  def test_MakeListOfPoints_MultiValueRow(self):
+    """A test for the special case of sending time series."""
+    # The master name is gotten when making the list of points,
+    # so it must be stubbed out here.
+    self.mox.StubOutWithMock(slave_utils, 'GetActiveMaster')
+    slave_utils.GetActiveMaster().AndReturn('ChromiumEndure')
+    self.mox.ReplayAll()
+
+    actual_points = results_dashboard.MakeListOfPoints(
+        {
+            'gmail_test': {
+                'traces': {
+                    'dom_nodes': [[10, 123], [20.5, 234]],
+                },
+                'units': 'count',
+                'units_x': 'seconds',
+                'rev': '12345',
+            }
+        },
+        'linux', 'endure', 'chromium.endure', 'Builder', 10, {})
+    expected_points = [
+        {
+            'master': 'ChromiumEndure',
+            'bot': 'linux',
+            'test': 'endure/gmail_test/dom_nodes',
+            'revision': 12345,
+            'data': [[10, 123], [20.5, 234]],
+            'units': 'count',
+            'units_x': 'seconds',
+            'masterid': 'chromium.endure',
+            'buildername': 'Builder',
+            'buildnumber': 10,
+            'supplemental_columns': {},
+        }
+    ]
+    self.assertEqual(expected_points, actual_points)
+
+  def test_MakeListOfPoints_TimestampUsedWhenRevisionIsNaN(self):
+    """Tests sending data with a git hash as "revision"."""
+    self.mox.StubOutWithMock(datetime, 'datetime')
+    datetime.datetime.utcnow().AndReturn(FakeDateTime())
+    self.mox.StubOutWithMock(slave_utils, 'GetActiveMaster')
+    slave_utils.GetActiveMaster().AndReturn('ChromiumPerf')
+    self.mox.ReplayAll()
+
+    actual_points = results_dashboard.MakeListOfPoints(
+        {
+            'bar': {
+                'traces': {'baz': ["100.0", "5.0"]},
+                'rev': '2eca27b067e3e57c70e40b8b95d0030c5d7c1a7f',
+            }
+        },
+        'my-bot', 'foo_test', 'chromium.perf', 'Builder', 10, {})
+    expected_points = [
+        {
+            'master': 'ChromiumPerf',
+            'bot': 'my-bot',
+            'test': 'foo_test/bar/baz',
+            # Corresponding timestamp for the fake datetime is used.
+            'revision': 1375315200,
+            'value': '100.0',
+            'error': '5.0',
+            'masterid': 'chromium.perf',
+            'buildername': 'Builder',
+            'buildnumber': 10,
+            'supplemental_columns': {
+                'r_chromium': '2eca27b067e3e57c70e40b8b95d0030c5d7c1a7f',
+            },
+        }
+    ]
+    self.assertEqual(expected_points, actual_points)
+
+  def test_BlinkUsesTimestamp(self):
+    """Tests that timestamp is used for "revision" for ChromiumWebkit master."""
+    self.mox.StubOutWithMock(datetime, 'datetime')
+    datetime.datetime.utcnow().AndReturn(FakeDateTime())
+    self.mox.StubOutWithMock(slave_utils, 'GetActiveMaster')
+    slave_utils.GetActiveMaster().AndReturn('ChromiumWebkit')
+    self.mox.ReplayAll()
+
+    actual_points = results_dashboard.MakeListOfPoints(
+        {
+            'bar': {
+                'traces': {'baz': ["100.0", "5.0"]},
+                'rev': '123456',
+                'webkit_rev': '23456',
+            }
+        },
+        'my-bot', 'foo_test', 'chromium.webkit', 'Builder', 10, {})
+    expected_points = [
+        {
+            'master': 'ChromiumWebkit',
+            'bot': 'my-bot',
+            'test': 'foo_test/bar/baz',
+            'revision': 1375315200,
+            'value': '100.0',
+            'error': '5.0',
+            'masterid': 'chromium.webkit',
+            'buildername': 'Builder',
+            'buildnumber': 10,
+            'supplemental_columns': {
+                'r_chromium_svn': 123456,
+                'r_webkit_rev': '23456',
+            },
+        }
+    ]
+    self.assertEqual(expected_points, actual_points)
+
+
 class IsEncodedJson(mox.Comparator):
   def __init__(self, expected_json):
     self._json = expected_json
@@ -40,772 +286,101 @@ class IsEncodedJson(mox.Comparator):
     return '<Is Request JSON %s>' % self._json
 
 
-class ResultsDashboardTest(unittest.TestCase):
+class ResultsDashboardSendDataTest(unittest.TestCase):
+  """Tests related to sending requests and saving data from failed requests."""
+
   def setUp(self):
-    super(ResultsDashboardTest, self).setUp()
+    super(ResultsDashboardSendDataTest, self).setUp()
     self.mox = mox.Mox()
     self.build_dir = tempfile.mkdtemp()
     os.makedirs(os.path.join(self.build_dir, results_dashboard.CACHE_DIR))
-    self.cache_filename = os.path.join(self.build_dir,
-                                       results_dashboard.CACHE_DIR,
-                                       results_dashboard.CACHE_FILENAME)
+    self.cache_file_name = os.path.join(self.build_dir,
+                                        results_dashboard.CACHE_DIR,
+                                        results_dashboard.CACHE_FILENAME)
 
   def tearDown(self):
     self.mox.UnsetStubs()
     shutil.rmtree(self.build_dir)
 
-  def _SendResults(self, send_results_args, expected_new_json, errors,
-                       mock_timestamp=False, webkit_master=False):
+  def _TestSendResults(self, new_data, expected_json, errors):
     """Test one call of SendResults with the given set of arguments.
-
-    Args:
-      send_results_args: The list of arguments to pass to SendResults.
-      expected_new_json: A list of JSON string expected to be sent.
-      errors: A list of corresponding errors expected to be received
-          (Each item in the list is either a string or None.)
-      mock_timestamp: Whether to stub out datetime with FakeDateTime().
-      webkit_master: Whether GetActiveMaster should give the webkit master.
 
     This method will fail a test case if the JSON that gets sent and the
     errors that are raised when results_dashboard.SendResults is called
     don't match the expected json and errors.
+
+    Args:
+      new_data: The new (not cached) data to send.
+      expected_json_sent: A list of JSON string expected to be sent.
+      errors: A list of corresponding errors expected to be received.
     """
-    # Unsetting stubs required here for multiple calls from same test.
     self.mox.UnsetStubs()
-    self.mox.StubOutWithMock(slave_utils, 'GetActiveMaster')
-    if webkit_master:
-      slave_utils.GetActiveMaster().AndReturn('ChromiumWebkit')
-    else:
-      slave_utils.GetActiveMaster().AndReturn('ChromiumPerf')
-    if mock_timestamp:
-      self.mox.StubOutWithMock(datetime, 'datetime')
-      datetime.datetime.utcnow().AndReturn(FakeDateTime())
     # urllib2.urlopen is the function that's called to send data to
     # the server. Here it is replaced with a mock object which is used
     # to record the expected JSON.
     # Because the JSON expected might be equivalent without being exactly
     # equal (in the string sense), a Mox Comparator is used.
     self.mox.StubOutWithMock(urllib2, 'urlopen')
-    for json_line, error in zip(expected_new_json, errors):
+    for json_line, error in zip(expected_json, errors):
       if error:
         urllib2.urlopen(IsEncodedJson(json_line)).AndRaise(error)
       else:
         urllib2.urlopen(IsEncodedJson(json_line))
     self.mox.ReplayAll()
-    results_dashboard.SendResults(*send_results_args)
+    results_dashboard.SendResults(new_data, 'https:/x.com', self.build_dir)
     self.mox.VerifyAll()
 
-  def test_SingleLogLine(self):
-    args = [
-        'bar-summary.dat',
-        ['{"traces": {"baz": ["100.0", "5.0"]},'
-         ' "rev": "12345", "webkit_rev": "6789", "webrtc_rev": "3456",'
-         ' "v8_rev": "2345"}'],
-        'linux-release',
-        'foo',
-        'https://chrome-perf.googleplex.com',
-        'chromium.perf',
-        'XP Perf (1)',
-        '7890',
-        self.build_dir,
-        {}]
-    expected_new_json = [json.dumps([{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/baz',
-        'revision': 12345,
-        'value': '100.0',
-        'error': '5.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-        }}])]
-    errors = [None]
-    self._SendResults(args, expected_new_json, errors)
-
-  def test_SupplementalColumns(self):
-    args = [
-        'bar-summary.dat',
-        ['{"traces": {"baz": ["100.0", "5.0"]},'
-         ' "rev": "12345", "webkit_rev": "6789", "webrtc_rev": "3456",'
-         ' "v8_rev": "2345"}'],
-        'linux-release',
-        'foo',
-        'https://chrome-perf.googleplex.com',
-        'chromium.perf',
-        'XP Perf (1)',
-        '7890', self.build_dir,
-        {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-            'r_foo': 'SHA1',
-            'r_bar': 'SHA2',
-        }]
-    expected_new_json = [json.dumps([{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/baz',
-        'revision': 12345,
-        'value': '100.0',
-        'error': '5.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-            'r_foo': 'SHA1',
-            'r_bar': 'SHA2',
-        }}])]
-    errors = [None]
-    self._SendResults(args, expected_new_json, errors)
-
-  def test_UnitsLogLine(self):
-    args = [
-        'bar-summary.dat',
-        ['{"traces": {"baz": ["100.0", "5.0"]},'
-         ' "rev": "12345", "webkit_rev": "6789", "webrtc_rev": "3456", '
-         ' "v8_rev": "2345", "units": "ms"}',
-         '{"traces": {"bam": ["100.0", "5.0"]},'
-         ' "rev": "12345", "webkit_rev": "6789", "webrtc_rev": "3456", '
-         ' "v8_rev": "2345", "units": ""}'],
-        'linux-release',
-        'foo',
-        'https://chrome-perf.googleplex.com',
-        'chromium.perf',
-        'XP Perf (1)',
-        '7890',
-        self.build_dir,
-        {}]
-    expected_new_json = [json.dumps([{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/baz',
-        'revision': 12345,
-        'value': '100.0',
-        'error': '5.0',
-        'units': 'ms',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-    }},{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/bam',
-        'revision': 12345,
-        'value': '100.0',
-        'error': '5.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-    }}])]
-    errors = [None]
-    self._SendResults(args, expected_new_json, errors)
-
-  def test_ImportantLogLine(self):
-    args = [
-        'bar-summary.dat',
-        ['{"traces": {"one": ["1.0", "5.0"], "two": ["2.0", "0.0"]},'
-         ' "rev": "12345", "webkit_rev": "6789", "webrtc_rev": "3456",'
-         ' "v8_rev": "2345", "units": "ms", '
-         '"important": ["one"]}'],
-        'linux-release',
-        'foo',
-        'https://chrome-perf.googleplex.com',
-        'chromium.perf',
-        'XP Perf (1)',
-        '7890',
-        self.build_dir,
-        {}]
-    expected_new_json = [json.dumps([{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/one',
-        'revision': 12345,
-        'value': '1.0',
-        'error': '5.0',
-        'units': 'ms',
-        'important': True,
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-    }},{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/two',
-        'revision': 12345,
-        'value': '2.0',
-        'error': '0.0',
-        'units': 'ms',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-    }}])]
-    errors = [None]
-    self._SendResults(args, expected_new_json, errors)
-
-  def test_MultipleLogLines(self):
-    args = [
-        'bar-summary.dat', [
-            '{"traces": {"baz": ["100.0", "5.0"]},'
-            ' "rev": "12345", "webkit_rev": "6789", "webrtc_rev": "3456",'
-            ' "v8_rev": "2345"}',
-            '{"traces": {"box": ["101.0", "4.0"]},'
-            ' "rev": "12345", "webkit_rev": "6789", "webrtc_rev": "3456",'
-            ' "v8_rev": "2345"}'],
-        'linux-release',
-        'foo',
-        'https://chrome-perf.googleplex.com',
-        'chromium.perf',
-        'XP Perf (1)',
-        '7890',
-        self.build_dir,
-        {}]
-    expected_new_json = [json.dumps([{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/baz',
-        'revision': 12345,
-        'value': '100.0',
-        'error': '5.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-    }}, {
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/box',
-        'revision': 12345,
-        'value': '101.0',
-        'error': '4.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-    }}])]
-    errors = [None]
-    self._SendResults(args, expected_new_json, errors)
-
-  def test_ModifiedTraceNames(self):
-    args = [
-        'bar-summary.dat',
-        ['{"traces": {"bar": ["100.0", "5.0"], "bar_ref": ["99.0", "2.0"],'
-         ' "baz/y": ["101.0", "3.0"], "notchanged": ["102.0", "1.0"]},'
-         ' "rev": "12345", "webkit_rev": "6789", "webrtc_rev": "3456",'
-         ' "v8_rev": "2345"}'],
-        'linux-release',
-        'foo',
-        'https://chrome-perf.googleplex.com',
-        'chromium.perf',
-        'XP Perf (1)',
-        '7890',
-        self.build_dir,
-        {}]
-    expected_new_json = [json.dumps([{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar',
-        'revision': 12345,
-        'value': '100.0',
-        'error': '5.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-    }},{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/ref',
-        'revision': 12345,
-        'value': '99.0',
-        'error': '2.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-    }}, {
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/baz_y',
-        'revision': 12345,
-        'value': '101.0',
-        'error': '3.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-    }},{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/notchanged',
-        'revision': 12345,
-        'value': '102.0',
-        'error': '1.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-    }}])]
-    errors = [None]
-    self._SendResults(args, expected_new_json, errors)
-
-  def test_MultiValueRowUpload(self):
-    args = [
-        'my_endure_graph-summary.dat',
-        ['{"traces": {'
-             '"total_dom_nodes": [["10", "123"], ["20.5", "234"]],'
-             '"event_listeners": [["10", "12"], ["20.5", "40"]]},'
-         ' "rev": "12345",'
-         ' "webkit_rev": "6789",'
-         ' "webrtc_rev": "3456",'
-         ' "v8_rev": "2345",'
-         ' "units": "count",'
-         ' "units_x": "seconds",'
-         ' "stack": false}'],
-        'linux-release',
-        'endure/test_name',
-        'https://chrome-perf.googleplex.com',
-        'chromium.perf',
-        'Linux (1)',
-        '1234',
-        self.build_dir,
-        {}]
-    expected_new_json = [json.dumps([{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'endure/test_name/my_endure_graph/total_dom_nodes',
-        'revision': 12345,
-        'data': [['10', '123'], ['20.5', '234']],
-        'masterid': 'chromium.perf',
-        'buildername': 'Linux (1)',
-        'buildnumber': '1234',
-        'units': 'count',
-        'units_x': 'seconds',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345'
-    }}, {
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'endure/test_name/my_endure_graph/event_listeners',
-        'revision': 12345,
-        'data': [['10', '12'], ['20.5', '40']],
-        'masterid': 'chromium.perf',
-        'buildername': 'Linux (1)',
-        'buildnumber': '1234',
-        'units': 'count',
-        'units_x': 'seconds',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345'
-    }}])]
-    errors = [None, None]
-    self._SendResults(args, expected_new_json, errors)
-
-  def test_ByUrlGraph(self):
-    args = [
-        'bar_by_url-summary.dat',
-        ['{"traces": {"baz": ["100.0", "5.0"]},'
-         ' "rev": "12345", "webkit_rev": "6789", "webrtc_rev": "3456",'
-         '"v8_rev": "2345"}'],
-        'linux-release',
-        'foo',
-        'https://chrome-perf.googleplex.com',
-        'chromium.perf',
-        'XP Perf (1)',
-        '7890',
-        self.build_dir,
-        {}]
-    expected_new_json = [json.dumps([{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/baz',
-        'revision': 12345,
-        'value': '100.0',
-        'error': '5.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-        }}])]
-    errors = [None]
-    self._SendResults(args, expected_new_json, errors)
-
-  def test_GitHashToTimestamp(self):
-    args = [
-        'mean_frame_time-summary.dat',
-        ['{"traces": {"mean_frame_time": ["77.0964285714", "138.142773233"]},'
-         ' "rev": "2eca27b067e3e57c70e40b8b95d0030c5d7c1a7f",'
-         ' "webkit_rev": "bf9aa8d62561bb2e4d7bc09e9d9e8c6a665ddc88",'
-         ' "webrtc_rev": "bf9aa8d62561bb2e4d7bc09e9d9e8c6a665ddc86",'
-         ' "v8_rev": "bf9aa8d62561bb2e4d7bc09e9d9e8c6a665ddc87",'
-         ' "ver": "undefined", "chan": "undefined", "units": "ms",'
-         ' "important": ["mean_frame_time"]}'],
-        'linux-release',
-        'smoothness_measurement',
-        'https://chrome-perf.googleplex.com',
-        'chromium.perf',
-        'Linux (1)',
-        '1234',
-        self.build_dir,
-        {}]
-    expected_new_json = [json.dumps([{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'smoothness_measurement/mean_frame_time',
-        'revision': 1375315200,
-        'value': '77.0964285714',
-        'error': '138.142773233',
-        'masterid': 'chromium.perf',
-        'buildername': 'Linux (1)',
-        'buildnumber': '1234',
-        'important': True,
-        'units': 'ms',
-        'supplemental_columns': {
-            'r_chromium': '2eca27b067e3e57c70e40b8b95d0030c5d7c1a7f',
-            'r_webkit_rev': 'bf9aa8d62561bb2e4d7bc09e9d9e8c6a665ddc88',
-            'r_webrtc_rev': 'bf9aa8d62561bb2e4d7bc09e9d9e8c6a665ddc86',
-            'r_v8_rev': 'bf9aa8d62561bb2e4d7bc09e9d9e8c6a665ddc87',
-        }}])]
-    errors = [None]
-    self._SendResults(args, expected_new_json, errors, mock_timestamp=True)
-
-  def test_WebkitUsesTimestamp(self):
-    args = [
-        'mean_frame_time-summary.dat',
-        ['{"traces": {"mean_frame_time": ["77.0964285714", "138.142773233"]},'
-         ' "rev": "12345",'
-         ' "webkit_rev": "23456",'
-         ' "webrtc_rev": "3456",'
-         ' "v8_rev": "34567",'
-         ' "ver": "undefined", "chan": "undefined", "units": "ms",'
-         ' "important": ["mean_frame_time"]}'],
-        'linux-release',
-        'smoothness_measurement',
-        'https://chrome-perf.googleplex.com',
-        'chromium.webkit',
-        'Linux (1)',
-        '1234',
-        self.build_dir,
-        {}]
-    expected_new_json = [json.dumps([{
-        'master': 'ChromiumWebkit',
-        'bot': 'linux-release',
-        'test': 'smoothness_measurement/mean_frame_time',
-        'revision': 1375315200,
-        'value': '77.0964285714',
-        'error': '138.142773233',
-        'masterid': 'chromium.webkit',
-        'buildername': 'Linux (1)',
-        'buildnumber': '1234',
-        'important': True,
-        'units': 'ms',
-        'supplemental_columns': {
-            'r_chromium_svn': 12345,
-            'r_webkit_rev': '23456',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '34567',
-        }}])]
-    errors = [None]
-    self._SendResults(args, expected_new_json, errors, mock_timestamp=True,
-                      webkit_master=True)
-
   def test_FailureRetried(self):
-    args = [
-        'bar-summary.dat',
-        ['{"traces": {"baz": ["100.0", "5.0"]},'
-         ' "rev": "12345", "webkit_rev": "6789", "webrtc_rev": "3456",'
-         ' "v8_rev": "2345"}'],
-        'linux-release',
-        'foo',
-        'https://chrome-perf.googleplex.com',
-        'chromium.perf',
-        'XP Perf (1)',
-        '7890',
-        self.build_dir,
-        {}]
-    expected_new_json = [json.dumps([{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/baz',
-        'revision': 12345,
-        'value': '100.0',
-        'error': '5.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-        }}])]
-    errors = [urllib2.URLError('reason')]
-    self._SendResults(args, expected_new_json, errors)
-    args2 = [
-        'bar-summary.dat',
-        ['{"traces": {"baz": ["101.0", "6.0"]},'
-         ' "rev": "12346", "webkit_rev": "6790", "webrtc_rev": "3456",'
-         ' "v8_rev": "2345"}'],
-        'linux-release',
-        'foo',
-        'https://chrome-perf.googleplex.com',
-        'chromium.perf',
-        'XP Perf (1)',
-        '7890',
-        self.build_dir,
-        {}]
-    expected_new_json.append(json.dumps([{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/baz',
-        'revision': 12346,
-        'value': '101.0',
-        'error': '6.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6790',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-        }
-    }]))
-    errors = [None, None]
-    self._SendResults(args2, expected_new_json, errors)
+    """After failing once, the same JSON is sent the next time."""
+    # First, some data is sent but it fails for some reason.
+    self._TestSendResults(
+        {'sample': 1},
+        ['{"sample": 1}'],
+        [urllib2.URLError('some reason')])
+
+    # The next time, the old data is sent with the new data.
+    self._TestSendResults(
+        {'sample': 2},
+        ['{"sample": 1}', '{"sample": 2}'],
+        [None, None])
 
   def test_SuccessNotRetried(self):
-    args = [
-        'bar-summary.dat',
-        ['{"traces": {"baz": ["100.0", "5.0"]},'
-         ' "rev": "12345", "webkit_rev": "6789", "webrtc_rev": "3456",'
-         ' "v8_rev": "2345"}'],
-        'linux-release',
-        'foo',
-        'https://chrome-perf.googleplex.com',
-        'chromium.perf',
-        'XP Perf (1)',
-        '7890',
-        self.build_dir,
-        {}]
-    expected_new_json = [json.dumps([{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/baz',
-        'revision': 12345,
-        'value': '100.0',
-        'error': '5.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-        }}])]
-    errors = [None]
-    self._SendResults(args, expected_new_json, errors)
-    args2 = [
-        'bar-summary.dat',
-        ['{"traces": {"baz": ["101.0", "6.0"]},'
-         ' "rev": "12346", "webkit_rev": "6790", "webrtc_rev": "3456",'
-         ' "v8_rev": "2345"}'],
-        'linux-release',
-        'foo',
-        'https://chrome-perf.googleplex.com',
-        'chromium.perf',
-        'XP Perf (1)',
-        '7890',
-        self.build_dir,
-        {}]
-    expected_new_json2 = [json.dumps([{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/baz',
-        'revision': 12346,
-        'value': '101.0',
-        'error': '6.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6790',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-        }
-    }])]
-    errors = [None]
-    self._SendResults(args2, expected_new_json2, errors)
+    """After being successfully sent, data is not re-sent."""
+    # First, some data is sent.
+    self._TestSendResults(
+        {'sample': 1},
+        ['{"sample": 1}'],
+        [None])
 
-  def test_FailureCached(self):
-    args = [
-        'bar-summary.dat',
-        ['{"traces": {"baz": ["100.0", "5.0"]},'
-         ' "rev": "12345", "webkit_rev": "6789", "webrtc_rev": "3456",'
-         ' "v8_rev": "2345"}'],
-        'linux-release',
-        'foo',
-        'https://chrome-perf.googleplex.com',
-        'chromium.perf',
-        'XP Perf (1)',
-        '7890',
-        self.build_dir,
-        {}]
-    expected_new_json = [json.dumps([{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/baz',
-        'revision': 12345,
-        'value': '100.0',
-        'error': '5.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-        }}])]
-    errors = [urllib2.URLError('reason')]
-    self._SendResults(args, expected_new_json, errors)
-    cache_file = open(self.cache_filename, 'rb')
-    actual_cache = cache_file.read()
-    cache_file.close()
-    # Compare the dicts loaded from the JSON instead of the actual JSON string,
-    # because the order of the fields in the string doesn't matter.
-    self.assertEqual(json.loads(expected_new_json[0]), json.loads(actual_cache))
+    # The next time, the old data is not sent with the new data.
+    self._TestSendResults(
+        {'sample': 2},
+        ['{"sample": 2}'],
+        [None])
 
-  def test_NoResendAfterMultipleErrors(self):
-    previous_lines = '\n'.join([
-        json.dumps([{
-            'master': 'ChromiumPerf',
-            'bot': 'linux-release',
-            'test': 'foo/bar/baz',
-            'revision': 12345,
-            'value': '100.0',
-            'error': '5.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-            'supplemental_columns': {
-                'r_webkit_rev': '6789',
-                'r_webrtc_rev': '3456',
-                'r_v8_rev': '2345',
-            }}]),
-        json.dumps([{
-            'master': 'ChromiumPerf',
-            'bot': 'linux-release',
-            'test': 'foo/bar/baz',
-            'revision': 12346,
-            'value': '101.0',
-            'error': '5.0',
-            'masterid': 'chromium.perf',
-            'buildername': 'XP Perf (1)',
-            'buildnumber': '7890',
-            'supplemental_columns': {
-                'r_webkit_rev': '6789',
-                'r_webrtc_rev': '3456',
-                'r_v8_rev': '2345',
-            }}]),
-        json.dumps([{
-            'master': 'ChromiumPerf',
-            'bot': 'linux-release',
-            'test': 'foo/bar/baz',
-            'revision': 12347,
-            'value': '99.0',
-            'error': '5.0',
-            'masterid': 'chromium.perf',
-            'buildername': 'XP Perf (1)',
-            'buildnumber': '7890',
-            'supplemental_columns': {
-                'r_webkit_rev': '6789',
-                'r_webrtc_rev': '3456',
-                'r_v8_rev': '2345',
-            }}])
-    ])
-    cache_file = open(self.cache_filename, 'wb')
-    cache_file.write(previous_lines)
-    cache_file.close()
-    args = [
-        'bar-summary.dat',
-        ['{"traces": {"baz": ["102.0", "5.0"]},'
-         ' "rev": "12348", "webkit_rev": "6789", "v8_rev": "2345"}'],
-        'linux-release',
-        'foo',
-        'https://chrome-perf.googleplex.com',
-        'chromium.perf',
-        'XP Perf (1)',
-        '7890',
-        self.build_dir,
-        {}]
-    expected_new_json = [json.dumps([{
-        'master': 'ChromiumPerf',
-        'bot': 'linux-release',
-        'test': 'foo/bar/baz',
-        'revision': 12345,
-        'value': '100.0',
-        'error': '5.0',
-        'masterid': 'chromium.perf',
-        'buildername': 'XP Perf (1)',
-        'buildnumber': '7890',
-        'supplemental_columns': {
-            'r_webkit_rev': '6789',
-            'r_webrtc_rev': '3456',
-            'r_v8_rev': '2345',
-        }}])]
-    errors = [urllib2.URLError('reason')]
-    self._SendResults(args, expected_new_json, errors)
-    cache_file = open(self.cache_filename, 'rb')
-    actual_cache_lines = [l.strip() for l in cache_file.readlines()]
-    cache_file.close()
-    self.assertEqual(4, len(actual_cache_lines))
-    for line in previous_lines.split('\n') + expected_new_json:
-      self.assertTrue(line in actual_cache_lines)
+
+class ResultsDashboardTest(unittest.TestCase):
+  """Tests for other functions in results_dashboard."""
+
+  # Testing private method.
+  # pylint: disable=W0212
+  def test_LinkAnnotation_WithData(self):
+    self.assertEqual(
+        ('@@@STEP_LINK@Results Dashboard@'
+         'https://chromeperf.appspot.com/report'
+         '?masters=MyMaster&bots=b&tests=sunspider&rev=1234@@@'),
+        results_dashboard._LinkAnnotation(
+            'https://chromeperf.appspot.com',
+            [{
+                'master': 'MyMaster',
+                'bot': 'b',
+                'test': 'sunspider/Total',
+                'revision': 1234,
+                'value': 10,
+            }]))
+
+  def test_LinkAnnotation_UnexpectedData(self):
+    self.assertIsNone(results_dashboard._LinkAnnotation('', {}))
 
 
 if __name__ == '__main__':

@@ -18,9 +18,11 @@ REGISTER_TEST_CASE(MediaStreamAudioTrack);
 
 namespace {
 
-// Real max defined in
+// Real constants defined in
 // content/renderer/pepper/pepper_media_stream_audio_track_host.cc.
 const int32_t kMaxNumberOfBuffers = 1000;
+const int32_t kMinDuration = 10;
+const int32_t kMaxDuration = 10000;
 const int32_t kTimes = 3;
 const char kJSCode[] =
     "function gotStream(stream) {"
@@ -74,6 +76,7 @@ void TestMediaStreamAudioTrack::RunTests(const std::string& filter) {
   RUN_TEST(Create, filter);
   RUN_TEST(GetBuffer, filter);
   RUN_TEST(Configure, filter);
+  RUN_TEST(ConfigureClose, filter);
 }
 
 void TestMediaStreamAudioTrack::HandleMessage(const pp::Var& message) {
@@ -145,6 +148,53 @@ std::string TestMediaStreamAudioTrack::TestGetBuffer() {
   PASS();
 }
 
+std::string TestMediaStreamAudioTrack::CheckConfigure(
+    int32_t attrib_list[], int32_t expected_result) {
+  TestCompletionCallback cc_configure(instance_->pp_instance(), false);
+  cc_configure.WaitForResult(
+      audio_track_.Configure(attrib_list, cc_configure.GetCallback()));
+  ASSERT_EQ(expected_result, cc_configure.result());
+  PASS();
+}
+
+std::string TestMediaStreamAudioTrack::CheckGetBuffer(
+    int times, int expected_duration) {
+  PP_TimeDelta timestamp = 0.0;
+  for (int j = 0; j < times; ++j) {
+    TestCompletionCallbackWithOutput<pp::AudioBuffer> cc_get_buffer(
+        instance_->pp_instance(), false);
+    cc_get_buffer.WaitForResult(
+        audio_track_.GetBuffer(cc_get_buffer.GetCallback()));
+    ASSERT_EQ(PP_OK, cc_get_buffer.result());
+    pp::AudioBuffer buffer = cc_get_buffer.output();
+    ASSERT_FALSE(buffer.is_null());
+    ASSERT_TRUE(IsSampleRateValid(buffer.GetSampleRate()));
+    ASSERT_EQ(buffer.GetSampleSize(), PP_AUDIOBUFFER_SAMPLESIZE_16_BITS);
+
+    ASSERT_GE(buffer.GetTimestamp(), timestamp);
+    timestamp = buffer.GetTimestamp();
+
+    // TODO(amistry): Figure out how to inject a predictable audio pattern, such
+    // as a sawtooth, and check the buffer data to make sure it's correct.
+    ASSERT_TRUE(buffer.GetDataBuffer() != NULL);
+    if (expected_duration > 0) {
+      uint32_t buffer_size = buffer.GetDataBufferSize();
+      uint32_t channels = buffer.GetNumberOfChannels();
+      uint32_t sample_rate = buffer.GetSampleRate();
+      uint32_t bytes_per_frame = channels * 2;
+      int32_t duration = expected_duration;
+      ASSERT_EQ(buffer_size % bytes_per_frame, 0U);
+      ASSERT_EQ(buffer_size,
+                (duration * sample_rate * bytes_per_frame) / 1000);
+    } else {
+      ASSERT_GT(buffer.GetDataBufferSize(), 0U);
+    }
+
+    audio_track_.RecycleBuffer(buffer);
+  }
+  PASS();
+}
+
 std::string TestMediaStreamAudioTrack::TestConfigure() {
   // Create a track.
   instance_->EvalScript(kJSCode);
@@ -155,7 +205,16 @@ std::string TestMediaStreamAudioTrack::TestConfigure() {
   ASSERT_FALSE(audio_track_.HasEnded());
   ASSERT_FALSE(audio_track_.GetId().empty());
 
-  PP_TimeDelta timestamp = 0.0;
+  // Perform a |Configure()| with no attributes. This ends up making an IPC
+  // call, but the host implementation has a fast-path when there are no changes
+  // to the configuration. This test is intended to hit that fast-path and make
+  // sure it works correctly.
+  {
+    int32_t attrib_list[] = {
+      PP_MEDIASTREAMAUDIOTRACK_ATTRIB_NONE,
+    };
+    ASSERT_SUBTEST_SUCCESS(CheckConfigure(attrib_list, PP_OK));
+  }
 
   // Configure number of buffers.
   struct {
@@ -170,35 +229,55 @@ std::string TestMediaStreamAudioTrack::TestConfigure() {
     { 0, PP_OK },  // Use default.
   };
   for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]); ++i) {
-    TestCompletionCallback cc_configure(instance_->pp_instance(), false);
     int32_t attrib_list[] = {
       PP_MEDIASTREAMAUDIOTRACK_ATTRIB_BUFFERS, buffers[i].buffers,
       PP_MEDIASTREAMAUDIOTRACK_ATTRIB_NONE,
     };
-    cc_configure.WaitForResult(
-        audio_track_.Configure(attrib_list, cc_configure.GetCallback()));
-    ASSERT_EQ(buffers[i].expect_result, cc_configure.result());
-
+    ASSERT_SUBTEST_SUCCESS(CheckConfigure(attrib_list,
+                                          buffers[i].expect_result));
     // Get some buffers. This should also succeed when configure fails.
-    for (int j = 0; j < kTimes; ++j) {
-      TestCompletionCallbackWithOutput<pp::AudioBuffer> cc_get_buffer(
-          instance_->pp_instance(), false);
-      cc_get_buffer.WaitForResult(
-          audio_track_.GetBuffer(cc_get_buffer.GetCallback()));
-      ASSERT_EQ(PP_OK, cc_get_buffer.result());
-      pp::AudioBuffer buffer = cc_get_buffer.output();
-      ASSERT_FALSE(buffer.is_null());
-      ASSERT_TRUE(IsSampleRateValid(buffer.GetSampleRate()));
-      ASSERT_EQ(buffer.GetSampleSize(), PP_AUDIOBUFFER_SAMPLESIZE_16_BITS);
+    ASSERT_SUBTEST_SUCCESS(CheckGetBuffer(kTimes, -1));
+  }
 
-      ASSERT_GE(buffer.GetTimestamp(), timestamp);
-      timestamp = buffer.GetTimestamp();
+  // Configure buffer duration.
+  struct {
+    int32_t duration;
+    int32_t expect_result;
+  } durations[] = {
+    { kMinDuration, PP_OK },
+    { 123, PP_OK },
+    { kMinDuration - 1, PP_ERROR_BADARGUMENT },
+    { kMaxDuration + 1, PP_ERROR_BADARGUMENT },
+  };
+  for (size_t i = 0; i < sizeof(durations) / sizeof(durations[0]); ++i) {
+    int32_t attrib_list[] = {
+      PP_MEDIASTREAMAUDIOTRACK_ATTRIB_DURATION, durations[i].duration,
+      PP_MEDIASTREAMAUDIOTRACK_ATTRIB_NONE,
+    };
+    ASSERT_SUBTEST_SUCCESS(CheckConfigure(attrib_list,
+                                          durations[i].expect_result));
 
-      ASSERT_GT(buffer.GetDataBufferSize(), 0U);
-      ASSERT_TRUE(buffer.GetDataBuffer() != NULL);
+    // Get some buffers. This always works, but the buffer size will vary.
+    int duration =
+        durations[i].expect_result == PP_OK ? durations[i].duration : -1;
+    ASSERT_SUBTEST_SUCCESS(CheckGetBuffer(kTimes, duration));
+  }
+  // Test kMaxDuration separately since each GetBuffer will take 10 seconds.
+  {
+    int32_t attrib_list[] = {
+      PP_MEDIASTREAMAUDIOTRACK_ATTRIB_DURATION, kMaxDuration,
+      PP_MEDIASTREAMAUDIOTRACK_ATTRIB_NONE,
+    };
+    ASSERT_SUBTEST_SUCCESS(CheckConfigure(attrib_list, PP_OK));
+  }
 
-      audio_track_.RecycleBuffer(buffer);
-    }
+  // Reset the duration to prevent the next part from taking 10 seconds.
+  {
+    int32_t attrib_list[] = {
+      PP_MEDIASTREAMAUDIOTRACK_ATTRIB_DURATION, kMinDuration,
+      PP_MEDIASTREAMAUDIOTRACK_ATTRIB_NONE,
+    };
+    ASSERT_SUBTEST_SUCCESS(CheckConfigure(attrib_list, PP_OK));
   }
 
   // Configure should fail while plugin holds buffers.
@@ -224,5 +303,35 @@ std::string TestMediaStreamAudioTrack::TestConfigure() {
   audio_track_.Close();
   ASSERT_TRUE(audio_track_.HasEnded());
   audio_track_ = pp::MediaStreamAudioTrack();
+  PASS();
+}
+
+std::string TestMediaStreamAudioTrack::TestConfigureClose() {
+  // Create a track.
+  instance_->EvalScript(kJSCode);
+  event_.Wait();
+  event_.Reset();
+
+  ASSERT_FALSE(audio_track_.is_null());
+  ASSERT_FALSE(audio_track_.HasEnded());
+  ASSERT_FALSE(audio_track_.GetId().empty());
+
+  // Configure the audio track and close it immediately. The Configure() call
+  // should complete.
+  int32_t attrib_list[] = {
+    PP_MEDIASTREAMAUDIOTRACK_ATTRIB_BUFFERS, 10,
+    PP_MEDIASTREAMAUDIOTRACK_ATTRIB_NONE,
+  };
+  TestCompletionCallback cc_configure(instance_->pp_instance(), false);
+  int32_t result = audio_track_.Configure(attrib_list,
+                                          cc_configure.GetCallback());
+  ASSERT_EQ(PP_OK_COMPLETIONPENDING, result);
+  audio_track_.Close();
+  cc_configure.WaitForResult(result);
+  result = cc_configure.result();
+  // Unfortunately, we can't control whether the configure succeeds or is
+  // aborted.
+  ASSERT_TRUE(result == PP_OK || result == PP_ERROR_ABORTED);
+
   PASS();
 }

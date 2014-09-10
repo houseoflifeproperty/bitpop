@@ -39,14 +39,16 @@ template_h = string.Template("""// Code generated from InspectorInstrumentation.
 
 ${includes}
 
-namespace WebCore {
+namespace blink {
+
+${forward_declarations}
 
 namespace InspectorInstrumentation {
 
 $methods
 } // namespace InspectorInstrumentation
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(${file_name}_h)
 """)
@@ -82,7 +84,7 @@ template_cpp = string.Template("""// Code generated from InspectorInstrumentatio
 
 ${includes}
 
-namespace WebCore {
+namespace blink {
 ${extra_definitions}
 
 namespace InspectorInstrumentation {
@@ -90,7 +92,7 @@ $methods
 
 } // namespace InspectorInstrumentation
 
-} // namespace WebCore
+} // namespace blink
 """)
 
 template_outofline = string.Template("""
@@ -115,24 +117,26 @@ template_instrumenting_agents_h = string.Template("""// Code generated from Insp
 #ifndef InstrumentingAgentsInl_h
 #define InstrumentingAgentsInl_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 ${forward_list}
 
-class InstrumentingAgents : public RefCounted<InstrumentingAgents> {
+class InstrumentingAgents : public RefCountedWillBeGarbageCollectedFinalized<InstrumentingAgents> {
     WTF_MAKE_NONCOPYABLE(InstrumentingAgents);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassRefPtr<InstrumentingAgents> create()
+    static PassRefPtrWillBeRawPtr<InstrumentingAgents> create()
     {
-        return adoptRef(new InstrumentingAgents());
+        return adoptRefWillBeNoop(new InstrumentingAgents());
     }
     ~InstrumentingAgents() { }
+    void trace(Visitor*);
     void reset();
 
 ${accessor_list}
@@ -156,6 +160,11 @@ template_instrumenting_agents_cpp = string.Template("""
 InstrumentingAgents::InstrumentingAgents()
     : $init_list
 {
+}
+
+void InstrumentingAgents::trace(Visitor* visitor)
+{
+    $trace_list
 }
 
 void InstrumentingAgents::reset()
@@ -195,6 +204,7 @@ class File:
         self.name = name
         self.header_name = self.name + "Inl"
         self.includes = [include_inspector_header("InspectorInstrumentation")]
+        self.forward_declarations = []
         self.declarations = []
         for line in map(str.strip, source.split("\n")):
             line = re.sub("\s{2,}", " ", line).strip()  # Collapse whitespace
@@ -202,9 +212,12 @@ class File:
                 continue
             if line[0] == "#":
                 self.includes.append(line)
+            elif line.startswith("class "):
+                self.forward_declarations.append(line)
             else:
                 self.declarations.append(Method(line))
         self.includes.sort()
+        self.forward_declarations.sort()
 
     def generate(self, cpp_lines, used_agents):
         header_lines = []
@@ -217,6 +230,7 @@ class File:
         return template_h.substitute(None,
                                      file_name=self.header_name,
                                      includes="\n".join(self.includes),
+                                     forward_declarations="\n".join(self.forward_declarations),
                                      methods="\n".join(header_lines))
 
 
@@ -247,6 +261,8 @@ class Method:
 
         if self.return_type == "bool":
             self.default_return_value = "false"
+        elif self.return_type == "int":
+            self.default_return_value = "0"
         elif self.return_type == "String":
             self.default_return_value = "\"\""
         else:
@@ -440,6 +456,7 @@ def generate_instrumenting_agents(used_agents):
     accessor_list = []
     member_list = []
     init_list = []
+    trace_list = []
     reset_list = []
 
     for agent in agents:
@@ -452,14 +469,16 @@ def generate_instrumenting_agents(used_agents):
             class_name=class_name,
             getter_name=getter_name,
             member_name=member_name))
-        member_list.append("    %s* %s;" % (class_name, member_name))
-        init_list.append("%s(0)" % member_name)
-        reset_list.append("%s = 0;" % member_name)
+        member_list.append("    RawPtrWillBeMember<%s> %s;" % (class_name, member_name))
+        init_list.append("%s(nullptr)" % member_name)
+        trace_list.append("visitor->trace(%s);" % member_name)
+        reset_list.append("%s = nullptr;" % member_name)
 
     forward_list.sort()
     accessor_list.sort()
     member_list.sort()
     init_list.sort()
+    trace_list.sort()
     reset_list.sort()
 
     header_lines = template_instrumenting_agents_h.substitute(
@@ -471,6 +490,7 @@ def generate_instrumenting_agents(used_agents):
     cpp_lines = template_instrumenting_agents_cpp.substitute(
         None,
         init_list="\n    , ".join(init_list),
+        trace_list="\n    ".join(trace_list),
         reset_list="\n    ".join(reset_list))
 
     return header_lines, cpp_lines

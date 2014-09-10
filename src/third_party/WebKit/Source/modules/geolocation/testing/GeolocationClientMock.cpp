@@ -36,7 +36,7 @@
 #include "modules/geolocation/GeolocationError.h"
 #include "modules/geolocation/GeolocationPosition.h"
 
-namespace WebCore {
+namespace blink {
 
 GeolocationClientMock::GeolocationClientMock()
     : m_hasError(false)
@@ -184,4 +184,4 @@ void GeolocationClientMock::clearError()
     m_errorMessage = String();
 }
 
-} // WebCore
+} // namespace blink

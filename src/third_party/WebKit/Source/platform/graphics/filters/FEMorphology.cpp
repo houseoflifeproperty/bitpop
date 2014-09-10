@@ -32,11 +32,10 @@
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/text/TextStream.h"
 #include "wtf/Uint8ClampedArray.h"
-#include "wtf/Vector.h"
 
 using namespace std;
 
-namespace WebCore {
+namespace blink {
 
 FEMorphology::FEMorphology(Filter* filter, MorphologyOperatorType type, float radiusX, float radiusY)
     : FilterEffect(filter)
@@ -166,4 +165,4 @@ TextStream& FEMorphology::externalRepresentation(TextStream& ts, int indent) con
     return ts;
 }
 
-} // namespace WebCore
+} // namespace blink

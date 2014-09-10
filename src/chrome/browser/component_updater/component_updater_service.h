@@ -8,7 +8,9 @@
 #include <string>
 #include <vector>
 
+#include "base/callback_forward.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/ref_counted.h"
 #include "base/version.h"
 #include "url/gurl.h"
 
@@ -17,6 +19,7 @@ class ComponentsUI;
 namespace base {
 class DictionaryValue;
 class FilePath;
+class SequencedTaskRunner;
 }
 
 namespace net {
@@ -30,6 +33,7 @@ class ResourceThrottle;
 
 namespace component_updater {
 
+class Configurator;
 class OnDemandUpdater;
 
 // Component specific installers must derive from this class and implement
@@ -37,7 +41,7 @@ class OnDemandUpdater;
 // given to ComponentUpdateService::RegisterComponent().
 class ComponentInstaller {
  public:
-  // Called by the component updater on the UI thread when there was a
+  // Called by the component updater on the main thread when there was a
   // problem unpacking or verifying the component. |error| is a non-zero
   // value which is only meaningful to the component updater.
   virtual void OnUpdateError(int error) = 0;
@@ -45,7 +49,8 @@ class ComponentInstaller {
   // Called by the component updater when a component has been unpacked
   // and is ready to be installed. |manifest| contains the CRX manifest
   // json dictionary and |unpack_path| contains the temporary directory
-  // with all the unpacked CRX files.
+  // with all the unpacked CRX files. This method may be called from
+  // a thread other than the main thread.
   virtual bool Install(const base::DictionaryValue& manifest,
                        const base::FilePath& unpack_path) = 0;
 
@@ -95,47 +100,10 @@ struct CrxUpdateItem;
 // notifications are fired, like COMPONENT_UPDATER_STARTED and
 // COMPONENT_UPDATE_FOUND. See notification_type.h for more details.
 //
-// All methods are safe to call ONLY from chrome's UI thread.
+// All methods are safe to call ONLY from the browser's main thread.
 class ComponentUpdateService {
  public:
   enum Status { kOk, kReplaced, kInProgress, kError };
-  // Controls the component updater behavior.
-  class Configurator {
-   public:
-    virtual ~Configurator() {}
-    // Delay in seconds from calling Start() to the first update check.
-    virtual int InitialDelay() = 0;
-    // Delay in seconds to every subsequent update check. 0 means don't check.
-    virtual int NextCheckDelay() = 0;
-    // Delay in seconds from each task step. Used to smooth out CPU/IO usage.
-    virtual int StepDelay() = 0;
-    // Delay in seconds between applying updates for different components, if
-    // several updates are available at a given time.
-    virtual int StepDelayMedium() = 0;
-    // Minimum delta time in seconds before checking again the same component.
-    virtual int MinimumReCheckWait() = 0;
-    // Minimum delta time in seconds before an on-demand check is allowed
-    // for the same component.
-    virtual int OnDemandDelay() = 0;
-    // The url that is going to be used update checks over Omaha protocol.
-    virtual GURL UpdateUrl() = 0;
-    // The url where the completion pings are sent. Invalid if and only if
-    // pings are disabled.
-    virtual GURL PingUrl() = 0;
-    // Parameters added to each url request. It can be null if none are needed.
-    virtual std::string ExtraRequestParams() = 0;
-    // How big each update request can be. Don't go above 2000.
-    virtual size_t UrlSizeLimit() = 0;
-    // The source of contexts for all the url requests.
-    virtual net::URLRequestContextGetter* RequestContext() = 0;
-    // True means that all ops are performed in this process.
-    virtual bool InProcess() = 0;
-    // True means that this client can handle delta updates.
-    virtual bool DeltasEnabled() const = 0;
-    // True means that the background downloader can be used for downloading
-    // non on-demand components.
-    virtual bool UseBackgroundDownloader() const = 0;
-  };
 
   // Defines an interface to observe ComponentUpdateService. It provides
   // notifications when state changes occur for the service or for the
@@ -204,6 +172,24 @@ class ComponentUpdateService {
   // proactively triggered outside the normal component update service schedule.
   virtual OnDemandUpdater& GetOnDemandUpdater() = 0;
 
+  // This method is used to trigger an on-demand update for component |crx_id|.
+  // This can be used when loading a resource that depends on this component.
+  //
+  // |callback| is called on the main thread once the on-demand update is
+  // complete, regardless of success. |callback| may be called immediately
+  // within the method body.
+  //
+  // Additionally, this function implements an embedder-defined cooldown
+  // interval between on demand update attempts. This behavior is intended
+  // to be defensive against programming bugs, usually triggered by web fetches,
+  // where the on-demand functionality is invoked too often. If this function
+  // is called while still on cooldown, |callback| will be called immediately.
+  virtual void MaybeThrottle(const std::string& crx_id,
+                             const base::Closure& callback) = 0;
+
+  // Returns a task runner suitable for use by component installers.
+  virtual scoped_refptr<base::SequencedTaskRunner> GetSequencedTaskRunner() = 0;
+
   virtual ~ComponentUpdateService() {}
 
  private:
@@ -213,7 +199,6 @@ class ComponentUpdateService {
                                    CrxUpdateItem* item) const = 0;
 
   friend class ::ComponentsUI;
-  FRIEND_TEST_ALL_PREFIXES(ComponentUpdaterTest, ResourceThrottleLiveNoUpdate);
 };
 
 typedef ComponentUpdateService::Observer ServiceObserver;
@@ -221,17 +206,6 @@ typedef ComponentUpdateService::Observer ServiceObserver;
 class OnDemandUpdater {
  public:
   virtual ~OnDemandUpdater() {}
-
-  // Returns a network resource throttle. It means that a component will be
-  // downloaded and installed before the resource is unthrottled. This function
-  // can be called from the IO thread. The function implements a cooldown
-  // interval of 30 minutes. That means it will ineffective to call the
-  // function before the cooldown interval has passed. This behavior is intended
-  // to be defensive against programming bugs, usually triggered by web fetches,
-  // where the on-demand functionality is invoked too often.
-  virtual content::ResourceThrottle* GetOnDemandResourceThrottle(
-      net::URLRequest* request,
-      const std::string& crx_id) = 0;
 
  private:
   friend class OnDemandTester;
@@ -249,8 +223,8 @@ class OnDemandUpdater {
 
 // Creates the component updater. You must pass a valid |config| allocated on
 // the heap which the component updater will own.
-ComponentUpdateService* ComponentUpdateServiceFactory(
-    ComponentUpdateService::Configurator* config);
+ComponentUpdateService* ComponentUpdateServiceFactory(Configurator* config);
+
 }  // namespace component_updater
 
 #endif  // CHROME_BROWSER_COMPONENT_UPDATER_COMPONENT_UPDATER_SERVICE_H_

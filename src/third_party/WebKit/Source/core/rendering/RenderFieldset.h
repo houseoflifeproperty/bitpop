@@ -26,7 +26,7 @@
 
 #include "core/rendering/RenderBlockFlow.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderFieldset FINAL : public RenderBlockFlow {
 public:
@@ -44,12 +44,12 @@ private:
     virtual void computePreferredLogicalWidths() OVERRIDE;
     virtual bool avoidsFloats() const OVERRIDE { return true; }
 
-    virtual void paintBoxDecorations(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void paintBoxDecorationBackground(PaintInfo&, const LayoutPoint&) OVERRIDE;
     virtual void paintMask(PaintInfo&, const LayoutPoint&) OVERRIDE;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderFieldset, isFieldset());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderFieldset_h

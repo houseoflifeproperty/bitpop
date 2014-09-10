@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-importScript("EditFileSystemDialog.js");
-
 /**
  * @constructor
  * @param {!function()} onHide
@@ -45,8 +43,7 @@ WebInspector.SettingsScreen = function(onHide)
 
     this._tabbedPane = new WebInspector.TabbedPane();
     this._tabbedPane.element.classList.add("help-window-main");
-    var settingsLabelElement = document.createElement("div");
-    settingsLabelElement.className = "help-window-label";
+    var settingsLabelElement = document.createElementWithClass("div", "help-window-label");
     settingsLabelElement.createTextChild(WebInspector.UIString("Settings"));
     this._tabbedPane.element.insertBefore(settingsLabelElement, this._tabbedPane.element.firstChild);
     this._tabbedPane.element.appendChild(this._createCloseButton());
@@ -137,7 +134,7 @@ WebInspector.SettingsScreen.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _keyDown: function(event)
     {
@@ -162,7 +159,7 @@ WebInspector.SettingsTab = function(name, id)
     if (id)
         this.element.id = id;
     var header = this.element.createChild("header");
-    header.createChild("h3").appendChild(document.createTextNode(name));
+    header.createChild("h3").createTextChild(name);
     this.containerElement = this.element.createChild("div", "help-container-wrapper").createChild("div", "settings-tab help-content help-container");
 }
 
@@ -182,10 +179,9 @@ WebInspector.SettingsTab.prototype = {
     _createSelectSetting: function(name, options, setting)
     {
         var p = document.createElement("p");
-        var labelElement = p.createChild("label");
-        labelElement.textContent = name;
+        p.createChild("label").textContent = name;
 
-        var select = p.createChild("select");
+        var select = p.createChild("select", "chrome-select");
         var settingValue = setting.get();
 
         for (var i = 0; i < options.length; ++i) {
@@ -218,7 +214,7 @@ WebInspector.GenericSettingsTab = function()
 
     this._populateSectionsFromExtensions();
 
-    var restoreDefaults = this._appendSection().createChild("input", "settings-tab-text-button");
+    var restoreDefaults = this._appendSection().createChild("input", "text-button");
     restoreDefaults.type = "button";
     restoreDefaults.value = WebInspector.UIString("Restore defaults and reload");
     restoreDefaults.addEventListener("click", restoreAndReload, false);
@@ -237,11 +233,11 @@ WebInspector.GenericSettingsTab.prototype = {
         /** @const */
         var explicitSectionOrder = ["", "Appearance", "Elements", "Sources", "Profiler", "Console", "Extensions"];
 
-        var allExtensions = WebInspector.moduleManager.extensions("ui-setting");
+        var allExtensions = self.runtime.extensions("ui-setting");
 
-        /** @type {!StringMultimap.<!WebInspector.ModuleManager.Extension>} */
+        /** @type {!StringMultimap.<!Runtime.Extension>} */
         var extensionsBySectionId = new StringMultimap();
-        /** @type {!StringMultimap.<!WebInspector.ModuleManager.Extension>} */
+        /** @type {!StringMultimap.<!Runtime.Extension>} */
         var childSettingExtensionsByParentName = new StringMultimap();
 
         allExtensions.forEach(function(extension) {
@@ -255,9 +251,8 @@ WebInspector.GenericSettingsTab.prototype = {
         });
 
         var sectionIds = extensionsBySectionId.keys();
-        var explicitlyOrderedSections = {};
+        var explicitlyOrderedSections = explicitSectionOrder.keySet();
         for (var i = 0; i < explicitSectionOrder.length; ++i) {
-            explicitlyOrderedSections[explicitSectionOrder[i]] = true;
             var extensions = extensionsBySectionId.get(explicitSectionOrder[i]);
             if (!extensions.size())
                 continue;
@@ -272,8 +267,8 @@ WebInspector.GenericSettingsTab.prototype = {
 
     /**
      * @param {string} sectionName
-     * @param {!Array.<!WebInspector.ModuleManager.Extension>} extensions
-     * @param {!StringMultimap.<!WebInspector.ModuleManager.Extension>} childSettingExtensionsByParentName
+     * @param {!Array.<!Runtime.Extension>} extensions
+     * @param {!StringMultimap.<!Runtime.Extension>} childSettingExtensionsByParentName
      */
     _addSectionWithExtensionProvidedSettings: function(sectionName, extensions, childSettingExtensionsByParentName)
     {
@@ -283,7 +278,7 @@ WebInspector.GenericSettingsTab.prototype = {
 
         /**
          * @param {?Element} parentFieldset
-         * @param {!WebInspector.ModuleManager.Extension} extension
+         * @param {!Runtime.Extension} extension
          * @this {WebInspector.GenericSettingsTab}
          */
         function processSetting(parentFieldset, extension)
@@ -346,20 +341,39 @@ WebInspector.GenericSettingsTab.prototype = {
         }
     },
 
+    __proto__: WebInspector.SettingsTab.prototype
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.UISettingDelegate}
+ */
+WebInspector.SettingsScreen.SkipStackFramePatternSettingDelegate = function()
+{
+    WebInspector.UISettingDelegate.call(this);
+}
+
+WebInspector.SettingsScreen.SkipStackFramePatternSettingDelegate.prototype = {
     /**
-     * @param {?Element} p
+     * @override
+     * @return {!Element}
      */
-    _appendDrawerNote: function(p)
+    settingElement: function()
     {
-        var noteElement = p.createChild("div", "help-field-note");
-        noteElement.createTextChild("Hit ");
-        noteElement.createChild("span", "help-key").textContent = "Esc";
-        noteElement.createTextChild(WebInspector.UIString(" or click the"));
-        noteElement.appendChild(new WebInspector.StatusBarButton(WebInspector.UIString("Drawer"), "console-status-bar-item").element);
-        noteElement.createTextChild(WebInspector.UIString("toolbar item"));
+        var button = document.createElementWithClass("input", "text-button");
+        button.type = "button";
+        button.value = WebInspector.manageBlackboxingButtonLabel();
+        button.title = WebInspector.UIString("Skip stepping through sources with particular names");
+        button.addEventListener("click", this._onManageButtonClick.bind(this), false);
+        return button;
     },
 
-    __proto__: WebInspector.SettingsTab.prototype
+    _onManageButtonClick: function()
+    {
+        WebInspector.FrameworkBlackboxDialog.show(WebInspector.inspectorView.element);
+    },
+
+    __proto__: WebInspector.UISettingDelegate.prototype
 }
 
 /**
@@ -380,14 +394,14 @@ WebInspector.WorkspaceSettingsTab = function()
     this._fileSystemsListContainer = this._fileSystemsSection.createChild("p", "settings-list-container");
 
     this._addFileSystemRowElement = this._fileSystemsSection.createChild("div");
-    var addFileSystemButton = this._addFileSystemRowElement.createChild("input", "settings-tab-text-button");
+    var addFileSystemButton = this._addFileSystemRowElement.createChild("input", "text-button");
     addFileSystemButton.type = "button";
     addFileSystemButton.value = WebInspector.UIString("Add folder\u2026");
     addFileSystemButton.addEventListener("click", this._addFileSystemClicked.bind(this), false);
 
-    this._editFileSystemButton = this._addFileSystemRowElement.createChild("input", "settings-tab-text-button");
+    this._editFileSystemButton = this._addFileSystemRowElement.createChild("input", "text-button");
     this._editFileSystemButton.type = "button";
-    this._editFileSystemButton.value = WebInspector.UIString("Edit\u2026");
+    this._editFileSystemButton.value = WebInspector.UIString("Folder options\u2026");
     this._editFileSystemButton.addEventListener("click", this._editFileSystemClicked.bind(this), false);
     this._updateEditFileSystemButtonState();
 
@@ -418,7 +432,7 @@ WebInspector.WorkspaceSettingsTab.prototype = {
             return;
         }
 
-        this._fileSystemsList = new WebInspector.SettingsList(["path"], this._renderFileSystem.bind(this));
+        this._fileSystemsList = new WebInspector.SettingsList([{ id: "path" }], this._renderFileSystem.bind(this));
         this._fileSystemsList.element.classList.add("file-systems-list");
         this._fileSystemsList.addEventListener(WebInspector.SettingsList.Events.Selected, this._fileSystemSelected.bind(this));
         this._fileSystemsList.addEventListener(WebInspector.SettingsList.Events.Removed, this._fileSystemRemovedfromList.bind(this));
@@ -465,25 +479,8 @@ WebInspector.WorkspaceSettingsTab.prototype = {
     },
 
     /**
-     * @param {function(?Event)} handler
-     * @return {!Element}
-     */
-    _createRemoveButton: function(handler)
-    {
-        var removeButton = document.createElement("button");
-        removeButton.classList.add("button");
-        removeButton.classList.add("remove-item-button");
-        removeButton.value = WebInspector.UIString("Remove");
-        if (handler)
-            removeButton.addEventListener("click", handler, false);
-        else
-            removeButton.disabled = true;
-        return removeButton;
-    },
-
-    /**
      * @param {!Element} columnElement
-     * @param {string} column
+     * @param {{id: string, placeholder: (string|undefined), options: (!Array.<string>|undefined)}} column
      * @param {?string} id
      */
     _renderFileSystem: function(columnElement, column, id)
@@ -582,7 +579,7 @@ WebInspector.ExperimentsSettingsTab.prototype = {
         var subsection = document.createElement("div");
         var warning = subsection.createChild("span", "settings-experiments-warning-subsection-warning");
         warning.textContent = WebInspector.UIString("WARNING:");
-        subsection.appendChild(document.createTextNode(" "));
+        subsection.createTextChild(" ");
         var message = subsection.createChild("span", "settings-experiments-warning-subsection-message");
         message.textContent = WebInspector.UIString("These experiments could be dangerous and may require restart.");
         return subsection;
@@ -604,7 +601,7 @@ WebInspector.ExperimentsSettingsTab.prototype = {
         p.className = experiment.hidden && !experiment.isEnabled() ? "settings-experiment-hidden" : "";
         var label = p.createChild("label");
         label.appendChild(input);
-        label.appendChild(document.createTextNode(WebInspector.UIString(experiment.title)));
+        label.createTextChild(WebInspector.UIString(experiment.title));
         p.appendChild(label);
         return p;
     },
@@ -620,11 +617,10 @@ WebInspector.SettingsController = function()
     /** @type {?WebInspector.SettingsScreen} */
     this._settingsScreen;
 
-    window.addEventListener("resize", this._resize.bind(this), true);
+    window.addEventListener("resize", this._resize.bind(this), false);
 }
 
-WebInspector.SettingsController.prototype =
-{
+WebInspector.SettingsController.prototype = {
     _onHideSettingsScreen: function()
     {
         delete this._settingsScreenVisible;
@@ -672,16 +668,17 @@ WebInspector.SettingsController.SettingsScreenActionDelegate.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.Object}
- * @param {!Array.<string>} columns
- * @param {function(!Element, string, ?string)} itemRenderer
+ * @param {!Array.<{id: string, placeholder: (string|undefined), options: (!Array.<string>|undefined)}>} columns
+ * @param {function(!Element, {id: string, placeholder: (string|undefined), options: (!Array.<string>|undefined)}, ?string)} itemRenderer
  */
 WebInspector.SettingsList = function(columns, itemRenderer)
 {
-    this.element = document.createElement("div");
-    this.element.classList.add("settings-list");
+    this.element = document.createElementWithClass("div", "settings-list");
     this.element.tabIndex = -1;
     this._itemRenderer = itemRenderer;
-    this._listItems = {};
+    /** @type {!StringMap.<!Element>} */
+    this._listItems = new StringMap();
+    /** @type {!Array.<?string>} */
     this._ids = [];
     this._columns = columns;
 }
@@ -700,11 +697,10 @@ WebInspector.SettingsList.prototype = {
      */
     addItem: function(itemId, beforeId)
     {
-        var listItem = document.createElement("div");
+        var listItem = document.createElementWithClass("div", "settings-list-item");
         listItem._id = itemId;
-        listItem.classList.add("settings-list-item");
-        if (typeof beforeId !== undefined)
-            this.element.insertBefore(listItem, this._listItems[beforeId]);
+        if (typeof beforeId !== "undefined")
+            this.element.insertBefore(listItem, this.itemForId(beforeId));
         else
             this.element.appendChild(listItem);
 
@@ -713,24 +709,24 @@ WebInspector.SettingsList.prototype = {
 
         listItem.columnElements = {};
         for (var i = 0; i < this._columns.length; ++i) {
-            var columnElement = listItemColumnsElement.createChild("div", "list-column");
-            var columnId = this._columns[i];
-            listItem.columnElements[columnId] = columnElement;
-            this._itemRenderer(columnElement, columnId, itemId);
+            var column = this._columns[i];
+            var columnElement = listItemColumnsElement.createChild("div", "list-column settings-list-column-" + column.id);
+            listItem.columnElements[column.id] = columnElement;
+            this._itemRenderer(columnElement, column, itemId);
         }
         var removeItemButton = this._createRemoveButton(removeItemClicked.bind(this));
         listItemContents.addEventListener("click", this.selectItem.bind(this, itemId), false);
         listItemContents.addEventListener("dblclick", this._onDoubleClick.bind(this, itemId), false);
         listItemContents.appendChild(removeItemButton);
 
-        this._listItems[itemId] = listItem;
-        if (typeof beforeId !== undefined)
+        this._listItems.put(itemId || "", listItem);
+        if (typeof beforeId !== "undefined")
             this._ids.splice(this._ids.indexOf(beforeId), 0, itemId);
         else
             this._ids.push(itemId);
 
         /**
-         * @param {?Event} event
+         * @param {!Event} event
          * @this {WebInspector.SettingsList}
          */
         function removeItemClicked(event)
@@ -749,8 +745,9 @@ WebInspector.SettingsList.prototype = {
      */
     removeItem: function(id)
     {
-        this._listItems[id].remove();
-        delete this._listItems[id];
+        var listItem = this._listItems.remove(id || "");
+        if (listItem)
+            listItem.remove();
         this._ids.remove(id);
         if (id === this._selectedId) {
             delete this._selectedId;
@@ -772,7 +769,7 @@ WebInspector.SettingsList.prototype = {
      */
     columns: function()
     {
-        return this._columns.slice();
+        return this._columns.select("id");
     },
 
     /**
@@ -784,25 +781,25 @@ WebInspector.SettingsList.prototype = {
     },
 
     /**
-     * @return {!Element}
+     * @return {?Element}
      */
     selectedItem: function()
     {
-        return this._selectedId ? this._listItems[this._selectedId] : null;
+        return this._selectedId ? this.itemForId(this._selectedId) : null;
     },
 
     /**
-     * @param {string} itemId
-     * @return {!Element}
+     * @param {?string} itemId
+     * @return {?Element}
      */
     itemForId: function(itemId)
     {
-        return this._listItems[itemId];
+        return this._listItems.get(itemId || "") || null;
     },
 
     /**
      * @param {?string} id
-     * @param {?Event=} event
+     * @param {!Event=} event
      */
     _onDoubleClick: function(id, event)
     {
@@ -811,32 +808,29 @@ WebInspector.SettingsList.prototype = {
 
     /**
      * @param {?string} id
-     * @param {?Event=} event
+     * @param {!Event=} event
      */
     selectItem: function(id, event)
     {
-        if (typeof this._selectedId !== "undefined") {
-            this._listItems[this._selectedId].classList.remove("selected");
-        }
+        if (typeof this._selectedId !== "undefined")
+            this.itemForId(this._selectedId).classList.remove("selected");
 
         this._selectedId = id;
-        if (typeof this._selectedId !== "undefined") {
-            this._listItems[this._selectedId].classList.add("selected");
-        }
+        if (typeof this._selectedId !== "undefined")
+            this.itemForId(this._selectedId).classList.add("selected");
+
         this.dispatchEventToListeners(WebInspector.SettingsList.Events.Selected, id);
         if (event)
             event.consume();
     },
 
     /**
-     * @param {function(?Event)} handler
+     * @param {function(!Event)} handler
      * @return {!Element}
      */
     _createRemoveButton: function(handler)
     {
-        var removeButton = document.createElement("button");
-        removeButton.classList.add("remove-item-button");
-        removeButton.value = WebInspector.UIString("Remove");
+        var removeButton = document.createElementWithClass("div", "remove-item-button");
         removeButton.addEventListener("click", handler, false);
         return removeButton;
     },
@@ -847,27 +841,26 @@ WebInspector.SettingsList.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.SettingsList}
- * @param {!Array.<string>} columns
+ * @param {!Array.<{id: string, placeholder: (string|undefined), options: (!Array.<string>|undefined)}>} columns
  * @param {function(string, string):string} valuesProvider
- * @param {function(?string, !Object)} validateHandler
+ * @param {function(?string, !Object):!Array.<string>} validateHandler
  * @param {function(?string, !Object)} editHandler
  */
 WebInspector.EditableSettingsList = function(columns, valuesProvider, validateHandler, editHandler)
 {
     WebInspector.SettingsList.call(this, columns, this._renderColumn.bind(this));
+    this._valuesProvider = valuesProvider;
     this._validateHandler = validateHandler;
     this._editHandler = editHandler;
-    this._valuesProvider = valuesProvider;
-    /** @type {!Object.<string, !HTMLInputElement>} */
-    this._addInputElements = {};
-    /** @type {!Object.<string, !Object.<string, !HTMLInputElement>>} */
-    this._editInputElements = {};
-    /** @type {!Object.<string, !Object.<string, !HTMLSpanElement>>} */
-    this._textElements = {};
+    /** @type {!StringMap.<(!HTMLInputElement|!HTMLSelectElement)>} */
+    this._addInputElements = new StringMap();
+    /** @type {!StringMap.<!StringMap.<(!HTMLInputElement|!HTMLSelectElement)>>} */
+    this._editInputElements = new StringMap();
+    /** @type {!StringMap.<!StringMap.<!HTMLSpanElement>>} */
+    this._textElements = new StringMap();
 
     this._addMappingItem = this.addItem(null);
-    this._addMappingItem.classList.add("item-editing");
-    this._addMappingItem.classList.add("add-list-item");
+    this._addMappingItem.classList.add("item-editing", "add-list-item");
 }
 
 WebInspector.EditableSettingsList.prototype = {
@@ -884,28 +877,47 @@ WebInspector.EditableSettingsList.prototype = {
     },
 
     /**
-     * @param {!Element} columnElement
-     * @param {string} columnId
      * @param {?string} itemId
      */
-    _renderColumn: function(columnElement, columnId, itemId)
+    refreshItem: function(itemId)
     {
-        columnElement.classList.add("settings-list-column-" + columnId);
-        var placeholder = (columnId === "url") ? WebInspector.UIString("URL prefix") : WebInspector.UIString("Folder path");
+        if (!itemId)
+            return;
+        var listItem = this.itemForId(itemId);
+        if (!listItem)
+            return;
+        for (var i = 0; i < this._columns.length; ++i) {
+            var column = this._columns[i];
+            var columnId = column.id;
+
+            var value = this._valuesProvider(itemId, columnId);
+            var textElement = this._textElements.get(itemId).get(columnId);
+            textElement.textContent = value;
+            textElement.title = value;
+
+            var editElement = this._editInputElements.get(itemId).get(columnId);
+            this._setEditElementValue(editElement, value || "");
+        }
+    },
+
+    /**
+     * @param {!Element} columnElement
+     * @param {{id: string, placeholder: (string|undefined), options: (!Array.<string>|undefined)}} column
+     * @param {?string} itemId
+     */
+    _renderColumn: function(columnElement, column, itemId)
+    {
+        var columnId = column.id;
         if (itemId === null) {
-            var inputElement = /** @type {!HTMLInputElement} */ (columnElement.createChild("input", "list-column-editor"));
-            inputElement.placeholder = placeholder;
-            inputElement.addEventListener("blur", this._onAddMappingInputBlur.bind(this), false);
-            inputElement.addEventListener("input", this._validateEdit.bind(this, itemId), false);
-            this._addInputElements[columnId] = inputElement;
+            this._createEditElement(columnElement, column, itemId);
             return;
         }
         var validItemId = itemId;
 
-        if (!this._editInputElements[itemId])
-            this._editInputElements[itemId] = {};
-        if (!this._textElements[itemId])
-            this._textElements[itemId] = {};
+        if (!this._editInputElements.contains(itemId))
+            this._editInputElements.put(itemId, new StringMap());
+        if (!this._textElements.contains(itemId))
+            this._textElements.put(itemId, new StringMap());
 
         var value = this._valuesProvider(itemId, columnId);
 
@@ -913,17 +925,12 @@ WebInspector.EditableSettingsList.prototype = {
         textElement.textContent = value;
         textElement.title = value;
         columnElement.addEventListener("click", rowClicked.bind(this), false);
-        this._textElements[itemId][columnId] = textElement;
+        this._textElements.get(itemId).put(columnId, textElement);
 
-        var inputElement = /** @type {!HTMLInputElement} */ (columnElement.createChild("input", "list-column-editor"));
-        inputElement.value = value;
-        inputElement.addEventListener("blur", this._editMappingBlur.bind(this, itemId), false);
-        inputElement.addEventListener("input", this._validateEdit.bind(this, itemId), false);
-        columnElement.inputElement = inputElement;
-        this._editInputElements[itemId][columnId] = inputElement;
+        this._createEditElement(columnElement, column, itemId, value);
 
         /**
-         * @param {?Event} event
+         * @param {!Event} event
          * @this {WebInspector.EditableSettingsList}
          */
         function rowClicked(event)
@@ -935,9 +942,64 @@ WebInspector.EditableSettingsList.prototype = {
             this._editingId = validItemId;
             var listItem = this.itemForId(validItemId);
             listItem.classList.add("item-editing");
-            var inputElement = event.target.inputElement || this._editInputElements[validItemId][this.columns()[0]];
-            inputElement.focus();
-            inputElement.select();
+            var editElement = event.target.editElement || this._editInputElements.get(validItemId).get(this.columns()[0]);
+            editElement.focus();
+            if (editElement.select)
+                editElement.select();
+        }
+    },
+
+    /**
+     * @param {!Element} columnElement
+     * @param {{id: string, placeholder: (string|undefined), options: (!Array.<string>|undefined)}} column
+     * @param {?string} itemId
+     * @param {string=} value
+     * @return {!Element}
+     */
+    _createEditElement: function(columnElement, column, itemId, value)
+    {
+        var options = column.options;
+        if (options) {
+            var editElement = /** @type {!HTMLSelectElement} */ (columnElement.createChild("select", "chrome-select list-column-editor"));
+            for (var i = 0; i < options.length; ++i) {
+                var option = editElement.createChild("option");
+                option.value = options[i];
+                option.textContent = options[i];
+            }
+            editElement.addEventListener("blur", this._editMappingBlur.bind(this, itemId), false);
+            editElement.addEventListener("change", this._editMappingBlur.bind(this, itemId), false);
+        } else {
+            var editElement = /** @type {!HTMLInputElement} */ (columnElement.createChild("input", "list-column-editor"));
+            editElement.addEventListener("blur", this._editMappingBlur.bind(this, itemId), false);
+            editElement.addEventListener("input", this._validateEdit.bind(this, itemId), false);
+            if (itemId === null)
+                editElement.placeholder = column.placeholder || "";
+        }
+
+        if (itemId === null)
+            this._addInputElements.put(column.id, editElement);
+        else
+            this._editInputElements.get(itemId).put(column.id, editElement);
+
+        this._setEditElementValue(editElement, value || "");
+        columnElement.editElement = editElement;
+        return editElement;
+    },
+
+    /**
+     * @param {!HTMLInputElement|!HTMLSelectElement|undefined} editElement
+     * @param {string} value
+     */
+    _setEditElementValue: function(editElement, value)
+    {
+        if (!editElement)
+            return;
+        if (editElement instanceof HTMLSelectElement) {
+            var options = editElement.options;
+            for (var i = 0; i < options.length; ++i)
+                options[i].selected = (options[i].value === value);
+        } else {
+            editElement.value = value;
         }
     },
 
@@ -948,22 +1010,22 @@ WebInspector.EditableSettingsList.prototype = {
     _data: function(itemId)
     {
         var inputElements = this._inputElements(itemId);
-        var data = {};
+        var data = { __proto__: null };
         var columns = this.columns();
         for (var i = 0; i < columns.length; ++i)
-            data[columns[i]] = inputElements[columns[i]].value;
+            data[columns[i]] = inputElements.get(columns[i]).value;
         return data;
     },
 
     /**
      * @param {?string} itemId
-     * @return {?Object.<string, !HTMLInputElement>}
+     * @return {?StringMap.<(!HTMLInputElement|!HTMLSelectElement)>}
      */
     _inputElements: function(itemId)
     {
         if (!itemId)
             return this._addInputElements;
-        return this._editInputElements[itemId] || null;
+        return this._editInputElements.get(itemId) || null;
     },
 
     /**
@@ -977,7 +1039,7 @@ WebInspector.EditableSettingsList.prototype = {
         var columns = this.columns();
         for (var i = 0; i < columns.length; ++i) {
             var columnId = columns[i];
-            var inputElement = this._inputElements(itemId)[columnId];
+            var inputElement = this._inputElements(itemId).get(columnId);
             if (hasChanges && errorColumns.indexOf(columnId) !== -1)
                 inputElement.classList.add("editable-item-error");
             else
@@ -992,27 +1054,29 @@ WebInspector.EditableSettingsList.prototype = {
      */
     _hasChanges: function(itemId)
     {
-        var hasChanges = false;
         var columns = this.columns();
         for (var i = 0; i < columns.length; ++i) {
             var columnId = columns[i];
-            var oldValue = itemId ? this._textElements[itemId][columnId].textContent : "";
-            var newValue = this._inputElements(itemId)[columnId].value;
-            if (oldValue !== newValue) {
-                hasChanges = true;
-                break;
-            }
+            var oldValue = itemId ? this._textElements.get(itemId).get(columnId).textContent : "";
+            var newValue = this._inputElements(itemId).get(columnId).value;
+            if (oldValue !== newValue)
+                return true;
         }
-        return hasChanges;
+        return false;
     },
 
     /**
-     * @param {string} itemId
-     * @param {?Event} event
+     * @param {?string} itemId
+     * @param {!Event} event
      */
     _editMappingBlur: function(itemId, event)
     {
-        var inputElements = Object.values(this._editInputElements[itemId]);
+        if (itemId === null) {
+            this._onAddMappingInputBlur(event);
+            return;
+        }
+
+        var inputElements = this._editInputElements.get(itemId).values();
         if (inputElements.indexOf(event.relatedTarget) !== -1)
             return;
 
@@ -1027,18 +1091,21 @@ WebInspector.EditableSettingsList.prototype = {
             var columns = this.columns();
             for (var i = 0; i < columns.length; ++i) {
                 var columnId = columns[i];
-                var inputElement = this._editInputElements[itemId][columnId];
-                inputElement.value = this._textElements[itemId][columnId].textContent;
-                inputElement.classList.remove("editable-item-error");
+                var editElement = this._editInputElements.get(itemId).get(columnId);
+                this._setEditElementValue(editElement, this._textElements.get(itemId).get(columnId).textContent);
+                editElement.classList.remove("editable-item-error");
             }
             return;
         }
         this._editHandler(itemId, this._data(itemId));
     },
 
+    /**
+     * @param {!Event} event
+     */
     _onAddMappingInputBlur: function(event)
     {
-        var inputElements = Object.values(this._addInputElements);
+        var inputElements = this._addInputElements.values();
         if (inputElements.indexOf(event.relatedTarget) !== -1)
             return;
 
@@ -1052,8 +1119,8 @@ WebInspector.EditableSettingsList.prototype = {
         var columns = this.columns();
         for (var i = 0; i < columns.length; ++i) {
             var columnId = columns[i];
-            var inputElement = this._addInputElements[columnId];
-            inputElement.value = "";
+            var editElement = this._addInputElements.get(columnId);
+            this._setEditElementValue(editElement, "");
         }
     },
 

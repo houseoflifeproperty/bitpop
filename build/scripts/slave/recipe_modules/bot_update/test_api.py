@@ -18,7 +18,8 @@ class BotUpdateTestApi(recipe_test_api.RecipeTestApi):
     active = bot_update.check_valid_host(master, builder, slave) or force
 
     output = {
-        'did_run': active
+        'did_run': active,
+        'patch_failure': False
     }
 
     # Add in extra json output if active.
@@ -42,9 +43,14 @@ class BotUpdateTestApi(recipe_test_api.RecipeTestApi):
       })
 
       if fail_patch:
-        output['log_lines'] = [('patch failed', 'Patch failed to apply'),]
+        output['log_lines'] = [('patch error', 'Patch failed to apply'),]
+        output['patch_failure'] = True
     return self.m.json.output(output)
 
+  def patch_error_data(self):
+    ret = recipe_test_api.StepTestData()
+    ret.retcode = 1
+    return ret
 
   @staticmethod
   def gen_revision(project, GIT_MODE):

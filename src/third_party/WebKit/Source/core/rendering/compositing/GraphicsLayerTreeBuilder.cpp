@@ -35,7 +35,7 @@
 #include "core/rendering/compositing/CompositedLayerMapping.h"
 #include "core/rendering/compositing/RenderLayerCompositor.h"
 
-namespace WebCore {
+namespace blink {
 
 GraphicsLayerTreeBuilder::GraphicsLayerTreeBuilder()
 {
@@ -55,39 +55,43 @@ static bool shouldAppendLayer(const RenderLayer& layer)
     return true;
 }
 
-void GraphicsLayerTreeBuilder::rebuild(RenderLayer& layer, GraphicsLayerVector& childLayersOfEnclosingLayer)
+void GraphicsLayerTreeBuilder::rebuild(RenderLayer& layer, AncestorInfo info)
 {
     // Make the layer compositing if necessary, and set up clipping and content layers.
     // Note that we can only do work here that is independent of whether the descendant layers
-    // have been processed. computeCompositingRequirements() will already have done the repaint if necessary.
+    // have been processed. computeCompositingRequirements() will already have done the paint invalidation if necessary.
 
     layer.stackingNode()->updateLayerListsIfNeeded();
 
     const bool hasCompositedLayerMapping = layer.hasCompositedLayerMapping();
-    CompositedLayerMappingPtr currentCompositedLayerMapping = layer.compositedLayerMapping();
+    CompositedLayerMapping* currentCompositedLayerMapping = layer.compositedLayerMapping();
 
     // If this layer has a compositedLayerMapping, then that is where we place subsequent children GraphicsLayers.
     // Otherwise children continue to append to the child list of the enclosing layer.
     GraphicsLayerVector layerChildren;
-    GraphicsLayerVector& childList = hasCompositedLayerMapping ? layerChildren : childLayersOfEnclosingLayer;
+    AncestorInfo infoForChildren(info);
+    if (hasCompositedLayerMapping) {
+        infoForChildren.childLayersOfEnclosingCompositedLayer = &layerChildren;
+        infoForChildren.enclosingCompositedLayer = &layer;
+    }
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     LayerListMutationDetector mutationChecker(layer.stackingNode());
 #endif
 
     if (layer.stackingNode()->isStackingContext()) {
         RenderLayerStackingNodeIterator iterator(*layer.stackingNode(), NegativeZOrderChildren);
         while (RenderLayerStackingNode* curNode = iterator.next())
-            rebuild(*curNode->layer(), childList);
+            rebuild(*curNode->layer(), infoForChildren);
 
         // If a negative z-order child is compositing, we get a foreground layer which needs to get parented.
         if (hasCompositedLayerMapping && currentCompositedLayerMapping->foregroundLayer())
-            childList.append(currentCompositedLayerMapping->foregroundLayer());
+            infoForChildren.childLayersOfEnclosingCompositedLayer->append(currentCompositedLayerMapping->foregroundLayer());
     }
 
     RenderLayerStackingNodeIterator iterator(*layer.stackingNode(), NormalFlowChildren | PositiveZOrderChildren);
     while (RenderLayerStackingNode* curNode = iterator.next())
-        rebuild(*curNode->layer(), childList);
+        rebuild(*curNode->layer(), infoForChildren);
 
     if (hasCompositedLayerMapping) {
         bool parented = false;
@@ -99,6 +103,7 @@ void GraphicsLayerTreeBuilder::rebuild(RenderLayer& layer, GraphicsLayerVector& 
 
         // If the layer has a clipping layer the overflow controls layers will be siblings of the clipping layer.
         // Otherwise, the overflow control layers are normal children.
+        // FIXME: Why isn't this handled in CLM updateInternalHierarchy?
         if (!currentCompositedLayerMapping->hasClippingLayer() && !currentCompositedLayerMapping->hasScrollingLayer()) {
             if (GraphicsLayer* overflowControlLayer = currentCompositedLayerMapping->layerForHorizontalScrollbar()) {
                 overflowControlLayer->removeFromParent();
@@ -117,8 +122,14 @@ void GraphicsLayerTreeBuilder::rebuild(RenderLayer& layer, GraphicsLayerVector& 
         }
 
         if (shouldAppendLayer(layer))
-            childLayersOfEnclosingLayer.append(currentCompositedLayerMapping->childForSuperlayers());
+            info.childLayersOfEnclosingCompositedLayer->append(currentCompositedLayerMapping->childForSuperlayers());
     }
+
+    if (layer.scrollParent()
+        && layer.scrollParent()->hasCompositedLayerMapping()
+        && layer.scrollParent()->compositedLayerMapping()->needsToReparentOverflowControls()
+        && layer.scrollParent()->scrollableArea()->topmostScrollChild() == &layer)
+        info.childLayersOfEnclosingCompositedLayer->append(layer.scrollParent()->compositedLayerMapping()->detachLayerForOverflowControls(*info.enclosingCompositedLayer));
 }
 
 }

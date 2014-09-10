@@ -78,8 +78,9 @@ PasswordStore::PasswordStore(
       observers_(new ObserverListThreadSafe<Observer>()),
       shutdown_called_(false) {}
 
-bool PasswordStore::Init(const syncer::SyncableService::StartSyncFlare& flare) {
-  ReportMetrics();
+bool PasswordStore::Init(const syncer::SyncableService::StartSyncFlare& flare,
+                         const std::string& sync_username) {
+  ReportMetrics(sync_username);
 #if defined(PASSWORD_MANAGER_ENABLE_SYNC)
   ScheduleTask(base::Bind(&PasswordStore::InitSyncableService, this, flare));
 #endif
@@ -162,8 +163,9 @@ void PasswordStore::GetBlacklistLogins(PasswordStoreConsumer* consumer) {
   Schedule(&PasswordStore::GetBlacklistLoginsImpl, consumer);
 }
 
-void PasswordStore::ReportMetrics() {
-  ScheduleTask(base::Bind(&PasswordStore::ReportMetricsImpl, this));
+void PasswordStore::ReportMetrics(const std::string& sync_username) {
+  ScheduleTask(base::Bind(&PasswordStore::ReportMetricsImpl, this,
+                          sync_username));
 }
 
 void PasswordStore::AddObserver(Observer* observer) {
@@ -224,6 +226,18 @@ void PasswordStore::LogStatsForBulkDeletion(int num_deletions) {
                        num_deletions);
 }
 
+void PasswordStore::NotifyLoginsChanged(
+    const PasswordStoreChangeList& changes) {
+  DCHECK(GetBackgroundTaskRunner()->BelongsToCurrentThread());
+  if (!changes.empty()) {
+    observers_->Notify(&Observer::OnLoginsChanged, changes);
+#if defined(PASSWORD_MANAGER_ENABLE_SYNC)
+    if (syncable_service_)
+      syncable_service_->ActOnPasswordStoreChanges(changes);
+#endif
+  }
+}
+
 template<typename BackendFunc>
 void PasswordStore::Schedule(
     BackendFunc func,
@@ -238,18 +252,6 @@ void PasswordStore::Schedule(
 void PasswordStore::WrapModificationTask(ModificationTask task) {
   PasswordStoreChangeList changes = task.Run();
   NotifyLoginsChanged(changes);
-}
-
-void PasswordStore::NotifyLoginsChanged(
-    const PasswordStoreChangeList& changes) {
-  DCHECK(GetBackgroundTaskRunner()->BelongsToCurrentThread());
-  if (!changes.empty()) {
-    observers_->Notify(&Observer::OnLoginsChanged, changes);
-#if defined(PASSWORD_MANAGER_ENABLE_SYNC)
-    if (syncable_service_)
-      syncable_service_->ActOnPasswordStoreChanges(changes);
-#endif
-  }
 }
 
 #if defined(PASSWORD_MANAGER_ENABLE_SYNC)

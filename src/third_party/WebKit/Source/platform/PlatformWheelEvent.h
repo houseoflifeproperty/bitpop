@@ -29,7 +29,7 @@
 #include "platform/PlatformEvent.h"
 #include "platform/geometry/IntPoint.h"
 
-namespace WebCore {
+namespace blink {
 
 class FloatPoint;
 class FloatSize;
@@ -65,7 +65,6 @@ public:
         , m_wheelTicksX(0)
         , m_wheelTicksY(0)
         , m_granularity(ScrollByPixelWheelEvent)
-        , m_directionInvertedFromDevice(false)
         , m_hasPreciseScrollingDeltas(false)
 #if OS(MACOSX)
         , m_phase(PlatformWheelEventPhaseNone)
@@ -88,7 +87,6 @@ public:
         , m_wheelTicksX(wheelTicksX)
         , m_wheelTicksY(wheelTicksY)
         , m_granularity(granularity)
-        , m_directionInvertedFromDevice(false)
         , m_hasPreciseScrollingDeltas(false)
 #if OS(MACOSX)
         , m_phase(PlatformWheelEventPhaseNone)
@@ -113,8 +111,6 @@ public:
 
     PlatformWheelEventGranularity granularity() const { return m_granularity; }
 
-    bool directionInvertedFromDevice() const { return m_directionInvertedFromDevice; }
-
     bool hasPreciseScrollingDeltas() const { return m_hasPreciseScrollingDeltas; }
     void setHasPreciseScrollingDeltas(bool b) { m_hasPreciseScrollingDeltas = b; }
 #if OS(MACOSX)
@@ -138,7 +134,6 @@ protected:
     float m_wheelTicksX;
     float m_wheelTicksY;
     PlatformWheelEventGranularity m_granularity;
-    bool m_directionInvertedFromDevice;
     bool m_hasPreciseScrollingDeltas;
 #if OS(MACOSX)
     PlatformWheelEventPhase m_phase;
@@ -151,6 +146,6 @@ protected:
 #endif
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PlatformWheelEvent_h

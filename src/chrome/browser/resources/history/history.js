@@ -33,11 +33,12 @@ var activeVisit = null;
 /** @const */ var MenuButton = cr.ui.MenuButton;
 
 /**
- * Enum that shows the filtering behavior for a host or URL to a managed user.
- * Must behave like the FilteringBehavior enum from managed_mode_url_filter.h.
+ * Enum that shows the filtering behavior for a host or URL to a supervised
+ * user. Must behave like the FilteringBehavior enum from
+ * supervised_user_url_filter.h.
  * @enum {number}
  */
-ManagedModeFilteringBehavior = {
+SupervisedUserFilteringBehavior = {
   ALLOW: 0,
   WARN: 1,
   BLOCK: 2
@@ -68,7 +69,6 @@ function recordUmaAction(actionDesc) {
  * @param {integer} maxBucketValue The max value for the last histogram bucket.
  * @param {integer} value The value to record in the histogram.
  */
-
 function recordUmaHistogram(histogram, maxBucketValue, value) {
   chrome.send('metricsHandler:recordInHistogram',
               [histogram,
@@ -116,10 +116,11 @@ function Visit(result, continued, model) {
   this.dateTimeOfDay = result.dateTimeOfDay || '';
   this.dateShort = result.dateShort || '';
 
-  // Shows the filtering behavior for that host (only used for managed users).
-  // A value of |ManagedModeFilteringBehavior.ALLOW| is not displayed so it is
-  // used as the default value.
-  this.hostFilteringBehavior = ManagedModeFilteringBehavior.ALLOW;
+  // Shows the filtering behavior for that host (only used for supervised
+  // users).
+  // A value of |SupervisedUserFilteringBehavior.ALLOW| is not displayed so it
+  // is used as the default value.
+  this.hostFilteringBehavior = SupervisedUserFilteringBehavior.ALLOW;
   if (typeof result.hostFilteringBehavior != 'undefined')
     this.hostFilteringBehavior = result.hostFilteringBehavior;
 
@@ -147,12 +148,14 @@ Visit.prototype.getResultDOM = function(propertyBag) {
   var isSearchResult = propertyBag.isSearchResult || false;
   var addTitleFavicon = propertyBag.addTitleFavicon || false;
   var useMonthDate = propertyBag.useMonthDate || false;
+  var focusless = propertyBag.focusless || false;
   var node = createElementWithClassName('li', 'entry');
   var time = createElementWithClassName('div', 'time');
   var entryBox = createElementWithClassName('label', 'entry-box');
   var domain = createElementWithClassName('div', 'domain');
 
   this.id_ = this.model_.nextVisitId_++;
+  var self = this;
 
   // Only create the checkbox if it can be used either to delete an entry or to
   // block/allow it.
@@ -164,16 +167,19 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     checkbox.addEventListener('click', checkboxClicked);
     entryBox.appendChild(checkbox);
 
+    if (focusless)
+      checkbox.tabIndex = -1;
+
     // Clicking anywhere in the entryBox will check/uncheck the checkbox.
     entryBox.setAttribute('for', checkbox.id);
     entryBox.addEventListener('mousedown', entryBoxMousedown);
     entryBox.addEventListener('click', entryBoxClick);
+    entryBox.addEventListener('keydown', this.handleKeydown_.bind(this));
   }
 
   // Keep track of the drop down that triggered the menu, so we know
   // which element to apply the command to.
   // TODO(dubroy): Ideally we'd use 'activate', but MenuButton swallows it.
-  var self = this;
   var setActiveVisit = function(e) {
     activeVisit = self;
     var menu = $('action-menu');
@@ -186,6 +192,7 @@ Visit.prototype.getResultDOM = function(propertyBag) {
 
   var bookmarkSection = createElementWithClassName('div', 'bookmark-section');
   if (this.starred_) {
+    bookmarkSection.title = loadTimeData.getString('removeBookmark');
     bookmarkSection.classList.add('starred');
     bookmarkSection.addEventListener('click', function f(e) {
       recordUmaAction('HistoryPage_BookmarkStarClicked');
@@ -204,9 +211,15 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     visitEntryWrapper.classList.add('blocked-indicator');
     visitEntryWrapper.appendChild(this.getVisitAttemptDOM_());
   } else {
-    visitEntryWrapper.appendChild(this.getTitleDOM_(isSearchResult));
+    var title = visitEntryWrapper.appendChild(
+        this.getTitleDOM_(isSearchResult));
+
     if (addTitleFavicon)
       this.addFaviconToElement_(visitEntryWrapper);
+
+    if (focusless)
+      title.querySelector('a').tabIndex = -1;
+
     visitEntryWrapper.appendChild(domain);
   }
 
@@ -215,16 +228,14 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     removeButton.setAttribute('aria-label',
                               loadTimeData.getString('removeFromHistory'));
     removeButton.classList.add('custom-appearance');
-    removeButton.addEventListener('click', function(e) {
-      self.removeFromHistory();
-      e.stopPropagation();
-      e.preventDefault();
-    });
+    removeButton.addEventListener(
+        'click', this.removeEntryFromHistory_.bind(this));
     entryBox.appendChild(removeButton);
 
     // Support clicking anywhere inside the entry box.
     entryBox.addEventListener('click', function(e) {
-      e.currentTarget.querySelector('a').click();
+      if (!e.defaultPrevented)
+        self.titleLink.click();
     });
   } else {
     var dropDown = createElementWithClassName('button', 'drop-down');
@@ -232,7 +243,12 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     dropDown.title = loadTimeData.getString('actionMenuDescription');
     dropDown.setAttribute('menu', '#action-menu');
     dropDown.setAttribute('aria-haspopup', 'true');
+
+    if (focusless)
+      dropDown.tabIndex = -1;
+
     cr.ui.decorate(dropDown, MenuButton);
+    dropDown.respondToArrowKeys = false;
 
     dropDown.addEventListener('mousedown', setActiveVisit);
     dropDown.addEventListener('focus', setActiveVisit);
@@ -278,11 +294,34 @@ Visit.prototype.getResultDOM = function(propertyBag) {
  */
 Visit.prototype.removeFromHistory = function() {
   recordUmaAction('HistoryPage_EntryMenuRemoveFromHistory');
-  var self = this;
   this.model_.removeVisitsFromHistory([this], function() {
-    removeEntryFromView(self.domNode_);
-  });
+    this.model_.getView().removeVisit(this);
+  }.bind(this));
 };
+
+Object.defineProperty(Visit.prototype, 'checkBox', {
+  get: function() {
+    return this.domNode_.querySelector('input[type=checkbox]');
+  },
+});
+
+Object.defineProperty(Visit.prototype, 'bookmarkStar', {
+  get: function() {
+    return this.domNode_.querySelector('.bookmark-section.starred');
+  },
+});
+
+Object.defineProperty(Visit.prototype, 'titleLink', {
+  get: function() {
+    return this.domNode_.querySelector('.title a');
+  },
+});
+
+Object.defineProperty(Visit.prototype, 'dropDown', {
+  get: function() {
+    return this.domNode_.querySelector('button.drop-down');
+  },
+});
 
 // Visit, private: ------------------------------------------------------------
 
@@ -400,6 +439,32 @@ Visit.prototype.showMoreFromSite_ = function() {
   $('search-field').focus();
 };
 
+/**
+ * @param {Event} e A keydown event to handle.
+ * @private
+ */
+Visit.prototype.handleKeydown_ = function(e) {
+  // Delete or Backspace should delete the entry if allowed.
+  if ((e.keyIdentifier == 'U+0008' || e.keyIdentifier == 'U+007F') &&
+      !this.model_.isDeletingVisits()) {
+    this.removeEntryFromHistory_(e);
+  }
+};
+
+/**
+ * Removes a history entry on click or keydown and finds a new entry to focus.
+ * @param {Event} e A click or keydown event.
+ * @private
+ */
+Visit.prototype.removeEntryFromHistory_ = function(e) {
+  if (!this.model_.deletingHistoryAllowed)
+    return;
+
+  this.model_.getView().onBeforeRemove(this);
+  this.removeFromHistory();
+  e.preventDefault();
+};
+
 // Visit, private, static: ----------------------------------------------------
 
 /**
@@ -446,6 +511,14 @@ HistoryModel.Range = {
  */
 HistoryModel.prototype.setView = function(view) {
   this.view_ = view;
+};
+
+
+/**
+ * @return {HistoryView|undefined} Returns the view for this model (if set).
+ */
+HistoryModel.prototype.getView = function() {
+  return this.view_;
 };
 
 /**
@@ -554,6 +627,8 @@ HistoryModel.prototype.hasMoreResults = function() {
  * @param {Function} callback The function to call after removal succeeds.
  */
 HistoryModel.prototype.removeVisitsFromHistory = function(visits, callback) {
+  assert(this.deletingHistoryAllowed);
+
   var toBeRemoved = [];
   for (var i = 0; i < visits.length; i++) {
     toBeRemoved.push({
@@ -561,8 +636,14 @@ HistoryModel.prototype.removeVisitsFromHistory = function(visits, callback) {
       timestamps: visits[i].allTimestamps
     });
   }
+
   chrome.send('removeVisits', toBeRemoved);
   this.deleteCompleteCallback_ = callback;
+};
+
+/** @return {boolean} Whether the model is currently deleting a visit. */
+HistoryModel.prototype.isDeletingVisits = function() {
+  return !!this.deleteCompleteCallback_;
 };
 
 /**
@@ -607,6 +688,16 @@ Object.defineProperty(HistoryModel.prototype, 'requestedPage', {
   }
 });
 
+/**
+ * Removes |visit| from this model.
+ * @param {Visit} visit A visit to remove.
+ */
+HistoryModel.prototype.removeVisit = function(visit) {
+  var index = this.visits_.indexOf(visit);
+  if (index >= 0)
+    this.visits_.splice(index, 1);
+};
+
 // HistoryModel, Private: -----------------------------------------------------
 
 /**
@@ -616,8 +707,8 @@ Object.defineProperty(HistoryModel.prototype, 'requestedPage', {
 HistoryModel.prototype.clearModel_ = function() {
   this.inFlight_ = false;  // Whether a query is inflight.
   this.searchText_ = '';
-  // Whether this user is a managed user.
-  this.isManagedProfile = loadTimeData.getBoolean('isManagedProfile');
+  // Whether this user is a supervised user.
+  this.isSupervisedProfile = loadTimeData.getBoolean('isSupervisedProfile');
   this.deletingHistoryAllowed = loadTimeData.getBoolean('allowDeletingHistory');
 
   // Only create checkboxes for editing entries if they can be used either to
@@ -728,6 +819,34 @@ HistoryModel.prototype.getGroupByDomain = function() {
 };
 
 ///////////////////////////////////////////////////////////////////////////////
+// HistoryFocusObserver:
+
+/** @implements {cr.ui.FocusRow.Observer} */
+function HistoryFocusObserver() {}
+
+HistoryFocusObserver.prototype = {
+  /** @override */
+  onActivate: function(row) {
+    this.getActiveRowElement_(row).classList.add('active');
+  },
+
+  /** @override */
+  onDeactivate: function(row, el) {
+    this.getActiveRowElement_(row).classList.remove('active');
+  },
+
+  /**
+   * @param {cr.ui.FocusRow} row The row to find an element for.
+   * @return {Element} |row|'s "active" element.
+   * @private
+   */
+  getActiveRowElement_: function(row) {
+    return findAncestorByClass(row.items[0], 'entry') ||
+           findAncestorByClass(row.items[0], 'site-domain-wrapper');
+  },
+};
+
+///////////////////////////////////////////////////////////////////////////////
 // HistoryView:
 
 /**
@@ -741,6 +860,8 @@ function HistoryView(model) {
   this.editButtonTd_ = $('edit-button');
   this.editingControlsDiv_ = $('editing-controls');
   this.resultDiv_ = $('results-display');
+  this.focusGrid_ = new cr.ui.FocusGrid(this.resultDiv_,
+                                        new HistoryFocusObserver);
   this.pageDiv_ = $('results-pagination');
   this.model_ = model;
   this.pageIndex_ = 0;
@@ -921,16 +1042,14 @@ HistoryView.prototype.onModelReady = function(doneLoading) {
 
   // Allow custom styling based on whether there are any results on the page.
   // To make this easier, add a class to the body if there are any results.
-  if (this.model_.visits_.length)
-    document.body.classList.add('has-results');
-  else
-    document.body.classList.remove('has-results');
+  var hasResults = this.model_.visits_.length > 0;
+  document.body.classList.toggle('has-results', hasResults);
 
+  this.updateFocusGrid_();
   this.updateNavBar_();
 
   if (isMobileVersion()) {
     // Hide the search field if it is empty and there are no results.
-    var hasResults = this.model_.visits_.length > 0;
     var isSearch = this.model_.getSearchText().length > 0;
     $('search-field').hidden = !(hasResults || isSearch);
   }
@@ -970,6 +1089,89 @@ HistoryView.prototype.showNotification = function(innerHTML, isWarning) {
     links[i].target = '_top';
 
   this.positionNotificationBar();
+};
+
+/**
+ * @param {Visit} visit The visit about to be removed from this view.
+ */
+HistoryView.prototype.onBeforeRemove = function(visit) {
+  assert(this.currentVisits_.indexOf(visit) >= 0);
+
+  var pos = this.focusGrid_.getPositionForTarget(document.activeElement);
+  if (!pos)
+    return;
+
+  var row = this.focusGrid_.rows[pos.row + 1] ||
+            this.focusGrid_.rows[pos.row - 1];
+  if (row)
+    row.focusIndex(Math.min(pos.col, row.items.length - 1));
+};
+
+/**
+ * Removes a single entry from the view. Also removes gaps before and after
+ * entry if necessary.
+ * @param {Visit} visit The visit to be removed.
+ */
+HistoryView.prototype.removeVisit = function(visit) {
+  var entry = visit.domNode_;
+  var previousEntry = entry.previousSibling;
+  var nextEntry = entry.nextSibling;
+  var toRemove = [entry];
+
+  // If there is no previous entry, and the next entry is a gap, remove it.
+  if (!previousEntry && nextEntry && nextEntry.classList.contains('gap'))
+    toRemove.push(nextEntry);
+
+  // If there is no next entry, and the previous entry is a gap, remove it.
+  if (!nextEntry && previousEntry && previousEntry.classList.contains('gap'))
+    toRemove.push(previousEntry);
+
+  // If both the next and previous entries are gaps, remove the next one.
+  if (nextEntry && nextEntry.classList.contains('gap') &&
+      previousEntry && previousEntry.classList.contains('gap')) {
+    toRemove.push(nextEntry);
+  }
+
+  // If removing the last entry on a day, remove the entire day.
+  var dayResults = findAncestorByClass(entry, 'day-results');
+  if (dayResults && dayResults.querySelectorAll('.entry').length <= 1) {
+    toRemove.push(dayResults.previousSibling);  // Remove the 'h3'.
+    toRemove.push(dayResults);
+  }
+
+  // Callback to be called when each node has finished animating. It detects
+  // when all the animations have completed.
+  function onRemove() {
+    for (var i = 0; i < toRemove.length; ++i) {
+      if (toRemove[i].parentNode)
+        return;
+    }
+    onEntryRemoved();
+  }
+
+  // Kick off the removal process.
+  for (var i = 0; i < toRemove.length; ++i) {
+    removeNode(toRemove[i], onRemove, this);
+  }
+  this.updateFocusGrid_();
+
+  var index = this.currentVisits_.indexOf(visit);
+  if (index >= 0)
+    this.currentVisits_.splice(index, 1);
+
+  this.model_.removeVisit(visit);
+};
+
+/**
+ * Called when an individual history entry has been removed from the page.
+ * This will only be called when all the elements affected by the deletion
+ * have been removed from the DOM and the animations have completed.
+ */
+HistoryView.prototype.onEntryRemoved = function() {
+  this.updateSelectionEditButtons();
+
+  if (this.model_.getSize() == 0)
+    this.onModelReady(true);  // Shows "No entries" message.
 };
 
 /**
@@ -1035,9 +1237,11 @@ HistoryView.prototype.getGroupedVisitsDOM_ = function(
   var siteResults = results.appendChild(
       createElementWithClassName('li', 'site-entry'));
 
-  // Make a wrapper that will contain the arrow, the favicon and the domain.
   var siteDomainWrapper = siteResults.appendChild(
       createElementWithClassName('div', 'site-domain-wrapper'));
+  // Make a row that will contain the arrow, the favicon and the domain.
+  var siteDomainRow = siteDomainWrapper.appendChild(
+      createElementWithClassName('div', 'site-domain-row'));
 
   if (this.model_.editingEntriesAllowed) {
     var siteDomainCheckbox =
@@ -1046,13 +1250,12 @@ HistoryView.prototype.getGroupedVisitsDOM_ = function(
     siteDomainCheckbox.type = 'checkbox';
     siteDomainCheckbox.addEventListener('click', domainCheckboxClicked);
     siteDomainCheckbox.domain_ = domain;
-
-    siteDomainWrapper.appendChild(siteDomainCheckbox);
+    siteDomainRow.appendChild(siteDomainCheckbox);
   }
 
-  var siteArrow = siteDomainWrapper.appendChild(
-      createElementWithClassName('div', 'site-domain-arrow collapse'));
-  var siteDomain = siteDomainWrapper.appendChild(
+  var siteArrow = siteDomainRow.appendChild(
+      createElementWithClassName('div', 'site-domain-arrow'));
+  var siteDomain = siteDomainRow.appendChild(
       createElementWithClassName('div', 'site-domain'));
   var siteDomainLink = siteDomain.appendChild(
       createElementWithClassName('button', 'link-button'));
@@ -1067,11 +1270,12 @@ HistoryView.prototype.getGroupedVisitsDOM_ = function(
 
   domainVisits[0].addFaviconToElement_(siteDomain);
 
-  siteDomainWrapper.addEventListener('click', toggleHandler);
+  siteDomainWrapper.addEventListener(
+      'click', this.toggleGroupedVisits_.bind(this));
 
-  if (this.model_.isManagedProfile) {
-    siteDomainWrapper.appendChild(
-        getManagedStatusDOM(domainVisits[0].hostFilteringBehavior));
+  if (this.model_.isSupervisedProfile) {
+    siteDomainRow.appendChild(
+        getFilteringStatusDOM(domainVisits[0].hostFilteringBehavior));
   }
 
   siteResults.appendChild(siteDomainWrapper);
@@ -1086,7 +1290,8 @@ HistoryView.prototype.getGroupedVisitsDOM_ = function(
   var isMonthGroupedResult = this.getRangeInDays() == HistoryModel.Range.MONTH;
   for (var j = 0, visit; visit = domainVisits[j]; j++) {
     resultsList.appendChild(visit.getResultDOM({
-      useMonthDate: isMonthGroupedResult
+      focusless: true,
+      useMonthDate: isMonthGroupedResult,
     }));
     this.setVisitRendered_(visit);
   }
@@ -1333,6 +1538,34 @@ HistoryView.prototype.displayResults_ = function(doneLoading) {
   this.setTimeColumnWidth_(this.resultDiv_);
 };
 
+var focusGridRowSelector = [
+  '.day-results > .entry:not(.fade-out)',
+  '.expand .grouped .entry:not(.fade-out)',
+  '.site-domain-wrapper'
+].join(', ');
+
+var focusGridColumnSelector = [
+  '.entry-box input',
+  '.bookmark-section.starred',
+  '.title a',
+  '.drop-down',
+  '.domain-checkbox',
+  '.link-button',
+].join(', ');
+
+/** @private */
+HistoryView.prototype.updateFocusGrid_ = function() {
+  var rows = this.resultDiv_.querySelectorAll(focusGridRowSelector);
+  var grid = [];
+
+  for (var i = 0; i < rows.length; ++i) {
+    assert(rows[i].parentNode);
+    grid.push(rows[i].querySelectorAll(focusGridColumnSelector));
+  }
+
+  this.focusGrid_.setGrid(grid);
+};
+
 /**
  * Update the visibility of the page navigation buttons.
  * @private
@@ -1340,9 +1573,9 @@ HistoryView.prototype.displayResults_ = function(doneLoading) {
 HistoryView.prototype.updateNavBar_ = function() {
   this.updateRangeButtons_();
 
-  // Managed users have the control bar on top, don't show it on the bottom
+  // Supervised users have the control bar on top, don't show it on the bottom
   // as well.
-  if (!loadTimeData.getBoolean('isManagedProfile')) {
+  if (!loadTimeData.getBoolean('isSupervisedProfile')) {
     $('newest-button').hidden = this.pageIndex_ == 0;
     $('newer-button').hidden = this.pageIndex_ == 0;
     $('older-button').hidden =
@@ -1392,6 +1625,33 @@ HistoryView.prototype.setTimeColumnWidth_ = function() {
     styleEl.id = 'timeColumnStyle';
   }
   styleEl.textContent = '.entry .time { min-width: ' + maxWidth + 'px; }';
+};
+
+/**
+ * Toggles an element in the grouped history.
+ * @param {Element} e The element which was clicked on.
+ * @private
+ */
+HistoryView.prototype.toggleGroupedVisits_ = function(e) {
+  var entry = findAncestorByClass(e.target, 'site-entry');
+  var innerResultList = entry.querySelector('.site-results');
+
+  if (entry.classList.contains('expand')) {
+    innerResultList.style.height = 0;
+  } else {
+    innerResultList.style.height = 'auto';
+    // -webkit-transition does not work on height:auto elements so first set
+    // the height to auto so that it is computed and then set it to the
+    // computed value in pixels so the transition works properly.
+    var height = innerResultList.clientHeight;
+    innerResultList.style.height = 0;
+    setTimeout(function() {
+      innerResultList.style.height = height + 'px';
+    }, 0);
+  }
+
+  entry.classList.toggle('expand');
+  this.updateFocusGrid_();
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1567,9 +1827,9 @@ function load() {
 
   // Only show the controls if the command line switch is activated.
   if (loadTimeData.getBoolean('groupByDomain') ||
-      loadTimeData.getBoolean('isManagedProfile')) {
+      loadTimeData.getBoolean('isSupervisedProfile')) {
     // Hide the top container which has the "Clear browsing data" and "Remove
-    // selected entries" buttons since they're unavailable in managed mode
+    // selected entries" buttons since they're unavailable for supervised users.
     $('top-container').hidden = true;
     $('history-page').classList.add('big-topbar-page');
     $('filter-controls').hidden = false;
@@ -1580,8 +1840,6 @@ function load() {
   // Adjust the position of the notification bar when the window size changes.
   window.addEventListener('resize',
       historyView.positionNotificationBar.bind(historyView));
-
-  cr.ui.FocusManager.disableMouseFocusOnButtons();
 
   if (isMobileVersion()) {
     // Move the search box out of the header.
@@ -1626,10 +1884,9 @@ function load() {
 }
 
 /**
- * Updates the managed filter status labels of a host/URL entry to the current
- * value.
+ * Updates the filter status labels of a host/URL entry to the current value.
  * @param {Element} statusElement The div which contains the status labels.
- * @param {ManagedModeFilteringBehavior} newStatus The filter status of the
+ * @param {SupervisedUserFilteringBehavior} newStatus The filter status of the
  *     current domain/URL.
  */
 function updateHostStatus(statusElement, newStatus) {
@@ -1637,7 +1894,7 @@ function updateHostStatus(statusElement, newStatus) {
       statusElement.querySelector('.filtering-behavior');
   // Reset to the base class first, then add modifier classes if needed.
   filteringBehaviorDiv.className = 'filtering-behavior';
-  if (newStatus == ManagedModeFilteringBehavior.BLOCK) {
+  if (newStatus == SupervisedUserFilteringBehavior.BLOCK) {
     filteringBehaviorDiv.textContent =
         loadTimeData.getString('filterBlocked');
     filteringBehaviorDiv.classList.add('filter-blocked');
@@ -1713,9 +1970,8 @@ function removeItems() {
 
     // Disable the checkbox and put a strikethrough style on the link, so the
     // user can see what will be deleted.
-    var link = entry.querySelector('a');
     checkbox.disabled = true;
-    link.classList.add('to-be-removed');
+    entry.visit.titleLink.classList.add('to-be-removed');
     disabledItems.push(checkbox);
     var integerId = parseInt(entry.visit.id_, 10);
     // Record the ID of the entry to signify how many entries are above this
@@ -1747,8 +2003,8 @@ function removeItems() {
       var checkbox = disabledItems[i];
       checkbox.disabled = false;
 
-      var entryBox = findAncestorByClass(checkbox, 'entry-box');
-      entryBox.querySelector('a').classList.remove('to-be-removed');
+      var entry = findAncestorByClass(checkbox, 'entry');
+      entry.visit.titleLink.classList.remove('to-be-removed');
     }
     $('overlay').removeEventListener('cancelOverlay', onCancelRemove);
     hideConfirmationOverlay();
@@ -1829,7 +2085,7 @@ function updateParentCheckbox(checkbox) {
 
   var groupCheckbox = entry.querySelector('.site-domain-wrapper input');
   if (groupCheckbox)
-      groupCheckbox.checked = false;
+    groupCheckbox.checked = false;
 }
 
 function entryBoxMousedown(event) {
@@ -1869,7 +2125,7 @@ function entryBoxClick(event) {
  * have been removed from the DOM and the animations have completed.
  */
 function onEntryRemoved() {
-  historyView.updateSelectionEditButtons();
+  historyView.onEntryRemoved();
 }
 
 /**
@@ -1877,8 +2133,9 @@ function onEntryRemoved() {
  * @param {Node} node The node to be removed.
  * @param {Function?} onRemove A function to be called after the node
  *     has been removed from the DOM.
+ * @param {*=} opt_scope An optional scope object to call |onRemove| with.
  */
-function removeNode(node, onRemove) {
+function removeNode(node, onRemove, opt_scope) {
   node.classList.add('fade-out'); // Trigger CSS fade out animation.
 
   // Delete the node when the animation is complete.
@@ -1890,93 +2147,17 @@ function removeNode(node, onRemove) {
     e.stopPropagation();
 
     if (onRemove)
-      onRemove();
+      onRemove.call(opt_scope);
   });
 }
 
 /**
- * Removes a single entry from the view. Also removes gaps before and after
- * entry if necessary.
- * @param {Node} entry The DOM node representing the entry to be removed.
- */
-function removeEntryFromView(entry) {
-  var nextEntry = entry.nextSibling;
-  var previousEntry = entry.previousSibling;
-  var dayResults = findAncestorByClass(entry, 'day-results');
-
-  var toRemove = [entry];
-
-  // if there is no previous entry, and the next entry is a gap, remove it
-  if (!previousEntry && nextEntry && nextEntry.className == 'gap')
-    toRemove.push(nextEntry);
-
-  // if there is no next entry, and the previous entry is a gap, remove it
-  if (!nextEntry && previousEntry && previousEntry.className == 'gap')
-    toRemove.push(previousEntry);
-
-  // if both the next and previous entries are gaps, remove one
-  if (nextEntry && nextEntry.className == 'gap' &&
-      previousEntry && previousEntry.className == 'gap') {
-    toRemove.push(nextEntry);
-  }
-
-  // If removing the last entry on a day, remove the entire day.
-  if (dayResults && dayResults.querySelectorAll('.entry').length == 1) {
-    toRemove.push(dayResults.previousSibling);  // Remove the 'h3'.
-    toRemove.push(dayResults);
-  }
-
-  // Callback to be called when each node has finished animating. It detects
-  // when all the animations have completed, and then calls |onEntryRemoved|.
-  function onRemove() {
-    for (var i = 0; i < toRemove.length; ++i) {
-      if (toRemove[i].parentNode)
-        return;
-    }
-    onEntryRemoved();
-  }
-
-  // Kick off the removal process.
-  for (var i = 0; i < toRemove.length; ++i) {
-    removeNode(toRemove[i], onRemove);
-  }
-}
-
-/**
- * Toggles an element in the grouped history.
- * @param {Element} e The element which was clicked on.
- */
-function toggleHandler(e) {
-  var innerResultList = e.currentTarget.parentElement.querySelector(
-      '.site-results');
-  var innerArrow = e.currentTarget.parentElement.querySelector(
-      '.site-domain-arrow');
-  if (innerArrow.classList.contains('collapse')) {
-    innerResultList.style.height = 'auto';
-    // -webkit-transition does not work on height:auto elements so first set
-    // the height to auto so that it is computed and then set it to the
-    // computed value in pixels so the transition works properly.
-    var height = innerResultList.clientHeight;
-    innerResultList.style.height = 0;
-    setTimeout(function() {
-      innerResultList.style.height = height + 'px';
-    }, 0);
-    innerArrow.classList.remove('collapse');
-    innerArrow.classList.add('expand');
-  } else {
-    innerResultList.style.height = 0;
-    innerArrow.classList.remove('expand');
-    innerArrow.classList.add('collapse');
-  }
-}
-
-/**
- * Builds the DOM elements to show the managed status of a domain/URL.
- * @param {ManagedModeFilteringBehavior} filteringBehavior The filter behavior
- *     for this item.
+ * Builds the DOM elements to show the filtering status of a domain/URL.
+ * @param {SupervisedUserFilteringBehavior} filteringBehavior The filter
+ *     behavior for this item.
  * @return {Element} Returns the DOM elements which show the status.
  */
-function getManagedStatusDOM(filteringBehavior) {
+function getFilteringStatusDOM(filteringBehavior) {
   var filterStatusDiv = createElementWithClassName('div', 'filter-status');
   var filteringBehaviorDiv =
       createElementWithClassName('div', 'filtering-behavior');

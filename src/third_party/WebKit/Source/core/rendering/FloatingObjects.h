@@ -30,7 +30,7 @@
 #include "wtf/ListHashSet.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderBlockFlow;
 class RenderBox;
@@ -79,7 +79,7 @@ public:
     int paginationStrut() const { return m_paginationStrut; }
     void setPaginationStrut(int strut) { m_paginationStrut = strut; }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool isInPlacedTree() const { return m_isInPlacedTree; }
     void setIsInPlacedTree(bool value) { m_isInPlacedTree = value; }
 #endif
@@ -106,7 +106,7 @@ private:
     unsigned m_shouldPaint : 1;
     unsigned m_isDescendant : 1;
     unsigned m_isPlaced : 1;
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     unsigned m_isInPlacedTree : 1;
 #endif
 };
@@ -124,7 +124,7 @@ struct FloatingObjectHashFunctions {
 struct FloatingObjectHashTranslator {
     static unsigned hash(RenderBox* key) { return DefaultHash<RenderBox*>::Hash::hash(key); }
     static bool equal(FloatingObject* a, RenderBox* b) { return a->renderer() == b; }
-    static bool equal(const OwnPtr<WebCore::FloatingObject>& a, RenderBox* b) { return a->renderer() == b; }
+    static bool equal(const OwnPtr<FloatingObject>& a, RenderBox* b) { return a->renderer() == b; }
 };
 typedef ListHashSet<OwnPtr<FloatingObject>, 4, FloatingObjectHashFunctions> FloatingObjectSet;
 typedef FloatingObjectSet::const_iterator FloatingObjectSetIterator;
@@ -203,6 +203,6 @@ template<> struct ValueToString<FloatingObject*> {
 };
 #endif
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FloatingObjects_h

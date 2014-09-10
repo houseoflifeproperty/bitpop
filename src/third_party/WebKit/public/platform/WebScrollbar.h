@@ -33,10 +33,6 @@
 #include "wtf/PassOwnPtr.h"
 #endif
 
-namespace WebCore {
-class Scrollbar;
-}
-
 namespace blink {
 
 // A const accessor interface for a WebKit scrollbar

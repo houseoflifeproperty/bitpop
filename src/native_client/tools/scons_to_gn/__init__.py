@@ -5,6 +5,7 @@
 from collections import defaultdict
 import hashlib
 import json
+import os
 import sys
 
 from conditions import TrustedConditions, UntrustedConditions
@@ -35,6 +36,7 @@ class ObjectTracker(object):
     self.object_tree = RawTree()
     self.top = TopNode(name)
     self.cond_obj = cond_obj
+    self.installs = []
     self.BuildObjectMap(name)
     self.BuildTree()
 
@@ -43,16 +45,35 @@ class ObjectTracker(object):
 
   def Dump(self, fileobj):
     fileobj.write(NOTICE)
+    self.cond_obj.WriteImports(fileobj)
     self.top.Dump(fileobj, 0)
+    for ins in self.installs:
+      print "Install " + ins
 
   def ExecCondition(self, name):
+    env = Environment(self, self.cond_obj)
     global_map = {
-      'Import': Import
+      'Action': Action,
+      'Import': Import,
+      'COMMAND_LINE_TARGETS' : [],
+      'env' : env,
+      'os' : os
     }
     local_map = {
-      'env' : Environment(self, self.cond_obj)
+      'env' : env,
+      'os' : os
     }
-    execfile(name, global_map, local_map)
+    try:
+      execfile(name, global_map, local_map)
+      env.Flush()
+    except BaseException, e:
+      pass
+
+  def AddHeader(self, node):
+    self.installs.append("Header: " + node)
+
+  def AddLibrary(self, node):
+    self.installs.append("Library: " + node)
 
   def AddObject(self, name, obj_type, add_props={}, del_props={}):
     obj = self.object_tree[name]
@@ -107,11 +128,12 @@ class ObjectTracker(object):
               prop_node.AddChild(ValueNode(value))
     self.top.Examine(OrganizeProperties())
 
+def Action(*args):
+  return []
 
 def Import(name):
   if name != 'env':
     print 'Warning: Tried to IMPORT: ' + name
-
 
 def ParseSource(name):
   tracker = ObjectTracker(name);

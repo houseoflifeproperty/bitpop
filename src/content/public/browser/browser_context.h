@@ -10,6 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/supports_user_data.h"
 #include "content/common/content_export.h"
+#include "content/public/common/push_messaging_status.h"
 
 class GURL;
 
@@ -40,6 +41,7 @@ class PushMessagingService;
 class ResourceContext;
 class SiteInstance;
 class StoragePartition;
+class SSLHostStateDelegate;
 
 // This class holds the context needed for a browsing session.
 // It lives on the UI thread. All these methods must only be called on the UI
@@ -84,6 +86,15 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   static void CreateMemoryBackedBlob(BrowserContext* browser_context,
                                      const char* data, size_t length,
                                      const BlobCallback& callback);
+
+  // Delivers a push message with |data| to the Service Worker identified by
+  // |origin| and |service_worker_registration_id|.
+  static void DeliverPushMessage(
+      BrowserContext* browser_context,
+      const GURL& origin,
+      int64 service_worker_registration_id,
+      const std::string& data,
+      const base::Callback<void(PushMessagingStatus)>& callback);
 
   // Ensures that the corresponding ResourceContext is initialized. Normally the
   // BrowserContext initializs the corresponding getters when its objects are
@@ -149,6 +160,10 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // responsible for ensuring that it outlives RenderProcessHost. It's valid to
   // return NULL.
   virtual PushMessagingService* GetPushMessagingService() = 0;
+
+  // Returns the SSL host state decisions for this context. The context may
+  // return NULL, implementing the default exception storage strategy.
+  virtual SSLHostStateDelegate* GetSSLHostStateDelegate() = 0;
 };
 
 }  // namespace content

@@ -36,7 +36,7 @@
 #include "wtf/Forward.h"
 #include "wtf/Functional.h"
 
-namespace WebCore {
+namespace blink {
 
 class AsyncFileSystemCallbacks;
 class CallbackWrapper;
@@ -44,6 +44,7 @@ class FileSystemClient;
 class ExecutionContext;
 class KURL;
 class LocalFrame;
+class WebFileSystem;
 
 class LocalFileSystem FINAL : public NoBaseWillBeGarbageCollectedFinalized<LocalFileSystem>, public WillBeHeapSupplement<LocalFrame>, public WillBeHeapSupplement<WorkerClients> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(LocalFileSystem);
@@ -71,14 +72,16 @@ protected:
     explicit LocalFileSystem(PassOwnPtr<FileSystemClient>);
 
 private:
+    WebFileSystem* fileSystem() const;
     void requestFileSystemAccessInternal(ExecutionContext*, const Closure& allowed, const Closure& denied);
+    void fileSystemNotAvailable(PassRefPtrWillBeRawPtr<ExecutionContext>, PassRefPtr<CallbackWrapper>);
     void fileSystemNotAllowedInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, PassRefPtr<CallbackWrapper>);
     void fileSystemAllowedInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, FileSystemType, PassRefPtr<CallbackWrapper>);
-    void resolveURLInternal(const KURL&, PassRefPtr<CallbackWrapper>);
+    void resolveURLInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, const KURL&, PassRefPtr<CallbackWrapper>);
     void deleteFileSystemInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, FileSystemType, PassRefPtr<CallbackWrapper>);
     OwnPtr<FileSystemClient> m_client;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // LocalFileSystem_h

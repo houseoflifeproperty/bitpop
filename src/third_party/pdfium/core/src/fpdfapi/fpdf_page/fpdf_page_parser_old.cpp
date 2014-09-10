@@ -91,7 +91,7 @@ void CPDF_StreamContentParser::Handle_BeginImage()
         CPDF_Object* pObj = m_pSyntax->ReadNextObject();
         if (!key.IsEmpty()) {
             pDict->SetAt(key, pObj, m_pDocument);
-        } else {
+        } else if (pObj) {
             pObj->Release();
         }
     }
@@ -962,7 +962,6 @@ void CPDF_ContentParser::Start(CPDF_Page* pPage, CPDF_ParseOptions* pOptions)
             return;
         }
         m_pStreamArray = FX_Alloc(CPDF_StreamAcc*, m_nStreams);
-        FXSYS_memset32(m_pStreamArray, 0, sizeof(CPDF_StreamAcc*) * m_nStreams);
     } else {
         m_Status = Done;
         return;
@@ -1064,7 +1063,7 @@ void CPDF_ContentParser::Continue(IFX_Pause* pPause)
             } else {
                 CPDF_Array* pContent = m_pObjects->m_pFormDict->GetArray(FX_BSTRC("Contents"));
                 m_pStreamArray[m_CurrentOffset] = FX_NEW CPDF_StreamAcc;
-                CPDF_Stream* pStreamObj = (CPDF_Stream*)pContent->GetElementValue(m_CurrentOffset);
+                CPDF_Stream* pStreamObj = (CPDF_Stream*)(pContent ? pContent->GetElementValue(m_CurrentOffset) : NULL);
                 m_pStreamArray[m_CurrentOffset]->LoadAllData(pStreamObj, FALSE);
                 m_CurrentOffset ++;
             }

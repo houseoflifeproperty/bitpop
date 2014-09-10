@@ -23,10 +23,12 @@ class PrefService;
 
 namespace content {
 class ResourceContext;
+class SSLHostStateDelegate;
 class WebContents;
 }
 
 namespace data_reduction_proxy {
+class DataReductionProxyConfigurator;
 class DataReductionProxySettings;
 }
 
@@ -37,8 +39,6 @@ class CookieStore;
 namespace visitedlink {
 class VisitedLinkMaster;
 }
-
-using data_reduction_proxy::DataReductionProxySettings;
 
 namespace android_webview {
 
@@ -84,7 +84,8 @@ class AwBrowserContext : public content::BrowserContext,
 
   AwFormDatabaseService* GetFormDatabaseService();
 
-  DataReductionProxySettings* GetDataReductionProxySettings();
+  data_reduction_proxy::DataReductionProxySettings*
+      GetDataReductionProxySettings();
 
   void CreateUserPrefServiceIfNecessary();
 
@@ -106,6 +107,7 @@ class AwBrowserContext : public content::BrowserContext,
   virtual content::BrowserPluginGuestManager* GetGuestManager() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
   virtual content::PushMessagingService* GetPushMessagingService() OVERRIDE;
+  virtual content::SSLHostStateDelegate* GetSSLHostStateDelegate() OVERRIDE;
 
   // visitedlink::VisitedLinkDelegate implementation.
   virtual void RebuildTable(
@@ -130,7 +132,10 @@ class AwBrowserContext : public content::BrowserContext,
 
   scoped_ptr<PrefService> user_pref_service_;
 
-  scoped_ptr<DataReductionProxySettings> data_reduction_proxy_settings_;
+  scoped_ptr<data_reduction_proxy::DataReductionProxyConfigurator>
+      data_reduction_proxy_configurator_;
+  scoped_ptr<data_reduction_proxy::DataReductionProxySettings>
+      data_reduction_proxy_settings_;
 
   DISALLOW_COPY_AND_ASSIGN(AwBrowserContext);
 };

@@ -32,7 +32,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBuffer;
 class AudioContext;
@@ -55,6 +55,7 @@ public:
     virtual ~ScriptProcessorNode();
 
     // AudioNode
+    virtual void dispose() OVERRIDE;
     virtual void process(size_t framesToProcess) OVERRIDE;
     virtual void initialize() OVERRIDE;
     virtual void uninitialize() OVERRIDE;
@@ -71,7 +72,6 @@ private:
 
     ScriptProcessorNode(AudioContext*, float sampleRate, size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfOutputChannels);
 
-    static void fireProcessEventDispatch(void* userData);
     void fireProcessEvent();
 
     // Double buffering
@@ -89,11 +89,10 @@ private:
     unsigned m_numberOfOutputChannels;
 
     RefPtr<AudioBus> m_internalInputBus;
-
     // Synchronize process() with fireProcessEvent().
     mutable Mutex m_processEventLock;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ScriptProcessorNode_h

@@ -19,8 +19,33 @@
 // hashes back to ids.
 
 {
+  "app.runtime": [{
+    "channel": "stable",
+    "contexts": ["blessed_extension"],
+    "extension_types": ["platform_app"],
+    "noparent": true
+  }, {
+    "channel": "stable",
+    "component_extensions_auto_granted": false,
+    "contexts": ["blessed_extension"],
+    "extension_types": ["extension"],
+    "noparent": true,
+    "whitelist": [
+      "2FC374607C2DF285634B67C64A2E356C607091C3",  // Quickoffice
+      "3727DD3E564B6055387425027AD74C58784ACC15",  // Quickoffice internal
+      "12E618C3C6E97495AAECF2AC12DEB082353241C6"   // QO component extension
+    ]
+  }],
   "dns": {
     "dependencies": ["permission:dns"],
+    "contexts": ["blessed_extension"]
+  },
+  "hid": {
+    "dependencies": ["permission:hid"],
+    "contexts": ["blessed_extension"]
+  },
+  "power": {
+    "dependencies": ["permission:power"],
     "contexts": ["blessed_extension"]
   },
   "runtime": {
@@ -32,7 +57,14 @@
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
   },
   "runtime.connect": {
-    "contexts": "all",
+    // Everything except WebUI.
+    "contexts": [
+      "blessed_web_page",
+      "content_script",
+      "blessed_extension",
+      "unblessed_extension",
+      "web_page"
+    ],
     "matches": ["<all_urls>"]
   },
   "runtime.getURL": {
@@ -52,19 +84,23 @@
   "runtime.onMessage": {
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
   },
-  "runtime.reload": {
-    "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
-  },
-  "runtime.requestUpdateCheck": {
-    "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
-  },
   "runtime.sendMessage": {
-    "contexts": "all",
+    // Everything except WebUI.
+    "contexts": [
+      "blessed_web_page",
+      "content_script",
+      "blessed_extension",
+      "unblessed_extension",
+      "web_page"
+    ],
     "matches": ["<all_urls>"]
   },
   "runtime.setUninstallURL": {
-    "channel": "dev",
-    "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
+    "channel": "dev"
+  },
+  "serial": {
+    "dependencies": ["permission:serial"],
+    "contexts": ["blessed_extension"]
   },
   "socket": {
     "dependencies": ["permission:socket"],
@@ -86,12 +122,26 @@
     "dependencies": ["permission:storage"],
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
   },
-  "test": {
+  "test": [{
     "internal": true,
     "channel": "stable",
     "extension_types": "all",
-    "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
-  },
+    // Everything except web pages and WebUI. WebUI is declared in a separate
+    // rule to keep the "matches" property isolated.
+    "contexts": [
+      "blessed_extension",
+      "blessed_web_page",
+      "content_script",
+      "unblessed_extension"
+    ]
+  }, {
+    "internal": true,
+    "channel": "stable",
+    "contexts": ["webui"],
+    "matches": [
+      "chrome://extensions-frame/*"
+    ]
+  }],
   "types": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
@@ -105,5 +155,9 @@
   "usb": {
     "dependencies": ["permission:usb"],
     "contexts": ["blessed_extension"]
+  },
+  "usbPrivate": {
+    "channel": "dev",
+    "contexts": ["webui"]
   }
 }

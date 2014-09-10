@@ -117,7 +117,9 @@ QuicSession::QuicSession(QuicConnection* connection, const QuicConfig& config)
         config_.GetInitialSessionFlowControlWindowToSend(),
         config_.GetInitialSessionFlowControlWindowToSend()));
   }
+}
 
+void QuicSession::InitializeSession() {
   connection_->set_visitor(visitor_shim_.get());
   connection_->SetFromConfig(config_);
   if (connection_->connected()) {
@@ -254,20 +256,26 @@ void QuicSession::OnWindowUpdateFrames(
     // Stream may be closed by the time we receive a WINDOW_UPDATE, so we can't
     // assume that it still exists.
     QuicStreamId stream_id = frames[i].stream_id;
-    if (stream_id == 0) {
+    if (stream_id == kConnectionLevelId) {
       // This is a window update that applies to the connection, rather than an
       // individual stream.
       DVLOG(1) << ENDPOINT
                << "Received connection level flow control window update with "
                   "byte offset: " << frames[i].byte_offset;
-      if (FLAGS_enable_quic_connection_flow_control_2 &&
-          flow_controller_->UpdateSendWindowOffset(frames[i].byte_offset)) {
+      if (flow_controller_->UpdateSendWindowOffset(frames[i].byte_offset)) {
         connection_window_updated = true;
       }
       continue;
     }
 
-    QuicDataStream* stream = GetDataStream(stream_id);
+    if (connection_->version() <= QUIC_VERSION_20 &&
+        (stream_id == kCryptoStreamId || stream_id == kHeadersStreamId)) {
+      DLOG(DFATAL) << "WindowUpdate for stream " << stream_id << " in version "
+                   << QuicVersionToString(connection_->version());
+      return;
+    }
+
+    ReliableQuicStream* stream = GetStream(stream_id);
     if (stream) {
       stream->OnWindowUpdateFrame(frames[i]);
     }
@@ -419,10 +427,15 @@ void QuicSession::CloseStreamInner(QuicStreamId stream_id,
   // of the how many bytes the stream's flow controller believes it has
   // received, for accurate connection level flow control accounting.
   if (!stream->HasFinalReceivedByteOffset() &&
-      stream->flow_controller()->IsEnabled() &&
-      FLAGS_enable_quic_connection_flow_control_2) {
+      stream->flow_controller()->IsEnabled()) {
     locally_closed_streams_highest_offset_[stream_id] =
         stream->flow_controller()->highest_received_byte_offset();
+    if (FLAGS_close_quic_connection_unfinished_streams &&
+        connection()->connected() &&
+        locally_closed_streams_highest_offset_.size() > max_open_streams_) {
+      // A buggy client may fail to send FIN/RSTs. Don't tolerate this.
+      connection_->SendConnectionClose(QUIC_TOO_MANY_UNFINISHED_STREAMS);
+    }
   }
 
   stream_map_.erase(it);
@@ -431,10 +444,6 @@ void QuicSession::CloseStreamInner(QuicStreamId stream_id,
 
 void QuicSession::UpdateFlowControlOnFinalReceivedByteOffset(
     QuicStreamId stream_id, QuicStreamOffset final_byte_offset) {
-  if (!FLAGS_enable_quic_connection_flow_control_2) {
-    return;
-  }
-
   map<QuicStreamId, QuicStreamOffset>::iterator it =
       locally_closed_streams_highest_offset_.find(stream_id);
   if (it == locally_closed_streams_highest_offset_.end()) {
@@ -469,7 +478,7 @@ bool QuicSession::IsCryptoHandshakeConfirmed() {
 void QuicSession::OnConfigNegotiated() {
   connection_->SetFromConfig(config_);
   QuicVersion version = connection()->version();
-  if (version < QUIC_VERSION_17) {
+  if (version <= QUIC_VERSION_16) {
     return;
   }
 
@@ -512,6 +521,11 @@ void QuicSession::OnNewStreamFlowControlWindow(uint32 new_window) {
     return;
   }
 
+  // Inform all existing streams about the new window.
+  if (connection_->version() > QUIC_VERSION_20) {
+    GetCryptoStream()->flow_controller()->UpdateSendWindowOffset(new_window);
+    headers_stream_->flow_controller()->UpdateSendWindowOffset(new_window);
+  }
   for (DataStreamMap::iterator it = stream_map_.begin();
        it != stream_map_.end(); ++it) {
     it->second->flow_controller()->UpdateSendWindowOffset(new_window);
@@ -739,11 +753,15 @@ void QuicSession::OnSuccessfulVersionNegotiation(const QuicVersion& version) {
     flow_controller_->Disable();
   }
 
-  // Inform all streams about the negotiated version. They may have been created
-  // with a different version.
+  // Disable stream level flow control based on negotiated version. Streams may
+  // have been created with a different version.
+  if (version <= QUIC_VERSION_20) {
+    GetCryptoStream()->flow_controller()->Disable();
+    headers_stream_->flow_controller()->Disable();
+  }
   for (DataStreamMap::iterator it = stream_map_.begin();
        it != stream_map_.end(); ++it) {
-    if (version < QUIC_VERSION_17) {
+    if (version <= QUIC_VERSION_16) {
       it->second->flow_controller()->Disable();
     }
   }

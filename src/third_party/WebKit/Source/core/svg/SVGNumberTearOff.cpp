@@ -32,10 +32,10 @@
 
 #include "core/svg/SVGNumberTearOff.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGNumberTearOff::SVGNumberTearOff(PassRefPtr<SVGNumber> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName)
     : SVGPropertyTearOff<SVGNumber>(target, contextElement, propertyIsAnimVal, attributeName)

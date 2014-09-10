@@ -27,14 +27,14 @@
 #ifndef WorkerGlobalScope_h
 #define WorkerGlobalScope_h
 
-#include "bindings/v8/ScriptWrappable.h"
-#include "bindings/v8/WorkerScriptController.h"
+#include "bindings/core/v8/WorkerScriptController.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
 #include "core/frame/DOMWindowBase64.h"
 #include "core/frame/UseCounter.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/workers/WorkerEventQueue.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
@@ -46,7 +46,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/text/AtomicStringHash.h"
 
-namespace WebCore {
+namespace blink {
 
     class Blob;
     class ExceptionState;
@@ -58,19 +58,19 @@ namespace WebCore {
     class WorkerNavigator;
     class WorkerThread;
 
-    class WorkerGlobalScope : public RefCountedWillBeRefCountedGarbageCollected<WorkerGlobalScope>, public ScriptWrappable, public SecurityContext, public ExecutionContext, public ExecutionContextClient, public WillBeHeapSupplementable<WorkerGlobalScope>, public EventTargetWithInlineData, public DOMWindowBase64 {
+    class WorkerGlobalScope : public RefCountedWillBeRefCountedGarbageCollected<WorkerGlobalScope>, public SecurityContext, public ExecutionContext, public ExecutionContextClient, public WillBeHeapSupplementable<WorkerGlobalScope>, public EventTargetWithInlineData, public DOMWindowBase64 {
         WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerGlobalScope);
         REFCOUNTED_EVENT_TARGET(WorkerGlobalScope);
     public:
         virtual ~WorkerGlobalScope();
 
         virtual bool isWorkerGlobalScope() const OVERRIDE FINAL { return true; }
+        virtual bool isSharedWorkerGlobalScope() const OVERRIDE { return false; }
+        virtual bool isDedicatedWorkerGlobalScope() const OVERRIDE { return false; }
+        virtual bool isServiceWorkerGlobalScope() const OVERRIDE { return false; }
 
         virtual ExecutionContext* executionContext() const OVERRIDE FINAL;
 
-        virtual bool isSharedWorkerGlobalScope() const { return false; }
-        virtual bool isDedicatedWorkerGlobalScope() const { return false; }
-        virtual bool isServiceWorkerGlobalScope() const { return false; }
         virtual void countFeature(UseCounter::Feature) const;
         virtual void countDeprecation(UseCounter::Feature) const;
 
@@ -144,7 +144,7 @@ namespace WebCore {
         void applyContentSecurityPolicyFromString(const String& contentSecurityPolicy, ContentSecurityPolicyHeaderType);
 
         virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) OVERRIDE;
-        void addMessageToWorkerConsole(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>, ScriptState*);
+        void addMessageToWorkerConsole(PassRefPtrWillBeRawPtr<ConsoleMessage>);
 
     private:
 #if !ENABLE(OILPAN)
@@ -156,7 +156,7 @@ namespace WebCore {
         virtual KURL virtualCompleteURL(const String&) const OVERRIDE FINAL;
 
         virtual void reportBlockedScriptExecutionToInspector(const String& directiveText) OVERRIDE FINAL;
-        virtual void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, ScriptState* = 0) OVERRIDE FINAL;
+        virtual void addMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) OVERRIDE FINAL;
 
         virtual EventTarget* errorEventTarget() OVERRIDE FINAL;
         virtual void didUpdateSecurityOrigin() OVERRIDE FINAL { }
@@ -171,7 +171,7 @@ namespace WebCore {
         OwnPtr<WorkerScriptController> m_script;
         WorkerThread* m_thread;
 
-        OwnPtr<WorkerInspectorController> m_workerInspectorController;
+        RefPtrWillBeMember<WorkerInspectorController> m_workerInspectorController;
         bool m_closing;
 
         OwnPtrWillBeMember<WorkerEventQueue> m_eventQueue;
@@ -184,6 +184,6 @@ namespace WebCore {
 
 DEFINE_TYPE_CASTS(WorkerGlobalScope, ExecutionContext, context, context->isWorkerGlobalScope(), context.isWorkerGlobalScope());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerGlobalScope_h

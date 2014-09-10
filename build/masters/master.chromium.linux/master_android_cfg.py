@@ -65,6 +65,7 @@ F('f_android_dbg_tests', linux_android().ChromiumAnnotationFactory(
     factory_properties={
       'android_bot_id': 'main-tests-dbg',
       'build_url': android_dbg_archive,
+      'generate_gtest_json': True,
     }))
 
 B('Android Builder', 'f_android_rel', 'android', 'android',
@@ -85,6 +86,7 @@ F('f_android_rel_tests', linux_android().ChromiumAnnotationFactory(
     factory_properties={
       'android_bot_id': 'main-tests-rel',
       'build_url': android_rel_archive,
+      'generate_gtest_json': True,
     }))
 
 B('Android Clang Builder (dbg)', 'f_android_clang_dbg', 'android', 'android',

@@ -32,11 +32,12 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 
-namespace WebCore {
+namespace blink {
 
 StyleMedia::StyleMedia(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
+    ScriptWrappable::init(this);
 }
 
 AtomicString StyleMedia::type() const
@@ -63,8 +64,8 @@ bool StyleMedia::matchMedium(const String& query) const
     if (!media->set(query))
         return false;
 
-    MediaQueryEvaluator screenEval(type(), m_frame);
+    MediaQueryEvaluator screenEval(m_frame);
     return screenEval.eval(media.get());
 }
 
-} // namespace WebCore
+} // namespace blink

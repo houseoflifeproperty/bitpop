@@ -35,40 +35,37 @@
 #include "core/page/PagePopupClient.h"
 #include "platform/DateTimeChooser.h"
 
-namespace WebCore {
-class PagePopup;
-class DateTimeChooserClient;
-}
-
 namespace blink {
 
 class ChromeClientImpl;
+class DateTimeChooserClient;
+class PagePopup;
 
-class DateTimeChooserImpl FINAL : public WebCore::DateTimeChooser, public WebCore::PagePopupClient {
+class DateTimeChooserImpl FINAL : public DateTimeChooser, public PagePopupClient {
 public:
-    static PassRefPtrWillBeRawPtr<DateTimeChooserImpl> create(ChromeClientImpl*, WebCore::DateTimeChooserClient*, const WebCore::DateTimeChooserParameters&);
+    static PassRefPtrWillBeRawPtr<DateTimeChooserImpl> create(ChromeClientImpl*, DateTimeChooserClient*, const DateTimeChooserParameters&);
     virtual ~DateTimeChooserImpl();
-    virtual void trace(WebCore::Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) OVERRIDE;
 
     // DateTimeChooser functions:
     virtual void endChooser() OVERRIDE;
 
 private:
-    DateTimeChooserImpl(ChromeClientImpl*, WebCore::DateTimeChooserClient*, const WebCore::DateTimeChooserParameters&);
+    DateTimeChooserImpl(ChromeClientImpl*, DateTimeChooserClient*, const DateTimeChooserParameters&);
     // PagePopupClient functions:
-    virtual WebCore::IntSize contentSize() OVERRIDE;
-    virtual void writeDocument(WebCore::SharedBuffer*) OVERRIDE;
-    virtual WebCore::Locale& locale() OVERRIDE;
+    virtual IntSize contentSize() OVERRIDE;
+    virtual void writeDocument(SharedBuffer*) OVERRIDE;
+    virtual Locale& locale() OVERRIDE;
     virtual void setValueAndClosePopup(int, const String&) OVERRIDE;
     virtual void setValue(const String&) OVERRIDE;
     virtual void closePopup() OVERRIDE;
     virtual void didClosePopup() OVERRIDE;
 
     ChromeClientImpl* m_chromeClient;
-    RawPtrWillBeMember<WebCore::DateTimeChooserClient> m_client;
-    WebCore::PagePopup* m_popup;
-    WebCore::DateTimeChooserParameters m_parameters;
-    OwnPtr<WebCore::Locale> m_locale;
+    RawPtrWillBeMember<DateTimeChooserClient> m_client;
+    PagePopup* m_popup;
+    DateTimeChooserParameters m_parameters;
+    OwnPtr<Locale> m_locale;
 };
 
 }

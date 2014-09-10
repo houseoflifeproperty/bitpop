@@ -18,6 +18,7 @@
 #include "net/quic/quic_blocked_writer_interface.h"
 #include "net/quic/quic_connection_helper.h"
 #include "net/quic/quic_protocol.h"
+#include "net/quic/quic_server_packet_writer.h"
 #include "net/quic/quic_server_session.h"
 #include "net/quic/quic_time_wait_list_manager.h"
 
@@ -36,9 +37,7 @@ namespace net {
 
 class QuicConfig;
 class QuicCryptoServerConfig;
-class QuicPacketWriterWrapper;
 class QuicSession;
-class UDPServerSocket;
 
 namespace test {
 class QuicDispatcherPeer;
@@ -46,7 +45,17 @@ class QuicDispatcherPeer;
 
 class DeleteSessionsAlarm;
 
-class QuicDispatcher : public QuicServerSessionVisitor {
+class ProcessPacketInterface {
+ public:
+  virtual ~ProcessPacketInterface() {}
+  virtual void ProcessPacket(const IPEndPoint& server_address,
+                             const IPEndPoint& client_address,
+                             const QuicEncryptedPacket& packet) = 0;
+};
+
+class QuicDispatcher : public QuicBlockedWriterInterface,
+                       public QuicServerSessionVisitor,
+                       public ProcessPacketInterface {
  public:
   // Ideally we'd have a linked_hash_set: the  boolean is unused.
   typedef linked_hash_map<QuicBlockedWriterInterface*, bool> WriteBlockedList;
@@ -61,17 +70,14 @@ class QuicDispatcher : public QuicServerSessionVisitor {
 
   virtual ~QuicDispatcher();
 
-  // Takes ownership of the packet writer
-  virtual void Initialize(QuicPacketWriter* writer);
+  // Takes ownership of the packet writer.
+  virtual void Initialize(QuicServerPacketWriter* writer);
 
   // Process the incoming packet by creating a new session, passing it to
   // an existing session, or passing it to the TimeWaitListManager.
   virtual void ProcessPacket(const IPEndPoint& server_address,
                              const IPEndPoint& client_address,
-                             const QuicEncryptedPacket& packet);
-
-  // Called when the socket becomes writable to allow queued writes to happen.
-  virtual void OnCanWrite();
+                             const QuicEncryptedPacket& packet) OVERRIDE;
 
   // Returns true if there's anything in the blocked writer list.
   virtual bool HasPendingWrites() const;
@@ -79,13 +85,18 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   // Sends ConnectionClose frames to all connected clients.
   void Shutdown();
 
+  // QuicBlockedWriterInterface implementation:
+  // Called when the socket becomes writable to allow queued writes to happen.
+  virtual void OnCanWrite() OVERRIDE;
+
   // QuicServerSessionVisitor interface implementation:
   // Ensure that the closed connection is cleaned up asynchronously.
   virtual void OnConnectionClosed(QuicConnectionId connection_id,
                                   QuicErrorCode error) OVERRIDE;
 
   // Queues the blocked writer for later resumption.
-  virtual void OnWriteBlocked(QuicBlockedWriterInterface* writer) OVERRIDE;
+  virtual void OnWriteBlocked(
+      QuicBlockedWriterInterface* blocked_writer) OVERRIDE;
 
   typedef base::hash_map<QuicConnectionId, QuicSession*> SessionMap;
 
@@ -93,8 +104,6 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   void DeleteSessions();
 
   const SessionMap& session_map() const { return session_map_; }
-
-  WriteBlockedList* write_blocked_list() { return &write_blocked_list_; }
 
  protected:
   virtual QuicSession* CreateQuicSession(QuicConnectionId connection_id,
@@ -104,7 +113,8 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   virtual QuicConnection* CreateQuicConnection(
       QuicConnectionId connection_id,
       const IPEndPoint& server_address,
-      const IPEndPoint& client_address);
+      const IPEndPoint& client_address,
+      QuicPerConnectionPacketWriter* writer);
 
   // Called by |framer_visitor_| when the public header has been parsed.
   virtual bool OnUnauthenticatedPublicHeader(
@@ -115,7 +125,7 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   virtual QuicTimeWaitListManager* CreateQuicTimeWaitListManager();
 
   // Replaces the packet writer with |writer|. Takes ownership of |writer|.
-  void set_writer(QuicPacketWriter* writer) {
+  void set_writer(QuicServerPacketWriter* writer) {
     writer_.reset(writer);
   }
 
@@ -125,15 +135,6 @@ class QuicDispatcher : public QuicServerSessionVisitor {
 
   const QuicVersionVector& supported_versions() const {
     return supported_versions_;
-  }
-
-  const QuicVersionVector& supported_versions_no_flow_control() const {
-    return supported_versions_no_flow_control_;
-  }
-
-  const QuicVersionVector& supported_versions_no_connection_flow_control()
-      const {
-    return supported_versions_no_connection_flow_control_;
   }
 
   const IPEndPoint& current_server_address() {
@@ -154,7 +155,7 @@ class QuicDispatcher : public QuicServerSessionVisitor {
 
   QuicConnectionHelperInterface* helper() { return helper_; }
 
-  QuicPacketWriter* writer() { return writer_.get(); }
+  QuicServerPacketWriter* writer() { return writer_.get(); }
 
  private:
   class QuicFramerVisitor;
@@ -192,27 +193,13 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   std::list<QuicSession*> closed_session_list_;
 
   // The writer to write to the socket with.
-  scoped_ptr<QuicPacketWriter> writer_;
+  scoped_ptr<QuicServerPacketWriter> writer_;
 
   // This vector contains QUIC versions which we currently support.
   // This should be ordered such that the highest supported version is the first
   // element, with subsequent elements in descending order (versions can be
   // skipped as necessary).
   const QuicVersionVector supported_versions_;
-
-  // Versions which do not support flow control (introduced in QUIC_VERSION_17).
-  // This is used to construct new QuicConnections when flow control is disabled
-  // via flag.
-  // TODO(rjshade): Remove this when
-  // FLAGS_enable_quic_stream_flow_control_2 is removed.
-  QuicVersionVector supported_versions_no_flow_control_;
-  // Versions which do not support *connection* flow control (introduced in
-  // QUIC_VERSION_19).
-  // This is used to construct new QuicConnections when connection flow control
-  // is disabled via flag.
-  // TODO(rjshade): Remove this when
-  // FLAGS_enable_quic_connection_flow_control_2 is removed.
-  QuicVersionVector supported_versions_no_connection_flow_control_;
 
   // Information about the packet currently being handled.
   IPEndPoint current_client_address_;

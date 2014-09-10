@@ -113,6 +113,7 @@ WebInspector.DockController.prototype = {
 
         var eventData = { from: this._dockSide, to: dockSide };
         this.dispatchEventToListeners(WebInspector.DockController.Events.BeforeDockSideChanged, eventData);
+        console.timeStamp("DockController.setIsDocked");
         InspectorFrontendHost.setIsDocked(dockSide !== WebInspector.DockController.State.Undocked, this._setIsDockedResponse.bind(this, eventData));
         this._dockSide = dockSide;
         this._updateUI();
@@ -163,7 +164,7 @@ WebInspector.DockController.prototype = {
 
 /**
  * @constructor
- * @implements {WebInspector.StatusBarButton.Provider}
+ * @implements {WebInspector.StatusBarItem.Provider}
  */
 WebInspector.DockController.ButtonProvider = function()
 {
@@ -171,9 +172,9 @@ WebInspector.DockController.ButtonProvider = function()
 
 WebInspector.DockController.ButtonProvider.prototype = {
     /**
-     * @return {?WebInspector.StatusBarButton}
+     * @return {?WebInspector.StatusBarItem}
      */
-    button: function()
+    item: function()
     {
         if (!WebInspector.dockController.canDock())
             return null;

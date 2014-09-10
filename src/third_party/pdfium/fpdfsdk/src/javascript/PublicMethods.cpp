@@ -68,25 +68,26 @@ struct stru_TbConvert
 	FX_LPCSTR lpszCppMark;
 };
 
-static const stru_TbConvert fcTable[] = {"mmmm","%B",
-	"mmm", "%b",
-	"mm",  "%m",
+static const stru_TbConvert fcTable[] = {
+	{ "mmmm","%B" },
+	{ "mmm", "%b" },
+	{ "mm",  "%m" },
 	//"m"
-	"dddd","%A",
-	"ddd", "%a",
-	"dd",  "%d",
+	{ "dddd","%A" },
+	{ "ddd", "%a" },
+	{ "dd",  "%d" },
 	//"d",   "%w",
-	"yyyy","%Y",
-	"yy",  "%y",
-	"HH",  "%H",
+	{ "yyyy","%Y" },
+	{ "yy",  "%y" },
+	{ "HH",  "%H" },
 	//"H"
-	"hh",  "%I",
+	{ "hh",  "%I" },
 	//"h"
-	"MM",  "%M",
+	{ "MM",  "%M" },
 	//"M"
-	"ss",  "%S",
+	{ "ss",  "%S" },
 	//"s
-	"tt",  "%p"
+	{ "tt",  "%p" },
 	//"t"
 };
 
@@ -222,16 +223,10 @@ CFX_WideString CJS_PublicMethods::StrLTrim(FX_LPCWSTR pStr)
 CFX_WideString CJS_PublicMethods::StrRTrim(FX_LPCWSTR pStr)
 {
 	FX_LPCWSTR p = pStr;
-
 	while (*p) p++;
-	p--;
-	if (p >= pStr)
-	{		
-		while (*p && *p == L' ') p--;
-		p++;
-		return CFX_WideString(pStr,p-pStr);
-	}
-	return L"";
+	while (p > pStr && *(p - 1) == L' ') p--;
+
+	return CFX_WideString(pStr, p - pStr);
 }
 
 CFX_WideString CJS_PublicMethods::StrTrim(FX_LPCWSTR pStr)
@@ -243,22 +238,16 @@ CFX_ByteString CJS_PublicMethods::StrLTrim(FX_LPCSTR pStr)
 {
 	while (*pStr && *pStr == ' ') pStr++;
 
-    return pStr;
+        return pStr;
 }
 
 CFX_ByteString CJS_PublicMethods::StrRTrim(FX_LPCSTR pStr)
 {
 	FX_LPCSTR p = pStr;
-
 	while (*p) p++;
-	p--;
-	if (p >= pStr)
-	{		
-		while (*p && *p == ' ') p--;
-		p++;
-		return CFX_ByteString(pStr,p-pStr);
-	}
-	return "";
+	while (p > pStr && *(p - 1) == L' ') p--;
+
+	return CFX_ByteString(pStr,p-pStr);
 }
 
 CFX_ByteString CJS_PublicMethods::StrTrim(FX_LPCSTR pStr)
@@ -624,7 +613,7 @@ double CJS_PublicMethods::MakeRegularDate(const CFX_WideString & value, const CF
 	FX_BOOL bPm = FALSE;
 	FX_BOOL bExit = FALSE;
 	bWrongFormat = FALSE;
-	
+
 	int i=0;
 	int j=0;
 
@@ -632,7 +621,7 @@ double CJS_PublicMethods::MakeRegularDate(const CFX_WideString & value, const CF
 	{
 		if (bExit) break;
 
-		FX_WCHAR c = format.GetAt(i);		
+		FX_WCHAR c = format.GetAt(i);
 		switch (c)
 		{
 			case ':':
@@ -643,7 +632,7 @@ double CJS_PublicMethods::MakeRegularDate(const CFX_WideString & value, const CF
 				i++;
 				j++;
 				break;
-				
+
 			case 'y':
 			case 'm':
 			case 'd':
@@ -655,8 +644,9 @@ double CJS_PublicMethods::MakeRegularDate(const CFX_WideString & value, const CF
 				{
 					int oldj = j;
 					int nSkip = 0;
+					int remaining = format.GetLength() - i - 1;
 
-					if (format.GetAt(i+1) != c)
+					if (remaining == 0 || format.GetAt(i+1) != c)
 					{
 						switch (c)
 						{
@@ -695,13 +685,13 @@ double CJS_PublicMethods::MakeRegularDate(const CFX_WideString & value, const CF
 								j += nSkip;
 								break;
 							case 't':
-								bPm = value.GetAt(i) == 'p';
+								bPm = (j < value.GetLength() && value.GetAt(j) == 'p');
 								i++;
 								j++;
 								break;
-						}					
+						}
 					}
-					else if (format.GetAt(i+1) == c && format.GetAt(i+2) != c)
+					else if (remaining == 1 || format.GetAt(i+2) != c)
 					{
 						switch (c)
 						{
@@ -741,13 +731,13 @@ double CJS_PublicMethods::MakeRegularDate(const CFX_WideString & value, const CF
 								j += nSkip;
 								break;
 							case 't':
-								bPm = (value.GetAt(j) == 'p' && value.GetAt(j+1) == 'm');
+								bPm = (j + 1 < value.GetLength() && value.GetAt(j) == 'p' && value.GetAt(j+1) == 'm');
 								i += 2;
 								j += 2;
 								break;
 						}
 					}
-					else if (format.GetAt(i+1) == c && format.GetAt(i+2) == c && format.GetAt(i+3) != c)
+					else if (remaining == 2 || format.GetAt(i+3) != c)
 					{
 						switch (c)
 						{
@@ -766,7 +756,7 @@ double CJS_PublicMethods::MakeRegularDate(const CFX_WideString & value, const CF
 											break;
 										}
 									}
-									
+
 									if (!bFind)
 									{
 										nMonth = ParseStringInteger(value, j, nSkip, 3);
@@ -783,7 +773,7 @@ double CJS_PublicMethods::MakeRegularDate(const CFX_WideString & value, const CF
 								break;
 						}
 					}
-					else if (format.GetAt(i+1) == c && format.GetAt(i+2) == c && format.GetAt(i+3) == c && format.GetAt(i+4) != c)
+					else if (remaining == 3 || format.GetAt(i+4) != c)
 					{
 						switch (c)
 						{
@@ -815,7 +805,7 @@ double CJS_PublicMethods::MakeRegularDate(const CFX_WideString & value, const CF
 											break;
 										}
 									}
-									
+
 									if (!bFind)
 									{
 										nMonth = ParseStringInteger(value, j, nSkip, 4);
@@ -828,11 +818,11 @@ double CJS_PublicMethods::MakeRegularDate(const CFX_WideString & value, const CF
 								i += 4;
 								j += 4;
 								break;
-						}					
+						}
 					}
 					else
 					{
-						if (format.GetAt(i) != value.GetAt(j))
+						if (j >= value.GetLength() || format.GetAt(i) != value.GetAt(j))
 						{
 							bWrongFormat = TRUE;
 							bExit = TRUE;
@@ -840,7 +830,7 @@ double CJS_PublicMethods::MakeRegularDate(const CFX_WideString & value, const CF
 						i++;
 						j++;
 					}
-					
+
 					if (oldj == j)
 					{
 						bWrongFormat = TRUE;
@@ -848,7 +838,7 @@ double CJS_PublicMethods::MakeRegularDate(const CFX_WideString & value, const CF
 					}
 				}
 
-				break;			
+				break;
 			default:
 				if (value.GetLength() <= j)
 				{
@@ -863,7 +853,7 @@ double CJS_PublicMethods::MakeRegularDate(const CFX_WideString & value, const CF
 				i++;
 				j++;
 				break;
-		}		
+		}
 	}
 
 	if (bPm) nHour += 12;
@@ -923,10 +913,10 @@ CFX_WideString CJS_PublicMethods::MakeFormatDate(double dDate, const CFX_WideStr
 	int nSec = JS_GetSecFromTime(dDate);
 
 	int i = 0;
-	FX_WCHAR c;
 	while (i < format.GetLength())
 	{
-		c = format.GetAt(i);
+	        FX_WCHAR c = format.GetAt(i);
+                int remaining = format.GetLength() - i - 1;
 		sPart = L"";
 		switch (c)
 		{
@@ -938,7 +928,7 @@ CFX_WideString CJS_PublicMethods::MakeFormatDate(double dDate, const CFX_WideStr
 			case 'M':
 			case 's':
 			case 't':
-				if (format.GetAt(i+1) != c)
+				if (remaining == 0 || format.GetAt(i+1) != c)
 				{
 					switch (c)
 					{
@@ -963,13 +953,13 @@ CFX_WideString CJS_PublicMethods::MakeFormatDate(double dDate, const CFX_WideStr
 						case 's':
 							sPart.Format((FX_LPCWSTR)L"%d",nSec);
 							break;
-						case 't':				
+						case 't':
 							sPart += nHour>12?'p':'a';
 							break;
-					}					
+					}
 					i++;
 				}
-				else if (format.GetAt(i+1) == c && format.GetAt(i+2) != c)
+				else if (remaining == 1 || format.GetAt(i+2) != c)
 				{
 					switch (c)
 					{
@@ -994,14 +984,14 @@ CFX_WideString CJS_PublicMethods::MakeFormatDate(double dDate, const CFX_WideStr
 						case 's':
 							sPart.Format((FX_LPCWSTR)L"%02d",nSec);
 							break;
-						case 't':							
+						case 't':
 							sPart = nHour>12? (FX_LPCWSTR)L"pm": (FX_LPCWSTR)L"am";
 							break;
-					}			
+					}
 					i+=2;
 				}
-				else if (format.GetAt(i+1) == c && format.GetAt(i+2) == c && format.GetAt(i+3) != c)
-				{		
+				else if (remaining == 2 || format.GetAt(i+3) != c)
+				{
 					switch (c)
 					{
 						case 'm':
@@ -1015,16 +1005,16 @@ CFX_WideString CJS_PublicMethods::MakeFormatDate(double dDate, const CFX_WideStr
 							sPart += c;
 							sPart += c;
 							break;
-					}					
+					}
 				}
-				else if (format.GetAt(i+1) == c && format.GetAt(i+2) == c && format.GetAt(i+3) == c && format.GetAt(i+4) != c)
+				else if (remaining == 3 || format.GetAt(i+4) != c)
 				{
 					switch (c)
 					{
 						case 'y':
 							sPart.Format((FX_LPCWSTR)L"%04d",nYear);
 							i += 4;
-							break;	
+							break;
 						case 'm':
 							i+=4;
 							if (nMonth > 0&&nMonth <= 12)
@@ -1037,20 +1027,20 @@ CFX_WideString CJS_PublicMethods::MakeFormatDate(double dDate, const CFX_WideStr
 							sPart += c;
 							sPart += c;
 							break;
-					}					
+					}
 				}
 				else
 				{
 					i++;
 					sPart += c;
 				}
-				break;			
+				break;
 			default:
 				i++;
 				sPart += c;
 				break;
 		}
-		
+
 		sRet += sPart;
 	}
 
@@ -1084,7 +1074,7 @@ FX_BOOL CJS_PublicMethods::AFNumber_Format(OBJ_METHOD_PARAMS)
 	int iDec = params[0];
 	int iSepStyle = params[1];
 	int iNegStyle = params[2];
-	int icurrStyle = params[3]; //it's no use!
+	// params[3] is iCurrStyle, it's not used.
 	std::wstring wstrCurrency(params[4].operator CFX_WideString());
 	FX_BOOL bCurrencyPrepend = params[5];
 	

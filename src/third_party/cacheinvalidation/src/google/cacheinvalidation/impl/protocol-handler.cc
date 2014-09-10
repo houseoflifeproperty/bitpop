@@ -278,8 +278,8 @@ void ProtocolHandler::SendRegistrations(
 void ProtocolHandler::SendInvalidationAck(const InvalidationP& invalidation,
     BatchingTask* batching_task) {
   CHECK(internal_scheduler_->IsRunningOnThread()) << "Not on internal thread";
-  // We could do squelching - we don't since it is unlikely to be too beneficial
-  // here.
+  // We could summarize acks if there are suppressing invalidations - we don't
+  // since it is unlikely to be too beneficial here.
   batcher_.AddAck(invalidation);
   batching_task->EnsureScheduled("Send-ack");
 }

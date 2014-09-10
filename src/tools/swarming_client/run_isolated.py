@@ -14,7 +14,7 @@ file. All content written to this directory will be uploaded upon termination
 and the .isolated file describing this directory will be printed to stdout.
 """
 
-__version__ = '0.3.1'
+__version__ = '0.3.2'
 
 import ctypes
 import logging
@@ -30,7 +30,9 @@ import time
 
 from third_party.depot_tools import fix_encoding
 
+from utils import file_path
 from utils import lru
+from utils import on_error
 from utils import threading_utils
 from utils import tools
 from utils import zip_package
@@ -247,24 +249,99 @@ def make_tree_deleteable(root):
 
 
 def rmtree(root):
-  """Wrapper around shutil.rmtree() to retry automatically on Windows."""
+  """Wrapper around shutil.rmtree() to retry automatically on Windows.
+
+  On Windows, forcibly kills processes that are found to interfere with the
+  deletion.
+
+  Returns:
+    True on normal execution, False if berserk techniques (like killing
+    processes) had to be used.
+  """
   make_tree_deleteable(root)
   logging.info('rmtree(%s)', root)
-  if sys.platform == 'win32':
-    for i in range(4):
-      try:
-        shutil.rmtree(root)
-        break
-      except WindowsError:  # pylint: disable=E0602
-        if i == 3:
-          raise
-        delay = (i+1)*2
-        print >> sys.stderr, (
-            'Failed to delete %s. Maybe the test has subprocess outliving it.'
-            ' Sleep %d seconds.' % (root, delay))
-        time.sleep(delay)
-  else:
+  if sys.platform != 'win32':
     shutil.rmtree(root)
+    return True
+
+  # Windows is more 'challenging'. First tries the soft way: tries 3 times to
+  # delete and sleep a bit in between.
+  max_tries = 3
+  for i in xrange(max_tries):
+    # errors is a list of tuple(function, path, excinfo).
+    errors = []
+    shutil.rmtree(root, onerror=lambda *args: errors.append(args))
+    if not errors:
+      return True
+    if i == max_tries - 1:
+      sys.stderr.write(
+          'Failed to delete %s. The following files remain:\n' % root)
+      for _, path, _ in errors:
+        sys.stderr.write('- %s\n' % path)
+    else:
+      delay = (i+1)*2
+      sys.stderr.write(
+          'Failed to delete %s (%d files remaining).\n'
+          '  Maybe the test has a subprocess outliving it.\n'
+          '  Sleeping %d seconds.\n' %
+          (root, len(errors), delay))
+      time.sleep(delay)
+
+  # The soft way was not good enough. Try the hard way. Enumerates both:
+  # - all child processes from this process.
+  # - processes where the main executable in inside 'root'. The reason is that
+  #   the ancestry may be broken so stray grand-children processes could be
+  #   undetected by the first technique.
+  # This technique is not fool-proof but gets mostly there.
+  def get_processes():
+    processes = threading_utils.enum_processes_win()
+    tree_processes = threading_utils.filter_processes_tree_win(processes)
+    dir_processes = threading_utils.filter_processes_dir_win(processes, root)
+    # Convert to dict to remove duplicates.
+    processes = {p.ProcessId: p for p in tree_processes}
+    processes.update((p.ProcessId, p) for p in dir_processes)
+    processes.pop(os.getpid())
+    return processes
+
+  for i in xrange(3):
+    sys.stderr.write('Enumerating processes:\n')
+    processes = get_processes()
+    if not processes:
+      break
+    for _, proc in sorted(processes.iteritems()):
+      sys.stderr.write(
+          '- pid %d; Handles: %d; Exe: %s; Cmd: %s\n' % (
+            proc.ProcessId,
+            proc.HandleCount,
+            proc.ExecutablePath,
+            proc.CommandLine))
+    sys.stderr.write('Terminating %d processes.\n' % len(processes))
+    for pid in sorted(processes):
+      try:
+        # Killing is asynchronous.
+        os.kill(pid, 9)
+        sys.stderr.write('- %d killed\n' % pid)
+      except OSError:
+        sys.stderr.write('- failed to kill %s\n' % pid)
+    if i < 2:
+      time.sleep((i+1)*2)
+  else:
+    processes = get_processes()
+    if processes:
+      sys.stderr.write('Failed to terminate processes.\n')
+      raise errors[0][2][0], errors[0][2][1], errors[0][2][2]
+
+  # Now that annoying processes in root are evicted, try again.
+  errors = []
+  shutil.rmtree(root, onerror=lambda *args: errors.append(args))
+  if errors:
+    # There's no hope.
+    sys.stderr.write(
+        'Failed to delete %s. The following files remain:\n' % root)
+    for _, path, _ in errors:
+      sys.stderr.write('- %s\n' % path)
+    raise errors[0][2][0], errors[0][2][1], errors[0][2][2]
+  return False
 
 
 def try_remove(filepath):
@@ -552,14 +629,16 @@ class DiskCache(isolateserver.LocalCache):
       self._remove_lru_file()
       self._free_disk = get_free_space(self.cache_dir)
     if trimmed_due_to_space:
-      total = sum(self._lru.itervalues())
+      total_usage = sum(self._lru.itervalues())
+      usage_percent = 0.
+      if total_usage:
+        usage_percent = 100. * self.policies.max_cache_size / float(total_usage)
       logging.warning(
           'Trimmed due to not enough free disk space: %.1fkb free, %.1fkb '
           'cache (%.1f%% of its maximum capacity)',
           self._free_disk / 1024.,
-          total / 1024.,
-          100. * self.policies.max_cache_size / float(total),
-          )
+          total_usage / 1024.,
+          usage_percent)
     self._save()
 
   def _path(self, digest):
@@ -674,8 +753,8 @@ def run_tha_test(isolated_hash, storage, cache, extra_args):
           cache=cache,
           outdir=run_dir,
           require_command=True)
-    except isolateserver.ConfigError as e:
-      tools.report_error(e)
+    except isolateserver.ConfigError:
+      on_error.report(None)
       return 1
 
     change_tree_read_only(run_dir, settings.read_only)
@@ -704,28 +783,22 @@ def run_tha_test(isolated_hash, storage, cache, extra_args):
         logging.info(
             'Command finished with exit code %d (%s)',
             result, hex(0xffffffff & result))
-    except OSError as e:
-      tools.report_error('Failed to run %s; cwd=%s: %s' % (command, cwd, e))
+    except OSError:
+      on_error.report('Failed to run %s; cwd=%s' % (command, cwd))
       result = 1
 
   finally:
     try:
       try:
-        rmtree(run_dir)
+        if not rmtree(run_dir):
+          print >> sys.stderr, (
+              'Failed to delete the temporary directory, forcibly failing the\n'
+              'task because of it. No zombie process can outlive a successful\n'
+              'task run and still be marked as successful. Fix your stuff.')
+          result = result or 1
       except OSError:
         logging.warning('Leaking %s', run_dir)
-        # Swallow the exception so it doesn't generate an infrastructure error.
-        #
-        # It usually happens on Windows when a child process is not properly
-        # terminated, usually because of a test case starting child processes
-        # that time out. This causes files to be locked and it becomes
-        # impossible to delete them.
-        #
-        # Only report an infrastructure error if the test didn't fail. This is
-        # because a swarming bot will likely not reboot. This situation will
-        # cause accumulation of temporary hardlink trees.
-        if not result:
-          raise
+        result = 1
 
       # HACK(vadimsh): On Windows rmtree(run_dir) call above has
       # a synchronization effect: it finishes only when all task child processes
@@ -751,7 +824,13 @@ def run_tha_test(isolated_hash, storage, cache, extra_args):
             tools.format_json(output_data, dense=True))
 
     finally:
-      rmtree(out_dir)
+      try:
+        if os.path.isdir(out_dir) and not rmtree(out_dir):
+          result = result or 1
+      except OSError:
+        # The error was already printed out. Report it but that's it.
+        on_error.report(None)
+        result = 1
 
   return result
 
@@ -815,21 +894,19 @@ def main(args):
   policies = CachePolicies(
       options.max_cache_size, options.min_free_space, options.max_items)
 
-  try:
-    # |options.cache| path may not exist until DiskCache() instance is created.
-    cache = DiskCache(
-        options.cache, policies, isolateserver.get_hash_algo(options.namespace))
-    remote = options.isolate_server or options.indir
-    with isolateserver.get_storage(remote, options.namespace) as storage:
-      # Hashing schemes used by |storage| and |cache| MUST match.
-      assert storage.hash_algo == cache.hash_algo
-      return run_tha_test(
-          options.isolated or options.hash, storage, cache, args)
-  except Exception as e:
-    # Make sure any exception is logged.
-    tools.report_error(e)
-    logging.exception(e)
-    return 1
+  # |options.cache| path may not exist until DiskCache() instance is created.
+  cache = DiskCache(
+      options.cache, policies, isolateserver.get_hash_algo(options.namespace))
+
+  remote = options.isolate_server or options.indir
+  if file_path.is_url(remote):
+    auth.ensure_logged_in(remote)
+
+  with isolateserver.get_storage(remote, options.namespace) as storage:
+    # Hashing schemes used by |storage| and |cache| MUST match.
+    assert storage.hash_algo == cache.hash_algo
+    return run_tha_test(
+        options.isolated or options.hash, storage, cache, args)
 
 
 if __name__ == '__main__':

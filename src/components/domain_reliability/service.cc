@@ -7,10 +7,26 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/single_thread_task_runner.h"
+#include "base/task_runner_util.h"
 #include "components/domain_reliability/monitor.h"
 #include "net/url_request/url_request_context_getter.h"
 
 namespace domain_reliability {
+
+namespace {
+
+scoped_ptr<base::Value> GetWebUIDataOnNetworkTaskRunner(
+    base::WeakPtr<DomainReliabilityMonitor> monitor) {
+  if (!monitor) {
+    base::DictionaryValue* dict = new base::DictionaryValue();
+    dict->SetString("error", "no_monitor");
+    return scoped_ptr<base::Value>(dict);
+  }
+
+  return monitor->GetWebUIData();
+}
+
+}  // namespace
 
 class DomainReliabilityServiceImpl : public DomainReliabilityService {
  public:
@@ -22,7 +38,7 @@ class DomainReliabilityServiceImpl : public DomainReliabilityService {
 
   // DomainReliabilityService implementation:
 
-  virtual scoped_ptr<DomainReliabilityMonitor> Init(
+  virtual scoped_ptr<DomainReliabilityMonitor> CreateMonitor(
       scoped_refptr<base::SequencedTaskRunner> network_task_runner) OVERRIDE {
     DCHECK(!network_task_runner_);
 
@@ -47,7 +63,17 @@ class DomainReliabilityServiceImpl : public DomainReliabilityService {
         callback);
   }
 
-  virtual void Shutdown() OVERRIDE {}
+  virtual void GetWebUIData(
+      const base::Callback<void(scoped_ptr<base::Value>)>& callback)
+      const OVERRIDE {
+    DCHECK(network_task_runner_);
+
+    PostTaskAndReplyWithResult(
+        network_task_runner_,
+        FROM_HERE,
+        base::Bind(&GetWebUIDataOnNetworkTaskRunner, monitor_),
+        callback);
+  }
 
  private:
   std::string upload_reporter_string_;

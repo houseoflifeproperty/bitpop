@@ -45,7 +45,7 @@
 #include "hb.h"
 #include "wtf/HashMap.h"
 
-namespace WebCore {
+namespace blink {
 
 // Our implementation of the callbacks which HarfBuzz requires by using Skia
 // calls. See the HarfBuzz source for references about what these callbacks do.
@@ -86,6 +86,10 @@ static void SkiaGetGlyphWidthAndExtents(SkPaint* paint, hb_codepoint_t codepoint
 
 static hb_bool_t harfBuzzGetGlyph(hb_font_t* hbFont, void* fontData, hb_codepoint_t unicode, hb_codepoint_t variationSelector, hb_codepoint_t* glyph, void* userData)
 {
+    // Variation selectors not supported.
+    if (variationSelector)
+        return false;
+
     HarfBuzzFontData* hbFontData = reinterpret_cast<HarfBuzzFontData*>(fontData);
 
     WTF::HashMap<uint32_t, uint16_t>::AddResult result = hbFontData->m_glyphCacheForFaceCacheEntry->add(unicode, 0);
@@ -234,4 +238,4 @@ hb_font_t* HarfBuzzFace::createFont()
     return font;
 }
 
-} // namespace WebCore
+} // namespace blink

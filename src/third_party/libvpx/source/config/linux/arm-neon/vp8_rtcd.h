@@ -91,6 +91,10 @@ int vp8_denoiser_filter_c(unsigned char *mc_running_avg_y, int mc_avg_y_stride, 
 int vp8_denoiser_filter_neon(unsigned char *mc_running_avg_y, int mc_avg_y_stride, unsigned char *running_avg_y, int avg_y_stride, unsigned char *sig, int sig_stride, unsigned int motion_magnitude, int increase_denoising);
 #define vp8_denoiser_filter vp8_denoiser_filter_neon
 
+int vp8_denoiser_filter_uv_c(unsigned char *mc_running_avg, int mc_avg_stride, unsigned char *running_avg, int avg_stride, unsigned char *sig, int sig_stride, unsigned int motion_magnitude, int increase_denoising);
+int vp8_denoiser_filter_uv_neon(unsigned char *mc_running_avg, int mc_avg_stride, unsigned char *running_avg, int avg_stride, unsigned char *sig, int sig_stride, unsigned int motion_magnitude, int increase_denoising);
+#define vp8_denoiser_filter_uv vp8_denoiser_filter_uv_neon
+
 void vp8_dequant_idct_add_c(short *input, short *dq, unsigned char *output, int stride);
 void vp8_dequant_idct_add_v6(short *input, short *dq, unsigned char *output, int stride);
 void vp8_dequant_idct_add_neon(short *input, short *dq, unsigned char *output, int stride);
@@ -331,8 +335,7 @@ void vp8_sixtap_predict16x16_neon(unsigned char *src, int src_pitch, int xofst, 
 
 void vp8_sixtap_predict4x4_c(unsigned char *src, int src_pitch, int xofst, int yofst, unsigned char *dst, int dst_pitch);
 void vp8_sixtap_predict4x4_armv6(unsigned char *src, int src_pitch, int xofst, int yofst, unsigned char *dst, int dst_pitch);
-void vp8_sixtap_predict4x4_neon(unsigned char *src, int src_pitch, int xofst, int yofst, unsigned char *dst, int dst_pitch);
-#define vp8_sixtap_predict4x4 vp8_sixtap_predict4x4_neon
+#define vp8_sixtap_predict4x4 vp8_sixtap_predict4x4_armv6
 
 void vp8_sixtap_predict8x4_c(unsigned char *src, int src_pitch, int xofst, int yofst, unsigned char *dst, int dst_pitch);
 void vp8_sixtap_predict8x4_armv6(unsigned char *src, int src_pitch, int xofst, int yofst, unsigned char *dst, int dst_pitch);

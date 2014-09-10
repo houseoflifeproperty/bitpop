@@ -39,11 +39,13 @@ namespace cricket {
 class FakeVideoSendStream : public webrtc::VideoSendStream {
  public:
   FakeVideoSendStream(const webrtc::VideoSendStream::Config& config,
-                      const std::vector<webrtc::VideoStream>& video_streams);
+                      const std::vector<webrtc::VideoStream>& video_streams,
+                      const void* encoder_settings);
   webrtc::VideoSendStream::Config GetConfig();
   std::vector<webrtc::VideoStream> GetVideoStreams();
 
-  bool IsSending();
+  bool IsSending() const;
+  bool GetVp8Settings(webrtc::VideoCodecVP8* settings) const;
 
  private:
   virtual webrtc::VideoSendStream::Stats GetStats() const OVERRIDE;
@@ -60,6 +62,8 @@ class FakeVideoSendStream : public webrtc::VideoSendStream {
   bool sending_;
   webrtc::VideoSendStream::Config config_;
   std::vector<webrtc::VideoStream> video_streams_;
+  bool codec_settings_set_;
+  webrtc::VideoCodecVP8 vp8_settings_;
 };
 
 class FakeVideoReceiveStream : public webrtc::VideoReceiveStream {
@@ -68,6 +72,8 @@ class FakeVideoReceiveStream : public webrtc::VideoReceiveStream {
       const webrtc::VideoReceiveStream::Config& config);
 
   webrtc::VideoReceiveStream::Config GetConfig();
+
+  bool IsReceiving() const;
 
  private:
   virtual webrtc::VideoReceiveStream::Stats GetStats() const OVERRIDE;
@@ -98,8 +104,6 @@ class FakeCall : public webrtc::Call {
   std::vector<webrtc::VideoCodec> GetDefaultVideoCodecs();
 
  private:
-  virtual webrtc::VideoSendStream::Config GetDefaultSendConfig() OVERRIDE;
-
   virtual webrtc::VideoSendStream* CreateVideoSendStream(
       const webrtc::VideoSendStream::Config& config,
       const std::vector<webrtc::VideoStream>& video_streams,
@@ -107,8 +111,6 @@ class FakeCall : public webrtc::Call {
 
   virtual void DestroyVideoSendStream(
       webrtc::VideoSendStream* send_stream) OVERRIDE;
-
-  virtual webrtc::VideoReceiveStream::Config GetDefaultReceiveConfig() OVERRIDE;
 
   virtual webrtc::VideoReceiveStream* CreateVideoReceiveStream(
       const webrtc::VideoReceiveStream::Config& config) OVERRIDE;

@@ -225,6 +225,7 @@ struct StreamDataCounters {
      retransmitted_packets(0),
      fec_packets(0) {}
 
+  // TODO(pbos): Rename bytes -> media_bytes.
   uint32_t bytes;  // Payload bytes, excluding RTP headers and padding.
   uint32_t header_bytes;  // Number of bytes used by RTP headers.
   uint32_t padding_bytes;  // Number of padding bytes.
@@ -266,6 +267,15 @@ class FrameCountObserver {
   virtual void FrameCountUpdated(FrameType frame_type,
                                  uint32_t frame_count,
                                  const unsigned int ssrc) = 0;
+};
+
+// Callback, used to notify an observer whenever the send-side delay is updated.
+class SendSideDelayObserver {
+ public:
+  virtual ~SendSideDelayObserver() {}
+  virtual void SendSideDelayUpdated(int avg_delay_ms,
+                                    int max_delay_ms,
+                                    uint32_t ssrc) = 0;
 };
 
 // ==================================================================
@@ -587,10 +597,24 @@ struct VideoCodecVP8 {
   }
 };
 
+// H264 specific.
+struct VideoCodecH264
+{
+    VideoCodecProfile profile;
+    bool           frameDroppingOn;
+    int            keyFrameInterval;
+    // These are NULL/0 if not externally negotiated.
+    const uint8_t* spsData;
+    size_t         spsLen;
+    const uint8_t* ppsData;
+    size_t         ppsLen;
+};
+
 // Video codec types
 enum VideoCodecType
 {
     kVideoCodecVP8,
+    kVideoCodecH264,
     kVideoCodecI420,
     kVideoCodecRED,
     kVideoCodecULPFEC,
@@ -601,6 +625,7 @@ enum VideoCodecType
 union VideoCodecUnion
 {
     VideoCodecVP8       VP8;
+    VideoCodecH264      H264;
 };
 
 

@@ -33,7 +33,7 @@
 #include "platform/fonts/FontWidthVariant.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class ResourceFetcher;
@@ -47,6 +47,7 @@ public:
 
     FontResource(const ResourceRequest&);
     virtual ~FontResource();
+    virtual void trace(Visitor*) OVERRIDE;
 
     virtual void load(ResourceFetcher*, const ResourceLoaderOptions&) OVERRIDE;
 
@@ -54,8 +55,15 @@ public:
 
     virtual void allClientsRemoved() OVERRIDE;
     void beginLoadIfNeeded(ResourceFetcher* dl);
-    virtual bool stillNeedsLoad() const OVERRIDE { return !m_loadInitiated; }
+    virtual bool stillNeedsLoad() const OVERRIDE { return m_state != LoadInitiated; }
     bool exceedsFontLoadWaitLimit() const { return m_exceedsFontLoadWaitLimit; }
+
+    bool loadScheduled() const { return m_state != Unloaded; }
+    void didScheduleLoad();
+    void didUnscheduleLoad();
+
+    void setCORSFailed() { m_corsFailed = true; }
+    bool isCORSFailed() const { return m_corsFailed; }
 
     bool ensureCustomFontData();
     FontPlatformData platformDataFromCustomData(float size, bool bold, bool italic, FontOrientation = Horizontal, FontWidthVariant = RegularWidth);
@@ -72,13 +80,16 @@ private:
     virtual void checkNotify() OVERRIDE;
     void fontLoadWaitLimitCallback(Timer<FontResource>*);
 
+    enum State { Unloaded, LoadScheduled, LoadInitiated };
+
     OwnPtr<FontCustomPlatformData> m_fontData;
-    bool m_loadInitiated;
+    State m_state;
     bool m_exceedsFontLoadWaitLimit;
+    bool m_corsFailed;
     Timer<FontResource> m_fontLoadWaitLimitTimer;
 
 #if ENABLE(SVG_FONTS)
-    RefPtrWillBePersistent<Document> m_externalSVGDocument;
+    RefPtrWillBeMember<Document> m_externalSVGDocument;
 #endif
 
     friend class MemoryCache;

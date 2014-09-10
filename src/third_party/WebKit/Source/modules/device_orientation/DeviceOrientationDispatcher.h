@@ -31,22 +31,19 @@
 #ifndef DeviceOrientationDispatcher_h
 #define DeviceOrientationDispatcher_h
 
-#include "core/frame/DeviceEventDispatcherBase.h"
+#include "core/frame/PlatformEventDispatcher.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebDeviceOrientationListener.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
-class WebDeviceOrientationData;
-}
-
-namespace WebCore {
 
 class DeviceOrientationController;
 class DeviceOrientationData;
+class WebDeviceOrientationData;
 
 // This class listens to device orientation data and notifies all registered controllers.
-class DeviceOrientationDispatcher : public DeviceEventDispatcherBase, public blink::WebDeviceOrientationListener {
+class DeviceOrientationDispatcher : public PlatformEventDispatcher, public WebDeviceOrientationListener {
 public:
     static DeviceOrientationDispatcher& instance();
 
@@ -55,19 +52,19 @@ public:
     DeviceOrientationData* latestDeviceOrientationData();
 
     // Inherited from WebDeviceOrientationListener.
-    virtual void didChangeDeviceOrientation(const blink::WebDeviceOrientationData&) OVERRIDE;
+    virtual void didChangeDeviceOrientation(const WebDeviceOrientationData&) OVERRIDE;
 
 private:
     DeviceOrientationDispatcher();
     ~DeviceOrientationDispatcher();
 
-    // Inherited from DeviceEventDispatcherBase.
+    // Inherited from PlatformEventDispatcher.
     virtual void startListening() OVERRIDE;
     virtual void stopListening() OVERRIDE;
 
     RefPtrWillBePersistent<DeviceOrientationData> m_lastDeviceOrientationData;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeviceOrientationDispatcher_h

@@ -259,9 +259,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
             shell()->web_contents()->GetVisibleURL());
 }
 
-// TODO(shrikant): enable this for Windows when issue with
-// force-compositing-mode is resolved (http://crbug.com/281726).
-// Also crashes under ThreadSanitizer, http://crbug.com/356758.
+// Crashes under ThreadSanitizer, http://crbug.com/356758.
 #if defined(OS_WIN) || defined(OS_ANDROID) \
     || defined(THREAD_SANITIZER)
 #define MAYBE_GetSizeForNewRenderView DISABLED_GetSizeForNewRenderView
@@ -515,6 +513,47 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, LoadProgress) {
   ASSERT_GE(progresses.size(), 1U)
       << "There should be at least one progress update";
   EXPECT_EQ(1.0, *progresses.rbegin());
+}
+
+struct FirstVisuallyNonEmptyPaintObserver : public WebContentsObserver {
+  FirstVisuallyNonEmptyPaintObserver(Shell* shell)
+      : WebContentsObserver(shell->web_contents()),
+        did_fist_visually_non_empty_paint_(false) {}
+
+  virtual void DidFirstVisuallyNonEmptyPaint() OVERRIDE {
+    did_fist_visually_non_empty_paint_ = true;
+    on_did_first_visually_non_empty_paint_.Run();
+  }
+
+  void WaitForDidFirstVisuallyNonEmptyPaint() {
+    if (did_fist_visually_non_empty_paint_)
+      return;
+    base::RunLoop run_loop;
+    on_did_first_visually_non_empty_paint_ = run_loop.QuitClosure();
+    run_loop.Run();
+  }
+
+  base::Closure on_did_first_visually_non_empty_paint_;
+  bool did_fist_visually_non_empty_paint_;
+};
+
+// See: http://crbug.com/395664
+#if defined(OS_ANDROID)
+#define MAYBE_FirstVisuallyNonEmptyPaint DISABLED_FirstVisuallyNonEmptyPaint
+#else
+// http://crbug.com/398471
+#define MAYBE_FirstVisuallyNonEmptyPaint DISABLED_FirstVisuallyNonEmptyPaint
+#endif
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       MAYBE_FirstVisuallyNonEmptyPaint) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  scoped_ptr<FirstVisuallyNonEmptyPaintObserver> observer(
+      new FirstVisuallyNonEmptyPaintObserver(shell()));
+
+  NavigateToURL(shell(), embedded_test_server()->GetURL("/title1.html"));
+
+  observer->WaitForDidFirstVisuallyNonEmptyPaint();
+  ASSERT_TRUE(observer->did_fist_visually_non_empty_paint_);
 }
 
 }  // namespace content

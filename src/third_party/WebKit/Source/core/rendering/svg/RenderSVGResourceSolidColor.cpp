@@ -28,7 +28,7 @@
 #include "core/rendering/svg/SVGRenderSupport.h"
 #include "platform/graphics/GraphicsContext.h"
 
-namespace WebCore {
+namespace blink {
 
 const RenderSVGResourceType RenderSVGResourceSolidColor::s_resourceType = SolidColorResourceType;
 
@@ -48,7 +48,7 @@ bool RenderSVGResourceSolidColor::applyResource(RenderObject* object, RenderStyl
     ASSERT(context);
     ASSERT(resourceMode != ApplyToDefaultMode);
 
-    const SVGRenderStyle* svgStyle = style ? style->svgStyle() : 0;
+    const SVGRenderStyle* svgStyle = style ? &style->svgStyle() : 0;
 
     bool isRenderingMask = false;
     if (object->frame() && object->frame()->view())

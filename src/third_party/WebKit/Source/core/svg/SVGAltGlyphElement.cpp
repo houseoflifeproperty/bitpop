@@ -25,15 +25,15 @@
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGAltGlyphElement.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/SVGNames.h"
 #include "core/XLinkNames.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/rendering/svg/RenderSVGTSpan.h"
 #include "core/svg/SVGAltGlyphDefElement.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGAltGlyphElement::SVGAltGlyphElement(Document& document)
     : SVGTextPositioningElement(SVGNames::altGlyphTag, document)

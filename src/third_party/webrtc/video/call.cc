@@ -33,11 +33,17 @@ namespace webrtc {
 const char* RtpExtension::kTOffset = "urn:ietf:params:rtp-hdrext:toffset";
 const char* RtpExtension::kAbsSendTime =
     "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time";
+
+bool RtpExtension::IsSupported(const std::string& name) {
+  return name == webrtc::RtpExtension::kTOffset ||
+         name == webrtc::RtpExtension::kAbsSendTime;
+}
+
 namespace internal {
 
 class CpuOveruseObserverProxy : public webrtc::CpuOveruseObserver {
  public:
-  CpuOveruseObserverProxy(OveruseCallback* overuse_callback)
+  explicit CpuOveruseObserverProxy(OveruseCallback* overuse_callback)
       : crit_(CriticalSectionWrapper::CreateCriticalSection()),
         overuse_callback_(overuse_callback) {
     assert(overuse_callback != NULL);
@@ -67,8 +73,6 @@ class Call : public webrtc::Call, public PacketReceiver {
 
   virtual PacketReceiver* Receiver() OVERRIDE;
 
-  virtual VideoSendStream::Config GetDefaultSendConfig() OVERRIDE;
-
   virtual VideoSendStream* CreateVideoSendStream(
       const VideoSendStream::Config& config,
       const std::vector<VideoStream>& video_streams,
@@ -76,8 +80,6 @@ class Call : public webrtc::Call, public PacketReceiver {
 
   virtual void DestroyVideoSendStream(webrtc::VideoSendStream* send_stream)
       OVERRIDE;
-
-  virtual VideoReceiveStream::Config GetDefaultReceiveConfig() OVERRIDE;
 
   virtual VideoReceiveStream* CreateVideoReceiveStream(
       const VideoReceiveStream::Config& config) OVERRIDE;
@@ -93,9 +95,7 @@ class Call : public webrtc::Call, public PacketReceiver {
 
  private:
   DeliveryStatus DeliverRtcp(const uint8_t* packet, size_t length);
-  DeliveryStatus DeliverRtp(const RTPHeader& header,
-                            const uint8_t* packet,
-                            size_t length);
+  DeliveryStatus DeliverRtp(const uint8_t* packet, size_t length);
 
   Call::Config config_;
 
@@ -106,9 +106,9 @@ class Call : public webrtc::Call, public PacketReceiver {
   std::map<uint32_t, VideoSendStream*> send_ssrcs_ GUARDED_BY(send_lock_);
   scoped_ptr<RWLockWrapper> send_lock_;
 
-  scoped_ptr<RtpHeaderParser> rtp_header_parser_;
-
   scoped_ptr<CpuOveruseObserverProxy> overuse_observer_proxy_;
+
+  VideoSendStream::RtpStateMap suspended_send_ssrcs_;
 
   VideoEngine* video_engine_;
   ViERTP_RTCP* rtp_rtcp_;
@@ -137,7 +137,6 @@ Call::Call(webrtc::VideoEngine* video_engine, const Call::Config& config)
     : config_(config),
       receive_lock_(RWLockWrapper::CreateRWLock()),
       send_lock_(RWLockWrapper::CreateRWLock()),
-      rtp_header_parser_(RtpHeaderParser::Create()),
       video_engine_(video_engine),
       base_channel_id_(-1) {
   assert(video_engine != NULL);
@@ -173,11 +172,6 @@ Call::~Call() {
 
 PacketReceiver* Call::Receiver() { return this; }
 
-VideoSendStream::Config Call::GetDefaultSendConfig() {
-  VideoSendStream::Config config;
-  return config;
-}
-
 VideoSendStream* Call::CreateVideoSendStream(
     const VideoSendStream::Config& config,
     const std::vector<VideoStream>& video_streams,
@@ -193,6 +187,7 @@ VideoSendStream* Call::CreateVideoSendStream(
       config,
       video_streams,
       encoder_settings,
+      suspended_send_ssrcs_,
       base_channel_id_,
       config_.start_bitrate_bps != -1 ? config_.start_bitrate_bps
                                       : kDefaultVideoStreamBitrateBps);
@@ -208,29 +203,32 @@ VideoSendStream* Call::CreateVideoSendStream(
 void Call::DestroyVideoSendStream(webrtc::VideoSendStream* send_stream) {
   assert(send_stream != NULL);
 
+  send_stream->Stop();
+
   VideoSendStream* send_stream_impl = NULL;
   {
     WriteLockScoped write_lock(*send_lock_);
-    for (std::map<uint32_t, VideoSendStream*>::iterator it =
-             send_ssrcs_.begin();
-         it != send_ssrcs_.end();
-         ++it) {
+    std::map<uint32_t, VideoSendStream*>::iterator it = send_ssrcs_.begin();
+    while (it != send_ssrcs_.end()) {
       if (it->second == static_cast<VideoSendStream*>(send_stream)) {
         send_stream_impl = it->second;
-        send_ssrcs_.erase(it);
-        break;
+        send_ssrcs_.erase(it++);
+      } else {
+        ++it;
       }
     }
   }
 
+  VideoSendStream::RtpStateMap rtp_state = send_stream_impl->GetRtpStates();
+
+  for (VideoSendStream::RtpStateMap::iterator it = rtp_state.begin();
+       it != rtp_state.end();
+       ++it) {
+    suspended_send_ssrcs_[it->first] = it->second;
+  }
+
   assert(send_stream_impl != NULL);
   delete send_stream_impl;
-}
-
-VideoReceiveStream::Config Call::GetDefaultReceiveConfig() {
-  VideoReceiveStream::Config config;
-  config.rtp.remb = true;
-  return config;
 }
 
 VideoReceiveStream* Call::CreateVideoReceiveStream(
@@ -291,7 +289,7 @@ uint32_t Call::ReceiveBitrateEstimate() {
   return 0;
 }
 
-Call::PacketReceiver::DeliveryStatus Call::DeliverRtcp(const uint8_t* packet,
+PacketReceiver::DeliveryStatus Call::DeliverRtcp(const uint8_t* packet,
                                                        size_t length) {
   // TODO(pbos): Figure out what channel needs it actually.
   //             Do NOT broadcast! Also make sure it's a valid packet.
@@ -322,32 +320,32 @@ Call::PacketReceiver::DeliveryStatus Call::DeliverRtcp(const uint8_t* packet,
   return rtcp_delivered ? DELIVERY_OK : DELIVERY_PACKET_ERROR;
 }
 
-Call::PacketReceiver::DeliveryStatus Call::DeliverRtp(const RTPHeader& header,
-                                                      const uint8_t* packet,
-                                                      size_t length) {
+PacketReceiver::DeliveryStatus Call::DeliverRtp(const uint8_t* packet,
+                                                size_t length) {
+  // Minimum RTP header size.
+  if (length < 12)
+    return DELIVERY_PACKET_ERROR;
+
+  const uint8_t* ptr = &packet[8];
+  uint32_t ssrc = ptr[0] << 24 | ptr[1] << 16 | ptr[2] << 8 | ptr[3];
+
   ReadLockScoped read_lock(*receive_lock_);
   std::map<uint32_t, VideoReceiveStream*>::iterator it =
-      receive_ssrcs_.find(header.ssrc);
+      receive_ssrcs_.find(ssrc);
 
   if (it == receive_ssrcs_.end())
     return DELIVERY_UNKNOWN_SSRC;
 
-  return it->second->DeliverRtp(static_cast<const uint8_t*>(packet), length)
-             ? DELIVERY_OK
-             : DELIVERY_PACKET_ERROR;
+  return it->second->DeliverRtp(packet, length) ? DELIVERY_OK
+                                                : DELIVERY_PACKET_ERROR;
 }
 
-Call::PacketReceiver::DeliveryStatus Call::DeliverPacket(const uint8_t* packet,
-                                                         size_t length) {
-  // TODO(pbos): ExtensionMap if there are extensions.
-  if (RtpHeaderParser::IsRtcp(packet, static_cast<int>(length)))
+PacketReceiver::DeliveryStatus Call::DeliverPacket(const uint8_t* packet,
+                                                   size_t length) {
+  if (RtpHeaderParser::IsRtcp(packet, length))
     return DeliverRtcp(packet, length);
 
-  RTPHeader rtp_header;
-  if (!rtp_header_parser_->Parse(packet, static_cast<int>(length), &rtp_header))
-    return DELIVERY_PACKET_ERROR;
-
-  return DeliverRtp(rtp_header, packet, length);
+  return DeliverRtp(packet, length);
 }
 
 }  // namespace internal

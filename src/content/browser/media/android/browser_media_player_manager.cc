@@ -173,10 +173,10 @@ void BrowserMediaPlayerManager::FullscreenPlayerSeek(int msec) {
 }
 
 void BrowserMediaPlayerManager::ExitFullscreen(bool release_media_player) {
+  if (WebContentsDelegate* delegate = web_contents_->GetDelegate())
+    delegate->ToggleFullscreenModeForTab(web_contents_, false);
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableOverlayFullscreenVideoSubtitle)) {
-    if (WebContentsDelegate* delegate = web_contents_->GetDelegate())
-      delegate->ToggleFullscreenModeForTab(web_contents_, false);
     if (RenderWidgetHostViewAndroid* view_android =
         static_cast<RenderWidgetHostViewAndroid*>(
             web_contents_->GetRenderWidgetHostView())) {
@@ -224,8 +224,6 @@ void BrowserMediaPlayerManager::SetVideoSurface(
           web_contents_->GetRenderWidgetHostView())) {
     view_android->SetOverlayVideoMode(true);
   }
-  if (WebContentsDelegate* delegate = web_contents_->GetDelegate())
-    delegate->ToggleFullscreenModeForTab(web_contents_, true);
 }
 
 void BrowserMediaPlayerManager::OnMediaMetadataChanged(
@@ -409,24 +407,6 @@ void BrowserMediaPlayerManager::OnEnterFullscreen(int player_id) {
     video_view_->OpenVideo();
     return;
   } else if (!ContentVideoView::GetInstance()) {
-    if (!GetPlayer(player_id)) {
-      // If a player doesn't exist, it must be waiting for CORS check.
-      // As a result, just request the tab to enter fullscreen mode without
-      // creating the surface view. This is only needed for M37.
-      Send(new MediaPlayerMsg_DidEnterFullscreen(RoutingID(), player_id));
-      if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableOverlayFullscreenVideoSubtitle)) {
-        return;
-      }
-      if (RenderWidgetHostViewAndroid* view_android =
-          static_cast<RenderWidgetHostViewAndroid*>(
-              web_contents_->GetRenderWidgetHostView())) {
-        view_android->SetOverlayVideoMode(true);
-      }
-      if (WebContentsDelegate* delegate = web_contents_->GetDelegate())
-          delegate->ToggleFullscreenModeForTab(web_contents_, true);
-    }
-
     // In Android WebView, two ContentViewCores could both try to enter
     // fullscreen video, we just ignore the second one.
     video_view_.reset(new ContentVideoView(this));

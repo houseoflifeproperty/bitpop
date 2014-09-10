@@ -15,7 +15,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/extensions/api/tab_capture/tab_capture_registry.h"
 #include "chrome/browser/media/desktop_streams_registry.h"
 #include "chrome/browser/media/media_stream_capture_indicator.h"
 #include "chrome/browser/media/media_stream_infobar_delegate.h"
@@ -37,6 +36,7 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/media_stream_request.h"
 #include "extensions/common/constants.h"
@@ -59,6 +59,10 @@
 #define AUDIO_STREAM_MONITORING
 #include "chrome/browser/media/audio_stream_monitor.h"
 #endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/api/tab_capture/tab_capture_registry.h"
+#endif
 
 using content::BrowserThread;
 using content::MediaCaptureDevices;
@@ -114,7 +118,6 @@ bool IsBuiltInExtension(const GURL& origin) {
 
 // Returns true of the security origin is associated with casting.
 bool IsOriginForCasting(const GURL& origin) {
-#if defined(OFFICIAL_BUILD)
   // Whitelisted tab casting extensions.
   return
       // Dev
@@ -127,9 +130,6 @@ bool IsOriginForCasting(const GURL& origin) {
       origin.spec() == "chrome-extension://dliochdbjfkdbacpmhlcpmleaejidimm/" ||
       // Google Cast Stable
       origin.spec() == "chrome-extension://boadgeojelhgndaghljhdicfkmllpafd/";
-#else
-  return false;
-#endif
 }
 
 // Helper to get title of the calling application shown in the screen capture
@@ -274,17 +274,6 @@ MediaCaptureDevicesDispatcher::MediaCaptureDevicesDispatcher()
   notifications_registrar_.Add(
       this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
       content::NotificationService::AllSources());
-
-  // AVFoundation is used for video/audio device monitoring and video capture in
-  // Mac. Experimentally, connect it in Canary and Unkown (developer builds).
-#if defined(OS_MACOSX)
-  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
-  if (channel == chrome::VersionInfo::CHANNEL_CANARY ||
-      channel == chrome::VersionInfo::CHANNEL_UNKNOWN) {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kEnableAVFoundation);
-  }
-#endif
 }
 
 MediaCaptureDevicesDispatcher::~MediaCaptureDevicesDispatcher() {}
@@ -391,11 +380,24 @@ void MediaCaptureDevicesDispatcher::ProcessDesktopCaptureAccessRequest(
   // The extension name that the stream is registered with.
   std::string original_extension_name;
   // Resolve DesktopMediaID for the specified device id.
-  content::DesktopMediaID media_id =
-      GetDesktopStreamsRegistry()->RequestMediaForStreamId(
-          request.requested_video_device_id, request.render_process_id,
-          request.render_view_id, request.security_origin,
-          &original_extension_name);
+  content::DesktopMediaID media_id;
+  // TODO(miu): Replace "main RenderFrame" IDs with the request's actual
+  // RenderFrame IDs once the desktop capture extension API implementation is
+  // fixed.  http://crbug.com/304341
+  content::WebContents* const web_contents_for_stream =
+      content::WebContents::FromRenderFrameHost(
+          content::RenderFrameHost::FromID(request.render_process_id,
+                                           request.render_frame_id));
+  content::RenderFrameHost* const main_frame = web_contents_for_stream ?
+      web_contents_for_stream->GetMainFrame() : NULL;
+  if (main_frame) {
+    media_id = GetDesktopStreamsRegistry()->RequestMediaForStreamId(
+        request.requested_video_device_id,
+        main_frame->GetProcess()->GetID(),
+        main_frame->GetRoutingID(),
+        request.security_origin,
+        &original_extension_name);
+  }
 
   // Received invalid device id.
   if (media_id.type == content::DesktopMediaID::TYPE_NONE) {
@@ -532,10 +534,7 @@ void MediaCaptureDevicesDispatcher::ProcessTabCaptureAccessRequest(
   content::MediaStreamDevices devices;
   scoped_ptr<content::MediaStreamUI> ui;
 
-#if defined(OS_ANDROID)
-  // Tab capture is not supported on Android.
-  callback.Run(devices, content::MEDIA_DEVICE_TAB_CAPTURE_FAILURE, ui.Pass());
-#else  // defined(OS_ANDROID)
+#if defined(ENABLE_EXTENSIONS)
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
   extensions::TabCaptureRegistry* tab_capture_registry =
@@ -545,9 +544,8 @@ void MediaCaptureDevicesDispatcher::ProcessTabCaptureAccessRequest(
     callback.Run(devices, content::MEDIA_DEVICE_INVALID_STATE, ui.Pass());
     return;
   }
-  bool tab_capture_allowed =
-      tab_capture_registry->VerifyRequest(request.render_process_id,
-                                          request.render_view_id);
+  const bool tab_capture_allowed = tab_capture_registry->VerifyRequest(
+      request.render_process_id, request.render_frame_id, extension->id());
 
   if (request.audio_type == content::MEDIA_TAB_AUDIO_CAPTURE &&
       tab_capture_allowed &&
@@ -574,7 +572,9 @@ void MediaCaptureDevicesDispatcher::ProcessTabCaptureAccessRequest(
     devices.empty() ? content::MEDIA_DEVICE_INVALID_STATE :
                       content::MEDIA_DEVICE_OK,
     ui.Pass());
-#endif  // !defined(OS_ANDROID)
+#else  // defined(ENABLE_EXTENSIONS)
+  callback.Run(devices, content::MEDIA_DEVICE_TAB_CAPTURE_FAILURE, ui.Pass());
+#endif  // defined(ENABLE_EXTENSIONS)
 }
 
 void MediaCaptureDevicesDispatcher::
@@ -834,18 +834,18 @@ void MediaCaptureDevicesDispatcher::OnVideoCaptureDevicesChanged() {
 
 void MediaCaptureDevicesDispatcher::OnMediaRequestStateChanged(
     int render_process_id,
-    int render_view_id,
+    int render_frame_id,
     int page_request_id,
     const GURL& security_origin,
-    const content::MediaStreamDevice& device,
+    content::MediaStreamType stream_type,
     content::MediaRequestState state) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(
           &MediaCaptureDevicesDispatcher::UpdateMediaRequestStateOnUIThread,
-          base::Unretained(this), render_process_id, render_view_id,
-          page_request_id, security_origin, device, state));
+          base::Unretained(this), render_process_id, render_frame_id,
+          page_request_id, security_origin, stream_type, state));
 }
 
 void MediaCaptureDevicesDispatcher::OnAudioStreamPlaying(
@@ -907,17 +907,17 @@ void MediaCaptureDevicesDispatcher::NotifyVideoDevicesChangedOnUIThread() {
 
 void MediaCaptureDevicesDispatcher::UpdateMediaRequestStateOnUIThread(
     int render_process_id,
-    int render_view_id,
+    int render_frame_id,
     int page_request_id,
     const GURL& security_origin,
-    const content::MediaStreamDevice& device,
+    content::MediaStreamType stream_type,
     content::MediaRequestState state) {
   // Track desktop capture sessions.  Tracking is necessary to avoid unbalanced
   // session counts since not all requests will reach MEDIA_REQUEST_STATE_DONE,
   // but they will all reach MEDIA_REQUEST_STATE_CLOSING.
-  if (device.type == content::MEDIA_DESKTOP_VIDEO_CAPTURE) {
+  if (stream_type == content::MEDIA_DESKTOP_VIDEO_CAPTURE) {
     if (state == content::MEDIA_REQUEST_STATE_DONE) {
-      DesktopCaptureSession session = { render_process_id, render_view_id,
+      DesktopCaptureSession session = { render_process_id, render_frame_id,
                                         page_request_id };
       desktop_capture_sessions_.push_back(session);
     } else if (state == content::MEDIA_REQUEST_STATE_CLOSING) {
@@ -926,7 +926,7 @@ void MediaCaptureDevicesDispatcher::UpdateMediaRequestStateOnUIThread(
            it != desktop_capture_sessions_.end();
            ++it) {
         if (it->render_process_id == render_process_id &&
-            it->render_view_id == render_view_id &&
+            it->render_frame_id == render_frame_id &&
             it->page_request_id == page_request_id) {
           desktop_capture_sessions_.erase(it);
           break;
@@ -944,7 +944,7 @@ void MediaCaptureDevicesDispatcher::UpdateMediaRequestStateOnUIThread(
       for (RequestsQueue::iterator it = queue.begin();
            it != queue.end(); ++it) {
         if (it->request.render_process_id == render_process_id &&
-            it->request.render_view_id == render_view_id &&
+            it->request.render_frame_id == render_frame_id &&
             it->request.page_request_id == page_request_id) {
           queue.erase(it);
           found = true;
@@ -957,7 +957,7 @@ void MediaCaptureDevicesDispatcher::UpdateMediaRequestStateOnUIThread(
   }
 
 #if defined(OS_CHROMEOS)
-  if (IsOriginForCasting(security_origin) && IsVideoMediaType(device.type)) {
+  if (IsOriginForCasting(security_origin) && IsVideoMediaType(stream_type)) {
     // Notify ash that casting state has changed.
     if (state == content::MEDIA_REQUEST_STATE_DONE) {
       ash::Shell::GetInstance()->OnCastingSessionStartedOrStopped(true);
@@ -969,8 +969,8 @@ void MediaCaptureDevicesDispatcher::UpdateMediaRequestStateOnUIThread(
 
   FOR_EACH_OBSERVER(Observer, observers_,
                     OnRequestUpdate(render_process_id,
-                                    render_view_id,
-                                    device,
+                                    render_frame_id,
+                                    stream_type,
                                     state));
 }
 

@@ -6,8 +6,8 @@
 #define V8_MIPS_MACRO_ASSEMBLER_MIPS_H_
 
 #include "src/assembler.h"
-#include "src/mips/assembler-mips.h"
 #include "src/globals.h"
+#include "src/mips/assembler-mips.h"
 
 namespace v8 {
 namespace internal {
@@ -84,7 +84,14 @@ Register GetRegisterThatIsNotOneOf(Register reg1,
                                    Register reg5 = no_reg,
                                    Register reg6 = no_reg);
 
-bool AreAliased(Register r1, Register r2, Register r3, Register r4);
+bool AreAliased(Register reg1,
+                Register reg2,
+                Register reg3 = no_reg,
+                Register reg4 = no_reg,
+                Register reg5 = no_reg,
+                Register reg6 = no_reg,
+                Register reg7 = no_reg,
+                Register reg8 = no_reg);
 
 
 // -----------------------------------------------------------------------------
@@ -109,7 +116,7 @@ inline MemOperand FieldMemOperand(Register object, int offset) {
 // Generate a MemOperand for storing arguments 5..N on the stack
 // when calling CallCFunction().
 inline MemOperand CFunctionArgumentOperand(int index) {
-  ASSERT(index > kCArgSlotCount);
+  DCHECK(index > kCArgSlotCount);
   // Argument 5 takes the slot just past the four Arg-slots.
   int offset = (index - 5) * kPointerSize + kCArgsSlotsSize;
   return MemOperand(sp, offset);
@@ -449,7 +456,7 @@ class MacroAssembler: public Assembler {
   // nop(type)). These instructions are generated to mark special location in
   // the code, like some special IC code.
   static inline bool IsMarkedCode(Instr instr, int type) {
-    ASSERT((FIRST_IC_MARKER <= type) && (type < LAST_CODE_MARKER));
+    DCHECK((FIRST_IC_MARKER <= type) && (type < LAST_CODE_MARKER));
     return IsNop(instr, type);
   }
 
@@ -467,7 +474,7 @@ class MacroAssembler: public Assembler {
                   rs == static_cast<uint32_t>(ToNumber(zero_reg)));
     int type =
         (sllzz && FIRST_IC_MARKER <= sa && sa < LAST_CODE_MARKER) ? sa : -1;
-    ASSERT((type == -1) ||
+    DCHECK((type == -1) ||
            ((FIRST_IC_MARKER <= type) && (type < LAST_CODE_MARKER)));
     return type;
   }
@@ -546,7 +553,8 @@ class MacroAssembler: public Assembler {
                           Register scratch2,
                           Register heap_number_map,
                           Label* gc_required,
-                          TaggingMode tagging_mode = TAG_RESULT);
+                          TaggingMode tagging_mode = TAG_RESULT,
+                          MutableMode mode = IMMUTABLE);
   void AllocateHeapNumberWithValue(Register result,
                                    FPURegister value,
                                    Register scratch1,
@@ -681,7 +689,7 @@ class MacroAssembler: public Assembler {
 
   // Pop two registers. Pops rightmost register first (from lower address).
   void Pop(Register src1, Register src2) {
-    ASSERT(!src1.is(src2));
+    DCHECK(!src1.is(src2));
     lw(src2, MemOperand(sp, 0 * kPointerSize));
     lw(src1, MemOperand(sp, 1 * kPointerSize));
     Addu(sp, sp, 2 * kPointerSize);
@@ -703,17 +711,15 @@ class MacroAssembler: public Assembler {
   // RegList constant kSafepointSavedRegisters.
   void PushSafepointRegisters();
   void PopSafepointRegisters();
-  void PushSafepointRegistersAndDoubles();
-  void PopSafepointRegistersAndDoubles();
   // Store value in register src in the safepoint stack slot for
   // register dst.
   void StoreToSafepointRegisterSlot(Register src, Register dst);
-  void StoreToSafepointRegistersAndDoublesSlot(Register src, Register dst);
   // Load the value of the src register from its safepoint stack slot
   // into register dst.
   void LoadFromSafepointRegisterSlot(Register dst, Register src);
 
-  // Flush the I-cache from asm code. You should use CPU::FlushICache from C.
+  // Flush the I-cache from asm code. You should use CpuFeatures::FlushICache
+  // from C.
   // Does not handle errors.
   void FlushICache(Register address, unsigned instructions);
 
@@ -1070,7 +1076,7 @@ class MacroAssembler: public Assembler {
     lw(type, FieldMemOperand(obj, HeapObject::kMapOffset));
     lbu(type, FieldMemOperand(type, Map::kInstanceTypeOffset));
     And(type, type, Operand(kIsNotStringMask));
-    ASSERT_EQ(0, kStringTag);
+    DCHECK_EQ(0, kStringTag);
     return eq;
   }
 
@@ -1282,7 +1288,7 @@ const Operand& rt = Operand(zero_reg), BranchDelaySlot bd = PROTECT
   };
 
   Handle<Object> CodeObject() {
-    ASSERT(!code_object_.is_null());
+    DCHECK(!code_object_.is_null());
     return code_object_;
   }
 

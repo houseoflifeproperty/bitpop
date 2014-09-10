@@ -9,15 +9,7 @@
       "--url",
       "https://chromium.googlesource.com/chromium/src.git"
     ],
-    "name": "git setup",
-    "seed_steps": [
-      "git setup",
-      "git fetch",
-      "git checkout",
-      "git clean",
-      "submodule sync",
-      "submodule update"
-    ]
+    "name": "git setup"
   },
   {
     "cmd": [
@@ -87,5 +79,21 @@
     ],
     "cwd": "[SLAVE_BUILD]/src",
     "name": "git status"
+  },
+  {
+    "cmd": [
+      "git",
+      "status"
+    ],
+    "cwd": "[SLAVE_BUILD]/src",
+    "name": "git status can_fail_build"
+  },
+  {
+    "cmd": [
+      "git",
+      "status"
+    ],
+    "cwd": "[SLAVE_BUILD]/src",
+    "name": "git status cannot_fail_build"
   }
 ]

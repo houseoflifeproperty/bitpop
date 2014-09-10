@@ -31,15 +31,7 @@ class TestDiscardableShader : public SkShader {
     CreateBitmap(gfx::Size(50, 50), "discardable", &bitmap_);
   }
 
-  TestDiscardableShader(SkFlattenableReadBuffer& flattenable_buffer) {
-    SkOrderedReadBuffer& buffer =
-        static_cast<SkOrderedReadBuffer&>(flattenable_buffer);
-    SkReader32* reader = buffer.getReader32();
-
-    reader->skip(-4);
-    uint32_t toSkip = reader->readU32();
-    reader->skip(toSkip);
-
+  TestDiscardableShader(SkReadBuffer& buffer) : SkShader(buffer) {
     CreateBitmap(gfx::Size(50, 50), "discardable", &bitmap_);
   }
 
@@ -63,11 +55,7 @@ class TestDiscardableShader : public SkShader {
 };
 
 void CreateBitmap(gfx::Size size, const char* uri, SkBitmap* bitmap) {
-  const SkImageInfo info = {
-    size.width(), size.height(), kPMColor_SkColorType, kPremul_SkAlphaType
-  };
-
-  bitmap->allocPixels(info);
+  bitmap->allocN32Pixels(size.width(), size.height());
   bitmap->pixelRef()->setImmutable();
   bitmap->pixelRef()->setURI(uri);
 }

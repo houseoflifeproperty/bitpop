@@ -34,9 +34,10 @@
 #include "platform/network/ResourceLoadPriority.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/Referrer.h"
+#include "public/platform/WebURLRequest.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 enum ResourceRequestCachePolicy {
     UseProtocolCachePolicy, // normal load
@@ -51,28 +52,6 @@ struct CrossThreadResourceRequestData;
 class PLATFORM_EXPORT ResourceRequest {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    // The type of this ResourceRequest, based on how the resource will be used.
-    enum TargetType {
-        TargetIsMainFrame,
-        TargetIsSubframe,
-        TargetIsSubresource, // Resource is a generic subresource. (Generally a specific type should be specified)
-        TargetIsStyleSheet,
-        TargetIsScript,
-        TargetIsFont,
-        TargetIsImage,
-        TargetIsObject,
-        TargetIsMedia,
-        TargetIsWorker,
-        TargetIsSharedWorker,
-        TargetIsPrefetch,
-        TargetIsFavicon,
-        TargetIsXHR,
-        TargetIsTextTrack,
-        TargetIsPing,
-        TargetIsServiceWorker,
-        TargetIsUnspecified,
-    };
-
     class ExtraData : public RefCounted<ExtraData> {
     public:
         virtual ~ExtraData() { }
@@ -146,6 +125,7 @@ public:
     const AtomicString& httpOrigin() const { return httpHeaderField("Origin"); }
     void setHTTPOrigin(const AtomicString& httpOrigin) { setHTTPHeaderField("Origin", httpOrigin); }
     void clearHTTPOrigin();
+    void addHTTPOriginIfNeeded(const AtomicString& origin);
 
     const AtomicString& httpUserAgent() const { return httpHeaderField("User-Agent"); }
     void setHTTPUserAgent(const AtomicString& httpUserAgent) { setHTTPHeaderField("User-Agent", httpUserAgent); }
@@ -201,13 +181,15 @@ public:
     ExtraData* extraData() const { return m_extraData.get(); }
     void setExtraData(PassRefPtr<ExtraData> extraData) { m_extraData = extraData; }
 
-    // What this request is for.
-    TargetType targetType() const { return m_targetType; }
-    void setTargetType(TargetType type) { m_targetType = type; }
+    blink::WebURLRequest::RequestContext requestContext() const { return m_requestContext; }
+    void setRequestContext(blink::WebURLRequest::RequestContext context) { m_requestContext = context; }
 
-    bool cacheControlContainsNoCache();
-    bool cacheControlContainsNoStore();
-    bool hasCacheValidatorFields();
+    blink::WebURLRequest::FrameType frameType() const { return m_frameType; }
+    void setFrameType(blink::WebURLRequest::FrameType frameType) { m_frameType = frameType; }
+
+    bool cacheControlContainsNoCache() const;
+    bool cacheControlContainsNoStore() const;
+    bool hasCacheValidatorFields() const;
 
     static double defaultTimeoutInterval(); // May return 0 when using platform default.
     static void setDefaultTimeoutInterval(double);
@@ -216,6 +198,8 @@ public:
 
 private:
     void initialize(const KURL& url, ResourceRequestCachePolicy cachePolicy);
+
+    const CacheControlHeader& cacheControlHeader() const;
 
     KURL m_url;
     ResourceRequestCachePolicy m_cachePolicy;
@@ -235,9 +219,11 @@ private:
     int m_requestorProcessID;
     int m_appCacheHostID;
     RefPtr<ExtraData> m_extraData;
-    TargetType m_targetType;
+    blink::WebURLRequest::RequestContext m_requestContext;
+    blink::WebURLRequest::FrameType m_frameType;
     ReferrerPolicy m_referrerPolicy;
-    CacheControlHeader m_cacheControlHeader;
+
+    mutable CacheControlHeader m_cacheControlHeaderCache;
 
     static double s_defaultTimeoutInterval;
 };
@@ -269,12 +255,13 @@ public:
     int m_requestorID;
     int m_requestorProcessID;
     int m_appCacheHostID;
-    ResourceRequest::TargetType m_targetType;
+    blink::WebURLRequest::RequestContext m_requestContext;
+    blink::WebURLRequest::FrameType m_frameType;
     ReferrerPolicy m_referrerPolicy;
 };
 
 unsigned initializeMaximumHTTPConnectionCountPerHost();
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ResourceRequest_h

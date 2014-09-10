@@ -13,6 +13,7 @@
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
 #include "chrome/browser/drive/drive_api_service.h"
@@ -151,7 +152,7 @@ bool CreateTemporaryFile(const base::FilePath& dir_path,
   *temp_file =
       webkit_blob::ScopedFile(temp_file_path,
                               webkit_blob::ScopedFile::DELETE_ON_SCOPE_OUT,
-                              base::MessageLoopProxy::current().get());
+                              base::ThreadTaskRunnerHandle::Get().get());
   return success;
 }
 
@@ -348,7 +349,7 @@ void APIUtil::DidGetDirectory(const std::string& parent_resource_id,
   DVLOG(2) << "Found Drive directory.";
 
   // TODO(tzik): Handle error.
-  DCHECK_EQ(google_apis::ENTRY_KIND_FOLDER, entry->kind());
+  DCHECK_EQ(google_apis::ResourceEntry::ENTRY_KIND_FOLDER, entry->kind());
   DCHECK_EQ(directory_name, entry->title());
 
   if (entry->title() == GetSyncRootDirectoryName())
@@ -638,11 +639,8 @@ void APIUtil::DidGetDriveRootResourceIdForEnsureSyncRoot(
 }
 
 // static
-// TODO(calvinlo): Delete this when Sync Directory Operations are supported by
-// default.
 std::string APIUtil::GetSyncRootDirectoryName() {
-  return IsSyncFSDirectoryOperationEnabled() ? kSyncRootFolderTitleDev
-                                             : kSyncRootFolderTitle;
+  return kSyncRootFolderTitle;
 }
 
 // static

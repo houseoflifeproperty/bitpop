@@ -9,6 +9,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/run_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_uploader.h"
 #include "chrome/browser/drive/fake_drive_service.h"
@@ -73,9 +74,8 @@ class LocalToRemoteSyncerTest : public testing::Test {
         fake_drive_service.PassAs<drive::DriveServiceInterface>(),
         drive_uploader.Pass(),
         NULL,
-        base::MessageLoopProxy::current(),
-        base::MessageLoopProxy::current(),
-        base::MessageLoopProxy::current()));
+        base::ThreadTaskRunnerHandle::Get(),
+        base::ThreadTaskRunnerHandle::Get()));
     context_->SetRemoteChangeProcessor(remote_change_processor_.get());
 
     RegisterSyncableFileSystem();
@@ -83,7 +83,7 @@ class LocalToRemoteSyncerTest : public testing::Test {
     sync_task_manager_.reset(new SyncTaskManager(
         base::WeakPtr<SyncTaskManager::Client>(),
         10 /* maximum_background_task */,
-        base::MessageLoopProxy::current()));
+        base::ThreadTaskRunnerHandle::Get()));
     sync_task_manager_->Initialize(SYNC_STATUS_OK);
   }
 
@@ -195,8 +195,23 @@ class LocalToRemoteSyncerTest : public testing::Test {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     scoped_ptr<RemoteToLocalSyncer>
         syncer(new RemoteToLocalSyncer(context_.get()));
-    syncer->RunExclusive(CreateResultReceiver(&status));
+    syncer->RunPreflight(SyncTaskToken::CreateForTesting(
+        CreateResultReceiver(&status)));
     base::RunLoop().RunUntilIdle();
+    return status;
+  }
+
+  SyncStatusCode RunRemoteToLocalSyncerUntilIdle() {
+    SyncStatusCode status;
+    int retry_count = 0;
+    do {
+      if (retry_count++ > kRetryLimit)
+        break;
+      status = RunRemoteToLocalSyncer();
+    } while (status == SYNC_STATUS_OK ||
+             status == SYNC_STATUS_RETRY ||
+             GetMetadataDatabase()->PromoteLowerPriorityTrackersToNormal());
+    EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC, status);
     return status;
   }
 
@@ -219,9 +234,10 @@ class LocalToRemoteSyncerTest : public testing::Test {
     return entries[0]->resource_id();
   }
 
-  void VerifyTitleUniqueness(const std::string& parent_folder_id,
-                             const std::string& title,
-                             google_apis::DriveEntryKind kind) {
+  void VerifyTitleUniqueness(
+      const std::string& parent_folder_id,
+      const std::string& title,
+      google_apis::ResourceEntry::ResourceEntryKind kind) {
     ScopedVector<google_apis::ResourceEntry> entries;
     EXPECT_EQ(google_apis::HTTP_SUCCESS,
               fake_drive_helper_->SearchByTitle(
@@ -247,7 +263,6 @@ class LocalToRemoteSyncerTest : public testing::Test {
   scoped_ptr<SyncEngineContext> context_;
   scoped_ptr<FakeDriveServiceHelper> fake_drive_helper_;
   scoped_ptr<FakeRemoteChangeProcessor> remote_change_processor_;
-  scoped_ptr<MetadataDatabase> metadata_database_;
   scoped_ptr<SyncTaskManager> sync_task_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(LocalToRemoteSyncerTest);
@@ -276,9 +291,12 @@ TEST_F(LocalToRemoteSyncerTest, CreateFile) {
   std::string folder_id = GetFileIDForParentAndTitle(app_root, "folder");
   ASSERT_FALSE(folder_id.empty());
 
-  VerifyTitleUniqueness(app_root, "file1", google_apis::ENTRY_KIND_FILE);
-  VerifyTitleUniqueness(app_root, "folder", google_apis::ENTRY_KIND_FOLDER);
-  VerifyTitleUniqueness(folder_id, "file2", google_apis::ENTRY_KIND_FILE);
+  VerifyTitleUniqueness(
+      app_root, "file1", google_apis::ResourceEntry::ENTRY_KIND_FILE);
+  VerifyTitleUniqueness(
+      app_root, "folder", google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
+  VerifyTitleUniqueness(
+      folder_id, "file2", google_apis::ResourceEntry::ENTRY_KIND_FILE);
 }
 
 TEST_F(LocalToRemoteSyncerTest, CreateFileOnMissingPath) {
@@ -307,9 +325,12 @@ TEST_F(LocalToRemoteSyncerTest, CreateFileOnMissingPath) {
   std::string folder_id2 = GetFileIDForParentAndTitle(folder_id1, "folder2");
   ASSERT_FALSE(folder_id2.empty());
 
-  VerifyTitleUniqueness(app_root, "folder1", google_apis::ENTRY_KIND_FOLDER);
-  VerifyTitleUniqueness(folder_id1, "folder2", google_apis::ENTRY_KIND_FOLDER);
-  VerifyTitleUniqueness(folder_id2, "file", google_apis::ENTRY_KIND_FILE);
+  VerifyTitleUniqueness(
+      app_root, "folder1", google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
+  VerifyTitleUniqueness(
+      folder_id1, "folder2", google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
+  VerifyTitleUniqueness(
+      folder_id2, "file", google_apis::ResourceEntry::ENTRY_KIND_FILE);
 }
 
 TEST_F(LocalToRemoteSyncerTest, DeleteFile) {
@@ -328,8 +349,10 @@ TEST_F(LocalToRemoteSyncerTest, DeleteFile) {
                  SYNC_FILE_TYPE_DIRECTORY),
       URL(kOrigin, "folder")));
 
-  VerifyTitleUniqueness(app_root, "file", google_apis::ENTRY_KIND_FILE);
-  VerifyTitleUniqueness(app_root, "folder", google_apis::ENTRY_KIND_FOLDER);
+  VerifyTitleUniqueness(
+      app_root, "file", google_apis::ResourceEntry::ENTRY_KIND_FILE);
+  VerifyTitleUniqueness(
+      app_root, "folder", google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
 
   EXPECT_EQ(SYNC_STATUS_OK, RunLocalToRemoteSyncer(
       FileChange(FileChange::FILE_CHANGE_DELETE,
@@ -362,8 +385,8 @@ TEST_F(LocalToRemoteSyncerTest, Conflict_CreateFileOnFolder) {
   ScopedVector<google_apis::ResourceEntry> entries =
       GetResourceEntriesForParentAndTitle(app_root, "foo");
   ASSERT_EQ(2u, entries.size());
-  EXPECT_EQ(google_apis::ENTRY_KIND_FOLDER, entries[0]->kind());
-  EXPECT_EQ(google_apis::ENTRY_KIND_FILE, entries[1]->kind());
+  EXPECT_EQ(google_apis::ResourceEntry::ENTRY_KIND_FOLDER, entries[0]->kind());
+  EXPECT_EQ(google_apis::ResourceEntry::ENTRY_KIND_FILE, entries[1]->kind());
 }
 
 TEST_F(LocalToRemoteSyncerTest, Conflict_CreateFolderOnFile) {
@@ -385,8 +408,8 @@ TEST_F(LocalToRemoteSyncerTest, Conflict_CreateFolderOnFile) {
   ScopedVector<google_apis::ResourceEntry> entries =
       GetResourceEntriesForParentAndTitle(app_root, "foo");
   ASSERT_EQ(2u, entries.size());
-  EXPECT_EQ(google_apis::ENTRY_KIND_FILE, entries[0]->kind());
-  EXPECT_EQ(google_apis::ENTRY_KIND_FOLDER, entries[1]->kind());
+  EXPECT_EQ(google_apis::ResourceEntry::ENTRY_KIND_FILE, entries[0]->kind());
+  EXPECT_EQ(google_apis::ResourceEntry::ENTRY_KIND_FOLDER, entries[1]->kind());
 }
 
 TEST_F(LocalToRemoteSyncerTest, Conflict_CreateFileOnFile) {
@@ -408,8 +431,8 @@ TEST_F(LocalToRemoteSyncerTest, Conflict_CreateFileOnFile) {
   ScopedVector<google_apis::ResourceEntry> entries =
       GetResourceEntriesForParentAndTitle(app_root, "foo");
   ASSERT_EQ(2u, entries.size());
-  EXPECT_EQ(google_apis::ENTRY_KIND_FILE, entries[0]->kind());
-  EXPECT_EQ(google_apis::ENTRY_KIND_FILE, entries[1]->kind());
+  EXPECT_EQ(google_apis::ResourceEntry::ENTRY_KIND_FILE, entries[0]->kind());
+  EXPECT_EQ(google_apis::ResourceEntry::ENTRY_KIND_FILE, entries[1]->kind());
 }
 
 TEST_F(LocalToRemoteSyncerTest, Conflict_UpdateDeleteOnFile) {
@@ -421,16 +444,8 @@ TEST_F(LocalToRemoteSyncerTest, Conflict_UpdateDeleteOnFile) {
 
   const std::string file_id = CreateRemoteFile(app_root, "foo", "data");
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
-
-  SyncStatusCode status;
-  int retry_count = 0;
-  do {
-    if (retry_count++ > kRetryLimit)
-      break;
-    status = RunRemoteToLocalSyncer();
-  } while (status == SYNC_STATUS_OK ||
-           status == SYNC_STATUS_RETRY);
-  EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC, status);
+  EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC,
+            RunRemoteToLocalSyncerUntilIdle());
 
   DeleteResource(file_id);
 
@@ -446,7 +461,7 @@ TEST_F(LocalToRemoteSyncerTest, Conflict_UpdateDeleteOnFile) {
   ScopedVector<google_apis::ResourceEntry> entries =
       GetResourceEntriesForParentAndTitle(app_root, "foo");
   ASSERT_EQ(1u, entries.size());
-  EXPECT_EQ(google_apis::ENTRY_KIND_FILE, entries[0]->kind());
+  EXPECT_EQ(google_apis::ResourceEntry::ENTRY_KIND_FILE, entries[0]->kind());
   EXPECT_TRUE(!entries[0]->deleted());
   EXPECT_NE(file_id, entries[0]->resource_id());
 }
@@ -460,15 +475,8 @@ TEST_F(LocalToRemoteSyncerTest, Conflict_CreateDeleteOnFile) {
 
   const std::string file_id = CreateRemoteFile(app_root, "foo", "data");
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
-  SyncStatusCode status;
-  int retry_count = 0;
-  do {
-    if (retry_count++ > kRetryLimit)
-      break;
-    status = RunRemoteToLocalSyncer();
-  } while (status == SYNC_STATUS_OK ||
-           status == SYNC_STATUS_RETRY);
-  EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC, status);
+  EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC,
+            RunRemoteToLocalSyncerUntilIdle());
 
   DeleteResource(file_id);
 
@@ -482,7 +490,7 @@ TEST_F(LocalToRemoteSyncerTest, Conflict_CreateDeleteOnFile) {
   ScopedVector<google_apis::ResourceEntry> entries =
       GetResourceEntriesForParentAndTitle(app_root, "foo");
   ASSERT_EQ(1u, entries.size());
-  EXPECT_EQ(google_apis::ENTRY_KIND_FILE, entries[0]->kind());
+  EXPECT_EQ(google_apis::ResourceEntry::ENTRY_KIND_FILE, entries[0]->kind());
   EXPECT_TRUE(!entries[0]->deleted());
   EXPECT_NE(file_id, entries[0]->resource_id());
 }
@@ -504,8 +512,8 @@ TEST_F(LocalToRemoteSyncerTest, Conflict_CreateFolderOnFolder) {
   ScopedVector<google_apis::ResourceEntry> entries =
       GetResourceEntriesForParentAndTitle(app_root, "foo");
   ASSERT_EQ(2u, entries.size());
-  EXPECT_EQ(google_apis::ENTRY_KIND_FOLDER, entries[0]->kind());
-  EXPECT_EQ(google_apis::ENTRY_KIND_FOLDER, entries[1]->kind());
+  EXPECT_EQ(google_apis::ResourceEntry::ENTRY_KIND_FOLDER, entries[0]->kind());
+  EXPECT_EQ(google_apis::ResourceEntry::ENTRY_KIND_FOLDER, entries[1]->kind());
   EXPECT_TRUE(!entries[0]->deleted());
   EXPECT_TRUE(!entries[1]->deleted());
   EXPECT_TRUE(folder_id == entries[0]->resource_id() ||
@@ -527,15 +535,8 @@ TEST_F(LocalToRemoteSyncerTest, AppRootDeletion) {
 
   DeleteResource(app_root);
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
-  SyncStatusCode status;
-  int retry_count = 0;
-  do {
-    if (retry_count++ > kRetryLimit)
-      break;
-    status = RunRemoteToLocalSyncer();
-  } while (status == SYNC_STATUS_OK ||
-           status == SYNC_STATUS_RETRY);
-  EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC, status);
+  EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC,
+            RunRemoteToLocalSyncerUntilIdle());
 
   EXPECT_EQ(SYNC_STATUS_UNKNOWN_ORIGIN, RunLocalToRemoteSyncer(
       FileChange(FileChange::FILE_CHANGE_ADD_OR_UPDATE,

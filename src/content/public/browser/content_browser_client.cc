@@ -149,11 +149,12 @@ bool ContentBrowserClient::AllowWorkerDatabase(
   return true;
 }
 
-bool ContentBrowserClient::AllowWorkerFileSystem(
+void ContentBrowserClient::AllowWorkerFileSystem(
     const GURL& url,
     ResourceContext* context,
-    const std::vector<std::pair<int, int> >& render_frames) {
-  return true;
+    const std::vector<std::pair<int, int> >& render_frames,
+    base::Callback<void(bool)> callback) {
+  callback.Run(true);
 }
 
 bool ContentBrowserClient::AllowWorkerIndexedDB(
@@ -203,12 +204,12 @@ MediaObserver* ContentBrowserClient::GetMediaObserver() {
   return NULL;
 }
 
-blink::WebNotificationPresenter::Permission
-    ContentBrowserClient::CheckDesktopNotificationPermission(
-        const GURL& source_origin,
-        ResourceContext* context,
-        int render_process_id) {
-  return blink::WebNotificationPresenter::PermissionAllowed;
+blink::WebNotificationPermission
+ContentBrowserClient::CheckDesktopNotificationPermission(
+    const GURL& source_origin,
+    ResourceContext* context,
+    int render_process_id) {
+  return blink::WebNotificationPermissionAllowed;
 }
 
 void ContentBrowserClient::RequestGeolocationPermission(

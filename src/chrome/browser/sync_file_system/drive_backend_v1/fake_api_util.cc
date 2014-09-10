@@ -8,8 +8,8 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/message_loop/message_loop_proxy.h"
-#include "google_apis/drive/drive_entry_kinds.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "webkit/common/blob/scoped_file.h"
 
 namespace sync_file_system {
@@ -76,7 +76,7 @@ void FakeAPIUtil::RemoveObserver(APIUtilObserver* observer) {}
 
 void FakeAPIUtil::GetDriveDirectoryForSyncRoot(
     const ResourceIdCallback& callback) {
-  base::MessageLoopProxy::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(callback,
                  google_apis::HTTP_SUCCESS,
@@ -87,7 +87,7 @@ void FakeAPIUtil::GetDriveDirectoryForOrigin(
     const std::string& sync_root_resource_id,
     const GURL& origin,
     const ResourceIdCallback& callback) {
-  base::MessageLoopProxy::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(callback,
                  google_apis::HTTP_SUCCESS,
@@ -95,7 +95,7 @@ void FakeAPIUtil::GetDriveDirectoryForOrigin(
 }
 
 void FakeAPIUtil::GetLargestChangeStamp(const ChangeStampCallback& callback) {
-  base::MessageLoopProxy::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(callback, google_apis::HTTP_SUCCESS, largest_changestamp_));
 }
@@ -131,7 +131,7 @@ void FakeAPIUtil::ListChanges(int64 start_changestamp,
   change_feed->set_entries(entries.Pass());
   change_feed->set_largest_changestamp(largest_changestamp_);
 
-  base::MessageLoopProxy::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(
           callback, google_apis::HTTP_SUCCESS, base::Passed(&change_feed)));
@@ -162,7 +162,7 @@ void FakeAPIUtil::DownloadFile(const std::string& resource_id,
   }
 
   webkit_blob::ScopedFile dummy;
-  base::MessageLoopProxy::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(callback, error, file_md5, file_size, updated_time,
                  base::Passed(&dummy)));
@@ -194,7 +194,7 @@ void FakeAPIUtil::DeleteFile(const std::string& resource_id,
                              const std::string& remote_file_md5,
                              const GDataErrorCallback& callback) {
   if (!ContainsKey(remote_resources_, resource_id)) {
-    base::MessageLoopProxy::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::Bind(callback, google_apis::HTTP_NOT_FOUND));
     return;
@@ -209,7 +209,7 @@ void FakeAPIUtil::DeleteFile(const std::string& resource_id,
                    SYNC_FILE_TYPE_UNKNOWN,
                    true /* deleted */);
 
-  base::MessageLoopProxy::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(callback, google_apis::HTTP_SUCCESS));
 }
@@ -252,13 +252,13 @@ scoped_ptr<google_apis::ResourceEntry> FakeAPIUtil::CreateResourceEntry(
 
   switch (resource.type) {
     case SYNC_FILE_TYPE_FILE:
-      entry->set_kind(google_apis::ENTRY_KIND_FILE);
+      entry->set_kind(google_apis::ResourceEntry::ENTRY_KIND_FILE);
       break;
     case SYNC_FILE_TYPE_DIRECTORY:
-      entry->set_kind(google_apis::ENTRY_KIND_FOLDER);
+      entry->set_kind(google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
       break;
     case SYNC_FILE_TYPE_UNKNOWN:
-      entry->set_kind(google_apis::ENTRY_KIND_UNKNOWN);
+      entry->set_kind(google_apis::ResourceEntry::ENTRY_KIND_UNKNOWN);
       break;
   }
 

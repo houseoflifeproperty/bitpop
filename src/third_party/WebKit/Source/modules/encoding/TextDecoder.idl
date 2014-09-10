@@ -30,8 +30,8 @@
 
 [
     RuntimeEnabled=EncodingAPI,
-    Exposed=Window&Worker,
-    Constructor(optional DOMString label = null, optional Dictionary options),
+    Exposed=(Window,Worker),
+    Constructor(optional DOMString label = "utf-8", optional Dictionary options),
     RaisesException=Constructor,
     GarbageCollected,
     MeasureAs=TextDecoderConstructor

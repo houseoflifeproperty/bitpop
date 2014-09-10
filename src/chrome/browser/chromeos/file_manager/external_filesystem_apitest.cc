@@ -8,12 +8,9 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
-#include "chrome/browser/chromeos/drive/test_util.h"
 #include "chrome/browser/chromeos/file_manager/drive_test_util.h"
 #include "chrome/browser/chromeos/file_manager/volume_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/extensions/extension_apitest.h"
@@ -22,9 +19,11 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/notification_types.h"
 #include "google_apis/drive/drive_api_parser.h"
 #include "google_apis/drive/test_util.h"
 #include "google_apis/drive/time_util.h"
@@ -294,11 +293,10 @@ bool InitializeDriveService(
 class BackgroundObserver {
  public:
   BackgroundObserver()
-      : page_created_(chrome::NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY,
+      : page_created_(extensions::NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY,
                       content::NotificationService::AllSources()),
-        page_closed_(chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED,
-                     content::NotificationService::AllSources()) {
-  }
+        page_closed_(extensions::NOTIFICATION_EXTENSION_HOST_DESTROYED,
+                     content::NotificationService::AllSources()) {}
 
   void WaitUntilLoaded() {
     page_created_.Wait();
@@ -513,9 +511,8 @@ class MultiProfileDriveFileSystemExtensionApiTest :
   virtual void SetUpOnMainThread() OVERRIDE {
     base::FilePath user_data_directory;
     PathService::Get(chrome::DIR_USER_DATA, &user_data_directory);
-    chromeos::UserManager::Get()->UserLoggedIn(kSecondProfileAccount,
-                                               kSecondProfileHash,
-                                               false);
+    user_manager::UserManager::Get()->UserLoggedIn(
+        kSecondProfileAccount, kSecondProfileHash, false);
     // Set up the secondary profile.
     base::FilePath profile_dir =
         user_data_directory.Append(
@@ -577,7 +574,7 @@ class MultiProfileDriveFileSystemExtensionApiTest :
         "application/vnd.google-apps.document", "",
         resource_ids_["test_dir"], "hosted_doc", true,
         google_apis::test_util::CreateCopyResultCallback(&error, &entry));
-    drive::test_util::RunBlockingPoolTask();
+    content::RunAllBlockingPoolTasksUntilIdle();
     if (error != google_apis::HTTP_CREATED)
       return false;
 
@@ -588,7 +585,7 @@ class MultiProfileDriveFileSystemExtensionApiTest :
         kResourceId,
         "application/vnd.google-apps.document", "", "", "hosted_doc", true,
         google_apis::test_util::CreateCopyResultCallback(&error, &entry));
-    drive::test_util::RunBlockingPoolTask();
+    content::RunAllBlockingPoolTasksUntilIdle();
     return (error == google_apis::HTTP_CREATED);
   }
 

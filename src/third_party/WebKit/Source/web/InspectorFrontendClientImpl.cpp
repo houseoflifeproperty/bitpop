@@ -31,8 +31,8 @@
 #include "config.h"
 #include "web/InspectorFrontendClientImpl.h"
 
-#include "V8InspectorFrontendHost.h"
-#include "bindings/v8/ScriptController.h"
+#include "bindings/core/v8/V8InspectorFrontendHost.h"
+#include "bindings/core/v8/ScriptController.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectorFrontendHost.h"
 #include "core/page/Page.h"
@@ -41,8 +41,6 @@
 #include "public/web/WebDevToolsFrontendClient.h"
 #include "web/WebDevToolsFrontendImpl.h"
 #include "wtf/text/WTFString.h"
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -54,8 +52,22 @@ InspectorFrontendClientImpl::InspectorFrontendClientImpl(Page* frontendPage, Web
 
 InspectorFrontendClientImpl::~InspectorFrontendClientImpl()
 {
-    if (m_frontendHost)
+    ASSERT(!m_frontendHost);
+}
+
+void InspectorFrontendClientImpl::trace(Visitor* visitor)
+{
+    visitor->trace(m_frontendPage);
+    visitor->trace(m_frontendHost);
+    InspectorFrontendClient::trace(visitor);
+}
+
+void InspectorFrontendClientImpl::dispose()
+{
+    if (m_frontendHost) {
         m_frontendHost->disconnectClient();
+        m_frontendHost = nullptr;
+    }
     m_client = 0;
 }
 
@@ -119,13 +131,13 @@ void InspectorFrontendClientImpl::windowObjectCleared()
             "     ['resetZoom', 0],"
             "     ['save', 3],"
             "     ['searchInPath', 3],"
+            "     ['setDeviceCountUpdatesEnabled', 1],"
+            "     ['setDevicesUpdatesEnabled', 1],"
             "     ['setWhitelistedShortcuts', 1],"
             "     ['setContentsResizingStrategy', 2],"
             "     ['setInspectedPageBounds', 1],"
             "     ['setIsDocked', 1],"
-            "     ['subscribe', 1],"
             "     ['stopIndexing', 1],"
-            "     ['unsubscribe', 1],"
             "     ['zoomIn', 0],"
             "     ['zoomOut', 0]]);"
             ""

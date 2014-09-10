@@ -46,7 +46,7 @@
 #include "public/platform/WebThreadedDataReceiver.h"
 #include "wtf/Functional.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -112,7 +112,7 @@ HTMLDocumentParser::HTMLDocumentParser(HTMLDocument& document, bool reportErrors
     , m_parserScheduler(HTMLParserScheduler::create(this))
     , m_xssAuditorDelegate(&document)
     , m_weakFactory(this)
-    , m_preloader(adoptPtr(new HTMLResourcePreloader(&document)))
+    , m_preloader(HTMLResourcePreloader::create(document))
     , m_isPinnedToMainThread(false)
     , m_endWasDelayed(false)
     , m_haveBackgroundParser(false)
@@ -164,7 +164,9 @@ HTMLDocumentParser::~HTMLDocumentParser()
 void HTMLDocumentParser::trace(Visitor* visitor)
 {
     visitor->trace(m_treeBuilder);
+    visitor->trace(m_xssAuditorDelegate);
     visitor->trace(m_scriptRunner);
+    visitor->trace(m_preloader);
     ScriptableDocumentParser::trace(visitor);
     HTMLScriptRunnerHost::trace(visitor);
 }
@@ -342,7 +344,7 @@ bool HTMLDocumentParser::canTakeNextToken(SynchronousMode mode, PumpSession& ses
 
 void HTMLDocumentParser::didReceiveParsedChunkFromBackgroundParser(PassOwnPtr<ParsedChunk> chunk)
 {
-    TRACE_EVENT0("webkit", "HTMLDocumentParser::didReceiveParsedChunkFromBackgroundParser");
+    TRACE_EVENT0("blink", "HTMLDocumentParser::didReceiveParsedChunkFromBackgroundParser");
 
     // alert(), runModalDialog, and the JavaScript Debugger all run nested event loops
     // which can cause this method to be re-entered. We detect re-entry using
@@ -428,7 +430,7 @@ void HTMLDocumentParser::discardSpeculationsAndResumeFrom(PassOwnPtr<ParsedChunk
 
 void HTMLDocumentParser::processParsedChunkFromBackgroundParser(PassOwnPtr<ParsedChunk> popChunk)
 {
-    TRACE_EVENT0("webkit", "HTMLDocumentParser::processParsedChunkFromBackgroundParser");
+    TRACE_EVENT0("blink", "HTMLDocumentParser::processParsedChunkFromBackgroundParser");
 
     ASSERT_WITH_SECURITY_IMPLICATION(!document()->activeParserCount());
     ASSERT(!isParsingFragment());
@@ -699,7 +701,7 @@ void HTMLDocumentParser::insert(const SegmentedString& source)
     if (isStopped())
         return;
 
-    TRACE_EVENT1("webkit", "HTMLDocumentParser::insert", "source_length", source.length());
+    TRACE_EVENT1("blink", "HTMLDocumentParser::insert", "source_length", source.length());
 
     // pumpTokenizer can cause this parser to be detached from the Document,
     // but we need to ensure it isn't deleted yet.

@@ -1,6 +1,6 @@
 /********************************************************************
  * COPYRIGHT: 
- * Copyright (c) 2009-2010, International Business Machines Corporation and
+ * Copyright (c) 2009-2013, International Business Machines Corporation and
  * others. All Rights Reserved.
  ********************************************************************/
 /********************************************************************************
@@ -98,6 +98,8 @@ const UChar lll_Cyrl[]    = {(UChar)0x0406, (UChar)0x04C0, (UChar)0x31, 0};
 /* The skeleton transform for all of thes 'lll' lookalikes is all lower case l. */
 const UChar lll_Skel[]    = {(UChar)0x6c, (UChar)0x6c, (UChar)0x6c, 0};  
 
+const UChar han_Hiragana[] = {(UChar)0x3086, (UChar)0x308A, (UChar)0x0020, (UChar)0x77F3, (UChar)0x7530, 0};
+
 /* Provide better code coverage */
 const char goodLatinUTF8[]    = {0x75, 0x77, 0};
 /*
@@ -130,9 +132,9 @@ static void TestUSpoofCAPI(void) {
     const char *dataSrcDir;
     char       *fileName;
     char       *confusables;
-    int         confusablesLength;
+    int         confusablesLength = 0;
     char       *confusablesWholeScript;
-    int         confusablesWholeScriptLength;
+    int         confusablesWholeScriptLength = 0;
     FILE       *f;
     UParseError pe;
     int32_t     errType;
@@ -142,20 +144,23 @@ static void TestUSpoofCAPI(void) {
     fileName = malloc(strlen(dataSrcDir) + 100);
     strcpy(fileName, dataSrcDir);
     strcat(fileName, U_FILE_SEP_STRING "unidata" U_FILE_SEP_STRING "confusables.txt");
-    f = fopen(fileName, "r");
+    f = fopen(fileName, "rb");
     TEST_ASSERT_NE(f, NULL);
     confusables = malloc(3000000);
-    confusablesLength = fread(confusables, 1, 3000000, f);
-    fclose(f);
+    if (f != NULL) {
+        confusablesLength = fread(confusables, 1, 3000000, f);
+        fclose(f);
+    }
 
-    
     strcpy(fileName, dataSrcDir);
     strcat(fileName, U_FILE_SEP_STRING "unidata" U_FILE_SEP_STRING "confusablesWholeScript.txt");
-    f = fopen(fileName, "r");
+    f = fopen(fileName, "rb");
     TEST_ASSERT_NE(f, NULL);
     confusablesWholeScript = malloc(1000000);
-    confusablesWholeScriptLength = fread(confusablesWholeScript, 1, 1000000, f);
-    fclose(f);
+    if (f != NULL) {
+        confusablesWholeScriptLength = fread(confusablesWholeScript, 1, 1000000, f);
+        fclose(f);
+    }
 
     rsc = uspoof_openFromSource(confusables, confusablesLength,
                                               confusablesWholeScript, confusablesWholeScriptLength,
@@ -288,6 +293,25 @@ static void TestUSpoofCAPI(void) {
         uspoof_close(clone2);
     TEST_TEARDOWN;
 
+     /*
+     *  basic uspoof_check()
+     */
+     TEST_SETUP
+         int32_t result;
+         result = uspoof_check(sc, goodLatin, -1, NULL, &status);
+         TEST_ASSERT_SUCCESS(status);
+         TEST_ASSERT_EQ(0, result);
+
+         result = uspoof_check(sc, han_Hiragana, -1, NULL, &status);
+         TEST_ASSERT_SUCCESS(status);
+         TEST_ASSERT_EQ(0, result);
+
+         result = uspoof_check(sc, scMixed, -1, NULL, &status);
+         TEST_ASSERT_SUCCESS(status);
+         TEST_ASSERT_EQ(USPOOF_SINGLE_SCRIPT | USPOOF_MIXED_SCRIPT_CONFUSABLE, result);
+     TEST_TEARDOWN
+
+
     /*
      *  get & set Checks
     */
@@ -384,10 +408,13 @@ static void TestUSpoofCAPI(void) {
         TEST_ASSERT_SUCCESS(status);
         uset_close(tmpSet);
 
-        /* Latin Identifier should now fail; other non-latin test cases should still be OK */
+        /* Latin Identifier should now fail; other non-latin test cases should still be OK
+         *  Note: fail of CHAR_LIMIT also causes the restriction level to be USPOOF_UNRESTRICTIVE
+         *        which will give us a USPOOF_RESTRICTION_LEVEL failure.
+         */
         checkResults = uspoof_check(sc, goodLatin, -1, NULL, &status);
         TEST_ASSERT_SUCCESS(status);
-        TEST_ASSERT_EQ(USPOOF_CHAR_LIMIT, checkResults);
+        TEST_ASSERT_EQ(USPOOF_CHAR_LIMIT | USPOOF_RESTRICTION_LEVEL, checkResults);
 
         checkResults = uspoof_check(sc, goodGreek, -1, NULL, &status);
         TEST_ASSERT_SUCCESS(status);
@@ -408,7 +435,7 @@ static void TestUSpoofCAPI(void) {
         checkResults = uspoof_checkUTF8(sc, utf8buf, -1, &position, &status);
         TEST_ASSERT_SUCCESS(status);
         TEST_ASSERT_EQ(0, checkResults);
-        TEST_ASSERT_EQ(666, position);
+        TEST_ASSERT_EQ(0, position);
 
         u_strToUTF8(utf8buf, sizeof(utf8buf), NULL, goodCyrl, -1, &status);
         TEST_ASSERT_SUCCESS(status);
@@ -422,7 +449,7 @@ static void TestUSpoofCAPI(void) {
         checkResults = uspoof_checkUTF8(sc, utf8buf, -1, &position, &status);
         TEST_ASSERT_SUCCESS(status);
         TEST_ASSERT_EQ(USPOOF_MIXED_SCRIPT_CONFUSABLE | USPOOF_SINGLE_SCRIPT , checkResults);
-        TEST_ASSERT_EQ(2, position);
+        TEST_ASSERT_EQ(0, position);
 
     TEST_TEARDOWN;
 

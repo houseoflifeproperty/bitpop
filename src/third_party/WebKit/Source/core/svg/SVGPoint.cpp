@@ -32,7 +32,7 @@
 
 #include "core/svg/SVGPoint.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGAnimationElement.h"
 #include "core/svg/SVGParserUtilities.h"
@@ -40,29 +40,20 @@
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGPoint::SVGPoint()
-    : SVGPropertyBase(classType())
 {
 }
 
 SVGPoint::SVGPoint(const FloatPoint& point)
-    : SVGPropertyBase(classType())
-    , m_value(point)
+    : m_value(point)
 {
 }
 
 PassRefPtr<SVGPoint> SVGPoint::clone() const
 {
     return SVGPoint::create(m_value);
-}
-
-PassRefPtr<SVGPropertyBase> SVGPoint::cloneForAnimation(const String& value) const
-{
-    RefPtr<SVGPoint> point = SVGPoint::create();
-    point->setValueAsString(value, IGNORE_EXCEPTION);
-    return point.release();
 }
 
 template<typename CharType>

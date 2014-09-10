@@ -44,6 +44,7 @@
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/rect_based_targeting_utils.h"
+#include "ui/views/view_targeter.h"
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
@@ -227,28 +228,19 @@ class Tab::FaviconCrashAnimation : public gfx::LinearAnimation,
 //
 //  This is a Button subclass that causes middle clicks to be forwarded to the
 //  parent View by explicitly not handling them in OnMousePressed.
-class Tab::TabCloseButton : public views::ImageButton {
+class Tab::TabCloseButton : public views::ImageButton,
+                            public views::MaskedTargeterDelegate {
  public:
-  explicit TabCloseButton(Tab* tab) : views::ImageButton(tab), tab_(tab) {}
-  virtual ~TabCloseButton() {}
-
-  // Overridden from views::View.
-  virtual View* GetEventHandlerForRect(const gfx::Rect& rect) OVERRIDE {
-    if (!views::UsePointBasedTargeting(rect))
-      return View::GetEventHandlerForRect(rect);
-
-    // Ignore the padding set on the button.
-    gfx::Rect contents_bounds = GetContentsBounds();
-    contents_bounds.set_x(GetMirroredXForRect(contents_bounds));
-
-    // Include the padding in hit-test for touch events.
-    if (aura::Env::GetInstance()->is_touch_down())
-      contents_bounds = GetLocalBounds();
-
-    return contents_bounds.Intersects(rect) ? this : parent();
+  explicit TabCloseButton(Tab* tab)
+      : views::ImageButton(tab),
+        tab_(tab) {
+    SetEventTargeter(
+        scoped_ptr<views::ViewTargeter>(new views::ViewTargeter(this)));
   }
 
-  // Overridden from views::View.
+  virtual ~TabCloseButton() {}
+
+  // views::View:
   virtual View* GetTooltipHandlerForPoint(const gfx::Point& point) OVERRIDE {
     // Tab close button has no children, so tooltip handler should be the same
     // as the event handler.
@@ -285,26 +277,30 @@ class Tab::TabCloseButton : public views::ImageButton {
     event->SetHandled();
   }
 
-  virtual bool HasHitTestMask() const OVERRIDE {
-    return true;
+  virtual const char* GetClassName() const OVERRIDE {
+    return kTabCloseButtonName;
   }
 
-  virtual void GetHitTestMask(HitTestSource source,
-                              gfx::Path* path) const OVERRIDE {
-    // Use the button's contents bounds (which does not include padding)
-    // and the hit test mask of our parent |tab_| to determine if the
-    // button is hidden behind another tab.
+ private:
+  // Returns the rectangular bounds of parent tab's visible region in the
+  // local coordinate space of |this|.
+  gfx::Rect GetTabBounds() const {
     gfx::Path tab_mask;
-    tab_->GetHitTestMask(source, &tab_mask);
+    tab_->GetHitTestMask(&tab_mask);
 
-    gfx::Rect button_bounds(GetContentsBounds());
-    button_bounds.set_x(GetMirroredXForRect(button_bounds));
     gfx::RectF tab_bounds_f(gfx::SkRectToRectF(tab_mask.getBounds()));
     views::View::ConvertRectToTarget(tab_, this, &tab_bounds_f);
-    gfx::Rect tab_bounds = gfx::ToEnclosingRect(tab_bounds_f);
+    return gfx::ToEnclosingRect(tab_bounds_f);
+  }
 
-    // If either the top or bottom of the tab close button is clipped,
-    // do not consider these regions to be part of the button's bounds.
+  // Returns the rectangular bounds of the tab close button in the local
+  // coordinate space of |this|, not including clipped regions on the top
+  // or bottom of the button. |tab_bounds| is the rectangular bounds of
+  // the parent tab's visible region in the local coordinate space of |this|.
+  gfx::Rect GetTabCloseButtonBounds(const gfx::Rect& tab_bounds) const {
+    gfx::Rect button_bounds(GetContentsBounds());
+    button_bounds.set_x(GetMirroredXForRect(button_bounds));
+
     int top_overflow = tab_bounds.y() - button_bounds.y();
     int bottom_overflow = button_bounds.bottom() - tab_bounds.bottom();
     if (top_overflow > 0)
@@ -312,29 +308,70 @@ class Tab::TabCloseButton : public views::ImageButton {
     else if (bottom_overflow > 0)
       button_bounds.set_height(button_bounds.height() - bottom_overflow);
 
-    // If the hit test request is in response to a gesture, |path| should be
-    // empty unless the entire tab close button is visible to the user. Hit
-    // test requests in response to a mouse event should always set |path|
-    // to be the visible portion of the tab close button, even if it is
-    // partially hidden behind another tab.
-    path->reset();
+    return button_bounds;
+  }
+
+  // views::ViewTargeterDelegate:
+  virtual View* TargetForRect(View* root, const gfx::Rect& rect) OVERRIDE {
+    CHECK_EQ(root, this);
+
+    if (!views::UsePointBasedTargeting(rect))
+      return ViewTargeterDelegate::TargetForRect(root, rect);
+
+    // Ignore the padding set on the button.
+    gfx::Rect contents_bounds = GetContentsBounds();
+    contents_bounds.set_x(GetMirroredXForRect(contents_bounds));
+
+    // Include the padding in hit-test for touch events.
+    if (aura::Env::GetInstance()->is_touch_down())
+      contents_bounds = GetLocalBounds();
+
+    return contents_bounds.Intersects(rect) ? this : parent();
+  }
+
+  // views:MaskedTargeterDelegate:
+  virtual bool GetHitTestMask(gfx::Path* mask) const OVERRIDE {
+    DCHECK(mask);
+    mask->reset();
+
+    // The parent tab may be partially occluded by another tab if we are
+    // in stacked tab mode, which means that the tab close button may also
+    // be partially occluded. Define the hit test mask of the tab close
+    // button to be the intersection of the parent tab's visible bounds
+    // and the bounds of the tab close button.
+    gfx::Rect tab_bounds(GetTabBounds());
+    gfx::Rect button_bounds(GetTabCloseButtonBounds(tab_bounds));
     gfx::Rect intersection(gfx::IntersectRects(tab_bounds, button_bounds));
+
     if (!intersection.IsEmpty()) {
-      // TODO(tdanderson): Consider always returning the intersection if
-      // the non-rectangular shape of the tabs can be accounted for.
-      if (source == HIT_TEST_SOURCE_TOUCH &&
-          !tab_bounds.Contains(button_bounds))
-        return;
-
-      path->addRect(RectToSkRect(intersection));
+      mask->addRect(RectToSkRect(intersection));
+      return true;
     }
+
+    return false;
   }
 
-  virtual const char* GetClassName() const OVERRIDE {
-    return kTabCloseButtonName;
+  virtual bool DoesIntersectRect(const View* target,
+                                 const gfx::Rect& rect) const OVERRIDE {
+    CHECK_EQ(target, this);
+
+    // If the request is not made in response to a gesture, use the
+    // default implementation.
+    if (views::UsePointBasedTargeting(rect))
+      return MaskedTargeterDelegate::DoesIntersectRect(target, rect);
+
+    // The hit test request is in response to a gesture. Return false if any
+    // part of the tab close button is hidden from the user.
+    // TODO(tdanderson): Consider always returning the intersection if the
+    //                   non-rectangular shape of the tab can be accounted for.
+    gfx::Rect tab_bounds(GetTabBounds());
+    gfx::Rect button_bounds(GetTabCloseButtonBounds(tab_bounds));
+    if (!tab_bounds.Contains(button_bounds))
+      return false;
+
+    return MaskedTargeterDelegate::DoesIntersectRect(target, rect);
   }
 
- private:
   Tab* tab_;
 
   DISALLOW_COPY_AND_ASSIGN(TabCloseButton);
@@ -375,7 +412,7 @@ Tab::Tab(TabController* controller)
       animating_media_state_(TAB_MEDIA_STATE_NONE),
       close_button_(NULL),
       title_(new views::Label()),
-      tab_activated_with_last_gesture_begin_(false),
+      tab_activated_with_last_tap_down_(false),
       hover_controller_(this),
       showing_icon_(false),
       showing_media_indicator_(false),
@@ -390,12 +427,14 @@ Tab::Tab(TabController* controller)
 
   set_id(VIEW_ID_TAB);
 
-  title_->set_directionality_mode(gfx::DIRECTIONALITY_FROM_TEXT);
   title_->SetHorizontalAlignment(gfx::ALIGN_TO_HEAD);
   title_->SetElideBehavior(gfx::FADE_TAIL);
   title_->SetAutoColorReadabilityEnabled(false);
   title_->SetText(CoreTabHelper::GetDefaultTitle());
   AddChildView(title_);
+
+  SetEventTargeter(
+      scoped_ptr<views::ViewTargeter>(new views::ViewTargeter(this)));
 
   // Add the Close Button.
   close_button_ = new TabCloseButton(this);
@@ -639,6 +678,35 @@ void Tab::ShowContextMenuForView(views::View* source,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Tab, views::MaskedTargeterDelegate overrides:
+
+bool Tab::GetHitTestMask(gfx::Path* mask) const {
+  DCHECK(mask);
+
+  // When the window is maximized we don't want to shave off the edges or top
+  // shadow of the tab, such that the user can click anywhere along the top
+  // edge of the screen to select a tab. Ditto for immersive fullscreen.
+  const views::Widget* widget = GetWidget();
+  bool include_top_shadow =
+      widget && (widget->IsMaximized() || widget->IsFullscreen());
+  TabResources::GetHitTestMask(width(), height(), include_top_shadow, mask);
+
+  // It is possible for a portion of the tab to be occluded if tabs are
+  // stacked, so modify the hit test mask to only include the visible
+  // region of the tab.
+  gfx::Rect clip;
+  controller_->ShouldPaintTab(this, &clip);
+  if (clip.size().GetArea()) {
+    SkRect intersection(mask->getBounds());
+    intersection.intersect(RectToSkRect(clip));
+    mask->reset();
+    mask->addRect(intersection);
+  }
+
+  return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Tab, views::View overrides:
 
 void Tab::OnPaint(gfx::Canvas* canvas) {
@@ -747,32 +815,6 @@ void Tab::OnThemeChanged() {
 
 const char* Tab::GetClassName() const {
   return kViewClassName;
-}
-
-bool Tab::HasHitTestMask() const {
-  return true;
-}
-
-void Tab::GetHitTestMask(HitTestSource source, gfx::Path* path) const {
-  // When the window is maximized we don't want to shave off the edges or top
-  // shadow of the tab, such that the user can click anywhere along the top
-  // edge of the screen to select a tab. Ditto for immersive fullscreen.
-  const views::Widget* widget = GetWidget();
-  bool include_top_shadow =
-      widget && (widget->IsMaximized() || widget->IsFullscreen());
-  TabResources::GetHitTestMask(width(), height(), include_top_shadow, path);
-
-  // It is possible for a portion of the tab to be occluded if tabs are
-  // stacked, so modify the hit test mask to only include the visible
-  // region of the tab.
-  gfx::Rect clip;
-  controller_->ShouldPaintTab(this, &clip);
-  if (clip.size().GetArea()) {
-    SkRect intersection(path->getBounds());
-    intersection.intersect(RectToSkRect(clip));
-    path->reset();
-    path->addRect(intersection);
-  }
 }
 
 bool Tab::GetTooltipText(const gfx::Point& p, base::string16* tooltip) const {
@@ -884,16 +926,16 @@ void Tab::OnMouseExited(const ui::MouseEvent& event) {
 
 void Tab::OnGestureEvent(ui::GestureEvent* event) {
   switch (event->type()) {
-    case ui::ET_GESTURE_BEGIN: {
-      if (event->details().touch_points() != 1)
-        return;
+    case ui::ET_GESTURE_TAP_DOWN: {
+      // TAP_DOWN is only dispatched for the first touch point.
+      DCHECK_EQ(1, event->details().touch_points());
 
       // See comment in OnMousePressed() as to why we copy the event.
       ui::GestureEvent event_in_parent(*event, static_cast<View*>(this),
                                        parent());
       ui::ListSelectionModel original_selection;
       original_selection.Copy(controller_->GetSelectionModel());
-      tab_activated_with_last_gesture_begin_ = !IsActive();
+      tab_activated_with_last_tap_down_ = !IsActive();
       if (!IsSelected())
         controller_->SelectTab(this);
       gfx::Point loc(event->location());
@@ -921,6 +963,11 @@ void Tab::OnGestureEvent(ui::GestureEvent* event) {
 void Tab::GetAccessibleState(ui::AXViewState* state) {
   state->role = ui::AX_ROLE_TAB;
   state->name = data_.title;
+  state->AddStateFlag(ui::AX_STATE_MULTISELECTABLE);
+  state->AddStateFlag(ui::AX_STATE_SELECTABLE);
+  controller_->UpdateTabAccessibilityState(this, state);
+  if (IsSelected())
+    state->AddStateFlag(ui::AX_STATE_SELECTED);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

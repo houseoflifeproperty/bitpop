@@ -23,7 +23,7 @@
 #include "core/rendering/svg/RenderSVGHiddenContainer.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderLayer;
 
@@ -52,7 +52,7 @@ protected:
     enum InvalidationMode {
         LayoutAndBoundariesInvalidation = 1 << 0,
         BoundariesInvalidation = 1 << 1,
-        RepaintInvalidation = 1 << 2,
+        PaintInvalidation = 1 << 2,
         ParentOnlyInvalidation = 1 << 3
     };
 
@@ -63,7 +63,7 @@ protected:
 
     void clearInvalidationMask() { m_invalidationMask = 0; }
 
-    static AffineTransform computeResourceSpaceTransform(RenderObject*, const AffineTransform& baseTransform, const SVGRenderStyle*, unsigned short resourceMode);
+    static AffineTransform computeResourceSpaceTransform(RenderObject*, const AffineTransform& baseTransform, const SVGRenderStyle&, unsigned short resourceMode);
 
     bool m_isInLayout;
 

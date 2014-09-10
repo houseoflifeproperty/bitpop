@@ -22,27 +22,25 @@
 #include "ui/views/widget/widget.h"
 
 // In the browser actions container's chevron menu, a menu item view's icon
-// comes from BrowserActionView::GetIconWithBadge() (which comes from the
-// browser action button's icon) when the menu item view is created. But, the
-// browser action button's icon may not be loaded in time because it is read
-// from file system in another thread.
+// comes from BrowserActionView::GetIconWithBadge() when the menu item view is
+// created. But, the browser action's icon may not be loaded in time because it
+// is read from file system in another thread.
 // The IconUpdater will update the menu item view's icon when the browser
-// action button's icon has been updated.
-class IconUpdater : public BrowserActionButton::IconObserver {
+// action's icon has been updated.
+class IconUpdater : public BrowserActionView::IconObserver {
  public:
-  IconUpdater(views::MenuItemView* menu_item_view,
-              BrowserActionButton* button)
+  IconUpdater(views::MenuItemView* menu_item_view, BrowserActionView* view)
       : menu_item_view_(menu_item_view),
-        button_(button) {
+        view_(view) {
     DCHECK(menu_item_view);
-    DCHECK(button);
-    button->set_icon_observer(this);
+    DCHECK(view);
+    view->set_icon_observer(this);
   }
   virtual ~IconUpdater() {
-    button_->set_icon_observer(NULL);
+    view_->set_icon_observer(NULL);
   }
 
-  // Overridden from BrowserActionButton::IconObserver:
+  // Overridden from BrowserActionView::IconObserver:
   virtual void OnIconUpdated(const gfx::ImageSkia& icon) OVERRIDE {
     menu_item_view_->SetIcon(icon);
   }
@@ -51,9 +49,9 @@ class IconUpdater : public BrowserActionButton::IconObserver {
   // The menu item view whose icon might be updated.
   views::MenuItemView* menu_item_view_;
 
-  // The button to be observed. When its icon changes, update the corresponding
+  // The view to be observed. When its icon changes, update the corresponding
   // menu item view's icon.
-  BrowserActionButton* button_;
+  BrowserActionView* view_;
 
   DISALLOW_COPY_AND_ASSIGN(IconUpdater);
 };
@@ -63,7 +61,8 @@ BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
     Browser* browser,
     views::MenuButton* menu_button,
     const std::vector<BrowserActionView*>& views,
-    int start_index)
+    int start_index,
+    bool for_drop)
     : owner_(owner),
       browser_(browser),
       observer_(NULL),
@@ -71,9 +70,10 @@ BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
       menu_(NULL),
       views_(&views),
       start_index_(start_index),
-      for_drop_(false) {
+      for_drop_(for_drop) {
   menu_ = new views::MenuItemView(this);
-  menu_runner_.reset(new views::MenuRunner(menu_));
+  menu_runner_.reset(new views::MenuRunner(
+      menu_, for_drop_ ? views::MenuRunner::FOR_DROP : 0));
   menu_->set_has_icons(true);
 
   size_t command_id = 1;  // Menu id 0 is reserved, start with 1.
@@ -81,17 +81,16 @@ BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
     BrowserActionView* view = (*views_)[i];
     views::MenuItemView* menu_item = menu_->AppendMenuItemWithIcon(
         command_id,
-        base::UTF8ToUTF16(view->button()->extension()->name()),
+        base::UTF8ToUTF16(view->extension()->name()),
         view->GetIconWithBadge());
 
     // Set the tooltip for this item.
     base::string16 tooltip = base::UTF8ToUTF16(
-        extensions::ExtensionActionManager::Get(owner_->profile())->
-        GetBrowserAction(*view->button()->extension())->
-        GetTitle(owner_->GetCurrentTabId()));
+        view->extension_action()->GetTitle(
+            view->view_controller()->GetCurrentTabId()));
     menu_->SetTooltip(tooltip, command_id);
 
-    icon_updaters_.push_back(new IconUpdater(menu_item, view->button()));
+    icon_updaters_.push_back(new IconUpdater(menu_item, view));
 
     ++command_id;
   }
@@ -102,10 +101,7 @@ BrowserActionOverflowMenuController::~BrowserActionOverflowMenuController() {
     observer_->NotifyMenuDeleted(this);
 }
 
-bool BrowserActionOverflowMenuController::RunMenu(views::Widget* window,
-                                                  bool for_drop) {
-  for_drop_ = for_drop;
-
+bool BrowserActionOverflowMenuController::RunMenu(views::Widget* window) {
   gfx::Rect bounds = menu_button_->bounds();
   gfx::Point screen_loc;
   views::View::ConvertPointToScreen(menu_button_, &screen_loc);
@@ -114,8 +110,8 @@ bool BrowserActionOverflowMenuController::RunMenu(views::Widget* window,
 
   views::MenuAnchorPosition anchor = views::MENU_ANCHOR_TOPRIGHT;
   // As we maintain our own lifetime we can safely ignore the result.
-  ignore_result(menu_runner_->RunMenuAt(window, menu_button_, bounds, anchor,
-      ui::MENU_SOURCE_NONE, for_drop_ ? views::MenuRunner::FOR_DROP : 0));
+  ignore_result(menu_runner_->RunMenuAt(
+      window, menu_button_, bounds, anchor, ui::MENU_SOURCE_NONE));
   if (!for_drop_) {
     // Give the context menu (if any) a chance to execute the user-selected
     // command.
@@ -128,14 +124,17 @@ void BrowserActionOverflowMenuController::CancelMenu() {
   menu_->Cancel();
 }
 
+void BrowserActionOverflowMenuController::NotifyBrowserActionViewsDeleting() {
+  icon_updaters_.clear();
+}
+
 bool BrowserActionOverflowMenuController::IsCommandEnabled(int id) const {
   BrowserActionView* view = (*views_)[start_index_ + id - 1];
-  return view->button()->IsEnabled(owner_->GetCurrentTabId());
+  return view->IsEnabled(view->view_controller()->GetCurrentTabId());
 }
 
 void BrowserActionOverflowMenuController::ExecuteCommand(int id) {
-  BrowserActionView* view = (*views_)[start_index_ + id - 1];
-  owner_->OnBrowserActionExecuted(view->button());
+  (*views_)[start_index_ + id - 1]->view_controller()->ExecuteActionByUser();
 }
 
 bool BrowserActionOverflowMenuController::ShowContextMenu(
@@ -143,25 +142,25 @@ bool BrowserActionOverflowMenuController::ShowContextMenu(
     int id,
     const gfx::Point& p,
     ui::MenuSourceType source_type) {
-  const extensions::Extension* extension =
-      (*views_)[start_index_ + id - 1]->button()->extension();
-  if (!extension->ShowConfigureContextMenus())
+  BrowserActionView* view = (*views_)[start_index_ + id - 1];
+  if (!view->extension()->ShowConfigureContextMenus())
     return false;
 
   scoped_refptr<ExtensionContextMenuModel> context_menu_contents =
-      new ExtensionContextMenuModel(extension, browser_, owner_);
-  views::MenuRunner context_menu_runner(context_menu_contents.get());
+      new ExtensionContextMenuModel(
+          view->extension(), browser_, view->view_controller());
+  views::MenuRunner context_menu_runner(context_menu_contents.get(),
+                                        views::MenuRunner::HAS_MNEMONICS |
+                                            views::MenuRunner::IS_NESTED |
+                                            views::MenuRunner::CONTEXT_MENU);
 
   // We can ignore the result as we delete ourself.
   // This blocks until the user choses something or dismisses the menu.
-  ignore_result(context_menu_runner.RunMenuAt(
-      menu_button_->GetWidget(),
-      NULL,
-      gfx::Rect(p, gfx::Size()),
-      views::MENU_ANCHOR_TOPLEFT,
-      source_type,
-      views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::IS_NESTED |
-          views::MenuRunner::CONTEXT_MENU));
+  ignore_result(context_menu_runner.RunMenuAt(menu_button_->GetWidget(),
+                                              NULL,
+                                              gfx::Rect(p, gfx::Size()),
+                                              views::MENU_ANCHOR_TOPLEFT,
+                                              source_type));
 
   // The user is done with the context menu, so we can close the underlying
   // menu.
@@ -179,21 +178,17 @@ bool BrowserActionOverflowMenuController::GetDropFormats(
     views::MenuItemView* menu,
     int* formats,
     std::set<OSExchangeData::CustomFormat>* custom_formats) {
-  custom_formats->insert(BrowserActionDragData::GetBrowserActionCustomFormat());
-  return true;
+  return BrowserActionDragData::GetDropFormats(custom_formats);
 }
 
 bool BrowserActionOverflowMenuController::AreDropTypesRequired(
     views::MenuItemView* menu) {
-  return true;
+  return BrowserActionDragData::AreDropTypesRequired();
 }
 
 bool BrowserActionOverflowMenuController::CanDrop(
     views::MenuItemView* menu, const OSExchangeData& data) {
-  BrowserActionDragData drop_data;
-  if (!drop_data.Read(data))
-    return false;
-  return drop_data.IsFromProfile(owner_->profile());
+  return BrowserActionDragData::CanDrop(data, owner_->profile());
 }
 
 int BrowserActionOverflowMenuController::GetDropOperation(
@@ -248,9 +243,7 @@ void BrowserActionOverflowMenuController::WriteDragData(
     views::MenuItemView* sender, OSExchangeData* data) {
   size_t drag_index;
   BrowserActionView* view = ViewForId(sender->GetCommand(), &drag_index);
-  std::string id = view->button()->extension()->id();
-
-  BrowserActionDragData drag_data(id, drag_index);
+  BrowserActionDragData drag_data(view->extension()->id(), drag_index);
   drag_data.Write(owner_->profile(), data);
 }
 

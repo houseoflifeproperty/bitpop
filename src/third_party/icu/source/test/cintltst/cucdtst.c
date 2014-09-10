@@ -1,6 +1,6 @@
 /********************************************************************
  * COPYRIGHT:
- * Copyright (c) 1997-2010, International Business Machines Corporation and
+ * Copyright (c) 1997-2013, International Business Machines Corporation and
  * others. All Rights Reserved.
  ********************************************************************/
 /*******************************************************************************
@@ -159,7 +159,12 @@ static const char dirStrings[][5] = {
     "RLO",
     "PDF",
     "NSM",
-    "BN"
+    "BN",
+    /* new in Unicode 6.3/ICU 52 */
+    "FSI",
+    "LRI",
+    "RLI",
+    "PDI"
 };
 
 void addUnicodeTest(TestNode** root);
@@ -184,6 +189,7 @@ void addUnicodeTest(TestNode** root)
     addTest(root, &TestUScriptCodeAPI, "tsutil/cucdtst/TestUScriptCodeAPI");
     addTest(root, &TestHasScript, "tsutil/cucdtst/TestHasScript");
     addTest(root, &TestGetScriptExtensions, "tsutil/cucdtst/TestGetScriptExtensions");
+    addTest(root, &TestScriptMetadataAPI, "tsutil/cucdtst/TestScriptMetadataAPI");
     addTest(root, &TestUScriptRunAPI, "tsutil/cucdtst/TestUScriptRunAPI");
     addTest(root, &TestPropertyNames, "tsutil/cucdtst/TestPropertyNames");
     addTest(root, &TestPropertyValues, "tsutil/cucdtst/TestPropertyValues");
@@ -925,6 +931,15 @@ static void TestIdentifier()
 }
 
 /* for each line of UnicodeData.txt, check some of the properties */
+typedef struct UnicodeDataContext {
+#if UCONFIG_NO_NORMALIZATION
+    const void *dummy;
+#else
+    const UNormalizer2 *nfc;
+    const UNormalizer2 *nfkc;
+#endif
+} UnicodeDataContext;
+
 /*
  * ### TODO
  * This test fails incorrectly if the First or Last code point of a repetitive area
@@ -944,11 +959,19 @@ unicodeDataLineFn(void *context,
                   UErrorCode *pErrorCode)
 {
     char buffer[100];
+    const char *d;
     char *end;
     uint32_t value;
     UChar32 c;
     int32_t i;
     int8_t type;
+    int32_t dt;
+    UChar dm[32], s[32];
+    int32_t dmLength, length;
+
+#if !UCONFIG_NO_NORMALIZATION
+    const UNormalizer2 *nfc, *nfkc;
+#endif
 
     /* get the character code, field 0 */
     c=strtoul(fields[0][0], &end, 16);
@@ -985,6 +1008,10 @@ unicodeDataLineFn(void *context,
     if(value!=u_getCombiningClass(c) || value!=(uint32_t)u_getIntPropertyValue(c, UCHAR_CANONICAL_COMBINING_CLASS)) {
         log_err("error: u_getCombiningClass(U+%04lx)==%hu instead of %lu\n", c, u_getCombiningClass(c), value);
     }
+    nfkc=((UnicodeDataContext *)context)->nfkc;
+    if(value!=unorm2_getCombiningClass(nfkc, c)) {
+        log_err("error: unorm2_getCombiningClass(nfkc, U+%04lx)==%hu instead of %lu\n", c, unorm2_getCombiningClass(nfkc, c), value);
+    }
 #endif
 
     /* get BiDi category, field 4 */
@@ -993,6 +1020,95 @@ unicodeDataLineFn(void *context,
     if(i!=u_charDirection(c) || i!=u_getIntPropertyValue(c, UCHAR_BIDI_CLASS)) {
         log_err("error: u_charDirection(U+%04lx)==%u instead of %u (%s)\n", c, u_charDirection(c), MakeDir(fields[4][0]), fields[4][0]);
     }
+
+    /* get Decomposition_Type & Decomposition_Mapping, field 5 */
+    d=NULL;
+    if(fields[5][0]==fields[5][1]) {
+        /* no decomposition, except UnicodeData.txt omits Hangul syllable decompositions */
+        if(c==0xac00 || c==0xd7a3) {
+            dt=U_DT_CANONICAL;
+        } else {
+            dt=U_DT_NONE;
+        }
+    } else {
+        d=fields[5][0];
+        *fields[5][1]=0;
+        dt=UCHAR_INVALID_CODE;
+        if(*d=='<') {
+            end=strchr(++d, '>');
+            if(end!=NULL) {
+                *end=0;
+                dt=u_getPropertyValueEnum(UCHAR_DECOMPOSITION_TYPE, d);
+                d=u_skipWhitespace(end+1);
+            }
+        } else {
+            dt=U_DT_CANONICAL;
+        }
+    }
+    if(dt>U_DT_NONE) {
+        if(c==0xac00) {
+            dm[0]=0x1100;
+            dm[1]=0x1161;
+            dm[2]=0;
+            dmLength=2;
+        } else if(c==0xd7a3) {
+            dm[0]=0xd788;
+            dm[1]=0x11c2;
+            dm[2]=0;
+            dmLength=2;
+        } else {
+            dmLength=u_parseString(d, dm, 32, NULL, pErrorCode);
+        }
+    } else {
+        dmLength=-1;
+    }
+    if(dt<0 || U_FAILURE(*pErrorCode)) {
+        log_err("error in UnicodeData.txt: syntax error in U+%04lX decomposition field\n", (long)c);
+        return;
+    }
+#if !UCONFIG_NO_NORMALIZATION
+    i=u_getIntPropertyValue(c, UCHAR_DECOMPOSITION_TYPE);
+    if(i!=dt) {
+        log_err("error: u_getIntPropertyValue(U+%04lx, UCHAR_DECOMPOSITION_TYPE)==%d instead of %d\n", c, i, dt);
+    }
+    /* Expect Decomposition_Mapping=nfkc.getRawDecomposition(c). */
+    length=unorm2_getRawDecomposition(nfkc, c, s, 32, pErrorCode);
+    if(U_FAILURE(*pErrorCode) || length!=dmLength || (length>0 && 0!=u_strcmp(s, dm))) {
+        log_err("error: unorm2_getRawDecomposition(nfkc, U+%04lx)==%d instead of %d "
+                "or the Decomposition_Mapping is different (%s)\n",
+                c, length, dmLength, u_errorName(*pErrorCode));
+        return;
+    }
+    /* For canonical decompositions only, expect Decomposition_Mapping=nfc.getRawDecomposition(c). */
+    if(dt!=U_DT_CANONICAL) {
+        dmLength=-1;
+    }
+    nfc=((UnicodeDataContext *)context)->nfc;
+    length=unorm2_getRawDecomposition(nfc, c, s, 32, pErrorCode);
+    if(U_FAILURE(*pErrorCode) || length!=dmLength || (length>0 && 0!=u_strcmp(s, dm))) {
+        log_err("error: unorm2_getRawDecomposition(nfc, U+%04lx)==%d instead of %d "
+                "or the Decomposition_Mapping is different (%s)\n",
+                c, length, dmLength, u_errorName(*pErrorCode));
+        return;
+    }
+    /* recompose */
+    if(dt==U_DT_CANONICAL && !u_hasBinaryProperty(c, UCHAR_FULL_COMPOSITION_EXCLUSION)) {
+        UChar32 a, b, composite;
+        i=0;
+        U16_NEXT(dm, i, dmLength, a);
+        U16_NEXT(dm, i, dmLength, b);
+        /* i==dmLength */
+        composite=unorm2_composePair(nfc, a, b);
+        if(composite!=c) {
+            log_err("error: nfc U+%04lX decomposes to U+%04lX+U+%04lX but does not compose back (instead U+%04lX)\n",
+                    (long)c, (long)a, (long)b, (long)composite);
+        }
+        /*
+         * Note: NFKC has fewer round-trip mappings than NFC,
+         * so we can't just test unorm2_composePair(nfkc, a, b) here without further data.
+         */
+    }
+#endif
 
     /* get ISO Comment, field 11 */
     *fields[11][1]=0;
@@ -1096,12 +1212,15 @@ enumTypeRange(const void *context, UChar32 start, UChar32 limit, UCharCategory t
 
 static UBool U_CALLCONV
 enumDefaultsRange(const void *context, UChar32 start, UChar32 limit, UCharCategory type) {
-    /* default Bidi classes for unassigned code points */
+    /* default Bidi classes for unassigned code points, from the DerivedBidiClass.txt header */
     static const int32_t defaultBidi[][2]={ /* { limit, class } */
         { 0x0590, U_LEFT_TO_RIGHT },
         { 0x0600, U_RIGHT_TO_LEFT },
         { 0x07C0, U_RIGHT_TO_LEFT_ARABIC },
-        { 0x0900, U_RIGHT_TO_LEFT },
+        { 0x08A0, U_RIGHT_TO_LEFT },
+        { 0x0900, U_RIGHT_TO_LEFT_ARABIC },  /* Unicode 6.1 changes U+08A0..U+08FF from R to AL */
+        { 0x20A0, U_LEFT_TO_RIGHT },
+        { 0x20D0, U_EUROPEAN_NUMBER_TERMINATOR },  /* Unicode 6.3 changes the currency symbols block U+20A0..U+20CF to default to ET not L */
         { 0xFB1D, U_LEFT_TO_RIGHT },
         { 0xFB50, U_RIGHT_TO_LEFT },
         { 0xFE00, U_RIGHT_TO_LEFT_ARABIC },
@@ -1110,6 +1229,8 @@ enumDefaultsRange(const void *context, UChar32 start, UChar32 limit, UCharCatego
         { 0x10800, U_LEFT_TO_RIGHT },
         { 0x11000, U_RIGHT_TO_LEFT },
         { 0x1E800, U_LEFT_TO_RIGHT },  /* new default-R range in Unicode 5.2: U+1E800 - U+1EFFF */
+        { 0x1EE00, U_RIGHT_TO_LEFT },
+        { 0x1EF00, U_RIGHT_TO_LEFT_ARABIC },  /* Unicode 6.1 changes U+1EE00..U+1EEFF from R to AL */
         { 0x1F000, U_RIGHT_TO_LEFT },
         { 0x110000, U_LEFT_TO_RIGHT }
     };
@@ -1191,6 +1312,8 @@ static void TestUnicodeData()
     UChar32 c;
     int8_t type;
 
+    UnicodeDataContext context;
+
     u_versionFromString(expectVersionArray, U_UNICODE_VERSION);
     u_getUnicodeVersion(versionArray);
     if(memcmp(versionArray, expectVersionArray, U_MAX_VERSION_LENGTH) != 0)
@@ -1212,7 +1335,15 @@ static void TestUnicodeData()
     }
 
     errorCode=U_ZERO_ERROR;
-    parseUCDFile("UnicodeData.txt", fields, 15, unicodeDataLineFn, NULL, &errorCode);
+#if !UCONFIG_NO_NORMALIZATION
+    context.nfc=unorm2_getNFCInstance(&errorCode);
+    context.nfkc=unorm2_getNFKCInstance(&errorCode);
+    if(U_FAILURE(errorCode)) {
+        log_data_err("error: unable to open an NFC or NFKC UNormalizer2 - %s\n", u_errorName(errorCode));
+        return;
+    }
+#endif
+    parseUCDFile("UnicodeData.txt", fields, 15, unicodeDataLineFn, &context, &errorCode);
     if(U_FAILURE(errorCode)) {
         return; /* if we couldn't parse UnicodeData.txt, we should return */
     }
@@ -1414,7 +1545,7 @@ static void TestCharLength()
     for(i=0; i<(int32_t)(sizeof(codepoint)/sizeof(codepoint[0])); i=(int16_t)(i+2)){
         UChar32 c=codepoint[i+1];
         if(UTF_CHAR_LENGTH(c) != codepoint[i] || U16_LENGTH(c) != codepoint[i]){
-            log_err("The no: of code units for U+%04x:- Expected: %d Got: %d\n", c, codepoint[i], UTF_CHAR_LENGTH(c));
+            log_err("The no: of code units for U+%04x:- Expected: %d Got: %d\n", c, codepoint[i], U16_LENGTH(c));
         }
         multiple=(UBool)(codepoint[i] == 1 ? FALSE : TRUE);
         if(UTF_NEED_MULTIPLE_UCHAR(c) != multiple){
@@ -1443,7 +1574,7 @@ static int32_t MakeProp(char* str)
 static int32_t MakeDir(char* str) 
 {
     int32_t pos = 0;
-    for (pos = 0; pos < 19; pos++) {
+    for (pos = 0; pos < U_CHAR_DIRECTION_COUNT; pos++) {
         if (strcmp(str, dirStrings[pos]) == 0) {
             return pos;
         }
@@ -1458,12 +1589,10 @@ static const struct {
     const char *name, *oldName, *extName, *alias;
 } names[]={
     {0x0061, "LATIN SMALL LETTER A", "", "LATIN SMALL LETTER A"},
-    {0x01a2, "LATIN CAPITAL LETTER OI",
-             "LATIN CAPITAL LETTER O I",
+    {0x01a2, "LATIN CAPITAL LETTER OI", "",
              "LATIN CAPITAL LETTER OI",
              "LATIN CAPITAL LETTER GHA"},
-    {0x0284, "LATIN SMALL LETTER DOTLESS J WITH STROKE AND HOOK",
-             "LATIN SMALL LETTER DOTLESS J BAR HOOK",
+    {0x0284, "LATIN SMALL LETTER DOTLESS J WITH STROKE AND HOOK", "",
              "LATIN SMALL LETTER DOTLESS J WITH STROKE AND HOOK" },
     {0x0fd0, "TIBETAN MARK BSKA- SHOG GI MGO RGYAN", "",
              "TIBETAN MARK BSKA- SHOG GI MGO RGYAN",
@@ -1474,7 +1603,7 @@ static const struct {
     {0xd7a3, "HANGUL SYLLABLE HIH", "", "HANGUL SYLLABLE HIH" },
     {0xd800, "", "", "<lead surrogate-D800>" },
     {0xdc00, "", "", "<trail surrogate-DC00>" },
-    {0xff08, "FULLWIDTH LEFT PARENTHESIS", "FULLWIDTH OPENING PARENTHESIS", "FULLWIDTH LEFT PARENTHESIS" },
+    {0xff08, "FULLWIDTH LEFT PARENTHESIS", "", "FULLWIDTH LEFT PARENTHESIS" },
     {0xffe5, "FULLWIDTH YEN SIGN", "", "FULLWIDTH YEN SIGN" },
     {0xffff, "", "", "<noncharacter-FFFF>" },
     {0x1d0c5, "BYZANTINE MUSICAL SYMBOL FHTORA SKLIRON CHROMA VASIS", "",
@@ -1856,6 +1985,18 @@ TestMirroring() {
                 c3=u_charMirror(c2);
                 if(c3!=start) {
                     log_err("u_charMirror() does not roundtrip: U+%04lx->U+%04lx->U+%04lx\n", (long)start, (long)c2, (long)c3);
+                }
+                c3=u_getBidiPairedBracket(start);
+                if(u_getIntPropertyValue(start, UCHAR_BIDI_PAIRED_BRACKET_TYPE)==U_BPT_NONE) {
+                    if(c3!=start) {
+                        log_err("u_getBidiPairedBracket(U+%04lx) != self for bpt(c)==None\n",
+                                (long)start);
+                    }
+                } else {
+                    if(c3!=c2) {
+                        log_err("u_getBidiPairedBracket(U+%04lx) != U+%04lx = bmg(c)'\n",
+                                (long)start, (long)c2);
+                    }
                 }
             } while(++start<=end);
         }
@@ -2278,7 +2419,7 @@ TestAdditionalProperties() {
         { 0x05ed, UCHAR_BIDI_CLASS, U_RIGHT_TO_LEFT },
         { 0x07f2, UCHAR_BIDI_CLASS, U_DIR_NON_SPACING_MARK }, /* Nko, new in Unicode 5.0 */
         { 0x07fe, UCHAR_BIDI_CLASS, U_RIGHT_TO_LEFT }, /* unassigned R */
-        { 0x08ba, UCHAR_BIDI_CLASS, U_RIGHT_TO_LEFT },
+        { 0x089f, UCHAR_BIDI_CLASS, U_RIGHT_TO_LEFT },
         { 0xfb37, UCHAR_BIDI_CLASS, U_RIGHT_TO_LEFT },
         { 0xfb42, UCHAR_BIDI_CLASS, U_RIGHT_TO_LEFT },
         { 0x10806, UCHAR_BIDI_CLASS, U_RIGHT_TO_LEFT },
@@ -2473,6 +2614,10 @@ TestAdditionalProperties() {
 
         { -1, 0x520, 0 }, /* version break for Unicode 5.2 */
 
+        /* unassigned code points in new default Bidi R blocks */
+        { 0x1ede4, UCHAR_BIDI_CLASS, U_RIGHT_TO_LEFT },
+        { 0x1efe4, UCHAR_BIDI_CLASS, U_RIGHT_TO_LEFT },
+
         /* test some script codes >127 */
         { 0xa6e6,  UCHAR_SCRIPT, USCRIPT_BAMUM },
         { 0xa4d0,  UCHAR_SCRIPT, USCRIPT_LISU },
@@ -2482,6 +2627,26 @@ TestAdditionalProperties() {
 
         /* value changed in Unicode 6.0 */
         { 0x06C3, UCHAR_JOINING_GROUP, U_JG_TEH_MARBUTA_GOAL },
+
+        { -1, 0x610, 0 }, /* version break for Unicode 6.1 */
+
+        /* unassigned code points in new/changed default Bidi AL blocks */
+        { 0x08ba, UCHAR_BIDI_CLASS, U_RIGHT_TO_LEFT_ARABIC },
+        { 0x1eee4, UCHAR_BIDI_CLASS, U_RIGHT_TO_LEFT_ARABIC },
+
+        { -1, 0x630, 0 }, /* version break for Unicode 6.3 */
+
+        /* unassigned code points in the currency symbols block now default to ET */
+        { 0x20C0, UCHAR_BIDI_CLASS, U_EUROPEAN_NUMBER_TERMINATOR },
+        { 0x20CF, UCHAR_BIDI_CLASS, U_EUROPEAN_NUMBER_TERMINATOR },
+
+        /* new property in Unicode 6.3 */
+        { 0x0027, UCHAR_BIDI_PAIRED_BRACKET_TYPE, U_BPT_NONE },
+        { 0x0028, UCHAR_BIDI_PAIRED_BRACKET_TYPE, U_BPT_OPEN },
+        { 0x0029, UCHAR_BIDI_PAIRED_BRACKET_TYPE, U_BPT_CLOSE },
+        { 0xFF5C, UCHAR_BIDI_PAIRED_BRACKET_TYPE, U_BPT_NONE },
+        { 0xFF5B, UCHAR_BIDI_PAIRED_BRACKET_TYPE, U_BPT_OPEN },
+        { 0xFF5D, UCHAR_BIDI_PAIRED_BRACKET_TYPE, U_BPT_CLOSE },
 
         /* undefined UProperty values */
         { 0x61, 0x4a7, 0 },
@@ -2561,6 +2726,9 @@ TestAdditionalProperties() {
     }
     if(u_getIntPropertyMaxValue(UCHAR_WORD_BREAK)!=(int32_t)U_WB_COUNT-1) {
         log_err("error: u_getIntPropertyMaxValue(UCHAR_WORD_BREAK) wrong\n");
+    }
+    if(u_getIntPropertyMaxValue(UCHAR_BIDI_PAIRED_BRACKET_TYPE)!=(int32_t)U_BPT_COUNT-1) {
+        log_err("error: u_getIntPropertyMaxValue(UCHAR_BIDI_PAIRED_BRACKET_TYPE) wrong\n");
     }
     /*JB#2410*/
     if( u_getIntPropertyMaxValue(0x2345)!=-1) {
@@ -2694,6 +2862,8 @@ TestNumericProperties(void) {
         { 0x2181, U_NT_NUMERIC, 5000. },
         { 0x137C, U_NT_NUMERIC, 10000. },
         { 0x4e07, U_NT_NUMERIC, 10000. },
+        { 0x12432, U_NT_NUMERIC, 216000. },
+        { 0x12433, U_NT_NUMERIC, 432000. },
         { 0x4ebf, U_NT_NUMERIC, 100000000. },
         { 0x5146, U_NT_NUMERIC, 1000000000000. },
         { -1, U_NT_NONE, U_NO_NUMERIC_VALUE },
@@ -2985,9 +3155,8 @@ TestConsistency() {
             while(start<=end) {
                 length=u_charName(start, U_UNICODE_CHAR_NAME, buffer, sizeof(buffer), &errorCode);
                 if(U_FAILURE(errorCode)) {
-                    log_err("error getting the name of U+%04x - %s\n", start, u_errorName(errorCode));
+                    log_data_err("error getting the name of U+%04x - %s\n", start, u_errorName(errorCode));
                     errorCode=U_ZERO_ERROR;
-                    continue;
                 }
                 if( (strstr(buffer, "SMALL")==NULL || strstr(buffer, "CAPITAL")!=NULL) &&
                     strstr(buffer, "SMALL CAPITAL")==NULL
@@ -3208,7 +3377,16 @@ caseFoldingLineFn(void *context,
     char status;
 
     /* get code point */
-    c=(UChar32)strtoul(u_skipWhitespace(fields[0][0]), &end, 16);
+    const char *s=u_skipWhitespace(fields[0][0]);
+    if(0==strncmp(s, "0000..10FFFF", 12)) {
+        /*
+         * Ignore the line
+         * # @missing: 0000..10FFFF; C; <code point>
+         * because maps-to-self is already our default, and this line breaks this parser.
+         */
+        return;
+    }
+    c=(UChar32)strtoul(s, &end, 16);
     end=(char *)u_skipWhitespace(end);
     if(end<=fields[0][0] || end!=fields[0][1]) {
         log_err("syntax error in CaseFolding.txt field 0 at %s\n", fields[0][0]);
@@ -3242,14 +3420,14 @@ caseFoldingLineFn(void *context,
          * If a turkic folding was not mentioned, then it should fold the same
          * as the regular simple case folding.
          */
-        UChar s[2];
+        UChar prevString[2];
         int32_t length;
 
         length=0;
-        U16_APPEND_UNSAFE(s, length, prev);
+        U16_APPEND_UNSAFE(prevString, length, prev);
         testFold(prev, (~pData->which)&CF_ALL,
                  prev, pData->prevSimple,
-                 s, length,
+                 prevString, length,
                  pData->prevFull, pData->prevFullLength);
         pData->prev=pData->prevSimple=c;
         length=0;

@@ -74,6 +74,20 @@ void QuicUnackedPacketMap::OnRetransmittedPacket(
   // We keep the old packet in the unacked packet list until it, or one of
   // the retransmissions of it are acked.
   transmission_info->retransmittable_frames = NULL;
+  // Only keep one transmission older than largest observed, because only the
+  // most recent is expected to possibly be a spurious retransmission.
+  if (transmission_info->all_transmissions->size() > 1 &&
+      *(++transmission_info->all_transmissions->begin()) < largest_observed_) {
+    QuicPacketSequenceNumber old_transmission =
+        *transmission_info->all_transmissions->begin();
+    TransmissionInfo* old_transmission_info =
+        FindOrNull(unacked_packets_, old_transmission);
+    // Don't remove old packets if they're still in flight.
+    if (old_transmission_info == NULL || !old_transmission_info->in_flight) {
+      transmission_info->all_transmissions->erase(old_transmission);
+      unacked_packets_.erase(old_transmission);
+    }
+  }
   unacked_packets_[new_sequence_number] =
       TransmissionInfo(frames,
                        new_sequence_number,
@@ -318,6 +332,23 @@ void QuicUnackedPacketMap::SetSent(QuicPacketSequenceNumber sequence_number,
     it->second.bytes_sent = bytes_sent;
     it->second.in_flight = true;
   }
+}
+
+void QuicUnackedPacketMap::RestoreInFlight(
+    QuicPacketSequenceNumber sequence_number) {
+  DCHECK_LT(0u, sequence_number);
+  UnackedPacketMap::iterator it = unacked_packets_.find(sequence_number);
+  if (it == unacked_packets_.end()) {
+    LOG(DFATAL) << "OnPacketSent called for packet that is not unacked: "
+                << sequence_number;
+    return;
+  }
+  DCHECK(!it->second.in_flight);
+  DCHECK_NE(0u, it->second.bytes_sent);
+  DCHECK(it->second.sent_time.IsInitialized());
+
+  bytes_in_flight_ += it->second.bytes_sent;
+  it->second.in_flight = true;
 }
 
 }  // namespace net

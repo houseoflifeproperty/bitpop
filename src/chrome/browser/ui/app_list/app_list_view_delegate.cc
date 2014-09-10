@@ -6,13 +6,14 @@
 
 #include <vector>
 
+#include "apps/custom_launcher_page_contents.h"
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/metrics/user_metrics.h"
 #include "base/stl_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search/hotword_service.h"
@@ -23,23 +24,32 @@
 #include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
 #include "chrome/browser/ui/app_list/search/search_controller.h"
 #include "chrome/browser/ui/app_list/start_page_service.h"
+#include "chrome/browser/ui/apps/chrome_app_delegate.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "chrome/browser/web_applications/web_app.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/extension_set.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
 #include "grit/theme_resources.h"
 #include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/app_list_view_delegate_observer.h"
 #include "ui/app_list/search_box_model.h"
 #include "ui/app_list/speech_ui_model.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/views/controls/webview/webview.h"
 
 #if defined(TOOLKIT_VIEWS)
 #include "ui/views/controls/webview/webview.h"
@@ -87,16 +97,58 @@ void PopulateUsers(const ProfileInfoCache& profile_info,
   users->clear();
   const size_t count = profile_info.GetNumberOfProfiles();
   for (size_t i = 0; i < count; ++i) {
-    // Don't display managed users.
-    if (profile_info.ProfileIsSupervisedAtIndex(i))
-      continue;
-
     app_list::AppListViewDelegate::User user;
     user.name = profile_info.GetNameOfProfileAtIndex(i);
     user.email = profile_info.GetUserNameOfProfileAtIndex(i);
     user.profile_path = profile_info.GetPathOfProfileAtIndex(i);
     user.active = active_profile_path == user.profile_path;
     users->push_back(user);
+  }
+}
+
+// Gets a list of URLs of the custom launcher pages to show in the launcher.
+// Returns a URL for each installed launcher page. If --custom-launcher-page is
+// specified and valid, also includes that URL.
+void GetCustomLauncherPageUrls(content::BrowserContext* browser_context,
+                               std::vector<GURL>* urls) {
+  // First, check the command line.
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (app_list::switches::IsExperimentalAppListEnabled() &&
+      command_line->HasSwitch(switches::kCustomLauncherPage)) {
+    GURL custom_launcher_page_url(
+        command_line->GetSwitchValueASCII(switches::kCustomLauncherPage));
+
+    if (custom_launcher_page_url.SchemeIs(extensions::kExtensionScheme)) {
+      urls->push_back(custom_launcher_page_url);
+    } else {
+      // TODO(mgiuca): Add a proper manifest parser to catch this error properly
+      // and display it on the extensions page.
+      LOG(ERROR) << "Invalid custom launcher page URL: "
+                 << custom_launcher_page_url.possibly_invalid_spec();
+    }
+  }
+
+  // Search the list of installed extensions for ones with 'launcher_page'.
+  extensions::ExtensionRegistry* extension_registry =
+      extensions::ExtensionRegistry::Get(browser_context);
+  const extensions::ExtensionSet& enabled_extensions =
+      extension_registry->enabled_extensions();
+  for (extensions::ExtensionSet::const_iterator it = enabled_extensions.begin();
+       it != enabled_extensions.end();
+       ++it) {
+    const extensions::Extension* extension = it->get();
+    const extensions::Manifest* manifest = extension->manifest();
+    if (!manifest->HasKey(extensions::manifest_keys::kLauncherPage))
+      continue;
+    std::string launcher_page_page;
+    if (!manifest->GetString(extensions::manifest_keys::kLauncherPagePage,
+                             &launcher_page_page)) {
+      LOG(ERROR) << "Extension " << extension->id() << ": "
+                 << extensions::manifest_keys::kLauncherPage
+                 << " has no 'page' attribute; will be ignored.";
+      continue;
+    }
+    urls->push_back(extension->GetResourceURL(launcher_page_page));
   }
 }
 
@@ -144,6 +196,20 @@ AppListViewDelegate::AppListViewDelegate(Profile* profile,
   OnProfileChanged();  // sets model_
   if (service)
     service->AddObserver(this);
+
+  // Set up the custom launcher pages.
+  std::vector<GURL> custom_launcher_page_urls;
+  GetCustomLauncherPageUrls(profile, &custom_launcher_page_urls);
+  for (std::vector<GURL>::const_iterator it = custom_launcher_page_urls.begin();
+       it != custom_launcher_page_urls.end();
+       ++it) {
+    std::string extension_id = it->host();
+    apps::CustomLauncherPageContents* page_contents =
+        new apps::CustomLauncherPageContents(
+            scoped_ptr<apps::AppDelegate>(new ChromeAppDelegate), extension_id);
+    page_contents->Initialize(profile, *it);
+    custom_page_contents_.push_back(page_contents);
+  }
 }
 
 AppListViewDelegate::~AppListViewDelegate() {
@@ -260,10 +326,9 @@ void AppListViewDelegate::GetShortcutPathForApp(
     const std::string& app_id,
     const base::Callback<void(const base::FilePath&)>& callback) {
 #if defined(OS_WIN)
-  ExtensionService* service = profile_->GetExtensionService();
-  DCHECK(service);
   const extensions::Extension* extension =
-      service->GetInstalledExtension(app_id);
+      extensions::ExtensionRegistry::Get(profile_)->GetExtensionById(
+          app_id, extensions::ExtensionRegistry::EVERYTHING);
   if (!extension) {
     callback.Run(base::FilePath());
     return;
@@ -274,7 +339,7 @@ void AppListViewDelegate::GetShortcutPathForApp(
                                       extension->id(),
                                       GURL()));
 
-  web_app::UpdateShortcutInfoAndIconForApp(
+  web_app::GetShortcutInfoForApp(
       extension,
       profile_,
       base::Bind(CreateShortcutInWebAppDir, app_data_dir, callback));
@@ -357,10 +422,10 @@ gfx::ImageSkia AppListViewDelegate::GetWindowIcon() {
 }
 
 void AppListViewDelegate::OpenSettings() {
-  ExtensionService* service = profile_->GetExtensionService();
-  DCHECK(service);
-  const extensions::Extension* extension = service->GetInstalledExtension(
-      extension_misc::kSettingsAppId);
+  const extensions::Extension* extension =
+      extensions::ExtensionRegistry::Get(profile_)->GetExtensionById(
+          extension_misc::kSettingsAppId,
+          extensions::ExtensionRegistry::EVERYTHING);
   DCHECK(extension);
   controller_->ActivateApp(profile_,
                            extension,
@@ -446,11 +511,33 @@ views::View* AppListViewDelegate::CreateStartPageWebView(
   if (!web_contents)
     return NULL;
 
+  DCHECK_EQ(profile_, web_contents->GetBrowserContext());
   views::WebView* web_view = new views::WebView(
       web_contents->GetBrowserContext());
   web_view->SetPreferredSize(size);
   web_view->SetWebContents(web_contents);
   return web_view;
+}
+
+std::vector<views::View*> AppListViewDelegate::CreateCustomPageWebViews(
+    const gfx::Size& size) {
+  std::vector<views::View*> web_views;
+
+  for (ScopedVector<apps::CustomLauncherPageContents>::const_iterator it =
+           custom_page_contents_.begin();
+       it != custom_page_contents_.end();
+       ++it) {
+    content::WebContents* web_contents = (*it)->web_contents();
+    // TODO(mgiuca): DCHECK_EQ(profile_, web_contents->GetBrowserContext())
+    // after http://crbug.com/392763 resolved.
+    views::WebView* web_view =
+        new views::WebView(web_contents->GetBrowserContext());
+    web_view->SetPreferredSize(size);
+    web_view->SetWebContents(web_contents);
+    web_views.push_back(web_view);
+  }
+
+  return web_views;
 }
 #endif
 

@@ -19,6 +19,7 @@
 #include "SkMaskFilter.h"
 #include "SkWriteBuffer.h"
 #include "SkPaint.h"
+#include "SkPatchUtils.h"
 #include "SkPathEffect.h"
 #include "SkPictureFlat.h"
 #include "SkRasterizer.h"
@@ -266,7 +267,7 @@ public:
     bool shuttleBitmap(const SkBitmap&, int32_t slot);
 
 protected:
-    virtual void willSave(SaveFlags) SK_OVERRIDE;
+    virtual void willSave() SK_OVERRIDE;
     virtual SaveLayerStrategy willSaveLayer(const SkRect*, const SkPaint*, SaveFlags) SK_OVERRIDE;
     virtual void willRestore() SK_OVERRIDE;
 
@@ -282,13 +283,15 @@ protected:
                                 SkScalar constY, const SkPaint&) SK_OVERRIDE;
     virtual void onDrawTextOnPath(const void* text, size_t byteLength, const SkPath& path,
                                   const SkMatrix* matrix, const SkPaint&) SK_OVERRIDE;
-
+    virtual void onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
+                             const SkPoint texCoords[4], SkXfermode* xmode,
+                             const SkPaint& paint) SK_OVERRIDE;
     virtual void onClipRect(const SkRect&, SkRegion::Op, ClipEdgeStyle) SK_OVERRIDE;
     virtual void onClipRRect(const SkRRect&, SkRegion::Op, ClipEdgeStyle) SK_OVERRIDE;
     virtual void onClipPath(const SkPath&, SkRegion::Op, ClipEdgeStyle) SK_OVERRIDE;
     virtual void onClipRegion(const SkRegion&, SkRegion::Op) SK_OVERRIDE;
 
-    virtual void onDrawPicture(const SkPicture* picture) SK_OVERRIDE;
+    virtual void onDrawPicture(const SkPicture*, const SkMatrix*, const SkPaint*) SK_OVERRIDE;
 
 private:
     void recordTranslate(const SkMatrix&);
@@ -475,12 +478,14 @@ bool SkGPipeCanvas::needOpBytes(size_t needed) {
     }
 
     needed += 4;  // size of DrawOp atom
-    needed = SkTMax<size_t>(MIN_BLOCK_SIZE, needed);
     needed = SkAlign4(needed);
     if (fWriter.bytesWritten() + needed > fBlockSize) {
-        // Before we wipe out any data that has already been written, read it
-        // out.
+        // Before we wipe out any data that has already been written, read it out.
         this->doNotify();
+
+        // If we're going to allocate a new block, allocate enough to make it worthwhile.
+        needed = SkTMax<size_t>(MIN_BLOCK_SIZE, needed);
+
         void* block = fController->requestBlock(needed, &fBlockSize);
         if (NULL == block) {
             // Do not notify the readers, which would call this function again.
@@ -515,13 +520,13 @@ uint32_t SkGPipeCanvas::getTypefaceID(SkTypeface* face) {
 #define NOTIFY_SETUP(canvas)    \
     AutoPipeNotify apn(canvas)
 
-void SkGPipeCanvas::willSave(SaveFlags flags) {
+void SkGPipeCanvas::willSave() {
     NOTIFY_SETUP(this);
     if (this->needOpBytes()) {
-        this->writeOp(kSave_DrawOp, 0, flags);
+        this->writeOp(kSave_DrawOp);
     }
 
-    this->INHERITED::willSave(flags);
+    this->INHERITED::willSave();
 }
 
 SkCanvas::SaveLayerStrategy SkGPipeCanvas::willSaveLayer(const SkRect* bounds, const SkPaint* paint,
@@ -930,9 +935,14 @@ void SkGPipeCanvas::onDrawTextOnPath(const void* text, size_t byteLength, const 
     }
 }
 
-void SkGPipeCanvas::onDrawPicture(const SkPicture* picture) {
+void SkGPipeCanvas::onDrawPicture(const SkPicture* picture, const SkMatrix* matrix,
+                                  const SkPaint* paint) {
     // we want to playback the picture into individual draw calls
-    this->INHERITED::onDrawPicture(picture);
+    //
+    // todo: do we always have to unroll? If the pipe is not cross-process, seems like
+    // we could just ref the picture and move on...? <reed, scroggo>
+    //
+    this->INHERITED::onDrawPicture(picture, matrix, paint);
 }
 
 void SkGPipeCanvas::drawVertices(VertexMode vmode, int vertexCount,
@@ -991,6 +1001,51 @@ void SkGPipeCanvas::drawVertices(VertexMode vmode, int vertexCount,
         if (flags & kDrawVertices_HasIndices_DrawOpFlag) {
             fWriter.write32(indexCount);
             fWriter.writePad(indices, indexCount * sizeof(uint16_t));
+        }
+    }
+}
+
+void SkGPipeCanvas::onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
+                                const SkPoint texCoords[4], SkXfermode* xmode,
+                                const SkPaint& paint) {
+    NOTIFY_SETUP(this);
+    
+    size_t size = SkPatchUtils::kNumCtrlPts * sizeof(SkPoint);
+    unsigned flags = 0;
+    if (NULL != colors) {
+        flags |= kDrawVertices_HasColors_DrawOpFlag;
+        size += SkPatchUtils::kNumCorners * sizeof(SkColor);
+    }
+    if (NULL != texCoords) {
+        flags |= kDrawVertices_HasTexs_DrawOpFlag;
+        size += SkPatchUtils::kNumCorners * sizeof(SkPoint);
+    }
+    if (NULL != xmode) {
+        SkXfermode::Mode mode;
+        if (xmode->asMode(&mode) && SkXfermode::kModulate_Mode != mode) {
+            flags |= kDrawVertices_HasXfermode_DrawOpFlag;
+            size += sizeof(int32_t);
+        }
+    }
+    
+    this->writePaint(paint);
+    if (this->needOpBytes(size)) {
+        this->writeOp(kDrawPatch_DrawOp, flags, 0);
+        
+        fWriter.write(cubics, SkPatchUtils::kNumCtrlPts * sizeof(SkPoint));
+        
+        if (NULL != colors) {
+            fWriter.write(colors, SkPatchUtils::kNumCorners * sizeof(SkColor));
+        }
+        
+        if (NULL != texCoords) {
+            fWriter.write(texCoords, SkPatchUtils::kNumCorners * sizeof(SkPoint));
+        }
+        
+        if (flags & kDrawVertices_HasXfermode_DrawOpFlag) {
+            SkXfermode::Mode mode = SkXfermode::kModulate_Mode;
+            SkAssertResult(xmode->asMode(&mode));
+            fWriter.write32(mode);
         }
     }
 }

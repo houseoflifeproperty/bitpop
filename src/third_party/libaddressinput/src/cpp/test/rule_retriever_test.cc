@@ -16,47 +16,45 @@
 
 #include <libaddressinput/callback.h>
 #include <libaddressinput/null_storage.h>
+#include <libaddressinput/util/basictypes.h>
 #include <libaddressinput/util/scoped_ptr.h>
 
 #include <string>
 
 #include <gtest/gtest.h>
 
-#include "fake_downloader.h"
 #include "retriever.h"
 #include "rule.h"
+#include "testdata_source.h"
 
 namespace {
 
 using i18n::addressinput::BuildCallback;
-using i18n::addressinput::FakeDownloader;
 using i18n::addressinput::NullStorage;
 using i18n::addressinput::Retriever;
 using i18n::addressinput::Rule;
 using i18n::addressinput::RuleRetriever;
 using i18n::addressinput::scoped_ptr;
+using i18n::addressinput::TestdataSource;
 
 // Tests for RuleRetriever object.
 class RuleRetrieverTest : public testing::Test {
  protected:
   RuleRetrieverTest()
-      : rule_retriever_(new Retriever(FakeDownloader::kFakeDataUrl,
-                                      new FakeDownloader,
-                                      new NullStorage)),
+      : rule_retriever_(
+            new Retriever(new TestdataSource(false), new NullStorage)),
         success_(false),
         key_(),
-        rule_() {}
+        rule_(),
+        rule_ready_(BuildCallback(this, &RuleRetrieverTest::OnRuleReady)) {}
 
   virtual ~RuleRetrieverTest() {}
-
-  RuleRetriever::Callback* BuildCallback() {
-    return ::BuildCallback(this, &RuleRetrieverTest::OnRuleReady);
-  }
 
   RuleRetriever rule_retriever_;
   bool success_;
   std::string key_;
   Rule rule_;
+  const scoped_ptr<const RuleRetriever::Callback> rule_ready_;
 
  private:
   void OnRuleReady(bool success,
@@ -66,13 +64,14 @@ class RuleRetrieverTest : public testing::Test {
     key_ = key;
     rule_.CopyFrom(rule);
   }
+
+  DISALLOW_COPY_AND_ASSIGN(RuleRetrieverTest);
 };
 
 TEST_F(RuleRetrieverTest, ExistingRule) {
   static const char kExistingKey[] = "data/CA";
 
-  scoped_ptr<RuleRetriever::Callback> callback(BuildCallback());
-  rule_retriever_.RetrieveRule(kExistingKey, *callback);
+  rule_retriever_.RetrieveRule(kExistingKey, *rule_ready_);
 
   EXPECT_TRUE(success_);
   EXPECT_EQ(kExistingKey, key_);
@@ -82,8 +81,7 @@ TEST_F(RuleRetrieverTest, ExistingRule) {
 TEST_F(RuleRetrieverTest, MissingRule) {
   static const char kMissingKey[] = "junk";
 
-  scoped_ptr<RuleRetriever::Callback> callback(BuildCallback());
-  rule_retriever_.RetrieveRule(kMissingKey, *callback);
+  rule_retriever_.RetrieveRule(kMissingKey, *rule_ready_);
 
   EXPECT_TRUE(success_);  // The server returns "{}" for bad keys.
   EXPECT_EQ(kMissingKey, key_);

@@ -39,8 +39,6 @@
 
 namespace blink {
 
-using namespace WebCore;
-
 PopupMenuChromium::PopupMenuChromium(LocalFrame& frame, PopupMenuClient* client)
     : m_popupClient(client)
     , m_frameView(frame.view())

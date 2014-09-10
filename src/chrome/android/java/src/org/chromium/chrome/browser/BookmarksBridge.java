@@ -4,12 +4,10 @@
 
 package org.chromium.chrome.browser;
 
-import android.text.TextUtils;
-import android.util.Log;
-
 import org.chromium.base.CalledByNative;
 import org.chromium.base.ObserverList;
 import org.chromium.chrome.browser.profiles.Profile;
+import org.chromium.components.bookmarks.BookmarkId;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,14 +17,6 @@ import java.util.List;
  * bookmark model stored in native.
  */
 public class BookmarksBridge {
-
-    // Should mirror constants in chrome/browser/android/bookmarks/bookmarks_bridge.cc
-    public static final int BOOKMARK_TYPE_NORMAL = 0;
-    public static final int BOOKMARK_TYPE_PARTNER = 1;
-
-    public static final int INVALID_FOLDER_ID = -2;
-    public static final int ROOT_FOLDER_ID = -1;
-
     private final Profile mProfile;
     private long mNativeBookmarksBridge;
     private boolean mIsNativeBookmarkModelLoaded;
@@ -118,6 +108,11 @@ public class BookmarksBridge {
          *  callback methods. For example, this is called when partner bookmarks change.
          */
         void bookmarkModelChanged();
+
+        /**
+         * Called when the native side of bookmark is loaded and now in usable state.
+         */
+        void bookmarkModelLoaded();
     }
 
     /**
@@ -156,6 +151,98 @@ public class BookmarksBridge {
      */
     public void removeObserver(BookmarkModelObserver observer) {
         mObservers.removeObserver(observer);
+    }
+
+    /**
+     * @return Whether or not the underlying bookmark model is loaded.
+     */
+    public boolean isBookmarkModelLoaded() {
+        return mIsNativeBookmarkModelLoaded;
+    }
+
+    /**
+     * @return A BookmarkItem instance for the given BookmarkId.
+     */
+    public BookmarkItem getBookmarkById(BookmarkId id) {
+        assert mIsNativeBookmarkModelLoaded;
+        return nativeGetBookmarkByID(mNativeBookmarksBridge, id.getId(), id.getType());
+    }
+
+    /**
+     * @return All the permanent nodes.
+     */
+    public List<BookmarkId> getPermanentNodeIDs() {
+        assert mIsNativeBookmarkModelLoaded;
+        List<BookmarkId> result = new ArrayList<BookmarkId>();
+        nativeGetPermanentNodeIDs(mNativeBookmarksBridge, result);
+        return result;
+    }
+
+    /**
+     * Reads sub-folder IDs, sub-bookmark IDs, or both of the given folder.
+     *
+     * @param getFolders   Whether sub-folders should be returned.
+     * @param getBookmarks Whether sub-bookmarks should be returned.
+     * @return Child IDs of the given folder, with the specified type.
+     */
+    public List<BookmarkId> getChildIDs(BookmarkId id, boolean getFolders, boolean getBookmarks) {
+        assert mIsNativeBookmarkModelLoaded;
+        List<BookmarkId> result = new ArrayList<BookmarkId>();
+        nativeGetChildIDs(mNativeBookmarksBridge,
+                id.getId(),
+                id.getType(),
+                getFolders,
+                getBookmarks,
+                result);
+        return result;
+    }
+
+    /**
+     * @return All bookmark IDs ordered by descending creation date.
+     */
+    public List<BookmarkId> getAllBookmarkIDsOrderedByCreationDate() {
+        assert mIsNativeBookmarkModelLoaded;
+        List<BookmarkId> result = new ArrayList<BookmarkId>();
+        nativeGetAllBookmarkIDsOrderedByCreationDate(mNativeBookmarksBridge, result);
+        return result;
+    }
+
+    /**
+     * Set title of the given bookmark.
+     */
+    public void setBookmarkTitle(BookmarkId id, String title) {
+        assert mIsNativeBookmarkModelLoaded;
+        nativeSetBookmarkTitle(mNativeBookmarksBridge, id.getId(), id.getType(), title);
+    }
+
+    /**
+     * Set URL of the given bookmark.
+     */
+    public void setBookmarkUrl(BookmarkId id, String url) {
+        assert mIsNativeBookmarkModelLoaded;
+        nativeSetBookmarkUrl(mNativeBookmarksBridge, id.getId(), id.getType(), url);
+    }
+
+    /**
+     * @return Whether the given bookmark exist in the current bookmark model, e.g., not deleted.
+     */
+    public boolean doesBookmarkExist(BookmarkId id) {
+        assert mIsNativeBookmarkModelLoaded;
+        return nativeDoesBookmarkExist(mNativeBookmarksBridge, id.getId(), id.getType());
+    }
+
+    /**
+     * Fetches the bookmarks of the given folder. This is an always-synchronous version of another
+     * getBookmarksForForder function.
+     *
+     * @param folderId The parent folder id.
+     * @return Bookmarks of the given folder.
+     */
+    public List<BookmarkItem> getBookmarksForFolder(BookmarkId folderId) {
+        assert mIsNativeBookmarkModelLoaded;
+        List<BookmarkItem> result = new ArrayList<BookmarkItem>();
+        nativeGetBookmarksForFolder(mNativeBookmarksBridge, folderId, null, result);
+        return result;
     }
 
     /**
@@ -210,6 +297,13 @@ public class BookmarksBridge {
         nativeMoveBookmark(mNativeBookmarksBridge, bookmarkId, newParentId, index);
     }
 
+    /**
+     * A bridge function to BookmarkModelFactory::GetForProfile.
+     */
+    public static long getNativeBookmarkModel(Profile profile) {
+        return nativeGetNativeBookmarkModel(profile);
+    }
+
     public static boolean isEditBookmarksEnabled() {
         return nativeIsEditBookmarksEnabled();
     }
@@ -217,6 +311,11 @@ public class BookmarksBridge {
     @CalledByNative
     private void bookmarkModelLoaded() {
         mIsNativeBookmarkModelLoaded = true;
+
+        for (BookmarkModelObserver observer : mObservers) {
+            observer.bookmarkModelLoaded();
+        }
+
         if (!mDelayedBookmarkCallbacks.isEmpty()) {
             for (int i = 0; i < mDelayedBookmarkCallbacks.size(); i++) {
                 mDelayedBookmarkCallbacks.get(i).callCallbackMethod();
@@ -301,10 +400,28 @@ public class BookmarksBridge {
     }
 
     @CalledByNative
+    private static void addToBookmarkIdList(List<BookmarkId> bookmarkIdList, long id, int type) {
+        bookmarkIdList.add(new BookmarkId(id, type));
+    }
+
+    @CalledByNative
     private static BookmarkId createBookmarkId(long id, int type) {
         return new BookmarkId(id, type);
     }
 
+    private native BookmarkItem nativeGetBookmarkByID(long nativeBookmarksBridge, long id,
+            int type);
+    private native void nativeGetPermanentNodeIDs(long nativeBookmarksBridge,
+            List<BookmarkId> bookmarksList);
+    private native void nativeGetChildIDs(long nativeBookmarksBridge, long id, int type,
+            boolean getFolders, boolean getBookmarks, List<BookmarkId> bookmarksList);
+    private native void nativeGetAllBookmarkIDsOrderedByCreationDate(long nativeBookmarksBridge,
+            List<BookmarkId> result);
+    private native void nativeSetBookmarkTitle(long nativeBookmarksBridge, long id, int type,
+            String title);
+    private native void nativeSetBookmarkUrl(long nativeBookmarksBridge, long id, int type,
+            String url);
+    private native boolean nativeDoesBookmarkExist(long nativeBookmarksBridge, long id, int type);
     private native void nativeGetBookmarksForFolder(long nativeBookmarksBridge,
             BookmarkId folderId, BookmarksCallback callback,
             List<BookmarkItem> bookmarksList);
@@ -314,111 +431,10 @@ public class BookmarksBridge {
     private native void nativeDeleteBookmark(long nativeBookmarksBridge, BookmarkId bookmarkId);
     private native void nativeMoveBookmark(long nativeBookmarksBridge, BookmarkId bookmarkId,
             BookmarkId newParentId, int index);
+    private static native long nativeGetNativeBookmarkModel(Profile profile);
     private native long nativeInit(Profile profile);
     private native void nativeDestroy(long nativeBookmarksBridge);
     private static native boolean nativeIsEditBookmarksEnabled();
-
-    /**
-     * Simple object representing the bookmark id.
-     */
-    public static class BookmarkId {
-        private static final String LOG_TAG = "BookmarkId";
-        private static final char TYPE_PARTNER = 'p';
-
-        private final long mId;
-        private final int mType;
-
-        public BookmarkId(long id, int type) {
-            mId = id;
-            mType = type;
-        }
-
-        /**
-         * @param c The char representing the type.
-         * @return The Bookmark type from a char representing the type.
-         */
-        private static int getBookmarkTypeFromChar(char c) {
-            switch (c) {
-                case TYPE_PARTNER:
-                    return BOOKMARK_TYPE_PARTNER;
-                default:
-                    return BOOKMARK_TYPE_NORMAL;
-            }
-        }
-
-        /**
-         * @param c The char representing the bookmark type.
-         * @return Whether the char representing the bookmark type is a valid type.
-         */
-        private static boolean isValidBookmarkTypeFromChar(char c) {
-            return c == TYPE_PARTNER;
-        }
-
-        /**
-         * @param s The bookmark id string (Eg: p1 for partner bookmark id 1).
-         * @return the Bookmark id from the string which is a concatenation of bookmark type and
-         *         the bookmark id.
-         */
-        public static BookmarkId getBookmarkIdFromString(String s) {
-            long id = ROOT_FOLDER_ID;
-            int type = BOOKMARK_TYPE_NORMAL;
-            if (TextUtils.isEmpty(s)) return new BookmarkId(id, type);
-            char folderTypeChar = s.charAt(0);
-            if (isValidBookmarkTypeFromChar(folderTypeChar)) {
-                type = getBookmarkTypeFromChar(folderTypeChar);
-                s = s.substring(1);
-            }
-            try {
-                id = Long.parseLong(s);
-            } catch (NumberFormatException exception) {
-                Log.e(LOG_TAG, "Error parsing url to extract the bookmark folder id.", exception);
-            }
-            return new BookmarkId(id, type);
-        }
-
-        /**
-         * @return The id of the bookmark.
-         */
-        @CalledByNative("BookmarkId")
-        public long getId() {
-            return mId;
-        }
-
-        /**
-         * @return The bookmark type.
-         */
-        @CalledByNative("BookmarkId")
-        public int getType() {
-            return mType;
-        }
-
-        private String getBookmarkTypeString() {
-            switch (mType) {
-                case BOOKMARK_TYPE_PARTNER:
-                    return String.valueOf(TYPE_PARTNER);
-                case BOOKMARK_TYPE_NORMAL:
-                default:
-                    return "";
-            }
-        }
-
-        @Override
-        public String toString() {
-            return getBookmarkTypeString() + mId;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (!(o instanceof BookmarkId)) return false;
-            BookmarkId item = (BookmarkId) o;
-            return (item.mId == mId && item.mType == mType);
-        }
-
-        @Override
-        public int hashCode() {
-            return toString().hashCode();
-        }
-    }
 
     /**
      * Simple object representing the bookmark item.
@@ -432,7 +448,6 @@ public class BookmarksBridge {
         private final BookmarkId mParentId;
         private final boolean mIsEditable;
         private final boolean mIsManaged;
-
 
         private BookmarkItem(BookmarkId id, String title, String url, boolean isFolder,
                 BookmarkId parentId, boolean isEditable, boolean isManaged) {

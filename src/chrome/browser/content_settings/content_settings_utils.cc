@@ -41,6 +41,8 @@ const char* kTypeNames[] = {
   "ppapi-broker",
   "multiple-automatic-downloads",
   "midi-sysex",
+  "push-messaging",
+  "ssl-cert-decisions",
 #if defined(OS_WIN)
   "metro-switch-to-desktop",
 #elif defined(OS_ANDROID) || defined(OS_CHROMEOS)
@@ -61,6 +63,17 @@ namespace content_settings {
 
 std::string GetTypeName(ContentSettingsType type) {
   return std::string(kTypeNames[type]);
+}
+
+bool GetTypeFromName(const std::string& name,
+                     ContentSettingsType* return_setting) {
+  for (size_t type = 0; type < CONTENT_SETTINGS_NUM_TYPES; ++type) {
+    if (name.compare(kTypeNames[type]) == 0) {
+      *return_setting = static_cast<ContentSettingsType>(type);
+      return true;
+    }
+  }
+  return false;
 }
 
 std::string CreatePatternString(

@@ -7,6 +7,7 @@
 
 
 from slave import recipe_api
+from slave import recipe_util
 
 
 # This is just for testing, to indicate if a master is using a Git scheduler
@@ -47,17 +48,25 @@ def jsonish_to_python(spec, is_top=False):
 
 class BotUpdateApi(recipe_api.RecipeApi):
 
+  def __init__(self, *args, **kwargs):
+      self._properties = {}
+      super(BotUpdateApi, self).__init__(*args, **kwargs)
+
   def __call__(self, name, cmd, **kwargs):
     """Wrapper for easy calling of bot_update."""
     assert isinstance(cmd, (list, tuple))
-    kwargs.setdefault('abort_on_failure', True)
     bot_update_path = self.m.path['build'].join(
         'scripts', 'slave', 'bot_update.py')
     return self.m.python(name, bot_update_path, cmd, **kwargs)
 
+  @property
+  def properties(self):
+      return self._properties
+
   def ensure_checkout(self, gclient_config=None, suffix=None,
                       patch=True, update_presentation=True,
-                      force=False, **kwargs):
+                      force=False, patch_root=None, no_shallow=False,
+                      **kwargs):
     # We can re-use the gclient spec from the gclient module, since all the
     # data bot_update needs is already configured into the gclient spec.
     cfg = gclient_config or self.m.gclient.c
@@ -70,7 +79,7 @@ class BotUpdateApi(recipe_api.RecipeApi):
 
     # Construct our bot_update command.  This basically be inclusive of
     # everything required for bot_update to know:
-    root = self.m.properties.get('root')
+    root = patch_root or self.m.properties.get('root')
     if patch:
       issue = self.m.properties.get('issue')
       patchset = self.m.properties.get('patchset')
@@ -124,7 +133,9 @@ class BotUpdateApi(recipe_api.RecipeApi):
     if self.m.gclient.c and self.m.gclient.c.revisions:
       revisions.update(self.m.gclient.c.revisions)
     for name, revision in sorted(revisions.items()):
-      flags.append(['--revision', '%s@%s' % (name, revision)])
+      fixed_revision = self.m.gclient.resolve_revision(revision)
+      if fixed_revision:
+        flags.append(['--revision', '%s@%s' % (name, fixed_revision)])
 
     # Filter out flags that are None.
     cmd = [item for flag_set in flags
@@ -132,6 +143,8 @@ class BotUpdateApi(recipe_api.RecipeApi):
 
     if force:
       cmd.append('--force')
+    if no_shallow:
+      cmd.append('--no_shallow')
 
     # Inject Json output for testing.
     git_mode = self.m.properties.get('mastername') in GIT_MASTERS
@@ -139,22 +152,6 @@ class BotUpdateApi(recipe_api.RecipeApi):
     step_test_data = lambda: self.test_api.output_json(
         master, builder, slave, root, first_sln, rev_map, git_mode, force,
         self.m.properties.get('fail_patch', False))
-
-    def followup_fn(step_result):
-      if update_presentation:
-        # Set properties such as got_revision.
-        if 'properties' in step_result.json.output:
-          properties = step_result.json.output['properties']
-          for prop_name, prop_value in properties.iteritems():
-            step_result.presentation.properties[prop_name] = prop_value
-      # Add helpful step description in the step UI.
-      if 'step_text' in step_result.json.output:
-        step_text = step_result.json.output['step_text']
-        step_result.presentation.step_text = step_text
-      # Add log line output.
-      if 'log_lines' in step_result.json.output:
-        for log_name, log_lines in step_result.json.output['log_lines']:
-          step_result.presentation.logs[log_name] = log_lines.splitlines()
 
     # Add suffixes to the step name, if specified.
     name = 'bot_update'
@@ -164,16 +161,51 @@ class BotUpdateApi(recipe_api.RecipeApi):
       name += ' - %s' % suffix
 
     # Ah hah! Now that everything is in place, lets run bot_update!
-    yield self(name, cmd, followup_fn=followup_fn,
-               step_test_data=step_test_data, **kwargs),
+    try:
+      self(name, cmd, step_test_data=step_test_data, **kwargs)
+    finally:
+      step_result = self.m.step.active_result
 
-    # Set the "checkout" path for the main solution.
-    # This is used by the Chromium module to figure out where to look for
-    # the checkout.
-    bot_update_step = self.m.step_history.last_step()
-    # bot_update actually just sets root to be the folder name of the
-    # first solution.
-    if bot_update_step.json.output['did_run']:
-      co_root = bot_update_step.json.output['root']
-      cwd = kwargs.get('cwd', self.m.path['slave_build'])
-      self.m.path['checkout'] = cwd.join(*co_root.split(self.m.path.sep))
+      self._properties = step_result.json.output.get('properties', {})
+
+      if update_presentation:
+        # Set properties such as got_revision.
+        for prop_name, prop_value in self.properties.iteritems():
+          step_result.presentation.properties[prop_name] = prop_value
+      # Add helpful step description in the step UI.
+      if 'step_text' in step_result.json.output:
+        step_text = step_result.json.output['step_text']
+        step_result.presentation.step_text = step_text
+      # Add log line output.
+      if 'log_lines' in step_result.json.output:
+        for log_name, log_lines in step_result.json.output['log_lines']:
+          step_result.presentation.logs[log_name] = log_lines.splitlines()
+      # Abort the build on failure, if its not a patch failure.
+      if step_result.presentation.status == self.m.step.FAILURE:
+        if step_result.json.output.get('patch_failure'):
+          step_result.presentation.status = self.m.step.SUCCESS
+        else:
+          raise self.m.step.StepFailure('Bot Update failed, aborting.')
+
+      # Set the "checkout" path for the main solution.
+      # This is used by the Chromium module to figure out where to look for
+      # the checkout.
+      # If there is a patch failure, emit another step that said things failed.
+      if step_result.json.output.get('patch_failure'):
+        self.m.python.inline(
+            'Patch failure',
+            """\
+            import sys
+            print 'Check the bot_update step for details.'
+            sys.exit(1)
+            """,
+            step_test_data=self.test_api.patch_error_data)
+
+      # bot_update actually just sets root to be the folder name of the
+      # first solution.
+      if step_result.json.output['did_run']:
+        co_root = step_result.json.output['root']
+        cwd = kwargs.get('cwd', self.m.path['slave_build'])
+        self.m.path['checkout'] = cwd.join(*co_root.split(self.m.path.sep))
+
+    return step_result

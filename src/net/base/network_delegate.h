@@ -35,6 +35,9 @@ namespace net {
 class CookieOptions;
 class HttpRequestHeaders;
 class HttpResponseHeaders;
+class ProxyInfo;
+class ProxyServer;
+class ProxyService;
 class SocketStream;
 class URLRequest;
 
@@ -60,9 +63,19 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   int NotifyBeforeURLRequest(URLRequest* request,
                              const CompletionCallback& callback,
                              GURL* new_url);
+  void NotifyResolveProxy(const GURL& url,
+                          int load_flags,
+                          const ProxyService& proxy_service,
+                          ProxyInfo* result);
+  void NotifyProxyFallback(const ProxyServer& bad_proxy,
+                           int net_error,
+                           bool did_fallback);
   int NotifyBeforeSendHeaders(URLRequest* request,
                               const CompletionCallback& callback,
                               HttpRequestHeaders* headers);
+  void NotifyBeforeSendProxyHeaders(URLRequest* request,
+                                    const ProxyInfo& proxy_info,
+                                    HttpRequestHeaders* headers);
   void NotifySendHeaders(URLRequest* request,
                          const HttpRequestHeaders& headers);
   int NotifyHeadersReceived(
@@ -117,6 +130,21 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
                                  const CompletionCallback& callback,
                                  GURL* new_url);
 
+  // Called as the proxy is being resolved for |url|. Allows the delegate to
+  // override the proxy resolution decision made by ProxyService. The delegate
+  // may override the decision by modifying the ProxyInfo |result|.
+  virtual void OnResolveProxy(const GURL& url,
+                              int load_flags,
+                              const ProxyService& proxy_service,
+                              ProxyInfo* result);
+
+  // Called when use of |bad_proxy| fails due to |net_error|. |did_fallback| is
+  // true if the proxy service was able to fallback to another proxy
+  // configuration.
+  virtual void OnProxyFallback(const ProxyServer& bad_proxy,
+                               int net_error,
+                               bool did_fallback);
+
   // Called right before the HTTP headers are sent. Allows the delegate to
   // read/write |headers| before they get sent out. |callback| and |headers| are
   // valid only until OnCompleted or OnURLRequestDestroyed is called for this
@@ -125,6 +153,13 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   virtual int OnBeforeSendHeaders(URLRequest* request,
                                   const CompletionCallback& callback,
                                   HttpRequestHeaders* headers);
+
+  // Called after a proxy connection. Allows the delegate to read/write
+  // |headers| before they get sent out. |headers| is valid only until
+  // OnCompleted or OnURLRequestDestroyed is called for this request.
+  virtual void OnBeforeSendProxyHeaders(URLRequest* request,
+                                        const ProxyInfo& proxy_info,
+                                        HttpRequestHeaders* headers);
 
   // Called right before the HTTP request(s) are being sent to the network.
   // |headers| is only valid until OnCompleted or OnURLRequestDestroyed is

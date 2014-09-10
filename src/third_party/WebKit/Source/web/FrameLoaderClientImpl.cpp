@@ -32,10 +32,10 @@
 #include "config.h"
 #include "web/FrameLoaderClientImpl.h"
 
-#include "bindings/v8/ScriptController.h"
+#include "bindings/core/v8/ScriptController.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/dom/DocumentFullscreen.h"
+#include "core/dom/FullscreenElementStack.h"
 #include "core/events/MessageEvent.h"
 #include "core/events/MouseEvent.h"
 #include "core/frame/FrameView.h"
@@ -96,8 +96,6 @@
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 #include <v8.h>
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -171,6 +169,13 @@ void FrameLoaderClientImpl::didUpdateCurrentHistoryItem()
         m_webFrame->client()->didUpdateCurrentHistoryItem(m_webFrame);
 }
 
+void FrameLoaderClientImpl::didRemoveAllPendingStylesheet()
+{
+    WebViewImpl* webview = m_webFrame->viewImpl();
+    if (webview)
+        webview->didRemoveAllPendingStylesheet(m_webFrame);
+}
+
 bool FrameLoaderClientImpl::allowScript(bool enabledPerSettings)
 {
     if (m_webFrame->permissionClient())
@@ -201,6 +206,14 @@ bool FrameLoaderClientImpl::allowImage(bool enabledPerSettings, const KURL& imag
         return m_webFrame->permissionClient()->allowImage(enabledPerSettings, imageURL);
 
     return enabledPerSettings;
+}
+
+bool FrameLoaderClientImpl::allowMedia(const KURL& mediaURL)
+{
+    if (m_webFrame->permissionClient())
+        return m_webFrame->permissionClient()->allowMedia(mediaURL);
+
+    return true;
 }
 
 bool FrameLoaderClientImpl::allowDisplayingInsecureContent(bool enabledPerSettings, SecurityOrigin* context, const KURL& url)
@@ -239,7 +252,7 @@ bool FrameLoaderClientImpl::hasWebView() const
 
 Frame* FrameLoaderClientImpl::opener() const
 {
-    return toWebCoreFrame(m_webFrame->opener());
+    return toCoreFrame(m_webFrame->opener());
 }
 
 void FrameLoaderClientImpl::setOpener(Frame* opener)
@@ -250,32 +263,32 @@ void FrameLoaderClientImpl::setOpener(Frame* opener)
 
 Frame* FrameLoaderClientImpl::parent() const
 {
-    return toWebCoreFrame(m_webFrame->parent());
+    return toCoreFrame(m_webFrame->parent());
 }
 
 Frame* FrameLoaderClientImpl::top() const
 {
-    return toWebCoreFrame(m_webFrame->top());
+    return toCoreFrame(m_webFrame->top());
 }
 
 Frame* FrameLoaderClientImpl::previousSibling() const
 {
-    return toWebCoreFrame(m_webFrame->previousSibling());
+    return toCoreFrame(m_webFrame->previousSibling());
 }
 
 Frame* FrameLoaderClientImpl::nextSibling() const
 {
-    return toWebCoreFrame(m_webFrame->nextSibling());
+    return toCoreFrame(m_webFrame->nextSibling());
 }
 
 Frame* FrameLoaderClientImpl::firstChild() const
 {
-    return toWebCoreFrame(m_webFrame->firstChild());
+    return toCoreFrame(m_webFrame->firstChild());
 }
 
 Frame* FrameLoaderClientImpl::lastChild() const
 {
-    return toWebCoreFrame(m_webFrame->lastChild());
+    return toCoreFrame(m_webFrame->lastChild());
 }
 
 void FrameLoaderClientImpl::detachedFromParent()
@@ -295,17 +308,9 @@ void FrameLoaderClientImpl::detachedFromParent()
     m_webFrame->setClient(0);
 
     client->frameDetached(m_webFrame);
-    // Clear our reference to WebCore::LocalFrame at the very end, in case the client
+    // Clear our reference to LocalFrame at the very end, in case the client
     // refers to it.
-    m_webFrame->setWebCoreFrame(nullptr);
-}
-
-void FrameLoaderClientImpl::dispatchWillRequestAfterPreconnect(ResourceRequest& request)
-{
-    if (m_webFrame->client()) {
-        WrappedResourceRequest webreq(request);
-        m_webFrame->client()->willRequestAfterPreconnect(m_webFrame, webreq);
-    }
+    m_webFrame->setCoreFrame(nullptr);
 }
 
 void FrameLoaderClientImpl::dispatchWillSendRequest(
@@ -334,7 +339,7 @@ void FrameLoaderClientImpl::dispatchDidReceiveResponse(DocumentLoader* loader,
 void FrameLoaderClientImpl::dispatchDidChangeResourcePriority(unsigned long identifier, ResourceLoadPriority priority, int intraPriorityValue)
 {
     if (m_webFrame->client())
-        m_webFrame->client()->didChangeResourcePriority(m_webFrame, identifier, static_cast<blink::WebURLRequest::Priority>(priority), intraPriorityValue);
+        m_webFrame->client()->didChangeResourcePriority(m_webFrame, identifier, static_cast<WebURLRequest::Priority>(priority), intraPriorityValue);
 }
 
 // Called when a particular resource load completes
@@ -383,10 +388,10 @@ void FrameLoaderClientImpl::dispatchWillClose()
         m_webFrame->client()->willClose(m_webFrame);
 }
 
-void FrameLoaderClientImpl::dispatchDidStartProvisionalLoad()
+void FrameLoaderClientImpl::dispatchDidStartProvisionalLoad(bool isTransitionNavigation)
 {
     if (m_webFrame->client())
-        m_webFrame->client()->didStartProvisionalLoad(m_webFrame);
+        m_webFrame->client()->didStartProvisionalLoad(m_webFrame, isTransitionNavigation);
 }
 
 void FrameLoaderClientImpl::dispatchDidReceiveTitle(const String& title)
@@ -395,7 +400,7 @@ void FrameLoaderClientImpl::dispatchDidReceiveTitle(const String& title)
         m_webFrame->client()->didReceiveTitle(m_webFrame, title, WebTextDirectionLeftToRight);
 }
 
-void FrameLoaderClientImpl::dispatchDidChangeIcons(WebCore::IconType type)
+void FrameLoaderClientImpl::dispatchDidChangeIcons(IconType type)
 {
     if (m_webFrame->client())
         m_webFrame->client()->didChangeIcon(m_webFrame, static_cast<WebIconURL::Type>(type));
@@ -456,14 +461,29 @@ void FrameLoaderClientImpl::dispatchDidChangeThemeColor()
         m_webFrame->client()->didChangeThemeColor();
 }
 
-NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const ResourceRequest& request, DocumentLoader* loader, NavigationPolicy policy)
+NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const ResourceRequest& request, DocumentLoader* loader, NavigationPolicy policy, bool isTransitionNavigation)
 {
     if (!m_webFrame->client())
         return NavigationPolicyIgnore;
     WebDataSourceImpl* ds = WebDataSourceImpl::fromDocumentLoader(loader);
-    WebNavigationPolicy webPolicy = m_webFrame->client()->decidePolicyForNavigation(m_webFrame, ds->extraData(), WrappedResourceRequest(request),
-        ds->navigationType(), static_cast<WebNavigationPolicy>(policy), ds->isRedirect());
+
+    WrappedResourceRequest wrappedResourceRequest(request);
+    WebFrameClient::NavigationPolicyInfo navigationInfo(wrappedResourceRequest);
+    navigationInfo.frame = m_webFrame;
+    navigationInfo.extraData = ds->extraData();
+    navigationInfo.navigationType = ds->navigationType();
+    navigationInfo.defaultPolicy = static_cast<WebNavigationPolicy>(policy);
+    navigationInfo.isRedirect = ds->isRedirect();
+    navigationInfo.isTransitionNavigation = isTransitionNavigation;
+
+    WebNavigationPolicy webPolicy = m_webFrame->client()->decidePolicyForNavigation(navigationInfo);
     return static_cast<NavigationPolicy>(webPolicy);
+}
+
+void FrameLoaderClientImpl::dispatchAddNavigationTransitionData(const String& allowedDestinationOrigin, const String& selector, const String& markup)
+{
+    if (m_webFrame->client())
+        m_webFrame->client()->addNavigationTransitionData(allowedDestinationOrigin, selector, markup);
 }
 
 void FrameLoaderClientImpl::dispatchWillRequestResource(FetchRequest* request)
@@ -508,7 +528,7 @@ void FrameLoaderClientImpl::loadURLExternally(const ResourceRequest& request, Na
 {
     if (m_webFrame->client()) {
         ASSERT(m_webFrame->frame()->document());
-        DocumentFullscreen::webkitCancelFullScreen(*m_webFrame->frame()->document());
+        FullscreenElementStack::from(*m_webFrame->frame()->document()).fullyExitFullscreen();
         WrappedResourceRequest webreq(request);
         m_webFrame->client()->loadURLExternally(
             m_webFrame, webreq, static_cast<WebNavigationPolicy>(policy), suggestedName);
@@ -580,7 +600,7 @@ String FrameLoaderClientImpl::userAgent(const KURL& url)
     if (!override.isEmpty())
         return override;
 
-    return blink::Platform::current()->userAgent();
+    return Platform::current()->userAgent();
 }
 
 String FrameLoaderClientImpl::doNotTrackValue()
@@ -743,12 +763,12 @@ void FrameLoaderClientImpl::dispatchWillOpenSocketStream(SocketStreamHandle* han
     m_webFrame->client()->willOpenSocketStream(SocketStreamHandleInternal::toWebSocketStreamHandle(handle));
 }
 
-void FrameLoaderClientImpl::dispatchWillOpenWebSocket(blink::WebSocketHandle* handle)
+void FrameLoaderClientImpl::dispatchWillOpenWebSocket(WebSocketHandle* handle)
 {
     m_webFrame->client()->willOpenWebSocket(handle);
 }
 
-void FrameLoaderClientImpl::dispatchWillStartUsingPeerConnectionHandler(blink::WebRTCPeerConnectionHandler* handler)
+void FrameLoaderClientImpl::dispatchWillStartUsingPeerConnectionHandler(WebRTCPeerConnectionHandler* handler)
 {
     m_webFrame->client()->willStartUsingPeerConnectionHandler(webFrame(), handler);
 }

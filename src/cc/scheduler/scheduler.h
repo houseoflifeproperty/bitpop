@@ -20,6 +20,9 @@
 #include "cc/scheduler/scheduler_state_machine.h"
 
 namespace base {
+namespace debug {
+class ConvertableToTraceFormat;
+}
 class SingleThreadTaskRunner;
 }
 
@@ -35,7 +38,7 @@ class SchedulerClient {
   virtual void ScheduledActionAnimate() = 0;
   virtual void ScheduledActionCommit() = 0;
   virtual void ScheduledActionUpdateVisibleTiles() = 0;
-  virtual void ScheduledActionActivatePendingTree() = 0;
+  virtual void ScheduledActionActivateSyncTree() = 0;
   virtual void ScheduledActionBeginOutputSurfaceCreation() = 0;
   virtual void ScheduledActionManageTiles() = 0;
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks time) = 0;
@@ -95,6 +98,13 @@ class CC_EXPORT Scheduler {
   void DidLoseOutputSurface();
   void DidCreateAndInitializeOutputSurface();
 
+  // Tests do not want to shut down until all possible BeginMainFrames have
+  // occured to prevent flakiness.
+  bool MainFrameForTestingWillHappen() const {
+    return state_machine_.CommitPending() ||
+           state_machine_.CouldSendBeginMainFrame();
+  }
+
   bool CommitPending() const { return state_machine_.CommitPending(); }
   bool RedrawPending() const { return state_machine_.RedrawPending(); }
   bool ManageTilesPending() const {
@@ -129,7 +139,7 @@ class CC_EXPORT Scheduler {
   void PollForAnticipatedDrawTriggers();
   void PollToAdvanceCommitState();
 
-  scoped_ptr<base::Value> AsValue() const;
+  scoped_refptr<base::debug::ConvertableToTraceFormat> AsValue() const;
 
   bool IsInsideAction(SchedulerStateMachine::Action action) {
     return inside_action_ == action;
@@ -161,7 +171,7 @@ class CC_EXPORT Scheduler {
     // TimeSourceClient implementation of OnTimerTick triggers a BeginFrame.
     virtual void OnTimerTick() OVERRIDE;
 
-    scoped_ptr<base::Value> AsValue() const;
+    void AsValueInto(base::debug::TracedValue* dict) const;
 
    private:
     BeginFrameArgs CreateSyntheticBeginFrameArgs(base::TimeTicks frame_time);

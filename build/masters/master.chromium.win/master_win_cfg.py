@@ -98,7 +98,7 @@ def Update(config, active_master, c):
             'chromium',
             factory_properties=spec.get('factory_properties'),
             triggers=spec.get('triggers'),
-            timeout=2400),
+            timeout=spec.get('timeout', 2400)),
         'notify_on_missing': True,
         'category': '2windows',
       } for spec in specs

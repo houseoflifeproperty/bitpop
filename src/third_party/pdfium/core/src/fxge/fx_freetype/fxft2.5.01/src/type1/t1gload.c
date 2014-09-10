@@ -281,7 +281,7 @@
     const T1_Decoder_Funcs  decoder_funcs = psaux->t1_decoder_funcs;
 
     FT_Matrix               font_matrix;
-    FT_Vector               font_offset;
+    FT_Vector               font_offset = {0, 0};
     FT_Data                 glyph_data;
     FT_Bool                 must_finish_decoder = FALSE;
 #ifdef FT_CONFIG_OPTION_INCREMENTAL

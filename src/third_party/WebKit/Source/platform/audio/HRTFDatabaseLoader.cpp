@@ -36,7 +36,7 @@
 #include "public/platform/Platform.h"
 #include "wtf/MainThread.h"
 
-namespace WebCore {
+namespace blink {
 
 // Singleton
 HRTFDatabaseLoader::LoaderMap* HRTFDatabaseLoader::s_loaderMap = 0;
@@ -97,7 +97,7 @@ void HRTFDatabaseLoader::loadAsynchronously()
 
     if (!m_hrtfDatabase && !m_databaseLoaderThread) {
         // Start the asynchronous database loading process.
-        m_databaseLoaderThread = adoptPtr(blink::Platform::current()->createThread("HRTF database loader"));
+        m_databaseLoaderThread = adoptPtr(Platform::current()->createThread("HRTF database loader"));
         m_databaseLoaderThread->postTask(new Task(WTF::bind(&HRTFDatabaseLoader::load, this)));
     }
 }
@@ -113,6 +113,6 @@ void HRTFDatabaseLoader::waitForLoaderThreadCompletion()
     m_databaseLoaderThread.clear();
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

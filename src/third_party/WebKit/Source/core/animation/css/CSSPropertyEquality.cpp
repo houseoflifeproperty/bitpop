@@ -10,17 +10,15 @@
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/ShadowList.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
 template <CSSPropertyID property>
-bool fillLayersEqual(const FillLayer* aLayer, const FillLayer* bLayer)
+bool fillLayersEqual(const FillLayer& aLayers, const FillLayer& bLayers)
 {
-    if (aLayer == bLayer)
-        return true;
-    if (!aLayer || !bLayer)
-        return false;
+    const FillLayer* aLayer = &aLayers;
+    const FillLayer* bLayer = &bLayers;
     while (aLayer && bLayer) {
         switch (property) {
         case CSSPropertyBackgroundPositionX:
@@ -119,12 +117,12 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
     case CSSPropertyColor:
         return a.color() == b.color() && a.visitedLinkColor() == b.visitedLinkColor();
     case CSSPropertyFill: {
-        const SVGRenderStyle& aSVG = *a.svgStyle();
-        const SVGRenderStyle& bSVG = *b.svgStyle();
+        const SVGRenderStyle& aSVG = a.svgStyle();
+        const SVGRenderStyle& bSVG = b.svgStyle();
         return aSVG.fillPaintType() == bSVG.fillPaintType()
-            && (aSVG.fillPaintType() != SVGPaint::SVG_PAINTTYPE_RGBCOLOR || aSVG.fillPaintColor() == bSVG.fillPaintColor())
+            && (aSVG.fillPaintType() != SVG_PAINTTYPE_RGBCOLOR || aSVG.fillPaintColor() == bSVG.fillPaintColor())
             && aSVG.visitedLinkFillPaintType() == bSVG.visitedLinkFillPaintType()
-            && (aSVG.visitedLinkFillPaintType() != SVGPaint::SVG_PAINTTYPE_RGBCOLOR || aSVG.visitedLinkFillPaintColor() == bSVG.visitedLinkFillPaintColor());
+            && (aSVG.visitedLinkFillPaintType() != SVG_PAINTTYPE_RGBCOLOR || aSVG.visitedLinkFillPaintColor() == bSVG.visitedLinkFillPaintColor());
     }
     case CSSPropertyFillOpacity:
         return a.fillOpacity() == b.fillOpacity();
@@ -144,6 +142,8 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
         // FIXME: Should we introduce an option to pass the computed font size here, allowing consumers to
         // enable text zoom rather than Text Autosizing? See http://crbug.com/227545.
         return a.specifiedFontSize() == b.specifiedFontSize();
+    case CSSPropertyFontStretch:
+        return a.fontStretch() == b.fontStretch();
     case CSSPropertyFontWeight:
         return a.fontWeight() == b.fontWeight();
     case CSSPropertyHeight:
@@ -208,12 +208,12 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
     case CSSPropertyStopOpacity:
         return a.stopOpacity() == b.stopOpacity();
     case CSSPropertyStroke: {
-        const SVGRenderStyle& aSVG = *a.svgStyle();
-        const SVGRenderStyle& bSVG = *b.svgStyle();
+        const SVGRenderStyle& aSVG = a.svgStyle();
+        const SVGRenderStyle& bSVG = b.svgStyle();
         return aSVG.strokePaintType() == bSVG.strokePaintType()
-            && (aSVG.strokePaintType() != SVGPaint::SVG_PAINTTYPE_RGBCOLOR || aSVG.strokePaintColor() == bSVG.strokePaintColor())
+            && (aSVG.strokePaintType() != SVG_PAINTTYPE_RGBCOLOR || aSVG.strokePaintColor() == bSVG.strokePaintColor())
             && aSVG.visitedLinkStrokePaintType() == bSVG.visitedLinkStrokePaintType()
-            && (aSVG.visitedLinkStrokePaintType() != SVGPaint::SVG_PAINTTYPE_RGBCOLOR || aSVG.visitedLinkStrokePaintColor() == bSVG.visitedLinkStrokePaintColor());
+            && (aSVG.visitedLinkStrokePaintType() != SVG_PAINTTYPE_RGBCOLOR || aSVG.visitedLinkStrokePaintColor() == bSVG.visitedLinkStrokePaintColor());
     }
     case CSSPropertyStrokeDasharray:
         return dataEquivalent(a.strokeDashArray(), b.strokeDashArray());
@@ -282,10 +282,6 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
         return a.perspective() == b.perspective();
     case CSSPropertyPerspectiveOrigin:
         return a.perspectiveOriginX() == b.perspectiveOriginX() && a.perspectiveOriginY() == b.perspectiveOriginY();
-    case CSSPropertyWebkitPerspectiveOriginX:
-        return a.perspectiveOriginX() == b.perspectiveOriginX();
-    case CSSPropertyWebkitPerspectiveOriginY:
-        return a.perspectiveOriginY() == b.perspectiveOriginY();
     case CSSPropertyWebkitTextStrokeColor:
         return a.textStrokeColor().resolve(a.color()) == b.textStrokeColor().resolve(b.color())
             && a.visitedLinkTextStrokeColor().resolve(a.color()) == b.visitedLinkTextStrokeColor().resolve(b.color());
@@ -293,12 +289,6 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
         return a.transform() == b.transform();
     case CSSPropertyTransformOrigin:
         return a.transformOriginX() == b.transformOriginX() && a.transformOriginY() == b.transformOriginY() && a.transformOriginZ() == b.transformOriginZ();
-    case CSSPropertyWebkitTransformOriginX:
-        return a.transformOriginX() == b.transformOriginX();
-    case CSSPropertyWebkitTransformOriginY:
-        return a.transformOriginY() == b.transformOriginY();
-    case CSSPropertyWebkitTransformOriginZ:
-        return a.transformOriginZ() == b.transformOriginZ();
     case CSSPropertyWidows:
         return a.widows() == b.widows();
     case CSSPropertyWidth:

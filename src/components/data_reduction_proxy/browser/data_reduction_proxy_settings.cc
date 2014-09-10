@@ -8,6 +8,7 @@
 #include "base/command_line.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/prefs/pref_member.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
@@ -15,17 +16,16 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_auth_request_handler.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_configurator.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_usage_stats.h"
 #include "components/data_reduction_proxy/common/data_reduction_proxy_pref_names.h"
 #include "components/data_reduction_proxy/common/data_reduction_proxy_switches.h"
-#include "crypto/random.h"
-#include "net/base/auth.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
-#include "net/http/http_auth.h"
-#include "net/http/http_auth_cache.h"
+#include "net/base/net_util.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_fetcher.h"
@@ -38,6 +38,14 @@
 using base::StringPrintf;
 
 namespace {
+// Values of the UMA DataReductionProxy.NetworkChangeEvents histograms.
+// This enum must remain synchronized with the enum of the same
+// name in metrics/histograms/histograms.xml.
+enum DataReductionProxyNetworkChangeEvent {
+  IP_CHANGED = 0, // The client IP address changed.
+  DISABLED_ON_VPN = 1, // The proxy is disabled because a VPN is running.
+  CHANGE_EVENT_COUNT = 2 // This must always be last.
+};
 
 // Key of the UMA DataReductionProxy.StartupState histogram.
 const char kUMAProxyStartupStateHistogram[] =
@@ -46,9 +54,15 @@ const char kUMAProxyStartupStateHistogram[] =
 // Key of the UMA DataReductionProxy.ProbeURL histogram.
 const char kUMAProxyProbeURL[] = "DataReductionProxy.ProbeURL";
 
-// TODO(marq): Factor this string out into a constant here and in
-//             http_auth_handler_spdyproxy.
-const char kAuthenticationRealmName[] = "SpdyProxy";
+// Key of the UMA DataReductionProxy.ProbeURLNetError histogram.
+const char kUMAProxyProbeURLNetError[] = "DataReductionProxy.ProbeURLNetError";
+
+// Record a network change event.
+void RecordNetworkChangeEvent(DataReductionProxyNetworkChangeEvent event) {
+  UMA_HISTOGRAM_ENUMERATION("DataReductionProxy.NetworkChangeEvents",
+                            event,
+                            CHANGE_EVENT_COUNT);
+}
 
 int64 GetInt64PrefValue(const base::ListValue& list_value, size_t index) {
   int64 val = 0;
@@ -62,6 +76,12 @@ int64 GetInt64PrefValue(const base::ListValue& list_value, size_t index) {
   return val;
 }
 
+bool IsEnabledOnCommandLine() {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  return command_line.HasSwitch(
+      data_reduction_proxy::switches::kEnableDataReductionProxy);
+}
+
 }  // namespace
 
 namespace data_reduction_proxy {
@@ -70,9 +90,12 @@ DataReductionProxySettings::DataReductionProxySettings(
     DataReductionProxyParams* params)
     : restricted_by_carrier_(false),
       enabled_by_user_(false),
+      disabled_on_vpn_(false),
+      unreachable_(false),
       prefs_(NULL),
       local_state_prefs_(NULL),
-      url_request_context_getter_(NULL) {
+      url_request_context_getter_(NULL),
+      configurator_(NULL) {
   DCHECK(params);
   params_.reset(params);
 }
@@ -80,6 +103,7 @@ DataReductionProxySettings::DataReductionProxySettings(
 DataReductionProxySettings::~DataReductionProxySettings() {
   if (params_->allowed())
     spdy_proxy_auth_enabled_.Destroy();
+  net::NetworkChangeNotifier::RemoveIPAddressObserver(this);
 }
 
 void DataReductionProxySettings::InitPrefMembers() {
@@ -126,125 +150,27 @@ void DataReductionProxySettings::InitDataReductionProxySettings(
     PrefService* prefs,
     PrefService* local_state_prefs,
     net::URLRequestContextGetter* url_request_context_getter,
-    scoped_ptr<DataReductionProxyConfigurator> configurator) {
+    DataReductionProxyConfigurator* configurator) {
   InitDataReductionProxySettings(prefs,
                                  local_state_prefs,
                                  url_request_context_getter);
-  SetProxyConfigurator(configurator.Pass());
+  SetProxyConfigurator(configurator);
+}
+
+void DataReductionProxySettings::SetOnDataReductionEnabledCallback(
+    const base::Callback<void(bool)>& on_data_reduction_proxy_enabled) {
+  on_data_reduction_proxy_enabled_ = on_data_reduction_proxy_enabled;
+  on_data_reduction_proxy_enabled_.Run(IsDataReductionProxyEnabled());
 }
 
 void DataReductionProxySettings::SetProxyConfigurator(
-    scoped_ptr<DataReductionProxyConfigurator> configurator) {
+    DataReductionProxyConfigurator* configurator) {
   DCHECK(configurator);
-  configurator_ = configurator.Pass();
-}
-
-// static
-void DataReductionProxySettings::InitDataReductionProxySession(
-    net::HttpNetworkSession* session,
-    const DataReductionProxyParams* params) {
-// This is a no-op unless the authentication parameters are compiled in.
-// (even though values for them may be specified on the command line).
-// Authentication will still work if the command line parameters are used,
-// however there will be a round-trip overhead for each challenge/response
-// (typically once per session).
-// TODO(bengr):Pass a configuration struct into DataReductionProxyConfigurator's
-// constructor. The struct would carry everything in the preprocessor flags.
-  DCHECK(session);
-  net::HttpAuthCache* auth_cache = session->http_auth_cache();
-  DCHECK(auth_cache);
-  InitDataReductionAuthentication(auth_cache, params);
-}
-
-// static
-void DataReductionProxySettings::InitDataReductionAuthentication(
-    net::HttpAuthCache* auth_cache,
-    const DataReductionProxyParams* params) {
-  DCHECK(auth_cache);
-  DCHECK(params);
-  int64 timestamp =
-      (base::Time::Now() - base::Time::UnixEpoch()).InMilliseconds() / 1000;
-
-  DataReductionProxyParams::DataReductionProxyList proxies =
-      params->GetAllowedProxies();
-  for (DataReductionProxyParams::DataReductionProxyList::iterator it =
-           proxies.begin();
-       it != proxies.end(); ++it) {
-    GURL auth_origin = (*it).GetOrigin();
-
-    int32 rand[3];
-    crypto::RandBytes(rand, 3 * sizeof(rand[0]));
-
-    std::string realm =
-        base::StringPrintf("%s%lld", kAuthenticationRealmName,
-                           static_cast<long long>(timestamp));
-    std::string challenge = base::StringPrintf(
-        "%s realm=\"%s\", ps=\"%lld-%u-%u-%u\"",
-        kAuthenticationRealmName,
-        realm.data(),
-        static_cast<long long>(timestamp),
-        rand[0],
-        rand[1],
-        rand[2]);
-    base::string16 password = AuthHashForSalt(timestamp, params->key());
-
-    DVLOG(1) << "origin: [" << auth_origin << "] realm: [" << realm
-        << "] challenge: [" << challenge << "] password: [" << password << "]";
-
-    net::AuthCredentials credentials(base::string16(), password);
-    // |HttpAuthController| searches this cache by origin and path, the latter
-    // being '/' in the case of the data reduction proxy.
-    auth_cache->Add(auth_origin,
-                    realm,
-                    net::HttpAuth::AUTH_SCHEME_SPDYPROXY,
-                    challenge,
-                    credentials,
-                    std::string("/"));
-  }
-}
-
-bool DataReductionProxySettings::IsAcceptableAuthChallenge(
-    net::AuthChallengeInfo* auth_info) {
-  // Challenge realm must start with the authentication realm name.
-  std::string realm_prefix =
-      auth_info->realm.substr(0, strlen(kAuthenticationRealmName));
-  if (realm_prefix != kAuthenticationRealmName)
-    return false;
-
-  // The challenger must be one of the configured proxies.
-  DataReductionProxyParams::DataReductionProxyList proxies =
-      params_->GetAllowedProxies();
-  for (DataReductionProxyParams::DataReductionProxyList::iterator it =
-       proxies.begin();
-       it != proxies.end(); ++it) {
-    net::HostPortPair origin_host = net::HostPortPair::FromURL(*it);
-    if (origin_host.Equals(auth_info->challenger))
-      return true;
-  }
-  return false;
-}
-
-base::string16 DataReductionProxySettings::GetTokenForAuthChallenge(
-    net::AuthChallengeInfo* auth_info) {
-  if (auth_info->realm.length() > strlen(kAuthenticationRealmName)) {
-    int64 salt;
-    std::string realm_suffix =
-        auth_info->realm.substr(strlen(kAuthenticationRealmName));
-    if (base::StringToInt64(realm_suffix, &salt)) {
-      return AuthHashForSalt(salt, params_->key());
-    } else {
-      DVLOG(1) << "Unable to parse realm name " << auth_info->realm
-               << "into an int for salting.";
-      return base::string16();
-    }
-  } else {
-    return base::string16();
-  }
+  configurator_ = configurator;
 }
 
 bool DataReductionProxySettings::IsDataReductionProxyEnabled() {
-  return spdy_proxy_auth_enabled_.GetValue() ||
-      DataReductionProxyParams::IsKeySetOnCommandLine();
+  return spdy_proxy_auth_enabled_.GetValue() || IsEnabledOnCommandLine();
 }
 
 bool
@@ -295,6 +221,15 @@ DataReductionProxySettings::GetDailyOriginalContentLengths() {
   return GetDailyContentLengths(prefs::kDailyHttpOriginalContentLength);
 }
 
+void DataReductionProxySettings::SetUnreachable(bool unreachable) {
+  unreachable_ = unreachable;
+}
+
+bool DataReductionProxySettings::IsDataReductionProxyUnreachable() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  return unreachable_;
+}
+
 DataReductionProxySettings::ContentLengthList
 DataReductionProxySettings::GetDailyReceivedContentLengths() {
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -312,10 +247,16 @@ void DataReductionProxySettings::OnURLFetchComplete(
 
   DCHECK(source == fetcher_.get());
   net::URLRequestStatus status = source->GetStatus();
-  if (status.status() == net::URLRequestStatus::FAILED &&
-      status.error() == net::ERR_INTERNET_DISCONNECTED) {
-    RecordProbeURLFetchResult(INTERNET_DISCONNECTED);
-    return;
+  if (status.status() == net::URLRequestStatus::FAILED) {
+    if (status.error() == net::ERR_INTERNET_DISCONNECTED) {
+      RecordProbeURLFetchResult(INTERNET_DISCONNECTED);
+      return;
+    }
+    // TODO(bengr): Remove once we understand the reasons probes are failing.
+    // Probe errors are either due to fetcher-level errors or modified
+    // responses. This only tracks the former.
+    UMA_HISTOGRAM_SPARSE_SLOWLY(
+        kUMAProxyProbeURLNetError, std::abs(status.error()));
   }
 
   std::string response;
@@ -371,6 +312,7 @@ PrefService* DataReductionProxySettings::GetLocalStatePrefs() {
 
 void DataReductionProxySettings::AddDefaultProxyBypassRules() {
   // localhost
+  DCHECK(configurator_);
   configurator_->AddHostPatternToBypass("<local>");
   // RFC1918 private addresses.
   configurator_->AddHostPatternToBypass("10.0.0.0/8");
@@ -405,6 +347,9 @@ void DataReductionProxySettings::OnIPAddressChanged() {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (enabled_by_user_) {
     DCHECK(params_->allowed());
+    RecordNetworkChangeEvent(IP_CHANGED);
+    if (DisableIfVPN())
+      return;
     ProbeWhetherDataReductionProxyIsAvailable();
     WarmProxyConnection();
   }
@@ -412,6 +357,8 @@ void DataReductionProxySettings::OnIPAddressChanged() {
 
 void DataReductionProxySettings::OnProxyEnabledPrefChange() {
   DCHECK(thread_checker_.CalledOnValidThread());
+  if (!on_data_reduction_proxy_enabled_.is_null())
+    on_data_reduction_proxy_enabled_.Run(IsDataReductionProxyEnabled());
   if (!params_->allowed())
     return;
   MaybeActivateDataReductionProxy(false);
@@ -450,16 +397,15 @@ void DataReductionProxySettings::MaybeActivateDataReductionProxy(
     prefs->SetBoolean(prefs::kDataReductionProxyWasEnabledBefore, true);
     ResetDataReductionStatistics();
   }
-
   // Configure use of the data reduction proxy if it is enabled.
   enabled_by_user_= IsDataReductionProxyEnabled();
-  SetProxyConfigs(enabled_by_user_,
+  SetProxyConfigs(enabled_by_user_ && !disabled_on_vpn_,
                   IsDataReductionProxyAlternativeEnabled(),
                   restricted_by_carrier_,
                   at_startup);
 
   // Check if the proxy has been restricted explicitly by the carrier.
-  if (enabled_by_user_) {
+  if (enabled_by_user_ && !disabled_on_vpn_) {
     ProbeWhetherDataReductionProxyIsAvailable();
     WarmProxyConnection();
   }
@@ -470,10 +416,12 @@ void DataReductionProxySettings::SetProxyConfigs(bool enabled,
                                                  bool restricted,
                                                  bool at_startup) {
   DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(configurator_);
+
   LogProxyState(enabled, restricted, at_startup);
   // The alternative is only configured if the standard configuration is
   // is enabled.
-  if (enabled) {
+  if (enabled & !params_->holdback()) {
     if (alternative_enabled) {
       configurator_->Enable(restricted,
                             !params_->fallback_allowed(),
@@ -517,6 +465,12 @@ void DataReductionProxySettings::RecordStartupState(ProxyStartupState state) {
   UMA_HISTOGRAM_ENUMERATION(kUMAProxyStartupStateHistogram,
                             state,
                             PROXY_STARTUP_STATE_COUNT);
+}
+
+void DataReductionProxySettings::GetNetworkList(
+    net::NetworkInterfaceList* interfaces,
+    int policy) {
+  net::GetNetworkList(interfaces, policy);
 }
 
 void DataReductionProxySettings::ResetParamsForTest(
@@ -579,18 +533,6 @@ void DataReductionProxySettings::GetContentLengths(
       local_state->GetInt64(prefs::kDailyHttpContentLengthLastUpdateDate);
 }
 
-// static
-base::string16 DataReductionProxySettings::AuthHashForSalt(
-    int64 salt,
-    const std::string& key) {
-  std::string salted_key =
-      base::StringPrintf("%lld%s%lld",
-                         static_cast<long long>(salt),
-                         key.c_str(),
-                         static_cast<long long>(salt));
-  return base::UTF8ToUTF16(base::MD5String(salted_key));
-}
-
 net::URLFetcher* DataReductionProxySettings::GetBaseURLFetcher(
     const GURL& gurl,
     int load_flags) {
@@ -634,6 +576,38 @@ void DataReductionProxySettings::WarmProxyConnection() {
     return;
   warmup_fetcher_.reset(fetcher);
   warmup_fetcher_->Start();
+}
+
+bool DataReductionProxySettings::DisableIfVPN() {
+  net::NetworkInterfaceList network_interfaces;
+  GetNetworkList(&network_interfaces, 0);
+  // VPNs use a "tun" interface, so the presence of a "tun" interface indicates
+  // a VPN is in use.
+  // TODO(kundaji): Verify this works on Windows.
+  const std::string vpn_interface_name_prefix = "tun";
+  for (size_t i = 0; i < network_interfaces.size(); ++i) {
+    std::string interface_name = network_interfaces[i].name;
+    if (LowerCaseEqualsASCII(
+        interface_name.begin(),
+        interface_name.begin() + vpn_interface_name_prefix.size(),
+        vpn_interface_name_prefix.c_str())) {
+      SetProxyConfigs(false,
+                      IsDataReductionProxyAlternativeEnabled(),
+                      false,
+                      false);
+      disabled_on_vpn_ = true;
+      RecordNetworkChangeEvent(DISABLED_ON_VPN);
+      return true;
+    }
+  }
+  if (disabled_on_vpn_) {
+    SetProxyConfigs(enabled_by_user_,
+                    IsDataReductionProxyAlternativeEnabled(),
+                    restricted_by_carrier_,
+                    false);
+  }
+  disabled_on_vpn_ = false;
+  return false;
 }
 
 }  // namespace data_reduction_proxy

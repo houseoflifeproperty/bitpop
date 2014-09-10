@@ -110,9 +110,7 @@ bool InitializeGLContext(CGLContextObj* context,
 // Key: G = Gray, R = Red, B = Blue, Y = Yellow, C = Cyan
 SkBitmap GenerateTestPatternBitmap(const gfx::Size& size) {
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, size.width(), size.height());
-  CHECK(bitmap.allocPixels());
-  SkAutoLockPixels lock_bitmap(bitmap);
+  CHECK(bitmap.allocN32Pixels(size.width(), size.height()));
   bitmap.eraseColor(SK_ColorGRAY);
   for (int y = 0; y < size.height(); ++y) {
     uint32_t* p = bitmap.getAddr32(0, y);
@@ -146,8 +144,7 @@ GLuint CreateTextureWithImage(const SkBitmap& bitmap) {
 // Read back a texture from the GPU, returning the image data as an SkBitmap.
 SkBitmap ReadBackTexture(GLuint texture, const gfx::Size& size, GLenum format) {
   SkBitmap result;
-  result.setConfig(SkBitmap::kARGB_8888_Config, size.width(), size.height());
-  CHECK(result.allocPixels());
+  CHECK(result.allocN32Pixels(size.width(), size.height()));
 
   GLuint frame_buffer;
   EXPECT_NO_GL_ERROR(glGenFramebuffersEXT(1, &frame_buffer));
@@ -187,8 +184,8 @@ SkBitmap ScaleBitmapWithSkia(const SkBitmap& src,
   }
 
   SkBitmap result;
-  result.setConfig(cropped_src.config(), to_size.width(), to_size.height());
-  CHECK(result.allocPixels());
+  CHECK(result.allocPixels(
+      cropped_src.info().makeWH(to_size.width(), to_size.height())));
 
   SkCanvas canvas(result);
   canvas.scale(static_cast<double>(result.width()) / cropped_src.width(),
@@ -215,8 +212,8 @@ int ImageDifference(const SkBitmap& expected, const SkBitmap& actual) {
   // Sanity-check assumed image properties.
   DCHECK_EQ(expected.width(), actual.width());
   DCHECK_EQ(expected.height(), actual.height());
-  DCHECK_EQ(SkBitmap::kARGB_8888_Config, expected.config());
-  DCHECK_EQ(SkBitmap::kARGB_8888_Config, actual.config());
+  DCHECK_EQ(kN32_SkColorType, expected.colorType());
+  DCHECK_EQ(kN32_SkColorType, actual.colorType());
 
   // Compare both images.
   int num_pixels_different = 0;

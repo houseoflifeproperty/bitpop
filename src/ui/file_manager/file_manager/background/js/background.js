@@ -62,6 +62,11 @@ function Background() {
    * @private
    */
   this.deviceHandler_ = new DeviceHandler();
+  this.deviceHandler_.addEventListener(
+      DeviceHandler.VOLUME_NAVIGATION_REQUESTED,
+      function(event) {
+        this.navigateToVolume(event.volumeId);
+      }.bind(this));
 
   /**
    * Drive sync handler.
@@ -72,6 +77,14 @@ function Background() {
   this.driveSyncHandler_.addEventListener(
       DriveSyncHandler.COMPLETED_EVENT,
       function() { this.tryClose(); }.bind(this));
+
+  /**
+   * Promise of string data.
+   * @type {Promise}
+   */
+  this.stringDataPromise = new Promise(function(fulfill) {
+    chrome.fileBrowserPrivate.getStrings(fulfill);
+  });
 
   /**
    * String assets.
@@ -106,22 +119,20 @@ function Background() {
   chrome.contextMenus.onClicked.addListener(
       this.onContextMenuClicked_.bind(this));
 
-  // Fetch strings and initialize the context menu.
-  this.queue.run(function(callNextStep) {
-    chrome.fileBrowserPrivate.getStrings(function(strings) {
-      // Initialize string assets.
+  this.queue.run(function(callback) {
+    this.stringDataPromise.then(function(strings) {
+      // Init string data.
       this.stringData = strings;
       loadTimeData.data = strings;
+
+      // Init context menu.
       this.initContextMenu_();
 
-      // Invoke initialize callbacks.
-      for (var i = 0; i < this.initializeCallbacks_.length; i++) {
-        this.initializeCallbacks_[i]();
-      }
-      this.initializeCallbacks_ = null;
-
-      callNextStep();
-    }.bind(this));
+      callback();
+    }.bind(this)).catch(function(error) {
+      console.error(error.stack || error);
+      callback();
+    });
   }.bind(this));
 }
 
@@ -157,10 +168,7 @@ Background.MAXIMIZED_KEY_ = 'isMaximized';
  * @param {function()} callback Initialize callback to be registered.
  */
 Background.prototype.ready = function(callback) {
-  if (this.initializeCallbacks_ !== null)
-    this.initializeCallbacks_.push(callback);
-  else
-    callback();
+  this.stringDataPromise.then(callback);
 };
 
 /**
@@ -213,6 +221,26 @@ Background.prototype.getSimilarWindows = function(url) {
       result.push(this.appWindows[appID]);
   }
   return result;
+};
+
+/**
+ * Opens the root directory of the volume in Files.app.
+ * @param {string} volumeId ID of a volume to be opened.
+ */
+Background.prototype.navigateToVolume = function(volumeId) {
+  VolumeManager.getInstance().then(function(volumeManager) {
+    var volumeInfoList = volumeManager.volumeInfoList;
+    var index = volumeInfoList.findIndex(volumeId);
+    var volumeInfo = volumeInfoList.item(index);
+    return volumeInfo.resolveDisplayRoot();
+  }).then(function(entry) {
+    launchFileManager(
+        {currentDirectoryURL: entry.toURL()},
+        /* App ID */ null,
+        LaunchType.FOCUS_ANY_OR_CREATE);
+  }).catch(function(error) {
+    console.error(error.stack || error);
+  });
 };
 
 /**
@@ -587,9 +615,7 @@ var FILE_MANAGER_WINDOW_CREATE_OPTIONS = Object.freeze({
   }),
   minWidth: 480,
   minHeight: 240,
-  frame: 'none',
-  hidden: true,
-  transparentBackground: true
+  hidden: true
 });
 
 /**
@@ -729,55 +755,29 @@ function registerDialog(dialogWindow) {
  * @private
  */
 Background.prototype.onExecute_ = function(action, details) {
-  var urls = details.entries.map(function(e) { return e.toURL(); });
-
   switch (action) {
     case 'play':
+      var urls = util.entriesToURLs(details.entries);
       launchAudioPlayer({items: urls, position: 0});
       break;
 
     default:
-      var launchEnable = null;
-      var queue = new AsyncUtil.Queue();
-      queue.run(function(nextStep) {
-        // If it is not auto-open (triggered by mounting external devices), we
-        // always launch Files.app.
-        if (action != 'auto-open') {
-          launchEnable = true;
-          nextStep();
-          return;
-        }
-        // If the disable-default-apps flag is on, Files.app is not opened
-        // automatically on device mount not to obstruct the manual test.
-        chrome.commandLinePrivate.hasSwitch('disable-default-apps',
-                                            function(flag) {
-          launchEnable = !flag;
-          nextStep();
-        });
-      });
-      queue.run(function(nextStep) {
-        if (!launchEnable) {
-          nextStep();
-          return;
-        }
+      var appState = {
+        params: {action: action},
+        // It is not allowed to call getParent() here, since there may be
+        // no permissions to access it at this stage. Therefore we are passing
+        // the selectionURL only, and the currentDirectory will be resolved
+        // later.
+        selectionURL: details.entries[0].toURL()
+      };
 
-        // Every other action opens a Files app window.
-        var appState = {
-          params: {
-            action: action
-          },
-          // It is not allowed to call getParent() here, since there may be
-          // no permissions to access it at this stage. Therefore we are passing
-          // the selectionURL only, and the currentDirectory will be resolved
-          // later.
-          selectionURL: details.entries[0].toURL()
-        };
-        // For mounted devices just focus any Files.app window. The mounted
-        // volume will appear on the navigation list.
-        var type = action == 'auto-open' ? LaunchType.FOCUS_ANY_OR_CREATE :
-            LaunchType.FOCUS_SAME_OR_CREATE;
-        launchFileManager(appState, /* App ID */ undefined, type, nextStep);
-      });
+      // Every other action opens a Files app window.
+      // For mounted devices just focus any Files.app window. The mounted
+      // volume will appear on the navigation list.
+      launchFileManager(
+          appState,
+          /* App ID */ null,
+          LaunchType.FOCUS_SAME_OR_CREATE);
       break;
   }
 };
@@ -800,13 +800,6 @@ var audioPlayer = null;
 var audioPlayerInitializationQueue = new AsyncUtil.Queue();
 
 audioPlayerInitializationQueue.run(function(callback) {
-  // TODO(yoshiki): Remove '--file-manager-enable-new-audio-player' flag after
-  // the feature is launched.
-  var newAudioPlayerEnabled = true;
-
-  var audioPlayerHTML =
-      newAudioPlayerEnabled ? 'audio_player.html' : 'mediaplayer.html';
-
   /**
    * Audio player window create options.
    * @type {Object}
@@ -814,16 +807,13 @@ audioPlayerInitializationQueue.run(function(callback) {
   var audioPlayerCreateOptions = Object.freeze({
       type: 'panel',
       hidden: true,
-      minHeight:
-          newAudioPlayerEnabled ?
-              (44 + 73) :  // 44px: track, 73px: controller
-              (35 + 58),  // 35px: track, 58px: controller
-      minWidth: newAudioPlayerEnabled ? 292 : 280,
-      height: newAudioPlayerEnabled ? (44 + 73) : (35 + 58),  // collapsed
-      width: newAudioPlayerEnabled ? 292 : 280,
+      minHeight: 44 + 73,  // 44px: track, 73px: controller
+      minWidth: 292,
+      height: 44 + 73,  // collapsed
+      width: 292
   });
 
-  audioPlayer = new SingletonAppWindowWrapper(audioPlayerHTML,
+  audioPlayer = new SingletonAppWindowWrapper('audio_player.html',
                                               audioPlayerCreateOptions);
   callback();
 });

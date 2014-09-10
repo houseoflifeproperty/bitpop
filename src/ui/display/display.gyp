@@ -8,6 +8,7 @@
   },
   'targets': [
     {
+      # GN version: //ui/display/types
       'target_name': 'display_types',
       'type': '<(component)',
       'dependencies': [
@@ -18,6 +19,7 @@
         'DISPLAY_TYPES_IMPLEMENTATION',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'types/chromeos/display_mode.cc',
         'types/chromeos/display_mode.h',
         'types/chromeos/display_snapshot.cc',
@@ -32,6 +34,7 @@
       ],
     },
     {
+      # GN version: //ui/display
       'target_name': 'display',
       'type': '<(component)',
       'dependencies': [
@@ -44,6 +47,7 @@
         'DISPLAY_IMPLEMENTATION',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'chromeos/display_configurator.cc',
         'chromeos/display_configurator.h',
         'chromeos/touchscreen_delegate_impl.cc',
@@ -73,6 +77,7 @@
             '../../build/linux/system.gyp:xext',
             '../../build/linux/system.gyp:xi',
             '../../build/linux/system.gyp:xrandr',
+            '../../ui/events/platform/events_platform.gyp:events_platform',
           ],
         }],
         ['chromeos == 1', {
@@ -88,6 +93,7 @@
       ],
     },
     {
+      # GN version: //ui/display/util
       'target_name': 'display_util',
       'type': '<(component)',
       'dependencies': [
@@ -98,6 +104,7 @@
         'DISPLAY_UTIL_IMPLEMENTATION',
       ],
       'sources': [
+        # Note: file list shared with GN build.
         'util/display_util.cc',
         'util/display_util.h',
         'util/display_util_export.h',
@@ -121,6 +128,7 @@
       ],
     },
     {
+      # GN version: //ui/display:test_util
       'target_name': 'display_test_util',
       'type': '<(component)',
       'dependencies': [
@@ -132,6 +140,7 @@
         'DISPLAY_IMPLEMENTATION',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'chromeos/test/test_display_snapshot.cc',
         'chromeos/test/test_display_snapshot.h',
       ],
@@ -144,18 +153,34 @@
       ],
     },
     {
+      # GN version: //ui/display:display_unittests
       'target_name': 'display_unittests',
       'type': 'executable',
       'dependencies': [
         '../../base/base.gyp:run_all_unittests',
         '../../testing/gtest.gyp:gtest',
+        '../../ui/gfx/gfx.gyp:gfx_geometry',
         'display_util',
       ],
       'include_dirs': [
         '../..',
       ],
       'sources': [
+        'chromeos/display_configurator_unittest.cc',
+        'chromeos/touchscreen_delegate_impl_unittest.cc',
+        'chromeos/x11/display_util_x11_unittest.cc',
+        'chromeos/x11/native_display_event_dispatcher_x11_unittest.cc',
+        'util/display_util_unittest.cc',
         'util/edid_parser_unittest.cc',
+      ],
+      'conditions': [
+        ['chromeos == 1', {
+          'dependencies': [
+            'display',
+            'display_test_util',
+            'display_types',
+          ],
+        }],
       ],
     },
   ],

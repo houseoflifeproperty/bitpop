@@ -242,6 +242,14 @@
       },
       # TODO(wtc): suppress C4244 and C4554 in prdtoa.c.
       'msvs_disabled_warnings': [4018, 4244, 4554, 4267,],
+      'variables': {
+        'clang_warning_flags': [
+          # nspr passes "const char*" through "void*".
+          '-Wno-incompatible-pointer-types',
+          # nspr passes "int*" through "unsigned int*".
+          '-Wno-pointer-sign',
+        ],
+      },
       'conditions': [
         ['OS=="mac" or OS=="ios"', {
           'defines': [
@@ -326,16 +334,8 @@
               # nspr uses a bunch of deprecated functions (NSLinkModule etc) in
               # prlink.c on mac.
               '-Wno-deprecated-declarations',
-              # nspr passes "const char*" through "void*".
-              '-Wno-incompatible-pointer-types',
-              # nspr passes "int*" through "unsigned int*".
-              '-Wno-pointer-sign',
             ],
           },
-          'cflags': [
-            '-Wno-incompatible-pointer-types',
-            '-Wno-pointer-sign',
-          ],
         }],
       ],
     },
@@ -1056,6 +1056,20 @@
         ],
       },
       'msvs_disabled_warnings': [4018, 4101, 4267, ],
+      'variables': {
+        'clang_warning_flags': [
+          # nss doesn't explicitly cast between different enum types.
+          '-Wno-conversion',
+          # nss passes "const char*" through "void*".
+          '-Wno-incompatible-pointer-types',
+          # nss prefers `a && b || c` over `(a && b) || c`.
+          '-Wno-logical-op-parentheses',
+          # nss doesn't use exhaustive switches on enums
+          '-Wno-switch',
+          # nss has some `unsigned < 0` checks.
+          '-Wno-tautological-compare',
+        ],
+      },
       'conditions': [
         ['exclude_nss_root_certs==1', {
           'defines': [
@@ -1210,29 +1224,6 @@
             'nss/lib/freebl/intel-gcm-x86-masm.asm',
             # mpi_x86_asm.c contains MSVC inline assembly code.
             'nss/lib/freebl/mpi/mpi_x86_asm.c',
-          ],
-        }],
-        ['clang==1', {
-          'xcode_settings': {
-            'WARNING_CFLAGS': [
-              # nss doesn't explicitly cast between different enum types.
-              '-Wno-conversion',
-              # nss passes "const char*" through "void*".
-              '-Wno-incompatible-pointer-types',
-              # nss prefers `a && b || c` over `(a && b) || c`.
-              '-Wno-logical-op-parentheses',
-              # nss doesn't use exhaustive switches on enums
-              '-Wno-switch',
-              # nss has some `unsigned < 0` checks.
-              '-Wno-tautological-compare',
-            ],
-          },
-          'cflags': [
-            '-Wno-conversion',
-            '-Wno-incompatible-pointer-types',
-            '-Wno-logical-op-parentheses',
-            '-Wno-switch',
-            '-Wno-tautological-compare',
           ],
         }],
       ],

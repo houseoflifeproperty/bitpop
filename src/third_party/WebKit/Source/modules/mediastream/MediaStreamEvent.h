@@ -29,12 +29,12 @@
 #include "modules/mediastream/MediaStream.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 struct MediaStreamEventInit : public EventInit {
     MediaStreamEventInit();
 
-    RefPtr<MediaStream> stream;
+    Member<MediaStream> stream;
 };
 
 class MediaStreamEvent FINAL : public Event {
@@ -42,7 +42,7 @@ public:
     virtual ~MediaStreamEvent();
 
     static PassRefPtrWillBeRawPtr<MediaStreamEvent> create();
-    static PassRefPtrWillBeRawPtr<MediaStreamEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<MediaStream>);
+    static PassRefPtrWillBeRawPtr<MediaStreamEvent> create(const AtomicString& type, bool canBubble, bool cancelable, MediaStream*);
     static PassRefPtrWillBeRawPtr<MediaStreamEvent> create(const AtomicString& type, const MediaStreamEventInit& initializer);
 
     MediaStream* stream() const;
@@ -54,12 +54,12 @@ public:
 
 private:
     MediaStreamEvent();
-    MediaStreamEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<MediaStream>);
+    MediaStreamEvent(const AtomicString& type, bool canBubble, bool cancelable, MediaStream*);
     MediaStreamEvent(const AtomicString& type, const MediaStreamEventInit&);
 
-    RefPtr<MediaStream> m_stream;
+    PersistentWillBeMember<MediaStream> m_stream;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MediaStreamEvent_h

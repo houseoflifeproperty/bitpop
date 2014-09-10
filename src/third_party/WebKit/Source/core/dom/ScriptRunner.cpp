@@ -33,7 +33,7 @@
 #include "core/fetch/ScriptResource.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 ScriptRunner::ScriptRunner(Document* document)
     : m_document(document)
@@ -135,10 +135,12 @@ void ScriptRunner::timerFired(Timer<ScriptRunner>* timer)
 
 void ScriptRunner::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_document);
     visitor->trace(m_scriptsToExecuteInOrder);
     visitor->trace(m_scriptsToExecuteSoon);
     visitor->trace(m_pendingAsyncScripts);
+#endif
 }
 
 }

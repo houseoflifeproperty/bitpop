@@ -29,14 +29,14 @@
 #ifndef Location_h
 #define Location_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/DOMStringList.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalDOMWindow;
 class ExceptionState;
@@ -85,6 +85,6 @@ private:
     const KURL& url() const;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Location_h

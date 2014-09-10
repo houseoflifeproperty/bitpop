@@ -34,7 +34,7 @@
 #include "core/frame/Settings.h"
 #include "platform/text/TextCheckerClient.h"
 
-namespace WebCore {
+namespace blink {
 
 SpellCheckRequest::SpellCheckRequest(
     PassRefPtrWillBeRawPtr<Range> checkingRange,
@@ -68,7 +68,7 @@ PassRefPtr<SpellCheckRequest> SpellCheckRequest::create(TextCheckingTypeMask tex
     if (!text.length())
         return PassRefPtr<SpellCheckRequest>();
 
-    const WillBeHeapVector<DocumentMarker*>& markers = checkingRange->ownerDocument().markers().markersInRange(checkingRange.get(), DocumentMarker::SpellCheckClientMarkers());
+    const DocumentMarkerVector& markers = checkingRange->ownerDocument().markers().markersInRange(checkingRange.get(), DocumentMarker::SpellCheckClientMarkers());
     Vector<uint32_t> hashes(markers.size());
     Vector<unsigned> offsets(markers.size());
     for (size_t i = 0; i < markers.size(); i++) {
@@ -263,4 +263,4 @@ void SpellCheckRequester::didCheckCancel(int sequence)
     didCheck(sequence, results);
 }
 
-} // namespace WebCore
+} // namespace blink

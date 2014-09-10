@@ -30,7 +30,7 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "platform/Timer.h"
 
-namespace WebCore {
+namespace blink {
 
 class SuspendableTimer : public TimerBase, public ActiveDOMObject {
 public:
@@ -49,11 +49,11 @@ private:
     double m_nextFireInterval;
     double m_repeatInterval;
     bool m_active;
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     bool m_suspended;
 #endif
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SuspendableTimer_h

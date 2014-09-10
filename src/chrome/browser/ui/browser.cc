@@ -50,6 +50,8 @@
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/download/download_shelf.h"
+#include "chrome/browser/extensions/api/tabs/tabs_event_router.h"
+#include "chrome/browser/extensions/api/tabs/tabs_windows_api.h"
 #include "chrome/browser/extensions/browser_extension_window_controller.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/tab_helper.h"
@@ -114,12 +116,13 @@
 #include "chrome/browser/ui/global_error/global_error.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
+#include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/media_utils.h"
-#include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/search/search_delegate.h"
 #include "chrome/browser/ui/search/search_model.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
 #include "chrome/browser/ui/search_engines/search_engine_tab_helper.h"
+#include "chrome/browser/ui/settings_window_manager.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/status_bubble.h"
 #include "chrome/browser/ui/sync/browser_synced_window_delegate.h"
@@ -149,7 +152,9 @@
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/google/core/browser/google_url_tracker.h"
+#include "components/search/search.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
+#include "components/web_modal/popup_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/download_item.h"
@@ -373,14 +378,16 @@ Browser::Browser(const CreateParams& params)
   search_delegate_.reset(new SearchDelegate(search_model_.get()));
 
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-                 content::Source<Profile>(profile_->GetOriginalProfile()));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
+                 extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
+                 extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_PROCESS_TERMINATED,
+  registrar_.Add(this,
+                 extensions::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
+                 content::Source<Profile>(profile_->GetOriginalProfile()));
+  registrar_.Add(this,
+                 extensions::NOTIFICATION_EXTENSION_PROCESS_TERMINATED,
                  content::NotificationService::AllSources());
 #if defined(ENABLE_THEMES)
   registrar_.Add(
@@ -442,6 +449,12 @@ Browser::Browser(const CreateParams& params)
   }
 
   fullscreen_controller_.reset(new FullscreenController(this));
+
+  // Must be initialized after window_.
+  // Also: surprise! a modal dialog host is not necessary to host modal dialogs
+  // without a modal dialog host, so that value may be null.
+  popup_manager_.reset(new web_modal::PopupManager(
+      GetWebContentsModalDialogHost()));
 }
 
 Browser::~Browser() {
@@ -889,7 +902,11 @@ WebContents* Browser::OpenURL(const OpenURLParams& params) {
 void Browser::TabInsertedAt(WebContents* contents,
                             int index,
                             bool foreground) {
-  SetAsDelegate(contents, this);
+  SetAsDelegate(contents, true);
+
+  if (popup_manager_)
+    popup_manager_->RegisterWith(contents);
+
   SessionTabHelper* session_tab_helper =
       SessionTabHelper::FromWebContents(contents);
   session_tab_helper->SetWindowID(session_id());
@@ -931,8 +948,11 @@ void Browser::TabClosingAt(TabStripModel* tab_strip_model,
       content::Source<NavigationController>(&contents->GetController()),
       content::NotificationService::NoDetails());
 
+  if (popup_manager_)
+    popup_manager_->UnregisterWith(contents);
+
   // Sever the WebContents' connection back to us.
-  SetAsDelegate(contents, NULL);
+  SetAsDelegate(contents, false);
 }
 
 void Browser::TabDetachedAt(WebContents* contents, int index) {
@@ -946,6 +966,10 @@ void Browser::TabDetachedAt(WebContents* contents, int index) {
       session_service->SetSelectedTabInWindow(session_id(),
                                               old_active_index - 1);
   }
+
+  if (popup_manager_)
+    popup_manager_->UnregisterWith(contents);
+
   TabDetachedAtImpl(contents, index, DETACH_TYPE_DETACH);
 }
 
@@ -1209,6 +1233,18 @@ bool Browser::PreHandleGestureEvent(content::WebContents* source,
   return false;
 }
 
+bool Browser::CanDragEnter(content::WebContents* source,
+                           const content::DropData& data,
+                           blink::WebDragOperationsMask operations_allowed) {
+  // Disallow drag-and-drop navigation for Settings windows which do not support
+  // external navigation.
+  if ((operations_allowed & blink::WebDragOperationLink) &&
+      chrome::SettingsWindowManager::GetInstance()->IsSettingsBrowser(this)) {
+    return false;
+  }
+  return true;
+}
+
 bool Browser::IsMouseLocked() const {
   return fullscreen_controller_->IsMouseLocked();
 }
@@ -1311,7 +1347,7 @@ WebContents* Browser::OpenURLFromTab(WebContents* source,
 }
 
 void Browser::NavigationStateChanged(const WebContents* source,
-                                     unsigned changed_flags) {
+                                     content::InvalidateTypes changed_flags) {
   // Only update the UI when something visible has changed.
   if (changed_flags)
     ScheduleUIUpdate(source, changed_flags);
@@ -1600,8 +1636,7 @@ void Browser::EnumerateDirectory(WebContents* web_contents,
 }
 
 bool Browser::EmbedsFullscreenWidget() const {
-  return !CommandLine::ForCurrentProcess()->
-      HasSwitch(switches::kDisableFullscreenWithinTab);
+  return true;
 }
 
 void Browser::ToggleFullscreenModeForTab(WebContents* web_contents,
@@ -1619,16 +1654,15 @@ void Browser::RegisterProtocolHandler(WebContents* web_contents,
                                       const std::string& protocol,
                                       const GURL& url,
                                       bool user_gesture) {
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  if (profile->IsOffTheRecord())
+  content::BrowserContext* context = web_contents->GetBrowserContext();
+  if (context->IsOffTheRecord())
     return;
 
   ProtocolHandler handler =
       ProtocolHandler::CreateProtocolHandler(protocol, url);
 
   ProtocolHandlerRegistry* registry =
-      ProtocolHandlerRegistryFactory::GetForProfile(profile);
+      ProtocolHandlerRegistryFactory::GetForBrowserContext(context);
   if (registry->SilentlyHandleRegisterHandlerRequest(handler))
     return;
 
@@ -1659,6 +1693,24 @@ void Browser::RegisterProtocolHandler(WebContents* web_contents,
     RegisterProtocolHandlerInfoBarDelegate::Create(
         InfoBarService::FromWebContents(web_contents), registry, handler);
   }
+}
+
+void Browser::UnregisterProtocolHandler(WebContents* web_contents,
+                                        const std::string& protocol,
+                                        const GURL& url,
+                                        bool user_gesture) {
+  // user_gesture will be used in case we decide to have confirmation bubble
+  // for user while un-registering the handler.
+  content::BrowserContext* context = web_contents->GetBrowserContext();
+  if (context->IsOffTheRecord())
+    return;
+
+  ProtocolHandler handler =
+      ProtocolHandler::CreateProtocolHandler(protocol, url);
+
+  ProtocolHandlerRegistry* registry =
+      ProtocolHandlerRegistryFactory::GetForBrowserContext(context);
+  registry->RemoveHandler(handler);
 }
 
 void Browser::UpdatePreferredSize(WebContents* source,
@@ -1840,12 +1892,13 @@ void Browser::URLStarredChanged(content::WebContents* web_contents,
 ///////////////////////////////////////////////////////////////////////////////
 // Browser, ZoomObserver implementation:
 
-void Browser::OnZoomChanged(content::WebContents* source,
-                            bool can_show_bubble) {
-  if (source == tab_strip_model_->GetActiveWebContents()) {
+void Browser::OnZoomChanged(const ZoomController::ZoomChangedEventData& data) {
+  if (data.web_contents == tab_strip_model_->GetActiveWebContents()) {
     // Only show the zoom bubble for zoom changes in the active window.
-    window_->ZoomChangedForActiveTab(can_show_bubble && window_->IsActive() &&
-        !is_devtools());
+    window_->ZoomChangedForActiveTab(data.can_show_bubble &&
+                                     window_->IsActive());
+    // Change the zoom commands state based on the zoom state
+    command_controller_->ZoomStateChanged();
   }
 }
 
@@ -1882,7 +1935,7 @@ void Browser::Observe(int type,
                       const content::NotificationSource& source,
                       const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
+    case extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
       chrome::UpdateCommandEnabled(
           this,
           IDC_BOOKMARK_PAGE,
@@ -1923,14 +1976,14 @@ void Browser::Observe(int type,
       break;
     }
 
-    case chrome::NOTIFICATION_EXTENSION_PROCESS_TERMINATED: {
+    case extensions::NOTIFICATION_EXTENSION_PROCESS_TERMINATED: {
       Profile* profile = content::Source<Profile>(source).ptr();
       if (profile_->IsSameProfile(profile) && window()->GetLocationBar())
         window()->GetLocationBar()->InvalidatePageActions();
       break;
     }
 
-    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
+    case extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
       chrome::UpdateCommandEnabled(
           this,
           IDC_BOOKMARK_PAGE,
@@ -1940,7 +1993,7 @@ void Browser::Observe(int type,
           IDC_BOOKMARK_ALL_TABS,
           !chrome::ShouldRemoveBookmarkOpenPagesUI(profile_));
     // fallthrough
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED:
+    case extensions::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED:
       // During window creation on Windows we may end up calling into
       // SHAppBarMessage, which internally spawns a nested message loop. This
       // makes it possible for us to end up here before window creation has
@@ -2181,7 +2234,8 @@ bool Browser::CanCloseWithInProgressDownloads() {
 ///////////////////////////////////////////////////////////////////////////////
 // Browser, Assorted utility functions (private):
 
-void Browser::SetAsDelegate(WebContents* web_contents, Browser* delegate) {
+void Browser::SetAsDelegate(WebContents* web_contents, bool set_delegate) {
+  Browser* delegate = set_delegate ? this : NULL;
   // WebContents...
   web_contents->SetDelegate(delegate);
 
@@ -2192,7 +2246,10 @@ void Browser::SetAsDelegate(WebContents* web_contents, Browser* delegate) {
   CoreTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
   SearchEngineTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
   SearchTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
-  ZoomController::FromWebContents(web_contents)->set_observer(delegate);
+  if (delegate)
+    ZoomController::FromWebContents(web_contents)->AddObserver(this);
+  else
+    ZoomController::FromWebContents(web_contents)->RemoveObserver(this);
   ChromeTranslateClient* chrome_translate_client =
       ChromeTranslateClient::FromWebContents(web_contents);
   chrome_translate_client->translate_driver().set_observer(
@@ -2221,7 +2278,7 @@ void Browser::TabDetachedAtImpl(content::WebContents* contents,
       SyncHistoryWithTabs(0);
   }
 
-  SetAsDelegate(contents, NULL);
+  SetAsDelegate(contents, false);
   RemoveScheduledUpdatesFor(contents);
 
   if (find_bar_controller_.get() && index == tab_strip_model_->active_index()) {

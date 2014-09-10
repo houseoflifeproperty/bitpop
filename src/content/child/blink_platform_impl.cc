@@ -26,6 +26,9 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/sys_info.h"
 #include "base/time/time.h"
+#include "blink/public/resources/grit/blink_resources.h"
+#include "content/app/strings/grit/content_strings.h"
+#include "content/child/child_thread.h"
 #include "content/child/content_child_helpers.h"
 #include "content/child/fling_curve_configuration.h"
 #include "content/child/web_discardable_memory_impl.h"
@@ -35,20 +38,20 @@
 #include "content/child/webthread_impl.h"
 #include "content/child/worker_task_runner.h"
 #include "content/public/common/content_client.h"
-#include "grit/blink_resources.h"
 #include "grit/webkit_resources.h"
-#include "grit/webkit_strings.h"
 #include "net/base/data_url.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
+#include "net/base/net_util.h"
 #include "third_party/WebKit/public/platform/WebConvertableToTraceFormat.h"
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebWaitableEvent.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "ui/base/layout.h"
 
 #if defined(OS_ANDROID)
-#include "base/android/sys_utils.h"
 #include "content/child/fling_animator_impl_android.h"
 #endif
 
@@ -150,6 +153,13 @@ class ConvertableToTraceFormatWrapper
 
   blink::WebConvertableToTraceFormat convertable_;
 };
+
+bool isHostnameReservedIPAddress(const std::string& host) {
+  net::IPAddressNumber address;
+  if (!net::ParseURLHostnameToNumber(host, &address))
+    return false;
+  return net::IsIPAddressReserved(address);
+}
 
 }  // namespace
 
@@ -402,7 +412,11 @@ BlinkPlatformImpl::~BlinkPlatformImpl() {
 }
 
 WebURLLoader* BlinkPlatformImpl::createURLLoader() {
-  return new WebURLLoaderImpl;
+  ChildThread* child_thread = ChildThread::current();
+  // There may be no child thread in RenderViewTests.  These tests can still use
+  // data URLs to bypass the ResourceDispatcher.
+  return new WebURLLoaderImpl(
+      child_thread ? child_thread->resource_dispatcher() : NULL);
 }
 
 WebSocketStreamHandle* BlinkPlatformImpl::createSocketStreamHandle() {
@@ -433,6 +447,15 @@ WebData BlinkPlatformImpl::parseDataURL(const WebURL& url,
 WebURLError BlinkPlatformImpl::cancelledError(
     const WebURL& unreachableURL) const {
   return WebURLLoaderImpl::CreateError(unreachableURL, false, net::ERR_ABORTED);
+}
+
+bool BlinkPlatformImpl::isReservedIPAddress(
+    const blink::WebSecurityOrigin& securityOrigin) const {
+  return isHostnameReservedIPAddress(securityOrigin.host().utf8());
+}
+
+bool BlinkPlatformImpl::isReservedIPAddress(const blink::WebURL& url) const {
+  return isHostnameReservedIPAddress(GURL(url).host());
 }
 
 blink::WebThread* BlinkPlatformImpl::createThread(const char* name) {
@@ -750,6 +773,65 @@ const DataResource kDataResources[] = {
   { "generatePassword", IDR_PASSWORD_GENERATION_ICON, ui::SCALE_FACTOR_100P },
   { "generatePasswordHover",
     IDR_PASSWORD_GENERATION_ICON_HOVER, ui::SCALE_FACTOR_100P },
+  { "html.css", IDR_UASTYLE_HTML_CSS, ui::SCALE_FACTOR_NONE },
+  { "quirks.css", IDR_UASTYLE_QUIRKS_CSS, ui::SCALE_FACTOR_NONE },
+  { "view-source.css", IDR_UASTYLE_VIEW_SOURCE_CSS, ui::SCALE_FACTOR_NONE },
+  { "themeChromium.css", IDR_UASTYLE_THEME_CHROMIUM_CSS,
+    ui::SCALE_FACTOR_NONE },
+#if defined(OS_ANDROID)
+  { "themeChromiumAndroid.css", IDR_UASTYLE_THEME_CHROMIUM_ANDROID_CSS,
+    ui::SCALE_FACTOR_NONE },
+  { "mediaControlsAndroid.css", IDR_UASTYLE_MEDIA_CONTROLS_ANDROID_CSS,
+    ui::SCALE_FACTOR_NONE },
+#endif
+#if !defined(OS_WIN)
+  { "themeChromiumLinux.css", IDR_UASTYLE_THEME_CHROMIUM_LINUX_CSS,
+    ui::SCALE_FACTOR_NONE },
+#endif
+  { "themeChromiumSkia.css", IDR_UASTYLE_THEME_CHROMIUM_SKIA_CSS,
+    ui::SCALE_FACTOR_NONE },
+  { "themeInputMultipleFields.css",
+    IDR_UASTYLE_THEME_INPUT_MULTIPLE_FIELDS_CSS, ui::SCALE_FACTOR_NONE },
+#if defined(OS_MACOSX)
+  { "themeMac.css", IDR_UASTYLE_THEME_MAC_CSS, ui::SCALE_FACTOR_NONE },
+#endif
+  { "themeWin.css", IDR_UASTYLE_THEME_WIN_CSS, ui::SCALE_FACTOR_NONE },
+  { "themeWinQuirks.css", IDR_UASTYLE_THEME_WIN_QUIRKS_CSS,
+    ui::SCALE_FACTOR_NONE },
+  { "svg.css", IDR_UASTYLE_SVG_CSS, ui::SCALE_FACTOR_NONE},
+  { "navigationTransitions.css", IDR_UASTYLE_NAVIGATION_TRANSITIONS_CSS,
+    ui::SCALE_FACTOR_NONE },
+  { "mathml.css", IDR_UASTYLE_MATHML_CSS, ui::SCALE_FACTOR_NONE},
+  { "mediaControls.css", IDR_UASTYLE_MEDIA_CONTROLS_CSS,
+    ui::SCALE_FACTOR_NONE },
+  { "fullscreen.css", IDR_UASTYLE_FULLSCREEN_CSS, ui::SCALE_FACTOR_NONE},
+  { "xhtmlmp.css", IDR_UASTYLE_XHTMLMP_CSS, ui::SCALE_FACTOR_NONE},
+  { "viewportAndroid.css", IDR_UASTYLE_VIEWPORT_ANDROID_CSS,
+    ui::SCALE_FACTOR_NONE},
+  { "XMLViewer.js", IDR_XML_VIEWER_JS, ui::SCALE_FACTOR_NONE },
+  { "XMLViewer.css", IDR_XML_VIEWER_CSS, ui::SCALE_FACTOR_NONE },
+  { "InspectorOverlayPage.html", IDR_INSPECTOR_OVERLAY_PAGE_HTML,
+    ui::SCALE_FACTOR_NONE },
+  { "InjectedScriptCanvasModuleSource.js",
+    IDR_INSPECTOR_INJECTED_SCRIPT_CANVAS_MODULE_SOURCE_JS,
+    ui::SCALE_FACTOR_NONE },
+  { "InjectedScriptSource.js", IDR_INSPECTOR_INJECTED_SCRIPT_SOURCE_JS,
+    ui::SCALE_FACTOR_NONE },
+  { "DebuggerScriptSource.js", IDR_INSPECTOR_DEBUGGER_SCRIPT_SOURCE_JS,
+    ui::SCALE_FACTOR_NONE },
+#ifdef IDR_PICKER_COMMON_JS
+  { "pickerCommon.js", IDR_PICKER_COMMON_JS, ui::SCALE_FACTOR_NONE },
+  { "pickerCommon.css", IDR_PICKER_COMMON_CSS, ui::SCALE_FACTOR_NONE },
+  { "calendarPicker.js", IDR_CALENDAR_PICKER_JS, ui::SCALE_FACTOR_NONE },
+  { "calendarPicker.css", IDR_CALENDAR_PICKER_CSS, ui::SCALE_FACTOR_NONE },
+  { "pickerButton.css", IDR_PICKER_BUTTON_CSS, ui::SCALE_FACTOR_NONE },
+  { "suggestionPicker.js", IDR_SUGGESTION_PICKER_JS, ui::SCALE_FACTOR_NONE },
+  { "suggestionPicker.css", IDR_SUGGESTION_PICKER_CSS, ui::SCALE_FACTOR_NONE },
+  { "colorSuggestionPicker.js",
+    IDR_COLOR_SUGGESTION_PICKER_JS, ui::SCALE_FACTOR_NONE },
+  { "colorSuggestionPicker.css",
+    IDR_COLOR_SUGGESTION_PICKER_CSS, ui::SCALE_FACTOR_NONE },
+#endif
 };
 
 }  // namespace
@@ -906,7 +988,6 @@ void BlinkPlatformImpl::didStopWorkerRunLoop(
 }
 
 blink::WebCrypto* BlinkPlatformImpl::crypto() {
-  WebCryptoImpl::EnsureInit();
   return &web_crypto_;
 }
 
@@ -1054,7 +1135,7 @@ BlinkPlatformImpl::allocateAndLockDiscardableMemory(size_t bytes) {
 
 size_t BlinkPlatformImpl::maxDecodedImageBytes() {
 #if defined(OS_ANDROID)
-  if (base::android::SysUtils::IsLowEndDevice()) {
+  if (base::SysInfo::IsLowEndDevice()) {
     // Limit image decoded size to 3M pixels on low end devices.
     // 4 is maximum number of bytes per pixel.
     return 3 * 1024 * 1024 * 4;

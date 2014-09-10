@@ -31,31 +31,39 @@
 #include "config.h"
 #include "web/tests/WebUnitTests.h"
 
-// FIXME: Can we move this to webkit/support and fix the layering violation?
+#include "platform/heap/Handle.h"
+#include <base/bind.h>
+#include <base/message_loop/message_loop.h>
+#include <base/run_loop.h>
+#include <base/test/launcher/unit_test_launcher.h>
 #include <base/test/test_suite.h>
-#include <gmock/gmock.h>
-
-static TestSuite* testSuite = 0;
+#include <v8.h>
 
 namespace blink {
 
-void InitTestSuite(int argc, char** argv)
-{
-    ::testing::InitGoogleMock(&argc, argv);
-    testSuite = new TestSuite(argc, argv);
-}
+namespace {
 
-int RunAllUnitTests()
+int runHelper(TestSuite* testSuite, void (*preTestHook)(void), void (*postTestHook)(void))
 {
+    preTestHook();
     int result = testSuite->Run();
+
+    // Collect garbage in order to release mock objects referred from v8 or
+    // Oilpan heap. Otherwise false mock leaks will be reported.
+    v8::Isolate::GetCurrent()->RequestGarbageCollectionForTesting(v8::Isolate::kFullGarbageCollection);
+    blink::Heap::collectAllGarbage();
+
+    postTestHook();
 
     return result;
 }
 
-void DeleteTestSuite()
+} // namespace
+
+int runWebTests(int argc, char** argv, void (*preTestHook)(void), void (*postTestHook)(void))
 {
-    delete testSuite;
-    testSuite = 0;
+    TestSuite testSuite(argc, argv);
+    return base::LaunchUnitTests(argc, argv, base::Bind(&runHelper, base::Unretained(&testSuite), preTestHook, postTestHook));
 }
 
 } // namespace blink

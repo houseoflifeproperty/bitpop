@@ -5,6 +5,8 @@
 from slave import recipe_api
 from slave import recipe_util
 
+from . import builders
+from . import steps
 
 class TestLauncherFilterFileInputPlaceholder(recipe_util.Placeholder):
   def __init__(self, api, tests):
@@ -22,6 +24,10 @@ class TestLauncherFilterFileInputPlaceholder(recipe_util.Placeholder):
 
 
 class ChromiumApi(recipe_api.RecipeApi):
+  def __init__(self, *args, **kwargs):
+    super(ChromiumApi, self).__init__(*args, **kwargs)
+    self._build_properties = None
+
   def get_config_defaults(self):
     return {
       'HOST_PLATFORM': self.m.platform.name,
@@ -43,8 +49,20 @@ class ChromiumApi(recipe_api.RecipeApi):
         32 if self.m.platform.name in ('mac', 'win')
         else self.m.platform.bits),
 
-      'BUILD_CONFIG': self.m.properties.get('build_config', 'Release')
+      'BUILD_CONFIG': self.m.properties.get('build_config', 'Release'),
     }
+
+  @property
+  def builders(self):
+    return builders.BUILDERS
+
+  @property
+  def steps(self):
+    return steps
+
+  @property
+  def build_properties(self):
+    return self._build_properties
 
   @property
   def output_dir(self):
@@ -57,7 +75,7 @@ class ChromiumApi(recipe_api.RecipeApi):
 
     { 'MAJOR'": '37', 'MINOR': '0', 'BUILD': '2021', 'PATCH': '0' }
     """
-    text = self.m.step_history['get version'].stdout
+    text = self._version
     output = {}
     for line in text.splitlines():
       [k,v] = line.split('=', 1)
@@ -65,15 +83,19 @@ class ChromiumApi(recipe_api.RecipeApi):
     return output
 
   def get_version(self):
-    yield self.m.step(
+    self._version = self.m.step(
         'get version',
         ['cat', self.m.path['checkout'].join('chrome', 'VERSION')],
         stdout=self.m.raw_io.output('version'),
         step_test_data=(
             lambda: self.m.raw_io.test_api.stream_output(
-                "MAJOR=37\nMINOR=0\nBUILD=2021\nPATCH=0\n")))
+                "MAJOR=37\nMINOR=0\nBUILD=2021\nPATCH=0\n"))).stdout
+    return self.version
 
-  def compile(self, targets=None, name=None, abort_on_failure=True,
+  def set_build_properties(self, props):
+    self._build_properties = props
+
+  def compile(self, targets=None, name=None,
               force_clobber=False, **kwargs):
     """Return a compile.py invocation."""
     targets = targets or self.c.compile_py.default_targets.as_jsonish()
@@ -85,6 +107,8 @@ class ChromiumApi(recipe_api.RecipeApi):
     ]
     if self.c.compile_py.build_tool:
       args += ['--build-tool', self.c.compile_py.build_tool]
+    if self.c.compile_py.cross_tool:
+      args += ['--crosstool', self.c.compile_py.cross_tool]
     if self.c.compile_py.compiler:
       args += ['--compiler', self.c.compile_py.compiler]
     if self.c.compile_py.mode:
@@ -98,11 +122,17 @@ class ChromiumApi(recipe_api.RecipeApi):
     if self.c.compile_py.pass_arch_flag:
       args += ['--arch', self.c.gyp_env.GYP_DEFINES['target_arch']]
     args.append('--')
-    args.extend(targets)
-    return self.m.python(name or 'compile',
-                         self.m.path['build'].join('scripts', 'slave',
-                                                   'compile.py'),
-                         args, abort_on_failure=abort_on_failure, **kwargs)
+    if self.c.compile_py.build_tool == 'xcode':
+      for target in targets:
+        args.extend(['-target', target])
+      if self.c.compile_py.xcode_sdk:
+        args.extend(['-sdk', self.c.compile_py.xcode_sdk])
+    else:
+      args.extend(targets)
+    self.m.python(name or 'compile',
+                  self.m.path['build'].join('scripts', 'slave',
+                                            'compile.py'),
+                  args, **kwargs)
 
   @recipe_util.returns_placeholder
   def test_launcher_filter(self, tests):
@@ -124,6 +154,8 @@ class ChromiumApi(recipe_api.RecipeApi):
       test += '.exe'
 
     full_args = ['--target', self.c.build_config_fs]
+    if self.c.TARGET_PLATFORM == 'ios':
+      full_args.extend(['--test-platform', 'ios-simulator'])
     if self.m.platform.is_linux:
       full_args.append('--xvfb' if xvfb else '--no-xvfb')
     full_args += self.m.json.property_args()
@@ -161,7 +193,7 @@ class ChromiumApi(recipe_api.RecipeApi):
         '-o', 'gtest-results/%s' % test,
       ])
       # The flakiness dashboard needs the buildnumber, so we assert it here.
-      assert self.m.properties.get('buildnumber')
+      assert self.m.properties.get('buildnumber') is not None
 
     # These properties are specified on every bot, so pass them down
     # unconditionally.
@@ -169,14 +201,12 @@ class ChromiumApi(recipe_api.RecipeApi):
     full_args.append('--slave-name=%s' % self.m.properties['slavename'])
     # A couple of the recipes contain tests which don't specify a buildnumber,
     # so make this optional.
-    if self.m.properties.get('buildnumber'):
+    if self.m.properties.get('buildnumber') is not None:
       full_args.append('--build-number=%s' % self.m.properties['buildnumber'])
     if ext == '.py' or python_mode:
       full_args.append('--run-python-script')
     if not spawn_dbus:
       full_args.append('--no-spawn-dbus')
-    if parallel:
-      full_args.append('--parallel')
     if revision:
       full_args.append('--revision=%s' % revision)
     if webkit_revision:
@@ -198,8 +228,6 @@ class ChromiumApi(recipe_api.RecipeApi):
       full_args.append('--enable-msan')
     if self.c.gyp_env.GYP_DEFINES.get('tsan', 0) == 1:
       full_args.append('--enable-tsan')
-      full_args.append('--tsan-suppressions-file=%s' %
-                       self.c.runtests.tsan_suppressions_file)
     if self.c.gyp_env.GYP_DEFINES.get('syzyasan', 0) == 1:
       full_args.append('--use-syzyasan-logger')
     if self.c.runtests.memory_tool:
@@ -214,10 +242,8 @@ class ChromiumApi(recipe_api.RecipeApi):
     else:
       full_args.append(test)
 
+    full_args.extend(self.c.runtests.test_args)
     full_args.extend(args)
-
-    # By default, always run the tests.
-    kwargs.setdefault('always_run', True)
 
     return self.m.python(
       name or t_name,
@@ -233,7 +259,7 @@ class ChromiumApi(recipe_api.RecipeApi):
   def run_telemetry_test(self, runner, test, name='', args=None,
                          prefix_args=None, results_directory='',
                          spawn_dbus=False, revision=None, webkit_revision=None,
-                         master_class_name=None):
+                         master_class_name=None, **kwargs):
     """Runs a Telemetry based test with 'runner' as the executable.
     Automatically passes certain flags like --output-format=gtest to the
     test runner. 'prefix_args' are passed before the built-in arguments and
@@ -279,39 +305,67 @@ class ChromiumApi(recipe_api.RecipeApi):
         revision=revision,
         webkit_revision=webkit_revision,
         master_class_name=master_class_name,
-        env=env)
+        env=env,
+        **kwargs)
 
-  def run_telemetry_unittests(self):
-    return self.runtest(
+  def run_telemetry_unittests(self, suffix=None, cmd_args=None, **kwargs):
+    return self._run_telemetry_script(
+        'telemetry_unittests',
         self.m.path['checkout'].join('tools', 'telemetry', 'run_tests'),
-        args=['--browser=%s' % self.c.build_config_fs.lower()],
-        annotate='gtest',
-        name='telemetry_unittests',
-        test_type='telemetry_unittests',
-        python_mode=True,
-        xvfb=True)
+        suffix, cmd_args, **kwargs)
 
-  def run_telemetry_perf_unittests(self):
-    return self.runtest(
+  def run_telemetry_perf_unittests(self, suffix=None, cmd_args=None, **kwargs):
+    return self._run_telemetry_script(
+        'telemetry_perf_unittests',
         self.m.path['checkout'].join('tools', 'perf', 'run_tests'),
-        args=['--browser=%s' % self.c.build_config_fs.lower()],
-        annotate='gtest',
-        name='telemetry_perf_unittests',
-        test_type='telemetry_perf_unittests',
-        python_mode=True,
-        xvfb=True)
+        suffix, cmd_args, **kwargs)
 
-  def runhooks(self, run_gyp=True, **kwargs):
+  def _run_telemetry_script(self, name, script_path, suffix,
+                            cmd_args, **kwargs):
+    test_type = name
+    if suffix:
+      name += ' (%s)' % suffix
+    cmd_args = cmd_args or []
+
+    args = ['--browser=%s' % self.c.build_config_fs.lower(),
+            '--retry-limit=3']
+
+    if not self.m.tryserver.is_tryserver:
+      chromium_revision = self.m.bot_update.properties['got_revision']
+      blink_revision = self.m.bot_update.properties['got_webkit_revision']
+      args += [
+          '--builder-name=%s' % self.m.properties['buildername'],
+          '--master-name=%s' % self.m.properties['mastername'],
+          '--test-results-server=%s' % 'test-results.appspot.com',
+          '--test-type=%s' % test_type,
+          '--metadata', 'chromium_revision=%s' % chromium_revision,
+          '--metadata', 'blink_revision=%s' % blink_revision,
+          '--metadata', 'build_number=%s' % self.m.properties['buildnumber'],
+      ]
+
+    args += cmd_args
+
+    return self.runtest(
+        script_path,
+        args=args,
+        annotate='gtest',
+        name=name,
+        test_type=test_type,
+        python_mode=True,
+        xvfb=True,
+        **kwargs)
+
+  def runhooks(self, **kwargs):
     """Run the build-configuration hooks for chromium."""
     env = kwargs.get('env', {})
-    if run_gyp:
+    if self.c.project_generator.tool == 'gyp':
       env.update(self.c.gyp_env.as_jsonish())
     else:
       env['GYP_CHROMIUM_NO_ACTION'] = 1
     kwargs['env'] = env
-    return self.m.gclient.runhooks(**kwargs)
+    self.m.gclient.runhooks(**kwargs)
 
-  def run_gn(self):
+  def run_gn(self, use_goma=False):
     gn_args = []
     if self.c.BUILD_CONFIG == 'Debug':
       gn_args.append('is_debug=true')
@@ -322,7 +376,18 @@ class ChromiumApi(recipe_api.RecipeApi):
     if self.c.TARGET_ARCH == 'arm':
       gn_args.append('cpu_arch="arm"')
 
-    return self.m.python(
+    # TODO: crbug.com/395784.
+    # Consider getting the flags to use via the project_generator config
+    # and/or modifying the goma config to modify the gn flags directly,
+    # rather than setting the gn_args flags via a parameter passed to
+    # run_gn(). We shouldn't have *three* different mechanisms to control
+    # what args to use.
+    if use_goma:
+      gn_args.append('use_goma=true')
+      gn_args.append('goma_dir="%s"' % self.m.path['build'].join('goma'))
+    gn_args.extend(self.c.project_generator.args)
+
+    self.m.python(
         name='gn',
         script=self.m.path['depot_tools'].join('gn.py'),
         args=[
@@ -333,17 +398,17 @@ class ChromiumApi(recipe_api.RecipeApi):
         ])
 
   def taskkill(self):
-    return self.m.python(
+    self.m.python(
       'taskkill',
       self.m.path['build'].join('scripts', 'slave', 'kill_processes.py'))
 
   def cleanup_temp(self):
-    return self.m.python(
+    self.m.python(
       'cleanup_temp',
       self.m.path['build'].join('scripts', 'slave', 'cleanup_temp.py'))
 
   def crash_handler(self):
-    return self.m.python(
+    self.m.python(
         'start_crash_service',
         self.m.path['build'].join('scripts', 'slave', 'chromium',
                                   'run_crash_handler.py'),
@@ -351,8 +416,7 @@ class ChromiumApi(recipe_api.RecipeApi):
 
   def process_dumps(self, **kwargs):
     # Dumps are especially useful when other steps (e.g. tests) are failing.
-    kwargs.setdefault('always_run', True)
-    return self.m.python(
+    self.m.python(
         'process_dumps',
         self.m.path['build'].join('scripts', 'slave', 'process_dumps.py'),
         ['--target', self.c.build_config_fs],
@@ -360,7 +424,7 @@ class ChromiumApi(recipe_api.RecipeApi):
 
   def apply_syzyasan(self):
     args = ['--target', self.c.BUILD_CONFIG]
-    return self.m.python(
+    self.m.python(
       'apply_syzyasan',
       self.m.path['build'].join('scripts', 'slave', 'chromium',
                                 'win_apply_syzyasan.py'),
@@ -382,7 +446,11 @@ class ChromiumApi(recipe_api.RecipeApi):
         '--target', self.c.BUILD_CONFIG,
         '--factory-properties', self.m.json.dumps(fake_factory_properties),
     ]
-    return self.m.python(
+    if self.build_properties:
+      args += [
+        '--build-properties', self.m.json.dumps(self.build_properties),
+      ]
+    self.m.python(
       step_name,
       self.m.path['build'].join('scripts', 'slave', 'chromium',
                                 'archive_build.py'),
@@ -450,14 +518,49 @@ class ChromiumApi(recipe_api.RecipeApi):
         args=['--gitless', self.m.path['checkout'].join('.DEPS.git')],
         **kwargs)
 
-  def setup_tests(self, bot_type, test_steps):
-    steps = []
-    if bot_type in ['tester', 'builder_tester'] and test_steps:
-      if self.m.platform.is_win:
-        steps.append(self.crash_handler())
+  def list_perf_tests(self, browser, num_shards, devices=[]):
+    args = ['list', '--browser', browser, '--json-output',
+            self.m.json.output(), '--num-shards', num_shards]
+    for x in devices:
+      args += ['--device', x]
 
-      steps.extend(test_steps)
+    return self.m.python(
+      'List Perf Tests',
+      self.m.path['checkout'].join('tools', 'perf', 'run_benchmark'),
+      args,
+      step_test_data=lambda: self.m.json.test_api.output({
+        "steps": {
+          "blink_perf.all": {
+            "cmd": "cmd1",
+            "device_affinity": 0
+          },
+          "dromaeo.cssqueryjquery": {
+            "cmd": "cmd2",
+            "device_affinity": 1
+          },
+        },
+        "version": 1,
+      }))
 
-      if self.m.platform.is_win:
-        steps.append(self.process_dumps())
-    return steps
+  def get_annotate_by_test_name(self, test_name):
+    if test_name.split('.')[0] == 'page_cycler':
+      return 'pagecycler'
+    elif test_name.split('.')[0] == 'endure':
+      return 'endure'
+    return 'graphing'
+
+  def get_vs_toolchain_if_necessary(self):
+    """Updates and/or installs the Visual Studio toolchain if necessary.
+    Used on Windows bots which only run tests and do not check out the
+    Chromium workspace. Has no effect on non-Windows platforms."""
+    # These hashes come from src/build/toolchain_vs2013.hash in the
+    # Chromium workspace.
+    if self.m.platform.is_win:
+      self.m.python(
+          name='get_vs_toolchain_if_necessary',
+          script=self.m.path['depot_tools'].join(
+              'win_toolchain', 'get_toolchain_if_necessary.py'),
+          args=[
+              '27eac9b2869ef6c89391f305a3f01285ea317867',
+              '9d9a93134b3eabd003b85b4e7dea06c0eae150ed',
+          ])

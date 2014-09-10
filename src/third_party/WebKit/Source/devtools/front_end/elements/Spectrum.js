@@ -38,14 +38,10 @@ WebInspector.Spectrum = function()
     this.element.classList.add("spectrum-container");
     this.element.tabIndex = 0;
 
-    var topElement = this.element.createChild("div", "spectrum-top");
-    topElement.createChild("div", "spectrum-fill");
-
-    var topInnerElement = topElement.createChild("div", "spectrum-top-inner fill");
-    this._draggerElement = topInnerElement.createChild("div", "spectrum-color");
+    this._draggerElement = this.element.createChild("div", "spectrum-color");
     this._dragHelperElement = this._draggerElement.createChild("div", "spectrum-sat fill").createChild("div", "spectrum-val fill").createChild("div", "spectrum-dragger");
 
-    this._sliderElement = topInnerElement.createChild("div", "spectrum-hue");
+    this._sliderElement = this.element.createChild("div", "spectrum-hue");
     this.slideHelper = this._sliderElement.createChild("div", "spectrum-slider");
 
     var rangeContainer = this.element.createChild("div", "spectrum-range-container");
@@ -59,12 +55,9 @@ WebInspector.Spectrum = function()
     this._alphaElement.addEventListener("input", alphaDrag.bind(this), false);
     this._alphaElement.addEventListener("change", alphaDrag.bind(this), false);
 
-    var swatchElement = document.createElement("span");
-    swatchElement.className = "swatch";
+    var displayContainer = this.element.createChild("div", "spectrum-text");
+    var swatchElement = displayContainer.createChild("span", "swatch");
     this._swatchInnerElement = swatchElement.createChild("span", "swatch-inner");
-
-    var displayContainer = this.element.createChild("div");
-    displayContainer.appendChild(swatchElement);
     this._displayElement = displayContainer.createChild("span", "source-code spectrum-display-value");
 
     WebInspector.Spectrum.draggable(this._sliderElement, hueDrag.bind(this));
@@ -146,7 +139,7 @@ WebInspector.Spectrum.draggable = function(element, onmove, onstart, onstop) {
     var maxWidth;
 
     /**
-     * @param {?Event} e
+     * @param {!Event} e
      */
     function consume(e)
     {
@@ -154,7 +147,7 @@ WebInspector.Spectrum.draggable = function(element, onmove, onstart, onstop) {
     }
 
     /**
-     * @param {?Event} e
+     * @param {!Event} e
      */
     function move(e)
     {
@@ -168,7 +161,7 @@ WebInspector.Spectrum.draggable = function(element, onmove, onstart, onstop) {
     }
 
     /**
-     * @param {?Event} e
+     * @param {!Event} e
      */
     function start(e)
     {
@@ -198,7 +191,7 @@ WebInspector.Spectrum.draggable = function(element, onmove, onstart, onstop) {
     }
 
     /**
-     * @param {?Event} e
+     * @param {!Event} e
      */
     function stop(e)
     {
@@ -372,6 +365,7 @@ WebInspector.SpectrumPopupHelper.prototype = {
             this.hide(true);
         }
 
+        delete this._isHidden;
         this._anchorElement = element;
 
         this._spectrum.setColor(color);
@@ -380,6 +374,7 @@ WebInspector.SpectrumPopupHelper.prototype = {
 
         document.addEventListener("mousedown", this._hideProxy, false);
         window.addEventListener("blur", this._hideProxy, false);
+        window.addEventListener("resize", this._hideProxy, false);
         return true;
     },
 
@@ -396,12 +391,14 @@ WebInspector.SpectrumPopupHelper.prototype = {
      */
     hide: function(commitEdit)
     {
-        if (!this._popover.isShowing())
+        if (this._isHidden)
             return;
+        this._isHidden = true;
         this._popover.hide();
 
         document.removeEventListener("mousedown", this._hideProxy, false);
         window.removeEventListener("blur", this._hideProxy, false);
+        window.removeEventListener("resize", this._hideProxy, false);
 
         this.dispatchEventToListeners(WebInspector.SpectrumPopupHelper.Events.Hidden, !!commitEdit);
 
@@ -433,11 +430,10 @@ WebInspector.SpectrumPopupHelper.prototype = {
  */
 WebInspector.ColorSwatch = function(readOnly)
 {
-    this.element = document.createElement("span");
+    this.element = document.createElementWithClass("span", "swatch");
     this._swatchInnerElement = this.element.createChild("span", "swatch-inner");
     var shiftClickMessage = WebInspector.UIString("Shift-click to change color format.");
     this.element.title = readOnly ? shiftClickMessage : String.sprintf("%s\n%s", WebInspector.UIString("Click to open a colorpicker."), shiftClickMessage);
-    this.element.className = "swatch";
     this.element.addEventListener("mousedown", consumeEvent, false);
     this.element.addEventListener("dblclick", consumeEvent, false);
 }

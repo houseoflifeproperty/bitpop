@@ -26,8 +26,10 @@
 
 #include "config.h"
 #include "platform/network/ResourceRequest.h"
+#include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/WebURLRequest.h"
 
-namespace WebCore {
+namespace blink {
 
 double ResourceRequest::s_defaultTimeoutInterval = INT_MAX;
 
@@ -51,7 +53,8 @@ PassOwnPtr<ResourceRequest> ResourceRequest::adopt(PassOwnPtr<CrossThreadResourc
     request->setRequestorID(data->m_requestorID);
     request->setRequestorProcessID(data->m_requestorProcessID);
     request->setAppCacheHostID(data->m_appCacheHostID);
-    request->setTargetType(data->m_targetType);
+    request->setRequestContext(data->m_requestContext);
+    request->setFrameType(data->m_frameType);
     request->m_referrerPolicy = data->m_referrerPolicy;
     return request.release();
 }
@@ -77,7 +80,8 @@ PassOwnPtr<CrossThreadResourceRequestData> ResourceRequest::copyData() const
     data->m_requestorID = m_requestorID;
     data->m_requestorProcessID = m_requestorProcessID;
     data->m_appCacheHostID = m_appCacheHostID;
-    data->m_targetType = m_targetType;
+    data->m_requestContext = m_requestContext;
+    data->m_frameType = m_frameType;
     data->m_referrerPolicy = m_referrerPolicy;
     return data.release();
 }
@@ -190,6 +194,32 @@ void ResourceRequest::clearHTTPReferrer()
 void ResourceRequest::clearHTTPOrigin()
 {
     m_httpHeaderFields.remove("Origin");
+}
+
+void ResourceRequest::addHTTPOriginIfNeeded(const AtomicString& origin)
+{
+    if (!httpOrigin().isEmpty())
+        return; // Request already has an Origin header.
+
+    // Don't send an Origin header for GET or HEAD to avoid privacy issues.
+    // For example, if an intranet page has a hyperlink to an external web
+    // site, we don't want to include the Origin of the request because it
+    // will leak the internal host name. Similar privacy concerns have lead
+    // to the widespread suppression of the Referer header at the network
+    // layer.
+    if (httpMethod() == "GET" || httpMethod() == "HEAD")
+        return;
+
+    // For non-GET and non-HEAD methods, always send an Origin header so the
+    // server knows we support this feature.
+
+    if (origin.isEmpty()) {
+        // If we don't know what origin header to attach, we attach the value
+        // for an empty origin.
+        setHTTPOrigin(SecurityOrigin::createUnique()->toAtomicString());
+        return;
+    }
+    setHTTPOrigin(origin);
 }
 
 void ResourceRequest::clearHTTPUserAgent()
@@ -320,21 +350,24 @@ static const AtomicString& pragmaHeaderString()
     return pragmaHeader;
 }
 
-bool ResourceRequest::cacheControlContainsNoCache()
+const CacheControlHeader& ResourceRequest::cacheControlHeader() const
 {
-    if (!m_cacheControlHeader.parsed)
-        m_cacheControlHeader = parseCacheControlDirectives(m_httpHeaderFields.get(cacheControlHeaderString()), m_httpHeaderFields.get(pragmaHeaderString()));
-    return m_cacheControlHeader.containsNoCache;
+    if (!m_cacheControlHeaderCache.parsed)
+        m_cacheControlHeaderCache = parseCacheControlDirectives(m_httpHeaderFields.get(cacheControlHeaderString()), m_httpHeaderFields.get(pragmaHeaderString()));
+    return m_cacheControlHeaderCache;
 }
 
-bool ResourceRequest::cacheControlContainsNoStore()
+bool ResourceRequest::cacheControlContainsNoCache() const
 {
-    if (!m_cacheControlHeader.parsed)
-        m_cacheControlHeader = parseCacheControlDirectives(m_httpHeaderFields.get(cacheControlHeaderString()), m_httpHeaderFields.get(pragmaHeaderString()));
-    return m_cacheControlHeader.containsNoStore;
+    return cacheControlHeader().containsNoCache;
 }
 
-bool ResourceRequest::hasCacheValidatorFields()
+bool ResourceRequest::cacheControlContainsNoStore() const
+{
+    return cacheControlHeader().containsNoStore;
+}
+
+bool ResourceRequest::hasCacheValidatorFields() const
 {
     DEFINE_STATIC_LOCAL(const AtomicString, lastModifiedHeader, ("last-modified", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(const AtomicString, eTagHeader, ("etag", AtomicString::ConstructFromLiteral));
@@ -367,7 +400,8 @@ void ResourceRequest::initialize(const KURL& url, ResourceRequestCachePolicy cac
     m_requestorID = 0;
     m_requestorProcessID = 0;
     m_appCacheHostID = 0;
-    m_targetType = TargetIsUnspecified;
+    m_requestContext = blink::WebURLRequest::RequestContextUnspecified;
+    m_frameType = blink::WebURLRequest::FrameTypeNone;
     m_referrerPolicy = ReferrerPolicyDefault;
 }
 

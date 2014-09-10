@@ -9,7 +9,7 @@
 
 #include "components/sync_driver/data_type_manager.h"
 
-namespace browser_sync {
+namespace sync_driver {
 
 // Class to keep track of data types that have encountered an error during sync.
 class FailedDataTypesHandler {
@@ -61,12 +61,18 @@ class FailedDataTypesHandler {
   // Returns the types that cannot be configured due to not being ready.
   syncer::ModelTypeSet GetUnreadyErrorTypes() const;
 
+  // Returns the types that triggered the unrecoverable error.
+  syncer::ModelTypeSet GetUnrecoverableErrorTypes() const;
+
+  // Returns the current unrecoverable error, if there is one.
+  syncer::SyncError GetUnrecoverableError() const;
+
  private:
   // Returns true if there are any types with errors.
   bool AnyFailedDataType() const;
 
-  // List of data types that failed due to unrecoverable errors and should
-  // be disabled.
+  // The current unrecoverable errors. Only one unrecoverable error can be
+  // active at a time, but it may apply to more than one type.
   TypeErrorMap unrecoverable_errors_;
 
   // List of data types that failed due to runtime errors and should be
@@ -88,6 +94,6 @@ class FailedDataTypesHandler {
   DISALLOW_COPY_AND_ASSIGN(FailedDataTypesHandler);
 };
 
-}  // namespace browser_sync
+}  // namespace sync_driver
 
 #endif  // COMPONENTS_SYNC_DRIVER_FAILED_DATA_TYPES_HANDLER_H_

@@ -35,7 +35,7 @@
 #include "wtf/HashMap.h"
 #include "wtf/ListHashSet.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderInline;
 class RenderLayerModelObject;
@@ -51,13 +51,12 @@ typedef HashMap<RenderWidget*, IntRect> OverlapTestRequestMap;
 struct PaintInfo {
     PaintInfo(GraphicsContext* newContext, const IntRect& newRect, PaintPhase newPhase, PaintBehavior newPaintBehavior,
         RenderObject* newPaintingRoot = 0, ListHashSet<RenderInline*>* newOutlineObjects = 0,
-        OverlapTestRequestMap* overlapTestRequests = 0, const RenderLayerModelObject* newPaintContainer = 0)
+        const RenderLayerModelObject* newPaintContainer = 0)
         : context(newContext)
         , rect(newRect)
         , phase(newPhase)
         , paintBehavior(newPaintBehavior)
         , paintingRoot(newPaintingRoot)
-        , overlapTestRequests(overlapTestRequests)
         , m_paintContainer(newPaintContainer)
         , m_outlineObjects(newOutlineObjects)
     {
@@ -113,14 +112,12 @@ struct PaintInfo {
     PaintPhase phase;
     PaintBehavior paintBehavior;
     RenderObject* paintingRoot; // used to draw just one element and its visual kids
-    OverlapTestRequestMap* overlapTestRequests;
 
 private:
-
     const RenderLayerModelObject* m_paintContainer; // the layer object that originates the current painting
     ListHashSet<RenderInline*>* m_outlineObjects; // used to list outlines that should be painted by a block with inline children
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PaintInfo_h

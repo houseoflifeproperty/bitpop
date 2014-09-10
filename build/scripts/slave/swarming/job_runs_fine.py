@@ -9,6 +9,7 @@ possible to run a job on each OS.
 
 import Queue
 import datetime
+import optparse
 import os
 import shutil
 import subprocess
@@ -28,14 +29,12 @@ def capture(cmd, **kwargs):
 
 
 def run(
-    client_dir, isolated_hash, dimensions, task_name, isolate_server,
+    client_dir, isolated_hash, dimensions, suffix, task_name, isolate_server,
     swarming_server, timeout, channel):
   out = 'An internal error occured'
   code = 1
   duration = -1.
   try:
-    suffix = '/'.join(
-        '%s=%s' % (key, value) for key, value in sorted(dimensions.iteritems()))
     cmd = [
       sys.executable,
       'swarming.py',
@@ -55,21 +54,40 @@ def run(
     out, code = capture(cmd, cwd=client_dir)
     duration = time.time() - start
   finally:
+    # Only send out if there was a failure.
     channel.put((suffix, out if code else None, duration))
+
+
+def flatten_dict(d):
+  return '/'.join(
+      '%s=%s' % (key, value) for key, value in sorted(d.iteritems()))
 
 
 def main():
   # It is expected that cwd is the build directory.
   cwd = os.getcwd()
 
+  parser = optparse.OptionParser()
+  parser.add_option('--canary', action='store_true')
+  options, args = parser.parse_args()
+
+  if args:
+    parser.error('Unknown args: %s' % args)
+
   # Testing parameters:
-  swarming_server = 'https://chromium-swarm.appspot.com'
-  isolate_server = 'https://isolateserver.appspot.com'
+  if options.canary:
+    swarming_server = 'https://chromium-swarm-dev.appspot.com'
+    isolate_server = 'https://isolateserver-dev.appspot.com'
+  else:
+    swarming_server = 'https://chromium-swarm.appspot.com'
+    isolate_server = 'https://isolateserver.appspot.com'
+
   dimensions_to_test = (
     {'os': 'Linux'},
     {'os': 'Mac'},
     {'os': 'Windows'},
   )
+
   # Even under 100% load, a very high priority task should complete within 10
   # minutes.
   timeout = 10*60
@@ -99,33 +117,53 @@ def main():
   print('Archiving heartbeat.isolate took %3.1fs' % (time.time() - start))
 
   now = datetime.datetime.utcnow()
-  task_name = 'heartbeat-%s' % now.strftime('%Y-%m-%d_%H:%M:%S')
+  if options.canary:
+    task_name = 'heartbeat-canary-%s' % now.strftime('%Y-%m-%d_%H:%M:%S')
+  else:
+    task_name = 'heartbeat-%s' % now.strftime('%Y-%m-%d_%H:%M:%S')
 
   print('Sending tasks named %s' % task_name)
-  # Runs the 3 tasks in parallel.
-  channel = Queue.Queue(len(dimensions_to_test))
+  # Runs the tasks in parallel.
+  suffixes_dict = {
+    flatten_dict(dimensions): dimensions for dimensions in dimensions_to_test
+  }
+  assert len(suffixes_dict) == len(dimensions_to_test)
+  channel = Queue.Queue(len(suffixes_dict))
   threads = [
     threading.Thread(
       target=run,
       args=(
-        client_dir, isolated_hash, dimensions, task_name, isolate_server,
-        swarming_server, timeout, channel))
-    for dimensions in dimensions_to_test
+          client_dir, isolated_hash, dimensions, suffix, task_name,
+          isolate_server, swarming_server, timeout, channel))
+    for suffix, dimensions in suffixes_dict.iteritems()
   ]
   start = time.time()
-  deadline = start + timeout
+  # Add one minute to the deadline to wait for results. This is to take in
+  # account potential overhead. In practice, this should be lowered to a few
+  # seconds.
+  real_timeout = timeout + 60
+  deadline = start + real_timeout
 
   for t in threads:
     t.daemon = True
     t.start()
 
-  for _ in xrange(len(dimensions_to_test)):
+  while suffixes_dict:
     remaining = deadline - time.time()
     try:
       suffix, out, duration = channel.get(timeout=remaining)
     except Queue.Empty:
-      suffix = out = duration = None
-    if out is not None:
+      sys.stderr.write(
+          'Deadline exceeded to run the tasks within %d seconds.\n' %
+          real_timeout)
+      sys.stderr.write('Missing:\n')
+      for k, v in suffixes_dict.iteritems():
+        sys.stderr.write('%s: %s\n' % (k, v))
+      return 1
+
+    suffixes_dict.pop(suffix)
+    if out:
+      # out is only set in case of failure. See finally clause in run().
       sys.stderr.write(
           'Swarming on %s failed (%.2fs):\n' % (suffix, duration))
       sys.stderr.write(out)
@@ -134,10 +172,7 @@ def main():
       sys.stdout.write(
           'Swarming on %s success (%.2fs)\n' % (suffix, duration))
       sys.stdout.flush()
-    if time.time() > deadline:
-      # It took too long, do not wait for the rest of the tasks.
-      sys.stderr.write('Deadline exceeded to run the tasks')
-      return 1
+
   for t in threads:
     t.join()
   return code

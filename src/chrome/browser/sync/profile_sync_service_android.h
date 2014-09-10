@@ -13,6 +13,7 @@
 #include "base/compiler_specific.h"
 #include "base/time/time.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
+#include "components/invalidation/invalidation_util.h"
 #include "components/sync_driver/sync_prefs.h"
 #include "google/cacheinvalidation/include/types.h"
 #include "google_apis/gaia/google_service_auth_error.h"

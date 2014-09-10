@@ -34,9 +34,11 @@ import java.util.Map;
 class MediaResourceGetter {
 
     private static final String TAG = "MediaResourceGetter";
-    private final MediaMetadata EMPTY_METADATA = new MediaMetadata(0,0,0,false);
+    private static final MediaMetadata EMPTY_METADATA = new MediaMetadata(0,0,0,false);
 
     private final MediaMetadataRetriever mRetriever = new MediaMetadataRetriever();
+
+    private static String PACKAGE_NAME = null;
 
     @VisibleForTesting
     static class MediaMetadata {
@@ -114,6 +116,7 @@ class MediaResourceGetter {
                                                       final String url,
                                                       final String cookies,
                                                       final String userAgent) {
+        PACKAGE_NAME = context.getPackageName();
         return new MediaResourceGetter().extract(
                 context, url, cookies, userAgent);
     }
@@ -365,6 +368,8 @@ class MediaResourceGetter {
         List<String> result = new ArrayList<String>();
         result.add("/mnt/sdcard/");
         result.add("/sdcard/");
+        if (PACKAGE_NAME != null)
+            result.add("/data/data/" + PACKAGE_NAME + "/cache/");
         return result;
     }
 

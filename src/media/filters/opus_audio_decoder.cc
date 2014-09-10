@@ -282,7 +282,7 @@ void OpusAudioDecoder::Reset(const base::Closure& closure) {
   task_runner_->PostTask(FROM_HERE, closure);
 }
 
-void OpusAudioDecoder::Stop() {
+OpusAudioDecoder::~OpusAudioDecoder() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   if (!opus_decoder_)
@@ -293,15 +293,12 @@ void OpusAudioDecoder::Stop() {
   CloseDecoder();
 }
 
-OpusAudioDecoder::~OpusAudioDecoder() {}
-
 void OpusAudioDecoder::DecodeBuffer(
     const scoped_refptr<DecoderBuffer>& input,
     const DecodeCB& decode_cb) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(!decode_cb.is_null());
-
-  DCHECK(input.get());
+  DCHECK(input);
 
   // Libopus does not buffer output. Decoding is complete when an end of stream
   // input buffer is received.

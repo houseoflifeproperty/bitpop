@@ -11,10 +11,11 @@ namespace blink {
 
 class WebServiceWorkerResponsePrivate : public RefCounted<WebServiceWorkerResponsePrivate> {
 public:
+    WebURL url;
     unsigned short status;
     WebString statusText;
     HashMap<String, String> headers;
-    RefPtr<WebCore::BlobDataHandle> blobDataHandle;
+    RefPtr<BlobDataHandle> blobDataHandle;
 };
 
 WebServiceWorkerResponse::WebServiceWorkerResponse()
@@ -30,6 +31,16 @@ void WebServiceWorkerResponse::reset()
 void WebServiceWorkerResponse::assign(const WebServiceWorkerResponse& other)
 {
     m_private = other.m_private;
+}
+
+void WebServiceWorkerResponse::setURL(const WebURL& url)
+{
+    m_private->url = url;
+}
+
+WebURL WebServiceWorkerResponse::url() const
+{
+    return m_private->url;
 }
 
 void WebServiceWorkerResponse::setStatus(unsigned short status)
@@ -86,12 +97,12 @@ const HashMap<String, String>& WebServiceWorkerResponse::headers() const
     return m_private->headers;
 }
 
-void WebServiceWorkerResponse::setBlobDataHandle(PassRefPtr<WebCore::BlobDataHandle> blobDataHandle)
+void WebServiceWorkerResponse::setBlobDataHandle(PassRefPtr<BlobDataHandle> blobDataHandle)
 {
     m_private->blobDataHandle = blobDataHandle;
 }
 
-PassRefPtr<WebCore::BlobDataHandle> WebServiceWorkerResponse::blobDataHandle() const
+PassRefPtr<BlobDataHandle> WebServiceWorkerResponse::blobDataHandle() const
 {
     return m_private->blobDataHandle;
 }

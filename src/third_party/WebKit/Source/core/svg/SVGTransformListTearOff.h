@@ -35,11 +35,11 @@
 #include "core/svg/SVGTransformTearOff.h"
 #include "core/svg/properties/SVGListPropertyTearOffHelper.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGTransformListTearOff FINAL :
-    public SVGListPropertyTearOffHelper<SVGTransformListTearOff, SVGTransformList>,
-    public ScriptWrappable {
+class SVGTransformListTearOff FINAL
+    : public SVGListPropertyTearOffHelper<SVGTransformListTearOff, SVGTransformList>
+    , public ScriptWrappable {
 public:
     static PassRefPtr<SVGTransformListTearOff> create(PassRefPtr<SVGTransformList> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
     {
@@ -55,6 +55,6 @@ private:
     SVGTransformListTearOff(PassRefPtr<SVGTransformList>, SVGElement*, PropertyIsAnimValType, const QualifiedName&);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGTransformListTearOff_h_

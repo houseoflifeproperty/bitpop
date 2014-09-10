@@ -6,10 +6,11 @@
 #define RespondWithObserver_h
 
 #include "core/dom/ContextLifecycleObserver.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 class Response;
@@ -41,7 +42,7 @@ private:
 
     // Sends a response back to the client. The null response means to fallback
     // to native.
-    void sendResponse(PassRefPtr<Response>);
+    void sendResponse(PassRefPtrWillBeRawPtr<Response>);
 
     int m_eventID;
 
@@ -49,6 +50,6 @@ private:
     State m_state;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RespondWithObserver_h

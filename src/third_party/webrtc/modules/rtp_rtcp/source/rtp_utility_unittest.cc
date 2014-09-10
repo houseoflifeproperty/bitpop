@@ -8,9 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-
 /*
- * This file conatins unit tests for the ModuleRTPUtility.
+ * This file conatins unit tests for the RtpUtility.
  */
 
 #include "testing/gtest/include/gtest/gtest.h"
@@ -20,9 +19,9 @@
 
 namespace webrtc {
 
-using ModuleRTPUtility::RTPPayloadParser;
-using ModuleRTPUtility::RTPPayload;
-using ModuleRTPUtility::RTPPayloadVP8;
+using RtpUtility::RTPPayloadParser;
+using RtpUtility::RTPPayload;
+using RtpUtility::RTPPayloadVP8;
 
 // Payload descriptor
 //       0 1 2 3 4 5 6 7
@@ -81,7 +80,7 @@ TEST(ParseVP8Test, BasicHeader) {
   RTPPayload parsedPacket;
   ASSERT_TRUE(rtpPayloadParser.Parse(parsedPacket));
 
-  EXPECT_EQ(ModuleRTPUtility::kPFrame, parsedPacket.frameType);
+  EXPECT_EQ(RtpUtility::kPFrame, parsedPacket.frameType);
   EXPECT_EQ(kRtpVideoVp8, parsedPacket.type);
 
   VerifyBasicHeader(parsedPacket.info.VP8, 0 /*N*/, 1 /*S*/, 4 /*PartID*/);
@@ -102,7 +101,7 @@ TEST(ParseVP8Test, PictureID) {
   RTPPayload parsedPacket;
   ASSERT_TRUE(rtpPayloadParser.Parse(parsedPacket));
 
-  EXPECT_EQ(ModuleRTPUtility::kPFrame, parsedPacket.frameType);
+  EXPECT_EQ(RtpUtility::kPFrame, parsedPacket.frameType);
   EXPECT_EQ(kRtpVideoVp8, parsedPacket.type);
 
   VerifyBasicHeader(parsedPacket.info.VP8, 1 /*N*/, 0 /*S*/, 0 /*PartID*/);
@@ -141,7 +140,7 @@ TEST(ParseVP8Test, Tl0PicIdx) {
   RTPPayload parsedPacket;
   ASSERT_TRUE(rtpPayloadParser.Parse(parsedPacket));
 
-  EXPECT_EQ(ModuleRTPUtility::kIFrame, parsedPacket.frameType);
+  EXPECT_EQ(RtpUtility::kIFrame, parsedPacket.frameType);
   EXPECT_EQ(kRtpVideoVp8, parsedPacket.type);
 
   VerifyBasicHeader(parsedPacket.info.VP8, 0 /*N*/, 1 /*S*/, 0 /*PartID*/);
@@ -164,7 +163,7 @@ TEST(ParseVP8Test, TIDAndLayerSync) {
   RTPPayload parsedPacket;
   ASSERT_TRUE(rtpPayloadParser.Parse(parsedPacket));
 
-  EXPECT_EQ(ModuleRTPUtility::kPFrame, parsedPacket.frameType);
+  EXPECT_EQ(RtpUtility::kPFrame, parsedPacket.frameType);
   EXPECT_EQ(kRtpVideoVp8, parsedPacket.type);
 
   VerifyBasicHeader(parsedPacket.info.VP8, 0 /*N*/, 0 /*S*/, 8 /*PartID*/);
@@ -188,7 +187,7 @@ TEST(ParseVP8Test, KeyIdx) {
   RTPPayload parsedPacket;
   ASSERT_TRUE(rtpPayloadParser.Parse(parsedPacket));
 
-  EXPECT_EQ(ModuleRTPUtility::kPFrame, parsedPacket.frameType);
+  EXPECT_EQ(RtpUtility::kPFrame, parsedPacket.frameType);
   EXPECT_EQ(kRtpVideoVp8, parsedPacket.type);
 
   VerifyBasicHeader(parsedPacket.info.VP8, 0 /*N*/, 0 /*S*/, 8 /*PartID*/);
@@ -214,7 +213,7 @@ TEST(ParseVP8Test, MultipleExtensions) {
   RTPPayload parsedPacket;
   ASSERT_TRUE(rtpPayloadParser.Parse(parsedPacket));
 
-  EXPECT_EQ(ModuleRTPUtility::kPFrame, parsedPacket.frameType);
+  EXPECT_EQ(RtpUtility::kPFrame, parsedPacket.frameType);
   EXPECT_EQ(kRtpVideoVp8, parsedPacket.type);
 
   VerifyBasicHeader(parsedPacket.info.VP8, 0 /*N*/, 0 /*S*/, 8 /*PartID*/);
@@ -252,10 +251,11 @@ TEST(ParseVP8Test, TestWithPacketizer) {
   inputHeader.layerSync = false;
   inputHeader.tl0PicIdx = kNoTl0PicIdx;  // Disable.
   inputHeader.keyIdx = 31;
-  RtpFormatVp8 packetizer(payload, 10, inputHeader, 20);
+  RtpPacketizerVp8 packetizer(inputHeader, 20);
+  packetizer.SetPayloadData(payload, 10, NULL);
   bool last;
-  int send_bytes;
-  ASSERT_EQ(0, packetizer.NextPacket(packet, &send_bytes, &last));
+  size_t send_bytes;
+  ASSERT_TRUE(packetizer.NextPacket(packet, &send_bytes, &last));
   ASSERT_TRUE(last);
 
   RTPPayloadParser rtpPayloadParser(kRtpVideoVp8, packet, send_bytes);
@@ -263,7 +263,7 @@ TEST(ParseVP8Test, TestWithPacketizer) {
   RTPPayload parsedPacket;
   ASSERT_TRUE(rtpPayloadParser.Parse(parsedPacket));
 
-  EXPECT_EQ(ModuleRTPUtility::kIFrame, parsedPacket.frameType);
+  EXPECT_EQ(RtpUtility::kIFrame, parsedPacket.frameType);
   EXPECT_EQ(kRtpVideoVp8, parsedPacket.type);
 
   VerifyBasicHeader(parsedPacket.info.VP8,

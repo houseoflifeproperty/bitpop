@@ -9,7 +9,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -391,7 +390,8 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, SpanAndListsSearchable) {
 }
 
 // Find in a very large page.
-IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, LargePage) {
+// Disabled due to http://crbug.com/398017
+IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, DISABLED_LargePage) {
   WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   ui_test_utils::NavigateToURL(browser(), GetURL("largepage.html"));
@@ -801,18 +801,11 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, FindRestarts_Issue1155639) {
   EXPECT_EQ(1, ordinal);
 }
 
-// Disable the test for win, mac and ChromeOS as it started being flaky, see
-// http://crbug/367701.
-#if defined(OS_MACOSX) && !defined(OS_IOS) || defined(OS_WIN) || \
-    defined(OS_CHROMEOS)
-#define MAYBE_FindRestarts_Issue70505 DISABLED_FindRestarts_Issue70505
-#else
-#define MAYBE_FindRestarts_Issue70505 FindRestarts_Issue70505
-#endif
 // Make sure we don't get into an infinite loop when text box contains very
 // large amount of text.
+// Disable the test as it started being flaky, see http://crbug/367701.
 IN_PROC_BROWSER_TEST_F(FindInPageControllerTest,
-                       MAYBE_FindRestarts_Issue70505) {
+                       DISABLED_FindRestarts_Issue70505) {
   // First we navigate to our page.
   GURL url = GetURL(kLongTextareaPage);
   ui_test_utils::NavigateToURL(browser(), url);

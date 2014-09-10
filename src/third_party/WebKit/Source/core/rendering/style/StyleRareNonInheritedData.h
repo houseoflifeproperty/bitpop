@@ -41,7 +41,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class ContentData;
 class CSSAnimationData;
@@ -190,6 +190,10 @@ public:
 
     unsigned m_isolation : 1; // Isolation
 
+    unsigned m_justifyItems : 4; // ItemPosition
+    unsigned m_justifyItemsOverflowAlignment : 2; // OverflowAlignment
+    unsigned m_justifyItemsPositionType: 1; // Whether or not alignment uses the 'legacy' keyword.
+
     unsigned m_justifySelf : 4; // ItemPosition
     unsigned m_justifySelfOverflowAlignment : 2; // OverflowAlignment
 
@@ -203,11 +207,14 @@ public:
     // becomes composited.
     unsigned m_requiresAcceleratedCompositingForExternalReasons: 1;
 
+    // Whether the transform (if it exists) is stored in the element's inline style.
+    unsigned m_hasInlineTransform : 1;
+
 private:
     StyleRareNonInheritedData();
     StyleRareNonInheritedData(const StyleRareNonInheritedData&);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // StyleRareNonInheritedData_h

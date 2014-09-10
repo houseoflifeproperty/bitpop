@@ -31,7 +31,7 @@
 
 #include "core/rendering/RenderThemeChromiumSkia.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderThemeChromiumDefault : public RenderThemeChromiumSkia {
 public:
@@ -39,9 +39,6 @@ public:
     virtual String extraDefaultStyleSheet() OVERRIDE;
 
     virtual Color systemColor(CSSValueID) const OVERRIDE;
-
-    // A method asking if the control changes its tint when the window has focus or not.
-    virtual bool controlSupportsTints(const RenderObject*) const OVERRIDE;
 
     virtual bool supportsFocusRing(const RenderStyle*) const OVERRIDE;
 
@@ -79,7 +76,9 @@ public:
     virtual void adjustInnerSpinButtonStyle(RenderStyle*, Element*) const OVERRIDE;
     virtual bool paintInnerSpinButton(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
 
-    virtual bool popsMenuBySpaceOrReturn() const OVERRIDE FINAL { return true; }
+    virtual bool popsMenuBySpaceKey() const OVERRIDE FINAL { return true; }
+    virtual bool popsMenuByReturnKey() const OVERRIDE FINAL { return true; }
+    virtual bool popsMenuByAltDownUpOrF4Key() const OVERRIDE { return true; }
 
     virtual bool paintProgressBar(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
 
@@ -101,6 +100,6 @@ private:
     static unsigned m_inactiveSelectionForegroundColor;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderThemeChromiumDefault_h

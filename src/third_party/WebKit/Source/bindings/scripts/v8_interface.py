@@ -36,6 +36,8 @@ from collections import defaultdict
 import itertools
 from operator import itemgetter
 
+import idl_definitions
+from idl_definitions import IdlOperation
 import idl_types
 from idl_types import IdlType, inherits_interface
 import v8_attributes
@@ -48,16 +50,17 @@ from v8_utilities import capitalize, conditional_string, cpp_name, gc_type, has_
 
 
 INTERFACE_H_INCLUDES = frozenset([
-    'bindings/v8/V8Binding.h',
-    'bindings/v8/V8DOMWrapper.h',
-    'bindings/v8/WrapperTypeInfo.h',
+    'bindings/core/v8/ScriptWrappable.h',
+    'bindings/core/v8/V8Binding.h',
+    'bindings/core/v8/V8DOMWrapper.h',
+    'bindings/core/v8/WrapperTypeInfo.h',
     'platform/heap/Handle.h',
 ])
 INTERFACE_CPP_INCLUDES = frozenset([
-    'bindings/v8/ExceptionState.h',
-    'bindings/v8/V8DOMConfiguration.h',
-    'bindings/v8/V8HiddenValue.h',
-    'bindings/v8/V8ObjectConstructor.h',
+    'bindings/core/v8/ExceptionState.h',
+    'bindings/core/v8/V8DOMConfiguration.h',
+    'bindings/core/v8/V8HiddenValue.h',
+    'bindings/core/v8/V8ObjectConstructor.h',
     'core/dom/ContextFeatures.h',
     'core/dom/Document.h',
     'platform/RuntimeEnabledFeatures.h',
@@ -67,7 +70,7 @@ INTERFACE_CPP_INCLUDES = frozenset([
 ])
 
 
-def generate_interface(interface):
+def interface_context(interface):
     includes.clear()
     includes.update(INTERFACE_CPP_INCLUDES)
     header_includes = set(INTERFACE_H_INCLUDES)
@@ -83,8 +86,8 @@ def generate_interface(interface):
 
     is_document = inherits_interface(interface.name, 'Document')
     if is_document:
-        includes.update(['bindings/v8/ScriptController.h',
-                         'bindings/v8/V8WindowShell.h',
+        includes.update(['bindings/core/v8/ScriptController.h',
+                         'bindings/core/v8/WindowProxy.h',
                          'core/frame/LocalFrame.h'])
 
     # [ActiveDOMObject]
@@ -93,7 +96,7 @@ def generate_interface(interface):
     # [CheckSecurity]
     is_check_security = 'CheckSecurity' in extended_attributes
     if is_check_security:
-        includes.add('bindings/v8/BindingSecurity.h')
+        includes.add('bindings/core/v8/BindingSecurity.h')
 
     # [DependentLifetime]
     is_dependent_lifetime = 'DependentLifetime' in extended_attributes
@@ -106,14 +109,14 @@ def generate_interface(interface):
     # [SetWrapperReferenceFrom]
     reachable_node_function = extended_attributes.get('SetWrapperReferenceFrom')
     if reachable_node_function:
-        includes.update(['bindings/v8/V8GCController.h',
+        includes.update(['bindings/core/v8/V8GCController.h',
                          'core/dom/Element.h'])
 
     # [SetWrapperReferenceTo]
     set_wrapper_reference_to_list = [{
         'name': argument.name,
         # FIXME: properly should be:
-        # 'cpp_type': argument.idl_type.cpp_type_args(used_as_argument=True),
+        # 'cpp_type': argument.idl_type.cpp_type_args(raw_type=True),
         # (if type is non-wrapper type like NodeFilter, normally RefPtr)
         # Raw pointers faster though, and NodeFilter hacky anyway.
         'cpp_type': argument.idl_type.implemented_as + '*',
@@ -139,7 +142,7 @@ def generate_interface(interface):
 
     this_gc_type = gc_type(interface)
 
-    template_contents = {
+    context = {
         'conditional_string': conditional_string(interface),  # [Conditional]
         'cpp_class': cpp_name(interface),
         'gc_type': this_gc_type,
@@ -175,14 +178,14 @@ def generate_interface(interface):
     }
 
     # Constructors
-    constructors = [generate_constructor(interface, constructor)
+    constructors = [constructor_context(interface, constructor)
                     for constructor in interface.constructors
                     # FIXME: shouldn't put named constructors with constructors
                     # (currently needed for Perl compatibility)
                     # Handle named constructors separately
                     if constructor.name == 'Constructor']
     if len(constructors) > 1:
-        template_contents['constructor_overloads'] = generate_overloads(constructors)
+        context['constructor_overloads'] = overloads_context(constructors)
 
     # [CustomConstructor]
     custom_constructors = [{  # Only needed for computing interface length
@@ -195,63 +198,74 @@ def generate_interface(interface):
     any_type_attributes = [attribute for attribute in interface.attributes
                            if attribute.idl_type.name == 'Any']
     if has_event_constructor:
-        includes.add('bindings/v8/Dictionary.h')
+        includes.add('bindings/core/v8/Dictionary.h')
         if any_type_attributes:
-            includes.add('bindings/v8/SerializedScriptValue.h')
+            includes.add('bindings/core/v8/SerializedScriptValue.h')
 
     # [NamedConstructor]
-    named_constructor = generate_named_constructor(interface)
+    named_constructor = named_constructor_context(interface)
 
     if (constructors or custom_constructors or has_event_constructor or
         named_constructor):
-        includes.add('bindings/v8/V8ObjectConstructor.h')
+        includes.add('bindings/core/v8/V8ObjectConstructor.h')
         includes.add('core/frame/LocalDOMWindow.h')
 
-    template_contents.update({
+    context.update({
         'any_type_attributes': any_type_attributes,
         'constructors': constructors,
         'has_custom_constructor': bool(custom_constructors),
         'has_event_constructor': has_event_constructor,
         'interface_length':
             interface_length(interface, constructors + custom_constructors),
-        'is_constructor_call_with_document': has_extended_attribute_value(
-            interface, 'ConstructorCallWith', 'Document'),  # [ConstructorCallWith=Document]
-        'is_constructor_call_with_execution_context': has_extended_attribute_value(
-            interface, 'ConstructorCallWith', 'ExecutionContext'),  # [ConstructorCallWith=ExeuctionContext]
         'is_constructor_raises_exception': extended_attributes.get('RaisesException') == 'Constructor',  # [RaisesException=Constructor]
         'named_constructor': named_constructor,
     })
 
     # Constants
-    template_contents.update({
-        'constants': [generate_constant(constant) for constant in interface.constants],
+    context.update({
+        'constants': [constant_context(constant)
+                      for constant in interface.constants],
         'do_not_check_constants': 'DoNotCheckConstants' in extended_attributes,
     })
 
     # Attributes
-    attributes = [v8_attributes.generate_attribute(interface, attribute)
+    attributes = [v8_attributes.attribute_context(interface, attribute)
                   for attribute in interface.attributes]
-    template_contents.update({
+    context.update({
         'attributes': attributes,
-        'has_accessors': any(attribute['is_expose_js_accessors'] for attribute in attributes),
+        'has_accessors': any(attribute['is_expose_js_accessors'] and attribute['should_be_exposed_to_script'] for attribute in attributes),
         'has_attribute_configuration': any(
              not (attribute['is_expose_js_accessors'] or
                   attribute['is_static'] or
                   attribute['runtime_enabled_function'] or
                   attribute['per_context_enabled_function'])
+             and attribute['should_be_exposed_to_script']
              for attribute in attributes),
+        'has_conditional_attributes': any(attribute['per_context_enabled_function'] or attribute['exposed_test'] for attribute in attributes),
         'has_constructor_attributes': any(attribute['constructor_type'] for attribute in attributes),
-        'has_per_context_enabled_attributes': any(attribute['per_context_enabled_function'] for attribute in attributes),
         'has_replaceable_attributes': any(attribute['is_replaceable'] for attribute in attributes),
     })
 
     # Methods
-    methods = [v8_methods.generate_method(interface, method)
+    methods = [v8_methods.method_context(interface, method)
                for method in interface.operations
                if method.name]  # Skip anonymous special operations (methods)
-    generate_method_overloads(methods)
+    compute_method_overloads_context(methods)
 
-    per_context_enabled_methods = []
+    # Stringifier
+    if interface.stringifier:
+        stringifier = interface.stringifier
+        method = IdlOperation(interface.idl_name)
+        method.name = 'toString'
+        method.idl_type = IdlType('DOMString')
+        method.extended_attributes.update(stringifier.extended_attributes)
+        if stringifier.attribute:
+            method.extended_attributes['ImplementedAs'] = stringifier.attribute.name
+        elif stringifier.operation:
+            method.extended_attributes['ImplementedAs'] = stringifier.operation.name
+        methods.append(v8_methods.method_context(interface, method))
+
+    conditionally_enabled_methods = []
     custom_registration_methods = []
     method_configuration_methods = []
 
@@ -263,20 +277,23 @@ def generate_interface(interface):
         if 'overloads' in method:
             overloads = method['overloads']
             per_context_enabled_function = overloads['per_context_enabled_function_all']
+            conditionally_exposed_function = overloads['exposed_test_all']
             runtime_enabled_function = overloads['runtime_enabled_function_all']
             has_custom_registration = overloads['has_custom_registration_all']
         else:
             per_context_enabled_function = method['per_context_enabled_function']
+            conditionally_exposed_function = method['exposed_test']
             runtime_enabled_function = method['runtime_enabled_function']
             has_custom_registration = method['has_custom_registration']
 
-        if per_context_enabled_function:
-            per_context_enabled_methods.append(method)
+        if per_context_enabled_function or conditionally_exposed_function:
+            conditionally_enabled_methods.append(method)
             continue
         if runtime_enabled_function or has_custom_registration:
             custom_registration_methods.append(method)
             continue
-        method_configuration_methods.append(method)
+        if method['should_be_exposed_to_script']:
+            method_configuration_methods.append(method)
 
     for method in methods:
         # The value of the Function object’s “length” property is a Number
@@ -293,17 +310,19 @@ def generate_interface(interface):
         method['length'] = (method['overloads']['minarg'] if 'overloads' in method else
                             method['number_of_required_arguments'])
 
-    template_contents.update({
+    context.update({
+        'conditionally_enabled_methods': conditionally_enabled_methods,
         'custom_registration_methods': custom_registration_methods,
         'has_origin_safe_method_setter': any(
             method['is_check_security_for_frame'] and not method['is_read_only']
             for method in methods),
+        'has_private_script': any(attribute['is_implemented_in_private_script'] for attribute in attributes) or
+            any(method['is_implemented_in_private_script'] for method in methods),
         'method_configuration_methods': method_configuration_methods,
-        'per_context_enabled_methods': per_context_enabled_methods,
         'methods': methods,
     })
 
-    template_contents.update({
+    context.update({
         'indexed_property_getter': indexed_property_getter(interface),
         'indexed_property_setter': indexed_property_setter(interface),
         'indexed_property_deleter': indexed_property_deleter(interface),
@@ -313,11 +332,11 @@ def generate_interface(interface):
         'named_property_deleter': named_property_deleter(interface),
     })
 
-    return template_contents
+    return context
 
 
 # [DeprecateAs], [Reflect], [RuntimeEnabled]
-def generate_constant(constant):
+def constant_context(constant):
     # (Blink-only) string literals are unquoted in tokenizer, must be re-quoted
     # in C++.
     if constant.idl_type.name == 'String':
@@ -328,6 +347,7 @@ def generate_constant(constant):
     extended_attributes = constant.extended_attributes
     return {
         'cpp_class': extended_attributes.get('PartialInterfaceImplementedAs'),
+        'idl_type': constant.idl_type.name,
         'name': constant.name,
         # FIXME: use 'reflected_name' as correct 'name'
         'reflected_name': extended_attributes.get('Reflect', constant.name),
@@ -340,17 +360,17 @@ def generate_constant(constant):
 # Overloads
 ################################################################################
 
-def generate_method_overloads(methods):
+def compute_method_overloads_context(methods):
     # Regular methods
-    generate_overloads_by_type([method for method in methods
-                                if not method['is_static']])
+    compute_method_overloads_context_by_type([method for method in methods
+                                              if not method['is_static']])
     # Static methods
-    generate_overloads_by_type([method for method in methods
-                                if method['is_static']])
+    compute_method_overloads_context_by_type([method for method in methods
+                                              if method['is_static']])
 
 
-def generate_overloads_by_type(methods):
-    """Generates |method.overload*| template values.
+def compute_method_overloads_context_by_type(methods):
+    """Computes |method.overload*| template values.
 
     Called separately for static and non-static (regular) methods,
     as these are overloaded separately.
@@ -363,7 +383,7 @@ def generate_overloads_by_type(methods):
     for name, overloads in method_overloads_by_name(methods):
         # Resolution function is generated after last overloaded function;
         # package necessary information into |method.overloads| for that method.
-        overloads[-1]['overloads'] = generate_overloads(overloads)
+        overloads[-1]['overloads'] = overloads_context(overloads)
         overloads[-1]['overloads']['name'] = name
 
 
@@ -381,7 +401,7 @@ def method_overloads_by_name(methods):
     return sort_and_groupby(overloaded_methods, itemgetter('name'))
 
 
-def generate_overloads(overloads):
+def overloads_context(overloads):
     """Returns |overloads| template values for a single name.
 
     Sets |method.overload_index| in place for |method| in |overloads|
@@ -422,13 +442,14 @@ def generate_overloads(overloads):
 
     return {
         'deprecate_all_as': common_value(overloads, 'deprecate_as'),  # [DeprecateAs]
+        'exposed_test_all': common_value(overloads, 'exposed_test'),  # [Exposed]
+        'has_custom_registration_all': common_value(overloads, 'has_custom_registration'),
         'length_tests_methods': length_tests_methods(effective_overloads_by_length),
-        'minarg': lengths[0],
         # 1. Let maxarg be the length of the longest type list of the
         # entries in S.
         'maxarg': lengths[-1],
         'measure_all_as': common_value(overloads, 'measure_as'),  # [MeasureAs]
-        'has_custom_registration_all': common_value(overloads, 'has_custom_registration'),
+        'minarg': lengths[0],
         'per_context_enabled_function_all': common_value(overloads, 'per_context_enabled_function'),  # [PerContextEnabled]
         'runtime_enabled_function_all': common_value(overloads, 'runtime_enabled_function'),  # [RuntimeEnabled]
         'valid_arities': lengths
@@ -703,7 +724,7 @@ def resolution_tests_methods(effective_overloads):
     for idl_type, method in ((idl_type, method)
                              for idl_type, method in idl_types_methods
                              if idl_type.is_wrapper_type):
-        test = 'V8{idl_type}::hasInstance({cpp_value}, isolate)'.format(idl_type=idl_type.base_type, cpp_value=cpp_value)
+        test = 'V8{idl_type}::hasInstance({cpp_value}, info.GetIsolate())'.format(idl_type=idl_type.base_type, cpp_value=cpp_value)
         yield test, method
 
     # 8. Otherwise: if V is any kind of object except for a native Date object,
@@ -718,9 +739,9 @@ def resolution_tests_methods(effective_overloads):
         # http://crbug.com/321462
         idl_type, method = next((idl_type, method)
                                 for idl_type, method in idl_types_methods
-                                if (idl_type.array_or_sequence_type or
+                                if (idl_type.native_array_element_type or
                                     idl_type.name == 'Dictionary'))
-        if idl_type.array_or_sequence_type:
+        if idl_type.native_array_element_type:
             # (We test for Array instead of generic Object to type-check.)
             # FIXME: test for Object during resolution, then have type check for
             # Array in overloaded method: http://crbug.com/262383
@@ -738,7 +759,7 @@ def resolution_tests_methods(effective_overloads):
     # only needed if distinguishing between primitive types.)
     if len([idl_type.is_primitive_type for idl_type in idl_types]) > 1:
         # (Only needed if match in step 11, otherwise redundant.)
-        if any(idl_type.name == 'String' or idl_type.is_enum
+        if any(idl_type.is_string_type or idl_type.is_enum
                for idl_type in idl_types):
             # 10. Otherwise: if V is a Number value, and there is an entry in S
             # that has one of the following types at position i of its type
@@ -760,15 +781,12 @@ def resolution_tests_methods(effective_overloads):
     # 11. Otherwise: if there is an entry in S that has one of the following
     # types at position i of its type list,
     # • DOMString
+    # • ByteString
+    # • ScalarValueString [a DOMString typedef, per definition.]
     # • an enumeration type
-    # * ByteString
-    # Blink: ScalarValueString is a pending Web IDL addition
     try:
         method = next(method for idl_type, method in idl_types_methods
-                      if idl_type.name in ('String',
-                                           'ByteString',
-                                           'ScalarValueString') or
-                      idl_type.is_enum)
+                      if idl_type.is_string_type or idl_type.is_enum)
         yield 'true', method
     except StopIteration:
         pass
@@ -837,12 +855,16 @@ def sort_and_groupby(l, key=None):
 ################################################################################
 
 # [Constructor]
-def generate_constructor(interface, constructor):
-    arguments_need_try_catch = any(v8_methods.argument_needs_try_catch(argument)
+def constructor_context(interface, constructor):
+    arguments_need_try_catch = any(v8_methods.argument_needs_try_catch(argument, return_promise=False)
                                    for argument in constructor.arguments)
 
+    # [RaisesException=Constructor]
+    is_constructor_raises_exception = \
+        interface.extended_attributes.get('RaisesException') == 'Constructor'
+
     return {
-        'arguments': [v8_methods.generate_argument(interface, constructor, argument, index)
+        'arguments': [v8_methods.argument_context(interface, constructor, argument, index)
                       for index, argument in enumerate(constructor.arguments)],
         'arguments_need_try_catch': arguments_need_try_catch,
         'cpp_type': cpp_template_type(
@@ -851,20 +873,28 @@ def generate_constructor(interface, constructor):
         'cpp_value': v8_methods.cpp_value(
             interface, constructor, len(constructor.arguments)),
         'has_exception_state':
-            # [RaisesException=Constructor]
-            interface.extended_attributes.get('RaisesException') == 'Constructor' or
+            is_constructor_raises_exception or
             any(argument for argument in constructor.arguments
                 if argument.idl_type.name == 'SerializedScriptValue' or
-                   argument.idl_type.is_integer_type),
+                   argument.idl_type.may_raise_exception_on_conversion),
+        'is_call_with_document':
+            # [ConstructorCallWith=Document]
+            has_extended_attribute_value(interface,
+                'ConstructorCallWith', 'Document'),
+        'is_call_with_execution_context':
+            # [ConstructorCallWith=ExecutionContext]
+            has_extended_attribute_value(interface,
+                'ConstructorCallWith', 'ExecutionContext'),
         'is_constructor': True,
         'is_named_constructor': False,
+        'is_raises_exception': is_constructor_raises_exception,
         'number_of_required_arguments':
             number_of_required_arguments(constructor),
     }
 
 
 # [NamedConstructor]
-def generate_named_constructor(interface):
+def named_constructor_context(interface):
     extended_attributes = interface.extended_attributes
     if 'NamedConstructor' not in extended_attributes:
         return None
@@ -873,12 +903,12 @@ def generate_named_constructor(interface):
     # for Perl compatibility
     idl_constructor = interface.constructors[-1]
     assert idl_constructor.name == 'NamedConstructor'
-    constructor = generate_constructor(interface, idl_constructor)
-    constructor.update({
+    context = constructor_context(interface, idl_constructor)
+    context.update({
         'name': extended_attributes['NamedConstructor'],
         'is_named_constructor': True,
     })
-    return constructor
+    return context
 
 
 def number_of_required_arguments(constructor):
@@ -904,8 +934,10 @@ def interface_length(interface, constructors):
 def property_getter(getter, cpp_arguments):
     def is_null_expression(idl_type):
         if idl_type.is_union_type:
-            return ' && '.join('!result%sEnabled' % i
-                               for i, _ in enumerate(idl_type.member_types))
+            notnull = ' || '.join([
+                    member_argument['null_check_value']
+                    for member_argument in idl_type.union_arguments])
+            return '!(%s)' % notnull
         if idl_type.name == 'String':
             return 'result.isNull()'
         if idl_type.is_interface_type:
@@ -923,7 +955,8 @@ def property_getter(getter, cpp_arguments):
         cpp_arguments.append('exceptionState')
     union_arguments = idl_type.union_arguments
     if union_arguments:
-        cpp_arguments.extend(union_arguments)
+        cpp_arguments.extend([member_argument['cpp_value']
+                              for member_argument in union_arguments])
 
     cpp_value = '%s(%s)' % (cpp_method_name, ', '.join(cpp_arguments))
 

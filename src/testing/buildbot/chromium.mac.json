@@ -2,6 +2,7 @@
   "Mac10.6 Tests (1)": {
     "gtest_tests": [
       "interactive_ui_tests",
+      "accessibility_unittests",
       "base_unittests",
       "cacheinvalidation_unittests",
       "cast_unittests",
@@ -17,8 +18,7 @@
       "remoting_unittests",
       "app_list_unittests",
       {"test": "browser_tests", "shard_index": 0, "total_shards": 3},
-      "content_browsertests",
-      "webkit_compositor_bindings_unittests"
+      "content_browsertests"
     ]
   },
   "Mac10.6 Tests (2)": {
@@ -47,7 +47,8 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_service_manager_unittests",
+      "mojo_application_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       "sandbox_mac_unittests",
       {"test": "browser_tests", "shard_index": 2, "total_shards": 3}
@@ -56,12 +57,14 @@
   "Mac10.7 Tests (1)": {
     "gtest_tests": [
       "interactive_ui_tests",
+      "accessibility_unittests",
       "base_unittests",
       "cacheinvalidation_unittests",
       "cast_unittests",
       "cc_unittests",
       "chromedriver_unittests",
       "crypto_unittests",
+      "extensions_unittests",
       "gpu_unittests",
       "url_unittests",
       "jingle_unittests",
@@ -71,8 +74,7 @@
       "remoting_unittests",
       "app_list_unittests",
       {"test": "browser_tests", "shard_index": 0, "total_shards": 3},
-      "content_browsertests",
-      "webkit_compositor_bindings_unittests"
+      "content_browsertests"
     ]
   },
   "Mac10.7 Tests (2)": {
@@ -101,7 +103,8 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_service_manager_unittests",
+      "mojo_application_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       "sandbox_mac_unittests",
       {"test": "browser_tests", "shard_index": 2, "total_shards": 3}
@@ -121,8 +124,7 @@
       "printing_unittests",
       "remoting_unittests",
       {"test": "browser_tests", "shard_index": 0, "total_shards": 4},
-      "content_browsertests",
-      "webkit_compositor_bindings_unittests"
+      "content_browsertests"
     ]
   },
   "Mac 10.6 Tests (dbg)(2)": {
@@ -137,6 +139,7 @@
   "Mac 10.6 Tests (dbg)(3)": {
     "gtest_tests": [
       "interactive_ui_tests",
+      "accessibility_unittests",
       "base_unittests",
       {"test": "browser_tests", "shard_index": 2, "total_shards": 4}
     ]
@@ -160,7 +163,8 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_service_manager_unittests",
+      "mojo_application_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       {"test": "browser_tests", "shard_index": 3, "total_shards": 4}
     ]
@@ -179,8 +183,7 @@
       "printing_unittests",
       "remoting_unittests",
       {"test": "browser_tests", "shard_index": 0, "total_shards": 4},
-      "content_browsertests",
-      "webkit_compositor_bindings_unittests"
+      "content_browsertests"
     ]
   },
   "Mac 10.7 Tests (dbg)(2)": {
@@ -195,6 +198,7 @@
   "Mac 10.7 Tests (dbg)(3)": {
     "gtest_tests": [
       "interactive_ui_tests",
+      "accessibility_unittests",
       "base_unittests",
       {"test": "browser_tests", "shard_index": 2, "total_shards": 4}
     ]
@@ -218,7 +222,8 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_service_manager_unittests",
+      "mojo_application_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       {"test": "browser_tests", "shard_index": 3, "total_shards": 4}
     ]

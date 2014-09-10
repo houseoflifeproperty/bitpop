@@ -25,13 +25,10 @@
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/accessibility/ax_node_data.h"
 #include "ui/base/window_open_disposition.h"
 
 class SkBitmap;
 class FrameMsg_Navigate;
-struct AccessibilityHostMsg_EventParams;
-struct AccessibilityHostMsg_LocationChangeParams;
 struct MediaPlayerAction;
 struct ViewHostMsg_CreateWindow_Params;
 struct ViewHostMsg_ShowPopup_Params;
@@ -207,9 +204,9 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual WebPreferences GetWebkitPreferences() OVERRIDE;
   virtual void UpdateWebkitPreferences(
       const WebPreferences& prefs) OVERRIDE;
+  virtual void OnWebkitPreferencesChanged() OVERRIDE;
   virtual void GetAudioOutputControllers(
       const GetAudioOutputControllersCallback& callback) const OVERRIDE;
-  virtual void SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) OVERRIDE;
   virtual void SelectWordAroundCaret() OVERRIDE;
 
 #if defined(OS_ANDROID)
@@ -245,7 +242,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   }
 
   // Returns the content specific prefs for this RenderViewHost.
-  WebPreferences GetWebkitPrefs(const GURL& url);
+  WebPreferences ComputeWebkitPrefs(const GURL& url);
 
   // Sends the given navigation message. Use this rather than sending it
   // yourself since this does the internal bookkeeping described below. This
@@ -262,30 +259,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   // TODO(nasko): Remove this method once all callers are converted to use
   // RenderFrameHostImpl.
   void NavigateToURL(const GURL& url);
-
-  // Returns whether navigation messages are currently suspended for this
-  // RenderViewHost.  Only true during a cross-site navigation, while waiting
-  // for the onbeforeunload handler.
-  bool are_navigations_suspended() const { return navigations_suspended_; }
-
-  // Suspends (or unsuspends) any navigation messages from being sent from this
-  // RenderViewHost.  This is called when a pending RenderViewHost is created
-  // for a cross-site navigation, because we must suspend any navigations until
-  // we hear back from the old renderer's onbeforeunload handler.  Note that it
-  // is important that only one navigation event happen after calling this
-  // method with |suspend| equal to true.  If |suspend| is false and there is
-  // a suspended_nav_message_, this will send the message.  This function
-  // should only be called to toggle the state; callers should check
-  // are_navigations_suspended() first. If |suspend| is false, the time that the
-  // user decided the navigation should proceed should be passed as
-  // |proceed_time|.
-  void SetNavigationsSuspended(bool suspend,
-                               const base::TimeTicks& proceed_time);
-
-  // Clears any suspended navigation state after a cross-site navigation is
-  // canceled or suspended.  This is important if we later return to this
-  // RenderViewHost.
-  void CancelSuspendedNavigations();
 
   // Whether this RenderViewHost has been swapped out to be displayed by a
   // different process.
@@ -318,17 +291,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   // This is called after the beforeunload and unload events have fired
   // and the user has agreed to continue with closing the page.
   void ClosePageIgnoringUnloadEvents();
-
-  // Returns whether this RenderViewHost has an outstanding cross-site request.
-  // Cleared when we hear the response and start to swap out the old
-  // RenderViewHost, or if we hear a commit here without a network request.
-  bool HasPendingCrossSiteRequest();
-
-  // Sets whether this RenderViewHost has an outstanding cross-site request,
-  // for which another renderer will need to run an onunload event handler.
-  // This is called before the first navigation event for this RenderViewHost,
-  // and cleared when we hear the response or commit.
-  void SetHasPendingCrossSiteRequest(bool has_pending_request);
 
   // Tells the renderer view to focus the first (last if reverse is true) node.
   void SetInitialFocus(bool reverse);
@@ -408,30 +370,6 @@ class CONTENT_EXPORT RenderViewHostImpl
 
   // Set the opener to null in the renderer process.
   void DisownOpener();
-
-  // Turn on accessibility testing. The given callback will be run
-  // every time an accessibility notification is received from the
-  // renderer process, and the accessibility tree it sent can be
-  // retrieved using accessibility_tree_for_testing().
-  void SetAccessibilityCallbackForTesting(
-      const base::Callback<void(ui::AXEvent, int)>& callback);
-
-  // Only valid if SetAccessibilityCallbackForTesting was called and
-  // the callback was run at least once. Returns a snapshot of the
-  // accessibility tree received from the renderer as of the last time
-  // an accessibility notification was received.
-  const ui::AXTree& ax_tree_for_testing() {
-    CHECK(ax_tree_.get());
-    return *ax_tree_.get();
-  }
-
-  // Set accessibility callbacks.
-  void SetAccessibilityLayoutCompleteCallbackForTesting(
-      const base::Closure& callback);
-  void SetAccessibilityLoadCompleteCallbackForTesting(
-      const base::Closure& callback);
-  void SetAccessibilityOtherCallbackForTesting(
-      const base::Closure& callback);
 
   bool is_waiting_for_beforeunload_ack() {
     return is_waiting_for_beforeunload_ack_;
@@ -513,10 +451,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnUpdateInspectorSetting(const std::string& key,
                                 const std::string& value);
   void OnClosePageACK();
-  void OnAccessibilityEvents(
-      const std::vector<AccessibilityHostMsg_EventParams>& params);
-  void OnAccessibilityLocationChanges(
-      const std::vector<AccessibilityHostMsg_LocationChangeParams>& params);
   void OnDidZoomURL(double zoom_level, const GURL& url);
   void OnRunFileChooser(const FileChooserParams& params);
   void OnFocusedNodeTouched(bool editable);
@@ -565,19 +499,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   // See BindingsPolicy for details.
   int enabled_bindings_;
 
-  // Whether we should buffer outgoing Navigate messages rather than sending
-  // them.  This will be true when a RenderViewHost is created for a cross-site
-  // request, until we hear back from the onbeforeunload handler of the old
-  // RenderViewHost.
-  // TODO(nasko): Move to RenderFrameHost, as this is per-frame state.
-  bool navigations_suspended_;
-
-  // We only buffer the params for a suspended navigation while we have a
-  // pending RVH for a WebContentsImpl.  There will only ever be one suspended
-  // navigation, because WebContentsImpl will destroy the pending RVH and create
-  // a new one if a second navigation occurs.
-  // TODO(nasko): Move to RenderFrameHost, as this is per-frame state.
-  scoped_ptr<FrameMsg_Navigate_Params> suspended_nav_params_;
 
   // The current state of this RVH.
   // TODO(nasko): Move to RenderFrameHost, as this is per-frame state.
@@ -609,12 +530,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   // TODO(nasko): Move to RenderFrameHost, as this is per-frame state.
   bool unload_ack_is_for_cross_site_transition_;
 
-  // Accessibility callback for testing.
-  base::Callback<void(ui::AXEvent, int)> accessibility_testing_callback_;
-
-  // The most recently received accessibility tree - for testing only.
-  scoped_ptr<ui::AXTree> ax_tree_;
-
   // True if the render view can be shut down suddenly.
   bool sudden_termination_allowed_;
 
@@ -644,6 +559,13 @@ class CONTENT_EXPORT RenderViewHostImpl
 
   // True if the current focused element is editable.
   bool is_focused_element_editable_;
+
+  // This is updated every time UpdateWebkitPreferences is called. That method
+  // is in turn called when any of the settings change that the WebPreferences
+  // values depend on.
+  scoped_ptr<WebPreferences> web_preferences_;
+
+  bool updating_web_preferences_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewHostImpl);
 };

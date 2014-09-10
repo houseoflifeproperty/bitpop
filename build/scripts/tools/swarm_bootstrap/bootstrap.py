@@ -15,8 +15,10 @@ import shutil
 import sys
 import urllib
 
-if sys.platform in ('cygwin', 'win32'):
+if sys.platform == 'cygwin':
   root = '/cygdrive/e/b/swarm_slave'
+elif sys.platform == 'win32':
+  root = 'e:\\b\\swarm_slave'
 else:
   root = '/b/swarm_slave'
 if os.path.isdir(root):

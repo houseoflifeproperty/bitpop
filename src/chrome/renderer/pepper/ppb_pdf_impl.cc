@@ -4,21 +4,20 @@
 
 #include "chrome/renderer/pepper/ppb_pdf_impl.h"
 
-#include "base/command_line.h"
+#include "base/files/scoped_file.h"
 #include "base/metrics/histogram.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/renderer/printing/print_web_view_helper.h"
+#include "content/app/strings/grit/content_strings.h"
 #include "content/public/common/child_process_sandbox_support_linux.h"
 #include "content/public/common/referrer.h"
 #include "content/public/renderer/pepper_plugin_instance.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "grit/webkit_resources.h"
-#include "grit/webkit_strings.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/private/ppb_pdf.h"
 #include "ppapi/c/trusted/ppb_browser_font_trusted.h"
@@ -36,11 +35,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
-using ppapi::PpapiGlobals;
-using blink::WebElement;
-using blink::WebView;
-using content::RenderThread;
-
 namespace {
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
@@ -52,7 +46,8 @@ class PrivateFontFile : public ppapi::Resource {
   bool GetFontTable(uint32_t table, void* output, uint32_t* output_length) {
     size_t temp_size = static_cast<size_t>(*output_length);
     bool rv = content::GetFontTable(
-        fd_, table, 0 /* offset */, static_cast<uint8_t*>(output), &temp_size);
+        fd_.get(), table, 0 /* offset */, static_cast<uint8_t*>(output),
+        &temp_size);
     *output_length = base::checked_cast<uint32_t>(temp_size);
     return rv;
   }
@@ -61,7 +56,7 @@ class PrivateFontFile : public ppapi::Resource {
   virtual ~PrivateFontFile() {}
 
  private:
-  int fd_;
+  base::ScopedFD fd_;
 };
 #endif
 
@@ -189,7 +184,7 @@ PP_Resource GetFontFileWithFallback(
 
   scoped_refptr<ppapi::StringVar> face_name(
       ppapi::StringVar::FromPPVar(description->face));
-  if (!face_name.get())
+  if (!face_name)
     return 0;
 
   int fd = content::MatchFontWithFallback(
@@ -217,7 +212,7 @@ bool GetFontTableForPrivateFontFile(PP_Resource font_file,
                                     uint32_t* output_length) {
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
   ppapi::Resource* resource =
-      PpapiGlobals::Get()->GetResourceTracker()->GetResource(font_file);
+      ppapi::PpapiGlobals::Get()->GetResourceTracker()->GetResource(font_file);
   if (!resource)
     return false;
 
@@ -244,7 +239,7 @@ void SearchString(PP_Instance instance,
                    -1,
                    string,
                    -1,
-                   RenderThread::Get()->GetLocale().c_str(),
+                   content::RenderThread::Get()->GetLocale().c_str(),
                    0,
                    &status);
   DCHECK(status == U_ZERO_ERROR || status == U_USING_FALLBACK_WARNING ||
@@ -317,8 +312,8 @@ void HistogramPDFPageCount(PP_Instance instance, int count) {
 void UserMetricsRecordAction(PP_Instance instance, PP_Var action) {
   scoped_refptr<ppapi::StringVar> action_str(
       ppapi::StringVar::FromPPVar(action));
-  if (action_str.get())
-    RenderThread::Get()->RecordComputedAction(action_str->value());
+  if (action_str)
+    content::RenderThread::Get()->RecordComputedAction(action_str->value());
 }
 
 void HasUnsupportedFeature(PP_Instance instance_id) {
@@ -331,7 +326,7 @@ void HasUnsupportedFeature(PP_Instance instance_id) {
   if (!instance->IsFullPagePlugin())
     return;
 
-  WebView* view =
+  blink::WebView* view =
       instance->GetContainer()->element().document().frame()->view();
   content::RenderView* render_view = content::RenderView::FromWebView(view);
   render_view->Send(new ChromeViewHostMsg_PDFHasUnsupportedFeature(
@@ -421,7 +416,6 @@ PP_Bool IsOutOfProcess(PP_Instance instance_id) { return PP_FALSE; }
 
 void SetSelectedText(PP_Instance instance_id, const char* selected_text) {
   // This function is intended for out of process PDF plugin.
-  NOTIMPLEMENTED();
 }
 
 void SetLinkUnderCursor(PP_Instance instance_id, const char* url) {

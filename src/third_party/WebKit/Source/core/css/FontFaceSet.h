@@ -26,7 +26,7 @@
 #ifndef FontFaceSet_h
 #define FontFaceSet_h
 
-#include "bindings/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptPromise.h"
 #include "core/css/FontFace.h"
 #include "core/css/FontFaceSetForEachCallback.h"
 #include "core/dom/ActiveDOMObject.h"
@@ -43,7 +43,7 @@
 #undef check
 #endif
 
-namespace WebCore {
+namespace blink {
 
 class CSSFontFace;
 class CSSFontFaceSource;
@@ -144,7 +144,7 @@ private:
     bool resolveFontStyle(const String&, Font&);
     void handlePendingEventsAndPromisesSoon();
     void handlePendingEventsAndPromises();
-    const ListHashSet<RefPtrWillBeMember<FontFace> >& cssConnectedFontFaceList() const;
+    const WillBeHeapListHashSet<RefPtrWillBeMember<FontFace> >& cssConnectedFontFaceList() const;
     bool isCSSConnectedFontFace(FontFace*) const;
 
     WillBeHeapHashSet<RefPtrWillBeMember<FontFace> > m_loadingFonts;
@@ -152,14 +152,13 @@ private:
     Vector<OwnPtr<FontsReadyPromiseResolver> > m_readyResolvers;
     FontFaceArray m_loadedFonts;
     FontFaceArray m_failedFonts;
-    // FIXME: Oilpan: replace with a HeapListHashSet or HeapLinkedHashSet.
-    ListHashSet<RefPtrWillBeMember<FontFace> > m_nonCSSConnectedFaces;
+    WillBeHeapListHashSet<RefPtrWillBeMember<FontFace> > m_nonCSSConnectedFaces;
 
     AsyncMethodRunner<FontFaceSet> m_asyncRunner;
 
     FontLoadHistogram m_histogram;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FontFaceSet_h

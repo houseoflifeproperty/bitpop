@@ -29,16 +29,14 @@
 #ifndef PeriodicWave_h
 #define PeriodicWave_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/audio/AudioArray.h"
 #include "wtf/Float32Array.h"
-#include "wtf/OwnPtr.h"
-#include "wtf/PassRefPtr.h"
+#include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
-#include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class PeriodicWave : public RefCountedWillBeGarbageCollectedFinalized<PeriodicWave>, public ScriptWrappable {
 public:
@@ -92,6 +90,6 @@ private:
     Vector<OwnPtr<AudioFloatArray> > m_bandLimitedTables;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PeriodicWave_h

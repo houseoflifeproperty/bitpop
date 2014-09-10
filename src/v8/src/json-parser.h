@@ -9,8 +9,8 @@
 
 #include "src/char-predicates-inl.h"
 #include "src/conversions.h"
+#include "src/heap/spaces-inl.h"
 #include "src/messages.h"
-#include "src/spaces-inl.h"
 #include "src/token.h"
 
 namespace v8 {
@@ -104,7 +104,7 @@ class JsonParser BASE_EMBEDDED {
       DisallowHeapAllocation no_gc;
       String::FlatContent content = expected->GetFlatContent();
       if (content.IsAscii()) {
-        ASSERT_EQ('"', c0_);
+        DCHECK_EQ('"', c0_);
         const uint8_t* input_chars = seq_source_->GetChars() + position_ + 1;
         const uint8_t* expected_chars = content.ToOneByteVector().start();
         for (int i = 0; i < length; i++) {
@@ -300,7 +300,7 @@ Handle<Object> JsonParser<seq_ascii>::ParseJsonObject() {
       factory()->NewJSObject(object_constructor(), pretenure_);
   Handle<Map> map(json_object->map());
   ZoneList<Handle<Object> > properties(8, zone());
-  ASSERT_EQ(c0_, '{');
+  DCHECK_EQ(c0_, '{');
 
   bool transitioning = true;
 
@@ -358,19 +358,19 @@ Handle<Object> JsonParser<seq_ascii>::ParseJsonObject() {
         bool follow_expected = false;
         Handle<Map> target;
         if (seq_ascii) {
-          key = JSObject::ExpectedTransitionKey(map);
+          key = Map::ExpectedTransitionKey(map);
           follow_expected = !key.is_null() && ParseJsonString(key);
         }
         // If the expected transition hits, follow it.
         if (follow_expected) {
-          target = JSObject::ExpectedTransitionTarget(map);
+          target = Map::ExpectedTransitionTarget(map);
         } else {
           // If the expected transition failed, parse an internalized string and
           // try to find a matching transition.
           key = ParseJsonInternalizedString();
           if (key.is_null()) return ReportUnexpectedCharacter();
 
-          target = JSObject::FindTransitionToField(map, key);
+          target = Map::FindTransitionToField(map, key);
           // If a transition was found, follow it and continue.
           transitioning = !target.is_null();
         }
@@ -387,11 +387,9 @@ Handle<Object> JsonParser<seq_ascii>::ParseJsonObject() {
           Representation expected_representation = details.representation();
 
           if (value->FitsRepresentation(expected_representation)) {
-            // If the target representation is double and the value is already
-            // double, use the existing box.
-            if (value->IsSmi() && expected_representation.IsDouble()) {
-              value = factory()->NewHeapNumber(
-                  Handle<Smi>::cast(value)->value());
+            if (expected_representation.IsDouble()) {
+              value = Object::NewStorageFor(isolate(), value,
+                                            expected_representation);
             } else if (expected_representation.IsHeapObject() &&
                        !target->instance_descriptors()->GetFieldType(
                            descriptor)->NowContains(value)) {
@@ -399,7 +397,7 @@ Handle<Object> JsonParser<seq_ascii>::ParseJsonObject() {
                       isolate(), expected_representation));
               Map::GeneralizeFieldType(target, descriptor, value_type);
             }
-            ASSERT(target->instance_descriptors()->GetFieldType(
+            DCHECK(target->instance_descriptors()->GetFieldType(
                     descriptor)->NowContains(value));
             properties.Add(value, zone());
             map = target;
@@ -453,7 +451,7 @@ template <bool seq_ascii>
 Handle<Object> JsonParser<seq_ascii>::ParseJsonArray() {
   HandleScope scope(isolate());
   ZoneList<Handle<Object> > elements(4, zone());
-  ASSERT_EQ(c0_, '[');
+  DCHECK_EQ(c0_, '[');
 
   AdvanceSkipWhitespace();
   if (c0_ != ']') {
@@ -528,7 +526,7 @@ Handle<Object> JsonParser<seq_ascii>::ParseJsonNumber() {
     number = StringToDouble(isolate()->unicode_cache(),
                             chars,
                             NO_FLAGS,  // Hex, octal or trailing junk.
-                            OS::nan_value());
+                            base::OS::nan_value());
   } else {
     Vector<uint8_t> buffer = Vector<uint8_t>::New(length);
     String::WriteToFlat(*source_, buffer.start(), beg_pos, position_);
@@ -668,7 +666,7 @@ Handle<String> JsonParser<seq_ascii>::SlowScanJsonString(
     }
   }
 
-  ASSERT_EQ('"', c0_);
+  DCHECK_EQ('"', c0_);
   // Advance past the last '"'.
   AdvanceSkipWhitespace();
 
@@ -680,7 +678,7 @@ Handle<String> JsonParser<seq_ascii>::SlowScanJsonString(
 template <bool seq_ascii>
 template <bool is_internalized>
 Handle<String> JsonParser<seq_ascii>::ScanJsonString() {
-  ASSERT_EQ('"', c0_);
+  DCHECK_EQ('"', c0_);
   Advance();
   if (c0_ == '"') {
     AdvanceSkipWhitespace();
@@ -721,7 +719,8 @@ Handle<String> JsonParser<seq_ascii>::ScanJsonString() {
     } while (c0 != '"');
     int length = position - position_;
     uint32_t hash = (length <= String::kMaxHashCalcLength)
-        ? StringHasher::GetHashCore(running_hash) : length;
+                        ? StringHasher::GetHashCore(running_hash)
+                        : static_cast<uint32_t>(length);
     Vector<const uint8_t> string_vector(
         seq_source_->GetChars() + position_, length);
     StringTable* string_table = isolate()->heap()->string_table();
@@ -743,7 +742,7 @@ Handle<String> JsonParser<seq_ascii>::ScanJsonString() {
 #ifdef DEBUG
         uint32_t hash_field =
             (hash << String::kHashShift) | String::kIsNotArrayIndexMask;
-        ASSERT_EQ(static_cast<int>(result->Hash()),
+        DCHECK_EQ(static_cast<int>(result->Hash()),
                   static_cast<int>(hash_field >> String::kHashShift));
 #endif
         break;
@@ -781,7 +780,7 @@ Handle<String> JsonParser<seq_ascii>::ScanJsonString() {
   uint8_t* dest = SeqOneByteString::cast(*result)->GetChars();
   String::WriteToFlat(*source_, dest, beg_pos, position_);
 
-  ASSERT_EQ('"', c0_);
+  DCHECK_EQ('"', c0_);
   // Advance past the last '"'.
   AdvanceSkipWhitespace();
   return result;

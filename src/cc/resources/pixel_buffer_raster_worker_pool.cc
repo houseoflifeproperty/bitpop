@@ -8,8 +8,10 @@
 
 #include "base/containers/stack_container.h"
 #include "base/debug/trace_event.h"
+#include "base/debug/trace_event_argument.h"
 #include "cc/debug/traced_value.h"
 #include "cc/resources/resource.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 
 namespace cc {
 namespace {
@@ -27,11 +29,13 @@ typedef base::StackVector<RasterTask*, kMaxScheduledRasterTasks>
 scoped_ptr<RasterWorkerPool> PixelBufferRasterWorkerPool::Create(
     base::SequencedTaskRunner* task_runner,
     TaskGraphRunner* task_graph_runner,
+    ContextProvider* context_provider,
     ResourceProvider* resource_provider,
     size_t max_transfer_buffer_usage_bytes) {
   return make_scoped_ptr<RasterWorkerPool>(
       new PixelBufferRasterWorkerPool(task_runner,
                                       task_graph_runner,
+                                      context_provider,
                                       resource_provider,
                                       max_transfer_buffer_usage_bytes));
 }
@@ -39,11 +43,13 @@ scoped_ptr<RasterWorkerPool> PixelBufferRasterWorkerPool::Create(
 PixelBufferRasterWorkerPool::PixelBufferRasterWorkerPool(
     base::SequencedTaskRunner* task_runner,
     TaskGraphRunner* task_graph_runner,
+    ContextProvider* context_provider,
     ResourceProvider* resource_provider,
     size_t max_transfer_buffer_usage_bytes)
     : task_runner_(task_runner),
       task_graph_runner_(task_graph_runner),
       namespace_token_(task_graph_runner->GetNamespaceToken()),
+      context_provider_(context_provider),
       resource_provider_(resource_provider),
       shutdown_(false),
       scheduled_raster_task_count_(0u),
@@ -63,6 +69,7 @@ PixelBufferRasterWorkerPool::PixelBufferRasterWorkerPool(
           base::TimeDelta::FromMilliseconds(
               kCheckForCompletedRasterTasksDelayMs)),
       raster_finished_weak_ptr_factory_(this) {
+  DCHECK(context_provider_);
 }
 
 PixelBufferRasterWorkerPool::~PixelBufferRasterWorkerPool() {
@@ -216,12 +223,7 @@ void PixelBufferRasterWorkerPool::ScheduleTasks(RasterTaskQueue* queue) {
   check_for_completed_raster_task_notifier_.Schedule();
 
   TRACE_EVENT_ASYNC_STEP_INTO1(
-      "cc",
-      "ScheduledTasks",
-      this,
-      StateName(),
-      "state",
-      TracedValue::FromValue(StateAsValue().release()));
+      "cc", "ScheduledTasks", this, StateName(), "state", StateAsValue());
 }
 
 void PixelBufferRasterWorkerPool::CheckForCompletedTasks() {
@@ -315,7 +317,7 @@ void PixelBufferRasterWorkerPool::FlushUploads() {
   if (!has_performed_uploads_since_last_flush_)
     return;
 
-  resource_provider_->ShallowFlushIfSupported();
+  context_provider_->ContextGL()->ShallowFlushCHROMIUM();
   has_performed_uploads_since_last_flush_ = false;
 }
 
@@ -406,7 +408,7 @@ void PixelBufferRasterWorkerPool::CheckForCompletedUploads() {
     // Async set pixels commands are not necessarily processed in-sequence with
     // drawing commands. Read lock fences are required to ensure that async
     // commands don't access the resource while used for drawing.
-    resource_provider_->EnableReadLockFences(task->resource()->id(), true);
+    resource_provider_->EnableReadLockFences(task->resource()->id());
 
     DCHECK(std::find(completed_raster_tasks_.begin(),
                      completed_raster_tasks_.end(),
@@ -454,12 +456,7 @@ void PixelBufferRasterWorkerPool::CheckForCompletedRasterTasks() {
     ScheduleMoreTasks();
 
   TRACE_EVENT_ASYNC_STEP_INTO1(
-      "cc",
-      "ScheduledTasks",
-      this,
-      StateName(),
-      "state",
-      TracedValue::FromValue(StateAsValue().release()));
+      "cc", "ScheduledTasks", this, StateName(), "state", StateAsValue());
 
   // Schedule another check for completed raster tasks while there are
   // pending raster tasks or pending uploads.
@@ -739,29 +736,29 @@ void PixelBufferRasterWorkerPool::CheckForCompletedRasterizerTasks() {
   completed_tasks_.clear();
 }
 
-scoped_ptr<base::Value> PixelBufferRasterWorkerPool::StateAsValue() const {
-  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue);
-
+scoped_refptr<base::debug::ConvertableToTraceFormat>
+PixelBufferRasterWorkerPool::StateAsValue() const {
+  scoped_refptr<base::debug::TracedValue> state =
+      new base::debug::TracedValue();
   state->SetInteger("completed_count", completed_raster_tasks_.size());
   state->SetInteger("pending_count", raster_task_states_.size());
   state->SetInteger("pending_upload_count",
                     raster_tasks_with_pending_upload_.size());
   state->SetInteger("pending_required_for_activation_count",
                     raster_tasks_required_for_activation_count_);
-  state->Set("throttle_state", ThrottleStateAsValue().release());
-  return state.PassAs<base::Value>();
+  state->BeginDictionary("throttle_state");
+  ThrottleStateAsValueInto(state.get());
+  state->EndDictionary();
+  return state;
 }
 
-scoped_ptr<base::Value> PixelBufferRasterWorkerPool::ThrottleStateAsValue()
-    const {
-  scoped_ptr<base::DictionaryValue> throttle_state(new base::DictionaryValue);
-
+void PixelBufferRasterWorkerPool::ThrottleStateAsValueInto(
+    base::debug::TracedValue* throttle_state) const {
   throttle_state->SetInteger("bytes_available_for_upload",
                              max_bytes_pending_upload_ - bytes_pending_upload_);
   throttle_state->SetInteger("bytes_pending_upload", bytes_pending_upload_);
   throttle_state->SetInteger("scheduled_raster_task_count",
                              scheduled_raster_task_count_);
-  return throttle_state.PassAs<base::Value>();
 }
 
 }  // namespace cc

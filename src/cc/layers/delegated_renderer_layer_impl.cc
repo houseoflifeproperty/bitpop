@@ -11,12 +11,12 @@
 #include "base/containers/hash_tables.h"
 #include "cc/base/math_util.h"
 #include "cc/layers/append_quads_data.h"
-#include "cc/layers/quad_sink.h"
 #include "cc/layers/render_pass_sink.h"
 #include "cc/output/delegated_frame_data.h"
 #include "cc/quads/render_pass_draw_quad.h"
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/trees/layer_tree_impl.h"
+#include "cc/trees/occlusion_tracker.h"
 
 namespace cc {
 
@@ -114,7 +114,7 @@ void DelegatedRendererLayerImpl::SetFrameData(
 
   resource_provider->ReceiveFromChild(child_id_, frame_data->resource_list);
 
-  ScopedPtrVector<RenderPass> render_pass_list;
+  RenderPassList render_pass_list;
   RenderPass::CopyAll(frame_data->render_pass_list, &render_pass_list);
 
   bool invalid_frame = false;
@@ -158,11 +158,11 @@ void DelegatedRendererLayerImpl::SetFrameData(
 }
 
 void DelegatedRendererLayerImpl::SetRenderPasses(
-    ScopedPtrVector<RenderPass>* render_passes_in_draw_order) {
+    RenderPassList* render_passes_in_draw_order) {
   ClearRenderPasses();
 
   for (size_t i = 0; i < render_passes_in_draw_order->size(); ++i) {
-    ScopedPtrVector<RenderPass>::iterator to_take =
+    RenderPassList::iterator to_take =
         render_passes_in_draw_order->begin() + i;
     render_passes_index_by_id_.insert(
         std::pair<RenderPass::Id, int>((*to_take)->id, i));
@@ -257,9 +257,10 @@ bool DelegatedRendererLayerImpl::WillDraw(DrawMode draw_mode,
 }
 
 void DelegatedRendererLayerImpl::AppendQuads(
-    QuadSink* quad_sink,
+    RenderPass* render_pass,
+    const OcclusionTracker<LayerImpl>& occlusion_tracker,
     AppendQuadsData* append_quads_data) {
-  AppendRainbowDebugBorder(quad_sink, append_quads_data);
+  AppendRainbowDebugBorder(render_pass, append_quads_data);
 
   // This list will be empty after a lost context until a new frame arrives.
   if (render_passes_in_draw_order_.empty())
@@ -283,8 +284,11 @@ void DelegatedRendererLayerImpl::AppendQuads(
     // render_target.
     DCHECK(target_render_pass_id.layer_id == render_target()->id());
 
-    AppendRenderPassQuads(
-        quad_sink, append_quads_data, root_delegated_render_pass, frame_size);
+    AppendRenderPassQuads(render_pass,
+                          occlusion_tracker,
+                          append_quads_data,
+                          root_delegated_render_pass,
+                          frame_size);
   } else {
     // Verify that the RenderPass we are appending to was created by us.
     DCHECK(target_render_pass_id.layer_id == id());
@@ -292,18 +296,22 @@ void DelegatedRendererLayerImpl::AppendQuads(
     int render_pass_index = IdToIndex(target_render_pass_id.index);
     const RenderPass* delegated_render_pass =
         render_passes_in_draw_order_[render_pass_index];
-    AppendRenderPassQuads(
-        quad_sink, append_quads_data, delegated_render_pass, frame_size);
+    AppendRenderPassQuads(render_pass,
+                          occlusion_tracker,
+                          append_quads_data,
+                          delegated_render_pass,
+                          frame_size);
   }
 }
 
 void DelegatedRendererLayerImpl::AppendRainbowDebugBorder(
-    QuadSink* quad_sink,
+    RenderPass* render_pass,
     AppendQuadsData* append_quads_data) {
   if (!ShowDebugBorders())
     return;
 
-  SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
+  SharedQuadState* shared_quad_state =
+      render_pass->CreateAndAppendSharedQuadState();
   PopulateSharedQuadState(shared_quad_state);
 
   SkColor color;
@@ -347,42 +355,42 @@ void DelegatedRendererLayerImpl::AppendRainbowDebugBorder(
       break;
 
     if (!top.IsEmpty()) {
-      scoped_ptr<SolidColorDrawQuad> top_quad = SolidColorDrawQuad::Create();
+      SolidColorDrawQuad* top_quad =
+          render_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
       top_quad->SetNew(
           shared_quad_state, top, top, colors[i % kNumColors], false);
-      quad_sink->Append(top_quad.PassAs<DrawQuad>());
 
-      scoped_ptr<SolidColorDrawQuad> bottom_quad = SolidColorDrawQuad::Create();
+      SolidColorDrawQuad* bottom_quad =
+          render_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
       bottom_quad->SetNew(shared_quad_state,
                           bottom,
                           bottom,
                           colors[kNumColors - 1 - (i % kNumColors)],
                           false);
-      quad_sink->Append(bottom_quad.PassAs<DrawQuad>());
     }
     if (!left.IsEmpty()) {
-      scoped_ptr<SolidColorDrawQuad> left_quad = SolidColorDrawQuad::Create();
+      SolidColorDrawQuad* left_quad =
+          render_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
       left_quad->SetNew(shared_quad_state,
                         left,
                         left,
                         colors[kNumColors - 1 - (i % kNumColors)],
                         false);
-      quad_sink->Append(left_quad.PassAs<DrawQuad>());
 
-      scoped_ptr<SolidColorDrawQuad> right_quad = SolidColorDrawQuad::Create();
+      SolidColorDrawQuad* right_quad =
+          render_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
       right_quad->SetNew(
           shared_quad_state, right, right, colors[i % kNumColors], false);
-      quad_sink->Append(right_quad.PassAs<DrawQuad>());
     }
   }
 }
 
 void DelegatedRendererLayerImpl::AppendRenderPassQuads(
-    QuadSink* quad_sink,
+    RenderPass* render_pass,
+    const OcclusionTracker<LayerImpl>& occlusion_tracker,
     AppendQuadsData* append_quads_data,
     const RenderPass* delegated_render_pass,
     const gfx::Size& frame_size) const {
-
   const SharedQuadState* delegated_shared_quad_state = NULL;
   SharedQuadState* output_shared_quad_state = NULL;
 
@@ -394,7 +402,7 @@ void DelegatedRendererLayerImpl::AppendRenderPassQuads(
 
     if (delegated_quad->shared_quad_state != delegated_shared_quad_state) {
       delegated_shared_quad_state = delegated_quad->shared_quad_state;
-      output_shared_quad_state = quad_sink->CreateSharedQuadState();
+      output_shared_quad_state = render_pass->CreateAndAppendSharedQuadState();
       output_shared_quad_state->CopyFrom(delegated_shared_quad_state);
 
       if (is_root_delegated_render_pass) {
@@ -433,19 +441,19 @@ void DelegatedRendererLayerImpl::AppendRenderPassQuads(
         output_shared_quad_state->content_to_target_transform;
     if (!is_root_delegated_render_pass) {
       quad_content_to_delegated_target_space.ConcatTransform(
-          quad_sink->render_pass()->transform_to_root_target);
+          render_pass->transform_to_root_target);
       quad_content_to_delegated_target_space.ConcatTransform(draw_transform());
     }
 
-    gfx::Rect quad_visible_rect = quad_sink->UnoccludedContentRect(
+    gfx::Rect quad_visible_rect = occlusion_tracker.UnoccludedContentRect(
         delegated_quad->visible_rect, quad_content_to_delegated_target_space);
 
     if (quad_visible_rect.IsEmpty())
       continue;
 
-    scoped_ptr<DrawQuad> output_quad;
     if (delegated_quad->material != DrawQuad::RENDER_PASS) {
-      output_quad = delegated_quad->Copy(output_shared_quad_state);
+      DrawQuad* output_quad = render_pass->CopyFromAndAppendDrawQuad(
+          delegated_quad, output_shared_quad_state);
       output_quad->visible_rect = quad_visible_rect;
     } else {
       RenderPass::Id delegated_contributing_render_pass_id =
@@ -462,15 +470,14 @@ void DelegatedRendererLayerImpl::AppendRenderPassQuads(
         DCHECK(output_contributing_render_pass_id !=
                append_quads_data->render_pass_id);
 
-        output_quad = RenderPassDrawQuad::MaterialCast(delegated_quad)->Copy(
-            output_shared_quad_state,
-            output_contributing_render_pass_id).PassAs<DrawQuad>();
+        RenderPassDrawQuad* output_quad =
+            render_pass->CopyFromAndAppendRenderPassDrawQuad(
+                RenderPassDrawQuad::MaterialCast(delegated_quad),
+                output_shared_quad_state,
+                output_contributing_render_pass_id);
         output_quad->visible_rect = quad_visible_rect;
       }
     }
-
-    if (output_quad)
-      quad_sink->Append(output_quad.Pass());
   }
 }
 

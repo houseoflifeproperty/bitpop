@@ -28,11 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-importScript("LayerTreeOutline.js");
-importScript("LayerDetailsView.js");
-importScript("PaintProfilerView.js");
-importScript("LayerPaintProfilerView.js");
-
 /**
  * @constructor
  * @extends {WebInspector.PanelWithSidebarTree}
@@ -45,7 +40,7 @@ WebInspector.LayersPanel = function()
     this.sidebarElement().classList.add("outline-disclosure");
     this.sidebarTree.element.classList.remove("sidebar-tree");
 
-    this._target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget());
+    this._target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.mainTarget());
     this._model = new WebInspector.LayerTreeModel(this._target);
     this._model.addEventListener(WebInspector.LayerTreeModel.Events.LayerTreeChanged, this._onLayerTreeUpdated, this);
     this._model.addEventListener(WebInspector.LayerTreeModel.Events.LayerPainted, this._onLayerPainted, this);
@@ -64,7 +59,6 @@ WebInspector.LayersPanel = function()
     this._layers3DView.addEventListener(WebInspector.Layers3DView.Events.ObjectSelected, this._onObjectSelected, this);
     this._layers3DView.addEventListener(WebInspector.Layers3DView.Events.ObjectHovered, this._onObjectHovered, this);
     this._layers3DView.addEventListener(WebInspector.Layers3DView.Events.LayerSnapshotRequested, this._onSnapshotRequested, this);
-    this._layers3DView.registerShortcuts(this.registerShortcuts.bind(this));
 
     this._tabbedPane = new WebInspector.TabbedPane();
     this._tabbedPane.show(this._rightSplitView.sidebarElement());
@@ -199,15 +193,6 @@ WebInspector.LayersPanel.prototype = {
         this._layers3DView.hoverObject(activeObject);
     },
 
-    /**
-     * @param {!WebInspector.Layer} layer
-     * @param {string=} imageURL
-     */
-    _showImageForLayer: function(layer, imageURL)
-    {
-        this._layers3DView.showImageForLayer(layer, imageURL);
-    },
-
     __proto__: WebInspector.PanelWithSidebarTree.prototype
 }
 
@@ -227,7 +212,8 @@ WebInspector.LayersPanel.LayerTreeRevealer.prototype = {
     {
         if (!(snapshotData instanceof WebInspector.DeferredLayerTree))
             return;
-        var panel = /** @type {!WebInspector.LayersPanel} */ (WebInspector.inspectorView.showPanel("layers"));
-        panel._showLayerTree(/** @type {!WebInspector.DeferredLayerTree} */ (snapshotData));
+        var panel = /** @type {?WebInspector.LayersPanel} */ (WebInspector.inspectorView.showPanel("layers"));
+        if (panel)
+            panel._showLayerTree(/** @type {!WebInspector.DeferredLayerTree} */ (snapshotData));
     }
 }

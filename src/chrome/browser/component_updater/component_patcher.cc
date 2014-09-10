@@ -8,14 +8,15 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/json/json_file_value_serializer.h"
+#include "base/location.h"
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
 #include "chrome/browser/component_updater/component_patcher_operation.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
-#include "content/public/browser/browser_thread.h"
 
 namespace component_updater {
 
@@ -43,12 +44,12 @@ ComponentPatcher::ComponentPatcher(
     const base::FilePath& input_dir,
     const base::FilePath& unpack_dir,
     ComponentInstaller* installer,
-    bool in_process,
+    scoped_refptr<OutOfProcessPatcher> out_of_process_patcher,
     scoped_refptr<base::SequencedTaskRunner> task_runner)
     : input_dir_(input_dir),
       unpack_dir_(unpack_dir),
       installer_(installer),
-      in_process_(in_process),
+      out_of_process_patcher_(out_of_process_patcher),
       task_runner_(task_runner) {
 }
 
@@ -83,7 +84,13 @@ void ComponentPatcher::PatchNextFile() {
   }
   const base::DictionaryValue* command_args =
       static_cast<base::DictionaryValue*>(*next_command_);
-  current_operation_ = CreateDeltaUpdateOp(*command_args);
+
+  std::string operation;
+  if (command_args->GetString(kOp, &operation)) {
+    current_operation_ =
+        CreateDeltaUpdateOp(operation, out_of_process_patcher_);
+  }
+
   if (!current_operation_) {
     DonePatching(ComponentUnpacker::kDeltaUnsupportedCommand, 0);
     return;
@@ -92,7 +99,6 @@ void ComponentPatcher::PatchNextFile() {
                           input_dir_,
                           unpack_dir_,
                           installer_,
-                          in_process_,
                           base::Bind(&ComponentPatcher::DonePatchingFile,
                                      scoped_refptr<ComponentPatcher>(this)),
                           task_runner_);

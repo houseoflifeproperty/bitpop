@@ -5,9 +5,10 @@
 #ifndef CONTENT_CHILD_WEBCRYPTO_WEBCRYPTO_UTIL_H_
 #define CONTENT_CHILD_WEBCRYPTO_WEBCRYPTO_UTIL_H_
 
+#include <stdint.h>
 #include <string>
 #include <vector>
-#include "base/basictypes.h"
+
 #include "base/strings/string_piece.h"
 #include "base/values.h"
 #include "content/common/content_export.h"
@@ -20,12 +21,6 @@ namespace webcrypto {
 
 class Status;
 
-// Returns a pointer to the start of |data|, or NULL if it is empty. This is a
-// convenience function for getting the pointer, and should not be used beyond
-// the expected lifetime of |data|.
-CONTENT_EXPORT const uint8* Uint8VectorStart(const std::vector<uint8>& data);
-CONTENT_EXPORT uint8* Uint8VectorStart(std::vector<uint8>* data);
-
 // This function decodes unpadded 'base64url' encoded data, as described in
 // RFC4648 (http://www.ietf.org/rfc/rfc4648.txt) Section 5.
 // In Web Crypto, this type of encoding is only used inside JWK.
@@ -35,7 +30,8 @@ CONTENT_EXPORT bool Base64DecodeUrlSafe(const std::string& input,
 // Returns an unpadded 'base64url' encoding of the input data, the opposite of
 // Base64DecodeUrlSafe() above.
 CONTENT_EXPORT std::string Base64EncodeUrlSafe(const base::StringPiece& input);
-CONTENT_EXPORT std::string Base64EncodeUrlSafe(const std::vector<uint8>& input);
+CONTENT_EXPORT std::string Base64EncodeUrlSafe(
+    const std::vector<uint8_t>& input);
 
 // Composes a Web Crypto usage mask from an array of JWK key_ops values.
 CONTENT_EXPORT Status GetWebCryptoUsagesFromJwkKeyOps(
@@ -67,16 +63,40 @@ CONTENT_EXPORT blink::WebCryptoAlgorithm CreateRsaHashedImportAlgorithm(
     blink::WebCryptoAlgorithmId id,
     blink::WebCryptoAlgorithmId hash_id);
 
-bool CreateSecretKeyAlgorithm(const blink::WebCryptoAlgorithm& algorithm,
-                              unsigned int keylen_bytes,
-                              blink::WebCryptoKeyAlgorithm* key_algorithm);
-
 // Returns true if the set bits in b make up a subset of the set bits in a.
 bool ContainsKeyUsages(blink::WebCryptoKeyUsageMask a,
                        blink::WebCryptoKeyUsageMask b);
 
+bool KeyUsageAllows(const blink::WebCryptoKey& key,
+                    const blink::WebCryptoKeyUsage usage);
+
 bool IsAlgorithmRsa(blink::WebCryptoAlgorithmId alg_id);
 bool IsAlgorithmAsymmetric(blink::WebCryptoAlgorithmId alg_id);
+
+Status GetAesGcmTagLengthInBits(const blink::WebCryptoAesGcmParams* params,
+                                unsigned int* tag_length_bits);
+
+Status GetAesKeyGenLengthInBits(const blink::WebCryptoAesKeyGenParams* params,
+                                unsigned int* keylen_bits);
+
+Status GetHmacKeyGenLengthInBits(const blink::WebCryptoHmacKeyGenParams* params,
+                                 unsigned int* keylen_bits);
+
+Status VerifyAesKeyLengthForImport(unsigned int keylen_bytes);
+
+Status CheckKeyCreationUsages(blink::WebCryptoKeyUsageMask all_possible_usages,
+                              blink::WebCryptoKeyUsageMask actual_usages);
+
+// Extracts the public exponent and modulus length from the Blink parameters.
+// On success it is guaranteed that:
+//   * public_exponent is either 3 or 65537
+//   * modulus_length_bits is a multiple of 8
+//   * modulus_length is >= 256
+//   * modulus_length is <= 16K
+Status GetRsaKeyGenParameters(
+    const blink::WebCryptoRsaHashedKeyGenParams* params,
+    unsigned int* public_exponent,
+    unsigned int* modulus_length_bits);
 
 }  // namespace webcrypto
 

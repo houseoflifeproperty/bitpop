@@ -30,7 +30,7 @@
 #include "wtf/Deque.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ChangeVersionData;
 class Database;
@@ -49,6 +49,7 @@ class SQLTransactionCoordinator;
 class DatabaseBackend : public DatabaseBackendBase {
 public:
     DatabaseBackend(DatabaseContext*, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize);
+    virtual ~DatabaseBackend();
     virtual void trace(Visitor*) OVERRIDE;
 
     virtual bool openAndVerifyVersion(bool setVersionInNewDatabase, DatabaseError&, String& errorMessage) OVERRIDE FINAL;
@@ -79,6 +80,6 @@ private:
     friend class Database;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DatabaseBackend_h

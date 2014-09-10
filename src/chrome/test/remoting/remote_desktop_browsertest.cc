@@ -120,7 +120,7 @@ void RemoteDesktopBrowserTest::InstallChromotingAppUnpacked() {
   installer->set_prompt_for_plugins(false);
 
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+      extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
       content::NotificationService::AllSources());
 
   installer->Load(webapp_unpacked_);
@@ -343,27 +343,12 @@ void RemoteDesktopBrowserTest::ExpandMe2Me() {
 
   EXPECT_TRUE(HtmlElementVisible("me2me-content"));
   EXPECT_FALSE(HtmlElementVisible("me2me-first-run"));
-
-  // Wait until localHost is initialized. This can take a while.
-  ConditionalTimeoutWaiter waiter(
-      base::TimeDelta::FromSeconds(3),
-      base::TimeDelta::FromSeconds(1),
-      base::Bind(&RemoteDesktopBrowserTest::IsLocalHostReady, this));
-  EXPECT_TRUE(waiter.Wait());
-
-  EXPECT_TRUE(ExecuteScriptAndExtractBool(
-      "remoting.hostList.localHost_.hostName && "
-      "remoting.hostList.localHost_.hostId && "
-      "remoting.hostList.localHost_.status && "
-      "remoting.hostList.localHost_.status == 'ONLINE'"));
 }
 
 void RemoteDesktopBrowserTest::DisconnectMe2Me() {
   // The chromoting extension should be installed.
   ASSERT_TRUE(extension_);
 
-  // The active tab should have the chromoting app loaded.
-  ASSERT_EQ(Chromoting_Main_URL(), GetCurrentURL());
   ASSERT_TRUE(RemoteDesktopBrowserTest::IsSessionConnected());
 
   ClickOnControl("toolbar-stub");
@@ -483,15 +468,30 @@ void RemoteDesktopBrowserTest::SetUpTestForMe2Me() {
   VerifyInternetAccess();
   Install();
   LaunchChromotingApp();
+  LoadScript(app_web_content(), FILE_PATH_LITERAL("browser_test.js"));
   Auth();
   ExpandMe2Me();
-  LoadScript(app_web_content(), FILE_PATH_LITERAL("browser_test.js"));
+  EnsureRemoteConnectionEnabled();
 }
 
 void RemoteDesktopBrowserTest::Auth() {
   Authorize();
   Authenticate();
   Approve();
+}
+
+void RemoteDesktopBrowserTest::EnsureRemoteConnectionEnabled() {
+  // browser_test.ensureRemoteConnectionEnabled is defined in
+  // browser_test.js, which must be loaded before calling this function.
+  // TODO(kelvinp): This function currently only works on linux when the user is
+  // already part of the chrome-remote-desktop group.  Extend this functionality
+  // to Mac (https://crbug.com/397576) and Windows (https://crbug.com/397575).
+  bool result;
+  EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+      app_web_content(),
+      "browserTest.ensureRemoteConnectionEnabled(" + me2me_pin() + ")",
+      &result));
+  EXPECT_TRUE(result) << "Cannot start the host with Pin:" << me2me_pin();
 }
 
 void RemoteDesktopBrowserTest::ConnectToLocalHost(bool remember_pin) {
@@ -721,7 +721,7 @@ void RemoteDesktopBrowserTest::EnterPin(const std::string& pin,
   // we should verify that it only pops up at the right circumstance. That
   // probably belongs in a separate test case though.
   ConditionalTimeoutWaiter waiter(
-      base::TimeDelta::FromSeconds(5),
+      base::TimeDelta::FromSeconds(30),
       base::TimeDelta::FromSeconds(1),
       base::Bind(&RemoteDesktopBrowserTest::IsPinFormVisible, this));
   EXPECT_TRUE(waiter.Wait());
@@ -747,7 +747,7 @@ void RemoteDesktopBrowserTest::WaitForConnection() {
   // TODO(weitaosu): Instead of polling, can we register a callback to
   // remoting.clientSession.onStageChange_?
   ConditionalTimeoutWaiter waiter(
-      base::TimeDelta::FromSeconds(4),
+      base::TimeDelta::FromSeconds(30),
       base::TimeDelta::FromSeconds(1),
       base::Bind(&RemoteDesktopBrowserTest::IsSessionConnected, this));
   EXPECT_TRUE(waiter.Wait());

@@ -27,7 +27,7 @@
 #include "config.h"
 #include "core/xml/XPathExpression.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/xml/XPathExpressionNode.h"
 #include "core/xml/XPathNSResolver.h"
@@ -36,9 +36,11 @@
 #include "core/xml/XPathUtil.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace XPath;
+
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(XPathExpression);
 
 XPathExpression::XPathExpression()
 {
@@ -55,10 +57,6 @@ PassRefPtrWillBeRawPtr<XPathExpression> XPathExpression::createExpression(const 
         return nullptr;
 
     return expr.release();
-}
-
-XPathExpression::~XPathExpression()
-{
 }
 
 void XPathExpression::trace(Visitor* visitor)
@@ -78,13 +76,8 @@ PassRefPtrWillBeRawPtr<XPathResult> XPathExpression::evaluate(Node* contextNode,
         return nullptr;
     }
 
-    EvaluationContext& evaluationContext = Expression::evaluationContext();
-    evaluationContext.node = contextNode;
-    evaluationContext.size = 1;
-    evaluationContext.position = 1;
-    evaluationContext.hadTypeConversionError = false;
-    RefPtrWillBeRawPtr<XPathResult> result = XPathResult::create(&contextNode->document(), m_topExpression->evaluate());
-    evaluationContext.node = nullptr; // Do not hold a reference to the context node, as this may prevent the whole document from being destroyed in time.
+    EvaluationContext evaluationContext(*contextNode);
+    RefPtrWillBeRawPtr<XPathResult> result = XPathResult::create(evaluationContext, m_topExpression->evaluate(evaluationContext));
 
     if (evaluationContext.hadTypeConversionError) {
         // It is not specified what to do if type conversion fails while evaluating an expression.

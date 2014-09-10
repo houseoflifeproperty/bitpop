@@ -75,9 +75,6 @@
 #define WEBRTC_SPL_MUL_16_32_RSFT16(a, b) \
     (WEBRTC_SPL_MUL_16_16(a, b >> 16) \
      + ((WEBRTC_SPL_MUL_16_16(a, (b & 0xffff) >> 1) + 0x4000) >> 15))
-#define WEBRTC_SPL_MUL_32_32_RSFT32(a32a, a32b, b32) \
-    ((int32_t)(WEBRTC_SPL_MUL_16_32_RSFT16(a32a, b32) \
-    + (WEBRTC_SPL_MUL_16_32_RSFT16(a32b, b32) >> 16)))
 #endif
 #endif
 
@@ -106,13 +103,10 @@
 #define WEBRTC_SPL_SAT(a, b, c)         (b > a ? a : b < c ? c : b)
 #define WEBRTC_SPL_MUL_32_16(a, b)      ((a) * (b))
 
-#define WEBRTC_SPL_SUB_SAT_W32(a, b)    WebRtcSpl_SubSatW32(a, b)
 #define WEBRTC_SPL_ADD_SAT_W16(a, b)    WebRtcSpl_AddSatW16(a, b)
 
 // Shifting with negative numbers allowed
 // Positive means left shift
-#define WEBRTC_SPL_SHIFT_W16(x, c) \
-    (((c) >= 0) ? ((x) << (c)) : ((x) >> (-(c))))
 #define WEBRTC_SPL_SHIFT_W32(x, c) \
     (((c) >= 0) ? ((x) << (c)) : ((x) >> (-(c))))
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,15 +38,6 @@ class CONTENT_EXPORT DevToolsClientHost {
   // Called to notify client that it has been kicked out by some other client
   // with greater priority.
   virtual void ReplacedWithAnotherClient() = 0;
-
-  // Creates a DevToolsClientHost for a WebContents containing the default
-  // DevTools frontend implementation.
-  static DevToolsClientHost* CreateDevToolsFrontendHost(
-      WebContents* client_web_contents,
-      DevToolsFrontendHostDelegate* delegate);
-
-  // Sets up DevToolsClient on the corresponding RenderView.
-  static void SetupDevToolsFrontendClient(RenderViewHost* frontend_rvh);
 };
 
 }  // namespace content

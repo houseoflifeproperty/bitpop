@@ -14,7 +14,7 @@
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/configure_reason.h"
 
-namespace browser_sync {
+namespace sync_driver {
 
 // This interface is for managing the start up and shut down life cycle
 // of many different syncable data types.
@@ -37,8 +37,7 @@ class DataTypeManager {
   // this.
   enum ConfigureStatus {
     UNKNOWN = -1,
-    OK,                  // Configuration finished without error.
-    PARTIAL_SUCCESS,     // Some data types had an error while starting up.
+    OK,                  // Configuration finished some or all types.
     ABORTED,             // Start was aborted by calling Stop() before
                          // all types were started.
     UNRECOVERABLE_ERROR  // We got an unrecoverable error during startup.
@@ -49,28 +48,10 @@ class DataTypeManager {
     ConfigureResult();
     ConfigureResult(ConfigureStatus status,
                     syncer::ModelTypeSet requested_types);
-    ConfigureResult(ConfigureStatus status,
-                    syncer::ModelTypeSet requested_types,
-                    std::map<syncer::ModelType, syncer::SyncError>
-                        failed_data_types,
-                    syncer::ModelTypeSet unfinished_data_types,
-                    syncer::ModelTypeSet needs_crypto);
     ~ConfigureResult();
+
     ConfigureStatus status;
     syncer::ModelTypeSet requested_types;
-
-    // These types encountered a failure in association.
-    std::map<syncer::ModelType, syncer::SyncError> failed_data_types;
-
-    // List of types that failed to finish loading/associating within our
-    // alloted time period(see |kAssociationTimeOutInSeconds|). We move
-    // forward here and allow these types to continue to load/associate in
-    // the background.
-    syncer::ModelTypeSet unfinished_data_types;
-
-    // Those types that are unable to start due to the cryptographer not being
-    // ready.
-    syncer::ModelTypeSet needs_crypto;
   };
 
   virtual ~DataTypeManager() {}
@@ -106,6 +87,6 @@ class DataTypeManager {
   virtual State state() const = 0;
 };
 
-}  // namespace browser_sync
+}  // namespace sync_driver
 
 #endif  // COMPONENTS_SYNC_DRIVER_DATA_TYPE_MANAGER_H__

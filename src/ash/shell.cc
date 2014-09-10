@@ -292,13 +292,28 @@ void Shell::ShowContextMenu(const gfx::Point& location_in_screen,
       ->ShowContextMenu(location_in_screen, source_type);
 }
 
-void Shell::ToggleAppList(aura::Window* window) {
+void Shell::ShowAppList(aura::Window* window) {
   // If the context window is not given, show it on the target root window.
   if (!window)
     window = GetTargetRootWindow();
   if (!app_list_controller_)
     app_list_controller_.reset(new AppListController);
-  app_list_controller_->SetVisible(!app_list_controller_->IsVisible(), window);
+  app_list_controller_->SetVisible(true, window);
+}
+
+void Shell::DismissAppList() {
+  if (!app_list_controller_)
+    return;
+  app_list_controller_->SetVisible(false, GetTargetRootWindow());
+}
+
+void Shell::ToggleAppList(aura::Window* window) {
+  if (app_list_controller_ && app_list_controller_->IsVisible()) {
+    DismissAppList();
+    return;
+  }
+
+  ShowAppList(window);
 }
 
 bool Shell::GetAppListTargetVisibility() const {
@@ -837,6 +852,8 @@ void Shell::Init(const ShellInitParams& init_params) {
   if (!display_initialized)
     display_manager_->InitDefaultDisplay();
 
+  display_manager_->InitFontParams();
+
   // Install the custom factory first so that views::FocusManagers for Tray,
   // Shelf, and WallPaper could be created by the factory.
   views::FocusManagerFactory::Install(new AshFocusManagerFactory);
@@ -889,13 +906,6 @@ void Shell::Init(const ShellInitParams& init_params) {
 
   // The order in which event filters are added is significant.
 
-#if defined(OS_CHROMEOS)
-  // The StickyKeysController also rewrites events and must be added
-  // before observers, but after the EventRewriterEventFilter.
-  sticky_keys_controller_.reset(new StickyKeysController);
-  AddPreTargetHandler(sticky_keys_controller_.get());
-#endif
-
   // wm::UserActivityDetector passes events to observers, so let them get
   // rewritten first.
   user_activity_detector_.reset(new ::wm::UserActivityDetector);
@@ -928,6 +938,10 @@ void Shell::Init(const ShellInitParams& init_params) {
   // created.
 #if defined(OS_CHROMEOS)
     keyboard::InitializeKeyboard();
+#endif
+
+#if defined(OS_CHROMEOS)
+  sticky_keys_controller_.reset(new StickyKeysController);
 #endif
 
   lock_state_controller_.reset(new LockStateController);

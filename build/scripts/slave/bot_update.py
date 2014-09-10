@@ -7,6 +7,7 @@
 
 import cStringIO
 import codecs
+import collections
 import copy
 import ctypes
 import json
@@ -25,6 +26,9 @@ import urlparse
 import uuid
 
 import os.path as path
+
+# How many bytes at a time to read from pipes.
+BUF_SIZE = 256
 
 # Set this to true on flag day.
 FLAG_DAY = False
@@ -51,15 +55,30 @@ CHROMIUM_GIT_HOST = 'https://chromium.googlesource.com'
 CHROMIUM_SRC_URL = CHROMIUM_GIT_HOST + '/chromium/src.git'
 
 # Official builds use buildspecs, so this is a special case.
-BUILDSPEC_RE = r'^/chrome-internal/trunk/tools/buildspec/build/(.*)$'
+BUILDSPEC_TYPE = collections.namedtuple('buildspec',
+    ('container', 'version'))
+BUILDSPEC_RE = (r'^/chrome-internal/trunk/tools/buildspec/'
+                 '(build|branches|releases)/(.+)$')
 GIT_BUILDSPEC_PATH = ('https://chrome-internal.googlesource.com/chrome/tools/'
                       'buildspec')
 
-# This is the repository that the buildspecs2git cron job mirrors
-# all buildspecs into. When we see an svn buildspec, we rely on the
-# buildspecs2git cron job to produce the git version of the buildspec.
+BUILDSPEC_COMMIT_RE = (
+    re.compile(r'Buildspec for.*version (\d+\.\d+\.\d+\.\d+)'),
+    re.compile(r'Create (\d+\.\d+\.\d+\.\d+) buildspec'),
+    re.compile(r'Auto-converted (\d+\.\d+\.\d+\.\d+) buildspec to git'),
+)
+
+# Regular expression to parse a commit position
+COMMIT_POSITION_RE = re.compile(r'^Cr-Commit-Position:\s*((.+)@\{#(\d+)\})$',
+                                re.M)
+
+# This is the git mirror of the buildspecs repository. We could rely on the svn
+# checkout, now that the git buildspecs are checked in alongside the svn
+# buildspecs, but we're going to want to pull all the buildspecs from here
+# eventually anyhow, and there's already some logic to pull from git (for the
+# old git_buildspecs.git repo), so just stick with that.
 GIT_BUILDSPEC_REPO = (
-    'https://chrome-internal.googlesource.com/chrome/tools/git_buildspecs')
+    'https://chrome-internal.googlesource.com/chrome/tools/buildspec')
 
 # Copied from scripts/recipes/chromium.py.
 GOT_REVISION_MAPPINGS = {
@@ -150,11 +169,16 @@ RECOGNIZED_PATHS = {
         CHROMIUM_SRC_URL,
     '/chrome/trunk/deps/third_party/webrtc/webrtc.DEPS':
         CHROMIUM_GIT_HOST + '/chromium/deps/webrtc/webrtc.DEPS.git',
+    '/svn/branches/bleeding_edge':
+        CHROMIUM_GIT_HOST + '/external/v8.git',
+    '/chrome/trunk/src/tools/cros.DEPS':
+        CHROMIUM_GIT_HOST + '/chromium/src/tools/cros.DEPS.git',
 }
 RECOGNIZED_PATHS.update(internal_data.get('RECOGNIZED_PATHS', {}))
 
 ENABLED_MASTERS = [
     'bot_update.always_on',
+    'chromium.chrome',
     'chromium.chromedriver',
     'chromium.chromiumos',
     'chromium.endure',
@@ -164,14 +188,28 @@ ENABLED_MASTERS = [
     'chromium.gpu',
     'chromium.gpu.fyi',
     'chromium.linux',
+    'chromium.lkgr',
     'chromium.mac',
     'chromium.memory',
     'chromium.memory.fyi',
     'chromium.perf',
     'chromium.swarm',
+    'chromium.webkit',
+    'chromium.webrtc',
+    'chromium.webrtc.fyi',
+    'chromium.win',
     'client.drmemory',
+    'client.nacl.sdk',
     'client.nacl.sdk.mono',
-    'tryserver.chromium',
+    'client.skia',
+    'client.v8',
+    'client.webrtc',
+    'tryserver.blink',
+    'tryserver.chromium.linux',
+    'tryserver.chromium.mac',
+    'tryserver.chromium.perf',
+    'tryserver.chromium.win',
+    'chromium.perf.fyi',
 ]
 ENABLED_MASTERS += internal_data.get('ENABLED_MASTERS', [])
 
@@ -179,57 +217,45 @@ ENABLED_BUILDERS = {
     'tryserver.chromium.gpu': [
         'linux_gpu',
         'mac_gpu',
+        'win_gpu',
     ],
-    'chromium.webkit': [
-        'WebKit Linux Oilpan',
+    'client.v8.branches': [
+        # Note, bot_update can't be activated on other builders of
+        # client.v8.branches, as they're all pure svn based (non-chromium).
+        'Chromium ASAN (symbolized) - trunk',
+        'Chromium ASAN - trunk - debug',
+        'Chromium Win SyzyASAN - trunk',
     ],
-    'chromium.lkgr': [
-        'Android',
-        'Linux x64',
-        'Linux',
-        'Mac',
-        'Telemetry Harness Upload',
-    ],
-    'tryserver.blink': [
-        # Linux
-        'android_blink_compile_dbg',
-        'android_blink_compile_rel',
-        'blink_presubmit',
-        'linux_blink_bot_update',
-        'linux_blink_compile_dbg',
-        'linux_blink_compile_rel',
-        'linux_blink_dbg',
-        'linux_blink_oilpan_dbg',
-        'linux_blink_oilpan_rel',
-        'linux_blink_rel',
-
-        # Mac
-        'mac_blink_compile_dbg',
-        'mac_blink_compile_rel',
-        'mac_blink_dbg',
-        'mac_blink_rel',
-    ]
 }
 ENABLED_BUILDERS.update(internal_data.get('ENABLED_BUILDERS', {}))
 
 ENABLED_SLAVES = {
-    # This is enabled on a bot-to-bot basis to ensure that we don't have
-    # bots that have mixed configs.
-    'chromium.fyi': [
-        'build1-m1',  # Chromium Builder / Chromium Builder (dbg)
-        'vm928-m1',   # Chromium Linux Buildrunner
-        'vm859-m1',   # Chromium Linux Redux
-        'vm933-m1',   # ChromiumOS Linux Tests
-    ],
-
     # Tryserver bots need to be enabled on a bot basis to make sure checkouts
     # on the same bot do not conflict.
-    'tryserver.chromium': ['slave%d-c4' % i for i in range(250, 400)] +
-                          ['slave%d-c4' % i for i in range(102, 121)] +
-                          ['vm%d-m4' % i for i in [468, 469, 497, 502, 503]] +
-                          ['vm%d-m4' % i for i in range(800, 810)] +
-                          ['vm%d-m4' % i for i in range(666, 671)] +
-                          ['build%d-a4' % i for i in range(100, 140)],
+    # TODO(iannucci): Not all of these slaves are on the same master... c+p'd
+    #   for expediency.
+    # TODO(iannucci): Are these even needed?
+    'tryserver.chromium.linux':
+        ['slave%d-c4' % i for i in range(250, 400)] +
+        ['slave%d-c4' % i for i in range(102, 121)] +
+        ['vm%d-m4' % i for i in [468, 469, 497, 502, 503]] +
+        ['vm%d-m4' % i for i in range(800, 810)] +
+        ['vm%d-m4' % i for i in range(666, 671)] +
+        ['build%d-a4' % i for i in range(100, 140)],
+    'tryserver.chromium.mac':
+        ['slave%d-c4' % i for i in range(250, 400)] +
+        ['slave%d-c4' % i for i in range(102, 121)] +
+        ['vm%d-m4' % i for i in [468, 469, 497, 502, 503]] +
+        ['vm%d-m4' % i for i in range(800, 810)] +
+        ['vm%d-m4' % i for i in range(666, 671)] +
+        ['build%d-a4' % i for i in range(100, 140)],
+    'tryserver.chromium.win':
+        ['slave%d-c4' % i for i in range(250, 400)] +
+        ['slave%d-c4' % i for i in range(102, 121)] +
+        ['vm%d-m4' % i for i in [468, 469, 497, 502, 503]] +
+        ['vm%d-m4' % i for i in range(800, 810)] +
+        ['vm%d-m4' % i for i in range(666, 671)] +
+        ['build%d-a4' % i for i in range(100, 140)],
 }
 ENABLED_SLAVES.update(internal_data.get('ENABLED_SLAVES', {}))
 
@@ -237,70 +263,31 @@ ENABLED_SLAVES.update(internal_data.get('ENABLED_SLAVES', {}))
 # config is enabled, but a bot on that builder is disabled, that bot will
 # be disabled.
 DISABLED_BUILDERS = {
-    'chromium.gpu': [
-        'GPU Win Builder',
-        'GPU Win Builder (dbg)',
+    'tryserver.blink': [
+        # These don't exist, but are just here to satisfy recipes.
+        'linux_blink_no_bot_update',
+        'win_blink_no_bot_update',
     ],
-    'chromium.chromedriver': [
-        'Win7',
-    ],
-    'chromium.gpu.fyi': [
-        'GPU Win Builder (dbg)',
-        'GPU Win Builder',
-        'Win7 Audio',
-        'Win7 Debug (NVIDIA)',
-        'Win8 Debug (NVIDIA)',
-        'WinXP Debug (NVIDIA)',
-    ],
-    'chromium.win': ['Win Builder'],  # crbug.com/370473
-    'chromium.fyi': [
-        'Chromium Linux Codesearch',
-        'ChromiumOS Codesearch',
-        # ClusterFuzz relies on svn revisions to do bisection checks.
-        # crbug.com/377963
-        'Win SyzyASAN LKGR',
-    ],
-    'chromium.perf': [
-        # Windows disabled for performance reasons.
-        'Win Builder',
-        'Win x64 Builder',
-        'Win 8 Perf (1)',
-        'Win 8 Perf (2)',
-        'Win 7 Perf (1)',
-        'Win 7 Perf (2)',
-        'Win 7 Perf (3)',
-        'Win 7 Perf (4)',
-        'Win 7 Perf (5)',
-        'Win 7 x64 Perf (1)',
-        'Win 7 x64 Perf (2)',
-        'Win 7 ATI GPU Perf',
-        'Win 7 Intel GPU Perf',
-        'Win 7 Nvidia GPU Perf',
-        'Win 7 Low-End Perf (1)',
-        'Win 7 Low-End Perf (2)',
-        'Win XP Perf (1)',
-        'Win XP Perf (2)',
-        'Win XP Perf (3)',
-        'Win XP Perf (4)',
-        'Win XP Perf (5)',
-    ],
-    'chromium.swarm': [
-        'Windows Swarm Tests',
-        'Windows Swarm Tests (dbg)',
-    ],
-    'tryserver.chromium': [
+    'tryserver.chromium.linux': [
         # These don't exist, but are just here to satisfy recipes.
         'linux_no_bot_update',
+    ],
+    'tryserver.chromium.win': [
+        # These don't exist, but are just here to satisfy recipes.
         'win_no_bot_update',
         'win_blink',
         'win_blink_compile',
         'win_blink_compile_rel',
+        'win_drmemory',
     ],
 }
 DISABLED_BUILDERS.update(internal_data.get('DISABLED_BUILDERS', {}))
 
 DISABLED_SLAVES = {}
 DISABLED_SLAVES.update(internal_data.get('DISABLED_SLAVES', {}))
+
+HEAD_BUILDERS = {}
+HEAD_BUILDERS.update(internal_data.get('HEAD_BUILDERS', {}))
 
 # These masters work only in Git, meaning for got_revision, always output
 # a git hash rather than a SVN rev. This goes away if flag_day is True.
@@ -364,6 +351,11 @@ class InvalidDiff(Exception):
   pass
 
 
+class Inactive(Exception):
+  """Not really an exception, just used to exit early cleanly."""
+  pass
+
+
 RETRY = object()
 OK = object()
 FAIL = object()
@@ -372,6 +364,7 @@ def call(*args, **kwargs):
   """Interactive subprocess call."""
   kwargs['stdout'] = subprocess.PIPE
   kwargs['stderr'] = subprocess.STDOUT
+  kwargs.setdefault('bufsize', BUF_SIZE)
   cwd = kwargs.get('cwd', os.getcwd())
   result_fn = kwargs.pop('result_fn', lambda code, out: RETRY if code else OK)
   stdin_data = kwargs.pop('stdin_data', None)
@@ -398,20 +391,23 @@ def call(*args, **kwargs):
       proc.stdin.close()
     # This is here because passing 'sys.stdout' into stdout for proc will
     # produce out of order output.
-    last_was_cr = False
+    hanging_cr = False
     while True:
-      buf = proc.stdout.read(1)
-      if buf == '\r':
-        buf = '\n'
-        last_was_cr = True
-      elif last_was_cr:
-        last_was_cr = False
-        if buf == '\n':
-          continue
+      buf = proc.stdout.read(BUF_SIZE)
       if not buf:
         break
+      if hanging_cr:
+        buf = '\r' + buf
+      hanging_cr = buf.endswith('\r')
+      if hanging_cr:
+        buf = buf[:-1]
+      buf = buf.replace('\r\n', '\n').replace('\r', '\n')
       sys.stdout.write(buf)
       out.write(buf)
+    if hanging_cr:
+      sys.stdout.write('\n')
+      out.write('\n')
+
     code = proc.wait()
     elapsed_time = ((time.time() - start_time) / 60.0)
     outval = out.getvalue()
@@ -483,6 +479,22 @@ def check_valid_host(master, builder, slave):
           and not check_disabled(master, builder, slave))
 
 
+def maybe_ignore_revision(master, builder, revision):
+  """Handle builders that don't care what buildbot tells them to build.
+
+  This is especially the case with builders that build from buildspecs and/or
+  trigger off multiple repositories, where the --revision passed in has nothing
+  to do with the solution being built. Clearing the revision in this case
+  causes bot_update to use HEAD rather that trying to checkout an inappropriate
+  version of the solution.
+  """
+  builder_list = HEAD_BUILDERS.get(master)
+  if builder_list and builder in builder_list:
+    return []
+  return revision
+
+
+
 def solutions_printer(solutions):
   """Prints gclient solution to stdout."""
   print 'Gclient Solutions'
@@ -526,7 +538,7 @@ def solutions_to_git(input_solutions):
   assert input_solutions
   solutions = copy.deepcopy(input_solutions)
   first_solution = True
-  buildspec_name = False
+  buildspec = None
   for solution in solutions:
     original_url = solution['url']
     parsed_url = urlparse.urlparse(original_url)
@@ -536,17 +548,33 @@ def solutions_to_git(input_solutions):
     buildspec_m = re.match(BUILDSPEC_RE, parsed_path)
     if first_solution and buildspec_m:
       solution['url'] = GIT_BUILDSPEC_PATH
-      buildspec_name = buildspec_m.group(1)
-      solution['deps_file'] = path.join('build', buildspec_name, 'DEPS')
+      buildspec = BUILDSPEC_TYPE(
+          container=buildspec_m.group(1),
+          version=buildspec_m.group(2),
+      )
+      solution['deps_file'] = path.join(buildspec.container, buildspec.version,
+                                        '.DEPS.git')
     elif parsed_path in RECOGNIZED_PATHS:
       solution['url'] = RECOGNIZED_PATHS[parsed_path]
+    elif parsed_url.scheme == 'https' and 'googlesource' in parsed_url.netloc:
+      pass
     else:
       warnings.append('path %r not recognized' % parsed_path)
       print 'Warning: %s' % (warnings[-1],)
 
     # Point .DEPS.git is the git version of the DEPS file.
-    if not FLAG_DAY:
+    if not FLAG_DAY and not buildspec:
       solution['deps_file'] = '.DEPS.git'
+
+    # Strip out deps containing $$V8_REV$$, etc.
+    if 'custom_deps' in solution:
+      new_custom_deps = {}
+      for deps_name, deps_value in solution['custom_deps'].iteritems():
+        if deps_value and '$$' in deps_value:
+          print 'Dropping %s:%s from custom deps' % (deps_name, deps_value)
+        else:
+          new_custom_deps[deps_name] = deps_value
+      solution['custom_deps'] = new_custom_deps
 
     if first_solution:
       root = parsed_path
@@ -559,7 +587,7 @@ def solutions_to_git(input_solutions):
       print 'Removing safesync url %s from %s' % (solution['safesync_url'],
                                                   parsed_path)
       del solution['safesync_url']
-  return solutions, root, buildspec_name, warnings
+  return solutions, root, buildspec, warnings
 
 
 def remove(target):
@@ -602,14 +630,15 @@ def gclient_configure(solutions, target_os, target_os_only):
     f.write(get_gclient_spec(solutions, target_os, target_os_only))
 
 
-def gclient_sync(buildspec_name, shallow):
+def gclient_sync(buildspec, shallow):
   # We just need to allocate a filename.
   fd, gclient_output_file = tempfile.mkstemp(suffix='.json')
   os.close(fd)
   gclient_bin = 'gclient.bat' if sys.platform.startswith('win') else 'gclient'
   cmd = [gclient_bin, 'sync', '--verbose', '--reset', '--force',
-         '--output-json', gclient_output_file , '--nohooks', '--noprehooks']
-  if buildspec_name:
+         '--ignore_locks', '--output-json', gclient_output_file ,
+         '--nohooks', '--noprehooks']
+  if buildspec:
     cmd += ['--with_branch_heads']
   if shallow:
     cmd += ['--shallow']
@@ -691,34 +720,41 @@ def need_to_run_deps2git(repo_base, deps_file, deps_git_file):
   return last_known_deps_ref != merge_base_ref
 
 
-def get_git_buildspec(version):
+def get_git_buildspec(buildspec_path, buildspec_version):
   """Get the git buildspec of a version, return its contents.
 
   The contents are returned instead of the file so that we can check the
   repository into a temp directory and confine the cleanup logic here.
   """
-  git('cache', 'populate', '-v', '--cache-dir', CACHE_DIR, GIT_BUILDSPEC_REPO)
+  git('cache', 'populate', '--ignore_locks', '-v', '--cache-dir', CACHE_DIR,
+      GIT_BUILDSPEC_REPO)
   mirror_dir = git(
       'cache', 'exists', '--quiet', '--cache-dir', CACHE_DIR,
       GIT_BUILDSPEC_REPO).strip()
   TOTAL_TRIES = 30
   for tries in range(TOTAL_TRIES):
     try:
-      return git('show', 'master:%s/DEPS' % version, cwd=mirror_dir)
+      return git(
+          'show',
+          'master:%s/%s/.DEPS.git' % (buildspec_path, buildspec_version),
+          cwd=mirror_dir
+      )
     except SubprocessFailed:
       if tries < TOTAL_TRIES - 1:
-        print 'Buildspec for %s not committed yet, waiting 5 seconds...'
-        time.sleep(5)
-        git('cache', 'populate', '-v', '--cache-dir',
+        print 'Git Buildspec for %s not committed yet, waiting 10 seconds...'
+        time.sleep(10)
+        git('cache', 'populate', '--ignore_locks', '-v', '--cache-dir',
             CACHE_DIR, GIT_BUILDSPEC_REPO)
       else:
-        print >> sys.stderr, '%s not found, ' % version,
-        print >> sys.stderr, 'the buildspec2git cron job probably is not ',
-        print >> sys.stderr, 'running correctly, please contact mmoss@.'
+        print >> sys.stderr, '%s/%s .DEPS.git not found, ' % (
+            buildspec_path, buildspec_version)
+        print >> sys.stderr, 'the publish_deps.py "privategit" step in the ',
+        print >> sys.stderr, 'Chrome release process might have failed. ',
+        print >> sys.stderr, 'Please contact chrome-re@google.com.'
         raise
 
 
-def buildspecs2git(sln_dir, buildspec_name):
+def buildspecs2git(sln_dir, buildspec):
   """This is like deps2git, but for buildspecs.
 
   Because buildspecs are vastly different than normal DEPS files, we cannot
@@ -732,12 +768,30 @@ def buildspecs2git(sln_dir, buildspec_name):
   committed into the git_buildspecs repository.
   """
   repo_base = path.join(os.getcwd(), sln_dir)
-  deps_file = path.join(repo_base, 'build', buildspec_name, 'DEPS')
-  deps_git_file = path.join(repo_base, 'build', buildspec_name, '.DEPS.git')
+  deps_file = path.join(repo_base, buildspec.container, buildspec.version,
+                        'DEPS')
+  deps_git_file = path.join(repo_base, buildspec.container, buildspec.version,
+                            '.DEPS.git')
   deps_log = git('log', '-1', '--format=%B', deps_file, cwd=repo_base)
-  m = re.search(r'Buildspec for\s+version (\d+\.\d+\.\d+\.\d+)', deps_log)
-  version = m.group(1)
-  git_buildspec = get_git_buildspec(version)
+
+  # Identify the path from the container name
+  if buildspec.container == 'branches':
+    # Path to the buildspec is: .../branches/VERSION
+    buildspec_path = buildspec.container
+    buildspec_version = buildspec.version
+  else:
+    # Scan through known commit headers for the number
+    for buildspec_re in BUILDSPEC_COMMIT_RE:
+      m = buildspec_re.search(deps_log)
+      if m:
+        break
+    if not m:
+      raise ValueError("Unable to parse buildspec from:\n%s" % (deps_log,))
+    # Release versioned buildspecs are always in the 'releases' path.
+    buildspec_path = 'releases'
+    buildspec_version = m.group(1)
+
+  git_buildspec = get_git_buildspec(buildspec_path, buildspec_version)
   with open(deps_git_file, 'wb') as f:
     f.write(git_buildspec)
 
@@ -746,7 +800,7 @@ def ensure_deps2git(solution, shallow):
   repo_base = path.join(os.getcwd(), solution['name'])
   deps_file = path.join(repo_base, 'DEPS')
   deps_git_file = path.join(repo_base, '.DEPS.git')
-  if not git('ls-files', '.DEPS.git', cwd=repo_base).strip():
+  if not git('ls-files', 'DEPS', cwd=repo_base).strip():
     return
 
   print 'Checking if %s is newer than %s' % (deps_file, deps_git_file)
@@ -811,7 +865,7 @@ def get_target_revision(folder_name, git_url, revisions):
   return None
 
 
-def force_revision(folder_name, revision, git_svn=False):
+def force_revision(folder_name, revision):
   split_revision = revision.split(':', 1)
   branch = 'master'
   if len(split_revision) == 2:
@@ -853,27 +907,34 @@ def git_checkout(solutions, revisions, shallow):
         shallow = False
       sln_dir = path.join(build_dir, name)
       s = ['--shallow'] if shallow else []
-      populate_cmd = (['cache', 'populate', '-v', '--cache-dir', CACHE_DIR]
-                      + s + [url])
+      populate_cmd = (['cache', 'populate', '--ignore_locks', '-v',
+                       '--cache-dir', CACHE_DIR] + s + [url])
       git(*populate_cmd)
       mirror_dir = git(
           'cache', 'exists', '--quiet', '--cache-dir', CACHE_DIR, url).strip()
       clone_cmd = (
           'clone', '--no-checkout', '--local', '--shared', mirror_dir, sln_dir)
-      if not path.isdir(sln_dir):
-        git(*clone_cmd)
-      else:
-        git('fetch', 'origin', cwd=sln_dir)
 
-      revision = get_target_revision(name, url, revisions) or 'HEAD'
       try:
-        force_revision(sln_dir, revision, url==CHROMIUM_SRC_URL)
+        if not path.isdir(sln_dir):
+          git(*clone_cmd)
+        else:
+          git('fetch', 'origin', cwd=sln_dir)
+
+        revision = get_target_revision(name, url, revisions) or 'HEAD'
+        force_revision(sln_dir, revision)
         done = True
-      except SubprocessFailed:
+      except SubprocessFailed as e:
         # Exited abnormally, theres probably something wrong.
         # Lets wipe the checkout and try again.
+        tries_left -= 1
+        if tries_left > 0:
+          print 'Something failed: %s.' % str(e)
+          print 'waiting 5 seconds and trying again...'
+          time.sleep(5)
+        else:
+          raise
         remove(sln_dir)
-        git(*clone_cmd)
       except SVNRevisionNotFound:
         tries_left -= 1
         if tries_left > 0:
@@ -885,7 +946,7 @@ def git_checkout(solutions, revisions, shallow):
         else:
           raise
 
-    git('clean', '-df', cwd=sln_dir)
+    git('clean', '-dff', cwd=sln_dir)
 
     if first_solution:
       git_ref = git('log', '--format=%H', '--max-count=1',
@@ -1029,6 +1090,17 @@ def emit_flag(flag_file):
     f.write('Success!')
 
 
+def get_commit_position(git_path, revision='HEAD'):
+  """Dumps the 'git' log for a specific revision and parses out the commit
+  position.
+  """
+  git_log = git('log', '--format=%B', '-n1', revision, cwd=git_path)
+  m = COMMIT_POSITION_RE.search(git_log)
+  if not m:
+    return None
+  return m.group(1)
+
+
 def parse_got_revision(gclient_output, got_revision_mapping, use_svn_revs):
   """Translate git gclient revision mapping to build properties.
 
@@ -1049,7 +1121,7 @@ def parse_got_revision(gclient_output, got_revision_mapping, use_svn_revs):
     solution_output = solutions_output[dir_name]
     if solution_output.get('scm') is None:
       # This is an ignored DEPS, so the output got_revision should be 'None'.
-      git_revision = revision = None
+      git_revision = revision = commit_position = None
     else:
       # Since we are using .DEPS.git, everything had better be git.
       assert solution_output.get('scm') == 'git'
@@ -1060,10 +1132,13 @@ def parse_got_revision(gclient_output, got_revision_mapping, use_svn_revs):
           revision = git_revision
       else:
         revision = git_revision
+      commit_position = get_commit_position(dir_name)
 
     properties[property_name] = revision
     if revision != git_revision:
       properties['%s_git' % property_name] = git_revision
+    if commit_position:
+      properties['%s_cp' % property_name] = commit_position
 
   return properties
 
@@ -1095,7 +1170,7 @@ def ensure_deps_revisions(deps_url_mapping, solutions, revisions):
 
 def ensure_checkout(solutions, revisions, first_sln, target_os, target_os_only,
                     patch_root, issue, patchset, patch_url, rietveld_server,
-                    revision_mapping, buildspec_name, gyp_env, shallow):
+                    revision_mapping, buildspec, gyp_env, shallow):
   # Get a checkout of each solution, without DEPS or hooks.
   # Calling git directly because there is no way to run Gclient without
   # invoking DEPS.
@@ -1116,8 +1191,8 @@ def ensure_checkout(solutions, revisions, first_sln, target_os, target_os_only,
                             revision_mapping, git_ref, whitelist=['DEPS'])
       break
 
-  if buildspec_name:
-    buildspecs2git(first_sln, buildspec_name)
+  if buildspec:
+    buildspecs2git(first_sln, buildspec)
   else:
     # Run deps2git if there is a DEPS change after the last .DEPS.git commit.
     for solution in solutions:
@@ -1127,15 +1202,15 @@ def ensure_checkout(solutions, revisions, first_sln, target_os, target_os_only,
   gclient_configure(solutions, target_os, target_os_only)
 
   # Let gclient do the DEPS syncing.
-  gclient_output = gclient_sync(buildspec_name, shallow)
+  gclient_output = gclient_sync(buildspec, shallow)
 
   # Now that gclient_sync has finished, we should revert any .DEPS.git so that
   # presubmit doesn't complain about it being modified.
-  if (not buildspec_name and
+  if (not buildspec and
       git('ls-files', '.DEPS.git', cwd=first_sln).strip()):
     git('checkout', 'HEAD', '--', '.DEPS.git', cwd=first_sln)
 
-  if buildspec_name:
+  if buildspec:
     # Run gclient runhooks if we're on an official builder.
     # TODO(hinoka): Remove this when the official builders run their own
     #               runhooks step.
@@ -1151,6 +1226,11 @@ def ensure_checkout(solutions, revisions, first_sln, target_os, target_os_only,
   elif issue:
     apply_rietveld_issue(issue, patchset, patch_root, rietveld_server,
                          revision_mapping, git_ref, blacklist=['DEPS'])
+
+  # Reset the deps_file point in the solutions so that hooks get run properly.
+  for sln in solutions:
+    sln['deps_file'] = sln.get('deps_file', 'DEPS').replace('.DEPS.git', 'DEPS')
+  gclient_configure(solutions, target_os, target_os_only)
 
   return gclient_output
 
@@ -1225,6 +1305,8 @@ class UploadTelemetryThread(threading.Thread):
         'slave': self.slave,
     }
     data.update(self.kwargs)
+    if 'conversion_warnings' not in data:
+      data['conversion_warnings'] = []
     try:
       total_disk_space, free_disk_space = get_total_disk_space()
       total_disk_space_gb = int(total_disk_space / (1024 * 1024 * 1024))
@@ -1238,6 +1320,19 @@ class UploadTelemetryThread(threading.Thread):
           'status': 'OK',
           'small': total_disk_space < SHALLOW_CLONE_THRESHOLD,
       }
+      if total_disk_space < SHALLOW_CLONE_THRESHOLD:
+        data['conversion_warnings'].append(
+            'Small disk: %s GB' % total_disk_space_gb)
+
+      git_version_string = git('--version').strip()
+      git_version_m = re.search(r'git version (\d+\.\d+).*',
+                                git_version_string)
+      if git_version_m:
+        git_version = float(git_version_m.group(1))
+        if git_version < 1.9:
+          data['conversion_warnings'].append(
+              'Git version %0.1f < 1.9' % git_version)
+
     except Exception as e:
       data['disk'] = {
           'status': 'EXCEPTION',
@@ -1264,7 +1359,12 @@ def parse_revisions(revisions, root):
   is unspecified, or if revisions is [], then revision will be assigned 'HEAD'
   """
   results = {root.strip('/'): 'HEAD'}
+  expanded_revisions = []
   for revision in revisions:
+    # Allow rev1,rev2,rev3 format.
+    # TODO(hinoka): Delete this when webkit switches to recipes.
+    expanded_revisions.extend(revision.split(','))
+  for revision in expanded_revisions:
     split_revision = revision.split('@')
     if len(split_revision) == 1:
       # This is just a plain revision, set it as the revision for root.
@@ -1354,6 +1454,9 @@ def parse_args():
   parse.add_option('--post-flag-day', action='store_true',
                    help='Behave as if the chromium git migration has already '
                    'happened')
+  parse.add_option('--no_shallow', action='store_true',
+                   help='Bypass disk detection and never shallow clone. '
+                        'Does not override the --shallow flag')
 
 
   options, args = parse.parse_args()
@@ -1380,64 +1483,11 @@ def parse_args():
   return options, args
 
 
-def main():
-  # Get inputs.
-  options, _ = parse_args()
-  builder = options.builder_name
-  slave = options.slave_name
-  master = options.master
-
-  # Check if this script should activate or not.
-  active = check_valid_host(master, builder, slave) or options.force or False
-
-  # Print helpful messages to tell devs whats going on.
-  if options.force and options.output_json:
-    recipe_force = 'Forced on by recipes'
-  elif active and options.output_json:
-    recipe_force = 'Off by recipes, but forced on by bot update'
-  elif not active and options.output_json:
-    recipe_force = 'Forced off by recipes'
-  else:
-    recipe_force = 'N/A. Was not called by recipes'
-
-  print BOT_UPDATE_MESSAGE % {
-    'master': master or 'Not specified',
-    'builder': builder or 'Not specified',
-    'slave': slave or 'Not specified',
-    'recipe': recipe_force,
-  },
-  # Print to stderr so that it shows up red on win/mac.
-  print ACTIVATED_MESSAGE if active else NOT_ACTIVATED_MESSAGE
-
-  # Parse, munipulate, and print the gclient solutions.
-  specs = {}
-  exec(options.specs, specs)
-  svn_solutions = specs.get('solutions', [])
-  git_slns, svn_root, buildspec_name, warnings = solutions_to_git(svn_solutions)
-  solutions_printer(git_slns)
-
-  # Lets send some telemetry data about bot_update here. This returns a thread
-  # object so we can join on it later.
-  all_threads = []
-  run_id = uuid.uuid4().hex
-  thr = upload_telemetry(
-      active=active,
-      builder=builder,
-      conversion_warnings=warnings,
-      git_solutions=git_slns,
-      master=master,
-      prefix='start',
-      run_id=run_id,
-      slave=slave,
-      solutions=specs.get('solutions', []),
-      specs=options.specs,
-      unix_time=time.time(),
-  )
-  all_threads.append(thr)
-
-  dir_names = [sln.get('name') for sln in svn_solutions if 'name' in sln]
-  # If we're active now, but the flag file doesn't exist (we weren't active last
-  # run) or vice versa, blow away all checkouts.
+def prepare(options, git_slns, active):
+  """Prepares the target folder before we checkout."""
+  dir_names = [sln.get('name') for sln in git_slns if 'name' in sln]
+  # If we're active now, but the flag file doesn't exist (we weren't active
+  # last run) or vice versa, blow away all checkouts.
   if bool(active) != bool(check_flag(options.flag_file)):
     ensure_no_checkout(dir_names, '*')
   if options.output_json:
@@ -1451,8 +1501,7 @@ def main():
     emit_flag(options.flag_file)
   else:
     delete_flag(options.flag_file)
-    thr.join()
-    return
+    raise Inactive  # This is caught in main() and we exit cleanly.
 
   # Do a shallow checkout if the disk is less than 100GB.
   total_disk_space, free_disk_space = get_total_disk_space()
@@ -1466,7 +1515,8 @@ def main():
   if not options.output_json:
     print '@@@STEP_TEXT@%s@@@' % step_text
   if not options.shallow:
-    options.shallow = total_disk_space < SHALLOW_CLONE_THRESHOLD
+    options.shallow = (total_disk_space < SHALLOW_CLONE_THRESHOLD
+                       and not options.no_shallow)
 
   # The first solution is where the primary DEPS file resides.
   first_sln = dir_names[0]
@@ -1474,10 +1524,14 @@ def main():
   # Split all the revision specifications into a nice dict.
   print 'Revisions: %s' % options.revision
   revisions = parse_revisions(options.revision, first_sln)
-  # This is meant to be just an alias to the revision of the main solution.
-  root_revision = revisions[first_sln]
-  print 'Fetching Git checkout at %s@%s' % (first_sln, root_revision)
+  print 'Fetching Git checkout at %s@%s' % (first_sln, revisions[first_sln])
+  return revisions, step_text
 
+
+def checkout(options, git_slns, specs, buildspec, master,
+             svn_root, revisions, step_text):
+  first_sln = git_slns[0]['name']
+  dir_names = [sln.get('name') for sln in git_slns if 'name' in sln]
   try:
     # Outer try is for catching patch failures and exiting gracefully.
     # Inner try is for catching gclient failures and retrying gracefully.
@@ -1492,7 +1546,7 @@ def main():
           target_os=specs.get('target_os', []),
           target_os_only=specs.get('target_os_only', False),
 
-          # Then, pass in information about how to patch on top of the checkout.
+          # Then, pass in information about how to patch.
           patch_root=options.patch_root,
           issue=options.issue,
           patchset=options.patchset,
@@ -1501,7 +1555,7 @@ def main():
           revision_mapping=options.revision_mapping,
 
           # For official builders.
-          buildspec_name=buildspec_name,
+          buildspec=buildspec,
           gyp_env=options.gyp_env,
 
           # Finally, extra configurations such as shallowness of the clone.
@@ -1519,6 +1573,7 @@ def main():
                 root=first_sln,
                 log_lines=[('patch error', e.output),],
                 patch_root=options.patch_root,
+                patch_failure=True,
                 step_text='%s PATCH FAILED' % step_text)
     else:
       # If we're not on recipes, tell annotator about our got_revisions.
@@ -1548,28 +1603,115 @@ def main():
     # If we're not on recipes, tell annotator about our got_revisions.
     emit_properties(got_revisions)
 
-  thr = upload_telemetry(
-      active=active,
-      builder=builder,
-      conversion_warnings=warnings,
-      did_run=True,
-      gclient_output=gclient_output,
-      git_solutions=git_slns,
-      got_revision=got_revisions,
-      master=master,
-      patch_root=options.patch_root,
-      prefix='end',
-      run_id=run_id,
-      slave=slave,
-      solutions=specs['solutions'],
-      specs=options.specs,
-      unix_time=time.time(),
-  )
-  all_threads.append(thr)
+  return gclient_output, got_revisions
 
-  # Sort of wait for all telemetry threads to finish.
-  for thr in all_threads:
-    thr.join(5)
+
+def print_help_text(force, output_json, active, master, builder, slave):
+  """Print helpful messages to tell devs whats going on."""
+  if force and output_json:
+    recipe_force = 'Forced on by recipes'
+  elif active and output_json:
+    recipe_force = 'Off by recipes, but forced on by bot update'
+  elif not active and output_json:
+    recipe_force = 'Forced off by recipes'
+  else:
+    recipe_force = 'N/A. Was not called by recipes'
+
+  print BOT_UPDATE_MESSAGE % {
+    'master': master or 'Not specified',
+    'builder': builder or 'Not specified',
+    'slave': slave or 'Not specified',
+    'recipe': recipe_force,
+  },
+  print ACTIVATED_MESSAGE if active else NOT_ACTIVATED_MESSAGE
+
+
+def main():
+  # Get inputs.
+  options, _ = parse_args()
+  builder = options.builder_name
+  slave = options.slave_name
+  master = options.master
+
+  # Check if this script should activate or not.
+  active = check_valid_host(master, builder, slave) or options.force or False
+
+  options.revision = maybe_ignore_revision(master, builder, options.revision)
+
+  # Print a helpful message to tell developers whats going on with this step.
+  print_help_text(
+      options.force, options.output_json, active, master, builder, slave)
+
+  # Parse, munipulate, and print the gclient solutions.
+  specs = {}
+  exec(options.specs, specs)
+  svn_solutions = specs.get('solutions', [])
+  git_slns, svn_root, buildspec, warnings = solutions_to_git(svn_solutions)
+  solutions_printer(git_slns)
+
+  # Lets send some telemetry data about bot_update here. This returns a thread
+  # object so we can join on it later.
+  telemetry_info = {
+      'active': active,
+      'builder': builder,
+      'conversion_warnings': warnings,
+      'git_solutions': git_slns,
+      'master': master,
+      'patch_root': options.patch_root,
+      'run_id': uuid.uuid4().hex,
+      'slave': slave,
+      'solutions': specs.get('solutions', []),
+      'specs': options.specs,
+  }
+  all_threads = [
+      upload_telemetry(prefix='start', unix_time=time.time(), **telemetry_info)
+  ]
+
+  try:
+    # Dun dun dun, the main part of bot_update.
+    revisions, step_text = prepare(options, git_slns, active)
+    gclient_output, got_revisions = checkout(
+        options, git_slns, specs, buildspec, master, svn_root, revisions,
+        step_text)
+
+  except Inactive:
+    # Not active, should count as passing.
+    telemetry_info.update({
+        'passed': True,
+        'patch_failure': False,
+    })
+  except PatchFailed as e:
+    # Patch failure - as far as telemetry is concerned, bot_update passed.
+    telemetry_info.update({
+        'passed': True,
+        'patch_failure': True,
+    })
+    emit_flag(options.flag_file)
+    raise
+  except Exception as e:
+    # Unexpected failure.
+    telemetry_info.update({
+        'message': str(e),
+        'passed': False,
+        'patch_failure': False,
+    })
+    emit_flag(options.flag_file)
+    raise
+  else:
+    telemetry_info.update({
+        'gclient_output': gclient_output,
+        'got_revisions': got_revisions,
+        'passed': True,
+        'patch_failure': False,
+    })
+    emit_flag(options.flag_file)
+  finally:
+    thr = upload_telemetry(prefix='end', unix_time=time.time(),
+                           **telemetry_info)
+    all_threads.append(thr)
+    # Sort of wait for all telemetry threads to finish.
+    for thr in all_threads:
+      thr.join(5)
 
 
 if __name__ == '__main__':

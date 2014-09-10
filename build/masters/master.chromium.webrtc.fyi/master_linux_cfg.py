@@ -10,7 +10,11 @@ from master.factory import annotator_factory
 m_annotator = annotator_factory.AnnotatorFactory()
 
 def Update(c):
-  buildernames_list = ['Linux']
+  buildernames_list = [
+      'Linux',
+      'Linux GN',
+      'Linux GN (dbg)',
+  ]
   c['schedulers'].extend([
       SingleBranchScheduler(name='linux_webrtc_scheduler',
                             branch='trunk',
@@ -22,6 +26,14 @@ def Update(c):
   ])
   specs = [
     {'name': 'Linux'},
+    {
+       'name': 'Linux GN',
+       'slavebuilddir': 'linux_gn',
+    },
+    {
+      'name': 'Linux GN (dbg)',
+      'slavebuilddir': 'linux_gn',
+    },
   ]
 
   c['builders'].extend([
@@ -30,5 +42,6 @@ def Update(c):
         'factory': m_annotator.BaseFactory('webrtc/chromium'),
         'category': 'linux',
         'notify_on_missing': True,
+        'slavebuilddir': spec.get('slavebuilddir', 'linux'),
       } for spec in specs
   ])

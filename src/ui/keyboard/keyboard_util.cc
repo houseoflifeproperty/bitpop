@@ -28,7 +28,7 @@ const char kKeyUp[] = "keyup";
 
 void SendProcessKeyEvent(ui::EventType type,
                          aura::WindowTreeHost* host) {
-  ui::KeyEvent event(type, ui::VKEY_PROCESSKEY, ui::EF_NONE, false);
+  ui::KeyEvent event(type, ui::VKEY_PROCESSKEY, ui::EF_NONE);
   event.SetTranslated(true);
   ui::EventDispatchDetails details =
       host->event_processor()->OnEventFromSource(&event);
@@ -208,22 +208,22 @@ bool MoveCursor(int swipe_direction,
 
   // First deal with the x movement.
   if (codex != ui::VKEY_UNKNOWN) {
-    ui::KeyEvent press_event(ui::ET_KEY_PRESSED, codex, modifier_flags, 0);
+    ui::KeyEvent press_event(ui::ET_KEY_PRESSED, codex, modifier_flags);
     ui::EventDispatchDetails details =
         host->event_processor()->OnEventFromSource(&press_event);
     CHECK(!details.dispatcher_destroyed);
-    ui::KeyEvent release_event(ui::ET_KEY_RELEASED, codex, modifier_flags, 0);
+    ui::KeyEvent release_event(ui::ET_KEY_RELEASED, codex, modifier_flags);
     details = host->event_processor()->OnEventFromSource(&release_event);
     CHECK(!details.dispatcher_destroyed);
   }
 
   // Then deal with the y movement.
   if (codey != ui::VKEY_UNKNOWN) {
-    ui::KeyEvent press_event(ui::ET_KEY_PRESSED, codey, modifier_flags, 0);
+    ui::KeyEvent press_event(ui::ET_KEY_PRESSED, codey, modifier_flags);
     ui::EventDispatchDetails details =
         host->event_processor()->OnEventFromSource(&press_event);
     CHECK(!details.dispatcher_destroyed);
-    ui::KeyEvent release_event(ui::ET_KEY_RELEASED, codey, modifier_flags, 0);
+    ui::KeyEvent release_event(ui::ET_KEY_RELEASED, codey, modifier_flags);
     details = host->event_processor()->OnEventFromSource(&release_event);
     CHECK(!details.dispatcher_destroyed);
   }
@@ -277,7 +277,7 @@ bool SendKeyEvent(const std::string type,
       }
     }
 
-    ui::KeyEvent event(event_type, code, key_name, modifiers, false);
+    ui::KeyEvent event(event_type, code, key_name, modifiers);
     ui::EventDispatchDetails details =
         host->event_processor()->OnEventFromSource(&event);
     CHECK(!details.dispatcher_destroyed);
@@ -315,51 +315,53 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
   // necessary to have a custom path for the extension path, so the resource
   // map cannot be used directly.
   static const GritResourceMap kKeyboardResources[] = {
-    {"keyboard/layouts/function-key-row.html", IDR_KEYBOARD_FUNCTION_KEY_ROW},
-    {"keyboard/images/back.svg", IDR_KEYBOARD_IMAGES_BACK},
-    {"keyboard/images/backspace.png", IDR_KEYBOARD_IMAGES_BACKSPACE},
-    {"keyboard/images/brightness-down.svg",
-        IDR_KEYBOARD_IMAGES_BRIGHTNESS_DOWN},
-    {"keyboard/images/brightness-up.svg", IDR_KEYBOARD_IMAGES_BRIGHTNESS_UP},
-    {"keyboard/images/change-window.svg", IDR_KEYBOARD_IMAGES_CHANGE_WINDOW},
-    {"keyboard/images/down.svg", IDR_KEYBOARD_IMAGES_DOWN},
-    {"keyboard/images/forward.svg", IDR_KEYBOARD_IMAGES_FORWARD},
-    {"keyboard/images/fullscreen.svg", IDR_KEYBOARD_IMAGES_FULLSCREEN},
-    {"keyboard/images/hide-keyboard.png", IDR_KEYBOARD_IMAGES_HIDE_KEYBOARD},
-    {"keyboard/images/keyboard.svg", IDR_KEYBOARD_IMAGES_KEYBOARD},
-    {"keyboard/images/left.svg", IDR_KEYBOARD_IMAGES_LEFT},
-    {"keyboard/images/microphone.svg", IDR_KEYBOARD_IMAGES_MICROPHONE},
-    {"keyboard/images/microphone-green.svg",
-        IDR_KEYBOARD_IMAGES_MICROPHONE_GREEN},
-    {"keyboard/images/mute.svg", IDR_KEYBOARD_IMAGES_MUTE},
-    {"keyboard/images/reload.svg", IDR_KEYBOARD_IMAGES_RELOAD},
-    {"keyboard/images/return.png", IDR_KEYBOARD_IMAGES_RETURN},
-    {"keyboard/images/right.svg", IDR_KEYBOARD_IMAGES_RIGHT},
-    {"keyboard/images/search.png", IDR_KEYBOARD_IMAGES_SEARCH},
-    {"keyboard/images/shift.png", IDR_KEYBOARD_IMAGES_SHIFT},
-    {"keyboard/images/shutdown.svg", IDR_KEYBOARD_IMAGES_SHUTDOWN},
-    {"keyboard/images/tab.png", IDR_KEYBOARD_IMAGES_TAB},
-    {"keyboard/images/up.svg", IDR_KEYBOARD_IMAGES_UP},
-    {"keyboard/images/volume-down.svg", IDR_KEYBOARD_IMAGES_VOLUME_DOWN},
-    {"keyboard/images/volume-up.svg", IDR_KEYBOARD_IMAGES_VOLUME_UP},
-    {"keyboard/index.html", IDR_KEYBOARD_INDEX},
-    {"keyboard/keyboard.js", IDR_KEYBOARD_JS},
-    {"keyboard/layouts/numeric.html", IDR_KEYBOARD_LAYOUTS_NUMERIC},
-    {"keyboard/layouts/qwerty.html", IDR_KEYBOARD_LAYOUTS_QWERTY},
-    {"keyboard/layouts/system-qwerty.html", IDR_KEYBOARD_LAYOUTS_SYSTEM_QWERTY},
-    {"keyboard/layouts/spacebar-row.html", IDR_KEYBOARD_SPACEBAR_ROW},
-    {"keyboard/manifest.json", IDR_KEYBOARD_MANIFEST},
-    {"keyboard/main.css", IDR_KEYBOARD_MAIN_CSS},
-    {"keyboard/polymer_loader.js", IDR_KEYBOARD_POLYMER_LOADER},
-    {"keyboard/roboto_bold.ttf", IDR_KEYBOARD_ROBOTO_BOLD_TTF},
-    {"keyboard/sounds/keypress-delete.wav",
-        IDR_KEYBOARD_SOUNDS_KEYPRESS_DELETE},
-    {"keyboard/sounds/keypress-return.wav",
-        IDR_KEYBOARD_SOUNDS_KEYPRESS_RETURN},
-    {"keyboard/sounds/keypress-spacebar.wav",
-        IDR_KEYBOARD_SOUNDS_KEYPRESS_SPACEBAR},
-    {"keyboard/sounds/keypress-standard.wav",
-        IDR_KEYBOARD_SOUNDS_KEYPRESS_STANDARD},
+      {"keyboard/layouts/function-key-row.html", IDR_KEYBOARD_FUNCTION_KEY_ROW},
+      {"keyboard/images/back.svg", IDR_KEYBOARD_IMAGES_BACK},
+      {"keyboard/images/backspace.png", IDR_KEYBOARD_IMAGES_BACKSPACE},
+      {"keyboard/images/brightness-down.svg",
+       IDR_KEYBOARD_IMAGES_BRIGHTNESS_DOWN},
+      {"keyboard/images/brightness-up.svg", IDR_KEYBOARD_IMAGES_BRIGHTNESS_UP},
+      {"keyboard/images/change-window.svg", IDR_KEYBOARD_IMAGES_CHANGE_WINDOW},
+      {"keyboard/images/down.svg", IDR_KEYBOARD_IMAGES_DOWN},
+      {"keyboard/images/forward.svg", IDR_KEYBOARD_IMAGES_FORWARD},
+      {"keyboard/images/fullscreen.svg", IDR_KEYBOARD_IMAGES_FULLSCREEN},
+      {"keyboard/images/hide-keyboard.png", IDR_KEYBOARD_IMAGES_HIDE_KEYBOARD},
+      {"keyboard/images/keyboard.svg", IDR_KEYBOARD_IMAGES_KEYBOARD},
+      {"keyboard/images/left.svg", IDR_KEYBOARD_IMAGES_LEFT},
+      {"keyboard/images/microphone.svg", IDR_KEYBOARD_IMAGES_MICROPHONE},
+      {"keyboard/images/microphone-green.svg",
+       IDR_KEYBOARD_IMAGES_MICROPHONE_GREEN},
+      {"keyboard/images/mute.svg", IDR_KEYBOARD_IMAGES_MUTE},
+      {"keyboard/images/reload.svg", IDR_KEYBOARD_IMAGES_RELOAD},
+      {"keyboard/images/return.png", IDR_KEYBOARD_IMAGES_RETURN},
+      {"keyboard/images/right.svg", IDR_KEYBOARD_IMAGES_RIGHT},
+      {"keyboard/images/search.png", IDR_KEYBOARD_IMAGES_SEARCH},
+      {"keyboard/images/shift.png", IDR_KEYBOARD_IMAGES_SHIFT},
+      {"keyboard/images/shutdown.svg", IDR_KEYBOARD_IMAGES_SHUTDOWN},
+      {"keyboard/images/tab.png", IDR_KEYBOARD_IMAGES_TAB},
+      {"keyboard/images/up.svg", IDR_KEYBOARD_IMAGES_UP},
+      {"keyboard/images/volume-down.svg", IDR_KEYBOARD_IMAGES_VOLUME_DOWN},
+      {"keyboard/images/volume-up.svg", IDR_KEYBOARD_IMAGES_VOLUME_UP},
+      {"keyboard/index.html", IDR_KEYBOARD_INDEX},
+      {"keyboard/keyboard.js", IDR_KEYBOARD_JS},
+      {"keyboard/keyboard_mojo.js", IDR_KEYBOARD_MOJO_JS},
+      {"keyboard/layouts/numeric.html", IDR_KEYBOARD_LAYOUTS_NUMERIC},
+      {"keyboard/layouts/qwerty.html", IDR_KEYBOARD_LAYOUTS_QWERTY},
+      {"keyboard/layouts/system-qwerty.html",
+       IDR_KEYBOARD_LAYOUTS_SYSTEM_QWERTY},
+      {"keyboard/layouts/spacebar-row.html", IDR_KEYBOARD_SPACEBAR_ROW},
+      {"keyboard/manifest.json", IDR_KEYBOARD_MANIFEST},
+      {"keyboard/main.css", IDR_KEYBOARD_MAIN_CSS},
+      {"keyboard/polymer_loader.js", IDR_KEYBOARD_POLYMER_LOADER},
+      {"keyboard/roboto_bold.ttf", IDR_KEYBOARD_ROBOTO_BOLD_TTF},
+      {"keyboard/sounds/keypress-delete.wav",
+       IDR_KEYBOARD_SOUNDS_KEYPRESS_DELETE},
+      {"keyboard/sounds/keypress-return.wav",
+       IDR_KEYBOARD_SOUNDS_KEYPRESS_RETURN},
+      {"keyboard/sounds/keypress-spacebar.wav",
+       IDR_KEYBOARD_SOUNDS_KEYPRESS_SPACEBAR},
+      {"keyboard/sounds/keypress-standard.wav",
+       IDR_KEYBOARD_SOUNDS_KEYPRESS_STANDARD},
   };
   static const size_t kKeyboardResourcesSize = arraysize(kKeyboardResources);
   *size = kKeyboardResourcesSize;

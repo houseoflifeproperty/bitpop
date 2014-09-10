@@ -30,13 +30,15 @@
 #include "config.h"
 #include "core/rendering/shapes/ShapeOutsideInfo.h"
 
+#include "core/inspector/ConsoleMessage.h"
 #include "core/rendering/FloatingObjects.h"
 #include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderImage.h"
 #include "platform/LengthFunctions.h"
+#include "public/platform/Platform.h"
 
-namespace WebCore {
+namespace blink {
 
 CSSBoxType referenceBox(const ShapeValue& shapeValue)
 {
@@ -92,7 +94,7 @@ static bool checkShapeImageOrigin(Document& document, const StyleImage& styleIma
 
     const KURL& url = imageResource.url();
     String urlString = url.isNull() ? "''" : url.elidedString();
-    document.addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, "Unsafe attempt to load URL " + urlString + ".");
+    document.addConsoleMessage(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, "Unsafe attempt to load URL " + urlString + "."));
 
     return false;
 }
@@ -104,6 +106,16 @@ static LayoutRect getShapeImageMarginRect(const RenderBox& renderBox, const Layo
     return LayoutRect(marginBoxOrigin, referenceBoxLogicalSize + marginBoxSizeDelta);
 }
 
+static bool isValidRasterShapeRect(const LayoutRect& rect)
+{
+    static double maxImageSizeBytes = 0;
+    if (!maxImageSizeBytes) {
+        size_t size32MaxBytes =  0xFFFFFFFF / 4; // Some platforms don't limit maxDecodedImageBytes.
+        maxImageSizeBytes = std::min(size32MaxBytes, Platform::current()->maxDecodedImageBytes());
+    }
+    return (rect.width().toFloat() * rect.height().toFloat() * 4.0) < maxImageSizeBytes;
+}
+
 PassOwnPtr<Shape> ShapeOutsideInfo::createShapeForImage(StyleImage* styleImage, float shapeImageThreshold, WritingMode writingMode, float margin) const
 {
     const IntSize& imageSize = m_renderer.calculateImageIntrinsicDimensions(styleImage, roundedIntSize(m_referenceBoxLogicalSize), RenderImage::ScaleByEffectiveZoom);
@@ -111,8 +123,13 @@ PassOwnPtr<Shape> ShapeOutsideInfo::createShapeForImage(StyleImage* styleImage, 
 
     const LayoutRect& marginRect = getShapeImageMarginRect(m_renderer, m_referenceBoxLogicalSize);
     const LayoutRect& imageRect = (m_renderer.isRenderImage())
-        ? toRenderImage(&m_renderer)->replacedContentRect()
+        ? toRenderImage(m_renderer).replacedContentRect()
         : LayoutRect(LayoutPoint(), imageSize);
+
+    if (!isValidRasterShapeRect(marginRect) || !isValidRasterShapeRect(imageRect)) {
+        m_renderer.document().addConsoleMessage(ConsoleMessage::create(RenderingMessageSource, ErrorMessageLevel, "The shape-outside image is too large."));
+        return Shape::createEmptyRasterShape(writingMode, margin);
+    }
 
     ASSERT(!styleImage->isPendingImage());
     RefPtr<Image> image = styleImage->image(const_cast<RenderBox*>(&m_renderer), imageSize);
@@ -155,21 +172,6 @@ const Shape& ShapeOutsideInfo::computedShape() const
 
     ASSERT(m_shape);
     return *m_shape;
-}
-
-SegmentList ShapeOutsideInfo::computeSegmentsForLine(LayoutUnit lineTop, LayoutUnit lineHeight) const
-{
-    ASSERT(lineHeight >= 0);
-    SegmentList segments;
-
-    computedShape().getExcludedIntervals((lineTop - logicalTopOffset()), std::min(lineHeight, shapeLogicalBottom() - lineTop), segments);
-
-    for (size_t i = 0; i < segments.size(); i++) {
-        segments[i].logicalLeft += logicalLeftOffset();
-        segments[i].logicalRight += logicalLeftOffset();
-    }
-
-    return segments;
 }
 
 inline LayoutUnit borderBeforeInWritingMode(const RenderBox& renderer, WritingMode writingMode)
@@ -272,9 +274,10 @@ bool ShapeOutsideInfo::isEnabledFor(const RenderBox& box)
 
     return false;
 }
-
 void ShapeOutsideInfo::updateDeltasForContainingBlockLine(const RenderBlockFlow& containingBlock, const FloatingObject& floatingObject, LayoutUnit lineTop, LayoutUnit lineHeight)
 {
+    ASSERT(lineHeight >= 0);
+
     LayoutUnit borderBoxTop = containingBlock.logicalTopForFloat(&floatingObject) + containingBlock.marginBeforeForChild(&m_renderer);
     LayoutUnit borderBoxLineTop = lineTop - borderBoxTop;
 
@@ -286,14 +289,14 @@ void ShapeOutsideInfo::updateDeltasForContainingBlockLine(const RenderBlockFlow&
         LayoutUnit floatMarginBoxWidth = containingBlock.logicalWidthForFloat(&floatingObject);
 
         if (lineOverlapsShapeBounds()) {
-            SegmentList segments = computeSegmentsForLine(borderBoxLineTop, lineHeight);
-            if (segments.size()) {
+            LineSegment segment = computedShape().getExcludedInterval((borderBoxLineTop - logicalTopOffset()), std::min(lineHeight, shapeLogicalBottom() - borderBoxLineTop));
+            if (segment.isValid) {
                 LayoutUnit logicalLeftMargin = containingBlock.style()->isLeftToRightDirection() ? containingBlock.marginStartForChild(&m_renderer) : containingBlock.marginEndForChild(&m_renderer);
-                LayoutUnit rawLeftMarginBoxDelta = segments.first().logicalLeft + logicalLeftMargin;
+                LayoutUnit rawLeftMarginBoxDelta = segment.logicalLeft + logicalLeftOffset() + logicalLeftMargin;
                 m_leftMarginBoxDelta = clampToLayoutUnit(rawLeftMarginBoxDelta, LayoutUnit(), floatMarginBoxWidth);
 
                 LayoutUnit logicalRightMargin = containingBlock.style()->isLeftToRightDirection() ? containingBlock.marginEndForChild(&m_renderer) : containingBlock.marginStartForChild(&m_renderer);
-                LayoutUnit rawRightMarginBoxDelta = segments.last().logicalRight - containingBlock.logicalWidthForChild(&m_renderer) - logicalRightMargin;
+                LayoutUnit rawRightMarginBoxDelta = segment.logicalRight + logicalLeftOffset() - containingBlock.logicalWidthForChild(&m_renderer) - logicalRightMargin;
                 m_rightMarginBoxDelta = clampToLayoutUnit(rawRightMarginBoxDelta, -floatMarginBoxWidth, LayoutUnit());
                 m_lineOverlapsShape = true;
                 return;
@@ -344,4 +347,4 @@ FloatSize ShapeOutsideInfo::shapeToRendererSize(FloatSize size) const
     return size;
 }
 
-}
+} // namespace blink

@@ -18,18 +18,19 @@ def GetAdjustedInteractionIfContainGesture(timeline, interaction_record):
   markers.
   """
   # Only adjust the range for gestures.
-  if not interaction_record.logical_name.startswith('Gesture_'):
+  if not interaction_record.label.startswith('Gesture_'):
     return copy.copy(interaction_record)
   gesture_events = [
     ev for ev
-    in timeline.GetAllEventsOfName('SyntheticGestureController::running', True)
+    in timeline.GetAllToplevelSlicesOfName(
+        'SyntheticGestureController::running')
     if ev.start <= interaction_record.end and
     ev.end >= interaction_record.start]
   if len(gesture_events) == 0:
     return copy.copy(interaction_record)
   if len(gesture_events) > 1:
     raise Exception('More than one possible synthetic gesture marker found in '
-                    'interaction_record %s.' % interaction_record.logical_name)
-  return tir_module.TimelineInteractionRecord(interaction_record.logical_name,
+                    'interaction_record %s.' % interaction_record.label)
+  return tir_module.TimelineInteractionRecord(interaction_record.label,
                                               gesture_events[0].start,
                                               gesture_events[0].end)

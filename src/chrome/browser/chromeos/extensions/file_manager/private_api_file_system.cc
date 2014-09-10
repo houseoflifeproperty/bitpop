@@ -288,10 +288,8 @@ bool FileBrowserPrivateRequestFileSystemFunction::RunAsync() {
 
   // Set up file permission access.
   const int child_id = render_view_host()->GetProcess()->GetID();
-  if (!SetupFileSystemAccessPermissions(file_system_context,
-                                        child_id,
-                                        GetProfile(),
-                                        GetExtension())) {
+  if (!SetupFileSystemAccessPermissions(
+          file_system_context, child_id, GetProfile(), extension())) {
     DidFail(base::File::FILE_ERROR_SECURITY);
     return false;
   }
@@ -342,7 +340,7 @@ void FileBrowserPrivateRequestFileSystemFunction::OnEntryDefinition(
 void FileWatchFunctionBase::Respond(bool success) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  SetResult(base::Value::CreateBooleanValue(success));
+  SetResult(new base::FundamentalValue(success));
   SendResponse(success);
 }
 
@@ -586,7 +584,7 @@ void FileBrowserPrivateStartCopyFunction::RunAfterStartCopy(
     int operation_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  SetResult(base::Value::CreateIntegerValue(operation_id));
+  SetResult(new base::FundamentalValue(operation_id));
   SendResponse(true);
 }
 

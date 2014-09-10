@@ -50,10 +50,11 @@
 #include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebURLLoader.h"
+#include "public/platform/WebURLRequest.h"
 #include "public/platform/WebURLResponse.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 void PingLoader::loadImage(LocalFrame* frame, const KURL& url)
 {
@@ -63,7 +64,7 @@ void PingLoader::loadImage(LocalFrame* frame, const KURL& url)
     }
 
     ResourceRequest request(url);
-    request.setTargetType(ResourceRequest::TargetIsPing);
+    request.setRequestContext(blink::WebURLRequest::RequestContextPing);
     request.setHTTPHeaderField("Cache-Control", "max-age=0");
     frame->loader().fetchContext().addAdditionalRequestHeaders(frame->document(), request, FetchSubresource);
     frame->loader().fetchContext().setFirstPartyForCookies(request);
@@ -77,7 +78,7 @@ void PingLoader::loadImage(LocalFrame* frame, const KURL& url)
 void PingLoader::sendLinkAuditPing(LocalFrame* frame, const KURL& pingURL, const KURL& destinationURL)
 {
     ResourceRequest request(pingURL);
-    request.setTargetType(ResourceRequest::TargetIsPing);
+    request.setRequestContext(blink::WebURLRequest::RequestContextPing);
     request.setHTTPMethod("POST");
     request.setHTTPContentType("text/ping");
     request.setHTTPBody(FormData::create("PING"));
@@ -106,7 +107,7 @@ void PingLoader::sendLinkAuditPing(LocalFrame* frame, const KURL& pingURL, const
 void PingLoader::sendViolationReport(LocalFrame* frame, const KURL& reportURL, PassRefPtr<FormData> report, ViolationReportType type)
 {
     ResourceRequest request(reportURL);
-    request.setTargetType(ResourceRequest::TargetIsSubresource);
+    request.setRequestContext(blink::WebURLRequest::RequestContextPing);
     request.setHTTPMethod("POST");
     request.setHTTPContentType(type == ContentSecurityPolicyViolationReport ? "application/csp-report" : "application/json");
     request.setHTTPBody(report);
@@ -120,6 +121,9 @@ void PingLoader::sendViolationReport(LocalFrame* frame, const KURL& reportURL, P
 
 void PingLoader::start(LocalFrame* frame, ResourceRequest& request, const FetchInitiatorInfo& initiatorInfo, StoredCredentials credentialsAllowed)
 {
+    if (!frame->loader().mixedContentChecker()->canRunInsecureContent(frame->document()->securityOrigin(), request.url()))
+        return;
+
     OwnPtr<PingLoader> pingLoader = adoptPtr(new PingLoader(frame, request, initiatorInfo, credentialsAllowed));
 
     // Leak the ping loader, since it will kill itself as soon as it receives a response.

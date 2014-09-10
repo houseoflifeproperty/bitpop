@@ -6,30 +6,29 @@
 
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "extensions/common/constants.h"
 #include "url/gurl.h"
+#include "webkit/browser/quota/special_storage_policy.h"
 
 // Static
 bool BrowsingDataHelper::IsWebScheme(const std::string& scheme) {
   // Special-case `file://` scheme iff cookies and site data are enabled via
   // the `--allow-file-cookies` CLI flag.
   if (scheme == url::kFileScheme) {
-    return CommandLine::ForCurrentProcess()->HasSwitch(
+    return base::CommandLine::ForCurrentProcess()->HasSwitch(
         switches::kEnableFileCookies);
+  }
 
   // Otherwise, all "web safe" schemes are valid, except `chrome-extension://`
   // and `chrome-devtools://`.
-  } else {
-    content::ChildProcessSecurityPolicy* policy =
-        content::ChildProcessSecurityPolicy::GetInstance();
-    return (policy->IsWebSafeScheme(scheme) &&
-            !BrowsingDataHelper::IsExtensionScheme(scheme) &&
-            scheme != content::kChromeDevToolsScheme);
-  }
+  content::ChildProcessSecurityPolicy* policy =
+      content::ChildProcessSecurityPolicy::GetInstance();
+  return (policy->IsWebSafeScheme(scheme) &&
+          !BrowsingDataHelper::IsExtensionScheme(scheme) &&
+          scheme != content::kChromeDevToolsScheme);
 }
 
 // Static
@@ -49,20 +48,21 @@ bool BrowsingDataHelper::HasExtensionScheme(const GURL& origin) {
 
 // Static
 bool BrowsingDataHelper::DoesOriginMatchMask(const GURL& origin,
-    int origin_set_mask, ExtensionSpecialStoragePolicy* policy) {
+    int origin_set_mask, quota::SpecialStoragePolicy* policy) {
   // Packaged apps and extensions match iff EXTENSION.
   if (BrowsingDataHelper::HasExtensionScheme(origin.GetOrigin()) &&
       origin_set_mask & EXTENSION)
     return true;
 
   // If a websafe origin is unprotected, it matches iff UNPROTECTED_WEB.
-  if (!policy->IsStorageProtected(origin.GetOrigin()) &&
+  if ((!policy || !policy->IsStorageProtected(origin.GetOrigin())) &&
       BrowsingDataHelper::HasWebScheme(origin.GetOrigin()) &&
       origin_set_mask & UNPROTECTED_WEB)
     return true;
 
   // Hosted applications (protected and websafe origins) iff PROTECTED_WEB.
-  if (policy->IsStorageProtected(origin.GetOrigin()) &&
+  if (policy &&
+      policy->IsStorageProtected(origin.GetOrigin()) &&
       BrowsingDataHelper::HasWebScheme(origin.GetOrigin()) &&
       origin_set_mask & PROTECTED_WEB)
     return true;

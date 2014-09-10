@@ -8,7 +8,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "content/common/content_export.h"
-#include "third_party/WebKit/public/platform/WebAnimationCurve.h"
+#include "third_party/WebKit/public/platform/WebCompositorAnimationCurve.h"
 #include "third_party/WebKit/public/platform/WebCompositorSupport.h"
 #include "third_party/WebKit/public/platform/WebLayer.h"
 #include "third_party/WebKit/public/platform/WebTransformOperations.h"
@@ -32,7 +32,6 @@ class CONTENT_EXPORT WebCompositorSupportImpl
       blink::WebExternalTextureLayerClient* client);
   virtual blink::WebImageLayer* createImageLayer();
   virtual blink::WebNinePatchLayer* createNinePatchLayer();
-  virtual blink::WebSolidColorLayer* createSolidColorLayer();
   virtual blink::WebScrollbarLayer* createScrollbarLayer(
       blink::WebScrollbar* scrollbar,
       blink::WebScrollbarThemePainter painter,
@@ -42,18 +41,17 @@ class CONTENT_EXPORT WebCompositorSupportImpl
       int thumb_thickness,
       int track_start,
       bool is_left_side_vertical_scrollbar);
-  virtual blink::WebAnimation* createAnimation(
-      const blink::WebAnimationCurve& curve,
-      blink::WebAnimation::TargetProperty target,
+  virtual blink::WebCompositorAnimation* createAnimation(
+      const blink::WebCompositorAnimationCurve& curve,
+      blink::WebCompositorAnimation::TargetProperty target,
       int animation_id);
   virtual blink::WebFilterAnimationCurve* createFilterAnimationCurve();
   virtual blink::WebFloatAnimationCurve* createFloatAnimationCurve();
-#if WEB_SCROLL_OFFSET_ANIMATION_CURVE_IS_DEFINED
   virtual blink::WebScrollOffsetAnimationCurve*
       createScrollOffsetAnimationCurve(
           blink::WebFloatPoint target_value,
-          blink::WebAnimationCurve::TimingFunctionType timing_function);
-#endif
+          blink::WebCompositorAnimationCurve::TimingFunctionType
+              timing_function);
   virtual blink::WebTransformAnimationCurve* createTransformAnimationCurve();
   virtual blink::WebTransformOperations* createTransformOperations();
   virtual blink::WebFilterOperations* createFilterOperations();

@@ -36,7 +36,7 @@
 #include "wtf/Assertions.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class RasterShapeIntervals {
 public:
@@ -89,7 +89,7 @@ public:
 
     virtual LayoutRect shapeMarginLogicalBoundingBox() const OVERRIDE { return static_cast<LayoutRect>(marginIntervals().bounds()); }
     virtual bool isEmpty() const OVERRIDE { return m_intervals->isEmpty(); }
-    virtual void getExcludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList&) const OVERRIDE;
+    virtual LineSegment getExcludedInterval(LayoutUnit logicalTop, LayoutUnit logicalHeight) const OVERRIDE;
     virtual void buildDisplayPaths(DisplayPaths& paths) const OVERRIDE
     {
         m_intervals->buildBoundsPath(paths.shape);
@@ -105,6 +105,6 @@ private:
     IntSize m_marginRectSize;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RasterShape_h

@@ -104,6 +104,14 @@ class NexeLoadManager {
   // Returns true if dev interfaces are enabled for this plugin.
   bool DevInterfacesEnabled() const;
 
+  // Returns the time that the work for PNaCl translation began.
+  base::Time pnacl_start_time() const { return pnacl_start_time_; }
+  void set_pnacl_start_time(base::Time time) {
+    pnacl_start_time_ = time;
+  }
+
+  const std::string& program_url() const { return program_url_; }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(NexeLoadManager);
 
@@ -115,6 +123,8 @@ class NexeLoadManager {
   PP_Instance pp_instance_;
   PP_NaClReadyState nacl_ready_state_;
   bool nexe_error_reported_;
+
+  std::string program_url_;
 
   // A flag indicating if the NaCl executable is being loaded from an installed
   // application.  This flag is used to bucket UMA statistics more precisely to
@@ -158,6 +168,8 @@ class NexeLoadManager {
   // We store mime_type_ outside of args_ explicitly because we change it to be
   // lowercase.
   std::string mime_type_;
+
+  base::Time pnacl_start_time_;
 
   scoped_ptr<TrustedPluginChannel> trusted_plugin_channel_;
   scoped_ptr<ManifestServiceChannel> manifest_service_channel_;

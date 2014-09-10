@@ -41,7 +41,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class FormSubmission;
@@ -78,14 +78,13 @@ public:
 
     void scheduleRedirect(double delay, const String& url);
     void scheduleLocationChange(Document*, const String& url, const Referrer& referrer, bool lockBackForwardList = true);
+    void schedulePageBlock(Document*, const Referrer&);
     void scheduleFormSubmission(PassRefPtrWillBeRawPtr<FormSubmission>);
-    void scheduleRefresh();
+    void scheduleReload();
     void scheduleHistoryNavigation(int steps);
 
     void startTimer();
-
     void cancel();
-    void clear();
 
 private:
     bool shouldScheduleNavigation() const;
@@ -101,6 +100,6 @@ private:
     OwnPtr<ScheduledNavigation> m_redirect;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NavigationScheduler_h

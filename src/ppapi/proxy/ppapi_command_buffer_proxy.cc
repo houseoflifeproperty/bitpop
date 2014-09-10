@@ -57,7 +57,7 @@ void PpapiCommandBufferProxy::WaitForTokenInRange(int32 start, int32 end) {
   if (last_state_.error != gpu::error::kNoError)
     return;
 
-  bool success;
+  bool success = false;
   gpu::CommandBuffer::State state;
   if (Send(new PpapiHostMsg_PPBGraphics3D_WaitForTokenInRange(
           ppapi::API_ID_PPB_GRAPHICS_3D,
@@ -73,7 +73,7 @@ void PpapiCommandBufferProxy::WaitForGetOffsetInRange(int32 start, int32 end) {
   if (last_state_.error != gpu::error::kNoError)
     return;
 
-  bool success;
+  bool success = false;
   gpu::CommandBuffer::State state;
   if (Send(new PpapiHostMsg_PPBGraphics3D_WaitForGetOffsetInRange(
           ppapi::API_ID_PPB_GRAPHICS_3D,
@@ -150,6 +150,22 @@ uint32 PpapiCommandBufferProxy::InsertSyncPoint() {
          ppapi::API_ID_PPB_GRAPHICS_3D, resource_, &sync_point));
   }
   return sync_point;
+}
+
+uint32 PpapiCommandBufferProxy::InsertFutureSyncPoint() {
+  uint32 sync_point = 0;
+  if (last_state_.error == gpu::error::kNoError) {
+    Send(new PpapiHostMsg_PPBGraphics3D_InsertFutureSyncPoint(
+        ppapi::API_ID_PPB_GRAPHICS_3D, resource_, &sync_point));
+  }
+  return sync_point;
+}
+
+void PpapiCommandBufferProxy::RetireSyncPoint(uint32 sync_point) {
+  if (last_state_.error == gpu::error::kNoError) {
+    Send(new PpapiHostMsg_PPBGraphics3D_RetireSyncPoint(
+        ppapi::API_ID_PPB_GRAPHICS_3D, resource_, sync_point));
+  }
 }
 
 void PpapiCommandBufferProxy::SignalSyncPoint(uint32 sync_point,

@@ -30,7 +30,6 @@ struct RendererCapabilitiesImpl {
   // Capabilities used on compositor thread only.
   bool using_partial_swap;
   bool using_egl_image;
-  bool avoid_pow2_textures;
   bool using_map_image;
   bool using_discard_framebuffer;
   bool allow_rasterize_on_demand;
@@ -73,8 +72,6 @@ class CC_EXPORT Renderer {
   // Puts backbuffer onscreen.
   virtual void SwapBuffers(const CompositorFrameMetadata& metadata) = 0;
   virtual void ReceiveSwapBuffersAck(const CompositorFrameAck& ack) {}
-
-  virtual bool IsContextLost();
 
   bool visible() const { return visible_; }
   void SetVisible(bool visible);

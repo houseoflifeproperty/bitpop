@@ -34,8 +34,6 @@
 #include "platform/Length.h"
 #include "wtf/Assertions.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 static const float defaultMinimumScale = 0.25f;
@@ -234,4 +232,4 @@ void PageScaleConstraintsSet::adjustForAndroidWebViewQuirks(const ViewportDescri
     m_pageDefinedConstraints.layoutSize.setHeight(adjustedLayoutSizeHeight);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -30,10 +30,11 @@
 #include "core/editing/WritingDirection.h"
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSPrimitiveValue;
 class EditingStyle;
+class HTMLSpanElement;
 class StyleChange;
 
 enum ShouldIncludeTypingStyle {
@@ -89,7 +90,7 @@ private:
     void applyInlineStyleToPushDown(Node*, EditingStyle*);
     void pushDownInlineStyleAroundNode(EditingStyle*, Node*);
     void removeInlineStyle(EditingStyle* , const Position& start, const Position& end);
-    bool nodeFullySelected(Node*, const Position& start, const Position& end) const;
+    bool elementFullySelected(HTMLElement&, const Position& start, const Position& end) const;
 
     // style-application helpers
     void applyBlockStyle(EditingStyle*);
@@ -99,7 +100,7 @@ private:
     void applyInlineStyleToNodeRange(EditingStyle*, PassRefPtrWillBeRawPtr<Node> startNode, PassRefPtrWillBeRawPtr<Node> pastEndNode);
     void addBlockStyle(const StyleChange&, HTMLElement*);
     void addInlineStyleIfNeeded(EditingStyle*, PassRefPtrWillBeRawPtr<Node> start, PassRefPtrWillBeRawPtr<Node> end, EAddStyledElement = AddStyledElement);
-    Position positionToComputeInlineStyleChange(PassRefPtrWillBeRawPtr<Node>, RefPtrWillBeMember<Node>& dummyElement);
+    Position positionToComputeInlineStyleChange(PassRefPtrWillBeRawPtr<Node>, RefPtrWillBeMember<HTMLSpanElement>& dummyElement);
     void applyInlineStyleChange(PassRefPtrWillBeRawPtr<Node> startNode, PassRefPtrWillBeRawPtr<Node> endNode, StyleChange&, EAddStyledElement);
     void splitTextAtStart(const Position& start, const Position& end);
     void splitTextAtEnd(const Position& start, const Position& end);
@@ -116,7 +117,7 @@ private:
     void joinChildTextNodes(ContainerNode*, const Position& start, const Position& end);
 
     HTMLElement* splitAncestorsWithUnicodeBidi(Node*, bool before, WritingDirection allowedDirection);
-    void removeEmbeddingUpToEnclosingBlock(Node* node, Node* unsplitAncestor);
+    void removeEmbeddingUpToEnclosingBlock(Node*, HTMLElement* unsplitAncestor);
 
     void updateStartEnd(const Position& newStart, const Position& newEnd);
     Position startPosition();
@@ -135,10 +136,10 @@ private:
 
 enum ShouldStyleAttributeBeEmpty { AllowNonEmptyStyleAttribute, StyleAttributeShouldBeEmpty };
 bool isEmptyFontTag(const Element*, ShouldStyleAttributeBeEmpty = StyleAttributeShouldBeEmpty);
-bool isLegacyAppleStyleSpan(const Node*);
+bool isLegacyAppleHTMLSpanElement(const Node*);
 bool isStyleSpanOrSpanWithOnlyStyleAttribute(const Element*);
-PassRefPtrWillBeRawPtr<HTMLElement> createStyleSpanElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLSpanElement> createStyleSpanElement(Document&);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

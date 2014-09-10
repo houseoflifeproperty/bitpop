@@ -30,13 +30,9 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "google_apis/gaia/gaia_urls.h"
-#include "grit/browser_resources.h"
-#include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
 #include "net/base/escape.h"
 #include "net/base/network_change_notifier.h"
 #include "net/base/url_util.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
 using content::WebContents;
@@ -243,12 +239,12 @@ GURL GetReauthURL(Profile* profile, const std::string& account_id) {
         account_id);
   }
 
-  signin::Source source = switches::IsNewProfileManagement() ?
+  signin::Source source = switches::IsNewAvatarMenu() ?
       signin::SOURCE_REAUTH : signin::SOURCE_SETTINGS;
 
   GURL url = signin::GetPromoURL(
       source, true /* auto_close */,
-      switches::IsNewProfileManagement() /* is_constrained */);
+      switches::IsNewAvatarMenu() /* is_constrained */);
   url = net::AppendQueryParameter(url, "email", account_id);
   url = net::AppendQueryParameter(url, "validateEmail", "1");
   return net::AppendQueryParameter(url, "readOnlyEmail", "1");

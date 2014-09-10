@@ -30,11 +30,11 @@
 
 /**
  * @constructor
- * @extends {WebInspector.TargetAwareObject}
+ * @extends {WebInspector.SDKObject}
  */
 WebInspector.IndexedDBModel = function(target)
 {
-    WebInspector.TargetAwareObject.call(this, target);
+    WebInspector.SDKObject.call(this, target);
     this._agent = target.indexedDBAgent();
     this._agent.enable();
 
@@ -233,12 +233,8 @@ WebInspector.IndexedDBModel.prototype = {
      */
     _updateOriginDatabaseNames: function(securityOrigin, databaseNames)
     {
-        var newDatabaseNames = {};
-        for (var i = 0; i < databaseNames.length; ++i)
-            newDatabaseNames[databaseNames[i]] = true;
-        var oldDatabaseNames = {};
-        for (var i = 0; i < this._databaseNamesBySecurityOrigin[securityOrigin].length; ++i)
-            oldDatabaseNames[this._databaseNamesBySecurityOrigin[securityOrigin][i]] = true;
+        var newDatabaseNames = databaseNames.keySet();
+        var oldDatabaseNames = this._databaseNamesBySecurityOrigin[securityOrigin].keySet();
 
         this._databaseNamesBySecurityOrigin[securityOrigin] = databaseNames;
 
@@ -405,7 +401,7 @@ WebInspector.IndexedDBModel.prototype = {
         this._agent.requestData(databaseId.securityOrigin, databaseName, objectStoreName, indexName, skipCount, pageSize, keyRange ? keyRange : undefined, innerCallback.bind(this));
     },
 
-    __proto__: WebInspector.TargetAwareObject.prototype
+    __proto__: WebInspector.SDKObject.prototype
 }
 
 /**

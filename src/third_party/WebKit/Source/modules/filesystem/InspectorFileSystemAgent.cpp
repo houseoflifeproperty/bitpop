@@ -31,9 +31,10 @@
 #include "config.h"
 #include "modules/filesystem/InspectorFileSystemAgent.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/DOMImplementation.h"
 #include "core/dom/Document.h"
+#include "core/events/Event.h"
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileError.h"
 #include "core/fileapi/FileReader.h"
@@ -63,15 +64,15 @@
 #include "wtf/text/Base64.h"
 #include "wtf/text/TextEncoding.h"
 
-using WebCore::TypeBuilder::Array;
+using blink::TypeBuilder::Array;
 
-typedef WebCore::InspectorBackendDispatcher::FileSystemCommandHandler::RequestFileSystemRootCallback RequestFileSystemRootCallback;
-typedef WebCore::InspectorBackendDispatcher::FileSystemCommandHandler::RequestDirectoryContentCallback RequestDirectoryContentCallback;
-typedef WebCore::InspectorBackendDispatcher::FileSystemCommandHandler::RequestMetadataCallback RequestMetadataCallback;
-typedef WebCore::InspectorBackendDispatcher::FileSystemCommandHandler::RequestFileContentCallback RequestFileContentCallback;
-typedef WebCore::InspectorBackendDispatcher::FileSystemCommandHandler::DeleteEntryCallback DeleteEntryCallback;
+typedef blink::InspectorBackendDispatcher::FileSystemCommandHandler::RequestFileSystemRootCallback RequestFileSystemRootCallback;
+typedef blink::InspectorBackendDispatcher::FileSystemCommandHandler::RequestDirectoryContentCallback RequestDirectoryContentCallback;
+typedef blink::InspectorBackendDispatcher::FileSystemCommandHandler::RequestMetadataCallback RequestMetadataCallback;
+typedef blink::InspectorBackendDispatcher::FileSystemCommandHandler::RequestFileContentCallback RequestFileContentCallback;
+typedef blink::InspectorBackendDispatcher::FileSystemCommandHandler::DeleteEntryCallback DeleteEntryCallback;
 
-namespace WebCore {
+namespace blink {
 
 namespace FileSystemAgentState {
 static const char fileSystemAgentEnabled[] = "fileSystemAgentEnabled";
@@ -596,9 +597,9 @@ bool DeleteEntryRequest::didDeleteEntry()
 } // anonymous namespace
 
 // static
-PassOwnPtr<InspectorFileSystemAgent> InspectorFileSystemAgent::create(Page* page)
+PassOwnPtrWillBeRawPtr<InspectorFileSystemAgent> InspectorFileSystemAgent::create(Page* page)
 {
-    return adoptPtr(new InspectorFileSystemAgent(page));
+    return adoptPtrWillBeNoop(new InspectorFileSystemAgent(page));
 }
 
 InspectorFileSystemAgent::~InspectorFileSystemAgent()
@@ -727,4 +728,10 @@ ExecutionContext* InspectorFileSystemAgent::assertExecutionContextForOrigin(Erro
     return 0;
 }
 
-} // namespace WebCore
+void InspectorFileSystemAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_page);
+    InspectorBaseAgent::trace(visitor);
+}
+
+} // namespace blink

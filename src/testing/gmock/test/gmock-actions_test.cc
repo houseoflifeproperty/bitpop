@@ -36,6 +36,7 @@
 #include "gmock/gmock-actions.h"
 #include <algorithm>
 #include <iterator>
+#include <memory>
 #include <string>
 #include "gmock/gmock.h"
 #include "gmock/internal/gmock-port.h"
@@ -44,10 +45,10 @@
 
 namespace {
 
-using ::std::tr1::get;
-using ::std::tr1::make_tuple;
-using ::std::tr1::tuple;
-using ::std::tr1::tuple_element;
+using testing::get;
+using testing::make_tuple;
+using testing::tuple;
+using testing::tuple_element;
 using testing::internal::BuiltInDefaultValue;
 using testing::internal::Int64;
 using testing::internal::UInt64;
@@ -263,6 +264,21 @@ TEST(DefaultValueDeathTest, GetReturnsBuiltInDefaultValueWhenUnset) {
   }, "");
 }
 
+#if GTEST_LANG_CXX11
+TEST(DefaultValueDeathTest, GetWorksForMoveOnlyIfSet) {
+  EXPECT_FALSE(DefaultValue<std::unique_ptr<int>>::Exists());
+  EXPECT_DEATH_IF_SUPPORTED({
+      DefaultValue<std::unique_ptr<int>>::Get();
+  }, "");
+  DefaultValue<std::unique_ptr<int>>::SetFactory([] {
+    return std::unique_ptr<int>(new int(42));
+  });
+  EXPECT_TRUE(DefaultValue<std::unique_ptr<int>>::Exists());
+  std::unique_ptr<int> i = DefaultValue<std::unique_ptr<int>>::Get();
+  EXPECT_EQ(42, *i);
+}
+#endif  // GTEST_LANG_CXX11
+
 // Tests that DefaultValue<void>::Get() returns void.
 TEST(DefaultValueTest, GetWorksForVoid) {
   return DefaultValue<void>::Get();
@@ -323,9 +339,9 @@ TEST(DefaultValueOfReferenceDeathTest, GetReturnsBuiltInDefaultValueWhenUnset) {
 // Tests that ActionInterface can be implemented by defining the
 // Perform method.
 
-typedef int MyFunction(bool, int);
+typedef int MyGlobalFunction(bool, int);
 
-class MyActionImpl : public ActionInterface<MyFunction> {
+class MyActionImpl : public ActionInterface<MyGlobalFunction> {
  public:
   virtual int Perform(const tuple<bool, int>& args) {
     return get<0>(args) ? get<1>(args) : 0;
@@ -338,7 +354,7 @@ TEST(ActionInterfaceTest, CanBeImplementedByDefiningPerform) {
 }
 
 TEST(ActionInterfaceTest, MakeAction) {
-  Action<MyFunction> action = MakeAction(new MyActionImpl);
+  Action<MyGlobalFunction> action = MakeAction(new MyActionImpl);
 
   // When exercising the Perform() method of Action<F>, we must pass
   // it a tuple whose size and type are compatible with F's argument
@@ -351,12 +367,12 @@ TEST(ActionInterfaceTest, MakeAction) {
 // Tests that Action<F> can be contructed from a pointer to
 // ActionInterface<F>.
 TEST(ActionTest, CanBeConstructedFromActionInterface) {
-  Action<MyFunction> action(new MyActionImpl);
+  Action<MyGlobalFunction> action(new MyActionImpl);
 }
 
 // Tests that Action<F> delegates actual work to ActionInterface<F>.
 TEST(ActionTest, DelegatesWorkToActionInterface) {
-  const Action<MyFunction> action(new MyActionImpl);
+  const Action<MyGlobalFunction> action(new MyActionImpl);
 
   EXPECT_EQ(5, action.Perform(make_tuple(true, 5)));
   EXPECT_EQ(0, action.Perform(make_tuple(false, 1)));
@@ -364,8 +380,8 @@ TEST(ActionTest, DelegatesWorkToActionInterface) {
 
 // Tests that Action<F> can be copied.
 TEST(ActionTest, IsCopyable) {
-  Action<MyFunction> a1(new MyActionImpl);
-  Action<MyFunction> a2(a1);  // Tests the copy constructor.
+  Action<MyGlobalFunction> a1(new MyActionImpl);
+  Action<MyGlobalFunction> a2(a1);  // Tests the copy constructor.
 
   // a1 should continue to work after being copied from.
   EXPECT_EQ(5, a1.Perform(make_tuple(true, 5)));
@@ -620,6 +636,10 @@ class MockClass {
 
   MOCK_METHOD1(IntFunc, int(bool flag));  // NOLINT
   MOCK_METHOD0(Foo, MyClass());
+#if GTEST_LANG_CXX11
+  MOCK_METHOD0(MakeUnique, std::unique_ptr<int>());
+  MOCK_METHOD0(MakeVectorUnique, std::vector<std::unique_ptr<int>>());
+#endif
 
  private:
   GTEST_DISALLOW_COPY_AND_ASSIGN_(MockClass);
@@ -634,15 +654,19 @@ TEST(DoDefaultTest, ReturnsBuiltInDefaultValueByDefault) {
   EXPECT_EQ(0, mock.IntFunc(true));
 }
 
-// Tests that DoDefault() aborts the process when there is no built-in
-// default value for the return type.
+// Tests that DoDefault() throws (when exceptions are enabled) or aborts
+// the process when there is no built-in default value for the return type.
 TEST(DoDefaultDeathTest, DiesForUnknowType) {
   MockClass mock;
   EXPECT_CALL(mock, Foo())
       .WillRepeatedly(DoDefault());
+#if GTEST_HAS_EXCEPTIONS
+  EXPECT_ANY_THROW(mock.Foo());
+#else
   EXPECT_DEATH_IF_SUPPORTED({
     mock.Foo();
   }, "");
+#endif
 }
 
 // Tests that using DoDefault() inside a composite action leads to a
@@ -1027,68 +1051,12 @@ class VoidNullaryFunctor {
   void operator()() { g_done = true; }
 };
 
-bool Unary(int x) { return x < 0; }
-
-const char* Plus1(const char* s) { return s + 1; }
-
-void VoidUnary(int /* n */) { g_done = true; }
-
-bool ByConstRef(const std::string& s) { return s == "Hi"; }
-
-const double g_double = 0;
-bool ReferencesGlobalDouble(const double& x) { return &x == &g_double; }
-
-std::string ByNonConstRef(std::string& s) { return s += "+"; }  // NOLINT
-
-struct UnaryFunctor {
-  int operator()(bool x) { return x ? 1 : -1; }
-};
-
-const char* Binary(const char* input, short n) { return input + n; }  // NOLINT
-
-void VoidBinary(int, char) { g_done = true; }
-
-int Ternary(int x, char y, short z) { return x + y + z; }  // NOLINT
-
-void VoidTernary(int, char, bool) { g_done = true; }
-
-int SumOf4(int a, int b, int c, int d) { return a + b + c + d; }
-
-void VoidFunctionWithFourArguments(char, int, float, double) { g_done = true; }
-
-int SumOf5(int a, int b, int c, int d, int e) { return a + b + c + d + e; }
-
-struct SumOf5Functor {
-  int operator()(int a, int b, int c, int d, int e) {
-    return a + b + c + d + e;
-  }
-};
-
-int SumOf6(int a, int b, int c, int d, int e, int f) {
-  return a + b + c + d + e + f;
-}
-
-struct SumOf6Functor {
-  int operator()(int a, int b, int c, int d, int e, int f) {
-    return a + b + c + d + e + f;
-  }
-};
-
 class Foo {
  public:
   Foo() : value_(123) {}
 
   int Nullary() const { return value_; }
-  short Unary(long x) { return static_cast<short>(value_ + x); }  // NOLINT
-  std::string Binary(const std::string& str, char c) const { return str + c; }
-  int Ternary(int x, bool y, char z) { return value_ + x + y*z; }
-  int SumOf4(int a, int b, int c, int d) const {
-    return a + b + c + d + value_;
-  }
-  int SumOf5(int a, int b, int c, int d, int e) { return a + b + c + d + e; }
-  int SumOf6(int a, int b, int c, int d, int e, int f) {
-    return a + b + c + d + e + f;
-  }
+
  private:
   int value_;
 };
@@ -1304,5 +1272,44 @@ TEST(ByRefTest, PrintsCorrectly) {
   testing::internal::UniversalPrint(ByRef(n), &actual);
   EXPECT_EQ(expected.str(), actual.str());
 }
+
+#if GTEST_LANG_CXX11
+
+std::unique_ptr<int> UniquePtrSource() {
+  return std::unique_ptr<int>(new int(19));
+}
+
+std::vector<std::unique_ptr<int>> VectorUniquePtrSource() {
+  std::vector<std::unique_ptr<int>> out;
+  out.emplace_back(new int(7));
+  return out;
+}
+
+TEST(MockMethodTest, CanReturnMoveOnlyValue) {
+  MockClass mock;
+
+  // Check default value
+  DefaultValue<std::unique_ptr<int>>::SetFactory([] {
+    return std::unique_ptr<int>(new int(42));
+  });
+  EXPECT_EQ(42, *mock.MakeUnique());
+
+  EXPECT_CALL(mock, MakeUnique())
+      .WillRepeatedly(Invoke(UniquePtrSource));
+  EXPECT_CALL(mock, MakeVectorUnique())
+      .WillRepeatedly(Invoke(VectorUniquePtrSource));
+  std::unique_ptr<int> result1 = mock.MakeUnique();
+  EXPECT_EQ(19, *result1);
+  std::unique_ptr<int> result2 = mock.MakeUnique();
+  EXPECT_EQ(19, *result2);
+  EXPECT_NE(result1, result2);
+
+  std::vector<std::unique_ptr<int>> vresult = mock.MakeVectorUnique();
+  EXPECT_EQ(1, vresult.size());
+  EXPECT_NE(nullptr, vresult[0]);
+  EXPECT_EQ(7, *vresult[0]);
+}
+
+#endif  // GTEST_LANG_CXX11
 
 }  // Unnamed namespace

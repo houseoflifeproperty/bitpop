@@ -27,12 +27,14 @@
 
 #include "core/html/track/TextTrackCueList.h"
 
-namespace WebCore {
+namespace blink {
 
 TextTrackCueList::TextTrackCueList()
 {
     ScriptWrappable::init(this);
 }
+
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(TextTrackCueList);
 
 unsigned long TextTrackCueList::length() const
 {
@@ -148,5 +150,4 @@ void TextTrackCueList::trace(Visitor* visitor)
     visitor->trace(m_activeCues);
 }
 
-} // namespace WebCore
-
+} // namespace blink

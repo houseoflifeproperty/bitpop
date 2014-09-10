@@ -16,6 +16,7 @@
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "content/test/test_render_frame_host.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -63,6 +64,13 @@ class TreeWalkingWebContentsLogger : public WebContentsObserver {
   // content::WebContentsObserver implementation.
   virtual void RenderFrameCreated(RenderFrameHost* render_frame_host) OVERRIDE {
     LogWhatHappened("RenderFrameCreated", render_frame_host);
+  }
+
+  virtual void RenderFrameHostChanged(RenderFrameHost* old_host,
+                                      RenderFrameHost* new_host) OVERRIDE {
+    if (old_host)
+      LogWhatHappened("RenderFrameChanged(old)", old_host);
+    LogWhatHappened("RenderFrameChanged(new)", new_host);
   }
 
   virtual void RenderFrameDeleted(RenderFrameHost* render_frame_host) OVERRIDE {
@@ -185,6 +193,8 @@ TEST_F(FrameTreeTest, ObserverWalksTreeDuringFrameCreation) {
   TreeWalkingWebContentsLogger activity(contents());
   FrameTree* frame_tree = contents()->GetFrameTree();
   FrameTreeNode* root = frame_tree->root();
+
+  EXPECT_EQ("", activity.GetLog());
 
   // Simulate attaching a series of frames to build the frame tree.
   main_test_rfh()->OnCreateChildFrame(14, std::string());

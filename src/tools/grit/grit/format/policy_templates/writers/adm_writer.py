@@ -71,6 +71,7 @@ class AdmWriter(template_writer.TemplateWriter):
     'string-enum': 'DROPDOWNLIST',
     'int-enum': 'DROPDOWNLIST',
     'list': 'LISTBOX',
+    'string-enum-list': 'LISTBOX',
     'dict': 'EDITTEXT'
   }
 
@@ -106,7 +107,7 @@ class AdmWriter(template_writer.TemplateWriter):
     builder.AddLine()
     adm_type = self.TYPE_TO_INPUT[policy['type']]
     builder.AddLine('PART !!%s  %s' % (policy_part_name, adm_type), 1)
-    if policy['type'] == 'list':
+    if policy['type'] in ('list', 'string-enum-list'):
       # Note that the following line causes FullArmor ADMX Migrator to create
       # corrupt ADMX files. Please use admx_writer to get ADMX files.
       builder.AddLine('KEYNAME "%s\\%s"' % (key_name, policy['name']))

@@ -24,14 +24,17 @@ import stat
 import sys
 
 from common import chromium_utils
+from common.chromium_utils import GS_COMMIT_POSITION_NUMBER_KEY, \
+                                  GS_GIT_COMMIT_KEY
 from slave import build_directory
 from slave import slave_utils
-from slave import zip_build
 
-class StagingError(Exception): pass
+class StagingError(Exception):
+  pass
 
 
 def ShouldPackageFile(filename, target):
+  # Disable 'unused argument' warning for 'target' | pylint: disable=W0613
   """Returns true if the file should be a part of the resulting archive."""
   if chromium_utils.IsMac():
     file_filter = '^.+\.(a|dSYM)$'
@@ -45,7 +48,7 @@ def ShouldPackageFile(filename, target):
     return False
 
   # Skip files that we don't care about. Mostly directories.
-  things_to_skip = zip_build.FileExclusions()
+  things_to_skip = chromium_utils.FileExclusions()
 
   if filename in things_to_skip:
     return False
@@ -53,14 +56,61 @@ def ShouldPackageFile(filename, target):
   return True
 
 
+def GetBuildSortKey(options, primary_repo):
+  """Returns: (str) the build sort key for the specified repository.
+
+  Attempts to identify the build sort key for a given repository. If
+  'primary_repo' is None or if there is no sort key for the specified
+  primary repository, the checkout-wide sort key will be used.
+
+  Raises:
+    chromium_utils.NoIdentifiedRevision: if the checkout-wide sort key could not
+        be resolved.
+  """
+  if primary_repo:
+    try:
+      return chromium_utils.GetBuildSortKey(options, primary_repo)[1]
+    except chromium_utils.NoIdentifiedRevision:
+      pass
+  return chromium_utils.GetBuildSortKey(options, None)[1]
+
+
+def GetGitCommit(options, primary_repo):
+  """Returns: (str/None) the git commit hash for a given repository.
+
+  Attempts to identify the git commit hash for a given repository. If
+  'primary_repo' is None, or if there is no git commit hash for the specified
+  primary repository, the checkout-wide commit hash will be used.
+
+  If none of the candidate configurations are present, 'None' will be returned.
+  """
+  repos = []
+  if primary_repo:
+    repos += [primary_repo]
+  repos += [None]
+
+  for repo in repos:
+    try:
+      return chromium_utils.GetGitCommit(options, repo)
+    except chromium_utils.NoIdentifiedRevision:
+      pass
+  return None
+
+
 def archive(options, args):
+  # Disable 'unused argument' warning for 'args' | pylint: disable=W0613
   build_dir = build_directory.GetBuildOutputDirectory()
   src_dir = os.path.abspath(os.path.dirname(build_dir))
   build_dir = os.path.join(build_dir, options.target)
 
   revision_dir = options.factory_properties.get('revision_dir')
-  (build_revision, _) = slave_utils.GetBuildRevisions(
-      src_dir, None, revision_dir)
+  primary_repo = chromium_utils.GetPrimaryRepository(options)
+
+  # Get the sort key for the primary repository. If no primary repository is
+  # specified, or no sort key is identified for the primary repository,
+  # fall back on the default checkout sort key.
+  build_sortkey_value = GetBuildSortKey(options, primary_repo)
+  build_git_commit = GetGitCommit(options, primary_repo)
 
   staging_dir = slave_utils.GetStagingDir(src_dir)
   chromium_utils.MakeParentDirectoriesWorldReadable(staging_dir)
@@ -84,11 +134,11 @@ def archive(options, args):
     component = '-%s-component' % revision_dir
 
   prefix = options.factory_properties.get('cf_archive_name', 'cf_archive')
-  zip_file_name = '%s-%s-%s%s-%s' % (prefix,
+  zip_file_name = '%s-%s-%s%s-%d' % (prefix,
                                    chromium_utils.PlatformName(),
                                    options.target.lower(),
                                    component,
-                                   build_revision)
+                                   build_sortkey_value)
 
   (zip_dir, zip_file) = chromium_utils.MakeZip(staging_dir,
                                                zip_file_name,
@@ -106,8 +156,16 @@ def archive(options, args):
 
   gs_bucket = options.factory_properties.get('gs_bucket', None)
   gs_acl = options.factory_properties.get('gs_acl', None)
+
+  gs_metadata = {
+      GS_COMMIT_POSITION_NUMBER_KEY: build_sortkey_value,
+  }
+
+  if build_git_commit:
+    gs_metadata[GS_GIT_COMMIT_KEY] = build_git_commit
+
   status = slave_utils.GSUtilCopyFile(zip_file, gs_bucket, subdir=subdir,
-                                      gs_acl=gs_acl)
+                                      gs_acl=gs_acl, metadata=gs_metadata)
   if status:
     raise StagingError('Failed to upload %s to %s. Error %d' % (zip_file,
                                                                 gs_bucket,

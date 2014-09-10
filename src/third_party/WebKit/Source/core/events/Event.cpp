@@ -29,7 +29,7 @@
 #include "core/svg/SVGElement.h"
 #include "wtf/CurrentTime.h"
 
-namespace WebCore {
+namespace blink {
 
 EventInit::EventInit()
     : bubbles(false)
@@ -167,6 +167,11 @@ bool Event::isWheelEvent() const
     return false;
 }
 
+bool Event::isRelatedEvent() const
+{
+    return false;
+}
+
 bool Event::isDragEvent() const
 {
     return false;
@@ -219,12 +224,19 @@ EventPath& Event::ensureEventPath()
 
 PassRefPtrWillBeRawPtr<StaticNodeList> Event::path() const
 {
-    if (!m_currentTarget || !m_currentTarget->toNode())
+    if (!m_currentTarget) {
+        ASSERT(m_eventPhase == PhaseType::NONE);
+        if (!m_eventPath) {
+            // Before dispatching the event
+            return StaticNodeList::createEmpty();
+        }
+        ASSERT(!m_eventPath->isEmpty());
+        // After dispatching the event
+        return m_eventPath->last().treeScopeEventContext().ensureEventPath(*m_eventPath);
+    }
+    if (!m_currentTarget->toNode())
         return StaticNodeList::createEmpty();
     Node* node = m_currentTarget->toNode();
-    // FIXME: Support SVG Elements.
-    if (node->isSVGElement())
-        return StaticNodeList::createEmpty();
     size_t eventPathSize = m_eventPath->size();
     for (size_t i = 0; i < eventPathSize; ++i) {
         if (node == (*m_eventPath)[i].node()) {
@@ -254,4 +266,4 @@ void Event::trace(Visitor* visitor)
     visitor->trace(m_eventPath);
 }
 
-} // namespace WebCore
+} // namespace blink

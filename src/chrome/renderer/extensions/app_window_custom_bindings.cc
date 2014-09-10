@@ -8,6 +8,7 @@
 
 #include "base/command_line.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/grit/renderer_resources.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_observer.h"
@@ -18,7 +19,6 @@
 #include "extensions/renderer/scoped_persistent.h"
 #include "extensions/renderer/script_context.h"
 #include "extensions/renderer/script_context_set.h"
-#include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -117,12 +117,13 @@ void AppWindowCustomBindings::GetWindowControlsHtmlTemplate(
   v8::Handle<v8::Value> result = v8::String::Empty(args.GetIsolate());
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableAppWindowControls)) {
-    base::Value* value = base::Value::CreateStringValue(
-        ResourceBundle::GetSharedInstance().GetRawDataResource(
-            IDR_WINDOW_CONTROLS_TEMPLATE_HTML).as_string());
+    base::StringValue value(
+        ResourceBundle::GetSharedInstance()
+            .GetRawDataResource(IDR_WINDOW_CONTROLS_TEMPLATE_HTML)
+            .as_string());
     scoped_ptr<content::V8ValueConverter> converter(
         content::V8ValueConverter::create());
-    result = converter->ToV8Value(value, context()->v8_context());
+    result = converter->ToV8Value(&value, context()->v8_context());
   }
   args.GetReturnValue().Set(result);
 }

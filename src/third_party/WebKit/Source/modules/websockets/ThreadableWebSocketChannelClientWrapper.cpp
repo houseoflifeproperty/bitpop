@@ -31,21 +31,21 @@
 #include "config.h"
 #include "modules/websockets/ThreadableWebSocketChannelClientWrapper.h"
 
-namespace WebCore {
+namespace blink {
 
 ThreadableWebSocketChannelClientWrapper::ThreadableWebSocketChannelClientWrapper(WebSocketChannelClient* client)
     : m_client(client)
 {
 }
 
-PassRefPtrWillBeRawPtr<ThreadableWebSocketChannelClientWrapper> ThreadableWebSocketChannelClientWrapper::create(WebSocketChannelClient* client)
+ThreadableWebSocketChannelClientWrapper* ThreadableWebSocketChannelClientWrapper::create(WebSocketChannelClient* client)
 {
-    return adoptRefWillBeNoop(new ThreadableWebSocketChannelClientWrapper(client));
+    return new ThreadableWebSocketChannelClientWrapper(client);
 }
 
 void ThreadableWebSocketChannelClientWrapper::clearClient()
 {
-    m_client = 0;
+    m_client = nullptr;
 }
 
 void ThreadableWebSocketChannelClientWrapper::didConnect(const String& subprotocol, const String& extensions)
@@ -90,4 +90,9 @@ void ThreadableWebSocketChannelClientWrapper::didReceiveMessageError()
         m_client->didReceiveMessageError();
 }
 
-} // namespace WebCore
+void ThreadableWebSocketChannelClientWrapper::trace(Visitor* visitor)
+{
+    visitor->trace(m_client);
+}
+
+} // namespace blink

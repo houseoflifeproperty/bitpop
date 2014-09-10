@@ -25,9 +25,7 @@
 
 #include "core/dom/CharacterData.h"
 
-namespace WebCore {
-
-class ExecutionContext;
+namespace blink {
 
 class Comment FINAL : public CharacterData {
 public:
@@ -43,6 +41,6 @@ private:
 
 DEFINE_NODE_TYPE_CASTS(Comment, nodeType() == Node::COMMENT_NODE);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Comment_h

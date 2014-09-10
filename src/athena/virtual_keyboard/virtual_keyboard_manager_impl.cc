@@ -4,9 +4,9 @@
 
 #include "athena/virtual_keyboard/public/virtual_keyboard_manager.h"
 
+#include "athena/common/container_priorities.h"
 #include "athena/common/fill_layout_manager.h"
 #include "athena/screen/public/screen_manager.h"
-#include "athena/virtual_keyboard/vk_webui_controller.h"
 #include "base/bind.h"
 #include "base/memory/singleton.h"
 #include "base/values.h"
@@ -50,6 +50,8 @@ class BasicKeyboardControllerProxy : public keyboard::KeyboardControllerProxy {
     return browser_context_;
   }
 
+  virtual void SetUpdateInputType(ui::TextInputType type) OVERRIDE {}
+
  private:
   content::BrowserContext* browser_context_;
   aura::Window* root_window_;
@@ -76,10 +78,10 @@ class VirtualKeyboardManagerImpl : public VirtualKeyboardManager {
 
  private:
   void Init() {
-    container_ = athena::ScreenManager::Get()->CreateContainer(
-        "VirtualKeyboardContainer");
+    athena::ScreenManager::ContainerParams params("VirtualKeyboardContainer",
+                                                  CP_VIRTUAL_KEYBOARD);
+    container_ = athena::ScreenManager::Get()->CreateContainer(params);
     container_->SetLayoutManager(new FillLayoutManager(container_));
-    keyboard::SetOverrideContentUrl(GURL(keyboard::kKeyboardURL));
 
     keyboard_controller_.reset(new keyboard::KeyboardController(
         new BasicKeyboardControllerProxy(browser_context_,
@@ -88,9 +90,6 @@ class VirtualKeyboardManagerImpl : public VirtualKeyboardManager {
     aura::Window* kb_container = keyboard_controller_->GetContainerWindow();
     container_->AddChild(kb_container);
     kb_container->Show();
-
-    content::WebUIControllerFactory::RegisterFactory(
-        VKWebUIControllerFactory::GetInstance());
   }
 
   content::BrowserContext* browser_context_;
@@ -107,6 +106,9 @@ VirtualKeyboardManager* VirtualKeyboardManager::Create(
     content::BrowserContext* browser_context) {
   CHECK(!instance);
   keyboard::InitializeKeyboard();
+  keyboard::SetTouchKeyboardEnabled(true);
+  keyboard::InitializeWebUIBindings();
+
   new VirtualKeyboardManagerImpl(browser_context);
   CHECK(instance);
   return instance;

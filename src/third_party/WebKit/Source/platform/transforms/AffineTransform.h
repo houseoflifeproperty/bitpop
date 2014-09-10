@@ -32,7 +32,7 @@
 #include <string.h> // for memcpy
 #include "wtf/FastAllocBase.h"
 
-namespace WebCore {
+namespace blink {
 
 class FloatPoint;
 class FloatQuad;
@@ -107,8 +107,6 @@ public:
     double det() const;
     bool isInvertible() const;
     AffineTransform inverse() const;
-
-    void blend(const AffineTransform& from, double progress);
 
     TransformationMatrix toTransformationMatrix() const;
 

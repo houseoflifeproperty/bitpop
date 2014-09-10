@@ -9,9 +9,12 @@
 #include "base/bind.h"
 #include "base/memory/singleton.h"
 #include "base/observer_list.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
+#include "components/session_manager/core/session_manager.h"
+#include "components/user_manager/user_manager.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
@@ -48,6 +51,9 @@ void UserAddingScreenImpl::Start() {
   display_host_->StartUserAdding(
       base::Bind(&UserAddingScreenImpl::OnDisplayHostCompletion,
                  base::Unretained(this)));
+
+  g_browser_process->platform_part()->SessionManager()->SetSessionState(
+      session_manager::SESSION_STATE_LOGIN_SECONDARY);
   FOR_EACH_OBSERVER(Observer, observers_, OnUserAddingStarted());
 }
 
@@ -59,9 +65,9 @@ void UserAddingScreenImpl::Cancel() {
   display_host_->Finalize();
 
   // Reset wallpaper if cancel adding user from multiple user sign in page.
-  if (UserManager::Get()->IsUserLoggedIn()) {
+  if (user_manager::UserManager::Get()->IsUserLoggedIn()) {
     WallpaperManager::Get()->SetUserWallpaperDelayed(
-        UserManager::Get()->GetActiveUser()->email());
+        user_manager::UserManager::Get()->GetActiveUser()->email());
   }
 }
 
@@ -80,6 +86,9 @@ void UserAddingScreenImpl::RemoveObserver(Observer* observer) {
 void UserAddingScreenImpl::OnDisplayHostCompletion() {
   CHECK(IsRunning());
   display_host_ = NULL;
+
+  g_browser_process->platform_part()->SessionManager()->SetSessionState(
+      session_manager::SESSION_STATE_ACTIVE);
   FOR_EACH_OBSERVER(Observer, observers_, OnUserAddingFinished());
 }
 

@@ -10,7 +10,6 @@ DEPS = [
   'properties',
   'python',
   'step',
-  'step_history',
   'tryserver',
 ]
 
@@ -42,7 +41,6 @@ OZONE_TESTS = [
     'ui_unittests',
     # 'unit_tests',  Not sensible.
     'url_unittests',
-    # 'webkit_compositor_bindings_unittests', Not specified in bug.
     # 'sync_integration_tests', Not specified in bug.
     # 'chromium_swarm_tests', Not specified in bug.
 ] + [
@@ -66,43 +64,57 @@ def GenSteps(api):
 
   api.chromium.set_config('chromium', BUILD_CONFIG='Debug')
 
-  yield api.bot_update.ensure_checkout()
-  if not api.step_history.last_step().json.output['did_run']:
-    yield api.gclient.checkout()
+  step_result = api.bot_update.ensure_checkout()
+  if not step_result.json.output['did_run']:
+    api.gclient.checkout()
 
-    yield api.tryserver.maybe_apply_issue()
+    api.tryserver.maybe_apply_issue()
 
   api.chromium.c.gyp_env.GYP_DEFINES['embedded'] = 1
 
-  yield api.chromium.runhooks()
-  yield api.chromium.compile(['content_shell'], name='compile content_shell')
+  api.chromium.runhooks()
+  api.chromium.compile(['content_shell'], name='compile content_shell')
 
-  yield api.python('check ecs deps', api.path['checkout'].join('tools',
+  try:
+    api.python('check ecs deps', api.path['checkout'].join('tools',
       'check_ecs_deps', 'check_ecs_deps.py'),
-      can_fail_build=False,
       cwd=api.chromium.c.build_dir.join(api.chromium.c.build_config_fs))
+  except api.step.StepFailure:
+    pass
 
   tests_to_compile = list(set(OZONE_TESTS) - set(tests_that_do_not_compile))
   tests_to_compile.sort()
-  yield api.chromium.compile(tests_to_compile, name='compile tests')
+  api.chromium.compile(tests_to_compile, name='compile tests')
 
   tests_to_run = list(set(tests_to_compile) - set(tests_that_do_not_pass))
-  yield (api.chromium.runtest(x, xvfb=False, spawn_dbus=(x in dbus_tests))
-         for x in sorted(tests_to_run))
+  #TODO(martiniss) convert loop
+  for x in sorted(tests_to_run):
+    api.chromium.runtest(x, xvfb=False, spawn_dbus=(x in dbus_tests))
 
   # Compile the failing targets.
-  yield (api.chromium.compile([x], name='experimentally compile %s' % x,
-                              can_fail_build=False, abort_on_failure=False,
-                              always_run=True)
-         for x in sorted(set(OZONE_TESTS) & set(tests_that_do_not_compile)))
+  #TODO(martiniss) convert loop
+  for x in sorted(set(OZONE_TESTS) &
+                  set(tests_that_do_not_compile)): # pragma: no cover
+    try:
+      api.chromium.compile([x], name='experimentally compile %s' % x)
+    except api.step.StepFailure:
+      pass
 
   # Run the failing tests.
   tests_to_try = list(set(tests_to_compile) & set(tests_that_do_not_pass))
-  yield (api.chromium.runtest(x, xvfb=False, name='experimentally run %s' % x,
-                              can_fail_build=False)
-         for x in sorted(tests_to_try))
-
+  #TODO(martiniss) convert loop
+  for x in sorted(tests_to_try): # pragma: no cover
+    try:
+      api.chromium.runtest(x, xvfb=False, name='experimentally run %s' % x)
+    except api.step.StepFailure:
+      pass
 
 def GenTests(api):
   yield api.test('basic') + api.properties.scheduled()
   yield api.test('trybot') + api.properties.tryserver()
+
+  yield (
+    api.test('check_ecs_deps_fail') +
+    api.properties.scheduled() +
+    api.step_data('check ecs deps', retcode=1)
+  )

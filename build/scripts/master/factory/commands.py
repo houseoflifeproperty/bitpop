@@ -36,7 +36,8 @@ DEFAULT_TESTS = 'defaulttests'
 
 
 def CreateTriggerStep(trigger_name, trigger_set_properties=None,
-                      trigger_copy_properties=None, do_step_if=True):
+                      trigger_copy_properties=None, do_step_if=True,
+                      waitForFinish=False):
   """Returns a Trigger Step, with all the default values copied over.
 
   Args:
@@ -46,6 +47,7 @@ def CreateTriggerStep(trigger_name, trigger_set_properties=None,
       overwritten.
     trigger_copy_properties: a list of all the additional properties to copy
       over to the triggered bot.
+    waitForFinish: Wait for the triggered build to finish.
   """
   trigger_set_properties = trigger_set_properties or {}
   trigger_copy_properties = trigger_copy_properties or []
@@ -54,11 +56,11 @@ def CreateTriggerStep(trigger_name, trigger_set_properties=None,
       # Here are the standard names of the parent build properties.
       'parent_buildername': WithProperties('%(buildername:-)s'),
       'parent_buildnumber': WithProperties('%(buildnumber:-)s'),
+      'parent_build_archive_url': WithProperties('%(build_archive_url:-)s'),
       'parent_branch': WithProperties('%(branch:-)s'),
+      'parent_git_number': WithProperties('%(git_number:-)s'),
       'parent_got_revision': WithProperties('%(got_revision:-)s'),
       'parent_got_v8_revision': WithProperties('%(got_v8_revision:-)s'),
-      'parent_got_webrtc_revision':
-          WithProperties('%(got_webrtc_revision:-)s'),
       'parent_got_webkit_revision':
           WithProperties('%(got_webkit_revision:-)s'),
       'parent_got_nacl_revision':
@@ -89,7 +91,7 @@ def CreateTriggerStep(trigger_name, trigger_set_properties=None,
   return trigger.Trigger(
       schedulerNames=[trigger_name],
       updateSourceStamp=False,
-      waitForFinish=False,
+      waitForFinish=waitForFinish,
       set_properties=set_properties,
       copy_properties=trigger_copy_properties + ['testfilter'],
       doStepIf=do_step_if)
@@ -939,23 +941,76 @@ class FactoryCommands(object):
       if 'gyp' in env_key.lower():
         cmd.extend(['--gyp_env', '%s=%s' % (env_key, env_value)])
 
-    # HACK(hinoka): Because WebKit schedulers watch both the Chromium and Blink
-    #               repositories, the revision could be either a blink or
-    #               chromium revision. We need to differentiate them.
-    def resolve_blink_revision(build):
-      # Ahem, so when WithProperties() is resolved with getRenderingFor(),
-      # if you pass in keyword arguments to WithProperties(), it will actually
-      # call the value (it expects a lambda/function) with "build" as the
-      # only argument, where the output is then passed to the format string.
-      properties = build.getProperties()
-      if (properties.getProperty('branch') == 'trunk'
-          or properties.getProperty('parent_branch') == 'trunk'):
-        revision = properties.getProperty('parent_wk_revision')
-        if not revision:
-          revision = properties.getProperty('revision')
-        return 'src/third_party/WebKit@%s' % revision
+    def rev_factory(blink_config, gclient_specs):
+      """Using a variety of signals, determine the revision resolver."""
+      # HACK(hinoka): Because WebKit schedulers watch both the Chromium and
+      #               Blink repositories, the revision could be either a blink
+      #               or chromium revision. We need to differentiate them.
+      def resolve_blink_revision(build):
+        # Ahem, so when WithProperties() is resolved with getRenderingFor(),
+        # if you pass in keyword arguments to WithProperties(), it will actually
+        # call the value (it expects a lambda/function) with "build" as the
+        # only argument, where the output is then passed to the format string.
+        properties = build.getProperties()
+
+        # 1. Revisions always default to parent revisions.
+        src_revision = properties.getProperty('parent_got_revision')
+        webkit_revision = properties.getProperty('parent_wk_revision')
+
+        # 2. If this is not a triggered build, then add special logic to
+        #    resolve the revision based on if we got passed a blink sourcestamp
+        #    or chromium sourcestamp.
+        if (properties.getProperty('branch') == 'trunk'
+            or properties.getProperty('parent_branch') == 'trunk'):
+          # Blink Mode, revision refers to webkit.
+          if not webkit_revision:
+            webkit_revision = properties.getProperty('revision') or 'HEAD'
+        else:
+          # Normal Mode, revision refers to chromium.
+          if not src_revision:
+            src_revision = properties.getProperty('revision') or 'HEAD'
+
+        # 3. Default uninitialized revisions to HEAD.  This only happens when
+        #    someone presses "Force build", but we want to handle this
+        #    gracefully too.
+        webkit_revision = webkit_revision or 'HEAD'
+        src_revision = src_revision or 'HEAD'
+
+        return 'src@%s,src/third_party/WebKit@%s' % (src_revision,
+                                                    webkit_revision)
+      def resolve_v8_revision(build):
+        # TODO(hinoka): Remove this once V8 is 100% recipes.
+        properties = build.getProperties()
+        v8_revision = (properties.getProperty('parent_got_v8_revision') or
+                       properties.getProperty('revision') or 'HEAD')
+        lkgr = 'lkgr'
+        # HACK(hinoka): master.client.v8 sets this URL in the gclient
+        #               spec to indicate it wants to sync to lkcr, we use this
+        #               signal to sync to origin/lkcr.
+        if ('https://build.chromium.org/p/chromium/lkcr-status/lkgr'
+            in gclient_specs):
+          lkgr = 'lkcr'
+
+        bleeding_edge = ''
+        if 'bleeding_edge@$$V8_REV$$' in gclient_specs:
+          bleeding_edge = 'bleeding_edge:'
+
+        return 'src@origin/%s,src/v8@%s%s' % (lkgr, bleeding_edge, v8_revision)
+
+      # This is where the rev factory starts.  It uses blink_config and
+      # gclient_specs to determine what mode we're running in, and sets the
+      # revision property accordingly, defaulting to just passing the revision
+      # property through.
+      if blink_config == 'blink':
+        return resolve_blink_revision
+      elif '$$V8_REV$$' in gclient_specs:
+        # HACK(hinoka): We are relying on the fact that in the v8 config, a
+        #               property is added in to be string replaced later in
+        #               the gclient pipeline.
+        return resolve_v8_revision
       else:
-        return properties.getProperty('revision')
+        return lambda build: build.getProperties().getProperty('revision')
+
 
     PROPERTIES = {
         'root': '%(root:-)s',
@@ -964,8 +1019,8 @@ class FactoryCommands(object):
         'master': '%(mastername:-)s',
         'revision': {
             'fmtstring': '%(resolved_revision:-)s',
-            'resolved_revision': resolve_blink_revision
-        } if blink_config else '%(revision:-)s',
+            'resolved_revision': rev_factory(blink_config, gclient_specs)
+        },
         'patch_url': '%(patch_url:-)s',
         'slave_name': '%(slavename:-)s',
         'builder_name': '%(buildername:-)s',
@@ -976,8 +1031,7 @@ class FactoryCommands(object):
         property_value = WithProperties(**property_expr)
       else:
         property_value = WithProperties(property_expr)
-      if property_value:
-        cmd.extend(['--%s' % property_name, property_value])
+      cmd.extend(['--%s' % property_name, property_value])
 
     if server:
       cmd.extend(['--rietveld_server', server])
@@ -995,7 +1049,9 @@ class FactoryCommands(object):
         description='bot_update',
         haltOnFailure=True,
         flunkOnFailure=True,
-        timeout=600,
+        # TODO(hinoka): Change this back to 600 once Windows performance issues
+        #               are resolved crbug.com/383455.
+        timeout=1800,
         workdir=self.working_dir,
         command=cmd)
 
@@ -1075,12 +1131,15 @@ class FactoryCommands(object):
                           command=['python', self._kill_tool])
 
   # Zip / Extract commands.
-  def AddZipBuild(self, halt_on_failure=False, factory_properties=None):
+  def AddZipBuild(self, build_url, factory_properties=None):
     factory_properties = factory_properties or {}
+    build_url = build_url or factory_properties['build_url']
+    assert build_url
     revision = factory_properties.get('got_revision')
 
     cmd = [self._python, self._zip_tool,
-           '--target', self._target]
+           '--target', self._target,
+           '--build-url', build_url or '']
     if revision:
       cmd.extend(['--build_revision', revision])
 
@@ -1090,35 +1149,26 @@ class FactoryCommands(object):
     cmd = self.AddBuildProperties(cmd)
     cmd = self.AddFactoryProperties(factory_properties, cmd)
 
-    self._factory.addStep(shell.ShellCommand,
+    self._factory.addStep(chromium_step.AnnotatedCommand,
                           name='package_build',
                           timeout=600,
                           description='packaging build',
                           descriptionDone='packaged build',
-                          haltOnFailure=halt_on_failure,
+                          haltOnFailure=True,
                           command=cmd)
 
-  def AddExtractBuild(self, build_url, factory_properties=None):
+  def AddExtractBuild(self):
     """Extract a build.
 
     Assumes the zip file has a directory like src/xcodebuild which
     contains the actual build.
     """
-    factory_properties = factory_properties or {}
-    revision = (factory_properties.get('parent_got_revision')
-                or factory_properties.get('got_revision'))
-
     cmd = [self._python, self._extract_tool,
            '--target', self._target,
-           '--build-url', build_url]
-    if revision:
-      cmd.extend(['--build_revision', revision])
-
-    if 'webkit_dir' in factory_properties:
-      cmd += ['--webkit-dir', factory_properties['webkit_dir']]
+           '--build-archive-url',
+           WithProperties('%(parent_build_archive_url:-)s')]
 
     cmd = self.AddBuildProperties(cmd)
-    cmd = self.AddFactoryProperties(factory_properties, cmd)
     self.AddTestStep(retcode_command.ReturnCodeCommand, 'extract_build', cmd,
                      halt_on_failure=True)
 

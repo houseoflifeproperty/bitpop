@@ -48,16 +48,8 @@ void WebUIMojo::MainFrameObserver::DidFinishDocumentLoad() {
 WebUIMojo::WebUIMojo(RenderView* render_view)
     : RenderViewObserver(render_view),
       RenderViewObserverTracker<WebUIMojo>(render_view),
-      main_frame_observer_(this),
-      did_finish_document_load_(false) {
+      main_frame_observer_(this) {
   CreateContextState();
-}
-
-void WebUIMojo::SetBrowserHandle(mojo::ScopedMessagePipeHandle handle) {
-  if (did_finish_document_load_)
-    SetHandleOnContextState(handle.Pass());
-  else
-    pending_handle_ = handle.Pass();
 }
 
 WebUIMojo::~WebUIMojo() {
@@ -83,17 +75,10 @@ void WebUIMojo::DestroyContextState(v8::Handle<v8::Context> context) {
 }
 
 void WebUIMojo::OnDidFinishDocumentLoad() {
-  did_finish_document_load_ = true;
-  if (pending_handle_.is_valid())
-    SetHandleOnContextState(pending_handle_.Pass());
-}
-
-void WebUIMojo::SetHandleOnContextState(mojo::ScopedMessagePipeHandle handle) {
-  DCHECK(did_finish_document_load_);
   v8::HandleScope handle_scope(blink::mainThreadIsolate());
   WebUIMojoContextState* state = GetContextState();
   if (state)
-    state->SetHandle(handle.Pass());
+    state->Run();
 }
 
 WebUIMojoContextState* WebUIMojo::GetContextState() {

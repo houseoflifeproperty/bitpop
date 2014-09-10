@@ -33,14 +33,14 @@ enum XMLHttpRequestResponseType {
     "document",
     "json",
     "text",
-    "stream"
+    "legacystream"
 };
 
 [
     WillBeGarbageCollected,
     ActiveDOMObject,
     CustomConstructor(optional XMLHttpRequestOptions options),
-    Exposed=Window&Worker
+    Exposed=(Window,DedicatedWorker,SharedWorker)
 ] interface XMLHttpRequest : XMLHttpRequestEventTarget {
     // event handler attributes
     attribute EventHandler onreadystatechange;
@@ -57,9 +57,9 @@ enum XMLHttpRequestResponseType {
 
     [RaisesException=Setter] attribute boolean withCredentials;
 
-    [Custom, LogActivity, LogAllWorlds, RaisesException] void open(DOMString method, DOMString url, optional boolean async, optional DOMString user, optional DOMString password);
+    [Custom, RaisesException] void open(DOMString method, DOMString url, optional boolean async, optional DOMString user, optional DOMString password);
 
-    [LogActivity, LogAllWorlds, RaisesException] void setRequestHeader(DOMString header, DOMString value);
+    [RaisesException] void setRequestHeader(DOMString header, DOMString value);
 
     [Custom, RaisesException] void send();
 
@@ -69,8 +69,8 @@ enum XMLHttpRequestResponseType {
 
     // response
     [TreatReturnedNullStringAs=Undefined] DOMString getAllResponseHeaders();
-    [TreatReturnedNullStringAs=Null] DOMString getResponseHeader(DOMString header);
-    [Custom=Getter, RaisesException=Getter] readonly attribute DOMString responseText; // The custom getter implements TreatReturnedNullStringAs=Null
+    DOMString? getResponseHeader(DOMString header);
+    [Custom=Getter, RaisesException=Getter] readonly attribute DOMString? responseText;
     [RaisesException=Getter] readonly attribute Document responseXML;
 
     [RaisesException=Setter] attribute XMLHttpRequestResponseType responseType;

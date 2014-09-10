@@ -28,16 +28,16 @@
 #include "core/css/CSSCalculationValue.h"
 #include "core/css/CSSFilterValue.h"
 #include "core/css/CSSGradientValue.h"
-#include "core/css/CSSParserMode.h"
-#include "core/css/CSSParserValues.h"
 #include "core/css/CSSProperty.h"
 #include "core/css/CSSPropertySourceData.h"
 #include "core/css/CSSSelector.h"
-#include "core/css/CSSTokenizer.h"
 #include "core/css/MediaQuery.h"
 #include "core/css/StylePropertySet.h"
+#include "core/css/parser/CSSParserMode.h"
 #include "core/css/parser/CSSParserObserver.h"
+#include "core/css/parser/CSSParserValues.h"
 #include "core/css/parser/CSSPropertyParser.h"
+#include "core/css/parser/CSSTokenizer.h"
 #include "platform/graphics/Color.h"
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
@@ -45,10 +45,9 @@
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/TextPosition.h"
 
-namespace WebCore {
+namespace blink {
 
 class AnimationParseContext;
-class CSSArrayFunctionValue;
 class CSSBorderImageSliceValue;
 class CSSPrimitiveValue;
 class CSSSelectorList;
@@ -62,6 +61,7 @@ class ImmutableStylePropertySet;
 class MediaQueryExp;
 class MediaQuerySet;
 class MutableStylePropertySet;
+class StyleColor;
 class StyleKeyframe;
 class StylePropertyShorthand;
 class StyleRuleBase;
@@ -93,13 +93,15 @@ public:
     bool parseSupportsCondition(const String&);
     static bool parseValue(MutableStylePropertySet*, CSSPropertyID, const String&, bool important, CSSParserMode, StyleSheetContents*);
     static bool parseColor(RGBA32& color, const String&, bool strict = false);
+    static StyleColor colorFromRGBColorString(const String&);
     static bool parseSystemColor(RGBA32& color, const String&);
     static PassRefPtrWillBeRawPtr<CSSValueList> parseFontFaceValue(const AtomicString&);
     static PassRefPtrWillBeRawPtr<CSSValue> parseAnimationTimingFunctionValue(const String&);
     bool parseDeclaration(MutableStylePropertySet*, const String&, CSSParserObserver*, StyleSheetContents* contextStyleSheet);
-    static PassRefPtr<ImmutableStylePropertySet> parseInlineStyleDeclaration(const String&, Element*);
+    static PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> parseInlineStyleDeclaration(const String&, Element*);
     PassRefPtrWillBeRawPtr<MediaQuerySet> parseMediaQueryList(const String&);
     PassOwnPtr<Vector<double> > parseKeyframeKeyList(const String&);
+    bool parseAttributeMatchType(CSSSelector::AttributeMatchType&, const String&);
 
     static bool parseValue(MutableStylePropertySet*, CSSPropertyID, const String&, bool important, const Document&);
 
@@ -172,7 +174,7 @@ public:
 
     void clearProperties();
 
-    PassRefPtr<ImmutableStylePropertySet> createStylePropertySet();
+    PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> createStylePropertySet();
 
     CSSParserContext m_context;
 
@@ -267,7 +269,7 @@ private:
     void setupParser(const char* prefix, unsigned prefixLength, const String&, const char* suffix, unsigned suffixLength);
 
     bool parseValue(MutableStylePropertySet*, CSSPropertyID, const String&, bool important, StyleSheetContents* contextStyleSheet);
-    PassRefPtr<ImmutableStylePropertySet> parseDeclaration(const String&, StyleSheetContents* contextStyleSheet);
+    PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> parseDeclaration(const String&, StyleSheetContents* contextStyleSheet);
 
     bool parseColor(const String&);
 
@@ -322,6 +324,6 @@ inline int cssyylex(void* yylval, BisonCSSParser* parser)
 
 bool isValidNthToken(const CSSParserString&);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BisonCSSParser_h

@@ -371,13 +371,11 @@ public:
     // point.
     virtual void inspectElementAt(const WebPoint&) = 0;
 
-    // Settings used by the inspector.
-    virtual WebString inspectorSettings() const = 0;
-    virtual void setInspectorSettings(const WebString&) = 0;
-    virtual bool inspectorSetting(const WebString& key,
-                                  WebString* value) const = 0;
-    virtual void setInspectorSetting(const WebString& key,
-                                     const WebString& value) = 0;
+    // FIXME: These are deprecated. Remove them.
+    virtual WebString inspectorSettingsDeprecated() const { return WebString(); };
+    virtual void setInspectorSettings(const WebString&) { };
+    virtual bool inspectorSettingDeprecated(const WebString& key, WebString* value) const { return false; };
+    virtual void setInspectorSetting(const WebString& key, const WebString& value) { };
 
     // Set an override of device scale factor passed from WebView to
     // compositor. Pass zero to cancel override. This is used to implement
@@ -408,13 +406,6 @@ public:
 
 
     // SmartClip support ---------------------------------------------------
-
-    // FIXME: This should be removed when the chromium side patch lands
-    // http://codereview.chromium.org/260623004
-    virtual WebString getSmartClipData(WebRect) = 0;
-
-    // TODO(changwan): remove this
-    virtual void getSmartClipData(WebRect, WebString&, WebRect& resultRect) = 0;
     virtual void extractSmartClipData(WebRect initRect, WebString& text, WebString& html, WebRect& resultRect) = 0;
 
 

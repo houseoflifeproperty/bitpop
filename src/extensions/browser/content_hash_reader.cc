@@ -7,7 +7,9 @@
 #include "base/base64.h"
 #include "base/file_util.h"
 #include "base/json/json_reader.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
+#include "base/timer/elapsed_timer.h"
 #include "base/values.h"
 #include "crypto/sha2.h"
 #include "extensions/browser/computed_hashes.h"
@@ -33,6 +35,7 @@ ContentHashReader::ContentHashReader(const std::string& extension_id,
       relative_path_(relative_path),
       key_(key),
       status_(NOT_INITIALIZED),
+      content_exists_(false),
       have_verified_contents_(false),
       have_computed_hashes_(false),
       block_size_(0) {
@@ -42,10 +45,18 @@ ContentHashReader::~ContentHashReader() {
 }
 
 bool ContentHashReader::Init() {
+  base::ElapsedTimer timer;
   DCHECK_EQ(status_, NOT_INITIALIZED);
   status_ = FAILURE;
   base::FilePath verified_contents_path =
       file_util::GetVerifiedContentsPath(extension_root_);
+
+  // Check that this is a valid resource to verify (i.e., it exists).
+  base::FilePath content_path = extension_root_.Append(relative_path_);
+  if (!base::PathExists(content_path))
+    return false;
+
+  content_exists_ = true;
 
   if (!base::PathExists(verified_contents_path))
     return false;
@@ -85,6 +96,8 @@ bool ContentHashReader::Init() {
     return false;
 
   status_ = SUCCESS;
+  UMA_HISTOGRAM_TIMES("ExtensionContentHashReader.InitLatency",
+                      timer.Elapsed());
   return true;
 }
 

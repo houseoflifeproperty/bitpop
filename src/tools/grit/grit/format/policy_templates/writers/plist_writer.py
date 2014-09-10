@@ -32,6 +32,7 @@ class PListWriter(xml_formatted_writer.XMLFormattedWriter):
     'int': 'integer',
     'int-enum': 'integer',
     'string-enum': 'string',
+    'string-enum-list': 'array',
     'main': 'boolean',
     'list': 'array',
     'dict': 'dictionary',
@@ -107,7 +108,7 @@ class PListWriter(xml_formatted_writer.XMLFormattedWriter):
         else:
           element_type = 'string'
         self.AddElement(range_list, element_type, {}, str(item['value']))
-    elif policy_type == 'list':
+    elif policy_type in ('list', 'string-enum-list'):
       subkeys = self._AddKeyValuePair(dict, 'pfm_subkeys', 'array')
       subkeys_dict = self.AddElement(subkeys, 'dict')
       subkeys_type = self._AddKeyValuePair(subkeys_dict, 'pfm_type', 'string')

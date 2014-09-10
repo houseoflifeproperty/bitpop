@@ -183,7 +183,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config config) OVERRIDE;
+      const SkColorType color_type) OVERRIDE;
   virtual void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
@@ -218,7 +218,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual InputEventAckState FilterInputEvent(
       const blink::WebInputEvent& input_event) OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
-  virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
+  virtual BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
+      BrowserAccessibilityDelegate* delegate) OVERRIDE;
+  virtual gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget() OVERRIDE;
+  virtual gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible()
+      OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
   virtual void OnSwapCompositorFrame(
@@ -323,6 +327,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Updates the cursor clip region. Used for mouse locking.
   void UpdateMouseLockRegion();
+
+  // Notification that the LegacyRenderWidgetHostHWND was destroyed.
+  void OnLegacyWindowDestroyed();
 #endif
 
   // Method to indicate if this instance is shutting down or closing.
@@ -333,6 +340,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Sets whether the overscroll controller should be enabled for this page.
   void SetOverscrollControllerEnabled(bool enabled);
 
+  void SnapToPhysicalPixelBoundary();
+
   OverscrollController* overscroll_controller() const {
     return overscroll_controller_.get();
   }
@@ -342,7 +351,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Exposed for tests.
   aura::Window* window() { return window_; }
-  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+  virtual SkColorType PreferredReadbackFormat() OVERRIDE;
   virtual DelegatedFrameHost* GetDelegatedFrameHost() const OVERRIDE;
 
  private:
@@ -368,13 +377,17 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                            VisibleViewportTest);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            OverscrollResetsOnBlur);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsViewAuraTest,
+                           WebContentsViewReparent);
 
   class WindowObserver;
   friend class WindowObserver;
 
   void UpdateCursorIfOverSelf();
 
-  void SnapToPhysicalPixelBoundary();
+  // Tracks whether SnapToPhysicalPixelBoundary() has been called.
+  bool has_snapped_to_boundary() { return has_snapped_to_boundary_; }
+  void ResetHasSnappedToBoundary() { has_snapped_to_boundary_ = false; }
 
   // Set the bounds of the window and handle size changes.  Assumes the caller
   // has already adjusted the origin of |rect| to conform to whatever coordinate
@@ -561,7 +574,25 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // over this view changes, we need this information in order to create a new
   // region for the HWND.
   PluginWindowMoves plugin_window_moves_;
+
+  // The LegacyRenderWidgetHostHWND class provides a dummy HWND which is used
+  // for accessibility, as the container for windowless plugins like
+  // Flash/Silverlight, etc and for legacy drivers for trackpoints/trackpads,
+  // etc.
+  // The LegacyRenderWidgetHostHWND instance is created during the first call
+  // to RenderWidgetHostViewAura::InternalSetBounds. The instance is destroyed
+  // when the LegacyRenderWidgetHostHWND hwnd is destroyed.
+  content::LegacyRenderWidgetHostHWND* legacy_render_widget_host_HWND_;
+
+  // Set to true if the legacy_render_widget_host_HWND_ instance was destroyed
+  // by Windows. This could happen if the browser window was destroyed by
+  // DestroyWindow for e.g. This flag helps ensure that we don't try to create
+  // the LegacyRenderWidgetHostHWND instance again as that would be a futile
+  // exercise.
+  bool legacy_window_destroyed_;
 #endif
+
+  bool has_snapped_to_boundary_;
 
   TouchEditingClient* touch_editing_client_;
 
@@ -575,14 +606,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   base::WeakPtrFactory<RenderWidgetHostViewAura> weak_ptr_factory_;
 
-#if defined(OS_WIN)
-  // The LegacyRenderWidgetHostHWND class provides a dummy HWND which is used
-  // for accessibility, as the container for windowless plugins like
-  // Flash/Silverlight, etc and for legacy drivers for trackpoints/trackpads,
-  // etc.
-  scoped_ptr<content::LegacyRenderWidgetHostHWND>
-      legacy_render_widget_host_HWND_;
-#endif
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAura);
 };
 

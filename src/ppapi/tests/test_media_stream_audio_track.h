@@ -24,9 +24,14 @@ class TestMediaStreamAudioTrack : public TestCase {
   // Overrides.
   virtual void HandleMessage(const pp::Var& message_data);
 
+  // Test helpers.
+  std::string CheckConfigure(int32_t attrib_list[], int32_t expected_result);
+  std::string CheckGetBuffer(int times, int expected_duration);
+
   std::string TestCreate();
   std::string TestGetBuffer();
   std::string TestConfigure();
+  std::string TestConfigureClose();
 
   pp::MediaStreamAudioTrack audio_track_;
 

@@ -33,7 +33,7 @@
 
 #include "core/rendering/RenderObject.h"
 
-namespace WebCore {
+namespace blink {
 
 ActiveAnimations::~ActiveAnimations()
 {
@@ -42,21 +42,6 @@ ActiveAnimations::~ActiveAnimations()
         m_animations[i]->notifyElementDestroyed();
     m_animations.clear();
 #endif
-}
-
-void ActiveAnimations::addPlayer(AnimationPlayer* player)
-{
-    ++m_players.add(player, 0).storedValue->value;
-}
-
-void ActiveAnimations::removePlayer(AnimationPlayer* player)
-{
-    AnimationPlayerCountedSet::iterator it = m_players.find(player);
-    ASSERT(it != m_players.end());
-    ASSERT(it->value > 0);
-    --it->value;
-    if (!it->value)
-        m_players.remove(it);
 }
 
 void ActiveAnimations::updateAnimationFlags(RenderStyle& style)
@@ -93,9 +78,11 @@ void ActiveAnimations::cancelAnimationOnCompositor()
 
 void ActiveAnimations::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_cssAnimations);
     visitor->trace(m_defaultStack);
     visitor->trace(m_players);
+#endif
 }
 
-} // namespace WebCore
+} // namespace blink

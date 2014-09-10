@@ -32,14 +32,14 @@
 #include <set>
 #include <vector>
 
-#include "talk/base/basictypes.h"
-#include "talk/base/gunit.h"
-#include "talk/base/stringutils.h"
 #include "talk/media/base/codec.h"
 #include "talk/media/webrtc/fakewebrtccommon.h"
 #include "talk/media/webrtc/webrtcvideodecoderfactory.h"
 #include "talk/media/webrtc/webrtcvideoencoderfactory.h"
 #include "talk/media/webrtc/webrtcvie.h"
+#include "webrtc/base/basictypes.h"
+#include "webrtc/base/gunit.h"
+#include "webrtc/base/stringutils.h"
 
 namespace cricket {
 
@@ -548,13 +548,21 @@ class FakeWebRtcVideoEngine
     WEBRTC_ASSERT_CHANNEL(channel);
     return channels_.find(channel)->second->overuse_options_;
   }
-  int GetRtxSsrc(int channel, int simulcast_idx) const {
+  int GetSsrc(int channel, int idx) const {
     WEBRTC_ASSERT_CHANNEL(channel);
-    if (channels_.find(channel)->second->rtx_ssrcs_.find(simulcast_idx) ==
+    if (channels_.find(channel)->second->ssrcs_.find(idx) ==
+        channels_.find(channel)->second->ssrcs_.end()) {
+      return -1;
+    }
+    return channels_.find(channel)->second->ssrcs_[idx];
+  }
+  int GetRtxSsrc(int channel, int idx) const {
+    WEBRTC_ASSERT_CHANNEL(channel);
+    if (channels_.find(channel)->second->rtx_ssrcs_.find(idx) ==
         channels_.find(channel)->second->rtx_ssrcs_.end()) {
       return -1;
     }
-    return channels_.find(channel)->second->rtx_ssrcs_[simulcast_idx];
+    return channels_.find(channel)->second->rtx_ssrcs_[idx];
   }
   bool ReceiveCodecRegistered(int channel,
                               const webrtc::VideoCodec& codec) const {
@@ -684,7 +692,11 @@ class FakeWebRtcVideoEngine
     channels_[channel]->overuse_observer_ = observer;
     return 0;
   }
+#ifdef USE_WEBRTC_DEV_BRANCH
+  WEBRTC_STUB(GetCpuOveruseMetrics, (int, webrtc::CpuOveruseMetrics*));
+#else
   WEBRTC_STUB(CpuOveruseMeasures, (int, int*, int*, int*, int*));
+#endif
   WEBRTC_FUNC(SetCpuOveruseOptions,
       (int channel, const webrtc::CpuOveruseOptions& options)) {
     WEBRTC_CHECK_CHANNEL(channel);
@@ -738,7 +750,7 @@ class FakeWebRtcVideoEngine
     } else {
       out_codec.codecType = webrtc::kVideoCodecUnknown;
     }
-    talk_base::strcpyn(out_codec.plName, sizeof(out_codec.plName),
+    rtc::strcpyn(out_codec.plName, sizeof(out_codec.plName),
                        c.name.c_str());
     out_codec.plType = c.id;
     out_codec.width = c.width;
@@ -1028,7 +1040,7 @@ class FakeWebRtcVideoEngine
   WEBRTC_FUNC_CONST(GetRTCPCName, (const int channel,
                                    char rtcp_cname[KMaxRTCPCNameLength])) {
     WEBRTC_CHECK_CHANNEL(channel);
-    talk_base::strcpyn(rtcp_cname, KMaxRTCPCNameLength,
+    rtc::strcpyn(rtcp_cname, KMaxRTCPCNameLength,
                        channels_.find(channel)->second->cname_.c_str());
     return 0;
   }

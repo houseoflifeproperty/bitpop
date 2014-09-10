@@ -77,6 +77,8 @@ class AwRenderViewHostExt : public content::WebContentsObserver,
   void SetBackgroundColor(SkColor c);
   void SetJsOnlineProperty(bool network_up);
 
+  void SendCheckRenderThreadResponsiveness();
+
  private:
   // content::WebContentsObserver implementation.
   virtual void RenderViewCreated(content::RenderViewHost* view_host) OVERRIDE;

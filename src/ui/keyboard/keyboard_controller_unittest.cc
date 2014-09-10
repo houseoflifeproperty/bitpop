@@ -12,7 +12,6 @@
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/test/aura_test_helper.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
@@ -27,6 +26,7 @@
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/compositor/test/layer_animator_test_controller.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/keyboard/keyboard_controller_observer.h"
 #include "ui/keyboard/keyboard_controller_proxy.h"
@@ -294,7 +294,7 @@ TEST_F(KeyboardControllerTest, ClickDoesNotFocusKeyboard) {
   EventObserver observer;
   keyboard_container->AddPreTargetHandler(&observer);
 
-  aura::test::EventGenerator generator(root_window());
+  ui::test::EventGenerator generator(root_window());
   generator.MoveMouseTo(proxy()->GetKeyboardWindow()->bounds().CenterPoint());
   generator.ClickLeftButton();
   EXPECT_TRUE(window->HasFocus());
@@ -471,8 +471,8 @@ class KeyboardControllerAnimationTest : public KeyboardControllerTest,
 
   virtual void SetUp() OVERRIDE {
     // We cannot short-circuit animations for this test.
-    ui::ScopedAnimationDurationScaleMode normal_duration_mode(
-        ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+    ui::ScopedAnimationDurationScaleMode test_duration_mode(
+        ui::ScopedAnimationDurationScaleMode::NON_ZERO_DURATION);
 
     KeyboardControllerTest::SetUp();
 

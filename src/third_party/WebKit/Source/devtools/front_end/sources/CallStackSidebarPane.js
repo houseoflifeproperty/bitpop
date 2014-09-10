@@ -37,10 +37,10 @@ WebInspector.CallStackSidebarPane = function()
     asyncCheckbox.classList.add("scripts-callstack-async");
     asyncCheckbox.addEventListener("click", consumeEvent, false);
     WebInspector.settings.enableAsyncStackTraces.addChangeListener(this._asyncStackTracesStateChanged, this);
+    WebInspector.settings.skipStackFramesPattern.addChangeListener(this._blackboxingStateChanged, this);
 }
 
 WebInspector.CallStackSidebarPane.Events = {
-    CallFrameRestarted: "CallFrameRestarted",
     CallFrameSelected: "CallFrameSelected"
 }
 
@@ -72,11 +72,7 @@ WebInspector.CallStackSidebarPane.prototype = {
         var topStackHidden = (this._hiddenPlacards === this.placards.length);
 
         while (asyncStackTrace) {
-            var title = asyncStackTrace.description;
-            if (title)
-                title += " " + WebInspector.UIString("(async)");
-            else
-                title = WebInspector.UIString("Async Call");
+            var title = WebInspector.asyncStackTraceLabel(asyncStackTrace.description);
             var asyncPlacard = new WebInspector.Placard(title, "");
             asyncPlacard.element.addEventListener("click", this._selectNextVisiblePlacard.bind(this, this.placards.length, false), false);
             asyncPlacard.element.addEventListener("contextmenu", this._asyncPlacardContextMenu.bind(this, this.placards.length), true);
@@ -118,7 +114,7 @@ WebInspector.CallStackSidebarPane.prototype = {
             this.placards.push(placard);
             this.bodyElement.appendChild(placard.element);
 
-            if (callFrame.script.isFramework()) {
+            if (WebInspector.BlackboxSupport.isBlackboxedURL(callFrame.script.sourceURL)) {
                 placard.setHidden(true);
                 placard.element.classList.add("dimmed");
                 ++this._hiddenPlacards;
@@ -149,7 +145,7 @@ WebInspector.CallStackSidebarPane.prototype = {
 
     /**
      * @param {!WebInspector.CallStackSidebarPane.Placard} placard
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _placardContextMenu: function(placard, event)
     {
@@ -159,12 +155,19 @@ WebInspector.CallStackSidebarPane.prototype = {
             contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Restart frame" : "Restart Frame"), this._restartFrame.bind(this, placard));
 
         contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Copy stack trace" : "Copy Stack Trace"), this._copyStackTrace.bind(this));
+
+        var script = placard._callFrame.script;
+        if (!script.isSnippet()) {
+            contextMenu.appendSeparator();
+            this.appendBlackboxURLContextMenuItems(contextMenu, script.sourceURL);
+        }
+
         contextMenu.show();
     },
 
     /**
      * @param {number} index
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _asyncPlacardContextMenu: function(index, event)
     {
@@ -178,12 +181,51 @@ WebInspector.CallStackSidebarPane.prototype = {
     },
 
     /**
+     * @param {!WebInspector.ContextMenu} contextMenu
+     * @param {string} url
+     */
+    appendBlackboxURLContextMenuItems: function(contextMenu, url)
+    {
+        if (!url)
+            return;
+        var blackboxed = WebInspector.BlackboxSupport.isBlackboxedURL(url);
+        if (blackboxed)
+            contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Stop blackboxing" : "Stop Blackboxing"), this._handleContextMenuBlackboxURL.bind(this, url, false));
+        else
+            contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Blackbox script" : "Blackbox Script"), this._handleContextMenuBlackboxURL.bind(this, url, true));
+    },
+
+    /**
+     * @param {string} url
+     * @param {boolean} blackbox
+     */
+    _handleContextMenuBlackboxURL: function(url, blackbox)
+    {
+        if (blackbox)
+            WebInspector.BlackboxSupport.blackboxURL(url);
+        else
+            WebInspector.BlackboxSupport.unblackboxURL(url);
+    },
+
+    _blackboxingStateChanged: function()
+    {
+        if (!this._target)
+            return;
+        var details = this._target.debuggerModel.debuggerPausedDetails();
+        if (!details)
+            return;
+        this.update(details);
+        var selectedCallFrame = this._target.debuggerModel.selectedCallFrame();
+        if (selectedCallFrame)
+            this.setSelectedCallFrame(selectedCallFrame);
+    },
+
+    /**
      * @param {!WebInspector.CallStackSidebarPane.Placard} placard
      */
     _restartFrame: function(placard)
     {
         placard._callFrame.restart();
-        this.dispatchEventToListeners(WebInspector.CallStackSidebarPane.Events.CallFrameRestarted, placard._callFrame);
     },
 
     _asyncStackTracesStateChanged: function()
@@ -308,7 +350,7 @@ WebInspector.CallStackSidebarPane.prototype = {
     },
 
     /**
-     * @param {function(!Array.<!WebInspector.KeyboardShortcut.Descriptor>, function(?Event=):boolean)} registerShortcutDelegate
+     * @param {function(!Array.<!WebInspector.KeyboardShortcut.Descriptor>, function(!Event=):boolean)} registerShortcutDelegate
      */
     registerShortcuts: function(registerShortcutDelegate)
     {
@@ -351,7 +393,7 @@ WebInspector.CallStackSidebarPane.prototype = {
 WebInspector.CallStackSidebarPane.Placard = function(callFrame, asyncPlacard)
 {
     WebInspector.Placard.call(this, callFrame.functionName || WebInspector.UIString("(anonymous function)"), "");
-    callFrame.createLiveLocation(this._update.bind(this));
+    WebInspector.debuggerWorkspaceBinding.createCallFrameLiveLocation(callFrame, this._update.bind(this));
     this._callFrame = callFrame;
     this._asyncPlacard = asyncPlacard;
 }
@@ -362,7 +404,7 @@ WebInspector.CallStackSidebarPane.Placard.prototype = {
      */
     _update: function(uiLocation)
     {
-        this.subtitle = uiLocation.linkText().trimMiddle(100);
+        this.subtitle = uiLocation.linkText().trimMiddle(30);
     },
 
     __proto__: WebInspector.Placard.prototype

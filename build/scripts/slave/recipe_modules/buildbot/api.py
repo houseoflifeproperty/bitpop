@@ -8,7 +8,7 @@ class BuildbotApi(recipe_api.RecipeApi):
   def prep(self):
     """Prepatory steps for buildbot based recipes."""
     # TODO(iannucci): Also do taskkill?
-    return self.m.python(
+    self.m.python(
       'cleanup temp',
       self.m.path['build'].join('scripts', 'slave', 'cleanup_temp.py')
     )
@@ -17,10 +17,9 @@ class BuildbotApi(recipe_api.RecipeApi):
     """Returns a step which copies the 'parent_got_revision' build property
     to the 'got_revision' build property. This is needed for recipes which
     use isolates for testing and which skip the src/ checkout."""
-    def followup_fn(step_result):
-      step_result.presentation.properties['got_revision'] = \
-          self.m.properties['parent_got_revision']
-    return self.m.python.inline(
+
+    result = self.m.python.inline(
       'copy parent_got_revision to got_revision',
-      'exit()',
-      followup_fn=followup_fn)
+      'exit()')
+    result.presentation.properties['got_revision'] = (
+        self.m.properties['parent_got_revision'])

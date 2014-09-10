@@ -11,6 +11,7 @@
 #include "android_webview/browser/jni_dependency_factory.h"
 #include "android_webview/browser/net/aw_url_request_context_getter.h"
 #include "android_webview/browser/net/init_native_callback.h"
+#include "base/bind.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/pref_service_factory.h"
@@ -22,12 +23,15 @@
 #include "components/user_prefs/user_prefs.h"
 #include "components/visitedlink/browser/visitedlink_master.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/ssl_host_state_delegate.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "net/cookies/cookie_store.h"
+#include "net/proxy/proxy_service.h"
 
 using base::FilePath;
 using content::BrowserThread;
+using data_reduction_proxy::DataReductionProxyConfigService;
 using data_reduction_proxy::DataReductionProxySettings;
 
 namespace android_webview {
@@ -101,17 +105,30 @@ void AwBrowserContext::PreMainMessageLoopRun() {
           new data_reduction_proxy::DataReductionProxyParams(
               data_reduction_proxy::DataReductionProxyParams::kAllowed)));
 #endif
+  scoped_ptr<DataReductionProxyConfigService>
+      data_reduction_proxy_config_service(
+          new DataReductionProxyConfigService(
+              scoped_ptr<net::ProxyConfigService>(
+                  net::ProxyService::CreateSystemProxyConfigService(
+                      BrowserThread::GetMessageLoopProxyForThread(
+                          BrowserThread::IO),
+                          NULL /* Ignored on Android */)).Pass()));
+  if (data_reduction_proxy_settings_.get()) {
+      data_reduction_proxy_configurator_.reset(
+          new data_reduction_proxy::DataReductionProxyConfigTracker(
+              base::Bind(&DataReductionProxyConfigService::UpdateProxyConfig,
+                         base::Unretained(
+                             data_reduction_proxy_config_service.get())),
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
+    data_reduction_proxy_settings_->SetProxyConfigurator(
+        data_reduction_proxy_configurator_.get());
+  }
 
   url_request_context_getter_ =
-      new AwURLRequestContextGetter(GetPath(), cookie_store_.get());
+      new AwURLRequestContextGetter(GetPath(),
+                                    cookie_store_.get(),
+                                    data_reduction_proxy_config_service.Pass());
 
-  if (data_reduction_proxy_settings_.get()) {
-    scoped_ptr<data_reduction_proxy::DataReductionProxyConfigurator>
-        configurator(new data_reduction_proxy::DataReductionProxyConfigTracker(
-            url_request_context_getter_->proxy_config_service(),
-            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
-    data_reduction_proxy_settings_->SetProxyConfigurator(configurator.Pass());
-  }
   visitedlink_master_.reset(
       new visitedlink::VisitedLinkMaster(this, this, false));
   visitedlink_master_->Init();
@@ -261,6 +278,10 @@ quota::SpecialStoragePolicy* AwBrowserContext::GetSpecialStoragePolicy() {
 
 content::PushMessagingService* AwBrowserContext::GetPushMessagingService() {
   // TODO(johnme): Support push messaging in WebView.
+  return NULL;
+}
+
+content::SSLHostStateDelegate* AwBrowserContext::GetSSLHostStateDelegate() {
   return NULL;
 }
 

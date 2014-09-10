@@ -10,6 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/indexed_db/indexed_db_fake_backing_store.h"
 #include "content/browser/indexed_db/mock_indexed_db_database_callbacks.h"
+#include "content/browser/indexed_db/mock_indexed_db_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
@@ -31,7 +32,7 @@ class AbortObserver {
 
 class IndexedDBTransactionTest : public testing::Test {
  public:
-  IndexedDBTransactionTest() {
+  IndexedDBTransactionTest() : factory_(new MockIndexedDBFactory()) {
     backing_store_ = new IndexedDBFakeBackingStore();
     CreateDB();
   }
@@ -40,11 +41,10 @@ class IndexedDBTransactionTest : public testing::Test {
     // DB is created here instead of the constructor to workaround a
     // "peculiarity of C++". More info at
     // https://code.google.com/p/googletest/wiki/FAQ#My_compiler_complains_that_a_constructor_(or_destructor)_cannot
-    IndexedDBFactory* factory = NULL;
     leveldb::Status s;
     db_ = IndexedDBDatabase::Create(base::ASCIIToUTF16("db"),
                                     backing_store_,
-                                    factory,
+                                    factory_,
                                     IndexedDBDatabase::Identifier(),
                                     &s);
     ASSERT_TRUE(s.ok());
@@ -64,12 +64,14 @@ class IndexedDBTransactionTest : public testing::Test {
 
  private:
   base::MessageLoop message_loop_;
+  scoped_refptr<MockIndexedDBFactory> factory_;
 
   DISALLOW_COPY_AND_ASSIGN(IndexedDBTransactionTest);
 };
 
-class IndexedDBTransactionTestMode : public IndexedDBTransactionTest,
-  public testing::WithParamInterface<indexed_db::TransactionMode> {
+class IndexedDBTransactionTestMode
+    : public IndexedDBTransactionTest,
+      public testing::WithParamInterface<blink::WebIDBTransactionMode> {
  public:
   IndexedDBTransactionTestMode() {}
  private:
@@ -84,7 +86,7 @@ TEST_F(IndexedDBTransactionTest, Timeout) {
       id,
       new MockIndexedDBDatabaseCallbacks(),
       scope,
-      indexed_db::TRANSACTION_READ_WRITE,
+      blink::WebIDBTransactionModeReadWrite,
       db_,
       new IndexedDBFakeBackingStore::FakeTransaction(commit_success));
   db_->TransactionCreated(transaction);
@@ -128,7 +130,7 @@ TEST_F(IndexedDBTransactionTest, NoTimeoutReadOnly) {
       id,
       new MockIndexedDBDatabaseCallbacks(),
       scope,
-      indexed_db::TRANSACTION_READ_ONLY,
+      blink::WebIDBTransactionModeReadOnly,
       db_,
       new IndexedDBFakeBackingStore::FakeTransaction(commit_success));
   db_->TransactionCreated(transaction);
@@ -179,7 +181,7 @@ TEST_P(IndexedDBTransactionTestMode, ScheduleNormalTask) {
   EXPECT_TRUE(transaction->preemptive_task_queue_.empty());
 
   transaction->ScheduleTask(
-      IndexedDBDatabase::NORMAL_TASK,
+      blink::WebIDBTaskTypeNormal,
       base::Bind(&IndexedDBTransactionTest::DummyOperation,
                  base::Unretained(this)));
 
@@ -222,7 +224,7 @@ TEST_F(IndexedDBTransactionTest, SchedulePreemptiveTask) {
       id,
       new MockIndexedDBDatabaseCallbacks(),
       scope,
-      indexed_db::TRANSACTION_VERSION_CHANGE,
+      blink::WebIDBTransactionModeVersionChange,
       db_,
       new IndexedDBFakeBackingStore::FakeTransaction(commit_failure));
 
@@ -241,7 +243,7 @@ TEST_F(IndexedDBTransactionTest, SchedulePreemptiveTask) {
   EXPECT_TRUE(transaction->preemptive_task_queue_.empty());
 
   transaction->ScheduleTask(
-      IndexedDBDatabase::PREEMPTIVE_TASK,
+      blink::WebIDBTaskTypePreemptive,
       base::Bind(&IndexedDBTransactionTest::DummyOperation,
                  base::Unretained(this)));
   transaction->AddPreemptiveEvent();
@@ -323,7 +325,7 @@ TEST_P(IndexedDBTransactionTestMode, AbortPreemptive) {
   EXPECT_FALSE(transaction->IsTimeoutTimerRunning());
 
   transaction->ScheduleTask(
-      IndexedDBDatabase::PREEMPTIVE_TASK,
+      blink::WebIDBTaskTypePreemptive,
       base::Bind(&IndexedDBTransactionTest::DummyOperation,
                  base::Unretained(this)));
   EXPECT_EQ(0, transaction->pending_preemptive_events_);
@@ -356,11 +358,9 @@ TEST_P(IndexedDBTransactionTestMode, AbortPreemptive) {
             transaction->diagnostics().tasks_scheduled);
 }
 
-static const indexed_db::TransactionMode kTestModes[] = {
-  indexed_db::TRANSACTION_READ_ONLY,
-  indexed_db::TRANSACTION_READ_WRITE,
-  indexed_db::TRANSACTION_VERSION_CHANGE
-};
+static const blink::WebIDBTransactionMode kTestModes[] = {
+    blink::WebIDBTransactionModeReadOnly, blink::WebIDBTransactionModeReadWrite,
+    blink::WebIDBTransactionModeVersionChange};
 
 INSTANTIATE_TEST_CASE_P(IndexedDBTransactions,
                         IndexedDBTransactionTestMode,

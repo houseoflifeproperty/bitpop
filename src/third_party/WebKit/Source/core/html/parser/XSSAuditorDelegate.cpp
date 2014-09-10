@@ -28,6 +28,7 @@
 
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
@@ -37,7 +38,7 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 String XSSInfo::buildConsoleError() const
 {
@@ -73,6 +74,11 @@ XSSAuditorDelegate::XSSAuditorDelegate(Document* document)
     ASSERT(m_document);
 }
 
+void XSSAuditorDelegate::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
+}
+
 PassRefPtr<FormData> XSSAuditorDelegate::generateViolationReport(const XSSInfo& xssInfo)
 {
     ASSERT(isMainThread());
@@ -98,7 +104,7 @@ void XSSAuditorDelegate::didBlockScript(const XSSInfo& xssInfo)
 {
     ASSERT(isMainThread());
 
-    m_document->addConsoleMessage(JSMessageSource, ErrorMessageLevel, xssInfo.buildConsoleError());
+    m_document->addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, xssInfo.buildConsoleError()));
 
     // stopAllLoaders can detach the LocalFrame, so protect it.
     RefPtr<LocalFrame> protect(m_document->frame());
@@ -116,7 +122,7 @@ void XSSAuditorDelegate::didBlockScript(const XSSInfo& xssInfo)
     }
 
     if (xssInfo.m_didBlockEntirePage)
-        m_document->frame()->navigationScheduler().scheduleLocationChange(m_document, SecurityOrigin::urlWithUniqueSecurityOrigin(), Referrer());
+        m_document->frame()->navigationScheduler().schedulePageBlock(m_document, Referrer());
 }
 
-} // namespace WebCore
+} // namespace blink

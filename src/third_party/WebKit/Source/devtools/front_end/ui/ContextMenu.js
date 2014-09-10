@@ -80,6 +80,9 @@ WebInspector.ContextMenuItem.prototype = {
         this._disabled = !enabled;
     },
 
+    /**
+     * @return {!InspectorFrontendHostAPI.ContextMenuDescriptor}
+     */
     _buildDescriptor: function()
     {
         switch (this._type) {
@@ -90,6 +93,7 @@ WebInspector.ContextMenuItem.prototype = {
         case "checkbox":
             return { type: "checkbox", id: this._id, label: this._label, checked: !!this._checked, enabled: !this._disabled };
         }
+        throw new Error("Invalid item type:"  + this._type);
     }
 }
 
@@ -175,6 +179,9 @@ WebInspector.ContextSubMenuItem.prototype = {
         return !this._items.length;
     },
 
+    /**
+     * @return {!InspectorFrontendHostAPI.ContextMenuDescriptor}
+     */
     _buildDescriptor: function()
     {
         var result = { type: "subMenu", label: this._label, enabled: !this._disabled, subItems: [] };
@@ -189,22 +196,26 @@ WebInspector.ContextSubMenuItem.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.ContextSubMenuItem}
- * @param {?Event} event
+ * @param {!Event} event
  */
 WebInspector.ContextMenu = function(event)
 {
     WebInspector.ContextSubMenuItem.call(this, this, "");
-    this._event = /** @type {!Event} */ (event);
+    this._event = event;
     this._handlers = {};
     this._id = 0;
 }
 
-/**
- * @param {boolean} useSoftMenu
- */
-WebInspector.ContextMenu.setUseSoftMenu = function(useSoftMenu)
+WebInspector.ContextMenu.initialize = function()
 {
-    WebInspector.ContextMenu._useSoftMenu = useSoftMenu;
+    InspectorFrontendHost.events.addEventListener(InspectorFrontendHostAPI.Events.SetUseSoftMenu, setUseSoftMenu);
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    function setUseSoftMenu(event)
+    {
+        WebInspector.ContextMenu._useSoftMenu = /** @type {boolean} */ (event.data);
+    }
 }
 
 WebInspector.ContextMenu.prototype = {
@@ -222,11 +233,13 @@ WebInspector.ContextMenu.prototype = {
 
         if (menuObject.length) {
             WebInspector._contextMenu = this;
-            if (WebInspector.ContextMenu._useSoftMenu) {
-                var softMenu = new WebInspector.SoftContextMenu(menuObject);
-                softMenu.show(this._event);
+            if (WebInspector.ContextMenu._useSoftMenu || InspectorFrontendHost.isHostedMode()) {
+                var softMenu = new WebInspector.SoftContextMenu(menuObject, this._itemSelected.bind(this));
+                softMenu.show(this._event.x, this._event.y);
             } else {
-                InspectorFrontendHost.showContextMenu(this._event, menuObject);
+                InspectorFrontendHost.showContextMenuAtPoint(this._event.x, this._event.y, menuObject);
+                InspectorFrontendHost.events.addEventListener(InspectorFrontendHostAPI.Events.ContextMenuCleared, this._menuCleared, this);
+                InspectorFrontendHost.events.addEventListener(InspectorFrontendHostAPI.Events.ContextMenuItemSelected, this._onItemSelected, this);
             }
             this._event.consume(true);
         }
@@ -242,6 +255,9 @@ WebInspector.ContextMenu.prototype = {
             this._handlers[id] = handler;
     },
 
+    /**
+     * @return {!Array.<!InspectorFrontendHostAPI.ContextMenuDescriptor>}
+     */
     _buildDescriptor: function()
     {
         var result = [];
@@ -250,10 +266,28 @@ WebInspector.ContextMenu.prototype = {
         return result;
     },
 
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _onItemSelected: function(event)
+    {
+        this._itemSelected(/** @type {string} */ (event.data));
+    },
+
+    /**
+     * @param {string} id
+     */
     _itemSelected: function(id)
     {
         if (this._handlers[id])
             this._handlers[id].call(this);
+        this._menuCleared();
+    },
+
+    _menuCleared: function()
+    {
+        InspectorFrontendHost.events.removeEventListener(InspectorFrontendHostAPI.Events.ContextMenuCleared, this._menuCleared, this);
+        InspectorFrontendHost.events.removeEventListener(InspectorFrontendHostAPI.Events.ContextMenuItemSelected, this._onItemSelected, this);
     },
 
     /**
@@ -261,10 +295,10 @@ WebInspector.ContextMenu.prototype = {
      */
     appendApplicableItems: function(target)
     {
-        WebInspector.moduleManager.extensions(WebInspector.ContextMenu.Provider, target).forEach(processProviders.bind(this));
+        self.runtime.extensions(WebInspector.ContextMenu.Provider, target).forEach(processProviders.bind(this));
 
         /**
-         * @param {!WebInspector.ModuleManager.Extension} extension
+         * @param {!Runtime.Extension} extension
          * @this {WebInspector.ContextMenu}
          */
         function processProviders(extension)
@@ -292,16 +326,4 @@ WebInspector.ContextMenu.Provider.prototype = {
      * @param {!Object} target
      */
     appendApplicableItems: function(event, contextMenu, target) { }
-}
-
-WebInspector.contextMenuItemSelected = function(id)
-{
-    if (WebInspector._contextMenu)
-        WebInspector._contextMenu._itemSelected(id);
-}
-
-WebInspector.contextMenuCleared = function()
-{
-    // FIXME: Unfortunately, contextMenuCleared is invoked between show and item selected
-    // so we can't delete last menu object from WebInspector. Fix the contract.
 }

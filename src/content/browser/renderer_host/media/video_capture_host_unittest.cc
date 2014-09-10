@@ -86,23 +86,23 @@ class MockMediaStreamRequester : public MediaStreamRequester {
 
   // MediaStreamRequester implementation.
   MOCK_METHOD5(StreamGenerated,
-               void(int render_view_id,
+               void(int render_frame_id,
                     int page_request_id,
                     const std::string& label,
                     const StreamDeviceInfoArray& audio_devices,
                     const StreamDeviceInfoArray& video_devices));
   MOCK_METHOD3(StreamGenerationFailed,
-      void(int render_view_id,
+      void(int render_frame_id,
            int page_request_id,
            content::MediaStreamRequestResult result));
-  MOCK_METHOD3(DeviceStopped, void(int render_view_id,
+  MOCK_METHOD3(DeviceStopped, void(int render_frame_id,
                                    const std::string& label,
                                    const StreamDeviceInfo& device));
-  MOCK_METHOD4(DevicesEnumerated, void(int render_view_id,
+  MOCK_METHOD4(DevicesEnumerated, void(int render_frame_id,
                                        int page_request_id,
                                        const std::string& label,
                                        const StreamDeviceInfoArray& devices));
-  MOCK_METHOD4(DeviceOpened, void(int render_view_id,
+  MOCK_METHOD4(DeviceOpened, void(int render_frame_id,
                                   int page_request_id,
                                   const std::string& label,
                                   const StreamDeviceInfo& device_info));
@@ -152,7 +152,7 @@ class MockVideoCaptureHost : public VideoCaptureHost {
   void ReturnReceivedDibs(int device_id)  {
     int handle = GetReceivedDib();
     while (handle) {
-      this->OnReceiveEmptyBuffer(device_id, handle, std::vector<uint32>());
+      this->OnReceiveEmptyBuffer(device_id, handle, 0);
       handle = GetReceivedDib();
     }
   }
@@ -240,8 +240,7 @@ class MockVideoCaptureHost : public VideoCaptureHost {
 
     OnBufferFilled(device_id, buffer_id, frame_format, timestamp);
     if (return_buffers_) {
-      VideoCaptureHost::OnReceiveEmptyBuffer(
-          device_id, buffer_id, std::vector<uint32>());
+      VideoCaptureHost::OnReceiveEmptyBuffer(device_id, buffer_id, 0);
     }
   }
 
@@ -253,8 +252,7 @@ class MockVideoCaptureHost : public VideoCaptureHost {
     OnMailboxBufferFilled(
         device_id, buffer_id, mailbox_holder, format, timestamp);
     if (return_buffers_) {
-      VideoCaptureHost::OnReceiveEmptyBuffer(
-          device_id, buffer_id, std::vector<uint32>());
+      VideoCaptureHost::OnReceiveEmptyBuffer(device_id, buffer_id, 0);
     }
   }
 
@@ -319,7 +317,7 @@ class VideoCaptureHostTest : public testing::Test {
 
   void OpenSession() {
     const int render_process_id = 1;
-    const int render_view_id = 1;
+    const int render_frame_id = 1;
     const int page_request_id = 1;
     const GURL security_origin("http://test.com");
 
@@ -332,13 +330,13 @@ class VideoCaptureHostTest : public testing::Test {
       std::string label = media_stream_manager_->EnumerateDevices(
           &stream_requester_,
           render_process_id,
-          render_view_id,
+          render_frame_id,
           browser_context_.GetResourceContext()->GetMediaDeviceIDSalt(),
           page_request_id,
           MEDIA_DEVICE_VIDEO_CAPTURE,
           security_origin,
           true);
-      EXPECT_CALL(stream_requester_, DevicesEnumerated(render_view_id,
+      EXPECT_CALL(stream_requester_, DevicesEnumerated(render_frame_id,
                                                        page_request_id,
                                                        label,
                                                        _))
@@ -359,13 +357,13 @@ class VideoCaptureHostTest : public testing::Test {
       media_stream_manager_->OpenDevice(
           &stream_requester_,
           render_process_id,
-          render_view_id,
+          render_frame_id,
           browser_context_.GetResourceContext()->GetMediaDeviceIDSalt(),
           page_request_id,
           devices[0].device.id,
           MEDIA_DEVICE_VIDEO_CAPTURE,
           security_origin);
-      EXPECT_CALL(stream_requester_, DeviceOpened(render_view_id,
+      EXPECT_CALL(stream_requester_, DeviceOpened(render_frame_id,
                                                   page_request_id,
                                                   _,
                                                   _))

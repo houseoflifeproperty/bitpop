@@ -6,17 +6,15 @@
 
 #include <vector>
 
-#include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
-#include "chrome/browser/renderer_context_menu/render_view_context_menu_observer.h"
 #include "chrome/browser/spellchecker/spelling_service_client.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/renderer_context_menu/render_view_context_menu_observer.h"
 
 using content::RenderViewHost;
 using content::WebContents;
@@ -62,7 +60,7 @@ class MockRenderViewContextMenu : public RenderViewContextMenuProxy {
                               const base::string16& title) OVERRIDE;
   virtual RenderViewHost* GetRenderViewHost() const OVERRIDE;
   virtual WebContents* GetWebContents() const OVERRIDE;
-  virtual Profile* GetProfile() const OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContext() const OVERRIDE;
 
   // Attaches a RenderViewContextMenuObserver to be tested.
   void SetObserver(RenderViewContextMenuObserver* observer);
@@ -171,7 +169,7 @@ WebContents* MockRenderViewContextMenu::GetWebContents() const {
   return NULL;
 }
 
-Profile* MockRenderViewContextMenu::GetProfile() const {
+content::BrowserContext* MockRenderViewContextMenu::GetBrowserContext() const {
   return profile_.get();
 }
 
@@ -210,7 +208,7 @@ class SpellingMenuObserverTest : public InProcessBrowserTest {
     Reset(false);
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     observer_.reset();
     menu_.reset();
   }
@@ -237,9 +235,9 @@ class SpellingMenuObserverTest : public InProcessBrowserTest {
     // Force a non-empty and non-"en" locale so SUGGEST is available.
     menu()->GetPrefs()->SetString(prefs::kSpellCheckDictionary, "fr");
     ASSERT_TRUE(SpellingServiceClient::IsAvailable(
-        menu()->GetProfile(), SpellingServiceClient::SUGGEST));
+        menu()->GetBrowserContext(), SpellingServiceClient::SUGGEST));
     ASSERT_FALSE(SpellingServiceClient::IsAvailable(
-        menu()->GetProfile(), SpellingServiceClient::SPELLCHECK));
+        menu()->GetBrowserContext(), SpellingServiceClient::SPELLCHECK));
   }
 
   virtual ~SpellingMenuObserverTest();
@@ -371,8 +369,8 @@ IN_PROC_BROWSER_TEST_F(SpellingMenuObserverTest,
 
   // Force a non-empty locale so SPELLCHECK is available.
   menu()->GetPrefs()->SetString(prefs::kSpellCheckDictionary, "en");
-  EXPECT_TRUE(SpellingServiceClient::IsAvailable(menu()->GetProfile(),
-    SpellingServiceClient::SPELLCHECK));
+  EXPECT_TRUE(SpellingServiceClient::IsAvailable(
+      menu()->GetBrowserContext(), SpellingServiceClient::SPELLCHECK));
   InitMenu("asdfkj", "asdf");
 
   // The test should see a separator, a suggestion and another separator
@@ -412,10 +410,10 @@ IN_PROC_BROWSER_TEST_F(SpellingMenuObserverTest,
 
   // Force a non-empty locale so SUGGEST normally would be available.
   menu()->GetPrefs()->SetString(prefs::kSpellCheckDictionary, "en");
-  EXPECT_FALSE(SpellingServiceClient::IsAvailable(menu()->GetProfile(),
-    SpellingServiceClient::SUGGEST));
-  EXPECT_FALSE(SpellingServiceClient::IsAvailable(menu()->GetProfile(),
-    SpellingServiceClient::SPELLCHECK));
+  EXPECT_FALSE(SpellingServiceClient::IsAvailable(
+      menu()->GetBrowserContext(), SpellingServiceClient::SUGGEST));
+  EXPECT_FALSE(SpellingServiceClient::IsAvailable(
+      menu()->GetBrowserContext(), SpellingServiceClient::SPELLCHECK));
 
   InitMenu("sjxdjiiiiii", NULL);
 

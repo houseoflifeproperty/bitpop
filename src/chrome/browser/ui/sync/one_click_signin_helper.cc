@@ -54,6 +54,7 @@
 #include "chrome/browser/ui/tab_modal_confirm_dialog.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog_delegate.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/net/url_util.h"
 #include "chrome/common/pref_names.h"
@@ -71,6 +72,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/page_navigator.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -86,7 +88,6 @@
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "url/gurl.h"
 
 
@@ -414,6 +415,18 @@ bool AreWeShowingSignin(GURL url, signin::Source source, std::string email) {
        !email.empty());
 }
 
+// If profile is valid then get signin scoped device id from signin client.
+// Otherwise returns empty string.
+std::string GetSigninScopedDeviceId(Profile* profile) {
+  std::string signin_scoped_device_id;
+  SigninClient* signin_client =
+      profile ? ChromeSigninClientFactory::GetForProfile(profile) : NULL;
+  if (signin_client) {
+    signin_scoped_device_id = signin_client->GetSigninScopedDeviceId();
+  }
+  return signin_scoped_device_id;
+}
+
 // CurrentHistoryCleaner ------------------------------------------------------
 
 // Watch a webcontents and remove URL from the history once loading is complete.
@@ -428,12 +441,9 @@ class CurrentHistoryCleaner : public content::WebContentsObserver {
   // content::WebContentsObserver:
   virtual void WebContentsDestroyed() OVERRIDE;
   virtual void DidCommitProvisionalLoadForFrame(
-      int64 frame_id,
-      const base::string16& frame_unique_name,
-      bool is_main_frame,
+      content::RenderFrameHost* render_frame_host,
       const GURL& url,
-      content::PageTransition transition_type,
-      content::RenderViewHost* render_view_host) OVERRIDE;
+      content::PageTransition transition_type) OVERRIDE;
 
  private:
   scoped_ptr<content::WebContents> contents_;
@@ -452,14 +462,11 @@ CurrentHistoryCleaner::~CurrentHistoryCleaner() {
 }
 
 void CurrentHistoryCleaner::DidCommitProvisionalLoadForFrame(
-    int64 frame_id,
-    const base::string16& frame_unique_name,
-    bool is_main_frame,
+    content::RenderFrameHost* render_frame_host,
     const GURL& url,
-    content::PageTransition transition_type,
-    content::RenderViewHost* render_view_host) {
+    content::PageTransition transition_type) {
   // Return early if this is not top-level navigation.
-  if (!is_main_frame)
+  if (render_frame_host->GetParent())
     return;
 
   content::NavigationController* nc = &web_contents()->GetController();
@@ -638,18 +645,17 @@ void OneClickSigninHelper::SyncStarterWrapper::DisplayErrorBubble(
     const std::string& error_message) {
   args_.browser = OneClickSigninSyncStarter::EnsureBrowser(
       args_.browser, args_.profile, desktop_type_);
-  args_.browser->window()->ShowOneClickSigninBubble(
-      BrowserWindow::ONE_CLICK_SIGNIN_BUBBLE_TYPE_BUBBLE,
-      base::string16(),  // No email required - this is not a SAML confirmation.
-      base::UTF8ToUTF16(error_message),
-      // Callback is ignored.
-      BrowserWindow::StartSyncCallback());
+  LoginUIServiceFactory::GetForProfile(args_.profile)->DisplayLoginResult(
+      args_.browser, base::UTF8ToUTF16(error_message));
 }
 
 void OneClickSigninHelper::SyncStarterWrapper::StartSigninOAuthHelper() {
+  std::string signin_scoped_device_id = GetSigninScopedDeviceId(args_.profile);
   signin_oauth_helper_.reset(
       new SigninOAuthHelper(args_.profile->GetRequestContext(),
-                            args_.session_index, this));
+                            args_.session_index,
+                            signin_scoped_device_id,
+                            this));
 }
 
 void
@@ -1136,23 +1142,8 @@ void OneClickSigninHelper::RemoveSigninRedirectURLHistoryItem(
 }
 
 // static
-void OneClickSigninHelper::ShowSigninErrorBubble(Browser* browser,
-                                                 const std::string& error) {
-  DCHECK(!error.empty());
-
-  browser->window()->ShowOneClickSigninBubble(
-      BrowserWindow::ONE_CLICK_SIGNIN_BUBBLE_TYPE_BUBBLE,
-      base::string16(), /* no SAML email */
-      base::UTF8ToUTF16(error),
-      // This callback is never invoked.
-      // TODO(rogerta): Separate out the bubble API so we don't have to pass
-      // ignored |email| and |callback| params.
-      BrowserWindow::StartSyncCallback());
-}
-
-// static
 bool OneClickSigninHelper::HandleCrossAccountError(
-    content::WebContents* contents,
+    Profile* profile,
     const std::string& session_index,
     const std::string& email,
     const std::string& password,
@@ -1161,20 +1152,23 @@ bool OneClickSigninHelper::HandleCrossAccountError(
     signin::Source source,
     OneClickSigninSyncStarter::StartSyncMode start_mode,
     OneClickSigninSyncStarter::Callback sync_callback) {
-  Profile* profile =
-      Profile::FromBrowserContext(contents->GetBrowserContext());
   std::string last_email =
       profile->GetPrefs()->GetString(prefs::kGoogleServicesLastUsername);
 
   if (!last_email.empty() && !gaia::AreEmailsSame(last_email, email)) {
     // If the new email address is different from the email address that
-    // just signed in, show a confirmation dialog.
+    // just signed in, show a confirmation dialog on top of the current active
+    // tab.
 
     // No need to display a second confirmation so pass false below.
     // TODO(atwilson): Move this into OneClickSigninSyncStarter.
     // The tab modal dialog always executes its callback before |contents|
     // is deleted.
-    Browser* browser = chrome::FindBrowserWithWebContents(contents);
+    Browser* browser = chrome::FindLastActiveWithProfile(
+        profile, chrome::GetActiveDesktop());
+    content::WebContents* contents =
+        browser->tab_strip_model()->GetActiveWebContents();
+
     ConfirmEmailDialogDelegate::AskForConfirmation(
         contents,
         last_email,
@@ -1182,7 +1176,8 @@ bool OneClickSigninHelper::HandleCrossAccountError(
         base::Bind(
             &StartExplicitSync,
             StartSyncArgs(profile, browser, auto_accept,
-                          session_index, email, password, refresh_token,
+                          session_index, email, password,
+                          refresh_token,
                           contents, false /* confirmation_required */, source,
                           sync_callback),
             contents,
@@ -1359,7 +1354,8 @@ void OneClickSigninHelper::DidStopLoading(
 
     // Redirect to the landing page and display an error popup.
     RedirectToNtpOrAppsPage(web_contents(), source_);
-    ShowSigninErrorBubble(browser, error_message_);
+    LoginUIServiceFactory::GetForProfile(profile)->
+        DisplayLoginResult(browser, base::UTF8ToUTF16(error_message_));
     CleanTransientState();
     return;
   }
@@ -1539,7 +1535,7 @@ void OneClickSigninHelper::DidStopLoading(
                   OneClickSigninSyncStarter::CONFIGURE_SYNC_FIRST :
               OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS;
 
-      if (!HandleCrossAccountError(contents, session_index_, email_, password_,
+      if (!HandleCrossAccountError(profile, session_index_, email_, password_,
               "", auto_accept_, source_, start_mode,
               CreateSyncStarterCallback())) {
         if (!do_not_start_sync_for_testing_) {

@@ -52,24 +52,24 @@ public:
         EditingBehaviorAndroid
     };
 
+    enum V8CacheOptions {
+        V8CacheOptionsOff,
+        V8CacheOptionsParse,
+        V8CacheOptionsCode
+    };
+
     virtual bool mainFrameResizesAreOrientationChanges() const = 0;
     virtual bool shrinksViewportContentToFit() const = 0;
-    virtual bool scrollAnimatorEnabled() const = 0;
-    virtual bool touchEditingEnabled() const = 0;
     virtual bool viewportEnabled() const = 0;
-    virtual bool viewportMetaEnabled() const = 0;
     virtual void setAccelerated2dCanvasEnabled(bool) = 0;
     virtual void setAccelerated2dCanvasMSAASampleCount(int) = 0;
     virtual void setAcceleratedCompositingEnabled(bool) = 0;
-    virtual void setAcceleratedCompositingForCanvasEnabled(bool) = 0;
-    virtual void setAcceleratedCompositingForFiltersEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForFixedPositionEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForFixedRootBackgroundEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForOverflowScrollEnabled(bool) = 0;
     virtual void setCompositorDrivenAcceleratedScrollingEnabled(bool) = 0;
     // Not implemented yet, see http://crbug.com/178119
     virtual void setAcceleratedCompositingForTransitionEnabled(bool) { };
-    virtual void setAcceleratedCompositingForVideoEnabled(bool) = 0;
     // If set to true, allows frames with an https origin to display passive
     // contents at an insecure URL. Otherwise, disallows it. The
     // FrameLoaderClient set to the frame may override the value set by this
@@ -96,7 +96,6 @@ public:
     virtual void setCaretBrowsingEnabled(bool) = 0;
     virtual void setClobberUserAgentInitialScaleQuirk(bool) = 0;
     virtual void setCompositedScrollingForFramesEnabled(bool) = 0;
-    virtual void setCompositorTouchHitTesting(bool) = 0;
     virtual void setContainerCullingEnabled(bool) = 0;
     virtual void setCookieEnabled(bool) = 0;
     virtual void setNavigateOnDragDrop(bool) = 0;
@@ -107,6 +106,7 @@ public:
     virtual void setDefaultFontSize(int) = 0;
     virtual void setDefaultTextEncodingName(const WebString&) = 0;
     virtual void setDefaultVideoPosterURL(const WebString&) = 0;
+    virtual void setDisallowFullscreenForNonMediaElements(bool) = 0;
     void setDeferred2dCanvasEnabled(bool) { } // temporary stub
     virtual void setDeferredFiltersEnabled(bool) = 0;
     virtual void setDeferredImageDecodingEnabled(bool) = 0;
@@ -122,8 +122,8 @@ public:
     virtual void setExperimentalWebGLEnabled(bool) = 0;
     virtual void setFantasyFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setFixedFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
-    virtual void setGestureTapHighlightEnabled(bool) = 0;
     virtual void setForceZeroLayoutHeight(bool) = 0;
+    virtual void setFullscreenSupported(bool) = 0;
     virtual void setHyperlinkAuditingEnabled(bool) = 0;
     virtual void setIgnoreMainFrameOverflowHiddenQuirk(bool) = 0;
     virtual void setImagesEnabled(bool) = 0;
@@ -144,7 +144,6 @@ public:
     virtual void setMinimumFontSize(int) = 0;
     virtual void setMinimumLogicalFontSize(int) = 0;
     virtual void setMockScrollbarsEnabled(bool) = 0;
-    virtual void setNeedsSiteSpecificQuirks(bool) = 0;
     virtual void setOfflineWebApplicationCacheEnabled(bool) = 0;
     virtual void setOpenGLMultisamplingEnabled(bool) = 0;
     virtual void setPasswordEchoDurationInSeconds(double) = 0;
@@ -192,6 +191,7 @@ public:
     virtual void setUseSolidColorScrollbars(bool) = 0;
     virtual void setUseWideViewport(bool) = 0;
     virtual void setUsesEncodingDetector(bool) = 0;
+    virtual void setV8CacheOptions(V8CacheOptions) = 0;
     virtual void setValidationMessageTimerMagnification(int) = 0;
     virtual void setViewportEnabled(bool) = 0;
     virtual void setViewportMetaEnabled(bool) = 0;

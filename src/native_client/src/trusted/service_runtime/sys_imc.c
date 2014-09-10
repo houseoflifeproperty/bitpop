@@ -15,6 +15,7 @@
 #include "native_client/src/trusted/service_runtime/include/sys/errno.h"
 #include "native_client/src/trusted/service_runtime/nacl_app_thread.h"
 #include "native_client/src/trusted/service_runtime/nacl_copy.h"
+#include "native_client/src/trusted/service_runtime/nacl_syscall_common.h"
 #include "native_client/src/trusted/service_runtime/sel_ldr.h"
 
 
@@ -29,6 +30,11 @@ int32_t NaClSysImcMakeBoundSock(struct NaClAppThread *natp,
   int32_t                     retval = -NACL_ABI_EINVAL;
   struct NaClDesc             *pair[2];
   int32_t                     usr_pair[2];
+
+  /* This syscall is not used in Chromium so is disabled by default. */
+  if (!NaClAclBypassChecks) {
+    return -NACL_ABI_EACCES;
+  }
 
   NaClLog(3,
           ("Entered NaClSysImcMakeBoundSock(0x%08"NACL_PRIxPTR","
@@ -509,6 +515,11 @@ int32_t NaClSysImcMemObjCreate(struct NaClAppThread  *natp,
            " 0x%08"NACL_PRIxS")\n"),
           (uintptr_t) natp, size);
 
+  /* This syscall is not used in Chromium so is disabled by default. */
+  if (!NaClAclBypassChecks) {
+    return -NACL_ABI_EACCES;
+  }
+
   if (0 != (size & (NACL_MAP_PAGESIZE - 1))) {
     return -NACL_ABI_EINVAL;
   }
@@ -554,6 +565,11 @@ int32_t NaClSysImcSocketPair(struct NaClAppThread *natp,
           ("Entered NaClSysImcSocketPair(0x%08"NACL_PRIxPTR
            " 0x%08"NACL_PRIx32")\n"),
           (uintptr_t) natp, descs_out);
+
+  /* This syscall is not used in Chromium so is disabled by default. */
+  if (!NaClAclBypassChecks) {
+    return -NACL_ABI_EACCES;
+  }
 
   retval = NaClCommonDescSocketPair(pair);
   if (0 != retval) {

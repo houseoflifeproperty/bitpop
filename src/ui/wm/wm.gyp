@@ -8,6 +8,7 @@
   },
   'targets': [
     {
+      # GN version: //ui/wm
       'target_name': 'wm',
       'type': '<(component)',
       'dependencies': [
@@ -17,6 +18,7 @@
         '../compositor/compositor.gyp:compositor',
         '../events/events.gyp:events',
         '../events/events.gyp:events_base',
+        '../events/platform/events_platform.gyp:events_platform',
         '../gfx/gfx.gyp:gfx_geometry',
         '../gfx/gfx.gyp:gfx',
         '../resources/ui_resources.gyp:ui_resources',
@@ -36,6 +38,8 @@
         'core/capture_controller.h',
         'core/compound_event_filter.cc',
         'core/compound_event_filter.h',
+        'core/coordinate_conversion.cc',
+        'core/coordinate_conversion.h',
         'core/cursor_manager.cc',
         'core/cursor_manager.h',
         'core/default_activation_client.cc',
@@ -93,12 +97,12 @@
       ],
     },
     {
+      # GN version: //ui/wm:test_support
       'target_name': 'wm_test_support',
       'type': 'static_library',
       'dependencies': [
         '../../skia/skia.gyp:skia',
         '../aura/aura.gyp:aura',
-        '../base/ui_base.gyp:ui_base',
         '../events/events.gyp:events',
         '../events/events.gyp:events_base',
       ],
@@ -108,6 +112,7 @@
       ],
     },
     {
+      # GN version: //ui/wm:wm_unittests
       'target_name': 'wm_unittests',
       'type': 'executable',
       'dependencies': [
@@ -121,6 +126,7 @@
         '../compositor/compositor.gyp:compositor',
         '../events/events.gyp:events',
         '../events/events.gyp:events_base',
+        '../events/platform/events_platform.gyp:events_platform',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         'wm',

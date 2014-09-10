@@ -37,7 +37,7 @@
 
 using blink::WebString;
 
-namespace WebCore {
+namespace blink {
 
 // Factory method
 PassOwnPtr<MIDIAccessor> MIDIAccessor::create(MIDIAccessorClient* client)
@@ -50,7 +50,7 @@ MIDIAccessor::MIDIAccessor(MIDIAccessorClient* client)
 {
     ASSERT(client);
 
-    m_accessor = adoptPtr(blink::Platform::current()->createMIDIAccessor(this));
+    m_accessor = adoptPtr(Platform::current()->createMIDIAccessor(this));
 
     ASSERT(m_accessor);
 }
@@ -85,4 +85,4 @@ void MIDIAccessor::didReceiveMIDIData(unsigned portIndex, const unsigned char* d
     m_client->didReceiveMIDIData(portIndex, data, length, timeStamp);
 }
 
-} // namespace WebCore
+} // namespace blink

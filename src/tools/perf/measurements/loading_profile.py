@@ -7,17 +7,15 @@ import tempfile
 
 from metrics import loading
 from telemetry.core.platform.profiler import perf_profiler
-from telemetry.page import page_measurement
+from telemetry.page import page_test
+from telemetry.value import scalar
 
-class LoadingProfile(page_measurement.PageMeasurement):
+
+class LoadingProfile(page_test.PageTest):
   options = {'page_repeat': 2}
 
   def __init__(self):
     super(LoadingProfile, self).__init__(discard_first_result=True)
-
-  @property
-  def results_are_the_same_on_every_page(self):
-    return False
 
   def CustomizeBrowserOptions(self, options):
     if not perf_profiler.PerfProfiler.is_supported(browser_type='any'):
@@ -31,7 +29,7 @@ class LoadingProfile(page_measurement.PageMeasurement):
                                os.path.join(tempfile.mkdtemp(),
                                             page.file_safe_name))
 
-  def MeasurePage(self, page, tab, results):
+  def ValidateAndMeasurePage(self, page, tab, results):
     # In current telemetry tests, all tests wait for DocumentComplete state,
     # but we need to wait for the load event.
     tab.WaitForJavaScriptExpression('performance.timing.loadEventStart', 300)
@@ -47,4 +45,5 @@ class LoadingProfile(page_measurement.PageMeasurement):
 
     for function, period in perf_profiler.PerfProfiler.GetTopSamples(
         profile_file, 10).iteritems():
-      results.Add(function.replace('.', '_'), 'period', period)
+      results.AddValue(scalar.ScalarValue(
+          results.current_page, function.replace('.', '_'), 'period', period))

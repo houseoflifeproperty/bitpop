@@ -9,6 +9,11 @@ import os
 import re
 import StringIO
 
+from tvcm import js_utils
+from tvcm import module as module_module
+from tvcm import html_generation_controller
+
+
 srcdir = os.path.abspath(os.path.join(os.path.dirname(__file__),
                                       "..", "..", "..", "src"))
 
@@ -44,78 +49,41 @@ css_warning_message = """
  */
 """
 
-def GenerateCSS(load_sequence):
-  style_sheet_chunks = [css_warning_message, '\n']
-  for module in load_sequence:
-    for style_sheet in module.style_sheets:
-      style_sheet_chunks.append(style_sheet.contents_with_inlined_images)
-      style_sheet_chunks.append('\n')
-  return ''.join(style_sheet_chunks)
+def GenerateJS(load_sequence,
+               use_include_tags_for_scripts=False,
+               dir_for_include_tag_root=None):
+  f = StringIO.StringIO()
+  GenerateJSToFile(f,
+                   load_sequence,
+                   use_include_tags_for_scripts,
+                   dir_for_include_tag_root)
+  return f.getvalue()
 
-def _EscapeJSIfNeeded(js):
-  return js.replace("</script>", "<\/script>")
+def GenerateJSToFile(f,
+                     load_sequence,
+                     use_include_tags_for_scripts=False,
+                     dir_for_include_tag_root=None):
+  if use_include_tags_for_scripts and dir_for_include_tag_root == None:
+    raise Exception('Must provide dir_for_include_tag_root')
 
-def GenerateJS(load_sequence, include_html_templates=True):
-  js_chunks = [js_warning_message, '\n']
-  js_chunks.append("window.FLATTENED = {};\n")
-  js_chunks.append("window.FLATTENED_RAW_SCRIPTS = {};\n")
+  f.write(js_warning_message)
+  f.write('\n')
 
-  for module in load_sequence:
-    for dependent_raw_script in module.dependent_raw_scripts:
-      js_chunks.append("window.FLATTENED_RAW_SCRIPTS['%s'] = true;\n" %
-        dependent_raw_script.resource.unix_style_relative_path)
-    js_chunks.append( "window.FLATTENED['%s'] = true;\n" % module.name)
-
-  if include_html_templates:
-    html_encoded = base64.b64encode(
-        GenerateHTMLForCombinedTemplates(load_sequence))
-    js_chunks.append("var templateData_ = window.atob('" +
-                     html_encoded + "');\n");
-    js_chunks.append("var templateElem_ = document.createElement('div');\n");
-    js_chunks.append("templateElem_.innerHTML = templateData_;\n");
-    js_chunks.append("while (templateElem_.hasChildNodes()) {\n");
-    js_chunks.append("  document.head.appendChild(" +
-                     "templateElem_.removeChild(templateElem_.firstChild));\n");
-    js_chunks.append("}\n\n");
-
-  for module in load_sequence:
-    for dependent_raw_script in module.dependent_raw_scripts:
-      js_chunks.append(_EscapeJSIfNeeded(dependent_raw_script.contents))
-      js_chunks.append('\n')
-    js_chunks.append(_EscapeJSIfNeeded(module.contents))
-    js_chunks.append("\n")
-
-  return ''.join(js_chunks)
-
-def GenerateDepsJS(load_sequence, project):
-  chunks = [js_warning_message, '\n']
   loader = load_sequence[0].loader
-  for module in loader.loaded_modules.values():
-    chunks.append("tvcm.setResourceFileName('%s','%s');\n" % (
-        module.name, module.resource.unix_style_relative_path))
+
+  platform_script = loader.LoadRawScript('platform.min.js')
+  f.write(platform_script.contents)
+
+  polymer_script = loader.LoadRawScript('polymer.min.js')
+  f.write(polymer_script.contents)
+
+  f.write('\n')
+  f.write("window._TVCM_IS_COMPILED = true;\n")
 
   for module in load_sequence:
-    for dependent_module in module.dependent_modules:
-      chunks.append("tvcm.addModuleDependency('%s','%s');\n" % (
-          module.name, dependent_module.name));
-
-    for dependent_raw_script in module.dependent_raw_scripts:
-      relative_path = dependent_raw_script.resource.unix_style_relative_path
-      chunks.append(
-          "tvcm.addModuleRawScriptDependency('%s','%s');\n" % (
-           module.name, relative_path));
-
-    for style_sheet in module.style_sheets:
-      chunks.append("tvcm.addModuleStylesheet('%s','%s');\n" % (
-          module.name, style_sheet.name));
-  return "".join(chunks)
-
-def GenerateHTMLForCombinedTemplates(load_sequence):
-  chunks = []
-  for module in load_sequence:
-    for html_template in module.html_templates:
-      chunks.append(html_template.contents)
-  return "\n".join(chunks)
+    module.AppendJSContentsToFile(f,
+                                  use_include_tags_for_scripts,
+                                  dir_for_include_tag_root)
 
 class ExtraScript(object):
   def __init__(self, script_id=None, text_content=None, content_type=None):
@@ -160,19 +128,33 @@ def GenerateStandaloneHTMLToFile(output_file,
   <title>%s</title>
 """ % title)
 
-  output_file.write('<style>\n')
-  output_file.write(GenerateCSS(load_sequence))
-  output_file.write('\n')
-  output_file.write('</style>\n')
+  loader = load_sequence[0].loader
 
-  output_file.write(GenerateHTMLForCombinedTemplates(load_sequence))
+  written_style_sheets = set()
+
+  class HTMLGenerationController(html_generation_controller.HTMLGenerationController):
+    def __init__(self, module):
+      self.module = module
+    def GetHTMLForStylesheetHRef(self, href):
+      resource = self.module.HRefToResource(
+          href, '<link rel="stylesheet" href="%s">' % href)
+      style_sheet = loader.LoadStyleSheet(resource.name)
+
+      if style_sheet in written_style_sheets:
+        return None
+      written_style_sheets.add(style_sheet)
+
+      return "<style>\n%s\n</style>" % style_sheet.contents_with_inlined_images
+
+  for module in load_sequence:
+    ctl = HTMLGenerationController(module)
+    module.AppendHTMLContentsToFile(output_file, ctl)
 
   if flattened_js_url:
     output_file.write('<script src="%s"></script>\n' % flattened_js_url)
   else:
     output_file.write('<script>\n')
-    output_file.write(GenerateJS(load_sequence,
-                                 include_html_templates=False))
+    output_file.write(GenerateJS(load_sequence))
     output_file.write('</script>\n')
 
   for extra_script in extra_scripts:

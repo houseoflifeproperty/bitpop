@@ -19,7 +19,6 @@ DEPS = [
   'json',
   'platform',
   'properties',
-  'step_history',
   'swarming',
   'swarming_client',
   'test_utils',
@@ -51,24 +50,22 @@ def GenSteps(api):
   api.isolate.set_isolate_environment(api.chromium.c)
 
   # Checkout chromium + deps (including 'master' of swarming_client).
-  yield api.bot_update.ensure_checkout()
-  if not api.step_history.last_step().json.output['did_run']:
-    yield api.gclient.checkout()
+  step_result = api.bot_update.ensure_checkout()
+  if not step_result.json.output['did_run']:
+    api.gclient.checkout()
 
   # Ensure swarming_client version is fresh enough.
-  yield api.swarming.check_client_version()
+  api.swarming.check_client_version()
 
   # Build all supported tests, isolate them to the server. Set ISOLATE_DEBUG so
   # that isolate scripts invoked by ninja produce more information. Corresponds
   # to --profile flag.
-  yield (
-    api.chromium.runhooks(),
-    api.chromium.compile(
-        targets=['chromium_swarm_tests'], env={'ISOLATE_DEBUG': 1}),
-  )
+  api.chromium.runhooks()
+  api.chromium.compile(
+      targets=['chromium_swarm_tests'], env={'ISOLATE_DEBUG': 1})
 
   # Gather hashes of all isolated tests.
-  yield api.isolate.find_isolated_tests(api.chromium.output_dir)
+  api.isolate.find_isolated_tests(api.chromium.output_dir)
 
   # Make swarming tasks that run isolated tests.
   tasks = [
@@ -82,17 +79,20 @@ def GenSteps(api):
   # Launch them on swarming using OS dimension that correspond to platform this
   # recipe is running on (that is default behavior), since we used that platform
   # to compile tests.
-  yield api.swarming.trigger(tasks)
+  api.swarming.trigger(tasks)
 
   # And wait for them to finish. Ensure JSON result collection is working.
-  def followup_fn(step_result):
+  for step_result in api.swarming.collect_each(tasks):
     r = step_result.json.gtest_results
     p = step_result.presentation
+    t = step_result.swarming_task
+    missing_shards = r.raw.get('missing_shards') or []
+    for index in missing_shards:  # pragma: no cover
+      p.links['missing shard #%d' % index] = t.get_shard_view_url(index)
     if r.valid:
       p.step_text += api.test_utils.format_step_text([
           ['failures:', r.failures]
       ])
-  yield api.swarming.collect(tasks, followup_fn=followup_fn)
 
 
 def GenTests(api):

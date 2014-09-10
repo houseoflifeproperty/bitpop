@@ -21,21 +21,21 @@ class BaseAndroidApi(recipe_api.RecipeApi):
 
     cmd = ([self.m.path['build'].join('scripts', 'slave', 'env_dump.py'),
             '--output-json', self.m.json.output()] + envsetup_cmd)
-    yield self.m.step('envsetup', cmd, env=self._env)
+    result = self.m.step('envsetup', cmd, env=self._env)
 
-    env_diff = self.m.step_history.last_step().json.output
+    env_diff = result.json.output
     self._env.update((k, v) for k, v in env_diff.iteritems()
                      if not k.startswith('GYP_'))
 
   def runhooks(self):
-    return self.m.chromium.runhooks(env=self._env)
+    self.m.chromium.runhooks(env=self._env)
 
   def compile(self):
-    return self.m.chromium.compile(env=self._env)
+    self.m.chromium.compile(env=self._env)
 
   def test_runner(self, test):
     script = self.m.path['checkout'].join('build', 'android', 'test_runner.py')
     args = ['gtest', '-s', test, '--verbose']
     if self.m.chromium.c.BUILD_CONFIG == 'Release':
       args += ['--release']
-    return self.m.python(test, script, args, env=self._env)
+    self.m.python(test, script, args, env=self._env)

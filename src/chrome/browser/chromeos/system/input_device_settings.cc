@@ -37,8 +37,6 @@ const char kDeviceTypeTouchpad[] = "touchpad";
 const char kDeviceTypeMouse[] = "mouse";
 const char kInputControl[] = "/opt/google/input/inputcontrol";
 
-const char kRemoraRequisition[] = "remora";
-
 typedef base::RefCountedData<bool> RefCountedBool;
 
 bool ScriptExists(const std::string& script) {
@@ -247,8 +245,8 @@ bool InputDeviceSettingsImpl::ForceKeyboardDrivenUINavigation() {
   if (!policy_manager)
     return false;
 
-  if (base::strcasecmp(policy_manager->GetDeviceRequisition().c_str(),
-                       kRemoraRequisition) == 0) {
+  if (policy_manager->IsRemoraRequisition() ||
+      policy_manager->IsSharkRequisition()) {
     return true;
   }
 

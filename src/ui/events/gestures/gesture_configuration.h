@@ -71,11 +71,11 @@ class EVENTS_BASE_EXPORT GestureConfiguration {
   static void set_max_separation_for_gesture_touches_in_pixels(int val) {
     max_separation_for_gesture_touches_in_pixels_ = val;
   }
-  static double max_swipe_deviation_ratio() {
-    return max_swipe_deviation_ratio_;
+  static float max_swipe_deviation_angle() {
+    return max_swipe_deviation_angle_;
   }
-  static void set_max_swipe_deviation_ratio(double val) {
-    max_swipe_deviation_ratio_ = val;
+  static void set_max_swipe_deviation_angle(float val) {
+    max_swipe_deviation_angle_ = val;
   }
   static double max_touch_down_duration_in_seconds_for_click() {
     return max_touch_down_duration_in_seconds_for_click_;
@@ -238,12 +238,13 @@ class EVENTS_BASE_EXPORT GestureConfiguration {
   static double semi_long_press_time_in_seconds_;
   static double max_seconds_between_double_click_;
   static double max_separation_for_gesture_touches_in_pixels_;
-  static double max_swipe_deviation_ratio_;
+  static float max_swipe_deviation_angle_;
   static double max_touch_down_duration_in_seconds_for_click_;
   static double max_touch_move_in_pixels_for_click_;
   static double max_distance_between_taps_for_double_tap_;
   static double min_distance_for_pinch_scroll_in_pixels_;
   static double min_flick_speed_squared_;
+  // Only used with --compensate-for-unstable-pinch-zoom.
   static double min_pinch_update_distance_in_pixels_;
   static double min_rail_break_velocity_;
   static double min_scroll_delta_squared_;

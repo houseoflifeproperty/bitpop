@@ -99,7 +99,7 @@ public class AwSettings {
     private boolean mVideoOverlayForEmbeddedVideoEnabled = false;
 
     // Although this bit is stored on AwSettings it is actually controlled via the CookieManager.
-    private boolean mAcceptThirdPartyCookies;
+    private boolean mAcceptThirdPartyCookies = false;
 
     private final boolean mSupportLegacyQuirks;
 
@@ -113,6 +113,7 @@ public class AwSettings {
     private boolean mShouldFocusFirstNode = true;
     private boolean mGeolocationEnabled = true;
     private boolean mAutoCompleteEnabled = true;
+    private boolean mFullscreenSupported = false;
     private boolean mSupportZoom = true;
     private boolean mBuiltInZoomControls = false;
     private boolean mDisplayZoomControls = true;
@@ -461,6 +462,21 @@ public class AwSettings {
     private boolean getEnableSupportedHardwareAcceleratedFeaturesLocked() {
         assert Thread.holdsLock(mAwSettingsLock);
         return mEnableSupportedHardwareAcceleratedFeatures;
+    }
+
+    public void setFullscreenSupported(boolean supported) {
+        synchronized (mAwSettingsLock) {
+            if (mFullscreenSupported != supported) {
+                mFullscreenSupported = supported;
+                mEventHandler.updateWebkitPreferencesLocked();
+            }
+        }
+    }
+
+    @CalledByNative
+    private boolean getFullscreenSupportedLocked() {
+        assert Thread.holdsLock(mAwSettingsLock);
+        return mFullscreenSupported;
     }
 
     /**

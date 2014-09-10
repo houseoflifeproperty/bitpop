@@ -1,0 +1,101 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/git_setup.py",
+      "--path",
+      "[SLAVE_BUILD]/src",
+      "--url",
+      "https://chromium.googlesource.com/chromium/src.git"
+    ],
+    "name": "git setup"
+  },
+  {
+    "cmd": [
+      "git",
+      "fetch",
+      "origin",
+      "master",
+      "--recurse-submodules"
+    ],
+    "cwd": "[SLAVE_BUILD]/src",
+    "name": "git fetch"
+  },
+  {
+    "cmd": [
+      "git",
+      "checkout",
+      "-f",
+      "FETCH_HEAD"
+    ],
+    "cwd": "[SLAVE_BUILD]/src",
+    "name": "git checkout"
+  },
+  {
+    "cmd": [
+      "git",
+      "clean",
+      "-f",
+      "-d",
+      "-x"
+    ],
+    "cwd": "[SLAVE_BUILD]/src",
+    "name": "git clean"
+  },
+  {
+    "cmd": [
+      "git",
+      "submodule",
+      "sync"
+    ],
+    "cwd": "[SLAVE_BUILD]/src",
+    "name": "submodule sync"
+  },
+  {
+    "cmd": [
+      "git",
+      "submodule",
+      "update",
+      "--init",
+      "--recursive"
+    ],
+    "cwd": "[SLAVE_BUILD]/src",
+    "name": "submodule update"
+  },
+  {
+    "cmd": [
+      "git",
+      "fetch",
+      "origin",
+      "--tags"
+    ],
+    "cwd": "[SLAVE_BUILD]/src",
+    "name": "git fetch tags"
+  },
+  {
+    "cmd": [
+      "git",
+      "status"
+    ],
+    "cwd": "[SLAVE_BUILD]/src",
+    "name": "git status"
+  },
+  {
+    "cmd": [
+      "git",
+      "status"
+    ],
+    "cwd": "[SLAVE_BUILD]/src",
+    "name": "git status can_fail_build",
+    "~followup_annotations": [
+      "step returned non-zero exit code: 1",
+      "@@@STEP_FAILURE@@@"
+    ]
+  },
+  {
+    "name": "$final_result",
+    "reason": "Step('git status can_fail_build') failed with return_code 1",
+    "status_code": 1
+  }
+]

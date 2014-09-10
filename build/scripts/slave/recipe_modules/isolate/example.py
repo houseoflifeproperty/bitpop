@@ -7,7 +7,6 @@ DEPS = [
   'json',
   'path',
   'step',
-  'step_history',
 ]
 
 
@@ -17,13 +16,13 @@ def GenSteps(api):
   assert api.isolate.isolate_server == 'https://isolateserver-dev.appspot.com'
 
   # That would read a list of files to search for, generated in GenTests.
-  yield api.step('read test spec', ['cat'], stdout=api.json.output())
-  expected_targets = api.step_history.last_step().stdout
+  step_result = api.step('read test spec', ['cat'], stdout=api.json.output())
+  expected_targets = step_result.stdout
 
   # Generates code coverage for find_isolated_tests corner cases.
   # TODO(vadimsh): This step doesn't actually make any sense when the recipe
   # is running for real via run_recipe.py.
-  yield api.isolate.find_isolated_tests(api.path['build'], expected_targets)
+  api.isolate.find_isolated_tests(api.path['build'], expected_targets)
 
 
 def GenTests(api):

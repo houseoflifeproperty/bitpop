@@ -48,45 +48,38 @@ class IsolateApi(recipe_api.RecipeApi):
     If |targets| is None, the step will use all *.isolated files it finds.
     Otherwise, it will verify that all |targets| are found and will use only
     them. If some expected targets are missing, will abort the build.
-
-    Also accepts step execution controlling flags (always_run, can_fail_build,
-    etc.) via kwargs.
     """
-    # Failure is fatal by default.
-    kwargs.setdefault('abort_on_failure', True)
+    step_result = self.m.python(
+      'find isolated tests',
+      self.resource('find_isolated_tests.py'),
+      [
+        '--build-dir', build_dir,
+        '--output-json', self.m.json.output(),
+      ],
+      step_test_data=lambda: (self.test_api.output_json(targets)),
+      **kwargs)
 
-    def followup_fn(step_result):
-      assert isinstance(step_result.json.output, dict)
-      self._isolated_tests = step_result.json.output
-      if targets is not None and step_result.presentation.status != 'FAILURE':
-        found = set(step_result.json.output)
-        expected = set(targets)
-        if found >= expected:
-          # Limit result only to |expected|.
-          self._isolated_tests = {
-            target: step_result.json.output[target] for target in expected
-          }
-        else:
-          # Some expected targets are missing? Fail the step.
-          step_result.presentation.status = 'FAILURE'
-          step_result.presentation.logs['missing.isolates'] = (
-              ['Failed to find *.isolated files:'] + list(expected - found))
-      step_result.presentation.properties['swarm_hashes'] = self._isolated_tests
-      # No isolated files found? That looks suspicious, emit warning.
-      if (not self._isolated_tests and
-          step_result.presentation.status != 'FAILURE'):
-        step_result.presentation.status = 'WARNING'
-
-    return self.m.python(
-        'find isolated tests',
-        self.resource('find_isolated_tests.py'),
-        [
-          '--build-dir', build_dir,
-          '--output-json', self.m.json.output(),
-        ],
-        followup_fn=followup_fn,
-        step_test_data=lambda: (self.test_api.output_json(targets)),
-        **kwargs)
+    assert isinstance(step_result.json.output, dict)
+    self._isolated_tests = step_result.json.output
+    if targets is not None and (
+            step_result.presentation.status != self.m.step.FAILURE):
+      found = set(step_result.json.output)
+      expected = set(targets)
+      if found >= expected:
+        # Limit result only to |expected|.
+        self._isolated_tests = {
+          target: step_result.json.output[target] for target in expected
+        }
+      else:
+        # Some expected targets are missing? Fail the step.
+        step_result.presentation.status = self.m.step.FAILURE
+        step_result.presentation.logs['missing.isolates'] = (
+            ['Failed to find *.isolated files:'] + list(expected - found))
+    step_result.presentation.properties['swarm_hashes'] = self._isolated_tests
+    # No isolated files found? That looks suspicious, emit warning.
+    if (not self._isolated_tests and
+        step_result.presentation.status != self.m.step.FAILURE):
+      step_result.presentation.status = self.m.step.WARNING
 
   @property
   def isolated_tests(self):
@@ -136,7 +129,7 @@ class IsolateApi(recipe_api.RecipeApi):
 
     Uses runtest_args_list, above, and delegates to api.chromium.runtest.
     """
-    return self.m.chromium.runtest(
+    self.m.chromium.runtest(
         self._run_isolated_path,
         args=self.runtest_args_list(test, args),
         # We must use the name of the test as the name in order to avoid
@@ -162,7 +155,7 @@ class IsolateApi(recipe_api.RecipeApi):
     Uses runtest_args_list, above, and delegates to
     api.chromium.run_telemetry_test.
     """
-    return self.m.chromium.run_telemetry_test(
+    self.m.chromium.run_telemetry_test(
         self._run_isolated_path,
         test,
         # When running the Telemetry test via an isolate we need to tell

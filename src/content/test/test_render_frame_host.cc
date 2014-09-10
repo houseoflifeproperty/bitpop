@@ -5,10 +5,27 @@
 #include "content/test/test_render_frame_host.h"
 
 #include "content/browser/frame_host/frame_tree.h"
+#include "content/browser/frame_host/render_frame_host_delegate.h"
 #include "content/common/frame_messages.h"
+#include "content/public/common/page_transition_types.h"
 #include "content/test/test_render_view_host.h"
+#include "net/base/load_flags.h"
+#include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 
 namespace content {
+
+TestRenderFrameHostCreationObserver::TestRenderFrameHostCreationObserver(
+    WebContents* web_contents)
+    : WebContentsObserver(web_contents), last_created_frame_(NULL) {
+}
+
+TestRenderFrameHostCreationObserver::~TestRenderFrameHostCreationObserver() {
+}
+
+void TestRenderFrameHostCreationObserver::RenderFrameCreated(
+    RenderFrameHost* render_frame_host) {
+  last_created_frame_ = render_frame_host;
+}
 
 TestRenderFrameHost::TestRenderFrameHost(RenderViewHostImpl* render_view_host,
                                          RenderFrameHostDelegate* delegate,
@@ -22,6 +39,7 @@ TestRenderFrameHost::TestRenderFrameHost(RenderViewHostImpl* render_view_host,
                           frame_tree_node,
                           routing_id,
                           is_swapped_out),
+      child_creation_observer_(delegate ? delegate->GetAsWebContents() : NULL),
       contents_mime_type_("text/html"),
       simulate_history_list_was_cleared_(false) {
   // Allow TestRenderViewHosts to easily access their main frame RFH.
@@ -33,8 +51,16 @@ TestRenderFrameHost::TestRenderFrameHost(RenderViewHostImpl* render_view_host,
 
 TestRenderFrameHost::~TestRenderFrameHost() {}
 
-void TestRenderFrameHost::SendNavigate(int page_id, const GURL& url) {
-  SendNavigateWithTransition(page_id, url, PAGE_TRANSITION_LINK);
+TestRenderViewHost* TestRenderFrameHost::GetRenderViewHost() {
+  return static_cast<TestRenderViewHost*>(
+      RenderFrameHostImpl::GetRenderViewHost());
+}
+
+TestRenderFrameHost* TestRenderFrameHost::AppendChild(
+    const std::string& frame_name) {
+  OnCreateChildFrame(GetProcess()->GetNextRoutingID(), frame_name);
+  return static_cast<TestRenderFrameHost*>(
+      child_creation_observer_.last_created_frame());
 }
 
 void TestRenderFrameHost::SendNavigateWithTransition(
@@ -42,6 +68,10 @@ void TestRenderFrameHost::SendNavigateWithTransition(
     const GURL& url,
     PageTransition transition) {
   SendNavigateWithTransitionAndResponseCode(page_id, url, transition, 200);
+}
+
+void TestRenderFrameHost::SendNavigate(int page_id, const GURL& url) {
+  SendNavigateWithTransition(page_id, url, PAGE_TRANSITION_LINK);
 }
 
 void TestRenderFrameHost::SendFailedNavigate(int page_id, const GURL& url) {
@@ -56,7 +86,7 @@ void TestRenderFrameHost::SendNavigateWithTransitionAndResponseCode(
   // DidStartProvisionalLoad may delete the pending entry that holds |url|,
   // so we keep a copy of it to use in SendNavigateWithParameters.
   GURL url_copy(url);
-  OnDidStartProvisionalLoadForFrame(-1, url_copy);
+  OnDidStartProvisionalLoadForFrame(url_copy, false);
   SendNavigateWithParameters(page_id, url_copy, transition, url_copy,
       response_code, 0, std::vector<GURL>());
 }
@@ -65,7 +95,7 @@ void TestRenderFrameHost::SendNavigateWithOriginalRequestURL(
     int page_id,
     const GURL& url,
     const GURL& original_request_url) {
-  OnDidStartProvisionalLoadForFrame(-1, url);
+  OnDidStartProvisionalLoadForFrame(url, false);
   SendNavigateWithParameters(page_id, url, PAGE_TRANSITION_LINK,
       original_request_url, 200, 0, std::vector<GURL>());
 }
@@ -80,7 +110,7 @@ void TestRenderFrameHost::SendNavigateWithFile(
 
 void TestRenderFrameHost::SendNavigateWithParams(
     FrameHostMsg_DidCommitProvisionalLoad_Params* params) {
-  FrameHostMsg_DidCommitProvisionalLoad msg(1, *params);
+  FrameHostMsg_DidCommitProvisionalLoad msg(GetRoutingID(), *params);
   OnNavigate(msg);
 }
 
@@ -132,8 +162,22 @@ void TestRenderFrameHost::SendNavigateWithParameters(
       file_path_for_history_item ? "data" : NULL,
       file_path_for_history_item);
 
-  FrameHostMsg_DidCommitProvisionalLoad msg(1, params);
+  FrameHostMsg_DidCommitProvisionalLoad msg(GetRoutingID(), params);
   OnNavigate(msg);
 }
 
+void TestRenderFrameHost::SendBeginNavigationWithURL(const GURL& url) {
+  FrameHostMsg_BeginNavigation_Params params;
+  params.method = "GET";
+  params.url = url;
+  params.referrer_policy = blink::WebReferrerPolicyDefault;
+  params.load_flags = net::LOAD_NORMAL;
+  params.has_user_gesture = false;
+  params.transition_type = PAGE_TRANSITION_LINK;
+  params.should_replace_current_entry = false;
+  params.allow_download = true;
+  // TODO(clamy): When the BeginNavigation handler is no longer compiled out,
+  // call OnBeginNavigation directly.
+  frame_tree_node()->render_manager()->OnBeginNavigation(params);
+}
 }  // namespace content

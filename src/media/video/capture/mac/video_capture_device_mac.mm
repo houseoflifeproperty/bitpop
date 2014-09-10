@@ -21,10 +21,31 @@
 #import "media/video/capture/mac/video_capture_device_avfoundation_mac.h"
 #import "media/video/capture/mac/video_capture_device_qtkit_mac.h"
 
+@implementation DeviceNameAndTransportType
+
+- (id)initWithName:(NSString*)deviceName transportType:(int32_t)transportType {
+  if (self = [super init]) {
+    deviceName_.reset([deviceName copy]);
+    transportType_ = transportType;
+  }
+  return self;
+}
+
+- (NSString*)deviceName {
+  return deviceName_;
+}
+
+- (int32_t)transportType {
+  return transportType_;
+}
+
+@end  // @implementation DeviceNameAndTransportType
+
 namespace media {
 
-const int kMinFrameRate = 1;
-const int kMaxFrameRate = 30;
+// Mac specific limits for minimum and maximum frame rate.
+const float kMinFrameRate = 1.0f;
+const float kMaxFrameRate = 30.0f;
 
 // In device identifiers, the USB VID and PID are stored in 4 bytes each.
 const size_t kVidPidSize = 4;
@@ -307,10 +328,12 @@ static void SetAntiFlickerInUsbDevice(const int vendor_id,
 }
 
 const std::string VideoCaptureDevice::Name::GetModel() const {
-  // Both PID and VID are 4 characters.
-  if (unique_id_.size() < 2 * kVidPidSize) {
+  // Skip the AVFoundation's not USB nor built-in devices.
+  if (capture_api_type() == AVFOUNDATION && transport_type() != USB_OR_BUILT_IN)
     return "";
-  }
+  // Both PID and VID are 4 characters.
+  if (unique_id_.size() < 2 * kVidPidSize)
+    return "";
 
   // The last characters of device id is a concatenation of VID and then PID.
   const size_t vid_location = unique_id_.size() - 2 * kVidPidSize;
@@ -328,7 +351,9 @@ VideoCaptureDeviceMac::VideoCaptureDeviceMac(const Name& device_name)
       state_(kNotInitialized),
       capture_device_(nil),
       weak_factory_(this) {
-  final_resolution_selected_ = AVFoundationGlue::IsAVFoundationSupported();
+  // Avoid reconfiguring AVFoundation or blacklisted devices.
+  final_resolution_selected_ = AVFoundationGlue::IsAVFoundationSupported() ||
+      device_name.is_blacklisted();
 }
 
 VideoCaptureDeviceMac::~VideoCaptureDeviceMac() {
@@ -547,13 +572,13 @@ void VideoCaptureDeviceMac::LogMessage(const std::string& message) {
 }
 
 bool VideoCaptureDeviceMac::UpdateCaptureResolution() {
- if (![capture_device_ setCaptureHeight:capture_format_.frame_size.height()
-                                  width:capture_format_.frame_size.width()
-                              frameRate:capture_format_.frame_rate]) {
-   ReceiveError("Could not configure capture device.");
-   return false;
- }
- return true;
+  if (![capture_device_ setCaptureHeight:capture_format_.frame_size.height()
+                                   width:capture_format_.frame_size.width()
+                               frameRate:capture_format_.frame_rate]) {
+    ReceiveError("Could not configure capture device.");
+    return false;
+  }
+  return true;
 }
 
 } // namespace media

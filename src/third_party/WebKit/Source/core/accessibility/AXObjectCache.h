@@ -34,7 +34,7 @@
 #include "wtf/HashSet.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class AbstractInlineTextBox;
 class Document;
@@ -196,6 +196,8 @@ public:
     void postNotification(AXObject*, Document*, AXNotification, bool postToElement, PostType = PostAsynchronously);
 
     bool nodeHasRole(Node*, const AtomicString& role);
+
+    void setCanvasObjectBounds(Element*, const LayoutRect&);
 
     AXComputedObjectAttributeCache* computedObjectAttributeCache() { return m_computedObjectAttributeCache.get(); }
 

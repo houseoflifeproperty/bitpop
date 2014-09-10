@@ -35,8 +35,6 @@
 #include "web/ChromeClientImpl.h"
 #include "wtf/text/AtomicString.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 class WebDateTimeChooserCompletionImpl : public WebDateTimeChooserCompletion {
@@ -65,23 +63,23 @@ private:
         delete this;
     }
 
-    RefPtr<ExternalDateTimeChooser> m_chooser;
+    RefPtrWillBePersistent<ExternalDateTimeChooser> m_chooser;
 };
 
 ExternalDateTimeChooser::~ExternalDateTimeChooser()
 {
 }
 
-ExternalDateTimeChooser::ExternalDateTimeChooser(WebCore::DateTimeChooserClient* client)
+ExternalDateTimeChooser::ExternalDateTimeChooser(DateTimeChooserClient* client)
     : m_client(client)
 {
     ASSERT(client);
 }
 
-PassRefPtr<ExternalDateTimeChooser> ExternalDateTimeChooser::create(ChromeClientImpl* chromeClient, WebViewClient* webViewClient, WebCore::DateTimeChooserClient* client, const WebCore::DateTimeChooserParameters& parameters)
+PassRefPtrWillBeRawPtr<ExternalDateTimeChooser> ExternalDateTimeChooser::create(ChromeClientImpl* chromeClient, WebViewClient* webViewClient, DateTimeChooserClient* client, const DateTimeChooserParameters& parameters)
 {
     ASSERT(chromeClient);
-    RefPtr<ExternalDateTimeChooser> chooser = adoptRef(new ExternalDateTimeChooser(client));
+    RefPtrWillBeRawPtr<ExternalDateTimeChooser> chooser = adoptRefWillBeNoop(new ExternalDateTimeChooser(client));
     if (!chooser->openDateTimeChooser(chromeClient, webViewClient, parameters))
         chooser.clear();
     return chooser.release();
@@ -168,6 +166,6 @@ void ExternalDateTimeChooser::endChooser()
     client->didEndChooser();
 }
 
-}
+} // namespace blink
 
 #endif

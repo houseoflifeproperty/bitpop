@@ -32,6 +32,7 @@
 #include "core/inspector/InspectorDOMDebuggerAgent.h"
 
 #include "core/InspectorFrontend.h"
+#include "core/events/Event.h"
 #include "core/inspector/InspectorDOMAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
@@ -54,7 +55,7 @@ const int domBreakpointDerivedTypeShift = 16;
 
 }
 
-namespace WebCore {
+namespace blink {
 
 static const char requestAnimationFrameEventName[] = "requestAnimationFrame";
 static const char cancelAnimationFrameEventName[] = "cancelAnimationFrame";
@@ -62,6 +63,7 @@ static const char animationFrameFiredEventName[] = "animationFrameFired";
 static const char setTimerEventName[] = "setTimer";
 static const char clearTimerEventName[] = "clearTimer";
 static const char timerFiredEventName[] = "timerFired";
+static const char windowCloseEventName[] = "close";
 static const char customElementCallbackName[] = "customElementCallback";
 static const char webglErrorFiredEventName[] = "webglErrorFired";
 static const char webglWarningFiredEventName[] = "webglWarningFired";
@@ -74,9 +76,9 @@ static const char pauseOnAllXHRs[] = "pauseOnAllXHRs";
 static const char xhrBreakpoints[] = "xhrBreakpoints";
 }
 
-PassOwnPtr<InspectorDOMDebuggerAgent> InspectorDOMDebuggerAgent::create(InspectorDOMAgent* domAgent, InspectorDebuggerAgent* debuggerAgent)
+PassOwnPtrWillBeRawPtr<InspectorDOMDebuggerAgent> InspectorDOMDebuggerAgent::create(InspectorDOMAgent* domAgent, InspectorDebuggerAgent* debuggerAgent)
 {
-    return adoptPtr(new InspectorDOMDebuggerAgent(domAgent, debuggerAgent));
+    return adoptPtrWillBeNoop(new InspectorDOMDebuggerAgent(domAgent, debuggerAgent));
 }
 
 InspectorDOMDebuggerAgent::InspectorDOMDebuggerAgent(InspectorDOMAgent* domAgent, InspectorDebuggerAgent* debuggerAgent)
@@ -91,8 +93,20 @@ InspectorDOMDebuggerAgent::InspectorDOMDebuggerAgent(InspectorDOMAgent* domAgent
 
 InspectorDOMDebuggerAgent::~InspectorDOMDebuggerAgent()
 {
+#if !ENABLE(OILPAN)
     ASSERT(!m_debuggerAgent);
     ASSERT(!m_instrumentingAgents->inspectorDOMDebuggerAgent());
+#endif
+}
+
+void InspectorDOMDebuggerAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_domAgent);
+    visitor->trace(m_debuggerAgent);
+#if ENABLE(OILPAN)
+    visitor->trace(m_domBreakpoints);
+#endif
+    InspectorBaseAgent::trace(visitor);
 }
 
 // Browser debugger agent enabled only when JS debugger is enabled.
@@ -151,7 +165,7 @@ void InspectorDOMDebuggerAgent::clearFrontend()
 void InspectorDOMDebuggerAgent::discardAgent()
 {
     m_debuggerAgent->setListener(0);
-    m_debuggerAgent = 0;
+    m_debuggerAgent = nullptr;
 }
 
 void InspectorDOMDebuggerAgent::setEventListenerBreakpoint(ErrorString* error, const String& eventName, const String* targetName)
@@ -241,7 +255,7 @@ void InspectorDOMDebuggerAgent::didRemoveDOMNode(Node* node)
     if (m_domBreakpoints.size()) {
         // Remove subtree breakpoints.
         m_domBreakpoints.remove(node);
-        Vector<Node*> stack(1, InspectorDOMAgent::innerFirstChild(node));
+        WillBeHeapVector<RawPtrWillBeMember<Node> > stack(1, InspectorDOMAgent::innerFirstChild(node));
         do {
             Node* node = stack.last();
             stack.removeLast();
@@ -417,7 +431,7 @@ void InspectorDOMDebuggerAgent::pauseOnNativeEventIfNeeded(PassRefPtr<JSONObject
         m_debuggerAgent->schedulePauseOnNextStatement(InspectorFrontend::Debugger::Reason::EventListener, eventData);
 }
 
-PassRefPtr<JSONObject> InspectorDOMDebuggerAgent::preparePauseOnNativeEventData(const String& eventName, const AtomicString* targetName)
+PassRefPtr<JSONObject> InspectorDOMDebuggerAgent::preparePauseOnNativeEventData(const String& eventName, const String* targetName)
 {
     String fullEventName = (targetName ? listenerEventCategoryType : instrumentationEventCategoryType) + eventName;
     if (m_pauseInNextEventListener) {
@@ -475,7 +489,14 @@ void InspectorDOMDebuggerAgent::willFireAnimationFrame(Document*, int)
 
 void InspectorDOMDebuggerAgent::willHandleEvent(EventTarget* target, Event* event, EventListener*, bool)
 {
-    pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(event->type(), &target->interfaceName()), false);
+    Node* node = target->toNode();
+    String targetName = node ? node->nodeName() : target->interfaceName();
+    pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(event->type(), &targetName), false);
+}
+
+void InspectorDOMDebuggerAgent::willCloseWindow()
+{
+    pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(windowCloseEventName, 0), true);
 }
 
 void InspectorDOMDebuggerAgent::willExecuteCustomElementCallback(Element*)
@@ -560,5 +581,5 @@ void InspectorDOMDebuggerAgent::clear()
     m_pauseInNextEventListener = false;
 }
 
-} // namespace WebCore
+} // namespace blink
 

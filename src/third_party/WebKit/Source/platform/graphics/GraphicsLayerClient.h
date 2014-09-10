@@ -29,7 +29,7 @@
 #include "platform/PlatformExport.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class FloatPoint;
 class GraphicsContext;
@@ -52,7 +52,7 @@ typedef unsigned GraphicsLayerPaintingPhase;
 enum {
     LayerTreeNormal = 0,
     LayerTreeIncludesDebugInfo = 1 << 0, // Dump extra debugging info like layer addresses.
-    LayerTreeIncludesRepaintRects = 1 << 1,
+    LayerTreeIncludesPaintInvalidationRects = 1 << 1,
     LayerTreeIncludesPaintingPhases = 1 << 2,
     LayerTreeIncludesRootLayer = 1 << 3,
     LayerTreeIncludesClipAndScrollParents = 1 << 4
@@ -67,11 +67,11 @@ public:
     virtual void notifyAnimationStarted(const GraphicsLayer*, double monotonicTime) = 0;
 
     virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) = 0;
-    virtual bool isTrackingRepaints() const { return false; }
+    virtual bool isTrackingPaintInvalidations() const { return false; }
 
     virtual String debugName(const GraphicsLayer*) = 0;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     // CompositedLayerMapping overrides this to verify that it is not
     // currently painting contents. An ASSERT fails, if it is.
     // This is executed in GraphicsLayer construction and destruction
@@ -81,6 +81,6 @@ public:
 #endif
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // GraphicsLayerClient_h

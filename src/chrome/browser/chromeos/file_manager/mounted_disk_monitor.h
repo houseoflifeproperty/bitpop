@@ -21,42 +21,36 @@ namespace file_manager {
 // couple of seconds. This is to give DiskManager time to process device
 // removed/added events (events for the devices that were present before suspend
 // should not trigger any new notifications or file manager windows).
-class MountedDiskMonitor
-    : public chromeos::PowerManagerClient::Observer,
-      public chromeos::disks::DiskMountManager::Observer {
+class MountedDiskMonitor : public chromeos::PowerManagerClient::Observer {
  public:
-  MountedDiskMonitor(
-      chromeos::PowerManagerClient* power_manager_client,
-      chromeos::disks::DiskMountManager* disk_mount_manager);
+  explicit MountedDiskMonitor(
+      chromeos::PowerManagerClient* power_manager_client);
   virtual ~MountedDiskMonitor();
 
   // PowerManagerClient::Observer overrides:
   virtual void SuspendImminent() OVERRIDE;
   virtual void SuspendDone(const base::TimeDelta& sleep_duration) OVERRIDE;
 
-  // DiskMountManager::Observer overrides.
-  virtual void OnDiskEvent(
+  // Receives forwarded notifications originates from DiskMountManager.
+  void OnDiskEvent(
       chromeos::disks::DiskMountManager::DiskEvent event,
-      const chromeos::disks::DiskMountManager::Disk* disk) OVERRIDE;
-  virtual void OnDeviceEvent(
+      const chromeos::disks::DiskMountManager::Disk* disk);
+  void OnDeviceEvent(
       chromeos::disks::DiskMountManager::DeviceEvent event,
-      const std::string& device_path) OVERRIDE;
-  virtual void OnMountEvent(
+      const std::string& device_path);
+  void OnMountEvent(
       chromeos::disks::DiskMountManager::MountEvent event,
       chromeos::MountError error_code,
-      const chromeos::disks::DiskMountManager::MountPointInfo& mount_info)
-      OVERRIDE;
-  virtual void OnFormatEvent(
-      chromeos::disks::DiskMountManager::FormatEvent event,
-      chromeos::FormatError error_code,
-      const std::string& device_path) OVERRIDE;
+      const chromeos::disks::DiskMountManager::MountPointInfo& mount_info,
+      const chromeos::disks::DiskMountManager::Disk* disk);
 
   // Checks if the disk is being remounted. The disk is remounting if it has
   // been unmounted during the resuming time span.
   bool DiskIsRemounting(
       const chromeos::disks::DiskMountManager::Disk& disk) const;
-  bool DeviceIsHardUnplugged(const std::string& device_path) const;
-  void ClearHardUnpluggedFlag(const std::string& device_path);
+  bool DeviceIsHardUnpluggedButNotReported(
+      const std::string& device_path) const;
+  void MarkAsHardUnpluggedReported(const std::string& device_path);
 
   // In order to avoid consuming time a lot for testing, this allows to set the
   // resuming time span.
@@ -66,6 +60,7 @@ class MountedDiskMonitor
   }
 
  private:
+  enum HardUnpluggedState { HARD_UNPLUGGED, HARD_UNPLUGGED_AND_REPORTED };
   // Maps source paths with corresponding uuids.
   typedef std::map<std::string, std::string> DiskMap;
 
@@ -75,16 +70,12 @@ class MountedDiskMonitor
   void Reset();
 
   chromeos::PowerManagerClient* power_manager_client_;
-  chromeos::disks::DiskMountManager* disk_mount_manager_;
 
   bool is_resuming_;
   DiskMap mounted_disks_;
   DiskSet unmounted_while_resuming_;
-  // Map of mount paths and device paths that are mount but are not unmount
-  // requested.
-  std::map<std::string, std::string> not_unmount_requested_;
   // Set of device path that is hard unplugged.
-  std::set<std::string> hard_unplugged_;
+  std::map<std::string, HardUnpluggedState> hard_unplugged_;
   base::TimeDelta resuming_time_span_;
   base::WeakPtrFactory<MountedDiskMonitor> weak_factory_;
 

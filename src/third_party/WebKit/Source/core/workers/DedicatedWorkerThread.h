@@ -33,7 +33,7 @@
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/workers/WorkerThread.h"
 
-namespace WebCore {
+namespace blink {
 
 class WorkerObjectProxy;
 class WorkerThreadStartupData;
@@ -46,7 +46,7 @@ public:
 
 protected:
     virtual PassRefPtrWillBeRawPtr<WorkerGlobalScope> createWorkerGlobalScope(PassOwnPtrWillBeRawPtr<WorkerThreadStartupData>) OVERRIDE;
-    virtual void runEventLoop() OVERRIDE;
+    virtual void postInitialize() OVERRIDE;
 
 private:
     DedicatedWorkerThread(WorkerLoaderProxy&, WorkerObjectProxy&, double timeOrigin, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData>);
@@ -55,6 +55,6 @@ private:
     double m_timeOrigin;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DedicatedWorkerThread_h

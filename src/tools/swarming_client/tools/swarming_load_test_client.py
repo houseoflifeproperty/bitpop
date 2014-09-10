@@ -34,6 +34,10 @@ from utils import threading_utils
 import swarming_load_test_bot
 
 
+# Amount of time the timer should be reduced on the Swarming side.
+TIMEOUT_OVERHEAD = 10
+
+
 def print_results(results, columns, buckets):
   delays = [i for i in results if isinstance(i, float)]
   failures = [i for i in results if not isinstance(i, float)]
@@ -74,8 +78,7 @@ def trigger_task(
     extra_args=[],
     env={},
     dimensions=dimensions,
-    working_dir=None,
-    deadline=3600,
+    deadline=int(timeout-TIMEOUT_OVERHEAD),
     verbose=False,
     profile=False,
     priority=100)
@@ -101,6 +104,7 @@ def trigger_task(
     test_keys.append(key.pop('test_key'))
     assert re.match('[0-9a-f]+', test_keys[-1]), test_keys
   expected = {
+    u'priority': 100,
     u'test_case_name': unicode(name),
     u'test_keys': [
       {
@@ -166,8 +170,10 @@ def main():
       '-m', '--concurrent', type='int', default=200, metavar='N',
       help='Maximum concurrent on-going requests, default: %default')
   group.add_option(
-      '-t', '--timeout', type='float', default=3600., metavar='N',
-      help='Timeout to get results, default: %default')
+      '-t', '--timeout', type='float', default=15*60., metavar='N',
+      help='Task expiration and timeout to get results, the task itself will '
+           'have %ds less than the value provided. Default: %%default' %
+               TIMEOUT_OVERHEAD)
   group.add_option(
       '-o', '--output-size', type='int', default=100, metavar='N',
       help='Bytes sent to stdout, default: %default')
@@ -215,6 +221,7 @@ def main():
   columns = [('processing', 0), ('processed', 0), ('todo', 0)]
   progress = threading_utils.Progress(columns)
   index = 0
+  results = []
   with threading_utils.ThreadPoolWithProgress(
       progress, 1, options.concurrent, 0) as pool:
     try:
@@ -240,6 +247,19 @@ def main():
           index += 1
           progress.print_update()
         time.sleep(0.01)
+      progress.update_item('Getting results for on-going tasks.', raw=True)
+      for i in pool.iter_results():
+        results.append(i)
+        # This is a bit excessive but it's useful in the case where some tasks
+        # hangs, so at least partial data is available.
+        if options.dump:
+          results.sort()
+          if os.path.exists(options.dump):
+            os.rename(options.dump, options.dump + '.old')
+          with open(options.dump, 'wb') as f:
+            json.dump(results, f, separators=(',',':'))
+      if not options.dump:
+        results.sort()
     except KeyboardInterrupt:
       aborted = pool.abort()
       progress.update_item(
@@ -247,20 +267,12 @@ def main():
           raw=True,
           todo=-aborted)
       progress.print_update()
-    finally:
-      # TODO(maruel): We could give up on collecting results for the on-going
-      # tasks but that would need to be optional.
-      progress.update_item('Getting results for on-going tasks.', raw=True)
-      results = sorted(pool.join())
   progress.print_update()
   # At this point, progress is not used anymore.
   print('')
   print(' - Took %.1fs.' % (time.time() - start))
   print('')
   print_results(results, options.columns, options.buckets)
-  if options.dump:
-    with open(options.dump, 'w') as f:
-      json.dump(results, f, separators=(',',':'))
   return 0
 
 

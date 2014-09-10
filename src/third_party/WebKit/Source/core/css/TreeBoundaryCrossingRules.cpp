@@ -34,7 +34,7 @@
 #include "core/dom/StyleEngine.h"
 #include "core/dom/shadow/ShadowRoot.h"
 
-namespace WebCore {
+namespace blink {
 
 static void addRules(RuleSet* ruleSet, const WillBeHeapVector<MinimalRuleData>& rules)
 {
@@ -76,18 +76,13 @@ void TreeBoundaryCrossingRules::collectTreeBoundaryCrossingRules(Element* elemen
     for (DocumentOrderedList::iterator it = m_scopingNodes.begin(); it != m_scopingNodes.end(); ++it) {
         const ContainerNode* scopingNode = toContainerNode(*it);
         CSSStyleSheetRuleSubSet* ruleSubSet = m_treeBoundaryCrossingRuleSetMap.get(scopingNode);
-        unsigned boundaryBehavior = SelectorChecker::ScopeContainsLastMatchedElement;
         bool isInnerTreeScope = element->treeScope().isInclusiveAncestorOf(scopingNode->treeScope());
-
-        // If a given scoping node is a shadow root, we should use ScopeIsShadowRoot.
-        if (scopingNode && scopingNode->isShadowRoot())
-            boundaryBehavior |= SelectorChecker::ScopeIsShadowRoot;
 
         CascadeOrder cascadeOrder = isInnerTreeScope ? innerCascadeOrder : outerCascadeOrder;
         for (CSSStyleSheetRuleSubSet::iterator it = ruleSubSet->begin(); it != ruleSubSet->end(); ++it) {
             CSSStyleSheet* parentStyleSheet = it->first;
             RuleSet* ruleSet = it->second.get();
-            collector.collectMatchingRules(MatchRequest(ruleSet, includeEmptyRules, scopingNode, parentStyleSheet), ruleRange, static_cast<SelectorChecker::BehaviorAtBoundary>(boundaryBehavior), ignoreCascadeScope, cascadeOrder);
+            collector.collectMatchingRules(MatchRequest(ruleSet, includeEmptyRules, scopingNode, parentStyleSheet), ruleRange, SelectorChecker::ScopeContainsLastMatchedElement, ignoreCascadeScope, cascadeOrder);
         }
         ++innerCascadeOrder;
         --outerCascadeOrder;
@@ -112,4 +107,12 @@ void TreeBoundaryCrossingRules::collectFeaturesTo(RuleFeatureSet& features)
         collectFeaturesFromRuleSubSet(it->get(), features);
 }
 
-} // namespace WebCore
+void TreeBoundaryCrossingRules::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_treeBoundaryCrossingRuleSetMap);
+    visitor->trace(m_scopingNodes);
+#endif
+}
+
+} // namespace blink

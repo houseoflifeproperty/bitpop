@@ -230,22 +230,30 @@ def split_server_request_url(url):
   return urlhost, urlpath
 
 
-def get_http_service(urlhost):
+def get_http_service(urlhost, allow_cached=False, use_count_key=None):
   """Returns existing or creates new instance of HttpService that can send
   requests to given base urlhost.
   """
+  def new_service():
+    return HttpService(
+        urlhost,
+        engine=RequestsLibEngine(get_cacerts_bundle()),
+        authenticator=create_authenticator(urlhost),
+        use_count_key=use_count_key)
+
   # Ensure consistency in url naming.
   urlhost = str(urlhost).lower().rstrip('/')
+
   # Do not use COUNT_KEY with Google Storage (since it breaks a signature).
-  use_count_key = not GS_STORAGE_HOST_URL_RE.match(urlhost)
+  if use_count_key is None:
+    use_count_key = not GS_STORAGE_HOST_URL_RE.match(urlhost)
+
+  if not allow_cached:
+    return new_service()
   with _http_services_lock:
     service = _http_services.get(urlhost)
     if not service:
-      service = HttpService(
-          urlhost,
-          engine=RequestsLibEngine(get_cacerts_bundle()),
-          authenticator=create_authenticator(urlhost),
-          use_count_key=use_count_key)
+      service = new_service()
       _http_services[urlhost] = service
     return service
 
@@ -314,6 +322,15 @@ def configure_auth(method, config=None):
   with _auth_lock:
     _auth_method = method
     _auth_method_config = config
+
+
+def get_auth_method():
+  """Returns authentication method used by default.
+
+  Set with 'configure_auth'. See 'configure_auth' doc string for existing
+  auth method.
+  """
+  return _auth_method
 
 
 def create_authenticator(urlhost):
@@ -898,10 +915,14 @@ class OAuthAuthenticator(Authenticator):
     self.urlhost = urlhost
     self.config = config
     self._lock = threading.Lock()
-    self._access_token = oauth.load_access_token(self.urlhost, self.config)
+    self._access_token_known = False
+    self._access_token = None
 
   def authorize(self, request):
     with self._lock:
+      if not self._access_token_known:
+        self._access_token = oauth.load_access_token(self.urlhost, self.config)
+        self._access_token_known = True
       if self._access_token:
         request.headers['Authorization'] = 'Bearer %s' % self._access_token
 
@@ -909,11 +930,13 @@ class OAuthAuthenticator(Authenticator):
     with self._lock:
       self._access_token = oauth.create_access_token(
           self.urlhost, self.config, allow_user_interaction)
+      self._access_token_known = True
       return self._access_token is not None
 
   def logout(self):
     with self._lock:
       self._access_token = None
+      self._access_token_known = True
       oauth.purge_access_token(self.urlhost, self.config)
 
 

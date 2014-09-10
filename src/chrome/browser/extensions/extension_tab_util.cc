@@ -21,6 +21,7 @@
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/common/extensions/api/tabs.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/url_constants.h"
 #include "components/url_fixer/url_fixer.h"
@@ -169,8 +170,8 @@ base::DictionaryValue* ExtensionTabUtil::OpenTab(
   GURL url;
   if (params.url.get()) {
     std::string url_string= *params.url;
-    url = ExtensionTabUtil::ResolvePossiblyRelativeURL(
-        url_string, function->GetExtension());
+    url = ExtensionTabUtil::ResolvePossiblyRelativeURL(url_string,
+                                                       function->extension());
     if (!url.is_valid()) {
       *error =
           ErrorUtils::FormatErrorMessage(keys::kInvalidUrlError, url_string);
@@ -201,7 +202,7 @@ base::DictionaryValue* ExtensionTabUtil::OpenTab(
   // We can't load extension URLs into incognito windows unless the extension
   // uses split mode. Special case to fall back to a tabbed window.
   if (url.SchemeIs(kExtensionScheme) &&
-      !IncognitoInfo::IsSplitMode(function->GetExtension()) &&
+      !IncognitoInfo::IsSplitMode(function->extension()) &&
       browser->profile()->IsOffTheRecord()) {
     Profile* profile = browser->profile()->GetOriginalProfile();
     chrome::HostDesktopType desktop_type = browser->host_desktop_type();
@@ -251,7 +252,7 @@ base::DictionaryValue* ExtensionTabUtil::OpenTab(
   return ExtensionTabUtil::CreateTabValue(navigate_params.target_contents,
                                           tab_strip,
                                           new_index,
-                                          function->GetExtension());
+                                          function->extension());
 }
 
 Browser* ExtensionTabUtil::GetBrowserFromWindowID(

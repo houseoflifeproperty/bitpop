@@ -7,11 +7,11 @@
 #include "config.h"
 #include "V8TestInterfaceGarbageCollected.h"
 
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/V8DOMConfiguration.h"
+#include "bindings/core/v8/V8HiddenValue.h"
+#include "bindings/core/v8/V8ObjectConstructor.h"
 #include "bindings/tests/v8/V8TestInterfaceGarbageCollected.h"
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/V8DOMConfiguration.h"
-#include "bindings/v8/V8HiddenValue.h"
-#include "bindings/v8/V8ObjectConstructor.h"
 #include "core/dom/ContextFeatures.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalDOMWindow.h"
@@ -20,7 +20,7 @@
 #include "wtf/GetPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 static void initializeScriptWrappableForInterface(TestInterfaceGarbageCollected* object)
 {
@@ -30,15 +30,15 @@ static void initializeScriptWrappableForInterface(TestInterfaceGarbageCollected*
         ASSERT_NOT_REACHED();
 }
 
-} // namespace WebCore
+} // namespace blink
 
-void webCoreInitializeScriptWrappableForInterface(WebCore::TestInterfaceGarbageCollected* object)
+void webCoreInitializeScriptWrappableForInterface(blink::TestInterfaceGarbageCollected* object)
 {
-    WebCore::initializeScriptWrappableForInterface(object);
+    blink::initializeScriptWrappableForInterface(object);
 }
 
-namespace WebCore {
-const WrapperTypeInfo V8TestInterfaceGarbageCollected::wrapperTypeInfo = { gin::kEmbedderBlink, V8TestInterfaceGarbageCollected::domTemplate, V8TestInterfaceGarbageCollected::derefObject, 0, V8TestInterfaceGarbageCollected::toEventTarget, 0, V8TestInterfaceGarbageCollected::installPerContextEnabledMethods, &V8EventTarget::wrapperTypeInfo, WrapperTypeObjectPrototype, GarbageCollectedObject };
+namespace blink {
+const WrapperTypeInfo V8TestInterfaceGarbageCollected::wrapperTypeInfo = { gin::kEmbedderBlink, V8TestInterfaceGarbageCollected::domTemplate, V8TestInterfaceGarbageCollected::derefObject, 0, V8TestInterfaceGarbageCollected::toEventTarget, 0, V8TestInterfaceGarbageCollected::installConditionallyEnabledMethods, &V8EventTarget::wrapperTypeInfo, WrapperTypeObjectPrototype, GarbageCollectedObject };
 
 namespace TestInterfaceGarbageCollectedV8Internal {
 
@@ -53,9 +53,9 @@ static void attr1AttributeGetter(const v8::PropertyCallbackInfo<v8::Value>& info
 
 static void attr1AttributeGetterCallback(v8::Local<v8::String>, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
-    TRACE_EVENT_SET_SAMPLING_STATE("Blink", "DOMGetter");
+    TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMGetter");
     TestInterfaceGarbageCollectedV8Internal::attr1AttributeGetter(info);
-    TRACE_EVENT_SET_SAMPLING_STATE("V8", "V8Execution");
+    TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
 
 static void attr1AttributeSetter(v8::Local<v8::Value> v8Value, const v8::PropertyCallbackInfo<void>& info)
@@ -68,15 +68,15 @@ static void attr1AttributeSetter(v8::Local<v8::Value> v8Value, const v8::Propert
 
 static void attr1AttributeSetterCallback(v8::Local<v8::String>, v8::Local<v8::Value> v8Value, const v8::PropertyCallbackInfo<void>& info)
 {
-    TRACE_EVENT_SET_SAMPLING_STATE("Blink", "DOMSetter");
+    TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMSetter");
     TestInterfaceGarbageCollectedV8Internal::attr1AttributeSetter(v8Value, info);
-    TRACE_EVENT_SET_SAMPLING_STATE("V8", "V8Execution");
+    TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
 
 static void funcMethod(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     if (UNLIKELY(info.Length() < 1)) {
-        throwMinimumArityTypeErrorForMethod("func", "TestInterfaceGarbageCollected", 1, info.Length(), info.GetIsolate());
+        V8ThrowException::throwException(createMinimumArityTypeErrorForMethod("func", "TestInterfaceGarbageCollected", 1, info.Length(), info.GetIsolate()), info.GetIsolate());
         return;
     }
     TestInterfaceGarbageCollected* impl = V8TestInterfaceGarbageCollected::toNative(info.Holder());
@@ -91,16 +91,15 @@ static void funcMethod(const v8::FunctionCallbackInfo<v8::Value>& info)
 
 static void funcMethodCallback(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    TRACE_EVENT_SET_SAMPLING_STATE("Blink", "DOMMethod");
+    TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMMethod");
     TestInterfaceGarbageCollectedV8Internal::funcMethod(info);
-    TRACE_EVENT_SET_SAMPLING_STATE("V8", "V8Execution");
+    TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
 
 static void constructor(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    v8::Isolate* isolate = info.GetIsolate();
     if (UNLIKELY(info.Length() < 1)) {
-        throwMinimumArityTypeErrorForConstructor("TestInterfaceGarbageCollected", 1, info.Length(), info.GetIsolate());
+        V8ThrowException::throwException(createMinimumArityTypeErrorForConstructor("TestInterfaceGarbageCollected", 1, info.Length(), info.GetIsolate()), info.GetIsolate());
         return;
     }
     V8StringResource<> str;
@@ -108,27 +107,26 @@ static void constructor(const v8::FunctionCallbackInfo<v8::Value>& info)
         TOSTRING_VOID_INTERNAL(str, info[0]);
     }
     RawPtr<TestInterfaceGarbageCollected> impl = TestInterfaceGarbageCollected::create(str);
-
     v8::Handle<v8::Object> wrapper = info.Holder();
-    V8DOMWrapper::associateObjectWithWrapper<V8TestInterfaceGarbageCollected>(impl.release(), &V8TestInterfaceGarbageCollected::wrapperTypeInfo, wrapper, isolate, WrapperConfiguration::Independent);
+    V8DOMWrapper::associateObjectWithWrapper<V8TestInterfaceGarbageCollected>(impl.release(), &V8TestInterfaceGarbageCollected::wrapperTypeInfo, wrapper, info.GetIsolate(), WrapperConfiguration::Independent);
     v8SetReturnValue(info, wrapper);
 }
 
 } // namespace TestInterfaceGarbageCollectedV8Internal
 
 static const V8DOMConfiguration::AttributeConfiguration V8TestInterfaceGarbageCollectedAttributes[] = {
-    {"attr1", TestInterfaceGarbageCollectedV8Internal::attr1AttributeGetterCallback, TestInterfaceGarbageCollectedV8Internal::attr1AttributeSetterCallback, 0, 0, 0, static_cast<v8::AccessControl>(v8::DEFAULT), static_cast<v8::PropertyAttribute>(v8::None), 0 /* on instance */},
+    {"attr1", TestInterfaceGarbageCollectedV8Internal::attr1AttributeGetterCallback, TestInterfaceGarbageCollectedV8Internal::attr1AttributeSetterCallback, 0, 0, 0, static_cast<v8::AccessControl>(v8::DEFAULT), static_cast<v8::PropertyAttribute>(v8::None), V8DOMConfiguration::ExposedToAllScripts, V8DOMConfiguration::OnInstance},
 };
 
 static const V8DOMConfiguration::MethodConfiguration V8TestInterfaceGarbageCollectedMethods[] = {
-    {"func", TestInterfaceGarbageCollectedV8Internal::funcMethodCallback, 0, 1},
+    {"func", TestInterfaceGarbageCollectedV8Internal::funcMethodCallback, 0, 1, V8DOMConfiguration::ExposedToAllScripts},
 };
 
 void V8TestInterfaceGarbageCollected::constructorCallback(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    TRACE_EVENT_SCOPED_SAMPLING_STATE("Blink", "DOMConstructor");
+    TRACE_EVENT_SCOPED_SAMPLING_STATE("blink", "DOMConstructor");
     if (!info.IsConstructCall()) {
-        throwTypeError(ExceptionMessages::constructorNotCallableAsFunction("TestInterfaceGarbageCollected"), info.GetIsolate());
+        V8ThrowException::throwTypeError(ExceptionMessages::constructorNotCallableAsFunction("TestInterfaceGarbageCollected"), info.GetIsolate());
         return;
     }
 
@@ -140,7 +138,7 @@ void V8TestInterfaceGarbageCollected::constructorCallback(const v8::FunctionCall
     TestInterfaceGarbageCollectedV8Internal::constructor(info);
 }
 
-static void configureV8TestInterfaceGarbageCollectedTemplate(v8::Handle<v8::FunctionTemplate> functionTemplate, v8::Isolate* isolate)
+static void installV8TestInterfaceGarbageCollectedTemplate(v8::Handle<v8::FunctionTemplate> functionTemplate, v8::Isolate* isolate)
 {
     functionTemplate->ReadOnlyPrototype();
 
@@ -161,7 +159,7 @@ static void configureV8TestInterfaceGarbageCollectedTemplate(v8::Handle<v8::Func
 
 v8::Handle<v8::FunctionTemplate> V8TestInterfaceGarbageCollected::domTemplate(v8::Isolate* isolate)
 {
-    return V8DOMConfiguration::domClassTemplate(isolate, const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), configureV8TestInterfaceGarbageCollectedTemplate);
+    return V8DOMConfiguration::domClassTemplate(isolate, const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), installV8TestInterfaceGarbageCollectedTemplate);
 }
 
 bool V8TestInterfaceGarbageCollected::hasInstance(v8::Handle<v8::Value> v8Value, v8::Isolate* isolate)
@@ -176,7 +174,7 @@ v8::Handle<v8::Object> V8TestInterfaceGarbageCollected::findInstanceInPrototypeC
 
 TestInterfaceGarbageCollected* V8TestInterfaceGarbageCollected::toNativeWithTypeCheck(v8::Isolate* isolate, v8::Handle<v8::Value> value)
 {
-    return hasInstance(value, isolate) ? fromInternalPointer(v8::Handle<v8::Object>::Cast(value)->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex)) : 0;
+    return hasInstance(value, isolate) ? fromInternalPointer(blink::toInternalPointer(v8::Handle<v8::Object>::Cast(value))) : 0;
 }
 
 EventTarget* V8TestInterfaceGarbageCollected::toEventTarget(v8::Handle<v8::Object> object)
@@ -206,12 +204,12 @@ v8::Handle<v8::Object> V8TestInterfaceGarbageCollected::createWrapper(RawPtr<Tes
     if (UNLIKELY(wrapper.IsEmpty()))
         return wrapper;
 
-    installPerContextEnabledProperties(wrapper, impl.get(), isolate);
+    installConditionallyEnabledProperties(wrapper, isolate);
     V8DOMWrapper::associateObjectWithWrapper<V8TestInterfaceGarbageCollected>(impl, &wrapperTypeInfo, wrapper, isolate, WrapperConfiguration::Independent);
     return wrapper;
 }
 
-void V8TestInterfaceGarbageCollected::derefObject(void* object)
+void V8TestInterfaceGarbageCollected::derefObject(ScriptWrappableBase* internalPointer)
 {
 }
 
@@ -221,4 +219,4 @@ v8::Handle<v8::Value> toV8NoInline(TestInterfaceGarbageCollected* impl, v8::Hand
     return toV8(impl, creationContext, isolate);
 }
 
-} // namespace WebCore
+} // namespace blink

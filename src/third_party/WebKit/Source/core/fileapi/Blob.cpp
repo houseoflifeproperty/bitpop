@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/fileapi/Blob.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/DOMURL.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
@@ -39,7 +39,7 @@
 #include "platform/blob/BlobRegistry.h"
 #include "platform/blob/BlobURL.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
@@ -155,4 +155,4 @@ URLRegistry& Blob::registry() const
     return BlobURLRegistry::registry();
 }
 
-} // namespace WebCore
+} // namespace blink

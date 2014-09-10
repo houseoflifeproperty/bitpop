@@ -148,21 +148,18 @@ logs/stdio">stdio</a></td></tr><tr><td style=3D"">content_browsertests<br/>=
 builds/102110/steps/content_browsertests/logs/stdio">stdio</a></td></tr><tr=
 ><td style=3D"">installer_util_unittests<br/><a href=3D"http://build.chromi=
 um.org/p/tryserver.chromium/builders/win_rel/builds/102110/steps/installer_=
-util_unittests/logs/stdio">stdio</a></td></tr><tr><td style=3D"">webkit_com=
-positor_bindings_unittests<br/><a href=3D"http://build.chromium.org/p/tryse=
-rver.chromium/builders/win_rel/builds/102110/steps/webkit_compositor_bindin=
-gs_unittests/logs/stdio">stdio</a></td></tr><tr><td style=3D"">sizes<br/><a=
- href=3D"http://build.chromium.org/p/tryserver.chromium/builders/win_rel/bu=
-ilds/102110/steps/sizes/logs/stdio">stdio</a></td></tr><tr><td style=3D"col=
-or: #FFFFFF; background-color: #8fdf5f; border-color: #4F8530;">sync_integr=
-ation_tests<br/><a href=3D"http://build.chromium.org/p/tryserver.chromium/b=
-uilders/win_rel/builds/102110/steps/sync_integration_tests/logs/stdio">stdi=
-o</a></td></tr><tr><td style=3D"">nacl_integration<br/><a href=3D"http://bu=
-ild.chromium.org/p/tryserver.chromium/builders/win_rel/builds/102110/steps/=
-nacl_integration/logs/stdio">stdio</a></td></tr><tr><td style=3D"color: #FF=
-FFFF; background-color: #8fdf5f; border-color: #4F8530;">process_dumps<br/>=
+util_unittests/logs/stdio">stdio</a></td></tr><tr><td style=3D"">sizes<br/>=
 <a href=3D"http://build.chromium.org/p/tryserver.chromium/builders/win_rel/=
-builds/102110/steps/process_dumps/logs/stdio">stdio</a></td></tr></table>
+builds/102110/steps/sizes/logs/stdio">stdio</a></td></tr><tr><td style=3D"c=
+olor: #FFFFFF; background-color: #8fdf5f; border-color: #4F8530;">sync_inte=
+gration_tests<br/><a href=3D"http://build.chromium.org/p/tryserver.chromium=
+/builders/win_rel/builds/102110/steps/sync_integration_tests/logs/stdio">st=
+dio</a></td></tr><tr><td style=3D"">nacl_integration<br/><a href=3D"http://=
+build.chromium.org/p/tryserver.chromium/builders/win_rel/builds/102110/step=
+s/nacl_integration/logs/stdio">stdio</a></td></tr><tr><td style=3D"color: #=
+FFFFFF; background-color: #8fdf5f; border-color: #4F8530;">process_dumps<br=
+/><a href=3D"http://build.chromium.org/p/tryserver.chromium/builders/win_re=
+l/builds/102110/steps/process_dumps/logs/stdio">stdio</a></td></tr></table>
 <br>
 FAQ: <a href=3D"https://sites.google.com/a/chromium.org/dev/developers/test=
 ing/try-server-usage">

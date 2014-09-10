@@ -37,7 +37,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ClipPathOperation : public RefCounted<ClipPathOperation> {
 public:
@@ -100,6 +100,7 @@ public:
     }
 
     const BasicShape* basicShape() const { return m_shape.get(); }
+    bool isValid() const { return m_shape.get(); }
     WindRule windRule() const { return m_shape->windRule(); }
     const Path& path(const FloatRect& boundingRect)
     {

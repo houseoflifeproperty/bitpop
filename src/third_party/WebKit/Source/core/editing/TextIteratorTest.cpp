@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/editing/TextIterator.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
@@ -51,7 +51,7 @@
 #include "wtf/testing/WTFTestHelpers.h"
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 
 namespace {
 
@@ -84,7 +84,6 @@ void TextIteratorTest::SetUp()
 
 Vector<String> TextIteratorTest::iterate(TextIteratorBehavior iteratorBehavior)
 {
-    document().view()->updateLayoutAndStyleIfNeededRecursive(); // Force renderers to be created; TextIterator needs them.
     RefPtrWillBeRawPtr<Range> range = getBodyRange();
     TextIterator iterator(range.get(), iteratorBehavior);
     return iterateWithIterator(iterator);
@@ -92,7 +91,6 @@ Vector<String> TextIteratorTest::iterate(TextIteratorBehavior iteratorBehavior)
 
 Vector<String> TextIteratorTest::iteratePartial(const Position& start, const Position& end, TextIteratorBehavior iteratorBehavior)
 {
-    document().view()->updateLayoutAndStyleIfNeededRecursive();
     TextIterator iterator(start, end, iteratorBehavior);
     return iterateWithIterator(iterator);
 }

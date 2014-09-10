@@ -50,6 +50,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/bookmarks/browser/bookmark_model.h"
+#include "components/metrics/metrics_service.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/page_navigator.h"
@@ -88,6 +89,7 @@
 #include "ui/views/window/non_client_view.h"
 
 using base::UserMetricsAction;
+using bookmarks::BookmarkNodeData;
 using content::OpenURLParams;
 using content::PageNavigator;
 using content::Referrer;
@@ -142,9 +144,6 @@ static const int kOtherFolderButtonTag = 1;
 static const int kAppsShortcutButtonTag = 2;
 
 // Preferred padding between text and edge.
-//
-// Note that the vertical padding is one pixel less than it was in TextButton;
-// we clip the bottom of letters like 'g' or 'p' if we don't.
 static const int kButtonPaddingHorizontal = 6;
 static const int kButtonPaddingVertical = 4;
 
@@ -166,14 +165,13 @@ bool animations_enabled = true;
 
 // BookmarkButtonBase -----------------------------------------------
 
-// Base class for text buttons used on the bookmark bar.
+// Base class for buttons used on the bookmark bar.
 
 class BookmarkButtonBase : public views::LabelButton {
  public:
   BookmarkButtonBase(views::ButtonListener* listener,
                      const base::string16& title)
       : LabelButton(listener, title) {
-    SetDirectionalityMode(gfx::DIRECTIONALITY_FROM_TEXT);
     SetElideBehavior(kElideBehavior);
     show_animation_.reset(new gfx::SlideAnimation(this));
     if (!animations_enabled) {
@@ -185,20 +183,23 @@ class BookmarkButtonBase : public views::LabelButton {
     }
   }
 
-  virtual bool IsTriggerableEvent(const ui::Event& e) OVERRIDE {
-    return e.type() == ui::ET_GESTURE_TAP ||
-           e.type() == ui::ET_GESTURE_TAP_DOWN ||
-           event_utils::IsPossibleDispositionEvent(e);
+  virtual View* GetTooltipHandlerForPoint(const gfx::Point& point) OVERRIDE {
+    return HitTestPoint(point) && CanProcessEventsWithinSubtree() ? this : NULL;
   }
 
   virtual scoped_ptr<LabelButtonBorder> CreateDefaultBorder() const OVERRIDE {
-    // We change the insets on the border to match the previous TextButton.
     scoped_ptr<LabelButtonBorder> border = LabelButton::CreateDefaultBorder();
     border->set_insets(gfx::Insets(kButtonPaddingVertical,
                                    kButtonPaddingHorizontal,
                                    kButtonPaddingVertical,
                                    kButtonPaddingHorizontal));
     return border.Pass();
+  }
+
+  virtual bool IsTriggerableEvent(const ui::Event& e) OVERRIDE {
+    return e.type() == ui::ET_GESTURE_TAP ||
+           e.type() == ui::ET_GESTURE_TAP_DOWN ||
+           event_utils::IsPossibleDispositionEvent(e);
   }
 
  private:
@@ -285,7 +286,6 @@ class BookmarkFolderButton : public views::MenuButton {
                        views::MenuButtonListener* menu_button_listener,
                        bool show_menu_marker)
       : MenuButton(listener, title, menu_button_listener, show_menu_marker) {
-    SetDirectionalityMode(gfx::DIRECTIONALITY_FROM_TEXT);
     SetElideBehavior(kElideBehavior);
     show_animation_.reset(new gfx::SlideAnimation(this));
     if (!animations_enabled) {
@@ -1006,8 +1006,7 @@ void BookmarkBarView::BookmarkMenuControllerDeleted(
 }
 
 void BookmarkBarView::ShowImportDialog() {
-  int64 install_time =
-      g_browser_process->local_state()->GetInt64(prefs::kInstallDate);
+  int64 install_time = g_browser_process->metrics_service()->GetInstallDate();
   int64 time_from_install = base::Time::Now().ToTimeT() - install_time;
   if (bookmark_bar_state_ == BookmarkBar::SHOW) {
     UMA_HISTOGRAM_COUNTS("Import.ShowDialog.FromBookmarkBarView",
@@ -1239,9 +1238,9 @@ void BookmarkBarView::OnMenuButtonClicked(views::View* view,
 
   RecordBookmarkFolderOpen(GetBookmarkLaunchLocation());
   bookmark_menu_ = new BookmarkMenuController(
-      browser_, page_navigator_, GetWidget(), node, start_index);
+      browser_, page_navigator_, GetWidget(), node, start_index, false);
   bookmark_menu_->set_observer(this);
-  bookmark_menu_->RunMenuAt(this, false);
+  bookmark_menu_->RunMenuAt(this);
 }
 
 void BookmarkBarView::ButtonPressed(views::Button* sender,
@@ -1502,7 +1501,7 @@ void BookmarkBarView::ConfigureButton(const BookmarkNode* node,
         GetThemeProvider()->GetColor(ThemeProperties::COLOR_BOOKMARK_TEXT));
   }
 
-  button->set_min_size(gfx::Size());
+  button->SetMinSize(gfx::Size());
   button->set_context_menu_controller(this);
   button->set_drag_controller(this);
   if (node->is_url()) {
@@ -1512,7 +1511,7 @@ void BookmarkBarView::ConfigureButton(const BookmarkNode* node,
     else
       button->SetImage(views::Button::STATE_NORMAL, GetDefaultFavicon());
   }
-  button->set_max_size(gfx::Size(kMaxButtonWidth, 0));
+  button->SetMaxSize(gfx::Size(kMaxButtonWidth, 0));
 }
 
 void BookmarkBarView::BookmarkNodeAddedImpl(BookmarkModel* model,
@@ -1602,10 +1601,10 @@ void BookmarkBarView::ShowDropFolderForNode(const BookmarkNode* node) {
     start_index = GetFirstHiddenNodeIndex();
 
   drop_info_->is_menu_showing = true;
-  bookmark_drop_menu_ = new BookmarkMenuController(browser_,
-      page_navigator_, GetWidget(), node, start_index);
+  bookmark_drop_menu_ = new BookmarkMenuController(
+      browser_, page_navigator_, GetWidget(), node, start_index, true);
   bookmark_drop_menu_->set_observer(this);
-  bookmark_drop_menu_->RunMenuAt(this, true);
+  bookmark_drop_menu_->RunMenuAt(this);
 }
 
 void BookmarkBarView::StopShowFolderDropMenuTimer() {

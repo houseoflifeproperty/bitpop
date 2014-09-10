@@ -13,12 +13,14 @@ def Update(c):
   c['schedulers'].extend([
       SingleBranchScheduler(name='webrtc_android_scheduler',
                             branch='trunk',
-                            treeStableTimer=0,
+                            treeStableTimer=30,
                             builderNames=[
           'Android',
           'Android (dbg)',
           'Android Clang (dbg)',
           'Android ARM64 (dbg)',
+          'Android GN',
+          'Android GN (dbg)',
           'Android Chromium-APK Builder',
           'Android Chromium-APK Builder (dbg)',
       ]),
@@ -54,6 +56,16 @@ def Update(c):
       'name': 'Android ARM64 (dbg)',
       'recipe': 'webrtc/standalone',
       'slavebuilddir': 'android_arm64',
+    },
+    {
+      'name': 'Android GN',
+      'recipe': 'webrtc/standalone',
+      'slavebuilddir': 'android_gn',
+    },
+    {
+      'name': 'Android GN (dbg)',
+      'recipe': 'webrtc/standalone',
+      'slavebuilddir': 'android_gn',
     },
     {
       'name': 'Android Chromium-APK Builder',

@@ -20,6 +20,7 @@ int SkForceLinking(bool doNotPassTrue) {
         CreateICOImageDecoder();
         CreatePKMImageDecoder();
         CreateKTXImageDecoder();
+        CreateASTCImageDecoder();
         CreateWBMPImageDecoder();
         // Only link GIF and PNG on platforms that build them. See images.gyp
 #if !defined(SK_BUILD_FOR_MAC) && !defined(SK_BUILD_FOR_WIN) && !defined(SK_BUILD_FOR_NACL) \
@@ -28,6 +29,9 @@ int SkForceLinking(bool doNotPassTrue) {
 #endif
 #if !defined(SK_BUILD_FOR_MAC) && !defined(SK_BUILD_FOR_WIN) && !defined(SK_BUILD_FOR_IOS)
         CreatePNGImageDecoder();
+#endif
+#if defined(SK_BUILD_FOR_IOS)
+        CreatePNGImageEncoder_IOS();
 #endif
         return -1;
     }

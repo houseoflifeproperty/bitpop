@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2010 Google, Inc. All Rights Reserved.
- * Copyright (C) 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2011, 2014 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,7 +27,7 @@
 #include "config.h"
 #include "core/html/parser/HTMLTreeBuilder.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/MathMLNames.h"
 #include "core/SVGNames.h"
@@ -49,7 +49,7 @@
 #include "wtf/MainThread.h"
 #include "wtf/unicode/CharacterNames.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -265,7 +265,7 @@ private:
 
 HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser, HTMLDocument* document, ParserContentPolicy parserContentPolicy, bool, const HTMLParserOptions& options)
     : m_framesetOk(true)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     , m_isAttached(true)
 #endif
     , m_tree(document, parserContentPolicy)
@@ -282,7 +282,7 @@ HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser, HTMLDocument* docum
 // minimize code duplication between these constructors.
 HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser, DocumentFragment* fragment, Element* contextElement, ParserContentPolicy parserContentPolicy, const HTMLParserOptions& options)
     : m_framesetOk(true)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     , m_isAttached(true)
 #endif
     , m_fragmentContext(fragment, contextElement)
@@ -324,7 +324,7 @@ void HTMLTreeBuilder::trace(Visitor* visitor)
 
 void HTMLTreeBuilder::detach()
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     // This call makes little sense in fragment mode, but for consistency
     // DocumentParser expects detach() to always be called before it's destroyed.
     m_isAttached = false;
@@ -508,7 +508,8 @@ void HTMLTreeBuilder::processCloseWhenNestedTag(AtomicHTMLToken* token)
 
 typedef HashMap<AtomicString, QualifiedName> PrefixedNameToQualifiedNameMap;
 
-static void mapLoweredLocalNameToName(PrefixedNameToQualifiedNameMap* map, const QualifiedName* const* names, size_t length)
+template <typename TableQualifiedName>
+static void mapLoweredLocalNameToName(PrefixedNameToQualifiedNameMap* map, const TableQualifiedName* const* names, size_t length)
 {
     for (size_t i = 0; i < length; ++i) {
         const QualifiedName& name = *names[i];
@@ -524,7 +525,7 @@ static void adjustSVGTagNameCase(AtomicHTMLToken* token)
     static PrefixedNameToQualifiedNameMap* caseMap = 0;
     if (!caseMap) {
         caseMap = new PrefixedNameToQualifiedNameMap;
-        OwnPtr<const QualifiedName*[]> svgTags = SVGNames::getSVGTags();
+        OwnPtr<const SVGQualifiedName*[]> svgTags = SVGNames::getSVGTags();
         mapLoweredLocalNameToName(caseMap, svgTags.get(), SVGNames::SVGTagsCount);
     }
 
@@ -799,7 +800,8 @@ void HTMLTreeBuilder::processStartTagForInBody(AtomicHTMLToken* token)
             m_framesetOk = false;
         return;
     }
-    if (token->name() == paramTag
+    if ((RuntimeEnabledFeatures::contextMenuEnabled() && token->name() == menuitemTag)
+        || token->name() == paramTag
         || token->name() == sourceTag
         || token->name() == trackTag) {
         m_tree.insertSelfClosingHTMLElement(token);
@@ -2800,4 +2802,4 @@ void HTMLTreeBuilder::parseError(AtomicHTMLToken*)
 {
 }
 
-} // namespace WebCore
+} // namespace blink

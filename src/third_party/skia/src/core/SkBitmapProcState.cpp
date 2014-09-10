@@ -167,6 +167,22 @@ bool SkBitmapProcState::possiblyScaleImage() {
         SkScalar invScaleX = fInvMatrix.getScaleX();
         SkScalar invScaleY = fInvMatrix.getScaleY();
 
+        if (SkScalarNearlyEqual(invScaleX,1.0f) &&
+            SkScalarNearlyEqual(invScaleY,1.0f)) {
+            // short-circuit identity scaling; the output is supposed to
+            // be the same as the input, so we might as well go fast.
+
+            // Note(humper): We could also probably do this if the scales
+            // are close to -1 as well, since the flip doesn't require
+            // any fancy re-sampling...
+
+            // Set our filter level to low -- the only post-filtering this
+            // image might require is some interpolation if the translation
+            // is fractional.
+            fFilterLevel = SkPaint::kLow_FilterLevel;
+            return false;
+        }
+
         fScaledCacheID = SkScaledImageCache::FindAndLock(fOrigBitmap,
                                                          invScaleX, invScaleY,
                                                          &fScaledBitmap);
@@ -187,16 +203,11 @@ bool SkBitmapProcState::possiblyScaleImage() {
 
             // All the criteria are met; let's make a new bitmap.
 
-            SkConvolutionProcs simd;
-            sk_bzero(&simd, sizeof(simd));
-            this->platformConvolutionProcs(&simd);
-
             if (!SkBitmapScaler::Resize(&fScaledBitmap,
                                         fOrigBitmap,
                                         SkBitmapScaler::RESIZE_BEST,
                                         dest_width,
                                         dest_height,
-                                        simd,
                                         SkScaledImageCache::GetAllocator())) {
                 // we failed to create fScaledBitmap, so just return and let
                 // the scanline proc handle it.
@@ -223,8 +234,10 @@ bool SkBitmapProcState::possiblyScaleImage() {
         fInvMatrix.setTranslate(fInvMatrix.getTranslateX() / fInvMatrix.getScaleX(),
                                 fInvMatrix.getTranslateY() / fInvMatrix.getScaleY());
 
-        // no need for any further filtering; we just did it!
-        fFilterLevel = SkPaint::kNone_FilterLevel;
+        // Set our filter level to low -- the only post-filtering this
+        // image might require is some interpolation if the translation
+        // is fractional.
+        fFilterLevel = SkPaint::kLow_FilterLevel;
         unlocker.release();
         return true;
     }
@@ -501,6 +514,8 @@ bool SkBitmapProcState::chooseProcs(const SkMatrix& inv, const SkPaint& paint) {
 
     ///////////////////////////////////////////////////////////////////////
 
+    const SkAlphaType at = fBitmap->alphaType();
+
     // No need to do this if we're doing HQ sampling; if filter quality is
     // still set to HQ by the time we get here, then we must have installed
     // the shader procs above and can skip all this.
@@ -520,15 +535,24 @@ bool SkBitmapProcState::chooseProcs(const SkMatrix& inv, const SkPaint& paint) {
         // bits 3,4,5 encoding the source bitmap format
         switch (fBitmap->colorType()) {
             case kN32_SkColorType:
+                if (kPremul_SkAlphaType != at && kOpaque_SkAlphaType != at) {
+                    return false;
+                }
                 index |= 0;
                 break;
             case kRGB_565_SkColorType:
                 index |= 8;
                 break;
             case kIndex_8_SkColorType:
+                if (kPremul_SkAlphaType != at && kOpaque_SkAlphaType != at) {
+                    return false;
+                }
                 index |= 16;
                 break;
             case kARGB_4444_SkColorType:
+                if (kPremul_SkAlphaType != at && kOpaque_SkAlphaType != at) {
+                    return false;
+                }
                 index |= 24;
                 break;
             case kAlpha_8_SkColorType:

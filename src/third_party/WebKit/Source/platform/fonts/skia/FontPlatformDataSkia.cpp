@@ -35,7 +35,7 @@
 #include "SkTypeface.h"
 #include "platform/fonts/FontCache.h"
 
-namespace WebCore {
+namespace blink {
 
 #if !OS(MACOSX)
 unsigned FontPlatformData::hash() const
@@ -51,6 +51,17 @@ unsigned FontPlatformData::hash() const
     h ^= textSizeBytes;
 
     return h;
+}
+
+bool FontPlatformData::fontContainsCharacter(UChar32 character)
+{
+    SkPaint paint;
+    setupPaint(&paint);
+    paint.setTextEncoding(SkPaint::kUTF32_TextEncoding);
+
+    uint16_t glyph;
+    paint.textToGlyphs(&character, sizeof(character), &glyph);
+    return glyph;
 }
 
 #endif
@@ -76,4 +87,4 @@ PassRefPtr<SharedBuffer> FontPlatformData::openTypeTable(uint32_t table) const
 }
 #endif
 
-} // namespace WebCore
+} // namespace blink

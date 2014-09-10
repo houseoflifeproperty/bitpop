@@ -178,10 +178,6 @@ class DependencySettings(GClientKeywords):
     # recursion limit and controls gclient's behavior so it does not misbehave.
     self._managed = managed
     self._should_process = should_process
-    # This is a mutable value that overrides the normal recursion limit for this
-    # dependency.  It is read from the actual DEPS file so cannot be set on
-    # class instantiation.
-    self.recursion_override = None
     # This is a mutable value which has the list of 'target_os' OSes listed in
     # the current deps file.
     self.local_target_os = None
@@ -259,13 +255,6 @@ class DependencySettings(GClientKeywords):
     return self._url
 
   @property
-  def recursion_limit(self):
-    """Returns > 0 if this dependency is not too recursed to be processed."""
-    if self.recursion_override is not None:
-      return self.recursion_override
-    return max(self.parent.recursion_limit - 1, 0)
-
-  @property
   def target_os(self):
     if self.local_target_os is not None:
       return tuple(set(self.local_target_os).union(self.parent.target_os))
@@ -318,6 +307,15 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
     # unavailable
     self._got_revision = None
 
+    # This is a mutable value that overrides the normal recursion limit for this
+    # dependency.  It is read from the actual DEPS file so cannot be set on
+    # class instantiation.
+    self.recursion_override = None
+    # recursedeps is a mutable value that selectively overrides the default
+    # 'no recursion' setting on a dep-by-dep basis.  It will replace
+    # recursion_override.
+    self.recursedeps = None
+
     if not self.name and self.parent:
       raise gclient_utils.Error('Dependency without name')
 
@@ -356,6 +354,26 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
     requirements = tuple(sorted(requirements))
     logging.info('Dependency(%s).requirements = %s' % (self.name, requirements))
     return requirements
+
+  @property
+  def try_recursedeps(self):
+    """Returns False if recursion_override is ever specified."""
+    if self.recursion_override is not None:
+      return False
+    return self.parent.try_recursedeps
+
+  @property
+  def recursion_limit(self):
+    """Returns > 0 if this dependency is not too recursed to be processed."""
+    # We continue to support the absence of recursedeps until tools and DEPS
+    # using recursion_override are updated.
+    if self.try_recursedeps and self.parent.recursedeps != None:
+      if self.name in self.parent.recursedeps:
+        return 1
+
+    if self.recursion_override is not None:
+      return self.recursion_override
+    return max(self.parent.recursion_limit - 1, 0)
 
   def verify_validity(self):
     """Verifies that this Dependency is fine to add as a child of another one.
@@ -517,14 +535,26 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
 
     deps_content = None
     use_strict = False
-    filepath = os.path.join(self.root.root_dir, self.name, self.deps_file)
-    if not os.path.isfile(filepath):
+
+    # First try to locate the configured deps file.  If it's missing, fallback
+    # to DEPS.
+    deps_files = [self.deps_file]
+    if 'DEPS' not in deps_files:
+      deps_files.append('DEPS')
+    for deps_file in deps_files:
+      filepath = os.path.join(self.root.root_dir, self.name, deps_file)
+      if os.path.isfile(filepath):
+        logging.info(
+            'ParseDepsFile(%s): %s file found at %s', self.name, deps_file,
+            filepath)
+        break
       logging.info(
-          'ParseDepsFile(%s): No %s file found at %s' % (
-            self.name, self.deps_file, filepath))
-    else:
+          'ParseDepsFile(%s): No %s file found at %s', self.name, deps_file,
+          filepath)
+
+    if os.path.isfile(filepath):
       deps_content = gclient_utils.FileRead(filepath)
-      logging.debug('ParseDepsFile(%s) read:\n%s' % (self.name, deps_content))
+      logging.debug('ParseDepsFile(%s) read:\n%s', self.name, deps_content)
       use_strict = 'use strict' in deps_content.splitlines()[0]
 
     local_scope = {}
@@ -563,6 +593,10 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
       self.recursion_override = local_scope.get('recursion')
       logging.warning(
           'Setting %s recursion to %d.', self.name, self.recursion_limit)
+    self.recursedeps = local_scope.get('recursedeps', None)
+    if 'recursedeps' in local_scope:
+      self.recursedeps = set(self.recursedeps)
+      logging.warning('Found recursedeps %r.', repr(self.recursedeps))
     # If present, save 'target_os' in the local_target_os property.
     if 'target_os' in local_scope:
       self.local_target_os = local_scope['target_os']
@@ -580,15 +614,26 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
 
     # If use_relative_paths is set in the DEPS file, regenerate
     # the dictionary using paths relative to the directory containing
-    # the DEPS file.
+    # the DEPS file.  Also update recursedeps if use_relative_paths is
+    # enabled.
     use_relative_paths = local_scope.get('use_relative_paths', False)
     if use_relative_paths:
+      logging.warning('use_relative_paths enabled.')
       rel_deps = {}
       for d, url in deps.items():
         # normpath is required to allow DEPS to use .. in their
         # dependency local path.
         rel_deps[os.path.normpath(os.path.join(self.name, d))] = url
+      logging.warning('Updating deps by prepending %s.', self.name)
       deps = rel_deps
+
+      # Update recursedeps if it's set.
+      if self.recursedeps is not None:
+        logging.warning('Updating recursedeps by prepending %s.', self.name)
+        rel_deps = set()
+        for d in self.recursedeps:
+          rel_deps.add(os.path.normpath(os.path.join(self.name, d)))
+        self.recursedeps = rel_deps
 
     # Convert the deps into real Dependency.
     deps_to_add = []
@@ -1117,8 +1162,12 @@ want to set 'managed': False in .gclient.
     else:
       self._enforced_os = tuple(set(self._enforced_os).union(target_os))
 
-    gclient_scm.GitWrapper.cache_dir = config_dict.get('cache_dir')
-    git_cache.Mirror.SetCachePath(config_dict.get('cache_dir'))
+    cache_dir = config_dict.get('cache_dir')
+    if cache_dir:
+      cache_dir = os.path.join(self.root_dir, cache_dir)
+      cache_dir = os.path.abspath(cache_dir)
+    gclient_scm.GitWrapper.cache_dir = cache_dir
+    git_cache.Mirror.SetCachePath(cache_dir)
 
     if not target_os and config_dict.get('target_os_only', False):
       raise gclient_utils.Error('Can\'t use target_os_only if target_os is '
@@ -1457,6 +1506,11 @@ want to set 'managed': False in .gclient.
     return self._recursion_limit
 
   @property
+  def try_recursedeps(self):
+    """Whether to attempt using recursedeps-style recursion processing."""
+    return True
+
+  @property
   def target_os(self):
     return self._enforced_os
 
@@ -1758,9 +1812,14 @@ def CMDsync(parser, args):
   parser.add_option('--output-json',
                     help='Output a json document to this path containing '
                          'summary information about the sync.')
+  parser.add_option('--no-history', action='store_true',
+                    help='GIT ONLY - Reduces the size/time of the checkout at '
+                    'the cost of no history. Requires Git 1.9+')
   parser.add_option('--shallow', action='store_true',
                     help='GIT ONLY - Do a shallow clone into the cache dir. '
                          'Requires Git 1.9+')
+  parser.add_option('--ignore_locks', action='store_true',
+                    help='GIT ONLY - Ignore cache locks.')
   (options, args) = parser.parse_args(args)
   client = GClient.LoadCurrentConfig(options)
 

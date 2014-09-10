@@ -35,7 +35,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class MediaStreamComponent;
 class MediaStreamDescriptor;
@@ -45,15 +45,15 @@ class RTCStatsRequest : public RefCounted<RTCStatsRequest> {
 public:
     virtual ~RTCStatsRequest() { }
 
-    virtual PassRefPtrWillBeRawPtr<RTCStatsResponseBase> createResponse() = 0;
+    virtual RTCStatsResponseBase* createResponse() = 0;
     virtual bool hasSelector() = 0;
     virtual MediaStreamComponent* component() = 0;
-    virtual void requestSucceeded(PassRefPtrWillBeRawPtr<RTCStatsResponseBase>) = 0;
+    virtual void requestSucceeded(RTCStatsResponseBase*) = 0;
 
 protected:
     RTCStatsRequest() { }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCStatsRequest_h

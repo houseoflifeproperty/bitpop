@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <sys/utsname.h>
 #include <unistd.h>
+#include <sys/socket.h>
 
 #if defined(ANDROID)
 // Work-around for buggy headers in Android's NDK
@@ -34,6 +35,7 @@
 #include "sandbox/linux/seccomp-bpf/verifier.h"
 #include "sandbox/linux/services/broker_process.h"
 #include "sandbox/linux/services/linux_syscalls.h"
+#include "sandbox/linux/tests/scoped_temporary_file.h"
 #include "sandbox/linux/tests/unit_tests.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -52,6 +54,17 @@ namespace {
 
 const int kExpectedReturnValue = 42;
 const char kSandboxDebuggingEnv[] = "CHROME_SANDBOX_DEBUGGING";
+
+// Set the global environment to allow the use of UnsafeTrap() policies.
+void EnableUnsafeTraps() {
+  // The use of UnsafeTrap() causes us to print a warning message. This is
+  // generally desirable, but it results in the unittest failing, as it doesn't
+  // expect any messages on "stderr". So, temporarily disable messages. The
+  // BPF_TEST() is guaranteed to turn messages back on, after the policy
+  // function has completed.
+  setenv(kSandboxDebuggingEnv, "t", 0);
+  Die::SuppressInfoMessages(true);
+}
 
 // This test should execute no matter whether we have kernel support. So,
 // we make it a TEST() instead of a BPF_TEST().
@@ -234,11 +247,8 @@ class ErrnoTestPolicy : public SandboxBPFPolicy {
 ErrorCode ErrnoTestPolicy::EvaluateSyscall(SandboxBPF*, int sysno) const {
   DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
   switch (sysno) {
-#if defined(ANDROID)
     case __NR_dup3:    // dup2 is a wrapper of dup3 in android
-#else
     case __NR_dup2:
-#endif
       // Pretend that dup2() worked, but don't actually do anything.
       return ErrorCode(0);
     case __NR_setuid:
@@ -480,13 +490,10 @@ intptr_t CountSyscalls(const struct arch_seccomp_data& args, void* aux) {
 }
 
 ErrorCode GreyListedPolicy(SandboxBPF* sandbox, int sysno, int* aux) {
-  // The use of UnsafeTrap() causes us to print a warning message. This is
-  // generally desirable, but it results in the unittest failing, as it doesn't
-  // expect any messages on "stderr". So, temporarily disable messages. The
-  // BPF_TEST() is guaranteed to turn messages back on, after the policy
-  // function has completed.
-  setenv(kSandboxDebuggingEnv, "t", 0);
-  Die::SuppressInfoMessages(true);
+  // Set the global environment for unsafe traps once.
+  if (sysno == MIN_SYSCALL) {
+    EnableUnsafeTraps();
+  }
 
   // Some system calls must always be allowed, if our policy wants to make
   // use of UnsafeTrap()
@@ -653,7 +660,7 @@ BPF_TEST_C(SandboxBPF, SigBus, RedirectAllSyscallsPolicy) {
   // more complex uses of signals where our use of the SIGBUS mask is not
   // 100% transparent. This is expected behavior.
   int fds[2];
-  BPF_ASSERT(pipe(fds) == 0);
+  BPF_ASSERT(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
   bus_handler_fd_ = fds[1];
   struct sigaction sa = {};
   sa.sa_sigaction = SigBusHandler;
@@ -751,15 +758,13 @@ intptr_t BrokerOpenTrapHandler(const struct arch_seccomp_data& args,
   BPF_ASSERT(aux);
   BrokerProcess* broker_process = static_cast<BrokerProcess*>(aux);
   switch (args.nr) {
-#if defined(ANDROID)
     case __NR_faccessat:    // access is a wrapper of faccessat in android
+      BPF_ASSERT(static_cast<int>(args.args[0]) == AT_FDCWD);
       return broker_process->Access(reinterpret_cast<const char*>(args.args[1]),
                                     static_cast<int>(args.args[2]));
-#else
     case __NR_access:
       return broker_process->Access(reinterpret_cast<const char*>(args.args[0]),
                                     static_cast<int>(args.args[1]));
-#endif
     case __NR_open:
       return broker_process->Open(reinterpret_cast<const char*>(args.args[0]),
                                   static_cast<int>(args.args[1]));
@@ -783,11 +788,8 @@ ErrorCode DenyOpenPolicy(SandboxBPF* sandbox,
   }
 
   switch (sysno) {
-#if defined(ANDROID)
     case __NR_faccessat:
-#else
     case __NR_access:
-#endif
     case __NR_open:
     case __NR_openat:
       // We get a InitializedOpenBroker class, but our trap handler wants
@@ -865,28 +867,23 @@ ErrorCode SimpleCondTestPolicy::EvaluateSyscall(SandboxBPF* sandbox,
   // We deliberately return unusual errno values upon failure, so that we
   // can uniquely test for these values. In a "real" policy, you would want
   // to return more traditional values.
+  int flags_argument_position = -1;
   switch (sysno) {
-#if defined(ANDROID)
-    case __NR_openat:    // open is a wrapper of openat in android
-      // Allow opening files for reading, but don't allow writing.
-      COMPILE_ASSERT(O_RDONLY == 0, O_RDONLY_must_be_all_zero_bits);
-      return sandbox->Cond(2,
-                           ErrorCode::TP_32BIT,
-                           ErrorCode::OP_HAS_ANY_BITS,
-                           O_ACCMODE /* 0x3 */,
-                           ErrorCode(EROFS),
-                           ErrorCode(ErrorCode::ERR_ALLOWED));
-#else
     case __NR_open:
+    case __NR_openat:  // open can be a wrapper for openat(2).
+      if (sysno == __NR_open) {
+        flags_argument_position = 1;
+      } else if (sysno == __NR_openat) {
+        flags_argument_position = 2;
+      }
       // Allow opening files for reading, but don't allow writing.
       COMPILE_ASSERT(O_RDONLY == 0, O_RDONLY_must_be_all_zero_bits);
-      return sandbox->Cond(1,
+      return sandbox->Cond(flags_argument_position,
                            ErrorCode::TP_32BIT,
                            ErrorCode::OP_HAS_ANY_BITS,
                            O_ACCMODE /* 0x3 */,
                            ErrorCode(EROFS),
                            ErrorCode(ErrorCode::ERR_ALLOWED));
-#endif
     case __NR_prctl:
       // Allow prctl(PR_SET_DUMPABLE) and prctl(PR_GET_DUMPABLE), but
       // disallow everything else.
@@ -1981,6 +1978,13 @@ SANDBOX_TEST(SandboxBPF, DISABLE_ON_TSAN(SeccompRetTrace)) {
   return;
 #endif
 
+#if defined(__mips__)
+  // TODO: Figure out how to support specificity of handling indirect syscalls
+  //        in this test and enable it.
+  printf("This test is currently disabled on MIPS.");
+  return;
+#endif
+
   pid_t pid = fork();
   BPF_ASSERT_NE(-1, pid);
   if (pid == 0) {
@@ -2058,6 +2062,88 @@ SANDBOX_TEST(SandboxBPF, DISABLE_ON_TSAN(SeccompRetTrace)) {
     BPF_ASSERT_NE(-1, ptrace(PTRACE_CONT, pid, NULL, NULL));
   }
 }
+
+// Android does not expose pread64 nor pwrite64.
+#if !defined(OS_ANDROID)
+
+bool FullPwrite64(int fd, const char* buffer, size_t count, off64_t offset) {
+  while (count > 0) {
+    const ssize_t transfered =
+        HANDLE_EINTR(pwrite64(fd, buffer, count, offset));
+    if (transfered <= 0 || static_cast<size_t>(transfered) > count) {
+      return false;
+    }
+    count -= transfered;
+    buffer += transfered;
+    offset += transfered;
+  }
+  return true;
+}
+
+bool FullPread64(int fd, char* buffer, size_t count, off64_t offset) {
+  while (count > 0) {
+    const ssize_t transfered = HANDLE_EINTR(pread64(fd, buffer, count, offset));
+    if (transfered <= 0 || static_cast<size_t>(transfered) > count) {
+      return false;
+    }
+    count -= transfered;
+    buffer += transfered;
+    offset += transfered;
+  }
+  return true;
+}
+
+bool pread_64_was_forwarded = false;
+
+class TrapPread64Policy : public SandboxBPFPolicy {
+ public:
+  TrapPread64Policy() {}
+  virtual ~TrapPread64Policy() {}
+
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox_compiler,
+                                    int system_call_number) const OVERRIDE {
+    // Set the global environment for unsafe traps once.
+    if (system_call_number == MIN_SYSCALL) {
+      EnableUnsafeTraps();
+    }
+
+    if (system_call_number == __NR_pread64) {
+      return sandbox_compiler->UnsafeTrap(ForwardPreadHandler, NULL);
+    }
+    return ErrorCode(ErrorCode::ERR_ALLOWED);
+  }
+
+ private:
+  static intptr_t ForwardPreadHandler(const struct arch_seccomp_data& args,
+                                      void* aux) {
+    BPF_ASSERT(args.nr == __NR_pread64);
+    pread_64_was_forwarded = true;
+
+    return SandboxBPF::ForwardSyscall(args);
+  }
+  DISALLOW_COPY_AND_ASSIGN(TrapPread64Policy);
+};
+
+// pread(2) takes a 64 bits offset. On 32 bits systems, it will be split
+// between two arguments. In this test, we make sure that ForwardSyscall() can
+// forward it properly.
+BPF_TEST_C(SandboxBPF, Pread64, TrapPread64Policy) {
+  ScopedTemporaryFile temp_file;
+  const uint64_t kLargeOffset = (static_cast<uint64_t>(1) << 32) | 0xBEEF;
+  const char kTestString[] = "This is a test!";
+  BPF_ASSERT(FullPwrite64(
+      temp_file.fd(), kTestString, sizeof(kTestString), kLargeOffset));
+
+  char read_test_string[sizeof(kTestString)] = {0};
+  BPF_ASSERT(FullPread64(temp_file.fd(),
+                         read_test_string,
+                         sizeof(read_test_string),
+                         kLargeOffset));
+  BPF_ASSERT_EQ(0, memcmp(kTestString, read_test_string, sizeof(kTestString)));
+  BPF_ASSERT(pread_64_was_forwarded);
+}
+
+#endif  // !defined(OS_ANDROID)
 
 }  // namespace
 

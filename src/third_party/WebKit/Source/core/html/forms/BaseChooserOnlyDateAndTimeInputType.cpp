@@ -27,7 +27,8 @@
 #if !ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/forms/BaseChooserOnlyDateAndTimeInputType.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "core/dom/Document.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/frame/FrameHost.h"
 #include "core/html/HTMLDivElement.h"
@@ -35,7 +36,7 @@
 #include "core/page/Chrome.h"
 #include "platform/UserGestureIndicator.h"
 
-namespace WebCore {
+namespace blink {
 
 BaseChooserOnlyDateAndTimeInputType::~BaseChooserOnlyDateAndTimeInputType()
 {

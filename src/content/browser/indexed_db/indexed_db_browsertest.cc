@@ -548,9 +548,16 @@ static scoped_ptr<net::test_server::HttpResponse> CorruptDBRequestHandler(
         failure_method = FAIL_METHOD_GET;
       else if (fail_method == "Commit")
         failure_method = FAIL_METHOD_COMMIT;
-      else {
+      else
         NOTREACHED() << "Unknown method: \"" << fail_method << "\"";
-      }
+    } else if (fail_class == "LevelDBIterator") {
+      failure_class = FAIL_CLASS_LEVELDB_ITERATOR;
+      if (fail_method == "Seek")
+        failure_method = FAIL_METHOD_SEEK;
+      else
+        NOTREACHED() << "Unknown method: \"" << fail_method << "\"";
+    } else {
+      NOTREACHED() << "Unknown class: \"" << fail_class << "\"";
     }
 
     DCHECK_GE(instance_num, 1);
@@ -590,7 +597,7 @@ IN_PROC_BROWSER_TEST_P(IndexedDBBrowserCorruptionTest,
   const GURL& origin_url = embedded_test_server()->base_url();
   embedded_test_server()->RegisterRequestHandler(
       base::Bind(&CorruptDBRequestHandler,
-                 base::ConstRef(GetContext()),
+                 base::Unretained(GetContext()),
                  origin_url,
                  s_corrupt_db_test_prefix,
                  this));
@@ -605,13 +612,15 @@ IN_PROC_BROWSER_TEST_P(IndexedDBBrowserCorruptionTest,
 
 INSTANTIATE_TEST_CASE_P(IndexedDBBrowserCorruptionTestInstantiation,
                         IndexedDBBrowserCorruptionTest,
-                        ::testing::Values("get",
+                        ::testing::Values("failGetBlobJournal",
+                                          "get",
+                                          "failWebkitGetDatabaseNames",
                                           "iterate",
+                                          "failTransactionCommit",
                                           "clearObjectStore"));
 
-// Crashes flakily on various platforms. crbug.com/375856
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest,
-                       DISABLED_DeleteCompactsBackingStore) {
+                       DeleteCompactsBackingStore) {
   const GURL test_url = GetTestUrl("indexeddb", "delete_compact.html");
   SimpleTest(GURL(test_url.spec() + "#fill"));
   int64 after_filling = RequestDiskUsage();
@@ -632,7 +641,7 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest,
   const int kTestFillBytes = 1024 * 1024 * 5;  // 5MB
   EXPECT_GT(after_filling, kTestFillBytes);
 
-  const int kTestCompactBytes = 1024 * 1024 * 1;  // 1MB
+  const int kTestCompactBytes = 1024 * 10;  // 10kB
   EXPECT_LT(after_deleting, kTestCompactBytes);
 }
 
@@ -661,7 +670,11 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest,
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, PRE_VersionChangeCrashResilience) {
   NavigateAndWaitForTitle(shell(), "version_change_crash.html", "#part2",
                           "pass - part2 - crash me");
-  NavigateToURL(shell(), GURL(kChromeUIBrowserCrashHost));
+  // If we actually crash here then googletest will not run the next step
+  // (VersionChangeCrashResilience) as an optimization. googletest's
+  // ASSERT_DEATH/EXIT fails to work properly (on Windows) due to how we
+  // implement the PRE_* test mechanism.
+  exit(0);
 }
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, VersionChangeCrashResilience) {
@@ -715,14 +728,8 @@ class IndexedDBBrowserTestSingleProcess : public IndexedDBBrowserTest {
   }
 };
 
-// Crashing on Android due to kSingleProcess flag: http://crbug.com/342525
-#if defined(OS_ANDROID)
-#define MAYBE_RenderThreadShutdownTest DISABLED_RenderThreadShutdownTest
-#else
-#define MAYBE_RenderThreadShutdownTest RenderThreadShutdownTest
-#endif
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestSingleProcess,
-                       MAYBE_RenderThreadShutdownTest) {
+                       RenderThreadShutdownTest) {
   SimpleTest(GetTestUrl("indexeddb", "shutdown_with_requests.html"));
 }
 

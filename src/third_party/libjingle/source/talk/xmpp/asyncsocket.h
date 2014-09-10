@@ -28,9 +28,11 @@
 #ifndef _ASYNCSOCKET_H_
 #define _ASYNCSOCKET_H_
 
-#include "talk/base/sigslot.h"
+#include <string>
 
-namespace talk_base {
+#include "webrtc/base/sigslot.h"
+
+namespace rtc {
   class SocketAddress;
 }
 
@@ -64,7 +66,7 @@ public:
   virtual Error error() = 0;
   virtual int GetError() = 0;    // winsock error code
 
-  virtual bool Connect(const talk_base::SocketAddress& addr) = 0;
+  virtual bool Connect(const rtc::SocketAddress& addr) = 0;
   virtual bool Read(char * data, size_t len, size_t* len_read) = 0;
   virtual bool Write(const char * data, size_t len) = 0;
   virtual bool Close() = 0;

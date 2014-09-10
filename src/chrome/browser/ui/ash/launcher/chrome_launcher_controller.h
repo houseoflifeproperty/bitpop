@@ -78,7 +78,6 @@ class ChromeLauncherControllerUserSwitchObserver {
   virtual ~ChromeLauncherControllerUserSwitchObserver() {}
 
  private:
-
   DISALLOW_COPY_AND_ASSIGN(ChromeLauncherControllerUserSwitchObserver);
 };
 
@@ -385,6 +384,13 @@ class ChromeLauncherController : public ash::ShelfDelegate,
   // Returns true if |browser| is owned by the active user.
   bool IsBrowserFromActiveUser(Browser* browser);
 
+  // Check if the shelf visibility (location, visibility) will change with a new
+  // user profile or not. However, since the full visibility calculation of the
+  // shelf cannot be performed here, this is only a probability used for
+  // animation predictions.
+  bool ShelfBoundsChangesProbablyWithUser(aura::Window* root_window,
+                                          const std::string& user_id) const;
+
   // Access to the BrowserStatusMonitor for tests.
   BrowserStatusMonitor* browser_status_monitor_for_test() {
     return browser_status_monitor_.get();
@@ -474,7 +480,7 @@ class ChromeLauncherController : public ash::ShelfDelegate,
   // Returns the shelf item status for the given |app_id|, which can be either
   // STATUS_ACTIVE (if the app is active), STATUS_RUNNING (if there is such an
   // app) or STATUS_CLOSED.
-  ash::ShelfItemStatus GetAppState(const::std::string& app_id);
+  ash::ShelfItemStatus GetAppState(const std::string& app_id);
 
   // Creates an app launcher to insert at |index|. Note that |index| may be
   // adjusted by the model to meet ordering constraints.

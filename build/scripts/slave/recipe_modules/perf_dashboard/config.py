@@ -16,8 +16,8 @@ config_ctx = config_item_context(BaseConfig, {}, 'basic')
 
 @config_ctx()
 def production(c):
-  c.url = "https://chromeperf.appspot.com/add_point"
+  c.url = "https://chromeperf.appspot.com"
   
 @config_ctx()
 def testing(c):
-  c.url = "https://chrome-perf.googleplex.com/add_point"
+  c.url = "https://chrome-perf.googleplex.com"

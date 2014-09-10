@@ -7,8 +7,11 @@
 /**
  * Handler of device event.
  * @constructor
+ * @extends {cr.EventTarget}
  */
 function DeviceHandler() {
+  cr.EventTarget.call(this);
+
   /**
    * Map of device path and mount status of devices.
    * @type {Object.<string, DeviceHandler.MountStatus>}
@@ -17,11 +20,20 @@ function DeviceHandler() {
   this.mountStatus_ = {};
 
   /**
-   * List of ID of notifications that have a button.
-   * @type {Array.<string>}
+   * Map of device path and volumeId of the volume that should be navigated to
+   * from the 'device inserted' notification.
+   * @type {Object.<string, DirectoryEntry>}
    * @private
    */
-  this.buttonNotifications_ = [];
+  this.navigationVolumes_ = {};
+
+  /**
+   * Whether the device is just after starting up or not.
+   *
+   * @type {boolean}
+   * @private
+   */
+  this.isStartup_ = false;
 
   chrome.fileBrowserPrivate.onDeviceChanged.addListener(
       this.onDeviceChanged_.bind(this));
@@ -29,9 +41,21 @@ function DeviceHandler() {
       this.onMountCompleted_.bind(this));
   chrome.notifications.onButtonClicked.addListener(
       this.onNotificationButtonClicked_.bind(this));
-
-  Object.seal(this);
+  chrome.runtime.onStartup.addListener(
+      this.onStartup_.bind(this));
 }
+
+DeviceHandler.prototype = {
+  __proto__: cr.EventTarget.prototype
+};
+
+/**
+ * An event name trigerred when a user requests to navigate to a volume.
+ * The event object must have a volumeId property.
+ * @type {string}
+ * @const
+ */
+DeviceHandler.VOLUME_NAVIGATION_REQUESTED = 'volumenavigationrequested';
 
 /**
  * Notification type.
@@ -96,6 +120,16 @@ DeviceHandler.Notification.DEVICE = new DeviceHandler.Notification(
  * @type {DeviceHandler.Notification}
  * @const
  */
+DeviceHandler.Notification.DEVICE_NAVIGATION = new DeviceHandler.Notification(
+    'deviceNavigation',
+    'REMOVABLE_DEVICE_DETECTION_TITLE',
+    'REMOVABLE_DEVICE_NAVIGATION_MESSAGE',
+    'REMOVABLE_DEVICE_NAVIGATION_BUTTON_LABEL');
+
+/**
+ * @type {DeviceHandler.Notification}
+ * @const
+ */
 DeviceHandler.Notification.DEVICE_FAIL = new DeviceHandler.Notification(
     'deviceFail',
     'REMOVABLE_DEVICE_DETECTION_TITLE',
@@ -117,10 +151,9 @@ DeviceHandler.Notification.DEVICE_EXTERNAL_STORAGE_DISABLED =
  */
 DeviceHandler.Notification.DEVICE_HARD_UNPLUGGED =
     new DeviceHandler.Notification(
-        'deviceFail',
+        'hardUnplugged',
         'DEVICE_HARD_UNPLUGGED_TITLE',
-        'DEVICE_HARD_UNPLUGGED_MESSAGE',
-        'DEVICE_HARD_UNPLUGGED_BUTTON_LABEL');
+        'DEVICE_HARD_UNPLUGGED_MESSAGE');
 
 /**
  * @type {DeviceHandler.Notification}
@@ -224,7 +257,8 @@ DeviceHandler.Notification.prototype.clearTimeout_ = function() {
 DeviceHandler.prototype.onDeviceChanged_ = function(event) {
   switch (event.type) {
     case 'added':
-      DeviceHandler.Notification.DEVICE.showLater(event.devicePath);
+      if (!this.isStartup_)
+        DeviceHandler.Notification.DEVICE.showLater(event.devicePath);
       this.mountStatus_[event.devicePath] = DeviceHandler.MountStatus.NO_RESULT;
       break;
     case 'disabled':
@@ -242,9 +276,10 @@ DeviceHandler.prototype.onDeviceChanged_ = function(event) {
       delete this.mountStatus_[event.devicePath];
       break;
     case 'hard_unplugged':
-      var id = DeviceHandler.Notification.DEVICE_HARD_UNPLUGGED.show(
-          event.devicePath);
-      this.buttonNotifications_.push(id);
+      if (!this.isStartup_) {
+        DeviceHandler.Notification.DEVICE_HARD_UNPLUGGED.show(
+            event.devicePath);
+      }
       break;
     case 'format_start':
       DeviceHandler.Notification.FORMAT_START.show(event.devicePath);
@@ -292,6 +327,35 @@ DeviceHandler.prototype.onMountCompleted_ = function(event) {
   if (!volume.deviceType || event.isRemounting)
     return;
 
+  // If the current volume status is succeed and it should be handled in
+  // Files.app, show the notification to navigate the volume.
+  if (event.status === 'success' && event.shouldNotify) {
+    if (this.navigationVolumes_[event.volumeMetadata.devicePath]) {
+      // The notification has already shown for the device. It seems the device
+      // has multiple volumes. The order of mount events of volumes are
+      // undetermind, so it compares the volume Id and uses the earier order ID
+      // to prevent Files.app from navigating to different volumes for each
+      // time.
+      if (event.volumeMetadata.volumeId <
+          this.navigationVolumes_[event.volumeMetadata.devicePath]) {
+        this.navigationVolumes_[event.volumeMetadata.devicePath] =
+            event.volumeMetadata.volumeId;
+      }
+    } else {
+      if (!this.isStartup_) {
+        this.navigationVolumes_[event.volumeMetadata.devicePath] =
+            event.volumeMetadata.volumeId;
+        DeviceHandler.Notification.DEVICE_NAVIGATION.show(
+            event.volumeMetadata.devicePath);
+      }
+    }
+  }
+
+  if (event.eventType === 'unmount') {
+    this.navigationVolumes_[volume.devicePath] = null;
+    DeviceHandler.Notification.DEVICE_NAVIGATION.hide(volume.devicePath);
+  }
+
   var getFirstStatus = function(event) {
     if (event.status === 'success')
       return DeviceHandler.MountStatus.SUCCESS;
@@ -308,7 +372,7 @@ DeviceHandler.prototype.onMountCompleted_ = function(event) {
       return;
     // If the multipart error message has already shown, do nothing because the
     // message does not changed by the following mount results.
-    case DeviceHandler.MULTIPART_ERROR:
+    case DeviceHandler.MountStatus.MULTIPART_ERROR:
       return;
     // If this is the first result, hide the scanning notification.
     case DeviceHandler.MountStatus.NO_RESULT:
@@ -339,6 +403,9 @@ DeviceHandler.prototype.onMountCompleted_ = function(event) {
       break;
   }
 
+  if (event.eventType === 'unmount')
+    return;
+
   // Show the notification for the current errors.
   // If there is no error, do not show/update the notification.
   var message;
@@ -350,7 +417,7 @@ DeviceHandler.prototype.onMountCompleted_ = function(event) {
       break;
     case DeviceHandler.MountStatus.CHILD_ERROR:
     case DeviceHandler.MountStatus.ONLY_PARENT_ERROR:
-      if (event.status === 'error_unsuported_filesystem') {
+      if (event.status === 'error_unsupported_filesystem') {
         message = volume.deviceLabel ?
             strf('DEVICE_UNSUPPORTED_MESSAGE', volume.deviceLabel) :
             str('DEVICE_UNSUPPORTED_DEFAULT_MESSAGE');
@@ -373,9 +440,18 @@ DeviceHandler.prototype.onMountCompleted_ = function(event) {
  * @private
  */
 DeviceHandler.prototype.onNotificationButtonClicked_ = function(id) {
-  var index = this.buttonNotifications_.indexOf(id);
-  if (index !== -1) {
+  var match = /^deviceNavigation:(.*)$/.exec(id);
+  if (match) {
     chrome.notifications.clear(id, function() {});
-    this.buttonNotifications_.splice(index, 1);
+    var event = new Event(DeviceHandler.VOLUME_NAVIGATION_REQUESTED);
+    event.volumeId = this.navigationVolumes_[match[1]];
+    this.dispatchEvent(event);
   }
+};
+
+DeviceHandler.prototype.onStartup_ = function() {
+  this.isStartup_ = true;
+  setTimeout(function() {
+    this.isStartup_ = false;
+  }.bind(this), 5000);
 };

@@ -40,7 +40,7 @@
 #include "skia/ext/skia_utils_mac.h"
 #include <Carbon/Carbon.h>
 
-namespace WebCore {
+namespace blink {
 
 // FIXME: Get these numbers from CoreUI.
 static int cRealButtonLength[] = { 28, 21 };
@@ -88,8 +88,6 @@ static blink::WebThemeEngine::State scrollbarStateToThemeState(ScrollbarThemeCli
 //     - Skia specific changes
 bool ScrollbarThemeMacNonOverlayAPI::paint(ScrollbarThemeClient* scrollbar, GraphicsContext* context, const IntRect& damageRect)
 {
-    if (context->paintingDisabled())
-        return true;
     // Get the tickmarks for the frameview.
     Vector<IntRect> tickmarks;
     scrollbar->getTickmarks(tickmarks);

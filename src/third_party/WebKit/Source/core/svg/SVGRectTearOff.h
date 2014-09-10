@@ -31,11 +31,11 @@
 #ifndef SVGRectTearOff_h
 #define SVGRectTearOff_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/svg/SVGRect.h"
 #include "core/svg/properties/SVGPropertyTearOff.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGRectTearOff : public SVGPropertyTearOff<SVGRect>, public ScriptWrappable {
 public:
@@ -57,6 +57,6 @@ private:
     SVGRectTearOff(PassRefPtr<SVGRect>, SVGElement* contextElement, PropertyIsAnimValType, const QualifiedName& attributeName = QualifiedName::null());
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGRectTearOff_h_

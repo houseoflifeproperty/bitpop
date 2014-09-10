@@ -4,14 +4,30 @@
 
 import Queue
 import glob
+import logging
 import multiprocessing
 import re
 import signal
 import traceback
 
+from cStringIO import StringIO
+
 from .type_definitions import (
-    Test, UnknownError, TestError, NoMatchingTestsError,
+    Test, UnknownError, TestError, NoMatchingTestsError, MultiTest,
     Result, ResultStageAbort)
+
+from . import util
+
+
+class ResetableStringIO(object):
+  def __init__(self):
+    self._stream = StringIO()
+
+  def reset(self):
+    self._stream = StringIO()
+
+  def __getattr__(self, key):
+    return getattr(self._stream, key)
 
 
 def gen_loop_process(gen, test_queue, result_queue, opts, kill_switch,
@@ -46,27 +62,49 @@ def gen_loop_process(gen, test_queue, result_queue, opts, kill_switch,
     paths_seen = set()
     seen_tests = False
     try:
-      for test in gen():
+      with cover_ctx:
+        gen_inst = gen()
+
+      while not kill_switch.is_set():
+        with cover_ctx:
+          root_test = next(gen_inst)
+
         if kill_switch.is_set():
           break
 
-        if not isinstance(test, Test):
-          result_queue.put_nowait(
-              UnknownError(
-                  'Got non-Test isinstance from generator: %r' % test))
-          continue
+        ok_tests = []
 
-        test_path = test.expect_path()
-        if test_path in paths_seen:
-          result_queue.put_nowait(
-              TestError(test, 'Duplicate expectation path!'))
+        if isinstance(root_test, MultiTest):
+          subtests = root_test.tests
         else:
-          paths_seen.add(test_path)
-          if not neg_matcher.match(test.name) and matcher.match(test.name):
-            seen_tests = True
-            yield test
+          subtests = [root_test]
+
+        for subtest in subtests:
+          if not isinstance(subtest, Test):
+            result_queue.put_nowait(
+                UnknownError('Got non-[Multi]Test isinstance from generator: %r'
+                             % subtest))
+            continue
+
+          test_path = subtest.expect_path()
+          if test_path is not None and test_path in paths_seen:
+            result_queue.put_nowait(
+                TestError(subtest, 'Duplicate expectation path!'))
+          else:
+            if test_path is not None:
+              paths_seen.add(test_path)
+            name = subtest.name
+            if not neg_matcher.match(name) and matcher.match(name):
+              ok_tests.append(subtest)
+
+        if ok_tests:
+          seen_tests = True
+          yield root_test.restrict(ok_tests)
+
       if not seen_tests:
         result_queue.put_nowait(NoMatchingTestsError())
+    except StopIteration:
+      pass
     except KeyboardInterrupt:
       pass
     finally:
@@ -75,9 +113,8 @@ def gen_loop_process(gen, test_queue, result_queue, opts, kill_switch,
 
 
   next_stage = (result_queue if opts.handler.SKIP_RUNLOOP else test_queue)
-  with cover_ctx:
-    opts.handler.gen_stage_loop(opts, generate_tests(), next_stage.put_nowait,
-                                result_queue.put_nowait)
+  opts.handler.gen_stage_loop(opts, generate_tests(), next_stage.put_nowait,
+                              result_queue.put_nowait)
 
 
 def run_loop_process(test_queue, result_queue, opts, kill_switch, cover_ctx):
@@ -85,12 +122,37 @@ def run_loop_process(test_queue, result_queue, opts, kill_switch, cover_ctx):
   into opts.run_stage_loop().
 
   Generates coverage data as a side-effect.
+
   @type test_queue: multiprocessing.Queue()
   @type result_queue: multiprocessing.Queue()
   @type opts: argparse.Namespace
   @type kill_switch: multiprocessing.Event()
   @type cover_ctx: cover.CoverageContext().create_subprocess_context()
   """
+  logstream = ResetableStringIO()
+  logger = logging.getLogger()
+  logger.setLevel(logging.DEBUG)
+  shandler = logging.StreamHandler(logstream)
+  shandler.setFormatter(
+      logging.Formatter('%(levelname)s: %(message)s'))
+  logger.addHandler(shandler)
+
+  SKIP = object()
+  def process_test(subtest):
+    logstream.reset()
+    with cover_ctx(include=subtest.coverage_includes()):
+      subresult = subtest.run()
+    if isinstance(subresult, TestError):
+      result_queue.put_nowait(subresult)
+      return SKIP
+    elif not isinstance(subresult, Result):
+      result_queue.put_nowait(
+          TestError(
+              subtest,
+              'Got non-Result instance from test: %r' % subresult))
+      return SKIP
+    return subresult
+
   def generate_tests_results():
     try:
       while not kill_switch.is_set():
@@ -102,22 +164,18 @@ def run_loop_process(test_queue, result_queue, opts, kill_switch, cover_ctx):
           continue
 
         try:
-          result = test.run()
-          if not isinstance(result, Result):
-            result_queue.put_nowait(
-                TestError(test, 'Got non-Result instance from test: %r'
-                          % result))
-            continue
-
-          yield test, result
+          for subtest, subresult in test.process(process_test):
+            if subresult is not SKIP:
+              yield subtest, subresult, logstream.getvalue().splitlines()
         except Exception:
-          result_queue.put_nowait(TestError(test, traceback.format_exc()))
+          result_queue.put_nowait(
+              TestError(test, traceback.format_exc(),
+                        logstream.getvalue().splitlines()))
     except KeyboardInterrupt:
       pass
 
-  with cover_ctx:
-    opts.handler.run_stage_loop(opts, generate_tests_results(),
-                                result_queue.put_nowait)
+  opts.handler.run_stage_loop(opts, generate_tests_results(),
+                              result_queue.put_nowait)
 
 
 def result_loop(test_gen, cover_ctx, opts):
@@ -133,8 +191,12 @@ def result_loop(test_gen, cover_ctx, opts):
   test_queue = multiprocessing.Queue()
   result_queue = multiprocessing.Queue()
 
+  gen_cover_ctx = cover_ctx
+  if cover_ctx.enabled:
+    gen_cover_ctx = cover_ctx(include=util.get_cover_list(test_gen))
+
   test_gen_args = (
-      test_gen, test_queue, result_queue, opts, kill_switch, cover_ctx)
+      test_gen, test_queue, result_queue, opts, kill_switch, gen_cover_ctx)
 
   procs = []
   if opts.handler.SKIP_RUNLOOP:

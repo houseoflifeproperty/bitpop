@@ -15,8 +15,8 @@
 #include "base/supports_user_data.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/common/referrer.h"
+#include "content/public/common/resource_type.h"
 #include "net/base/load_states.h"
-#include "webkit/common/resource_type.h"
 
 namespace content {
 class CrossSiteResourceHandler;
@@ -49,13 +49,14 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
       bool is_main_frame,
       bool parent_is_main_frame,
       int parent_render_frame_id,
-      ResourceType::Type resource_type,
+      ResourceType resource_type,
       PageTransition transition_type,
       bool should_replace_current_entry,
       bool is_download,
       bool is_stream,
       bool allow_download,
       bool has_user_gesture,
+      bool enable_load_timing,
       blink::WebReferrerPolicy referrer_policy,
       blink::WebPageVisibilityState visibility_state,
       ResourceContext* context,
@@ -73,7 +74,7 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   virtual bool IsMainFrame() const OVERRIDE;
   virtual bool ParentIsMainFrame() const OVERRIDE;
   virtual int GetParentRenderFrameID() const OVERRIDE;
-  virtual ResourceType::Type GetResourceType() const OVERRIDE;
+  virtual ResourceType GetResourceType() const OVERRIDE;
   virtual int GetProcessType() const OVERRIDE;
   virtual blink::WebReferrerPolicy GetReferrerPolicy() const OVERRIDE;
   virtual blink::WebPageVisibilityState GetVisibilityState() const OVERRIDE;
@@ -152,6 +153,8 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   int memory_cost() const { return memory_cost_; }
   void set_memory_cost(int cost) { memory_cost_ = cost; }
 
+  bool is_load_timing_enabled() const { return enable_load_timing_; }
+
  private:
   FRIEND_TEST_ALL_PREFIXES(ResourceDispatcherHostTest,
                            DeletedFilterDetached);
@@ -175,8 +178,9 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   bool is_stream_;
   bool allow_download_;
   bool has_user_gesture_;
+  bool enable_load_timing_;
   bool was_ignored_by_handler_;
-  ResourceType::Type resource_type_;
+  ResourceType resource_type_;
   PageTransition transition_type_;
   int memory_cost_;
   blink::WebReferrerPolicy referrer_policy_;

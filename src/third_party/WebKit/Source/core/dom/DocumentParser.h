@@ -28,10 +28,9 @@
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
-class DocumentWriter;
 class SegmentedString;
 class ScriptableDocumentParser;
 class TextResourceDecoder;
@@ -126,6 +125,6 @@ private:
     RawPtrWillBeMember<Document> m_document;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DocumentParser_h

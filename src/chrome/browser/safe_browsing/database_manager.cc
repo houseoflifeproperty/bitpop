@@ -213,6 +213,9 @@ SafeBrowsingDatabaseManager::SafeBrowsingDatabaseManager(
       check_timeout_(base::TimeDelta::FromMilliseconds(kCheckTimeoutMs)) {
   DCHECK(sb_service_.get() != NULL);
 
+  // Android only supports a subset of FULL_SAFE_BROWSING.
+  // TODO(shess): This shouldn't be OS-driven <http://crbug.com/394379>
+#if !defined(OS_ANDROID)
   CommandLine* cmdline = CommandLine::ForCurrentProcess();
   enable_download_protection_ =
       !cmdline->HasSwitch(switches::kSbDisableDownloadProtection);
@@ -253,6 +256,7 @@ SafeBrowsingDatabaseManager::SafeBrowsingDatabaseManager(
   UMA_HISTOGRAM_ENUMERATION("SB2.SideEffectFreeWhitelistStatus",
                             side_effect_free_whitelist_status,
                             SIDE_EFFECT_FREE_WHITELIST_STATUS_MAX);
+#endif
 }
 
 SafeBrowsingDatabaseManager::~SafeBrowsingDatabaseManager() {
@@ -757,7 +761,10 @@ void SafeBrowsingDatabaseManager::OnCheckDone(SafeBrowsingCheck* check) {
   } else {
     // We may have cached results for previous GetHash queries.  Since
     // this data comes from cache, don't histogram hits.
-    HandleOneCheck(check, check->cache_hits);
+    bool is_threat = HandleOneCheck(check, check->cache_hits);
+    // cache_hits should only contain hits for a fullhash we searched for, so if
+    // we got to this point it should always result in a threat match.
+    DCHECK(is_threat);
   }
 }
 

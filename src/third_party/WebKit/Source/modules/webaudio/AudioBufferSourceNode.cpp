@@ -28,7 +28,7 @@
 
 #include "modules/webaudio/AudioBufferSourceNode.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/audio/AudioUtilities.h"
 #include "modules/webaudio/AudioContext.h"
@@ -38,9 +38,7 @@
 #include "wtf/MathExtras.h"
 #include <algorithm>
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 const double DefaultGrainDuration = 0.020; // 20ms
 
@@ -64,23 +62,29 @@ AudioBufferSourceNode::AudioBufferSourceNode(AudioContext* context, float sample
     , m_isGrain(false)
     , m_grainOffset(0.0)
     , m_grainDuration(DefaultGrainDuration)
-    , m_pannerNode(0)
 {
     ScriptWrappable::init(this);
     setNodeType(NodeTypeAudioBufferSource);
 
-    m_playbackRate = AudioParam::create(context, "playbackRate", 1.0, 0.0, MaxRate);
+    m_playbackRate = AudioParam::create(context, 1.0);
 
-    // Default to mono.  A call to setBuffer() will set the number of output channels to that of the buffer.
-    addOutput(adoptPtr(new AudioNodeOutput(this, 1)));
+    // Default to mono. A call to setBuffer() will set the number of output
+    // channels to that of the buffer.
+    addOutput(AudioNodeOutput::create(this, 1));
 
     initialize();
 }
 
 AudioBufferSourceNode::~AudioBufferSourceNode()
 {
+    ASSERT(!isInitialized());
+}
+
+void AudioBufferSourceNode::dispose()
+{
     clearPannerNode();
     uninitialize();
+    AudioScheduledSourceNode::dispose();
 }
 
 void AudioBufferSourceNode::process(size_t framesToProcess)
@@ -225,7 +229,7 @@ bool AudioBufferSourceNode::renderFromBuffer(AudioBus* bus, unsigned destination
         double loopStartFrame = m_loopStart * buffer()->sampleRate();
         double loopEndFrame = m_loopEnd * buffer()->sampleRate();
 
-        virtualEndFrame = min(loopEndFrame, virtualEndFrame);
+        virtualEndFrame = std::min(loopEndFrame, virtualEndFrame);
         virtualDeltaFrames = virtualEndFrame - loopStartFrame;
     }
 
@@ -255,8 +259,8 @@ bool AudioBufferSourceNode::renderFromBuffer(AudioBus* bus, unsigned destination
         endFrame = static_cast<unsigned>(virtualEndFrame);
         while (framesToProcess > 0) {
             int framesToEnd = endFrame - readIndex;
-            int framesThisTime = min(framesToProcess, framesToEnd);
-            framesThisTime = max(0, framesThisTime);
+            int framesThisTime = std::min(framesToProcess, framesToEnd);
+            framesThisTime = std::max(0, framesThisTime);
 
             for (unsigned i = 0; i < numberOfChannels; ++i)
                 memcpy(destinationChannels[i] + writeIndex, sourceChannels[i] + readIndex, sizeof(float) * framesThisTime);
@@ -391,14 +395,14 @@ void AudioBufferSourceNode::start(double when, double grainOffset, double grainD
     // Do sanity checking of grain parameters versus buffer size.
     double bufferDuration = buffer()->duration();
 
-    grainOffset = max(0.0, grainOffset);
-    grainOffset = min(bufferDuration, grainOffset);
+    grainOffset = std::max(0.0, grainOffset);
+    grainOffset = std::min(bufferDuration, grainOffset);
     m_grainOffset = grainOffset;
 
     double maxDuration = bufferDuration - grainOffset;
 
-    grainDuration = max(0.0, grainDuration);
-    grainDuration = min(maxDuration, grainDuration);
+    grainDuration = std::max(0.0, grainDuration);
+    grainDuration = std::min(maxDuration, grainDuration);
     m_grainDuration = grainDuration;
 
     m_isGrain = true;
@@ -430,10 +434,10 @@ double AudioBufferSourceNode::totalPitchRate()
     double totalRate = dopplerRate * sampleRateFactor * basePitchRate;
 
     // Sanity check the total rate.  It's very important that the resampler not get any bad rate values.
-    totalRate = max(0.0, totalRate);
+    totalRate = std::max(0.0, totalRate);
     if (!totalRate)
         totalRate = 1; // zero rate is considered illegal
-    totalRate = min(MaxRate, totalRate);
+    totalRate = std::min(MaxRate, totalRate);
 
     bool isTotalRateValid = !std::isnan(totalRate) && !std::isinf(totalRate);
     ASSERT(isTotalRateValid);
@@ -451,20 +455,20 @@ bool AudioBufferSourceNode::propagatesSilence() const
 void AudioBufferSourceNode::setPannerNode(PannerNode* pannerNode)
 {
     if (m_pannerNode != pannerNode && !hasFinished()) {
-        if (pannerNode)
-            pannerNode->ref(AudioNode::RefTypeConnection);
-        if (m_pannerNode)
-            m_pannerNode->deref(AudioNode::RefTypeConnection);
-
+        RefPtrWillBeRawPtr<PannerNode> oldPannerNode(m_pannerNode.release());
         m_pannerNode = pannerNode;
+        if (pannerNode)
+            pannerNode->makeConnection();
+        if (oldPannerNode)
+            oldPannerNode->breakConnection();
     }
 }
 
 void AudioBufferSourceNode::clearPannerNode()
 {
     if (m_pannerNode) {
-        m_pannerNode->deref(AudioNode::RefTypeConnection);
-        m_pannerNode = 0;
+        m_pannerNode->breakConnection();
+        m_pannerNode.clear();
     }
 }
 
@@ -479,9 +483,10 @@ void AudioBufferSourceNode::trace(Visitor* visitor)
 {
     visitor->trace(m_buffer);
     visitor->trace(m_playbackRate);
+    visitor->trace(m_pannerNode);
     AudioScheduledSourceNode::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

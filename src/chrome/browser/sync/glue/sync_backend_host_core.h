@@ -12,6 +12,7 @@
 #include "components/sync_driver/system_encryptor.h"
 #include "sync/internal_api/public/base/cancelation_signal.h"
 #include "sync/internal_api/public/sessions/type_debug_info_observer.h"
+#include "sync/internal_api/public/shutdown_reason.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
 #include "url/gurl.h"
 
@@ -36,12 +37,11 @@ struct DoInitializeOptions {
       bool delete_sync_data_folder,
       const std::string& restored_key_for_bootstrapping,
       const std::string& restored_keystore_key_for_bootstrapping,
-      scoped_ptr<syncer::InternalComponentsFactory>
-          internal_components_factory,
-      scoped_ptr<syncer::UnrecoverableErrorHandler>
-          unrecoverable_error_handler,
+      scoped_ptr<syncer::InternalComponentsFactory> internal_components_factory,
+      scoped_ptr<syncer::UnrecoverableErrorHandler> unrecoverable_error_handler,
       syncer::ReportUnrecoverableErrorFunction
-          report_unrecoverable_error_function);
+          report_unrecoverable_error_function,
+      const std::string& signin_scoped_device_id);
   ~DoInitializeOptions();
 
   base::MessageLoop* sync_loop;
@@ -64,6 +64,7 @@ struct DoInitializeOptions {
   scoped_ptr<syncer::UnrecoverableErrorHandler> unrecoverable_error_handler;
   syncer::ReportUnrecoverableErrorFunction
       report_unrecoverable_error_function;
+  std::string signin_scoped_device_id;
 };
 
 // Helper struct to handle currying params to
@@ -194,8 +195,8 @@ class SyncBackendHostCore
   // 2) Post DoShutdown() to sync loop to clean up backend state, save
   //    directory and destroy sync manager.
   void ShutdownOnUIThread();
-  void DoShutdown(bool sync_disabled);
-  void DoDestroySyncManager();
+  void DoShutdown(syncer::ShutdownReason reason);
+  void DoDestroySyncManager(syncer::ShutdownReason reason);
 
   // Configuration methods that must execute on sync loop.
   void DoConfigureSyncer(
@@ -290,7 +291,7 @@ class SyncBackendHostCore
   scoped_ptr<base::RepeatingTimer<SyncBackendHostCore> > save_changes_timer_;
 
   // Our encryptor, which uses Chrome's encryption functions.
-  SystemEncryptor encryptor_;
+  sync_driver::SystemEncryptor encryptor_;
 
   // A special ChangeProcessor that tracks the DEVICE_INFO type for us.
   scoped_ptr<SyncedDeviceTracker> synced_device_tracker_;
@@ -321,6 +322,10 @@ class SyncBackendHostCore
 
   // Set when the forwarding of per-type debug counters is enabled.
   bool forward_type_info_;
+
+  // Obtained from SigninClient::GetSigninScopedDeviceId(). Stored here just to
+  // pass from SyncBackendHostImpl to SyncedDeviceTracker.
+  std::string signin_scoped_device_id_;
 
   base::WeakPtrFactory<SyncBackendHostCore> weak_ptr_factory_;
 

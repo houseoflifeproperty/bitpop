@@ -33,7 +33,7 @@
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 class SharedWorker;
@@ -49,12 +49,12 @@ public:
     virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<SharedWorker>::trace(visitor); }
 
 private:
-    explicit SharedWorkerPerformance();
+    SharedWorkerPerformance();
     static const char* supplementName();
 
     double m_timeOrigin;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SharedWorkerPerformance_h

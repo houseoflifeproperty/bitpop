@@ -157,9 +157,10 @@ WebInspector.TextPrompt.prototype = {
         if (!x) {
             // Append a break element instead of setting textContent to make sure the selection is inside the prompt.
             this._element.removeChildren();
-            this._element.appendChild(document.createElement("br"));
-        } else
+            this._element.createChild("br");
+        } else {
             this._element.textContent = x;
+        }
 
         this.moveCaretToEndOfPrompt();
         this._element.scrollIntoView();
@@ -244,7 +245,7 @@ WebInspector.TextPrompt.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     onMouseWheel: function(event)
     {
@@ -252,7 +253,7 @@ WebInspector.TextPrompt.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     onKeyDown: function(event)
     {
@@ -304,7 +305,7 @@ WebInspector.TextPrompt.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     onInput: function(event)
     {
@@ -471,18 +472,17 @@ WebInspector.TextPrompt.prototype = {
         this._commonPrefix = this._buildCommonPrefix(completions, wordPrefixLength);
 
         if (this.isCaretAtEndOfPrompt()) {
+            var completionText = completions[selectedIndex];
+            var prefixText = this._userEnteredRange.toString();
+            var suffixText = completionText.substring(wordPrefixLength);
             this._userEnteredRange.deleteContents();
             this._element.normalize();
             var finalSelectionRange = document.createRange();
-            var completionText = completions[selectedIndex];
-            var prefixText = completionText.substring(0, wordPrefixLength);
-            var suffixText = completionText.substring(wordPrefixLength);
 
             var prefixTextNode = document.createTextNode(prefixText);
             fullWordRange.insertNode(prefixTextNode);
 
-            this.autoCompleteElement = document.createElement("span");
-            this.autoCompleteElement.className = "auto-complete-text";
+            this.autoCompleteElement = document.createElementWithClass("span", "auto-complete-text");
             this.autoCompleteElement.textContent = suffixText;
 
             prefixTextNode.parentNode.insertBefore(this.autoCompleteElement, prefixTextNode.nextSibling);

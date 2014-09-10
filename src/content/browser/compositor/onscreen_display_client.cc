@@ -5,6 +5,8 @@
 #include "content/browser/compositor/onscreen_display_client.h"
 
 #include "cc/output/output_surface.h"
+#include "cc/surfaces/surface_factory.h"
+#include "cc/surfaces/surface_manager.h"
 #include "content/common/host_shared_bitmap_manager.h"
 
 namespace content {
@@ -15,7 +17,9 @@ OnscreenDisplayClient::OnscreenDisplayClient(
     cc::SurfaceManager* manager)
     : onscreen_context_provider_(onscreen_context_provider),
       software_surface_(software_surface.Pass()),
-      display_(this, manager, HostSharedBitmapManager::current()) {
+      display_(new cc::Display(this,
+                               manager,
+                               HostSharedBitmapManager::current())) {
 }
 
 OnscreenDisplayClient::~OnscreenDisplayClient() {

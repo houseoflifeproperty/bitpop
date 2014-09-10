@@ -34,7 +34,7 @@
 
 using namespace std;
 
-namespace WebCore {
+namespace blink {
 
 ScrollView::ScrollView()
     : m_horizontalScrollbarMode(ScrollbarAuto)
@@ -162,11 +162,6 @@ void ScrollView::setCanHaveScrollbars(bool canScroll)
     setScrollbarModes(newHorizontalMode, newVerticalMode);
 }
 
-bool ScrollView::shouldAttemptToScrollUsingFastPath() const
-{
-    return true;
-}
-
 void ScrollView::setPaintsEntireContents(bool paintsEntireContents)
 {
     m_paintsEntireContents = paintsEntireContents;
@@ -240,6 +235,18 @@ IntPoint ScrollView::adjustScrollPositionWithinRange(const IntPoint& scrollPoint
     return newScrollPosition;
 }
 
+void ScrollView::adjustScrollbarOpacity()
+{
+    if (m_horizontalScrollbar && layerForHorizontalScrollbar()) {
+        bool isOpaqueScrollbar = !m_horizontalScrollbar->isOverlayScrollbar();
+        layerForHorizontalScrollbar()->setContentsOpaque(isOpaqueScrollbar);
+    }
+    if (m_verticalScrollbar && layerForVerticalScrollbar()) {
+        bool isOpaqueScrollbar = !m_verticalScrollbar->isOverlayScrollbar();
+        layerForVerticalScrollbar()->setContentsOpaque(isOpaqueScrollbar);
+    }
+}
+
 int ScrollView::scrollSize(ScrollbarOrientation orientation) const
 {
     Scrollbar* scrollbar = ((orientation == HorizontalScrollbar) ? m_horizontalScrollbar : m_verticalScrollbar).get();
@@ -279,14 +286,17 @@ void ScrollView::scrollTo(const IntSize& newOffset)
         scrollContents(scrollDelta);
 }
 
-void ScrollView::setScrollPosition(const IntPoint& scrollPoint)
+void ScrollView::setScrollPosition(const IntPoint& scrollPoint, ScrollBehavior scrollBehavior)
 {
     IntPoint newScrollPosition = adjustScrollPositionWithinRange(scrollPoint);
 
     if (newScrollPosition == scrollPosition())
         return;
 
-    updateScrollbars(IntSize(newScrollPosition.x(), newScrollPosition.y()));
+    if (scrollBehavior == ScrollBehaviorInstant)
+        updateScrollbars(IntSize(newScrollPosition.x(), newScrollPosition.y()));
+    else
+        programmaticallyScrollSmoothlyToOffset(newScrollPosition);
 }
 
 bool ScrollView::scroll(ScrollDirection direction, ScrollGranularity granularity)
@@ -329,7 +339,7 @@ static bool useOverlayScrollbars()
     return ScrollbarTheme::theme()->usesOverlayScrollbars();
 }
 
-void ScrollView::computeScrollbarExistence(bool& newHasHorizontalScrollbar, bool& newHasVerticalScrollbar, ComputeScrollbarExistenceOption option) const
+void ScrollView::computeScrollbarExistence(bool& newHasHorizontalScrollbar, bool& newHasVerticalScrollbar, const IntSize& docSize, ComputeScrollbarExistenceOption option) const
 {
     bool hasHorizontalScrollbar = m_horizontalScrollbar;
     bool hasVerticalScrollbar = m_verticalScrollbar;
@@ -347,8 +357,6 @@ void ScrollView::computeScrollbarExistence(bool& newHasHorizontalScrollbar, bool
 
     if (m_scrollbarsSuppressed || (hScroll != ScrollbarAuto && vScroll != ScrollbarAuto))
         return;
-
-    IntSize docSize = contentsSize();
 
     if (hScroll == ScrollbarAuto)
         newHasHorizontalScrollbar = docSize.width() > visibleWidth();
@@ -435,7 +443,7 @@ bool ScrollView::adjustScrollbarExistence(ComputeScrollbarExistenceOption option
 
     bool newHasHorizontalScrollbar = false;
     bool newHasVerticalScrollbar = false;
-    computeScrollbarExistence(newHasHorizontalScrollbar, newHasVerticalScrollbar, option);
+    computeScrollbarExistence(newHasHorizontalScrollbar, newHasVerticalScrollbar, contentsSize(), option);
 
     bool scrollbarExistenceChanged = hasHorizontalScrollbar != newHasHorizontalScrollbar || hasVerticalScrollbar != newHasVerticalScrollbar;
     if (!scrollbarExistenceChanged)
@@ -545,7 +553,7 @@ void ScrollView::scrollContents(const IntSize& scrollDelta)
         window->invalidateContentsAndRootView(panScrollIconDirtyRect);
     }
 
-    if (!shouldAttemptToScrollUsingFastPath() || !scrollContentsFastPath(-scrollDelta, scrollViewRect, clipRect))
+    if (!scrollContentsFastPath(-scrollDelta, scrollViewRect))
         scrollContentsSlowPath(updateRect);
 
     // Invalidate the overhang areas if they are visible.
@@ -555,9 +563,9 @@ void ScrollView::scrollContents(const IntSize& scrollDelta)
     frameRectsChanged();
 }
 
-bool ScrollView::scrollContentsFastPath(const IntSize& scrollDelta, const IntRect& rectToScroll, const IntRect& clipRect)
+bool ScrollView::scrollContentsFastPath(const IntSize& scrollDelta, const IntRect& rectToScroll)
 {
-    hostWindow()->scroll(scrollDelta, rectToScroll, clipRect);
+    hostWindow()->scroll();
     return true;
 }
 
@@ -812,6 +820,7 @@ bool ScrollView::isScrollCornerVisible() const
 
 void ScrollView::scrollbarStyleChanged()
 {
+    adjustScrollbarOpacity();
     contentsResized();
     updateScrollbars(scrollOffset());
     positionScrollbarLayers();
@@ -859,9 +868,6 @@ void ScrollView::paintPanScrollIcon(GraphicsContext* context)
 
 void ScrollView::paint(GraphicsContext* context, const IntRect& rect)
 {
-    if (context->paintingDisabled() && !context->updatingControlTints())
-        return;
-
     notifyPageThatContentAreaWillPaint();
 
     IntRect documentDirtyRect = rect;
@@ -1123,4 +1129,4 @@ void ScrollView::setScrollOrigin(const IntPoint& origin, bool updatePositionAtAl
         updateScrollbars(scrollOffset());
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -4,5 +4,4 @@ DEPS = [
   'path',
   'python',
   'step',
-  'step_history',
 ]

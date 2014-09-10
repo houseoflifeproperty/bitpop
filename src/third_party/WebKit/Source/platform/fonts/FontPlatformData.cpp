@@ -24,7 +24,6 @@
 #include "wtf/HashMap.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
-#include "wtf/Vector.h"
 
 #if OS(MACOSX)
 #include "platform/fonts/harfbuzz/HarfBuzzFace.h"
@@ -32,7 +31,7 @@
 
 using namespace std;
 
-namespace WebCore {
+namespace blink {
 
 FontPlatformData::FontPlatformData(WTF::HashTableDeletedValueType)
     : m_syntheticBold(false)
@@ -120,4 +119,4 @@ const FontPlatformData& FontPlatformData::operator=(const FontPlatformData& othe
     return platformDataAssign(other);
 }
 
-}
+} // namespace blink

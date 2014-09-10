@@ -74,19 +74,6 @@ scoped_refptr<const Extension> GetExtensionWithHostPermission(
       .Build();
 }
 
-bool RequiresActionForScriptExecution(const std::string& extension_id,
-                                      const std::string& host_permissions,
-                                      Manifest::Location location) {
-  scoped_refptr<const Extension> extension =
-      GetExtensionWithHostPermission(extension_id,
-                                     host_permissions,
-                                     location);
-  return extension->permissions_data()->RequiresActionForScriptExecution(
-      extension,
-      -1,  // Ignore tab id for these.
-      GURL::EmptyGURL());
-}
-
 // Checks that urls are properly restricted for the given extension.
 void CheckRestrictedUrls(const Extension* extension,
                          bool block_chrome_urls) {
@@ -266,47 +253,6 @@ TEST(ExtensionPermissionsTest, SocketPermissions) {
         "239.255.255.250", 1900));
 }
 
-TEST(ExtensionPermissionsTest, RequiresActionForScriptExecution) {
-  // Extensions with all_hosts should require action.
-  EXPECT_TRUE(RequiresActionForScriptExecution(
-      "all_hosts_permissions", kAllHostsPermission, Manifest::INTERNAL));
-  // Extensions with nearly all hosts are treated the same way.
-  EXPECT_TRUE(RequiresActionForScriptExecution(
-      "pseudo_all_hosts_permissions", "*://*.com/*", Manifest::INTERNAL));
-  // Extensions with explicit permissions shouldn't require action.
-  EXPECT_FALSE(RequiresActionForScriptExecution(
-      "explicit_permissions", "https://www.google.com/*", Manifest::INTERNAL));
-  // Policy extensions are exempt...
-  EXPECT_FALSE(RequiresActionForScriptExecution(
-      "policy", kAllHostsPermission, Manifest::EXTERNAL_POLICY));
-  // ... as are component extensions.
-  EXPECT_FALSE(RequiresActionForScriptExecution(
-      "component", kAllHostsPermission, Manifest::COMPONENT));
-  // Throw in an external pref extension to make sure that it's not just working
-  // for everything non-internal.
-  EXPECT_TRUE(RequiresActionForScriptExecution(
-      "external_pref", kAllHostsPermission, Manifest::EXTERNAL_PREF));
-
-  // If we grant an extension tab permissions, then it should no longer require
-  // action.
-  scoped_refptr<const Extension> extension =
-      GetExtensionWithHostPermission("all_hosts_permissions",
-                                     kAllHostsPermission,
-                                     Manifest::INTERNAL);
-  URLPatternSet allowed_hosts;
-  allowed_hosts.AddPattern(
-      URLPattern(URLPattern::SCHEME_HTTPS, "https://www.google.com/*"));
-  scoped_refptr<PermissionSet> tab_permissions(
-      new PermissionSet(APIPermissionSet(),
-                        ManifestPermissionSet(),
-                        allowed_hosts,
-                        URLPatternSet()));
-  extension->permissions_data()->UpdateTabSpecificPermissions(0,
-                                                              tab_permissions);
-  EXPECT_FALSE(extension->permissions_data()->RequiresActionForScriptExecution(
-      extension, 0, GURL("https://www.google.com/")));
-}
-
 TEST(ExtensionPermissionsTest, IsRestrictedUrl) {
   scoped_refptr<const Extension> extension =
       GetExtensionWithHostPermission("normal_extension",
@@ -336,11 +282,11 @@ TEST(ExtensionPermissionsTest, GetPermissionMessages_ManyAPIPermissions) {
       extension->permissions_data()->GetPermissionMessageStrings();
   // Warning for "tabs" is suppressed by "history" permission.
   ASSERT_EQ(5u, warnings.size());
-  EXPECT_EQ("Read and modify your data on api.flickr.com",
+  EXPECT_EQ("Read and change your data on api.flickr.com",
             UTF16ToUTF8(warnings[0]));
-  EXPECT_EQ("Read and modify your bookmarks", UTF16ToUTF8(warnings[1]));
+  EXPECT_EQ("Read and change your bookmarks", UTF16ToUTF8(warnings[1]));
   EXPECT_EQ("Detect your physical location", UTF16ToUTF8(warnings[2]));
-  EXPECT_EQ("Read and modify your browsing history", UTF16ToUTF8(warnings[3]));
+  EXPECT_EQ("Read and change your browsing history", UTF16ToUTF8(warnings[3]));
   EXPECT_EQ("Manage your apps, extensions, and themes",
             UTF16ToUTF8(warnings[4]));
 }
@@ -354,7 +300,7 @@ TEST(ExtensionPermissionsTest, GetPermissionMessages_ManyHostsPermissions) {
       extension->permissions_data()->GetPermissionMessageDetailsStrings();
   ASSERT_EQ(1u, warnings.size());
   ASSERT_EQ(1u, warnings_details.size());
-  EXPECT_EQ("Read and modify your data on 5 websites",
+  EXPECT_EQ("Read and change your data on a number of websites",
             UTF16ToUTF8(warnings[0]));
   EXPECT_EQ("- www.a.com\n- www.b.com\n- www.c.com\n- www.d.com\n- www.e.com",
             UTF16ToUTF8(warnings_details[0]));
@@ -379,7 +325,7 @@ TEST(ExtensionPermissionsTest, GetPermissionMessages_ManyHosts) {
       extension->permissions_data()->GetPermissionMessageStrings();
   ASSERT_EQ(1u, warnings.size());
   EXPECT_EQ(
-      "Read and modify your data on encrypted.google.com and www.google.com",
+      "Read and change your data on encrypted.google.com and www.google.com",
       UTF16ToUTF8(warnings[0]));
 }
 
@@ -395,7 +341,7 @@ TEST(ExtensionPermissionsTest, GetPermissionMessages_Plugins) {
 #else
   ASSERT_EQ(1u, warnings.size());
   EXPECT_EQ(
-      "Read and modify all your data on your computer and the websites you "
+      "Read and change all your data on your computer and the websites you "
       "visit",
       UTF16ToUTF8(warnings[0]));
 #endif

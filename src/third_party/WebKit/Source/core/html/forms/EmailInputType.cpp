@@ -24,7 +24,7 @@
 #include "config.h"
 #include "core/html/forms/EmailInputType.h"
 
-#include "bindings/v8/ScriptRegexp.h"
+#include "bindings/core/v8/ScriptRegexp.h"
 #include "core/InputTypeNames.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
@@ -37,7 +37,7 @@
 #include <unicode/idna.h>
 #include <unicode/unistr.h>
 
-namespace WebCore {
+namespace blink {
 
 using blink::WebLocalizedString;
 
@@ -298,4 +298,4 @@ String EmailInputType::visibleValue() const
     return builder.toString();
 }
 
-} // namespace WebCore
+} // namespace blink

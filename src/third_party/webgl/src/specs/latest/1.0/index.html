@@ -28,7 +28,7 @@
     <!--end-logo-->
 
     <h1>WebGL Specification</h1>
-    <h2 class="no-toc">Editor's Draft 17 April 2014</h2>
+    <h2 class="no-toc">Editor's Draft 15 July 2014</h2>
     <dl>
         <dt>This version:
             <dd>
@@ -319,12 +319,22 @@
     </p>
     <p>
         WebGL presents its drawing buffer to the HTML page compositor immediately before a
-        compositing operation, but only if <code>clear</code>, <code>drawArrays</code>
-        or <code>drawElements</code> have been called since the last compositing operation, while
-        the drawing buffer is the currently bound framebuffer. Before the drawing buffer is
-        presented for compositing the implementation shall ensure that all rendering operations have
-        been flushed to the drawing buffer. By default, after compositing the contents of the
-        drawing buffer shall be cleared to their default values, as shown in the table above.
+        compositing operation, but only if at least one of the following has occurred since the
+        previous compositing operation:
+        <ul>
+            <li>Context creation</li>
+            <li>Canvas resize</li>
+            <li>
+                <code>clear</code>, <code>drawArrays</code>, or <code>drawElements</code> has been
+                called while the drawing buffer is the currently bound framebuffer
+            </li>
+        </ul>
+    </p>
+    <p>
+        Before the drawing buffer is presented for compositing the implementation shall ensure that
+        all rendering operations have been flushed to the drawing buffer. By default, after
+        compositing the contents of the drawing buffer shall be cleared to their default values, as
+        shown in the table above.
     </p>
     <p>
         This default behavior can be changed by setting the <code>preserveDrawingBuffer</code>
@@ -1565,11 +1575,10 @@ interface <dfn id="WebGLRenderingContextBase">WebGLRenderingContextBase</dfn>
     void blendFuncSeparate(GLenum srcRGB, GLenum dstRGB, 
                            GLenum srcAlpha, GLenum dstAlpha);
 
+    typedef (ArrayBuffer or ArrayBufferView) BufferDataSource;
     void bufferData(GLenum target, GLsizeiptr size, GLenum usage);
-    void bufferData(GLenum target, ArrayBufferView data, GLenum usage);
-    void bufferData(GLenum target, ArrayBuffer? data, GLenum usage);
-    void bufferSubData(GLenum target, GLintptr offset, ArrayBufferView data);
-    void bufferSubData(GLenum target, GLintptr offset, ArrayBuffer? data);
+    void bufferData(GLenum target, BufferDataSource? data, GLenum usage);
+    void bufferSubData(GLenum target, GLintptr offset, BufferDataSource? data);
 
     [WebGLHandlesContextLoss] GLenum checkFramebufferStatus(GLenum target);
     void clear(GLbitfield mask);
@@ -1693,17 +1702,15 @@ interface <dfn id="WebGLRenderingContextBase">WebGLRenderingContextBase</dfn>
     void stencilOp(GLenum fail, GLenum zfail, GLenum zpass);
     void stencilOpSeparate(GLenum face, GLenum fail, GLenum zfail, GLenum zpass);
 
+    typedef (ImageData or
+             HTMLImageElement or
+             HTMLCanvasElement or
+             HTMLVideoElement) TexImageSource;
     void texImage2D(GLenum target, GLint level, GLenum internalformat, 
                     GLsizei width, GLsizei height, GLint border, GLenum format, 
                     GLenum type, ArrayBufferView? pixels);
     void texImage2D(GLenum target, GLint level, GLenum internalformat,
-                    GLenum format, GLenum type, ImageData? pixels);
-    void texImage2D(GLenum target, GLint level, GLenum internalformat,
-                    GLenum format, GLenum type, HTMLImageElement image); // May throw DOMException
-    void texImage2D(GLenum target, GLint level, GLenum internalformat,
-                    GLenum format, GLenum type, HTMLCanvasElement canvas); // May throw DOMException
-    void texImage2D(GLenum target, GLint level, GLenum internalformat,
-                    GLenum format, GLenum type, HTMLVideoElement video); // May throw DOMException
+                    GLenum format, GLenum type, TexImageSource? source); // May throw DOMException
 
     void texParameterf(GLenum target, GLenum pname, GLfloat param);
     void texParameteri(GLenum target, GLenum pname, GLint param);
@@ -1712,13 +1719,7 @@ interface <dfn id="WebGLRenderingContextBase">WebGLRenderingContextBase</dfn>
                        GLsizei width, GLsizei height, 
                        GLenum format, GLenum type, ArrayBufferView? pixels);
     void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, 
-                       GLenum format, GLenum type, ImageData? pixels);
-    void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, 
-                       GLenum format, GLenum type, HTMLImageElement image); // May throw DOMException
-    void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, 
-                       GLenum format, GLenum type, HTMLCanvasElement canvas); // May throw DOMException
-    void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, 
-                       GLenum format, GLenum type, HTMLVideoElement video); // May throw DOMException
+                       GLenum format, GLenum type, TexImageSource? source); // May throw DOMException
 
     void uniform1f(WebGLUniformLocation? location, GLfloat x);
     void uniform1fv(WebGLUniformLocation? location, Float32Array v);
@@ -2109,16 +2110,14 @@ WebGLRenderingContext implements WebGLRenderingContextBase;
             Set the size of the currently bound WebGLBuffer object for the passed target. The
             buffer is initialized to 0.
             
-        <dt><p class="idl-code">void bufferData(GLenum target, ArrayBufferView data, GLenum usage)</p>
-            <p class="idl-code">void bufferData(GLenum target, ArrayBuffer? data, GLenum usage)
+        <dt><p class="idl-code">void bufferData(GLenum target, BufferDataSource? data, GLenum usage)
             <span class="gl-spec">(<a href="http://www.khronos.org/registry/gles/specs/2.0/es_full_spec_2.0.25.pdf#nameddest=section-2.9">OpenGL ES 2.0 &sect;2.9</a>, <a class="nonnormative" href="http://www.khronos.org/opengles/sdk/2.0/docs/man/xhtml/glBufferData.xml">man page</a>)</span></p>
         <dd>
             Set the size of the currently bound WebGLBuffer object for the passed target to the 
             size of the passed data, then write the contents of data to the buffer object.
             <br><br>
             If the passed data is null then an <code>INVALID_VALUE</code> error is generated.
-        <dt><p class="idl-code">void bufferSubData(GLenum target, GLintptr offset, ArrayBufferView data)</p>
-            <p class="idl-code">void bufferSubData(GLenum target, GLintptr offset, ArrayBuffer? data)
+        <dt><p class="idl-code">void bufferSubData(GLenum target, GLintptr offset, BufferDataSource? data)
             <span class="gl-spec">(<a href="http://www.khronos.org/registry/gles/specs/2.0/es_full_spec_2.0.25.pdf#nameddest=section-2.9">OpenGL ES 2.0 &sect;2.9</a>, <a class="nonnormative" href="http://www.khronos.org/opengles/sdk/2.0/docs/man/xhtml/glBufferSubData.xml">man page</a>)</span></p>
         <dd>
             For the WebGLBuffer object bound to the passed target write the passed data starting at
@@ -2335,7 +2334,11 @@ WebGLRenderingContext implements WebGLRenderingContextBase;
 
             For any pixel lying outside the frame buffer, all channels of the associated texel are
             initialized to 0; see <a href="#READS_OUTSIDE_FRAMEBUFFER">Reading Pixels Outside the
-            Framebuffer</a>.
+            Framebuffer</a>. <br><br>
+
+            If this function attempts to read from a complete framebuffer with a missing attachment,
+            an <code>INVALID_OPERATION</code> error is generated
+            per <a href="#READING_FROM_MISSING_ATTACHMENT">Reading from a Missing Attachment</a>.
         <dt class="idl-code">void copyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, 
                            GLint x, GLint y, GLsizei width, GLsizei height)
             <span class="gl-spec">(<a href="http://www.khronos.org/registry/gles/specs/2.0/es_full_spec_2.0.25.pdf#nameddest=section-3.7.2">OpenGL ES 2.0 &sect;3.7.2</a>, <a class="nonnormative" href="http://www.khronos.org/opengles/sdk/2.0/docs/man/xhtml/glCopyTexSubImage2D.xml">man page</a>)</span>
@@ -2345,7 +2348,11 @@ WebGLRenderingContext implements WebGLRenderingContextBase;
 
             For any pixel lying outside the frame buffer, all channels of the associated texel are
             initialized to 0; see <a href="#READS_OUTSIDE_FRAMEBUFFER">Reading Pixels Outside the
-            Framebuffer</a>.
+            Framebuffer</a>. <br><br>
+
+            If this function attempts to read from a complete framebuffer with a missing attachment,
+            an <code>INVALID_OPERATION</code> error is generated
+            per <a href="#READING_FROM_MISSING_ATTACHMENT">Reading from a Missing Attachment</a>.
         <dt class="idl-code">WebGLTexture? createTexture()
             <span class="gl-spec">(<a href="http://www.khronos.org/registry/gles/specs/2.0/es_full_spec_2.0.25.pdf#nameddest=section-3.7.13">OpenGL ES 2.0 &sect;3.7.13</a>, <a class="nonnormative" href="http://www.khronos.org/opengles/sdk/2.0/docs/man/xhtml/glGenTextures.xml">man page</a>)</span>
         <dd>
@@ -2408,13 +2415,7 @@ WebGLRenderingContext implements WebGLRenderingContextBase;
             See <a href="#PIXEL_STORAGE_PARAMETERS">Pixel Storage Parameters</a> for WebGL-specific
             pixel storage parameters that affect the behavior of this function.
         <dt><p class="idl-code"><a name="TEXIMAGE2D_HTML">void texImage2D</a>(GLenum target, GLint level, GLenum internalformat,
-                    GLenum format, GLenum type, ImageData? pixels)</p>
-            <p class="idl-code">void texImage2D(GLenum target, GLint level, GLenum internalformat,
-                    GLenum format, GLenum type, HTMLImageElement image) /* May throw DOMException */</p>
-            <p class="idl-code">void texImage2D(GLenum target, GLint level, GLenum internalformat,
-                    GLenum format, GLenum type, HTMLCanvasElement canvas) /* May throw DOMException */</p>
-            <p class="idl-code">void texImage2D(GLenum target, GLint level, GLenum internalformat,
-                    GLenum format, GLenum type, HTMLVideoElement video) /* May throw DOMException */
+                    GLenum format, GLenum type, TexImageSource? source) /* May throw DOMException */
             <span class="gl-spec">(<a href="http://www.khronos.org/registry/gles/specs/2.0/es_full_spec_2.0.25.pdf#nameddest=section-3.7.1">OpenGL ES 2.0 &sect;3.7.1</a>, <a class="nonnormative" href="http://www.khronos.org/opengles/sdk/2.0/docs/man/xhtml/glTexImage2D.xml">man page</a>)</span></p>
         <dd>
             Uploads the given element or image data to the currently bound WebGLTexture. <br><br>
@@ -2463,7 +2464,7 @@ WebGLRenderingContext implements WebGLRenderingContextBase;
             set to false, a <code>SECURITY_ERR</code> exception must be
             thrown. See <a href="#ORIGIN_RESTRICTIONS">Origin Restrictions</a>.<br><br>
 
-            If <code>pixels</code> is null then an <code>INVALID_VALUE</code> error is
+            If <code>source</code> is null then an <code>INVALID_VALUE</code> error is
             generated. <br><br>
 
             See <a href="#PIXEL_STORAGE_PARAMETERS">Pixel Storage Parameters</a> for WebGL-specific
@@ -2498,13 +2499,7 @@ WebGLRenderingContext implements WebGLRenderingContextBase;
             See <a href="#PIXEL_STORAGE_PARAMETERS">Pixel Storage Parameters</a> for WebGL-specific
             pixel storage parameters that affect the behavior of this function.
         <dt><p class="idl-code"><a name="TEXSUBIMAGE2D_HTML">void texSubImage2D</a>(GLenum target, GLint level, GLint xoffset, GLint yoffset, 
-                       GLenum format, GLenum type, ImageData? pixels)</p>
-            <p class="idl-code">void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, 
-                       GLenum format, GLenum type, HTMLImageElement image) /* May throw DOMException */</p>
-            <p class="idl-code">void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, 
-                       GLenum format, GLenum type, HTMLCanvasElement canvas) /* May throw DOMException */</p>
-            <p class="idl-code">void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, 
-                       GLenum format, GLenum type, HTMLVideoElement video) /* May throw DOMException */
+                       GLenum format, GLenum type, TexImageSource? source) /* May throw DOMException */
             <span class="gl-spec">(<a href="http://www.khronos.org/registry/gles/specs/2.0/es_full_spec_2.0.25.pdf#nameddest=section-3.7.2">OpenGL ES 2.0 &sect;3.7.2</a>, <a class="nonnormative" href="http://www.khronos.org/opengles/sdk/2.0/docs/man/xhtml/glTexSubImage2D.xml">man page</a>)</span></p>
         <dd>
             Updates a sub-rectangle of the currently bound WebGLTexture with the contents of the
@@ -2534,7 +2529,7 @@ WebGLRenderingContext implements WebGLRenderingContextBase;
             set to false, a <code>SECURITY_ERR</code> exception must be
             thrown. See <a href="#ORIGIN_RESTRICTIONS">Origin Restrictions</a>.<br><br>
 
-            If <code>pixels</code> is null then an <code>INVALID_VALUE</code> error is
+            If <code>source</code> is null then an <code>INVALID_VALUE</code> error is
             generated. <br><br>
 
             See <a href="#PIXEL_STORAGE_PARAMETERS">Pixel Storage Parameters</a> for WebGL-specific
@@ -2867,7 +2862,7 @@ WebGLRenderingContext implements WebGLRenderingContextBase;
     
 <!-- ======================================================================================================= -->
 
-    <h4>Writing to the drawing buffer</h4>
+    <h4><a name="WRITING_TO_THE_DRAWING_BUFFER">Writing to the drawing buffer</a></h4>
 
     <p>
         OpenGL ES 2.0 has 3 calls which can render to the drawing buffer: <code>clear</code>, 
@@ -2951,6 +2946,9 @@ WebGLRenderingContext implements WebGLRenderingContextBase;
             see <a href="#READS_OUTSIDE_FRAMEBUFFER">Reading Pixels Outside the Framebuffer</a>.
             <br><br>
 
+            If this function attempts to read from a complete framebuffer with a missing color
+            attachment, an <code>INVALID_OPERATION</code> error is generated
+            per <a href="#READING_FROM_MISSING_ATTACHMENT">Reading from a Missing Attachment</a>.
     </dl>
     
 <!-- ======================================================================================================= -->
@@ -3037,15 +3035,16 @@ WebGLRenderingContext implements WebGLRenderingContextBase;
         <a href="http://www.w3.org/TR/domcore/#eventinit">EventInit</a> is defined in the DOM4
         specification <a href="#refsDOM4">[DOM4]</a>.
     </p>
-        To <b><a name="fire-a-webgl-context-event">fire a WebGL context event named e</a></b> means that
-        an <a href="http://www.w3.org/TR/domcore/#concept-event">event</a>
-        using the <code>WebGLContextEvent</code> interface, with
+        To <b><a name="fire-a-webgl-context-event">fire a WebGL context event named e</a></b> means
+        that an <a href="http://www.w3.org/TR/domcore/#concept-event">event</a> using
+        the <code>WebGLContextEvent</code> interface, with
         its <a href="http://www.w3.org/TR/domcore/#dom-event-type"><code>type</code></a>
-        attribute <a href="#refsDOM4">[DOM4]</a> initialized to <em>e</em>, and
+        attribute <a href="#refsDOM4">[DOM4]</a> initialized to <em>e</em>, its
+        <code>cancelable</code> attribute initialized to true, and
         its <a href="http://www.w3.org/TR/domcore/#dom-event-istrusted"><code>isTrusted</code></a>
         attribute <a href="#refsDOM4">[DOM4]</a> initialized to true, is to
-        be <a href="http://www.w3.org/TR/domcore/#concept-event-dispatch">dispatched</a>
-        at the given object.
+        be <a href="http://www.w3.org/TR/domcore/#concept-event-dispatch">dispatched</a> at the
+        given object.
     <p>
     </p>
     <pre class="idl">
@@ -3269,7 +3268,7 @@ portability across various operating systems and devices.
 
 </p>
 
-    <h3>Buffer Object Binding</h3>
+    <h3><a name="BUFFER_OBJECT_BINDING">Buffer Object Binding</a></h3>
 
 <p>
 
@@ -3413,27 +3412,27 @@ framebuffer being framebuffer complete:
 <p>
 Unless <code>width</code> and <code>height</code> parameters are explicitly specified, the width
 and height of the texture set by <code>texImage2D</code> and the width and height of the
-sub-rectangle updated by <code>texSubImage2D</code> are determined based on the uploaded element or
-image data the following way:
+sub-rectangle updated by <code>texSubImage2D</code> are determined based on the uploaded
+<code>TexImageSource source</code> object:
 </p>
 
     <dl>
-        <dt><code>ImageData pixels</code>
+        <dt><code>source</code> of type <code>ImageData</code>
         <dd>
             The width and height of the texture are set to the current values of the width and
-            height properties of <code>pixels</code>, representing the actual pixel width and height
-            of <code>pixels</code>.
-        <dt><code>HTMLImageElement image</code>
+            height properties of the ImageData object, representing the actual pixel width and height
+            of the <code>ImageData</code> object.
+        <dt><code>source</code> of type <code>HTMLImageElement</code>
         <dd>
             If a bitmap is uploaded, the width and height of the texture are set to the width and
             height of the uploaded bitmap in pixels. If an SVG image is uploaded, the width and
             height of the texture are set to the current values of the width and height properties
-            of <code>image</code>.
-        <dt><code>HTMLCanvasElement canvas</code>
+            of the <code>HTMLImageElement</code> object.
+        <dt><code>source</code> of type <code>HTMLCanvasElement</code>
         <dd>
             The width and height of the texture are set to the current values of the width and
-            height properties of <code>canvas</code>.
-        <dt><code>HTMLVideoElement video</code>
+            height properties of the <code>HTMLCanvasElement</code> object.
+        <dt><code>source</code> of type <code>HTMLVideoElement</code>
         <dd>
             The width and height of the texture are set to the width and height of the uploaded
             frame of the video in pixels.
@@ -3609,11 +3608,11 @@ extensions.
     WebGL imposes a limit of 256 characters on the lengths of uniform and attribute locations.
 </p>
 
-    <h3>String Length Queries</h3>
+    <h3><a name="STRING_LENGTH_QUERIES">String Length Queries</a></h3>
 
 <p>
     In the WebGL API, the enumerants <code>INFO_LOG_LENGTH</code>, <code>SHADER_SOURCE_LENGTH</code>,
-    <code>ACTIVE_UNIFORM_MAX_LENGTH</code>, and <code>ACTIVE_ATTRIB_MAX_LENGTH</code> have been removed. In
+    <code>ACTIVE_UNIFORM_MAX_LENGTH</code>, and <code>ACTIVE_ATTRIBUTE_MAX_LENGTH</code> have been removed. In
     the OpenGL ES 2.0 API, these enumerants are needed to determine the size of buffers passed to calls
     like <code>glGetActiveAttrib</code>. In the WebGL API, the analogous calls (<code>getActiveAttrib</code>,
     <code>getActiveUniform</code>, <code>getProgramInfoLog</code>, <code>getShaderInfoLog</code>, and
@@ -3658,6 +3657,23 @@ extensions.
 <p>
     In the WebGL API, such operations that would cause such feedback loops (by the definitions
     in the OpenGL ES 2.0 spec) will instead generate an <code>INVALID_OPERATION</code> error.
+</p>
+
+<h3><a name="READING_FROM_MISSING_ATTACHMENT">Reading From a Missing Attachment</a></h3>
+<p>
+    In the OpenGL ES 2.0 API, it is not specified what happens when a command tries to source
+    data from a missing attachment, such as ReadPixels of color data from a complete framebuffer
+    that does not have a color attachment.
+</p>
+<p>
+    In the WebGL API, such operations that require data from an attachment that is missing will
+    generate an <code>INVALID_OPERATION</code> error. This applies to the following functions:
+    
+    <ul>
+    <li> <code>copyTexImage2D</code>
+    <li> <code>copyTexSubImage2D</code>
+    <li> <code>readPixels</code>
+    </ul>
 </p>
 
 <!-- ======================================================================================================= -->

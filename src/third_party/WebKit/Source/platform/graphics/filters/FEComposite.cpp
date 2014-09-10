@@ -38,7 +38,7 @@
 
 #include "wtf/Uint8ClampedArray.h"
 
-namespace WebCore {
+namespace blink {
 
 FEComposite::FEComposite(Filter* filter, const CompositeOperationType& type, float k1, float k2, float k3, float k4)
     : FilterEffect(filter)
@@ -331,15 +331,13 @@ void FEComposite::applySoftware()
         destinationRect.intersect(absolutePaintRect());
         if (destinationRect.isEmpty())
             break;
-        IntPoint destinationPoint(destinationRect.x() - absolutePaintRect().x(), destinationRect.y() - absolutePaintRect().y());
         FloatRect sourceRect(IntPoint(destinationRect.x() - in->absolutePaintRect().x(),
                                     destinationRect.y() - in->absolutePaintRect().y()), destinationRect.size());
         FloatRect source2Rect(IntPoint(destinationRect.x() - in2->absolutePaintRect().x(),
                                      destinationRect.y() - in2->absolutePaintRect().y()), destinationRect.size());
-        filterContext->drawImageBuffer(imageBuffer2,
-            FloatRect(destinationPoint, imageBuffer2->size()), &source2Rect);
-        filterContext->drawImageBuffer(imageBuffer,
-            FloatRect(destinationPoint, imageBuffer->size()), &sourceRect, CompositeSourceIn);
+        destinationRect.move(-absolutePaintRect().x(), -absolutePaintRect().y());
+        filterContext->drawImageBuffer(imageBuffer2, destinationRect, &source2Rect);
+        filterContext->drawImageBuffer(imageBuffer, destinationRect, &sourceRect, CompositeSourceIn);
         break;
     }
     case FECOMPOSITE_OPERATOR_OUT:
@@ -359,18 +357,18 @@ void FEComposite::applySoftware()
     }
 }
 
-SkXfermode::Mode toXfermode(WebCore::CompositeOperationType mode)
+SkXfermode::Mode toXfermode(CompositeOperationType mode)
 {
     switch (mode) {
-    case WebCore::FECOMPOSITE_OPERATOR_OVER:
+    case FECOMPOSITE_OPERATOR_OVER:
         return SkXfermode::kSrcOver_Mode;
-    case WebCore::FECOMPOSITE_OPERATOR_IN:
+    case FECOMPOSITE_OPERATOR_IN:
         return SkXfermode::kSrcIn_Mode;
-    case WebCore::FECOMPOSITE_OPERATOR_OUT:
+    case FECOMPOSITE_OPERATOR_OUT:
         return SkXfermode::kSrcOut_Mode;
-    case WebCore::FECOMPOSITE_OPERATOR_ATOP:
+    case FECOMPOSITE_OPERATOR_ATOP:
         return SkXfermode::kSrcATop_Mode;
-    case WebCore::FECOMPOSITE_OPERATOR_XOR:
+    case FECOMPOSITE_OPERATOR_XOR:
         return SkXfermode::kXor_Mode;
     default:
         ASSERT_NOT_REACHED();
@@ -443,4 +441,4 @@ TextStream& FEComposite::externalRepresentation(TextStream& ts, int indent) cons
     return ts;
 }
 
-} // namespace WebCore
+} // namespace blink

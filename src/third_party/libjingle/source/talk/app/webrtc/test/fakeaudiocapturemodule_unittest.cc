@@ -29,9 +29,9 @@
 
 #include <algorithm>
 
-#include "talk/base/gunit.h"
-#include "talk/base/scoped_ref_ptr.h"
-#include "talk/base/thread.h"
+#include "webrtc/base/gunit.h"
+#include "webrtc/base/scoped_ref_ptr.h"
+#include "webrtc/base/thread.h"
 
 using std::min;
 
@@ -49,7 +49,7 @@ class FakeAdmTest : public testing::Test,
 
   virtual void SetUp() {
     fake_audio_capture_module_ = FakeAudioCaptureModule::Create(
-        talk_base::Thread::Current());
+        rtc::Thread::Current());
     EXPECT_TRUE(fake_audio_capture_module_.get() != NULL);
   }
 
@@ -84,13 +84,13 @@ class FakeAdmTest : public testing::Test,
                                    const uint8_t nChannels,
                                    const uint32_t samplesPerSec,
                                    void* audioSamples,
-#ifdef USE_WEBRTC_DEV_BRANCH
                                    uint32_t& nSamplesOut,
+#ifdef USE_WEBRTC_DEV_BRANCH
                                    int64_t* elapsed_time_ms,
-                                   int64_t* ntp_time_ms) {
 #else
-                                   uint32_t& nSamplesOut) {
+                                   uint32_t* rtp_timestamp,
 #endif
+                                   int64_t* ntp_time_ms) {
     ++pull_iterations_;
     const uint32_t audio_buffer_size = nSamples * nBytesPerSample;
     const uint32_t bytes_out = RecordedDataReceived() ?
@@ -99,15 +99,17 @@ class FakeAdmTest : public testing::Test,
     nSamplesOut = bytes_out / nBytesPerSample;
 #ifdef USE_WEBRTC_DEV_BRANCH
     *elapsed_time_ms = 0;
-    *ntp_time_ms = 0;
+#else
+    *rtp_timestamp = 0;
 #endif
+    *ntp_time_ms = 0;
     return 0;
   }
 
   int push_iterations() const { return push_iterations_; }
   int pull_iterations() const { return pull_iterations_; }
 
-  talk_base::scoped_refptr<FakeAudioCaptureModule> fake_audio_capture_module_;
+  rtc::scoped_refptr<FakeAudioCaptureModule> fake_audio_capture_module_;
 
  private:
   bool RecordedDataReceived() const {

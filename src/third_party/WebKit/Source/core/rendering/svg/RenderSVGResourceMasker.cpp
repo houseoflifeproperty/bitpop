@@ -21,15 +21,15 @@
 
 #include "core/rendering/svg/RenderSVGResourceMasker.h"
 
+#include "core/dom/ElementTraversal.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
 #include "core/svg/SVGElement.h"
 #include "platform/graphics/DisplayList.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 #include "platform/transforms/AffineTransform.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 const RenderSVGResourceType RenderSVGResourceMasker::s_resourceType = MaskerResourceType;
 
@@ -66,12 +66,12 @@ bool RenderSVGResourceMasker::applyResource(RenderObject* object, RenderStyle*,
 
     clearInvalidationMask();
 
-    FloatRect repaintRect = object->paintInvalidationRectInLocalCoordinates();
-    if (repaintRect.isEmpty() || !element()->hasChildren())
+    FloatRect paintInvalidationRect = object->paintInvalidationRectInLocalCoordinates();
+    if (paintInvalidationRect.isEmpty() || !element()->hasChildren())
         return false;
 
     // Content layer start.
-    context->beginTransparencyLayer(1, &repaintRect);
+    context->beginTransparencyLayer(1, &paintInvalidationRect);
 
     return true;
 }
@@ -85,17 +85,16 @@ void RenderSVGResourceMasker::postApplyResource(RenderObject* object, GraphicsCo
     ASSERT_UNUSED(resourceMode, resourceMode == ApplyToDefaultMode);
     ASSERT_WITH_SECURITY_IMPLICATION(!needsLayout());
 
-    FloatRect repaintRect = object->paintInvalidationRectInLocalCoordinates();
+    FloatRect paintInvalidationRect = object->paintInvalidationRectInLocalCoordinates();
 
-    const SVGRenderStyle* svgStyle = style()->svgStyle();
-    ASSERT(svgStyle);
-    ColorFilter maskLayerFilter = svgStyle->maskType() == MT_LUMINANCE
+    const SVGRenderStyle& svgStyle = style()->svgStyle();
+    ColorFilter maskLayerFilter = svgStyle.maskType() == MT_LUMINANCE
         ? ColorFilterLuminanceToAlpha : ColorFilterNone;
-    ColorFilter maskContentFilter = svgStyle->colorInterpolation() == CI_LINEARRGB
+    ColorFilter maskContentFilter = svgStyle.colorInterpolation() == CI_LINEARRGB
         ? ColorFilterSRGBToLinearRGB : ColorFilterNone;
 
     // Mask layer start.
-    context->beginLayer(1, CompositeDestinationIn, &repaintRect, maskLayerFilter);
+    context->beginLayer(1, CompositeDestinationIn, &paintInvalidationRect, maskLayerFilter);
     {
         // Draw the mask with color conversion (when needed).
         GraphicsContextStateSaver maskContentSaver(*context);
@@ -137,9 +136,9 @@ PassRefPtr<DisplayList> RenderSVGResourceMasker::asDisplayList(GraphicsContext* 
     // with local clips/mask, which may yield incorrect results when mixing objectBoundingBox and
     // userSpaceOnUse units (http://crbug.com/294900).
     context->beginRecording(strokeBoundingBox());
-    for (Element* childElement = ElementTraversal::firstWithin(*element()); childElement; childElement = ElementTraversal::nextSibling(*childElement)) {
+    for (SVGElement* childElement = Traversal<SVGElement>::firstChild(*element()); childElement; childElement = Traversal<SVGElement>::nextSibling(*childElement)) {
         RenderObject* renderer = childElement->renderer();
-        if (!childElement->isSVGElement() || !renderer)
+        if (!renderer)
             continue;
         RenderStyle* style = renderer->style();
         if (!style || style->display() == NONE || style->visibility() != VISIBLE)
@@ -151,7 +150,7 @@ PassRefPtr<DisplayList> RenderSVGResourceMasker::asDisplayList(GraphicsContext* 
     return context->endRecording();
 }
 
-void RenderSVGResourceMasker::calculateMaskContentRepaintRect()
+void RenderSVGResourceMasker::calculateMaskContentPaintInvalidationRect()
 {
     for (SVGElement* childElement = Traversal<SVGElement>::firstChild(*element()); childElement; childElement = Traversal<SVGElement>::nextSibling(*childElement)) {
         RenderObject* renderer = childElement->renderer();
@@ -177,7 +176,7 @@ FloatRect RenderSVGResourceMasker::resourceBoundingBox(const RenderObject* objec
         return maskBoundaries;
 
     if (m_maskContentBoundaries.isEmpty())
-        calculateMaskContentRepaintRect();
+        calculateMaskContentPaintInvalidationRect();
 
     FloatRect maskRect = m_maskContentBoundaries;
     if (maskElement->maskContentUnits()->currentValue()->value() == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {

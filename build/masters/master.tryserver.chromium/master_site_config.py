@@ -17,7 +17,7 @@ class TryServer(Master.Master4):
   base_app_url = 'https://chromium-status.appspot.com'
   tree_status_url = base_app_url + '/status'
   store_revisions_url = base_app_url + '/revisions'
-  last_good_url = base_app_url + '/lkgr'
-  last_good_blink_url = 'http://blink-status.appspot.com/lkgr'
+  last_good_url = None
+  last_good_blink_url = None
   svn_url = 'svn://svn-mirror.golo.chromium.org/chrome-try/try'
   buildbot_url = 'http://build.chromium.org/p/tryserver.chromium/'

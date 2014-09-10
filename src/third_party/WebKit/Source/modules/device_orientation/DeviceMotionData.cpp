@@ -27,7 +27,7 @@
 #include "modules/device_orientation/DeviceMotionData.h"
 #include "public/platform/WebDeviceMotionData.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<DeviceMotionData::Acceleration> DeviceMotionData::Acceleration::create(
     bool canProvideX, double x, bool canProvideY, double y, bool canProvideZ, double z)
@@ -77,7 +77,7 @@ PassRefPtrWillBeRawPtr<DeviceMotionData> DeviceMotionData::create(
     return adoptRefWillBeNoop(new DeviceMotionData(acceleration, accelerationIncludingGravity, rotationRate, canProvideInterval, interval));
 }
 
-PassRefPtrWillBeRawPtr<DeviceMotionData> DeviceMotionData::create(const blink::WebDeviceMotionData& data)
+PassRefPtrWillBeRawPtr<DeviceMotionData> DeviceMotionData::create(const WebDeviceMotionData& data)
 {
     return DeviceMotionData::create(
         DeviceMotionData::Acceleration::create(
@@ -131,4 +131,4 @@ bool DeviceMotionData::canProvideEventData() const
     return hasAcceleration || hasAccelerationIncludingGravity || hasRotationRate;
 }
 
-} // namespace WebCore
+} // namespace blink

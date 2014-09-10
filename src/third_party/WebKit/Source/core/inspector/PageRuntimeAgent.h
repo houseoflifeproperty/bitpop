@@ -31,11 +31,11 @@
 #ifndef PageRuntimeAgent_h
 #define PageRuntimeAgent_h
 
-#include "bindings/v8/ScriptState.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "core/inspector/InspectorRuntimeAgent.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class InspectorPageAgent;
 class Page;
@@ -43,11 +43,12 @@ class SecurityOrigin;
 
 class PageRuntimeAgent FINAL : public InspectorRuntimeAgent {
 public:
-    static PassOwnPtr<PageRuntimeAgent> create(InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, Page* page, InspectorPageAgent* pageAgent)
+    static PassOwnPtrWillBeRawPtr<PageRuntimeAgent> create(InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, Page* page, InspectorPageAgent* pageAgent)
     {
-        return adoptPtr(new PageRuntimeAgent(injectedScriptManager, scriptDebugServer, page, pageAgent));
+        return adoptPtrWillBeNoop(new PageRuntimeAgent(injectedScriptManager, scriptDebugServer, page, pageAgent));
     }
     virtual ~PageRuntimeAgent();
+    virtual void trace(Visitor*) OVERRIDE;
     virtual void init() OVERRIDE;
     virtual void enable(ErrorString*) OVERRIDE;
 
@@ -63,12 +64,12 @@ private:
     virtual void unmuteConsole() OVERRIDE;
     void reportExecutionContextCreation();
 
-    Page* m_inspectedPage;
-    InspectorPageAgent* m_pageAgent;
+    RawPtrWillBeMember<Page> m_inspectedPage;
+    RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
     bool m_mainWorldContextCreated;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // !defined(InspectorPagerAgent_h)

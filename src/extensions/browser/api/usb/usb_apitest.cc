@@ -90,6 +90,8 @@ class MockUsbDeviceHandle : public UsbDeviceHandle {
   MOCK_METHOD1(ReleaseInterface, bool(const int interface_number));
   MOCK_METHOD2(SetInterfaceAlternateSetting,
                bool(const int interface_number, const int alternate_setting));
+  MOCK_METHOD1(GetManufacturer, bool(base::string16* manufacturer));
+  MOCK_METHOD1(GetProduct, bool(base::string16* product));
   MOCK_METHOD1(GetSerial, bool(base::string16* serial));
 
   virtual scoped_refptr<UsbDevice> GetDevice() const OVERRIDE {
@@ -131,7 +133,7 @@ class MockUsbDevice : public UsbDevice {
   }
 
 #if defined(OS_CHROMEOS)
-  virtual void RequestUsbAcess(
+  virtual void RequestUsbAccess(
       int interface_id,
       const base::Callback<void(bool success)>& callback) OVERRIDE {
     BrowserThread::PostTask(
@@ -187,7 +189,7 @@ class UsbApiTest : public ExtensionApiTest {
     UsbService::SetInstanceForTest(new MockUsbService(mock_device_));
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     scoped_refptr<content::MessageLoopRunner> runner =
         new content::MessageLoopRunner;
     UsbService* service = NULL;

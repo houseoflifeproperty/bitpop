@@ -1,27 +1,17 @@
 package org.chromium.devtools.jsdoc.checks;
 
-import com.google.javascript.rhino.head.Token;
-import com.google.javascript.rhino.head.ast.Assignment;
-import com.google.javascript.rhino.head.ast.AstNode;
-import com.google.javascript.rhino.head.ast.Comment;
-import com.google.javascript.rhino.head.ast.FunctionNode;
+import com.google.javascript.rhino.JSDocInfo;
+import com.google.javascript.rhino.Node;
+import com.google.javascript.rhino.Token;
 
 import org.chromium.devtools.jsdoc.ValidationCheck;
 import org.chromium.devtools.jsdoc.ValidatorContext;
-import org.chromium.devtools.jsdoc.checks.TypeRecord.InheritanceEntry;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class ContextTrackingValidationCheck extends ValidationCheck {
 
-    private static final Pattern EXTENDS_PATTERN =
-            Pattern.compile("@extends\\s+\\{\\s*([^\\s}]+)\\s*\\}");
-    private static final Pattern RETURN_PATTERN =
-            Pattern.compile("@return\\s+\\{\\s*(.+)\\s*\\}");
     private ContextTrackingState state;
     private final List<ContextTrackingChecker> clients = new ArrayList<>(5);
 
@@ -35,13 +25,14 @@ public class ContextTrackingValidationCheck extends ValidationCheck {
     }
 
     @Override
-    public void doVisit(AstNode node) {
+    public void doVisit(Node node) {
         switch (node.getType()) {
         case Token.ASSIGN:
-            enterAssignNode((Assignment) node);
+        case Token.VAR:
+            enterAssignOrVarNode(node);
             break;
         case Token.FUNCTION:
-            enterFunctionNode((FunctionNode) node);
+            enterFunctionNode(node);
             break;
         default:
             break;
@@ -51,15 +42,15 @@ public class ContextTrackingValidationCheck extends ValidationCheck {
     }
 
     @Override
-    public void didVisit(AstNode node) {
+    public void didVisit(Node node) {
         leaveNode(node);
 
         switch (node.getType()) {
         case Token.ASSIGN:
-            leaveAssignNode((Assignment) node);
+            leaveAssignNode(node);
             break;
         case Token.FUNCTION:
-            leaveFunctionNode((FunctionNode) node);
+            leaveFunctionNode(node);
             break;
         default:
             break;
@@ -71,59 +62,40 @@ public class ContextTrackingValidationCheck extends ValidationCheck {
         client.setState(state);
     }
 
-    private void enterNode(AstNode node) {
+    private void enterNode(Node node) {
         for (ContextTrackingChecker client : clients) {
             client.enterNode(node);
         }
     }
 
-    private void leaveNode(AstNode node) {
+    private void leaveNode(Node node) {
         for (ContextTrackingChecker client : clients) {
             client.leaveNode(node);
         }
     }
 
-    private void enterFunctionNode(FunctionNode node) {
-        Comment jsDocNode = getJsDocNode(node);
-        AstNode nameNode = AstUtil.getFunctionNameNode(node);
-
-        // It can be a type declaration: /** @constructor */ function MyType() {...}.
-        // Or even /** @constructor */ window.Foo.Bar = function() {...}.
-        String functionName = nameNode == null ? null : getNodeText(nameNode);
-        boolean isConstructor = rememberTypeRecordIfNeeded(functionName, jsDocNode);
-
+    private void enterFunctionNode(Node node) {
         TypeRecord parentType = state.getCurrentFunctionRecord() == null
                 ? state.getCurrentTypeRecord()
                 : null;
-        state.pushFunctionRecord(new FunctionRecord(
+        Node nameNode = AstUtil.getFunctionNameNode(node);
+        String functionName = nameNode == null ? null : state.getNodeText(nameNode);
+        FunctionRecord functionRecord = new FunctionRecord(
                 node,
-                AstUtil.getJsDocNode(node),
                 functionName,
-                isConstructor,
-                getReturnType(jsDocNode),
                 parentType,
-                state.getCurrentFunctionRecord()));
+                state.getCurrentFunctionRecord());
+        state.pushFunctionRecord(functionRecord);
+        rememberTypeRecordIfNeeded(functionName, functionRecord.info);
     }
 
     @SuppressWarnings("unused")
-    private void leaveFunctionNode(FunctionNode node) {
+    private void leaveFunctionNode(Node node) {
         state.functionRecords.removeLast();
     }
 
-    private String getReturnType(Comment jsDocNode) {
-        if (jsDocNode == null) {
-            return null;
-        }
-        String jsDoc = getNodeText(jsDocNode);
-        Matcher m = RETURN_PATTERN.matcher(jsDoc);
-        if (!m.find()) {
-            return null;
-        }
-        return m.group(1);
-    }
-
-    private void enterAssignNode(Assignment assignment) {
-        String assignedTypeName = getAssignedTypeName(assignment);
+    private void enterAssignOrVarNode(Node node) {
+        String assignedTypeName = getAssignedTypeName(node);
         if (assignedTypeName == null) {
             return;
         }
@@ -136,15 +108,9 @@ public class ContextTrackingValidationCheck extends ValidationCheck {
             state.pushFunctionRecord(null);
             return;
         }
-
-        if (assignment.getRight().getType() == Token.FUNCTION) {
-            // MyType = function() {...}
-            rememberTypeRecordIfNeeded(assignedTypeName, getJsDocNode(assignment));
-        }
-
     }
 
-    private void leaveAssignNode(Assignment assignment) {
+    private void leaveAssignNode(Node assignment) {
         String assignedTypeName = getAssignedTypeName(assignment);
         if (assignedTypeName == null) {
             return;
@@ -157,54 +123,23 @@ public class ContextTrackingValidationCheck extends ValidationCheck {
         }
     }
 
-    private String getAssignedTypeName(Assignment assignment) {
-        AstNode node = AstUtil.getAssignedTypeNameNode(assignment);
+    private String getAssignedTypeName(Node assignment) {
+        Node node = AstUtil.getAssignedTypeNameNode(assignment);
         return getNodeText(node);
     }
 
-    private boolean rememberTypeRecordIfNeeded(String typeName, Comment jsDocNode) {
-        String jsDoc = getNodeText(jsDocNode);
-        if (typeName == null) {
-            return isConstructor(jsDoc) || isInterface(jsDoc);
-        }
-        if (!isConstructor(jsDoc) && !isInterface(jsDoc)) {
+    private boolean rememberTypeRecordIfNeeded(String typeName, JSDocInfo info) {
+        if (info == null) {
             return false;
         }
-        TypeRecord record = new TypeRecord(
-                typeName,
-                isInterface(jsDoc),
-                getExtendsEntries(jsDocNode));
+        if (typeName == null) {
+            return info.isConstructor() || info.isInterface();
+        }
+        if (!info.isConstructor() && !info.isInterface()) {
+            return false;
+        }
+        TypeRecord record = new TypeRecord(typeName, info);
         state.typeRecordsByTypeName.put(typeName, record);
         return true;
-    }
-
-    private static boolean isInterface(String jsDoc) {
-        return jsDoc != null && jsDoc.contains("@interface");
-    }
-
-    private static boolean isConstructor(String jsDoc) {
-        return jsDoc != null && jsDoc.contains("@constructor");
-    }
-
-    private static Comment getJsDocNode(AstNode node) {
-        if (node.getType() == Token.FUNCTION) {
-            return AstUtil.getJsDocNode((FunctionNode) node);
-        }
-        return node.getJsDocNode();
-    }
-
-    private List<InheritanceEntry> getExtendsEntries(Comment jsDocNode) {
-        if (jsDocNode == null) {
-            return Collections.emptyList();
-        }
-        List<InheritanceEntry> result = new ArrayList<>(2);
-        Matcher matcher = EXTENDS_PATTERN.matcher(getNodeText(jsDocNode));
-        while (matcher.find()) {
-            String fullSuperType = matcher.group(1);
-            result.add(new InheritanceEntry(
-                    fullSuperType.replaceFirst("\\.<.+>", ""), jsDocNode, matcher.start(1)));
-        }
-
-        return result;
     }
 }

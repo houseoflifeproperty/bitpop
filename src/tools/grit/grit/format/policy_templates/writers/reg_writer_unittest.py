@@ -212,6 +212,37 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '"1"="foo"',
         '"2"="bar"'])
 
+  def testStringEnumListPolicy(self):
+    # Tests a policy group with a single policy of type 'string-enum-list'.
+    grd = self.PrepareTest(
+        '{'
+        '  "policy_definitions": ['
+        '    {'
+        '      "name": "ListPolicy",'
+        '      "type": "string-enum-list",'
+        '      "caption": "",'
+        '      "desc": "",'
+        '      "items": ['
+        '        {"name": "ProxyServerDisabled", "value": "foo",'
+        '         "caption": ""},'
+        '        {"name": "ProxyServerAutoDetect", "value": "bar",'
+                '         "caption": ""},'
+        '      ],'
+        '      "supported_on": ["chrome.linux:8-"],'
+        '      "example_value": ["foo", "bar"]'
+        '    },'
+        '  ],'
+        '  "placeholders": [],'
+        '  "messages": {},'
+        '}')
+    output = self.GetOutput(grd, 'fr', {'_chromium' : '1'}, 'reg', 'en')
+    expected_output = self.NEWLINE.join([
+        'Windows Registry Editor Version 5.00',
+        '',
+        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Chromium\\ListPolicy]',
+        '"1"="foo"',
+        '"2"="bar"'])
+
   def testDictionaryPolicy(self):
     # Tests a policy group with a single policy of type 'dict'.
     example = {

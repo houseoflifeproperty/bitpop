@@ -25,6 +25,7 @@
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_pref_names.h"
 #include "components/policy/core/common/policy_types.h"
+#include "components/user_manager/user_manager.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "policy/policy_constants.h"
 #include "url/gurl.h"
@@ -63,7 +64,7 @@ void OnWildcardCheckCompleted(const std::string& username,
     // logged-in session is not possible. Fix this either by delaying the
     // cryptohome deletion operation or by getting rid of the in-session
     // wildcard check.
-    chromeos::UserManager::Get()->RemoveUserFromList(username);
+    user_manager::UserManager::Get()->RemoveUserFromList(username);
     chrome::AttemptUserExit();
   }
 }
@@ -91,7 +92,7 @@ UserCloudPolicyManagerChromeOS::UserCloudPolicyManagerChromeOS(
       wait_for_policy_fetch_(wait_for_policy_fetch),
       policy_fetch_timeout_(false, false) {
   time_init_started_ = base::Time::Now();
-  if (wait_for_policy_fetch_) {
+  if (wait_for_policy_fetch_ && !initial_policy_fetch_timeout.is_max()) {
     policy_fetch_timeout_.Start(
         FROM_HERE,
         initial_policy_fetch_timeout,
@@ -279,13 +280,13 @@ void UserCloudPolicyManagerChromeOS::OnComponentCloudPolicyUpdated() {
 void UserCloudPolicyManagerChromeOS::GetChromePolicy(PolicyMap* policy_map) {
   CloudPolicyManager::GetChromePolicy(policy_map);
 
-  // Default multi-profile behavior for managed accounts to not-allowed.
+  // Default multi-profile behavior for managed accounts to primary-only.
   if (store()->has_policy() &&
       !policy_map->Get(key::kChromeOsMultiProfileUserBehavior)) {
     policy_map->Set(key::kChromeOsMultiProfileUserBehavior,
                     POLICY_LEVEL_MANDATORY,
                     POLICY_SCOPE_USER,
-                    new base::StringValue("not-allowed"),
+                    new base::StringValue("primary-only"),
                     NULL);
   }
 }

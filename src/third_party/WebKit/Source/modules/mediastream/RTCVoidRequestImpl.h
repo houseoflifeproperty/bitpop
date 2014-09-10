@@ -35,7 +35,7 @@
 #include "platform/heap/Handle.h"
 #include "platform/mediastream/RTCVoidRequest.h"
 
-namespace WebCore {
+namespace blink {
 
 class RTCErrorCallback;
 class RTCPeerConnection;
@@ -43,7 +43,7 @@ class VoidCallback;
 
 class RTCVoidRequestImpl FINAL : public RTCVoidRequest, public ActiveDOMObject {
 public:
-    static PassRefPtr<RTCVoidRequestImpl> create(ExecutionContext*, PassRefPtrWillBeRawPtr<RTCPeerConnection>, PassOwnPtr<VoidCallback>, PassOwnPtr<RTCErrorCallback>);
+    static PassRefPtr<RTCVoidRequestImpl> create(ExecutionContext*, RTCPeerConnection*, PassOwnPtr<VoidCallback>, PassOwnPtr<RTCErrorCallback>);
     virtual ~RTCVoidRequestImpl();
 
     // RTCVoidRequest
@@ -54,16 +54,16 @@ public:
     virtual void stop() OVERRIDE;
 
 private:
-    RTCVoidRequestImpl(ExecutionContext*, PassRefPtrWillBeRawPtr<RTCPeerConnection>, PassOwnPtr<VoidCallback>, PassOwnPtr<RTCErrorCallback>);
+    RTCVoidRequestImpl(ExecutionContext*, RTCPeerConnection*, PassOwnPtr<VoidCallback>, PassOwnPtr<RTCErrorCallback>);
 
     void clear();
 
     OwnPtr<VoidCallback> m_successCallback;
     OwnPtr<RTCErrorCallback> m_errorCallback;
 
-    RefPtrWillBePersistent<RTCPeerConnection> m_requester;
+    Persistent<RTCPeerConnection> m_requester;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCVoidRequestImpl_h

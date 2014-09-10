@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2010 Apple Inc. All rights reserved.
  * Copyright (C) 2013 Google Inc. All rights reserved.
+ * Copyright (C) 2014 Opera Software ASA. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,12 +30,13 @@
 #include "platform/Widget.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "wtf/text/WTFString.h"
+#include <v8.h>
 
 struct NPObject;
 
 namespace blink { class WebLayer; }
 
-namespace WebCore {
+namespace blink {
 
 class ResourceError;
 class ResourceResponse;
@@ -45,7 +47,7 @@ public:
     virtual bool isPluginView() const OVERRIDE FINAL { return true; }
 
     virtual blink::WebLayer* platformLayer() const { return 0; }
-    virtual NPObject* scriptableObject() { return 0; }
+    virtual v8::Local<v8::Object> scriptableObject(v8::Isolate*) { return v8::Local<v8::Object>(); }
     virtual bool getFormValue(String&) { return false; }
     virtual bool wantsWheelEvents() { return false; }
     virtual bool supportsKeyboardFocus() const { return false; }
@@ -63,6 +65,6 @@ protected:
 
 DEFINE_TYPE_CASTS(PluginView, Widget, widget, widget->isPluginView(), widget.isPluginView());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PluginView_h

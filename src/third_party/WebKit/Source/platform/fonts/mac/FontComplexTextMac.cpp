@@ -38,7 +38,7 @@
 
 using namespace std;
 
-namespace WebCore {
+namespace blink {
 
 static bool preferHarfBuzz(const Font* font)
 {
@@ -84,7 +84,7 @@ float Font::getGlyphsAndAdvancesForComplexText(const TextRunPaintInfo& runInfo, 
     float afterWidth = controller.runWidthSoFar();
 
     if (runInfo.run.rtl()) {
-        initialAdvance = controller.totalWidth() + controller.finalRoundingWidth() - afterWidth;
+        initialAdvance = controller.totalWidth() - afterWidth;
         glyphBuffer.reverse();
     } else
         initialAdvance = beforeWidth;
@@ -209,4 +209,4 @@ const SimpleFontData* Font::fontDataForCombiningCharacterSequence(const UChar* c
     return SimpleFontData::systemFallback();
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -26,7 +26,6 @@ import sys
 from common import chromium_utils
 from slave import build_directory
 from slave import slave_utils
-from slave import zip_build
 
 class StagingError(Exception): pass
 
@@ -43,7 +42,7 @@ def ShouldPackageFile(filename, target):
     return False
 
   # Skip files that we don't care about. Mostly directories.
-  things_to_skip = zip_build.FileExclusions()
+  things_to_skip = chromium_utils.FileExclusions()
 
   if filename in things_to_skip:
     return False

@@ -25,16 +25,17 @@
 #include "config.h"
 #include "core/html/HTMLTableRowElement.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/NodeListsNodeData.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLTableCellElement.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/html/HTMLTableSectionElement.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -80,14 +81,11 @@ int HTMLTableRowElement::rowIndex() const
         }
     }
 
-    for (Element* child = ElementTraversal::firstWithin(*table); child; child = ElementTraversal::nextSibling(*child)) {
-        if (child->hasTagName(tbodyTag)) {
-            HTMLTableSectionElement* section = toHTMLTableSectionElement(child);
-            for (HTMLTableRowElement* row = Traversal<HTMLTableRowElement>::firstChild(*section); row; row = Traversal<HTMLTableRowElement>::nextSibling(*row)) {
-                if (row == this)
-                    return rIndex;
-                ++rIndex;
-            }
+    for (HTMLElement* tbody = Traversal<HTMLElement>::firstChild(*table, HasHTMLTagName(tbodyTag)); tbody; tbody = Traversal<HTMLElement>::nextSibling(*tbody, HasHTMLTagName(tbodyTag))) {
+        for (HTMLTableRowElement* row = Traversal<HTMLTableRowElement>::firstChild(*tbody); row; row = Traversal<HTMLTableRowElement>::nextSibling(*row)) {
+            if (row == this)
+                return rIndex;
+            ++rIndex;
         }
     }
 
@@ -155,7 +153,7 @@ void HTMLTableRowElement::deleteCell(int index, ExceptionState& exceptionState)
 
 PassRefPtrWillBeRawPtr<HTMLCollection> HTMLTableRowElement::cells()
 {
-    return ensureCachedHTMLCollection(TRCells);
+    return ensureCachedCollection<HTMLCollection>(TRCells);
 }
 
 }

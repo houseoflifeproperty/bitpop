@@ -5,10 +5,11 @@
 {
   'targets': [
     {
+      # GN version: //ui/resources
       'target_name': 'ui_resources',
       'type': 'none',
       'variables': {
-        'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources',
+        'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/ui/resources',
       },
       'actions': [
         {
@@ -38,6 +39,8 @@
     {
       # This creates a pak file that contains the resources in src/ui.
       # This pak file can be used by tests.
+      #
+      # GN version: //ui/resources:ui_test_pak
       'target_name': 'ui_test_pak',
       'type': 'none',
       'dependencies': [
@@ -49,10 +52,10 @@
           'action_name': 'repack_ui_test_pack',
           'variables': {
             'pak_inputs': [
-              '<(SHARED_INTERMEDIATE_DIR)/ui/app_locale_settings/app_locale_settings_en-US.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/webui_resources.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/ui/ui_strings/ui_strings_en-US.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/ui/resources/ui_resources_100_percent.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/ui/resources/webui_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/ui/strings/app_locale_settings_en-US.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/ui/strings/ui_strings_en-US.pak',
             ],
             'pak_output': '<(PRODUCT_DIR)/ui_test.pak',
           },
@@ -63,9 +66,10 @@
         ['OS != "mac"', {
           'copies': [
             {
+              # GN version //ui/resources:copy_ui_resources_100_percent
               'destination': '<(PRODUCT_DIR)/ui',
               'files': [
-                '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
+                '<(SHARED_INTERMEDIATE_DIR)/ui/resources/ui_resources_100_percent.pak',
               ],
             },
           ],
@@ -73,6 +77,7 @@
         ['OS == "ios"', {
           'actions': [
             {
+              # GN version: //ui/resources:copy_ui_test_pak
               'action_name': 'copy_ui_test_pak',
               'message': 'Copying ui_test.pak into locale.pak',
               'inputs': [

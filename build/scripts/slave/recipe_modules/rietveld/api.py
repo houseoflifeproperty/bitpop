@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import urlparse
+
 from slave import recipe_api
 
 class RietveldApi(recipe_api.RecipeApi):
@@ -26,29 +28,34 @@ class RietveldApi(recipe_api.RecipeApi):
     """
     # TODO(pgervais): replace *root_pieces by a single Path object.
     authentication = kwargs.get('authentication', None)
+    rietveld_url = self.m.properties['rietveld']
+    issue_number = self.m.properties['issue']
 
     if authentication == 'oauth2':
-      return self.m.python(
+      step_result = self.m.python(
         'apply_issue',
         self.m.path['depot_tools'].join('apply_issue.py'), [
           '-r', self.m.path['checkout'].join(*root_pieces),
-          '-i', self.m.properties['issue'],
+          '-i', issue_number,
           '-p', self.m.properties['patchset'],
-          '-s', self.m.properties['rietveld'],
+          '-s', rietveld_url,
           '-E', self.m.path['build'].join('site_config',
                                           '.rietveld_client_email'),
           '-k', self.m.path['build'].join('site_config',
                                           '.rietveld_secret_key')
           ],
-        abort_on_failure=True)
+        )
 
-    return self.m.python(
-      'apply_issue',
-      self.m.path['depot_tools'].join('apply_issue.py'), [
-        '-r', self.m.path['checkout'].join(*root_pieces),
-        '-i', self.m.properties['issue'],
-        '-p', self.m.properties['patchset'],
-        '-s', self.m.properties['rietveld'],
-        '--no-auth'],
-      abort_on_failure=True)
+    else:
+      step_result = self.m.python(
+        'apply_issue',
+        self.m.path['depot_tools'].join('apply_issue.py'), [
+          '-r', self.m.path['checkout'].join(*root_pieces),
+          '-i', issue_number,
+          '-p', self.m.properties['patchset'],
+          '-s', rietveld_url,
+          '--no-auth'],
+        )
+    step_result.presentation.links['Applied issue %s' % issue_number] = (
+      urlparse.urljoin(rietveld_url, str(issue_number)))
 

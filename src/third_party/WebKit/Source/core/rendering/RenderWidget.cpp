@@ -36,14 +36,16 @@
 #include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "wtf/HashMap.h"
 
-namespace WebCore {
+namespace blink {
 
 RenderWidget::RenderWidget(Element* element)
     : RenderReplaced(element)
+#if !ENABLE(OILPAN)
     // Reference counting is used to prevent the widget from being
     // destroyed while inside the Widget code, which might not be
     // able to handle that.
     , m_refCount(1)
+#endif
 {
     ASSERT(element);
     frameView()->addWidget(this);
@@ -67,14 +69,26 @@ void RenderWidget::willBeDestroyed()
 
 void RenderWidget::destroy()
 {
+#if ENABLE(ASSERT) && ENABLE(OILPAN)
+    ASSERT(!m_didCallDestroy);
+    m_didCallDestroy = true;
+#endif
     willBeDestroyed();
     clearNode();
+#if ENABLE(OILPAN)
+    // In Oilpan, postDestroy doesn't delete |this|. So calling it here is safe
+    // though |this| will be referred in FrameView.
+    postDestroy();
+#else
     deref();
+#endif
 }
 
 RenderWidget::~RenderWidget()
 {
+#if !ENABLE(OILPAN)
     ASSERT(m_refCount <= 0);
+#endif
 }
 
 Widget* RenderWidget::widget() const
@@ -109,7 +123,7 @@ bool RenderWidget::setWidgetGeometry(const LayoutRect& frame)
     if (widget->frameRect() == newFrame)
         return false;
 
-    RefPtr<RenderWidget> protector(this);
+    RefPtrWillBeRawPtr<RenderWidget> protector(this);
     RefPtrWillBeRawPtr<Node> protectedNode(node());
     widget->setFrameRect(newFrame);
     return widget->frameRect().size() != newFrame.size();
@@ -176,15 +190,6 @@ void RenderWidget::paintContents(PaintInfo& paintInfo, const LayoutPoint& paintO
 
     if (!widgetPaintOffset.isZero())
         paintInfo.context->translate(-widgetPaintOffset.width(), -widgetPaintOffset.height());
-
-    if (widget->isFrameView()) {
-        FrameView* frameView = toFrameView(widget);
-        bool runOverlapTests = !frameView->useSlowRepaintsIfNotOverlapped() || frameView->hasCompositedContent();
-        if (paintInfo.overlapTestRequests && runOverlapTests) {
-            ASSERT(!paintInfo.overlapTestRequests->contains(this));
-            paintInfo.overlapTestRequests->set(this, widget->frameRect());
-        }
-    }
 }
 
 void RenderWidget::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -196,8 +201,8 @@ void RenderWidget::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 
     LayoutPoint adjustedPaintOffset = paintOffset + location();
 
-    if (hasBoxDecorations() && (paintInfo.phase == PaintPhaseForeground || paintInfo.phase == PaintPhaseSelection))
-        paintBoxDecorations(paintInfo, adjustedPaintOffset);
+    if (hasBoxDecorationBackground() && (paintInfo.phase == PaintPhaseForeground || paintInfo.phase == PaintPhaseSelection))
+        paintBoxDecorationBackground(paintInfo, adjustedPaintOffset);
 
     if (paintInfo.phase == PaintPhaseMask) {
         paintMask(paintInfo, adjustedPaintOffset);
@@ -240,19 +245,13 @@ void RenderWidget::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
         layer()->scrollableArea()->paintResizer(paintInfo.context, roundedIntPoint(adjustedPaintOffset), paintInfo.rect);
 }
 
-void RenderWidget::setIsOverlapped(bool isOverlapped)
-{
-    Widget* widget = this->widget();
-    ASSERT(widget);
-    ASSERT(widget->isFrameView());
-    toFrameView(widget)->setIsOverlapped(isOverlapped);
-}
-
+#if !ENABLE(OILPAN)
 void RenderWidget::deref()
 {
     if (--m_refCount <= 0)
         postDestroy();
 }
+#endif
 
 void RenderWidget::updateOnWidgetChange()
 {
@@ -321,4 +320,4 @@ CursorDirective RenderWidget::getCursor(const LayoutPoint& point, Cursor& cursor
     return RenderReplaced::getCursor(point, cursor);
 }
 
-} // namespace WebCore
+} // namespace blink

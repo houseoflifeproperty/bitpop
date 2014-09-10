@@ -8,14 +8,15 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using syncer::ModelType;
-namespace browser_sync {
+
+namespace sync_driver {
 
 FakeDataTypeController::FakeDataTypeController(ModelType type)
-      : DataTypeController(base::MessageLoopProxy::current(), base::Closure(),
-                           DisableTypeCallback()),
+      : DataTypeController(base::MessageLoopProxy::current(), base::Closure()),
         state_(NOT_RUNNING),
         model_load_delayed_(false),
-        type_(type) {}
+        type_(type),
+        ready_for_start_(true) {}
 
 FakeDataTypeController::~FakeDataTypeController() {
 }
@@ -53,7 +54,7 @@ void FakeDataTypeController::StartAssociating(
 
 // MODEL_STARTING | ASSOCIATING -> RUNNING | DISABLED | NOT_RUNNING
 // (depending on |result|)
-void FakeDataTypeController::FinishStart(StartResult result) {
+void FakeDataTypeController::FinishStart(ConfigureResult result) {
   // We should have a callback from Start().
   if (last_start_callback_.is_null()) {
     ADD_FAILURE();
@@ -72,6 +73,13 @@ void FakeDataTypeController::FinishStart(StartResult result) {
                           syncer::SyncError::DATATYPE_ERROR,
                           "Association failed",
                           type()));
+  } else if (result == UNRECOVERABLE_ERROR) {
+    state_ = NOT_RUNNING;
+    local_merge_result.set_error(
+        syncer::SyncError(FROM_HERE,
+                          syncer::SyncError::UNRECOVERABLE_ERROR,
+                          "Unrecoverable error",
+                          type()));
   } else {
     state_ = NOT_RUNNING;
     local_merge_result.set_error(
@@ -80,11 +88,7 @@ void FakeDataTypeController::FinishStart(StartResult result) {
                           "Fake error",
                           type()));
   }
-  StartCallback start_callback = last_start_callback_;
-  last_start_callback_.Reset();
-  start_callback.Run(result,
-                     local_merge_result,
-                     syncer_merge_result);
+  last_start_callback_.Run(result, local_merge_result, syncer_merge_result);
 }
 
 // * -> NOT_RUNNING
@@ -95,19 +99,6 @@ void FakeDataTypeController::Stop() {
     // error.  We should probably find a way to use the real code and mock out
     // unnecessary pieces.
     SimulateModelLoadFinishing();
-  }
-
-  // The DTM still expects |last_start_callback_| to be called back.
-  if (!last_start_callback_.is_null()) {
-    syncer::SyncError error(FROM_HERE,
-                            syncer::SyncError::DATATYPE_ERROR,
-                            "Fake error",
-                            type_);
-    syncer::SyncMergeResult local_merge_result(type_);
-    local_merge_result.set_error(error);
-    last_start_callback_.Run(ABORTED,
-                             local_merge_result,
-                             syncer::SyncMergeResult(type_));
   }
 }
 
@@ -131,10 +122,16 @@ DataTypeController::State FakeDataTypeController::state() const {
   return state_;
 }
 
-void FakeDataTypeController::OnSingleDatatypeUnrecoverableError(
-    const tracked_objects::Location& from_here,
-    const std::string& message) {
-  ADD_FAILURE() << message;
+void FakeDataTypeController::OnSingleDataTypeUnrecoverableError(
+    const syncer::SyncError& error) {
+  syncer::SyncMergeResult local_merge_result(type());
+  local_merge_result.set_error(error);
+  last_start_callback_.Run(
+      RUNTIME_ERROR, local_merge_result, syncer::SyncMergeResult(type_));
+}
+
+bool FakeDataTypeController::ReadyForStart() const {
+  return ready_for_start_;
 }
 
 void FakeDataTypeController::SetDelayModelLoad() {
@@ -151,4 +148,8 @@ void FakeDataTypeController::SimulateModelLoadFinishing() {
   model_load_callback_.Reset();
 }
 
-}  // namespace browser_sync
+void FakeDataTypeController::SetReadyForStart(bool ready) {
+  ready_for_start_ = ready;
+}
+
+}  // namespace sync_driver

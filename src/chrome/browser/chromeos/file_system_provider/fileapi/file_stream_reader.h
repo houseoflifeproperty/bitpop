@@ -7,17 +7,15 @@
 
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "webkit/browser/blob/file_stream_reader.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
-namespace fileapi {
-class AsyncFileUtil;
-}  // namespace fileapi
-
 namespace chromeos {
 namespace file_system_provider {
 
+struct EntryMetadata;
 class ProvidedFileSystemInterface;
 
 // Implements a streamed file reader. It is lazily initialized by the first call
@@ -28,7 +26,7 @@ class FileStreamReader : public webkit_blob::FileStreamReader {
       void(base::WeakPtr<ProvidedFileSystemInterface> file_system,
            const base::FilePath& file_path,
            int file_handle,
-           base::File::Error result)> InitializeCompletedCallback;
+           base::File::Error result)> OpenFileCompletedCallback;
 
   FileStreamReader(fileapi::FileSystemContext* context,
                    const fileapi::FileSystemURL& url,
@@ -45,19 +43,32 @@ class FileStreamReader : public webkit_blob::FileStreamReader {
       const net::Int64CompletionCallback& callback) OVERRIDE;
 
  private:
+  // State of the file stream reader.
+  enum State { NOT_INITIALIZED, INITIALIZING, INITIALIZED, FAILED };
+
+  // Called when Read() operation is completed with either a success of an
+  // error.
+  void OnReadCompleted(net::CompletionCallback callback, int result);
+
   // Initializes the reader by opening the file. When completed with success,
   // runs the |pending_closure|. Otherwise, calls the |error_callback|.
   void Initialize(const base::Closure& pending_closure,
                   const net::Int64CompletionCallback& error_callback);
 
-  // Called when initializing is completed with either a success or an error.
-  void OnInitializeCompleted(
+  // Called when opening a file is completed with either a success or an error.
+  void OnOpenFileCompleted(
       const base::Closure& pending_closure,
       const net::Int64CompletionCallback& error_callback,
       base::WeakPtr<ProvidedFileSystemInterface> file_system,
       const base::FilePath& file_path,
       int file_handle,
       base::File::Error result);
+
+  // Called when initialization is completed with either a success or an error.
+  void OnInitializeCompleted(const base::Closure& pending_closure,
+                             const net::Int64CompletionCallback& error_callback,
+                             const EntryMetadata& metadata,
+                             base::File::Error result);
 
   // Called when a file system provider returns chunk of read data. Note, that
   // this may be called multiple times per single Read() call, as long as
@@ -72,8 +83,8 @@ class FileStreamReader : public webkit_blob::FileStreamReader {
   // or an error.
   void OnGetMetadataForGetLengthReceived(
       const net::Int64CompletionCallback& callback,
-      base::File::Error result,
-      const base::File::Info& file_info);
+      const EntryMetadata& metadata,
+      base::File::Error result);
 
   // Same as Read(), but called after initializing is completed.
   void ReadAfterInitialized(scoped_refptr<net::IOBuffer> buffer,
@@ -87,6 +98,7 @@ class FileStreamReader : public webkit_blob::FileStreamReader {
   int64 current_offset_;
   int64 current_length_;
   base::Time expected_modification_time_;
+  State state_;
 
   // Set during initialization (in case of a success).
   base::WeakPtr<ProvidedFileSystemInterface> file_system_;

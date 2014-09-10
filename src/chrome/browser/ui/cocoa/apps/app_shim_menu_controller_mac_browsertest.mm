@@ -18,6 +18,7 @@
 #include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_switches.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension.h"
 
 namespace {
@@ -147,7 +148,10 @@ IN_PROC_BROWSER_TEST_F(AppShimMenuControllerBrowserTest,
                     object:app_1_app_window->GetNativeWindow()];
 
   CheckHasAppMenus(app_1_);
-  ExtensionService::UninstallExtensionHelper(extension_service(), app_1_->id());
+  ExtensionService::UninstallExtensionHelper(
+      extension_service(),
+      app_1_->id(),
+      extensions::UNINSTALL_REASON_FOR_TESTING);
   CheckNoAppMenus();
 }
 

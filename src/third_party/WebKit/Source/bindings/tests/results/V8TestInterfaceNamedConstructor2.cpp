@@ -7,10 +7,10 @@
 #include "config.h"
 #include "V8TestInterfaceNamedConstructor2.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/V8DOMConfiguration.h"
-#include "bindings/v8/V8HiddenValue.h"
-#include "bindings/v8/V8ObjectConstructor.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/V8DOMConfiguration.h"
+#include "bindings/core/v8/V8HiddenValue.h"
+#include "bindings/core/v8/V8ObjectConstructor.h"
 #include "core/dom/ContextFeatures.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalDOMWindow.h"
@@ -19,7 +19,7 @@
 #include "wtf/GetPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 static void initializeScriptWrappableForInterface(TestInterfaceNamedConstructor2* object)
 {
@@ -29,15 +29,15 @@ static void initializeScriptWrappableForInterface(TestInterfaceNamedConstructor2
         ASSERT_NOT_REACHED();
 }
 
-} // namespace WebCore
+} // namespace blink
 
-void webCoreInitializeScriptWrappableForInterface(WebCore::TestInterfaceNamedConstructor2* object)
+void webCoreInitializeScriptWrappableForInterface(blink::TestInterfaceNamedConstructor2* object)
 {
-    WebCore::initializeScriptWrappableForInterface(object);
+    blink::initializeScriptWrappableForInterface(object);
 }
 
-namespace WebCore {
-const WrapperTypeInfo V8TestInterfaceNamedConstructor2::wrapperTypeInfo = { gin::kEmbedderBlink, V8TestInterfaceNamedConstructor2::domTemplate, V8TestInterfaceNamedConstructor2::derefObject, 0, 0, 0, V8TestInterfaceNamedConstructor2::installPerContextEnabledMethods, 0, WrapperTypeObjectPrototype, RefCountedObject };
+namespace blink {
+const WrapperTypeInfo V8TestInterfaceNamedConstructor2::wrapperTypeInfo = { gin::kEmbedderBlink, V8TestInterfaceNamedConstructor2::domTemplate, V8TestInterfaceNamedConstructor2::derefObject, 0, 0, 0, V8TestInterfaceNamedConstructor2::installConditionallyEnabledMethods, 0, WrapperTypeObjectPrototype, RefCountedObject };
 
 namespace TestInterfaceNamedConstructor2V8Internal {
 
@@ -45,31 +45,21 @@ template <typename T> void V8_USE(T) { }
 
 } // namespace TestInterfaceNamedConstructor2V8Internal
 
-const WrapperTypeInfo V8TestInterfaceNamedConstructor2Constructor::wrapperTypeInfo = { gin::kEmbedderBlink, V8TestInterfaceNamedConstructor2Constructor::domTemplate, V8TestInterfaceNamedConstructor2::derefObject, 0, 0, 0, V8TestInterfaceNamedConstructor2::installPerContextEnabledMethods, 0, WrapperTypeObjectPrototype, RefCountedObject };
+const WrapperTypeInfo V8TestInterfaceNamedConstructor2Constructor::wrapperTypeInfo = { gin::kEmbedderBlink, V8TestInterfaceNamedConstructor2Constructor::domTemplate, V8TestInterfaceNamedConstructor2::derefObject, 0, 0, 0, V8TestInterfaceNamedConstructor2::installConditionallyEnabledMethods, 0, WrapperTypeObjectPrototype, RefCountedObject };
 
 static void V8TestInterfaceNamedConstructor2ConstructorCallback(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    v8::Isolate* isolate = info.GetIsolate();
     if (!info.IsConstructCall()) {
-        throwTypeError(ExceptionMessages::constructorNotCallableAsFunction("Audio"), isolate);
+        V8ThrowException::throwTypeError(ExceptionMessages::constructorNotCallableAsFunction("Audio"), info.GetIsolate());
         return;
     }
 
-    if (ConstructorMode::current(isolate) == ConstructorMode::WrapExistingObject) {
+    if (ConstructorMode::current(info.GetIsolate()) == ConstructorMode::WrapExistingObject) {
         v8SetReturnValue(info, info.Holder());
         return;
     }
-
-    Document* documentPtr = currentDOMWindow(isolate)->document();
-    ASSERT(documentPtr);
-    Document& document = *documentPtr;
-
-    // Make sure the document is added to the DOM Node map. Otherwise, the TestInterfaceNamedConstructor2 instance
-    // may end up being the only node in the map and get garbage-collected prematurely.
-    toV8(documentPtr, info.Holder(), isolate);
-
     if (UNLIKELY(info.Length() < 1)) {
-        throwMinimumArityTypeErrorForConstructor("TestInterfaceNamedConstructor2", 1, info.Length(), info.GetIsolate());
+        V8ThrowException::throwException(createMinimumArityTypeErrorForConstructor("TestInterfaceNamedConstructor2", 1, info.Length(), info.GetIsolate()), info.GetIsolate());
         return;
     }
     V8StringResource<> stringArg;
@@ -77,9 +67,8 @@ static void V8TestInterfaceNamedConstructor2ConstructorCallback(const v8::Functi
         TOSTRING_VOID_INTERNAL(stringArg, info[0]);
     }
     RefPtr<TestInterfaceNamedConstructor2> impl = TestInterfaceNamedConstructor2::createForJSConstructor(stringArg);
-
     v8::Handle<v8::Object> wrapper = info.Holder();
-    V8DOMWrapper::associateObjectWithWrapper<V8TestInterfaceNamedConstructor2>(impl.release(), &V8TestInterfaceNamedConstructor2Constructor::wrapperTypeInfo, wrapper, isolate, WrapperConfiguration::Independent);
+    V8DOMWrapper::associateObjectWithWrapper<V8TestInterfaceNamedConstructor2>(impl.release(), &V8TestInterfaceNamedConstructor2Constructor::wrapperTypeInfo, wrapper, info.GetIsolate(), WrapperConfiguration::Independent);
     v8SetReturnValue(info, wrapper);
 }
 
@@ -91,7 +80,7 @@ v8::Handle<v8::FunctionTemplate> V8TestInterfaceNamedConstructor2Constructor::do
     if (!result.IsEmpty())
         return result;
 
-    TRACE_EVENT_SCOPED_SAMPLING_STATE("Blink", "BuildDOMTemplate");
+    TRACE_EVENT_SCOPED_SAMPLING_STATE("blink", "BuildDOMTemplate");
     result = v8::FunctionTemplate::New(isolate, V8TestInterfaceNamedConstructor2ConstructorCallback);
     v8::Local<v8::ObjectTemplate> instanceTemplate = result->InstanceTemplate();
     instanceTemplate->SetInternalFieldCount(V8TestInterfaceNamedConstructor2::internalFieldCount);
@@ -101,7 +90,7 @@ v8::Handle<v8::FunctionTemplate> V8TestInterfaceNamedConstructor2Constructor::do
     return result;
 }
 
-static void configureV8TestInterfaceNamedConstructor2Template(v8::Handle<v8::FunctionTemplate> functionTemplate, v8::Isolate* isolate)
+static void installV8TestInterfaceNamedConstructor2Template(v8::Handle<v8::FunctionTemplate> functionTemplate, v8::Isolate* isolate)
 {
     functionTemplate->ReadOnlyPrototype();
 
@@ -120,7 +109,7 @@ static void configureV8TestInterfaceNamedConstructor2Template(v8::Handle<v8::Fun
 
 v8::Handle<v8::FunctionTemplate> V8TestInterfaceNamedConstructor2::domTemplate(v8::Isolate* isolate)
 {
-    return V8DOMConfiguration::domClassTemplate(isolate, const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), configureV8TestInterfaceNamedConstructor2Template);
+    return V8DOMConfiguration::domClassTemplate(isolate, const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), installV8TestInterfaceNamedConstructor2Template);
 }
 
 bool V8TestInterfaceNamedConstructor2::hasInstance(v8::Handle<v8::Value> v8Value, v8::Isolate* isolate)
@@ -135,7 +124,7 @@ v8::Handle<v8::Object> V8TestInterfaceNamedConstructor2::findInstanceInPrototype
 
 TestInterfaceNamedConstructor2* V8TestInterfaceNamedConstructor2::toNativeWithTypeCheck(v8::Isolate* isolate, v8::Handle<v8::Value> value)
 {
-    return hasInstance(value, isolate) ? fromInternalPointer(v8::Handle<v8::Object>::Cast(value)->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex)) : 0;
+    return hasInstance(value, isolate) ? fromInternalPointer(blink::toInternalPointer(v8::Handle<v8::Object>::Cast(value))) : 0;
 }
 
 v8::Handle<v8::Object> wrap(TestInterfaceNamedConstructor2* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
@@ -160,14 +149,14 @@ v8::Handle<v8::Object> V8TestInterfaceNamedConstructor2::createWrapper(PassRefPt
     if (UNLIKELY(wrapper.IsEmpty()))
         return wrapper;
 
-    installPerContextEnabledProperties(wrapper, impl.get(), isolate);
+    installConditionallyEnabledProperties(wrapper, isolate);
     V8DOMWrapper::associateObjectWithWrapper<V8TestInterfaceNamedConstructor2>(impl, &wrapperTypeInfo, wrapper, isolate, WrapperConfiguration::Independent);
     return wrapper;
 }
 
-void V8TestInterfaceNamedConstructor2::derefObject(void* object)
+void V8TestInterfaceNamedConstructor2::derefObject(ScriptWrappableBase* internalPointer)
 {
-    fromInternalPointer(object)->deref();
+    fromInternalPointer(internalPointer)->deref();
 }
 
 template<>
@@ -176,4 +165,4 @@ v8::Handle<v8::Value> toV8NoInline(TestInterfaceNamedConstructor2* impl, v8::Han
     return toV8(impl, creationContext, isolate);
 }
 
-} // namespace WebCore
+} // namespace blink

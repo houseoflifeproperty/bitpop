@@ -23,6 +23,7 @@
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "third_party/WebKit/public/web/WebDragStatus.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/gfx/ipc/gfx_param_traits.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
@@ -35,12 +36,6 @@
 
 
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebDragStatus, blink::WebDragStatusLast)
-
-IPC_STRUCT_BEGIN(BrowserPluginHostMsg_AutoSize_Params)
-  IPC_STRUCT_MEMBER(bool, enable)
-  IPC_STRUCT_MEMBER(gfx::Size, max_size)
-  IPC_STRUCT_MEMBER(gfx::Size, min_size)
-IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(BrowserPluginHostMsg_ResizeGuest_Params)
   // Indicates whether the parameters have been populated or not.
@@ -59,8 +54,6 @@ IPC_STRUCT_BEGIN(BrowserPluginHostMsg_Attach_Params)
   IPC_STRUCT_MEMBER(bool, focused)
   IPC_STRUCT_MEMBER(bool, visible)
   IPC_STRUCT_MEMBER(bool, opaque)
-  IPC_STRUCT_MEMBER(GURL, embedder_frame_url)
-  IPC_STRUCT_MEMBER(BrowserPluginHostMsg_AutoSize_Params, auto_size_params)
   IPC_STRUCT_MEMBER(BrowserPluginHostMsg_ResizeGuest_Params,
                     resize_guest_params)
   IPC_STRUCT_MEMBER(gfx::Point, origin)
@@ -122,14 +115,6 @@ IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_ExtendSelectionAndDelete,
                     int /* before */,
                     int /* after */)
 
-// This message is sent to the browser process to enable or disable autosize
-// mode.
-IPC_MESSAGE_ROUTED3(
-    BrowserPluginHostMsg_SetAutoSize,
-    int /* instance_id */,
-    BrowserPluginHostMsg_AutoSize_Params /* auto_size_params */,
-    BrowserPluginHostMsg_ResizeGuest_Params /* resize_guest_params */)
-
 // This message is sent to the browser process to indicate that a BrowserPlugin
 // has taken ownership of the lifetime of the guest of the given |instance_id|.
 // |params| is the state of the BrowserPlugin taking ownership of
@@ -154,7 +139,7 @@ IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_HandleInputEvent,
 IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_CopyFromCompositingSurfaceAck,
                     int /* instance_id */,
                     int /* request_id */,
-                    SkBitmap);
+                    SkBitmap)
 
 // Notify the guest renderer that some resources given to the embededer
 // are not used any more.
@@ -213,7 +198,7 @@ IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_ResizeGuest,
 
 // This message is sent in response to a completed attachment of a guest
 // to a BrowserPlugin.
-IPC_MESSAGE_CONTROL1(BrowserPluginMsg_Attach_ACK, int /* instance_id */);
+IPC_MESSAGE_CONTROL1(BrowserPluginMsg_Attach_ACK, int /* instance_id */)
 
 // Once the swapped out guest RenderView has been created in the embedder render
 // process, the browser process informs the embedder of its routing ID.

@@ -14,6 +14,7 @@ import subprocess
 import sys
 import gyp
 import gyp.common
+from gyp.common import OrderedSet
 import gyp.msvs_emulation
 import gyp.MSVSUtil as MSVSUtil
 import gyp.xcode_emulation
@@ -529,7 +530,7 @@ class NinjaWriter:
   def WriteWinIdlFiles(self, spec, prebuild):
     """Writes rules to match MSVS's implicit idl handling."""
     assert self.flavor == 'win'
-    if self.msvs_settings.HasExplicitIdlRules(spec):
+    if self.msvs_settings.HasExplicitIdlRulesOrActions(spec):
       return []
     outputs = []
     for source in filter(lambda x: x.endswith('.idl'), spec['sources']):
@@ -598,8 +599,9 @@ class NinjaWriter:
       is_cygwin = (self.msvs_settings.IsRuleRunUnderCygwin(action)
                    if self.flavor == 'win' else False)
       args = action['action']
+      pool = 'console' if int(action.get('ninja_use_console', 0)) else None
       rule_name, _ = self.WriteNewNinjaRule(name, args, description,
-                                            is_cygwin, env=env)
+                                            is_cygwin, env, pool)
 
       inputs = [self.GypPathToNinja(i, env) for i in action['inputs']]
       if int(action.get('process_outputs_as_sources', False)):
@@ -637,8 +639,9 @@ class NinjaWriter:
           ('%s ' + generator_default_variables['RULE_INPUT_PATH']) % name)
       is_cygwin = (self.msvs_settings.IsRuleRunUnderCygwin(rule)
                    if self.flavor == 'win' else False)
+      pool = 'console' if int(rule.get('ninja_use_console', 0)) else None
       rule_name, args = self.WriteNewNinjaRule(
-          name, args, description, is_cygwin, env=env)
+          name, args, description, is_cygwin, env, pool)
 
       # TODO: if the command references the outputs directly, we should
       # simplify it to just use $out.
@@ -1426,7 +1429,7 @@ class NinjaWriter:
       values = []
     ninja_file.variable(var, ' '.join(values))
 
-  def WriteNewNinjaRule(self, name, args, description, is_cygwin, env):
+  def WriteNewNinjaRule(self, name, args, description, is_cygwin, env, pool):
     """Write out a new ninja "rule" statement for a given command.
 
     Returns the name of the new rule, and a copy of |args| with variables
@@ -1484,7 +1487,7 @@ class NinjaWriter:
     # GYP rules/actions express being no-ops by not touching their outputs.
     # Avoid executing downstream dependencies in this case by specifying
     # restat=1 to ninja.
-    self.ninja.rule(rule_name, command, description, restat=True,
+    self.ninja.rule(rule_name, command, description, restat=True, pool=pool,
                     rspfile=rspfile, rspfile_content=rspfile_content)
     self.ninja.newline()
 
@@ -1777,8 +1780,15 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
       wrappers[key_prefix] = os.path.join(build_to_root, value)
 
   if flavor == 'win':
+    configs = [target_dicts[qualified_target]['configurations'][config_name]
+               for qualified_target in target_list]
+    shared_system_includes = None
+    if not generator_flags.get('ninja_use_custom_environment_files', 0):
+      shared_system_includes = \
+          gyp.msvs_emulation.ExtractSharedMSVSSystemIncludes(
+              configs, generator_flags)
     cl_paths = gyp.msvs_emulation.GenerateEnvironmentFiles(
-        toplevel_build, generator_flags, OpenOutput)
+        toplevel_build, generator_flags, shared_system_includes, OpenOutput)
     for arch, path in cl_paths.iteritems():
       if clang_cl:
         # If we have selected clang-cl, use that instead.

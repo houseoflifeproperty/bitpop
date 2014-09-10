@@ -34,7 +34,7 @@
 #include "platform/animation/TimingFunction.h"
 #include "public/platform/WebAnimation.h"
 
-namespace WebCore {
+namespace blink {
 
 class CompositorAnimationsImpl {
 private:
@@ -56,4 +56,4 @@ private:
     friend class AnimationCompositorAnimationsTest;
 };
 
-} // WebCore
+} // namespace blink

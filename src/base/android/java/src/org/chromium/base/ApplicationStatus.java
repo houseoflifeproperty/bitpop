@@ -12,9 +12,9 @@ import android.os.Bundle;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Provides information about the current activity's status, and a way
@@ -51,7 +51,6 @@ public class ApplicationStatus {
 
     private static Application sApplication;
 
-    private static Object sCachedApplicationStateLock = new Object();
     private static Integer sCachedApplicationState;
 
     /** Last activity that was shown (or null if none or it was destroyed). */
@@ -64,7 +63,7 @@ public class ApplicationStatus {
      * A map of which observers listen to state changes from which {@link Activity}.
      */
     private static final Map<Activity, ActivityInfo> sActivityInfo =
-            new ConcurrentHashMap<Activity, ActivityInfo>();
+            new HashMap<Activity, ActivityInfo>();
 
     /**
      * A list of observers to be notified when any {@link Activity} has a state change.
@@ -188,9 +187,7 @@ public class ApplicationStatus {
         }
 
         // Invalidate the cached application state.
-        synchronized (sCachedApplicationStateLock) {
-            sCachedApplicationState = null;
-        }
+        sCachedApplicationState = null;
 
         ActivityInfo info = sActivityInfo.get(activity);
         info.setStatus(newState);
@@ -238,6 +235,7 @@ public class ApplicationStatus {
      * @return A {@link List} of all non-destroyed {@link Activity}s.
      */
     public static List<WeakReference<Activity>> getRunningActivities() {
+        ThreadUtils.assertOnUiThread();
         List<WeakReference<Activity>> activities = new ArrayList<WeakReference<Activity>>();
         for (Activity activity : sActivityInfo.keySet()) {
             activities.add(new WeakReference<Activity>(activity));
@@ -304,11 +302,7 @@ public class ApplicationStatus {
      * @return The state of the application (see {@link ApplicationState}).
      */
     public static int getStateForApplication() {
-        synchronized (sCachedApplicationStateLock) {
-            if (sCachedApplicationState == null) {
-                sCachedApplicationState = determineApplicationState();
-            }
-        }
+        if (sCachedApplicationState == null) sCachedApplicationState = determineApplicationState();
 
         return sCachedApplicationState.intValue();
     }

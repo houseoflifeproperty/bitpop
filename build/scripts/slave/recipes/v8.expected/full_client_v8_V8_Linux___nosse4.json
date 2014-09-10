@@ -3,40 +3,40 @@
     "cmd": [
       "python",
       "-u",
-      "[DEPOT_TOOLS]/gclient.py",
-      "config",
+      "[BUILD]/scripts/slave/bot_update.py",
+      "--master",
+      "client.v8",
+      "--builder",
+      "V8 Linux - nosse4",
+      "--slave",
+      "TestSlavename",
       "--spec",
-      "cache_dir = None\nsolutions = [{'custom_deps': {'v8/test/mozilla/data': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/deps/third_party/mozilla-tests'}, 'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
-    ],
-    "name": "gclient setup"
-  },
-  {
-    "abort_on_failure": true,
-    "cmd": [
-      "python",
-      "-u",
-      "[DEPOT_TOOLS]/gclient.py",
-      "sync",
-      "--nohooks",
-      "--delete_unversioned_trees",
-      "--force",
-      "--verbose",
+      "cache_dir = None\nsolutions = [{'custom_deps': {'v8/test/mozilla/data': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/deps/third_party/mozilla-tests'}, 'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]",
+      "--revision_mapping_file",
+      "{\"v8\": \"got_revision\"}",
+      "--output_json",
+      "/path/to/tmp/json",
       "--revision",
-      "v8@20123",
-      "--output-json",
-      "/path/to/tmp/json"
+      "v8@bleeding_edge:20123",
+      "--no_shallow"
     ],
-    "name": "gclient sync",
+    "name": "bot_update",
     "~followup_annotations": [
+      "@@@STEP_TEXT@Some step text@@@",
       "@@@STEP_LOG_LINE@json.output@{@@@",
-      "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
-      "@@@STEP_LOG_LINE@json.output@    \"v8/\": {@@@",
-      "@@@STEP_LOG_LINE@json.output@      \"revision\": 50110@@@",
-      "@@@STEP_LOG_LINE@json.output@    }@@@",
-      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"did_run\": true, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_failure\": false, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_root\": \"v8\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"properties\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_revision\": 50110, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_revision_git\": \"f2cbea7e89a45f46819777bb78a1f5bd0241f64c\"@@@",
+      "@@@STEP_LOG_LINE@json.output@  }, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"root\": \"v8\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"step_text\": \"Some step text\"@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@",
-      "@@@SET_BUILD_PROPERTY@got_revision@50110@@@"
+      "@@@SET_BUILD_PROPERTY@got_revision@50110@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision_git@\"f2cbea7e89a45f46819777bb78a1f5bd0241f64c\"@@@"
     ]
   },
   {
@@ -78,7 +78,6 @@
     ]
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -97,7 +96,6 @@
     "name": "extract build"
   },
   {
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -107,7 +105,7 @@
       "--arch",
       "ia32",
       "--testname",
-      "mjsunit fuzz-natives cctest message preparser",
+      "mjsunit fuzz-natives cctest message preparser base-unittests compiler-unittests",
       "--shell_flags=\"--noenable-sse4-1\"",
       "--flaky-tests",
       "skip",
@@ -118,8 +116,6 @@
     "name": "Check"
   },
   {
-    "always_run": true,
-    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -129,7 +125,7 @@
       "--arch",
       "ia32",
       "--testname",
-      "mjsunit fuzz-natives cctest message preparser",
+      "mjsunit fuzz-natives cctest message preparser base-unittests compiler-unittests",
       "--shell_flags=\"--noenable-sse4-1\"",
       "--flaky-tests",
       "run",
@@ -140,26 +136,6 @@
     "name": "Check - flaky"
   },
   {
-    "always_run": true,
-    "cmd": [
-      "python",
-      "-u",
-      "[BUILD]/scripts/slave/v8/v8testing.py",
-      "--target",
-      "Release",
-      "--arch",
-      "ia32",
-      "--testname",
-      "test262",
-      "--shell_flags=\"--noenable-sse4-1\"",
-      "--json-test-results",
-      "/path/to/tmp/json"
-    ],
-    "cwd": "[SLAVE_BUILD]/v8",
-    "name": "Test262"
-  },
-  {
-    "always_run": true,
     "cmd": [
       "python",
       "-u",

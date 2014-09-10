@@ -26,6 +26,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/autofill/content/browser/content_autofill_driver.h"
@@ -102,14 +103,17 @@ class AutofillManagerTestDelegateImpl
 
   // autofill::AutofillManagerTestDelegate:
   virtual void DidPreviewFormData() OVERRIDE {
+    ASSERT_TRUE(loop_runner_->loop_running());
     loop_runner_->Quit();
   }
 
   virtual void DidFillFormData() OVERRIDE {
+    ASSERT_TRUE(loop_runner_->loop_running());
     loop_runner_->Quit();
   }
 
   virtual void DidShowSuggestions() OVERRIDE {
+    ASSERT_TRUE(loop_runner_->loop_running());
     loop_runner_->Quit();
   }
 
@@ -211,9 +215,16 @@ class AutofillInteractiveTest : public InProcessBrowserTest {
         ContentAutofillDriver::FromWebContents(web_contents);
     AutofillManager* autofill_manager = autofill_driver->autofill_manager();
     autofill_manager->SetTestDelegate(&test_delegate_);
+
+    // If the mouse happened to be over where the suggestions are shown, then
+    // the preview will show up and will fail the tests. We need to give it a
+    // point that's within the browser frame, or else the method hangs.
+    gfx::Point reset_mouse(GetWebContents()->GetContainerBounds().origin());
+    reset_mouse = gfx::Point(reset_mouse.x() + 5, reset_mouse.y() + 5);
+    ASSERT_TRUE(ui_test_utils::SendMouseMoveSync(reset_mouse));
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     // Make sure to close any showing popups prior to tearing down the UI.
     content::WebContents* web_contents = GetWebContents();
     AutofillManager* autofill_manager = ContentAutofillDriver::FromWebContents(
@@ -336,6 +347,45 @@ class AutofillInteractiveTest : public InProcessBrowserTest {
     ASSERT_TRUE(result);
   }
 
+  // Simulates a click on the middle of the DOM element with the given |id|.
+  void ClickElementWithId(const std::string& id) {
+    int x;
+    ASSERT_TRUE(content::ExecuteScriptAndExtractInt(
+        GetRenderViewHost(),
+        "var bounds = document.getElementById('" +
+            id +
+            "').getBoundingClientRect();"
+            "domAutomationController.send("
+            "    Math.floor(bounds.left + bounds.width / 2));",
+        &x));
+    int y;
+    ASSERT_TRUE(content::ExecuteScriptAndExtractInt(
+        GetRenderViewHost(),
+        "var bounds = document.getElementById('" +
+            id +
+            "').getBoundingClientRect();"
+            "domAutomationController.send("
+            "    Math.floor(bounds.top + bounds.height / 2));",
+        &y));
+    content::SimulateMouseClickAt(GetWebContents(),
+                                  0,
+                                  blink::WebMouseEvent::ButtonLeft,
+                                  gfx::Point(x, y));
+  }
+
+  void ClickFirstNameField() {
+    ASSERT_NO_FATAL_FAILURE(ClickElementWithId("firstname"));
+  }
+
+  // Make a pointless round trip to the renderer, giving the popup a chance to
+  // show if it's going to. If it does show, an assert in
+  // AutofillManagerTestDelegateImpl will trigger.
+  void MakeSurePopupDoesntAppear() {
+    int unused;
+    ASSERT_TRUE(content::ExecuteScriptAndExtractInt(
+        GetRenderViewHost(), "domAutomationController.send(42)", &unused));
+  }
+
   void ExpectFilledTestForm() {
     ExpectFieldValue("firstname", "Milton");
     ExpectFieldValue("lastname", "Waddams");
@@ -403,6 +453,8 @@ class AutofillInteractiveTest : public InProcessBrowserTest {
     // The form should be filled.
     ExpectFilledTestForm();
   }
+
+  AutofillManagerTestDelegateImpl* test_delegate() { return &test_delegate_; }
 
  private:
   AutofillManagerTestDelegateImpl test_delegate_;
@@ -481,6 +533,76 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillSelectViaTab) {
 
   // The form should be filled.
   ExpectFilledTestForm();
+}
+
+IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillViaClick) {
+  CreateTestProfile();
+
+  // Load the test page.
+  ASSERT_NO_FATAL_FAILURE(ui_test_utils::NavigateToURL(
+      browser(), GURL(std::string(kDataURIPrefix) + kTestFormString)));
+  // Focus a fillable field.
+  ASSERT_NO_FATAL_FAILURE(FocusFirstNameField());
+
+  // Now click it.
+  test_delegate()->Reset();
+  ASSERT_NO_FATAL_FAILURE(ClickFirstNameField());
+  test_delegate()->Wait();
+
+  // Press the down arrow to select the suggestion and preview the autofilled
+  // form.
+  SendKeyToPopupAndWait(ui::VKEY_DOWN);
+
+  // Press Enter to accept the autofill suggestions.
+  SendKeyToPopupAndWait(ui::VKEY_RETURN);
+
+  // The form should be filled.
+  ExpectFilledTestForm();
+}
+
+// Makes sure that the first click does *not* activate the popup.
+IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, DontAutofillForFirstClick) {
+  CreateTestProfile();
+
+  // Load the test page.
+  ASSERT_NO_FATAL_FAILURE(ui_test_utils::NavigateToURL(
+      browser(), GURL(std::string(kDataURIPrefix) + kTestFormString)));
+
+  // Click the first name field while it's out of focus, then twiddle our thumbs
+  // a bit. If a popup were to show, it would hit the asserts in
+  // AutofillManagerTestDelegateImpl while we're wasting time.
+  ASSERT_NO_FATAL_FAILURE(ClickFirstNameField());
+  ASSERT_NO_FATAL_FAILURE(MakeSurePopupDoesntAppear());
+
+  // The second click should activate the popup since the first click focused
+  // the field.
+  test_delegate()->Reset();
+  ASSERT_NO_FATAL_FAILURE(ClickFirstNameField());
+  test_delegate()->Wait();
+}
+
+// Makes sure that clicking outside the focused field doesn't activate
+// the popup.
+IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, DontAutofillForOutsideClick) {
+  CreateTestProfile();
+
+  // Load the test page.
+  ASSERT_NO_FATAL_FAILURE(ui_test_utils::NavigateToURL(
+      browser(),
+      GURL(std::string(kDataURIPrefix) + kTestFormString +
+           "<button disabled id='disabled-button'>Cant click this</button>")));
+
+  ASSERT_NO_FATAL_FAILURE(FocusFirstNameField());
+
+  // Clicking a disabled button will generate a mouse event but focus doesn't
+  // change. This tests that autofill can handle a mouse event outside a focused
+  // input *without* showing the popup.
+  ASSERT_NO_FATAL_FAILURE(ClickElementWithId("disabled-button"));
+  ASSERT_NO_FATAL_FAILURE(MakeSurePopupDoesntAppear());
+
+  test_delegate()->Reset();
+  ASSERT_NO_FATAL_FAILURE(ClickFirstNameField());
+  test_delegate()->Wait();
 }
 
 // Test that a field is still autofillable after the previously autofilled
@@ -1007,7 +1129,7 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillAfterTranslate) {
   infobar_observer.Wait();
   InfoBarService* infobar_service =
       InfoBarService::FromWebContents(GetWebContents());
-  TranslateInfoBarDelegate* delegate =
+  translate::TranslateInfoBarDelegate* delegate =
       infobar_service->infobar_at(0)->delegate()->AsTranslateInfoBarDelegate();
   ASSERT_TRUE(delegate);
   EXPECT_EQ(translate::TRANSLATE_STEP_BEFORE_TRANSLATE,
@@ -1034,7 +1156,13 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillAfterTranslate) {
 // The high level key presses execute the following: Select the first text
 // field, invoke the autofill popup list, select the first profile within the
 // list, and commit to the profile to populate the form.
-IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, ComparePhoneNumbers) {
+// Flakily times out on windows. http://crbug.com/390564
+#if defined(OS_WIN)
+#define MAYBE_ComparePhoneNumbers DISABLED_ComparePhoneNumbers
+#else
+#define MAYBE_ComparePhoneNumbers ComparePhoneNumbers
+#endif
+IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, MAYBE_ComparePhoneNumbers) {
   ASSERT_TRUE(test_server()->Start());
 
   AutofillProfile profile;

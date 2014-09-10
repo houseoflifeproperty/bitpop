@@ -31,11 +31,11 @@
 #ifndef DOMFileSystemSync_h
 #define DOMFileSystemSync_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/filesystem/DOMFileSystemBase.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class DirectoryEntrySync;
 class File;

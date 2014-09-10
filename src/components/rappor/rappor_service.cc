@@ -35,10 +35,25 @@ const char kRapporRolloutFieldTrialName[] = "RapporRollout";
 // Constant for the finch parameter name for the server URL
 const char kRapporRolloutServerUrlParam[] = "ServerUrl";
 
-GURL GetServerUrl() {
-  return GURL(chrome_variations::GetVariationParamValue(
+// Constant for the finch parameter name for the server URL
+const char kRapporRolloutRequireUmaParam[] = "RequireUma";
+
+// The rappor server's URL.
+const char kDefaultServerUrl[] = "https://clients4.google.com/rappor";
+
+GURL GetServerUrl(bool metrics_enabled) {
+  bool require_uma = variations::GetVariationParamValue(
       kRapporRolloutFieldTrialName,
-      kRapporRolloutServerUrlParam));
+      kRapporRolloutRequireUmaParam) != "False";
+  if (!metrics_enabled && require_uma)
+    return GURL();  // Invalid URL disables Rappor.
+  std::string server_url = variations::GetVariationParamValue(
+      kRapporRolloutFieldTrialName,
+      kRapporRolloutServerUrlParam);
+  if (!server_url.empty())
+    return GURL(server_url);
+  else
+    return GURL(kDefaultServerUrl);
 }
 
 const RapporParameters kRapporParametersForType[NUM_RAPPOR_TYPES] = {
@@ -61,10 +76,15 @@ RapporService::~RapporService() {
 }
 
 void RapporService::Start(PrefService* pref_service,
-                          net::URLRequestContextGetter* request_context) {
-  const GURL server_url = GetServerUrl();
-  if (!server_url.is_valid())
+                          net::URLRequestContextGetter* request_context,
+                          bool metrics_enabled) {
+  const GURL server_url = GetServerUrl(metrics_enabled);
+  if (!server_url.is_valid()) {
+    DVLOG(1) << server_url.spec() << " is invalid. "
+             << "RapporService not started.";
     return;
+  }
+  DVLOG(1) << "RapporService started. Reporting to " << server_url.spec();
   DCHECK(!uploader_);
   LoadSecret(pref_service);
   LoadCohort(pref_service);
@@ -78,11 +98,14 @@ void RapporService::Start(PrefService* pref_service,
 
 void RapporService::OnLogInterval() {
   DCHECK(uploader_);
+  DVLOG(2) << "RapporService::OnLogInterval";
   RapporReports reports;
   if (ExportMetrics(&reports)) {
     std::string log_text;
     bool success = reports.SerializeToString(&log_text);
     DCHECK(success);
+    DVLOG(1) << "RapporService sending a report of "
+             << reports.report_size() << " value(s).";
     uploader_->QueueLog(log_text);
   }
   log_rotation_timer_.Start(FROM_HERE,
@@ -111,6 +134,7 @@ void RapporService::LoadCohort(PrefService* pref_service) {
   // This is the first time the client has started the service (or their
   // preferences were corrupted).  Randomly assign them to a cohort.
   cohort_ = base::RandGenerator(RapporParameters::kMaxCohorts);
+  DVLOG(2) << "Selected a new Rappor cohort: " << cohort_;
   pref_service->SetInteger(prefs::kRapporCohortSeed, cohort_);
 }
 
@@ -126,6 +150,7 @@ void RapporService::LoadSecret(PrefService* pref_service) {
     // one.
   }
 
+  DVLOG(2) << "Generated a new Rappor secret.";
   secret_ = HmacByteVectorGenerator::GenerateEntropyInput();
   base::Base64Encode(secret_, &secret_base64);
   pref_service->SetString(prefs::kRapporSecret, secret_base64);
@@ -163,6 +188,9 @@ void RapporService::RecordSample(const std::string& metric_name,
   if (!IsInitialized())
     return;
   DCHECK_LT(type, NUM_RAPPOR_TYPES);
+  DVLOG(2) << "Recording sample \"" << sample
+           << "\" for metric \"" << metric_name
+           << "\" of type: " << type;
   RecordSampleInternal(metric_name, kRapporParametersForType[type], sample);
 }
 

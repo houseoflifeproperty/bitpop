@@ -27,6 +27,7 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
+#include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/printing/print_dialog_cloud.h"
@@ -36,6 +37,7 @@
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/printing/printer_manager_dialog.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/account_reconcilor_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -54,9 +56,10 @@
 #include "components/cloud_devices/common/cloud_device_description.h"
 #include "components/cloud_devices/common/cloud_devices_urls.h"
 #include "components/cloud_devices/common/printer_description.h"
+#include "components/signin/core/browser/account_reconcilor.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
-#include "components/signin/core/browser/signin_manager_base.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
@@ -120,34 +123,6 @@ enum PrintSettingsBuckets {
   PRINT_SETTINGS_BUCKET_BOUNDARY
 };
 
-enum UiBucketGroups {
-  DESTINATION_SEARCH,
-  GCP_PROMO,
-  UI_BUCKET_GROUP_BOUNDARY
-};
-
-enum PrintDestinationBuckets {
-  DESTINATION_SHOWN,
-  DESTINATION_CLOSED_CHANGED,
-  DESTINATION_CLOSED_UNCHANGED,
-  SIGNIN_PROMPT,
-  SIGNIN_TRIGGERED,
-  PRIVET_DUPLICATE_SELECTED,
-  CLOUD_DUPLICATE_SELECTED,
-  REGISTER_PROMO_SHOWN,
-  REGISTER_PROMO_SELECTED,
-  ACCOUNT_CHANGED,
-  ADD_ACCOUNT_SELECTED,
-  PRINT_DESTINATION_BUCKET_BOUNDARY
-};
-
-enum GcpPromoBuckets {
-  PROMO_SHOWN,
-  PROMO_CLOSED,
-  PROMO_CLICKED,
-  GCP_PROMO_BUCKET_BOUNDARY
-};
-
 void ReportUserActionHistogram(enum UserActionBuckets event) {
   UMA_HISTOGRAM_ENUMERATION("PrintPreview.UserAction", event,
                             USERACTION_BUCKET_BOUNDARY);
@@ -156,16 +131,6 @@ void ReportUserActionHistogram(enum UserActionBuckets event) {
 void ReportPrintSettingHistogram(enum PrintSettingsBuckets setting) {
   UMA_HISTOGRAM_ENUMERATION("PrintPreview.PrintSettings", setting,
                             PRINT_SETTINGS_BUCKET_BOUNDARY);
-}
-
-void ReportPrintDestinationHistogram(enum PrintDestinationBuckets event) {
-  UMA_HISTOGRAM_ENUMERATION("PrintPreview.DestinationAction", event,
-                            PRINT_DESTINATION_BUCKET_BOUNDARY);
-}
-
-void ReportGcpPromoHistogram(enum GcpPromoBuckets event) {
-  UMA_HISTOGRAM_ENUMERATION("PrintPreview.GcpPromo", event,
-                            GCP_PROMO_BUCKET_BOUNDARY);
 }
 
 // Name of a dictionary field holding cloud print related data;
@@ -180,6 +145,11 @@ const char kNumberFormat[] = "numberFormat";
 // Name of a dictionary field specifying whether to print automatically in
 // kiosk mode. See http://crbug.com/31395.
 const char kPrintAutomaticallyInKioskMode[] = "printAutomaticallyInKioskMode";
+// Dictionary field to indicate whether Chrome is running in forced app (app
+// kiosk) mode. It's not the same as desktop Chrome kiosk (the one above).
+const char kAppKioskMode[] = "appKioskMode";
+// Dictionary field to store Cloud Print base URL.
+const char kCloudPrintUrl[] = "cloudPrintUrl";
 #if defined(OS_WIN)
 const char kHidePrintWithSystemDialogLink[] = "hidePrintWithSystemDialogLink";
 #endif
@@ -270,11 +240,14 @@ void ReportPrintSettingsStats(const base::DictionaryValue& settings) {
 
 // Callback that stores a PDF file on disk.
 void PrintToPdfCallback(printing::Metafile* metafile,
-                        const base::FilePath& path) {
+                        const base::FilePath& path,
+                        const base::Closure& pdf_file_saved_closure) {
   DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   metafile->SaveTo(path);
   // |metafile| must be deleted on the UI thread.
   BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, metafile);
+  if (!pdf_file_saved_closure.is_null())
+    pdf_file_saved_closure.Run();
 }
 
 std::string GetDefaultPrinterOnFileThread() {
@@ -558,6 +531,7 @@ PrintPreviewHandler::PrintPreviewHandler()
       manage_cloud_printers_dialog_request_count_(0),
       reported_failed_preview_(false),
       has_logged_printers_count_(false),
+      reconcilor_(NULL),
       weak_factory_(this) {
   ReportUserActionHistogram(PREVIEW_STARTED);
 }
@@ -565,6 +539,8 @@ PrintPreviewHandler::PrintPreviewHandler()
 PrintPreviewHandler::~PrintPreviewHandler() {
   if (select_file_dialog_.get())
     select_file_dialog_->ListenerDestroyed();
+
+  UnregisterForMergeSession();
 }
 
 void PrintPreviewHandler::RegisterMessages() {
@@ -610,9 +586,6 @@ void PrintPreviewHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("getInitialSettings",
       base::Bind(&PrintPreviewHandler::HandleGetInitialSettings,
                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("reportUiEvent",
-      base::Bind(&PrintPreviewHandler::HandleReportUiEvent,
-                 base::Unretained(this)));
   web_ui()->RegisterMessageCallback("printWithCloudPrintDialog",
       base::Bind(&PrintPreviewHandler::HandlePrintWithCloudPrintDialog,
                  base::Unretained(this)));
@@ -628,12 +601,12 @@ void PrintPreviewHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("getPrivetPrinterCapabilities",
       base::Bind(&PrintPreviewHandler::HandleGetPrivetPrinterCapabilities,
                  base::Unretained(this)));
+  RegisterForMergeSession();
 }
 
 bool PrintPreviewHandler::PrivetPrintingEnabled() {
 #if defined(ENABLE_SERVICE_DISCOVERY)
-  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
-    switches::kDisableDeviceDiscovery);
+  return true;
 #else
   return false;
 #endif
@@ -913,7 +886,7 @@ void PrintPreviewHandler::PrintToPdf() {
         base::UTF16ToUTF8(print_job_title_utf16);
 #endif
 
-    file_util::ReplaceIllegalCharactersInPath(&print_job_title, '_');
+    base::i18n::ReplaceIllegalCharactersInPath(&print_job_title, '_');
     base::FilePath default_filename(print_job_title);
     default_filename =
         default_filename.ReplaceExtension(FILE_PATH_LITERAL("pdf"));
@@ -1119,38 +1092,6 @@ void PrintPreviewHandler::HandleGetInitialSettings(
                  weak_factory_.GetWeakPtr()));
 }
 
-void PrintPreviewHandler::HandleReportUiEvent(const base::ListValue* args) {
-  int event_group, event_number;
-  if (!args->GetInteger(0, &event_group) || !args->GetInteger(1, &event_number))
-    return;
-
-  enum UiBucketGroups ui_bucket_group =
-      static_cast<enum UiBucketGroups>(event_group);
-  if (ui_bucket_group >= UI_BUCKET_GROUP_BOUNDARY)
-    return;
-
-  switch (ui_bucket_group) {
-    case DESTINATION_SEARCH: {
-      enum PrintDestinationBuckets event =
-          static_cast<enum PrintDestinationBuckets>(event_number);
-      if (event >= PRINT_DESTINATION_BUCKET_BOUNDARY)
-        return;
-      ReportPrintDestinationHistogram(event);
-      break;
-    }
-    case GCP_PROMO: {
-      enum GcpPromoBuckets event =
-          static_cast<enum GcpPromoBuckets>(event_number);
-      if (event >= GCP_PROMO_BUCKET_BOUNDARY)
-        return;
-      ReportGcpPromoHistogram(event);
-      break;
-    }
-    default:
-      break;
-  }
-}
-
 void PrintPreviewHandler::HandleForceOpenNewTab(const base::ListValue* args) {
   std::string url;
   if (!args->GetString(0, &url))
@@ -1189,6 +1130,8 @@ void PrintPreviewHandler::SendInitialSettings(
   base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
   initial_settings.SetBoolean(kPrintAutomaticallyInKioskMode,
                               cmdline->HasSwitch(switches::kKioskModePrinting));
+  initial_settings.SetBoolean(kAppKioskMode,
+                              chrome::IsRunningInForcedAppMode());
 #if defined(OS_WIN)
   // In Win8 metro, the system print dialog can only open on the desktop.  Doing
   // so will cause the browser to appear hung, so we don't show the link in
@@ -1245,9 +1188,11 @@ void PrintPreviewHandler::SendCloudPrintEnabled() {
       preview_web_contents()->GetBrowserContext());
   PrefService* prefs = profile->GetPrefs();
   if (prefs->GetBoolean(prefs::kCloudPrintSubmitEnabled)) {
-    GURL gcp_url(cloud_devices::GetCloudPrintURL());
-    base::StringValue gcp_url_value(gcp_url.spec());
-    web_ui()->CallJavascriptFunction("setUseCloudPrint", gcp_url_value);
+    base::DictionaryValue settings;
+    settings.SetString(kCloudPrintUrl,
+                       GURL(cloud_devices::GetCloudPrintURL()).spec());
+    settings.SetBoolean(kAppKioskMode, chrome::IsRunningInForcedAppMode());
+    web_ui()->CallJavascriptFunction("setUseCloudPrint", settings);
   }
 }
 
@@ -1272,6 +1217,12 @@ WebContents* PrintPreviewHandler::GetInitiator() const {
 
 void PrintPreviewHandler::OnPrintDialogShown() {
   ClosePreviewDialog();
+}
+
+void PrintPreviewHandler::MergeSessionCompleted(
+    const std::string& account_id,
+    const GoogleServiceAuthError& error) {
+  OnSigninComplete();
 }
 
 void PrintPreviewHandler::SelectFile(const base::FilePath& default_filename) {
@@ -1350,7 +1301,10 @@ void PrintPreviewHandler::PostPrintToPdfTask() {
   metafile->InitFromData(static_cast<const void*>(data->front()), data->size());
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      base::Bind(&PrintToPdfCallback, metafile.release(), print_to_pdf_path_));
+      base::Bind(&PrintToPdfCallback,
+                 metafile.release(),
+                 print_to_pdf_path_,
+                 pdf_file_saved_closure_));
   print_to_pdf_path_ = base::FilePath();
   ClosePreviewDialog();
 }
@@ -1594,3 +1548,23 @@ void PrintPreviewHandler::FillPrinterDescription(
 }
 
 #endif  // defined(ENABLE_SERVICE_DISCOVERY)
+
+void PrintPreviewHandler::RegisterForMergeSession() {
+  DCHECK(!reconcilor_);
+  Profile* profile = Profile::FromWebUI(web_ui());
+  if (switches::IsEnableAccountConsistency() && !profile->IsOffTheRecord()) {
+    reconcilor_ = AccountReconcilorFactory::GetForProfile(profile);
+    if (reconcilor_)
+      reconcilor_->AddMergeSessionObserver(this);
+  }
+}
+
+void PrintPreviewHandler::UnregisterForMergeSession() {
+  if (reconcilor_)
+    reconcilor_->RemoveMergeSessionObserver(this);
+}
+
+void PrintPreviewHandler::SetPdfSavedClosureForTesting(
+    const base::Closure& closure) {
+  pdf_file_saved_closure_ = closure;
+}

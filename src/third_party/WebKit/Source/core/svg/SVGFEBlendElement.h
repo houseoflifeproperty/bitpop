@@ -23,18 +23,38 @@
 
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
-#include "platform/graphics/filters/FEBlend.h"
 
-namespace WebCore {
-
-template<> const SVGEnumerationStringEntries& getStaticStringEntries<BlendModeType>();
+namespace blink {
 
 class SVGFEBlendElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
+    enum Mode {
+        ModeUnknown = 0,
+        ModeNormal = 1,
+        ModeMultiply = 2,
+        ModeScreen = 3,
+        ModeDarken = 4,
+        ModeLighten = 5,
+
+        // The following modes do not map to IDL constants on
+        // SVGFEBlendElement.
+        ModeOverlay,
+        ModeColorDodge,
+        ModeColorBurn,
+        ModeHardLight,
+        ModeSoftLight,
+        ModeDifference,
+        ModeExclusion,
+        ModeHue,
+        ModeSaturation,
+        ModeColor,
+        ModeLuminosity,
+    };
+
     DECLARE_NODE_FACTORY(SVGFEBlendElement);
     SVGAnimatedString* in1() { return m_in1.get(); }
     SVGAnimatedString* in2() { return m_in2.get(); }
-    SVGAnimatedEnumeration<BlendModeType>* mode() { return m_mode.get(); }
+    SVGAnimatedEnumeration<Mode>* mode() { return m_mode.get(); }
 
 private:
     explicit SVGFEBlendElement(Document&);
@@ -47,9 +67,12 @@ private:
 
     RefPtr<SVGAnimatedString> m_in1;
     RefPtr<SVGAnimatedString> m_in2;
-    RefPtr<SVGAnimatedEnumeration<BlendModeType> > m_mode;
+    RefPtr<SVGAnimatedEnumeration<Mode> > m_mode;
 };
 
-} // namespace WebCore
+template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGFEBlendElement::Mode>();
+template<> unsigned short getMaxExposedEnumValue<SVGFEBlendElement::Mode>();
+
+} // namespace blink
 
 #endif

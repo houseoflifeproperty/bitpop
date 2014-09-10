@@ -31,7 +31,7 @@
 #ifndef MutationObserver_h
 #define MutationObserver_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
 #include "wtf/PassOwnPtr.h"
@@ -40,7 +40,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Dictionary;
 class ExceptionState;
@@ -93,7 +93,7 @@ public:
     void setHasTransientRegistration();
     bool canDeliver();
 
-    HashSet<Node*> getObservedNodes() const;
+    WillBeHeapHashSet<RawPtrWillBeMember<Node> > getObservedNodes() const;
 
     void trace(Visitor*);
 

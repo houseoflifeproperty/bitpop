@@ -25,15 +25,16 @@
 #include "config.h"
 #include "core/html/HTMLTableSectionElement.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/NodeListsNodeData.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/html/HTMLTableRowElement.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -101,7 +102,7 @@ int HTMLTableSectionElement::numRows() const
 
 PassRefPtrWillBeRawPtr<HTMLCollection> HTMLTableSectionElement::rows()
 {
-    return ensureCachedHTMLCollection(TSectionRows);
+    return ensureCachedCollection<HTMLCollection>(TSectionRows);
 }
 
 }

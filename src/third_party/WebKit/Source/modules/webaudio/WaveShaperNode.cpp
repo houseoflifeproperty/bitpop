@@ -28,18 +28,18 @@
 
 #include "modules/webaudio/WaveShaperNode.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "wtf/MainThread.h"
 
-namespace WebCore {
+namespace blink {
 
 WaveShaperNode::WaveShaperNode(AudioContext* context)
     : AudioBasicProcessorNode(context, context->sampleRate())
 {
     ScriptWrappable::init(this);
-    m_processor = adoptPtr(new WaveShaperProcessor(context->sampleRate(), 1));
+    m_processor = adoptPtrWillBeNoop(new WaveShaperProcessor(context->sampleRate(), 1));
     setNodeType(NodeTypeWaveShaper);
 
     initialize();
@@ -91,6 +91,6 @@ String WaveShaperNode::oversample() const
     }
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

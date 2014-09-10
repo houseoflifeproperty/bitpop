@@ -42,8 +42,6 @@
          disable_oes_standard_derivatives)                   \
   GPU_OP(DISABLE_POST_SUB_BUFFERS_FOR_ONSCREEN_SURFACES,     \
          disable_post_sub_buffers_for_onscreen_surfaces)     \
-  GPU_OP(ENABLE_CHROMIUM_FAST_NPOT_MO8_TEXTURES,             \
-         enable_chromium_fast_npot_mo8_textures)             \
   GPU_OP(EXIT_ON_CONTEXT_LOST,                               \
          exit_on_context_lost)                               \
   GPU_OP(FORCE_DISCRETE_GPU,                                 \
@@ -84,6 +82,8 @@
          restore_scissor_on_fbo_change)                      \
   GPU_OP(REVERSE_POINT_SPRITE_COORD_ORIGIN,                  \
          reverse_point_sprite_coord_origin)                  \
+  GPU_OP(SCALARIZE_VEC_AND_MAT_CONSTRUCTOR_ARGS,             \
+         scalarize_vec_and_mat_constructor_args)             \
   GPU_OP(SET_TEXTURE_FILTER_BEFORE_GENERATING_MIPMAP,        \
          set_texture_filter_before_generating_mipmap)        \
   GPU_OP(SWIZZLE_RGBA_FOR_ASYNC_READPIXELS,                  \

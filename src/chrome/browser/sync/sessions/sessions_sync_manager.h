@@ -43,6 +43,7 @@ class TabNavigation;
 namespace browser_sync {
 
 class DataTypeErrorHandler;
+class LocalDeviceInfoProvider;
 class SyncedTabDelegate;
 class SyncedWindowDelegate;
 class SyncedWindowDelegatesGetter;
@@ -82,21 +83,8 @@ class SessionsSyncManager : public syncer::SyncableService,
                             public OpenTabsUIDelegate,
                             public LocalSessionEventHandler {
  public:
-  // Isolates SessionsSyncManager from having to depend on sync internals.
-  class SyncInternalApiDelegate {
-   public:
-    virtual ~SyncInternalApiDelegate() {}
-
-    // Returns sync's representation of the local device info.
-    // Return value is an empty scoped_ptr if the device info is unavailable.
-    virtual scoped_ptr<DeviceInfo> GetLocalDeviceInfo() const = 0;
-
-    // Used for creation of the machine tag for this local session.
-    virtual std::string GetLocalSyncCacheGUID() const = 0;
-  };
-
   SessionsSyncManager(Profile* profile,
-                      SyncInternalApiDelegate* delegate,
+                      LocalDeviceInfoProvider* local_device,
                       scoped_ptr<LocalSessionEventRouter> router);
   virtual ~SessionsSyncManager();
 
@@ -148,6 +136,8 @@ class SessionsSyncManager : public syncer::SyncableService,
 
   FaviconCache* GetFaviconCache();
 
+  SyncedWindowDelegatesGetter* GetSyncedWindowDelegatesGetter() const;
+
   // Triggers garbage collection of stale sessions (as defined by
   // |stale_session_threshold_days_|). This is called automatically every
   // time we start up (via AssociateModels) and when new sessions data is
@@ -191,6 +181,10 @@ class SessionsSyncManager : public syncer::SyncableService,
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, PopulateSessionWindow);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, ValidTabs);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, SetSessionTabFromDelegate);
+  FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
+                           SetSessionTabFromDelegateNavigationIndex);
+  FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
+                           SetSessionTabFromDelegateCurrentInvalid);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, BlockedNavigations);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, DeleteForeignSession);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
@@ -354,7 +348,8 @@ class SessionsSyncManager : public syncer::SyncableService,
   scoped_ptr<syncer::SyncErrorFactory> error_handler_;
   scoped_ptr<syncer::SyncChangeProcessor> sync_processor_;
 
-  const SyncInternalApiDelegate* const delegate_;
+  // Local device info provider, owned by ProfileSyncService.
+  const LocalDeviceInfoProvider* const local_device_;
 
   // Unique client tag.
   std::string current_machine_tag_;

@@ -38,13 +38,11 @@
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
+
 class EventHandler;
 class IntSize;
 class Node;
-}
-
-namespace blink {
 
 // ViewportAnchor provides a way to anchor a viewport origin to a DOM node.
 // In particular, the user supplies the current viewport (in CSS coordinates)
@@ -54,24 +52,24 @@ namespace blink {
 // its orientation relative to the node, and the viewport origin maintains its
 // orientation relative to the anchor.
 class ViewportAnchor {
-    WTF_MAKE_NONCOPYABLE(ViewportAnchor);
+    STACK_ALLOCATED();
 public:
-    explicit ViewportAnchor(WebCore::EventHandler* eventHandler);
+    explicit ViewportAnchor(EventHandler*);
 
-    void setAnchor(const WebCore::IntRect& viewRect, const WebCore::FloatSize& anchorInViewCoords);
+    void setAnchor(const IntRect& viewRect, const FloatSize& anchorInViewCoords);
 
-    WebCore::IntPoint computeOrigin(const WebCore::IntSize& currentViewSize) const;
+    IntPoint computeOrigin(const IntSize& currentViewSize) const;
 
 private:
-    WebCore::EventHandler* m_eventHandler;
+    RawPtrWillBeMember<EventHandler> m_eventHandler;
 
-    WebCore::IntRect m_viewRect;
+    IntRect m_viewRect;
 
-    RefPtrWillBePersistent<WebCore::Node> m_anchorNode;
-    WebCore::LayoutRect m_anchorNodeBounds;
+    RefPtrWillBeMember<Node> m_anchorNode;
+    LayoutRect m_anchorNodeBounds;
 
-    WebCore::FloatSize m_anchorInViewCoords;
-    WebCore::FloatSize m_anchorInNodeCoords;
+    FloatSize m_anchorInViewCoords;
+    FloatSize m_anchorInNodeCoords;
 };
 
 } // namespace blink

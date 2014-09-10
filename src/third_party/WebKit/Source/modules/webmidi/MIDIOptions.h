@@ -31,20 +31,20 @@
 #ifndef MIDIOptions_h
 #define MIDIOptions_h
 
-#include "bindings/v8/Dictionary.h"
+#include "bindings/core/v8/Dictionary.h"
 
-namespace WebCore {
+namespace blink {
 
 struct MIDIOptions  {
     explicit MIDIOptions(const Dictionary& options)
         : sysex(false)
     {
-        options.get("sysex", sysex);
+        DictionaryHelper::get(options, "sysex", sysex);
     }
 
     bool sysex;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MIDIOptions_h

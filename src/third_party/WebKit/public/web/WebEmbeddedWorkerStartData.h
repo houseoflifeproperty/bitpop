@@ -58,6 +58,11 @@ struct WebEmbeddedWorkerStartData {
     WebEmbeddedWorkerStartMode startMode; // FIXME: ditto delete
     PauseAfterDownloadMode pauseAfterDownloadMode;
     WaitForDebuggerMode waitForDebuggerMode;
+
+    WebEmbeddedWorkerStartData()
+        : startMode(WebEmbeddedWorkerStartModeDontPauseOnStart)
+        , pauseAfterDownloadMode(DontPauseAfterDownload)
+        , waitForDebuggerMode(DontWaitForDebugger) { }
 };
 
 } // namespace blink

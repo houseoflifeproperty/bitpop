@@ -11,7 +11,6 @@
     "name": "gclient setup"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -49,7 +48,6 @@
     "name": "[spec: WebKit] gclient setup"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",

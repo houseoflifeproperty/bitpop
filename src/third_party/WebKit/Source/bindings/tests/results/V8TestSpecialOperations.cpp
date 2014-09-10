@@ -7,12 +7,12 @@
 #include "config.h"
 #include "V8TestSpecialOperations.h"
 
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/V8DOMConfiguration.h"
+#include "bindings/core/v8/V8HiddenValue.h"
 #include "bindings/core/v8/V8NodeList.h"
+#include "bindings/core/v8/V8ObjectConstructor.h"
 #include "bindings/tests/v8/V8Node.h"
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/V8DOMConfiguration.h"
-#include "bindings/v8/V8HiddenValue.h"
-#include "bindings/v8/V8ObjectConstructor.h"
 #include "core/dom/ContextFeatures.h"
 #include "core/dom/Document.h"
 #include "core/dom/NameNodeList.h"
@@ -24,7 +24,7 @@
 #include "wtf/GetPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 static void initializeScriptWrappableForInterface(TestSpecialOperations* object)
 {
@@ -34,15 +34,15 @@ static void initializeScriptWrappableForInterface(TestSpecialOperations* object)
         ASSERT_NOT_REACHED();
 }
 
-} // namespace WebCore
+} // namespace blink
 
-void webCoreInitializeScriptWrappableForInterface(WebCore::TestSpecialOperations* object)
+void webCoreInitializeScriptWrappableForInterface(blink::TestSpecialOperations* object)
 {
-    WebCore::initializeScriptWrappableForInterface(object);
+    blink::initializeScriptWrappableForInterface(object);
 }
 
-namespace WebCore {
-const WrapperTypeInfo V8TestSpecialOperations::wrapperTypeInfo = { gin::kEmbedderBlink, V8TestSpecialOperations::domTemplate, V8TestSpecialOperations::derefObject, 0, 0, 0, V8TestSpecialOperations::installPerContextEnabledMethods, 0, WrapperTypeObjectPrototype, RefCountedObject };
+namespace blink {
+const WrapperTypeInfo V8TestSpecialOperations::wrapperTypeInfo = { gin::kEmbedderBlink, V8TestSpecialOperations::domTemplate, V8TestSpecialOperations::derefObject, 0, 0, 0, V8TestSpecialOperations::installConditionallyEnabledMethods, 0, WrapperTypeObjectPrototype, RefCountedObject };
 
 namespace TestSpecialOperationsV8Internal {
 
@@ -51,7 +51,7 @@ template <typename T> void V8_USE(T) { }
 static void namedItemMethod(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     if (UNLIKELY(info.Length() < 1)) {
-        throwMinimumArityTypeErrorForMethod("namedItem", "TestSpecialOperations", 1, info.Length(), info.GetIsolate());
+        V8ThrowException::throwException(createMinimumArityTypeErrorForMethod("namedItem", "TestSpecialOperations", 1, info.Length(), info.GetIsolate()), info.GetIsolate());
         return;
     }
     TestSpecialOperations* impl = V8TestSpecialOperations::toNative(info.Holder());
@@ -59,16 +59,14 @@ static void namedItemMethod(const v8::FunctionCallbackInfo<v8::Value>& info)
     {
         TOSTRING_VOID_INTERNAL(name, info[0]);
     }
-    bool result0Enabled = false;
     RefPtrWillBeRawPtr<Node> result0;
-    bool result1Enabled = false;
     RefPtrWillBeRawPtr<NodeList> result1;
-    impl->getItem(name, result0Enabled, result0, result1Enabled, result1);
-    if (result0Enabled) {
+    impl->getItem(name, result0, result1);
+    if (result0) {
         v8SetReturnValue(info, result0.release());
         return;
     }
-    if (result1Enabled) {
+    if (result1) {
         v8SetReturnValue(info, result1.release());
         return;
     }
@@ -77,38 +75,36 @@ static void namedItemMethod(const v8::FunctionCallbackInfo<v8::Value>& info)
 
 static void namedItemMethodCallback(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    TRACE_EVENT_SET_SAMPLING_STATE("Blink", "DOMMethod");
+    TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMMethod");
     TestSpecialOperationsV8Internal::namedItemMethod(info);
-    TRACE_EVENT_SET_SAMPLING_STATE("V8", "V8Execution");
+    TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
 
 static void namedPropertyGetter(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     TestSpecialOperations* impl = V8TestSpecialOperations::toNative(info.Holder());
     AtomicString propertyName = toCoreAtomicString(name);
-    bool result0Enabled = false;
     RefPtrWillBeRawPtr<Node> result0;
-    bool result1Enabled = false;
     RefPtrWillBeRawPtr<NodeList> result1;
-    impl->getItem(propertyName, result0Enabled, result0, result1Enabled, result1);
-    if (!result0Enabled && !result1Enabled)
+    impl->getItem(propertyName, result0, result1);
+    if (!(result0 || result1))
         return;
-    if (result0Enabled) {
-        v8SetReturnValueFast(info, WTF::getPtr(result0.release()), impl);
-        return;
-    }
-    if (result1Enabled) {
-        v8SetReturnValueFast(info, WTF::getPtr(result1.release()), impl);
+    if (result0) {
+        v8SetReturnValue(info, result0.release());
         return;
     }
-    v8SetReturnValueNull(info);
+    if (result1) {
+        v8SetReturnValue(info, result1.release());
+        return;
+    }
+    ASSERT_NOT_REACHED();
 }
 
 static void namedPropertyGetterCallback(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
-    TRACE_EVENT_SET_SAMPLING_STATE("Blink", "DOMNamedProperty");
+    TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMNamedProperty");
     TestSpecialOperationsV8Internal::namedPropertyGetter(name, info);
-    TRACE_EVENT_SET_SAMPLING_STATE("V8", "V8Execution");
+    TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
 
 static void namedPropertySetter(v8::Local<v8::String> name, v8::Local<v8::Value> v8Value, const v8::PropertyCallbackInfo<v8::Value>& info)
@@ -124,9 +120,9 @@ static void namedPropertySetter(v8::Local<v8::String> name, v8::Local<v8::Value>
 
 static void namedPropertySetterCallback(v8::Local<v8::String> name, v8::Local<v8::Value> v8Value, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
-    TRACE_EVENT_SET_SAMPLING_STATE("Blink", "DOMNamedProperty");
+    TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMNamedProperty");
     TestSpecialOperationsV8Internal::namedPropertySetter(name, v8Value, info);
-    TRACE_EVENT_SET_SAMPLING_STATE("V8", "V8Execution");
+    TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
 
 static void namedPropertyQuery(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Integer>& info)
@@ -145,40 +141,39 @@ static void namedPropertyQuery(v8::Local<v8::String> name, const v8::PropertyCal
 
 static void namedPropertyQueryCallback(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Integer>& info)
 {
-    TRACE_EVENT_SET_SAMPLING_STATE("Blink", "DOMNamedProperty");
+    TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMNamedProperty");
     TestSpecialOperationsV8Internal::namedPropertyQuery(name, info);
-    TRACE_EVENT_SET_SAMPLING_STATE("V8", "V8Execution");
+    TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
 
 static void namedPropertyEnumerator(const v8::PropertyCallbackInfo<v8::Array>& info)
 {
     TestSpecialOperations* impl = V8TestSpecialOperations::toNative(info.Holder());
-    v8::Isolate* isolate = info.GetIsolate();
     Vector<String> names;
-    ExceptionState exceptionState(ExceptionState::EnumerationContext, "TestSpecialOperations", info.Holder(), isolate);
+    ExceptionState exceptionState(ExceptionState::EnumerationContext, "TestSpecialOperations", info.Holder(), info.GetIsolate());
     impl->namedPropertyEnumerator(names, exceptionState);
     if (exceptionState.throwIfNeeded())
         return;
-    v8::Handle<v8::Array> v8names = v8::Array::New(isolate, names.size());
+    v8::Handle<v8::Array> v8names = v8::Array::New(info.GetIsolate(), names.size());
     for (size_t i = 0; i < names.size(); ++i)
-        v8names->Set(v8::Integer::New(isolate, i), v8String(isolate, names[i]));
+        v8names->Set(v8::Integer::New(info.GetIsolate(), i), v8String(info.GetIsolate(), names[i]));
     v8SetReturnValue(info, v8names);
 }
 
 static void namedPropertyEnumeratorCallback(const v8::PropertyCallbackInfo<v8::Array>& info)
 {
-    TRACE_EVENT_SET_SAMPLING_STATE("Blink", "DOMNamedProperty");
+    TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMNamedProperty");
     TestSpecialOperationsV8Internal::namedPropertyEnumerator(info);
-    TRACE_EVENT_SET_SAMPLING_STATE("V8", "V8Execution");
+    TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
 
 } // namespace TestSpecialOperationsV8Internal
 
 static const V8DOMConfiguration::MethodConfiguration V8TestSpecialOperationsMethods[] = {
-    {"namedItem", TestSpecialOperationsV8Internal::namedItemMethodCallback, 0, 1},
+    {"namedItem", TestSpecialOperationsV8Internal::namedItemMethodCallback, 0, 1, V8DOMConfiguration::ExposedToAllScripts},
 };
 
-static void configureV8TestSpecialOperationsTemplate(v8::Handle<v8::FunctionTemplate> functionTemplate, v8::Isolate* isolate)
+static void installV8TestSpecialOperationsTemplate(v8::Handle<v8::FunctionTemplate> functionTemplate, v8::Isolate* isolate)
 {
     functionTemplate->ReadOnlyPrototype();
 
@@ -198,7 +193,7 @@ static void configureV8TestSpecialOperationsTemplate(v8::Handle<v8::FunctionTemp
 
 v8::Handle<v8::FunctionTemplate> V8TestSpecialOperations::domTemplate(v8::Isolate* isolate)
 {
-    return V8DOMConfiguration::domClassTemplate(isolate, const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), configureV8TestSpecialOperationsTemplate);
+    return V8DOMConfiguration::domClassTemplate(isolate, const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), installV8TestSpecialOperationsTemplate);
 }
 
 bool V8TestSpecialOperations::hasInstance(v8::Handle<v8::Value> v8Value, v8::Isolate* isolate)
@@ -213,7 +208,7 @@ v8::Handle<v8::Object> V8TestSpecialOperations::findInstanceInPrototypeChain(v8:
 
 TestSpecialOperations* V8TestSpecialOperations::toNativeWithTypeCheck(v8::Isolate* isolate, v8::Handle<v8::Value> value)
 {
-    return hasInstance(value, isolate) ? fromInternalPointer(v8::Handle<v8::Object>::Cast(value)->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex)) : 0;
+    return hasInstance(value, isolate) ? fromInternalPointer(blink::toInternalPointer(v8::Handle<v8::Object>::Cast(value))) : 0;
 }
 
 v8::Handle<v8::Object> wrap(TestSpecialOperations* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
@@ -238,14 +233,14 @@ v8::Handle<v8::Object> V8TestSpecialOperations::createWrapper(PassRefPtr<TestSpe
     if (UNLIKELY(wrapper.IsEmpty()))
         return wrapper;
 
-    installPerContextEnabledProperties(wrapper, impl.get(), isolate);
+    installConditionallyEnabledProperties(wrapper, isolate);
     V8DOMWrapper::associateObjectWithWrapper<V8TestSpecialOperations>(impl, &wrapperTypeInfo, wrapper, isolate, WrapperConfiguration::Independent);
     return wrapper;
 }
 
-void V8TestSpecialOperations::derefObject(void* object)
+void V8TestSpecialOperations::derefObject(ScriptWrappableBase* internalPointer)
 {
-    fromInternalPointer(object)->deref();
+    fromInternalPointer(internalPointer)->deref();
 }
 
 template<>
@@ -254,4 +249,4 @@ v8::Handle<v8::Value> toV8NoInline(TestSpecialOperations* impl, v8::Handle<v8::O
     return toV8(impl, creationContext, isolate);
 }
 
-} // namespace WebCore
+} // namespace blink

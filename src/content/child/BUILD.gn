@@ -18,7 +18,7 @@ source_set("child") {
     "//base",
     "//components/tracing",
     "//mojo/environment:chromium",
-    "//mojo/public/interfaces/service_provider",
+    "//mojo/public/interfaces/application",
     "//skia",
     "//third_party/icu",
     "//ui/base",
@@ -87,13 +87,14 @@ source_set("child") {
     sources = []
   } else {
     deps += [
+      "//content/app/strings",
       "//crypto:platform",
-      #"//third_party/WebKit/public:blink",  # TODO(GYP)
+      "//third_party/WebKit/public:blink",
+      "//third_party/WebKit/public:resources",
       "//third_party/npapi",
-      "//webkit:resources",
-      "//webkit:strings",
       "//webkit/child",
       "//webkit/common",
+      "//webkit/glue/resources",
     ]
   }
 
@@ -102,13 +103,15 @@ source_set("child") {
     sources -= [ "npapi/webplugin_delegate_impl_mac.mm" ]
   }
 
-  if (is_win) {
+  if (is_win || !use_aura) {
     sources -= [ "npapi/webplugin_delegate_impl_aura.cc" ]
   }
 
   if (!use_openssl) {
-    sources -= [ "webcrypto/platform_crypto_openssl.cc" ]
+    sources += rebase_path(content_child_gypi_values.webcrypto_nss_sources,
+                           ".", "//content")
   } else {
-    sources -= [ "webcrypto/platform_crypto_nss.cc" ]
+    sources += rebase_path(content_child_gypi_values.webcrypto_openssl_sources,
+                           ".", "//content")
   }
 }

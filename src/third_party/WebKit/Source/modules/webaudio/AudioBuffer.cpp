@@ -32,14 +32,14 @@
 
 #include "modules/webaudio/AudioBuffer.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/audio/AudioBus.h"
 #include "platform/audio/AudioFileReader.h"
 #include "modules/webaudio/AudioContext.h"
 
-namespace WebCore {
+namespace blink {
 
 float AudioBuffer::minAllowedSampleRate()
 {
@@ -213,6 +213,6 @@ void AudioBuffer::zero()
     }
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

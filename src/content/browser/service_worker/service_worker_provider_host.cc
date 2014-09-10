@@ -11,6 +11,7 @@
 #include "content/browser/service_worker/service_worker_controllee_request_handler.h"
 #include "content/browser/service_worker/service_worker_dispatcher_host.h"
 #include "content/browser/service_worker/service_worker_handle.h"
+#include "content/browser/service_worker/service_worker_registration_handle.h"
 #include "content/browser/service_worker/service_worker_utils.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/common/service_worker/service_worker_messages.h"
@@ -30,10 +31,35 @@ ServiceWorkerProviderHost::ServiceWorkerProviderHost(
 }
 
 ServiceWorkerProviderHost::~ServiceWorkerProviderHost() {
+  // Clear docurl so the deferred activation of a waiting worker
+  // won't associate the new version with a provider being destroyed.
+  document_url_ = GURL();
+  if (controlling_version_)
+    controlling_version_->RemoveControllee(this);
   if (active_version_)
-    active_version_->RemoveControllee(this);
+    active_version_->RemovePotentialControllee(this);
   if (waiting_version_)
-    waiting_version_->RemoveWaitingControllee(this);
+    waiting_version_->RemovePotentialControllee(this);
+  if (installing_version_)
+    installing_version_->RemovePotentialControllee(this);
+  if (associated_registration_)
+    associated_registration_->RemoveListener(this);
+}
+
+void ServiceWorkerProviderHost::OnVersionAttributesChanged(
+    ServiceWorkerRegistration* registration,
+    ChangedVersionAttributesMask changed_mask,
+    const ServiceWorkerRegistrationInfo& info) {
+  DCHECK_EQ(associated_registration_, registration);
+  SetVersionAttributes(registration->installing_version(),
+                       registration->waiting_version(),
+                       registration->active_version());
+}
+
+void ServiceWorkerProviderHost::OnRegistrationFailed(
+    ServiceWorkerRegistration* registration) {
+  DCHECK_EQ(associated_registration_, registration);
+  UnassociateRegistration();
 }
 
 void ServiceWorkerProviderHost::SetDocumentUrl(const GURL& url) {
@@ -41,12 +67,64 @@ void ServiceWorkerProviderHost::SetDocumentUrl(const GURL& url) {
   document_url_ = url;
 }
 
-void ServiceWorkerProviderHost::SetActiveVersion(
-    ServiceWorkerVersion* version) {
-  if (version == active_version_)
+void ServiceWorkerProviderHost::SetVersionAttributes(
+    ServiceWorkerVersion* installing_version,
+    ServiceWorkerVersion* waiting_version,
+    ServiceWorkerVersion* active_version) {
+  ChangedVersionAttributesMask mask;
+
+  if (installing_version != installing_version_) {
+    SetVersionAttributesInternal(installing_version, &installing_version_);
+    mask.add(ChangedVersionAttributesMask::INSTALLING_VERSION);
+  }
+  if (waiting_version != waiting_version_) {
+    SetVersionAttributesInternal(waiting_version, &waiting_version_);
+    mask.add(ChangedVersionAttributesMask::WAITING_VERSION);
+  }
+  if (active_version != active_version_) {
+    SetVersionAttributesInternal(active_version, &active_version_);
+    mask.add(ChangedVersionAttributesMask::ACTIVE_VERSION);
+  }
+
+  if (!dispatcher_host_)
+    return;  // Could be NULL in some tests.
+  if (!mask.changed())
     return;
-  scoped_refptr<ServiceWorkerVersion> previous_version = active_version_;
-  active_version_ = version;
+
+  ServiceWorkerVersionAttributes attributes;
+  if (mask.installing_changed())
+    attributes.installing = CreateHandleAndPass(installing_version);
+  if (mask.waiting_changed())
+    attributes.waiting = CreateHandleAndPass(waiting_version);
+  if (mask.active_changed())
+    attributes.active = CreateHandleAndPass(active_version);
+
+  dispatcher_host_->Send(new ServiceWorkerMsg_SetVersionAttributes(
+      kDocumentMainThreadId,
+      provider_id(),
+      kInvalidServiceWorkerRegistrationHandleId,
+      mask.changed(),
+      attributes));
+}
+
+void ServiceWorkerProviderHost::SetVersionAttributesInternal(
+    ServiceWorkerVersion* version,
+    scoped_refptr<ServiceWorkerVersion>* data_member) {
+  scoped_refptr<ServiceWorkerVersion> previous_version = *data_member;
+  *data_member = version;
+  if (version)
+    version->AddPotentialControllee(this);
+  if (previous_version)
+    previous_version->RemovePotentialControllee(this);
+}
+
+void ServiceWorkerProviderHost::SetControllerVersionAttribute(
+    ServiceWorkerVersion* version) {
+  if (version == controlling_version_)
+    return;
+
+  scoped_refptr<ServiceWorkerVersion> previous_version = controlling_version_;
+  controlling_version_ = version;
   if (version)
     version->AddControllee(this);
   if (previous_version)
@@ -55,27 +133,13 @@ void ServiceWorkerProviderHost::SetActiveVersion(
   if (!dispatcher_host_)
     return;  // Could be NULL in some tests.
 
-  dispatcher_host_->Send(new ServiceWorkerMsg_SetCurrentServiceWorker(
+  dispatcher_host_->Send(new ServiceWorkerMsg_SetControllerServiceWorker(
       kDocumentMainThreadId, provider_id(), CreateHandleAndPass(version)));
 }
 
-void ServiceWorkerProviderHost::SetWaitingVersion(
-    ServiceWorkerVersion* version) {
-  DCHECK(ValidateVersionForAssociation(version));
-  if (version == waiting_version_)
-    return;
-  scoped_refptr<ServiceWorkerVersion> previous_version = waiting_version_;
-  waiting_version_ = version;
-  if (version)
-    version->AddWaitingControllee(this);
-  if (previous_version)
-    previous_version->RemoveWaitingControllee(this);
-
-  if (!dispatcher_host_)
-    return;  // Could be NULL in some tests.
-
-  dispatcher_host_->Send(new ServiceWorkerMsg_SetWaitingServiceWorker(
-      kDocumentMainThreadId, provider_id(), CreateHandleAndPass(version)));
+void ServiceWorkerProviderHost::ClearVersionAttributes() {
+  SetVersionAttributes(NULL, NULL, NULL);
+  SetControllerVersionAttribute(NULL);
 }
 
 bool ServiceWorkerProviderHost::SetHostedVersionId(int64 version_id) {
@@ -100,9 +164,28 @@ bool ServiceWorkerProviderHost::SetHostedVersionId(int64 version_id) {
   return true;
 }
 
+void ServiceWorkerProviderHost::AssociateRegistration(
+    ServiceWorkerRegistration* registration) {
+  DCHECK(CanAssociateRegistration(registration));
+  associated_registration_ = registration;
+  registration->AddListener(this);
+  SetVersionAttributes(registration->installing_version(),
+                       registration->waiting_version(),
+                       registration->active_version());
+  SetControllerVersionAttribute(registration->active_version());
+}
+
+void ServiceWorkerProviderHost::UnassociateRegistration() {
+  if (!associated_registration_)
+    return;
+  associated_registration_->RemoveListener(this);
+  associated_registration_ = NULL;
+  ClearVersionAttributes();
+}
+
 scoped_ptr<ServiceWorkerRequestHandler>
 ServiceWorkerProviderHost::CreateRequestHandler(
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context) {
   if (IsHostToRunningServiceWorker()) {
     return scoped_ptr<ServiceWorkerRequestHandler>(
@@ -118,25 +201,14 @@ ServiceWorkerProviderHost::CreateRequestHandler(
   return scoped_ptr<ServiceWorkerRequestHandler>();
 }
 
-bool ServiceWorkerProviderHost::ValidateVersionForAssociation(
-    ServiceWorkerVersion* version) {
+bool ServiceWorkerProviderHost::CanAssociateRegistration(
+    ServiceWorkerRegistration* registration) {
+  if (!context_)
+    return false;
   if (running_hosted_version_)
     return false;
-  if (!version)
-    return true;
-
-  // A version to be associated with this provider should have the same
-  // registration (scope) as current active/waiting versions.
-  if (active_version_) {
-    if (active_version_->registration_id() != version->registration_id())
-      return false;
-    DCHECK_EQ(active_version_->scope(), version->scope());
-  }
-  if (waiting_version_) {
-    if (waiting_version_->registration_id() != version->registration_id())
-      return false;
-    DCHECK_EQ(waiting_version_->scope(), version->scope());
-  }
+  if (!registration || associated_registration_)
+    return false;
   return true;
 }
 
@@ -161,12 +233,14 @@ void ServiceWorkerProviderHost::PostMessage(
 
 ServiceWorkerObjectInfo ServiceWorkerProviderHost::CreateHandleAndPass(
     ServiceWorkerVersion* version) {
-  DCHECK(ValidateVersionForAssociation(version));
   ServiceWorkerObjectInfo info;
   if (context_ && version) {
     scoped_ptr<ServiceWorkerHandle> handle =
-        ServiceWorkerHandle::Create(context_, dispatcher_host_,
-                                    kDocumentMainThreadId, version);
+        ServiceWorkerHandle::Create(context_,
+                                    dispatcher_host_,
+                                    kDocumentMainThreadId,
+                                    provider_id_,
+                                    version);
     info = handle->GetObjectInfo();
     dispatcher_host_->RegisterServiceWorkerHandle(handle.Pass());
   }

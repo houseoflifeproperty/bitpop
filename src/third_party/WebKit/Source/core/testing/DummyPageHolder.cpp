@@ -37,16 +37,27 @@
 #include "core/frame/Settings.h"
 #include "wtf/Assertions.h"
 
-namespace WebCore {
+namespace blink {
 
-PassOwnPtr<DummyPageHolder> DummyPageHolder::create(const IntSize& initialViewSize)
+PassOwnPtr<DummyPageHolder> DummyPageHolder::create(const IntSize& initialViewSize, Page::PageClients* pageClients)
 {
-    return adoptPtr(new DummyPageHolder(initialViewSize));
+    return adoptPtr(new DummyPageHolder(initialViewSize, pageClients));
 }
 
-DummyPageHolder::DummyPageHolder(const IntSize& initialViewSize)
+DummyPageHolder::DummyPageHolder(const IntSize& initialViewSize, Page::PageClients* pageClients)
 {
-    fillWithEmptyClients(m_pageClients);
+    if (!pageClients) {
+        fillWithEmptyClients(m_pageClients);
+    } else {
+        m_pageClients.chromeClient = pageClients->chromeClient;
+        m_pageClients.contextMenuClient = pageClients->contextMenuClient;
+        m_pageClients.editorClient = pageClients->editorClient;
+        m_pageClients.dragClient = pageClients->dragClient;
+        m_pageClients.inspectorClient = pageClients->inspectorClient;
+        m_pageClients.backForwardClient = pageClients->backForwardClient;
+        m_pageClients.spellCheckerClient = pageClients->spellCheckerClient;
+        m_pageClients.storageClient = pageClients->storageClient;
+    }
     m_page = adoptPtrWillBeNoop(new Page(m_pageClients));
     Settings& settings = m_page->settings();
     // FIXME: http://crbug.com/363843. This needs to find a better way to
@@ -88,4 +99,4 @@ Document& DummyPageHolder::document() const
     return *m_frame->domWindow()->document();
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -25,7 +25,6 @@
     "commandLinePrivate",
     "contextMenus",
     "echoPrivate",
-    "experimental",
     "fileBrowserHandler",
     "fileBrowserPrivate",
     "fullscreen",
@@ -116,7 +115,8 @@
       "file_filters": [
         "filesystem:*.gdraw",
         "filesystem:*.gtable",
-        "filesystem:*.gform"
+        "filesystem:*.gform",
+        "filesystem:*.glink"
       ]
     },
     {

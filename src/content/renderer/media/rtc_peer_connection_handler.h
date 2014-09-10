@@ -20,6 +20,7 @@
 namespace blink {
 class WebFrame;
 class WebRTCDataChannelHandler;
+class WebRTCOfferOptions;
 }
 
 namespace content {
@@ -27,11 +28,12 @@ namespace content {
 class PeerConnectionDependencyFactory;
 class PeerConnectionTracker;
 class RemoteMediaStreamImpl;
+class RTCMediaConstraints;
 class WebRtcMediaStreamAdapter;
 
 // Mockable wrapper for blink::WebRTCStatsResponse
 class CONTENT_EXPORT LocalRTCStatsResponse
-    : public NON_EXPORTED_BASE(talk_base::RefCountInterface) {
+    : public NON_EXPORTED_BASE(rtc::RefCountInterface) {
  public:
   explicit LocalRTCStatsResponse(const blink::WebRTCStatsResponse& impl)
       : impl_(impl) {
@@ -54,7 +56,7 @@ class CONTENT_EXPORT LocalRTCStatsResponse
 
 // Mockable wrapper for blink::WebRTCStatsRequest
 class CONTENT_EXPORT LocalRTCStatsRequest
-    : public NON_EXPORTED_BASE(talk_base::RefCountInterface) {
+    : public NON_EXPORTED_BASE(rtc::RefCountInterface) {
  public:
   explicit LocalRTCStatsRequest(blink::WebRTCStatsRequest impl);
   // Constructor for testing.
@@ -70,7 +72,7 @@ class CONTENT_EXPORT LocalRTCStatsRequest
 
  private:
   blink::WebRTCStatsRequest impl_;
-  talk_base::scoped_refptr<LocalRTCStatsResponse> response_;
+  rtc::scoped_refptr<LocalRTCStatsResponse> response_;
 };
 
 // RTCPeerConnectionHandler is a delegate for the RTC PeerConnection API
@@ -91,6 +93,10 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
   // Destroy all existing RTCPeerConnectionHandler objects.
   static void DestructAllHandlers();
 
+  static void ConvertOfferOptionsToConstraints(
+      const blink::WebRTCOfferOptions& options,
+      RTCMediaConstraints* output);
+
   void associateWithFrame(blink::WebFrame* frame);
 
   // Initialize method only used for unit test.
@@ -107,6 +113,10 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
   virtual void createOffer(
       const blink::WebRTCSessionDescriptionRequest& request,
       const blink::WebMediaConstraints& options) OVERRIDE;
+  virtual void createOffer(
+      const blink::WebRTCSessionDescriptionRequest& request,
+      const blink::WebRTCOfferOptions& options) OVERRIDE;
+
   virtual void createAnswer(
       const blink::WebRTCSessionDescriptionRequest& request,
       const blink::WebMediaConstraints& options) OVERRIDE;
@@ -212,6 +222,7 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
       content::RemoteMediaStreamImpl*> RemoteStreamMap;
   RemoteStreamMap remote_streams_;
   scoped_refptr<webrtc::UMAObserver> uma_observer_;
+  base::TimeTicks ice_connection_checking_start_;
 
   DISALLOW_COPY_AND_ASSIGN(RTCPeerConnectionHandler);
 };

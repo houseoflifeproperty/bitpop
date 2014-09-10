@@ -9,6 +9,7 @@
 #include "media/base/yuv_convert.h"
 #include "third_party/libyuv/include/libyuv.h"
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "ui/gfx/skbitmap_operations.h"
 
 // Skia internal format depends on a platform. On Android it is ABGR, on others
 // it is ARGB.
@@ -56,10 +57,8 @@ static void ConvertVideoFrameToBitmap(
   if (bitmap->isNull() ||
       bitmap->width() != video_frame->visible_rect().width() ||
       bitmap->height() != video_frame->visible_rect().height()) {
-    bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                      video_frame->visible_rect().width(),
-                      video_frame->visible_rect().height());
-    bitmap->allocPixels();
+    bitmap->allocN32Pixels(video_frame->visible_rect().width(),
+                           video_frame->visible_rect().height());
     bitmap->setIsVolatile(true);
   }
 
@@ -190,7 +189,8 @@ SkCanvasVideoRenderer::~SkCanvasVideoRenderer() {}
 void SkCanvasVideoRenderer::Paint(media::VideoFrame* video_frame,
                                   SkCanvas* canvas,
                                   const gfx::RectF& dest_rect,
-                                  uint8 alpha) {
+                                  uint8 alpha,
+                                  VideoRotation video_rotation) {
   if (alpha == 0) {
     return;
   }
@@ -212,8 +212,30 @@ void SkCanvasVideoRenderer::Paint(media::VideoFrame* video_frame,
   if (last_frame_.isNull() ||
       video_frame->timestamp() != last_frame_timestamp_) {
     ConvertVideoFrameToBitmap(video_frame, &last_frame_);
+
+    switch (video_rotation) {
+      case VIDEO_ROTATION_0:
+        break;
+      case VIDEO_ROTATION_90:
+        last_frame_ = SkBitmapOperations::Rotate(
+            last_frame_, SkBitmapOperations::ROTATION_90_CW);
+        break;
+      case VIDEO_ROTATION_180:
+        last_frame_ = SkBitmapOperations::Rotate(
+            last_frame_, SkBitmapOperations::ROTATION_180_CW);
+        break;
+      case VIDEO_ROTATION_270:
+        last_frame_ = SkBitmapOperations::Rotate(
+            last_frame_, SkBitmapOperations::ROTATION_270_CW);
+        break;
+    }
+
     last_frame_timestamp_ = video_frame->timestamp();
   }
+
+  // Use SRC mode so we completely overwrite the buffer (in case we have alpha)
+  // this means we don't need the extra cost of clearing the buffer first.
+  paint.setXfermode(SkXfermode::Create(SkXfermode::kSrc_Mode));
 
   // Paint using |last_frame_|.
   paint.setFilterLevel(SkPaint::kLow_FilterLevel);

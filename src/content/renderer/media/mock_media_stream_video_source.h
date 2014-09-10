@@ -7,12 +7,16 @@
 
 #include "content/renderer/media/media_stream_video_source.h"
 
+#include "testing/gmock/include/gmock/gmock.h"
+
 namespace content {
 
 class MockMediaStreamVideoSource : public MediaStreamVideoSource {
  public:
   explicit MockMediaStreamVideoSource(bool manual_get_supported_formats);
   virtual ~MockMediaStreamVideoSource();
+
+  MOCK_METHOD1(DoSetMutedState, void(bool muted_state));
 
   // Simulate that the underlying source start successfully.
   void StartMockedSource();
@@ -38,6 +42,12 @@ class MockMediaStreamVideoSource : public MediaStreamVideoSource {
   const media::VideoCaptureParams& start_params() const { return params_; }
   int max_requested_height() const { return max_requested_height_; }
   int max_requested_width() const { return max_requested_width_; }
+  double max_requested_frame_rate() const { return max_requested_frame_rate_; }
+
+  void SetMutedState(bool muted_state) {
+    MediaStreamVideoSource::SetMutedState(muted_state);
+    DoSetMutedState(muted_state);
+  }
 
  protected:
   void DeliverVideoFrameOnIO(const scoped_refptr<media::VideoFrame>& frame,
@@ -49,6 +59,7 @@ class MockMediaStreamVideoSource : public MediaStreamVideoSource {
   virtual void GetCurrentSupportedFormats(
       int max_requested_height,
       int max_requested_width,
+      double max_requested_frame_rate,
       const VideoCaptureDeviceFormatsCB& callback) OVERRIDE;
   virtual void StartSourceImpl(
       const media::VideoCaptureParams& params,
@@ -61,6 +72,7 @@ class MockMediaStreamVideoSource : public MediaStreamVideoSource {
   bool manual_get_supported_formats_;
   int max_requested_height_;
   int max_requested_width_;
+  double max_requested_frame_rate_;
   bool attempted_to_start_;
   VideoCaptureDeviceFormatsCB formats_callback_;
   VideoCaptureDeliverFrameCB frame_callback_;

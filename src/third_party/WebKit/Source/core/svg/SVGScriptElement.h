@@ -28,7 +28,7 @@
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGURIReference.h"
 
-namespace WebCore {
+namespace blink {
 
 class ScriptLoader;
 
@@ -41,18 +41,19 @@ public:
 
     ScriptLoader* loader() const { return m_loader.get(); }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     virtual bool isAnimatableAttribute(const QualifiedName&) const OVERRIDE;
 #endif
 
 private:
     SVGScriptElement(Document&, bool wasInsertedByParser, bool alreadyStarted);
+    virtual ~SVGScriptElement();
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void didNotifySubtreeInsertionsToDocument() OVERRIDE;
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
+    virtual void childrenChanged(const ChildrenChange&) OVERRIDE;
 
     virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
@@ -83,6 +84,6 @@ private:
     OwnPtr<ScriptLoader> m_loader;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

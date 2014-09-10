@@ -7,6 +7,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_util.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 #include "url/gurl.h"
 #include "webkit/common/fileapi/file_system_types.h"
@@ -21,12 +22,6 @@ const base::FilePath::CharType kV0FormatPathPrefix[] =
     FILE_PATH_LITERAL("drive/");
 const char kWapiFileIdPrefix[] = "file:";
 const char kWapiFolderIdPrefix[] = "folder:";
-
-std::string RemovePrefix(const std::string& str, const std::string& prefix) {
-  if (StartsWithASCII(str, prefix, true))
-    return std::string(str.begin() + prefix.size(), str.end());
-  return str;
-}
 
 }  // namespace
 
@@ -87,10 +82,11 @@ std::string AddWapiIdPrefix(const std::string& resource_id,
 }
 
 std::string RemoveWapiIdPrefix(const std::string& resource_id) {
-  if (StartsWithASCII(resource_id, kWapiFileIdPrefix, true))
-    return RemovePrefix(resource_id, kWapiFileIdPrefix);
-  if (StartsWithASCII(resource_id, kWapiFolderIdPrefix, true))
-    return RemovePrefix(resource_id, kWapiFolderIdPrefix);
+  std::string value;
+  if (RemovePrefix(resource_id, kWapiFileIdPrefix, &value))
+    return value;
+  if (RemovePrefix(resource_id, kWapiFolderIdPrefix, &value))
+    return value;
   return resource_id;
 }
 
@@ -146,7 +142,8 @@ SyncStatusCode MigrateDatabaseFromV0ToV1(leveldb::DB* db) {
     std::string key = itr->key().ToString();
     if (!StartsWithASCII(key, kDriveMetadataKeyPrefix, true))
       break;
-    std::string serialized_url(RemovePrefix(key, kDriveMetadataKeyPrefix));
+    std::string serialized_url;
+    RemovePrefix(key, kDriveMetadataKeyPrefix, &serialized_url);
 
     GURL origin;
     base::FilePath path;
@@ -241,6 +238,62 @@ SyncStatusCode MigrateDatabaseFromV1ToV2(leveldb::DB* db) {
       write_batch.Put(key, RemoveWapiIdPrefix(itr->value().ToString()));
       continue;
     }
+  }
+
+  return LevelDBStatusToSyncStatusCode(
+      db->Write(leveldb::WriteOptions(), &write_batch));
+}
+
+SyncStatusCode MigrateDatabaseFromV4ToV3(leveldb::DB* db) {
+  // Rollback from version 4 to version 3.
+  // Please see metadata_database_index.cc for version 3 format, and
+  // metadata_database_index_on_disk.cc for version 4 format.
+
+  const char kDatabaseVersionKey[] = "VERSION";
+  const char kServiceMetadataKey[] = "SERVICE";
+  const char kFileMetadataKeyPrefix[] = "FILE: ";
+  const char kFileTrackerKeyPrefix[] = "TRACKER: ";
+
+  // Key prefixes used in version 4.
+  const char kAppRootIDByAppIDKeyPrefix[] = "APP_ROOT: ";
+  const char kActiveTrackerIDByFileIDKeyPrefix[] = "ACTIVE_FILE: ";
+  const char kTrackerIDByFileIDKeyPrefix[] = "TRACKER_FILE: ";
+  const char kMultiTrackerByFileIDKeyPrefix[] = "MULTI_FILE: ";
+  const char kActiveTrackerIDByParentAndTitleKeyPrefix[] = "ACTIVE_PATH: ";
+  const char kTrackerIDByParentAndTitleKeyPrefix[] = "TRACKER_PATH: ";
+  const char kMultiBackingParentAndTitleKeyPrefix[] = "MULTI_PATH: ";
+  const char kDirtyIDKeyPrefix[] = "DIRTY: ";
+  const char kDemotedDirtyIDKeyPrefix[] = "DEMOTED_DIRTY: ";
+
+  leveldb::WriteBatch write_batch;
+  write_batch.Put(kDatabaseVersionKey, "3");
+
+  scoped_ptr<leveldb::Iterator> itr(db->NewIterator(leveldb::ReadOptions()));
+  for (itr->SeekToFirst(); itr->Valid(); itr->Next()) {
+    std::string key = itr->key().ToString();
+
+    // Do nothing for valid entries in both versions.
+    if (StartsWithASCII(key, kServiceMetadataKey, true) ||
+        StartsWithASCII(key, kFileMetadataKeyPrefix, true) ||
+        StartsWithASCII(key, kFileTrackerKeyPrefix, true)) {
+      continue;
+    }
+
+    // Drop entries used in version 4 only.
+    if (StartsWithASCII(key, kAppRootIDByAppIDKeyPrefix, true) ||
+        StartsWithASCII(key, kActiveTrackerIDByFileIDKeyPrefix, true) ||
+        StartsWithASCII(key, kTrackerIDByFileIDKeyPrefix, true) ||
+        StartsWithASCII(key, kMultiTrackerByFileIDKeyPrefix, true) ||
+        StartsWithASCII(key, kActiveTrackerIDByParentAndTitleKeyPrefix, true) ||
+        StartsWithASCII(key, kTrackerIDByParentAndTitleKeyPrefix, true) ||
+        StartsWithASCII(key, kMultiBackingParentAndTitleKeyPrefix, true) ||
+        StartsWithASCII(key, kDirtyIDKeyPrefix, true) ||
+        StartsWithASCII(key, kDemotedDirtyIDKeyPrefix, true)) {
+      write_batch.Delete(key);
+      continue;
+    }
+
+    DVLOG(3) << "Unknown key: " << key << " was found.";
   }
 
   return LevelDBStatusToSyncStatusCode(

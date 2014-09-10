@@ -11,7 +11,6 @@
     "name": "gclient setup"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -22,7 +21,6 @@
     "name": "gclient revert"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -54,7 +52,6 @@
     ]
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "svn",
       "export",
@@ -71,7 +68,6 @@
     ]
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "patch",
       "--dir",
@@ -95,30 +91,9 @@
     "env": {
       "GYP_DEFINES": "clang=1 component=static_library dcheck_always_on=1 disable_nacl=1 fastbuild=1 gomadir='[BUILD]/goma' release_extra_cflags=-gline-tables-only target_arch=x64 tsan=1 use_allocator=none use_aura=1 use_goma=1"
     },
-    "name": "gclient runhooks",
-    "seed_steps": [
-      "gclient runhooks",
-      "compile",
-      "audio_decoder_unittests",
-      "common_audio_unittests",
-      "common_video_unittests",
-      "libjingle_media_unittest",
-      "libjingle_p2p_unittest",
-      "libjingle_peerconnection_unittest",
-      "libjingle_sound_unittest",
-      "libjingle_unittest",
-      "modules_tests",
-      "modules_unittests",
-      "system_wrappers_unittests",
-      "test_support_unittests",
-      "tools_unittests",
-      "video_engine_core_unittests",
-      "video_engine_tests",
-      "voice_engine_unittests"
-    ]
+    "name": "gclient runhooks"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -140,7 +115,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -157,14 +131,12 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "audio_decoder_unittests"
     ],
     "name": "audio_decoder_unittests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -181,14 +153,12 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "common_audio_unittests"
     ],
     "name": "common_audio_unittests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -205,14 +175,12 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "common_video_unittests"
     ],
     "name": "common_video_unittests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -229,14 +197,12 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "libjingle_media_unittest"
     ],
     "name": "libjingle_media_unittest"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -253,14 +219,12 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "libjingle_p2p_unittest"
     ],
     "name": "libjingle_p2p_unittest"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -277,14 +241,12 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "libjingle_peerconnection_unittest"
     ],
     "name": "libjingle_peerconnection_unittest"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -301,14 +263,12 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "libjingle_sound_unittest"
     ],
     "name": "libjingle_sound_unittest"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -325,14 +285,12 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "libjingle_unittest"
     ],
     "name": "libjingle_unittest"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -349,14 +307,12 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "modules_tests"
     ],
     "name": "modules_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -373,14 +329,12 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "modules_unittests"
     ],
     "name": "modules_unittests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -397,14 +351,12 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "system_wrappers_unittests"
     ],
     "name": "system_wrappers_unittests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -421,14 +373,12 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "test_support_unittests"
     ],
     "name": "test_support_unittests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -445,14 +395,12 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "tools_unittests"
     ],
     "name": "tools_unittests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -469,14 +417,12 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "video_engine_core_unittests"
     ],
     "name": "video_engine_core_unittests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -493,14 +439,12 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "video_engine_tests"
     ],
     "name": "video_engine_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -517,7 +461,6 @@
       "--builder-name=linux_tsan2",
       "--slave-name=slavename",
       "--enable-tsan",
-      "--tsan-suppressions-file=[SLAVE_BUILD]/src/tools/valgrind-webrtc/tsan_v2/suppressions.txt",
       "voice_engine_unittests"
     ],
     "name": "voice_engine_unittests"

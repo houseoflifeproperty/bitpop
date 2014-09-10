@@ -5,6 +5,9 @@
 #ifndef CHROME_BROWSER_METRICS_CHROME_METRICS_SERVICE_ACCESSOR_H_
 #define CHROME_BROWSER_METRICS_CHROME_METRICS_SERVICE_ACCESSOR_H_
 
+#include <stdint.h>
+#include <string>
+
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "chrome/browser/metrics/metrics_service_accessor.h"
@@ -40,11 +43,13 @@ class ChromeMetricsServiceAccessor : public MetricsServiceAccessor {
   friend class ::ChromeBrowserMetricsServiceObserver;
   friend class ChromeRenderMessageFilter;
   friend class ::CrashesDOMHandler;
+  friend class DataReductionProxyChromeSettings;
   friend class extensions::ExtensionDownloader;
   friend class extensions::ManifestFetchData;
   friend class extensions::MetricsPrivateGetIsCrashReportingEnabledFunction;
   friend class ::FlashDOMHandler;
   friend class system_logs::ChromeInternalLogSource;
+  friend class UmaSessionStats;
 
   FRIEND_TEST_ALL_PREFIXES(ChromeMetricsServiceAccessorTest,
                            MetricsReportingEnabled);
@@ -61,6 +66,22 @@ class ChromeMetricsServiceAccessor : public MetricsServiceAccessor {
   // level for Android and ChromeOS, and otherwise is the same as
   // IsMetricsReportingEnabled for desktop Chrome.
   static bool IsCrashReportingEnabled();
+
+  // Registers a field trial name and group to be used to annotate a UMA report
+  // with a particular Chrome configuration state. A UMA report will be
+  // annotated with this trial group if and only if all events in the report
+  // were created after the trial is registered. Only one group name may be
+  // registered at a time for a given trial name. Only the last group name that
+  // is registered for a given trial name will be recorded. The values passed
+  // in must not correspond to any real field trial in the code.
+  static bool RegisterSyntheticFieldTrial(const std::string& trial_name,
+                                          const std::string& group_name);
+
+  // Same as RegisterSyntheticFieldTrial above, but takes a hash for the trial
+  // name, rather than computing it from the string.
+  static bool RegisterSyntheticFieldTrialWithNameHash(
+      uint32_t trial_name_hash,
+      const std::string& group_name);
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(ChromeMetricsServiceAccessor);
 };

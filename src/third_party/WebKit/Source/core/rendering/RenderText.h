@@ -1,7 +1,7 @@
 /*
  * (C) 1999 Lars Knoll (knoll@kde.org)
  * (C) 2000 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004-2009, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,13 +23,14 @@
 #ifndef RenderText_h
 #define RenderText_h
 
+#include "core/dom/Text.h"
 #include "core/rendering/RenderObject.h"
 #include "platform/LengthFunctions.h"
 #include "platform/text/TextPath.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class AbstractInlineTextBox;
 class InlineTextBox;
@@ -40,7 +41,7 @@ public:
     // not the content of the Text node, updating text-transform property
     // doesn't re-transform the string.
     RenderText(Node*, PassRefPtr<StringImpl>);
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     virtual ~RenderText();
 #endif
 
@@ -118,7 +119,7 @@ public:
     LayoutUnit marginLeft() const { return minimumValueForLength(style()->marginLeft(), 0); }
     LayoutUnit marginRight() const { return minimumValueForLength(style()->marginRight(), 0); }
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE FINAL;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const OVERRIDE FINAL;
 
     InlineTextBox* firstTextBox() const { return m_firstTextBox; }
     InlineTextBox* lastTextBox() const { return m_lastTextBox; }
@@ -141,14 +142,12 @@ public:
     bool isAllCollapsibleWhitespace() const;
 
     bool canUseSimpleFontCodePath() const { return m_canUseSimpleFontCodePath; }
-    bool knownToHaveNoOverflowAndNoFallbackFonts() const { return m_knownToHaveNoOverflowAndNoFallbackFonts; }
 
     void removeAndDestroyTextBoxes();
 
     PassRefPtr<AbstractInlineTextBox> firstAbstractInlineTextBox();
 
 protected:
-    virtual void computePreferredLogicalWidths(float leadWidth);
     virtual void willBeDestroyed() OVERRIDE;
 
     virtual void styleWillChange(StyleDifference, const RenderStyle&) OVERRIDE FINAL { }
@@ -162,6 +161,7 @@ protected:
     virtual InlineTextBox* createTextBox(); // Subclassed by SVG.
 
 private:
+    void computePreferredLogicalWidths(float leadWidth);
     void computePreferredLogicalWidths(float leadWidth, HashSet<const SimpleFontData*>& fallbackFonts, GlyphOverflow&);
 
     bool computeCanUseSimpleFontCodePath() const;
@@ -181,6 +181,8 @@ private:
     bool isAllASCII() const { return m_isAllASCII; }
 
     void secureText(UChar mask);
+
+    bool isText() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
 
     // We put the bitfield first to minimize padding on 64-bit.
     bool m_hasBreakableChar : 1; // Whether or not we can be broken into multiple lines.
@@ -225,14 +227,19 @@ inline UChar RenderText::characterAt(unsigned i) const
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderText, isText());
 
-#ifdef NDEBUG
+#if !ENABLE(ASSERT)
 inline void RenderText::checkConsistency() const
 {
 }
 #endif
 
+inline RenderText* Text::renderer() const
+{
+    return toRenderText(CharacterData::renderer());
+}
+
 void applyTextTransform(const RenderStyle*, String&, UChar);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderText_h

@@ -20,7 +20,7 @@
 #ifndef DOMPlugin_h
 #define DOMPlugin_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/frame/FrameDestructionObserver.h"
 #include "core/plugins/DOMMimeType.h"
 #include "platform/heap/Handle.h"
@@ -28,7 +28,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Plugin;
 class PluginData;
@@ -61,6 +61,6 @@ private:
     unsigned m_index;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Plugin_h

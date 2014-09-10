@@ -164,8 +164,7 @@ class TopSitesImplTest : public HistoryUnitTestBase {
   // Creates a bitmap of the specified color. Caller takes ownership.
   gfx::Image CreateBitmap(SkColor color) {
     SkBitmap thumbnail;
-    thumbnail.setConfig(SkBitmap::kARGB_8888_Config, 4, 4);
-    thumbnail.allocPixels();
+    thumbnail.allocN32Pixels(4, 4);
     thumbnail.eraseColor(color);
     return gfx::Image::CreateFrom1xBitmap(thumbnail);  // adds ref.
   }
@@ -182,7 +181,9 @@ class TopSitesImplTest : public HistoryUnitTestBase {
   // Blocks the caller until history processes a task. This is useful if you
   // need to wait until you know history has processed a task.
   void WaitForHistory() {
-    history_service()->ScheduleDBTask(new WaitForHistoryTask(), &consumer_);
+    history_service()->ScheduleDBTask(
+        scoped_ptr<history::HistoryDBTask>(new WaitForHistoryTask()),
+        &history_tracker_);
     base::MessageLoop::current()->Run();
   }
 
@@ -191,14 +192,13 @@ class TopSitesImplTest : public HistoryUnitTestBase {
   void WaitForTopSites() {
     top_sites()->backend_->DoEmptyRequest(
         base::Bind(&TopSitesImplTest::QuitCallback, base::Unretained(this)),
-        &cancelable_task_tracker_);
+        &top_sites_tracker_);
     base::MessageLoop::current()->Run();
   }
 
   TopSitesImpl* top_sites() {
     return static_cast<TopSitesImpl*>(profile_->GetTopSites());
   }
-  CancelableRequestConsumer* consumer() { return &consumer_; }
   TestingProfile* profile() {return profile_.get();}
   HistoryService* history_service() {
     return HistoryServiceFactory::GetForProfile(profile_.get(),
@@ -237,7 +237,7 @@ class TopSitesImplTest : public HistoryUnitTestBase {
     RedirectList redirects;
     redirects.push_back(url);
     history_service()->AddPage(
-        url, base::Time::Now(), static_cast<ContextID>(this), 0, GURL(),
+        url, base::Time::Now(), reinterpret_cast<ContextID>(1), 0, GURL(),
         redirects, content::PAGE_TRANSITION_TYPED, history::SOURCE_BROWSED,
         false);
   }
@@ -247,7 +247,7 @@ class TopSitesImplTest : public HistoryUnitTestBase {
     RedirectList redirects;
     redirects.push_back(url);
     history_service()->AddPage(
-        url, base::Time::Now(), static_cast<ContextID>(this), 0, GURL(),
+        url, base::Time::Now(), reinterpret_cast<ContextID>(1), 0, GURL(),
         redirects, content::PAGE_TRANSITION_TYPED, history::SOURCE_BROWSED,
         false);
     history_service()->SetPageTitle(url, title);
@@ -259,7 +259,7 @@ class TopSitesImplTest : public HistoryUnitTestBase {
                         const history::RedirectList& redirects,
                         base::Time time) {
     history_service()->AddPage(
-        url, time, static_cast<ContextID>(this), 0, GURL(),
+        url, time, reinterpret_cast<ContextID>(1), 0, GURL(),
         redirects, content::PAGE_TRANSITION_TYPED, history::SOURCE_BROWSED,
         false);
     history_service()->SetPageTitle(url, title);
@@ -333,10 +333,10 @@ class TopSitesImplTest : public HistoryUnitTestBase {
   scoped_ptr<TestingProfile> profile_;
 
   // To cancel HistoryService tasks.
-  CancelableRequestConsumer consumer_;
+  base::CancelableTaskTracker history_tracker_;
 
   // To cancel TopSitesBackend tasks.
-  base::CancelableTaskTracker cancelable_task_tracker_;
+  base::CancelableTaskTracker top_sites_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(TopSitesImplTest);
 };  // Class TopSitesImplTest

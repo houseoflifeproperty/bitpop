@@ -25,32 +25,30 @@
 #ifndef RTCDataChannel_h
 #define RTCDataChannel_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "modules/EventTargetModules.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebRTCDataChannelHandler.h"
 #include "public/platform/WebRTCDataChannelHandlerClient.h"
-#include "wtf/RefCounted.h"
 
 namespace blink {
-class WebRTCDataChannelHandler;
-class WebRTCPeerConnectionHandler;
-struct WebRTCDataChannelInit;
-}
-
-namespace WebCore {
 
 class Blob;
 class ExceptionState;
 class RTCPeerConnection;
+class WebRTCDataChannelHandler;
+class WebRTCPeerConnectionHandler;
+struct WebRTCDataChannelInit;
 
-class RTCDataChannel FINAL : public RefCountedWillBeRefCountedGarbageCollected<RTCDataChannel>, public ScriptWrappable, public EventTargetWithInlineData, public blink::WebRTCDataChannelHandlerClient {
-    REFCOUNTED_EVENT_TARGET(RTCDataChannel);
+class RTCDataChannel FINAL
+    : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<RTCDataChannel>
+    , public EventTargetWithInlineData
+    , public WebRTCDataChannelHandlerClient {
+    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<RTCDataChannel>);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(RTCDataChannel);
 public:
-    static PassRefPtrWillBeRawPtr<RTCDataChannel> create(ExecutionContext*, RTCPeerConnection*, PassOwnPtr<blink::WebRTCDataChannelHandler>);
-    static PassRefPtrWillBeRawPtr<RTCDataChannel> create(ExecutionContext*, RTCPeerConnection*, blink::WebRTCPeerConnectionHandler*, const String& label, const blink::WebRTCDataChannelInit&, ExceptionState&);
+    static RTCDataChannel* create(ExecutionContext*, RTCPeerConnection*, PassOwnPtr<WebRTCDataChannelHandler>);
+    static RTCDataChannel* create(ExecutionContext*, RTCPeerConnection*, WebRTCPeerConnectionHandler*, const String& label, const WebRTCDataChannelInit&, ExceptionState&);
     virtual ~RTCDataChannel();
 
     String label() const;
@@ -88,31 +86,28 @@ public:
     virtual const AtomicString& interfaceName() const OVERRIDE;
     virtual ExecutionContext* executionContext() const OVERRIDE;
 
-#if ENABLE(OILPAN)
     void clearWeakMembers(Visitor*);
-#endif
-
     virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    RTCDataChannel(ExecutionContext*, RTCPeerConnection*, PassOwnPtr<blink::WebRTCDataChannelHandler>);
+    RTCDataChannel(ExecutionContext*, RTCPeerConnection*, PassOwnPtr<WebRTCDataChannelHandler>);
 
     void scheduleDispatchEvent(PassRefPtrWillBeRawPtr<Event>);
     void scheduledEventTimerFired(Timer<RTCDataChannel>*);
 
     ExecutionContext* m_executionContext;
 
-    // blink::WebRTCDataChannelHandlerClient
-    virtual void didChangeReadyState(blink::WebRTCDataChannelHandlerClient::ReadyState) OVERRIDE;
-    virtual void didReceiveStringData(const blink::WebString&) OVERRIDE;
+    // WebRTCDataChannelHandlerClient
+    virtual void didChangeReadyState(WebRTCDataChannelHandlerClient::ReadyState) OVERRIDE;
+    virtual void didReceiveStringData(const WebString&) OVERRIDE;
     virtual void didReceiveRawData(const char*, size_t) OVERRIDE;
     virtual void didDetectError() OVERRIDE;
 
-    OwnPtr<blink::WebRTCDataChannelHandler> m_handler;
+    OwnPtr<WebRTCDataChannelHandler> m_handler;
 
     bool m_stopped;
 
-    blink::WebRTCDataChannelHandlerClient::ReadyState m_readyState;
+    WebRTCDataChannelHandlerClient::ReadyState m_readyState;
 
     enum BinaryType {
         BinaryTypeBlob,
@@ -123,11 +118,9 @@ private:
     Timer<RTCDataChannel> m_scheduledEventTimer;
     WillBeHeapVector<RefPtrWillBeMember<Event> > m_scheduledEvents;
 
-#if ENABLE(OILPAN)
     WeakMember<RTCPeerConnection> m_connection;
-#endif
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCDataChannel_h

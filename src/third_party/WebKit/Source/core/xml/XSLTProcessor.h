@@ -23,7 +23,7 @@
 #ifndef XSLTProcessor_h
 #define XSLTProcessor_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/Node.h"
 #include "core/xml/XSLStyleSheet.h"
 #include "platform/RuntimeEnabledFeatures.h"
@@ -33,7 +33,7 @@
 #include <libxml/parserInternals.h>
 #include <libxslt/documents.h>
 
-namespace WebCore {
+namespace blink {
 
 class LocalFrame;
 class Document;

@@ -29,7 +29,6 @@
  */
 #include "config.h"
 
-#include "core/dom/Document.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebThread.h"
@@ -49,7 +48,7 @@
 #include <gtest/gtest.h>
 
 using namespace blink;
-using WebCore::Document;
+using blink::Document;
 using blink::FrameTestHelpers::runPendingTasks;
 using blink::URLTestHelpers::toKURL;
 using blink::URLTestHelpers::registerMockedURLLoad;

@@ -31,6 +31,7 @@
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_notification_tracker.h"
 #include "content/public/test/test_utils.h"
+#include "content/test/test_render_frame_host.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
 #include "net/base/net_util.h"
@@ -44,8 +45,7 @@ namespace {
 // Creates an image with a 1x1 SkBitmap of the specified |color|.
 gfx::Image CreateImage(SkColor color) {
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 1, 1);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(1, 1);
   bitmap.eraseColor(color);
   return gfx::Image::CreateFrom1xBitmap(bitmap);
 }
@@ -79,8 +79,7 @@ class MockScreenshotManager : public content::NavigationEntryScreenshotManager {
 
   void TakeScreenshotFor(content::NavigationEntryImpl* entry) {
     SkBitmap bitmap;
-    bitmap.setConfig(SkBitmap::kARGB_8888_Config, 1, 1);
-    bitmap.allocPixels();
+    bitmap.allocN32Pixels(1, 1);
     bitmap.eraseARGB(0, 0, 0, 0);
     encoding_screenshot_in_progress_ = true;
     OnScreenshotTaken(entry->GetUniqueID(), true, bitmap);
@@ -248,7 +247,7 @@ class TestWebContentsDelegate : public WebContentsDelegate {
 
   // Keep track of whether the tab has notified us of a navigation state change.
   virtual void NavigationStateChanged(const WebContents* source,
-                                      unsigned changed_flags) OVERRIDE {
+                                      InvalidateTypes changed_flags) OVERRIDE {
     navigation_state_change_count_++;
   }
 
@@ -417,8 +416,7 @@ TEST_F(NavigationControllerTest, LoadURL) {
   // Simulate the beforeunload ack for the cross-site transition, and then the
   // commit.
   test_rvh()->SendBeforeUnloadACK(true);
-  static_cast<TestRenderViewHost*>(
-      contents()->GetPendingRenderViewHost())->SendNavigate(1, url2);
+  contents()->GetPendingMainFrame()->SendNavigate(1, url2);
   EXPECT_EQ(1U, navigation_entry_committed_counter_);
   navigation_entry_committed_counter_ = 0;
 
@@ -749,8 +747,7 @@ TEST_F(NavigationControllerTest, LoadURL_NewPending) {
   // After the beforeunload but before it commits, do a new navigation.
   test_rvh()->SendBeforeUnloadACK(true);
   const GURL kNewURL("http://see");
-  static_cast<TestRenderViewHost*>(
-      contents()->GetPendingRenderViewHost())->SendNavigate(3, kNewURL);
+  contents()->GetPendingMainFrame()->SendNavigate(3, kNewURL);
 
   // There should no longer be any pending entry, and the third navigation we
   // just made should be committed.
@@ -828,16 +825,15 @@ TEST_F(NavigationControllerTest, LoadURL_PrivilegedPending) {
   controller.LoadURL(
       kExistingURL2, Referrer(), PAGE_TRANSITION_TYPED, std::string());
   test_rvh()->SendBeforeUnloadACK(true);
-  TestRenderViewHost* foo_rvh = static_cast<TestRenderViewHost*>(
-      contents()->GetPendingRenderViewHost());
-  foo_rvh->SendNavigate(1, kExistingURL2);
+  TestRenderFrameHost* foo_rfh = contents()->GetPendingMainFrame();
+  foo_rfh->SendNavigate(1, kExistingURL2);
   EXPECT_EQ(1U, navigation_entry_committed_counter_);
   navigation_entry_committed_counter_ = 0;
 
   // Now make a pending back/forward navigation to a privileged entry.
   // The zeroth entry should be pending.
   controller.GoBack();
-  foo_rvh->SendBeforeUnloadACK(true);
+  foo_rfh->GetRenderViewHost()->SendBeforeUnloadACK(true);
   EXPECT_EQ(0U, notifications.size());
   EXPECT_EQ(0, controller.GetPendingEntryIndex());
   EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
@@ -847,7 +843,7 @@ TEST_F(NavigationControllerTest, LoadURL_PrivilegedPending) {
   // Before that commits, do a new navigation.
   const GURL kNewURL("http://foo/bee");
   LoadCommittedDetails details;
-  foo_rvh->SendNavigate(3, kNewURL);
+  foo_rfh->SendNavigate(3, kNewURL);
 
   // There should no longer be any pending entry, and the third navigation we
   // just made should be committed.
@@ -1085,33 +1081,32 @@ TEST_F(NavigationControllerTest, LoadURL_WithBindings) {
                 controller.GetPendingEntry())->bindings());
 
   // Commit.
-  TestRenderViewHost* orig_rvh = static_cast<TestRenderViewHost*>(test_rvh());
-  orig_rvh->SendNavigate(0, url1);
+  TestRenderFrameHost* orig_rfh = contents()->GetMainFrame();
+  orig_rfh->SendNavigate(0, url1);
   EXPECT_EQ(controller.GetEntryCount(), 1);
   EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
   EXPECT_EQ(0, NavigationEntryImpl::FromNavigationEntry(
       controller.GetLastCommittedEntry())->bindings());
 
   // Manually increase the number of active views in the SiteInstance
-  // that orig_rvh belongs to, to prevent it from being destroyed when
-  // it gets swapped out, so that we can reuse orig_rvh when the
+  // that orig_rfh belongs to, to prevent it from being destroyed when
+  // it gets swapped out, so that we can reuse orig_rfh when the
   // controller goes back.
-  static_cast<SiteInstanceImpl*>(orig_rvh->GetSiteInstance())->
+  static_cast<SiteInstanceImpl*>(orig_rfh->GetSiteInstance())->
       increment_active_view_count();
 
   // Navigate to a second URL, simulate the beforeunload ack for the cross-site
   // transition, run the unload handler, and set bindings on the pending
   // RenderViewHost to simulate a privileged url.
   controller.LoadURL(url2, Referrer(), PAGE_TRANSITION_TYPED, std::string());
-  orig_rvh->SendBeforeUnloadACK(true);
+  orig_rfh->GetRenderViewHost()->SendBeforeUnloadACK(true);
   contents()->GetRenderManagerForTesting()->OnCrossSiteResponse(
-      contents()->GetRenderManagerForTesting()->pending_frame_host(),
+      contents()->GetPendingMainFrame(),
       GlobalRequestID(0, 0), scoped_ptr<CrossSiteTransferringRequest>(),
       url_chain, Referrer(), PAGE_TRANSITION_TYPED, false);
-  TestRenderViewHost* new_rvh =
-      static_cast<TestRenderViewHost*>(contents()->GetPendingRenderViewHost());
-  new_rvh->AllowBindings(1);
-  new_rvh->SendNavigate(1, url2);
+  TestRenderFrameHost* new_rfh = contents()->GetPendingMainFrame();
+  new_rfh->GetRenderViewHost()->AllowBindings(1);
+  new_rfh->SendNavigate(1, url2);
 
   // The second load should be committed, and bindings should be remembered.
   EXPECT_EQ(controller.GetEntryCount(), 2);
@@ -1122,12 +1117,12 @@ TEST_F(NavigationControllerTest, LoadURL_WithBindings) {
 
   // Going back, the first entry should still appear unprivileged.
   controller.GoBack();
-  new_rvh->SendBeforeUnloadACK(true);
+  new_rfh->GetRenderViewHost()->SendBeforeUnloadACK(true);
   contents()->GetRenderManagerForTesting()->OnCrossSiteResponse(
-      contents()->GetRenderManagerForTesting()->pending_frame_host(),
+      contents()->GetPendingMainFrame(),
       GlobalRequestID(0, 0), scoped_ptr<CrossSiteTransferringRequest>(),
       url_chain, Referrer(), PAGE_TRANSITION_TYPED, false);
-  orig_rvh->SendNavigate(0, url1);
+  orig_rfh->SendNavigate(0, url1);
   EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
   EXPECT_EQ(0, NavigationEntryImpl::FromNavigationEntry(
       controller.GetLastCommittedEntry())->bindings());
@@ -2803,7 +2798,7 @@ TEST_F(NavigationControllerTest, RendererInitiatedPendingEntries) {
 
   // We create pending entries for renderer-initiated navigations so that we
   // can show them in new tabs when it is safe.
-  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, url1);
+  navigator->DidStartProvisionalLoad(main_test_rfh(), url1, false);
 
   // Simulate what happens if a BrowserURLHandler rewrites the URL, causing
   // the virtual URL to differ from the URL.
@@ -2817,7 +2812,7 @@ TEST_F(NavigationControllerTest, RendererInitiatedPendingEntries) {
           is_renderer_initiated());
 
   // If the user clicks another link, we should replace the pending entry.
-  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, url2);
+  navigator->DidStartProvisionalLoad(main_test_rfh(), url2, false);
   EXPECT_EQ(url2, controller.GetPendingEntry()->GetURL());
   EXPECT_EQ(url2, controller.GetPendingEntry()->GetVirtualURL());
 
@@ -2827,18 +2822,18 @@ TEST_F(NavigationControllerTest, RendererInitiatedPendingEntries) {
   EXPECT_EQ(url2, controller.GetLastCommittedEntry()->GetVirtualURL());
 
   // We should not replace the pending entry for an error URL.
-  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, url1);
+  navigator->DidStartProvisionalLoad(main_test_rfh(), url1, false);
   EXPECT_EQ(url1, controller.GetPendingEntry()->GetURL());
-  navigator->DidStartProvisionalLoad(
-      main_test_rfh(), -1, GURL(kUnreachableWebDataURL));
+  navigator->DidStartProvisionalLoad(main_test_rfh(),
+                                     GURL(kUnreachableWebDataURL), false);
   EXPECT_EQ(url1, controller.GetPendingEntry()->GetURL());
 
   // We should remember if the pending entry will replace the current one.
   // http://crbug.com/308444.
-  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, url1);
+  navigator->DidStartProvisionalLoad(main_test_rfh(), url1, false);
   NavigationEntryImpl::FromNavigationEntry(controller.GetPendingEntry())->
       set_should_replace_entry(true);
-  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, url2);
+  navigator->DidStartProvisionalLoad(main_test_rfh(), url2, false);
   EXPECT_TRUE(
       NavigationEntryImpl::FromNavigationEntry(controller.GetPendingEntry())->
           should_replace_entry());
@@ -3074,54 +3069,71 @@ TEST_F(NavigationControllerTest, DontShowRendererURLInNewTabAfterCommit) {
 // regression for bug 1126349.
 TEST_F(NavigationControllerTest, IsInPageNavigation) {
   NavigationControllerImpl& controller = controller_impl();
-  // Navigate to URL with no refs.
   const GURL url("http://www.google.com/home.html");
+
+  // If the renderer claims it performed an in-page navigation from
+  // about:blank, trust the renderer.
+  // This can happen when an iframe is created and populated via
+  // document.write(), then tries to perform a fragment navigation.
+  // TODO(japhet): We should only trust the renderer if the about:blank
+  // was the first document in the given frame, but we don't have enough
+  // information to identify that case currently.
+  const GURL blank_url(url::kAboutBlankURL);
+  main_test_rfh()->SendNavigate(0, blank_url);
+  EXPECT_TRUE(controller.IsURLInPageNavigation(url, true,
+      main_test_rfh()));
+
+  // Navigate to URL with no refs.
   main_test_rfh()->SendNavigate(0, url);
 
   // Reloading the page is not an in-page navigation.
   EXPECT_FALSE(controller.IsURLInPageNavigation(url, false,
-      NAVIGATION_TYPE_UNKNOWN));
+      main_test_rfh()));
   const GURL other_url("http://www.google.com/add.html");
   EXPECT_FALSE(controller.IsURLInPageNavigation(other_url, false,
-      NAVIGATION_TYPE_UNKNOWN));
+      main_test_rfh()));
   const GURL url_with_ref("http://www.google.com/home.html#my_ref");
   EXPECT_TRUE(controller.IsURLInPageNavigation(url_with_ref, true,
-      NAVIGATION_TYPE_UNKNOWN));
+      main_test_rfh()));
 
   // Navigate to URL with refs.
   main_test_rfh()->SendNavigate(1, url_with_ref);
 
   // Reloading the page is not an in-page navigation.
   EXPECT_FALSE(controller.IsURLInPageNavigation(url_with_ref, false,
-      NAVIGATION_TYPE_UNKNOWN));
+      main_test_rfh()));
   EXPECT_FALSE(controller.IsURLInPageNavigation(url, false,
-      NAVIGATION_TYPE_UNKNOWN));
+      main_test_rfh()));
   EXPECT_FALSE(controller.IsURLInPageNavigation(other_url, false,
-      NAVIGATION_TYPE_UNKNOWN));
+      main_test_rfh()));
   const GURL other_url_with_ref("http://www.google.com/home.html#my_other_ref");
   EXPECT_TRUE(controller.IsURLInPageNavigation(other_url_with_ref, true,
-      NAVIGATION_TYPE_UNKNOWN));
+      main_test_rfh()));
 
   // Going to the same url again will be considered in-page
   // if the renderer says it is even if the navigation type isn't IN_PAGE.
   EXPECT_TRUE(controller.IsURLInPageNavigation(url_with_ref, true,
-      NAVIGATION_TYPE_UNKNOWN));
+      main_test_rfh()));
 
   // Going back to the non ref url will be considered in-page if the navigation
   // type is IN_PAGE.
   EXPECT_TRUE(controller.IsURLInPageNavigation(url, true,
-      NAVIGATION_TYPE_IN_PAGE));
+      main_test_rfh()));
 
   // If the renderer says this is a same-origin in-page navigation, believe it.
   // This is the pushState/replaceState case.
   EXPECT_TRUE(controller.IsURLInPageNavigation(other_url, true,
-      NAVIGATION_TYPE_UNKNOWN));
+      main_test_rfh()));
 
   // Don't believe the renderer if it claims a cross-origin navigation is
   // in-page.
   const GURL different_origin_url("http://www.example.com");
+  MockRenderProcessHost* rph =
+      static_cast<MockRenderProcessHost*>(main_test_rfh()->GetProcess());
+  EXPECT_EQ(0, rph->bad_msg_count());
   EXPECT_FALSE(controller.IsURLInPageNavigation(different_origin_url, true,
-      NAVIGATION_TYPE_UNKNOWN));
+      main_test_rfh()));
+  EXPECT_EQ(1, rph->bad_msg_count());
 }
 
 // Some pages can have subframes with the same base URL (minus the reference) as
@@ -4220,14 +4232,17 @@ TEST_F(NavigationControllerTest, MAYBE_PurgeScreenshot) {
   }
 }
 
-TEST_F(NavigationControllerTest, PushStateUpdatesTitle) {
-
-  // Navigate
+TEST_F(NavigationControllerTest, PushStateUpdatesTitleAndFavicon) {
+  // Navigate.
   test_rvh()->SendNavigate(1, GURL("http://foo"));
 
-  // Set title
+  // Set title and favicon.
   base::string16 title(base::ASCIIToUTF16("Title"));
+  FaviconStatus favicon;
+  favicon.valid = true;
+  favicon.url = GURL("http://foo/favicon.ico");
   controller().GetLastCommittedEntry()->SetTitle(title);
+  controller().GetLastCommittedEntry()->GetFavicon() = favicon;
 
   // history.pushState() is called.
   FrameHostMsg_DidCommitProvisionalLoad_Params params;
@@ -4242,6 +4257,10 @@ TEST_F(NavigationControllerTest, PushStateUpdatesTitle) {
   base::string16 new_title =
       controller().GetLastCommittedEntry()->GetTitleForDisplay(std::string());
   EXPECT_EQ(title, new_title);
+  FaviconStatus new_favicon =
+      controller().GetLastCommittedEntry()->GetFavicon();
+  EXPECT_EQ(favicon.valid, new_favicon.valid);
+  EXPECT_EQ(favicon.url, new_favicon.url);
 }
 
 // Test that the navigation controller clears its session history when a
@@ -4278,7 +4297,7 @@ TEST_F(NavigationControllerTest, ClearHistoryList) {
   EXPECT_TRUE(entry->should_clear_history_list());
 
   // Assume that the RV correctly cleared its history and commit the navigation.
-  static_cast<TestRenderViewHost*>(contents()->GetPendingRenderViewHost())->
+  contents()->GetPendingMainFrame()->GetRenderViewHost()->
       set_simulate_history_list_was_cleared(true);
   contents()->CommitPendingNavigation();
 

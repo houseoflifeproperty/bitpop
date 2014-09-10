@@ -122,7 +122,7 @@ void RenderWidgetHostViewChildFrame::ImeCompositionRangeChanged(
 void RenderWidgetHostViewChildFrame::WasShown() {
   if (!host_->is_hidden())
     return;
-  host_->WasShown();
+  host_->WasShown(ui::LatencyInfo());
 }
 
 void RenderWidgetHostViewChildFrame::WasHidden() {
@@ -289,7 +289,7 @@ void RenderWidgetHostViewChildFrame::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& /* dst_size */,
     const base::Callback<void(bool, const SkBitmap&)>& callback,
-    const SkBitmap::Config config) {
+    const SkColorType color_type) {
   callback.Run(false, SkBitmap());
 }
 
@@ -332,8 +332,16 @@ gfx::NativeViewId RenderWidgetHostViewChildFrame::GetParentForWindowlessPlugin()
 }
 #endif // defined(OS_WIN)
 
-SkBitmap::Config RenderWidgetHostViewChildFrame::PreferredReadbackFormat() {
-  return SkBitmap::kARGB_8888_Config;
+SkColorType RenderWidgetHostViewChildFrame::PreferredReadbackFormat() {
+  return kN32_SkColorType;
+}
+
+BrowserAccessibilityManager*
+RenderWidgetHostViewChildFrame::CreateBrowserAccessibilityManager(
+    BrowserAccessibilityDelegate* delegate) {
+  // This eventually needs to be implemented for cross-process iframes.
+  // http://crbug.com/368298
+  return NULL;
 }
 
 }  // namespace content

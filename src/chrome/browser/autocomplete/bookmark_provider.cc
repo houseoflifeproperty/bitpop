@@ -10,16 +10,17 @@
 
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_result.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/autocomplete/history_provider.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
-#include "components/autocomplete/url_prefix.h"
 #include "components/bookmarks/browser/bookmark_match.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
+#include "components/omnibox/autocomplete_result.h"
+#include "components/omnibox/omnibox_field_trial.h"
+#include "components/omnibox/url_prefix.h"
 #include "net/base/net_util.h"
 
 using bookmarks::BookmarkMatch;
@@ -28,11 +29,9 @@ typedef std::vector<BookmarkMatch> BookmarkMatches;
 
 // BookmarkProvider ------------------------------------------------------------
 
-BookmarkProvider::BookmarkProvider(
-    AutocompleteProviderListener* listener,
-    Profile* profile)
-    : AutocompleteProvider(listener, profile,
-                           AutocompleteProvider::TYPE_BOOKMARK),
+BookmarkProvider::BookmarkProvider(Profile* profile)
+    : AutocompleteProvider(AutocompleteProvider::TYPE_BOOKMARK),
+      profile_(profile),
       bookmark_model_(NULL),
       score_using_url_matches_(OmniboxFieldTrial::BookmarksIndexURLsValue()) {
   if (profile) {
@@ -177,8 +176,8 @@ AutocompleteMatch BookmarkProvider::BookmarkMatchToACMatch(
                                match.contents.size(),
                                true);
   match.fill_into_edit =
-      AutocompleteInput::FormattedStringWithEquivalentMeaning(url,
-                                                              match.contents);
+      AutocompleteInput::FormattedStringWithEquivalentMeaning(
+          url, match.contents, ChromeAutocompleteSchemeClassifier(profile_));
   if (inline_autocomplete_offset != base::string16::npos) {
     // |inline_autocomplete_offset| may be beyond the end of the
     // |fill_into_edit| if the user has typed an URL with a scheme and the
@@ -196,7 +195,6 @@ AutocompleteMatch BookmarkProvider::BookmarkMatchToACMatch(
       ClassificationsFromMatch(bookmark_match.title_match_positions,
                                match.description.size(),
                                false);
-  match.starred = true;
 
   // Summary on how a relevance score is determined for the match:
   //

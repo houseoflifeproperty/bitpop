@@ -27,6 +27,7 @@
 
 using content::ResourceController;
 using content::ResourceThrottle;
+using content::ResourceType;
 
 namespace extensions {
 
@@ -166,8 +167,8 @@ class UserScriptListenerTest : public ExtensionServiceTestBase {
     net::TestURLRequest* request =
         new net::TestURLRequest(url, net::DEFAULT_PRIORITY, delegate, context);
 
-    ResourceThrottle* throttle =
-        listener_->CreateResourceThrottle(url, ResourceType::MAIN_FRAME);
+    ResourceThrottle* throttle = listener_->CreateResourceThrottle(
+        url, content::RESOURCE_TYPE_MAIN_FRAME);
 
     bool defer = false;
     if (throttle) {
@@ -216,7 +217,7 @@ TEST_F(UserScriptListenerTest, DelayAndUpdate) {
   ASSERT_FALSE(request->is_pending());
 
   content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
+      extensions::NOTIFICATION_USER_SCRIPTS_UPDATED,
       content::Source<Profile>(profile_.get()),
       content::NotificationService::NoDetails());
   base::MessageLoop::current()->RunUntilIdle();
@@ -241,7 +242,7 @@ TEST_F(UserScriptListenerTest, DelayAndUnload) {
   ASSERT_FALSE(request->is_pending());
 
   content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
+      extensions::NOTIFICATION_USER_SCRIPTS_UPDATED,
       content::Source<Profile>(profile_.get()),
       content::NotificationService::NoDetails());
   base::MessageLoop::current()->RunUntilIdle();
@@ -293,7 +294,7 @@ TEST_F(UserScriptListenerTest, MultiProfile) {
   extensions::ExtensionRegistry::Get(&profile2)->AddEnabled(extension);
 
   content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+      extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
       content::Source<Profile>(&profile2),
       content::Details<Extension>(extension.get()));
 
@@ -306,7 +307,7 @@ TEST_F(UserScriptListenerTest, MultiProfile) {
   // When the first profile's user scripts are ready, the request should still
   // be blocked waiting for profile2.
   content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
+      extensions::NOTIFICATION_USER_SCRIPTS_UPDATED,
       content::Source<Profile>(profile_.get()),
       content::NotificationService::NoDetails());
   base::MessageLoop::current()->RunUntilIdle();
@@ -315,7 +316,7 @@ TEST_F(UserScriptListenerTest, MultiProfile) {
 
   // After profile2 is ready, the request should proceed.
   content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
+      extensions::NOTIFICATION_USER_SCRIPTS_UPDATED,
       content::Source<Profile>(&profile2),
       content::NotificationService::NoDetails());
   base::MessageLoop::current()->RunUntilIdle();
@@ -335,14 +336,14 @@ TEST_F(UserScriptListenerTest, ResumeBeforeStart) {
       new net::TestURLRequest(url, net::DEFAULT_PRIORITY, &delegate, &context));
 
   ResourceThrottle* throttle =
-      listener_->CreateResourceThrottle(url, ResourceType::MAIN_FRAME);
+      listener_->CreateResourceThrottle(url, content::RESOURCE_TYPE_MAIN_FRAME);
   ASSERT_TRUE(throttle);
   request->SetUserData(NULL, new ThrottleController(request.get(), throttle));
 
   ASSERT_FALSE(request->is_pending());
 
   content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
+      extensions::NOTIFICATION_USER_SCRIPTS_UPDATED,
       content::Source<Profile>(profile_.get()),
       content::NotificationService::NoDetails());
   base::MessageLoop::current()->RunUntilIdle();

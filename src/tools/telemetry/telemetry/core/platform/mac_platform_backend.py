@@ -5,22 +5,24 @@
 import ctypes
 import os
 import time
-try:
-  import resource  # pylint: disable=F0401
-except ImportError:
-  resource = None  # Not available on all platforms
 
 from telemetry import decorators
 from telemetry.core.platform import platform_backend
 from telemetry.core.platform import posix_platform_backend
 from telemetry.core.platform.power_monitor import powermetrics_power_monitor
 
+try:
+  import resource  # pylint: disable=F0401
+except ImportError:
+  resource = None  # Not available on all platforms
+
+
 
 class MacPlatformBackend(posix_platform_backend.PosixPlatformBackend):
   def __init__(self):
     super(MacPlatformBackend, self).__init__()
     self.libproc = None
-    self.power_monitor_ = powermetrics_power_monitor.PowerMetricsPowerMonitor(
+    self._power_monitor = powermetrics_power_monitor.PowerMetricsPowerMonitor(
         self)
 
   def StartRawDisplayFrameRateMeasurement(self):
@@ -152,10 +154,13 @@ class MacPlatformBackend(posix_platform_backend.PosixPlatformBackend):
     assert p.returncode == 0, 'Failed to flush system cache'
 
   def CanMonitorPower(self):
-    return self.power_monitor_.CanMonitorPower()
+    return self._power_monitor.CanMonitorPower()
+
+  def CanMeasurePerApplicationPower(self):
+    return self._power_monitor.CanMeasurePerApplicationPower()
 
   def StartMonitoringPower(self, browser):
-    self.power_monitor_.StartMonitoringPower(browser)
+    self._power_monitor.StartMonitoringPower(browser)
 
   def StopMonitoringPower(self):
-    return self.power_monitor_.StopMonitoringPower()
+    return self._power_monitor.StopMonitoringPower()

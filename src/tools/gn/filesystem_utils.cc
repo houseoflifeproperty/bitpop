@@ -335,22 +335,18 @@ bool EnsureStringIsInOutputDir(const SourceDir& dir,
                                const std::string& str,
                                const Value& originating,
                                Err* err) {
-  // The last char of the dir will be a slash. We don't care if the input ends
-  // in a slash or not, so just compare up until there.
-  //
   // This check will be wrong for all proper prefixes "e.g. "/output" will
   // match "/out" but we don't really care since this is just a sanity check.
   const std::string& dir_str = dir.value();
-  if (str.compare(0, dir_str.length() - 1, dir_str, 0, dir_str.length() - 1)
-      != 0) {
-    *err = Err(originating, "File is not inside output directory.",
-        "The given file should be in the output directory. Normally you would "
-        "specify\n\"$target_out_dir/foo\" or "
-        "\"$target_gen_dir/foo\". I interpreted this as\n\""
-        + str + "\".");
-    return false;
-  }
-  return true;
+  if (str.compare(0, dir_str.length(), dir_str) == 0)
+    return true;  // Output directory is hardcoded.
+
+  *err = Err(originating, "File is not inside output directory.",
+      "The given file should be in the output directory. Normally you would "
+      "specify\n\"$target_out_dir/foo\" or "
+      "\"$target_gen_dir/foo\". I interpreted this as\n\""
+      + str + "\".");
+  return false;
 }
 
 bool IsPathAbsolute(const base::StringPiece& path) {

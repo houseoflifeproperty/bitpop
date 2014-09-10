@@ -26,7 +26,8 @@ class ArchiveApi(recipe_api.RecipeApi):
     elif src_dir:
       args.extend(['--src-dir', src_dir])
     args.extend(self.m.json.property_args())
-    return self.m.python(
+    kwargs['allow_subannotations'] = True
+    self.m.python(
       step_name,
       self.m.path['build'].join('scripts', 'slave', 'zip_build.py'),
       args,
@@ -35,17 +36,20 @@ class ArchiveApi(recipe_api.RecipeApi):
 
   def download_and_unzip_build(
       self, step_name, target, build_url, src_dir=None,
-      build_revision=None, **kwargs):
+      build_revision=None, build_archive_url=None, **kwargs):
     """Returns a step invoking extract_build.py to download and unzip
        a Chromium build."""
-    args = ['--target', target,
-            '--build-url', build_url]
-    if build_revision:
-      args.extend(['--build_revision', build_revision])
-    elif src_dir:
-      args.extend(['--src-dir', src_dir])
+    args = ['--target', target]
+    if build_archive_url:
+      args.extend(['--build-archive-url', build_archive_url])
+    else:
+      args.extend(['--build-url', build_url])
+      if build_revision:
+        args.extend(['--build_revision', build_revision])
+      elif src_dir:
+        args.extend(['--src-dir', src_dir])
     args.extend(self.m.json.property_args())
-    return self.m.python(
+    self.m.python(
       step_name,
       self.m.path['build'].join('scripts', 'slave', 'extract_build.py'),
       args,

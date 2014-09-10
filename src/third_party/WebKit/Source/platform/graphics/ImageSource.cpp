@@ -33,7 +33,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 ImageSource::ImageSource(ImageSource::AlphaOption alphaOption, ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption)
     : m_alphaOption(alphaOption)
@@ -171,4 +171,4 @@ unsigned ImageSource::frameBytesAtIndex(size_t index) const
     return m_decoder->frameBytesAtIndex(index);
 }
 
-}
+} // namespace blink

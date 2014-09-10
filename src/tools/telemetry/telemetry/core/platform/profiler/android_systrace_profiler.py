@@ -3,8 +3,8 @@
 # found in the LICENSE file.
 
 import os
-import subprocess
 import StringIO
+import subprocess
 import zipfile
 
 from telemetry.core import util
@@ -34,10 +34,11 @@ class AndroidSystraceProfiler(profiler.Profiler):
     # and the two methods conflict.
     self._browser_backend.StartTracing(None, timeout=10)
     self._profiler = subprocess.Popen(
-        ['python', os.path.join(util.GetChromiumSrcDir(), 'tools', 'android',
-                                'adb_profile_chrome.py'),
+        ['python', os.path.join(util.GetChromiumSrcDir(), 'tools',
+                                'profile_chrome.py'),
          '--categories', '', '--continuous', '--output',
-         self._systrace_output_path, '--systrace'] + _SYSTRACE_CATEGORIES,
+         self._systrace_output_path, '--json', '--systrace',
+         ','.join(_SYSTRACE_CATEGORIES)],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
   @classmethod

@@ -7,7 +7,6 @@
 #include "base/command_line.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
-#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/history/history_tab_helper.h"
 #include "chrome/browser/infobars/infobar_service.h"
@@ -31,15 +30,12 @@
 #include "components/dom_distiller/content/web_contents_main_frame_observer.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "content/public/browser/web_contents.h"
-#include "extensions/browser/view_type_utils.h"
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/android/webapps/single_tab_mode_tab_helper.h"
 #include "chrome/browser/ui/android/context_menu_helper.h"
 #include "chrome/browser/ui/android/window_android_helper.h"
 #else
-#include "chrome/browser/extensions/api/web_navigation/web_navigation_api.h"
-#include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/external_protocol/external_protocol_observer.h"
 #include "chrome/browser/net/predictor_tab_helper.h"
 #include "chrome/browser/plugins/plugin_observer.h"
@@ -62,6 +58,13 @@
 
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
 #include "chrome/browser/captive_portal/captive_portal_tab_helper.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/api/web_navigation/web_navigation_api.h"
+#include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
+#include "chrome/browser/extensions/tab_helper.h"
+#include "extensions/browser/view_type_utils.h"
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
@@ -102,14 +105,21 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
   web_contents->SetUserData(&kTabContentsAttachedTabHelpersUserDataKey,
                             new base::SupportsUserData::Data());
 
+#if defined(ENABLE_EXTENSIONS)
   // Set the view type.
   extensions::SetViewType(web_contents, extensions::VIEW_TYPE_TAB_CONTENTS);
+#endif
 
   // Create all the tab helpers.
 
   // SessionTabHelper comes first because it sets up the tab ID, and other
   // helpers may rely on that.
   SessionTabHelper::CreateForWebContents(web_contents);
+#if !defined(OS_ANDROID)
+  // ZoomController comes before common tab helpers since ChromeAutofillClient
+  // may want to register as a ZoomObserver with it.
+  ZoomController::CreateForWebContents(web_contents);
+#endif
 
   // --- Common tab helpers ---
 
@@ -125,7 +135,6 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
       web_contents,
       autofill::ChromeAutofillClient::FromWebContents(web_contents));
   CoreTabHelper::CreateForWebContents(web_contents);
-  extensions::TabHelper::CreateForWebContents(web_contents);
   FaviconTabHelper::CreateForWebContents(web_contents);
   FindTabHelper::CreateForWebContents(web_contents);
   HistoryTabHelper::CreateForWebContents(web_contents);
@@ -164,7 +173,6 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
   TabContentsSyncedTabDelegate::CreateForWebContents(web_contents);
   ThumbnailTabHelper::CreateForWebContents(web_contents);
   web_modal::WebContentsModalDialogManager::CreateForWebContents(web_contents);
-  ZoomController::CreateForWebContents(web_contents);
 #endif
 
 #if defined(OS_WIN)
@@ -175,6 +183,10 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
 
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
   CaptivePortalTabHelper::CreateForWebContents(web_contents);
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+  extensions::TabHelper::CreateForWebContents(web_contents);
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)

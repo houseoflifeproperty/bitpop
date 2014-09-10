@@ -30,7 +30,7 @@
 #include "core/html/HTMLMediaElement.h"
 #include "core/rendering/RenderView.h"
 
-namespace WebCore {
+namespace blink {
 
 RenderMedia::RenderMedia(HTMLMediaElement* video)
     : RenderImage(video)
@@ -40,6 +40,12 @@ RenderMedia::RenderMedia(HTMLMediaElement* video)
 
 RenderMedia::~RenderMedia()
 {
+}
+
+void RenderMedia::trace(Visitor* visitor)
+{
+    visitor->trace(m_children);
+    RenderImage::trace(visitor);
 }
 
 HTMLMediaElement* RenderMedia::mediaElement() const
@@ -75,4 +81,4 @@ void RenderMedia::paintReplaced(PaintInfo&, const LayoutPoint&)
 {
 }
 
-} // namespace WebCore
+} // namespace blink

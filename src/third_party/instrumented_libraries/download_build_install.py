@@ -8,36 +8,10 @@
 import argparse
 import os
 import platform
+import shlex
 import shutil
 import subprocess
 import sys
-
-# Build parameters for different sanitizers.
-# We use XORIGIN as RPATH and after building library replace it to $ORIGIN
-# The reason: this flag goes through configure script and makefiles
-# differently for different libraries. So the dollar sign '$' should be
-# differently escaped. Instead of having problems with that it just
-# uses XORIGIN to build library and after that replaces it to $ORIGIN
-# directly in .so file.
-SUPPORTED_SANITIZERS = {
-    'asan': {
-        'compiler_flags': '-O2 -fsanitize=address -gline-tables-only -fPIC -w '
-                          '-U_FORITFY_SOURCE',
-        'linker_flags': '-fsanitize=address -Wl,-z,origin -Wl,-R,XORIGIN/.'
-    },
-    'msan': {
-        'compiler_flags': '-O2 -fsanitize=memory '
-                          '-fsanitize-memory-track-origins '
-                          '-gline-tables-only -fPIC -w -U_FORTIFY_SOURCE',
-        'linker_flags': '-fsanitize=memory -Wl,-z,origin -Wl,-R,XORIGIN/.'
-    },
-    'tsan': {
-        'compiler_flags': '-O2 -fsanitize=thread -gline-tables-only -fPIC -w '
-                          '-U_FORTIFY_SOURCE',
-        'linker_flags': '-fsanitize=thread -Wl,-z,origin -Wl,-R,XORIGIN/.'
-    },
-}
-
 
 class ScopedChangeDirectory(object):
   """Changes current working directory and restores it back automatically."""
@@ -59,22 +33,22 @@ def get_script_absolute_path():
   return os.path.dirname(os.path.abspath(__file__))
 
 
-def get_library_build_dependencies(library):
-  command = 'apt-get -s build-dep %s | grep Inst | cut -d " " -f 2' % library
+def get_package_build_dependencies(package):
+  command = 'apt-get -s build-dep %s | grep Inst | cut -d " " -f 2' % package
   command_result = subprocess.Popen(command, stdout=subprocess.PIPE,
                                     shell=True)
   if command_result.wait():
-    raise Exception('Failed to determine build dependencies for %s' % library)
+    raise Exception('Failed to determine build dependencies for %s' % package)
   build_dependencies = [l.strip() for l in command_result.stdout]
   return build_dependencies
 
 
-def check_library_build_dependencies(library):
-  build_dependencies = get_library_build_dependencies(library)
+def check_package_build_dependencies(package):
+  build_dependencies = get_package_build_dependencies(package)
   if len(build_dependencies):
-    print >> sys.stderr, 'Please, install build-dependencies for %s' % library
+    print >> sys.stderr, 'Please, install build-dependencies for %s' % package
     print >> sys.stderr, 'One-liner for APT:'
-    print >> sys.stderr, 'sudo apt-get -y --no-remove build-dep %s' % library
+    print >> sys.stderr, 'sudo apt-get -y --no-remove build-dep %s' % package
     sys.exit(1)
 
 
@@ -119,29 +93,18 @@ def destdir_configure_make_install(parsed_arguments, environment,
   # files below.
   destdir = '%s/debian/instrumented_build' % os.getcwd()
   # Some makefiles use BUILDROOT instead of DESTDIR.
-  make_command = 'make -j%s DESTDIR=%s BUILDROOT=%s' % (
-      parsed_arguments.jobs, destdir, destdir),
+  make_command = 'make DESTDIR=%s BUILDROOT=%s' % (destdir, destdir)
   run_shell_commands([
       configure_command,
-      make_command,
-      '%s install' % make_command,
+      '%s -j%s' % (make_command, parsed_arguments.jobs),
+      # Parallel install is flaky for some packages.
+      '%s install -j1' % make_command,
       # Kill the .la files. They contain absolute paths, and will cause build
       # errors in dependent libraries.
       'rm %s/lib/*.la -f' % destdir,
       # Now move the contents of the temporary destdir to their final place.
       'cp %s/* %s/ -rdf' % (destdir, install_prefix)],
                      parsed_arguments.verbose, environment)
-
-
-def prefix_configure_make_install(parsed_arguments, environment,
-                                  install_prefix):
-  configure_command = './configure %s --prefix=%s' % (
-      parsed_arguments.extra_configure_flags, install_prefix)
-  shell_call(configure_command, parsed_arguments.verbose, environment)
-  shell_call('make -j%s' % parsed_arguments.jobs,
-             parsed_arguments.verbose, environment)
-  shell_call('make -j%s install' % parsed_arguments.jobs,
-             parsed_arguments.verbose, environment)
 
 
 def nss_make_and_copy(parsed_arguments, environment, install_prefix):
@@ -236,113 +199,134 @@ def build_and_install(parsed_arguments, environment, install_prefix):
   if parsed_arguments.build_method == 'destdir':
     destdir_configure_make_install(
         parsed_arguments, environment, install_prefix)
-  elif parsed_arguments.build_method == 'prefix':
-    prefix_configure_make_install(parsed_arguments, environment, install_prefix)
   elif parsed_arguments.build_method == 'custom_nss':
     nss_make_and_copy(parsed_arguments, environment, install_prefix)
   elif parsed_arguments.build_method == 'custom_libcap':
     libcap2_make_install(parsed_arguments, environment, install_prefix)
-  elif parsed_arguments.build_method == 'custom_pango':
-    parsed_arguments.extra_configure_flags += \
-      ' --x-libraries=%s/lib' % install_prefix
-    parsed_arguments.extra_configure_flags += \
-      ' --x-includes=%s/include' % install_prefix
-    prefix_configure_make_install(parsed_arguments, environment, install_prefix)
   elif parsed_arguments.build_method == 'custom_libpci3':
     libpci3_make_install(parsed_arguments, environment, install_prefix)
-  elif parsed_arguments.build_method == 'custom_libappindicator1':
-    environment['CSC'] = '/usr/bin/mono-csc'
-    destdir_configure_make_install(
-        parsed_arguments, environment, install_prefix)
   else:
     raise Exception('Unrecognized build method: %s' %
                     parsed_arguments.build_method)
 
 
-def download_build_install(parsed_arguments):
-  sanitizer_params = SUPPORTED_SANITIZERS[parsed_arguments.sanitizer_type]
+def unescape_flags(s):
+  # GYP escapes the build flags as if they are going to be inserted directly
+  # into the command line. Since we pass them via CFLAGS/LDFLAGS, we must drop
+  # the double quotes accordingly. 
+  return ' '.join(shlex.split(s))
 
+
+def build_environment(parsed_arguments, product_directory, install_prefix):
   environment = os.environ.copy()
-  # Usage of environment variables CC and CXX prefers usage flags --c-compiler
-  # and --cxx-compiler
+  # The CC/CXX environment variables take precedence over the command line
+  # flags.
   if 'CC' not in environment and parsed_arguments.cc:
     environment['CC'] = parsed_arguments.cc
   if 'CXX' not in environment and parsed_arguments.cxx:
     environment['CXX'] = parsed_arguments.cxx
 
+  cflags = unescape_flags(parsed_arguments.cflags)
+  if parsed_arguments.sanitizer_blacklist:
+    cflags += ' -fsanitize-blacklist=%s/%s' % (
+        get_script_absolute_path(),
+        parsed_arguments.sanitizer_blacklist)
+  environment['CFLAGS'] = cflags
+  environment['CXXFLAGS'] = cflags
+
+  ldflags = unescape_flags(parsed_arguments.ldflags)
+  # Make sure the linker searches the instrumented libraries dir for
+  # library dependencies.
+  environment['LDFLAGS'] = '%s -L%s/lib' % (ldflags, install_prefix)
+
+  if parsed_arguments.sanitizer_type == 'asan':
+    # Do not report leaks during the build process.
+    environment['ASAN_OPTIONS'] = '%s:detect_leaks=0' % \
+        environment.get('ASAN_OPTIONS', '')
+
+  # libappindicator1 needs this.
+  environment['CSC'] = '/usr/bin/mono-csc'
+  return environment
+
+
+
+def download_build_install(parsed_arguments):
   product_directory = os.path.normpath('%s/%s' % (
       get_script_absolute_path(),
       parsed_arguments.product_directory))
-
-  compiler_flags = sanitizer_params['compiler_flags']
-  if parsed_arguments.sanitizer_blacklist:
-    compiler_flags += ' -fsanitize-blacklist=%s/%s' % (
-        product_directory,
-        parsed_arguments.sanitizer_blacklist)
-  environment['CFLAGS'] = '%s %s' % (compiler_flags,
-                                     parsed_arguments.extra_cflags)
-  environment['CXXFLAGS'] = '%s %s' % (
-      compiler_flags,
-      parsed_arguments.extra_cxxflags)
 
   install_prefix = '%s/instrumented_libraries/%s' % (
       product_directory,
       parsed_arguments.sanitizer_type)
 
-  # Make sure the linker searches the instrumented libraries dir for
-  # library dependencies.
-  environment['LDFLAGS'] = '%s -L%s/lib %s' % (
-      sanitizer_params['linker_flags'],
-      install_prefix, parsed_arguments.extra_ldflags)
+  environment = build_environment(parsed_arguments, product_directory,
+                                  install_prefix)
 
-  library_directory = '%s/%s' % (parsed_arguments.intermediate_directory,
-                                 parsed_arguments.library)
+  package_directory = '%s/%s' % (parsed_arguments.intermediate_directory,
+                                 parsed_arguments.package)
 
-  # A failed build might have left a dirty source tree behind.
-  if os.path.exists(library_directory):
-    shell_call('rm -rf %s' % library_directory, parsed_arguments.verbose)
-  os.makedirs(library_directory)
+  # Clobber by default, unless the developer wants to hack on the package's
+  # source code.
+  clobber = (environment.get('INSTRUMENTED_LIBRARIES_NO_CLOBBER', '') != '1')
 
-  with ScopedChangeDirectory(library_directory) as cd_library:
-    shell_call('apt-get source %s' % parsed_arguments.library,
-               parsed_arguments.verbose)
+  download_source = True
+  if os.path.exists(package_directory):
+    if clobber:
+      shell_call('rm -rf %s' % package_directory, parsed_arguments.verbose)
+    else:
+      download_source = False
+  if download_source:
+    os.makedirs(package_directory)
+
+  with ScopedChangeDirectory(package_directory) as cd_package:
+    if download_source:
+      shell_call('apt-get source %s' % parsed_arguments.package,
+                 parsed_arguments.verbose)
     # There should be exactly one subdirectory after downloading a package.
     subdirectories = [d for d in os.listdir('.') if os.path.isdir(d)]
     if len(subdirectories) != 1:
-      raise (Exception('There was not one directory after downloading '
-                       'a package %s' % parsed_arguments.library))
+      raise Exception('apt-get source %s must create exactly one subdirectory.'
+         % parsed_arguments.package)
     with ScopedChangeDirectory(subdirectories[0]):
       # Here we are in the package directory.
-      if parsed_arguments.run_before_build:
-        shell_call(
-            '%s/%s' %
-            (os.path.relpath(cd_library.old_path),
-             parsed_arguments.run_before_build),
-            parsed_arguments.verbose)
+      if download_source:
+        # Patch/run_before_build steps are only done once.
+        if parsed_arguments.patch:
+          shell_call(
+              'patch -p1 -i %s/%s' %
+              (os.path.relpath(cd_package.old_path),
+               parsed_arguments.patch),
+              parsed_arguments.verbose)
+        if parsed_arguments.run_before_build:
+          shell_call(
+              '%s/%s' %
+              (os.path.relpath(cd_package.old_path),
+               parsed_arguments.run_before_build),
+              parsed_arguments.verbose)
       try:
         build_and_install(parsed_arguments, environment, install_prefix)
       except Exception as exception:
         print exception
-        print 'Failed to build library %s.' % parsed_arguments.library
+        print 'Failed to build package %s.' % parsed_arguments.package
         print ('Probably, some of its dependencies are not installed: %s' %
-               ' '.join(get_library_build_dependencies(parsed_arguments.library)))
+               ' '.join(get_package_build_dependencies(parsed_arguments.package)))
         sys.exit(1)
 
-  # Touch a txt file to indicate library is installed.
-  open('%s/%s.txt' % (install_prefix, parsed_arguments.library), 'w').close()
+  # Touch a txt file to indicate package is installed.
+  open('%s/%s.txt' % (install_prefix, parsed_arguments.package), 'w').close()
 
   # Remove downloaded package and generated temporary build files.
   # Failed builds intentionally skip this step, in order to aid in tracking down
   # build failures.
-  shell_call('rm -rf %s' % library_directory, parsed_arguments.verbose)
-
+  if clobber:
+    shell_call('rm -rf %s' % package_directory, parsed_arguments.verbose)
 
 def main():
   argument_parser = argparse.ArgumentParser(
-      description='Download, build and install instrumented library')
+      description='Download, build and install instrumented package')
 
   argument_parser.add_argument('-j', '--jobs', type=int, default=1)
-  argument_parser.add_argument('-l', '--library', required=True)
+  argument_parser.add_argument('-p', '--package', required=True)
   argument_parser.add_argument(
       '-i', '--product-directory', default='.',
       help='Relative path to the directory with chrome binaries')
@@ -350,17 +334,17 @@ def main():
       '-m', '--intermediate-directory', default='.',
       help='Relative path to the directory for temporary build files')
   argument_parser.add_argument('--extra-configure-flags', default='')
-  argument_parser.add_argument('--extra-cflags', default='')
-  argument_parser.add_argument('--extra-cxxflags', default='')
-  argument_parser.add_argument('--extra-ldflags', default='')
+  argument_parser.add_argument('--cflags', default='')
+  argument_parser.add_argument('--ldflags', default='')
   argument_parser.add_argument('-s', '--sanitizer-type', required=True,
-                               choices=SUPPORTED_SANITIZERS.keys())
+                               choices=['asan', 'msan', 'tsan'])
   argument_parser.add_argument('-v', '--verbose', action='store_true')
   argument_parser.add_argument('--check-build-deps', action='store_true')
   argument_parser.add_argument('--cc')
   argument_parser.add_argument('--cxx')
-  # This should be a shell script to run before building specific libraries
-  # e.g. extracting archives with sources, patching makefiles, etc.
+  argument_parser.add_argument('--patch', default='')
+  # This should be a shell script to run before building specific libraries.
+  # This will be run after applying the patch above.
   argument_parser.add_argument('--run-before-build', default='')
   argument_parser.add_argument('--build-method', default='destdir')
   argument_parser.add_argument('--sanitizer-blacklist', default='')
@@ -374,7 +358,7 @@ def main():
   os.chdir(get_script_absolute_path())
   # Ensure all build dependencies are installed.
   if parsed_arguments.check_build_deps:
-    check_library_build_dependencies(parsed_arguments.library)
+    check_package_build_dependencies(parsed_arguments.package)
 
   download_build_install(parsed_arguments)
 

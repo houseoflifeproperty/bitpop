@@ -2,43 +2,54 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.core import exceptions
 from telemetry.core import util
-from telemetry.core.backends.chrome import tracing_backend
-from telemetry.timeline import model
-from telemetry.page.actions import gesture_action
 from telemetry.page.actions import action_runner as action_runner_module
-# pylint: disable=W0401,W0614
-from telemetry.page.actions.all_page_actions import *
+from telemetry.page.actions import page_action
+from telemetry.timeline import model
 from telemetry.unittest import tab_test_case
 from telemetry.web_perf import timeline_interaction_record as tir_module
 
 
-class ActionRunnerTest(tab_test_case.TabTestCase):
-  def testIssuingInteractionRecord(self):
+class ActionRunnerInteractionTest(tab_test_case.TabTestCase):
+
+  def GetInteractionRecords(self, trace_data):
+    timeline_model = model.TimelineModel(trace_data)
+    renderer_thread = timeline_model.GetRendererThreadFromTabId(self._tab.id)
+    return [
+        tir_module.TimelineInteractionRecord.FromAsyncEvent(e)
+        for e in renderer_thread.async_slices
+        if tir_module.IsTimelineInteractionRecord(e.name)
+        ]
+
+  def VerifyIssuingInteractionRecords(self, **interaction_kwargs):
     action_runner = action_runner_module.ActionRunner(self._tab)
     self.Navigate('interaction_enabled_page.html')
     action_runner.Wait(1)
-    self._browser.StartTracing(tracing_backend.DEFAULT_TRACE_CATEGORIES)
-    interaction = action_runner.BeginInteraction(
-        'TestInteraction', is_smooth=True)
+    self._browser.StartTracing()
+    interaction = action_runner.BeginInteraction('InteractionName',
+                                                 **interaction_kwargs)
     interaction.End()
     trace_data = self._browser.StopTracing()
-    timeline_model = model.TimelineModel(trace_data)
 
-    records = []
-    renderer_thread = timeline_model.GetRendererThreadFromTabId(self._tab.id)
-    for event in renderer_thread.async_slices:
-      if not tir_module.IsTimelineInteractionRecord(event.name):
-        continue
-      records.append(tir_module.TimelineInteractionRecord.FromAsyncEvent(event))
-    self.assertEqual(1, len(records),
-                     'Fail to issue the interaction record on tracing timeline.'
-                     ' Trace data:\n%s' % repr(trace_data.EventData()))
-    self.assertEqual('TestInteraction', records[0].logical_name)
-    self.assertTrue(records[0].is_smooth)
+    records = self.GetInteractionRecords(trace_data)
+    self.assertEqual(
+        1, len(records),
+        'Failed to issue the interaction record on the tracing timeline.'
+        ' Trace data:\n%s' % repr(trace_data.EventData()))
+    self.assertEqual('InteractionName', records[0].label)
+    for attribute_name in interaction_kwargs:
+      self.assertTrue(getattr(records[0], attribute_name))
 
+  def testIssuingMultipleMeasurementInteractionRecords(self):
+    self.VerifyIssuingInteractionRecords(is_fast=True)
+    self.VerifyIssuingInteractionRecords(is_responsive=True)
+    self.VerifyIssuingInteractionRecords(is_smooth=True)
+    self.VerifyIssuingInteractionRecords(is_fast=True, is_smooth=True)
+
+
+class ActionRunnerTest(tab_test_case.TabTestCase):
   def testExecuteJavaScript(self):
     action_runner = action_runner_module.ActionRunner(self._tab)
     self.Navigate('blank.html')
@@ -63,13 +74,13 @@ class ActionRunnerTest(tab_test_case.TabTestCase):
     self.Navigate('blank.html')
 
     action_runner.ExecuteJavaScript(
-        'window.setTimeout(function() { window.testing = 101; }, 1000);')
-    action_runner.Wait(2)
+        'window.setTimeout(function() { window.testing = 101; }, 50);')
+    action_runner.Wait(0.1)
     self.assertEqual(101, self._tab.EvaluateJavaScript('window.testing'))
 
     action_runner.ExecuteJavaScript(
-        'window.setTimeout(function() { window.testing = 102; }, 2000);')
-    action_runner.Wait(3)
+        'window.setTimeout(function() { window.testing = 102; }, 100);')
+    action_runner.Wait(0.2)
     self.assertEqual(102, self._tab.EvaluateJavaScript('window.testing'))
 
   def testWaitForJavaScriptCondition(self):
@@ -78,11 +89,11 @@ class ActionRunnerTest(tab_test_case.TabTestCase):
 
     action_runner.ExecuteJavaScript('window.testing = 219;')
     action_runner.WaitForJavaScriptCondition(
-        'window.testing == 219', timeout=1)
+        'window.testing == 219', timeout_in_seconds=0.1)
     action_runner.ExecuteJavaScript(
-        'window.setTimeout(function() { window.testing = 220; }, 1000);')
+        'window.setTimeout(function() { window.testing = 220; }, 50);')
     action_runner.WaitForJavaScriptCondition(
-        'window.testing == 220', timeout=2)
+        'window.testing == 220', timeout_in_seconds=0.1)
     self.assertEqual(220, self._tab.EvaluateJavaScript('window.testing'))
 
   def testWaitForElement(self):
@@ -96,8 +107,8 @@ class ActionRunnerTest(tab_test_case.TabTestCase):
         '  el.textContent = "foo";'
         '  document.body.appendChild(el);'
         '})()')
-    action_runner.WaitForElement('#test1', timeout=1)
-    action_runner.WaitForElement(text='foo', timeout=1)
+    action_runner.WaitForElement('#test1', timeout_in_seconds=0.1)
+    action_runner.WaitForElement(text='foo', timeout_in_seconds=0.1)
     action_runner.WaitForElement(
         element_function='document.getElementById("test1")')
     action_runner.ExecuteJavaScript(
@@ -105,19 +116,19 @@ class ActionRunnerTest(tab_test_case.TabTestCase):
         '  var el = document.createElement("div");'
         '  el.id = "test2";'
         '  document.body.appendChild(el);'
-        '}, 500)')
-    action_runner.WaitForElement('#test2', timeout=2)
+        '}, 50)')
+    action_runner.WaitForElement('#test2', timeout_in_seconds=0.1)
     action_runner.ExecuteJavaScript(
         'window.setTimeout(function() {'
         '  document.getElementById("test2").textContent = "bar";'
-        '}, 500)')
-    action_runner.WaitForElement(text='bar', timeout=2)
+        '}, 50)')
+    action_runner.WaitForElement(text='bar', timeout_in_seconds=0.1)
     action_runner.ExecuteJavaScript(
         'window.setTimeout(function() {'
         '  var el = document.createElement("div");'
         '  el.id = "test3";'
         '  document.body.appendChild(el);'
-        '}, 500)')
+        '}, 50)')
     action_runner.WaitForElement(
         element_function='document.getElementById("test3")')
 
@@ -132,9 +143,9 @@ class ActionRunnerTest(tab_test_case.TabTestCase):
         '  el.textContent = "foo";'
         '  document.body.appendChild(el);'
         '})()')
-    action_runner.WaitForElement('#test1', timeout=1)
+    action_runner.WaitForElement('#test1', timeout_in_seconds=0.2)
     def WaitForElement():
-      action_runner.WaitForElement(text='oo', timeout=1)
+      action_runner.WaitForElement(text='oo', timeout_in_seconds=0.2)
     self.assertRaises(util.TimeoutException, WaitForElement)
 
   def testClickElement(self):
@@ -158,7 +169,7 @@ class ActionRunnerTest(tab_test_case.TabTestCase):
       action_runner.ClickElement('#notfound')
     self.assertRaises(exceptions.EvaluateException, WillFail)
 
-  @test.Disabled('debug')
+  @benchmark.Disabled('debug')
   def testTapElement(self):
     self.Navigate('page_with_clickables.html')
     action_runner = action_runner_module.ActionRunner(self._tab)
@@ -180,8 +191,30 @@ class ActionRunnerTest(tab_test_case.TabTestCase):
       action_runner.TapElement('#notfound')
     self.assertRaises(exceptions.EvaluateException, WillFail)
 
+  def testScroll(self):
+    if not page_action.IsGestureSourceTypeSupported(
+        self._tab, 'touch'):
+      return
+
+    self.Navigate('page_with_swipeables.html')
+    action_runner = action_runner_module.ActionRunner(self._tab)
+
+    action_runner.ScrollElement(
+        selector='#left-right', direction='right', left_start_ratio=0.9)
+    self.assertTrue(action_runner.EvaluateJavaScript(
+        'document.querySelector("#left-right").scrollLeft') > 75)
+    action_runner.ScrollElement(
+        selector='#top-bottom', direction='down', top_start_ratio=0.9)
+    self.assertTrue(action_runner.EvaluateJavaScript(
+        'document.querySelector("#top-bottom").scrollTop') > 75)
+
+    action_runner.ScrollPage(direction='right', left_start_ratio=0.9,
+                             distance=100)
+    self.assertTrue(action_runner.EvaluateJavaScript(
+        'document.body.scrollLeft') > 75)
+
   def testSwipe(self):
-    if not gesture_action.GestureAction.IsGestureSourceTypeSupported(
+    if not page_action.IsGestureSourceTypeSupported(
         self._tab, 'touch'):
       return
 

@@ -8,7 +8,7 @@
 
 #include "core/html/canvas/WebGLRenderingContextBase.h"
 
-namespace WebCore {
+namespace blink {
 
 WebGLCompressedTextureETC1::WebGLCompressedTextureETC1(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
@@ -26,9 +26,9 @@ WebGLExtensionName WebGLCompressedTextureETC1::name() const
     return WebGLCompressedTextureETC1Name;
 }
 
-PassRefPtr<WebGLCompressedTextureETC1> WebGLCompressedTextureETC1::create(WebGLRenderingContextBase* context)
+PassRefPtrWillBeRawPtr<WebGLCompressedTextureETC1> WebGLCompressedTextureETC1::create(WebGLRenderingContextBase* context)
 {
-    return adoptRef(new WebGLCompressedTextureETC1(context));
+    return adoptRefWillBeNoop(new WebGLCompressedTextureETC1(context));
 }
 
 bool WebGLCompressedTextureETC1::supported(WebGLRenderingContextBase* context)
@@ -42,4 +42,4 @@ const char* WebGLCompressedTextureETC1::extensionName()
     return "WEBGL_compressed_texture_etc1";
 }
 
-} // namespace WebCore
+} // namespace blink

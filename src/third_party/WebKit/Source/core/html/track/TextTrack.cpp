@@ -32,9 +32,8 @@
 #include "config.h"
 #include "core/html/track/TextTrack.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/Document.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/track/TextTrackCueList.h"
@@ -43,7 +42,7 @@
 #include "core/html/track/vtt/VTTRegionList.h"
 #include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+namespace blink {
 
 static const int invalidTrackIndex = -1;
 
@@ -95,7 +94,7 @@ const AtomicString& TextTrack::showingKeyword()
     return ended;
 }
 
-TextTrack::TextTrack(Document& document, const AtomicString& kind, const AtomicString& label, const AtomicString& language, const AtomicString& id, TextTrackType type)
+TextTrack::TextTrack(const AtomicString& kind, const AtomicString& label, const AtomicString& language, const AtomicString& id, TextTrackType type)
     : TrackBase(TrackBase::TextTrack, label, language, id)
     , m_cues(nullptr)
     , m_regions(nullptr)
@@ -448,4 +447,4 @@ void TextTrack::trace(Visitor* visitor)
     EventTargetWithInlineData::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

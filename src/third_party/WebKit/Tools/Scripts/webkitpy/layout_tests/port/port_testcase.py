@@ -34,7 +34,7 @@ import os
 import socket
 import sys
 import time
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.system.executive_mock import MockExecutive, MockExecutive2
 from webkitpy.common.system.filesystem_mock import MockFileSystem
@@ -152,9 +152,6 @@ class PortTestCase(unittest.TestCase):
         cmd_line = port.driver_cmd_line()
         self.assertTrue('--foo=bar' in cmd_line)
         self.assertTrue('--foo=baz' in cmd_line)
-
-    def test_uses_apache(self):
-        self.assertTrue(self.make_port().uses_apache())
 
     def assert_servers_are_down(self, host, ports):
         for port in ports:

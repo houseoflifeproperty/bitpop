@@ -8,8 +8,9 @@
 #include "athena/activity/public/activity.h"
 #include "athena/activity/public/activity_view_model.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "ui/gfx/image/image_skia.h"
 
-namespace apps {
+namespace extensions {
 class ShellAppWindow;
 }
 
@@ -23,18 +24,25 @@ class AppActivity : public Activity,
                     public ActivityViewModel,
                     public content::WebContentsObserver {
  public:
-  explicit AppActivity(apps::ShellAppWindow* app_window);
+  explicit AppActivity(extensions::ShellAppWindow* app_window);
   virtual ~AppActivity();
 
  protected:
   // Activity:
   virtual athena::ActivityViewModel* GetActivityViewModel() OVERRIDE;
+  virtual void SetCurrentState(Activity::ActivityState state) OVERRIDE;
+  virtual ActivityState GetCurrentState() OVERRIDE;
+  virtual bool IsVisible() OVERRIDE;
+  virtual ActivityMediaState GetMediaState() OVERRIDE;
 
   // ActivityViewModel:
   virtual void Init() OVERRIDE;
-  virtual SkColor GetRepresentativeColor() OVERRIDE;
-  virtual base::string16 GetTitle() OVERRIDE;
+  virtual SkColor GetRepresentativeColor() const OVERRIDE;
+  virtual base::string16 GetTitle() const OVERRIDE;
+  virtual bool UsesFrame() const OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
+  virtual void CreateOverviewModeImage() OVERRIDE;
+  virtual gfx::ImageSkia GetOverviewModeImage() OVERRIDE;
 
   // content::WebContentsObserver:
   virtual void TitleWasSet(content::NavigationEntry* entry,
@@ -43,8 +51,14 @@ class AppActivity : public Activity,
       const std::vector<content::FaviconURL>& candidates) OVERRIDE;
 
  private:
-  scoped_ptr<apps::ShellAppWindow> app_window_;
+  scoped_ptr<extensions::ShellAppWindow> app_window_;
   views::WebView* web_view_;
+
+  // The current state for this activity.
+  ActivityState current_state_;
+
+  // The image which will be used in overview mode.
+  gfx::ImageSkia overview_mode_image_;
 
   DISALLOW_COPY_AND_ASSIGN(AppActivity);
 };

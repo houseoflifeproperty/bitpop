@@ -26,11 +26,11 @@
 #ifndef DataView_h
 #define DataView_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "wtf/ArrayBufferView.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
@@ -95,6 +95,6 @@ private:
 };
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DataView_h

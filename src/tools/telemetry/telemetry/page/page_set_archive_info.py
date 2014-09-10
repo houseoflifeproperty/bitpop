@@ -7,8 +7,9 @@ import logging
 import os
 import re
 import shutil
+import tempfile
 
-from telemetry.page import cloud_storage
+from telemetry.util import cloud_storage
 
 
 class PageSetArchiveInfo(object):
@@ -81,13 +82,20 @@ class PageSetArchiveInfo(object):
       return self._WprFileNameToPath(wpr_file)
     return None
 
-  def AddNewTemporaryRecording(self, temp_target_wpr_file_path):
-    self.temp_target_wpr_file_path = temp_target_wpr_file_path
+  def AddNewTemporaryRecording(self, temp_wpr_file_path=None):
+    if temp_wpr_file_path is None:
+      temp_wpr_file_handle, temp_wpr_file_path = tempfile.mkstemp()
+      os.close(temp_wpr_file_handle)
+    self.temp_target_wpr_file_path = temp_wpr_file_path
 
-  def AddRecordedPages(self, page_names):
+  def AddRecordedPages(self, pages):
+    if not pages:
+      os.remove(self.temp_target_wpr_file_path)
+      return
+
     (target_wpr_file, target_wpr_file_path) = self._NextWprFileName()
-    for page_name in page_names:
-      self._SetWprFileForPage(page_name, target_wpr_file)
+    for page in pages:
+      self._SetWprFileForPage(page.display_name, target_wpr_file)
     shutil.move(self.temp_target_wpr_file_path, target_wpr_file_path)
 
     # Update the hash file.

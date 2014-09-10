@@ -43,23 +43,19 @@ class TestAlarm : public QuicAlarm {
 
 }  // namespace
 
-QuicAckFrame MakeAckFrame(QuicPacketSequenceNumber largest_observed,
-                          QuicPacketSequenceNumber least_unacked) {
+QuicAckFrame MakeAckFrame(QuicPacketSequenceNumber largest_observed) {
   QuicAckFrame ack;
-  ack.received_info.largest_observed = largest_observed;
-  ack.received_info.entropy_hash = 0;
-  ack.sent_info.least_unacked = least_unacked;
-  ack.sent_info.entropy_hash = 0;
+  ack.largest_observed = largest_observed;
+  ack.entropy_hash = 0;
   return ack;
 }
 
 QuicAckFrame MakeAckFrameWithNackRanges(
     size_t num_nack_ranges, QuicPacketSequenceNumber least_unacked) {
-  QuicAckFrame ack = MakeAckFrame(2 * num_nack_ranges + least_unacked,
-                                  least_unacked);
+  QuicAckFrame ack = MakeAckFrame(2 * num_nack_ranges + least_unacked);
   // Add enough missing packets to get num_nack_ranges nack ranges.
   for (QuicPacketSequenceNumber i = 1; i < 2 * num_nack_ranges; i += 2) {
-    ack.received_info.missing_packets.insert(least_unacked + i);
+    ack.missing_packets.insert(least_unacked + i);
   }
   return ack;
 }
@@ -230,8 +226,8 @@ MockConnection::MockConnection(bool is_server)
                      IPEndPoint(TestPeerIPAddress(), kTestPort),
                      new testing::NiceMock<MockHelper>(),
                      new testing::NiceMock<MockPacketWriter>(),
+                     true  /* owns_writer */,
                      is_server, QuicSupportedVersions()),
-      writer_(QuicConnectionPeer::GetWriter(this)),
       helper_(helper()) {
 }
 
@@ -240,8 +236,8 @@ MockConnection::MockConnection(IPEndPoint address,
     : QuicConnection(kTestConnectionId, address,
                      new testing::NiceMock<MockHelper>(),
                      new testing::NiceMock<MockPacketWriter>(),
+                     true  /* owns_writer */,
                      is_server, QuicSupportedVersions()),
-      writer_(QuicConnectionPeer::GetWriter(this)),
       helper_(helper()) {
 }
 
@@ -251,8 +247,8 @@ MockConnection::MockConnection(QuicConnectionId connection_id,
                      IPEndPoint(TestPeerIPAddress(), kTestPort),
                      new testing::NiceMock<MockHelper>(),
                      new testing::NiceMock<MockPacketWriter>(),
+                     true  /* owns_writer */,
                      is_server, QuicSupportedVersions()),
-      writer_(QuicConnectionPeer::GetWriter(this)),
       helper_(helper()) {
 }
 
@@ -262,8 +258,8 @@ MockConnection::MockConnection(bool is_server,
                      IPEndPoint(TestPeerIPAddress(), kTestPort),
                      new testing::NiceMock<MockHelper>(),
                      new testing::NiceMock<MockPacketWriter>(),
+                     true  /* owns_writer */,
                      is_server, supported_versions),
-      writer_(QuicConnectionPeer::GetWriter(this)),
       helper_(helper()) {
 }
 
@@ -302,6 +298,7 @@ bool PacketSavingConnection::SendOrQueuePacket(
 
 MockSession::MockSession(QuicConnection* connection)
     : QuicSession(connection, DefaultQuicConfig()) {
+  InitializeSession();
   ON_CALL(*this, WritevData(_, _, _, _, _, _))
       .WillByDefault(testing::Return(QuicConsumedData(0, false)));
 }
@@ -311,7 +308,9 @@ MockSession::~MockSession() {
 
 TestSession::TestSession(QuicConnection* connection, const QuicConfig& config)
     : QuicSession(connection, config),
-      crypto_stream_(NULL) {}
+      crypto_stream_(NULL) {
+  InitializeSession();
+}
 
 TestSession::~TestSession() {}
 
@@ -325,10 +324,10 @@ QuicCryptoStream* TestSession::GetCryptoStream() {
 
 TestClientSession::TestClientSession(QuicConnection* connection,
                                      const QuicConfig& config)
-    : QuicClientSessionBase(connection,
-                            config),
+    : QuicClientSessionBase(connection, config),
       crypto_stream_(NULL) {
-    EXPECT_CALL(*this, OnProofValid(_)).Times(AnyNumber());
+  EXPECT_CALL(*this, OnProofValid(_)).Times(AnyNumber());
+  InitializeSession();
 }
 
 TestClientSession::~TestClientSession() {}
@@ -363,6 +362,12 @@ MockAckNotifierDelegate::MockAckNotifierDelegate() {
 }
 
 MockAckNotifierDelegate::~MockAckNotifierDelegate() {
+}
+
+MockNetworkChangeVisitor::MockNetworkChangeVisitor() {
+}
+
+MockNetworkChangeVisitor::~MockNetworkChangeVisitor() {
 }
 
 namespace {
@@ -553,11 +558,11 @@ size_t GetPacketLengthForOneStream(
   const size_t stream_length =
       NullEncrypter().GetCiphertextSize(*payload_length) +
       QuicPacketCreator::StreamFramePacketOverhead(
-          version, PACKET_8BYTE_CONNECTION_ID, include_version,
+          PACKET_8BYTE_CONNECTION_ID, include_version,
           sequence_number_length, 0u, is_in_fec_group);
   const size_t ack_length = NullEncrypter().GetCiphertextSize(
       QuicFramer::GetMinAckFrameSize(
-          version, sequence_number_length, PACKET_1BYTE_SEQUENCE_NUMBER)) +
+          sequence_number_length, PACKET_1BYTE_SEQUENCE_NUMBER)) +
       GetPacketHeaderSize(PACKET_8BYTE_CONNECTION_ID, include_version,
                           sequence_number_length, is_in_fec_group);
   if (stream_length < ack_length) {
@@ -566,7 +571,7 @@ size_t GetPacketLengthForOneStream(
 
   return NullEncrypter().GetCiphertextSize(*payload_length) +
       QuicPacketCreator::StreamFramePacketOverhead(
-          version, PACKET_8BYTE_CONNECTION_ID, include_version,
+          PACKET_8BYTE_CONNECTION_ID, include_version,
           sequence_number_length, 0u, is_in_fec_group);
 }
 

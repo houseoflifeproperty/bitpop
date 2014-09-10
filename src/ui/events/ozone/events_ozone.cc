@@ -64,6 +64,12 @@ uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
   return event->platform_keycode();
 }
 
+bool IsCharFromNative(const base::NativeEvent& native_event) {
+  const ui::KeyEvent* event = static_cast<const ui::KeyEvent*>(native_event);
+  DCHECK(event->IsKeyEvent());
+  return event->is_char();
+}
+
 gfx::Vector2d GetMouseWheelOffset(const base::NativeEvent& native_event) {
   const ui::MouseWheelEvent* event =
       static_cast<const ui::MouseWheelEvent*>(native_event);
@@ -76,6 +82,9 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
 }
 
 void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
+}
+
+void IncrementTouchIdRefCount(const base::NativeEvent& event) {
 }
 
 void ClearTouchIdIfReleased(const base::NativeEvent& xev) {
@@ -132,23 +141,6 @@ bool GetFlingData(const base::NativeEvent& native_event,
                   float* vx_ordinal,
                   float* vy_ordinal,
                   bool* is_cancel) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-bool GetGestureTimes(const base::NativeEvent& native_event,
-                     double* start_time,
-                     double* end_time) {
-  *start_time = 0;
-  *end_time = 0;
-  return false;
-}
-
-void SetNaturalScroll(bool /* enabled */) { NOTIMPLEMENTED(); }
-
-bool IsNaturalScrollEnabled() { return false; }
-
-bool IsTouchpadEvent(const base::NativeEvent& event) {
   NOTIMPLEMENTED();
   return false;
 }

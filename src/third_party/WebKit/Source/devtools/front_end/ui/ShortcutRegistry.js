@@ -11,6 +11,8 @@ WebInspector.ShortcutRegistry = function(actionRegistry)
     this._actionRegistry = actionRegistry;
     /** @type {!StringMultimap.<string>} */
     this._defaultKeyToActions = new StringMultimap();
+    /** @type {!StringMultimap.<!WebInspector.KeyboardShortcut.Descriptor>} */
+    this._defaultActionToShortcut = new StringMultimap();
     this._registerBindings();
 }
 
@@ -49,22 +51,26 @@ WebInspector.ShortcutRegistry.prototype = {
     },
 
     /**
+     * @param {string} actionId
+     * @return {!Array.<!WebInspector.KeyboardShortcut.Descriptor>}
+     */
+    shortcutDescriptorsForAction: function(actionId)
+    {
+        return this._defaultActionToShortcut.get(actionId).values();
+    },
+
+    /**
      * @param {!Array.<string>} actionIds
      * @return {!Array.<number>}
      */
     keysForActions: function(actionIds)
     {
-        var actionIdSet = actionIds.keySet();
         var result = [];
-        this._defaultKeyToActions.keys().forEach(function(key) {
-            var actionIdsForKey = this._defaultKeyToActions.get(key);
-            actionIdsForKey.values().some(function(actionId) {
-               if (actionIdSet.hasOwnProperty(actionId)) {
-                   result.push(key);
-                   return true;
-               }
-            });
-        }, this);
+        for (var i = 0; i < actionIds.length; ++i) {
+            var descriptors = this.shortcutDescriptorsForAction(actionIds[i]);
+            for (var j = 0; j < descriptors.length; ++j)
+                result.push(descriptors[j].key);
+        }
         return result;
     },
 
@@ -83,10 +89,15 @@ WebInspector.ShortcutRegistry.prototype = {
      */
     handleKey: function(key, keyIdentifier, event)
     {
+        var keyModifiers = key >> 8;
         var actionIds = this.applicableActions(key);
+        if (WebInspector.GlassPane.DefaultFocusedViewStack.length > 1) {
+            if (actionIds.length && !isPossiblyInputKey())
+                event.consume(true);
+            return;
+        }
 
         for (var i = 0; i < actionIds.length; ++i) {
-            var keyModifiers = key >> 8;
             if (!isPossiblyInputKey()) {
                 if (handler.call(this, actionIds[i]))
                     break;
@@ -144,14 +155,15 @@ WebInspector.ShortcutRegistry.prototype = {
      */
     registerShortcut: function(actionId, shortcut)
     {
-        var key = WebInspector.KeyboardShortcut.makeKeyFromBindingShortcut(shortcut);
-        if (!key)
+        var descriptor = WebInspector.KeyboardShortcut.makeDescriptorFromBindingShortcut(shortcut);
+        if (!descriptor)
             return;
-        this._defaultKeyToActions.put(String(key), actionId);
+        this._defaultActionToShortcut.put(actionId, descriptor);
+        this._defaultKeyToActions.put(String(descriptor.key), actionId);
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _onInput: function(event)
     {
@@ -164,11 +176,11 @@ WebInspector.ShortcutRegistry.prototype = {
     _registerBindings: function()
     {
         document.addEventListener("input", this._onInput.bind(this), true);
-        var extensions = WebInspector.moduleManager.extensions(WebInspector.ActionDelegate);
+        var extensions = self.runtime.extensions(WebInspector.ActionDelegate);
         extensions.forEach(registerExtension, this);
 
         /**
-         * @param {!WebInspector.ModuleManager.Extension} extension
+         * @param {!Runtime.Extension} extension
          * @this {WebInspector.ShortcutRegistry}
          */
         function registerExtension(extension)

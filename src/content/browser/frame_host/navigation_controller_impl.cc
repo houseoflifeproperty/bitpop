@@ -46,8 +46,6 @@
 namespace content {
 namespace {
 
-const int kInvalidateAll = 0xFFFFFFFF;
-
 // Invoked when entries have been pruned, or removed. For example, if the
 // current entries are [google, digg, yahoo], with the current entry google,
 // and the user types in cnet, then digg and yahoo are pruned.
@@ -104,24 +102,37 @@ void ConfigureEntriesForRestore(
   }
 }
 
-// See NavigationController::IsURLInPageNavigation for how this works and why.
+// There are two general cases where a navigation is in page:
+// 1. A fragment navigation, in which the url is kept the same except for the
+//    reference fragment.
+// 2. A history API navigation (pushState and replaceState). This case is
+//    always in-page, but the urls are not guaranteed to match excluding the
+//    fragment. The relevant spec allows pushState/replaceState to any URL on
+//    the same origin.
+// However, due to reloads, even identical urls are *not* guaranteed to be
+// in-page navigations, we have to trust the renderer almost entirely.
+// The one thing we do know is that cross-origin navigations will *never* be
+// in-page. Therefore, trust the renderer if the URLs are on the same origin,
+// and assume the renderer is malicious if a cross-origin navigation claims to
+// be in-page.
 bool AreURLsInPageNavigation(const GURL& existing_url,
                              const GURL& new_url,
                              bool renderer_says_in_page,
-                             NavigationType navigation_type) {
-  if (existing_url.GetOrigin() == new_url.GetOrigin())
-    return renderer_says_in_page;
-
-  if (!new_url.has_ref()) {
-    // When going back from the ref URL to the non ref one the navigation type
-    // is IN_PAGE.
-    return navigation_type == NAVIGATION_TYPE_IN_PAGE;
-  }
-
-  url::Replacements<char> replacements;
-  replacements.ClearRef();
-  return existing_url.ReplaceComponents(replacements) ==
-      new_url.ReplaceComponents(replacements);
+                             RenderFrameHost* rfh) {
+  WebPreferences prefs = rfh->GetRenderViewHost()->GetWebkitPreferences();
+  bool is_same_origin = existing_url.is_empty() ||
+                        // TODO(japhet): We should only permit navigations
+                        // originating from about:blank to be in-page if the
+                        // about:blank is the first document that frame loaded.
+                        // We don't have sufficient information to identify
+                        // that case at the moment, so always allow about:blank
+                        // for now.
+                        existing_url == GURL(url::kAboutBlankURL) ||
+                        existing_url.GetOrigin() == new_url.GetOrigin() ||
+                        !prefs.web_security_enabled;
+  if (!is_same_origin && renderer_says_in_page)
+      rfh->GetProcess()->ReceivedBadMessage();
+  return is_same_origin && renderer_says_in_page;
 }
 
 // Determines whether or not we should be carrying over a user agent override
@@ -134,7 +145,7 @@ bool ShouldKeepOverride(const NavigationEntry* last_entry) {
 
 // NavigationControllerImpl ----------------------------------------------------
 
-const size_t kMaxEntryCountForTestingNotSet = -1;
+const size_t kMaxEntryCountForTestingNotSet = static_cast<size_t>(-1);
 
 // static
 size_t NavigationControllerImpl::max_entry_count_for_testing_ =
@@ -639,8 +650,13 @@ void NavigationControllerImpl::LoadURL(
 
 void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
   TRACE_EVENT0("browser", "NavigationControllerImpl::LoadURLWithParams");
-  if (HandleDebugURL(params.url, params.transition_type))
-    return;
+  if (HandleDebugURL(params.url, params.transition_type)) {
+    // If Telemetry is running, allow the URL load to proceed as if it's
+    // unhandled, otherwise Telemetry can't tell if Navigation completed.
+    if (!CommandLine::ForCurrentProcess()->HasSwitch(
+            cc::switches::kEnableGpuBenchmarking))
+      return;
+  }
 
   // Any renderer-side debug URLs or javascript: URLs should be ignored if the
   // renderer process is not live, unless it is the initial navigation of the
@@ -766,8 +782,8 @@ bool NavigationControllerImpl::RendererDidNavigate(
   details->type = ClassifyNavigation(rfh, params);
 
   // is_in_page must be computed before the entry gets committed.
-  details->is_in_page = IsURLInPageNavigation(
-      params.url, params.was_within_same_page, details->type);
+  details->is_in_page = AreURLsInPageNavigation(rfh->GetLastCommittedURL(),
+      params.url, params.was_within_same_page, rfh);
 
   switch (details->type) {
     case NAVIGATION_TYPE_NEW_PAGE:
@@ -865,6 +881,15 @@ NavigationType NavigationControllerImpl::ClassifyNavigation(
     RenderFrameHost* rfh,
     const FrameHostMsg_DidCommitProvisionalLoad_Params& params) const {
   if (params.page_id == -1) {
+    // TODO(nasko, creis):  An out-of-process child frame has no way of
+    // knowing the page_id of its parent, so it is passing back -1. The
+    // semantics here should be re-evaluated during session history refactor
+    // (see http://crbug.com/236848). For now, we assume this means the
+    // child frame loaded and proceed. Note that this may do the wrong thing
+    // for cross-process AUTO_SUBFRAME navigations.
+    if (rfh->IsCrossProcessSubframe())
+      return NAVIGATION_TYPE_NEW_SUBFRAME;
+
     // The renderer generates the page IDs, and so if it gives us the invalid
     // page ID (-1) we know it didn't actually navigate. This happens in a few
     // cases:
@@ -986,8 +1011,7 @@ NavigationType NavigationControllerImpl::ClassifyNavigation(
   // navigations that don't actually navigate, but it can happen when there is
   // an encoding override (it always sends a navigation request).
   if (AreURLsInPageNavigation(existing_entry->GetURL(), params.url,
-                              params.was_within_same_page,
-                              NAVIGATION_TYPE_UNKNOWN)) {
+                              params.was_within_same_page, rfh)) {
     return NAVIGATION_TYPE_IN_PAGE;
   }
 
@@ -1023,18 +1047,8 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
     // update the virtual URL when replaceState is called after a pushState.
     GURL url = params.url;
     bool needs_update = false;
-    // We call RewriteURLIfNecessary twice: once when page navigation
-    // begins in CreateNavigationEntry, and once here when it commits.
-    // With the kEnableGpuBenchmarking flag, the rewriting includes
-    // handling debug URLs which cause an action to occur, and thus we
-    // should not rewrite them a second time.
-    bool skip_rewrite =
-        IsDebugURL(url) && base::CommandLine::ForCurrentProcess()->HasSwitch(
-            cc::switches::kEnableGpuBenchmarking);
-    if (!skip_rewrite) {
-      BrowserURLHandlerImpl::GetInstance()->RewriteURLIfNecessary(
-          &url, browser_context_, &needs_update);
-    }
+    BrowserURLHandlerImpl::GetInstance()->RewriteURLIfNecessary(
+        &url, browser_context_, &needs_update);
     new_entry->set_update_virtual_url_with_url(needs_update);
 
     // When navigating to a new page, give the browser URL handler a chance to
@@ -1059,9 +1073,11 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
 
   // history.pushState() is classified as a navigation to a new page, but
   // sets was_within_same_page to true. In this case, we already have the
-  // title available, so set it immediately.
-  if (params.was_within_same_page && GetLastCommittedEntry())
+  // title and favicon available, so set them immediately.
+  if (params.was_within_same_page && GetLastCommittedEntry()) {
     new_entry->SetTitle(GetLastCommittedEntry()->GetTitle());
+    new_entry->GetFavicon() = GetLastCommittedEntry()->GetFavicon();
+  }
 
   DCHECK(!params.history_list_was_cleared || !replace_entry);
   // The browser requested to clear the session history when it initiated the
@@ -1253,10 +1269,10 @@ int NavigationControllerImpl::GetIndexOfEntry(
 bool NavigationControllerImpl::IsURLInPageNavigation(
     const GURL& url,
     bool renderer_says_in_page,
-    NavigationType navigation_type) const {
+    RenderFrameHost* rfh) const {
   NavigationEntry* last_committed = GetLastCommittedEntry();
   return last_committed && AreURLsInPageNavigation(
-      last_committed->GetURL(), url, renderer_says_in_page, navigation_type);
+      last_committed->GetURL(), url, renderer_says_in_page, rfh);
 }
 
 void NavigationControllerImpl::CopyStateFrom(
@@ -1509,7 +1525,7 @@ void NavigationControllerImpl::DiscardNonCommittedEntries() {
   // If there was a transient entry, invalidate everything so the new active
   // entry state is shown.
   if (transient) {
-    delegate_->NotifyNavigationStateChanged(kInvalidateAll);
+    delegate_->NotifyNavigationStateChanged(INVALIDATE_TYPE_ALL);
   }
 }
 
@@ -1643,7 +1659,7 @@ void NavigationControllerImpl::NotifyNavigationEntryCommitted(
   // when it wants to draw.  See http://crbug.com/11157
   ssl_manager_.DidCommitProvisionalLoad(*details);
 
-  delegate_->NotifyNavigationStateChanged(kInvalidateAll);
+  delegate_->NotifyNavigationStateChanged(INVALIDATE_TYPE_ALL);
   delegate_->NotifyNavigationEntryCommitted(*details);
 
   // TODO(avi): Remove. http://crbug.com/170921
@@ -1752,7 +1768,7 @@ void NavigationControllerImpl::SetTransientEntry(NavigationEntry* entry) {
       entries_.begin() + index, linked_ptr<NavigationEntryImpl>(
           NavigationEntryImpl::FromNavigationEntry(entry)));
   transient_entry_index_ = index;
-  delegate_->NotifyNavigationStateChanged(kInvalidateAll);
+  delegate_->NotifyNavigationStateChanged(INVALIDATE_TYPE_ALL);
 }
 
 void NavigationControllerImpl::InsertEntriesFrom(

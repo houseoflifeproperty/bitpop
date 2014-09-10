@@ -28,7 +28,6 @@
 
 #include "core/rendering/FilterEffectRenderer.h"
 
-#include "core/dom/Document.h"
 #include "core/fetch/DocumentResource.h"
 #include "core/fetch/DocumentResourceReference.h"
 #include "core/page/Page.h"
@@ -48,7 +47,7 @@
 #include "wtf/MathExtras.h"
 #include <algorithm>
 
-namespace WebCore {
+namespace blink {
 
 static inline void endMatrixRow(Vector<float>& parameters)
 {
@@ -88,11 +87,7 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
 
     // Inverse zoom the pre-zoomed CSS shorthand filters, so that they are in the same zoom as the unzoomed reference filters.
     const RenderStyle* style = renderer->style();
-#ifdef BLINK_SCALE_FILTERS_AT_RECORD_TIME
-    float invZoom = 1.0f / ((style ? style->effectiveZoom() : 1.0f) * deviceScaleFactor(renderer->frame()));
-#else
     float invZoom = style ? 1.0f / style->effectiveZoom() : 1.0f;
-#endif
 
     RefPtr<FilterEffect> previousEffect = m_sourceGraphic;
     for (size_t i = 0; i < operations.operations().size(); ++i) {
@@ -306,7 +301,7 @@ LayoutRect FilterEffectRenderer::computeSourceImageRectForDirtyRect(const Layout
     return LayoutRect(rectForRepaint);
 }
 
-bool FilterEffectRendererHelper::prepareFilterEffect(RenderLayer* renderLayer, const LayoutRect& filterBoxRect, const LayoutRect& dirtyRect, const LayoutRect& layerRepaintRect)
+bool FilterEffectRendererHelper::prepareFilterEffect(RenderLayer* renderLayer, const LayoutRect& filterBoxRect, const LayoutRect& dirtyRect)
 {
     ASSERT(m_haveFilterEffect && renderLayer->filterRenderer());
     m_renderLayer = renderLayer;
@@ -342,10 +337,8 @@ bool FilterEffectRendererHelper::prepareFilterEffect(RenderLayer* renderLayer, c
     if (filter->hasFilterThatMovesPixels()) {
         if (hasUpdatedBackingStore)
             m_repaintRect = filterSourceRect;
-        else {
-            m_repaintRect.unite(layerRepaintRect);
+        else
             m_repaintRect.intersect(filterSourceRect);
-        }
     }
     return true;
 }
@@ -394,5 +387,5 @@ GraphicsContext* FilterEffectRendererHelper::applyFilterEffect()
     return m_savedGraphicsContext;
 }
 
-} // namespace WebCore
+} // namespace blink
 

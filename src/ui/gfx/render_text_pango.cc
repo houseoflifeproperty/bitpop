@@ -14,8 +14,10 @@
 #include "third_party/skia/include/core/SkTypeface.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
-#include "ui/gfx/font_render_params_linux.h"
+#include "ui/gfx/font_list.h"
+#include "ui/gfx/font_render_params.h"
 #include "ui/gfx/pango_util.h"
+#include "ui/gfx/platform_font_pango.h"
 #include "ui/gfx/utf16_indexing.h"
 
 namespace gfx {
@@ -82,6 +84,15 @@ Size RenderTextPango::GetStringSize() {
   EnsureLayout();
   int width = 0, height = 0;
   pango_layout_get_pixel_size(layout_, &width, &height);
+
+  // Pango returns 0 widths for very long strings (of 0x40000 chars or more).
+  // This is caused by an int overflow in pango_glyph_string_extents_range.
+  // Absurdly long strings may even report non-zero garbage values for width;
+  // while detecting that isn't worthwhile, this handles the 0 width cases.
+  const long kAbsurdLength = 100000;
+  if (width == 0 && g_utf8_strlen(layout_text_, -1) > kAbsurdLength)
+    width = font_list().GetExpectedTextWidth(g_utf8_strlen(layout_text_, -1));
+
   // Keep a consistent height between this particular string's PangoLayout and
   // potentially larger text supported by the FontList.
   // For example, if a text field contains a Japanese character, which is
@@ -307,12 +318,8 @@ void RenderTextPango::EnsureLayout() {
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
 
-    SetupPangoLayoutWithFontDescription(layout_,
-                                        GetLayoutText(),
-                                        font_list().GetFontDescriptionString(),
-                                        0,
-                                        GetTextDirection(),
-                                        Canvas::DefaultCanvasTextAlignment());
+    SetUpPangoLayout(layout_, GetLayoutText(), font_list(), GetTextDirection(),
+                     Canvas::DefaultCanvasTextAlignment());
 
     // No width set so that the x-axis position is relative to the start of the
     // text. ToViewPoint and ToTextPoint take care of the position conversion
@@ -348,9 +355,11 @@ void RenderTextPango::SetupPangoAttributes(PangoLayout* layout) {
     const size_t italic_end = styles()[ITALIC].GetRange(italic).end();
     const size_t style_end = std::min(bold_end, italic_end);
     if (style != font_list().GetFontStyle()) {
+      // TODO(derat): Don't interpret gfx::FontList font descriptions as Pango
+      // font descriptions: http://crbug.com/393067
       FontList derived_font_list = font_list().DeriveWithStyle(style);
-      ScopedPangoFontDescription desc(pango_font_description_from_string(
-          derived_font_list.GetFontDescriptionString().c_str()));
+      ScopedPangoFontDescription desc(
+          derived_font_list.GetFontDescriptionString());
 
       PangoAttribute* pango_attr = pango_attr_font_desc_new(desc.get());
       pango_attr->start_index =
@@ -383,33 +392,9 @@ void RenderTextPango::DrawVisualText(Canvas* canvas) {
   internal::SkiaTextRenderer renderer(canvas);
   ApplyFadeEffects(&renderer);
   ApplyTextShadows(&renderer);
-
-  // TODO(derat): Use font-specific params: http://crbug.com/125235
-  const FontRenderParams& render_params = GetDefaultFontRenderParams();
-  const bool use_subpixel_rendering =
-      render_params.subpixel_rendering !=
-          FontRenderParams::SUBPIXEL_RENDERING_NONE;
-  renderer.SetFontSmoothingSettings(
-      render_params.antialiasing,
-      use_subpixel_rendering && !background_is_transparent(),
-      render_params.subpixel_positioning);
-
-  SkPaint::Hinting skia_hinting = SkPaint::kNormal_Hinting;
-  switch (render_params.hinting) {
-    case FontRenderParams::HINTING_NONE:
-      skia_hinting = SkPaint::kNo_Hinting;
-      break;
-    case FontRenderParams::HINTING_SLIGHT:
-      skia_hinting = SkPaint::kSlight_Hinting;
-      break;
-    case FontRenderParams::HINTING_MEDIUM:
-      skia_hinting = SkPaint::kNormal_Hinting;
-      break;
-    case FontRenderParams::HINTING_FULL:
-      skia_hinting = SkPaint::kFull_Hinting;
-      break;
-  }
-  renderer.SetFontHinting(skia_hinting);
+  renderer.SetFontRenderParams(
+      font_list().GetPrimaryFont().GetFontRenderParams(),
+      background_is_transparent());
 
   // Temporarily apply composition underlines and selection colors.
   ApplyCompositionAndSelectionStyles();
@@ -424,7 +409,6 @@ void RenderTextPango::DrawVisualText(Canvas* canvas) {
 
     ScopedPangoFontDescription desc(
         pango_font_describe(run->item->analysis.font));
-
     const std::string family_name =
         pango_font_description_get_family(desc.get());
     renderer.SetTextSize(GetPangoFontSizeInPixels(desc.get()));

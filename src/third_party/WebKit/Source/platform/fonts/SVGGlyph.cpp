@@ -27,7 +27,7 @@
 
 using namespace WTF::Unicode;
 
-namespace WebCore {
+namespace blink {
 
 // Helper functions to determine the arabic character forms (initial, medial, terminal, isolated)
 enum ArabicCharShapingMode {
@@ -186,6 +186,6 @@ bool isCompatibleGlyph(const SVGGlyph& identifier, bool isVerticalText, const St
     return isCompatibleArabicForm(identifier, chars, startPosition, endPosition);
 }
 
-}
+} // namespace blink
 
 #endif

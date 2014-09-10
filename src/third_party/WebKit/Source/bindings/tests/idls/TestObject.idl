@@ -33,16 +33,6 @@ enum TestEnum {"", "EnumValue1", "EnumValue2", "EnumValue3"};
 callback VoidCallbackFunction = void ();
 callback AnyCallbackFunctionOptionalAnyArg = any (optional any optionalAnyArg);
 
-dictionary TestDict {
-    boolean booleanMember;
-    long longMember1 = 1;
-};
-
-dictionary TestDictDerived : TestDict {
-    unsigned short unsignedShortMember;
-    float floatMember4 = 4.0;
-};
-
 // No extended attributes on the interface; those go in TestInterface.idl
 interface TestObject {
     // Constants
@@ -61,12 +51,21 @@ interface TestObject {
     const unsigned short CONST_VALUE_16 = -010;
     const unsigned short CONST_VALUE_16 = -0x1A;
     const unsigned short CONST_VALUE_17 = -0X1a;
+    const double CONST_VALUE_18 = 0.123;
+    const double CONST_VALUE_19 = 4e9;
+    const double CONST_VALUE_20 = 3.4e5;
+    const double CONST_VALUE_21 = -1.3;
+    const double CONST_VALUE_22 = -4e-9;
+    const double CONST_VALUE_23 = .123;
+    const double CONST_VALUE_24 = 5E+4;
+    const float CONST_VALUE_25 = 1;
 
     // Extended attributes
     [DeprecateAs=Constant] const short DEPRECATED_CONSTANT = 1;
     [RuntimeEnabled=FeatureName] const short FEATURE_ENABLED_CONST = 1;
     [Reflect=CONST_IMPL] const short CONST_JAVASCRIPT = 1;
 
+    stringifier attribute DOMString stringifierAttribute;
 
     // Attributes
     //
@@ -162,12 +161,13 @@ interface TestObject {
     [LogActivity=SetterOnly, LogAllWorlds] attribute long activityLoggingSetterForAllWorldsLongAttribute;
     [CachedAttribute=isValueDirty] attribute any cachedAttributeAnyAttribute;
     [CachedAttribute=isArrayDirty] attribute DOMString[] cachedArrayAttribute;
+    [CachedAttribute=isStringDirty] attribute DOMString? cachedStringOrNoneAttribute;
     [CallWith=ExecutionContext] attribute any callWithExecutionContextAnyAttribute;
     [CallWith=ScriptState] attribute any callWithScriptStateAnyAttribute;
     [CallWith=ExecutionContext|ScriptState] attribute any callWithExecutionContextAndScriptStateAnyAttribute;
     [CheckSecurity=Node] readonly attribute Document checkSecurityForNodeReadonlyDocumentAttribute; // All uses are read only
     [Conditional=CONDITION] attribute long conditionalLongAttribute;
-    [Conditional=CONDITION_1&CONDITION_2] attribute long conditionalAndLongAttribute;
+    [Conditional=(CONDITION_1,CONDITION_2)] attribute long conditionalAndLongAttribute;
     [Conditional=CONDITION_1|CONDITION_2] attribute long conditionalOrLongAttribute;
     // Constructors: FIXME: replace suffix with [ConstructorAttribute]
     attribute TestInterfaceEmptyConstructor testInterfaceEmptyConstructorAttribute;
@@ -197,7 +197,9 @@ interface TestObject {
     [PutForwards=href] readonly attribute TestNode location;
     [PutForwards=hrefThrows] readonly attribute TestNode locationWithException;
     [PutForwards=hrefCallWith] readonly attribute TestNode locationWithCallWith;
+    [PutForwards=hrefByteString] readonly attribute TestNode locationByteString;
     [PerWorldBindings, PutForwards=href] readonly attribute TestNode locationWithPerWorldBindings;
+    [TypeChecking=Interface, PutForwards=href] readonly attribute TestNode locationTypeCheckingInterface;
     [PutForwards=attr1] readonly attribute TestInterfaceGarbageCollected locationGarbageCollected;
     [PutForwards=attr1] readonly attribute TestInterfaceWillBeGarbageCollected locationWillBeGarbageCollected;
     [RaisesException] attribute long raisesExceptionLongAttribute;
@@ -234,23 +236,24 @@ interface TestObject {
     [RuntimeEnabled=FeatureName] attribute long runtimeEnabledLongAttribute;
     [PerContextEnabled=FeatureName, RuntimeEnabled=FeatureName] attribute long perContextEnabledRuntimeEnabledLongAttribute;
     [Conditional=CONDITION, RuntimeEnabled=FeatureName] attribute long conditionalRuntimeEnabledLongAttribute;
-    [SetterCallWith=ActiveWindow&FirstWindow] attribute DOMString setterCallWithActiveWindowAndFirstWindowStringAttribute;
+    [SetterCallWith=(ActiveWindow,FirstWindow)] attribute DOMString setterCallWithActiveWindowAndFirstWindowStringAttribute;
     [SetterCallWith=ExecutionContext] attribute DOMString setterCallWithExecutionContextStringAttribute;
+    [TreatNullAs=EmptyString] attribute DOMString treatNullAsEmptyStringStringAttribute;
     [TreatNullAs=NullString] attribute DOMString treatNullAsNullStringStringAttribute;
     [TreatReturnedNullStringAs=Null] attribute DOMString treatReturnedNullStringAsNullStringAttribute;
     [TreatReturnedNullStringAs=Undefined] attribute DOMString treatReturnedNullStringAsUndefinedStringAttribute;
+    [TreatReturnedNullStringAs=Undefined, CachedAttribute=isStringDirty] attribute DOMString cachedTreatReturnedNullStringAsUndefinedStringAttribute;
     [TreatReturnedNullStringAs=Null] attribute ByteString treatReturnedNullStringAsNullByteStringAttribute;
     [TreatReturnedNullStringAs=Undefined] attribute ByteString treatReturnedNullStringAsUndefinedByteStringAttribute;
     [TreatReturnedNullStringAs=Null] attribute ScalarValueString treatReturnedNullStringAsNullScalarValueStringAttribute;
     [TreatReturnedNullStringAs=Undefined] attribute ScalarValueString treatReturnedNullStringAsUndefinedScalarValueStringAttribute;
-    [TypeChecking=Interface|Nullable] attribute float typeCheckingInterfaceNullableStringFloatAttribute; // nop for non-interface types
+    [TypeChecking=Interface] attribute float typeCheckingInterfaceFloatAttribute; // nop for non-interface types
     [TypeChecking=Interface] attribute TestInterface typeCheckingInterfaceTestInterfaceAttribute;
-    [TypeChecking=Nullable] attribute TestInterface? typeCheckingNullableTestInterfaceOrNullAttribute;
-    [TypeChecking=Interface|Nullable] attribute TestInterface? typeCheckingInterfaceNullableTestInterfaceOrNullAttribute;
+    [TypeChecking=Interface] attribute TestInterface? typeCheckingInterfaceTestInterfaceOrNullAttribute;
     [Reflect, URL] attribute DOMString urlStringAttribute;
     [Reflect=reflectUrlAttribute, URL] attribute DOMString urlStringAttribute;
     [Unforgeable] attribute long unforgeableLongAttribute;
-    [LogActivity=SetterOnly, LogPreviousValue] attribute long activityLoggingSetterOnlyLogPreviousValueAttribute;
+    [LogActivity=SetterOnly, LogPreviousValue] attribute DOMString? activityLoggingSetterOnlyLogPreviousValueAttribute;
     [LogActivity, LogPreviousValue] attribute TestInterfaceEmpty activityLoggingLogPreviousValueInterfaceAttribute;
 
 
@@ -347,6 +350,10 @@ interface TestObject {
     void voidMethodSequenceStringArg(sequence<DOMString> stringSequenceArg);
     void voidMethodSequenceTestInterfaceEmptyArg(sequence<TestInterfaceEmpty> testInterfaceEmptySequenceArg);
     // Nullable types
+    long? nullableLongMethod();
+    DOMString? nullableStringMethod();
+    TestInterface? nullableTestInterfaceMethod();
+    sequence<long>? nullableLongSequenceMethod();
     // Currently only used on interface type arguments
     void voidMethodTestInterfaceEmptyOrNullArg(TestInterfaceEmpty? nullableTestInterfaceEmptyArg);
     // Callback interface types
@@ -359,11 +366,11 @@ interface TestObject {
     // Exceptional types
     Dictionary dictionaryMethod();
     NodeFilter nodeFilterMethod();
-    Promise promiseMethod();
+    Promise promiseMethod(long arg1, Dictionary arg2, DOMString arg3, DOMString... variadic);
+    Promise promiseMethodWithoutExceptionState(Dictionary arg1);
     SerializedScriptValue serializedScriptValueMethod();
     XPathNSResolver xPathNSResolverMethod();
     void voidMethodDictionaryArg(Dictionary dictionaryArg);
-    void voidMethodEventListenerArg(EventListener eventListenerArg);
     void voidMethodNodeFilterArg(NodeFilter nodeFilterArg);
     void voidMethodPromiseArg(Promise promiseArg);
     void voidMethodSerializedScriptValueArg(SerializedScriptValue serializedScriptValueArg);
@@ -387,12 +394,15 @@ interface TestObject {
     void voidMethodOptionalDictionaryArg(optional Dictionary optionalDictionaryArg);
 
     // Optional arguments with defaults
+    void voidMethodDefaultByteStringArg(optional ByteString defaultByteStringArg = "foo");
     void voidMethodDefaultStringArg(optional DOMString defaultStringArg = "foo");
-    void voidMethodDefaultNullStringArg(optional DOMString defaultStringArg = null);
-    void voidMethodDefaultLongArg(optional long defaultLongArg = 10);
+    void voidMethodDefaultIntegerArgs(optional long defaultLongArg = 10,
+                                      optional long long defaultLongLongArg = -10,
+                                      optional unsigned long defaultUnsignedArg = 0xFFFFFFFF);
     void voidMethodDefaultDoubleArg(optional double defaultDoubleArg = 0.5);
     void voidMethodDefaultTrueBooleanArg(optional boolean defaultBooleanArg = true);
     void voidMethodDefaultFalseBooleanArg(optional boolean defaultBooleanArg = false);
+    void voidMethodDefaultNullableByteStringArg(optional ByteString? defaultStringArg = null);
     void voidMethodDefaultNullableStringArg(optional DOMString? defaultStringArg = null);
     void voidMethodDefaultNullableTestInterfaceArg(optional TestInterface? defaultTestInterfaceArg = null);
 
@@ -442,6 +452,7 @@ interface TestObject {
     // [EnforceRange]
     void voidMethodEnforceRangeLongArg([EnforceRange] long enforceRangeLongArg);
     // [TreatNullAs], [TreatUndefinedAs]
+    void voidMethodTreatNullAsEmptyStringStringArg([TreatNullAs=EmptyString] DOMString treatNullAsEmptyStringStringArg);
     void voidMethodTreatNullAsNullStringStringArg([TreatNullAs=NullString] DOMString treatNullAsNullStringStringArg);
     void voidMethodTreatNullAsNullStringTreatUndefinedAsNullStringStringArg([TreatNullAs=NullString, TreatUndefinedAs=NullString] DOMString treatNullAsNullStringStringArg);
 
@@ -450,14 +461,14 @@ interface TestObject {
     [CallWith=ExecutionContext] void callWithExecutionContextVoidMethod();
     [CallWith=ScriptState] void callWithScriptStateVoidMethod();
     [CallWith=ScriptState] long callWithScriptStateLongMethod();
-    [CallWith=ScriptState&ExecutionContext] void callWithScriptStateExecutionContextVoidMethod();
-    [CallWith=ScriptState&ScriptArguments] void callWithScriptStateScriptArgumentsVoidMethod();
-    [CallWith=ScriptState&ScriptArguments] void callWithScriptStateScriptArgumentsVoidMethodOptionalBooleanArg(optional boolean optionalBooleanArg);
+    [CallWith=(ScriptState,ExecutionContext)] void callWithScriptStateExecutionContextVoidMethod();
+    [CallWith=(ScriptState,ScriptArguments)] void callWithScriptStateScriptArgumentsVoidMethod();
+    [CallWith=(ScriptState,ScriptArguments)] void callWithScriptStateScriptArgumentsVoidMethodOptionalBooleanArg(optional boolean optionalBooleanArg);
     [CallWith=ActiveWindow] void callWithActiveWindow();
-    [CallWith=ActiveWindow&FirstWindow] void callWithActiveWindowScriptWindow();
+    [CallWith=(ActiveWindow,FirstWindow)] void callWithActiveWindowScriptWindow();
     [CheckSecurity=Node] void checkSecurityForNodeVoidMethod();
     [Conditional=CONDITION] void conditionalConditionVoidMethod();
-    [Conditional=CONDITION_1&CONDITION_2] void conditionalCondition1AndCondition2VoidMethod();
+    [Conditional=(CONDITION_1,CONDITION_2)] void conditionalCondition1AndCondition2VoidMethod();
     [Conditional=CONDITION] static void conditionalConditionStaticVoidMethod();
     [Custom] void customVoidMethod();
     [Conditional=CONDITION, Custom] void conditionalConditionCustomVoidMethod();
@@ -493,8 +504,6 @@ interface TestObject {
     [RaisesException] void raisesExceptionVoidMethodOptionalTestCallbackInterfaceArg(optional TestCallbackInterface optionalTestCallbackInterfaceArg);
     [RaisesException] TestInterfaceEmpty raisesExceptionTestInterfaceEmptyVoidMethod();
     [CallWith=ExecutionContext, RaisesException] void callWithExecutionContextRaisesExceptionVoidMethodLongArg(long longArg);
-    [ReadOnly] void readOnlyVoidMethod();
-    [NotEnumerable, ReadOnly] void notEnumerableReadOnlyVoidMethod();
     [RuntimeEnabled=FeatureName] void runtimeEnabledVoidMethod();
     [PerWorldBindings, RuntimeEnabled=FeatureName] void perWorldBindingsRuntimeEnabledVoidMethod();
     [RuntimeEnabled=FeatureName] void runtimeEnabledOverloadedVoidMethod(DOMString stringArg);
@@ -509,8 +518,7 @@ interface TestObject {
     [TreatReturnedNullStringAs=Null] ScalarValueString treatReturnedNullStringAsNullScalarValueStringMethod();
     [TreatReturnedNullStringAs=Undefined] ScalarValueString treatReturnedNullStringAsUndefinedScalarValueStringMethod();
     [TypeChecking=Interface] void typeCheckingInterfaceVoidMethodTestInterfaceEmptyArg(TestInterfaceEmpty testInterfaceEmptyArg);
-    [TypeChecking=Nullable] void typeCheckingNullableVoidMethodTestInterfaceEmptyOrNullArg(TestInterfaceEmpty? testInterfaceEmptyOrNullArg);
-    [TypeChecking=Interface|Nullable] void typeCheckingInterfaceNullableVoidMethodTestInterfaceEmptyOrNullArg(TestInterfaceEmpty? testInterfaceEmptyOrNullArg);
+    [TypeChecking=Interface] void typeCheckingInterfaceVoidMethodTestInterfaceEmptyVariadicArg(TestInterfaceEmpty... testInterfaceEmptyArg);
     [TypeChecking=Unrestricted] void typeCheckingUnrestrictedVoidMethodFloatArgDoubleArg(float floatArg, double doubleArg);
     [Unforgeable] void unforgeableVoidMethod();
     void voidMethodTestInterfaceGarbageCollectedSequenceArg(sequence<TestInterfaceGarbageCollected> testInterfaceGarbageCollectedSequenceArg);
@@ -525,4 +533,20 @@ interface TestObject {
     attribute TestInterfaceGarbageCollected? testInterfaceGarbageCollectedOrNullAttribute; // [GarbageCollected]
     attribute TestInterfaceWillBeGarbageCollected testInterfaceWillBeGarbageCollectedAttribute; // [WillBeGarbageCollected]
     attribute TestInterfaceWillBeGarbageCollected? testInterfaceWillBeGarbageCollectedOrNullAttribute; // [WillBeGarbageCollected]
+
+    // Private scripts
+    [ImplementedInPrivateScript] void voidMethodImplementedInPrivateScript();
+    [ImplementedInPrivateScript] short shortMethodImplementedInPrivateScript();
+    [ImplementedInPrivateScript] short shortMethodWithShortArgumentImplementedInPrivateScript(short value);
+    [ImplementedInPrivateScript] DOMString stringMethodWithStringArgumentImplementedInPrivateScript(DOMString value);
+    [ImplementedInPrivateScript] Node nodeMethodWithNodeArgumentImplementedInPrivateScript(Node value);
+    [ImplementedInPrivateScript] Node nodeMethodWithVariousArgumentsImplementedInPrivateScript(Document document, Node node, short value1, double value2, DOMString string);
+    [ImplementedInPrivateScript] readonly attribute short readonlyShortAttribute;
+    [ImplementedInPrivateScript] attribute short shortAttribute;
+    [ImplementedInPrivateScript] attribute DOMString stringAttribute;
+    [ImplementedInPrivateScript] attribute Node nodeAttribute;
+    [OnlyExposedToPrivateScript] short methodImplementedInCPPForPrivateScriptOnly(short value1, short value2);
+    [OnlyExposedToPrivateScript] attribute DOMString attributeImplementedInCPPForPrivateScriptOnly;
+    [ImplementedInPrivateScript, OnlyExposedToPrivateScript] short methodForPrivateScriptOnly(short value1, short value2);
+    [ImplementedInPrivateScript, OnlyExposedToPrivateScript] attribute DOMString attributeForPrivateScriptOnly;
 };

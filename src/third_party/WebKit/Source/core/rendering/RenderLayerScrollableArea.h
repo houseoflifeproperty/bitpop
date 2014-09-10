@@ -46,7 +46,7 @@
 
 #include "platform/scroll/ScrollableArea.h"
 
-namespace WebCore {
+namespace blink {
 
 enum ResizerHitTestType {
     ResizerForPointer,
@@ -121,7 +121,7 @@ public:
     void updateAfterStyleChange(const RenderStyle*);
     void updateAfterOverflowRecalc();
 
-    virtual void updateAfterCompositingChange() OVERRIDE;
+    virtual bool updateAfterCompositingChange() OVERRIDE;
 
     bool hasScrollbar() const { return m_hBar || m_vBar; }
 
@@ -141,6 +141,8 @@ public:
 
     LayoutUnit scrollWidth() const;
     LayoutUnit scrollHeight() const;
+    int pixelSnappedScrollWidth() const;
+    int pixelSnappedScrollHeight() const;
 
     int verticalScrollbarWidth(OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize) const;
     int horizontalScrollbarHeight(OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize) const;
@@ -170,11 +172,13 @@ public:
     // Rectangle encompassing the scroll corner and resizer rect.
     IntRect scrollCornerAndResizerRect() const;
 
-    bool needsCompositedScrolling() const;
+    void updateNeedsCompositedScrolling();
+    bool needsCompositedScrolling() const { return m_needsCompositedScrolling; }
 
-    // FIXME: This needs to be exposed as forced compositing scrolling is a RenderLayerScrollableArea
-    // concept and stacking container is a RenderLayerStackingNode concept.
-    bool adjustForForceCompositedScrollingMode(bool) const;
+    // These are used during compositing updates to determine if the overflow
+    // controls need to be repositioned in the GraphicsLayer tree.
+    void setTopmostScrollChild(RenderLayer*);
+    RenderLayer* topmostScrollChild() const { ASSERT(!m_nextTopmostScrollChild); return m_topmostScrollChild; }
 
 private:
     bool hasHorizontalOverflow() const;
@@ -225,6 +229,13 @@ private:
     unsigned m_scrollDimensionsDirty : 1;
     unsigned m_inOverflowRelayout : 1;
 
+    RenderLayer* m_nextTopmostScrollChild;
+    RenderLayer* m_topmostScrollChild;
+
+    // FIXME: once cc can handle composited scrolling with clip paths, we will
+    // no longer need this bit.
+    unsigned m_needsCompositedScrolling : 1;
+
     // The width/height of our scrolled area.
     LayoutRect m_overflowRect;
 
@@ -238,12 +249,12 @@ private:
     RefPtr<Scrollbar> m_vBar;
 
     // Renderers to hold our custom scroll corner.
-    RenderScrollbarPart* m_scrollCorner;
+    RawPtrWillBePersistent<RenderScrollbarPart> m_scrollCorner;
 
     // Renderers to hold our custom resizer.
-    RenderScrollbarPart* m_resizer;
+    RawPtrWillBePersistent<RenderScrollbarPart> m_resizer;
 };
 
-} // Namespace WebCore
+} // namespace blink
 
 #endif // RenderLayerScrollableArea_h

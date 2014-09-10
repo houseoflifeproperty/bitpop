@@ -14,7 +14,7 @@
 #include "chrome/browser/ui/fullscreen/fullscreen_exit_bubble_type.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
-#include "chrome/common/content_settings_types.h"
+#include "components/content_settings/core/common/content_settings_types.h"
 #include "components/translate/core/common/translate_errors.h"
 #include "ui/base/base_window.h"
 #include "ui/base/window_open_disposition.h"
@@ -29,9 +29,6 @@ class LocationBar;
 class Profile;
 class StatusBubble;
 class TemplateURL;
-#if !defined(OS_MACOSX)
-class ToolbarView;
-#endif
 
 struct WebApplicationInfo;
 
@@ -228,9 +225,14 @@ class BrowserWindow : public ui::BaseWindow {
                                      const std::string& extension_id) = 0;
 
   // Shows the translate bubble.
-  virtual void ShowTranslateBubble(content::WebContents* contents,
-                                   translate::TranslateStep step,
-                                   TranslateErrors::Type error_type) = 0;
+  //
+  // |is_user_gesture| is true when the bubble is shown on the user's deliberate
+  // action.
+  virtual void ShowTranslateBubble(
+      content::WebContents* contents,
+      translate::TranslateStep step,
+      translate::TranslateErrors::Type error_type,
+      bool is_user_gesture) = 0;
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   enum OneClickSigninBubbleType {
@@ -370,7 +372,10 @@ class BrowserWindow : public ui::BaseWindow {
     AVATAR_BUBBLE_MODE_DEFAULT,
     AVATAR_BUBBLE_MODE_ACCOUNT_MANAGEMENT,
     AVATAR_BUBBLE_MODE_SIGNIN,
+    AVATAR_BUBBLE_MODE_ADD_ACCOUNT,
     AVATAR_BUBBLE_MODE_REAUTH,
+    AVATAR_BUBBLE_MODE_CONFIRM_SIGNIN,
+    AVATAR_BUBBLE_MODE_SHOW_ERROR,
   };
   virtual void ShowAvatarBubbleFromAvatarButton(AvatarBubbleMode mode,
       const signin::ManageAccountsParams& manage_accounts_params) = 0;
@@ -410,37 +415,6 @@ class BrowserWindow : public ui::BaseWindow {
   friend class BrowserCloseManager;
   friend class BrowserView;
   virtual void DestroyBrowser() = 0;
-};
-
-#if defined(OS_WIN) || defined(TOOLKIT_VIEWS)
-class BookmarkBarView;
-class LocationBarView;
-
-namespace views {
-class View;
-}
-#endif  // defined(OS_WIN)
-
-// A BrowserWindow utility interface used for accessing elements of the browser
-// UI used only by UI test automation.
-class BrowserWindowTesting {
- public:
-#if defined(OS_WIN) || defined(TOOLKIT_VIEWS)
-  // Returns the BookmarkBarView.
-  virtual BookmarkBarView* GetBookmarkBarView() const = 0;
-
-  // Returns the LocationBarView.
-  virtual LocationBarView* GetLocationBarView() const = 0;
-
-  // Returns the TabContentsContainer.
-  virtual views::View* GetTabContentsContainerView() const = 0;
-
-  // Returns the ToolbarView.
-  virtual ToolbarView* GetToolbarView() const = 0;
-#endif
-
- protected:
-  virtual ~BrowserWindowTesting() {}
 };
 
 #endif  // CHROME_BROWSER_UI_BROWSER_WINDOW_H_

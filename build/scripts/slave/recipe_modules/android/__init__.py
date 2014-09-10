@@ -7,5 +7,4 @@ DEPS = [
   'python',
   'repo',
   'step',
-  'step_history',
 ]

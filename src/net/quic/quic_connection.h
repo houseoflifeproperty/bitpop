@@ -137,6 +137,17 @@ class NET_EXPORT_PRIVATE QuicConnectionDebugVisitor
                                 const IPEndPoint& peer_address,
                                 const QuicEncryptedPacket& packet) {}
 
+  // Called when a packet is received with a connection id that does not
+  // match the ID of this connection.
+  virtual void OnIncorrectConnectionId(
+      QuicConnectionId connection_id) {}
+
+  // Called when an undecryptable packet has been received.
+  virtual void OnUndecryptablePacket() {}
+
+  // Called when a duplicate packet has been received.
+  virtual void OnDuplicatePacket(QuicPacketSequenceNumber sequence_number) {}
+
   // Called when the protocol version on the received packet doensn't match
   // current protocol version of the connection.
   virtual void OnProtocolVersionMismatch(QuicVersion version) {}
@@ -187,6 +198,9 @@ class NET_EXPORT_PRIVATE QuicConnectionDebugVisitor
   // in the revival of a packet via FEC.
   virtual void OnRevivedPacket(const QuicPacketHeader& revived_header,
                                base::StringPiece payload) {}
+
+  // Called when the connection is closed.
+  virtual void OnConnectionClosed(QuicErrorCode error, bool from_peer) {}
 };
 
 class NET_EXPORT_PRIVATE QuicConnectionHelperInterface {
@@ -223,11 +237,13 @@ class NET_EXPORT_PRIVATE QuicConnection
   };
 
   // Constructs a new QuicConnection for |connection_id| and |address|.
-  // |helper| and |writer| must outlive this connection.
+  // |helper| must outlive this connection, and if |owns_writer| is false, so
+  // must |writer|.
   QuicConnection(QuicConnectionId connection_id,
                  IPEndPoint address,
                  QuicConnectionHelperInterface* helper,
                  QuicPacketWriter* writer,
+                 bool owns_writer,
                  bool is_server,
                  const QuicVersionVector& supported_versions);
   virtual ~QuicConnection();
@@ -303,11 +319,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   // If the socket is not blocked, writes queued packets.
   void WriteIfNotBlocked();
 
-  // Do any work which logically would be done in OnPacket but can not be
-  // safely done until the packet is validated.  Returns true if the packet
-  // can be handled, false otherwise.
-  bool ProcessValidatedPacket();
-
   // The version of the protocol this connection is using.
   QuicVersion version() const { return framer_.version(); }
 
@@ -355,12 +366,18 @@ class NET_EXPORT_PRIVATE QuicConnection
   virtual QuicStopWaitingFrame* CreateStopWaitingFrame() OVERRIDE;
   virtual bool OnSerializedPacket(const SerializedPacket& packet) OVERRIDE;
 
+  // Called by the crypto stream when the handshake completes. In the server's
+  // case this is when the SHLO has been ACKed. Clients call this on receipt of
+  // the SHLO.
+  void OnHandshakeComplete();
+
   // Accessors
   void set_visitor(QuicConnectionVisitorInterface* visitor) {
     visitor_ = visitor;
   }
+  // This method takes ownership of |debug_visitor|.
   void set_debug_visitor(QuicConnectionDebugVisitor* debug_visitor) {
-    debug_visitor_ = debug_visitor;
+    debug_visitor_.reset(debug_visitor);
     packet_generator_.set_debug_delegate(debug_visitor);
     sent_packet_manager_.set_debug_delegate(debug_visitor);
   }
@@ -490,6 +507,11 @@ class NET_EXPORT_PRIVATE QuicConnection
   };
 
  protected:
+  // Do any work which logically would be done in OnPacket but can not be
+  // safely done until the packet is validated.  Returns true if the packet
+  // can be handled, false otherwise.
+  virtual bool ProcessValidatedPacket();
+
   // Send a packet to the peer using encryption |level|. If |sequence_number|
   // is present in the |retransmission_map_|, then contents of this packet will
   // be retransmitted with a new sequence number if it's not acked by the peer.
@@ -511,6 +533,16 @@ class NET_EXPORT_PRIVATE QuicConnection
   bool SelectMutualVersion(const QuicVersionVector& available_versions);
 
   QuicPacketWriter* writer() { return writer_; }
+
+  bool peer_port_changed() const { return peer_port_changed_; }
+
+  const QuicReceivedPacketManager& received_packet_manager() const {
+    return received_packet_manager_;
+  }
+
+  QuicPacketSequenceNumber sequence_number_of_last_sent_packet() const {
+    return sequence_number_of_last_sent_packet_;
+  }
 
  private:
   friend class test::QuicConnectionPeer;
@@ -622,7 +654,8 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   QuicFramer framer_;
   QuicConnectionHelperInterface* helper_;  // Not owned.
-  QuicPacketWriter* writer_;  // Not owned.
+  QuicPacketWriter* writer_;  // Owned or not depending on |owns_writer_|.
+  bool owns_writer_;
   EncryptionLevel encryption_level_;
   const QuicClock* clock_;
   QuicRandom* random_generator_;
@@ -706,7 +739,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   scoped_ptr<QuicAlarm> ping_alarm_;
 
   QuicConnectionVisitorInterface* visitor_;
-  QuicConnectionDebugVisitor* debug_visitor_;
+  scoped_ptr<QuicConnectionDebugVisitor> debug_visitor_;
   QuicPacketGenerator packet_generator_;
 
   // Network idle time before we kill of this connection.

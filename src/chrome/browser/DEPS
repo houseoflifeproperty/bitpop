@@ -2,13 +2,13 @@ include_rules = [
   "+apps",
   "+ash",
   "+chrome/app",
+  "+chrome/grit",  # For generated headers
   "+chrome/installer",
   "+chrome_elf/blacklist",
   "+chrome_elf/chrome_elf_constants.h",
   "+chrome_elf/create_file",
   "+chrome_elf/dll_hash",
   "+chromeos",
-  "+components/autocomplete",
   "+components/autofill/content/browser",
   "+components/autofill/content/common",
   "+components/autofill/core/browser",
@@ -19,9 +19,12 @@ include_rules = [
   "+components/breakpad",
   "+components/cdm/browser",
   "+components/cloud_devices/common",
+  "+components/content_settings",
+  "+components/copresence",
   "+components/data_reduction_proxy",
   "+components/dom_distiller",
   "+components/domain_reliability",
+  "+components/enhanced_bookmarks",
   "+components/favicon_base",
   "+components/feedback",
   "+components/gcm_driver",
@@ -32,11 +35,14 @@ include_rules = [
   "+components/keyed_service",
   "+components/language_usage_metrics",
   "+components/leveldb_proto",
+  "+components/metrics",
   "+components/nacl/browser",
   "+components/nacl/common",
   "+components/navigation_interception",
   "+components/navigation_metrics",
   "+components/network_time",
+  "+components/omaha_query_params",
+  "+components/omnibox",
   "+components/os_crypt",
   "+components/password_manager",
   "+components/policy",
@@ -44,18 +50,23 @@ include_rules = [
   "+components/pref_registry",
   "+components/query_parser",
   "+components/rappor",
+  "+components/renderer_context_menu",
+  "+components/search",
   "+components/search_engines",
   "+components/search_provider_logos",
+  "+components/session_manager",
   "+components/sessions",
   "+components/signin",
   "+components/startup_metric_utils",
   "+components/storage_monitor",
+  "+components/suggestions",
   "+components/sync_driver",
   "+components/translate/content/browser",
   "+components/translate/content/common",
   "+components/translate/core/browser",
   "+components/translate/core/common",
   "+components/url_matcher",
+  "+components/user_manager",
   "+components/user_prefs",
   "+components/web_modal",
   "+components/webdata/common",
@@ -69,7 +80,7 @@ include_rules = [
   "+google/cacheinvalidation",  # Sync invalidation API protobuf files.
   "+google_apis",
   "+google_update",
-  "+grit",  # For generated headers
+  "+grit",  # TODO(thestig) Remove. For generated headers
   "+installer_util_strings",  # For generated headers
   "+jni",
   "+media/base",  # For media switches
@@ -84,7 +95,7 @@ include_rules = [
   "+sandbox/win/src",  # The path doesn't say it, but this is the Windows sandbox.
   "+skia/ext",
   "+sync/api",  # Sync API files.
-  "+sync/notifier",  # Sync invalidation API files.
+  "+sync/internal_api/public/attachments",  # Needed for tests.
   "+sync/protocol",  # Sync protobuf files.
   "+third_party/cros_system_api",
   "+win8/util",
@@ -112,9 +123,11 @@ include_rules = [
 
   # Other libraries.
   "+libxml",  # For search engine definition parsing.
+  "+third_party/google_toolbox_for_mac/src",
   "+third_party/icu/source/common/unicode",
   "+third_party/icu/source/i18n/unicode",
   "+third_party/leveldatabase",
+  "+third_party/mozilla",     # Mozilla interface headers.
   "+third_party/protobuf/src/google/protobuf",
   "+third_party/re2",
   "+third_party/smhasher",
@@ -125,6 +138,7 @@ include_rules = [
   # header-only types, and some selected common code.
   "-third_party/WebKit",
   "+third_party/WebKit/public/platform/WebCursorInfo.h",
+  "+third_party/WebKit/public/platform/WebNotificationPermission.h",
   "+third_party/WebKit/public/platform/WebRect.h",
   "+third_party/WebKit/public/platform/WebReferrerPolicy.h",
   "+third_party/WebKit/public/platform/WebScreenInfo.h",
@@ -134,7 +148,6 @@ include_rules = [
   "+third_party/WebKit/public/web/WebFindOptions.h",
   "+third_party/WebKit/public/web/WebInputEvent.h",
   "+third_party/WebKit/public/web/WebMediaPlayerAction.h",
-  "+third_party/WebKit/public/web/WebNotificationPresenter.h",
   "+third_party/WebKit/public/web/WebPageVisibilityState.h",
   "+third_party/WebKit/public/web/WebPluginAction.h",
   "+third_party/WebKit/public/web/WebTextDirection.h",

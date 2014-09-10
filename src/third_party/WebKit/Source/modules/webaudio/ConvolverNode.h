@@ -30,7 +30,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/ThreadingPrimitives.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBuffer;
 class ExceptionState;
@@ -46,6 +46,7 @@ public:
     virtual ~ConvolverNode();
 
     // AudioNode
+    virtual void dispose() OVERRIDE;
     virtual void process(size_t framesToProcess) OVERRIDE;
     virtual void initialize() OVERRIDE;
     virtual void uninitialize() OVERRIDE;
@@ -75,6 +76,6 @@ private:
     bool m_normalize;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ConvolverNode_h

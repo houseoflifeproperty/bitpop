@@ -30,7 +30,7 @@
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/style/GridResolvedPosition.h"
 
-namespace WebCore {
+namespace blink {
 
 struct GridCoordinate;
 struct GridSpan;
@@ -45,7 +45,6 @@ public:
 
     virtual void layoutBlock(bool relayoutChildren) OVERRIDE;
 
-    virtual bool avoidsFloats() const OVERRIDE { return true; }
     virtual bool canCollapseAnonymousBlockChild() const OVERRIDE { return false; }
 
     void dirtyGrid();
@@ -84,7 +83,7 @@ private:
     PassOwnPtr<GridCoordinate> createEmptyGridAreaAtSpecifiedPositionsOutsideGrid(const RenderBox*, GridTrackSizingDirection, const GridSpan& specifiedPositions) const;
     void placeSpecifiedMajorAxisItemsOnGrid(const Vector<RenderBox*>&);
     void placeAutoMajorAxisItemsOnGrid(const Vector<RenderBox*>&);
-    void placeAutoMajorAxisItemOnGrid(RenderBox*);
+    void placeAutoMajorAxisItemOnGrid(RenderBox*, std::pair<size_t, size_t>& autoPlacementCursor);
     GridTrackSizingDirection autoPlacementMajorAxisDirection() const;
     GridTrackSizingDirection autoPlacementMinorAxisDirection() const;
 
@@ -111,6 +110,9 @@ private:
     LayoutUnit columnPositionAlignedWithGridContainerEnd(const RenderBox*) const;
     LayoutUnit centeredColumnPositionForChild(const RenderBox*) const;
     LayoutUnit columnPositionForChild(const RenderBox*) const;
+    LayoutUnit startOfRowForChild(const RenderBox* child) const;
+    LayoutUnit endOfRowForChild(const RenderBox* child) const;
+    LayoutUnit centeredRowPositionForChild(const RenderBox*) const;
     LayoutUnit rowPositionForChild(const RenderBox*) const;
     LayoutPoint findChildLogicalPosition(const RenderBox*) const;
     GridCoordinate cachedGridCoordinate(const RenderBox*) const;
@@ -121,9 +123,11 @@ private:
 
     bool gridIsDirty() const { return m_gridIsDirty; }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool tracksAreWiderThanMinTrackBreadth(GridTrackSizingDirection, const Vector<GridTrack>&);
 #endif
+
+    size_t gridItemSpan(const RenderBox*, GridTrackSizingDirection);
 
     size_t gridColumnCount() const
     {
@@ -150,6 +154,6 @@ private:
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderGrid, isRenderGrid());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderGrid_h

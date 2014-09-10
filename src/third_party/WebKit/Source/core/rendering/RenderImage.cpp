@@ -43,15 +43,16 @@
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/TextRunConstructor.h"
 #include "core/svg/graphics/SVGImage.h"
 #include "platform/fonts/Font.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 
-using namespace std;
+namespace blink {
 
-namespace WebCore {
+float deviceScaleFactor(LocalFrame*);
 
 using namespace HTMLNames;
 
@@ -74,8 +75,13 @@ RenderImage* RenderImage::createAnonymous(Document* document)
 
 RenderImage::~RenderImage()
 {
+}
+
+void RenderImage::destroy()
+{
     ASSERT(m_imageResource);
     m_imageResource->shutdown();
+    RenderReplaced::destroy();
 }
 
 void RenderImage::setImageResource(PassOwnPtr<RenderImageResource> imageResource)
@@ -101,7 +107,7 @@ IntSize RenderImage::imageSizeForError(ImageResource* newImage) const
 
     IntSize imageSize;
     if (newImage->willPaintBrokenImage()) {
-        float deviceScaleFactor = WebCore::deviceScaleFactor(frame());
+        float deviceScaleFactor = blink::deviceScaleFactor(frame());
         pair<Image*, float> brokenImageAndImageScaleFactor = ImageResource::brokenImage(deviceScaleFactor);
         imageSize = brokenImageAndImageScaleFactor.first->size();
         imageSize.scale(1 / brokenImageAndImageScaleFactor.second);
@@ -130,7 +136,7 @@ bool RenderImage::setImageSizeForAltText(ImageResource* newImage /* = 0 */)
         FontCachePurgePreventer fontCachePurgePreventer;
 
         const Font& font = style()->font();
-        IntSize paddedTextSize(paddingWidth + min(ceilf(font.width(RenderBlockFlow::constructTextRun(this, font, m_altText, style()))), maxAltTextWidth), paddingHeight + min(font.fontMetrics().height(), maxAltTextHeight));
+        IntSize paddedTextSize(paddingWidth + std::min(ceilf(font.width(constructTextRun(this, font, m_altText, style()))), maxAltTextWidth), paddingHeight + std::min(font.fontMetrics().height(), maxAltTextHeight));
         imageSize = imageSize.expandedTo(paddedTextSize);
     }
 
@@ -146,7 +152,7 @@ void RenderImage::imageChanged(WrappedImagePtr newImage, const IntRect* rect)
     if (documentBeingDestroyed())
         return;
 
-    if (hasBoxDecorations() || hasMask() || hasShapeOutside())
+    if (hasBoxDecorationBackground() || hasMask() || hasShapeOutside())
         RenderReplaced::imageChanged(newImage, rect);
 
     if (!m_imageResource)
@@ -210,14 +216,13 @@ void RenderImage::repaintOrMarkForLayout(bool imageSizeChangedToAccomodateAltTex
 
     // If the actual area occupied by the image has changed and it is not constrained by style then a layout is required.
     bool imageSizeIsConstrained = style()->logicalWidth().isSpecified() && style()->logicalHeight().isSpecified();
-    bool needsLayout = !imageSizeIsConstrained && imageSourceHasChangedSize;
 
     // FIXME: We only need to recompute the containing block's preferred size if the containing block's size
     // depends on the image's size (i.e., the container uses shrink-to-fit sizing).
     // There's no easy way to detect that shrink-to-fit is needed, always force a layout.
-    bool containingBlockNeedsToRecomputePreferredSize =  style()->logicalWidth().isPercent() || style()->logicalMaxWidth().isPercent()  || style()->logicalMinWidth().isPercent();
+    bool containingBlockNeedsToRecomputePreferredSize = style()->logicalWidth().isPercent() || style()->logicalMaxWidth().isPercent()  || style()->logicalMinWidth().isPercent();
 
-    if (needsLayout || containingBlockNeedsToRecomputePreferredSize) {
+    if (imageSourceHasChangedSize && (!imageSizeIsConstrained || containingBlockNeedsToRecomputePreferredSize)) {
         setNeedsLayoutAndFullPaintInvalidation();
         return;
     }
@@ -304,7 +309,7 @@ void RenderImage::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
             RefPtr<Image> image = m_imageResource->image();
 
             if (m_imageResource->errorOccurred() && !image->isNull() && usableWidth >= image->width() && usableHeight >= image->height()) {
-                float deviceScaleFactor = WebCore::deviceScaleFactor(frame());
+                float deviceScaleFactor = blink::deviceScaleFactor(frame());
                 // Call brokenImage() explicitly to ensure we get the broken image icon at the appropriate resolution.
                 pair<Image*, float> brokenImageAndImageScaleFactor = ImageResource::brokenImage(deviceScaleFactor);
                 image = brokenImageAndImageScaleFactor.first;
@@ -332,7 +337,7 @@ void RenderImage::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
 
                 // Only draw the alt text if it'll fit within the content box,
                 // and only if it fits above the error image.
-                TextRun textRun = RenderBlockFlow::constructTextRun(this, font, m_altText, style(), TextRun::AllowTrailingExpansion | TextRun::ForbidLeadingExpansion, DefaultTextRunFlags | RespectDirection);
+                TextRun textRun = constructTextRun(this, font, m_altText, style(), TextRun::AllowTrailingExpansion | TextRun::ForbidLeadingExpansion, DefaultTextRunFlags | RespectDirection);
                 float textWidth = font.width(textRun);
                 TextRunPaintInfo textRunPaintInfo(textRun);
                 textRunPaintInfo.bounds = FloatRect(textRectOrigin, FloatSize(textWidth, fontMetrics.height()));
@@ -384,9 +389,6 @@ void RenderImage::paintAreaElementFocusRing(PaintInfo& paintInfo)
     Document& document = this->document();
 
     if (document.printing() || !document.frame()->selection().isFocusedAndActive())
-        return;
-
-    if (paintInfo.context->paintingDisabled() && !paintInfo.context->updatingControlTints())
         return;
 
     Element* focusedElement = document.focusedElement();
@@ -466,7 +468,7 @@ bool RenderImage::boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance 
     if (!RenderBoxModelObject::boxShadowShouldBeAppliedToBackground(bleedAvoidance))
         return false;
 
-    return !const_cast<RenderImage*>(this)->backgroundIsKnownToBeObscured();
+    return !const_cast<RenderImage*>(this)->boxDecorationBackgroundIsKnownToBeObscured();
 }
 
 bool RenderImage::foregroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect, unsigned) const
@@ -554,8 +556,12 @@ void RenderImage::updateAltText()
 
 void RenderImage::layout()
 {
+    LayoutRect oldContentRect = replacedContentRect();
     RenderReplaced::layout();
-    updateInnerContentRect();
+    if (replacedContentRect() != oldContentRect) {
+        setShouldDoFullPaintInvalidation(true);
+        updateInnerContentRect();
+    }
 }
 
 bool RenderImage::updateImageLoadingPriorities()
@@ -628,4 +634,4 @@ RenderBox* RenderImage::embeddedContentBox() const
     return 0;
 }
 
-} // namespace WebCore
+} // namespace blink

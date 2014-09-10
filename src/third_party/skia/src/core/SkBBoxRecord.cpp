@@ -7,6 +7,11 @@
  */
 
 #include "SkBBoxRecord.h"
+#include "SkPatchUtils.h"
+
+SkBBoxRecord::~SkBBoxRecord() {
+    fSaveStack.deleteAll();
+}
 
 void SkBBoxRecord::drawOval(const SkRect& rect, const SkPaint& paint) {
     if (this->transformBounds(rect, &paint)) {
@@ -280,11 +285,48 @@ void SkBBoxRecord::drawVertices(VertexMode mode, int vertexCount,
     }
 }
 
-void SkBBoxRecord::onDrawPicture(const SkPicture* picture) {
-    if (picture->width() > 0 && picture->height() > 0 &&
-        this->transformBounds(SkRect::MakeWH(picture->width(), picture->height()), NULL)) {
-        this->INHERITED::onDrawPicture(picture);
+void SkBBoxRecord::onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
+                               const SkPoint texCoords[4], SkXfermode* xmode,
+                               const SkPaint& paint) {
+    SkRect bbox;
+    bbox.set(cubics, SkPatchUtils::kNumCtrlPts);
+    if (this->transformBounds(bbox, &paint)) {
+        INHERITED::onDrawPatch(cubics, colors, texCoords, xmode, paint);
     }
+}
+
+void SkBBoxRecord::onDrawPicture(const SkPicture* picture, const SkMatrix* matrix,
+                                 const SkPaint* paint) {
+    SkRect bounds = SkRect::MakeWH(SkIntToScalar(picture->width()),
+                                   SkIntToScalar(picture->height()));
+    // todo: wonder if we should allow passing an optional matrix to transformBounds so we don't
+    // end up transforming the rect twice.
+    if (matrix) {
+        matrix->mapRect(&bounds);
+    }
+    if (this->transformBounds(bounds, paint)) {
+        this->INHERITED::onDrawPicture(picture, matrix, paint);
+    }
+}
+
+void SkBBoxRecord::willSave() {
+    fSaveStack.push(NULL);
+    this->INHERITED::willSave();
+}
+
+SkCanvas::SaveLayerStrategy SkBBoxRecord::willSaveLayer(const SkRect* bounds,
+                                                        const SkPaint* paint,
+                                                        SaveFlags flags) {
+    // Image filters can affect the effective bounds of primitives drawn inside saveLayer().
+    // Copy the paint so we can compute the modified bounds in transformBounds().
+    fSaveStack.push(paint && paint->getImageFilter() ? new SkPaint(*paint) : NULL);
+    return this->INHERITED::willSaveLayer(bounds, paint, flags);
+}
+
+void SkBBoxRecord::willRestore() {
+    delete fSaveStack.top();
+    fSaveStack.pop();
+    this->INHERITED::willRestore();
 }
 
 bool SkBBoxRecord::transformBounds(const SkRect& bounds, const SkPaint* paint) {
@@ -302,6 +344,14 @@ bool SkBBoxRecord::transformBounds(const SkRect& bounds, const SkPaint* paint) {
                 // current clip is empty
                 return false;
             }
+        }
+    }
+
+    for (int i = fSaveStack.count() - 1; i >= 0; --i) {
+        const SkPaint* paint = fSaveStack.getAt(i);
+        if (paint && paint->canComputeFastBounds()) {
+            SkRect temp;
+            outBounds = paint->computeFastBounds(outBounds, &temp);
         }
     }
 

@@ -55,6 +55,8 @@ signin::GAIAServiceType GetGAIAServiceTypeFromHeader(
     return signin::GAIA_SERVICE_TYPE_ADDSESSION;
   else if (header_value == "REAUTH")
     return signin::GAIA_SERVICE_TYPE_REAUTH;
+  else if (header_value == "SIGNUP")
+    return signin::GAIA_SERVICE_TYPE_SIGNUP;
   else if (header_value == "DEFAULT")
     return signin::GAIA_SERVICE_TYPE_DEFAULT;
   else
@@ -206,10 +208,10 @@ bool AppendMirrorRequestHeaderIfPossible(
   // available.
   const GURL& url = redirect_url.is_empty() ? request->url() : redirect_url;
   GURL origin(url.GetOrigin());
-  bool is_new_profile_management = switches::IsNewProfileManagement();
+  bool is_enable_account_consistency = switches::IsEnableAccountConsistency();
   bool is_google_url =
       !switches::IsEnableWebBasedSignin() &&
-      is_new_profile_management &&
+      is_enable_account_consistency &&
       (google_util::IsGoogleDomainUrl(
            url,
            google_util::ALLOW_SUBDOMAIN,
@@ -235,7 +237,7 @@ bool AppendMirrorRequestHeaderIfPossible(
       kGaiaIdAttrName, account_id.c_str(),
       kProfileModeAttrName, base::IntToString(profile_mode_mask).c_str(),
       kEnableAccountConsistencyAttrName,
-      is_new_profile_management ? "true" : "false"));
+      is_enable_account_consistency ? "true" : "false"));
   request->SetExtraRequestHeaderByName(
       kChromeConnectedHeader, header_value, false);
   return true;
@@ -259,7 +261,7 @@ void ProcessMirrorResponseHeaderIfExists(
     return;
   }
 
-  DCHECK(switches::IsNewProfileManagement() && !io_data->IsOffTheRecord());
+  DCHECK(switches::IsEnableAccountConsistency() && !io_data->IsOffTheRecord());
   ManageAccountsParams params(BuildManageAccountsParams(header_value));
   if (params.service_type == GAIA_SERVICE_TYPE_NONE)
     return;

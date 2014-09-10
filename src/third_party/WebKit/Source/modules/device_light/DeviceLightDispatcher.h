@@ -5,16 +5,16 @@
 #ifndef DeviceLightDispatcher_h
 #define DeviceLightDispatcher_h
 
-#include "core/frame/DeviceEventDispatcherBase.h"
+#include "core/frame/PlatformEventDispatcher.h"
 #include "public/platform/WebDeviceLightListener.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class DeviceLightController;
 
 // This class listens to device light data and notifies all registered controllers.
-class DeviceLightDispatcher FINAL : public DeviceEventDispatcherBase, public blink::WebDeviceLightListener {
+class DeviceLightDispatcher FINAL : public PlatformEventDispatcher, public WebDeviceLightListener {
 public:
     static DeviceLightDispatcher& instance();
 
@@ -27,13 +27,13 @@ private:
     DeviceLightDispatcher();
     virtual ~DeviceLightDispatcher();
 
-    // Inherited from DeviceEventDispatcherBase.
+    // Inherited from PlatformEventDispatcher.
     virtual void startListening() OVERRIDE;
     virtual void stopListening() OVERRIDE;
 
     double m_lastDeviceLightData;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeviceLightDispatcher_h

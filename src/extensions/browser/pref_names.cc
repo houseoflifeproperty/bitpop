@@ -32,13 +32,10 @@ const char kAllowedInstallSites[] = "extensions.allowed_install_sites";
 const char kAllowedTypes[] = "extensions.allowed_types";
 const char kBookmarkAppCreationLaunchType[] =
     "extensions.bookmark_app_creation_launch_type";
-const char kBrowserActionContainerWidth[] =
-    "extensions.browseractions.container.width";
 const char kExtensions[] = "extensions.settings";
 const char kInstallAllowList[] = "extensions.install.allowlist";
 const char kInstallDenyList[] = "extensions.install.denylist";
 const char kInstallForceList[] = "extensions.install.forcelist";
-const char kKnownDisabled[] = "extensions.known_disabled";
 const char kLastChromeVersion[] = "extensions.last_chrome_version";
 const char kLastUpdateCheck[] = "extensions.autoupdate.last_check";
 const char kNativeMessagingBlacklist[] = "native_messaging.blacklist";

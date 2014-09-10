@@ -10,10 +10,8 @@ DEPS = [
   'platform',
   'properties',
   'step',
-  'step_history',
   'tryserver',
 ]
-
 
 def GenSteps(api):
   api.chromium.set_config('blink', TARGET_PLATFORM='android', TARGET_ARCH='arm')
@@ -25,31 +23,31 @@ def GenSteps(api):
   # TODO(dpranke): crbug.com/348435. We need to figure out how to separate
   # out the retry and recovery logic from the rest of the recipe.
 
-  yield api.bot_update.ensure_checkout()
+  step_result = api.bot_update.ensure_checkout()
   # The first time we run bot update, remember if bot_update mode is on or off.
-  bot_update_mode = api.step_history.last_step().json.output['did_run']
+  bot_update_mode = step_result.json.output['did_run']
   if not bot_update_mode:
-    yield api.gclient.checkout(revert=True, can_fail_build=False,
-                               abort_on_failure=False)
-
-    if any((step.retcode != 0) for step in api.step_history.values()):
-      yield api.path.rmcontents('slave build directory',
+    try:
+      api.gclient.checkout(revert=True)
+    except api.step.StepFailure:
+      api.path.rmcontents('slave build directory',
                                 api.path['slave_build'])
-      yield api.gclient.checkout(revert=False)
-    yield api.tryserver.maybe_apply_issue()
+      api.gclient.checkout(revert=False)
+    api.tryserver.maybe_apply_issue()
 
-  yield api.chromium.runhooks()
-  yield api.chromium.compile(abort_on_failure=False, can_fail_build=False)
-
-  if api.step_history.last_step().retcode != 0:
-    yield api.path.rmcontents('slave build directory', api.path['slave_build'])
+  api.chromium.runhooks()
+  step_result = None
+  try:
+    step_result = api.chromium.compile()
+  except api.step.StepFailure:
+    api.path.rmcontents('slave build directory', api.path['slave_build'])
     if bot_update_mode:
-      yield api.bot_update.ensure_checkout(suffix='clean')
+      api.bot_update.ensure_checkout(suffix='clean')
     else:
-      yield api.gclient.checkout(revert=False)
-      yield api.tryserver.maybe_apply_issue()
-    yield api.chromium.runhooks()
-    yield api.chromium.compile()
+      api.gclient.checkout(revert=False)
+      api.tryserver.maybe_apply_issue()
+    api.chromium.runhooks()
+    api.chromium.compile()
 
 
 def GenTests(api):

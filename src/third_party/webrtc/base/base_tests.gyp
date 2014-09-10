@@ -29,6 +29,9 @@
         'base.gyp:webrtc_base',
         '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
+      'export_dependent_settings': [
+        '<(DEPTH)/testing/gtest.gyp:gtest',
+      ],
     },
     {
       'target_name': 'webrtc_base_tests',
@@ -54,6 +57,7 @@
         'crc32_unittest.cc',
         'criticalsection_unittest.cc',
         'event_unittest.cc',
+        'exp_filter_unittest.cc',
         'filelock_unittest.cc',
         'fileutils_unittest.cc',
         'helpers_unittest.cc',

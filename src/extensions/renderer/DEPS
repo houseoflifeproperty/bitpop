@@ -1,7 +1,8 @@
 include_rules = [
-  "-content",
-  "+content/public/common",
   "+content/public/renderer",
+
+  "+gin",
+  "+mojo/bindings/js",
 
   "+third_party/skia/include/core",
 

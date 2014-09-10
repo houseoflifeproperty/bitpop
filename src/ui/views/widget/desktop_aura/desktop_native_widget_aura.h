@@ -177,7 +177,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual void EndMoveLoop() OVERRIDE;
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) OVERRIDE;
   virtual ui::NativeTheme* GetNativeTheme() const OVERRIDE;
-  virtual void OnRootViewLayout() const OVERRIDE;
+  virtual void OnRootViewLayout() OVERRIDE;
   virtual bool IsTranslucentWindowOpacitySupported() const OVERRIDE;
   virtual void RepostNativeEvent(gfx::NativeEvent native_event) OVERRIDE;
 

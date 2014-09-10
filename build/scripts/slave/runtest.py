@@ -23,6 +23,7 @@ import optparse
 import os
 import re
 import stat
+import subprocess
 import sys
 import tempfile
 
@@ -42,7 +43,10 @@ sys.path.insert(0, os.path.abspath('src/tools/python'))
 
 from common import chromium_utils
 from common import gtest_utils
+
+# TODO(crbug.com/403564). We almost certainly shouldn't be importing this.
 import config
+
 from slave import annotation_utils
 from slave import build_directory
 from slave import crash_utils
@@ -65,6 +69,8 @@ HTTPD_CONF = {
     'mac': 'httpd2_mac.conf',
     'win': 'httpd.conf'
 }
+# Regex matching git comment lines containing svn revision info.
+GIT_SVN_ID_RE = re.compile('^git-svn-id: .*@([0-9]+) .*$')
 
 # The directory that this script is in.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -115,7 +121,6 @@ def _LaunchDBus():
     True if it actually spawned DBus.
   """
   import platform
-  import subprocess
   if (platform.uname()[0].lower() == 'linux' and
       'DBUS_SESSION_BUS_ADDRESS' not in os.environ):
     try:
@@ -202,6 +207,24 @@ def _GetMasterString(master):
   return '[Running for master: "%s"]' % master
 
 
+def _GetGitSvnRevision(dir_path):
+  """Extracts the svn revision number of the HEAD commit."""
+  git_exe = 'git.bat' if sys.platform.startswith('win') else 'git'
+  p = subprocess.Popen(
+      [git_exe, 'log', '-n', '1', '--pretty=format:%B', 'HEAD'],
+      cwd=dir_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+  (log, _) = p.communicate()
+  if p.returncode != 0:
+    return None
+  # Parse from the bottom up, in case the commit message embeds the message
+  # from a different commit (e.g., for a revert).
+  for line in reversed(log.splitlines()):
+    m = GIT_SVN_ID_RE.match(line.strip())
+    if m:
+      return m.group(1)
+  return None
+
+
 def _IsGitDirectory(dir_path):
   """Checks whether the given directory is in a git repository.
 
@@ -211,13 +234,11 @@ def _IsGitDirectory(dir_path):
   Returns:
     True if given directory is in a git repository, False otherwise.
   """
-  if os.path.exists(os.path.join(dir_path, '.git')):
-    return True
-  parent = os.path.dirname(dir_path)
-  # The parent path of / is /. Stop if we've reached the root.
-  if parent == dir_path:
-    return False
-  return _IsGitDirectory(parent)
+  git_exe = 'git.bat' if sys.platform.startswith('win') else 'git'
+  with open(os.devnull, 'w') as devnull:
+    p = subprocess.Popen([git_exe, 'rev-parse', '--git-dir'],
+                         cwd=dir_path, stdout=devnull, stderr=devnull)
+    return p.wait() == 0
 
 
 def _GetSvnRevision(in_directory):
@@ -231,10 +252,12 @@ def _GetSvnRevision(in_directory):
     a git SHA1 hash if the given directory is in a git repository, or an empty
     string if the revision number couldn't be found.
   """
-  import subprocess
   import xml.dom.minidom
   if not os.path.exists(os.path.join(in_directory, '.svn')):
     if _IsGitDirectory(in_directory):
+      svn_rev = _GetGitSvnRevision(in_directory)
+      if svn_rev:
+        return svn_rev
       return _GetGitRevision(in_directory)
     else:
       return ''
@@ -261,13 +284,12 @@ def _GetGitRevision(in_directory):
   Returns:
     The git SHA1 hash string.
   """
-  import subprocess
-  command_line = ['git', 'log', '-1', '--pretty=oneline']
-  output = subprocess.Popen(command_line,
-                            cwd=in_directory,
-                            shell=(sys.platform == 'win32'),
-                            stdout=subprocess.PIPE).communicate()[0]
-  return output[0:40]
+  git_exe = 'git.bat' if sys.platform.startswith('win') else 'git'
+  p = subprocess.Popen(
+      [git_exe, 'rev-parse', 'HEAD'],
+      cwd=in_directory, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+  (stdout, _) = p.communicate()
+  return stdout.strip()
 
 
 def _GenerateJSONForTestResults(options, results_tracker):
@@ -565,8 +587,10 @@ def _CreateResultsTracker(tracker_class, options):
   if not tracker_class:
     return None
 
-  if tracker_class.__name__ in ('GTestLogParser', 'GTestJSONParser'):
+  if tracker_class.__name__ in ('GTestLogParser',):
     tracker_obj = tracker_class()
+  elif tracker_class.__name__ in ('GTestJSONParser',):
+    tracker_obj = tracker_class(options.build_properties.get('mastername'))
   else:
     build_dir = os.path.abspath(options.build_dir)
 
@@ -623,10 +647,6 @@ def _SendResultsToDashboard(results_tracker, system, test, url, build_dir,
                             supplemental_columns_file, extra_columns=None):
   """Sends results from a results tracker (aka log parser) to the dashboard.
 
-  TODO(qyearsley): Change this function and results_dashboard.SendResults so
-  that only one request is made per test run (instead of one per graph name).
-  Also, maybe refactor this function to take fewer arguments.
-
   Args:
     results_tracker: An instance of a log parser class, which has been used to
         process the test output, so it contains the test results.
@@ -644,20 +664,55 @@ def _SendResultsToDashboard(results_tracker, system, test, url, build_dir,
         dict.
   """
   if system is None:
-    # perf_id not specified in factory-properties
+    # perf_id not specified in factory properties.
+    print 'Error: No system name (perf_id) specified when sending to dashboard.'
     return
-  supplemental_columns = _GetSupplementalColumns(build_dir,
-                                                 supplemental_columns_file)
+  supplemental_columns = _GetSupplementalColumns(
+      build_dir, supplemental_columns_file)
   if extra_columns:
     supplemental_columns.update(extra_columns)
-  for logname, log in results_tracker.PerformanceLogs().iteritems():
-    lines = [str(l).rstrip() for l in log]
+
+  charts = _GetDataFromLogProcessor(results_tracker)
+  points = results_dashboard.MakeListOfPoints(
+      charts, system, test, mastername, buildername, buildnumber,
+      supplemental_columns)
+  results_dashboard.SendResults(points, url, build_dir)
+
+
+def _GetDataFromLogProcessor(log_processor):
+  """Returns a mapping of chart names to chart data.
+
+  Args:
+    log_processor: A log processor (aka results tracker) object.
+
+  Returns:
+    A dictionary mapping chart name to lists of chart data.
+    put together in process_log_utils. Each chart data dictionary contains:
+      "traces": A dictionary mapping trace names to value, stddev pairs.
+      "units": Units for the chart.
+      "rev": A revision number (or git hash).
+      Plus other revision keys, e.g. webkit_rev, ver, v8_rev.
+  """
+  charts = {}
+  for log_file_name, line_list in log_processor.PerformanceLogs().iteritems():
+    if not log_file_name.endswith('-summary.dat'):
+      # The log processor data also contains "graphs list" file contents,
+      # which we can ignore.
+      continue
+    chart_name = log_file_name.replace('-summary.dat', '')
+
+    # It's assumed that the log lines list has length one, because for each
+    # graph name only one line is added in process_log_utils in the method
+    # GraphingLogProcessor._CreateSummaryOutput.
+    if len(line_list) != 1:
+      print 'Error: Unexpected log processor line list: %s' % str(line_list)
+      continue
+    line = line_list[0].rstrip()
     try:
-      results_dashboard.SendResults(logname, lines, system, test, url,
-                                    mastername, buildername, buildnumber,
-                                    build_dir, supplemental_columns)
-    except NotImplementedError as e:
-      print 'Did not submit to results dashboard: %s' % e
+      charts[chart_name] = json.loads(line)
+    except ValueError:
+      print 'Error: Could not parse JSON: %s' % line
+  return charts
 
 
 def _BuildCoverageGtestExclusions(options, args):
@@ -806,6 +861,18 @@ def _UploadGtestJsonSummary(json_path, build_properties, test_exe):
         for iteration_data in (
             target_json['gtest_results']['per_iteration_data']):
           for test_name, test_runs in iteration_data.iteritems():
+            # Compute the number of flaky failures. A failure is only considered
+            # flaky, when the test succeeds at least once on the same code.
+            # However, we do not consider a test flaky if it only changes
+            # between various failure states, e.g. FAIL and TIMEOUT.
+            num_successes = len([r['status'] for r in test_runs
+                                             if r['status'] == 'SUCCESS'])
+            num_failures = len(test_runs) - num_successes
+            if num_failures > 0 and num_successes > 0:
+              flaky_failures = num_failures
+            else:
+              flaky_failures = 0
+
             for run_index, run_data in enumerate(test_runs):
               row = {
                 'test_name': test_name,
@@ -821,7 +888,10 @@ def _UploadGtestJsonSummary(json_path, build_properties, test_exe):
                 'mastername':
                     target_json['build_properties'].get('mastername', ''),
                 'raw_json_gs_path': raw_json_gs_path,
-                'timestamp': now.strftime('%Y-%m-%d %H:%M:%S.%f')
+                'timestamp': now.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                'flaky_failures': flaky_failures,
+                'num_successes': num_successes,
+                'num_failures': num_failures
               }
               gzipf.write(json.dumps(row) + '\n')
 
@@ -978,7 +1048,7 @@ def _MainMac(options, args, extra_env):
       _UploadGtestJsonSummary(json_file_name,
                               options.build_properties,
                               test_exe)
-      results_tracker.ProcessJSONFile()
+      results_tracker.ProcessJSONFile(options.build_dir)
 
   if options.generate_json_file:
     if not _GenerateJSONForTestResults(options, results_tracker):
@@ -1018,7 +1088,7 @@ def _MainIOS(options, args, extra_env):
   # Set defaults in case the device family and iOS version can't be parsed out
   # of |args|
   device = 'iPhone Retina (4-inch)'
-  ios_version = '7.0'
+  ios_version = '7.1'
 
   # Parse the test_name and device from the test display name.
   # The expected format is: <test_name> (<device>)
@@ -1048,9 +1118,12 @@ def _MainIOS(options, args, extra_env):
       build_dir, options.target + '-iphonesimulator', test_name + '.app')
   test_exe_path = os.path.join(
       build_dir, 'ninja-iossim', options.target, 'iossim')
+  tmpdir = tempfile.mkdtemp()
   command = [test_exe_path,
       '-d', device,
       '-s', ios_version,
+      '-t', '120',
+      '-u', tmpdir,
       app_exe_path, '--'
   ]
   command.extend(args[1:])
@@ -1067,7 +1140,7 @@ def _MainIOS(options, args, extra_env):
   # directory from previous test runs (i.e.- from crashes or unittest leaks).
   slave_utils.RemoveChromeTemporaryFiles()
 
-  dirs_to_cleanup = []
+  dirs_to_cleanup = [tmpdir]
   crash_files_before = set([])
   crash_files_after = set([])
   crash_files_before = set(crash_utils.list_crash_logs())
@@ -1202,6 +1275,7 @@ def _MainLinux(options, args, extra_env):
   try:
     start_xvfb = False
     http_server = None
+    json_file_name = None
     if options.document_root:
       http_server = _StartHttpServer('linux', build_dir=build_dir,
                                       test_exe_path=test_exe_path,
@@ -1246,10 +1320,11 @@ def _MainLinux(options, args, extra_env):
     if start_xvfb:
       xvfb.StopVirtualX(slave_name)
     if _UsingGtestJson(options):
-      _UploadGtestJsonSummary(json_file_name,
-                              options.build_properties,
-                              test_exe)
-      results_tracker.ProcessJSONFile()
+      if json_file_name:
+        _UploadGtestJsonSummary(json_file_name,
+                                options.build_properties,
+                                test_exe)
+      results_tracker.ProcessJSONFile(options.build_dir)
 
   if options.generate_json_file:
     if not _GenerateJSONForTestResults(options, results_tracker):
@@ -1368,7 +1443,7 @@ def _MainWin(options, args, extra_env):
       _UploadGtestJsonSummary(json_file_name,
                               options.build_properties,
                               test_exe)
-      results_tracker.ProcessJSONFile()
+      results_tracker.ProcessJSONFile(options.build_dir)
 
   if options.enable_pageheap:
     slave_utils.SetPageHeap(build_dir, 'chrome.exe', False)
@@ -1496,6 +1571,8 @@ def main():
   option_parser.add_option('--pass-build-dir', action='store_true',
                            default=False,
                            help='pass --build-dir to the spawned test script')
+  option_parser.add_option('--test-platform',
+                           help='Platform to test on, e.g. ios-simulator')
   option_parser.add_option('--enable-pageheap', action='store_true',
                            default=False,
                            help='enable pageheap checking for chrome.exe')
@@ -1634,13 +1711,6 @@ def main():
                            help='Enable data race detection '
                                 '(ThreadSanitizer). Can also enabled with the '
                                 'factory property "tsan" (deprecated).')
-  option_parser.add_option('--tsan-suppressions-file',
-                           default=('src/tools/valgrind/tsan_v2/'
-                                    'suppressions.txt'),
-                           help='Suppression file for ThreadSanitizer. '
-                                'Default: %default. Can also be specified '
-                                'using the factory property '
-                                '"tsan_suppressions_file" (deprecated).')
   option_parser.add_option('--strip-path-prefix',
                            default='build/src/out/Release/../../',
                            help='Source paths in stack traces will be stripped '
@@ -1693,8 +1763,6 @@ def main():
                            options.factory_properties.get('msan', False))
     options.enable_tsan = (options.enable_tsan or
                            options.factory_properties.get('tsan', False))
-    options.tsan_suppressions_file = (options.tsan_suppressions_file or
-        options.factory_properties.get('tsan_suppressions_file'))
     options.enable_lsan = (options.enable_lsan or
                            options.factory_properties.get('lsan', False))
 
@@ -1752,15 +1820,7 @@ def main():
 
     # ThreadSanitizer
     if options.enable_tsan:
-      # TODO(glider): enable die_after_fork back once http://crbug.com/356758
-      # is fixed.
-      tsan_options = symbolization_options + \
-                     ['suppressions=%s' % options.tsan_suppressions_file,
-                      'print_suppressions=1',
-                      'report_signal_unsafe=0',
-                      'report_thread_leaks=0',
-                      'history_size=7',
-                      'die_after_fork=0']
+      tsan_options = symbolization_options
       extra_env['TSAN_OPTIONS'] = ' '.join(tsan_options)
       # Disable sandboxing under TSan for now. http://crbug.com/223602.
       args.append('--no-sandbox')
@@ -1835,7 +1895,8 @@ def main():
     if options.parse_input:
       result = _MainParse(options, args)
     elif sys.platform.startswith('darwin'):
-      test_platform = options.factory_properties.get('test_platform', '')
+      test_platform = options.factory_properties.get(
+          'test_platform', options.test_platform)
       if test_platform in ('ios-simulator',):
         result = _MainIOS(options, args, extra_env)
       else:
@@ -1843,7 +1904,8 @@ def main():
     elif sys.platform == 'win32':
       result = _MainWin(options, args, extra_env)
     elif sys.platform == 'linux2':
-      if options.factory_properties.get('test_platform', '') == 'android':
+      if options.factory_properties.get('test_platform',
+            options.test_platform) == 'android':
         result = _MainAndroid(options, args, extra_env)
       else:
         result = _MainLinux(options, args, extra_env)

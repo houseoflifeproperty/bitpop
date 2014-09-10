@@ -31,7 +31,7 @@
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "components/user_manager/user_manager.h"
 #endif
 
 using content::BrowserThread;
@@ -86,7 +86,8 @@ bool IsInKioskMode() {
     return true;
 
 #if defined(OS_CHROMEOS)
-  const chromeos::UserManager* user_manager = chromeos::UserManager::Get();
+  const user_manager::UserManager* user_manager =
+      user_manager::UserManager::Get();
   return user_manager && user_manager->IsLoggedInAsKioskApp();
 #else
   return false;
@@ -345,6 +346,19 @@ void MediaStreamDevicesController::Accept(bool update_content_setting) {
           request_.request_type == content::MEDIA_OPEN_DEVICE) {
         SetPermission(true);
       }
+    }
+
+    if (audio_allowed) {
+      profile_->GetHostContentSettingsMap()->UpdateLastUsageByPattern(
+          ContentSettingsPattern::FromURLNoWildcard(request_.security_origin),
+          ContentSettingsPattern::Wildcard(),
+          CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC);
+    }
+    if (video_allowed) {
+      profile_->GetHostContentSettingsMap()->UpdateLastUsageByPattern(
+          ContentSettingsPattern::FromURLNoWildcard(request_.security_origin),
+          ContentSettingsPattern::Wildcard(),
+          CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA);
     }
   }
 

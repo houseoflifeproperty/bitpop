@@ -11,6 +11,7 @@
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/web_preferences.h"
 #include "content/renderer/pepper/host_globals.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/plugin_module.h"
@@ -25,7 +26,6 @@
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
-#include "webkit/common/webpreferences.h"
 
 using ppapi::thunk::EnterResourceNoLock;
 using ppapi::thunk::PPB_Graphics3D_API;
@@ -135,6 +135,14 @@ gpu::CommandBuffer::State PPB_Graphics3D_Impl::WaitForGetOffsetInRange(
 
 uint32_t PPB_Graphics3D_Impl::InsertSyncPoint() {
   return command_buffer_->InsertSyncPoint();
+}
+
+uint32_t PPB_Graphics3D_Impl::InsertFutureSyncPoint() {
+  return command_buffer_->InsertFutureSyncPoint();
+}
+
+void PPB_Graphics3D_Impl::RetireSyncPoint(uint32_t sync_point) {
+  return command_buffer_->RetireSyncPoint(sync_point);
 }
 
 bool PPB_Graphics3D_Impl::BindToInstance(bool bind) {

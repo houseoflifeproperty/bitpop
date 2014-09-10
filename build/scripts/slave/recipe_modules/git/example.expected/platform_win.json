@@ -11,15 +11,7 @@
       "--git_cmd_path",
       "[DEPOT_TOOLS]\\git.bat"
     ],
-    "name": "git setup",
-    "seed_steps": [
-      "git setup",
-      "git fetch",
-      "git checkout",
-      "git clean",
-      "submodule sync",
-      "submodule update"
-    ]
+    "name": "git setup"
   },
   {
     "cmd": [
@@ -90,5 +82,21 @@
     ],
     "cwd": "[SLAVE_BUILD]\\src",
     "name": "git status"
+  },
+  {
+    "cmd": [
+      "[DEPOT_TOOLS]\\git.bat",
+      "status"
+    ],
+    "cwd": "[SLAVE_BUILD]\\src",
+    "name": "git status can_fail_build"
+  },
+  {
+    "cmd": [
+      "[DEPOT_TOOLS]\\git.bat",
+      "status"
+    ],
+    "cwd": "[SLAVE_BUILD]\\src",
+    "name": "git status cannot_fail_build"
   }
 ]

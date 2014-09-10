@@ -24,7 +24,6 @@
 #include "core/fetch/MemoryCache.h"
 
 #include "core/dom/CrossThreadTask.h"
-#include "core/dom/Document.h"
 #include "core/fetch/ResourcePtr.h"
 #include "core/frame/FrameView.h"
 #include "core/workers/WorkerGlobalScope.h"
@@ -41,9 +40,9 @@
 #include "wtf/TemporaryChange.h"
 #include "wtf/text/CString.h"
 
-namespace WebCore {
+namespace blink {
 
-static MemoryCache* gMemoryCache;
+static OwnPtrWillBePersistent<MemoryCache>* gMemoryCache;
 
 static const unsigned cDefaultCacheCapacity = 8192 * 1024;
 static const unsigned cDeferredPruneDeadCapacityFactor = 2;
@@ -55,16 +54,44 @@ MemoryCache* memoryCache()
 {
     ASSERT(WTF::isMainThread());
     if (!gMemoryCache)
-        gMemoryCache = new MemoryCache();
-    return gMemoryCache;
+        gMemoryCache = new OwnPtrWillBePersistent<MemoryCache>(MemoryCache::create());
+    return gMemoryCache->get();
 }
 
-void setMemoryCacheForTesting(MemoryCache* memoryCache)
+PassOwnPtrWillBeRawPtr<MemoryCache> replaceMemoryCacheForTesting(PassOwnPtrWillBeRawPtr<MemoryCache> cache)
 {
-    gMemoryCache = memoryCache;
+#if ENABLE(OILPAN)
+    // Move m_liveResources content to keep Resource objects alive.
+    for (HeapHashSet<Member<Resource> >::iterator i = memoryCache()->m_liveResources.begin();
+        i != memoryCache()->m_liveResources.end();
+        ++i) {
+        cache->m_liveResources.add(*i);
+    }
+    memoryCache()->m_liveResources.clear();
+#else
+    // Make sure we have non-empty gMemoryCache.
+    memoryCache();
+#endif
+    OwnPtrWillBeRawPtr<MemoryCache> oldCache = gMemoryCache->release();
+    *gMemoryCache = cache;
+    return oldCache.release();
 }
 
-MemoryCache::MemoryCache()
+void MemoryCacheEntry::trace(Visitor* visitor)
+{
+    visitor->trace(m_previousInLiveResourcesList);
+    visitor->trace(m_nextInLiveResourcesList);
+    visitor->trace(m_previousInAllResourcesList);
+    visitor->trace(m_nextInAllResourcesList);
+}
+
+void MemoryCacheLRUList::trace(Visitor* visitor)
+{
+    visitor->trace(m_head);
+    visitor->trace(m_tail);
+}
+
+inline MemoryCache::MemoryCache()
     : m_inPruneResources(false)
     , m_prunePending(false)
     , m_maxPruneDeferralDelay(cMaxPruneDeferralDelay)
@@ -86,10 +113,26 @@ MemoryCache::MemoryCache()
     m_pruneTimeStamp = m_pruneFrameTimeStamp = FrameView::currentFrameTimeStamp();
 }
 
+PassOwnPtrWillBeRawPtr<MemoryCache> MemoryCache::create()
+{
+    return adoptPtrWillBeNoop(new MemoryCache());
+}
+
 MemoryCache::~MemoryCache()
 {
     if (m_prunePending)
         blink::Platform::current()->currentThread()->removeTaskObserver(this);
+}
+
+void MemoryCache::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_allResources);
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(m_liveDecodedResources); ++i)
+        visitor->trace(m_liveDecodedResources[i]);
+    visitor->trace(m_resources);
+    visitor->trace(m_liveResources);
+#endif
 }
 
 KURL MemoryCache::removeFragmentIdentifierIfNeeded(const KURL& originalURL)
@@ -109,8 +152,9 @@ KURL MemoryCache::removeFragmentIdentifierIfNeeded(const KURL& originalURL)
 void MemoryCache::add(Resource* resource)
 {
     ASSERT(WTF::isMainThread());
+    ASSERT(resource->url().isValid());
     RELEASE_ASSERT(!m_resources.contains(resource->url()));
-    m_resources.set(resource->url(), MemoryCacheEntry::create(resource));
+    m_resources.set(resource->url().string(), MemoryCacheEntry::create(resource));
     update(resource, 0, resource->size(), true);
 
     WTF_LOG(ResourceLoading, "MemoryCache::add Added '%s', resource %p\n", resource->url().string().latin1().data(), resource);
@@ -328,13 +372,15 @@ bool MemoryCache::evict(MemoryCacheEntry* entry)
 
     ResourceMap::iterator it = m_resources.find(resource->url());
     ASSERT(it != m_resources.end());
+#if !ENABLE(OILPAN)
     OwnPtr<MemoryCacheEntry> entryPtr;
     entryPtr.swap(it->value);
+#endif
     m_resources.remove(it);
     return canDelete;
 }
 
-MemoryCache::LRUList* MemoryCache::lruListFor(unsigned accessCount, size_t size)
+MemoryCacheLRUList* MemoryCache::lruListFor(unsigned accessCount, size_t size)
 {
     ASSERT(accessCount > 0);
     unsigned queueIndex = WTF::fastLog2(size / accessCount);
@@ -343,9 +389,9 @@ MemoryCache::LRUList* MemoryCache::lruListFor(unsigned accessCount, size_t size)
     return &m_allResources[queueIndex];
 }
 
-void MemoryCache::removeFromLRUList(MemoryCacheEntry* entry, LRUList* list)
+void MemoryCache::removeFromLRUList(MemoryCacheEntry* entry, MemoryCacheLRUList* list)
 {
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     // Verify that we are in fact in this list.
     bool found = false;
     for (MemoryCacheEntry* current = list->m_head; current; current = current->m_nextInAllResourcesList) {
@@ -359,8 +405,8 @@ void MemoryCache::removeFromLRUList(MemoryCacheEntry* entry, LRUList* list)
 
     MemoryCacheEntry* next = entry->m_nextInAllResourcesList;
     MemoryCacheEntry* previous = entry->m_previousInAllResourcesList;
-    entry->m_nextInAllResourcesList = 0;
-    entry->m_previousInAllResourcesList = 0;
+    entry->m_nextInAllResourcesList = nullptr;
+    entry->m_previousInAllResourcesList = nullptr;
 
     if (next)
         next->m_previousInAllResourcesList = previous;
@@ -373,7 +419,7 @@ void MemoryCache::removeFromLRUList(MemoryCacheEntry* entry, LRUList* list)
         list->m_head = next;
 }
 
-void MemoryCache::insertInLRUList(MemoryCacheEntry* entry, LRUList* list)
+void MemoryCache::insertInLRUList(MemoryCacheEntry* entry, MemoryCacheLRUList* list)
 {
     ASSERT(!entry->m_nextInAllResourcesList && !entry->m_previousInAllResourcesList);
 
@@ -385,7 +431,7 @@ void MemoryCache::insertInLRUList(MemoryCacheEntry* entry, LRUList* list)
     else
         list->m_tail = entry;
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     // Verify that we are in now in the list like we should be.
     bool found = false;
     for (MemoryCacheEntry* current = list->m_head; current; current = current->m_nextInAllResourcesList) {
@@ -405,9 +451,9 @@ void MemoryCache::removeFromLiveDecodedResourcesList(MemoryCacheEntry* entry)
         return;
     entry->m_inLiveDecodedResourcesList = false;
 
-    LRUList* list = &m_liveDecodedResources[entry->m_liveResourcePriority];
+    MemoryCacheLRUList* list = &m_liveDecodedResources[entry->m_liveResourcePriority];
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     // Verify that we are in fact in this list.
     bool found = false;
     for (MemoryCacheEntry* current = list->m_head; current; current = current->m_nextInLiveResourcesList) {
@@ -422,8 +468,8 @@ void MemoryCache::removeFromLiveDecodedResourcesList(MemoryCacheEntry* entry)
     MemoryCacheEntry* next = entry->m_nextInLiveResourcesList;
     MemoryCacheEntry* previous = entry->m_previousInLiveResourcesList;
 
-    entry->m_nextInLiveResourcesList = 0;
-    entry->m_previousInLiveResourcesList = 0;
+    entry->m_nextInLiveResourcesList = nullptr;
+    entry->m_previousInLiveResourcesList = nullptr;
 
     if (next)
         next->m_previousInLiveResourcesList = previous;
@@ -442,7 +488,7 @@ void MemoryCache::insertInLiveDecodedResourcesList(MemoryCacheEntry* entry)
     ASSERT(!entry->m_nextInLiveResourcesList && !entry->m_previousInLiveResourcesList && !entry->m_inLiveDecodedResourcesList);
     entry->m_inLiveDecodedResourcesList = true;
 
-    LRUList* list = &m_liveDecodedResources[entry->m_liveResourcePriority];
+    MemoryCacheLRUList* list = &m_liveDecodedResources[entry->m_liveResourcePriority];
     entry->m_nextInLiveResourcesList = list->m_head;
     if (list->m_head)
         list->m_head->m_previousInLiveResourcesList = entry;
@@ -451,7 +497,7 @@ void MemoryCache::insertInLiveDecodedResourcesList(MemoryCacheEntry* entry)
     if (!entry->m_nextInLiveResourcesList)
         list->m_tail = entry;
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     // Verify that we are in now in the list like we should be.
     bool found = false;
     for (MemoryCacheEntry* current = list->m_head; current; current = current->m_nextInLiveResourcesList) {
@@ -540,7 +586,7 @@ void MemoryCache::removeURLFromCache(ExecutionContext* context, const KURL& url)
 {
     if (context->isWorkerGlobalScope()) {
         WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
-        workerGlobalScope->thread()->workerLoaderProxy().postTaskToLoader(createCallbackTask(&removeURLFromCacheInternal, url));
+        workerGlobalScope->thread()->workerLoaderProxy().postTaskToLoader(createCrossThreadTask(&removeURLFromCacheInternal, url));
         return;
     }
     removeURLFromCacheInternal(context, url);
@@ -681,6 +727,30 @@ void MemoryCache::pruneNow(double currentTime)
     m_pruneTimeStamp = currentTime;
 }
 
+#if ENABLE(OILPAN)
+void MemoryCache::registerLiveResource(Resource& resource)
+{
+    ASSERT(!m_liveResources.contains(&resource));
+    m_liveResources.add(&resource);
+}
+
+void MemoryCache::unregisterLiveResource(Resource& resource)
+{
+    ASSERT(m_liveResources.contains(&resource));
+    m_liveResources.remove(&resource);
+}
+
+#else
+
+void MemoryCache::registerLiveResource(Resource&)
+{
+}
+
+void MemoryCache::unregisterLiveResource(Resource&)
+{
+}
+#endif
+
 #ifdef MEMORY_CACHE_STATS
 
 void MemoryCache::dumpStats(Timer<MemoryCache>*)
@@ -725,4 +795,4 @@ void MemoryCache::dumpLRULists(bool includeLive) const
 
 #endif // MEMORY_CACHE_STATS
 
-} // namespace WebCore
+} // namespace blink

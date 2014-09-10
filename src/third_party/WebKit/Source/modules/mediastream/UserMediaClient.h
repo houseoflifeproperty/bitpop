@@ -33,17 +33,16 @@
 
 #include "modules/mediastream/MediaDevicesRequest.h"
 #include "modules/mediastream/UserMediaRequest.h"
-#include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalFrame;
 
 class UserMediaClient {
 public:
-    virtual void requestUserMedia(PassRefPtrWillBeRawPtr<UserMediaRequest>) = 0;
+    virtual void requestUserMedia(UserMediaRequest*) = 0;
     virtual void cancelUserMediaRequest(UserMediaRequest*) = 0;
-    virtual void requestMediaDevices(PassRefPtrWillBeRawPtr<MediaDevicesRequest>) = 0;
+    virtual void requestMediaDevices(MediaDevicesRequest*) = 0;
     virtual void cancelMediaDevicesRequest(MediaDevicesRequest*) = 0;
 
 protected:
@@ -52,6 +51,6 @@ protected:
 
 void provideUserMediaTo(LocalFrame&, UserMediaClient*);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // UserMediaClient_h

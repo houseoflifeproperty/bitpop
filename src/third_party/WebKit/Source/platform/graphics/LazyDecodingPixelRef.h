@@ -40,7 +40,7 @@ using skia::LazyPixelRef;
 
 class SkData;
 
-namespace WebCore {
+namespace blink {
 
 class ImageFrameGenerator;
 class ScaledImageFragment;
@@ -49,8 +49,6 @@ class LazyDecodingPixelRef FINAL : public LazyPixelRef {
 public:
     LazyDecodingPixelRef(const SkImageInfo&, PassRefPtr<ImageFrameGenerator>, size_t index);
     virtual ~LazyDecodingPixelRef();
-
-    SK_DECLARE_UNFLATTENABLE_OBJECT()
 
     PassRefPtr<ImageFrameGenerator> frameGenerator() const { return m_frameGenerator; }
     size_t frameIndex() const { return m_frameIndex; }
@@ -77,6 +75,6 @@ private:
     PlatformInstrumentation::LazyPixelRefTracker m_objectTracker;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // LazyDecodingPixelRef_h_

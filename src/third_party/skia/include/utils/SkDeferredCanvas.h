@@ -131,6 +131,7 @@ public:
      * rendered using the deferred canvas.
      */
     void setBitmapSizeThreshold(size_t sizeThreshold);
+    size_t getBitmapSizeThreshold() const { return fBitmapSizeThreshold; }
 
     /**
      * Executes all pending commands without drawing
@@ -170,7 +171,7 @@ public:
     virtual SkDrawFilter* setDrawFilter(SkDrawFilter* filter) SK_OVERRIDE;
 
 protected:
-    virtual void willSave(SaveFlags) SK_OVERRIDE;
+    virtual void willSave() SK_OVERRIDE;
     virtual SaveLayerStrategy willSaveLayer(const SkRect*, const SkPaint*, SaveFlags) SK_OVERRIDE;
     virtual void willRestore() SK_OVERRIDE;
 
@@ -186,13 +187,16 @@ protected:
                                 SkScalar constY, const SkPaint&) SK_OVERRIDE;
     virtual void onDrawTextOnPath(const void* text, size_t byteLength, const SkPath& path,
                                   const SkMatrix* matrix, const SkPaint&) SK_OVERRIDE;
-
+    virtual void onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
+                             const SkPoint texCoords[4], SkXfermode* xmode,
+                             const SkPaint& paint) SK_OVERRIDE;
+    
     virtual void onClipRect(const SkRect&, SkRegion::Op, ClipEdgeStyle) SK_OVERRIDE;
     virtual void onClipRRect(const SkRRect&, SkRegion::Op, ClipEdgeStyle) SK_OVERRIDE;
     virtual void onClipPath(const SkPath&, SkRegion::Op, ClipEdgeStyle) SK_OVERRIDE;
     virtual void onClipRegion(const SkRegion&, SkRegion::Op) SK_OVERRIDE;
 
-    virtual void onDrawPicture(const SkPicture* picture) SK_OVERRIDE;
+    virtual void onDrawPicture(const SkPicture*, const SkMatrix*, const SkPaint*) SK_OVERRIDE;
 
 public:
     class NotificationClient {
@@ -240,7 +244,9 @@ private:
     bool isFullFrame(const SkRect*, const SkPaint*) const;
     void validate() const;
     void init();
-    bool            fDeferredDrawing;
+
+    size_t fBitmapSizeThreshold;
+    bool   fDeferredDrawing;
 
     friend class SkDeferredCanvasTester; // for unit testing
     typedef SkCanvas INHERITED;

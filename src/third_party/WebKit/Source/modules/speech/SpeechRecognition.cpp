@@ -27,7 +27,7 @@
 
 #include "modules/speech/SpeechRecognition.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/page/Page.h"
@@ -35,7 +35,7 @@
 #include "modules/speech/SpeechRecognitionError.h"
 #include "modules/speech/SpeechRecognitionEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 SpeechRecognition* SpeechRecognition::create(ExecutionContext* context)
 {
@@ -202,4 +202,4 @@ void SpeechRecognition::trace(Visitor* visitor)
     EventTargetWithInlineData::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

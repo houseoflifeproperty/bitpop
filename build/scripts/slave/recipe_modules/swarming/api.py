@@ -2,11 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import functools
+
 from slave import recipe_api
 
 
 # Minimally supported version of swarming.py script (reported by --version).
-MINIMAL_SWARMING_VERSION = (0, 4, 8)
+MINIMAL_SWARMING_VERSION = (0, 4, 10)
 
 
 # Platform name as provided by 'platform' module -> Swarming OS dimension.
@@ -131,7 +133,7 @@ class SwarmingApi(recipe_api.RecipeApi):
   @task_priority.setter
   def task_priority(self, value):
     """Sets swarming task priority for tasks triggered from the recipe."""
-    assert 0 <= value <= 1000
+    assert 0 <= value <= 255
     self._task_priority = value
 
   @staticmethod
@@ -215,7 +217,7 @@ class SwarmingApi(recipe_api.RecipeApi):
 
   def check_client_version(self):
     """Yields steps to verify compatibility with swarming_client version."""
-    yield self.m.swarming_client.ensure_script_version(
+    return self.m.swarming_client.ensure_script_version(
         'swarming.py', MINIMAL_SWARMING_VERSION)
 
   def trigger(self, tasks, **kwargs):
@@ -226,12 +228,12 @@ class SwarmingApi(recipe_api.RecipeApi):
 
     Args:
       tasks: an enumerable of SwarmingTask instances.
-      kwargs: passed to recipe step constructor as-is, may contain
-        always_run, can_fail_build, etc.
+      kwargs: passed to recipe step constructor as-is
     """
     # TODO(vadimsh): Trigger multiple tasks as a single step.
     assert all(isinstance(t, SwarmingTask) for t in tasks)
-    steps = []
+    results = []
+    #TODO(martiniss) convert loop
     for task in tasks:
       assert task.task_id not in self._pending_tasks, (
           'Triggered same task twice: %s' % task.task_id)
@@ -245,6 +247,7 @@ class SwarmingApi(recipe_api.RecipeApi):
         '--priority', str(task.priority),
         '--shards', str(task.shards),
         '--task-name', task.task_id,
+        '--dump-json', self.m.json.output(),
       ]
       for name, value in sorted(task.dimensions.iteritems()):
         assert isinstance(value, basestring), value
@@ -266,43 +269,51 @@ class SwarmingApi(recipe_api.RecipeApi):
         args.extend(task.extra_args)
 
       # Build corresponding step.
-      steps.append(self.m.python(
+      step_result = self.m.python(
           name=self._get_step_name('trigger', task),
           script=self.m.swarming_client.path.join('swarming.py'),
           args=args,
-          **kwargs))
+          step_test_data=functools.partial(self._gen_trigger_step_data, task),
+          **kwargs)
+      self._trigger_followup(task, step_result)
+      results.append(step_result)
 
-    return steps
+    return results
 
   def collect(self, tasks, **kwargs):
+    return list(self.collect_each(tasks, **kwargs))
+
+  def collect_each(self, tasks, **kwargs):
     """Waits for a set of Swarming tasks to finish.
 
     Always waits for all task results. Failed tasks will be marked as such
-    but would not abort the build (corresponds to always_run=True step
-    property).
+    but would not abort the build.
 
     Args:
       tasks: an enumerable of SwarmingTask instances. All of them should have
           been triggered previously with 'trigger' method.
-      kwargs: passed to recipe step constructor as-is, may contain
-        always_run, can_fail_build, followup_fn, etc.
+      kwargs: passed to recipe step constructor as-is
     """
     # TODO(vadimsh): Implement "wait for any" to wait for first finished task.
     # TODO(vadimsh): Update |tasks| in-place with results of task execution.
     # TODO(vadimsh): Add timeouts.
     assert all(isinstance(t, SwarmingTask) for t in tasks)
-    steps = []
+    #TODO(martiniss) convert loop
     for task in tasks:
       assert task.task_id in self._pending_tasks, (
           'Trying to collect a task that was not triggered: %s' % task.task_id)
       self._pending_tasks.remove(task.task_id)
-      steps.append(task.collect_step_builder(task, **kwargs))
-    return steps
+      try:
+        task.collect_step_builder(task, **kwargs)
+      finally:
+        step_result = self.m.step.active_result
+        step_result.swarming_task = task
+      yield step_result
+
 
   def _default_collect_step(self, task, **kwargs):
     """Produces a step that collects a result of an arbitrary task."""
     # By default wait for all tasks to finish even if some of them failed.
-    kwargs.setdefault('always_run', True)
     return self.m.python(
         name=self._get_step_name('swarming', task),
         script=self.m.swarming_client.path.join('swarming.py'),
@@ -312,8 +323,6 @@ class SwarmingApi(recipe_api.RecipeApi):
   def _gtest_collect_step(self, merged_test_output, task, **kwargs):
     """Produces a step that collects and processes a result of gtest task."""
     # By default wait for all tasks to finish even if some of them failed.
-    kwargs.setdefault('always_run', True)
-
     # Shim script's own arguments.
     args = [
       '--swarming-client-dir', self.m.swarming_client.path,
@@ -376,6 +385,42 @@ class SwarmingApi(recipe_api.RecipeApi):
     args.append(task.task_id)
     return args
 
+  def _gen_trigger_step_data(self, task):
+    """Generates an expected value of --dump-json in 'trigger' step.
+
+    Used when running recipes to generate test expectations.
+    """
+    # Suffixes of shard subtask names.
+    subtasks = []
+    if task.shards == 1:
+      subtasks = ['']
+    else:
+      subtasks = [':%d:%d' % (task.shards, i) for i in range(task.shards)]
+    return self.m.json.test_api.output({
+      'base_task_name': task.task_id,
+      'tasks': {
+        '%s%s' % (task.task_id, suffix): {
+          'task_id': 'deadbeef%d' % i,
+          'shard_index': i,
+          'view_url': '%s/user/task/deadbeef%d' % (self.swarming_server, i),
+        } for i, suffix in enumerate(subtasks)
+      },
+    })
+
+  def _trigger_followup(self, task, step_result):
+    """Called as followup_fn for 'trigger' to add URLs to task shards."""
+    # Store trigger output with the |task|, print links to triggered shards.
+    if step_result.presentation != self.m.step.FAILURE:
+      task._trigger_output = step_result.json.output
+      links = step_result.presentation.links
+      for index in xrange(task.shards):
+        url = task.get_shard_view_url(index)
+        if url:
+          links['shard #%d' % index] = url
+
+    assert not hasattr(step_result, 'swarming_task')
+    step_result.swarming_task = task
+
 
 class SwarmingTask(object):
   """Definition of a task to run on swarming."""
@@ -425,6 +470,7 @@ class SwarmingTask(object):
     self.suffix = suffix
     self.extra_args = tuple(extra_args or [])
     self.collect_step_builder = collect_step_builder
+    self._trigger_output = None
 
   @property
   def task_id(self):
@@ -439,3 +485,13 @@ class SwarmingTask(object):
     return '%s/%s/%s/%s/%d%s' % (
         self.title, self.dimensions['os'], self.isolated_hash,
         self.builder, self.build_number, self.suffix)
+
+  def get_shard_view_url(self, index):
+    """Returns URL of HTML page with shard details or None if not available.
+
+    Works only after the task has been successfully triggered.
+    """
+    if self._trigger_output and self._trigger_output.get('tasks'):
+      for shard_dict in self._trigger_output['tasks'].itervalues():
+        if shard_dict['shard_index'] == index:
+          return shard_dict['view_url']

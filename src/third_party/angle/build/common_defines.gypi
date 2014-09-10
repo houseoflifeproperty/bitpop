@@ -9,11 +9,7 @@
         'angle_path%': '..',
         'windows_sdk_path%': 'C:/Program Files (x86)/Windows Kits/8.0',
     },
-    'defines':
-    [
-        'NOMINMAX',
-    ],
-    'msvs_disabled_warnings': [ 4100, 4127, 4239, 4244, 4245, 4512, 4702, 4530, 4718, 4267 ],
+    'msvs_disabled_warnings': [ 4100, 4127, 4239, 4244, 4245, 4251, 4512, 4702, 4530, 4718, 4267 ],
     'msvs_system_include_dirs':
     [
         '<(windows_sdk_path)/Include/shared',
@@ -27,10 +23,7 @@
             [
                 '_CRT_SECURE_NO_DEPRECATE',
                 '_SCL_SECURE_NO_WARNINGS',
-                '_HAS_EXCEPTIONS=0',
-                '_WINDOWS',
-                'WIN32',
-                'WIN32_LEAN_AND_MEAN',
+                'NOMINMAX',
             ],
         },
         'VCLinkerTool':

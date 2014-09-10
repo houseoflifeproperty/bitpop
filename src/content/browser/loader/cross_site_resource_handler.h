@@ -17,6 +17,8 @@ class URLRequest;
 
 namespace content {
 
+struct TransitionLayerData;
+
 // Ensures that cross-site responses are delayed until the onunload handler of
 // the previous page is allowed to run.  This handler wraps an
 // AsyncEventHandler, and it sits inside SafeBrowsing and Buffered event
@@ -29,7 +31,7 @@ class CrossSiteResourceHandler : public LayeredResourceHandler {
   virtual ~CrossSiteResourceHandler();
 
   // ResourceHandler implementation:
-  virtual bool OnRequestRedirected(const GURL& new_url,
+  virtual bool OnRequestRedirected(const net::RedirectInfo& redirect_info,
                                    ResourceResponse* response,
                                    bool* defer) OVERRIDE;
   virtual bool OnResponseStarted(ResourceResponse* response,
@@ -49,6 +51,14 @@ class CrossSiteResourceHandler : public LayeredResourceHandler {
   CONTENT_EXPORT static void SetLeakRequestsForTesting(
       bool leak_requests_for_testing);
 
+  // Navigations are deferred at OnResponseStarted to parse out any navigation
+  // transition link headers, and give the navigation transition (if it exists)
+  // a chance to run.
+  void ResumeResponseDeferredAtStart(int request_id);
+
+  // Returns whether the handler is deferred.
+  bool did_defer_for_testing() const { return did_defer_; }
+
  private:
   // Prepare to render the cross-site response in a new RenderViewHost, by
   // telling the old RenderViewHost to run its onunload handler.
@@ -60,6 +70,14 @@ class CrossSiteResourceHandler : public LayeredResourceHandler {
   bool DeferForNavigationPolicyCheck(ResourceRequestInfoImpl* info,
                                      ResourceResponse* response,
                                      bool* defer);
+
+  bool OnNavigationTransitionResponseStarted(
+      ResourceResponse* response,
+      bool* defer,
+      const TransitionLayerData& transition_data);
+
+  bool OnNormalResponseStarted(ResourceResponse* response,
+                               bool* defer);
 
   void ResumeOrTransfer(bool is_transfer);
   void ResumeIfDeferred();

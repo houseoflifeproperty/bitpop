@@ -29,7 +29,6 @@
 
 #include "core/CSSValueKeywords.h"
 #include "core/StylePropertyShorthand.h"
-#include "core/css/CSSArrayFunctionValue.h"
 #include "core/css/CSSAspectRatioValue.h"
 #include "core/css/CSSBasicShapes.h"
 #include "core/css/CSSBorderImage.h"
@@ -75,7 +74,9 @@
 #include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/Settings.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/rendering/RenderTheme.h"
 #include "platform/FloatConversion.h"
@@ -94,11 +95,11 @@
 extern int cssyydebug;
 #endif
 
-int cssyyparse(WebCore::BisonCSSParser*);
+int cssyyparse(blink::BisonCSSParser*);
 
 using namespace WTF;
 
-namespace WebCore {
+namespace blink {
 
 static const unsigned INVALID_NUM_PARSED_PROPERTIES = UINT_MAX;
 
@@ -208,9 +209,6 @@ static inline bool isColorPropertyID(CSSPropertyID propertyId)
     case CSSPropertyBorderRightColor:
     case CSSPropertyBorderTopColor:
     case CSSPropertyOutlineColor:
-    case CSSPropertyTextLineThroughColor:
-    case CSSPropertyTextOverlineColor:
-    case CSSPropertyTextUnderlineColor:
     case CSSPropertyWebkitBorderAfterColor:
     case CSSPropertyWebkitBorderBeforeColor:
     case CSSPropertyWebkitBorderEndColor:
@@ -283,7 +281,7 @@ static inline bool isSimpleLengthPropertyID(CSSPropertyID propertyId, bool& acce
         return true;
     case CSSPropertyShapeMargin:
         acceptsNegativeNumbers = false;
-        return RuntimeEnabledFeatures::cssShapesEnabled();
+        return true;
     case CSSPropertyBottom:
     case CSSPropertyLeft:
     case CSSPropertyMarginBottom:
@@ -390,7 +388,7 @@ bool isValidKeywordPropertyAndValue(CSSPropertyID propertyId, CSSValueID valueID
         // inline | block | list-item | inline-block | table |
         // inline-table | table-row-group | table-header-group | table-footer-group | table-row |
         // table-column-group | table-column | table-cell | table-caption | -webkit-box | -webkit-inline-box | none
-        // flex | inline-flex | -webkit-flex | -webkit-inline-flex | grid | inline-grid | lazy-block
+        // flex | inline-flex | -webkit-flex | -webkit-inline-flex | grid | inline-grid
         return (valueID >= CSSValueInline && valueID <= CSSValueInlineFlex) || valueID == CSSValueWebkitFlex || valueID == CSSValueWebkitInlineFlex || valueID == CSSValueNone
             || (RuntimeEnabledFeatures::cssGridLayoutEnabled() && (valueID == CSSValueGrid || valueID == CSSValueInlineGrid));
     case CSSPropertyEmptyCells: // show | hide
@@ -399,8 +397,10 @@ bool isValidKeywordPropertyAndValue(CSSPropertyID propertyId, CSSValueID valueID
         return valueID == CSSValueLeft || valueID == CSSValueRight || valueID == CSSValueNone || valueID == CSSValueCenter;
     case CSSPropertyFontStyle: // normal | italic | oblique
         return valueID == CSSValueNormal || valueID == CSSValueItalic || valueID == CSSValueOblique;
-    case CSSPropertyImageRendering: // auto | optimizeContrast
-        return valueID == CSSValueAuto || valueID == CSSValueWebkitOptimizeContrast;
+    case CSSPropertyFontStretch: // normal | ultra-condensed | extra-condensed | condensed | semi-condensed | semi-expanded | expanded | extra-expanded | ultra-expanded
+        return valueID == CSSValueNormal || valueID == CSSValueUltraCondensed || valueID == CSSValueExtraCondensed || valueID == CSSValueCondensed || valueID == CSSValueSemiCondensed || valueID == CSSValueSemiExpanded || valueID == CSSValueExpanded || valueID == CSSValueExtraExpanded || valueID == CSSValueUltraExpanded;
+    case CSSPropertyImageRendering: // auto | optimizeContrast | pixelated
+        return valueID == CSSValueAuto || valueID == CSSValueWebkitOptimizeContrast || (RuntimeEnabledFeatures::imageRenderingPixelatedEnabled() && valueID == CSSValuePixelated);
     case CSSPropertyIsolation: // auto | isolate
         return RuntimeEnabledFeatures::cssCompositingEnabled()
             && (valueID == CSSValueAuto || valueID == CSSValueIsolate);
@@ -434,9 +434,8 @@ bool isValidKeywordPropertyAndValue(CSSPropertyID propertyId, CSSValueID valueID
         // none | visiblePainted | visibleFill | visibleStroke | visible |
         // painted | fill | stroke | auto | all | bounding-box
         return valueID == CSSValueVisible || valueID == CSSValueNone || valueID == CSSValueAll || valueID == CSSValueAuto || (valueID >= CSSValueVisiblepainted && valueID <= CSSValueBoundingBox);
-    case CSSPropertyPosition: // static | relative | absolute | fixed | sticky
-        return valueID == CSSValueStatic || valueID == CSSValueRelative || valueID == CSSValueAbsolute || valueID == CSSValueFixed
-            || (RuntimeEnabledFeatures::cssStickyPositionEnabled() && valueID == CSSValueSticky);
+    case CSSPropertyPosition: // static | relative | absolute | fixed
+        return valueID == CSSValueStatic || valueID == CSSValueRelative || valueID == CSSValueAbsolute || valueID == CSSValueFixed;
     case CSSPropertyResize: // none | both | horizontal | vertical | auto
         return valueID == CSSValueNone || valueID == CSSValueBoth || valueID == CSSValueHorizontal || valueID == CSSValueVertical || valueID == CSSValueAuto;
     case CSSPropertyScrollBehavior: // instant | smooth
@@ -454,14 +453,6 @@ bool isValidKeywordPropertyAndValue(CSSPropertyID propertyId, CSSValueID valueID
         // auto | none | inter-word | distribute
         return RuntimeEnabledFeatures::css3TextEnabled()
             && (valueID == CSSValueInterWord || valueID == CSSValueDistribute || valueID == CSSValueAuto || valueID == CSSValueNone);
-    case CSSPropertyTextLineThroughMode:
-    case CSSPropertyTextOverlineMode:
-    case CSSPropertyTextUnderlineMode:
-        return valueID == CSSValueContinuous || valueID == CSSValueSkipWhiteSpace;
-    case CSSPropertyTextLineThroughStyle:
-    case CSSPropertyTextOverlineStyle:
-    case CSSPropertyTextUnderlineStyle:
-        return valueID == CSSValueNone || valueID == CSSValueSolid || valueID == CSSValueDouble || valueID == CSSValueDashed || valueID == CSSValueDotDash || valueID == CSSValueDotDotDash || valueID == CSSValueWave;
     case CSSPropertyTextOverflow: // clip | ellipsis
         return valueID == CSSValueClip || valueID == CSSValueEllipsis;
     case CSSPropertyTextRendering: // auto | optimizeSpeed | optimizeLegibility | geometricPrecision
@@ -524,9 +515,6 @@ bool isValidKeywordPropertyAndValue(CSSPropertyID propertyId, CSSValueID valueID
         return valueID == CSSValueAuto || valueID == CSSValueNormal || valueID == CSSValueNone;
     case CSSPropertyWebkitFontSmoothing:
         return valueID == CSSValueAuto || valueID == CSSValueNone || valueID == CSSValueAntialiased || valueID == CSSValueSubpixelAntialiased;
-    case CSSPropertyGridAutoFlow:
-        return RuntimeEnabledFeatures::cssGridLayoutEnabled()
-            && (valueID == CSSValueNone || valueID == CSSValueRow || valueID == CSSValueColumn);
     case CSSPropertyWebkitLineBreak: // auto | loose | normal | strict | after-white-space
         return valueID == CSSValueAuto || valueID == CSSValueLoose || valueID == CSSValueNormal || valueID == CSSValueStrict || valueID == CSSValueAfterWhiteSpace;
     case CSSPropertyWebkitMarginAfterCollapse:
@@ -560,12 +548,6 @@ bool isValidKeywordPropertyAndValue(CSSPropertyID propertyId, CSSValueID valueID
         return valueID == CSSValueReadOnly || valueID == CSSValueReadWrite || valueID == CSSValueReadWritePlaintextOnly;
     case CSSPropertyWebkitUserSelect: // auto | none | text | all
         return valueID == CSSValueAuto || valueID == CSSValueNone || valueID == CSSValueText || valueID == CSSValueAll;
-    case CSSPropertyWebkitWrapFlow:
-        return RuntimeEnabledFeatures::cssExclusionsEnabled()
-            && (valueID == CSSValueAuto || valueID == CSSValueBoth || valueID == CSSValueStart || valueID == CSSValueEnd || valueID == CSSValueMaximum || valueID == CSSValueClear);
-    case CSSPropertyWebkitWrapThrough:
-        return RuntimeEnabledFeatures::cssExclusionsEnabled()
-            && (valueID == CSSValueWrap || valueID == CSSValueNone);
     case CSSPropertyWebkitWritingMode:
         return valueID >= CSSValueHorizontalTb && valueID <= CSSValueHorizontalBt;
     case CSSPropertyWhiteSpace: // normal | pre | nowrap
@@ -599,6 +581,7 @@ bool isKeywordPropertyID(CSSPropertyID propertyId)
     case CSSPropertyEmptyCells:
     case CSSPropertyFloat:
     case CSSPropertyFontStyle:
+    case CSSPropertyFontStretch:
     case CSSPropertyImageRendering:
     case CSSPropertyListStylePosition:
     case CSSPropertyListStyleType:
@@ -618,15 +601,9 @@ bool isKeywordPropertyID(CSSPropertyID propertyId)
     case CSSPropertyTableLayout:
     case CSSPropertyTextAlignLast:
     case CSSPropertyTextJustify:
-    case CSSPropertyTextLineThroughMode:
-    case CSSPropertyTextLineThroughStyle:
     case CSSPropertyTextOverflow:
-    case CSSPropertyTextOverlineMode:
-    case CSSPropertyTextOverlineStyle:
     case CSSPropertyTextRendering:
     case CSSPropertyTextTransform:
-    case CSSPropertyTextUnderlineMode:
-    case CSSPropertyTextUnderlineStyle:
     case CSSPropertyTouchActionDelay:
     case CSSPropertyVisibility:
     case CSSPropertyWebkitAppearance:
@@ -655,7 +632,6 @@ bool isKeywordPropertyID(CSSPropertyID propertyId)
     case CSSPropertyJustifyContent:
     case CSSPropertyFontKerning:
     case CSSPropertyWebkitFontSmoothing:
-    case CSSPropertyGridAutoFlow:
     case CSSPropertyWebkitLineBreak:
     case CSSPropertyWebkitMarginAfterCollapse:
     case CSSPropertyWebkitMarginBeforeCollapse:
@@ -674,8 +650,6 @@ bool isKeywordPropertyID(CSSPropertyID propertyId)
     case CSSPropertyWebkitUserDrag:
     case CSSPropertyWebkitUserModify:
     case CSSPropertyWebkitUserSelect:
-    case CSSPropertyWebkitWrapFlow:
-    case CSSPropertyWebkitWrapThrough:
     case CSSPropertyWebkitWritingMode:
     case CSSPropertyWhiteSpace:
     case CSSPropertyWordBreak:
@@ -1025,6 +999,16 @@ bool BisonCSSParser::parseColor(RGBA32& color, const String& string, bool strict
     return true;
 }
 
+StyleColor BisonCSSParser::colorFromRGBColorString(const String& colorString)
+{
+    // FIXME: Rework css parser so it is more SVG aware.
+    RGBA32 color;
+    if (parseColor(color, colorString.stripWhiteSpace()))
+        return StyleColor(color);
+    // FIXME: This branch catches the string currentColor, but we should error if we have an illegal color value.
+    return StyleColor::currentColor();
+}
+
 bool BisonCSSParser::parseColor(const String& string)
 {
     setupParser("@-internal-decls color:", string, "");
@@ -1058,7 +1042,7 @@ void BisonCSSParser::parseSelector(const String& string, CSSSelectorList& select
     m_selectorListForParseSelector = 0;
 }
 
-PassRefPtr<ImmutableStylePropertySet> BisonCSSParser::parseInlineStyleDeclaration(const String& string, Element* element)
+PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> BisonCSSParser::parseInlineStyleDeclaration(const String& string, Element* element)
 {
     Document& document = element->document();
     CSSParserContext context = CSSParserContext(document.elementSheet().contents()->parserContext(), UseCounter::getFrom(&document));
@@ -1066,7 +1050,7 @@ PassRefPtr<ImmutableStylePropertySet> BisonCSSParser::parseInlineStyleDeclaratio
     return BisonCSSParser(context).parseDeclaration(string, document.elementSheet().contents());
 }
 
-PassRefPtr<ImmutableStylePropertySet> BisonCSSParser::parseDeclaration(const String& string, StyleSheetContents* contextStyleSheet)
+PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> BisonCSSParser::parseDeclaration(const String& string, StyleSheetContents* contextStyleSheet)
 {
     setStyleSheet(contextStyleSheet);
 
@@ -1074,7 +1058,7 @@ PassRefPtr<ImmutableStylePropertySet> BisonCSSParser::parseDeclaration(const Str
     cssyyparse(this);
     m_rule = nullptr;
 
-    RefPtr<ImmutableStylePropertySet> style = createStylePropertySet();
+    RefPtrWillBeRawPtr<ImmutableStylePropertySet> style = createStylePropertySet();
     clearProperties();
     return style.release();
 }
@@ -1126,6 +1110,17 @@ PassRefPtrWillBeRawPtr<MediaQuerySet> BisonCSSParser::parseMediaQueryList(const 
     return m_mediaList.release();
 }
 
+bool BisonCSSParser::parseAttributeMatchType(CSSSelector::AttributeMatchType& matchType, const String& string)
+{
+    if (!RuntimeEnabledFeatures::cssAttributeCaseSensitivityEnabled() && !isUASheetBehavior(m_context.mode()))
+        return false;
+    if (string == "i") {
+        matchType = CSSSelector::CaseInsensitive;
+        return true;
+    }
+    return false;
+}
+
 static inline void filterProperties(bool important, const WillBeHeapVector<CSSProperty, 256>& input, WillBeHeapVector<CSSProperty, 256>& output, size_t& unusedEntries, BitArray<numCSSProperties>& seenProperties)
 {
     // Add properties in reverse order so that highest priority definitions are reached first. Duplicate definitions can then be ignored when found.
@@ -1141,7 +1136,7 @@ static inline void filterProperties(bool important, const WillBeHeapVector<CSSPr
     }
 }
 
-PassRefPtr<ImmutableStylePropertySet> BisonCSSParser::createStylePropertySet()
+PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> BisonCSSParser::createStylePropertySet()
 {
     BitArray<numCSSProperties> seenProperties;
     size_t unusedEntries = m_parsedProperties.size();
@@ -1739,7 +1734,7 @@ void BisonCSSParser::logError(const String& message, const CSSParserLocation& lo
         lineNumberInStyleSheet = location.lineNumber;
     }
     FrameConsole& console = m_styleSheet->singleOwnerDocument()->frame()->console();
-    console.addMessage(CSSMessageSource, WarningMessageLevel, message, m_styleSheet->baseURL().string(), lineNumberInStyleSheet + m_startPosition.m_line.zeroBasedInt() + 1, columnNumber + 1);
+    console.addMessage(ConsoleMessage::create(CSSMessageSource, WarningMessageLevel, message, m_styleSheet->baseURL().string(), lineNumberInStyleSheet + m_startPosition.m_line.zeroBasedInt() + 1, columnNumber + 1));
 }
 
 StyleRuleKeyframes* BisonCSSParser::createKeyframesRule(const String& name, PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<StyleKeyframe> > > popKeyframes, bool isPrefixed)

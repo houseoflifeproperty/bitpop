@@ -2,11 +2,6 @@
 # Copyright (c) 2012 The Native Client Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-#
-# IMPORTANT NOTE: If you make local mods to this file, you must run:
-#   %  pnacl/build.sh driver
-# in order for them to take effect in the scons build.  This command
-# updates the copy in the toolchain/ tree.
 
 # Global environment and expression parsing for the PNaCl driver
 
@@ -49,6 +44,14 @@ INITIAL_ENV = {
   'BASE_LIB_X8632'  : '${BASE}/lib-bc-x86-32',
   'BASE_LIB_X8664'  : '${BASE}/lib-bc-x86-64',
   'BASE_LIB_ARM'    : '${BASE}/lib-bc-arm',
+
+  'LIBS_NATIVE_ARCH' : '${LIBS_NATIVE_%ARCH%}',
+  'LIBS_NATIVE_ARM' : '${BASE_LIB_NATIVE}arm',
+  'LIBS_NATIVE_ARM_NONSFI' : '${BASE_LIB_NATIVE}arm-nonsfi',
+  'LIBS_NATIVE_X8632' : '${BASE_LIB_NATIVE}x86-32',
+  'LIBS_NATIVE_X8632_NONSFI' : '${BASE_LIB_NATIVE}x86-32-nonsfi',
+  'LIBS_NATIVE_X8664' : '${BASE_LIB_NATIVE}x86-64',
+  'LIBS_NATIVE_MIPS32' : '${BASE_LIB_NATIVE}mips32',
 
   'BASE_LLVM_BIN'   : '${BASE_LLVM}/bin',
   'TRANSLATOR_BIN'  :

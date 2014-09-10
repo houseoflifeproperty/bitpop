@@ -199,17 +199,17 @@ void AutofillManager::RegisterProfilePrefs(
       prefs::kAutofillEnabled,
       true,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-#if defined(OS_MACOSX) || defined(OS_ANDROID)
+#if defined(OS_MACOSX)
   registry->RegisterBooleanPref(
       prefs::kAutofillAuxiliaryProfilesEnabled,
       true,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-#else  // defined(OS_MACOSX) || defined(OS_ANDROID)
+#else  // defined(OS_MACOSX)
   registry->RegisterBooleanPref(
       prefs::kAutofillAuxiliaryProfilesEnabled,
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-#endif  // defined(OS_MACOSX) || defined(OS_ANDROID)
+#endif  // defined(OS_MACOSX)
 #if defined(OS_MACOSX)
   registry->RegisterBooleanPref(
       prefs::kAutofillMacAddressBookQueried,
@@ -328,7 +328,7 @@ bool AutofillManager::OnFormSubmitted(const FormData& form,
     return false;
 
   submitted_form->UpdateFromCache(*cached_submitted_form);
-  if (submitted_form->IsAutofillable(true))
+  if (submitted_form->IsAutofillable())
     ImportFormData(*submitted_form);
 
   // Only upload server statistics and UMA metrics if at least some local data
@@ -453,7 +453,7 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
       driver_->RendererIsAvailable() &&
       GetCachedFormAndField(form, field, &form_structure, &autofill_field) &&
       // Don't send suggestions for forms that aren't auto-fillable.
-      form_structure->IsAutofillable(false)) {
+      form_structure->IsAutofillable()) {
     AutofillType type = autofill_field->Type();
     bool is_filling_credit_card = (type.group() == CREDIT_CARD);
     if (is_filling_credit_card) {
@@ -473,7 +473,7 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
       // provide credit card suggestions for non-HTTPS pages. However, provide a
       // warning to the user in these cases.
       int warning = 0;
-      if (!form_structure->IsAutofillable(true))
+      if (!form_structure->IsAutofillable())
         warning = IDS_AUTOFILL_WARNING_FORM_DISABLED;
       else if (is_filling_credit_card && !FormIsHTTPS(*form_structure))
         warning = IDS_AUTOFILL_WARNING_INSECURE_CONNECTION;
@@ -550,9 +550,12 @@ void AutofillManager::FillOrPreviewForm(
   FormData result = form;
 
   base::string16 profile_full_name;
+  std::string profile_language_code;
   if (!is_credit_card) {
     profile_full_name = data_model->GetInfo(
         AutofillType(NAME_FULL), app_locale_);
+    profile_language_code =
+        static_cast<const AutofillProfile*>(data_model)->language_code();
   }
 
   // If the relevant section is auto-filled, we should fill |field| but not the
@@ -563,8 +566,11 @@ void AutofillManager::FillOrPreviewForm(
       if ((*iter) == field) {
         base::string16 value = data_model->GetInfoForVariant(
             autofill_field->Type(), variant, app_locale_);
-        if (AutofillField::FillFormField(
-            *autofill_field, value, app_locale_, &(*iter))) {
+        if (AutofillField::FillFormField(*autofill_field,
+                                         value,
+                                         profile_language_code,
+                                         app_locale_,
+                                         &(*iter))) {
           // Mark the cached field as autofilled, so that we can detect when a
           // user edits an autofilled field (for metrics).
           autofill_field->is_autofilled = true;
@@ -620,8 +626,11 @@ void AutofillManager::FillOrPreviewForm(
           (result.fields[i] == field ||
            result.fields[i].form_control_type == "select-one" ||
            result.fields[i].value.empty());
-      if (AutofillField::FillFormField(
-          *cached_field, value, app_locale_, &result.fields[i])) {
+      if (AutofillField::FillFormField(*cached_field,
+                                       value,
+                                       profile_language_code,
+                                       app_locale_,
+                                       &result.fields[i])) {
         // Mark the cached field as autofilled, so that we can detect when a
         // user edits an autofilled field (for metrics).
         form_structure->field(i)->is_autofilled = true;
@@ -978,7 +987,7 @@ bool AutofillManager::GetCachedFormAndField(const FormData& form,
   // If we do not have this form in our cache but it is parseable, we'll add it
   // in the call to |UpdateCachedForm()|.
   if (!FindCachedForm(form, form_structure) &&
-      !FormStructure(form).ShouldBeParsed(false)) {
+      !FormStructure(form).ShouldBeParsed()) {
     return false;
   }
 
@@ -1105,7 +1114,7 @@ void AutofillManager::ParseForms(const std::vector<FormData>& forms) {
   for (std::vector<FormData>::const_iterator iter = forms.begin();
        iter != forms.end(); ++iter) {
     scoped_ptr<FormStructure> form_structure(new FormStructure(*iter));
-    if (!form_structure->ShouldBeParsed(false))
+    if (!form_structure->ShouldBeParsed())
       continue;
 
     form_structure->DetermineHeuristicTypes(*metric_logger_);
@@ -1211,7 +1220,7 @@ bool AutofillManager::ShouldUploadForm(const FormStructure& form) {
     return false;
 
   // Disregard forms that we wouldn't ever autofill in the first place.
-  if (!form.ShouldBeParsed(true))
+  if (!form.ShouldBeParsed())
     return false;
 
   return true;

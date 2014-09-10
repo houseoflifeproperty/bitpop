@@ -54,11 +54,6 @@ ErrorConsole::ErrorConsole(Profile* profile)
        profile_(profile),
        prefs_(NULL),
        registry_observer_(this) {
-// TODO(rdevlin.cronin): Remove once crbug.com/159265 is fixed.
-#if !defined(ENABLE_EXTENSIONS)
-  return;
-#endif
-
   pref_registrar_.Init(profile_->GetPrefs());
   pref_registrar_.Add(prefs::kExtensionsUIDeveloperMode,
                       base::Bind(&ErrorConsole::OnPrefChanged,
@@ -97,7 +92,7 @@ void ErrorConsole::SetReportingForExtension(const std::string& extension_id,
 
   prefs_->UpdateExtensionPref(extension_id,
                               kStoreExtensionErrorsPref,
-                              base::Value::CreateIntegerValue(mask));
+                              new base::FundamentalValue(mask));
 }
 
 void ErrorConsole::SetReportingAllForExtension(
@@ -112,7 +107,7 @@ void ErrorConsole::SetReportingAllForExtension(
 
   prefs_->UpdateExtensionPref(extension_id,
                               kStoreExtensionErrorsPref,
-                              base::Value::CreateIntegerValue(mask));
+                              new base::FundamentalValue(mask));
 }
 
 bool ErrorConsole::IsReportingEnabledForExtension(
@@ -226,7 +221,8 @@ void ErrorConsole::OnExtensionLoaded(content::BrowserContext* browser_context,
 
 void ErrorConsole::OnExtensionInstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension) {
+    const Extension* extension,
+    bool is_update) {
   // We don't want to have manifest errors from previous installs. We want
   // to keep runtime errors, though, because extensions are reloaded on a
   // refresh of chrome:extensions, and we don't want to wipe our history
@@ -238,7 +234,8 @@ void ErrorConsole::OnExtensionInstalled(
 
 void ErrorConsole::OnExtensionUninstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension) {
+    const Extension* extension,
+    extensions::UninstallReason reason) {
   errors_.Remove(extension->id());
 }
 

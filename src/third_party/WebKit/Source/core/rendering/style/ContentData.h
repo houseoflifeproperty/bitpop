@@ -30,7 +30,7 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class RenderObject;
@@ -66,6 +66,9 @@ private:
     OwnPtr<ContentData> m_next;
 };
 
+#define DEFINE_CONTENT_DATA_TYPE_CASTS(typeName) \
+    DEFINE_TYPE_CASTS(typeName##ContentData, ContentData, content, content->is##typeName(), content.is##typeName())
+
 class ImageContentData FINAL : public ContentData {
     friend class ContentData;
 public:
@@ -98,6 +101,8 @@ private:
     RefPtr<StyleImage> m_image;
 };
 
+DEFINE_CONTENT_DATA_TYPE_CASTS(Image);
+
 class TextContentData FINAL : public ContentData {
     friend class ContentData;
 public:
@@ -124,6 +129,8 @@ private:
 
     String m_text;
 };
+
+DEFINE_CONTENT_DATA_TYPE_CASTS(Text);
 
 class CounterContentData FINAL : public ContentData {
     friend class ContentData;
@@ -156,6 +163,8 @@ private:
     OwnPtr<CounterContent> m_counter;
 };
 
+DEFINE_CONTENT_DATA_TYPE_CASTS(Counter);
+
 class QuoteContentData FINAL : public ContentData {
     friend class ContentData;
 public:
@@ -183,6 +192,8 @@ private:
     QuoteType m_quote;
 };
 
+DEFINE_CONTENT_DATA_TYPE_CASTS(Quote);
+
 inline bool operator==(const ContentData& a, const ContentData& b)
 {
     return a.equals(b);
@@ -193,6 +204,6 @@ inline bool operator!=(const ContentData& a, const ContentData& b)
     return !(a == b);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ContentData_h

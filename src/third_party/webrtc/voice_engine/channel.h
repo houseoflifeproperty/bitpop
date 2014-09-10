@@ -27,6 +27,7 @@
 #include "webrtc/voice_engine/include/voe_audio_processing.h"
 #include "webrtc/voice_engine/include/voe_network.h"
 #include "webrtc/voice_engine/level_indicator.h"
+#include "webrtc/voice_engine/network_predictor.h"
 #include "webrtc/voice_engine/shared_data.h"
 #include "webrtc/voice_engine/voice_engine_defines.h"
 
@@ -206,6 +207,7 @@ public:
     int32_t SetRecPayloadType(const CodecInst& codec);
     int32_t GetRecPayloadType(CodecInst& codec);
     int32_t SetSendCNPayloadType(int type, PayloadFrequencies frequency);
+    int SetOpusMaxBandwidth(int bandwidth_hz);
 
     // VoE dual-streaming.
     int SetSecondarySendCodec(const CodecInst& codec, int red_payload_type);
@@ -327,7 +329,6 @@ public:
     int SetRTCPStatus(bool enable);
     int GetRTCPStatus(bool& enabled);
     int SetRTCP_CNAME(const char cName[256]);
-    int GetRTCP_CNAME(char cName[256]);
     int GetRemoteRTCP_CNAME(char cName[256]);
     int GetRemoteRTCPData(unsigned int& NTPHigh, unsigned int& NTPLow,
                           unsigned int& timestamp,
@@ -622,6 +623,7 @@ private:
     scoped_ptr<BitrateController> bitrate_controller_;
     scoped_ptr<RtcpBandwidthObserver> rtcp_bandwidth_observer_;
     scoped_ptr<BitrateObserver> send_bitrate_observer_;
+    scoped_ptr<NetworkPredictor> network_predictor_;
 };
 
 }  // namespace voe

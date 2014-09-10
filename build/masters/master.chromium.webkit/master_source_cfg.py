@@ -8,20 +8,7 @@ from buildbot.scheduler import AnyBranchScheduler
 from common import chromium_utils
 
 from master import build_utils
-
-def ChromeTreeFileSplitter(path):
-  """split_file for the 'src' project in the trunk."""
-
-  # Exclude .DEPS.git from triggering builds on chrome.
-  if path == 'src/.DEPS.git':
-    return None
-
-  # List of projects we are interested in. The project names must exactly
-  # match paths in the Subversion repository, relative to the 'path' URL
-  # argument. build_utils.SplitPath() will use them as branch names to
-  # kick off the Schedulers for different projects.
-  projects = ['src']
-  return build_utils.SplitPath(projects, path)
+from master import chromium_svn_poller
 
 def WebkitFileSplitter(path):
   """split_file for webkit.org repository."""
@@ -31,17 +18,12 @@ def WebkitFileSplitter(path):
 
 def Update(config, _active_master, c):
   # Polls config.Master.trunk_url for changes
-  chromium_url = "http://src.chromium.org/viewvc/chrome?view=rev&revision=%s"
-  webkit_url = "http://src.chromium.org/viewvc/blink?view=rev&revision=%s"
-  cr_poller = svnpoller.SVNPoller(svnurl=config.Master.trunk_url,
-                                  svnbin=chromium_utils.SVN_BIN,
-                                  split_file=ChromeTreeFileSplitter,
-                                  pollinterval=30,
-                                  revlinktmpl=chromium_url,
-                                  cachepath='chromium.svnrev',
-                                  project='chromium')
+  cr_poller = chromium_svn_poller.ChromiumSvnPoller(pollinterval=30,
+                                                    cachepath='chromium.svnrev',
+                                                    project='chromium')
   c['change_source'].append(cr_poller)
 
+  webkit_url = 'http://src.chromium.org/viewvc/blink?view=rev&revision=%s'
   webkit_poller = svnpoller.SVNPoller(svnurl = config.Master.webkit_root_url,
                                       svnbin=chromium_utils.SVN_BIN,
                                       split_file=WebkitFileSplitter,
@@ -53,4 +35,8 @@ def Update(config, _active_master, c):
 
   c['schedulers'].append(AnyBranchScheduler(
       name='global_scheduler', branches=['trunk', 'src'], treeStableTimer=60,
+      builderNames=[]))
+
+  c['schedulers'].append(AnyBranchScheduler(
+      name='global_deps_scheduler', branches=['src'], treeStableTimer=60,
       builderNames=[]))

@@ -284,6 +284,44 @@ class AdmlWriterUnittest(xml_writer_base_unittest.XmlWriterBaseTest):
         '</presentation>')
     self.AssertXMLEquals(output, expected_output)
 
+  def testStringEnumListPolicy(self):
+    list_policy = {
+      'name': 'ListPolicyStub',
+      'type': 'string-enum-list',
+      'caption': 'List policy caption',
+      'label': 'List policy label',
+      'desc': 'This is a test description.',
+      'items': [
+          {
+           'name': 'item 1',
+           'value': 'value 1',
+           'caption': 'Caption Item 1',
+          },
+          {
+           'name': 'item 2',
+           'value': 'value 2',
+           'caption': 'Caption Item 2',
+          },
+      ],
+    }
+    self. _InitWriterForAddingPolicies(self.writer, list_policy)
+    self.writer.WritePolicy(list_policy)
+    # Assert generated string elements.
+    output = self.GetXMLOfChildren(self.writer._string_table_elem)
+    expected_output = (
+        '<string id="ListPolicyStub">List policy caption</string>\n'
+        '<string id="ListPolicyStub_Explain">'
+        'This is a test description.</string>\n'
+        '<string id="ListPolicyStubDesc">List policy caption</string>')
+    self.AssertXMLEquals(output, expected_output)
+    # Assert generated presentation elements.
+    output = self.GetXMLOfChildren(self.writer._presentation_table_elem)
+    expected_output = (
+        '<presentation id="ListPolicyStub">\n'
+        '  <listBox refId="ListPolicyStubDesc">List policy label</listBox>\n'
+        '</presentation>')
+    self.AssertXMLEquals(output, expected_output)
+
   def testDictionaryPolicy(self):
     dict_policy = {
       'name': 'DictionaryPolicyStub',

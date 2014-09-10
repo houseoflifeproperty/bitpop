@@ -29,13 +29,13 @@
 #include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/extensions/install_verifier.h"
 #include "chrome/browser/extensions/shared_module_service.h"
-#include "chrome/browser/omaha_query_params/omaha_query_params.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "components/omaha_query_params/omaha_query_params.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/download_save_info.h"
@@ -60,7 +60,6 @@
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #endif
 
-using chrome::OmahaQueryParams;
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DownloadItem;
@@ -201,8 +200,9 @@ GURL WebstoreInstaller::GetWebstoreInstallURL(
   std::string url_string = extension_urls::GetWebstoreUpdateUrl().spec();
 
   GURL url(url_string + "?response=redirect&" +
-           OmahaQueryParams::Get(OmahaQueryParams::CRX) + "&x=" +
-           net::EscapeQueryParamValue(JoinString(params, '&'), true));
+           omaha_query_params::OmahaQueryParams::Get(
+               omaha_query_params::OmahaQueryParams::CRX) +
+           "&x=" + net::EscapeQueryParamValue(JoinString(params, '&'), true));
   DCHECK(url.is_valid());
 
   return url;
@@ -290,7 +290,8 @@ WebstoreInstaller::WebstoreInstaller(Profile* profile,
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(web_contents);
 
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR,
+  registrar_.Add(this,
+                 extensions::NOTIFICATION_EXTENSION_INSTALL_ERROR,
                  content::Source<CrxInstaller>(NULL));
   extension_registry_observer_.Add(ExtensionRegistry::Get(profile));
 }
@@ -339,7 +340,7 @@ void WebstoreInstaller::Start() {
     NOTREACHED();
   }
   extensions::InstallTracker* tracker =
-      extensions::InstallTrackerFactory::GetForProfile(profile_);
+      extensions::InstallTrackerFactory::GetForBrowserContext(profile_);
   extensions::InstallObserver::ExtensionInstallParams params(
       id_,
       name,
@@ -360,7 +361,7 @@ void WebstoreInstaller::Observe(int type,
                                 const content::NotificationSource& source,
                                 const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR: {
+    case extensions::NOTIFICATION_EXTENSION_INSTALL_ERROR: {
       CrxInstaller* crx_installer = content::Source<CrxInstaller>(source).ptr();
       CHECK(crx_installer);
       if (crx_installer != crx_installer_.get())
@@ -385,7 +386,8 @@ void WebstoreInstaller::Observe(int type,
 
 void WebstoreInstaller::OnExtensionInstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension) {
+    const Extension* extension,
+    bool is_update) {
   CHECK(profile_->IsSameProfile(Profile::FromBrowserContext(browser_context)));
   if (pending_modules_.empty())
     return;
@@ -505,7 +507,7 @@ void WebstoreInstaller::OnDownloadUpdated(DownloadItem* download) {
           if (delegate_)
             delegate_->OnExtensionDownloadProgress(id_, download);
           extensions::InstallTracker* tracker =
-              extensions::InstallTrackerFactory::GetForProfile(profile_);
+              extensions::InstallTrackerFactory::GetForBrowserContext(profile_);
           tracker->OnDownloadProgress(id_, 100);
         }
       }
@@ -657,7 +659,7 @@ void WebstoreInstaller::UpdateDownloadProgress() {
   if (percent >= 0) {
     percent = (percent + (finished_modules * 100)) / total_modules_;
     extensions::InstallTracker* tracker =
-        extensions::InstallTrackerFactory::GetForProfile(profile_);
+        extensions::InstallTrackerFactory::GetForBrowserContext(profile_);
     tracker->OnDownloadProgress(id_, percent);
   }
 
@@ -706,7 +708,7 @@ void WebstoreInstaller::ReportFailure(const std::string& error,
   }
 
   extensions::InstallTracker* tracker =
-      extensions::InstallTrackerFactory::GetForProfile(profile_);
+      extensions::InstallTrackerFactory::GetForBrowserContext(profile_);
   tracker->OnInstallFailure(id_);
 
   Release();  // Balanced in Start().

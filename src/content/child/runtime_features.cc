@@ -13,7 +13,10 @@
 #if defined(OS_ANDROID)
 #include <cpu-features.h>
 #include "base/android/build_info.h"
+#include "base/metrics/field_trial.h"
 #include "media/base/android/media_codec_bridge.h"
+#elif defined(OS_WIN)
+#include "base/win/windows_version.h"
 #endif
 
 using blink::WebRuntimeFeatures;
@@ -52,13 +55,33 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
   WebRuntimeFeatures::enableTouchIconLoading(true);
   WebRuntimeFeatures::enableOrientationEvent(true);
   WebRuntimeFeatures::enableFastMobileScrolling(true);
+  WebRuntimeFeatures::enableMediaCapture(true);
+  // If navigation transitions gets activated via field trial, enable it in
+  // blink. We don't set this to false in case the user has manually enabled
+  // the feature via experimental web platform features.
+  if (base::FieldTrialList::FindFullName("NavigationTransitions") == "Enabled")
+    WebRuntimeFeatures::enableNavigationTransitions(true);
 #else
   WebRuntimeFeatures::enableNavigatorContentUtils(true);
 #endif  // defined(OS_ANDROID)
+
+#if !(defined OS_ANDROID || defined OS_CHROMEOS || defined OS_IOS)
+    // Only Android, ChromeOS, and IOS support NetInfo right now.
+    WebRuntimeFeatures::enableNetworkInformation(false);
+#endif
+
+#if defined(OS_WIN)
+  // Screen Orientation API is currently broken on Windows 8 Metro mode and
+  // until we can find how to disable it only for Blink instances running in a
+  // renderer process in Metro, we need to disable the API altogether for Win8.
+  // See http://crbug.com/400846
+  if (base::win::OSInfo::GetInstance()->version() >= base::win::VERSION_WIN8)
+    WebRuntimeFeatures::enableScreenOrientation(false);
+#endif // OS_WIN
 }
 
 void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
-    const CommandLine& command_line) {
+    const base::CommandLine& command_line) {
   if (command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures))
     WebRuntimeFeatures::enableExperimentalFeatures(true);
 
@@ -72,9 +95,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kDisableDesktopNotifications))
     WebRuntimeFeatures::enableNotifications(false);
-
-  if (command_line.HasSwitch(switches::kDisableNavigatorContentUtils))
-    WebRuntimeFeatures::enableNavigatorContentUtils(false);
 
   if (command_line.HasSwitch(switches::kDisableLocalStorage))
     WebRuntimeFeatures::enableLocalStorage(false);
@@ -96,12 +116,7 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (!command_line.HasSwitch(switches::kEnableSpeechRecognition))
     WebRuntimeFeatures::enableScriptedSpeech(false);
-#endif
 
-  if (command_line.HasSwitch(switches::kEnableServiceWorker))
-    WebRuntimeFeatures::enableServiceWorker(true);
-
-#if defined(OS_ANDROID)
   // WebAudio is enabled by default on ARM and X86, if the MediaCodec
   // API is available.
   WebRuntimeFeatures::enableWebAudio(
@@ -130,8 +145,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableExperimentalCanvasFeatures))
     WebRuntimeFeatures::enableExperimentalCanvasFeatures(true);
 
-  if (command_line.HasSwitch(switches::kEnableSpeechSynthesis))
-    WebRuntimeFeatures::enableSpeechSynthesis(true);
+  if (command_line.HasSwitch(switches::kEnableDisplayList2dCanvas))
+    WebRuntimeFeatures::enableDisplayList2dCanvas(true);
 
   if (command_line.HasSwitch(switches::kEnableWebGLDraftExtensions))
     WebRuntimeFeatures::enableWebGLDraftExtensions(true);
@@ -145,18 +160,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (ui::IsOverlayScrollbarEnabled())
     WebRuntimeFeatures::enableOverlayScrollbars(true);
 
-  if (command_line.HasSwitch(switches::kEnableFastTextAutosizing))
-    WebRuntimeFeatures::enableFastTextAutosizing(true);
-
-  if (command_line.HasSwitch(switches::kDisableFastTextAutosizing))
-    WebRuntimeFeatures::enableFastTextAutosizing(false);
-
-  if (command_line.HasSwitch(switches::kDisableRepaintAfterLayout))
-    WebRuntimeFeatures::enableRepaintAfterLayout(false);
-
-  if (command_line.HasSwitch(switches::kEnableRepaintAfterLayout))
-    WebRuntimeFeatures::enableRepaintAfterLayout(true);
-
   if (command_line.HasSwitch(switches::kEnableTargetedStyleRecalc))
     WebRuntimeFeatures::enableTargetedStyleRecalc(true);
 
@@ -168,6 +171,12 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kEnableLayerSquashing))
     WebRuntimeFeatures::enableLayerSquashing(true);
+
+  if (command_line.HasSwitch(switches::kEnableNetworkInformation) ||
+      command_line.HasSwitch(
+          switches::kEnableExperimentalWebPlatformFeatures)) {
+    WebRuntimeFeatures::enableNetworkInformation(true);
+  }
 }
 
 }  // namespace content

@@ -234,7 +234,9 @@ public abstract class InfoBar implements InfoBarView {
 
     @Override
     public void onLinkClicked() {
-        nativeOnLinkClicked(mNativeInfoBarPtr);
+        if (mNativeInfoBarPtr != 0) {
+            nativeOnLinkClicked(mNativeInfoBarPtr);
+        }
     }
 
     @Override

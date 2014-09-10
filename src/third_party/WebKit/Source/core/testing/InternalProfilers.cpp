@@ -36,7 +36,12 @@
 #include "wtf/text/WTFString.h"
 #include <algorithm>
 
-namespace WebCore {
+namespace blink {
+
+InternalProfilers::InternalProfilers()
+{
+    ScriptWrappable::init(this);
+}
 
 void InternalProfilers::startHeapProfiling(const String& prefix)
 {

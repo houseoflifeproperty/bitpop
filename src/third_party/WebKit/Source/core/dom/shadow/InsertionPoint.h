@@ -36,7 +36,7 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class InsertionPoint : public HTMLElement {
 public:
@@ -72,12 +72,14 @@ public:
 protected:
     InsertionPoint(const QualifiedName&, Document&);
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
-    virtual void childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta) OVERRIDE;
+    virtual void childrenChanged(const ChildrenChange&) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual void willRecalcStyle(StyleRecalcChange) OVERRIDE;
 
 private:
+    bool isInsertionPoint() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+
     ContentDistribution m_distribution;
     bool m_registeredWithShadowRoot;
 };
@@ -114,6 +116,6 @@ const InsertionPoint* resolveReprojection(const Node*);
 
 void collectDestinationInsertionPoints(const Node&, WillBeHeapVector<RawPtrWillBeMember<InsertionPoint>, 8>& results);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InsertionPoint_h

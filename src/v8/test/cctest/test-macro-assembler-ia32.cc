@@ -28,12 +28,12 @@
 #include <stdlib.h>
 
 #include "src/v8.h"
-
-#include "src/macro-assembler.h"
-#include "src/factory.h"
-#include "src/platform.h"
-#include "src/serialize.h"
 #include "test/cctest/cctest.h"
+
+#include "src/base/platform/platform.h"
+#include "src/factory.h"
+#include "src/macro-assembler.h"
+#include "src/serialize.h"
 
 using namespace v8::internal;
 
@@ -54,9 +54,8 @@ TEST(LoadAndStoreWithRepresentation) {
 
   // Allocate an executable page of memory.
   size_t actual_size;
-  byte* buffer = static_cast<byte*>(OS::Allocate(Assembler::kMinimalBufferSize,
-                                                 &actual_size,
-                                                 true));
+  byte* buffer = static_cast<byte*>(v8::base::OS::Allocate(
+      Assembler::kMinimalBufferSize, &actual_size, true));
   CHECK(buffer);
   Isolate* isolate = CcTest::i_isolate();
   HandleScope handles(isolate);

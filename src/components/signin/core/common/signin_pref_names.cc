@@ -23,6 +23,12 @@ const char kGoogleServicesUserAccountId[] = "google.services.user_account_id";
 // services.
 const char kGoogleServicesUsername[] = "google.services.username";
 
+// Device id scoped to single signin. This device id will be regenerated if user
+// signs out and signs back in. When refresh token is requested for this user it
+// will be annotated with this device id.
+const char kGoogleServicesSigninScopedDeviceId[] =
+    "google.services.signin_scoped_device_id";
+
 // Local state pref containing a string regex that restricts which accounts
 // can be used to log in to chrome (e.g. "*@google.com"). If missing or blank,
 // all accounts are allowed (no restrictions).
@@ -36,6 +42,10 @@ const char kReverseAutologinEnabled[] = "reverse_autologin.enabled";
 // sign-in.
 const char kReverseAutologinRejectedEmailList[] =
     "reverse_autologin.rejected_email_list";
+
+// Int64 which tracks, as time from epoch, when last time the user signed in
+// to the browser.
+const char kSignedInTime[] = "signin.signedin_time";
 
 // Boolean which stores if the user is allowed to signin to chrome.
 const char kSigninAllowed[] = "signin.allowed";

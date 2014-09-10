@@ -28,9 +28,10 @@
 
 #include "core/editing/CompositeEditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLElement;
+class HTMLUListElement;
 
 class InsertListCommand FINAL : public CompositeEditCommand {
 public:
@@ -51,17 +52,17 @@ private:
     virtual void doApply() OVERRIDE;
     virtual EditAction editingAction() const OVERRIDE { return EditActionInsertList; }
 
-    HTMLElement* fixOrphanedListChild(Node*);
-    bool selectionHasListOfType(const VisibleSelection& selection, const QualifiedName&);
+    HTMLUListElement* fixOrphanedListChild(Node*);
+    bool selectionHasListOfType(const VisibleSelection&, const HTMLQualifiedName&);
     PassRefPtrWillBeRawPtr<HTMLElement> mergeWithNeighboringLists(PassRefPtrWillBeRawPtr<HTMLElement>);
-    void doApplyForSingleParagraph(bool forceCreateList, const QualifiedName&, Range& currentSelection);
+    void doApplyForSingleParagraph(bool forceCreateList, const HTMLQualifiedName&, Range& currentSelection);
     void unlistifyParagraph(const VisiblePosition& originalStart, HTMLElement* listNode, Node* listChildNode);
-    PassRefPtrWillBeRawPtr<HTMLElement> listifyParagraph(const VisiblePosition& originalStart, const QualifiedName& listTag);
+    PassRefPtrWillBeRawPtr<HTMLElement> listifyParagraph(const VisiblePosition& originalStart, const HTMLQualifiedName& listTag);
 
     RefPtrWillBeMember<HTMLElement> m_listElement;
     Type m_type;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InsertListCommand_h

@@ -102,17 +102,20 @@ void QuicHttpStream::OnStreamReady(int rv) {
 int QuicHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
                                 HttpResponseInfo* response,
                                 const CompletionCallback& callback) {
-  CHECK(stream_);
   CHECK(!request_body_stream_);
   CHECK(!response_info_);
   CHECK(!callback.is_null());
   CHECK(response);
 
+   if (!stream_) {
+    return ERR_CONNECTION_CLOSED;
+  }
+
   QuicPriority priority = ConvertRequestPriorityToQuicPriority(priority_);
   stream_->set_priority(priority);
   // Store the serialized request headers.
   CreateSpdyHeadersFromHttpRequest(*request_info_, request_headers,
-                                   &request_headers_, SPDY3, /*direct=*/true);
+                                   SPDY3, /*direct=*/true, &request_headers_);
 
   // Store the request body.
   request_body_stream_ = request_info_->upload_data_stream;
@@ -352,6 +355,7 @@ void QuicHttpStream::OnCryptoHandshakeConfirmed() {
 }
 
 void QuicHttpStream::OnSessionClosed(int error) {
+  Close(false);
   session_error_ = error;
   session_.reset();
 }

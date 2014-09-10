@@ -4,10 +4,11 @@
 
 #include "cc/resources/raster_worker_pool.h"
 
+#include "base/test/test_simple_task_runner.h"
 #include "base/time/time.h"
 #include "cc/debug/lap_timer.h"
 #include "cc/output/context_provider.h"
-#include "cc/resources/direct_raster_worker_pool.h"
+#include "cc/resources/gpu_raster_worker_pool.h"
 #include "cc/resources/image_copy_raster_worker_pool.h"
 #include "cc/resources/image_raster_worker_pool.h"
 #include "cc/resources/pixel_buffer_raster_worker_pool.h"
@@ -79,7 +80,7 @@ enum RasterWorkerPoolType {
   RASTER_WORKER_POOL_TYPE_PIXEL_BUFFER,
   RASTER_WORKER_POOL_TYPE_IMAGE,
   RASTER_WORKER_POOL_TYPE_IMAGE_COPY,
-  RASTER_WORKER_POOL_TYPE_DIRECT
+  RASTER_WORKER_POOL_TYPE_GPU
 };
 
 static const int kTimeLimitMillis = 2000;
@@ -148,6 +149,7 @@ class RasterWorkerPoolPerfTestBase {
 
   RasterWorkerPoolPerfTestBase()
       : context_provider_(make_scoped_refptr(new PerfContextProvider)),
+        task_runner_(new base::TestSimpleTaskRunner),
         task_graph_runner_(new TaskGraphRunner),
         timer_(kWarmupRuns,
                base::TimeDelta::FromMilliseconds(kTimeLimitMillis),
@@ -203,6 +205,7 @@ class RasterWorkerPoolPerfTestBase {
   scoped_ptr<SharedBitmapManager> shared_bitmap_manager_;
   scoped_ptr<ResourceProvider> resource_provider_;
   scoped_ptr<ResourcePool> staging_resource_pool_;
+  scoped_refptr<base::TestSimpleTaskRunner> task_runner_;
   scoped_ptr<TaskGraphRunner> task_graph_runner_;
   LapTimer timer_;
 };
@@ -216,29 +219,31 @@ class RasterWorkerPoolPerfTest
     switch (GetParam()) {
       case RASTER_WORKER_POOL_TYPE_PIXEL_BUFFER:
         raster_worker_pool_ = PixelBufferRasterWorkerPool::Create(
-            base::MessageLoopProxy::current().get(),
+            task_runner_.get(),
             task_graph_runner_.get(),
+            context_provider_.get(),
             resource_provider_.get(),
             std::numeric_limits<size_t>::max());
         break;
       case RASTER_WORKER_POOL_TYPE_IMAGE:
-        raster_worker_pool_ = ImageRasterWorkerPool::Create(
-            base::MessageLoopProxy::current().get(),
-            task_graph_runner_.get(),
-            resource_provider_.get());
+        raster_worker_pool_ =
+            ImageRasterWorkerPool::Create(task_runner_.get(),
+                                          task_graph_runner_.get(),
+                                          resource_provider_.get());
         break;
       case RASTER_WORKER_POOL_TYPE_IMAGE_COPY:
-        raster_worker_pool_ = ImageCopyRasterWorkerPool::Create(
-            base::MessageLoopProxy::current().get(),
-            task_graph_runner_.get(),
-            resource_provider_.get(),
-            staging_resource_pool_.get());
+        raster_worker_pool_ =
+            ImageCopyRasterWorkerPool::Create(task_runner_.get(),
+                                              task_graph_runner_.get(),
+                                              context_provider_.get(),
+                                              resource_provider_.get(),
+                                              staging_resource_pool_.get());
         break;
-      case RASTER_WORKER_POOL_TYPE_DIRECT:
-        raster_worker_pool_ = DirectRasterWorkerPool::Create(
-            base::MessageLoopProxy::current().get(),
-            resource_provider_.get(),
-            context_provider_.get());
+      case RASTER_WORKER_POOL_TYPE_GPU:
+        raster_worker_pool_ =
+            GpuRasterWorkerPool::Create(task_runner_.get(),
+                                        context_provider_.get(),
+                                        resource_provider_.get());
         break;
     }
 
@@ -259,13 +264,12 @@ class RasterWorkerPoolPerfTest
   }
   virtual void DidFinishRunningTasks() OVERRIDE {
     raster_worker_pool_->AsRasterizer()->CheckForCompletedTasks();
-    base::MessageLoop::current()->Quit();
   }
   virtual void DidFinishRunningTasksRequiredForActivation() OVERRIDE {}
 
   void RunMessageLoopUntilAllTasksHaveCompleted() {
     task_graph_runner_->RunUntilIdle();
-    base::MessageLoop::current()->Run();
+    task_runner_->RunUntilIdle();
   }
 
   void RunScheduleTasksTest(const std::string& test_name,
@@ -379,8 +383,8 @@ class RasterWorkerPoolPerfTest
         return std::string("_image_raster_worker_pool");
       case RASTER_WORKER_POOL_TYPE_IMAGE_COPY:
         return std::string("_image_copy_raster_worker_pool");
-      case RASTER_WORKER_POOL_TYPE_DIRECT:
-        return std::string("_direct_raster_worker_pool");
+      case RASTER_WORKER_POOL_TYPE_GPU:
+        return std::string("_gpu_raster_worker_pool");
     }
     NOTREACHED();
     return std::string();
@@ -421,7 +425,7 @@ INSTANTIATE_TEST_CASE_P(RasterWorkerPoolPerfTests,
                         ::testing::Values(RASTER_WORKER_POOL_TYPE_PIXEL_BUFFER,
                                           RASTER_WORKER_POOL_TYPE_IMAGE,
                                           RASTER_WORKER_POOL_TYPE_IMAGE_COPY,
-                                          RASTER_WORKER_POOL_TYPE_DIRECT));
+                                          RASTER_WORKER_POOL_TYPE_GPU));
 
 class RasterWorkerPoolCommonPerfTest : public RasterWorkerPoolPerfTestBase,
                                        public testing::Test {

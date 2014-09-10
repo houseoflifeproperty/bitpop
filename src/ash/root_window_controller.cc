@@ -76,7 +76,7 @@
 #include "ui/wm/public/window_types.h"
 
 #if defined(OS_CHROMEOS)
-#include "ash/system/tray_accessibility.h"
+#include "ash/ash_touch_exploration_manager_chromeos.h"
 #include "ash/wm/boot_splash_screen_chromeos.h"
 #include "ui/chromeos/touch_exploration_controller.h"
 #endif
@@ -261,54 +261,6 @@ class EmptyWindowDelegate : public aura::WindowDelegate {
   DISALLOW_COPY_AND_ASSIGN(EmptyWindowDelegate);
 };
 
-#if defined(OS_CHROMEOS)
-// Responsible for initializing TouchExplorationController when spoken
-// feedback is on.
-class CrosAccessibilityObserver : public AccessibilityObserver {
- public:
-  explicit CrosAccessibilityObserver(
-      RootWindowController* root_window_controller)
-      : root_window_controller_(root_window_controller) {
-    Shell::GetInstance()->system_tray_notifier()->
-        AddAccessibilityObserver(this);
-    UpdateTouchExplorationState();
-  }
-
-  virtual ~CrosAccessibilityObserver() {
-    SystemTrayNotifier* system_tray_notifier =
-        Shell::GetInstance()->system_tray_notifier();
-    if (system_tray_notifier)
-      system_tray_notifier->RemoveAccessibilityObserver(this);
-  }
-
- private:
-  void UpdateTouchExplorationState() {
-    AccessibilityDelegate* delegate =
-        Shell::GetInstance()->accessibility_delegate();
-    bool enabled = delegate->IsSpokenFeedbackEnabled();
-
-    if (enabled && !touch_exploration_controller_.get()) {
-      touch_exploration_controller_.reset(
-          new ui::TouchExplorationController(
-              root_window_controller_->GetRootWindow()));
-    } else if (!enabled) {
-      touch_exploration_controller_.reset();
-    }
-  }
-
-  // Overridden from AccessibilityObserver.
-  virtual void OnAccessibilityModeChanged(
-      AccessibilityNotificationVisibility notify) OVERRIDE {
-    UpdateTouchExplorationState();
-  }
-
-  scoped_ptr<ui::TouchExplorationController> touch_exploration_controller_;
-  RootWindowController* root_window_controller_;
-
-  DISALLOW_COPY_AND_ASSIGN(CrosAccessibilityObserver);
-};
-#endif  // OS_CHROMEOS
-
 }  // namespace
 
 void RootWindowController::CreateForPrimaryDisplay(AshWindowTreeHost* host) {
@@ -396,8 +348,8 @@ void RootWindowController::Shutdown() {
   shell->RemoveShellObserver(this);
 
 #if defined(OS_CHROMEOS)
-  if (cros_accessibility_observer_) {
-    cros_accessibility_observer_.reset();
+  if (touch_exploration_manager_) {
+    touch_exploration_manager_.reset();
   }
 #endif
 
@@ -630,14 +582,13 @@ void RootWindowController::ShowContextMenu(const gfx::Point& location_in_screen,
   if (!wallpaper_controller_.get())
     return;
 
-  views::MenuRunner menu_runner(menu_model.get());
+  views::MenuRunner menu_runner(menu_model.get(),
+                                views::MenuRunner::CONTEXT_MENU);
   if (menu_runner.RunMenuAt(wallpaper_controller_->widget(),
                             NULL,
                             gfx::Rect(location_in_screen, gfx::Size()),
                             views::MENU_ANCHOR_TOPLEFT,
-                            source_type,
-                            views::MenuRunner::CONTEXT_MENU) ==
-      views::MenuRunner::MENU_DELETED) {
+                            source_type) == views::MenuRunner::MENU_DELETED) {
     return;
   }
 
@@ -806,9 +757,9 @@ void RootWindowController::Init(RootWindowType root_window_type,
   }
 
 #if defined(OS_CHROMEOS)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kAshEnableTouchExplorationMode)) {
-    cros_accessibility_observer_.reset(new CrosAccessibilityObserver(this));
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshDisableTouchExplorationMode)) {
+    touch_exploration_manager_.reset(new AshTouchExplorationManager(this));
   }
 #endif
 }
@@ -856,6 +807,10 @@ void RootWindowController::InitLayoutManagers() {
   docked_layout_manager_ =
       new DockedWindowLayoutManager(docked_container, workspace_controller());
   docked_container->SetLayoutManager(docked_layout_manager_);
+
+  // Installs SnapLayoutManager to containers who set the
+  // |kSnapsChildrenToPhysicalPixelBoundary| property.
+  wm::InstallSnapLayoutManagerToContainers(root_window);
 
   // Create Panel layout manager
   aura::Window* panel_container = GetContainer(kShellWindowId_PanelContainer);
@@ -956,6 +911,7 @@ void RootWindowController::CreateContainersInRootWindow(
       "DefaultContainer",
       non_lock_screen_containers);
   ::wm::SetChildWindowVisibilityChangesAnimated(default_container);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(default_container);
   SetUsesScreenCoordinates(default_container);
   SetUsesEasyResizeTargeter(default_container);
 
@@ -964,6 +920,7 @@ void RootWindowController::CreateContainersInRootWindow(
       "AlwaysOnTopContainer",
       non_lock_screen_containers);
   ::wm::SetChildWindowVisibilityChangesAnimated(always_on_top_container);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(always_on_top_container);
   SetUsesScreenCoordinates(always_on_top_container);
 
   aura::Window* docked_container = CreateContainer(
@@ -971,6 +928,7 @@ void RootWindowController::CreateContainersInRootWindow(
       "DockedContainer",
       non_lock_screen_containers);
   ::wm::SetChildWindowVisibilityChangesAnimated(docked_container);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(docked_container);
   SetUsesScreenCoordinates(docked_container);
   SetUsesEasyResizeTargeter(docked_container);
 
@@ -978,6 +936,7 @@ void RootWindowController::CreateContainersInRootWindow(
       CreateContainer(kShellWindowId_ShelfContainer,
                       "ShelfContainer",
                       non_lock_screen_containers);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(shelf_container);
   SetUsesScreenCoordinates(shelf_container);
   DescendantShouldStayInSameRootWindow(shelf_container);
 
@@ -985,12 +944,14 @@ void RootWindowController::CreateContainersInRootWindow(
       kShellWindowId_PanelContainer,
       "PanelContainer",
       non_lock_screen_containers);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(panel_container);
   SetUsesScreenCoordinates(panel_container);
 
   aura::Window* shelf_bubble_container =
       CreateContainer(kShellWindowId_ShelfBubbleContainer,
                       "ShelfBubbleContainer",
                       non_lock_screen_containers);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(shelf_bubble_container);
   SetUsesScreenCoordinates(shelf_bubble_container);
   DescendantShouldStayInSameRootWindow(shelf_bubble_container);
 
@@ -998,12 +959,14 @@ void RootWindowController::CreateContainersInRootWindow(
       CreateContainer(kShellWindowId_AppListContainer,
                       "AppListContainer",
                       non_lock_screen_containers);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(app_list_container);
   SetUsesScreenCoordinates(app_list_container);
 
   aura::Window* modal_container = CreateContainer(
       kShellWindowId_SystemModalContainer,
       "SystemModalContainer",
       non_lock_screen_containers);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(modal_container);
   modal_container->SetLayoutManager(
       new SystemModalContainerLayoutManager(modal_container));
   ::wm::SetChildWindowVisibilityChangesAnimated(modal_container);
@@ -1016,6 +979,7 @@ void RootWindowController::CreateContainersInRootWindow(
       kShellWindowId_LockScreenContainer,
       "LockScreenContainer",
       lock_screen_containers);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(lock_container);
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kAshDisableLockLayoutManager)) {
     lock_container->SetLayoutManager(
@@ -1030,6 +994,7 @@ void RootWindowController::CreateContainersInRootWindow(
       kShellWindowId_LockSystemModalContainer,
       "LockSystemModalContainer",
       lock_screen_containers);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(lock_modal_container);
   lock_modal_container->SetLayoutManager(
       new SystemModalContainerLayoutManager(lock_modal_container));
   ::wm::SetChildWindowVisibilityChangesAnimated(lock_modal_container);
@@ -1040,6 +1005,7 @@ void RootWindowController::CreateContainersInRootWindow(
       CreateContainer(kShellWindowId_StatusContainer,
                       "StatusContainer",
                       lock_screen_related_containers);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(status_container);
   SetUsesScreenCoordinates(status_container);
   DescendantShouldStayInSameRootWindow(status_container);
 
@@ -1048,6 +1014,7 @@ void RootWindowController::CreateContainersInRootWindow(
       "SettingBubbleContainer",
       lock_screen_related_containers);
   ::wm::SetChildWindowVisibilityChangesAnimated(settings_bubble_container);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(settings_bubble_container);
   SetUsesScreenCoordinates(settings_bubble_container);
   DescendantShouldStayInSameRootWindow(settings_bubble_container);
 
@@ -1056,6 +1023,7 @@ void RootWindowController::CreateContainersInRootWindow(
       "MenuContainer",
       lock_screen_related_containers);
   ::wm::SetChildWindowVisibilityChangesAnimated(menu_container);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(menu_container);
   SetUsesScreenCoordinates(menu_container);
 
   aura::Window* drag_drop_container = CreateContainer(
@@ -1063,18 +1031,22 @@ void RootWindowController::CreateContainersInRootWindow(
       "DragImageAndTooltipContainer",
       lock_screen_related_containers);
   ::wm::SetChildWindowVisibilityChangesAnimated(drag_drop_container);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(drag_drop_container);
   SetUsesScreenCoordinates(drag_drop_container);
 
   aura::Window* overlay_container = CreateContainer(
       kShellWindowId_OverlayContainer,
       "OverlayContainer",
       lock_screen_related_containers);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(overlay_container);
   SetUsesScreenCoordinates(overlay_container);
 
   aura::Window* virtual_keyboard_parent_container = CreateContainer(
       kShellWindowId_VirtualKeyboardParentContainer,
       "VirtualKeyboardParentContainer",
       root_window);
+  wm::SetSnapsChildrenToPhysicalPixelBoundary(
+      virtual_keyboard_parent_container);
   SetUsesScreenCoordinates(virtual_keyboard_parent_container);
 
 #if defined(OS_CHROMEOS)

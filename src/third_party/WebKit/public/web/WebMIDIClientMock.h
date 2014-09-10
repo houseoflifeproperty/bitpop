@@ -35,11 +35,9 @@
 #include "../platform/WebPrivateOwnPtr.h"
 #include "WebMIDIClient.h"
 
-namespace WebCore {
-class MIDIClientMock;
-}
-
 namespace blink {
+
+class MIDIClientMock;
 
 class WebMIDIClientMock : public WebMIDIClient {
 public:
@@ -56,7 +54,7 @@ public:
 private:
     BLINK_EXPORT void reset();
 
-    WebPrivateOwnPtr<WebCore::MIDIClientMock> m_clientMock;
+    WebPrivateOwnPtr<MIDIClientMock> m_clientMock;
 };
 
 } // namespace blink

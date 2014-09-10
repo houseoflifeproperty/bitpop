@@ -34,6 +34,7 @@
 #include "net/http/http_transaction.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/http/http_util.h"
+#include "net/proxy/proxy_info.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/url_request/fraudulent_certificate_reporter.h"
@@ -286,6 +287,19 @@ void URLRequestHttpJob::Kill() {
   URLRequestJob::Kill();
 }
 
+void URLRequestHttpJob::NotifyBeforeSendProxyHeadersCallback(
+    const ProxyInfo& proxy_info,
+    HttpRequestHeaders* request_headers) {
+  DCHECK(request_headers);
+  DCHECK_NE(URLRequestStatus::CANCELED, GetStatus().status());
+  if (network_delegate()) {
+    network_delegate()->NotifyBeforeSendProxyHeaders(
+        request_,
+        proxy_info,
+        request_headers);
+  }
+}
+
 void URLRequestHttpJob::NotifyHeadersComplete() {
   DCHECK(!response_info_);
 
@@ -414,8 +428,6 @@ void URLRequestHttpJob::StartTransactionInternal() {
         priority_, &transaction_);
 
     if (rv == OK && request_info_.url.SchemeIsWSOrWSS()) {
-      // TODO(ricea): Implement WebSocket throttling semantics as defined in
-      // RFC6455 Section 4.1.
       base::SupportsUserData::Data* data = request_->GetUserData(
           WebSocketHandshakeStreamBase::CreateHelper::DataKey());
       if (data) {
@@ -429,6 +441,9 @@ void URLRequestHttpJob::StartTransactionInternal() {
     if (rv == OK) {
       transaction_->SetBeforeNetworkStartCallback(
           base::Bind(&URLRequestHttpJob::NotifyBeforeNetworkStart,
+                     base::Unretained(this)));
+      transaction_->SetBeforeProxyHeadersSentCallback(
+          base::Bind(&URLRequestHttpJob::NotifyBeforeSendProxyHeadersCallback,
                      base::Unretained(this)));
 
       if (!throttling_entry_.get() ||
@@ -1333,9 +1348,10 @@ void URLRequestHttpJob::UpdatePacketReadTimes() {
     return;  // No new bytes have arrived.
   }
 
-  final_packet_time_ = base::Time::Now();
+  base::Time now(base::Time::Now());
   if (!bytes_observed_in_packets_)
-    request_time_snapshot_ = request_ ? request_->request_time() : base::Time();
+    request_time_snapshot_ = now;
+  final_packet_time_ = now;
 
   bytes_observed_in_packets_ = filter_input_byte_count();
 }
@@ -1359,14 +1375,14 @@ void URLRequestHttpJob::RecordPacketStats(
     }
 
     case FilterContext::SDCH_EXPERIMENT_DECODE: {
-      UMA_HISTOGRAM_CUSTOM_TIMES("Sdch3.Experiment2_Decode",
+      UMA_HISTOGRAM_CUSTOM_TIMES("Sdch3.Experiment3_Decode",
                                   duration,
                                   base::TimeDelta::FromMilliseconds(20),
                                   base::TimeDelta::FromMinutes(10), 100);
       return;
     }
     case FilterContext::SDCH_EXPERIMENT_HOLDBACK: {
-      UMA_HISTOGRAM_CUSTOM_TIMES("Sdch3.Experiment2_Holdback",
+      UMA_HISTOGRAM_CUSTOM_TIMES("Sdch3.Experiment3_Holdback",
                                   duration,
                                   base::TimeDelta::FromMilliseconds(20),
                                   base::TimeDelta::FromMinutes(10), 100);

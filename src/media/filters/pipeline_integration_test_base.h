@@ -134,7 +134,8 @@ class PipelineIntegrationTestBase {
   void OnVideoRendererPaint(const scoped_refptr<VideoFrame>& frame);
 
   MOCK_METHOD1(OnMetadata, void(PipelineMetadata));
-  MOCK_METHOD0(OnPrerollCompleted, void());
+  MOCK_METHOD1(OnBufferingStateChanged, void(BufferingState));
+  MOCK_METHOD1(DecryptorAttached, void(bool));
 };
 
 }  // namespace media

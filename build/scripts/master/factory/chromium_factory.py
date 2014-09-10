@@ -78,14 +78,6 @@ class ChromiumFactory(gclient_factory.GClientFactory):
   SAFESYNC_URL_CHROMIUM = 'http://chromium-status.appspot.com/lkgr'
 
   # gclient additional custom deps
-  CUSTOM_DEPS_V8_LATEST = ('src/v8',
-    'http://v8.googlecode.com/svn/branches/bleeding_edge@$$V8_REV$$')
-  CUSTOM_DEPS_V8_TRUNK = ('src/v8',
-    'http://v8.googlecode.com/svn/trunk@$$V8_REV$$')
-  CUSTOM_DEPS_WEBRTC_TRUNK = ('src/third_party/webrtc',
-    config.Master.webrtc_url + '/trunk/webrtc@$$WEBRTC_REV$$')
-  CUSTOM_DEPS_LIBJINGLE_TRUNK = ('src/third_party/libjingle/source/talk',
-    config.Master.webrtc_url + '/trunk/talk@$$WEBRTC_REV$$')
   CUSTOM_DEPS_AVPERF = ('src/chrome/test/data/media/avperf',
     config.Master.trunk_url + '/deps/avperf')
   CUSTOM_VARS_NACL_LATEST = [
@@ -124,8 +116,6 @@ class ChromiumFactory(gclient_factory.GClientFactory):
   CHROMIUM_GOT_REVISION_MAPPINGS = {
       'src': 'got_revision',
       'src/third_party/WebKit': 'got_webkit_revision',
-      'src/third_party/webrtc': 'got_webrtc_revision',
-      'src/tools/swarm_client': 'got_swarm_client_revision',  # crbug.com/321778
       'src/tools/swarming_client': 'got_swarming_client_revision',
       'src/v8': 'got_v8_revision',
   }
@@ -179,9 +169,10 @@ class ChromiumFactory(gclient_factory.GClientFactory):
                                       '/data/devtools_test_pages'))
 
   def __init__(self, build_dir, target_platform=None, pull_internal=True,
-               full_checkout=False, additional_svn_urls=None, name=None,
+               full_checkout=False, additional_repos=None, name=None,
                custom_deps_list=None, nohooks_on_update=False, target_os=None,
-               swarm_client_canary=False):
+               swarm_client_canary=False, internal_custom_deps_list=None,
+               got_revision_mapping_overrides=None):
     if full_checkout:
       needed_components = None
     else:
@@ -195,7 +186,7 @@ class ChromiumFactory(gclient_factory.GClientFactory):
                                  self.CUSTOM_VARS_SOURCEFORGE_URL,
                                  self.CUSTOM_VARS_LLVM_URL,
                                  self.CUSTOM_VARS_NACL_TRUNK_URL])
-    internal_custom_deps_list = [main]
+    solutions = [main]
     if config.Master.trunk_internal_url_src and pull_internal:
       if full_checkout:
         needed_components = None
@@ -203,18 +194,32 @@ class ChromiumFactory(gclient_factory.GClientFactory):
         needed_components = self.NEEDED_COMPONENTS_INTERNAL
       internal = gclient_factory.GClientSolution(
                      config.Master.trunk_internal_url_src,
-                     needed_components=needed_components)
-      internal_custom_deps_list.append(internal)
+                     needed_components=needed_components,
+                     custom_deps_list=internal_custom_deps_list)
+      solutions.append(internal)
 
-    additional_svn_urls = additional_svn_urls or []
-    for svn_url in additional_svn_urls:
-      solution = gclient_factory.GClientSolution(svn_url)
-      internal_custom_deps_list.append(solution)
+    additional_repos = additional_repos or []
+    for name, url in additional_repos:
+      solution = gclient_factory.GClientSolution(url, name=name)
+      solutions.append(solution)
+
+    got_rev_mappings = self.CHROMIUM_GOT_REVISION_MAPPINGS
+    if got_revision_mapping_overrides:
+      # We need to reverse the key/value in the got revision mapping dict
+      # because values are unique and keys are not.
+      bw_mappings = dict(
+          (v, k) for k, v in got_rev_mappings.iteritems())
+      bw_mapping_overrides = dict(
+          (v, k) for k, v in got_revision_mapping_overrides.iteritems())
+      bw_mappings.update(bw_mapping_overrides)
+      got_rev_mappings = dict(
+          (v, k) for k, v in bw_mappings.iteritems())
+      got_rev_mappings.update(got_revision_mapping_overrides)
 
     gclient_factory.GClientFactory.__init__(self,
-        build_dir, internal_custom_deps_list, target_platform=target_platform,
+        build_dir, solutions, target_platform=target_platform,
         nohooks_on_update=nohooks_on_update, target_os=target_os,
-        revision_mapping=self.CHROMIUM_GOT_REVISION_MAPPINGS)
+        revision_mapping=got_rev_mappings)
     if swarm_client_canary:
       # Contrary to other canaries like blink, v8, we don't really care about
       # having one build per swarm_client commits by having an additional source
@@ -490,6 +495,10 @@ class ChromiumFactory(gclient_factory.GClientFactory):
       f.AddGTestTestStep('app_list_unittests', fp)
     if R('app_list_unittests_br'):
       f.AddBuildrunnerGTest('app_list_unittests', fp)
+    if R('athena_unittests'):
+      f.AddGTestTestStep('athena_unittests', fp)
+    if R('athena_unittests_br'):
+      f.AddBuildrunnerGTest('athena_unittests', fp)
     if R('message_center_unittests'):
       f.AddGTestTestStep('message_center_unittests', fp)
     if R('message_center_unittests_br'):
@@ -561,10 +570,6 @@ class ChromiumFactory(gclient_factory.GClientFactory):
       f.AddBuildrunnerMiniInstallerTestStep(fp)
 
     # WebKit-related tests:
-    if R('webkit_compositor_bindings_unittests'):
-      f.AddGTestTestStep('webkit_compositor_bindings_unittests', fp)
-    if R('webkit_compositor_bindings_unittests_br'):
-      f.AddBuildrunnerGTest('webkit_compositor_bindings_unittests', fp)
     if R('webkit_unit_tests'):
       f.AddGTestTestStep('webkit_unit_tests', fp)
     if R('webkit_unit_tests_br'):
@@ -699,6 +704,7 @@ class ChromiumFactory(gclient_factory.GClientFactory):
         'smoothness.key_mobile_sites',
         'smoothness.top_25',
         'smoothness.tough_canvas_cases',
+        'smoothness.tough_filters_cases',
         'smoothness.tough_pinch_zoom_cases',
         'smoothness.tough_webgl_cases',
         'tab_switching.five_blank_pages',
@@ -779,33 +785,6 @@ class ChromiumFactory(gclient_factory.GClientFactory):
       f.AddSyncIntegrationTests(fp)
     if R('sync_integration_br'):
       f.AddBuildrunnerSyncIntegrationTests(fp)
-
-    # WebRTC tests:
-    if R('webrtc_perf_content_unittests'):
-      f.AddWebRtcPerfContentUnittests(fp)
-    if R('webrtc_manual_content_browsertests'):
-      f.AddWebRtcPerfManualContentBrowserTests(fp)
-    if R('webrtc_content_unittests'):
-      arg_list = ['--gtest_filter=WebRTC*:RTC*:MediaStream*']
-      f.AddGTestTestStep('content_unittests', description=' (webrtc filtered)',
-                         factory_properties=fp, arg_list=arg_list)
-    if R('webrtc_manual_browser_tests'):
-      f.AddWebRtcPerfManualBrowserTests(fp)
-
-    # GPU tests:
-    if R('gl_tests'):
-      f.AddGLTests(fp)
-    if R('gl_tests_br'):
-      f.AddBuildrunnerGTest('gl_tests', fp, test_tool_arg_list=['--no-xvfb'])
-    if R('content_gl_tests'):
-      f.AddContentGLTests(fp)
-    if R('gles2_conform_test'):
-      f.AddGLES2ConformTest(fp)
-    if R('gles2_conform_test_br'):
-      f.AddBuildrunnerGTest('gles2_conform_test', fp,
-                            test_tool_arg_list=['--no-xvfb'])
-    if R('gpu_content_tests'):
-      f.AddGpuContentTests(fp)
 
     def S(test, prefix, add_functor, br_functor=None):
       """Find any tests with a specific prefix and add them to the build.
@@ -1065,8 +1044,9 @@ class ChromiumFactory(gclient_factory.GClientFactory):
 
       chromium_cmd_obj.AddWindowsSyzyASanStep()
       # Need to add the Zip Build step back
-      chromium_cmd_obj.AddZipBuild(halt_on_failure=True,
-                                   factory_properties=factory_properties)
+      if build_url:
+        chromium_cmd_obj.AddZipBuild(build_url,
+                                    factory_properties=factory_properties)
 
     # Trigger Swarming tester. This buildbot builder does nothing else than
     # running swarming jobs.
@@ -1175,99 +1155,6 @@ class ChromiumFactory(gclient_factory.GClientFactory):
     return factory
 
 
-  def ChromiumV8LatestFactory(self, target='Release', clobber=False, tests=None,
-                              mode=None, slave_type='BuilderTester',
-                              options=None, compile_timeout=1200,
-                              build_url=None, project=None,
-                              factory_properties=None):
-    self._solutions[0].custom_deps_list = [self.CUSTOM_DEPS_V8_LATEST]
-    return self.ChromiumFactory(target, clobber, tests, mode, slave_type,
-                                options, compile_timeout, build_url, project,
-                                factory_properties)
-  def ChromiumV8TrunkFactory(self, target='Release', clobber=False, tests=None,
-                             mode=None, slave_type='BuilderTester',
-                             options=None, compile_timeout=1200,
-                             build_url=None, project=None,
-                             factory_properties=None):
-    self._solutions[0].custom_deps_list = [self.CUSTOM_DEPS_V8_TRUNK]
-    return self.ChromiumFactory(target, clobber, tests, mode, slave_type,
-                                options, compile_timeout, build_url, project,
-                                factory_properties)
-
-  def ChromiumWebRTCFactory(self, target='Release', clobber=False,
-                            tests=None, mode=None,
-                            slave_type='BuilderTester', options=None,
-                            compile_timeout=1200, build_url=None,
-                            project=None, factory_properties=None):
-    self._solutions.append(gclient_factory.GClientSolution(
-        config.Master.trunk_url + '/deps/third_party/webrtc/webrtc.DEPS',
-        name='webrtc.DEPS'))
-    return self.ChromiumFactory(target, clobber, tests, mode, slave_type,
-                                options, compile_timeout, build_url, project,
-                                factory_properties)
-
-  def ChromiumWebRTCLatestFactory(self, target='Release', clobber=False,
-                                  tests=None, mode=None,
-                                  slave_type='BuilderTester', options=None,
-                                  compile_timeout=1200, build_url=None,
-                                  project=None, factory_properties=None):
-    self._solutions[0].custom_deps_list = [self.CUSTOM_DEPS_WEBRTC_TRUNK,
-                                           self.CUSTOM_DEPS_LIBJINGLE_TRUNK]
-    factory_properties = factory_properties or {}
-    factory_properties['primary_repo'] = 'webrtc_'
-    factory_properties['no_gclient_revision'] = True
-    factory_properties['revision_dir'] = 'third_party/webrtc'
-    return self.ChromiumWebRTCFactory(target, clobber, tests, mode, slave_type,
-                                      options, compile_timeout, build_url,
-                                      project, factory_properties)
-
-  def ChromiumWebRTCAndroidFactory(self, annotation_script,
-                                   branch='master',
-                                   target='Release',
-                                   slave_type='AnnotatedBuilderTester',
-                                   clobber=False,
-                                   compile_timeout=6000,
-                                   project=None,
-                                   factory_properties=None, options=None,
-                                   tests=None,
-                                   gclient_deps=None):
-    self._solutions.append(gclient_factory.GClientSolution(
-        config.Master.trunk_url + '/deps/third_party/webrtc/webrtc.DEPS',
-        name='webrtc.DEPS'))
-    return self.ChromiumAnnotationFactory(annotation_script=annotation_script,
-                                          branch=branch,
-                                          target=target,
-                                          slave_type=slave_type,
-                                          clobber=clobber,
-                                          compile_timeout=compile_timeout,
-                                          project=project,
-                                          factory_properties=factory_properties,
-                                          options=options,
-                                          tests=tests,
-                                          gclient_deps=gclient_deps)
-
-  def ChromiumWebRTCAndroidLatestFactory(self, annotation_script,
-                                         branch='master',
-                                         target='Release',
-                                         slave_type='AnnotatedBuilderTester',
-                                         clobber=False,
-                                         compile_timeout=6000,
-                                         project=None,
-                                         factory_properties=None, options=None,
-                                         tests=None,
-                                         gclient_deps=None):
-    self._solutions[0].custom_deps_list = [self.CUSTOM_DEPS_WEBRTC_TRUNK,
-                                           self.CUSTOM_DEPS_LIBJINGLE_TRUNK]
-    factory_properties = factory_properties or {}
-    factory_properties['primary_repo'] = 'webrtc_'
-    factory_properties['no_gclient_revision'] = True
-    factory_properties['revision_dir'] = 'third_party/webrtc'
-    return self.ChromiumWebRTCAndroidFactory(annotation_script, branch, target,
-                                             slave_type, clobber,
-                                             compile_timeout, project,
-                                             factory_properties, options,
-                                             tests, gclient_deps)
-
   def ChromiumAVPerfFactory(self, target='Release', clobber=False, tests=None,
                               mode=None, slave_type='BuilderTester',
                               options=None, compile_timeout=1200,
@@ -1344,19 +1231,6 @@ class ChromiumFactory(gclient_factory.GClientFactory):
                                 options, compile_timeout, build_url, project,
                                 factory_properties)
 
-  def ChromiumGPUFactory(self, target='Release', clobber=False, tests=None,
-                         mode=None, slave_type='Tester', options=None,
-                         compile_timeout=1200, build_url=None, project=None,
-                         factory_properties=None):
-    # Make sure the solution is not already there.
-    if 'gpu_reference.DEPS' not in [s.name for s in self._solutions]:
-      self._solutions.append(gclient_factory.GClientSolution(
-          config.Master.trunk_url + '/deps/gpu_reference/gpu_reference.DEPS',
-          'gpu_reference.DEPS'))
-    return self.ChromiumFactory(target, clobber, tests, mode, slave_type,
-                                options, compile_timeout, build_url, project,
-                                factory_properties)
-
   def ChromiumASANFactory(self, target='Release', clobber=False, tests=None,
                           mode=None, slave_type='BuilderTester', options=None,
                           compile_timeout=1200, build_url=None, project=None,
@@ -1373,8 +1247,7 @@ class ChromiumFactory(gclient_factory.GClientFactory):
     # Make sure the solution is not already there.
     assert 'clang_indexer.DEPS' not in [s.name for s in self._solutions]
     self._solutions.append(gclient_factory.GClientSolution(
-        'svn://svn.chromium.org/chrome-internal/trunk/deps/'
-        'clang_indexer.DEPS'))
+        'https://chrome-internal.googlesource.com/chrome/tools/clang_indexer'))
     return self.ChromiumFactory(target, clobber, tests, mode, slave_type,
                                 options, compile_timeout, build_url, project,
                                 factory_properties)

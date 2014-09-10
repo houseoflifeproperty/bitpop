@@ -32,7 +32,7 @@
 
 #include "core/html/shadow/MediaControlElementTypes.h"
 
-namespace WebCore {
+namespace blink {
 
 // ----------------------------
 
@@ -54,6 +54,7 @@ private:
     void startTimer();
     void stopTimer();
     void transitionTimerFired(Timer<MediaControlPanelElement>*);
+    virtual bool keepEventInNode(Event*) OVERRIDE;
 
     bool m_isDisplayed;
     bool m_opaque;
@@ -128,6 +129,7 @@ private:
 
     virtual const AtomicString& shadowPseudoId() const OVERRIDE;
     virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual bool keepEventInNode(Event*) OVERRIDE;
 };
 
 // ----------------------------
@@ -165,6 +167,7 @@ private:
 
     virtual const AtomicString& shadowPseudoId() const OVERRIDE;
     virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual bool keepEventInNode(Event*) OVERRIDE;
 };
 
 // ----------------------------
@@ -199,6 +202,7 @@ private:
 
     virtual const AtomicString& shadowPseudoId() const OVERRIDE;
     virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual bool keepEventInNode(Event*) OVERRIDE;
 };
 
 // ----------------------------
@@ -244,6 +248,6 @@ private:
 };
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MediaControlElements_h

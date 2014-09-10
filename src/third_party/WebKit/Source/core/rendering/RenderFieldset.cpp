@@ -33,7 +33,7 @@
 using std::min;
 using std::max;
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -136,7 +136,7 @@ RenderBox* RenderFieldset::findLegend(FindLegendOption option) const
     return 0;
 }
 
-void RenderFieldset::paintBoxDecorations(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void RenderFieldset::paintBoxDecorationBackground(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     if (!paintInfo.shouldPaintWithinRoot(this))
         return;
@@ -144,7 +144,7 @@ void RenderFieldset::paintBoxDecorations(PaintInfo& paintInfo, const LayoutPoint
     LayoutRect paintRect(paintOffset, size());
     RenderBox* legend = findLegend();
     if (!legend)
-        return RenderBlockFlow::paintBoxDecorations(paintInfo, paintOffset);
+        return RenderBlockFlow::paintBoxDecorationBackground(paintInfo, paintOffset);
 
     // FIXME: We need to work with "rl" and "bt" block flow directions.  In those
     // cases the legend is embedded in the right and bottom borders respectively.
@@ -159,12 +159,14 @@ void RenderFieldset::paintBoxDecorations(PaintInfo& paintInfo, const LayoutPoint
         paintRect.setX(paintRect.x() + xOff);
     }
 
-    if (!boxShadowShouldBeAppliedToBackground(determineBackgroundBleedAvoidance(paintInfo.context)))
+    BoxDecorationData boxDecorationData(*style());
+
+    if (!boxShadowShouldBeAppliedToBackground(determineBackgroundBleedAvoidance(paintInfo.context, boxDecorationData)))
         paintBoxShadow(paintInfo, paintRect, style(), Normal);
-    paintFillLayers(paintInfo, resolveColor(CSSPropertyBackgroundColor), style()->backgroundLayers(), paintRect);
+    paintFillLayers(paintInfo, boxDecorationData.backgroundColor, style()->backgroundLayers(), paintRect);
     paintBoxShadow(paintInfo, paintRect, style(), Inset);
 
-    if (!style()->hasBorder())
+    if (!boxDecorationData.hasBorder)
         return;
 
     // Create a clipping region around the legend and paint the border as normal
@@ -213,4 +215,4 @@ void RenderFieldset::paintMask(PaintInfo& paintInfo, const LayoutPoint& paintOff
     paintMaskImages(paintInfo, paintRect);
 }
 
-} // namespace WebCore
+} // namespace blink

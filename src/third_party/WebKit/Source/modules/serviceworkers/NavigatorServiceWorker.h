@@ -9,7 +9,7 @@
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class Navigator;
@@ -26,7 +26,7 @@ public:
 
     static ServiceWorkerContainer* serviceWorker(Navigator&);
 
-    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<Navigator>::trace(visitor); }
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     explicit NavigatorServiceWorker(Navigator&);
@@ -35,9 +35,9 @@ private:
     // DOMWindowProperty override.
     virtual void willDetachGlobalObjectFromFrame() OVERRIDE;
 
-    RefPtr<ServiceWorkerContainer> m_serviceWorker;
+    RefPtrWillBeMember<ServiceWorkerContainer> m_serviceWorker;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NavigatorServiceWorker_h

@@ -1637,6 +1637,7 @@ binutils-install() {
   # x86_64-unknown-linux-gnu
   if ${BUILD_PLATFORM_LINUX} ; then
     echo "move shared libs to ${BINUTILS_INSTALL_DIR}/${SO_DIR}"
+    mkdir -p ${BINUTILS_INSTALL_DIR}/${SO_DIR}
     for lib in ${BINUTILS_INSTALL_DIR}/*/${BINUTILS_TARGET}/lib/lib*${SO_EXT}
     do
       echo "moving ${lib}"
@@ -2034,9 +2035,8 @@ binutils-gold-sb-configure() {
   # The Gold sandboxed build uses the normally-disallowed external
   # function __nacl_get_arch().  Allow that for now.
   #
-  # TODO(jfb) Gold currently only builds with libstdc++.
   local flags="-static -I$(GetAbsolutePath ${NACL_ROOT}/..) \
-    -fno-exceptions -O3 --pnacl-disable-abi-check -stdlib=${LIB_STDCPP_NAME} "
+    -fno-exceptions -O3 --pnacl-disable-abi-check "
   local configure_env=(
     AR="${PNACL_AR}" \
     AS="${PNACL_AS}" \
@@ -2483,6 +2483,9 @@ libs-support-unsandboxed() {
         -DNACL_LINUX=1 -DDEFINE_MAIN \
         ${NACL_ROOT}/src/nonsfi/irt/irt_interfaces.c \
         -o ${destdir}/unsandboxed_irt.o
+    gcc -m32 -O2 -Wall -Werror -I${NACL_ROOT}/.. -c \
+        ${NACL_ROOT}/src/untrusted/irt/irt_query_list.c \
+        -o ${destdir}/irt_query_list.o
   fi
 }
 
@@ -2757,7 +2760,7 @@ feature-version-file-install() {
   #
   # If you are adding a test that depends on a toolchain change, you
   # can increment this version number manually.
-  echo 5 > "${install_root}/FEATURE_VERSION"
+  echo 6 > "${install_root}/FEATURE_VERSION"
 }
 
 # The driver is a simple python script which changes its behavior

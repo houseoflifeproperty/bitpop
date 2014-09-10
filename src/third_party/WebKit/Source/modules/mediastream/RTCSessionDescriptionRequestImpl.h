@@ -38,37 +38,34 @@
 #include "wtf/PassRefPtr.h"
 
 namespace blink {
-class WebRTCSessionDescription;
-}
-
-namespace WebCore {
 
 class RTCErrorCallback;
 class RTCPeerConnection;
 class RTCSessionDescriptionCallback;
+class WebRTCSessionDescription;
 
 class RTCSessionDescriptionRequestImpl FINAL : public RTCSessionDescriptionRequest, public ActiveDOMObject {
 public:
-    static PassRefPtr<RTCSessionDescriptionRequestImpl> create(ExecutionContext*, PassRefPtrWillBeRawPtr<RTCPeerConnection>, PassOwnPtr<RTCSessionDescriptionCallback>, PassOwnPtr<RTCErrorCallback>);
+    static PassRefPtr<RTCSessionDescriptionRequestImpl> create(ExecutionContext*, RTCPeerConnection*, PassOwnPtr<RTCSessionDescriptionCallback>, PassOwnPtr<RTCErrorCallback>);
     virtual ~RTCSessionDescriptionRequestImpl();
 
-    virtual void requestSucceeded(const blink::WebRTCSessionDescription&) OVERRIDE;
+    virtual void requestSucceeded(const WebRTCSessionDescription&) OVERRIDE;
     virtual void requestFailed(const String& error) OVERRIDE;
 
     // ActiveDOMObject
     virtual void stop() OVERRIDE;
 
 private:
-    RTCSessionDescriptionRequestImpl(ExecutionContext*, PassRefPtrWillBeRawPtr<RTCPeerConnection>, PassOwnPtr<RTCSessionDescriptionCallback>, PassOwnPtr<RTCErrorCallback>);
+    RTCSessionDescriptionRequestImpl(ExecutionContext*, RTCPeerConnection*, PassOwnPtr<RTCSessionDescriptionCallback>, PassOwnPtr<RTCErrorCallback>);
 
     void clear();
 
     OwnPtr<RTCSessionDescriptionCallback> m_successCallback;
     OwnPtr<RTCErrorCallback> m_errorCallback;
 
-    RefPtrWillBePersistent<RTCPeerConnection> m_requester;
+    Persistent<RTCPeerConnection> m_requester;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCSessionDescriptionRequestImpl_h

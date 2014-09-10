@@ -6,7 +6,6 @@
 #include "core/loader/BeaconLoader.h"
 
 #include "core/FetchInitiatorTypeNames.h"
-#include "core/dom/Document.h"
 #include "core/fetch/CrossOriginAccessControl.h"
 #include "core/fetch/FetchContext.h"
 #include "core/fileapi/File.h"
@@ -15,14 +14,14 @@
 #include "platform/network/FormData.h"
 #include "platform/network/ParsedContentType.h"
 #include "platform/network/ResourceRequest.h"
+#include "public/platform/WebURLRequest.h"
 #include "wtf/ArrayBufferView.h"
 
-namespace WebCore {
+namespace blink {
 
 void BeaconLoader::prepareRequest(LocalFrame* frame, ResourceRequest& request)
 {
-    // NOTE: do not distinguish Beacon by target type.
-    request.setTargetType(ResourceRequest::TargetIsPing);
+    request.setRequestContext(WebURLRequest::RequestContextBeacon);
     request.setHTTPMethod("POST");
     request.setHTTPHeaderField("Cache-Control", "max-age=0");
     request.setAllowStoredCredentials(true);
@@ -127,4 +126,4 @@ bool BeaconLoader::sendBeacon(LocalFrame* frame, int allowance, const KURL& beac
     return true;
 }
 
-} // namespace WebCore
+} // namespace blink

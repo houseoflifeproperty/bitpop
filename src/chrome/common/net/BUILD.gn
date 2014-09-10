@@ -51,7 +51,7 @@ static_library("net") {
       "x509_certificate_model.cc",
       "x509_certificate_model_openssl.cc",
     ]
-    deps += [ "//third_party/openssl" ]
+    deps += [ "//third_party/boringssl" ]
   }
 
   if (use_openssl) {
@@ -59,7 +59,8 @@ static_library("net") {
     sources -= [
       "x509_certificate_model_nss.cc",
     ]
-  } else {
+  } else if (is_linux) {
+    # Already removed for non-Linux cases above.
     sources -= [
       "x509_certificate_model_openssl.cc",
     ]

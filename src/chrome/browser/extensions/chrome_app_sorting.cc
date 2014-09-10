@@ -218,7 +218,7 @@ void ChromeAppSorting::FixNTPOrdinalCollisions() {
   }
 
   content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_EXTENSION_LAUNCHER_REORDERED,
+      chrome::NOTIFICATION_APP_LAUNCHER_REORDERED,
       content::Source<ChromeAppSorting>(this),
       content::NotificationService::NoDetails());
 }
@@ -281,7 +281,7 @@ void ChromeAppSorting::OnExtensionMoved(
   SyncIfNeeded(moved_extension_id);
 
   content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_EXTENSION_LAUNCHER_REORDERED,
+      chrome::NOTIFICATION_APP_LAUNCHER_REORDERED,
       content::Source<ChromeAppSorting>(this),
       content::Details<const std::string>(&moved_extension_id));
 }
@@ -435,8 +435,12 @@ syncer::StringOrdinal ChromeAppSorting::PageIntegerAsStringOrdinal(
   return ntp_ordinal_map_.rbegin()->first;
 }
 
-void ChromeAppSorting::MarkExtensionAsHidden(const std::string& extension_id) {
-  ntp_hidden_extensions_.insert(extension_id);
+void ChromeAppSorting::SetExtensionVisible(const std::string& extension_id,
+                                           bool visible) {
+  if (visible)
+    ntp_hidden_extensions_.erase(extension_id);
+  else
+    ntp_hidden_extensions_.insert(extension_id);
 }
 
 syncer::StringOrdinal ChromeAppSorting::GetMinOrMaxAppLaunchOrdinalsOnPage(

@@ -67,7 +67,7 @@
 #include "wtf/text/TextEncoding.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 static bool isCharsetSpecifyingNode(const Node& node)
 {
@@ -76,13 +76,11 @@ static bool isCharsetSpecifyingNode(const Node& node)
 
     const HTMLMetaElement& element = toHTMLMetaElement(node);
     HTMLAttributeList attributeList;
-    if (element.hasAttributes()) {
-        AttributeCollection attributes = element.attributes();
-        AttributeCollection::const_iterator end = attributes.end();
-        for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
-            // FIXME: We should deal appropriately with the attribute if they have a namespace.
-            attributeList.append(std::make_pair(it->name().localName(), it->value().string()));
-        }
+    AttributeCollection attributes = element.attributes();
+    AttributeCollection::iterator end = attributes.end();
+    for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
+        // FIXME: We should deal appropriately with the attribute if they have a namespace.
+        attributeList.append(std::make_pair(it->name().localName(), it->value().string()));
     }
     WTF::TextEncoding textEncoding = encodingFromMetaAttributes(attributeList);
     return textEncoding.isValid();
@@ -108,7 +106,7 @@ protected:
     virtual void appendText(StringBuilder& out, Text&) OVERRIDE;
     virtual void appendElement(StringBuilder& out, Element&, Namespaces*) OVERRIDE;
     virtual void appendCustomAttributes(StringBuilder& out, const Element&, Namespaces*) OVERRIDE;
-    virtual void appendEndTag(const Node&) OVERRIDE;
+    virtual void appendEndTag(const Element&) OVERRIDE;
 
 private:
     PageSerializer* m_serializer;
@@ -167,10 +165,10 @@ void SerializerMarkupAccumulator::appendCustomAttributes(StringBuilder& out, con
     appendAttribute(out, element, Attribute(frameOwnerURLAttributeName(frameOwner), AtomicString(url.string())), namespaces);
 }
 
-void SerializerMarkupAccumulator::appendEndTag(const Node& node)
+void SerializerMarkupAccumulator::appendEndTag(const Element& element)
 {
-    if (node.isElementNode() && !shouldIgnoreElement(toElement(node)))
-        MarkupAccumulator::appendEndTag(node);
+    if (!shouldIgnoreElement(element))
+        MarkupAccumulator::appendEndTag(element);
 }
 
 PageSerializer::PageSerializer(Vector<SerializedResource>* resources)

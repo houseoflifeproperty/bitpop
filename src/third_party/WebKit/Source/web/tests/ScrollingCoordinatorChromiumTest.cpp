@@ -26,7 +26,9 @@
 
 #include "core/page/scrolling/ScrollingCoordinator.h"
 
+#include "core/page/Page.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/RenderWidget.h"
 #include "core/rendering/compositing/CompositedLayerMapping.h"
 #include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "platform/graphics/GraphicsLayer.h"
@@ -43,7 +45,7 @@
 #include "web/tests/URLTestHelpers.h"
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 using namespace blink;
 
 namespace {
@@ -137,7 +139,7 @@ static WebLayer* webLayerFromElement(Element* element)
         return 0;
     if (!layer->hasCompositedLayerMapping())
         return 0;
-    CompositedLayerMappingPtr compositedLayerMapping = layer->compositedLayerMapping();
+    CompositedLayerMapping* compositedLayerMapping = layer->compositedLayerMapping();
     GraphicsLayer* graphicsLayer = compositedLayerMapping->mainGraphicsLayer();
     if (!graphicsLayer)
         return 0;
@@ -289,7 +291,7 @@ TEST_F(ScrollingCoordinatorChromiumTest, overflowScrolling)
     ASSERT_TRUE(box->usesCompositedScrolling());
     ASSERT_EQ(PaintsIntoOwnBacking, box->layer()->compositingState());
 
-    CompositedLayerMappingPtr compositedLayerMapping = box->layer()->compositedLayerMapping();
+    CompositedLayerMapping* compositedLayerMapping = box->layer()->compositedLayerMapping();
     ASSERT_TRUE(compositedLayerMapping->hasScrollingLayer());
     ASSERT(compositedLayerMapping->scrollingContentsLayer());
 
@@ -329,7 +331,7 @@ TEST_F(ScrollingCoordinatorChromiumTest, overflowHidden)
     ASSERT_TRUE(box->usesCompositedScrolling());
     ASSERT_EQ(PaintsIntoOwnBacking, box->layer()->compositingState());
 
-    CompositedLayerMappingPtr compositedLayerMapping = box->layer()->compositedLayerMapping();
+    CompositedLayerMapping* compositedLayerMapping = box->layer()->compositedLayerMapping();
     ASSERT_TRUE(compositedLayerMapping->hasScrollingLayer());
     ASSERT(compositedLayerMapping->scrollingContentsLayer());
 

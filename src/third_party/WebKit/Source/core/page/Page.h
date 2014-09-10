@@ -37,7 +37,7 @@
 #include "wtf/Noncopyable.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class AutoscrollController;
 class BackForwardClient;
@@ -203,7 +203,7 @@ public:
     bool isCursorVisible() const;
     void setIsCursorVisible(bool isVisible) { m_isCursorVisible = isVisible; }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     void setIsPainting(bool painting) { m_isPainting = painting; }
     bool isPainting() const { return m_isPainting; }
 #endif
@@ -234,7 +234,7 @@ protected:
 private:
     void initGroup();
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     void checkSubframeCountConsistency() const;
 #else
     void checkSubframeCountConsistency() const { }
@@ -253,8 +253,8 @@ private:
     const OwnPtrWillBeMember<DragCaretController> m_dragCaretController;
     const OwnPtrWillBeMember<DragController> m_dragController;
     const OwnPtr<FocusController> m_focusController;
-    const OwnPtr<ContextMenuController> m_contextMenuController;
-    const OwnPtr<InspectorController> m_inspectorController;
+    const OwnPtrWillBeMember<ContextMenuController> m_contextMenuController;
+    const OwnPtrWillBeMember<InspectorController> m_inspectorController;
     const OwnPtrWillBeMember<PointerLockController> m_pointerLockController;
     OwnPtr<ScrollingCoordinator> m_scrollingCoordinator;
     const OwnPtrWillBeMember<UndoStack> m_undoStack;
@@ -299,7 +299,7 @@ private:
 
     bool m_isCursorVisible;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool m_isPainting;
 #endif
 
@@ -310,6 +310,6 @@ private:
     OwnPtrWillBeMember<FrameHost> m_frameHost;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Page_h

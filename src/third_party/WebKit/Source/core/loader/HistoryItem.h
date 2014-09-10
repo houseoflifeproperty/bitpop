@@ -27,14 +27,14 @@
 #ifndef HistoryItem_h
 #define HistoryItem_h
 
-#include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/SerializedScriptValue.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/weborigin/Referrer.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class DocumentState;
@@ -94,6 +94,9 @@ public:
     void setDocumentSequenceNumber(long long number) { m_documentSequenceNumber = number; }
     long long documentSequenceNumber() const { return m_documentSequenceNumber; }
 
+    void setFrameSequenceNumber(long long number) { m_frameSequenceNumber = number; }
+    long long frameSequenceNumber() const { return m_frameSequenceNumber; }
+
     void setFormInfoFromRequest(const ResourceRequest&);
     void setFormData(PassRefPtr<FormData>);
     void setFormContentType(const AtomicString&);
@@ -124,6 +127,12 @@ private:
     // such HistoryItem to another preserves the document.
     int64_t m_documentSequenceNumber;
 
+    // If two HistoryItems have the same frame sequence number, then they
+    // refer to the same instance of a Frame. This is used to determine whether
+    // whether a HistoryItem should navigate an existing frame or create a new
+    // one during a history navigation.
+    int64_t m_frameSequenceNumber;
+
     // Support for HTML5 History
     RefPtr<SerializedScriptValue> m_stateObject;
 
@@ -133,6 +142,6 @@ private:
 
 }; // class HistoryItem
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HISTORYITEM_H

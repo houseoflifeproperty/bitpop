@@ -218,21 +218,26 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // Overridden from WindowEventTarget
   virtual LRESULT HandleMouseMessage(unsigned int message,
                                      WPARAM w_param,
-                                     LPARAM l_param) OVERRIDE;
+                                     LPARAM l_param,
+                                     bool* handled) OVERRIDE;
   virtual LRESULT HandleKeyboardMessage(unsigned int message,
                                         WPARAM w_param,
-                                        LPARAM l_param) OVERRIDE;
+                                        LPARAM l_param,
+                                        bool* handled) OVERRIDE;
   virtual LRESULT HandleTouchMessage(unsigned int message,
                                      WPARAM w_param,
-                                     LPARAM l_param) OVERRIDE;
+                                     LPARAM l_param,
+                                     bool* handled) OVERRIDE;
 
   virtual LRESULT HandleScrollMessage(unsigned int message,
                                       WPARAM w_param,
-                                      LPARAM l_param) OVERRIDE;
+                                      LPARAM l_param,
+                                      bool* handled) OVERRIDE;
 
   virtual LRESULT HandleNcHitTestMessage(unsigned int message,
                                          WPARAM w_param,
-                                         LPARAM l_param) OVERRIDE;
+                                         LPARAM l_param,
+                                         bool* handled) OVERRIDE;
 
   // Returns the auto-hide edges of the appbar. See
   // ViewsDelegate::GetAppbarAutohideEdges() for details. If the edges change,

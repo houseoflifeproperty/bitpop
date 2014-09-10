@@ -35,10 +35,11 @@
 #include "core/dom/Node.h"
 #include "core/testing/LayerRect.h"
 
-namespace WebCore {
+namespace blink {
 
 LayerRectList::LayerRectList()
 {
+    ScriptWrappable::init(this);
 }
 
 DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(LayerRectList)
@@ -66,4 +67,4 @@ void LayerRectList::trace(Visitor* visitor)
     visitor->trace(m_list);
 }
 
-} // namespace WebCore
+} // namespace blink

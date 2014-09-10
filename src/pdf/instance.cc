@@ -70,36 +70,36 @@ const uint32 kAutoScrollTimeoutMs = 50;
 const double kAutoScrollFactor = 0.2;
 
 // Javascript methods.
-const char* kJSAccessibility = "accessibility";
-const char* kJSDocumentLoadComplete = "documentLoadComplete";
-const char* kJSGetHeight = "getHeight";
-const char* kJSGetHorizontalScrollbarThickness =
+const char kJSAccessibility[] = "accessibility";
+const char kJSDocumentLoadComplete[] = "documentLoadComplete";
+const char kJSGetHeight[] = "getHeight";
+const char kJSGetHorizontalScrollbarThickness[] =
     "getHorizontalScrollbarThickness";
-const char* kJSGetPageLocationNormalized = "getPageLocationNormalized";
-const char* kJSGetVerticalScrollbarThickness = "getVerticalScrollbarThickness";
-const char* kJSGetWidth = "getWidth";
-const char* kJSGetZoomLevel = "getZoomLevel";
-const char* kJSGoToPage = "goToPage";
-const char* kJSGrayscale = "grayscale";
-const char* kJSLoadPreviewPage = "loadPreviewPage";
-const char* kJSOnLoad = "onload";
-const char* kJSOnPluginSizeChanged = "onPluginSizeChanged";
-const char* kJSOnScroll = "onScroll";
-const char* kJSPageXOffset = "pageXOffset";
-const char* kJSPageYOffset = "pageYOffset";
-const char* kJSPrintPreviewPageCount = "printPreviewPageCount";
-const char* kJSReload = "reload";
-const char* kJSRemovePrintButton = "removePrintButton";
-const char* kJSResetPrintPreviewUrl = "resetPrintPreviewUrl";
-const char* kJSSendKeyEvent = "sendKeyEvent";
-const char* kJSSetPageNumbers = "setPageNumbers";
-const char* kJSSetPageXOffset = "setPageXOffset";
-const char* kJSSetPageYOffset = "setPageYOffset";
-const char* kJSSetZoomLevel = "setZoomLevel";
-const char* kJSZoomFitToHeight = "fitToHeight";
-const char* kJSZoomFitToWidth = "fitToWidth";
-const char* kJSZoomIn = "zoomIn";
-const char* kJSZoomOut = "zoomOut";
+const char kJSGetPageLocationNormalized[] = "getPageLocationNormalized";
+const char kJSGetVerticalScrollbarThickness[] = "getVerticalScrollbarThickness";
+const char kJSGetWidth[] = "getWidth";
+const char kJSGetZoomLevel[] = "getZoomLevel";
+const char kJSGoToPage[] = "goToPage";
+const char kJSGrayscale[] = "grayscale";
+const char kJSLoadPreviewPage[] = "loadPreviewPage";
+const char kJSOnLoad[] = "onload";
+const char kJSOnPluginSizeChanged[] = "onPluginSizeChanged";
+const char kJSOnScroll[] = "onScroll";
+const char kJSPageXOffset[] = "pageXOffset";
+const char kJSPageYOffset[] = "pageYOffset";
+const char kJSPrintPreviewPageCount[] = "printPreviewPageCount";
+const char kJSReload[] = "reload";
+const char kJSRemovePrintButton[] = "removePrintButton";
+const char kJSResetPrintPreviewUrl[] = "resetPrintPreviewUrl";
+const char kJSSendKeyEvent[] = "sendKeyEvent";
+const char kJSSetPageNumbers[] = "setPageNumbers";
+const char kJSSetPageXOffset[] = "setPageXOffset";
+const char kJSSetPageYOffset[] = "setPageYOffset";
+const char kJSSetZoomLevel[] = "setZoomLevel";
+const char kJSZoomFitToHeight[] = "fitToHeight";
+const char kJSZoomFitToWidth[] = "fitToWidth";
+const char kJSZoomIn[] = "zoomIn";
+const char kJSZoomOut[] = "zoomOut";
 
 // URL reference parameters.
 // For more possible parameters, see RFC 3778 and the "PDF Open Parameters"
@@ -307,6 +307,13 @@ Instance::Instance(PP_Instance instance)
 }
 
 Instance::~Instance() {
+  if (timer_pending_) {
+    timer_factory_.CancelAll();
+    timer_pending_ = false;
+  }
+  // The engine may try to access this instance during its destruction.
+  // Make sure this happens early while the instance is still intact.
+  engine_.reset();
   RemovePerInstanceObject(kPPPPdfInterface, this);
 }
 
@@ -497,20 +504,20 @@ bool Instance::HandleInputEvent(const pp::InputEvent& event) {
   // Left/Right arrows should scroll to the beginning of the Prev/Next page if
   // there is no horizontal scroll bar.
   // If fit-to-height, PgDown/PgUp should scroll to the beginning of the
-  // Prev/Next page.
+  // Prev/Next page. Spacebar / shift+spacebar should do the same.
   if (v_scrollbar_.get() && event.GetType() == PP_INPUTEVENT_TYPE_KEYDOWN) {
     pp::KeyboardInputEvent keyboard_event(event);
-    bool page_down =
-        (!h_scrollbar_.get() &&
-            keyboard_event.GetKeyCode() == ui::VKEY_RIGHT) ||
-        (zoom_mode_ == ZOOM_FIT_TO_PAGE &&
-            keyboard_event.GetKeyCode() == ui::VKEY_NEXT);
-    bool page_up =
-        (!h_scrollbar_.get() &&
-            keyboard_event.GetKeyCode() == ui::VKEY_LEFT) ||
-        (zoom_mode_ == ZOOM_FIT_TO_PAGE &&
-            keyboard_event.GetKeyCode() == ui::VKEY_PRIOR);
-
+    bool no_h_scrollbar = !h_scrollbar_.get();
+    uint32_t key_code = keyboard_event.GetKeyCode();
+    bool page_down = no_h_scrollbar && key_code == ui::VKEY_RIGHT;
+    bool page_up = no_h_scrollbar && key_code == ui::VKEY_LEFT;
+    if (zoom_mode_ == ZOOM_FIT_TO_PAGE) {
+      bool has_shift =
+          keyboard_event.GetModifiers() & PP_INPUTEVENT_MODIFIER_SHIFTKEY;
+      bool key_is_space = key_code == ui::VKEY_SPACE;
+      page_down |= key_is_space || key_code == ui::VKEY_NEXT;
+      page_up |= (key_is_space && has_shift) || (key_code == ui::VKEY_PRIOR);
+    }
     if (page_down) {
       int page = engine_->GetFirstVisiblePage();
       // Engine calculates visible page including delimiter to the page size.
@@ -772,11 +779,7 @@ void Instance::OnPaint(const std::vector<pp::Rect>& paint_rects,
   if (first_paint_) {
     first_paint_ = false;
     pp::Rect rect = pp::Rect(pp::Point(), plugin_size_);
-    unsigned int color = kBackgroundColorA << 24 |
-                         kBackgroundColorR << 16 |
-                         kBackgroundColorG << 8 |
-                         kBackgroundColorB;
-    FillRect(rect, color);
+    FillRect(rect, kBackgroundColor);
     ready->push_back(PaintManager::ReadyRect(rect, image_data_, true));
     *pending = paint_rects;
     return;
@@ -1023,12 +1026,10 @@ void Instance::CalculateBackgroundParts() {
 
   // Add the left, right, and bottom rectangles.  Note: we assume only
   // horizontal centering.
-  BackgroundPart part;
-  part.color = kBackgroundColorA << 24 |
-               kBackgroundColorR << 16 |
-               kBackgroundColorG << 8 |
-               kBackgroundColorB;
-  part.location = pp::Rect(0, 0, left_width, bottom);
+  BackgroundPart part = {
+    pp::Rect(0, 0, left_width, bottom),
+    kBackgroundColor
+  };
   if (!part.location.IsEmpty())
     background_parts_.push_back(part);
   part.location = pp::Rect(right_start, 0, right_width, bottom);
@@ -1065,17 +1066,17 @@ int Instance::GetDocumentPixelHeight() const {
                                device_scale_));
 }
 
-void Instance::FillRect(const pp::Rect& rect, unsigned int color) {
+void Instance::FillRect(const pp::Rect& rect, uint32 color) {
   DCHECK(!image_data_.is_null() || rect.IsEmpty());
-  unsigned int* buffer_start = static_cast<unsigned int*>(image_data_.data());
+  uint32* buffer_start = static_cast<uint32*>(image_data_.data());
   int stride = image_data_.stride();
-  unsigned int* ptr = buffer_start + rect.y() * stride / 4 + rect.x();
+  uint32* ptr = buffer_start + rect.y() * stride / 4 + rect.x();
   int height = rect.height();
   int width = rect.width();
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x)
       *(ptr + x) = color;
-    ptr += stride /4;
+    ptr += stride / 4;
   }
 }
 
@@ -1175,15 +1176,29 @@ void Instance::NavigateTo(const std::string& url, bool open_in_new_tab) {
   // Skip the code below so an empty URL does not turn into "http://", which
   // will cause GURL to fail a DCHECK.
   if (!url_copy.empty()) {
+    // If |url_copy| starts with '#', then it's for the same URL with a
+    // different URL fragment.
+    if (url_copy[0] == '#') {
+      url_copy = url_ + url_copy;
+      // Changing the href does not actually do anything when navigating in the
+      // same tab, so do the actual page scroll here. Then fall through so the
+      // href gets updated.
+      if (!open_in_new_tab) {
+        int page_number = GetInitialPage(url_copy);
+        if (page_number >= 0)
+          ScrollToPage(page_number);
+      }
+    }
     // If there's no scheme, add http.
     if (url_copy.find("://") == std::string::npos &&
         url_copy.find("mailto:") == std::string::npos) {
-      url_copy = std::string("http://") + url_copy;
+      url_copy = "http://" + url_copy;
     }
     // Make sure |url_copy| starts with a valid scheme.
     if (url_copy.find("http://") != 0 &&
         url_copy.find("https://") != 0 &&
         url_copy.find("ftp://") != 0 &&
+        url_copy.find("file://") != 0 &&
         url_copy.find("mailto:") != 0) {
       return;
     }
@@ -1191,6 +1206,7 @@ void Instance::NavigateTo(const std::string& url, bool open_in_new_tab) {
     if (url_copy == "http://" ||
         url_copy == "https://" ||
         url_copy == "ftp://" ||
+        url_copy == "file://" ||
         url_copy == "mailto:") {
       return;
     }
@@ -1483,6 +1499,12 @@ void Instance::DocumentLoadComplete(int page_count) {
   DCHECK(document_load_state_ == LOAD_STATE_LOADING);
   document_load_state_ = LOAD_STATE_COMPLETE;
   UserMetricsRecordAction("PDF.LoadSuccess");
+
+  if (did_call_start_loading_) {
+    pp::PDF::DidStopLoading(this);
+    did_call_start_loading_ = false;
+  }
+
   if (on_load_callback_.is_string())
     ExecuteScript(on_load_callback_);
   // Note: If we are in print preview mode on_load_callback_ might call
@@ -1498,11 +1520,6 @@ void Instance::DocumentLoadComplete(int page_count) {
     return;
   if (!pp::PDF::IsAvailable())
     return;
-
-  if (did_call_start_loading_) {
-    pp::PDF::DidStopLoading(this);
-    did_call_start_loading_ = false;
-  }
 
   int content_restrictions =
       CONTENT_RESTRICTION_CUT | CONTENT_RESTRICTION_PASTE;
@@ -2309,9 +2326,6 @@ pp::URLLoader Instance::CreateURLLoaderInternal() {
 }
 
 int Instance::GetInitialPage(const std::string& url) {
-#if defined(OS_NACL)
-  return -1;
-#else
   size_t found_idx = url.find('#');
   if (found_idx == std::string::npos)
     return -1;
@@ -2352,7 +2366,6 @@ int Instance::GetInitialPage(const std::string& url) {
     }
   }
   return page;
-#endif
 }
 
 void Instance::UpdateToolbarPosition(bool invalidate) {

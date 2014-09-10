@@ -236,7 +236,8 @@ void NativeThemeBase::Paint(SkCanvas* canvas,
     case kScrollbarUpArrow:
     case kScrollbarLeftArrow:
     case kScrollbarRightArrow:
-      PaintArrowButton(canvas, rect, part, state);
+      if (scrollbar_button_length_ > 0)
+        PaintArrowButton(canvas, rect, part, state);
       break;
     case kScrollbarHorizontalThumb:
     case kScrollbarVerticalThumb:
@@ -519,11 +520,6 @@ void NativeThemeBase::PaintScrollbarThumb(SkCanvas* canvas,
 void NativeThemeBase::PaintScrollbarCorner(SkCanvas* canvas,
                                            State state,
                                            const gfx::Rect& rect) const {
-  SkPaint paint;
-  paint.setColor(SK_ColorWHITE);
-  paint.setStyle(SkPaint::kFill_Style);
-  paint.setXfermodeMode(SkXfermode::kSrc_Mode);
-  canvas->drawIRect(RectToSkIRect(rect), paint);
 }
 
 void NativeThemeBase::PaintCheckbox(SkCanvas* canvas,

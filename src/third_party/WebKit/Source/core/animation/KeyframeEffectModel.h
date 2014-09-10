@@ -31,11 +31,11 @@
 #ifndef KeyframeEffectModel_h
 #define KeyframeEffectModel_h
 
-#include "core/animation/AnimatableValueKeyframe.h"
 #include "core/animation/AnimationEffect.h"
 #include "core/animation/AnimationNode.h"
 #include "core/animation/InterpolationEffect.h"
 #include "core/animation/StringKeyframe.h"
+#include "core/animation/animatable/AnimatableValueKeyframe.h"
 #include "platform/animation/TimingFunction.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
@@ -45,7 +45,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 class KeyframeEffectModelTest;
@@ -174,6 +174,6 @@ inline bool KeyframeEffectModel<AnimatableValueKeyframe>::isAnimatableValueKeyfr
 template <>
 inline bool KeyframeEffectModel<StringKeyframe>::isStringKeyframeEffectModel() const { return true; }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // KeyframeEffectModel_h

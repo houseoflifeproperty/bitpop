@@ -14,15 +14,15 @@ import java.util.Map;
  * Network request factory using the native http stack implementation.
  */
 @UsedByReflection("HttpUrlRequestFactory.java")
-class ChromiumUrlRequestFactory extends HttpUrlRequestFactory {
-    private UrlRequestContext mRequestContext;
+public class ChromiumUrlRequestFactory extends HttpUrlRequestFactory {
+    private ChromiumUrlRequestContext mRequestContext;
 
     @UsedByReflection("HttpUrlRequestFactory.java")
     public ChromiumUrlRequestFactory(
             Context context, HttpUrlRequestFactoryConfig config) {
         if (isEnabled()) {
             System.loadLibrary("cronet");
-            mRequestContext = new UrlRequestContext(
+            mRequestContext = new ChromiumUrlRequestContext(
                     context.getApplicationContext(), UserAgent.from(context),
                     config.toString());
         }
@@ -35,7 +35,7 @@ class ChromiumUrlRequestFactory extends HttpUrlRequestFactory {
 
     @Override
     public String getName() {
-        return "Chromium/" + UrlRequestContext.getVersion();
+        return "Chromium/" + ChromiumUrlRequestContext.getVersion();
     }
 
     @Override
@@ -51,5 +51,9 @@ class ChromiumUrlRequestFactory extends HttpUrlRequestFactory {
             HttpUrlRequestListener listener) {
         return new ChromiumUrlRequest(mRequestContext, url, requestPriority,
                 headers, channel, listener);
+    }
+
+    public ChromiumUrlRequestContext getRequestContext() {
+        return mRequestContext;
     }
 }

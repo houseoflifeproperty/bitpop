@@ -21,9 +21,9 @@
 #include "config.h"
 #include "core/svg/SVGTextContentElement.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
 #include "core/SVGNames.h"
@@ -34,7 +34,7 @@
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/SVGTextQuery.h"
 
-namespace WebCore {
+namespace blink {
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGLengthAdjustType>()
 {

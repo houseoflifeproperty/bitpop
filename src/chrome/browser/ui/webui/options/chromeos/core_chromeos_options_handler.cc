@@ -16,15 +16,17 @@
 #include "base/sys_info.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/proxy_cros_settings_parser.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chromeos/ui_account_tweaks.h"
+#include "chrome/browser/ui/webui/help/help_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/accounts_options_handler.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_ui.h"
@@ -57,7 +59,7 @@ base::DictionaryValue* CreateUserInfo(const std::string& username,
   user_dict->SetString("name", display_email);
   user_dict->SetString("email", display_name);
 
-  bool is_owner = UserManager::Get()->GetOwnerEmail() == username;
+  bool is_owner = user_manager::UserManager::Get()->GetOwnerEmail() == username;
   user_dict->SetBoolean("owner", is_owner);
   return user_dict;
 }
@@ -68,7 +70,7 @@ base::Value* CreateUsersWhitelist(const base::Value *pref_value) {
   const base::ListValue* list_value =
       static_cast<const base::ListValue*>(pref_value);
   base::ListValue* user_list = new base::ListValue();
-  UserManager* user_manager = UserManager::Get();
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
 
   for (base::ListValue::const_iterator i = list_value->begin();
        i != list_value->end(); ++i) {
@@ -244,7 +246,7 @@ base::Value* CoreChromeOSOptionsHandler::CreateValueForPref(
   // The screen lock setting is shared if multiple users are logged in and at
   // least one has chosen to require passwords.
   if (pref_name == prefs::kEnableAutoScreenLock &&
-      UserManager::Get()->GetLoggedInUsers().size() > 1 &&
+      user_manager::UserManager::Get()->GetLoggedInUsers().size() > 1 &&
       controlling_pref_name.empty()) {
     PrefService* user_prefs = Profile::FromWebUI(web_ui())->GetPrefs();
     const PrefService::Preference* pref =
@@ -281,11 +283,11 @@ void CoreChromeOSOptionsHandler::GetLocalizedValues(
   Profile* profile = Profile::FromWebUI(web_ui());
   AddAccountUITweaksLocalizedValues(localized_strings, profile);
 
-  UserManager* user_manager = UserManager::Get();
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
 
   // Check at load time whether this is a secondary user in a multi-profile
   // session.
-  User* user = user_manager->GetUserByProfile(profile);
+  user_manager::User* user = ProfileHelper::Get()->GetUserByProfile(profile);
   if (user && user->email() != user_manager->GetPrimaryUser()->email()) {
     const std::string& primary_email = user_manager->GetPrimaryUser()->email();
 
@@ -326,6 +328,13 @@ void CoreChromeOSOptionsHandler::GetLocalizedValues(
             IDS_OPTIONS_CONTROLLED_SETTING_OWNER,
             base::ASCIIToUTF16(user_manager->GetOwnerEmail())));
   }
+
+  localized_strings->SetString(
+      "browserVersion",
+      l10n_util::GetStringFUTF16(IDS_ABOUT_PRODUCT_VERSION,
+                                 ::HelpHandler::BuildBrowserVersionString()));
+  localized_strings->SetBoolean("showVersion",
+                                ::switches::AboutInSettingsEnabled());
 }
 
 void CoreChromeOSOptionsHandler::SelectNetworkCallback(

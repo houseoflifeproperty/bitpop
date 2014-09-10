@@ -6,10 +6,10 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_parser.h"
 #include "chrome/common/chrome_paths.h"
 #include "components/search_engines/search_terms_data.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_parser.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::ASCIIToUTF16;
@@ -102,8 +102,8 @@ void TemplateURLParserTest::ParseFile(
 
   std::string contents;
   ASSERT_TRUE(base::ReadFileToString(full_path, &contents));
-  template_url_.reset(TemplateURLParser::Parse(NULL, false, contents.data(),
-                                               contents.length(), filter));
+  template_url_.reset(TemplateURLParser::Parse(
+      SearchTermsData(), false, contents.data(), contents.length(), filter));
 }
 
 

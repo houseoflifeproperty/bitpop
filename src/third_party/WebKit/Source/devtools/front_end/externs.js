@@ -30,6 +30,12 @@
 
 // WebKit Web Facing API
 
+/**
+ * @param {!Object} object
+ * @param {!Function} callback
+ */
+Object.observe = function(object, callback) {}
+
 /** @type {boolean} */
 Event.prototype.isMetaOrCtrlForTest;
 
@@ -37,10 +43,6 @@ Event.prototype.isMetaOrCtrlForTest;
  * @type {number}
  */
 KeyboardEvent.DOM_KEY_LOCATION_NUMPAD;
-
-// FIXME: Remove after the Closure compiler roll.
-/** @param {*} message */
-function postMessage(message) {}
 
 /**
  * @param {string} eventName
@@ -184,82 +186,11 @@ function DOMFileSystem() {}
  */
 DOMFileSystem.prototype.root = null;
 
-/** @interface */
-function InspectorFrontendHostAPI() {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.addFileSystem = function(callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.append = function(url, content, callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.indexPath = function(requestId, fileSystemPath, callback) {}
-/** @return {string} */
-InspectorFrontendHostAPI.prototype.getSelectionBackgroundColor = function() {}
-/** @return {string} */
-InspectorFrontendHostAPI.prototype.getSelectionForegroundColor = function() {}
-/** @return {boolean} */
-InspectorFrontendHost.isUnderTest = function() {}
-/**
- * Requests inspected page to be placed atop of the inspector frontend with specified bounds.
- * @param {{x: number, y: number, width: number, height: number}} bounds
- */
-InspectorFrontendHostAPI.prototype.setInspectedPageBounds = function(bounds) {}
-/**
- * Requests inspected page to be placed atop of the inspector frontend
- * with passed insets from the frontend sides, respecting minimum size passed.
- * @param {{top: number, left: number, right: number, bottom: number}} insets
- * @param {{width: number, height: number}} minSize
- */
-InspectorFrontendHostAPI.prototype.setContentsResizingStrategy = function(insets, minSize) {}
-/** @param {string} shortcuts */
-InspectorFrontendHostAPI.prototype.setWhitelistedShortcuts = function(shortcuts) {}
-InspectorFrontendHostAPI.prototype.inspectElementCompleted = function() {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.moveWindowBy = function(x, y, callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.openInNewTab = function(url, callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.removeFileSystem = function(fileSystemPath, callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.requestFileSystems = function(callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.save = function(url, content, forceSaveAs, callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.searchInPath = function(requestId, fileSystemPath, query, callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.stopIndexing = function(requestId, callback) {}
-
-InspectorFrontendHostAPI.prototype.bringToFront = function() {}
-InspectorFrontendHostAPI.prototype.openUrlOnRemoteDeviceAndInspect = function(browserId, url) {}
-InspectorFrontendHostAPI.prototype.closeWindow = function() {}
-InspectorFrontendHostAPI.prototype.copyText = function(text) {}
-InspectorFrontendHostAPI.prototype.inspectedURLChanged = function(url) {}
-InspectorFrontendHostAPI.prototype.isolatedFileSystem = function(fileSystemId, registeredName) {}
-InspectorFrontendHostAPI.prototype.upgradeDraggedFileSystemPermissions = function(DOMFileSystem) {}
-InspectorFrontendHostAPI.prototype.platform = function() {}
-InspectorFrontendHostAPI.prototype.port = function() {}
-InspectorFrontendHostAPI.prototype.recordActionTaken = function(actionCode) {}
-InspectorFrontendHostAPI.prototype.recordPanelShown = function(panelCode) {}
-InspectorFrontendHostAPI.prototype.sendMessageToBackend = function(message) {}
-InspectorFrontendHostAPI.prototype.sendMessageToEmbedder = function(message) {}
-InspectorFrontendHostAPI.prototype.setInjectedScriptForOrigin = function(origin, script) {}
-InspectorFrontendHostAPI.prototype.setIsDocked = function(isDocked, callback) {}
-InspectorFrontendHostAPI.prototype.setZoomFactor = function(zoom) {}
-InspectorFrontendHostAPI.prototype.subscribe = function(eventType) {}
-InspectorFrontendHostAPI.prototype.unsubscribe = function(eventType) {}
-InspectorFrontendHostAPI.prototype.zoomFactor = function() {}
-InspectorFrontendHostAPI.prototype.zoomIn = function() {}
-InspectorFrontendHostAPI.prototype.zoomOut = function() {}
-InspectorFrontendHostAPI.prototype.resetZoom = function() {}
-/** @type {InspectorFrontendHostAPI} */
-var InspectorFrontendHost;
-InspectorFrontendHost.embedderMessageAck = function(id, error) {}
-
 // FIXME: remove everything below.
 var FormatterWorker = {}
 var WebInspector = {}
 
 WebInspector.panels = {};
-WebInspector.inspectorFrontendEventSink = {};
 
 WebInspector.reload = function() { }
 
@@ -355,7 +286,12 @@ CodeMirror.prototype = {
     execCommand: function(cmd) { },
     extendSelection: function(from, to) { },
     findMarksAt: function(pos) { },
-    findMatchingBracket: function() { },
+    /**
+     * @param {!CodeMirror.Pos} from
+     * @param {boolean=} strict
+     * @param {Object=} config
+     */
+    findMatchingBracket: function(from, strict, config) { },
     findPosH: function(from, amount, unit, visually) { },
     findPosV: function(from, amount, unit, goalColumn) { },
     firstLine: function() { },
@@ -425,6 +361,10 @@ CodeMirror.prototype = {
     /** @param {*=} origin */
     replaceRange: function(code, from, to, origin) { },
     replaceSelection: function(code, collapse, origin) { },
+    /**
+     * @param {!Array.<string>} textPerSelection
+     */
+    replaceSelections: function(textPerSelection) { },
     /** @param {*=} margin */
     scrollIntoView: function(pos, margin) { },
     scrollTo: function(x, y) { },
@@ -467,6 +407,13 @@ CodeMirror.Pos = function(line, ch) { }
 CodeMirror.Pos.prototype.line;
 /** @type {number} */
 CodeMirror.Pos.prototype.ch;
+
+/**
+ * @param {!CodeMirror.Pos} pos1
+ * @param {!CodeMirror.Pos} pos2
+ * @return {number}
+ */
+CodeMirror.cmpPos = function(pos1, pos2) { };
 
 /** @constructor */
 CodeMirror.StringStream = function(line)

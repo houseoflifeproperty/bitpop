@@ -18,34 +18,35 @@ class AOSPApi(recipe_api.RecipeApi):
             self.c.build_path,
             self.c.lunch_flavor]
 
-  def sync_chromium(self, use_revision=True):
-    svn_revision = 'HEAD'
-    if use_revision and 'revision' in self.m.properties:
-      svn_revision = str(self.m.properties['revision'])
-
+  def create_spec(self):
     spec = self.m.gclient.make_config('chromium')
-    spec.solutions[0].revision = svn_revision
     spec.target_os = ['android']
 
-    yield self.m.bot_update.ensure_checkout(spec)
-    if not self.m.step_history.last_step().json.output['did_run']:
-      yield self.m.gclient.checkout(spec)
+    svn_revision = 'HEAD'
+    if 'revision' in self.m.properties:
+      svn_revision = str(self.m.properties['revision'])
+    spec.solutions[0].revision = svn_revision
 
-    yield self.m.gclient.runhooks(env={'GYP_CHROMIUM_NO_ACTION': 1})
+    return spec
+
+  def sync_chromium(self, spec):
+    result = self.m.bot_update.ensure_checkout(spec)
+    if not result.json.output['did_run']:
+      self.m.gclient.checkout(spec)
+
+    self.m.gclient.runhooks(env={'GYP_CHROMIUM_NO_ACTION': 1})
 
   def lastchange_steps(self):
     lastchange_command = self.m.path['checkout'].join('build', 'util',
                                                       'lastchange.py')
-    yield (
-      self.m.step('Chromium LASTCHANGE', [
-        lastchange_command,
-        '-o', self.m.path['checkout'].join('build', 'util', 'LASTCHANGE'),
-        '-s', self.m.path['checkout']]),
-      self.m.step('Blink LASTCHANGE', [
-        lastchange_command,
-        '-o', self.m.path['checkout'].join('build', 'util', 'LASTCHANGE.blink'),
-        '-s', self.m.path['checkout'].join('third_party', 'WebKit')])
-    )
+    self.m.step('Chromium LASTCHANGE', [
+      lastchange_command,
+      '-o', self.m.path['checkout'].join('build', 'util', 'LASTCHANGE'),
+      '-s', self.m.path['checkout']]),
+    self.m.step('Blink LASTCHANGE', [
+      lastchange_command,
+      '-o', self.m.path['checkout'].join('build', 'util', 'LASTCHANGE.blink'),
+      '-s', self.m.path['checkout'].join('third_party', 'WebKit')])
 
   # TODO(iannucci): Refactor repo stuff into another module?
   def repo_init_steps(self):
@@ -59,12 +60,12 @@ class AOSPApi(recipe_api.RecipeApi):
     repo_copy_dir = self.m.path['slave_build'].join('repo_copy')
     repo_copy_path = self.m.path['slave_build'].join('repo_copy', 'repo')
     if self.m.path.exists(repo_in_android_path):
-      yield self.m.path.makedirs('repo copy dir', repo_copy_dir)
-      yield self.m.step('copy repo from Android', [
+      self.m.path.makedirs('repo copy dir', repo_copy_dir)
+      self.m.step('copy repo from Android', [
         'cp', repo_in_android_path, repo_copy_path])
       self.m.repo.repo_path = repo_copy_path
-    yield self.m.path.makedirs('android source root', self.c.build_path)
-    yield self.m.repo.init(self.c.repo.url, '-b', self.c.repo.branch,
+    self.m.path.makedirs('android source root', self.c.build_path)
+    self.m.repo.init(self.c.repo.url, '-b', self.c.repo.branch,
                            cwd=self.c.build_path)
     self.m.path.mock_add_paths(repo_in_android_path)
 
@@ -73,11 +74,11 @@ class AOSPApi(recipe_api.RecipeApi):
     sync_flags = self.c.repo.sync_flags.as_jsonish()
     if self.c.sync_manifest_override:
       sync_flags.extend(['-m', self.c.sync_manifest_override])
-    yield self.m.repo.sync(*sync_flags, cwd=self.c.build_path)
+    self.m.repo.sync(*sync_flags, cwd=self.c.build_path)
 
   def rsync_chromium_into_android_tree_step(self):
     # Calculate the blacklist of files to not copy across.
-    yield self.m.step(
+    result = self.m.step(
       'calculate blacklist',
       [
         self.m.path['checkout'].join('android_webview', 'buildbot',
@@ -89,7 +90,7 @@ class AOSPApi(recipe_api.RecipeApi):
       step_test_data=self.test_api.calculate_blacklist
     )
 
-    blacklist = self.m.step_history.last_step().json.output['blacklist']
+    blacklist = result.json.output['blacklist']
     chrome_checkout = str(self.m.path['checkout'])
     android_chrome_checkout = self.c.slave_chromium_in_android_path
 
@@ -110,19 +111,16 @@ class AOSPApi(recipe_api.RecipeApi):
     options.append('-rav')
     options.append('--delete')
     options.append('--delete-excluded')
-    # TODO: Remove after https://code.google.com/p/angleproject/issues/detail?id=669
-    # is resolved. Must come before "--exclude=.git".
-    options.append('--include=third_party/angle/.git')
     options.append('--exclude=.svn')
     options.append('--exclude=.git')
     options.extend(['--exclude=' + proj for proj in blacklist])
     command = ['rsync'] + options + [chrome_checkout, android_chrome_checkout]
-    yield self.m.step('rsync chromium_org', command)
+    self.m.step('rsync chromium_org', command)
 
   def gyp_webview_step(self):
     gyp_webview_path = self.c.slave_chromium_in_android_path.join(
         'android_webview', 'tools', 'gyp_webview')
-    yield self.m.step(
+    self.m.step(
         'gyp_webview',
         self.with_lunch_command + [gyp_webview_path, 'all'],
         cwd=self.c.slave_chromium_in_android_path)
@@ -130,7 +128,7 @@ class AOSPApi(recipe_api.RecipeApi):
   def all_incompatible_directories_check_step(self):
     webview_license_tool_path = self.c.slave_chromium_in_android_path.join(
         'android_webview', 'tools', 'webview_licenses.py')
-    yield self.m.python('incompatible directories', webview_license_tool_path,
+    self.m.python('incompatible directories', webview_license_tool_path,
                         ['all_incompatible_directories'])
 
   def compile_step(self, build_tool, step_name='compile', targets=None,
@@ -141,8 +139,6 @@ class AOSPApi(recipe_api.RecipeApi):
     envsetup = envsetup or self.with_lunch_command
     targets = targets or []
     env = env or {}
-    env['USE_LEGACY_COMMON_JAVAC'] = 'false'
-    env['ALTERNATE_JAVAC'] = '/usr/lib/jvm/java-7-openjdk-amd64/bin/javac'
     if defines:
       defines_str = ' '.join('%s=%s' % kv for kv in defines.iteritems())
       targets.insert(0, defines_str)
@@ -153,7 +149,7 @@ class AOSPApi(recipe_api.RecipeApi):
     if use_goma and self.m.path.exists(self.m.path['build'].join('goma')):
       compiler_option = ['--compiler', 'goma',
                          '--goma-dir', self.m.path['build'].join('goma')]
-    yield self.m.step(step_name,
+    self.m.step(step_name,
                       envsetup +
                       compile_script +
                       targets +
@@ -169,5 +165,6 @@ class AOSPApi(recipe_api.RecipeApi):
     update_default_props_command = (
         [self.resource('update_default_props.py')] +
         ['%s=%s' % (k,v) for k,v in extra_properties.iteritems()])
-    return self.m.step('update /root/default.prop',
+    self.m.step('update /root/default.prop',
                        self.with_lunch_command + update_default_props_command)
+

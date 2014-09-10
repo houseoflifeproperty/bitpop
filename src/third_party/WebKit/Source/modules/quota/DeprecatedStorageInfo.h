@@ -31,19 +31,19 @@
 #ifndef DeprecatedStorageInfo_h
 #define DeprecatedStorageInfo_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/quota/DeprecatedStorageQuota.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassOwnPtr.h"
+#include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 class StorageErrorCallback;
 class StorageQuotaCallback;
 class StorageUsageCallback;
 
-class DeprecatedStorageInfo : public GarbageCollectedFinalized<DeprecatedStorageInfo>, public ScriptWrappable {
+class DeprecatedStorageInfo FINAL : public GarbageCollected<DeprecatedStorageInfo>, public ScriptWrappable {
 public:
     enum {
         TEMPORARY,
@@ -59,8 +59,6 @@ public:
 
     void requestQuota(ExecutionContext*, int storageType, unsigned long long newQuotaInBytes, PassOwnPtr<StorageQuotaCallback>, PassOwnPtr<StorageErrorCallback>);
 
-    ~DeprecatedStorageInfo();
-
     void trace(Visitor*);
 
 private:
@@ -72,6 +70,6 @@ private:
     mutable Member<DeprecatedStorageQuota> m_persistentStorage;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeprecatedStorageInfo_h

@@ -256,7 +256,7 @@ using base::UserMetricsAction;
 
 - (IBAction)remove:(id)sender {
   [self stopPulsingBookmarkButton];
-  bookmark_utils::RemoveAllBookmarks(model_, node_->url());
+  bookmarks::RemoveAllBookmarks(model_, node_->url());
   content::RecordAction(UserMetricsAction("BookmarkBubble_Unstar"));
   node_ = NULL;  // no longer valid
   [self ok:sender];
@@ -332,6 +332,7 @@ using base::UserMetricsAction;
          toPopUpButton:folderPopUpButton_
            indentation:0];
   NSMenu* menu = [folderPopUpButton_ menu];
+  [menu addItem:[NSMenuItem separatorItem]];
   NSString* title = [[self class] chooseAnotherFolderString];
   NSMenuItem *item = [menu addItemWithTitle:title
                                      action:NULL

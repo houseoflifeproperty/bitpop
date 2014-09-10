@@ -34,7 +34,7 @@
 #include "core/animation/Animation.h"
 #include "core/animation/AnimationPlayer.h"
 #include "core/animation/InertAnimation.h"
-#include "core/animation/interpolation/Interpolation.h"
+#include "core/animation/Interpolation.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/Document.h"
 #include "core/rendering/style/RenderStyleConstants.h"
@@ -42,7 +42,7 @@
 #include "wtf/Vector.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSTransitionData;
 class Element;
@@ -170,11 +170,9 @@ public:
     // engine is removed.
     static const StyleRuleKeyframes* matchScopedKeyframesRule(StyleResolver*, const Element*, const StringImpl*);
 
-    static bool isAnimatableProperty(CSSPropertyID);
     static const StylePropertyShorthand& animatableProperties();
     static bool isAllowedAnimation(CSSPropertyID);
-    // FIXME: This should take a const ScopedStyleTree instead of a StyleResolver.
-    // We should also change the Element* to a const Element*
+    // FIXME: We should change the Element* to a const Element*
     static PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> calculateUpdate(Element*, const Element& parentElement, const RenderStyle&, RenderStyle* parentStyle, StyleResolver*);
 
     void setPendingUpdate(PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> update) { m_pendingUpdate = update; }
@@ -227,9 +225,11 @@ private:
         {
         }
         virtual void onEventCondition(const AnimationNode*) OVERRIDE;
+        virtual void trace(Visitor*) OVERRIDE;
+
     private:
         void maybeDispatch(Document::ListenerType, const AtomicString& eventName, double elapsedTime);
-        Element* m_target;
+        RawPtrWillBeMember<Element> m_target;
         const AtomicString m_name;
         AnimationNode::Phase m_previousPhase;
         double m_previousIteration;
@@ -244,19 +244,17 @@ private:
         {
         }
         virtual void onEventCondition(const AnimationNode*) OVERRIDE;
+        virtual void trace(Visitor*) OVERRIDE;
+
     private:
-        Element* m_target;
+        RawPtrWillBeMember<Element> m_target;
         const CSSPropertyID m_property;
         AnimationNode::Phase m_previousPhase;
     };
 };
 
-} // namespace WebCore
+} // namespace blink
 
-namespace WTF {
-template<> struct VectorTraits<WebCore::CSSAnimationUpdate::NewAnimation> : VectorTraitsBase<WebCore::CSSAnimationUpdate::NewAnimation> {
-    static const bool canInitializeWithMemset = true;
-};
-}
+WTF_ALLOW_INIT_WITH_MEM_FUNCTIONS(blink::CSSAnimationUpdate::NewAnimation);
 
 #endif

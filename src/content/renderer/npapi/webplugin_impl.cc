@@ -16,6 +16,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "cc/layers/io_surface_layer.h"
 #include "content/child/appcache/web_application_cache_host_impl.h"
+#include "content/child/multipart_response_delegate.h"
 #include "content/child/npapi/plugin_host.h"
 #include "content/child/npapi/plugin_instance.h"
 #include "content/child/npapi/webplugin_delegate_impl.h"
@@ -57,12 +58,11 @@
 #include "ui/gfx/rect.h"
 #include "url/gurl.h"
 #include "url/url_util.h"
-#include "webkit/child/multipart_response_delegate.h"
 
+using blink::WebCString;
 using blink::WebCanvas;
 using blink::WebConsoleMessage;
 using blink::WebCookieJar;
-using blink::WebCString;
 using blink::WebCursorInfo;
 using blink::WebData;
 using blink::WebDataSource;
@@ -85,7 +85,6 @@ using blink::WebURLRequest;
 using blink::WebURLResponse;
 using blink::WebVector;
 using blink::WebView;
-using webkit_glue::MultipartResponseDelegate;
 
 namespace content {
 
@@ -548,7 +547,7 @@ WebPluginImpl::WebPluginImpl(
       weak_factory_(this),
       loader_client_(this) {
   DCHECK_EQ(params.attributeNames.size(), params.attributeValues.size());
-  StringToLowerASCII(&mime_type_);
+  base::StringToLowerASCII(&mime_type_);
 
   for (size_t i = 0; i < params.attributeNames.size(); ++i) {
     arg_names_.push_back(params.attributeNames[i].utf8());
@@ -1284,7 +1283,10 @@ bool WebPluginImpl::InitiateHTTPRequest(unsigned long resource_id,
   info.request.setFirstPartyForCookies(
       webframe_->document().firstPartyForCookies());
   info.request.setRequestorProcessID(delegate_->GetProcessId());
-  info.request.setTargetType(WebURLRequest::TargetIsObject);
+  // TODO(mkwst): Is this a request for a plugin object itself
+  // (RequestContextObject), or a request that the plugin makes
+  // (RequestContextPlugin)?
+  info.request.setRequestContext(WebURLRequest::RequestContextPlugin);
   info.request.setHTTPMethod(WebString::fromUTF8(method));
   info.pending_failure_notification = false;
   info.notify_redirects = notify_redirects;

@@ -27,7 +27,6 @@
 #include "chrome/browser/task_manager/resource_provider.h"
 #include "chrome/browser/task_manager/tab_contents_information.h"
 #include "chrome/browser/task_manager/web_contents_resource_provider.h"
-#include "chrome/browser/task_manager/worker_resource_provider.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -38,6 +37,7 @@
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/browser/worker_service.h"
 #include "content/public/common/result_codes.h"
 #include "extensions/browser/extension_system.h"
 #include "grit/generated_resources.h"
@@ -270,8 +270,6 @@ TaskManagerModel::TaskManagerModel(TaskManager* task_manager)
       task_manager,
       scoped_ptr<WebContentsInformation>(
           new task_manager::GuestInformation())));
-
-  AddResourceProvider(new task_manager::WorkerResourceProvider(task_manager));
 }
 
 void TaskManagerModel::AddObserver(TaskManagerModelObserver* observer) {
@@ -700,15 +698,6 @@ bool TaskManagerModel::GetV8MemoryUsed(int index, size_t* result) const {
 bool TaskManagerModel::CanActivate(int index) const {
   CHECK_LT(index, ResourceCount());
   return GetResourceWebContents(index) != NULL;
-}
-
-bool TaskManagerModel::CanInspect(int index) const {
-  return GetResource(index)->CanInspect();
-}
-
-void TaskManagerModel::Inspect(int index) const {
-  CHECK_LT(index, ResourceCount());
-  GetResource(index)->Inspect();
 }
 
 int TaskManagerModel::GetGoatsTeleported(int index) const {

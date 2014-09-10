@@ -15,30 +15,29 @@ from tvcm import project as project_module
 class ModuleIntegrationTests(unittest.TestCase):
   def test_module(self):
     fs = fake_fs.FakeFS()
-    fs.AddFile('/src/x.js', """
+    fs.AddFile('/src/x.html', """
+<!DOCTYPE html>
+<link rel="import" href="/y.html">
+<link rel="import" href="/z.html">
+<script>
 'use strict';
-tvcm.require('y');
-tvcm.require('z');
-tvcm.exportTo('xyz', function() { });
+</script>
 """)
-    fs.AddFile('/src/y.js', """
-'use strict';
-tvcm.require('z');
-tvcm.exportTo('xyz', function() { });
+    fs.AddFile('/src/y.html', """
+<!DOCTYPE html>
+<link rel="import" href="/z.html">
 """)
-    fs.AddFile('/src/z.js', """
-'use strict';
-tvcm.exportTo('xyz', function() { });
+    fs.AddFile('/src/z.html', """
+<!DOCTYPE html>
 """)
-    fs.AddFile('/src/tvcm/__init__.js', '/* nothing */')
+    fs.AddFile('/src/tvcm.html', '<!DOCTYPE html>')
     with fs:
       project = project_module.Project(['/src/'],
                                        include_tvcm_paths=False)
       loader = resource_loader.ResourceLoader(project)
       x_module = loader.LoadModule('x')
 
-      self.assertEquals([loader.loaded_modules['tvcm'],
-                         loader.loaded_modules['y'],
+      self.assertEquals([loader.loaded_modules['y'],
                          loader.loaded_modules['z']],
                         x_module.dependent_modules)
 
@@ -46,50 +45,40 @@ tvcm.exportTo('xyz', function() { });
       load_sequence = []
       x_module.ComputeLoadSequenceRecursive(load_sequence, already_loaded_set)
 
-      self.assertEquals([loader.loaded_modules['tvcm'],
-                         loader.loaded_modules['z'],
+      self.assertEquals([loader.loaded_modules['z'],
                          loader.loaded_modules['y'],
                          x_module],
                         load_sequence)
 
   def testBasic(self):
     fs = fake_fs.FakeFS()
-    fs.AddFile('/x/src/my_module.js', """
-'use strict';
-tvcm.require('tvcm.foo');
-tvcm.exportTo('foo', function() {
+    fs.AddFile('/x/src/my_module.html', """
+<!DOCTYPE html>
+<link rel="import" href="/tvcm/foo.html">
 });
 """)
-    fs.AddFile('/x/tvcm/foo.js', """
-'use strict';
-tvcm.require('tvcm.foo');
-tvcm.exportTo('foo', function() {
+    fs.AddFile('/x/tvcm/foo.html', """
+<!DOCTYPE html>
 });
 """);
-    fs.AddFile('/x/tvcm/__init__.js', '/* nothing */')
     project = project_module.Project(['/x'],
                                      include_tvcm_paths=False)
     loader = resource_loader.ResourceLoader(project)
     with fs:
       my_module = loader.LoadModule(module_name = 'src.my_module')
       dep_names = [x.name for x in my_module.dependent_modules]
-      self.assertEquals(['tvcm', 'tvcm.foo'], dep_names)
+      self.assertEquals(['tvcm.foo'], dep_names)
 
   def testDepsExceptionContext(self):
     fs = fake_fs.FakeFS()
-    fs.AddFile('/x/src/my_module.js', """
-'use strict';
-tvcm.require('tvcm.foo');
-tvcm.exportTo('foo', function() {
-});
+    fs.AddFile('/x/src/my_module.html', """
+<!DOCTYPE html>
+<link rel="import" href="/tvcm/foo.html">
 """)
-    fs.AddFile('/x/tvcm/foo.js', """
-'use strict';
-tvcm.require('missing');
-tvcm.exportTo('foo', function() {
-});
+    fs.AddFile('/x/tvcm/foo.html', """
+<!DOCTYPE html>
+<link rel="import" href="missing.html">
 """);
-    fs.AddFile('/x/tvcm/__init__.js', '/* nothing */')
     project = project_module.Project(['/x'],
                                      include_tvcm_paths=False)
     loader = resource_loader.ResourceLoader(project)
@@ -104,14 +93,26 @@ tvcm.exportTo('foo', function() {
         ['src.my_module', 'tvcm.foo'],
         exc.context)
 
-  def testRawScript(self):
+
+
+  def testGetAllDependentFilenamesRecursive(self):
     fs = fake_fs.FakeFS()
-    fs.AddFile('/x/y/z/foo.js', """
-'use strict';
-    tvcm.requireRawScript('bar.js');
+    fs.AddFile('/x/y/z/foo.html', """
+<!DOCTYPE html>
+<link rel="import" href="/z/foo2.html">
+<link rel="stylesheet" href="/z/foo.css">
+<script src="/bar.js"></script>
 """)
+    fs.AddFile('/x/y/z/foo.css', """
+.x .y {
+    background-image: url(foo.jpeg);
+}
+""")
+    fs.AddFile('/x/y/z/foo.jpeg', '')
+    fs.AddFile('/x/y/z/foo2.html', """
+<!DOCTYPE html>
+""");
     fs.AddFile('/x/raw/bar.js', 'hello');
-    fs.AddFile('/x/y/tvcm/__init__.js', '/* nothing */')
     project = project_module.Project(['/x/y', '/x/raw/'],
                                      include_tvcm_paths=False)
     loader = resource_loader.ResourceLoader(project)
@@ -119,44 +120,11 @@ tvcm.exportTo('foo', function() {
       my_module = loader.LoadModule(module_name='z.foo')
       self.assertEquals(1, len(my_module.dependent_raw_scripts))
 
-      rs = my_module.dependent_raw_scripts[0]
-      self.assertEquals('hello', rs.contents)
-      self.assertEquals('/x/raw/bar.js', rs.filename)
-
-
-  def testModulesThatAreDirectores(self):
-    fs = fake_fs.FakeFS()
-    fs.AddFile('/x/foo/__init__.js', """'use strict'; tvcm.exportTo('foo', function(){});""")
-    fs.AddFile('/x/tvcm/__init__.js', '/* nothing */')
-
-    project = project_module.Project(['/x'], include_tvcm_paths=False)
-    loader = resource_loader.ResourceLoader(project)
-    with fs:
-      foo_module = loader.LoadModule(module_name = 'foo')
-      self.assertEquals('foo', foo_module.name)
-      self.assertEquals('/x/foo/__init__.js', foo_module.filename)
-
-  def testModulesThatAreDirectoresLoadedWithAbsoluteName(self):
-    fs = fake_fs.FakeFS()
-    fs.AddFile('/x/foo/__init__.js', """'use strict'; tvcm.exportTo('foo', function(){});""")
-    fs.AddFile('/x/tvcm/__init__.js', '/* nothing */')
-
-    project = project_module.Project(['/x'], include_tvcm_paths=False)
-    loader = resource_loader.ResourceLoader(project)
-    with fs:
-      foo_module = loader.LoadModule(module_filename = '/x/foo/__init__.js')
-      self.assertEquals('foo', foo_module.name)
-      self.assertEquals('/x/foo/__init__.js', foo_module.filename)
-
-  def testExceptionRaisedWhenOldStyleModuleRootExists(self):
-    fs = fake_fs.FakeFS()
-    fs.AddFile('/x/foo/__init__.js', """'use strict';""")
-    fs.AddFile('/x/foo.js', """'use strict';""")
-
-    project = project_module.Project(['/x'], include_tvcm_paths=False)
-    loader = resource_loader.ResourceLoader(project)
-    with fs:
-      self.assertRaises(module.DepsException,
-          lambda: loader.LoadModule(module_name = 'foo'))
-      self.assertRaises(module.DepsException,
-          lambda: loader.LoadModule(module_filename = '/x/foo/__init__.js'))
+      dependent_filenames = my_module.GetAllDependentFilenamesRecursive()
+      self.assertEquals([
+        '/x/y/z/foo.html',
+        '/x/raw/bar.js',
+        '/x/y/z/foo.css',
+        '/x/y/z/foo.jpeg',
+        '/x/y/z/foo2.html'
+      ], dependent_filenames)

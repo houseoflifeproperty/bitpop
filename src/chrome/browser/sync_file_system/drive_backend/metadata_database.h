@@ -29,9 +29,7 @@ class SingleThreadTaskRunner;
 }
 
 namespace leveldb {
-class DB;
 class Env;
-class WriteBatch;
 }
 
 namespace google_apis {
@@ -50,17 +48,9 @@ namespace drive_backend {
 class FileDetails;
 class FileMetadata;
 class FileTracker;
+class LevelDBWrapper;
 class MetadataDatabaseIndexInterface;
 class ServiceMetadata;
-
-struct DatabaseContents {
-  scoped_ptr<ServiceMetadata> service_metadata;
-  ScopedVector<FileMetadata> file_metadata;
-  ScopedVector<FileTracker> file_trackers;
-
-  DatabaseContents();
-  ~DatabaseContents();
-};
 
 // MetadataDatabase holds and maintains a LevelDB instance and its indexes,
 // which holds 1)ServiceMetadata, 2)FileMetadata and 3)FileTracker.
@@ -143,12 +133,11 @@ class MetadataDatabase {
   // of leveldb::Env::Default().  Use leveldb::MemEnv in test code for faster
   // testing.
   static void Create(base::SequencedTaskRunner* worker_task_runner,
-                     base::SequencedTaskRunner* file_task_runner,
                      const base::FilePath& database_path,
                      leveldb::Env* env_override,
                      const CreateCallback& callback);
   static SyncStatusCode CreateForTesting(
-      scoped_ptr<leveldb::DB> db,
+      scoped_ptr<LevelDBWrapper> db,
       scoped_ptr<MetadataDatabase>* metadata_database_out);
 
   ~MetadataDatabase();
@@ -333,7 +322,9 @@ class MetadataDatabase {
 
   // Changes the priority of the tracker to low.
   void LowerTrackerPriority(int64 tracker_id);
-  void PromoteLowerPriorityTrackersToNormal();
+  bool PromoteLowerPriorityTrackersToNormal();
+
+  void PromoteDemotedTracker(int64 tracker_id);
 
   // Returns true if there is a normal priority dirty tracker.
   // Assigns the dirty tracker if exists and |tracker| is non-NULL.
@@ -354,43 +345,41 @@ class MetadataDatabase {
   // Sets |app_ids| to a list of all registered app ids.
   void GetRegisteredAppIDs(std::vector<std::string>* app_ids);
 
+  // Clears dirty flag of trackers that can be cleared without external
+  // interactien.
+  void SweepDirtyTrackers(const std::vector<std::string>& file_ids,
+                          const SyncStatusCallback& callback);
+
  private:
   friend class MetadataDatabaseTest;
   struct CreateParam;
 
   MetadataDatabase(base::SequencedTaskRunner* worker_task_runner,
-                   base::SequencedTaskRunner* file_task_runner,
                    const base::FilePath& database_path,
                    leveldb::Env* env_override);
-  static void CreateOnFileTaskRunner(
+  static void CreateOnWorkerTaskRunner(
       scoped_ptr<CreateParam> create_param,
       const CreateCallback& callback);
-  SyncStatusCode InitializeOnFileTaskRunner();
-  void BuildIndexes(DatabaseContents* contents);
+  SyncStatusCode Initialize();
 
   // Database manipulation methods.
   void RegisterTrackerAsAppRoot(const std::string& app_id,
-                                int64 tracker_id,
-                                leveldb::WriteBatch* batch);
+                                int64 tracker_id);
 
   void CreateTrackerForParentAndFileID(const FileTracker& parent_tracker,
-                                       const std::string& file_id,
-                                       leveldb::WriteBatch* batch);
+                                       const std::string& file_id);
   void CreateTrackerForParentAndFileMetadata(const FileTracker& parent_tracker,
                                              const FileMetadata& file_metadata,
-                                             UpdateOption option,
-                                             leveldb::WriteBatch* batch);
+                                             UpdateOption option);
   void CreateTrackerInternal(const FileTracker& parent_tracker,
                              const std::string& file_id,
                              const FileDetails* details,
-                             UpdateOption option,
-                             leveldb::WriteBatch* batch);
+                             UpdateOption option);
 
   void MaybeAddTrackersForNewFile(const FileMetadata& file,
-                                  UpdateOption option,
-                                  leveldb::WriteBatch* batch);
+                                  UpdateOption option);
 
-  int64 IncrementTrackerID(leveldb::WriteBatch* batch);
+  int64 IncrementTrackerID();
 
   bool CanActivateTracker(const FileTracker& tracker);
   bool ShouldKeepDirty(const FileTracker& tracker) const;
@@ -400,40 +389,33 @@ class MetadataDatabase {
   bool HasActiveTrackerForPath(int64 parent_tracker,
                                const std::string& title) const;
 
-  void RemoveUnneededTrackersForMissingFile(const std::string& file_id,
-                                            leveldb::WriteBatch* batch);
+  void RemoveUnneededTrackersForMissingFile(const std::string& file_id);
   void UpdateByFileMetadata(const tracked_objects::Location& from_where,
                             scoped_ptr<FileMetadata> file,
-                            UpdateOption option,
-                            leveldb::WriteBatch* batch);
+                            UpdateOption option);
 
-  void WriteToDatabase(scoped_ptr<leveldb::WriteBatch> batch,
-                       const SyncStatusCallback& callback);
+  void WriteToDatabase(const SyncStatusCallback& callback);
 
   bool HasNewerFileMetadata(const std::string& file_id, int64 change_id);
 
   scoped_ptr<base::ListValue> DumpTrackers();
   scoped_ptr<base::ListValue> DumpMetadata();
 
-  void AttachSyncRoot(const google_apis::FileResource& sync_root_folder,
-                      leveldb::WriteBatch* batch);
-  void AttachInitialAppRoot(const google_apis::FileResource& app_root_folder,
-                            leveldb::WriteBatch* batch);
+  void AttachSyncRoot(const google_apis::FileResource& sync_root_folder);
+  void AttachInitialAppRoot(const google_apis::FileResource& app_root_folder);
 
   void ForceActivateTrackerByPath(int64 parent_tracker_id,
                                   const std::string& title,
-                                  const std::string& file_id,
-                                  leveldb::WriteBatch* batch);
+                                  const std::string& file_id);
 
   void DetachFromSequence();
+  bool CanClearDirty(const FileTracker& tracker);
 
   scoped_refptr<base::SequencedTaskRunner> worker_task_runner_;
-  scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
   base::FilePath database_path_;
   leveldb::Env* env_override_;
-  scoped_ptr<leveldb::DB> db_;
+  scoped_ptr<LevelDBWrapper> db_;
 
-  scoped_ptr<ServiceMetadata> service_metadata_;
   int64 largest_known_change_id_;
 
   scoped_ptr<MetadataDatabaseIndexInterface> index_;

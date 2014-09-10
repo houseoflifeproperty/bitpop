@@ -5,7 +5,7 @@
 
 """Archives a set of files or directories to a server."""
 
-__version__ = '0.3.2'
+__version__ = '0.3.4'
 
 import functools
 import hashlib
@@ -29,6 +29,7 @@ from third_party.depot_tools import subcommand
 
 from utils import file_path
 from utils import net
+from utils import on_error
 from utils import threading_utils
 from utils import tools
 
@@ -1482,8 +1483,9 @@ def expand_directory_and_symlink(indir, relfile, blacklist, follow_symlinks):
   if filepath != native_filepath:
     # Special case './'.
     if filepath != native_filepath + '.' + os.path.sep:
-      # Give up enforcing strict path case on OSX. Really, it's that sad. The
-      # case where it happens is very specific and hard to reproduce:
+      # While it'd be nice to enforce path casing on Windows, it's impractical.
+      # Also give up enforcing strict path case on OSX. Really, it's that sad.
+      # The case where it happens is very specific and hard to reproduce:
       # get_native_path_case(
       #    u'Foo.framework/Versions/A/Resources/Something.nib') will return
       # u'Foo.framework/Versions/A/resources/Something.nib', e.g. lowercase 'r'.
@@ -1496,7 +1498,7 @@ def expand_directory_and_symlink(indir, relfile, blacklist, follow_symlinks):
       # So *something* is happening under the hood resulting in the command 'ls'
       # and Carbon.File.FSPathMakeRef('path').FSRefMakePath() to disagree.  We
       # have no idea why.
-      if sys.platform != 'darwin':
+      if sys.platform not in ('darwin', 'win32'):
         raise MappingError(
             'File path doesn\'t equal native file path\n%s != %s' %
             (filepath, native_filepath))
@@ -2191,6 +2193,8 @@ def CMDarchive(parser, args):
            'directories')
   options, files = parser.parse_args(args)
   process_isolate_server_options(parser, options)
+  if file_path.is_url(options.isolate_server):
+    auth.ensure_logged_in(options.isolate_server)
   try:
     archive(options.isolate_server, options.namespace, files, options.blacklist)
   except Error as e:
@@ -2225,6 +2229,9 @@ def CMDdownload(parser, args):
   options.target = os.path.abspath(options.target)
 
   remote = options.isolate_server or options.indir
+  if file_path.is_url(remote):
+    auth.ensure_logged_in(remote)
+
   with get_storage(remote, options.namespace) as storage:
     # Fetching individual files.
     if options.file:
@@ -2336,6 +2343,7 @@ def process_isolate_server_options(parser, options):
       new[2] = ''
     new[2] = new[2].rstrip('/')
     options.isolate_server = urlparse.urlunparse(new)
+    on_error.report_on_exception_exit(options.isolate_server)
     return
 
   if file_path.is_url(options.indir):
@@ -2391,11 +2399,7 @@ class OptionParserIsolateServer(tools.OptionParserWithLogging):
 
 def main(args):
   dispatcher = subcommand.CommandDispatcher(__name__)
-  try:
-    return dispatcher.execute(OptionParserIsolateServer(), args)
-  except Exception as e:
-    tools.report_error(e)
-    return 1
+  return dispatcher.execute(OptionParserIsolateServer(), args)
 
 
 if __name__ == '__main__':

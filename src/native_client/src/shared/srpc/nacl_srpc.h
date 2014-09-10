@@ -20,7 +20,7 @@
 #include <stdio.h>
 
 #include "native_client/src/include/nacl_base.h"
-#include "native_client/src/trusted/service_runtime/include/machine/_types.h"
+#include "native_client/src/trusted/service_runtime/nacl_size_t.h"
 
 /*
  * TODO(sehr) break this file into separate files for sdk and service_runtime
@@ -591,12 +591,6 @@ extern int NaClSrpcRequestWrite(NaClSrpcChannel* channel,
  */
 extern void NaClSrpcRpcWait(NaClSrpcChannel* channel,
                             NaClSrpcRpc* rpc);
-
-/**
- *  @serverSrpc  Returns whether the srpc server is being run "standalone";
- *  that is, not as a subprocess of sel_universal, the browser plugin, etc.
- */
-int NaClSrpcIsStandalone(void);
 
 /**
  * Runs a text-based interpreter given a list of SRPC methods.  This

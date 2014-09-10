@@ -10,12 +10,16 @@ namespace input_method {
 MockInputMethodManager::MockInputMethodManager()
     : add_observer_count_(0),
       remove_observer_count_(0),
-      util_(&delegate_, whitelist_.GetSupportedInputMethods()),
+      util_(&delegate_),
       mod3_used_(false) {
   active_input_method_ids_.push_back("xkb:us::eng");
 }
 
 MockInputMethodManager::~MockInputMethodManager() {
+}
+
+InputMethodManager::State MockInputMethodManager::GetState() {
+  return InputMethodManager::STATE_BROWSER_SCREEN;
 }
 
 void MockInputMethodManager::AddObserver(
@@ -97,13 +101,13 @@ void MockInputMethodManager::ActivateInputMethodMenuItem(
 }
 
 void MockInputMethodManager::AddInputMethodExtension(
-    Profile* profile,
-    const std::string& id,
+    const std::string& extension_id,
+    const InputMethodDescriptors& descriptors,
     InputMethodEngineInterface* instance) {
 }
 
-void MockInputMethodManager::RemoveInputMethodExtension(Profile* profile,
-                                                        const std::string& id) {
+void MockInputMethodManager::RemoveInputMethodExtension(
+    const std::string& extension_id) {
 }
 
 void MockInputMethodManager::GetInputMethodExtensions(

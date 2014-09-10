@@ -19,12 +19,6 @@
 
 #include "config.h"
 
-#ifdef SKIP_STATIC_CONSTRUCTORS_ON_GCC
-#define WEBCORE_QUALIFIEDNAME_HIDE_GLOBALS 1
-#else
-#define QNAME_DEFAULT_CONSTRUCTOR
-#endif
-
 #include "core/dom/QualifiedName.h"
 
 #include "core/HTMLNames.h"
@@ -37,7 +31,7 @@
 #include "wtf/MainThread.h"
 #include "wtf/StaticConstructors.h"
 
-namespace WebCore {
+namespace blink {
 
 static const int staticQualifiedNamesCount = HTMLNames::HTMLTagsCount + HTMLNames::HTMLAttrsCount
     + SVGNames::SVGTagsCount + SVGNames::SVGAttrsCount

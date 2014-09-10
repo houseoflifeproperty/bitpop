@@ -26,7 +26,7 @@
 #include "core/html/FormAssociatedElement.h"
 #include "core/html/HTMLPlugInElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLFormElement;
 
@@ -84,7 +84,7 @@ private:
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
     virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
+    virtual void childrenChanged(const ChildrenChange&) OVERRIDE;
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
     virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
@@ -102,7 +102,6 @@ private:
     // so that we can better share code between <object> and <embed>.
     void parametersForPlugin(Vector<String>& paramNames, Vector<String>& paramValues, String& url, String& serviceType);
 
-    bool shouldAllowQuickTimeClassIdQuirk();
     bool hasValidClassId();
 
     void reloadPluginOnAttributeChange(const QualifiedName&);

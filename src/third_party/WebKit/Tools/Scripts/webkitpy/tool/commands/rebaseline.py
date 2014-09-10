@@ -26,11 +26,13 @@
 # (INCLUDING NEGLIGENCE OR/ OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import Queue
 import json
 import logging
 import optparse
 import re
 import sys
+import threading
 import time
 import traceback
 import urllib
@@ -389,8 +391,8 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
                         cmd_line.extend(['--results-directory', options.results_directory])
                     if options.verbose:
                         cmd_line.append('--verbose')
-                    copy_baseline_commands.append(tuple([[path_to_webkit_patch, 'copy-existing-baselines-internal'] + cmd_line, cwd]))
-                    rebaseline_commands.append(tuple([[path_to_webkit_patch, 'rebaseline-test-internal'] + cmd_line, cwd]))
+                    copy_baseline_commands.append(tuple([[self._tool.executable, path_to_webkit_patch, 'copy-existing-baselines-internal'] + cmd_line, cwd]))
+                    rebaseline_commands.append(tuple([[self._tool.executable, path_to_webkit_patch, 'rebaseline-test-internal'] + cmd_line, cwd]))
         return copy_baseline_commands, rebaseline_commands, lines_to_remove
 
     def _serial_commands(self, command_results):
@@ -437,7 +439,7 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
 
             path_to_webkit_patch = self._tool.path()
             cwd = self._tool.scm().checkout_root
-            optimize_commands.append(tuple([[path_to_webkit_patch, 'optimize-baselines'] + cmd_line, cwd]))
+            optimize_commands.append(tuple([[self._tool.executable, path_to_webkit_patch, 'optimize-baselines'] + cmd_line, cwd]))
         return optimize_commands
 
     def _update_expectations_files(self, lines_to_remove):
@@ -823,6 +825,7 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
 
         test_prefix_list, lines_to_remove = self.get_test_prefix_list(tests)
 
+        did_finish = False
         try:
             old_branch_name = tool.scm().current_branch()
             tool.scm().delete_branch(self.AUTO_REBASELINE_BRANCH_NAME)
@@ -848,8 +851,11 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
                 tool.executive.run_command(['git', 'pull'])
 
                 self._run_git_cl_command(options, ['dcommit', '-f'])
+        except Exception as e:
+            _log.error(e)
         finally:
-            self._run_git_cl_command(options, ['set_close'])
+            if did_finish:
+                self._run_git_cl_command(options, ['set_close'])
             tool.scm().ensure_cleanly_tracking_remote_master()
             tool.scm().checkout_branch(old_branch_name)
             tool.scm().delete_branch(self.AUTO_REBASELINE_BRANCH_NAME)
@@ -862,6 +868,7 @@ class RebaselineOMatic(AbstractDeclarativeCommand):
 
     SLEEP_TIME_IN_SECONDS = 30
     LOG_SERVER = 'blinkrebaseline.appspot.com'
+    QUIT_LOG = '##QUIT##'
 
     # Uploaded log entries append to the existing entry unless the
     # newentry flag is set. In that case it starts a new entry to
@@ -872,14 +879,31 @@ class RebaselineOMatic(AbstractDeclarativeCommand):
         }
         if is_new_entry:
             query['newentry'] = 'on'
-        urllib2.urlopen("http://" + self.LOG_SERVER + "/updatelog", data=urllib.urlencode(query))
+        try:
+            urllib2.urlopen("http://" + self.LOG_SERVER + "/updatelog", data=urllib.urlencode(query))
+        except:
+            traceback.print_exc(file=sys.stderr)
+
+    def _log_to_server_thread(self):
+        is_new_entry = True
+        while True:
+            messages = [self._log_queue.get()]
+            while not self._log_queue.empty():
+                messages.append(self._log_queue.get())
+            self._log_to_server('\n'.join(messages), is_new_entry=is_new_entry)
+            is_new_entry = False
+            if self.QUIT_LOG in messages:
+                return
+
+    def _post_log_to_server(self, log):
+        self._log_queue.put(log)
 
     def _log_line(self, handle):
         out = handle.readline().rstrip('\n')
         if out:
             if self._verbose:
                 print out
-            self._log_to_server(out)
+            self._post_log_to_server(out)
         return out
 
     def _run_logged_command(self, command):
@@ -891,18 +915,24 @@ class RebaselineOMatic(AbstractDeclarativeCommand):
             out = self._log_line(process.stdout)
 
     def _do_one_rebaseline(self):
+        self._log_queue = Queue.Queue(256)
+        log_thread = threading.Thread(name='LogToServer', target=self._log_to_server_thread)
+        log_thread.start()
         try:
             old_branch_name = self._tool.scm().current_branch()
-            self._log_to_server(is_new_entry=True)
             self._run_logged_command(['git', 'pull'])
             rebaseline_command = [self._tool.filesystem.join(self._tool.scm().checkout_root, 'Tools', 'Scripts', 'webkit-patch'), 'auto-rebaseline']
             if self._verbose:
                 rebaseline_command.append('--verbose')
             self._run_logged_command(rebaseline_command)
         except:
+            self._log_queue.put(self.QUIT_LOG)
             traceback.print_exc(file=sys.stderr)
             # Sometimes git crashes and leaves us on a detached head.
             self._tool.scm().checkout_branch(old_branch_name)
+        else:
+            self._log_queue.put(self.QUIT_LOG)
+        log_thread.join()
 
     def execute(self, options, args, tool):
         self._verbose = options.verbose

@@ -33,7 +33,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Threading.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioContext;
 class PeriodicWave;
@@ -57,6 +57,7 @@ public:
     virtual ~OscillatorNode();
 
     // AudioNode
+    virtual void dispose() OVERRIDE;
     virtual void process(size_t framesToProcess) OVERRIDE;
 
     String type() const;
@@ -105,6 +106,6 @@ private:
     RefPtrWillBeMember<PeriodicWave> m_periodicWave;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // OscillatorNode_h

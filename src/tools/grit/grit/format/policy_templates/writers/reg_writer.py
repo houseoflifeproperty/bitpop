@@ -47,7 +47,7 @@ class RegWriter(template_writer.TemplateWriter):
     list.sort() methods to sort policies.
     See TemplateWriter.SortPoliciesGroupsFirst for usage.
     '''
-    is_list = policy['type'] == 'list'
+    is_list = policy['type'] in ('list', 'string-enum-list')
     # Lists come after regular policies.
     return (is_list, policy['name'])
 
@@ -57,7 +57,7 @@ class RegWriter(template_writer.TemplateWriter):
     if policy['type'] == 'external':
       # This type can only be set through cloud policy.
       return
-    elif policy['type'] == 'list':
+    elif policy['type'] in ('list', 'string-enum-list'):
       self._StartBlock(key, policy['name'], list)
       i = 1
       for item in example_value:

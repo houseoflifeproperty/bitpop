@@ -25,7 +25,7 @@
 #include "core/rendering/RenderReplaced.h"
 #include "platform/Widget.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderWidget : public RenderReplaced {
 public:
@@ -37,11 +37,10 @@ public:
     void updateWidgetPosition();
     void widgetPositionsUpdated();
 
-    void setIsOverlapped(bool);
-
+#if !ENABLE(OILPAN)
     void ref() { ++m_refCount; }
     void deref();
-
+#endif
     virtual bool isWidget() const OVERRIDE FINAL { return true; }
     bool updateWidgetGeometry();
 
@@ -61,12 +60,13 @@ private:
     virtual void destroy() OVERRIDE FINAL;
 
     bool setWidgetGeometry(const LayoutRect&);
-
+#if !ENABLE(OILPAN)
     int m_refCount;
+#endif
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderWidget, isWidget());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderWidget_h

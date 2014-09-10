@@ -512,7 +512,7 @@ namespace WTF {
     template<typename T, size_t inlineCapacity, typename Allocator>
     void Deque<T, inlineCapacity, Allocator>::trace(typename Allocator::Visitor* visitor)
     {
-        COMPILE_ASSERT(Allocator::isGarbageCollected, Garbage_collector_must_be_enabled);
+        ASSERT(Allocator::isGarbageCollected); // Garbage collector must be enabled.
         const T* bufferBegin = m_buffer.buffer();
         const T* end = bufferBegin + m_end;
         if (ShouldBeTraced<VectorTraits<T> >::value) {
@@ -530,6 +530,13 @@ namespace WTF {
         if (m_buffer.hasOutOfLineBuffer())
             Allocator::markNoTracing(visitor, m_buffer.buffer());
     }
+
+#if !ENABLE(OILPAN)
+    template<typename T, size_t N>
+    struct NeedsTracing<Deque<T, N> > {
+        static const bool value = false;
+    };
+#endif
 
 } // namespace WTF
 

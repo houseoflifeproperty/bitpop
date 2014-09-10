@@ -15,15 +15,15 @@
 #include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "base/win/windows_version.h"
-#include "chrome/browser/component_updater/component_updater_service.h"
+#include "chrome/browser/component_updater/component_updater_configurator.h"
 #include "chrome/browser/component_updater/crx_update_item.h"
-#include "chrome/browser/omaha_query_params/omaha_query_params.h"
-#include "chrome/common/chrome_version_info.h"
-#include "extensions/common/extension.h"
+#include "components/omaha_query_params/omaha_query_params.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
+
+using omaha_query_params::OmahaQueryParams;
 
 namespace component_updater {
 
@@ -38,12 +38,14 @@ int GetPhysicalMemoryGB() {
 
 }  // namespace
 
-std::string BuildProtocolRequest(const std::string& request_body,
+std::string BuildProtocolRequest(const std::string& browser_version,
+                                 const std::string& channel,
+                                 const std::string& lang,
+                                 const std::string& os_long_name,
+                                 const std::string& request_body,
                                  const std::string& additional_attributes) {
-  const std::string prod_id(chrome::OmahaQueryParams::GetProdIdString(
-      chrome::OmahaQueryParams::CHROME));
-  const chrome::VersionInfo chrome_version_info;
-  const std::string chrome_version(chrome_version_info.Version());
+  const std::string prod_id(
+      OmahaQueryParams::GetProdIdString(OmahaQueryParams::CHROME));
 
   std::string request(
       "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
@@ -59,15 +61,15 @@ std::string BuildProtocolRequest(const std::string& request_body,
       "requestid=\"{%s}\" lang=\"%s\" updaterchannel=\"%s\" prodchannel=\"%s\" "
       "os=\"%s\" arch=\"%s\" nacl_arch=\"%s\"",
       prod_id.c_str(),
-      chrome_version.c_str(),                        // "version"
-      chrome_version.c_str(),                        // "prodversion"
-      base::GenerateGUID().c_str(),                  // "requestid"
-      chrome::OmahaQueryParams::GetLang(),           // "lang",
-      chrome::OmahaQueryParams::GetChannelString(),  // "updaterchannel"
-      chrome::OmahaQueryParams::GetChannelString(),  // "prodchannel"
-      chrome::OmahaQueryParams::GetOS(),             // "os"
-      chrome::OmahaQueryParams::GetArch(),           // "arch"
-      chrome::OmahaQueryParams::GetNaclArch());      // "nacl_arch"
+      browser_version.c_str(),           // "version"
+      browser_version.c_str(),           // "prodversion"
+      base::GenerateGUID().c_str(),      // "requestid"
+      lang.c_str(),                      // "lang",
+      channel.c_str(),                   // "updaterchannel"
+      channel.c_str(),                   // "prodchannel"
+      OmahaQueryParams::GetOS(),         // "os"
+      OmahaQueryParams::GetArch(),       // "arch"
+      OmahaQueryParams::GetNaclArch());  // "nacl_arch"
 #if defined(OS_WIN)
   const bool is_wow64(base::win::OSInfo::GetInstance()->wow64_status() ==
                       base::win::OSInfo::WOW64_ENABLED);
@@ -85,7 +87,7 @@ std::string BuildProtocolRequest(const std::string& request_body,
   base::StringAppendF(
       &request,
       "<os platform=\"%s\" version=\"%s\" arch=\"%s\"/>",
-      chrome::VersionInfo().OSType().c_str(),                  // "platform"
+      os_long_name.c_str(),                                    // "platform"
       base::SysInfo().OperatingSystemVersion().c_str(),        // "version"
       base::SysInfo().OperatingSystemArchitecture().c_str());  // "arch"
 
@@ -178,12 +180,15 @@ std::string HexStringToID(const std::string& hexstr) {
       id.append(1, 'a');
     }
   }
-  DCHECK(extensions::Extension::IdIsValid(id));
+
+  // TODO(tommycli): Add back the DCHECK validating the generated id. This
+  // requires moving the extension id_util functions into components/crx_file.
+
   return id;
 }
 
 std::string GetCrxComponentID(const CrxComponent& component) {
-  return HexStringToID(StringToLowerASCII(
+  return HexStringToID(base::StringToLowerASCII(
       base::HexEncode(&component.pk_hash[0], component.pk_hash.size() / 2)));
 }
 

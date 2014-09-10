@@ -27,24 +27,23 @@
 #ifndef DOMWindow_h
 #define DOMWindow_h
 
-#include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/Dictionary.h"
 #include "core/events/EventTarget.h"
 #include "core/frame/DOMWindowBase64.h"
 #include "core/frame/FrameDestructionObserver.h"
 #include "platform/LifecycleContext.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
+#include "platform/scroll/ScrollableArea.h"
 
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
     class ApplicationCache;
     class BarProp;
     class CSSRuleList;
     class CSSStyleDeclaration;
     class Console;
-    class DOMPoint;
     class DOMSelection;
     class DOMURL;
     class DOMWindowProperty;
@@ -83,7 +82,7 @@ namespace WebCore {
 
     struct WindowFeatures;
 
-    typedef Vector<RefPtr<MessagePort>, 1> MessagePortArray;
+    typedef WillBeHeapVector<RefPtrWillBeMember<MessagePort>, 1> MessagePortArray;
 
 enum PageshowEventPersistence {
     PageshowEventNotPersisted = 0,
@@ -92,14 +91,14 @@ enum PageshowEventPersistence {
 
     enum SetLocationLocking { LockHistoryBasedOnGestureState, LockHistoryAndBackForwardList };
 
-    class LocalDOMWindow FINAL : public RefCountedWillBeRefCountedGarbageCollected<LocalDOMWindow>, public ScriptWrappable, public EventTargetWithInlineData, public DOMWindowBase64, public FrameDestructionObserver, public WillBeHeapSupplementable<LocalDOMWindow>, public LifecycleContext<LocalDOMWindow> {
+    class LocalDOMWindow FINAL : public RefCountedWillBeGarbageCollectedFinalized<LocalDOMWindow>, public EventTargetWithInlineData, public DOMWindowBase64, public FrameDestructionObserver, public WillBeHeapSupplementable<LocalDOMWindow>, public LifecycleContext<LocalDOMWindow> {
         WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(LocalDOMWindow);
-        REFCOUNTED_EVENT_TARGET(LocalDOMWindow);
+        DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCounted<LocalDOMWindow>);
     public:
         static PassRefPtrWillBeRawPtr<Document> createDocument(const String& mimeType, const DocumentInit&, bool forceXHTML);
         static PassRefPtrWillBeRawPtr<LocalDOMWindow> create(LocalFrame& frame)
         {
-            return adoptRefWillBeRefCountedGarbageCollected(new LocalDOMWindow(frame));
+            return adoptRefWillBeNoop(new LocalDOMWindow(frame));
         }
         virtual ~LocalDOMWindow();
 
@@ -219,9 +218,6 @@ enum PageshowEventPersistence {
         PassRefPtrWillBeRawPtr<CSSRuleList> getMatchedCSSRules(Element*, const String& pseudoElt) const;
         double devicePixelRatio() const;
 
-        PassRefPtrWillBeRawPtr<DOMPoint> webkitConvertPointFromPageToNode(Node*, const DOMPoint*) const;
-        PassRefPtrWillBeRawPtr<DOMPoint> webkitConvertPointFromNodeToPage(Node*, const DOMPoint*) const;
-
         Console& console() const;
         FrameConsole* frameConsole() const;
 
@@ -233,9 +229,9 @@ enum PageshowEventPersistence {
         void postMessageTimerFired(PostMessageTimer*);
         void dispatchMessageEventWithOriginCheck(SecurityOrigin* intendedTargetOrigin, PassRefPtrWillBeRawPtr<Event>, PassRefPtrWillBeRawPtr<ScriptCallStack>);
 
-        void scrollBy(int x, int y) const;
+        void scrollBy(int x, int y, ScrollBehavior = ScrollBehaviorAuto) const;
         void scrollBy(int x, int y, const Dictionary& scrollOptions, ExceptionState&) const;
-        void scrollTo(int x, int y) const;
+        void scrollTo(int x, int y, ScrollBehavior = ScrollBehaviorAuto) const;
         void scrollTo(int x, int y, const Dictionary& scrollOptions, ExceptionState&) const;
         void scroll(int x, int y) const { scrollTo(x, y); }
         void scroll(int x, int y, const Dictionary& scrollOptions, ExceptionState& exceptionState) const { scrollTo(x, y, scrollOptions, exceptionState); }
@@ -256,7 +252,7 @@ enum PageshowEventPersistence {
         // Events
         // EventTarget API
         virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) OVERRIDE;
-        virtual bool removeEventListener(const AtomicString& eventType, EventListener*, bool useCapture = false) OVERRIDE;
+        virtual bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) OVERRIDE;
         virtual void removeAllEventListeners() OVERRIDE;
 
         using EventTarget::dispatchEvent;
@@ -363,7 +359,7 @@ enum PageshowEventPersistence {
         RefPtrWillBeMember<Document> m_document;
 
         bool m_shouldPrintWhenFinishedLoading;
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
         bool m_hasBeenReset;
 #endif
 
@@ -409,6 +405,6 @@ enum PageshowEventPersistence {
         return m_defaultStatus;
     }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMWindow_h

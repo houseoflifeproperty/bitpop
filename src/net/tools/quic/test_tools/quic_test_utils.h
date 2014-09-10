@@ -87,7 +87,6 @@ class MockConnection : public QuicConnection {
   virtual bool OnProtocolVersionMismatch(QuicVersion version) { return false; }
 
  private:
-  scoped_ptr<QuicPacketWriter> writer_;
   scoped_ptr<QuicConnectionHelperInterface> helper_;
 
   DISALLOW_COPY_AND_ASSIGN(MockConnection);
@@ -135,7 +134,8 @@ class MockQuicServerSessionVisitor : public QuicServerSessionVisitor {
   virtual ~MockQuicServerSessionVisitor();
   MOCK_METHOD2(OnConnectionClosed, void(QuicConnectionId connection_id,
                                         QuicErrorCode error));
-  MOCK_METHOD1(OnWriteBlocked, void(QuicBlockedWriterInterface* writer));
+  MOCK_METHOD1(OnWriteBlocked,
+               void(QuicBlockedWriterInterface* blocked_writer));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockQuicServerSessionVisitor);

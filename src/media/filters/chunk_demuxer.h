@@ -67,7 +67,7 @@ class MEDIA_EXPORT ChunkDemuxerStream : public DemuxerStream {
 
   // Signal to the stream that buffers handed in through subsequent calls to
   // Append() belong to a media segment that starts at |start_timestamp|.
-  void OnNewMediaSegment(base::TimeDelta start_timestamp);
+  void OnNewMediaSegment(DecodeTimestamp start_timestamp);
 
   // Called when midstream config updates occur.
   // Returns true if the new config is accepted.
@@ -86,6 +86,7 @@ class MEDIA_EXPORT ChunkDemuxerStream : public DemuxerStream {
   virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
   virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
   virtual bool SupportsConfigChanges() OVERRIDE;
+  virtual VideoRotation video_rotation() OVERRIDE;
 
   // Returns the text track configuration.  It is an error to call this method
   // if type() != TEXT.
@@ -161,7 +162,6 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   virtual void Stop(const base::Closure& callback) OVERRIDE;
   virtual void Seek(base::TimeDelta time, const PipelineStatusCB&  cb) OVERRIDE;
   virtual DemuxerStream* GetStream(DemuxerStream::Type type) OVERRIDE;
-  virtual base::TimeDelta GetStartTime() const OVERRIDE;
   virtual base::Time GetTimelineOffset() const OVERRIDE;
   virtual Liveness GetLiveness() const OVERRIDE;
 

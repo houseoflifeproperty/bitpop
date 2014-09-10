@@ -28,7 +28,7 @@
 
 #include "core/rendering/RenderReplaced.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLCanvasElement;
 
@@ -46,11 +46,11 @@ private:
     virtual void paintReplaced(PaintInfo&, const LayoutPoint&) OVERRIDE;
     virtual void intrinsicSizeChanged() OVERRIDE { canvasSizeChanged(); }
 
-    virtual CompositingReasons additionalCompositingReasons(CompositingTriggerFlags) const OVERRIDE;
+    virtual CompositingReasons additionalCompositingReasons() const OVERRIDE;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderHTMLCanvas, isCanvas());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderHTMLCanvas_h

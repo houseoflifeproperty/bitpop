@@ -12,13 +12,14 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/settings/cros_settings_names.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "extensions/common/extension.h"
@@ -178,32 +179,28 @@ void KioskAppsHandler::GetLocalizedValues(content::WebUIDataSource* source) {
 }
 
 void KioskAppsHandler::OnKioskAppDataChanged(const std::string& app_id) {
-  KioskAppManager::App app_data;
-  if (!kiosk_app_manager_->GetApp(app_id, &app_data))
-    return;
-
-  base::DictionaryValue app_dict;
-  PopulateAppDict(app_data, &app_dict);
-
-  web_ui()->CallJavascriptFunction("extensions.KioskAppsOverlay.updateApp",
-                                   app_dict);
+  UpdateApp(app_id);
 }
 
 void KioskAppsHandler::OnKioskAppDataLoadFailure(const std::string& app_id) {
-  base::StringValue app_id_value(app_id);
-  web_ui()->CallJavascriptFunction("extensions.KioskAppsOverlay.showError",
-                                   app_id_value);
-
-  kiosk_app_manager_->RemoveApp(app_id);
+  ShowError(app_id);
 }
 
+void KioskAppsHandler::OnKioskExtensionLoadedInCache(
+    const std::string& app_id) {
+  UpdateApp(app_id);
+}
+
+void KioskAppsHandler::OnKioskExtensionDownloadFailed(
+    const std::string& app_id) {
+  ShowError(app_id);
+}
 
 void KioskAppsHandler::OnGetConsumerKioskAutoLaunchStatus(
     chromeos::KioskAppManager::ConsumerKioskAutoLaunchStatus status) {
   initialized_ = true;
-  is_kiosk_enabled_ =
-      chromeos::UserManager::Get()->IsCurrentUserOwner() ||
-      !base::SysInfo::IsRunningOnChromeOS();
+  is_kiosk_enabled_ = user_manager::UserManager::Get()->IsCurrentUserOwner() ||
+                      !base::SysInfo::IsRunningOnChromeOS();
 
   is_auto_launch_enabled_ =
       status == KioskAppManager::CONSUMER_KIOSK_AUTO_LAUNCH_ENABLED ||
@@ -331,6 +328,26 @@ void KioskAppsHandler::HandleSetDisableBailoutShortcut(
   CrosSettings::Get()->SetBoolean(
       kAccountsPrefDeviceLocalAccountAutoLoginBailoutEnabled,
       !disable_bailout_shortcut);
+}
+
+void KioskAppsHandler::UpdateApp(const std::string& app_id) {
+  KioskAppManager::App app_data;
+  if (!kiosk_app_manager_->GetApp(app_id, &app_data))
+    return;
+
+  base::DictionaryValue app_dict;
+  PopulateAppDict(app_data, &app_dict);
+
+  web_ui()->CallJavascriptFunction("extensions.KioskAppsOverlay.updateApp",
+                                   app_dict);
+}
+
+void KioskAppsHandler::ShowError(const std::string& app_id) {
+  base::StringValue app_id_value(app_id);
+  web_ui()->CallJavascriptFunction("extensions.KioskAppsOverlay.showError",
+                                   app_id_value);
+
+  kiosk_app_manager_->RemoveApp(app_id);
 }
 
 }  // namespace chromeos

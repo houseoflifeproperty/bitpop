@@ -31,8 +31,8 @@
 #include "config.h"
 #include "core/inspector/DOMEditor.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
@@ -42,7 +42,7 @@
 #include "core/inspector/InspectorHistory.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class DOMEditor::RemoveChildAction FINAL : public InspectorHistory::Action {
     WTF_MAKE_NONCOPYABLE(RemoveChildAction);
@@ -517,5 +517,5 @@ void DOMEditor::trace(Visitor* visitor)
     visitor->trace(m_history);
 }
 
-} // namespace WebCore
+} // namespace blink
 

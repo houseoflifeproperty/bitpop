@@ -18,8 +18,10 @@ modules/mediastream/RTCDataChannel
 modules/mediastream/RTCPeerConnection
 modules/netinfo/NetworkInformation
 modules/notifications/Notification
+modules/screen_orientation/ScreenOrientation
 modules/serviceworkers/ServiceWorker
 modules/serviceworkers/ServiceWorkerGlobalScope
+modules/serviceworkers/ServiceWorkerRegistration
 modules/speech/SpeechRecognition
 modules/speech/SpeechSynthesis
 modules/speech/SpeechSynthesisUtterance
@@ -28,4 +30,4 @@ modules/webaudio/AudioNode Conditional=WEB_AUDIO
 modules/webmidi/MIDIAccess
 modules/webmidi/MIDIInput
 modules/webmidi/MIDIPort
-modules/websockets/WebSocket
+modules/websockets/WebSocket ImplementedAs=DOMWebSocket

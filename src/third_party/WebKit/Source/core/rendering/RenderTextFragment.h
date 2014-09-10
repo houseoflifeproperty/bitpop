@@ -25,7 +25,7 @@
 
 #include "core/rendering/RenderText.h"
 
-namespace WebCore {
+namespace blink {
 
 // Used to represent a text substring of an element, e.g., for text runs that are split because of
 // first letter and that must therefore have different styles (and positions in the render tree).
@@ -36,10 +36,11 @@ public:
     RenderTextFragment(Node*, StringImpl*, int startOffset, int length);
     RenderTextFragment(Node*, StringImpl*);
     virtual ~RenderTextFragment();
+    virtual void trace(Visitor*) OVERRIDE;
 
     virtual bool isTextFragment() const OVERRIDE { return true; }
 
-    virtual bool canBeSelectionLeaf() const OVERRIDE { return node() && node()->rendererIsEditable(); }
+    virtual bool canBeSelectionLeaf() const OVERRIDE { return node() && node()->hasEditableStyle(); }
 
     unsigned start() const { return m_start; }
     unsigned end() const { return m_end; }
@@ -69,11 +70,11 @@ private:
     unsigned m_start;
     unsigned m_end;
     RefPtr<StringImpl> m_contentString;
-    RenderBoxModelObject* m_firstLetter;
+    RawPtrWillBeMember<RenderBoxModelObject> m_firstLetter;
 };
 
 DEFINE_TYPE_CASTS(RenderTextFragment, RenderObject, object, toRenderText(object)->isTextFragment(), toRenderText(object).isTextFragment());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderTextFragment_h

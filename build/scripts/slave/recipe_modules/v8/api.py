@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 import math
-import os
+import collections
 
 from slave import recipe_api
 from slave.recipe_modules.v8 import builders
@@ -37,12 +37,18 @@ TEST_CONFIGS = {
     'test_args': ['--no-variants', '--shell_flags="--optimize-for-size"'],
   },
   'test262': {
+    'name': 'Test262 - no variants',
+    'tests': 'test262',
+    'test_args': ['--no-variants'],
+  },
+  'test262_variants': {
     'name': 'Test262',
     'tests': 'test262',
   },
   'v8testing': {
     'name': 'Check',
-    'tests': 'mjsunit fuzz-natives cctest message preparser',
+    'tests': ('mjsunit fuzz-natives cctest message preparser base-unittests '
+              'compiler-unittests'),
     'add_flaky_step': True,
   },
   'webkit': {
@@ -97,6 +103,16 @@ class V8Fuzzer(object):
     pass
 
 
+class V8DeoptFuzzer(object):
+  @staticmethod
+  def run(api, **kwargs):
+    return api.deopt_fuzz()
+
+  @staticmethod
+  def gclient_apply_config(_):
+    pass
+
+
 class V8GCMole(object):
   @staticmethod
   def run(api, **kwargs):
@@ -118,6 +134,7 @@ class V8SimpleLeakCheck(object):
 
 
 V8_NON_STANDARD_TESTS = {
+  'deopt': V8DeoptFuzzer,
   'fuzz': V8Fuzzer,
   'gcmole': V8GCMole,
   'presubmit': V8Presubmit,
@@ -136,15 +153,11 @@ def ChromiumSvnSubURL(c, *pieces):
 
 class V8Api(recipe_api.RecipeApi):
   BUILDERS = builders.BUILDERS
-  PERF_CONFIGS = {
-    'experimental': {
-      'name': 'Experimental',
-      'json': os.path.join('benchmarks', 'v8.json'),
-    }
-  }
 
   # Map of GS archive names to urls.
   GS_ARCHIVES = {
+    'arm_rel_archive': 'gs://chromium-v8/v8-arm-rel',
+    'arm_dbg_archive': 'gs://chromium-v8/v8-arm-dbg',
     'linux_rel_archive': 'gs://chromium-v8/v8-linux-rel',
     'linux_dbg_archive': 'gs://chromium-v8/v8-linux-dbg',
     'linux_nosnap_rel_archive': 'gs://chromium-v8/v8-linux-nosnap-rel',
@@ -180,42 +193,65 @@ class V8Api(recipe_api.RecipeApi):
       self.m.chromium.apply_config(c)
     for c in self.bot_config.get('v8_apply_config', []):
       self.apply_config(c)
+    if self.c.nacl.update_nacl_sdk:
+      self.c.nacl.NACL_SDK_ROOT = str(self.m.path['slave_build'].join(
+          'nacl_sdk', 'pepper_current'))
     # Test-specific configurations.
     for t in self.bot_config.get('tests', []):
       self.create_test(t).gclient_apply_config(self.m)
     # Initialize perf_dashboard api if any perf test should run.
-    # TODO(machenbach): Set to default config as soon as the experimental
-    # development on the performance runner is finished.
-    self.m.perf_dashboard.set_config('testing')
+    self.m.perf_dashboard.set_default_config()
+
+  def set_bot_config(self, bot_config):
+    """Set bot configuration for testing only."""
+    self.bot_config = bot_config
 
   def init_tryserver(self):
     self.m.chromium.apply_config('trybot_flavor')
     self.m.chromium.apply_config('optimized_debug')
     self.apply_config('trybot_flavor')
 
-  # TODO(machenbach): Make this a step_history helper.
-  def has_failed_steps(self):
-    return any(s.retcode != 0 for s in self.m.step_history.values())
+  def _gclient_checkout(self, may_nuke=False, revert=False):
+    if may_nuke:
+      try:
+        update_step = self.m.gclient.checkout(revert=revert)
+      except self.m.step.StepFailure as f:
+        # TODO(phajdan.jr): Remove the workaround, http://crbug.com/357767 .
+        self.m.path.rmcontents('slave build directory',
+                               self.m.path['slave_build']),
+        update_step = self.m.gclient.checkout()
+    else:
+      update_step = self.m.gclient.checkout()
+    return update_step
 
-  def checkout(self):
-    yield self.m.gclient.checkout()
+  def checkout(self, may_nuke=False, revert=False):
+    # Set revision for bot_update including branch information. Needs to be
+    # reset afterwards as gclient doesn't understand this info.
+    self.m.gclient.c.solutions[0].revision = ('bleeding_edge:%s' %
+        self.m.properties.get('revision', 'HEAD'))
+    update_step = self.m.bot_update.ensure_checkout(no_shallow=True)
+
+    if not update_step.json.output['did_run']:
+      self.m.gclient.c.solutions[0].revision = None
+      update_step = self._gclient_checkout(may_nuke=may_nuke, revert=revert)
+
     # Whatever step is run right before this line needs to emit got_revision.
-    update_step = self.m.step_history.last_step()
     self.revision = update_step.presentation.properties['got_revision']
 
-  def tryserver_checkout(self):
-    yield self.m.gclient.checkout(
-        revert=True, can_fail_build=False, abort_on_failure=False)
-    if self.has_failed_steps():
-      # TODO(phajdan.jr): Remove the workaround, http://crbug.com/357767 .
-      yield (
-          self.m.path.rmcontents('slave build directory',
-                                 self.m.path['slave_build']),
-          self.m.gclient.checkout(),
-        )
-
   def runhooks(self, **kwargs):
-    return self.m.chromium.runhooks(**kwargs)
+    env = {}
+    if self.c.gyp_env.CC:
+      env['CC'] = self.c.gyp_env.CC
+    if self.c.gyp_env.CXX:
+      env['CXX'] = self.c.gyp_env.CXX
+    if self.c.gyp_env.CXX_host:
+      env['CXX_host'] = self.c.gyp_env.CXX_host
+    if self.c.gyp_env.LINK:
+      env['LINK'] = self.c.gyp_env.LINK
+    # TODO(machenbach): Make this the default on windows.
+    if self.c.gyp_env.GYP_MSVS_VERSION:
+      env['GYP_MSVS_VERSION'] = self.c.gyp_env.GYP_MSVS_VERSION
+    self.m.chromium.runhooks(env=env, **kwargs)
 
   @property
   def needs_clang(self):
@@ -224,20 +260,34 @@ class V8Api(recipe_api.RecipeApi):
   def update_clang(self):
     # TODO(machenbach): Implement this for windows or unify with chromium's
     # update clang step as soon as it exists.
-    yield self.m.step(
+    self.m.step(
         'update clang',
         [self.m.path['checkout'].join('tools', 'clang',
                                       'scripts', 'update.sh')],
         env={'LLVM_URL': ChromiumSvnSubURL(self.m.gclient.c,
                                            'llvm-project')})
 
+    # TODO(machenbach): Move this path tweaking to the v8 gyp file.
+    clang_dir = self.m.path['checkout'].join(
+        'third_party', 'llvm-build', 'Release+Asserts', 'bin')
+    self.c.gyp_env.CC = self.m.path.join(clang_dir, 'clang')
+    self.c.gyp_env.CXX = self.m.path.join(clang_dir, 'clang++')
+    self.c.gyp_env.CXX_host = self.m.path.join(clang_dir, 'clang++')
+    self.c.gyp_env.LINK = self.m.path.join(clang_dir, 'clang++')
+
+  def update_nacl_sdk(self):
+    return self.m.python(
+      'update NaCl SDK',
+      self.m.path['build'].join('scripts', 'slave', 'update_nacl_sdk.py'),
+      ['--pepper-channel', self.c.nacl.update_nacl_sdk],
+      cwd=self.m.path['slave_build'],
+    )
+
   def tryserver_lkgr_fallback(self):
     self.m.gclient.apply_config('v8_lkgr')
-    yield (
-      self.tryserver_checkout(),
-      self.m.tryserver.maybe_apply_issue(),
-      self.runhooks(),
-    )
+    self.checkout(True, True)
+    self.m.tryserver.maybe_apply_issue()
+    self.runhooks()
 
   @property
   def bot_type(self):
@@ -264,35 +314,39 @@ class V8Api(recipe_api.RecipeApi):
     return self.bot_config.get('perf', [])
 
   def compile(self, **kwargs):
-    yield self.m.chromium.compile(**kwargs)
+    env={}
+    if self.c.nacl.NACL_SDK_ROOT:
+      env['NACL_SDK_ROOT'] = self.c.nacl.NACL_SDK_ROOT
+    args = []
+    if self.c.nacl.compile_extra_args:
+      args.extend(self.c.nacl.compile_extra_args)
+    self.m.chromium.compile(args, env=env, **kwargs)
 
   def tryserver_compile(self, fallback_fn, **kwargs):
-    yield self.compile(name='compile (with patch)',
-                       abort_on_failure=False,
-                       can_fail_build=False)
-    if self.m.step_history['compile (with patch)'].retcode != 0:
-      yield fallback_fn()
-      yield self.compile(name='compile (with patch, lkgr, clobber)',
+    try:
+      self.compile(name='compile (with patch)')
+    except self.m.step.StepFailure as f:
+      fallback_fn()
+      self.compile(name='compile (with patch, lkgr, clobber)',
                          force_clobber=True)
 
   def upload_build(self):
-    yield(self.m.archive.zip_and_upload_build(
+    self.m.archive.zip_and_upload_build(
           'package build',
           self.m.chromium.c.build_config_fs,
           self.GS_ARCHIVES[self.bot_config['build_gs_archive']],
-          src_dir='v8'))
+          src_dir='v8')
 
   def download_build(self):
-    yield(self.m.path.rmtree(
+    self.m.path.rmtree(
           'build directory',
-          self.m.chromium.c.build_dir.join(self.m.chromium.c.build_config_fs)))
+          self.m.chromium.c.build_dir.join(self.m.chromium.c.build_config_fs))
 
-    yield(self.m.archive.download_and_unzip_build(
+    self.m.archive.download_and_unzip_build(
           'extract build',
           self.m.chromium.c.build_config_fs,
           self.GS_ARCHIVES[self.bot_config['build_gs_archive']],
-          abort_on_failure=True,
-          src_dir='v8'))
+          src_dir='v8')
 
 
   # TODO(machenbach): Pass api already in constructor to avoid redundant api
@@ -306,12 +360,14 @@ class V8Api(recipe_api.RecipeApi):
     else:
       return V8Test(test)
 
+  #TODO(martiniss) convert loop
   def runtests(self):
-    yield [self.create_test(t).run(self)
-           for t in self.bot_config.get('tests', [])]
+    with self.m.step.defer_results():
+      for t in self.bot_config.get('tests', []):
+        self.create_test(t).run(self)
 
   def presubmit(self):
-    return self.m.python(
+    self.m.python(
       'Presubmit',
       self.m.path['build'].join('scripts', 'slave', 'v8', 'v8testing.py'),
       ['--testname', 'presubmit'],
@@ -319,7 +375,7 @@ class V8Api(recipe_api.RecipeApi):
     )
 
   def check_initializers(self):
-    return self.m.step(
+    self.m.step(
       'Static-Initializers',
       ['bash',
        self.m.path['checkout'].join('tools', 'check-static-initializers.sh'),
@@ -331,7 +387,7 @@ class V8Api(recipe_api.RecipeApi):
 
   def fuzz(self):
     assert self.m.chromium.c.HOST_PLATFORM == 'linux'
-    return self.m.step(
+    self.m.step(
       'Fuzz',
       ['bash',
        self.m.path['checkout'].join('tools', 'fuzz-harness.sh'),
@@ -352,27 +408,80 @@ class V8Api(recipe_api.RecipeApi):
         self.m.path.join('..', '..', '..', '..', '..', 'gcmole')
       ),
     }
-    return self.m.step(
+    self.m.step(
       'GCMole',
       ['lua', self.m.path.join('tools', 'gcmole', 'gcmole.lua')],
       cwd=self.m.path['checkout'],
       env=env,
     )
 
+  @recipe_api.composite_step
   def simple_leak_check(self):
     # TODO(machenbach): Add task kill step for windows.
     relative_d8_path = self.m.path.join(
         self.m.path.basename(self.m.chromium.c.build_dir),
         self.m.chromium.c.build_config_fs,
         'd8')
-    return self.m.step(
+    step_result = self.m.step(
       'Simple Leak Check',
       ['valgrind', '--leak-check=full', '--show-reachable=yes',
        '--num-callers=20', relative_d8_path, '-e', '"print(1+2)"'],
       cwd=self.m.path['checkout'],
     )
+    if not 'no leaks are possible' in (step_result.stdout or ''):
+      step_result.presentation.status = self.m.step.FAILURE
+      raise self.m.step.StepFailure('Failed leak check')
+
+  def deopt_fuzz(self):
+    full_args = [
+      '--mode', self.m.chromium.c.build_config_fs,
+      '--arch', self.m.chromium.c.gyp_env.GYP_DEFINES['v8_target_arch'],
+      '--progress', 'verbose',
+      '--buildbot',
+    ]
+
+    # Add builder-specific test arguments.
+    full_args += self.c.testing.test_args
+
+    self.m.python(
+      'Deopt Fuzz',
+      self.m.path['checkout'].join('tools', 'run-deopt-fuzzer.py'),
+      full_args,
+      cwd=self.m.path['checkout'],
+    )
+
+  def _command_results_text(self, results, flaky):
+    """Returns log lines for all results of a unique command."""
+    assert results
+    lines = []
+
+    # Add common description for multiple runs.
+    flaky_suffix = ' (flaky)' if flaky else ''
+    lines.append('Test: %s%s' % (results[0]['name'], flaky_suffix))
+    lines.append('Flags: %s' % " ".join(results[0]['flags']))
+    lines.append('Command: %s' % results[0]['command'])
+    lines.append('')
+
+    # Add results for each run of a command.
+    for result in sorted(results, key=lambda r: int(r['run'])):
+      lines.append('Run #%d' % int(result['run']))
+      lines.append('Exit code: %s' % result['exit_code'])
+      lines.append('Result: %s' % result['result'])
+      lines.append('')
+      if result['stdout']:
+        lines.append('Stdout:')
+        lines.extend(result['stdout'].splitlines())
+        lines.append('')
+      if result['stderr']:
+        lines.append('Stderr:')
+        lines.extend(result['stderr'].splitlines())
+        lines.append('')
+    return lines
 
   def _update_test_presentation(self, results, presentation):
+    def all_same(items):
+      return all(x == items[0] for x in items)
+
     if not results:
       return
 
@@ -387,29 +496,46 @@ class V8Api(recipe_api.RecipeApi):
       # different configurations).
       unique_results.setdefault(label, []).append(result)
 
+    failure_count = 0
+    flake_count = 0
     for label in sorted(unique_results.keys()[:MAX_FAILURE_LOGS]):
       lines = []
+
+      # Group results by command. The same command might have run multiple
+      # times to detect flakes.
+      results_per_command = {}
       for result in unique_results[label]:
-        lines.append('Test: %s' % result['name'])
-        lines.append('Flags: %s' % " ".join(result['flags']))
-        lines.append('Exit code: %s' % result['exit_code'])
-        lines.append('Result: %s' % result['result'])
-        lines.append('Command: %s' % result['command'])
-        lines.append('')
-        if result['stdout']:
-          lines.append('Stdout:')
-          lines.extend(result['stdout'].splitlines())
-          lines.append('')
-        if result['stderr']:
-          lines.append('Stderr:')
-          lines.extend(result['stderr'].splitlines())
-          lines.append('')
+        results_per_command.setdefault(result['command'], []).append(result)
+
+      for command in results_per_command:
+        # Determine flakiness. A test is flaky if not all results from a unique
+        # command are the same (e.g. all 'FAIL').
+        flaky = not all_same(map(lambda x: x['result'],
+                                 results_per_command[command]))
+
+        # Count flakes and failures for summary. The v8 test driver reports
+        # failures and reruns of failures.
+        flake_count += int(flaky)
+        failure_count += int(not flaky)
+
+        lines += self._command_results_text(results_per_command[command],
+                                            flaky)
       presentation.logs[label] = lines
 
+    # Summary about flakes and failures.
+    presentation.step_text += ('failures: %d<br/>flakes: %d<br/>' %
+                               (failure_count, flake_count))
+
+  @recipe_api.composite_step
   def _runtest(self, name, test, flaky_tests=None, **kwargs):
     env = {}
+    target = self.m.chromium.c.build_config_fs
+    if self.c.nacl.update_nacl_sdk:
+      # TODO(machenbach): NaCl circumvents the buildbot naming conventions and
+      # uses v8 flavor. Make this more uniform.
+      target = target.lower()
     full_args = [
-      '--target', self.m.chromium.c.build_config_fs,
+      '--target', target,
       '--arch', self.m.chromium.c.gyp_env.GYP_DEFINES['v8_target_arch'],
       '--testname', test['tests'],
     ]
@@ -436,14 +562,49 @@ class V8Api(recipe_api.RecipeApi):
           'third_party', 'llvm-build', 'Release+Asserts', 'bin',
           'llvm-symbolizer')
 
+    # Arguments and environment for tsan builds:
+    if self.m.chromium.c.gyp_env.GYP_DEFINES.get('tsan') == 1:
+      full_args.append('--tsan')
+      env['TSAN_OPTIONS'] = " ".join([
+        'external_symbolizer_path=%s' %
+            self.m.path['checkout'].join(
+                'third_party', 'llvm-build', 'Release+Asserts', 'bin',
+                'llvm-symbolizer'),
+        'exit_code=0',
+        'report_thread_leaks=0',
+        'history_size=7',
+        'report_destroy_locked=0',
+      ])
+
+    # Environment for nacl builds:
+    if self.c.nacl.NACL_SDK_ROOT:
+      env['NACL_SDK_ROOT'] = self.c.nacl.NACL_SDK_ROOT
+
     # Default callbacks if the show_test_results feature is turned off.
-    followup_fn = None
     step_test_data = None
 
     if self.c.testing.show_test_results:
       full_args += ['--json-test-results',
                     self.m.json.output(add_json_log=False)]
-      def followup_fn(step_result):
+      def step_test_data():
+        return self.test_api.output_json(
+            self._test_data.get('test_failures', False),
+            self._test_data.get('wrong_results', False))
+
+    try:
+      self.m.python(
+        name,
+        self.m.path['build'].join('scripts', 'slave', 'v8', 'v8testing.py'),
+        full_args,
+        cwd=self.m.path['checkout'],
+        env=env,
+        step_test_data=step_test_data,
+        **kwargs
+      )
+    finally:
+      # Show test results independent of the step result.
+      step_result = self.m.step.active_result
+      if self.c.testing.show_test_results:
         r = step_result.json.output
         # The output is expected to be a list of architecture dicts that
         # each contain a results list. On buildbot, there is only one
@@ -451,37 +612,19 @@ class V8Api(recipe_api.RecipeApi):
         if (r and isinstance(r, list) and isinstance(r[0], dict)):
           self._update_test_presentation(r[0]['results'],
                                          step_result.presentation)
-      def step_test_data():
-        return self.test_api.output_json(
-            self._test_data.get('test_failures', False),
-            self._test_data.get('wrong_results', False))
 
-    yield self.m.python(
-      name,
-      self.m.path['build'].join('scripts', 'slave', 'v8', 'v8testing.py'),
-      full_args,
-      cwd=self.m.path['checkout'],
-      env=env,
-      followup_fn=followup_fn,
-      step_test_data=step_test_data,
-      always_run=True,
-      **kwargs
-    )
-
-    if self.c.testing.show_test_results:
-      # Check integrity of the last output. The json list is expected to
-      # contain only one element for one (architecture, build config type)
-      # pair on the buildbot.
-      result = self.m.step_history.last_step().json.output
-      if result and len(result) > 1:
-        yield self.m.python.inline(
-            name,
-            r"""
-            import sys
-            print 'Unexpected results set present.'
-            sys.exit(1)
-            """,
-            always_run=True)
+        # Check integrity of the last output. The json list is expected to
+        # contain only one element for one (architecture, build config type)
+        # pair on the buildbot.
+        result = step_result.json.output
+        if result and len(result) > 1:
+          self.m.python.inline(
+              name,
+              r"""
+              import sys
+              print 'Unexpected results set present.'
+              sys.exit(1)
+              """)
 
   def runtest(self, test, **kwargs):
     # Get the flaky-step configuration default per test.
@@ -492,16 +635,27 @@ class V8Api(recipe_api.RecipeApi):
     if self.c.testing.add_flaky_step is not None:
       add_flaky_step = self.c.testing.add_flaky_step
     if add_flaky_step:
-      return [
-        self._runtest(test['name'], test, flaky_tests='skip', **kwargs),
+      try:
+        self._runtest(test['name'], test, flaky_tests='skip', **kwargs)
+      finally:
         self._runtest(test['name'] + ' - flaky', test, flaky_tests='run',
-                      can_fail_build=False, **kwargs),
-      ]
+                      **kwargs)
     else:
-      return self._runtest(test['name'], test, **kwargs)
+      self._runtest(test['name'], test, **kwargs)
 
-  def runperf(self, tests, perf_configs):
-    def run_single_perf_test(name, json_file):
+  def runperf(self, tests, perf_configs, category=None):
+    """Run v8 performance tests and upload results.
+
+    Args:
+      tests: A list of tests from perf_configs to run.
+      perf_configs: A mapping from test name to a suite configuration json.
+      category: Optionally use bot nesting level as category. Bot names are
+                irrelevant if several different bots run in the same category
+                like ia32.
+    """
+
+    results_mapping = collections.defaultdict(dict)
+    def run_single_perf_test(test, name, json_file):
       """Call the v8 benchmark suite runner.
 
       Performance results are saved in the json test results file as a dict with
@@ -514,27 +668,31 @@ class V8Api(recipe_api.RecipeApi):
         json_file,
       ]
 
-      def followup_fn(step_result):
-        """Log accumulated errors."""
-        errors = step_result.json.output['errors']
-        if errors:
-          step_result.presentation.logs['Errors'] = errors
-
       step_test_data = lambda: self.test_api.perf_json(
           self._test_data.get('perf_failures', False))
 
-      # TODO(machenbach): Remove 'can_fail_build' as soon as performance tests
-      # are stable.
-      yield self.m.python(
-        name,
-        self.m.path['checkout'].join('tools', 'run_benchmarks.py'),
-        full_args,
-        cwd=self.m.path['checkout'],
-        followup_fn=followup_fn,
-        step_test_data=step_test_data,
-        always_run=True,
-        can_fail_build=False
-      )
+      try:
+        self.m.python(
+          name,
+          self.m.path['checkout'].join('tools', 'run_benchmarks.py'),
+          full_args,
+          cwd=self.m.path['checkout'],
+          step_test_data=step_test_data,
+        )
+      finally:
+        results_mapping[t][name] = step_result = self.m.step.active_result
+        errors = step_result.json.output['errors']
+        if errors:
+          step_result.presentation.logs['Errors'] = errors
+        else:
+          # Add a link to the dashboard. This assumes the naming convention
+          # step name == suite name. If this convention didn't hold, we'd need
+          # to use the path from the json output graphs here.
+          self.m.perf_dashboard.add_dashboard_link(
+              step_result.presentation,
+              'v8/%s' % name,
+              self.revision,
+              bot=category)
 
     def mean(values):
       return float(sum(values)) / len(values)
@@ -545,12 +703,16 @@ class V8Api(recipe_api.RecipeApi):
     def standard_deviation(values, average):
       return math.sqrt(mean(variance(values, average)))
 
+    failed = False
     for t in tests:
       assert perf_configs[t]
       assert perf_configs[t]['name']
       assert perf_configs[t]['json']
-      yield run_single_perf_test(perf_configs[t]['name'],
-                                 perf_configs[t]['json'])
+      try:
+        run_single_perf_test(
+            t, perf_configs[t]['name'], perf_configs[t]['json'])
+      except self.m.step.StepFailure:
+        failed = True
 
     # Make sure that bots that run perf tests have a revision property.
     if tests:
@@ -560,8 +722,8 @@ class V8Api(recipe_api.RecipeApi):
     # Collect all perf data of the previous steps.
     points = []
     for t in tests:
-      name = perf_configs[t]['name']
-      for trace in self.m.step_history[name].json.output['traces']:
+      step = results_mapping[t][perf_configs[t]['name']]
+      for trace in step.json.output['traces']:
         # Make 'v8' the root of all standalone v8 performance tests.
         test_path = '/'.join(['v8'] + trace['graphs'])
 
@@ -576,10 +738,21 @@ class V8Api(recipe_api.RecipeApi):
 
         p = self.m.perf_dashboard.get_skeleton_point(
             test_path, self.revision, str(average))
-        p['error'] = str(standard_deviation(values, average))
         p['units'] = trace['units']
+        p['bot'] = category or p['bot']
+        p['supplemental_columns'] = {'a_default_rev': 'r_v8_rev',
+                                     'r_v8_rev': self.revision}
+
+        # A trace might provide a value for standard deviation if the test
+        # driver already calculated it, otherwise calculate it here.
+        p['error'] = (trace.get('stddev') or
+                      str(standard_deviation(values, average)))
+
         points.append(p)
 
     # Send all perf data to the perf dashboard in one step.
     if points:
-      yield self.m.perf_dashboard.post(points)
+      self.m.perf_dashboard.post(points)
+
+    if failed:
+      raise self.m.step.StepFailure('One or more performance tests failed.')

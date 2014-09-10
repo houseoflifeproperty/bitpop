@@ -26,8 +26,8 @@ assert os.path.isdir(os.path.join(ROOT_DIR, 'build')), \
 sys.path.insert(0, os.path.join(ROOT_DIR, 'build', 'scripts', 'tools'))
 import runit  # pylint: disable=F0401
 runit.add_build_paths(sys.path)
-import requests
-import pytz
+import requests  # pylint: disable=F0401
+import pytz  # pylint: disable=F0401
 
 from common import find_depot_tools
 DEPOT_TOOLS_DIR = find_depot_tools.add_depot_tools_to_path()
@@ -142,7 +142,11 @@ class GCStorage(object):
   re_number = re.compile('[0-9]+$')
 
   def __init__(self, master_name, bucket, chunk_size=CHUNK_SIZE, dry_run=False):
-    self._master_name = master_name
+    if master_name.startswith('master.'):
+      self._master_name = master_name[7:]
+    else:
+      self._master_name = master_name
+
     self._bucket = bucket.rstrip('/')
     # chunk to use when uncompressing files.
     self._chunk_size = chunk_size
@@ -465,8 +469,7 @@ class Waterfall(object):
       filename = os.path.join(self._master_path,
                               build_properties['builderName'], basename)
       ref = (build_properties['builderName'],
-             build_number,
-             re.sub(r'[^\w\.\-]', '_', step_name) + '.' + log_name)
+             build_number, re.sub(r'/', '_', step_name) + '.' + log_name)
 
       for ext in ('', '.bz2'):
         filename_ext = filename + ext

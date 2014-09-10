@@ -172,17 +172,17 @@
 // By default, const char* argument values are assumed to have long-lived scope
 // and will not be copied. Use this macro to force a const char* to be copied.
 #define TRACE_STR_COPY(str) \
-    WebCore::TraceEvent::TraceStringWithCopy(str)
+    blink::TraceEvent::TraceStringWithCopy(str)
 
 // By default, uint64 ID argument values are not mangled with the Process ID in
 // TRACE_EVENT_ASYNC macros. Use this macro to force Process ID mangling.
 #define TRACE_ID_MANGLE(id) \
-    WebCore::TraceEvent::TraceID::ForceMangle(id)
+    blink::TraceEvent::TraceID::ForceMangle(id)
 
 // By default, pointers are mangled with the Process ID in TRACE_EVENT_ASYNC
 // macros. Use this macro to prevent Process ID mangling.
 #define TRACE_ID_DONT_MANGLE(id) \
-    WebCore::TraceEvent::TraceID::DontMangle(id)
+    blink::TraceEvent::TraceID::DontMangle(id)
 
 // Records a pair of begin and end events called "name" for the current
 // scope, with 0, 1 or 2 associated arguments. If the category is not
@@ -497,6 +497,11 @@
     INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_CREATE_OBJECT, \
         categoryGroup, name, TRACE_ID_DONT_MANGLE(id), TRACE_EVENT_FLAG_NONE)
 
+#define TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(categoryGroup, name, id, snapshot) \
+    INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_SNAPSHOT_OBJECT, \
+        categoryGroup, name, TRACE_ID_DONT_MANGLE(id), TRACE_EVENT_FLAG_NONE, \
+        "snapshot", snapshot)
+
 #define TRACE_EVENT_OBJECT_DELETED_WITH_ID(categoryGroup, name, id) \
     INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_DELETE_OBJECT, \
         categoryGroup, name, TRACE_ID_DONT_MANGLE(id), TRACE_EVENT_FLAG_NONE)
@@ -530,10 +535,10 @@
 // const unsigned char*
 //     TRACE_EVENT_API_GET_CATEGORY_ENABLED(const char* category_name)
 #define TRACE_EVENT_API_GET_CATEGORY_ENABLED \
-    WebCore::EventTracer::getTraceCategoryEnabledFlag
+    blink::EventTracer::getTraceCategoryEnabledFlag
 
 // Add a trace event to the platform tracing system.
-// WebCore::TraceEvent::TraceEventHandle TRACE_EVENT_API_ADD_TRACE_EVENT(
+// blink::TraceEvent::TraceEventHandle TRACE_EVENT_API_ADD_TRACE_EVENT(
 //                    char phase,
 //                    const unsigned char* category_enabled,
 //                    const char* name,
@@ -545,13 +550,13 @@
 //                    const RefPtr<ConvertableToTraceFormat>* convertableValues
 //                    unsigned char flags)
 #define TRACE_EVENT_API_ADD_TRACE_EVENT \
-    WebCore::EventTracer::addTraceEvent
+    blink::EventTracer::addTraceEvent
 
 // Set the duration field of a COMPLETE trace event.
 // void TRACE_EVENT_API_UPDATE_TRACE_EVENT_DURATION(
-//     WebCore::TraceEvent::TraceEventHandle handle)
+//     blink::TraceEvent::TraceEventHandle handle)
 #define TRACE_EVENT_API_UPDATE_TRACE_EVENT_DURATION \
-    WebCore::EventTracer::updateTraceEventDuration
+    blink::EventTracer::updateTraceEventDuration
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -583,9 +588,9 @@
     do { \
         INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(category); \
         if (INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE()) { \
-            WebCore::TraceEvent::addTraceEvent( \
+            blink::TraceEvent::addTraceEvent( \
                 phase, INTERNALTRACEEVENTUID(categoryGroupEnabled), name, \
-                WebCore::TraceEvent::noEventId, flags, ##__VA_ARGS__); \
+                blink::TraceEvent::noEventId, flags, ##__VA_ARGS__); \
         } \
     } while (0)
 
@@ -594,13 +599,13 @@
 // ends.
 #define INTERNAL_TRACE_EVENT_ADD_SCOPED(category, name, ...) \
     INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(category); \
-    WebCore::TraceEvent::ScopedTracer INTERNALTRACEEVENTUID(scopedTracer); \
+    blink::TraceEvent::ScopedTracer INTERNALTRACEEVENTUID(scopedTracer); \
     if (INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE()) { \
-        WebCore::TraceEvent::TraceEventHandle h = \
-            WebCore::TraceEvent::addTraceEvent( \
+        blink::TraceEvent::TraceEventHandle h = \
+            blink::TraceEvent::addTraceEvent( \
                 TRACE_EVENT_PHASE_COMPLETE, \
                 INTERNALTRACEEVENTUID(categoryGroupEnabled), \
-                name, WebCore::TraceEvent::noEventId, \
+                name, blink::TraceEvent::noEventId, \
                 TRACE_EVENT_FLAG_NONE, ##__VA_ARGS__); \
         INTERNALTRACEEVENTUID(scopedTracer).initialize( \
             INTERNALTRACEEVENTUID(categoryGroupEnabled), name, h); \
@@ -614,9 +619,9 @@
         INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(category); \
         if (INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE()) { \
             unsigned char traceEventFlags = flags | TRACE_EVENT_FLAG_HAS_ID; \
-            WebCore::TraceEvent::TraceID traceEventTraceID( \
+            blink::TraceEvent::TraceID traceEventTraceID( \
                 id, &traceEventFlags); \
-            WebCore::TraceEvent::addTraceEvent( \
+            blink::TraceEvent::addTraceEvent( \
                 phase, INTERNALTRACEEVENTUID(categoryGroupEnabled), \
                 name, traceEventTraceID.data(), traceEventFlags, \
                 ##__VA_ARGS__); \
@@ -632,9 +637,7 @@
 #define TRACE_EVENT_PHASE_BEGIN    ('B')
 #define TRACE_EVENT_PHASE_END      ('E')
 #define TRACE_EVENT_PHASE_COMPLETE ('X')
-// FIXME: unify instant events handling between blink and platform.
 #define TRACE_EVENT_PHASE_INSTANT  ('I')
-#define TRACE_EVENT_PHASE_INSTANT_WITH_SCOPE  ('i')
 #define TRACE_EVENT_PHASE_ASYNC_BEGIN ('S')
 #define TRACE_EVENT_PHASE_ASYNC_STEP_INTO  ('T')
 #define TRACE_EVENT_PHASE_ASYNC_STEP_PAST  ('p')
@@ -643,6 +646,7 @@
 #define TRACE_EVENT_PHASE_COUNTER  ('C')
 #define TRACE_EVENT_PHASE_SAMPLE  ('P')
 #define TRACE_EVENT_PHASE_CREATE_OBJECT ('N')
+#define TRACE_EVENT_PHASE_SNAPSHOT_OBJECT ('O')
 #define TRACE_EVENT_PHASE_DELETE_OBJECT ('D')
 
 // Flags for changing the behavior of TRACE_EVENT_API_ADD_TRACE_EVENT.
@@ -668,7 +672,7 @@
 #define INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE() \
     (*INTERNALTRACEEVENTUID(categoryGroupEnabled) & (ENABLED_FOR_RECORDING | ENABLED_FOR_EVENT_CALLBACK))
 
-namespace WebCore {
+namespace blink {
 
 namespace TraceEvent {
 
@@ -972,11 +976,11 @@ public:
     // FIXME: Make load/store to traceSamplingState[] thread-safe and atomic.
     static inline const char* current()
     {
-        return reinterpret_cast<const char*>(*WebCore::traceSamplingState[BucketNumber]);
+        return reinterpret_cast<const char*>(*blink::traceSamplingState[BucketNumber]);
     }
     static inline void set(const char* categoryAndName)
     {
-        *WebCore::traceSamplingState[BucketNumber] = reinterpret_cast<long>(const_cast<char*>(categoryAndName));
+        *blink::traceSamplingState[BucketNumber] = reinterpret_cast<long>(const_cast<char*>(categoryAndName));
     }
 
 private:
@@ -1005,6 +1009,6 @@ private:
 
 } // namespace TraceEvent
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

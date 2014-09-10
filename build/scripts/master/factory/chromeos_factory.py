@@ -12,6 +12,7 @@ from buildbot.process.properties import Property, WithProperties
 from master import chromium_step
 from master.factory import build_factory
 from master.factory import chromeos_build_factory
+from master.master_utils import ConditionalProperty
 
 
 class ChromiteFactory(object):
@@ -84,23 +85,27 @@ class ChromiteFactory(object):
       patch: object with url and ref to patch on top
     """
     git_bin = '/usr/bin/git'
+    def git(*args):
+      return ' '.join((git_bin,) + args)
+
     git_checkout_dir = os.path.basename(repo).replace('.git', '')
-    clear_and_clone_cmd = 'rm -rf %s' % git_checkout_dir
-    clear_and_clone_cmd += ' && %s clone %s' % (git_bin, repo)
-    clear_and_clone_cmd += ' && cd %s' % git_checkout_dir
+
+    commands = []
+    commands += ['rm -rf "%s"' % (git_checkout_dir,)]
+    commands += [git('retry', 'clone', repo)]
+    commands += ['cd "%s"' % (git_checkout_dir,)]
 
     # We ignore branches coming from buildbot triggers and rely on those in the
     # config.  This is because buildbot branch names do not match up with
     # cros builds.
-    clear_and_clone_cmd += ' && %s checkout %s' % (git_bin, self.branch)
+    commands += [git('checkout', self.branch)]
     msg = 'Clear and Clone %s' % git_checkout_dir
     if patch:
-      clear_and_clone_cmd += (' && %s pull %s %s' %
-                              (git_bin, patch['url'], patch['ref']))
+      commands += [git('retry', 'pull', patch['url'], patch['ref'])]
       msg = 'Clear, Clone and Patch %s' % git_checkout_dir
 
     self.f_cbuild.addStep(shell.ShellCommand,
-                          command=clear_and_clone_cmd,
+                          command=' && '.join(commands),
                           name=msg,
                           description=msg,
                           haltOnFailure=True)
@@ -219,6 +224,15 @@ class CbuildbotFactory(ChromiteFactory):
     cmd = [WithProperties('--buildnumber=%(buildnumber)s'),
            '--buildroot=%s' % self.buildroot]
 
+    # Add '--master-build-id' flag when build ID property is present
+    cmd.append(
+        ConditionalProperty(
+            'master_build_id',
+            WithProperties('--master-build-id=%(master_build_id)s'),
+            [], # Will be flattened to nothing.
+        )
+    )
+
     if self.trybot:
       cmd.append(Property('extra_args'))
     else:
@@ -233,8 +247,13 @@ class CbuildbotFactory(ChromiteFactory):
     if self.pass_revision:
       cmd.append(WithProperties('--chrome_version=%(revision)s'))
 
-    #TODO(petermayo): This adds an empty parameter when not clobbering; fix.
-    cmd.append(WithProperties('%s', 'clobber:+--clobber'))
+    cmd.append(
+        ConditionalProperty(
+            'clobber',
+            '--clobber',
+            [], # Will be flattened to nothing.
+        )
+    )
 
     return cmd
 

@@ -42,7 +42,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace WorkerAgentState {
 static const char workerInspectionEnabled[] = "workerInspectionEnabled";
@@ -105,9 +105,9 @@ private:
 
 int InspectorWorkerAgent::WorkerFrontendChannel::s_nextId = 1;
 
-PassOwnPtr<InspectorWorkerAgent> InspectorWorkerAgent::create()
+PassOwnPtrWillBeRawPtr<InspectorWorkerAgent> InspectorWorkerAgent::create()
 {
-    return adoptPtr(new InspectorWorkerAgent());
+    return adoptPtrWillBeNoop(new InspectorWorkerAgent());
 }
 
 InspectorWorkerAgent::InspectorWorkerAgent()
@@ -118,7 +118,9 @@ InspectorWorkerAgent::InspectorWorkerAgent()
 
 InspectorWorkerAgent::~InspectorWorkerAgent()
 {
+#if !ENABLE(OILPAN)
     m_instrumentingAgents->setInspectorWorkerAgent(0);
+#endif
 }
 
 void InspectorWorkerAgent::init()
@@ -197,6 +199,15 @@ void InspectorWorkerAgent::setAutoconnectToWorkers(ErrorString*, bool value)
     m_state->setBoolean(WorkerAgentState::autoconnectToWorkers, value);
 }
 
+void InspectorWorkerAgent::setTracingSessionId(const String& sessionId)
+{
+    m_tracingSessionId = sessionId;
+    if (sessionId.isEmpty())
+        return;
+    for (DedicatedWorkers::iterator it = m_dedicatedWorkers.begin(); it != m_dedicatedWorkers.end(); ++it)
+        it->key->writeTimelineStartedEvent(sessionId);
+}
+
 bool InspectorWorkerAgent::shouldPauseDedicatedWorkerOnStart()
 {
     return m_state->getBoolean(WorkerAgentState::autoconnectToWorkers);
@@ -207,6 +218,8 @@ void InspectorWorkerAgent::didStartWorkerGlobalScope(WorkerGlobalScopeProxy* wor
     m_dedicatedWorkers.set(workerGlobalScopeProxy, url.string());
     if (m_inspectorFrontend && m_state->getBoolean(WorkerAgentState::workerInspectionEnabled))
         createWorkerFrontendChannel(workerGlobalScopeProxy, url.string());
+    if (!m_tracingSessionId.isEmpty())
+        workerGlobalScopeProxy->writeTimelineStartedEvent(m_tracingSessionId);
 }
 
 void InspectorWorkerAgent::workerGlobalScopeTerminated(WorkerGlobalScopeProxy* proxy)
@@ -249,4 +262,4 @@ void InspectorWorkerAgent::createWorkerFrontendChannel(WorkerGlobalScopeProxy* w
     m_inspectorFrontend->worker()->workerCreated(channel->id(), url, autoconnectToWorkers);
 }
 
-} // namespace WebCore
+} // namespace blink

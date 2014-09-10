@@ -108,6 +108,8 @@ class GCMDriverDesktop::IOWorker : public GCMClient::Delegate {
   virtual void OnMessageSendError(
       const std::string& app_id,
       const GCMClient::SendErrorDetails& send_error_details) OVERRIDE;
+  virtual void OnSendAcknowledged(const std::string& app_id,
+                                  const std::string& message_id) OVERRIDE;
   virtual void OnGCMReady() OVERRIDE;
   virtual void OnActivityRecorded() OVERRIDE;
   virtual void OnConnected(const net::IPEndPoint& ip_endpoint) OVERRIDE;
@@ -131,6 +133,9 @@ class GCMDriverDesktop::IOWorker : public GCMClient::Delegate {
             const GCMClient::OutgoingMessage& message);
   void GetGCMStatistics(bool clear_logs);
   void SetGCMRecording(bool recording);
+
+  void SetAccountsForCheckin(
+      const std::map<std::string, std::string>& account_tokens);
 
   // For testing purpose. Can be called from UI thread. Use with care.
   GCMClient* gcm_client_for_testing() const { return gcm_client_.get(); }
@@ -243,6 +248,17 @@ void GCMDriverDesktop::IOWorker::OnMessageSendError(
                  send_error_details));
 }
 
+void GCMDriverDesktop::IOWorker::OnSendAcknowledged(
+    const std::string& app_id,
+    const std::string& message_id) {
+  DCHECK(io_thread_->RunsTasksOnCurrentThread());
+
+  ui_thread_->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &GCMDriverDesktop::SendAcknowledged, service_, app_id, message_id));
+}
+
 void GCMDriverDesktop::IOWorker::OnGCMReady() {
   ui_thread_->PostTask(
       FROM_HERE,
@@ -343,6 +359,14 @@ void GCMDriverDesktop::IOWorker::SetGCMRecording(bool recording) {
   ui_thread_->PostTask(
       FROM_HERE,
       base::Bind(&GCMDriverDesktop::GetGCMStatisticsFinished, service_, stats));
+}
+
+void GCMDriverDesktop::IOWorker::SetAccountsForCheckin(
+    const std::map<std::string, std::string>& account_tokens) {
+  DCHECK(io_thread_->RunsTasksOnCurrentThread());
+
+  if (gcm_client_.get())
+    gcm_client_->SetAccountsForCheckin(account_tokens);
 }
 
 GCMDriverDesktop::GCMDriverDesktop(
@@ -581,6 +605,17 @@ void GCMDriverDesktop::SetGCMRecording(const GetGCMStatisticsCallback& callback,
                  recording));
 }
 
+void GCMDriverDesktop::SetAccountsForCheckin(
+    const std::map<std::string, std::string>& account_tokens) {
+  DCHECK(ui_thread_->RunsTasksOnCurrentThread());
+
+  io_thread_->PostTask(
+      FROM_HERE,
+      base::Bind(&GCMDriverDesktop::IOWorker::SetAccountsForCheckin,
+                 base::Unretained(io_worker_.get()),
+                 account_tokens));
+}
+
 GCMClient::Result GCMDriverDesktop::EnsureStarted() {
   DCHECK(ui_thread_->RunsTasksOnCurrentThread());
 
@@ -595,7 +630,7 @@ GCMClient::Result GCMDriverDesktop::EnsureStarted() {
     return GCMClient::UNKNOWN_ERROR;
 
   // TODO(jianli): To be removed when sign-in enforcement is dropped.
-  if (!signed_in_)
+  if (!signed_in_ && !GCMDriver::IsAllowedForAllUsers())
     return GCMClient::NOT_SIGNED_IN;
 
   DCHECK(!delayed_task_controller_);
@@ -658,6 +693,17 @@ void GCMDriverDesktop::MessageSendError(
   GetAppHandler(app_id)->OnSendError(app_id, send_error_details);
 }
 
+void GCMDriverDesktop::SendAcknowledged(const std::string& app_id,
+                                        const std::string& message_id) {
+  DCHECK(ui_thread_->RunsTasksOnCurrentThread());
+
+  // Drop the event if the service has been stopped.
+  if (!gcm_started_)
+    return;
+
+  GetAppHandler(app_id)->OnSendAcknowledged(app_id, message_id);
+}
+
 void GCMDriverDesktop::GCMClientReady() {
   DCHECK(ui_thread_->RunsTasksOnCurrentThread());
 
@@ -669,8 +715,8 @@ void GCMDriverDesktop::OnConnected(const net::IPEndPoint& ip_endpoint) {
 
   connected_ = true;
 
-  // Drop the event if signed out.
-  if (!signed_in_)
+  // Drop the event if the service has been stopped.
+  if (!gcm_started_)
     return;
 
   const GCMAppHandlerMap& app_handler_map = app_handlers();
@@ -687,8 +733,8 @@ void GCMDriverDesktop::OnDisconnected() {
 
   connected_ = false;
 
-  // Drop the event if signed out.
-  if (!signed_in_)
+  // Drop the event if the service has been stopped.
+  if (!gcm_started_)
     return;
 
   const GCMAppHandlerMap& app_handler_map = app_handlers();

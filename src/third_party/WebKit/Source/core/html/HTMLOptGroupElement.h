@@ -26,40 +26,39 @@
 
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLSelectElement;
+class HTMLDivElement;
 
 class HTMLOptGroupElement FINAL : public HTMLElement {
 public:
-    DECLARE_NODE_FACTORY(HTMLOptGroupElement);
+    static PassRefPtrWillBeRawPtr<HTMLOptGroupElement> create(Document&);
 
     virtual bool isDisabledFormControl() const OVERRIDE;
     HTMLSelectElement* ownerSelectElement() const;
 
     String groupLabelText() const;
 
-    bool isDisplayNone() const;
-
 private:
     explicit HTMLOptGroupElement(Document&);
 
-    virtual bool rendererIsFocusable() const OVERRIDE;
+    virtual bool rendererIsFocusable() const OVERRIDE { return true; }
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
+    virtual void childrenChanged(const ChildrenChange&) OVERRIDE;
+    virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE;
+    virtual void didAddUserAgentShadowRoot(ShadowRoot&) OVERRIDE;
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
-
-    virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE;
-
-    // <optgroup> never has a renderer so we manually manage a cached style.
+    // <optgroup> might not have a renderer so we manually manage a cached style.
     void updateNonRenderStyle();
     virtual RenderStyle* nonRendererStyle() const OVERRIDE;
     virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
 
+    void updateGroupLabel();
     void recalcSelectOptions();
+    HTMLDivElement& optGroupLabelElement() const;
 
     RefPtr<RenderStyle> m_style;
 };

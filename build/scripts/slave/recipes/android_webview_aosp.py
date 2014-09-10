@@ -36,31 +36,32 @@ def GenSteps(api):
   # we use the all_incompatible_directories_check_step to check nothing is
   # incompatible licenced.
 
-  yield droid.sync_chromium()
+  spec = droid.create_spec()
+  droid.sync_chromium(spec)
 
-  yield droid.lastchange_steps()
+  droid.lastchange_steps()
 
-  yield api.tryserver.maybe_apply_issue()
+  api.tryserver.maybe_apply_issue()
 
   # Check out the Android source.
-  yield droid.repo_init_steps()
-  yield droid.repo_sync_steps()
+  droid.repo_init_steps()
+  droid.repo_sync_steps()
 
   # The Android build system requires the Chromium sources be in the Android
   # tree. We rsync everything accept the blacklisted source into the Android
   # tree.
-  yield droid.rsync_chromium_into_android_tree_step()
+  droid.rsync_chromium_into_android_tree_step()
 
   # This generates the Android.mk files needed by the Android build system to
   # build the parts of Chromium that are needed by the WebView.
-  yield droid.gyp_webview_step()
+  droid.gyp_webview_step()
 
   # This check is in place to detect incompatibly-licensed new code that's
   # checked into the main Chromium repository.
-  yield droid.all_incompatible_directories_check_step()
+  droid.all_incompatible_directories_check_step()
 
   # TODO(android): use api.chromium.compile for this
-  yield droid.compile_step(
+  droid.compile_step(
     build_tool='make-android',
     targets=['webviewchromium'],
     use_goma=True)

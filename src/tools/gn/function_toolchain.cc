@@ -9,6 +9,7 @@
 #include "tools/gn/scope.h"
 #include "tools/gn/settings.h"
 #include "tools/gn/toolchain.h"
+#include "tools/gn/value_extractors.h"
 #include "tools/gn/variables.h"
 
 namespace functions {
@@ -50,6 +51,11 @@ const char kToolchain_Help[] =
     "  types via the \"tool\" call (see \"gn help tool\") and specifies\n"
     "  arguments to be passed to the toolchain build via the\n"
     "  \"toolchain_args\" call (see \"gn help toolchain_args\").\n"
+    "\n"
+    "  In addition, a toolchain can specify dependencies via the \"deps\"\n"
+    "  variable like a target. These dependencies will be resolved before any\n"
+    "  target in the toolchain is compiled. To avoid circular dependencies\n"
+    "  these must be targets defined in another toolchain.\n"
     "\n"
     "Invoking targets in toolchains:\n"
     "\n"
@@ -116,10 +122,21 @@ Value RunToolchain(Scope* scope,
   if (err->has_error())
     return Value();
 
+  // Read deps (if any).
+  const Value* deps_value = block_scope.GetValue(variables::kDeps, true);
+  if (deps_value) {
+    ExtractListOfLabels(
+        *deps_value, block_scope.GetSourceDir(),
+        ToolchainLabelForScope(&block_scope), &toolchain->deps(), err);
+    if (err->has_error())
+      return Value();
+  }
+
+
   if (!block_scope.CheckForUnusedVars(err))
     return Value();
 
-  // Save this target for the file.
+  // Save this toolchain.
   Scope::ItemVector* collector = scope->GetItemCollector();
   if (!collector) {
     *err = Err(function, "Can't define a toolchain in this context.");
@@ -142,22 +159,38 @@ const char kTool_Help[] =
     "  Used inside a toolchain definition to define a command to run for a\n"
     "  given file type. See also \"gn help toolchain\".\n"
     "\n"
-    "Command types:\n"
+    "Command types\n"
+    "\n"
     "  The following values may be passed to the tool() function for the type\n"
     "  of the command:\n"
     "\n"
     "  \"cc\", \"cxx\", \"objc\", \"objcxx\", \"asm\", \"alink\", \"solink\",\n"
     "  \"link\", \"stamp\", \"copy\"\n"
     "\n"
-    "Command flags:\n"
+    "Tool-specific notes\n"
+    "\n"
+    "  copy\n"
+    "    The copy command should be a native OS command since it does not\n"
+    "    implement toolchain dependencies (which would enable a copy tool to\n"
+    "    be compiled by a previous step).\n"
+    "\n"
+    "    It is legal for the copy to not update the timestamp of the output\n"
+    "    file (as long as it's greater than or equal to the input file). This\n"
+    "    allows the copy command to be implemented as a hard link which can\n"
+    "    be more efficient.\n"
+    "\n"
+    "Command flags\n"
     "\n"
     "  These variables may be specified in the { } block after the tool call.\n"
     "  They are passed directly to Ninja. See the ninja documentation for how\n"
     "  they work. Don't forget to backslash-escape $ required by Ninja to\n"
     "  prevent GN from doing variable expansion.\n"
     "\n"
-    "    command, depfile, deps, description, pool, restat, rspfile,\n"
+    "    command, depfile, depsformat, description, pool, restat, rspfile,\n"
     "    rspfile_content\n"
+    "\n"
+    "  (Note that GN uses \"depsformat\" for Ninja's \"deps\" variable to\n"
+    "  avoid confusion with dependency lists.)\n"
     "\n"
     "  Additionally, lib_prefix and lib_dir_prefix may be used for the link\n"
     "  tools. These strings will be prepended to the libraries and library\n"
@@ -168,7 +201,37 @@ const char kTool_Help[] =
     "  added to the link like with a \"-framework\" switch and the lib prefix\n"
     "  will be ignored.\n"
     "\n"
-    "Example:\n"
+    "Ninja variables available to tool invocations\n"
+    "\n"
+    "  When writing tool commands, you use the various built-in Ninja\n"
+    "  variables like \"$in\" and \"$out\" (note that the $ must be escaped\n"
+    "  for it to be passed to Ninja, so write \"\\$in\" in the command\n"
+    "  string).\n"
+    "\n"
+    "  GN defines the following variables for binary targets to access the\n"
+    "  various computed information needed for compiling:\n"
+    "\n"
+    "    - Compiler flags: \"cflags\", \"cflags_c\", \"cflags_cc\",\n"
+    "          \"cflags_objc\", \"cflags_objcc\"\n"
+    "\n"
+    "    - Linker flags: \"ldflags\", \"libs\"\n"
+    "\n"
+    "  GN sets these other variables with target information that can be\n"
+    "  used for computing names for supplimetary files:\n"
+    "\n"
+    "    - \"target_name\": The name of the current target with no\n"
+    "      path information. For example \"mylib\".\n"
+    "\n"
+    "    - \"target_out_dir\": The value of \"target_out_dir\" from the BUILD\n"
+    "      file for this target (see \"gn help target_out_dir\"), relative\n"
+    "      to the root build directory with no trailing slash.\n"
+    "\n"
+    "    - \"root_out_dir\": The value of \"root_out_dir\" from the BUILD\n"
+    "      file for this target (see \"gn help root_out_dir\"), relative\n"
+    "      to the root build directory with no trailing slash.\n"
+    "\n"
+    "Example\n"
+    "\n"
     "  toolchain(\"my_toolchain\") {\n"
     "    # Put these at the top to apply to all tools below.\n"
     "    lib_prefix = \"-l\"\n"
@@ -219,7 +282,11 @@ Value RunTool(Scope* scope,
   Toolchain::Tool t;
   if (!ReadString(block_scope, "command", &t.command, err) ||
       !ReadString(block_scope, "depfile", &t.depfile, err) ||
-      !ReadString(block_scope, "deps", &t.deps, err) ||
+      // TODO(brettw) delete this once we rename "deps" -> "depsformat" in
+      // the toolchain definitions. This will avoid colliding with the
+      // toolchain's "deps" list. For now, accept either.
+      !ReadString(block_scope, "deps", &t.depsformat, err) ||
+      !ReadString(block_scope, "depsformat", &t.depsformat, err) ||
       !ReadString(block_scope, "description", &t.description, err) ||
       !ReadString(block_scope, "lib_dir_prefix", &t.lib_dir_prefix, err) ||
       !ReadString(block_scope, "lib_prefix", &t.lib_prefix, err) ||

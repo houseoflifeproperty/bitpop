@@ -11,6 +11,7 @@ if so closes the tree and emails appropriate parties. Configuration for which
 steps to close and which parties to notify are in a local gatekeeper.json file.
 """
 
+from collections import defaultdict
 from contextlib import closing, contextmanager
 import getpass
 import hashlib
@@ -32,8 +33,7 @@ from slave import build_scan
 from slave import build_scan_db
 from slave import gatekeeper_ng_config
 
-SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                           '..', '..')
+DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Buildbot status enum.
 SUCCESS, WARNINGS, FAILURE, SKIPPED, EXCEPTION, RETRY = range(6)
@@ -48,6 +48,12 @@ def get_pwd(password_file):
 def update_status(tree_message, status_url_root, username, password):
   """Connects to chromium-status and closes the tree."""
   #TODO(xusydoc): append status if status is already closed.
+
+  if isinstance(tree_message, unicode):
+    tree_message = tree_message.encode('utf8')
+  elif isinstance(tree_message, str):
+    tree_message = tree_message.decode('utf8')
+
   params = urllib.urlencode({
       'message': tree_message,
       'username': username,
@@ -65,25 +71,43 @@ def get_tree_status(status_url_root):
   return json.load(urllib2.urlopen(status_url))
 
 
+def get_builder_section(gatekeeper_section, builder):
+  """Returns the applicable gatekeeper config for the builder.
+
+  If the builder isn't present or is excluded, return None.
+  """
+  if builder in gatekeeper_section:
+    builder_section = gatekeeper_section[builder]
+  elif '*' in gatekeeper_section:
+    builder_section = gatekeeper_section['*']
+  else:
+    return None
+
+  if builder not in builder_section.get('excluded_builders', set()):
+    return builder_section
+  return None
+
+
 def check_builds(master_builds, master_jsons, gatekeeper_config):
   """Given a gatekeeper configuration, see which builds have failed."""
+  succeeded_builds = []
   failed_builds = []
-  for build_json, master_url, builder, buildnum in master_builds:
+
+  # Sort by buildnumber, highest first.
+  sorted_builds = sorted(master_builds, key=lambda x: x[3], reverse=True)
+  successful_builder_steps = defaultdict(lambda: defaultdict(set))
+  current_builds_successful = True
+
+  for build_json, master_url, builder, buildnum in sorted_builds:
     gatekeeper_sections = gatekeeper_config.get(master_url, [])
     for gatekeeper_section in gatekeeper_sections:
       section_hash = gatekeeper_ng_config.gatekeeper_section_hash(
           gatekeeper_section)
 
-      if build_json['builderName'] in gatekeeper_section:
-        gatekeeper = gatekeeper_section[build_json['builderName']]
-      elif '*' in gatekeeper_section:
-        gatekeeper = gatekeeper_section['*']
-      else:
-        continue
-
-      # Check if the buildername is in the excluded builder list and disable if
-      # so.
-      if build_json['builderName'] in gatekeeper.get('excluded_builders', []):
+      gatekeeper = get_builder_section(
+          gatekeeper_section, build_json['builderName'])
+      if not gatekeeper:
+        succeeded_builds.append((master_url, builder, buildnum))
         continue
 
       steps = build_json['steps']
@@ -99,9 +123,11 @@ def check_builds(master_builds, master_jsons, gatekeeper_config):
       )
       tree_notify = set(gatekeeper.get('tree_notify', []))
       sheriff_classes = set(gatekeeper.get('sheriff_classes', []))
-      subject_template = gatekeeper.get('subject_template',
-                                        gatekeeper_ng_config.DEFAULTS[
-                                            'subject_template'])
+      status_template = gatekeeper.get(
+          'status_template', gatekeeper_ng_config.DEFAULTS['status_template'])
+      subject_template = gatekeeper.get(
+          'subject_template', gatekeeper_ng_config.DEFAULTS[
+             'subject_template'])
       finished = [s for s in steps if s.get('isFinished')]
       close_tree = gatekeeper.get('close_tree', True)
       respect_build_status = gatekeeper.get('respect_build_status', False)
@@ -110,6 +136,8 @@ def check_builds(master_builds, master_jsons, gatekeeper_config):
       # infrastructure-related instead of actual test errors.
       successful_steps = set(s['name'] for s in finished
                              if s.get('results', [FAILURE])[0] != FAILURE)
+
+      successful_builder_steps[master_url][builder].update(successful_steps)
 
       finished_steps = set(s['name'] for s in finished)
 
@@ -144,6 +172,7 @@ def check_builds(master_builds, master_jsons, gatekeeper_config):
                                'project_name': project_name,
                                'sheriff_classes': sheriff_classes,
                                'subject_template': subject_template,
+                               'status_template': status_template,
                                'tree_notify': tree_notify,
                                'unsatisfied': unsatisfied_steps,
                               },
@@ -151,8 +180,36 @@ def check_builds(master_builds, master_jsons, gatekeeper_config):
                               builder,
                               buildnum,
                               section_hash))
+        # If there is a failing step that a newer builder hasn't succeeded on,
+        # don't open the tree.
+        still_failing_steps = (
+            unsatisfied_steps - successful_builder_steps[master_url][builder])
+        if still_failing_steps and close_tree:
+          logging.debug('%s failed on %s, not yet resolved.',
+              ','.join(still_failing_steps),
+              generate_build_url(failed_builds[-1][0]))
+          current_builds_successful = False
+      else:
+        succeeded_builds.append((master_url, builder, buildnum))
 
-  return failed_builds
+  return (list(reversed(failed_builds)), list(reversed(succeeded_builds)),
+      successful_builder_steps, current_builds_successful)
+
+
+def propagate_build_status_back_to_db(failure_tuples, success_tuples, build_db):
+  """Write back to build_db which finished steps failed or succeeded."""
+  for _, master_url, builder, buildnum, _ in failure_tuples:
+    builder_dict = build_db.masters[master_url][builder]
+    if builder_dict[buildnum].finished:
+      # pylint: disable=W0212
+      builder_dict[buildnum] = builder_dict[buildnum]._replace(
+          succeeded=False)
+  for master_url, builder, buildnum in success_tuples:
+    builder_dict = build_db.masters[master_url][builder]
+    if builder_dict[buildnum].finished:
+      # pylint: disable=W0212
+      builder_dict[buildnum] = builder_dict[buildnum]._replace(
+          succeeded=True)
 
 
 def get_build_properties(build_json, properties):
@@ -178,7 +235,7 @@ def log_section(url, builder, buildnum, section_hash=None):
   logging.debug('----')
 
 
-def reject_old_revisions(failure_tuples, build_db):
+def reject_old_revisions(failed_builds, build_db):
   """Ignore builds which triggered on revisions older than the current.
 
   triggered_revisions has the format: {'revision': 500,
@@ -200,23 +257,24 @@ def reject_old_revisions(failure_tuples, build_db):
     # failing builds.
     logging.debug('no previous revision tracking information, '
                   'keeping all failures.')
-    return failure_tuples
+    return failed_builds
 
-  def tuple_start_time(tup):
-    """Sorting key that returns a tuple's negative build start time.
+  def build_start_time(build):
+    """Sorting key that returns a build's build start time.
 
-    By using negative start time, we sort such that the latest builds come
+    By using reversed start time, we sort such that the latest builds come
     first. This gives us a crude approximation of revision order, which means
     we can update triggered_revisions with the highest revision first. Note that
     this isn't perfect, but the likelihood of multiple failures occurring in the
     same minute is low and multi-revision sorting is potentially error-prone. An
     action-log based approach would obviate this hack.
     """
-    return tup[0]['build'].get('times', [None])[0]
+    return build['build'].get('times', [None])[0]
 
-  kept_tuples = []
-  for tup in sorted(failure_tuples, key=tuple_start_time, reverse=True):
-    build, _, builder, buildnum, _ = tup
+  kept_builds = []
+  for build in sorted(failed_builds, key=build_start_time, reverse=True):
+    builder = build['build']['builderName']
+    buildnum = build['build']['number']
     with log_section(build['base_url'], builder, buildnum):
       # get_build_properties will return a dict with all the keys given to it.
       # Since we're giving it triggered_revisions.keys(), revisions is
@@ -233,7 +291,7 @@ def reject_old_revisions(failure_tuples, build_db):
         logging.debug('Nones detected in revision tracking information, '
                       'keeping build.')
         triggered_revisions = revisions
-        kept_tuples.append(tup)
+        kept_builds.append(build)
         continue
 
       paired = []
@@ -246,16 +304,16 @@ def reject_old_revisions(failure_tuples, build_db):
         # TODO(stip): evaluate the greatest revision if we see a stream of
         # failures at once.
         logging.debug('keeping build')
-        kept_tuples.append(tup)
+        kept_builds.append(build)
         triggered_revisions = revisions
         continue
       logging.debug('rejecting build')
 
   build_db.aux['triggered_revisions'] = triggered_revisions
-  return kept_tuples
+  return kept_builds
 
 
-def debounce_failures(failed_builds, build_db):
+def debounce_failures(failed_builds, current_builds_successful, build_db):
   """Using trigger information in build_db, make sure we don't double-fire."""
 
   @contextmanager
@@ -265,6 +323,10 @@ def debounce_failures(failed_builds, build_db):
     build_db.masters[master_url][builder][buildnum].triggered[
         section_hash] = unsatisfied
 
+  if failed_builds and current_builds_successful:
+    logging.debug(
+        'All failing steps succeeded in later runs, not closing tree.')
+    return []
   true_failed_builds = []
   for build, master_url, builder, buildnum, section_hash in failed_builds:
     with log_section(build['base_url'], builder, buildnum, section_hash):
@@ -365,10 +427,38 @@ def submit_email(email_app, build_data, secret):
           code, response))
 
 
-def open_tree_if_possible(failed_builds, username, password, status_url_root,
-                          set_status):
-  closing_builds = [b for b in failed_builds if b['close_tree']]
-  if closing_builds:
+def open_tree_if_possible(build_db, master_jsons, successful_builder_steps,
+    current_builds_successful, username, password, status_url_root,
+    set_status, emoji):
+  if not current_builds_successful:
+    logging.debug('Not opening tree because failing steps were detected.')
+    return
+
+  previously_failed_builds = []
+  for master_url, master in master_jsons.iteritems():
+    for builder in master['builders']:
+      builder_dict = build_db.masters.get(master_url, {}).get(builder, {})
+      for buildnum, build in builder_dict.iteritems():
+        if build.finished:
+          if not build.succeeded:
+            if build.triggered:
+              # See crbug.com/389740 for why the 0 is there.
+              failing_steps = set(build.triggered.values()[0])
+            else:
+              failing_steps = set()
+            still_failing_steps = (
+                failing_steps - successful_builder_steps[master_url][builder])
+            if still_failing_steps:
+              previously_failed_builds.append(
+                  '%s on %s %s/builders/%s/builds/%d' % (
+                  ','.join(still_failing_steps), builder, master_url,
+                  urllib.quote(builder), buildnum))
+
+  if previously_failed_builds:
+    logging.debug(
+        'Not opening tree because previous builds weren\'t successful:')
+    for build in previously_failed_builds:
+      logging.debug('  %s' % build)
     return
 
   status = get_tree_status(status_url_root)
@@ -384,6 +474,11 @@ def open_tree_if_possible(failed_builds, username, password, status_url_root,
   logging.info('All builders are green, opening the tree...')
 
   tree_status = 'Tree is open (Automatic)'
+  if emoji:
+    random_emoji = random.choice(emoji)
+    if random_emoji.endswith(')'):
+      random_emoji += ' '
+    tree_status = 'Tree is open (Automatic: %s)' % random_emoji
   logging.info('Opening tree with message: \'%s\'' % tree_status)
   if set_status:
     update_status(tree_status, status_url_root, username, password)
@@ -391,8 +486,17 @@ def open_tree_if_possible(failed_builds, username, password, status_url_root,
     logging.info('set-status not set, not connecting to chromium-status!')
 
 
+def generate_build_url(build):
+  """Creates a URL to reference the build."""
+  return '%s/builders/%s/builds/%d' % (
+      build['base_url'].rstrip('/'),
+      urllib.quote(build['build']['builderName']),
+      build['build']['number']
+  )
+
+
 def close_tree_if_necessary(failed_builds, username, password, status_url_root,
-                            set_status):
+                            set_status, revision_properties):
   """Given a list of failed builds, close the tree if necessary."""
 
   closing_builds = [b for b in failed_builds if b['close_tree']]
@@ -408,13 +512,19 @@ def close_tree_if_necessary(failed_builds, username, password, status_url_root,
   logging.info('%d failed builds found, closing the tree...' %
                len(closing_builds))
 
+  template_vars = {
+      'blamelist': ','.join(closing_builds[0]['build']['blame']),
+      'build_url': generate_build_url(closing_builds[0]),
+      'builder_name': closing_builds[0]['build']['builderName'],
+      'project_name': closing_builds[0]['project_name'],
+      'unsatisfied': ','.join(closing_builds[0]['unsatisfied']),
+  }
+
+  template_vars.update(get_build_properties(closing_builds[0]['build'],
+                                            revision_properties))
+
   # Close on first failure seen.
-  msg = 'Tree is closed (Automatic: "%(steps)s" on "%(builder)s" %(blame)s)'
-  tree_status = msg % {'steps': ','.join(closing_builds[0]['unsatisfied']),
-                       'builder': failed_builds[0]['build']['builderName'],
-                       'blame':
-                       ','.join(failed_builds[0]['build']['blame'])
-                      }
+  tree_status = closing_builds[0]['status_template'] % template_vars
 
   logging.info('closing the tree with message: \'%s\'' % tree_status)
   if set_status:
@@ -430,10 +540,7 @@ def notify_failures(failed_builds, sheriff_url, default_from_email,
   emails_to_send = []
   for failed_build in failed_builds:
     waterfall_url = failed_build['base_url'].rstrip('/')
-    build_url = '%s/builders/%s/builds/%d' % (
-        failed_build['base_url'].rstrip('/'),
-        failed_build['build']['builderName'],
-        failed_build['build']['number'])
+    build_url = generate_build_url(failed_build)
     project_name = failed_build['project_name']
     fromaddr = failed_build['build'].get('fromAddr', default_from_email)
 
@@ -460,7 +567,12 @@ def notify_failures(failed_builds, sheriff_url, default_from_email,
     for field in ['builderName', 'number', 'reason']:
       build_data[field] = failed_build['build'][field]
 
-    build_data['result'] = failed_build['build'].get('results', 0)
+    # The default value here is 2. In the case of failing on an unfinished
+    # build, the build won't have a result yet. As of now, chromium-build treats
+    # anything as 'not failure' as warning. Since we can't get into
+    # notify_failures without a failure, it makes sense to have the default
+    # value be failure (2) here.
+    build_data['result'] = failed_build['build'].get('results', 2)
     build_data['blamelist'] = failed_build['build']['blame']
     build_data['changes'] = failed_build['build'].get('sourceStamp', {}).get(
         'changes', [])
@@ -560,8 +672,12 @@ def get_options():
                     help='file containing secret used in email app auth')
   parser.add_option('--no-email-app', action='store_true',
                     help='don\'t send emails')
-  parser.add_option('--json', default='gatekeeper.json',
+  parser.add_option('--json', default=os.path.join(DATA_DIR, 'gatekeeper.json'),
                     help='location of gatekeeper configuration file')
+  parser.add_option('--emoji',
+                    default=os.path.join(DATA_DIR, 'gatekeeper_emoji.json'),
+                    help='location of gatekeeper configuration file (None to'
+                         'turn off)')
   parser.add_option('--verify', action='store_true',
                     help='verify that the gatekeeper config file is correct')
   parser.add_option('--flatten-json', action='store_true',
@@ -631,6 +747,14 @@ def main():
       print '  ' + m
     return 1
 
+  emoji = []
+  if options.emoji != 'None':
+    try:
+      with open(options.emoji) as f:
+        emoji = json.load(f)
+    except (IOError, ValueError) as e:
+      logging.warning('Could not load emoji file %s: %s', options.emoji, e)
+
   if options.clear_build_db:
     build_db = {}
     build_scan_db.save_build_db(build_db, gatekeeper_config,
@@ -646,16 +770,29 @@ def main():
                              options.build_db)
     return 0
 
-  failure_tuples = check_builds(build_jsons, master_jsons, gatekeeper_config)
+  (failure_tuples, success_tuples, successful_builder_steps,
+      current_builds_successful) = check_builds(
+        build_jsons, master_jsons, gatekeeper_config)
+
+  # Write failure / success information back to the build_db.
+  propagate_build_status_back_to_db(failure_tuples, success_tuples, build_db)
+
   # opening is an option, mostly to keep the unittests working which
   # assume that any setting of status is negative.
   if options.open_tree:
-    # failures are actually tuples, we only care about the build part.
-    failing_builds = [b[0] for b in failure_tuples]
-    open_tree_if_possible(failing_builds, options.status_user, options.password,
-                          options.status_url, options.set_status)
+    open_tree_if_possible(build_db, master_jsons, successful_builder_steps,
+        current_builds_successful, options.status_user, options.password,
+        options.status_url, options.set_status, emoji)
+
+  # debounce_failures does 3 things:
+  # 1. Groups logging by builder
+  # 2. Selects out the "build" part from the failure tuple.
+  # 3. Rejects builds we've already warned about (and logs).
+  new_failures = debounce_failures(failure_tuples,
+      current_builds_successful, build_db)
 
   if options.track_revisions:
+    # Only close the tree if it's a newer revision than before.
     properties = options.revision_properties.split(',')
     triggered_revisions = build_db.aux.get('triggered_revisions', {})
     if not triggered_revisions or (
@@ -663,15 +800,11 @@ def main():
       logging.info('revision properties have changed from %s to %s. '
                    'clearing previous data.', triggered_revisions, properties)
       build_db.aux['triggered_revisions'] = dict.fromkeys(properties)
-    failure_tuples = reject_old_revisions(failure_tuples, build_db)
+    new_failures = reject_old_revisions(new_failures, build_db)
 
-  # debounce_failures does 3 things:
-  # 1. Groups logging by builder
-  # 2. Selects out the "build" part from the failure tuple.
-  # 3. Rejects builds we've already warned about (and logs).
-  new_failures = debounce_failures(failure_tuples, build_db)
   close_tree_if_necessary(new_failures, options.status_user, options.password,
-                          options.status_url, options.set_status)
+                          options.status_url, options.set_status,
+                          options.revision_properties.split(','))
   notify_failures(new_failures, options.sheriff_url, options.default_from_email,
                   options.email_app_url, options.email_app_secret,
                   options.email_domain, options.filter_domain,

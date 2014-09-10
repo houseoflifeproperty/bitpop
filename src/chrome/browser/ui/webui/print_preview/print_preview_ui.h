@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
@@ -16,8 +17,10 @@ class PrintPreviewDataService;
 class PrintPreviewHandler;
 struct PrintHostMsg_DidGetPreviewPageCount_Params;
 struct PrintHostMsg_RequestPrintPreview_Params;
+struct PrintHostMsg_SetOptionsFromDocument_Params;
 
 namespace base {
+class FilePath;
 class RefCountedBytes;
 }
 
@@ -139,9 +142,9 @@ class PrintPreviewUI : public ConstrainedWebDialogUI {
   // Reload the printers list.
   void OnReloadPrintersList();
 
-  // Notifies the WebUI that the pdf print scaling option is disabled by
-  // default.
-  void OnPrintPreviewScalingDisabled();
+  // Notifies the WebUI to set print preset options from source PDF.
+  void OnSetOptionsFromDocument(
+      const PrintHostMsg_SetOptionsFromDocument_Params& params);
 
   // Allows tests to wait until the print preview dialog is loaded. Optionally
   // also instructs the dialog to auto-cancel, which is used for testing only.
@@ -153,6 +156,13 @@ class PrintPreviewUI : public ConstrainedWebDialogUI {
   };
 
   static void SetDelegateForTesting(TestingDelegate* delegate);
+
+  // Allows for tests to set a file path to print a PDF to. This also initiates
+  // the printing without having to click a button on the print preview dialog.
+  void SetSelectedFileForTesting(const base::FilePath& path);
+
+  // Passes |closure| to PrintPreviewHandler::SetPdfSavedClosureForTesting().
+  void SetPdfSavedClosureForTesting(const base::Closure& closure);
 
  private:
   friend class PrintPreviewHandlerTest;

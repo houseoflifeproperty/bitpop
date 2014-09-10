@@ -38,8 +38,6 @@
 #include "web/WebLocalFrameImpl.h"
 #include "web/WorkerPermissionClient.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 PassOwnPtrWillBeRawPtr<DatabaseClientImpl> DatabaseClientImpl::create()

@@ -29,7 +29,7 @@
 #include "core/svg/RadialGradientAttributes.h"
 #include "core/svg/SVGTransformList.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGRadialGradientElement::SVGRadialGradientElement(Document& document)
     : SVGGradientElement(SVGNames::radialGradientTag, document)
@@ -167,7 +167,7 @@ bool SVGRadialGradientElement::collectGradientAttributes(RadialGradientAttribute
     if (!renderer())
         return false;
 
-    HashSet<SVGGradientElement*> processedGradients;
+    WillBeHeapHashSet<RawPtrWillBeMember<SVGGradientElement> > processedGradients;
     SVGGradientElement* current = this;
 
     setGradientAttributes(current, attributes);

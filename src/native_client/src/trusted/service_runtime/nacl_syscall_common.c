@@ -891,7 +891,18 @@ int32_t NaClSysTestInfoLeak(struct NaClAppThread *natp) {
 
   __asm__ volatile("vldm %0, {d0-d7}" :: "r" (manybytes) :
                    "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7");
+
+  /*
+   * __builtin_arm_set_fpscr is not available yet in gcc (not even in 4.8)
+   * and clang doesn't know about the "vfpcc" register.
+   * TODO(sbc): Always use __builtin_arm_set_fpscr once we are using a
+   * version of gcc that supports it.
+   */
+#ifdef __clang__
+  __builtin_arm_set_fpscr(0xdeadbeef);
+#else
   __asm__ volatile("fmxr fpscr, %0" :: "r" (0xdeadbeef) : "vfpcc");
+#endif
 
 #elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
 
@@ -974,6 +985,8 @@ int32_t NaClSysGetTimeOfDay(struct NaClAppThread      *natp,
    * applications?
    */
 
+  /* memset() call is required to clear padding in struct nacl_abi_timeval. */
+  memset(&now, 0, sizeof(now));
   retval = NaClGetTimeOfDay(&now);
   if (0 != retval) {
     return retval;
@@ -1020,6 +1033,8 @@ static int32_t NaClSysClockGetCommon(struct NaClAppThread  *natp,
   if (!NaClIsValidClockId(clk_id)) {
     goto done;
   }
+  /* memset() call is required to clear padding in struct nacl_abi_timespec. */
+  memset(&out_buf, 0, sizeof(out_buf));
   retval = (*timefunc)((nacl_clockid_t) clk_id, &out_buf);
   if (0 == retval) {
     if (ts_addr == 0 ? !null_ok :

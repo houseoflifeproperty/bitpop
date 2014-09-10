@@ -51,8 +51,6 @@
 #include "web/WebSettingsImpl.h"
 #include "web/WebViewImpl.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 class PagePopupChromeClient : public EmptyChromeClient {
@@ -97,11 +95,6 @@ private:
         m_popup->widgetClient()->didInvalidateRect(paintRect);
     }
 
-    virtual void scroll(const IntSize& scrollDelta, const IntRect& scrollRect, const IntRect& clipRect) OVERRIDE
-    {
-        m_popup->widgetClient()->didScrollRect(scrollDelta.width(), scrollDelta.height(), intersection(scrollRect, clipRect));
-    }
-
     virtual void invalidateContentsForSlowScroll(const IntRect& updateRect) OVERRIDE
     {
         invalidateContentsAndRootView(updateRect);
@@ -132,7 +125,7 @@ private:
         return FloatSize(0, 0);
     }
 
-    virtual void setCursor(const WebCore::Cursor& cursor) OVERRIDE
+    virtual void setCursor(const Cursor& cursor) OVERRIDE
     {
         if (m_popup->m_webView->client())
             m_popup->m_webView->client()->didChangeCursor(WebCursorInfo(cursor));
@@ -194,7 +187,7 @@ bool WebPagePopupImpl::initialize(WebViewImpl* webView, PagePopupClient* popupCl
 
     resize(m_popupClient->contentSize());
 
-    if (!initializePage())
+    if (!m_widgetClient || !initializePage())
         return false;
     m_widgetClient->show(WebNavigationPolicy());
     setFocus(true);
@@ -266,7 +259,7 @@ void WebPagePopupImpl::setIsAcceleratedCompositingActive(bool enter)
     } else if (m_layerTreeView) {
         m_isAcceleratedCompositingActive = true;
     } else {
-        TRACE_EVENT0("webkit", "WebPagePopupImpl::setIsAcceleratedCompositingActive(true)");
+        TRACE_EVENT0("blink", "WebPagePopupImpl::setIsAcceleratedCompositingActive(true)");
 
         m_widgetClient->initializeLayerTreeView();
         m_layerTreeView = m_widgetClient->layerTreeView();
@@ -285,8 +278,10 @@ WebSize WebPagePopupImpl::size()
     return m_popupClient->contentSize();
 }
 
-void WebPagePopupImpl::animate(double)
+void WebPagePopupImpl::beginFrame(const WebBeginFrameArgs& frameTime)
 {
+    // FIXME: This should use frameTime.lastFrameTimeMonotonic but doing so
+    // breaks tests.
     PageWidgetDelegate::animate(m_page.get(), monotonicallyIncreasingTime());
 }
 

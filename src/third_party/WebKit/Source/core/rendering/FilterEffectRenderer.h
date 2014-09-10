@@ -39,7 +39,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class GraphicsContext;
 class RenderLayer;
@@ -57,7 +57,7 @@ public:
     bool haveFilterEffect() const { return m_haveFilterEffect; }
     bool hasStartedFilterEffect() const { return m_savedGraphicsContext; }
 
-    bool prepareFilterEffect(RenderLayer*, const LayoutRect& filterBoxRect, const LayoutRect& dirtyRect, const LayoutRect& layerRepaintRect);
+    bool prepareFilterEffect(RenderLayer*, const LayoutRect& filterBoxRect, const LayoutRect& dirtyRect);
     GraphicsContext* beginFilterEffect(GraphicsContext* oldContext);
     GraphicsContext* applyFilterEffect();
 
@@ -114,13 +114,11 @@ private:
     RefPtr<SourceGraphic> m_sourceGraphic;
     RefPtr<FilterEffect> m_lastEffect;
 
-    IntRectExtent m_outsets;
-
     bool m_graphicsBufferAttached;
     bool m_hasFilterThatMovesPixels;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // FilterEffectRenderer_h

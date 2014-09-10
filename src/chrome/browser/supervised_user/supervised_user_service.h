@@ -17,11 +17,15 @@
 #include "chrome/browser/supervised_user/supervised_user_url_filter.h"
 #include "chrome/browser/supervised_user/supervised_users.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
+#include "chrome/browser/sync/sync_type_preference_provider.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/web_contents.h"
+
+#if defined(ENABLE_EXTENSIONS)
 #include "extensions/browser/extension_registry_observer.h"
 #include "extensions/browser/management_policy.h"
+#endif
 
 class Browser;
 class GoogleServiceAuthError;
@@ -44,9 +48,12 @@ class PrefRegistrySyncable;
 // (e.g. the installed content packs, the default URL filtering behavior, or
 // manual whitelist/blacklist overrides).
 class SupervisedUserService : public KeyedService,
+#if defined(ENABLE_EXTENSIONS)
                               public extensions::ManagementPolicy::Provider,
-                              public ProfileSyncServiceObserver,
                               public extensions::ExtensionRegistryObserver,
+#endif
+                              public SyncTypePreferenceProvider,
+                              public ProfileSyncServiceObserver,
                               public chrome::BrowserListObserver {
  public:
   typedef std::vector<base::string16> CategoryList;
@@ -73,8 +80,6 @@ class SupervisedUserService : public KeyedService,
   virtual void Shutdown() OVERRIDE;
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
-
-  static void MigrateUserPrefs(PrefService* prefs);
 
   void SetDelegate(Delegate* delegate);
 
@@ -136,7 +141,7 @@ class SupervisedUserService : public KeyedService,
   // Convenience method that registers this supervised user using
   // |registration_utility| and initializes sync with the returned token.
   // The |callback| will be called when registration is complete,
-  // whether it suceeded or not -- unless registration was cancelled manually,
+  // whether it succeeded or not -- unless registration was cancelled manually,
   // in which case the callback will be ignored.
   void RegisterAndInitSync(
       SupervisedUserRegistrationUtility* registration_utility,
@@ -151,15 +156,13 @@ class SupervisedUserService : public KeyedService,
   void AddNavigationBlockedCallback(const NavigationBlockedCallback& callback);
   void DidBlockNavigation(content::WebContents* web_contents);
 
+#if defined(ENABLE_EXTENSIONS)
   // extensions::ManagementPolicy::Provider implementation:
   virtual std::string GetDebugPolicyProviderName() const OVERRIDE;
   virtual bool UserMayLoad(const extensions::Extension* extension,
                            base::string16* error) const OVERRIDE;
   virtual bool UserMayModifySettings(const extensions::Extension* extension,
                                      base::string16* error) const OVERRIDE;
-
-  // ProfileSyncServiceObserver implementation:
-  virtual void OnStateChanged() OVERRIDE;
 
   // extensions::ExtensionRegistryObserver implementation.
   virtual void OnExtensionLoaded(
@@ -169,6 +172,13 @@ class SupervisedUserService : public KeyedService,
       content::BrowserContext* browser_context,
       const extensions::Extension* extension,
       extensions::UnloadedExtensionInfo::Reason reason) OVERRIDE;
+#endif
+
+  // SyncTypePreferenceProvider implementation:
+  virtual syncer::ModelTypeSet GetPreferredDataTypes() const OVERRIDE;
+
+  // ProfileSyncServiceObserver implementation:
+  virtual void OnStateChanged() OVERRIDE;
 
   // chrome::BrowserListObserver implementation:
   virtual void OnBrowserSetLastActive(Browser* browser) OVERRIDE;
@@ -222,9 +232,13 @@ class SupervisedUserService : public KeyedService,
                                   const std::string& token);
 
   void SetupSync();
+  void StartSetupSync();
+  void FinishSetupSyncWhenReady();
+  void FinishSetupSync();
 
   bool ProfileIsSupervised() const;
 
+#if defined(ENABLE_EXTENSIONS)
   // Internal implementation for ExtensionManagementPolicy::Delegate methods.
   // If |error| is not NULL, it will be filled with an error message if the
   // requested extension action (install, modify status, etc.) is not permitted.
@@ -234,6 +248,10 @@ class SupervisedUserService : public KeyedService,
   // Returns a list of all installed and enabled site lists in the current
   // supervised profile.
   ScopedVector<SupervisedUserSiteList> GetActiveSiteLists();
+
+  // Extensions helper to SetActive().
+  void SetExtensionsActive();
+#endif
 
   SupervisedUserSettingsService* GetSettingsService();
 
@@ -261,9 +279,11 @@ class SupervisedUserService : public KeyedService,
 
   Delegate* delegate_;
 
+#if defined(ENABLE_EXTENSIONS)
   ScopedObserver<extensions::ExtensionRegistry,
                  extensions::ExtensionRegistryObserver>
       extension_registry_observer_;
+#endif
 
   PrefChangeRegistrar pref_change_registrar_;
 
@@ -275,6 +295,9 @@ class SupervisedUserService : public KeyedService,
 
   // Sets a profile in elevated state for testing if set to true.
   bool elevated_for_testing_;
+
+  // True only when |Init()| method has been called.
+  bool did_init_;
 
   // True only when |Shutdown()| method has been called.
   bool did_shutdown_;

@@ -30,7 +30,7 @@
 #include "core/dom/Element.h"
 #include "core/rendering/style/RenderStyle.h"
 
-namespace WebCore {
+namespace blink {
 
 class PseudoElement FINAL : public Element {
 public:
@@ -45,6 +45,7 @@ public:
 
     virtual bool canStartSelection() const OVERRIDE { return false; }
     virtual bool canContainRangeEndPoint() const OVERRIDE { return false; }
+    virtual PseudoId pseudoId() const OVERRIDE { return m_pseudoId; }
 
     static String pseudoElementNameForEvents(PseudoId);
 
@@ -54,7 +55,6 @@ private:
     PseudoElement(Element*, PseudoId);
 
     virtual void didRecalcStyle(StyleRecalcChange) OVERRIDE;
-    virtual PseudoId customPseudoId() const OVERRIDE { return m_pseudoId; }
 
     PseudoId m_pseudoId;
 };

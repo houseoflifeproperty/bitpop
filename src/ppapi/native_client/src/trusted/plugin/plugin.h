@@ -28,11 +28,12 @@
 #include "ppapi/cpp/var.h"
 #include "ppapi/cpp/view.h"
 
-#include "ppapi/native_client/src/trusted/plugin/file_downloader.h"
 #include "ppapi/native_client/src/trusted/plugin/nacl_subprocess.h"
 #include "ppapi/native_client/src/trusted/plugin/pnacl_coordinator.h"
 #include "ppapi/native_client/src/trusted/plugin/service_runtime.h"
 #include "ppapi/native_client/src/trusted/plugin/utility.h"
+
+#include "ppapi/utility/completion_callback_factory.h"
 
 namespace nacl {
 class DescWrapper;
@@ -51,6 +52,12 @@ class ErrorInfo;
 class Manifest;
 
 int32_t ConvertFileDescriptor(PP_FileHandle handle);
+
+const PP_NaClFileInfo kInvalidNaClFileInfo = {
+  PP_kInvalidFileHandle,
+  0,  // token_lo
+  0,  // token_hi
+};
 
 class Plugin : public pp::Instance {
  public:
@@ -102,12 +109,12 @@ class Plugin : public pp::Instance {
   bool LoadNaClModuleContinuation(int32_t pp_error);
 
   // Load support.
-  // A helper SRPC NaCl module can be loaded given a PP_FileHandle.
+  // A helper SRPC NaCl module can be loaded given a PP_NaClFileInfo.
   // Blocks until the helper module signals initialization is done.
   // Does not update nacl_module_origin().
   // Returns NULL or the NaClSubprocess of the new helper NaCl module.
   NaClSubprocess* LoadHelperNaClModule(const nacl::string& helper_url,
-                                       PP_FileHandle file_handle,
+                                       PP_NaClFileInfo file_info,
                                        ErrorInfo* error_info);
 
   // Report an error that was encountered while loading a module.
@@ -140,13 +147,12 @@ class Plugin : public pp::Instance {
   // uma_interface_ normally.
   void HistogramTimeSmall(const std::string& name, int64_t ms);
 
-  // Load a nacl module from the file specified in file_handle.
+  // Loads and starts a helper (e.g. llc, ld) NaCl module.
   // Only to be used from a background (non-main) thread for the PNaCl
   // translator. This will fully initialize the |subprocess| if the load was
   // successful.
-  bool LoadHelperNaClModule(PP_FileHandle file_handle,
-                            NaClSubprocess* subprocess,
-                            const SelLdrStartParams& params);
+  bool LoadHelperNaClModuleInternal(NaClSubprocess* subprocess,
+                                    const SelLdrStartParams& params);
 
   // Start sel_ldr from the main thread, given the start params.
   // |pp_error| is set by CallOnMainThread (should be PP_OK).
@@ -161,17 +167,8 @@ class Plugin : public pp::Instance {
                              bool* started,
                              ServiceRuntime* service_runtime);
 
-  // Signals that the nexe is started.
   // This is invoked on the main thread.
-  void SignalNexeStarted(int32_t pp_error,
-                         bool* started,
-                         ServiceRuntime* service_runtime);
-
-  // This is invoked on the main thread.
-  void LoadNexeAndStart(int32_t pp_error,
-                        ServiceRuntime* service_runtime,
-                        PP_NaClFileInfo file_info,
-                        const pp::CompletionCallback& callback);
+  void StartNexe(int32_t pp_error, ServiceRuntime* service_runtime);
 
   // Callback used when getting the URL for the .nexe file.  If the URL loading
   // is successful, the file descriptor is opened and can be passed to sel_ldr
@@ -217,9 +214,6 @@ class Plugin : public pp::Instance {
   bool uses_nonsfi_mode_;
 
   nacl::DescWrapperFactory* wrapper_factory_;
-
-  // Original, unresolved URL for the .nexe program to load.
-  std::string program_url_;
 
   pp::CompletionCallbackFactory<Plugin> callback_factory_;
 

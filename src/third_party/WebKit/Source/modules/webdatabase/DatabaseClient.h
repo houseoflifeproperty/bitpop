@@ -31,19 +31,18 @@
 #ifndef DatabaseClient_h
 #define DatabaseClient_h
 
-#include "core/page/Page.h"
 #include "core/workers/WorkerClients.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class Database;
 class ExecutionContext;
 class InspectorDatabaseAgent;
+class Page;
 class WorkerClients;
 
-class GC_PLUGIN_IGNORE("http://crbug.com/367712") DatabaseClient;
 class DatabaseClient : public WillBeHeapSupplement<Page>, public WillBeHeapSupplement<WorkerClients> {
     WTF_MAKE_NONCOPYABLE(DatabaseClient);
 public:
@@ -59,6 +58,12 @@ public:
 
     void createInspectorAgentFor(Page*);
 
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        WillBeHeapSupplement<Page>::trace(visitor);
+        WillBeHeapSupplement<WorkerClients>::trace(visitor);
+    }
+
 private:
     InspectorDatabaseAgent* m_inspectorAgent;
 };
@@ -66,6 +71,6 @@ private:
 void provideDatabaseClientTo(Page&, PassOwnPtrWillBeRawPtr<DatabaseClient>);
 void provideDatabaseClientToWorker(WorkerClients*, PassOwnPtrWillBeRawPtr<DatabaseClient>);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DatabaseClient_h

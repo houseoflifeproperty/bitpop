@@ -20,12 +20,11 @@
 #include "chrome/browser/chromeos/login/login_manager_test.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/users/user.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/policy/cloud_external_data_manager_base_test_util.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
 #include "chromeos/chromeos_paths.h"
@@ -39,6 +38,8 @@
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
 #include "components/policy/core/common/cloud/cloud_policy_validator.h"
 #include "components/policy/core/common/cloud/policy_builder.h"
+#include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/test/browser_test_utils.h"
 #include "crypto/rsa_private_key.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -62,8 +63,8 @@ const char kBlueImageFileName[] = "chromeos/wallpapers/blue.jpg";
 const SkColor kRedImageColor = SkColorSetARGB(255, 199, 6, 7);
 const SkColor kGreenImageColor = SkColorSetARGB(255, 38, 196, 15);
 
-policy::CloudPolicyStore* GetStoreForUser(const User* user) {
-  Profile* profile = UserManager::Get()->GetProfileByUser(user);
+policy::CloudPolicyStore* GetStoreForUser(const user_manager::User* user) {
+  Profile* profile = ProfileHelper::Get()->GetProfileByUserUnsafe(user);
   if (!profile) {
     ADD_FAILURE();
     return NULL;
@@ -87,7 +88,7 @@ SkColor ComputeAverageColor(const SkBitmap& bitmap) {
     ADD_FAILURE() << "Bitmap has no pixelref.";
     return SkColorSetARGB(0, 0, 0, 0);
   }
-  if (bitmap.config() == SkBitmap::kNo_Config) {
+  if (bitmap.colorType() == kUnknown_SkColorType) {
     ADD_FAILURE() << "Bitmap has not been configured.";
     return SkColorSetARGB(0, 0, 0, 0);
   }
@@ -244,7 +245,8 @@ class WallpaperManagerPolicyTest
     }
     builder->Build();
     fake_session_manager_client_->set_user_policy(user_id, builder->GetBlob());
-    const User* user = UserManager::Get()->FindUser(user_id);
+    const user_manager::User* user =
+        user_manager::UserManager::Get()->FindUser(user_id);
     ASSERT_TRUE(user);
     policy::CloudPolicyStore* store = GetStoreForUser(user);
     ASSERT_TRUE(store);
@@ -299,14 +301,14 @@ IN_PROC_BROWSER_TEST_F(WallpaperManagerPolicyTest, SetResetClear) {
   InjectPolicy(0, kRedImageFileName);
   RunUntilWallpaperChangeCount(2);
   GetUserWallpaperInfo(0, &info);
-  ASSERT_EQ(User::POLICY, info.type);
+  ASSERT_EQ(user_manager::User::POLICY, info.type);
   ASSERT_EQ(kRedImageColor, GetAverageBackgroundColor());
 
   // First user: Set wallpaper policy to green image and verify average color.
   InjectPolicy(0, kGreenImageFileName);
   RunUntilWallpaperChangeCount(3);
   GetUserWallpaperInfo(0, &info);
-  ASSERT_EQ(User::POLICY, info.type);
+  ASSERT_EQ(user_manager::User::POLICY, info.type);
   ASSERT_EQ(kGreenImageColor, GetAverageBackgroundColor());
 
   // First user: Clear wallpaper policy and verify that the default wallpaper is
@@ -314,7 +316,7 @@ IN_PROC_BROWSER_TEST_F(WallpaperManagerPolicyTest, SetResetClear) {
   InjectPolicy(0, "");
   RunUntilWallpaperChangeCount(4);
   GetUserWallpaperInfo(0, &info);
-  ASSERT_EQ(User::DEFAULT, info.type);
+  ASSERT_EQ(user_manager::User::DEFAULT, info.type);
   ASSERT_EQ(original_background_color, GetAverageBackgroundColor());
 
   // Check wallpaper change count to ensure that setting the second user's

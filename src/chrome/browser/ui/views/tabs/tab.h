@@ -17,6 +17,7 @@
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/glow_hover_controller.h"
+#include "ui/views/masked_targeter_delegate.h"
 #include "ui/views/view.h"
 
 class TabController;
@@ -41,6 +42,7 @@ class Label;
 class Tab : public gfx::AnimationDelegate,
             public views::ButtonListener,
             public views::ContextMenuController,
+            public views::MaskedTargeterDelegate,
             public views::View {
  public:
   // The menu button's class name.
@@ -94,11 +96,11 @@ class Tab : public gfx::AnimationDelegate,
   }
 
   // Returns true if this tab became the active tab selected in
-  // response to the last ui::ET_GESTURE_BEGIN gesture dispatched to
+  // response to the last ui::ET_TAP_DOWN gesture dispatched to
   // this tab. Only used for collecting UMA metrics.
   // See ash/touch/touch_uma.cc.
-  bool tab_activated_with_last_gesture_begin() const {
-    return tab_activated_with_last_gesture_begin_;
+  bool tab_activated_with_last_tap_down() const {
+    return tab_activated_with_last_tap_down_;
   }
 
   views::GlowHoverController* hover_controller() {
@@ -164,28 +166,28 @@ class Tab : public gfx::AnimationDelegate,
 
   typedef std::list<ImageCacheEntry> ImageCache;
 
-  // Overridden from gfx::AnimationDelegate:
+  // gfx::AnimationDelegate:
   virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
   virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE;
   virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
 
-  // Overridden from views::ButtonListener:
+  // views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
-  // Overridden from views::ContextMenuController:
+  // views::ContextMenuController:
   virtual void ShowContextMenuForView(views::View* source,
                                       const gfx::Point& point,
                                       ui::MenuSourceType source_type) OVERRIDE;
 
-  // Overridden from views::View:
+  // views::MaskedTargeterDelegate:
+  virtual bool GetHitTestMask(gfx::Path* mask) const OVERRIDE;
+
+  // views::View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void OnThemeChanged() OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
-  virtual bool HasHitTestMask() const OVERRIDE;
-  virtual void GetHitTestMask(HitTestSource source,
-                              gfx::Path* path) const OVERRIDE;
   virtual bool GetTooltipText(const gfx::Point& p,
                               base::string16* tooltip) const OVERRIDE;
   virtual bool GetTooltipTextOrigin(const gfx::Point& p,
@@ -199,7 +201,7 @@ class Tab : public gfx::AnimationDelegate,
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
-  // Overridden from ui::EventHandler:
+  // ui::EventHandler:
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   // Invoked from Layout to adjust the position of the favicon or media
@@ -343,7 +345,7 @@ class Tab : public gfx::AnimationDelegate,
   views::ImageButton* close_button_;
   views::Label* title_;
 
-  bool tab_activated_with_last_gesture_begin_;
+  bool tab_activated_with_last_tap_down_;
 
   views::GlowHoverController hover_controller_;
 

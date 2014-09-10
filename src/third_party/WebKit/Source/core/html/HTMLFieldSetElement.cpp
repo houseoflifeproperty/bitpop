@@ -27,6 +27,7 @@
 
 #include "core/HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
+#include "core/dom/NodeListsNodeData.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLFormControlsCollection.h"
 #include "core/html/HTMLLegendElement.h"
@@ -34,7 +35,7 @@
 #include "core/rendering/RenderFieldset.h"
 #include "wtf/StdLibExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -60,10 +61,8 @@ void HTMLFieldSetElement::trace(Visitor* visitor)
 
 void HTMLFieldSetElement::invalidateDisabledStateUnder(Element& base)
 {
-    for (Element* element = ElementTraversal::firstWithin(base); element; element = ElementTraversal::next(*element, &base)) {
-        if (element->isFormControlElement())
-            toHTMLFormControlElement(element)->ancestorDisabledStateWasChanged();
-    }
+    for (HTMLFormControlElement* element = Traversal<HTMLFormControlElement>::firstWithin(base); element; element = Traversal<HTMLFormControlElement>::next(*element, &base))
+        element->ancestorDisabledStateWasChanged();
 }
 
 void HTMLFieldSetElement::disabledAttributeChanged()
@@ -73,9 +72,9 @@ void HTMLFieldSetElement::disabledAttributeChanged()
     invalidateDisabledStateUnder(*this);
 }
 
-void HTMLFieldSetElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void HTMLFieldSetElement::childrenChanged(const ChildrenChange& change)
 {
-    HTMLFormControlElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    HTMLFormControlElement::childrenChanged(change);
     for (HTMLLegendElement* legend = Traversal<HTMLLegendElement>::firstChild(*this); legend; legend = Traversal<HTMLLegendElement>::nextSibling(*legend))
         invalidateDisabledStateUnder(*legend);
 }
@@ -103,7 +102,7 @@ HTMLLegendElement* HTMLFieldSetElement::legend() const
 
 PassRefPtrWillBeRawPtr<HTMLFormControlsCollection> HTMLFieldSetElement::elements()
 {
-    return toHTMLFormControlsCollection(ensureCachedHTMLCollection(FormControls).get());
+    return ensureCachedCollection<HTMLFormControlsCollection>(FormControls);
 }
 
 void HTMLFieldSetElement::refreshElementsIfNeeded() const

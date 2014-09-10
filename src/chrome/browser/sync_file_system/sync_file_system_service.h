@@ -20,11 +20,11 @@
 #include "chrome/browser/sync_file_system/file_status_observer.h"
 #include "chrome/browser/sync_file_system/remote_file_sync_service.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
+#include "chrome/browser/sync_file_system/sync_process_runner.h"
 #include "chrome/browser/sync_file_system/sync_service_state.h"
 #include "chrome/browser/sync_file_system/task_logger.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/extension_registry_observer.h"
 #include "url/gurl.h"
 
 class Profile;
@@ -40,20 +40,20 @@ class LocalFileSyncService;
 class LocalSyncRunner;
 class RemoteSyncRunner;
 class SyncEventObserver;
-class SyncProcessRunner;
 
 class SyncFileSystemService
     : public KeyedService,
+      public SyncProcessRunner::Client,
       public ProfileSyncServiceObserver,
       public FileStatusObserver,
-      public content::NotificationObserver,
+      public extensions::ExtensionRegistryObserver,
       public base::SupportsWeakPtr<SyncFileSystemService> {
  public:
   typedef base::Callback<void(const base::ListValue&)> DumpFilesCallback;
   typedef base::Callback<void(const RemoteFileSyncService::OriginStatusMap&)>
       ExtensionStatusMapCallback;
 
-  // KeyedService overrides.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
   void InitializeForApp(
@@ -61,7 +61,6 @@ class SyncFileSystemService
       const GURL& app_origin,
       const SyncStatusCallback& callback);
 
-  SyncServiceState GetSyncServiceState();
   void GetExtensionStatusMap(const ExtensionStatusMapCallback& callback);
   void DumpFiles(const GURL& origin, const DumpFilesCallback& callback);
   void DumpDatabase(const DumpFilesCallback& callback);
@@ -76,7 +75,10 @@ class SyncFileSystemService
 
   LocalChangeProcessor* GetLocalChangeProcessor(const GURL& origin);
 
-  void OnSyncIdle();
+  // SyncProcessRunner::Client implementations.
+  virtual void OnSyncIdle() OVERRIDE;
+  virtual SyncServiceState GetSyncServiceState() OVERRIDE;
+  virtual SyncFileSystemService* GetSyncService() OVERRIDE;
 
   TaskLogger* task_logger() { return &task_logger_; }
 
@@ -132,23 +134,27 @@ class SyncFileSystemService
   void OnRemoteServiceStateUpdated(RemoteServiceState state,
                                    const std::string& description);
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // extensions::ExtensionRegistryObserver implementations.
+  virtual void OnExtensionInstalled(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension,
+      bool is_update) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension,
+      extensions::UnloadedExtensionInfo::Reason reason) OVERRIDE;
+  virtual void OnExtensionUninstalled(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension,
+      extensions::UninstallReason reason) OVERRIDE;
+  virtual void OnExtensionLoaded(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension) OVERRIDE;
 
-  void HandleExtensionInstalled(const content::NotificationDetails& details);
-  void HandleExtensionUnloaded(int type,
-                               const content::NotificationDetails& details);
-  void HandleExtensionUninstalled(int type,
-                                  const content::NotificationDetails& details);
-  void HandleExtensionEnabled(int type,
-                              const content::NotificationDetails& details);
-
-  // ProfileSyncServiceObserver:
+  // ProfileSyncServiceObserver implementation.
   virtual void OnStateChanged() OVERRIDE;
 
-  // SyncFileStatusObserver:
+  // SyncFileStatusObserver implementation.
   virtual void OnFileStatusChanged(
       const fileapi::FileSystemURL& url,
       SyncFileStatus sync_status,
@@ -169,7 +175,6 @@ class SyncFileSystemService
   RemoteFileSyncService* GetRemoteService(const GURL& origin);
 
   Profile* profile_;
-  content::NotificationRegistrar registrar_;
 
   scoped_ptr<LocalFileSyncService> local_service_;
   scoped_ptr<RemoteFileSyncService> remote_service_;

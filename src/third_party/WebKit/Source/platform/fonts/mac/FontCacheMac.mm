@@ -34,6 +34,7 @@
 #import "platform/LayoutTestSupport.h"
 #import "platform/RuntimeEnabledFeatures.h"
 #import "platform/fonts/FontDescription.h"
+#import "platform/fonts/FontFaceCreationParams.h"
 #import "platform/fonts/FontPlatformData.h"
 #import "platform/fonts/SimpleFontData.h"
 #import "platform/mac/WebFontCache.h"
@@ -47,7 +48,7 @@
 + (NSFont*)findFontLike:(NSFont*)font forCharacter:(UniChar)uc inLanguage:(id)useNil;
 @end
 
-namespace WebCore {
+namespace blink {
 
 // The "void*" parameter makes the function match the prototype for callbacks from callOnMainThread.
 static void invalidateFontCache(void*)
@@ -71,7 +72,7 @@ static bool useHinting()
     // Enable hinting when subpixel font scaling is disabled or
     // when running the set of standard non-subpixel layout tests,
     // otherwise use subpixel glyph positioning.
-    return (isRunningLayoutTest() && !isFontAntialiasingEnabledForTest()) || !RuntimeEnabledFeatures::subpixelFontScalingEnabled();
+    return (LayoutTestSupport::isRunningLayoutTest() && !LayoutTestSupport::isFontAntialiasingEnabledForTest()) || !RuntimeEnabledFeatures::subpixelFontScalingEnabled();
 }
 
 void FontCache::platformInit()
@@ -201,13 +202,13 @@ PassRefPtr<SimpleFontData> FontCache::getLastResortFallbackFont(const FontDescri
     return getFontData(fontDescription, lucidaGrandeStr, false, shouldRetain);
 }
 
-FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontDescription, const AtomicString& family, float fontSize)
+FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontDescription, const FontFaceCreationParams& creationParams, float fontSize)
 {
     NSFontTraitMask traits = fontDescription.style() ? NSFontItalicTrait : 0;
     NSInteger weight = toAppKitFontWeight(fontDescription.weight());
     float size = fontSize;
 
-    NSFont *nsFont = [WebFontCache fontWithFamily:family traits:traits weight:weight size:size];
+    NSFont *nsFont = [WebFontCache fontWithFamily:creationParams.family() traits:traits weight:weight size:size];
     if (!nsFont)
         return 0;
 
@@ -229,4 +230,4 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
     return platformData.leakPtr();
 }
 
-} // namespace WebCore
+} // namespace blink

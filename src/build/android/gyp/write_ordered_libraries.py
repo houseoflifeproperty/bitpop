@@ -33,7 +33,11 @@ _library_re = re.compile(
 
 
 def FullLibraryPath(library_name):
-  return '%s/%s' % (_options.libraries_dir, library_name)
+  for directory in _options.libraries_dir.split(','):
+    path = '%s/%s' % (directory, library_name)
+    if os.path.exists(path):
+      return path
+  return library_name
 
 
 def IsSystemLibrary(library_name):
@@ -61,33 +65,18 @@ def GetNonSystemDependencies(library_name):
 
 def GetSortedTransitiveDependencies(libraries):
   """Returns all transitive library dependencies in dependency order."""
-  def GraphNode(library):
-    return (library, GetNonSystemDependencies(library))
+  return build_utils.GetSortedTransitiveDependencies(
+      libraries, GetNonSystemDependencies)
 
-  # First: find all library dependencies.
-  unchecked_deps = libraries
-  all_deps = set(libraries)
-  while unchecked_deps:
-    lib = unchecked_deps.pop()
-    new_deps = GetNonSystemDependencies(lib).difference(all_deps)
-    unchecked_deps.extend(new_deps)
-    all_deps = all_deps.union(new_deps)
 
-  # Then: simple, slow topological sort.
-  sorted_deps = []
-  unsorted_deps = dict(map(GraphNode, all_deps))
-  while unsorted_deps:
-    for library, dependencies in unsorted_deps.items():
-      if not dependencies.intersection(unsorted_deps.keys()):
-        sorted_deps.append(library)
-        del unsorted_deps[library]
+def GetSortedTransitiveDependenciesForBinaries(binaries):
+  if binaries[0].endswith('.so'):
+    libraries = [os.path.basename(lib) for lib in binaries]
+  else:
+    assert len(binaries) == 1
+    all_deps = GetDependencies(binaries[0])
+    libraries = [lib for lib in all_deps if not IsSystemLibrary(lib)]
 
-  return sorted_deps
-
-def GetSortedTransitiveDependenciesForExecutable(executable):
-  """Returns all transitive library dependencies in dependency order."""
-  all_deps = GetDependencies(executable)
-  libraries = [lib for lib in all_deps if not IsSystemLibrary(lib)]
   return GetSortedTransitiveDependencies(libraries)
 
 
@@ -106,11 +95,8 @@ def main():
   _options, _ = parser.parse_args()
 
   libraries = build_utils.ParseGypList(_options.input_libraries)
-  if libraries[0].endswith('.so'):
-    libraries = [os.path.basename(lib) for lib in libraries]
-    libraries = GetSortedTransitiveDependencies(libraries)
-  else:
-    libraries = GetSortedTransitiveDependenciesForExecutable(libraries[0])
+  if len(libraries):
+    libraries = GetSortedTransitiveDependenciesForBinaries(libraries)
 
   build_utils.WriteJson(libraries, _options.output, only_if_changed=True)
 

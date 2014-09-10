@@ -25,10 +25,9 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/FloatSize.h"
 #include "platform/graphics/ImageBuffer.h"
-#include "third_party/skia/include/core/SkImageFilter.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class FilterEffect;
 
@@ -83,38 +82,14 @@ public:
         m_absoluteFilterRegion = m_absoluteTransform.mapRect(m_filterRegion);
     }
 
-    // The methods enableCache() and disableCache() are temporary, and we
-    // should address the real issue inside skia, thus simplifying what the
-    // clients have to know, and can remove these.
-    // Also note that this cache should no longer be used by Blink once the
-    // NON impl-side painting path is removed.
-    void enableCache()
-    {
-        if (!m_cache)
-            m_cache = adoptRef(SkImageFilter::Cache::Create(1));
-        SkImageFilter::SetExternalCache(m_cache.get());
-    }
-
-    void disableCache()
-    {
-        SkImageFilter::SetExternalCache(0);
-    }
-
-    void removeFromCache(SkImageFilter* filter)
-    {
-        if (m_cache)
-            m_cache->remove(filter);
-    }
-
 private:
     OwnPtr<ImageBuffer> m_sourceImage;
     AffineTransform m_absoluteTransform;
     AffineTransform m_inverseTransform;
     FloatRect m_absoluteFilterRegion;
     FloatRect m_filterRegion;
-    RefPtr<SkImageFilter::Cache> m_cache;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Filter_h

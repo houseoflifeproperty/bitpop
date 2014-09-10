@@ -98,7 +98,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
     # once across test runners.
     if TestRunner._DEVICE_HAS_TEST_FILES.get(self.device, False):
       logging.warning('Already copied test files to device %s, skipping.',
-                      self.device.old_interface.GetDevice())
+                      str(self.device))
       return
 
     test_data = _GetDataFilesForTestSuite(self.test_pkg.GetApkName())
@@ -106,7 +106,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
       # Make sure SD card is ready.
       self.device.WaitUntilFullyBooted(timeout=20)
       for p in test_data:
-        self.device.old_interface.PushIfNeeded(
+        self.device.PushChangedFiles(
             os.path.join(constants.DIR_SOURCE_ROOT, p),
             os.path.join(self.device.GetExternalStoragePath(), p))
 
@@ -116,17 +116,17 @@ class TestRunner(base_test_runner.BaseTestRunner):
       dst_src = dest_host_pair.split(':', 1)
       dst_layer = dst_src[0]
       host_src = dst_src[1]
-      host_test_files_path = '%s/%s' % (constants.DIR_SOURCE_ROOT, host_src)
+      host_test_files_path = os.path.join(constants.DIR_SOURCE_ROOT,
+                                          host_src)
       if os.path.exists(host_test_files_path):
-        self.device.old_interface.PushIfNeeded(
+        self.device.PushChangedFiles(
             host_test_files_path,
             '%s/%s/%s' % (
                 self.device.GetExternalStoragePath(),
                 TestRunner._DEVICE_DATA_DIR,
                 dst_layer))
     self.tool.CopyFiles()
-    TestRunner._DEVICE_HAS_TEST_FILES[
-        self.device.old_interface.GetDevice()] = True
+    TestRunner._DEVICE_HAS_TEST_FILES[str(self.device)] = True
 
   def _GetInstrumentationArgs(self):
     ret = {}
@@ -142,7 +142,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
     """Takes a screenshot from the device."""
     screenshot_name = os.path.join(constants.SCREENSHOTS_DIR, '%s.png' % test)
     logging.info('Taking screenshot named %s', screenshot_name)
-    self.device.old_interface.TakeScreenshot(screenshot_name)
+    self.device.TakeScreenshot(screenshot_name)
 
   def SetUp(self):
     """Sets up the test harness and device before all tests are run."""
@@ -151,7 +151,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
       logging.warning('Unable to enable java asserts for %s, non rooted device',
                       str(self.device))
     else:
-      if self.device.old_interface.SetJavaAssertsEnabled(True):
+      if self.device.SetJavaAsserts(True):
         # TODO(jbudorick) How to best do shell restart after the
         #                 android_commands refactor?
         self.device.RunShellCommand('stop')
@@ -164,6 +164,10 @@ class TestRunner(base_test_runner.BaseTestRunner):
         os.path.join(constants.DIR_SOURCE_ROOT), self._lighttp_port)
     if self.flags:
       self.flags.AddFlags(['--disable-fre', '--enable-test-intents'])
+      if self.options.device_flags:
+        with open(self.options.device_flags) as device_flags_file:
+          stripped_flags = (l.strip() for l in device_flags_file)
+          self.flags.AddFlags([flag for flag in stripped_flags if flag])
 
   def TearDown(self):
     """Cleans up the test harness and saves outstanding data from test run."""
@@ -235,7 +239,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
     self.TearDownPerfMonitoring(test)
 
     if self.coverage_dir:
-      self.device.old_interface.Adb().Pull(
+      self.device.PullFile(
           self.coverage_device_file, self.coverage_host_file)
       self.device.RunShellCommand(
           'rm -f %s' % self.coverage_device_file)
@@ -266,8 +270,9 @@ class TestRunner(base_test_runner.BaseTestRunner):
 
       # Obtain the relevant perf data.  The data is dumped to a
       # JSON formatted file.
-      json_string = self.device.old_interface.GetProtectedFileContents(
-          '/data/data/com.google.android.apps.chrome/files/PerfTestData.txt')
+      json_string = self.device.ReadFile(
+          '/data/data/com.google.android.apps.chrome/files/PerfTestData.txt',
+          as_root=True)
 
       if json_string:
         json_string = '\n'.join(json_string)
@@ -318,18 +323,52 @@ class TestRunner(base_test_runner.BaseTestRunner):
     """Returns the timeout in seconds for the given |test|."""
     annotations = self.test_pkg.GetTestAnnotations(test)
     if 'Manual' in annotations:
-      return 600 * 60
+      return 10 * 60 * 60
+    if 'IntegrationTest' in annotations:
+      return 30 * 60
     if 'External' in annotations:
+      return 10 * 60
+    if 'EnormousTest' in annotations:
       return 10 * 60
     if 'LargeTest' in annotations or _PERF_TEST_ANNOTATION in annotations:
       return 5 * 60
     if 'MediumTest' in annotations:
       return 3 * 60
+    if 'SmallTest' in annotations:
+      return 1 * 60
+
+    logging.warn(("Test size not found in annotations for test '{0}', using " +
+                  "1 minute for timeout.").format(test))
     return 1 * 60
+
+  def RunInstrumentationTest(self, test, test_package, instr_args, timeout):
+    """Runs a single instrumentation test.
+
+    Args:
+      test: Test class/method.
+      test_package: Package name of test apk.
+      instr_args: Extra key/value to pass to am instrument.
+      timeout: Timeout time in seconds.
+
+    Returns:
+      An instance of am_instrument_parser.TestResult object.
+    """
+    instrumentation_path = (
+        '%s/%s' % (test_package, self.options.test_runner))
+    args_with_filter = dict(instr_args)
+    args_with_filter['class'] = test
+    logging.info(args_with_filter)
+    (raw_results, _) = self.device.old_interface.Adb().StartInstrumentation(
+        instrumentation_path=instrumentation_path,
+        instrumentation_args=args_with_filter,
+        timeout_time=timeout)
+    assert len(raw_results) == 1
+    return raw_results[0]
+
 
   def _RunTest(self, test, timeout):
     try:
-      return self.device.old_interface.RunInstrumentationTest(
+      return self.RunInstrumentationTest(
           test, self.test_pkg.GetPackageName(),
           self._GetInstrumentationArgs(), timeout)
     except (device_errors.CommandTimeoutError,
@@ -360,10 +399,16 @@ class TestRunner(base_test_runner.BaseTestRunner):
         if not log:
           log = 'No information.'
         result_type = base_test_result.ResultType.FAIL
-        package = self.device.old_interface.DismissCrashDialogIfNeeded()
-        # Assume test package convention of ".test" suffix
-        if package and package in self.test_pkg.GetPackageName():
-          result_type = base_test_result.ResultType.CRASH
+        # Dismiss any error dialogs. Limit the number in case we have an error
+        # loop or we are failing to dismiss.
+        for _ in xrange(10):
+          package = self.device.old_interface.DismissCrashDialogIfNeeded()
+          if not package:
+            break
+          # Assume test package convention of ".test" suffix
+          if package in self.test_pkg.GetPackageName():
+            result_type = base_test_result.ResultType.CRASH
+            break
         result = test_result.InstrumentationTestResult(
             test, result_type, start_date_ms, duration_ms, log=log)
       else:

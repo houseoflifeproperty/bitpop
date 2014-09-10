@@ -28,11 +28,12 @@
 
 #include "core/SVGNames.h"
 #include "core/svg/SVGElement.h"
+#include "core/svg/SVGTests.h"
 #include "core/svg/animation/SMILTime.h"
 #include "platform/heap/Heap.h"
 #include "wtf/HashMap.h"
 
-namespace WebCore {
+namespace blink {
 
 class ConditionEventListener;
 class SMILTimeContainer;
@@ -42,7 +43,7 @@ template<typename T> class EventSender;
 typedef EventSender<SVGSMILElement> SMILEventSender;
 
 // This class implements SMIL interval timing model as needed for SVG animation.
-class SVGSMILElement : public SVGElement {
+class SVGSMILElement : public SVGElement, public SVGTests {
 public:
     SVGSMILElement(const QualifiedName&, Document&);
     virtual ~SVGSMILElement();
@@ -274,13 +275,13 @@ private:
     friend class ConditionEventListener;
 };
 
-inline bool isSVGSMILElement(const Node& node)
+inline bool isSVGSMILElement(const SVGElement& element)
 {
-    return node.hasTagName(SVGNames::setTag) || node.hasTagName(SVGNames::animateTag) || node.hasTagName(SVGNames::animateMotionTag)
-        || node.hasTagName(SVGNames::animateTransformTag) || node.hasTagName((SVGNames::discardTag));
+    return element.hasTagName(SVGNames::setTag) || element.hasTagName(SVGNames::animateTag) || element.hasTagName(SVGNames::animateMotionTag)
+        || element.hasTagName(SVGNames::animateTransformTag) || element.hasTagName((SVGNames::discardTag));
 }
 
-DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGSMILElement);
+DEFINE_SVGELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGSMILElement);
 
 }
 

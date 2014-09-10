@@ -15,9 +15,12 @@
         '../sql/sql.gyp:sql',
         '../ui/gfx/gfx.gyp:gfx',
         '../url/url.gyp:url_lib',
+        'bookmarks_browser',
         'enhanced_bookmarks_proto',
       ],
       'sources': [
+        'enhanced_bookmarks/enhanced_bookmark_utils.cc',
+        'enhanced_bookmarks/enhanced_bookmark_utils.h',
         'enhanced_bookmarks/image_store.cc',
         'enhanced_bookmarks/image_store.h',
         'enhanced_bookmarks/image_store_util.cc',
@@ -29,6 +32,17 @@
         'enhanced_bookmarks/persistent_image_store.h',
       ],
       'conditions': [
+        ['OS=="android"', {
+          'sources': [
+            'enhanced_bookmarks/android/component_jni_registrar.cc',
+            'enhanced_bookmarks/android/component_jni_registrar.h',
+            'enhanced_bookmarks/android/enhanced_bookmarks_bridge.cc',
+            'enhanced_bookmarks/android/enhanced_bookmarks_bridge.h',
+          ],
+          'dependencies': [
+            'enhanced_bookmarks_jni_headers',
+          ],
+        }],
         ['OS=="ios"', {
           'sources!': [
             'enhanced_bookmarks/image_store_util.cc',
@@ -63,5 +77,33 @@
       },
       'includes': [ '../build/protoc.gypi' ],
     },
+  ],
+  'conditions' : [
+    ['OS=="android"', {
+      'targets': [
+        {
+          'target_name': 'enhanced_bookmarks_java',
+          'type': 'none',
+          'dependencies': [
+            'components.gyp:bookmarks_java'
+          ],
+          'variables': {
+            'java_in_dir': 'enhanced_bookmarks/android/java',
+          },
+          'includes': [ '../build/java.gypi' ],
+        },
+        {
+          'target_name': 'enhanced_bookmarks_jni_headers',
+          'type': 'none',
+          'sources': [
+            'enhanced_bookmarks/android/java/src/org/chromium/components/enhancedbookmarks/EnhancedBookmarksBridge.java',
+          ],
+          'variables': {
+            'jni_gen_package': 'enhanced_bookmarks',
+          },
+          'includes': [ '../build/jni_generator.gypi' ],
+        },
+      ],
+    }]
   ],
 }

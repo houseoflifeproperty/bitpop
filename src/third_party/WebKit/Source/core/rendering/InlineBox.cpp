@@ -23,6 +23,7 @@
 #include "core/rendering/InlineFlowBox.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderBlockFlow.h"
+#include "core/rendering/RenderObjectInlines.h"
 #include "core/rendering/RootInlineBox.h"
 #include "platform/Partitions.h"
 #include "platform/fonts/FontMetrics.h"
@@ -31,9 +32,7 @@
 #include <stdio.h>
 #endif
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 struct SameSizeAsInlineBox {
     virtual ~SameSizeAsInlineBox() { }
@@ -41,14 +40,14 @@ struct SameSizeAsInlineBox {
     FloatPoint b;
     float c;
     uint32_t d : 32;
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool f;
 #endif
 };
 
 COMPILE_ASSERT(sizeof(InlineBox) == sizeof(SameSizeAsInlineBox), InlineBox_size_guard);
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 
 InlineBox::~InlineBox()
 {
@@ -352,17 +351,17 @@ LayoutPoint InlineBox::flipForWritingMode(const LayoutPoint& point)
     return root().block().flipForWritingMode(point);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
 
-void showTree(const WebCore::InlineBox* b)
+void showTree(const blink::InlineBox* b)
 {
     if (b)
         b->showTreeForThis();
 }
 
-void showLineTree(const WebCore::InlineBox* b)
+void showLineTree(const blink::InlineBox* b)
 {
     if (b)
         b->showLineTreeForThis();

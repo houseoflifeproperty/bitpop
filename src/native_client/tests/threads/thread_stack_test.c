@@ -1,7 +1,7 @@
 /*
  * Copyright 2011 The Native Client Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can
- * be found in the LICENSE file.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
  */
 
 #include <pthread.h>
@@ -20,7 +20,7 @@ static void CheckSuccess(int err, const char *filename, int lineno,
 }
 
 static void Check(int cond, const char *filename, int lineno,
-                         const char *expr) {
+                  const char *expr) {
   if (!cond) {
     printf("condition failed at %s:%i: %s\n",
            filename, lineno, expr);
@@ -137,4 +137,3 @@ int main(int argc, char *argv[]) {
 
   return 0;
 }
-

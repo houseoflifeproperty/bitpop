@@ -35,7 +35,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 class Page;
@@ -43,8 +43,9 @@ class SecurityOrigin;
 
 class InspectorFileSystemAgent FINAL : public InspectorBaseAgent<InspectorFileSystemAgent>, public InspectorBackendDispatcher::FileSystemCommandHandler {
 public:
-    static PassOwnPtr<InspectorFileSystemAgent> create(Page*);
+    static PassOwnPtrWillBeRawPtr<InspectorFileSystemAgent> create(Page*);
     virtual ~InspectorFileSystemAgent();
+    virtual void trace(Visitor*) OVERRIDE;
 
     virtual void enable(ErrorString*) OVERRIDE;
     virtual void disable(ErrorString*) OVERRIDE;
@@ -59,14 +60,14 @@ public:
     virtual void restore() OVERRIDE;
 
 private:
-    InspectorFileSystemAgent(Page*);
+    explicit InspectorFileSystemAgent(Page*);
     bool assertEnabled(ErrorString*);
     ExecutionContext* assertExecutionContextForOrigin(ErrorString*, SecurityOrigin*);
 
-    Page* m_page;
+    RawPtrWillBeMember<Page> m_page;
     bool m_enabled;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InspectorFileSystemAgent_h

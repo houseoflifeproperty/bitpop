@@ -9,8 +9,10 @@
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
 #include "base/win/windows_version.h"
+#include "grit/ui_resources.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_model.h"
+#include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/app_list_view_delegate.h"
 #include "ui/app_list/speech_ui_model.h"
 #include "ui/app_list/views/app_list_background.h"
@@ -21,15 +23,18 @@
 #include "ui/app_list/views/contents_view.h"
 #include "ui/app_list/views/search_box_view.h"
 #include "ui/app_list/views/speech_view.h"
+#include "ui/app_list/views/start_page_view.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/bubble/bubble_frame_view.h"
+#include "ui/views/controls/image_view.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/widget/widget.h"
@@ -65,7 +70,7 @@ bool SupportsShadow() {
   // Shadows are not supported on Windows without Aero Glass.
   if (!ui::win::IsAeroGlassEnabled() ||
       CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableDwmComposition)) {
+          ::switches::kDisableDwmComposition)) {
     return false;
   }
 #elif defined(OS_LINUX) && !defined(OS_CHROMEOS)
@@ -74,6 +79,28 @@ bool SupportsShadow() {
 #endif
   return true;
 }
+
+// The background for the App List overlay, which appears as a white rounded
+// rectangle with the given radius and the same size as the target view.
+class AppListOverlayBackground : public views::Background {
+ public:
+  AppListOverlayBackground(int corner_radius)
+      : corner_radius_(corner_radius) {};
+  virtual ~AppListOverlayBackground() {};
+
+  // Overridden from views::Background:
+  virtual void Paint(gfx::Canvas* canvas, views::View* view) const OVERRIDE {
+    SkPaint paint;
+    paint.setStyle(SkPaint::kFill_Style);
+    paint.setColor(SK_ColorWHITE);
+    canvas->DrawRoundRect(view->GetContentsBounds(), corner_radius_, paint);
+  }
+
+ private:
+  const int corner_radius_;
+
+  DISALLOW_COPY_AND_ASSIGN(AppListOverlayBackground);
+};
 
 }  // namespace
 
@@ -91,7 +118,7 @@ class HideViewAnimationObserver : public ui::ImplicitAnimationObserver {
   }
 
   void SetTarget(views::View* target) {
-    if (!target_)
+    if (target_)
       StopObservingImplicitAnimations();
     target_ = target;
   }
@@ -106,7 +133,8 @@ class HideViewAnimationObserver : public ui::ImplicitAnimationObserver {
       target_ = NULL;
 
       // Should update the background by invoking SchedulePaint().
-      frame_->SchedulePaint();
+      if (frame_)
+        frame_->SchedulePaint();
     }
   }
 
@@ -123,6 +151,8 @@ AppListView::AppListView(AppListViewDelegate* delegate)
     : delegate_(delegate),
       app_list_main_view_(NULL),
       speech_view_(NULL),
+      experimental_banner_view_(NULL),
+      overlay_view_(NULL),
       animation_observer_(new HideViewAnimationObserver()) {
   CHECK(delegate);
 
@@ -188,6 +218,33 @@ void AppListView::Close() {
 
 void AppListView::UpdateBounds() {
   SizeToContents();
+}
+
+void AppListView::SetAppListOverlayVisible(bool visible) {
+  DCHECK(overlay_view_);
+
+  // Display the overlay immediately so we can begin the animation.
+  overlay_view_->SetVisible(true);
+
+  ui::ScopedLayerAnimationSettings settings(
+      overlay_view_->layer()->GetAnimator());
+  settings.SetTweenType(gfx::Tween::LINEAR);
+
+  // If we're dismissing the overlay, hide the view at the end of the animation.
+  if (!visible) {
+    // Since only one animation is visible at a time, it's safe to re-use
+    // animation_observer_ here.
+    animation_observer_->set_frame(NULL);
+    animation_observer_->SetTarget(overlay_view_);
+    settings.AddObserver(animation_observer_.get());
+  }
+
+  const float kOverlayFadeInMilliseconds = 125;
+  settings.SetTransitionDuration(
+      base::TimeDelta::FromMilliseconds(kOverlayFadeInMilliseconds));
+
+  const float kOverlayOpacity = 0.75f;
+  overlay_view_->layer()->SetOpacity(visible ? kOverlayOpacity : 0.0f);
 }
 
 bool AppListView::ShouldCenterWindow() const {
@@ -279,6 +336,18 @@ void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
     AddChildView(speech_view_);
   }
 
+  if (app_list::switches::IsExperimentalAppListEnabled()) {
+    // Draw a banner in the corner of the experimental app list.
+    experimental_banner_view_ = new views::ImageView;
+    const gfx::ImageSkia& experimental_icon =
+        *ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+            IDR_APP_LIST_EXPERIMENTAL_ICON);
+    experimental_banner_view_->SetImage(experimental_icon);
+    experimental_banner_view_->SetPaintToLayer(true);
+    experimental_banner_view_->SetFillsBoundsOpaquely(false);
+    AddChildView(experimental_banner_view_);
+  }
+
   OnProfilesChanged();
   set_color(kContentsBackgroundColor);
   set_margins(gfx::Insets());
@@ -317,6 +386,25 @@ void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
   GetWidget()->Hide();
 #endif
 
+  // To make the overlay view, construct a view with a white background, rather
+  // than a white rectangle in it. This is because we need overlay_view_ to be
+  // drawn to its own layer (so it appears correctly in the foreground).
+  overlay_view_ = new views::View();
+  overlay_view_->SetPaintToLayer(true);
+  overlay_view_->SetBoundsRect(GetContentsBounds());
+  overlay_view_->SetVisible(false);
+  overlay_view_->layer()->SetOpacity(0.0f);
+  // On platforms that don't support a shadow, the rounded border of the app
+  // list is constructed _inside_ the view, so a rectangular background goes
+  // over the border in the rounded corners. To fix this, give the background a
+  // corner radius 1px smaller than the outer border, so it just reaches but
+  // doesn't cover it.
+  const int kOverlayCornerRadius =
+      GetBubbleFrameView()->bubble_border()->GetBorderCornerRadius();
+  overlay_view_->set_background(new AppListOverlayBackground(
+      kOverlayCornerRadius - (SupportsShadow() ? 0 : 1)));
+  AddChildView(overlay_view_);
+
   if (delegate_)
     delegate_->ViewInitialized();
 }
@@ -345,7 +433,12 @@ void AppListView::OnBeforeBubbleWidgetInit(
 }
 
 views::View* AppListView::GetInitiallyFocusedView() {
-  return app_list_main_view_->search_box_view()->search_box();
+  return app_list::switches::IsExperimentalAppListEnabled()
+             ? app_list_main_view_->contents_view()
+                   ->start_page_view()
+                   ->dummy_search_box_view()
+                   ->search_box()
+             : app_list_main_view_->search_box_view()->search_box();
 }
 
 gfx::ImageSkia AppListView::GetWindowIcon() {
@@ -400,6 +493,15 @@ void AppListView::Layout() {
                                       preferred_height));
     speech_bounds.Inset(-speech_view_->GetInsets());
     speech_view_->SetBoundsRect(speech_bounds);
+  }
+
+  if (experimental_banner_view_) {
+    // Position the experimental banner in the lower right corner.
+    gfx::Rect image_bounds = experimental_banner_view_->GetImageBounds();
+    image_bounds.set_origin(
+        gfx::Point(contents_bounds.width() - image_bounds.width(),
+                   contents_bounds.height() - image_bounds.height()));
+    experimental_banner_view_->SetBoundsRect(image_bounds);
   }
 }
 

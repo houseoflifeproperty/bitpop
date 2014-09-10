@@ -42,15 +42,10 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Uint8ClampedArray.h"
-#include "wtf/Vector.h"
 
 class SkCanvas;
 
 namespace blink {
-class WebGraphicsContext3D;
-}
-
-namespace WebCore {
 
 class DrawingBuffer;
 class GraphicsContext;
@@ -58,6 +53,7 @@ class Image;
 class ImageBufferClient;
 class IntPoint;
 class IntRect;
+class WebGraphicsContext3D;
 
 enum Multiply {
     Premultiplied,
@@ -93,6 +89,12 @@ public:
 
     GraphicsContext* context() const;
 
+    // Called at the end of a task that rendered a whole frame
+    void finalizeFrame(const FloatRect &dirtyRect);
+    void didFinalizeFrame();
+
+    bool isDirty();
+
     const SkBitmap& bitmap() const;
 
     PassRefPtr<Image> copyImage(BackingStoreCopy = CopyBackingStore, ScaleBehavior = Scaled) const;
@@ -100,21 +102,20 @@ public:
     // or return CopyBackingStore if it doesn't.
     static BackingStoreCopy fastCopyImageMode();
 
-    PassRefPtr<Uint8ClampedArray> getUnmultipliedImageData(const IntRect&) const;
-    PassRefPtr<Uint8ClampedArray> getPremultipliedImageData(const IntRect&) const;
+    PassRefPtr<Uint8ClampedArray> getImageData(Multiply, const IntRect&) const;
 
-    void putByteArray(Multiply multiplied, Uint8ClampedArray*, const IntSize& sourceSize, const IntRect& sourceRect, const IntPoint& destPoint);
+    void putByteArray(Multiply, Uint8ClampedArray*, const IntSize& sourceSize, const IntRect& sourceRect, const IntPoint& destPoint);
 
     String toDataURL(const String& mimeType, const double* quality = 0) const;
     AffineTransform baseTransform() const { return AffineTransform(); }
     void transformColorSpace(ColorSpace srcColorSpace, ColorSpace dstColorSpace);
-    blink::WebLayer* platformLayer() const;
+    WebLayer* platformLayer() const;
 
     // FIXME: current implementations of this method have the restriction that they only work
     // with textures that are RGB or RGBA format, UNSIGNED_BYTE type and level 0, as specified in
     // Extensions3D::canUseCopyTextureCHROMIUM().
     // Destroys the TEXTURE_2D binding for the active texture unit of the passed context
-    bool copyToPlatformTexture(blink::WebGraphicsContext3D*, Platform3DObject, GLenum, GLenum, GLint, bool, bool);
+    bool copyToPlatformTexture(WebGraphicsContext3D*, Platform3DObject, GLenum, GLenum, GLint, bool, bool);
 
     Platform3DObject getBackingTexture();
 
@@ -127,8 +128,8 @@ public:
 private:
     ImageBuffer(PassOwnPtr<ImageBufferSurface>);
 
-    void draw(GraphicsContext*, const FloatRect&, const FloatRect* = 0, CompositeOperator = CompositeSourceOver);
-    void drawPattern(GraphicsContext*, const FloatRect&, const FloatSize&, const FloatPoint&, CompositeOperator, const FloatRect&, blink::WebBlendMode, const IntSize& repeatSpacing = IntSize());
+    void draw(GraphicsContext*, const FloatRect&, const FloatRect* = 0, CompositeOperator = CompositeSourceOver, WebBlendMode = WebBlendModeNormal);
+    void drawPattern(GraphicsContext*, const FloatRect&, const FloatSize&, const FloatPoint&, CompositeOperator, const FloatRect&, WebBlendMode, const IntSize& repeatSpacing = IntSize());
     static PassRefPtr<SkColorFilter> createColorSpaceFilter(ColorSpace srcColorSpace, ColorSpace dstColorSpace);
 
     friend class GraphicsContext;
@@ -153,6 +154,6 @@ struct ImageDataBuffer {
 
 String PLATFORM_EXPORT ImageDataToDataURL(const ImageDataBuffer&, const String& mimeType, const double* quality);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ImageBuffer_h

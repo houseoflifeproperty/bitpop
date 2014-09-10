@@ -40,6 +40,7 @@
 #include "core/editing/TextIterator.h"
 #include "core/editing/VisibleSelection.h"
 #include "core/frame/FrameView.h"
+#include "core/page/Page.h"
 #include "platform/Timer.h"
 #include "public/platform/WebVector.h"
 #include "public/web/WebFindOptions.h"
@@ -50,8 +51,6 @@
 #include "web/WebViewImpl.h"
 #include "wtf/CurrentTime.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 TextFinder::FindMatch::FindMatch(PassRefPtrWillBeRawPtr<Range> range, int ordinal)
@@ -60,7 +59,7 @@ TextFinder::FindMatch::FindMatch(PassRefPtrWillBeRawPtr<Range> range, int ordina
 {
 }
 
-void TextFinder::FindMatch::trace(WebCore::Visitor* visitor)
+void TextFinder::FindMatch::trace(Visitor* visitor)
 {
     visitor->trace(m_range);
 }

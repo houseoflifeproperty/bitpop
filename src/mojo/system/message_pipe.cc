@@ -67,7 +67,7 @@ void MessagePipe::Close(unsigned port) {
 // TODO(vtl): Handle flags.
 MojoResult MessagePipe::WriteMessage(
     unsigned port,
-    const void* bytes,
+    UserPointer<const void> bytes,
     uint32_t num_bytes,
     std::vector<DispatcherTransport>* transports,
     MojoWriteMessageFlags flags) {
@@ -83,8 +83,8 @@ MojoResult MessagePipe::WriteMessage(
 }
 
 MojoResult MessagePipe::ReadMessage(unsigned port,
-                                    void* bytes,
-                                    uint32_t* num_bytes,
+                                    UserPointer<void> bytes,
+                                    UserPointer<uint32_t> num_bytes,
                                     DispatcherVector* dispatchers,
                                     uint32_t* num_dispatchers,
                                     MojoReadMessageFlags flags) {
@@ -93,29 +93,41 @@ MojoResult MessagePipe::ReadMessage(unsigned port,
   base::AutoLock locker(lock_);
   DCHECK(endpoints_[port]);
 
-  return endpoints_[port]->ReadMessage(bytes, num_bytes, dispatchers,
-                                       num_dispatchers, flags);
+  return endpoints_[port]->ReadMessage(
+      bytes, num_bytes, dispatchers, num_dispatchers, flags);
+}
+
+HandleSignalsState MessagePipe::GetHandleSignalsState(unsigned port) const {
+  DCHECK(port == 0 || port == 1);
+
+  base::AutoLock locker(const_cast<base::Lock&>(lock_));
+  DCHECK(endpoints_[port]);
+
+  return endpoints_[port]->GetHandleSignalsState();
 }
 
 MojoResult MessagePipe::AddWaiter(unsigned port,
                                   Waiter* waiter,
                                   MojoHandleSignals signals,
-                                  uint32_t context) {
+                                  uint32_t context,
+                                  HandleSignalsState* signals_state) {
   DCHECK(port == 0 || port == 1);
 
   base::AutoLock locker(lock_);
   DCHECK(endpoints_[port]);
 
-  return endpoints_[port]->AddWaiter(waiter, signals, context);
+  return endpoints_[port]->AddWaiter(waiter, signals, context, signals_state);
 }
 
-void MessagePipe::RemoveWaiter(unsigned port, Waiter* waiter) {
+void MessagePipe::RemoveWaiter(unsigned port,
+                               Waiter* waiter,
+                               HandleSignalsState* signals_state) {
   DCHECK(port == 0 || port == 1);
 
   base::AutoLock locker(lock_);
   DCHECK(endpoints_[port]);
 
-  endpoints_[port]->RemoveWaiter(waiter);
+  endpoints_[port]->RemoveWaiter(waiter, signals_state);
 }
 
 void MessagePipe::ConvertLocalToProxy(unsigned port) {
@@ -141,9 +153,8 @@ void MessagePipe::ConvertLocalToProxy(unsigned port) {
   endpoints_[port].swap(replacement_endpoint);
 }
 
-MojoResult MessagePipe::EnqueueMessage(
-    unsigned port,
-    scoped_ptr<MessageInTransit> message) {
+MojoResult MessagePipe::EnqueueMessage(unsigned port,
+                                       scoped_ptr<MessageInTransit> message) {
   return EnqueueMessageInternal(port, message.Pass(), NULL);
 }
 

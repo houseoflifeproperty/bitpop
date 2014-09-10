@@ -27,8 +27,8 @@
 #include "config.h"
 #include "core/editing/TextCheckingHelper.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/Range.h"
@@ -41,7 +41,7 @@
 #include "platform/text/TextBreakIterator.h"
 #include "platform/text/TextCheckerClient.h"
 
-namespace WebCore {
+namespace blink {
 
 static void findBadGrammars(TextCheckerClient& client, const UChar* text, int start, int length, Vector<TextCheckingResult>& results)
 {
@@ -527,7 +527,7 @@ bool TextCheckingHelper::unifiedTextCheckerEnabled() const
         return false;
 
     Document& doc = m_range->ownerDocument();
-    return WebCore::unifiedTextCheckerEnabled(doc.frame());
+    return blink::unifiedTextCheckerEnabled(doc.frame());
 }
 
 void checkTextOfParagraph(TextCheckerClient& client, const String& text, TextCheckingTypeMask checkingTypes, Vector<TextCheckingResult>& results)

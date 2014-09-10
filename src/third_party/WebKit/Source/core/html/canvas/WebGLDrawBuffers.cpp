@@ -27,7 +27,7 @@
 
 #include "core/html/canvas/WebGLDrawBuffers.h"
 
-namespace WebCore {
+namespace blink {
 
 WebGLDrawBuffers::WebGLDrawBuffers(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
@@ -45,9 +45,9 @@ WebGLExtensionName WebGLDrawBuffers::name() const
     return WebGLDrawBuffersName;
 }
 
-PassRefPtr<WebGLDrawBuffers> WebGLDrawBuffers::create(WebGLRenderingContextBase* context)
+PassRefPtrWillBeRawPtr<WebGLDrawBuffers> WebGLDrawBuffers::create(WebGLRenderingContextBase* context)
 {
-    return adoptRef(new WebGLDrawBuffers(context));
+    return adoptRefWillBeNoop(new WebGLDrawBuffers(context));
 }
 
 // static
@@ -177,4 +177,4 @@ bool WebGLDrawBuffers::satisfiesWebGLRequirements(WebGLRenderingContextBase* web
     return ok;
 }
 
-} // namespace WebCore
+} // namespace blink

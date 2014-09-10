@@ -40,10 +40,9 @@
 namespace WTF { template <typename T> class PassRefPtr; }
 #endif
 
-namespace WebCore { class AXObject; }
-
 namespace blink {
 
+class AXObject;
 class WebNode;
 class WebDocument;
 class WebString;
@@ -217,13 +216,13 @@ public:
     BLINK_EXPORT void scrollToGlobalPoint(const WebPoint&) const;
 
 #if BLINK_IMPLEMENTATION
-    WebAXObject(const WTF::PassRefPtr<WebCore::AXObject>&);
-    WebAXObject& operator=(const WTF::PassRefPtr<WebCore::AXObject>&);
-    operator WTF::PassRefPtr<WebCore::AXObject>() const;
+    WebAXObject(const WTF::PassRefPtr<AXObject>&);
+    WebAXObject& operator=(const WTF::PassRefPtr<AXObject>&);
+    operator WTF::PassRefPtr<AXObject>() const;
 #endif
 
 private:
-    WebPrivatePtr<WebCore::AXObject> m_private;
+    WebPrivatePtr<AXObject> m_private;
 };
 
 } // namespace blink

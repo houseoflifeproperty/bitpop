@@ -5,29 +5,32 @@
 #ifndef ServiceWorkerClients_h
 #define ServiceWorkerClients_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebServiceWorkerClientsInfo.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
-class Client;
 class ExecutionContext;
-class ScriptState;
 class ScriptPromise;
+class ScriptState;
+class ServiceWorkerClient;
 
-class ServiceWorkerClients FINAL : public RefCounted<ServiceWorkerClients>, public ScriptWrappable {
+class ServiceWorkerClients FINAL : public RefCountedWillBeGarbageCollected<ServiceWorkerClients>, public ScriptWrappable {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ServiceWorkerClients);
 public:
-    static PassRefPtr<ServiceWorkerClients> create();
-    ~ServiceWorkerClients();
+    static PassRefPtrWillBeRawPtr<ServiceWorkerClients> create();
 
     // ServiceWorkerClients.idl
     ScriptPromise getServiced(ScriptState*);
+
+    void trace(Visitor*) { }
 
 private:
     ServiceWorkerClients();
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ServiceWorkerClients_h

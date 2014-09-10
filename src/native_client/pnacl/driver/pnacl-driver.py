@@ -2,12 +2,6 @@
 # Copyright (c) 2012 The Native Client Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-#
-# IMPORTANT NOTE: If you make local mods to this file, you must run:
-#   %  pnacl/build.sh driver
-# in order for them to take effect in the scons build.  This command
-# updates the copy in the toolchain/ tree.
-#
 
 import re
 import subprocess
@@ -497,8 +491,14 @@ def main(argv):
   # If -arch was given, we are compiling directly to native code
   compiling_to_native = GetArch() is not None
 
-  if env.getbool('ALLOW_NATIVE') and not compiling_to_native:
-    Log.Fatal("--pnacl-allow-native without -arch is not meaningful.")
+  if env.getbool('ALLOW_NATIVE'):
+    if not compiling_to_native:
+      Log.Fatal("--pnacl-allow-native without -arch is not meaningful.")
+    # For native/mixed links, also bring in the native libgcc to avoid link
+    # failure if pre-translated native code needs functions from it.
+    env.append('LD_FLAGS', env.eval('-L${LIBS_NATIVE_ARCH}'))
+    env.append('STDLIBS', '-lgcc')
+
 
   if not env.get('STDLIB'):
     # Default C++ Standard Library.

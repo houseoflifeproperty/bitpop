@@ -12,7 +12,8 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/vector2d_f.h"
-#include "ui/views/widget/desktop_aura/x11_whole_screen_move_loop_delegate.h"
+#include "ui/views/widget/desktop_aura/x11_move_loop.h"
+#include "ui/views/widget/desktop_aura/x11_move_loop_delegate.h"
 
 typedef struct _XDisplay XDisplay;
 
@@ -30,29 +31,21 @@ class Widget;
 
 // Runs a nested message loop and grabs the mouse. This is used to implement
 // dragging.
-class X11WholeScreenMoveLoop : public ui::PlatformEventDispatcher {
+class X11WholeScreenMoveLoop : public X11MoveLoop,
+                               public ui::PlatformEventDispatcher {
  public:
-  explicit X11WholeScreenMoveLoop(X11WholeScreenMoveLoopDelegate* delegate);
+  explicit X11WholeScreenMoveLoop(X11MoveLoopDelegate* delegate);
   virtual ~X11WholeScreenMoveLoop();
 
   // ui:::PlatformEventDispatcher:
   virtual bool CanDispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
   virtual uint32_t DispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
 
-  // Runs the nested message loop. While the mouse is grabbed, use |cursor| as
-  // the mouse cursor. Returns true if the move-loop is completed successfully.
-  // If the pointer-grab fails, or the move-loop is canceled by the user (e.g.
-  // by pressing escape), then returns false.
-  bool RunMoveLoop(aura::Window* window, gfx::NativeCursor cursor);
-
-  // Updates the cursor while the move loop is running.
-  void UpdateCursor(gfx::NativeCursor cursor);
-
-  // Ends the RunMoveLoop() that's currently in progress.
-  void EndMoveLoop();
-
-  // Sets an image to be used during the drag.
-  void SetDragImage(const gfx::ImageSkia& image, gfx::Vector2dF offset);
+  // X11MoveLoop:
+  virtual bool RunMoveLoop(aura::Window* window,
+                           gfx::NativeCursor cursor) OVERRIDE;
+  virtual void UpdateCursor(gfx::NativeCursor cursor) OVERRIDE;
+  virtual void EndMoveLoop() OVERRIDE;
 
  private:
   // Grabs the pointer and keyboard, setting the mouse cursor to |cursor|.
@@ -62,17 +55,10 @@ class X11WholeScreenMoveLoop : public ui::PlatformEventDispatcher {
   // Creates an input-only window to be used during the drag.
   Window CreateDragInputWindow(XDisplay* display);
 
-  // Creates a window to show the drag image during the drag.
-  void CreateDragImageWindow();
-
-  // Checks to see if |in_image| is an image that has any visible regions
-  // (defined as having a pixel with alpha > 32). If so, return true.
-  bool CheckIfIconValid();
-
   // Dispatch mouse movement event to |delegate_| in a posted task.
   void DispatchMouseMovement();
 
-  X11WholeScreenMoveLoopDelegate* delegate_;
+  X11MoveLoopDelegate* delegate_;
 
   // Are we running a nested message loop from RunMoveLoop()?
   bool in_move_loop_;
@@ -94,11 +80,6 @@ class X11WholeScreenMoveLoop : public ui::PlatformEventDispatcher {
   // Keeps track of whether we still have a pointer grab at the end of the loop.
   bool has_grab_;
 
-  // A Widget is created during the drag if there is an image available to be
-  // used during the drag.
-  scoped_ptr<Widget> drag_widget_;
-  gfx::ImageSkia drag_image_;
-  gfx::Vector2dF drag_offset_;
   XMotionEvent last_xmotion_;
   base::WeakPtrFactory<X11WholeScreenMoveLoop> weak_factory_;
 

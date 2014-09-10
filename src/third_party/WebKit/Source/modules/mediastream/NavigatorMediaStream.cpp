@@ -23,8 +23,8 @@
 #include "config.h"
 #include "modules/mediastream/NavigatorMediaStream.h"
 
-#include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/frame/LocalFrame.h"
@@ -37,7 +37,7 @@
 #include "modules/mediastream/UserMediaController.h"
 #include "modules/mediastream/UserMediaRequest.h"
 
-namespace WebCore {
+namespace blink {
 
 NavigatorMediaStream::NavigatorMediaStream()
 {
@@ -58,7 +58,7 @@ void NavigatorMediaStream::webkitGetUserMedia(Navigator& navigator, const Dictio
         return;
     }
 
-    RefPtrWillBeRawPtr<UserMediaRequest> request = UserMediaRequest::create(navigator.frame()->document(), userMedia, options, successCallback, errorCallback, exceptionState);
+    UserMediaRequest* request = UserMediaRequest::create(navigator.frame()->document(), userMedia, options, successCallback, errorCallback, exceptionState);
     if (!request) {
         ASSERT(exceptionState.hadException());
         return;
@@ -75,7 +75,7 @@ void NavigatorMediaStream::getMediaDevices(Navigator& navigator, PassOwnPtr<Medi
         return;
     }
 
-    RefPtrWillBeRawPtr<MediaDevicesRequest> request = MediaDevicesRequest::create(navigator.frame()->document(), userMedia, callback, exceptionState);
+    MediaDevicesRequest* request = MediaDevicesRequest::create(navigator.frame()->document(), userMedia, callback, exceptionState);
     if (!request) {
         if (!exceptionState.hadException())
             exceptionState.throwDOMException(NotSupportedError, "Failed to request media devices.");
@@ -85,4 +85,4 @@ void NavigatorMediaStream::getMediaDevices(Navigator& navigator, PassOwnPtr<Medi
     request->start();
 }
 
-} // namespace WebCore
+} // namespace blink

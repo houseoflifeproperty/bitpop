@@ -108,6 +108,7 @@ def load_recipe_modules(mod_dirs):
   RM = 'RECIPE_MODULES'
   def find_and_load(fullname, modname, path):
     if fullname not in sys.modules or fullname == RM:
+      fil = None
       try:
         fil, pathname, descr = imp.find_module(modname,
                                                [os.path.dirname(path)])
@@ -189,8 +190,6 @@ def create_apis(mod_dirs, names, only_test_api, engine, test_data):
       Among other things it provides:
         properties (dict): the properties dictionary (used by the properties
             module)
-        step_history (OrderedDict): the step history object (used by the
-            step_history module!)
       See annotated_run.py for definition.
     test_data (TestData): ...
 

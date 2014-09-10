@@ -25,7 +25,6 @@
 #ifndef AudioNode_h
 #define AudioNode_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "modules/EventTargetModules.h"
 #include "platform/audio/AudioBus.h"
 #include "wtf/Forward.h"
@@ -36,7 +35,7 @@
 
 #define DEBUG_AUDIONODE_REFERENCES 0
 
-namespace WebCore {
+namespace blink {
 
 class AudioContext;
 class AudioNodeInput;
@@ -51,13 +50,17 @@ class ExceptionState;
 // Most processing nodes such as filters will have one input and one output, although multiple inputs and outputs are possible.
 
 // AudioNode has its own ref-counting mechanism that use RefTypes so we cannot use RefCountedGarbageCollected.
-class AudioNode : public NoBaseWillBeGarbageCollectedFinalized<AudioNode>, public ScriptWrappable, public EventTargetWithInlineData {
+class AudioNode : public NoBaseWillBeGarbageCollectedFinalized<AudioNode>, public EventTargetWithInlineData {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(AudioNode);
 public:
     enum { ProcessingSizeInFrames = 128 };
 
     AudioNode(AudioContext*, float sampleRate);
     virtual ~AudioNode();
+    // dispose() is called just before the destructor. This must be called in
+    // the main thread, and while the graph lock is held.
+    virtual void dispose();
+    static unsigned instanceCount() { return s_instanceCount; }
 
     AudioContext* context() { return m_context.get(); }
     const AudioContext* context() const { return m_context.get(); }
@@ -94,17 +97,26 @@ public:
     String nodeTypeName() const;
     void setNodeType(NodeType);
 
-    // We handle our own ref-counting because of the threading issues and subtle nature of
-    // how AudioNodes can continue processing (playing one-shot sound) after there are no more
-    // JavaScript references to the object.
-    enum RefType { RefTypeNormal, RefTypeConnection };
-
+#if !ENABLE(OILPAN)
     // Can be called from main thread or context's audio thread.
-    void ref(RefType refType = RefTypeNormal);
-    void deref(RefType refType = RefTypeNormal);
+    void ref();
+    void deref();
+#endif
+
+    // This object has been connected to another object. This might have
+    // existing connections from others.
+    // This function must be called after acquiring a connection reference.
+    void makeConnection();
+    // This object will be disconnected from another object. This might have
+    // remaining connections from others.
+    // This function must be called before releasing a connection reference.
+    void breakConnection();
 
     // Can be called from main thread or context's audio thread.  It must be called while the context's graph lock is held.
-    void finishDeref(RefType refType);
+#if !ENABLE(OILPAN)
+    void finishDeref();
+#endif
+    void breakConnectionWithLock();
 
     // The AudioNodeInput(s) (if any) will already have their input data available when process() is called.
     // Subclasses will take this input data and put the results in the AudioBus(s) of its AudioNodeOutput(s) (if any).
@@ -146,7 +158,7 @@ public:
     static void printNodeCounts();
 #endif
 
-    bool isMarkedForDeletion() const { return m_isMarkedForDeletion; }
+    bool isDisposeCalled() const { return m_isDisposeCalled; }
 
     // tailTime() is the length of time (not counting latency time) where non-zero output may occur after continuous silent input.
     virtual double tailTime() const = 0;
@@ -183,14 +195,10 @@ public:
 
     virtual void trace(Visitor*) OVERRIDE;
 
-#if ENABLE(OILPAN)
-    void clearKeepAlive();
-#endif
-
 protected:
     // Inputs and outputs must be created before the AudioNode is initialized.
-    void addInput(PassOwnPtr<AudioNodeInput>);
-    void addOutput(PassOwnPtr<AudioNodeOutput>);
+    void addInput();
+    void addOutput(PassOwnPtrWillBeRawPtr<AudioNodeOutput>);
 
     // Called by processIfNecessary() to cause all parts of the rendering graph connected to us to process.
     // Each rendering quantum, the audio data for each of the AudioNode's inputs will be available after this method is called.
@@ -205,35 +213,26 @@ private:
     NodeType m_nodeType;
     RefPtrWillBeMember<AudioContext> m_context;
     float m_sampleRate;
-    Vector<OwnPtr<AudioNodeInput> > m_inputs;
-    Vector<OwnPtr<AudioNodeOutput> > m_outputs;
-
-#if ENABLE(OILPAN)
-    // AudioNodes are in the oilpan heap but they are still reference counted at
-    // the same time. This is because we are not allowed to stop the audio
-    // thread and thus the audio thread cannot allocate objects in the oilpan
-    // heap.
-    // The m_keepAlive handle is used to keep a persistent reference to this
-    // AudioNode while someone has a reference to this AudioNode through a
-    // RefPtr.
-    GC_PLUGIN_IGNORE("http://crbug.com/353083")
-    OwnPtr<Persistent<AudioNode> > m_keepAlive;
-#endif
+    WillBeHeapVector<OwnPtrWillBeMember<AudioNodeInput> > m_inputs;
+    WillBeHeapVector<OwnPtrWillBeMember<AudioNodeOutput> > m_outputs;
 
     double m_lastProcessingTime;
     double m_lastNonSilentTime;
 
+#if !ENABLE(OILPAN)
     // Ref-counting
     volatile int m_normalRefCount;
+#endif
     volatile int m_connectionRefCount;
 
-    bool m_isMarkedForDeletion;
     bool m_isDisabled;
+    bool m_isDisposeCalled;
 
 #if DEBUG_AUDIONODE_REFERENCES
     static bool s_isNodeCountInitialized;
     static int s_nodeCount[NodeTypeEnd];
 #endif
+    static unsigned s_instanceCount;
 
 #if !ENABLE(OILPAN)
     virtual void refEventTarget() OVERRIDE FINAL { ref(); }
@@ -246,6 +245,6 @@ protected:
     AudioBus::ChannelInterpretation m_channelInterpretation;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioNode_h

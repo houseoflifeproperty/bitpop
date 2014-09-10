@@ -107,19 +107,19 @@ public:
     uint32_t readU32() { return this->readInt(); }
 
     bool readPath(SkPath* path) {
-        return readObjectFromMemory(path);
+        return this->readObjectFromMemory(path);
     }
 
     bool readMatrix(SkMatrix* matrix) {
-        return readObjectFromMemory(matrix);
+        return this->readObjectFromMemory(matrix);
     }
 
     bool readRRect(SkRRect* rrect) {
-        return readObjectFromMemory(rrect);
+        return this->readObjectFromMemory(rrect);
     }
 
     bool readRegion(SkRegion* rgn) {
-        return readObjectFromMemory(rgn);
+        return this->readObjectFromMemory(rgn);
     }
 
     /**

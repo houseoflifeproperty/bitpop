@@ -31,19 +31,19 @@
 #ifndef LayerRect_h
 #define LayerRect_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ClientRect.h"
-
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Node;
 
-class LayerRect FINAL : public RefCountedWillBeGarbageCollectedFinalized<LayerRect> {
+class LayerRect FINAL : public RefCountedWillBeGarbageCollectedFinalized<LayerRect>, public ScriptWrappable {
 public:
     static PassRefPtrWillBeRawPtr<LayerRect> create(PassRefPtrWillBeRawPtr<Node> node, const String& layerType, int nodeOffsetX, int nodeOffsetY, PassRefPtrWillBeRawPtr<ClientRect> rect)
     {
@@ -70,6 +70,7 @@ private:
         , m_associatedNodeOffsetY(nodeOffsetY)
         , m_rect(rect)
     {
+        ScriptWrappable::init(this);
     }
 
     RefPtrWillBeMember<Node> m_layerAssociatedNode;
@@ -79,6 +80,6 @@ private:
     RefPtrWillBeMember<ClientRect> m_rect;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

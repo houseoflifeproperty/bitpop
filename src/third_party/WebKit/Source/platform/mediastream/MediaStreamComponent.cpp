@@ -38,7 +38,7 @@
 #include "platform/mediastream/MediaStreamSource.h"
 #include "public/platform/WebAudioSourceProvider.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtr<MediaStreamComponent> MediaStreamComponent::create(PassRefPtr<MediaStreamSource> source)
 {
@@ -54,6 +54,7 @@ MediaStreamComponent::MediaStreamComponent(const String& id, PassRefPtr<MediaStr
     : m_source(source)
     , m_id(id)
     , m_enabled(true)
+    , m_muted(false)
 {
     ASSERT(m_id.length());
 }
@@ -87,5 +88,5 @@ void MediaStreamComponent::AudioSourceProviderImpl::provideInput(AudioBus* bus, 
 }
 #endif // #if ENABLE(WEB_AUDIO)
 
-} // namespace WebCore
+} // namespace blink
 

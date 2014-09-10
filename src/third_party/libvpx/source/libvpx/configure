@@ -26,6 +26,7 @@ Advanced options:
   ${toggle_unit_tests}            unit tests
   ${toggle_decode_perf_tests}     build decoder perf tests with unit tests
   --libc=PATH                     path to alternate libc
+  --size-limit=WxH                max size to allow in the decoder
   --as={yasm|nasm|auto}           use specified assembler [auto, yasm preferred]
   --sdk-path=PATH                 path to root of sdk (android builds only)
   ${toggle_fast_unaligned}        don't use unaligned accesses, even when
@@ -52,6 +53,7 @@ Advanced options:
   ${toggle_multi_res_encoding}    enable multiple-resolution encoding
   ${toggle_temporal_denoising}    enable temporal denoising and disable the spatial denoiser
   ${toggle_webm_io}               enable input from and output to WebM container
+  ${toggle_libyuv}                enable libyuv
 
 Codecs:
   Codecs can be selectively enabled or disabled individually, or by family:
@@ -95,6 +97,7 @@ all_platforms="${all_platforms} armv6-darwin-gcc"
 all_platforms="${all_platforms} armv6-linux-rvct"
 all_platforms="${all_platforms} armv6-linux-gcc"
 all_platforms="${all_platforms} armv6-none-rvct"
+all_platforms="${all_platforms} arm64-darwin-gcc"
 all_platforms="${all_platforms} armv7-android-gcc"   #neon Cortex-A8
 all_platforms="${all_platforms} armv7-darwin-gcc"    #neon Cortex-A8
 all_platforms="${all_platforms} armv7-linux-rvct"    #neon Cortex-A8
@@ -102,6 +105,7 @@ all_platforms="${all_platforms} armv7-linux-gcc"     #neon Cortex-A8
 all_platforms="${all_platforms} armv7-none-rvct"     #neon Cortex-A8
 all_platforms="${all_platforms} armv7-win32-vs11"
 all_platforms="${all_platforms} armv7-win32-vs12"
+all_platforms="${all_platforms} armv7s-darwin-gcc"
 all_platforms="${all_platforms} mips32-linux-gcc"
 all_platforms="${all_platforms} ppc32-darwin8-gcc"
 all_platforms="${all_platforms} ppc32-darwin9-gcc"
@@ -119,6 +123,7 @@ all_platforms="${all_platforms} x86-darwin10-gcc"
 all_platforms="${all_platforms} x86-darwin11-gcc"
 all_platforms="${all_platforms} x86-darwin12-gcc"
 all_platforms="${all_platforms} x86-darwin13-gcc"
+all_platforms="${all_platforms} x86-iphonesimulator-gcc"
 all_platforms="${all_platforms} x86-linux-gcc"
 all_platforms="${all_platforms} x86-linux-icc"
 all_platforms="${all_platforms} x86-os2-gcc"
@@ -135,6 +140,7 @@ all_platforms="${all_platforms} x86_64-darwin10-gcc"
 all_platforms="${all_platforms} x86_64-darwin11-gcc"
 all_platforms="${all_platforms} x86_64-darwin12-gcc"
 all_platforms="${all_platforms} x86_64-darwin13-gcc"
+all_platforms="${all_platforms} x86_64-iphonesimulator-gcc"
 all_platforms="${all_platforms} x86_64-linux-gcc"
 all_platforms="${all_platforms} x86_64-linux-icc"
 all_platforms="${all_platforms} x86_64-solaris-gcc"
@@ -266,7 +272,9 @@ HAVE_LIST="
 "
 EXPERIMENT_LIST="
     multiple_arf
-    alpha
+    spatial_svc
+    denoising
+    fp_mb_stats
 "
 CONFIG_LIST="
     external_build
@@ -314,10 +322,12 @@ CONFIG_LIST="
     os_support
     unit_tests
     webm_io
+    libyuv
     decode_perf_tests
     multi_res_encoding
     temporal_denoising
     experimental
+    size_limit
     ${EXPERIMENT_LIST}
 "
 CMDLINE_SELECT="
@@ -343,6 +353,7 @@ CMDLINE_SELECT="
     docs
     libc
     as
+    size_limit
     fast_unaligned
     codec_srcs
     debug_libs
@@ -367,6 +378,7 @@ CMDLINE_SELECT="
     postproc_visualizer
     unit_tests
     webm_io
+    libyuv
     decode_perf_tests
     multi_res_encoding
     temporal_denoising
@@ -708,14 +720,20 @@ process_toolchain() {
         *-vs*)
             soft_enable unit_tests
             soft_enable webm_io
+            soft_enable libyuv
         ;;
         *-android-*)
             soft_enable webm_io
+            soft_enable libyuv
             # GTestLog must be modified to use Android logging utilities.
         ;;
         *-darwin-*)
             # iOS/ARM builds do not work with gtest. This does not match
             # x86 targets.
+        ;;
+        *-iphonesimulator-*)
+            soft_enable webm_io
+            soft_enable libyuv
         ;;
         *-win*)
             # Some mingw toolchains don't have pthread available by default.
@@ -727,12 +745,18 @@ EOF
             check_cxx "$@" <<EOF && soft_enable webm_io
 int z;
 EOF
+            check_cxx "$@" <<EOF && soft_enable libyuv
+int z;
+EOF
         ;;
         *)
             enabled pthread_h && check_cxx "$@" <<EOF && soft_enable unit_tests
 int z;
 EOF
             check_cxx "$@" <<EOF && soft_enable webm_io
+int z;
+EOF
+            check_cxx "$@" <<EOF && soft_enable libyuv
 int z;
 EOF
         ;;

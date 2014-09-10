@@ -13,6 +13,7 @@
 #include "sync/internal_api/public/user_share.h"
 #include "sync/internal_api/public/write_node.h"
 #include "sync/internal_api/public/write_transaction.h"
+#include "sync/util/time.h"
 
 namespace browser_sync {
 
@@ -67,12 +68,13 @@ scoped_ptr<DeviceInfo> SyncedDeviceTracker::ReadLocalDeviceInfo(
   }
 
   const sync_pb::DeviceInfoSpecifics& specifics = node.GetDeviceInfoSpecifics();
-  return scoped_ptr<DeviceInfo> (
+  return scoped_ptr<DeviceInfo>(
       new DeviceInfo(specifics.cache_guid(),
                      specifics.client_name(),
                      specifics.chrome_version(),
                      specifics.sync_user_agent(),
-                     specifics.device_type()));
+                     specifics.device_type(),
+                     specifics.signin_scoped_device_id()));
 }
 
 scoped_ptr<DeviceInfo> SyncedDeviceTracker::ReadDeviceInfo(
@@ -86,12 +88,13 @@ scoped_ptr<DeviceInfo> SyncedDeviceTracker::ReadDeviceInfo(
   }
 
   const sync_pb::DeviceInfoSpecifics& specifics = node.GetDeviceInfoSpecifics();
-  return scoped_ptr<DeviceInfo> (
+  return scoped_ptr<DeviceInfo>(
       new DeviceInfo(specifics.cache_guid(),
                      specifics.client_name(),
                      specifics.chrome_version(),
                      specifics.sync_user_agent(),
-                     specifics.device_type()));
+                     specifics.device_type(),
+                     specifics.signin_scoped_device_id()));
 }
 
 void SyncedDeviceTracker::GetAllSyncedDeviceInfo(
@@ -122,12 +125,12 @@ void SyncedDeviceTracker::GetAllSyncedDeviceInfo(
 
     const sync_pb::DeviceInfoSpecifics& specifics =
         node.GetDeviceInfoSpecifics();
-    device_info->push_back(
-        new DeviceInfo(specifics.cache_guid(),
-                       specifics.client_name(),
-                       specifics.chrome_version(),
-                       specifics.sync_user_agent(),
-                       specifics.device_type()));
+    device_info->push_back(new DeviceInfo(specifics.cache_guid(),
+                                          specifics.client_name(),
+                                          specifics.chrome_version(),
+                                          specifics.sync_user_agent(),
+                                          specifics.device_type(),
+                                          specifics.signin_scoped_device_id()));
   }
 }
 
@@ -143,11 +146,15 @@ void SyncedDeviceTracker::RemoveObserver(Observer* observer) {
   observers_->RemoveObserver(observer);
 }
 
-void SyncedDeviceTracker::InitLocalDeviceInfo(const base::Closure& callback) {
+void SyncedDeviceTracker::InitLocalDeviceInfo(
+    const std::string& signin_scoped_device_id,
+    const base::Closure& callback) {
   DeviceInfo::CreateLocalDeviceInfo(
       cache_guid_,
+      signin_scoped_device_id,
       base::Bind(&SyncedDeviceTracker::InitLocalDeviceInfoContinuation,
-                 weak_factory_.GetWeakPtr(), callback));
+                 weak_factory_.GetWeakPtr(),
+                 callback));
 }
 
 void SyncedDeviceTracker::InitLocalDeviceInfoContinuation(
@@ -157,25 +164,29 @@ void SyncedDeviceTracker::InitLocalDeviceInfoContinuation(
 }
 
 void SyncedDeviceTracker::WriteLocalDeviceInfo(const DeviceInfo& info) {
-  sync_pb::DeviceInfoSpecifics specifics;
   DCHECK_EQ(cache_guid_, info.guid());
-  specifics.set_cache_guid(cache_guid_);
+  WriteDeviceInfo(info, local_device_info_tag_);
+}
+
+void SyncedDeviceTracker::WriteDeviceInfo(const DeviceInfo& info,
+                                          const std::string& tag) {
+  syncer::WriteTransaction trans(FROM_HERE, user_share_);
+  syncer::WriteNode node(&trans);
+
+  sync_pb::DeviceInfoSpecifics specifics;
+  specifics.set_cache_guid(info.guid());
   specifics.set_client_name(info.client_name());
   specifics.set_chrome_version(info.chrome_version());
   specifics.set_sync_user_agent(info.sync_user_agent());
   specifics.set_device_type(info.device_type());
-
-  WriteDeviceInfo(specifics, local_device_info_tag_);
-}
-
-void SyncedDeviceTracker::WriteDeviceInfo(
-    const sync_pb::DeviceInfoSpecifics& specifics,
-    const std::string& tag) {
-  syncer::WriteTransaction trans(FROM_HERE, user_share_);
-  syncer::WriteNode node(&trans);
+  specifics.set_signin_scoped_device_id(info.signin_scoped_device_id());
 
   if (node.InitByClientTagLookup(syncer::DEVICE_INFO, tag) ==
       syncer::BaseNode::INIT_OK) {
+    const sync_pb::DeviceInfoSpecifics& sync_specifics =
+        node.GetDeviceInfoSpecifics();
+    if (sync_specifics.has_backup_timestamp())
+      specifics.set_backup_timestamp(sync_specifics.backup_timestamp());
     node.SetDeviceInfoSpecifics(specifics);
     node.SetTitle(specifics.client_name());
   } else {
@@ -192,6 +203,35 @@ void SyncedDeviceTracker::WriteDeviceInfo(
     DCHECK_EQ(syncer::WriteNode::INIT_SUCCESS, create_result);
     new_node.SetDeviceInfoSpecifics(specifics);
     new_node.SetTitle(specifics.client_name());
+  }
+}
+
+void SyncedDeviceTracker::UpdateLocalDeviceBackupTime(base::Time backup_time) {
+  syncer::WriteTransaction trans(FROM_HERE, user_share_);
+  syncer::WriteNode node(&trans);
+
+  if (node.InitByClientTagLookup(syncer::DEVICE_INFO, local_device_info_tag_)
+          == syncer::BaseNode::INIT_OK) {
+    sync_pb::DeviceInfoSpecifics specifics = node.GetDeviceInfoSpecifics();
+    int64 new_backup_timestamp = syncer::TimeToProtoTime(backup_time);
+    if (!specifics.has_backup_timestamp() ||
+        specifics.backup_timestamp() != new_backup_timestamp) {
+      specifics.set_backup_timestamp(new_backup_timestamp);
+      node.SetDeviceInfoSpecifics(specifics);
+    }
+  }
+}
+
+base::Time SyncedDeviceTracker::GetLocalDeviceBackupTime() const {
+  syncer::ReadTransaction trans(FROM_HERE, user_share_);
+  syncer::ReadNode node(&trans);
+  if (node.InitByClientTagLookup(syncer::DEVICE_INFO, local_device_info_tag_)
+          == syncer::BaseNode::INIT_OK &&
+      node.GetDeviceInfoSpecifics().has_backup_timestamp()) {
+    return syncer::ProtoTimeToTime(
+        node.GetDeviceInfoSpecifics().backup_timestamp());
+  } else {
+    return base::Time();
   }
 }
 

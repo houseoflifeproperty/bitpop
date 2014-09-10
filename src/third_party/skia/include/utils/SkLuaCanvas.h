@@ -44,7 +44,7 @@ public:
     virtual void drawData(const void* data, size_t length) SK_OVERRIDE;
 
 protected:
-    virtual void willSave(SaveFlags) SK_OVERRIDE;
+    virtual void willSave() SK_OVERRIDE;
     virtual SaveLayerStrategy willSaveLayer(const SkRect*, const SkPaint*, SaveFlags) SK_OVERRIDE;
     virtual void willRestore() SK_OVERRIDE;
 
@@ -66,7 +66,7 @@ protected:
     virtual void onClipPath(const SkPath&, SkRegion::Op, ClipEdgeStyle) SK_OVERRIDE;
     virtual void onClipRegion(const SkRegion&, SkRegion::Op) SK_OVERRIDE;
 
-    virtual void onDrawPicture(const SkPicture*) SK_OVERRIDE;
+    virtual void onDrawPicture(const SkPicture*, const SkMatrix*, const SkPaint*) SK_OVERRIDE;
 
 private:
     lua_State*  fL;

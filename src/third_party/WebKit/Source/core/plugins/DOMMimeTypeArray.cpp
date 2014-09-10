@@ -23,9 +23,10 @@
 #include "core/frame/LocalFrame.h"
 #include "core/page/Page.h"
 #include "platform/plugins/PluginData.h"
+#include "wtf/Vector.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 DOMMimeTypeArray::DOMMimeTypeArray(LocalFrame* frame)
     : DOMWindowProperty(frame)
@@ -92,4 +93,4 @@ PluginData* DOMMimeTypeArray::getPluginData() const
     return p->pluginData();
 }
 
-} // namespace WebCore
+} // namespace blink

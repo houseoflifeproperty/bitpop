@@ -21,6 +21,7 @@
 #include "SkImageFilter.h"
 #include "SkMaskFilter.h"
 #include "SkReadBuffer.h"
+#include "SkPatchUtils.h"
 #include "SkPathEffect.h"
 #include "SkRasterizer.h"
 #include "SkRRect.h"
@@ -317,7 +318,7 @@ static void translate_rp(SkCanvas* canvas, SkReader32* reader, uint32_t op32,
 
 static void save_rp(SkCanvas* canvas, SkReader32* reader, uint32_t op32,
                     SkGPipeState* state) {
-    canvas->save((SkCanvas::SaveFlags)DrawOp_unpackData(op32));
+    canvas->save();
 }
 
 static void saveLayer_rp(SkCanvas* canvas, SkReader32* reader, uint32_t op32,
@@ -401,6 +402,34 @@ static void drawDRRect_rp(SkCanvas* canvas, SkReader32* reader, uint32_t op32,
     reader->readRRect(&inner);
     if (state->shouldDraw()) {
         canvas->drawDRRect(outer, inner, state->paint());
+    }
+}
+
+static void drawPatch_rp(SkCanvas* canvas, SkReader32* reader, uint32_t op32,
+                         SkGPipeState* state) {
+    
+    unsigned flags = DrawOp_unpackFlags(op32);
+    
+    const SkPoint* cubics = skip<SkPoint>(reader, SkPatchUtils::kNumCtrlPts);
+    
+    const SkColor* colors = NULL;
+    if (flags & kDrawVertices_HasColors_DrawOpFlag) {
+        colors = skip<SkColor>(reader, SkPatchUtils::kNumCorners);
+    }
+    const SkPoint* texCoords = NULL;
+    if (flags & kDrawVertices_HasTexs_DrawOpFlag) {
+        texCoords = skip<SkPoint>(reader, SkPatchUtils::kNumCorners);
+    }
+    SkAutoTUnref<SkXfermode> xfer;
+    if (flags & kDrawVertices_HasXfermode_DrawOpFlag) {
+        int mode = reader->readInt();
+        if (mode < 0 || mode > SkXfermode::kLastMode) {
+            mode = SkXfermode::kModulate_Mode;
+        }
+        xfer.reset(SkXfermode::Create((SkXfermode::Mode)mode));
+    }
+    if (state->shouldDraw()) {
+        canvas->drawPatch(cubics, colors, texCoords, xfer, state->paint());
     }
 }
 
@@ -775,6 +804,7 @@ static const ReadProc gReadTable[] = {
     drawDRRect_rp,
     drawOval_rp,
     drawPaint_rp,
+    drawPatch_rp,
     drawPath_rp,
     drawPicture_rp,
     drawPoints_rp,

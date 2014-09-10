@@ -116,7 +116,7 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
     # Replace URLs with links in the description.
     self._AddTextWithLinks(parent, policy['desc'])
     # Add list of enum items.
-    if policy['type'] in ('string-enum', 'int-enum'):
+    if policy['type'] in ('string-enum', 'int-enum', 'string-enum-list'):
       ul = self.AddElement(parent, 'ul')
       for item in policy['items']:
         if policy['type'] == 'int-enum':
@@ -379,7 +379,7 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
       self.AddText(parent, ', '.join(pieces))
     elif policy_type == 'string-enum':
       self.AddText(parent, '"%s"' % (example_value))
-    elif policy_type == 'list':
+    elif policy_type in ('list', 'string-enum-list'):
       self._AddListExample(parent, policy)
     elif policy_type == 'dict':
       self._AddDictionaryExample(parent, policy)
@@ -640,6 +640,7 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
       'int-enum': 'Integer',
       'string-enum': 'String',
       'list': 'List of strings',
+      'string-enum-list': 'List of strings',
       'dict': 'Dictionary',
       'external': 'External data reference',
     }

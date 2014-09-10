@@ -15,6 +15,8 @@
 #include "base/values.h"
 #include "net/base/net_log.h"
 #include "net/base/net_util.h"
+#include "net/cert/cert_verify_result.h"
+#include "net/cert/x509_certificate.h"
 #include "net/quic/crypto/crypto_handshake_message.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/quic_address_mismatch.h"
@@ -102,16 +104,12 @@ base::Value* NetLogQuicStreamFrameCallback(const QuicStreamFrame* frame,
 base::Value* NetLogQuicAckFrameCallback(const QuicAckFrame* frame,
                                         NetLog::LogLevel /* log_level */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  base::DictionaryValue* received_info = new base::DictionaryValue();
-  dict->Set("received_info", received_info);
-  received_info->SetString(
-      "largest_observed",
-      base::Uint64ToString(frame->received_info.largest_observed));
-  received_info->SetBoolean("truncated", frame->received_info.is_truncated);
+  dict->SetString("largest_observed",
+                  base::Uint64ToString(frame->largest_observed));
+  dict->SetBoolean("truncated", frame->is_truncated);
   base::ListValue* missing = new base::ListValue();
-  received_info->Set("missing_packets", missing);
-  const SequenceNumberSet& missing_packets =
-      frame->received_info.missing_packets;
+  dict->Set("missing_packets", missing);
+  const SequenceNumberSet& missing_packets = frame->missing_packets;
   for (SequenceNumberSet::const_iterator it = missing_packets.begin();
        it != missing_packets.end(); ++it) {
     missing->AppendString(base::Uint64ToString(*it));
@@ -124,31 +122,22 @@ base::Value* NetLogQuicCongestionFeedbackFrameCallback(
     NetLog::LogLevel /* log_level */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   switch (frame->type) {
-    case kInterArrival: {
-      dict->SetString("type", "InterArrival");
+    case kTimestamp: {
+      dict->SetString("type", "Timestamp");
       base::ListValue* received = new base::ListValue();
       dict->Set("received_packets", received);
       for (TimeMap::const_iterator it =
-               frame->inter_arrival.received_packet_times.begin();
-           it != frame->inter_arrival.received_packet_times.end(); ++it) {
+               frame->timestamp.received_packet_times.begin();
+           it != frame->timestamp.received_packet_times.end(); ++it) {
         string value = base::Uint64ToString(it->first) + "@" +
             base::Uint64ToString(it->second.ToDebuggingValue());
         received->AppendString(value);
       }
       break;
     }
-    case kFixRate:
-      dict->SetString("type", "FixRate");
-      dict->SetInteger("bitrate_in_bytes_per_second",
-                       frame->fix_rate.bitrate.ToBytesPerSecond());
-      break;
     case kTCP:
       dict->SetString("type", "TCP");
       dict->SetInteger("receive_window", frame->tcp.receive_window);
-      break;
-    case kTCPBBR:
-      dict->SetString("type", "TCPBBR");
-      // TODO(rtenneti): Add support for BBR.
       break;
   }
 
@@ -240,6 +229,23 @@ base::Value* NetLogQuicOnConnectionClosedCallback(
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("quic_error", error);
   dict->SetBoolean("from_peer", from_peer);
+  return dict;
+}
+
+base::Value* NetLogQuicCertificateVerifiedCallback(
+    scoped_refptr<X509Certificate> cert,
+    NetLog::LogLevel /* log_level */) {
+  // Only the subjects are logged so that we can investigate connection pooling.
+  // More fields could be logged in the future.
+  std::vector<std::string> dns_names;
+  cert->GetDNSNames(&dns_names);
+  base::DictionaryValue* dict = new base::DictionaryValue();
+  base::ListValue* subjects = new base::ListValue();
+  for (std::vector<std::string>::const_iterator it = dns_names.begin();
+       it != dns_names.end(); it++) {
+    subjects->Append(new base::StringValue(*it));
+  }
+  dict->Set("subjects", subjects);
   return dict;
 }
 
@@ -368,7 +374,7 @@ void QuicConnectionLogger::OnFrameAddedToPacket(const QuicFrame& frame) {
       net_log_.AddEvent(
           NetLog::TYPE_QUIC_SESSION_ACK_FRAME_SENT,
           base::Bind(&NetLogQuicAckFrameCallback, frame.ack_frame));
-      if (frame.ack_frame->received_info.is_truncated)
+      if (frame.ack_frame->is_truncated)
         ++num_truncated_acks_sent_;
       break;
     case CONGESTION_FEEDBACK_FRAME:
@@ -511,13 +517,13 @@ void QuicConnectionLogger::OnAckFrame(const QuicAckFrame& frame) {
       last_received_packet_size_ < kApproximateLargestSoloAckBytes)
     received_acks_[last_received_packet_sequence_number_] = true;
 
-  if (frame.received_info.is_truncated)
+  if (frame.is_truncated)
     ++num_truncated_acks_received_;
 
-  if (frame.received_info.missing_packets.empty())
+  if (frame.missing_packets.empty())
     return;
 
-  SequenceNumberSet missing_packets = frame.received_info.missing_packets;
+  SequenceNumberSet missing_packets = frame.missing_packets;
   SequenceNumberSet::const_iterator it = missing_packets.lower_bound(
       largest_received_missing_packet_sequence_number_);
   if (it == missing_packets.end())
@@ -674,6 +680,13 @@ void QuicConnectionLogger::UpdateReceivedFrameCounts(
     num_frames_received_ += num_frames_received;
     num_duplicate_frames_received_ += num_duplicate_frames_received;
   }
+}
+
+void QuicConnectionLogger::OnCertificateVerified(
+    const CertVerifyResult& result) {
+  net_log_.AddEvent(
+      NetLog::TYPE_QUIC_SESSION_CERTIFICATE_VERIFIED,
+      base::Bind(&NetLogQuicCertificateVerifiedCallback, result.verified_cert));
 }
 
 base::HistogramBase* QuicConnectionLogger::GetPacketSequenceNumberHistogram(

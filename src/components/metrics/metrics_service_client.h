@@ -22,9 +22,9 @@ class MetricsServiceClient {
  public:
   virtual ~MetricsServiceClient() {}
 
-  // Register the client id with other services (e.g. crash reporting), called
+  // Registers the client id with other services (e.g. crash reporting), called
   // when metrics recording gets enabled.
-  virtual void SetClientID(const std::string& client_id) = 0;
+  virtual void SetMetricsClientId(const std::string& client_id) = 0;
 
   // Whether there's an "off the record" (aka "Incognito") session active.
   virtual bool IsOffTheRecordSessionActive() = 0;
@@ -41,9 +41,6 @@ class MetricsServiceClient {
 
   // Returns the version of the application as a string.
   virtual std::string GetVersionString() = 0;
-
-  // Returns the install date of the application, in seconds since the epoch.
-  virtual int64 GetInstallDate() = 0;
 
   // Called by the metrics service when a log has been uploaded.
   virtual void OnLogUploadComplete() = 0;

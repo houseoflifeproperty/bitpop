@@ -40,7 +40,7 @@
 #include <gtest/gtest.h>
 
 
-namespace WebCore {
+namespace blink {
 
 void PrintTo(const CSSLengthArray& lengthArray, ::std::ostream* os)
 {
@@ -50,7 +50,7 @@ void PrintTo(const CSSLengthArray& lengthArray, ::std::ostream* os)
 
 }
 
-using namespace WebCore;
+using namespace blink;
 
 namespace {
 
@@ -72,7 +72,7 @@ void initLengthArray(CSSLengthArray& lengthArray)
 CSSLengthArray& setLengthArray(CSSLengthArray& lengthArray, String text)
 {
     initLengthArray(lengthArray);
-    RefPtr<MutableStylePropertySet> propertySet = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> propertySet = MutableStylePropertySet::create();
     propertySet->setProperty(CSSPropertyLeft, text);
     toCSSPrimitiveValue(propertySet->getPropertyCSSValue(CSSPropertyLeft).get())->accumulateLengthArray(lengthArray);
     return lengthArray;

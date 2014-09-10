@@ -13,7 +13,6 @@
 #include "content/child/child_shared_bitmap_manager.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
-#include "content/renderer/pepper/common.h"
 #include "content/renderer/pepper/gfx_conversion.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/ppb_image_data_impl.h"
@@ -359,7 +358,7 @@ void PepperGraphics2DHost::Paint(blink::WebCanvas* canvas,
   // Copy to device independent bitmap when target canvas doesn't support
   // platform paint.
   if (!skia::SupportsPlatformPaint(canvas))
-    backing_bitmap.copyTo(&image, kPMColor_SkColorType);
+    backing_bitmap.copyTo(&image, kN32_SkColorType);
   else
     image = backing_bitmap;
 

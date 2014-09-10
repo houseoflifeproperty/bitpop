@@ -37,15 +37,15 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 #include "wtf/ThreadingPrimitives.h"
 #endif
 
 using namespace WTF;
 
-namespace WebCore {
+namespace blink {
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 static Mutex& activeIteratorCountMutex()
 {
     DEFINE_STATIC_LOCAL(Mutex, mutex, ());
@@ -60,7 +60,7 @@ void EventListenerMap::assertNoActiveIterators()
 #endif
 
 EventListenerMap::EventListenerMap()
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     : m_activeIteratorCount(0)
 #endif
 {
@@ -236,7 +236,7 @@ EventListenerIterator::EventListenerIterator(EventTarget* target)
 
     m_map = &data->eventListenerMap;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     {
         MutexLocker locker(activeIteratorCountMutex());
         m_map->m_activeIteratorCount++;
@@ -244,7 +244,7 @@ EventListenerIterator::EventListenerIterator(EventTarget* target)
 #endif
 }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 EventListenerIterator::~EventListenerIterator()
 {
     if (m_map) {
@@ -269,4 +269,4 @@ EventListener* EventListenerIterator::nextListener()
     return 0;
 }
 
-} // namespace WebCore
+} // namespace blink

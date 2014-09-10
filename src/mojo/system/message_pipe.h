@@ -16,6 +16,8 @@
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/c/system/types.h"
 #include "mojo/system/dispatcher.h"
+#include "mojo/system/handle_signals_state.h"
+#include "mojo/system/memory.h"
 #include "mojo/system/message_in_transit.h"
 #include "mojo/system/message_pipe_endpoint.h"
 #include "mojo/system/system_impl_export.h"
@@ -29,8 +31,8 @@ class Waiter;
 // |MessagePipe| is the secondary object implementing a message pipe (see the
 // explanatory comment in core.cc). It is typically owned by the dispatcher(s)
 // corresponding to the local endpoints. This class is thread-safe.
-class MOJO_SYSTEM_IMPL_EXPORT MessagePipe :
-    public base::RefCountedThreadSafe<MessagePipe> {
+class MOJO_SYSTEM_IMPL_EXPORT MessagePipe
+    : public base::RefCountedThreadSafe<MessagePipe> {
  public:
   MessagePipe(scoped_ptr<MessagePipeEndpoint> endpoint0,
               scoped_ptr<MessagePipeEndpoint> endpoint1);
@@ -52,23 +54,25 @@ class MOJO_SYSTEM_IMPL_EXPORT MessagePipe :
   // Unlike |MessagePipeDispatcher::WriteMessage()|, this does not validate its
   // arguments.
   MojoResult WriteMessage(unsigned port,
-                          const void* bytes,
+                          UserPointer<const void> bytes,
                           uint32_t num_bytes,
                           std::vector<DispatcherTransport>* transports,
                           MojoWriteMessageFlags flags);
-  // Unlike |MessagePipeDispatcher::ReadMessage()|, this does not validate its
-  // arguments.
   MojoResult ReadMessage(unsigned port,
-                         void* bytes,
-                         uint32_t* num_bytes,
+                         UserPointer<void> bytes,
+                         UserPointer<uint32_t> num_bytes,
                          DispatcherVector* dispatchers,
                          uint32_t* num_dispatchers,
                          MojoReadMessageFlags flags);
+  HandleSignalsState GetHandleSignalsState(unsigned port) const;
   MojoResult AddWaiter(unsigned port,
                        Waiter* waiter,
                        MojoHandleSignals signals,
-                       uint32_t context);
-  void RemoveWaiter(unsigned port, Waiter* waiter);
+                       uint32_t context,
+                       HandleSignalsState* signals_state);
+  void RemoveWaiter(unsigned port,
+                    Waiter* waiter,
+                    HandleSignalsState* signals_state);
 
   // This is called by the dispatcher to convert a local endpoint to a proxy
   // endpoint.

@@ -41,6 +41,7 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/loader/DocumentLoader.h"
+#include "core/page/Page.h"
 #include "core/page/PageSerializer.h"
 #include "platform/SerializedResource.h"
 #include "platform/mhtml/MHTMLArchive.h"
@@ -58,7 +59,7 @@
 #include "wtf/Vector.h"
 #include "wtf/text/StringConcatenate.h"
 
-using namespace WebCore;
+using namespace blink;
 
 namespace {
 

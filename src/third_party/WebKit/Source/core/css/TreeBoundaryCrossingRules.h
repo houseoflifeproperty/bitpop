@@ -30,14 +30,14 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSStyleSheet;
 class ContainerNode;
 class ElementRuleCollector;
 class RuleFeatureSet;
 
-class TreeBoundaryCrossingRules {
+class TreeBoundaryCrossingRules FINAL {
     DISALLOW_ALLOCATION();
 public:
     void addTreeBoundaryCrossingRules(const RuleSet&, ContainerNode& scope, CSSStyleSheet*);
@@ -46,7 +46,7 @@ public:
     void collectFeaturesTo(RuleFeatureSet&);
     void collectTreeBoundaryCrossingRules(Element*, ElementRuleCollector&, bool includeEmptyRules);
 
-    void trace(Visitor* visitor) { visitor->trace(m_treeBoundaryCrossingRuleSetMap); }
+    void trace(Visitor*);
 
 private:
     size_t size() const { return m_scopingNodes.size(); }
@@ -54,10 +54,10 @@ private:
     void collectFeaturesFromRuleSubSet(CSSStyleSheetRuleSubSet*, RuleFeatureSet&);
 
     DocumentOrderedList m_scopingNodes;
-    typedef WillBeHeapHashMap<const ContainerNode*, OwnPtrWillBeMember<CSSStyleSheetRuleSubSet> > TreeBoundaryCrossingRuleSetMap;
+    typedef WillBeHeapHashMap<RawPtrWillBeMember<const ContainerNode>, OwnPtrWillBeMember<CSSStyleSheetRuleSubSet> > TreeBoundaryCrossingRuleSetMap;
     TreeBoundaryCrossingRuleSetMap m_treeBoundaryCrossingRuleSetMap;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TreeBoundaryCrossingRules_h

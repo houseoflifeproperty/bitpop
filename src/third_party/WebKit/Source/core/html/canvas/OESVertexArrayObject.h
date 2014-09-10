@@ -26,33 +26,33 @@
 #ifndef OESVertexArrayObject_h
 #define OESVertexArrayObject_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class WebGLRenderingContextBase;
 class WebGLVertexArrayObjectOES;
 
 class OESVertexArrayObject FINAL : public WebGLExtension, public ScriptWrappable {
 public:
-    static PassRefPtr<OESVertexArrayObject> create(WebGLRenderingContextBase*);
+    static PassRefPtrWillBeRawPtr<OESVertexArrayObject> create(WebGLRenderingContextBase*);
     static bool supported(WebGLRenderingContextBase*);
     static const char* extensionName();
 
     virtual ~OESVertexArrayObject();
     virtual WebGLExtensionName name() const OVERRIDE;
 
-    PassRefPtr<WebGLVertexArrayObjectOES> createVertexArrayOES();
+    PassRefPtrWillBeRawPtr<WebGLVertexArrayObjectOES> createVertexArrayOES();
     void deleteVertexArrayOES(WebGLVertexArrayObjectOES*);
     GLboolean isVertexArrayOES(WebGLVertexArrayObjectOES*);
     void bindVertexArrayOES(WebGLVertexArrayObjectOES*);
 
 private:
-    OESVertexArrayObject(WebGLRenderingContextBase*);
+    explicit OESVertexArrayObject(WebGLRenderingContextBase*);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // OESVertexArrayObject_h

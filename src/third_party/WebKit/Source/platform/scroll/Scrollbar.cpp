@@ -43,7 +43,7 @@ using namespace std;
 #define THUMB_POSITION_AFFECTS_BUTTONS
 #endif
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtr<Scrollbar> Scrollbar::create(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, ScrollbarControlSize size)
 {
@@ -183,12 +183,7 @@ void Scrollbar::updateThumbProportion()
 
 void Scrollbar::paint(GraphicsContext* context, const IntRect& damageRect)
 {
-    if (context->updatingControlTints() && theme()->supportsControlTints()) {
-        invalidate();
-        return;
-    }
-
-    if (context->paintingDisabled() || !frameRect().intersects(damageRect))
+    if (!frameRect().intersects(damageRect))
         return;
 
     if (!theme()->paint(this, context, damageRect))
@@ -603,4 +598,4 @@ float Scrollbar::scrollableAreaCurrentPos() const
     return m_scrollableArea->scrollPosition().y() - m_scrollableArea->minimumScrollPosition().y();
 }
 
-} // namespace WebCore
+} // namespace blink

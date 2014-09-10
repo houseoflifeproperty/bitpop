@@ -29,10 +29,10 @@
 package org.webrtc;
 
 import android.media.MediaCodec;
+import android.media.MediaCodecInfo.CodecCapabilities;
 import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
 import android.media.MediaFormat;
-import android.media.MediaCodecInfo.CodecCapabilities;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -156,7 +156,7 @@ class MediaCodecVideoEncoder {
 
   // Return the array of input buffers, or null on failure.
   private ByteBuffer[] initEncode(int width, int height, int kbps, int fps) {
-    Log.d(TAG, "initEncode: " + width + " x " + height +
+    Log.d(TAG, "Java initEncode: " + width + " x " + height +
         ". @ " + kbps + " kbps. Fps: " + fps +
         ". Color: 0x" + Integer.toHexString(colorFormat));
     if (mediaCodecThread != null) {
@@ -222,7 +222,7 @@ class MediaCodecVideoEncoder {
   }
 
   private void release() {
-    Log.d(TAG, "release");
+    Log.d(TAG, "Java releaseEncoder");
     checkOnMediaCodecThread();
     try {
       mediaCodec.stop();

@@ -20,7 +20,7 @@ _SRC_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__),
 
 
 def _RunLint(lint_path, config_path, processed_config_path, manifest_path,
-             result_path, product_dir, src_dirs, classes_dir):
+             result_path, product_dir, src_dirs, jar_path):
 
   def _RelativizePath(path):
     """Returns relative path to top-level src dir.
@@ -55,17 +55,15 @@ def _RunLint(lint_path, config_path, processed_config_path, manifest_path,
     print >> sys.stderr
     for issue in issues:
       issue_id = issue.attributes['id'].value
-      severity = issue.attributes['severity'].value
       message = issue.attributes['message'].value
       location_elem = issue.getElementsByTagName('location')[0]
       path = location_elem.attributes['file'].value
       line = location_elem.getAttribute('line')
       if line:
-        error = '%s:%s %s: %s [%s]' % (path, line, severity, message,
-                                       issue_id)
+        error = '%s:%s %s: %s [warning]' % (path, line, message, issue_id)
       else:
         # Issues in class files don't have a line number.
-        error = '%s %s: %s [%s]' % (path, severity, message, issue_id)
+        error = '%s %s: %s [warning]' % (path, message, issue_id)
       print >> sys.stderr, error
       for attr in ['errorLine1', 'errorLine2']:
         error_line = issue.getAttribute(attr)
@@ -78,7 +76,7 @@ def _RunLint(lint_path, config_path, processed_config_path, manifest_path,
   cmd = [
       lint_path, '-Werror', '--exitcode', '--showall',
       '--config', _RelativizePath(processed_config_path),
-      '--classpath', _RelativizePath(classes_dir),
+      '--classpath', _RelativizePath(jar_path),
       '--xml', _RelativizePath(result_path),
   ]
   for src in src_dirs:
@@ -90,13 +88,24 @@ def _RunLint(lint_path, config_path, processed_config_path, manifest_path,
 
   try:
     build_utils.CheckOutput(cmd, cwd=_SRC_ROOT)
-  except build_utils.CalledProcessError:
+  except build_utils.CalledProcessError as e:
     # There is a problem with lint usage
     if not os.path.exists(result_path):
-      raise
+      print 'Something is wrong:'
+      print e
+      return 0
+
     # There are actual lint issues
     else:
-      num_issues = _ParseAndShowResultFile()
+      try:
+        num_issues = _ParseAndShowResultFile()
+      except Exception:
+        print 'Lint created unparseable xml file...'
+        print 'File contents:'
+        with open(result_path) as f:
+          print f.read()
+        return 0
+
       _ProcessResultFile()
       msg = ('\nLint found %d new issues.\n'
              ' - For full explanation refer to %s\n'
@@ -126,7 +135,7 @@ def main():
   parser.add_option('--result-path', help='Path to XML lint result file.')
   parser.add_option('--product-dir', help='Path to product dir.')
   parser.add_option('--src-dirs', help='Directories containing java files.')
-  parser.add_option('--classes-dir', help='Directory containing class files.')
+  parser.add_option('--jar-path', help='Jar file containing class files.')
   parser.add_option('--stamp', help='Path to touch on success.')
   parser.add_option('--enable', action='store_true',
                     help='Run lint instead of just touching stamp.')
@@ -137,7 +146,7 @@ def main():
       options, parser, required=['lint_path', 'config_path',
                                  'processed_config_path', 'manifest_path',
                                  'result_path', 'product_dir', 'src_dirs',
-                                 'classes_dir'])
+                                 'jar_path'])
 
   src_dirs = build_utils.ParseGypList(options.src_dirs)
 
@@ -147,7 +156,7 @@ def main():
     rc = _RunLint(options.lint_path, options.config_path,
                   options.processed_config_path,
                   options.manifest_path, options.result_path,
-                  options.product_dir, src_dirs, options.classes_dir)
+                  options.product_dir, src_dirs, options.jar_path)
 
   if options.stamp and not rc:
     build_utils.Touch(options.stamp)

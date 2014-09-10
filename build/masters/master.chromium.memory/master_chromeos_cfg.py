@@ -37,6 +37,7 @@ chromeos_asan_archive = master_config.GetArchiveUrl(
 # Tests that are single-machine shard-safe.
 sharded_tests = [
   'aura_unittests',
+  'athena_unittests',
   'base_unittests',
   'browser_tests',
   'cacheinvalidation_unittests',
@@ -48,6 +49,7 @@ sharded_tests = [
   'content_unittests',
   'crypto_unittests',
   'device_unittests',
+  'display_unittests',
   'events_unittests',
   'gcm_unit_tests',
   'gpu_unittests',
@@ -62,7 +64,6 @@ sharded_tests = [
   'ui_unittests',
   'unit_tests',
   'views_unittests',
-  'webkit_compositor_bindings_unittests',
 ]
 
 #
@@ -70,14 +71,17 @@ sharded_tests = [
 #
 linux_aura_options = [
   'aura_builder',
+  'athena_unittests',
   'base_unittests',
   'browser_tests',
   'cacheinvalidation_unittests',
   'chromeos_unittests',
+  'components_unittests',
   'compositor_unittests',
   'content_browsertests',
   'content_unittests',
   'crypto_unittests',
+  'display_unittests',
   'gcm_unit_tests',
   'gpu_unittests',
   'interactive_ui_tests',
@@ -112,6 +116,7 @@ B('Linux Chromium OS ASan LSan Builder', 'chromeos_asan_rel', 'compile',
   'chromeos_asan_rel', auto_reboot=False, notify_on_missing=True)
 F('chromeos_asan_rel', linux().ChromiumASANFactory(
     slave_type='Builder',
+    build_url=chromeos_asan_archive,
     options=[
       '--build-tool=ninja',
       '--compiler=goma-clang',
@@ -152,7 +157,10 @@ asan_tests_2 = [
 ]
 
 asan_tests_3 = [
+  'athena_unittests',
   'browser_tests',
+  'components_unittests',
+  'display_unittests',
   'unit',
 ]
 

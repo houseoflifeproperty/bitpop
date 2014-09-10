@@ -115,61 +115,6 @@ class TestAnnotationStreams(unittest.TestCase):
       'Emits an annotation for STEP_LINK.'
     )
 
-  def testSeedStep(self):
-    steps = ['one', 'two']
-    stream = annotator.StructuredAnnotationStream(seed_steps=steps,
-                                                  stream=self.buf)
-    with stream.step('one'):
-      pass
-    with stream.step('two'):
-      pass
-
-    result = [
-        '@@@SEED_STEP one@@@',
-        '@@@SEED_STEP two@@@',
-        '@@@STEP_CURSOR one@@@',
-        '@@@STEP_STARTED@@@',
-        '@@@STEP_CURSOR one@@@',
-        '@@@STEP_CLOSED@@@',
-        '@@@STEP_CURSOR two@@@',
-        '@@@STEP_STARTED@@@',
-        '@@@STEP_CURSOR two@@@',
-        '@@@STEP_CLOSED@@@'
-    ]
-
-    self.assertEquals(result, self._getLines())
-
-  def testSeedStepSkip(self):
-    steps = ['one', 'two', 'three']
-    stream = annotator.StructuredAnnotationStream(seed_steps=steps,
-                                                  stream=self.buf)
-    with stream.step('one'):
-      pass
-    with stream.step('three'):
-      pass
-    with stream.step('two'):
-      pass
-
-    result = [
-        '@@@SEED_STEP one@@@',
-        '@@@SEED_STEP two@@@',
-        '@@@SEED_STEP three@@@',
-        '@@@STEP_CURSOR one@@@',
-        '@@@STEP_STARTED@@@',
-        '@@@STEP_CURSOR one@@@',
-        '@@@STEP_CLOSED@@@',
-        '@@@STEP_CURSOR three@@@',
-        '@@@STEP_STARTED@@@',
-        '@@@STEP_CURSOR three@@@',
-        '@@@STEP_CLOSED@@@',
-        '@@@SEED_STEP two@@@',
-        '@@@STEP_CURSOR two@@@',
-        '@@@STEP_STARTED@@@',
-        '@@@STEP_CURSOR two@@@',
-        '@@@STEP_CLOSED@@@',
-    ]
-
-    self.assertEquals(result, self._getLines())
 
   def testException(self):
     stream = annotator.StructuredAnnotationStream(stream=self.buf)
@@ -192,19 +137,6 @@ class TestAnnotationStreams(unittest.TestCase):
           pass
     self.assertRaises(Exception, dummy_func)
 
-  def testProtectedStartStop(self):
-    stream = annotator.StructuredAnnotationStream(stream=self.buf)
-
-    def dummy_func():
-      with stream.step('one') as s:
-        s.step_started()
-    self.assertRaises(AttributeError, dummy_func)
-
-    def dummy_func2():
-      with stream.step('two') as s:
-        s.step_closed()
-    self.assertRaises(AttributeError, dummy_func2)
-
   def testDupLogs(self):
     stream = annotator.StructuredAnnotationStream(stream=self.buf)
 
@@ -217,8 +149,6 @@ class TestAnnotationStreams(unittest.TestCase):
     step = annotator.AdvancedAnnotationStep(stream=self.buf, flush_before=None)
     stream = annotator.AdvancedAnnotationStream(stream=self.buf,
                                                 flush_before=None)
-    stream.seed_step('one')
-    stream.seed_step('two')
     stream.step_cursor('one')
     step.step_started()
     stream.step_cursor('two')
@@ -229,8 +159,6 @@ class TestAnnotationStreams(unittest.TestCase):
     step.step_closed()
 
     result = [
-        '@@@SEED_STEP one@@@',
-        '@@@SEED_STEP two@@@',
         '@@@STEP_CURSOR one@@@',
         '@@@STEP_STARTED@@@',
         '@@@STEP_CURSOR two@@@',
@@ -281,11 +209,6 @@ class TestExecution(unittest.TestCase):
 
     self.assertEquals(ret, 0)
 
-    preamble = [
-        '@@@SEED_STEP one@@@',
-        '',
-        '@@@SEED_STEP two@@@',
-    ]
     step_one_header = [
         '@@@STEP_CURSOR one@@@',
         '',
@@ -295,9 +218,7 @@ class TestExecution(unittest.TestCase):
         'in dir %s:' % os.getcwd(),
         ' allow_subannotations: False',
         ' cmd: [' + repr(sys.executable) + ', \'-c\', "print \'hello!\'"]',
-        ' followup_fn: default_followup(...)',
         ' name: one',
-        ' skip: False',
         'full environment:',
     ]
     step_one_result = [
@@ -316,9 +237,7 @@ class TestExecution(unittest.TestCase):
         'in dir %s:' % os.getcwd(),
         ' allow_subannotations: False',
         ' cmd: [' + repr(sys.executable) + ', \'-c\', "print \'yo!\'"]',
-        ' followup_fn: default_followup(...)',
         ' name: two',
-        ' skip: False',
         'full environment:',
     ]
     step_two_result = [
@@ -333,7 +252,6 @@ class TestExecution(unittest.TestCase):
       n = len(part)
       return any((part == whole[i:i+n]) for i in xrange(len(whole) - n+1))
 
-    self.assertTrue(has_sublist(self.capture.text, preamble))
     self.assertTrue(has_sublist(self.capture.text, step_one_header))
     self.assertTrue(has_sublist(self.capture.text, step_one_result))
     self.assertTrue(has_sublist(self.capture.text, step_two_header))
@@ -364,41 +282,6 @@ class TestExecution(unittest.TestCase):
 
     self.assertTrue('@@@STEP_EXCEPTION@@@' in self.capture.text)
     self.assertEquals(ret, 1)
-
-  def testAlwaysRun(self):
-    cmdlist = [{'name': 'one', 'cmd': _synthesizeCmd(['error'])},
-               {'name': 'two', 'cmd': _synthesizeCmd(['print \'yo!\'']),
-                    'always_run': True}]
-
-    ret = self._runAnnotator(cmdlist)
-    self.assertTrue('@@@STEP_CURSOR two@@@' in self.capture.text)
-    self.assertTrue('yo!' in self.capture.text)
-    self.assertEquals(ret, 1)
-
-  def testAlwaysRunNoDupes(self):
-    cmdlist = [{'name': 'one', 'cmd': _synthesizeCmd(['print \'yo!\'']),
-                    'always_run': True},
-               {'name': 'two', 'cmd': _synthesizeCmd(['error'])},
-               {'name': 'three', 'cmd': _synthesizeCmd(['print \'hello!\'']),
-                    'always_run': True}]
-
-    ret = self._runAnnotator(cmdlist)
-    self.assertEquals(self.capture.text.count('yo!'), 1)
-    self.assertTrue('hello!' in self.capture.text)
-    self.assertEquals(ret, 1)
-
-  def testSkip(self):
-    cmdlist = [{'name': 'one', 'cmd': _synthesizeCmd(['print \'yo!\''])},
-               {'name': 'delete', 'cmd': _synthesizeCmd(['error']),
-                    'skip': True},
-               {'name': 'checkout', 'cmd': _synthesizeCmd(['print \'nop\'']),
-                    'skip': False}]
-
-    ret = self._runAnnotator(cmdlist)
-    self.assertEquals(self.capture.text.count('yo!'), 1)
-    self.assertEquals(self.capture.text.count('nop'), 1)
-    self.assertTrue('@@@SEED_STEP delete@@@' in self.capture.text)
-    self.assertEquals(ret, 0)
 
   def testCwd(self):
     tmpdir = os.path.realpath(tempfile.mkdtemp())
@@ -476,9 +359,6 @@ class TestMatchAnnotation(unittest.TestCase):
     def STEP_WARNINGS(self):
       self.called.append(('STEP_WARNINGS', []))
 
-    def SEED_STEP(self, name):
-      self.called.append(('SEED_STEP', [name]))
-
     def STEP_LOG_LINE(self, log_name, line):
       self.called.append(('STEP_LOG_LINE', [log_name, line]))
 
@@ -487,6 +367,9 @@ class TestMatchAnnotation(unittest.TestCase):
 
     def STEP_CURSOR(self):  # pylint: disable=R0201
       assert False, 'STEP_CURSOR called'
+
+    def STEP_TRIGGER(self, spec):
+      self.called.append(('STEP_TRIGGER', [json.loads(spec)]))
 
     def SOME_OTHER_METHOD(self):  # pylint: disable=R0201
       assert False, 'SOME_OTHER_METHOD called'
@@ -525,20 +408,6 @@ class TestMatchAnnotation(unittest.TestCase):
     self.assertEqual(self.c.called, [
       ('STEP_WARNINGS', []),
       ('STEP_LINK', ['foo', 'bar@trashcan']),
-    ])
-
-  def testOneAnnotated(self):
-    annotator.MatchAnnotation('@@@SEED_STEP@@@@', self.c)
-    annotator.MatchAnnotation('@@@SEED_STEP@foo bar@@@', self.c)
-    annotator.MatchAnnotation('@@@SEED_STEP bat fur@@@', self.c)
-    annotator.MatchAnnotation('@@@SEED_STEP@ doom cake@@@', self.c)
-    annotator.MatchAnnotation('@@@SEED_STEP  sooper p@nts@@@', self.c)
-    self.assertEqual(self.c.called, [
-      ('SEED_STEP', ['']),
-      ('SEED_STEP', ['foo bar']),
-      ('SEED_STEP', ['bat fur']),
-      ('SEED_STEP', [' doom cake']),
-      ('SEED_STEP', [' sooper p@nts']),
     ])
 
   def testWrongZero(self):
@@ -583,6 +452,22 @@ class TestMatchAnnotation(unittest.TestCase):
     with self.assertRaisesRegexp(Exception, "does not implement"):
       annotator.MatchAnnotation('@@@SEED_STEP_TEXT@thingy@i like pie@@@',
                                 self.c)
+
+  def testTrigger(self):
+    annotator.MatchAnnotation(
+        '@@@STEP_TRIGGER {"builderNames": ["myBuilder"]}@@@',
+        self.c)
+    annotator.MatchAnnotation(
+        ('@@@STEP_TRIGGER {"builderNames": ["myBuilder"], "set_properties":'
+         '{"answer": 42}}@@@'),
+        self.c)
+    self.assertEqual(self.c.called, [
+        ('STEP_TRIGGER', [{u'builderNames': [u'myBuilder']}]),
+        ('STEP_TRIGGER', [{
+            u'builderNames': [u'myBuilder'],
+            u'set_properties': {u'answer': 42},
+        }]),
+    ])
 
 
 class TestMatchAnnotationImplementation(unittest.TestCase):

@@ -57,15 +57,12 @@ base::Value* NetLogHttpStreamJobCallback(const GURL* original_url,
 base::Value* NetLogHttpStreamProtoCallback(
     const SSLClientSocket::NextProtoStatus status,
     const std::string* proto,
-    const std::string* server_protos,
     NetLog::LogLevel /* log_level */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
 
   dict->SetString("next_proto_status",
                   SSLClientSocket::NextProtoStatusToString(status));
   dict->SetString("proto", *proto);
-  dict->SetString("server_protos",
-                  SSLClientSocket::ServerProtosToString(*server_protos));
   return dict;
 }
 
@@ -171,7 +168,7 @@ LoadState HttpStreamFactoryImpl::Job::GetLoadState() const {
 
 void HttpStreamFactoryImpl::Job::MarkAsAlternate(
     const GURL& original_url,
-    PortAlternateProtocolPair alternate) {
+    AlternateProtocolInfo alternate) {
   DCHECK(!original_url_.get());
   original_url_.reset(new GURL(original_url));
   if (alternate.protocol == QUIC) {
@@ -652,6 +649,7 @@ int HttpStreamFactoryImpl::Job::DoStart() {
 
 int HttpStreamFactoryImpl::Job::DoResolveProxy() {
   DCHECK(!pac_request_);
+  DCHECK(session_);
 
   next_state_ = STATE_RESOLVE_PROXY_COMPLETE;
 
@@ -661,7 +659,8 @@ int HttpStreamFactoryImpl::Job::DoResolveProxy() {
   }
 
   return session_->proxy_service()->ResolveProxy(
-      request_info_.url, &proxy_info_, io_callback_, &pac_request_, net_log_);
+      request_info_.url, request_info_.load_flags, &proxy_info_, io_callback_,
+      &pac_request_, session_->network_delegate(), net_log_);
 }
 
 int HttpStreamFactoryImpl::Job::DoResolveProxyComplete(int result) {
@@ -921,16 +920,15 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
       if (ssl_socket->WasNpnNegotiated()) {
         was_npn_negotiated_ = true;
         std::string proto;
-        std::string server_protos;
         SSLClientSocket::NextProtoStatus status =
-            ssl_socket->GetNextProto(&proto, &server_protos);
+            ssl_socket->GetNextProto(&proto);
         NextProto protocol_negotiated =
             SSLClientSocket::NextProtoFromString(proto);
         protocol_negotiated_ = protocol_negotiated;
         net_log_.AddEvent(
             NetLog::TYPE_HTTP_STREAM_REQUEST_PROTO,
             base::Bind(&NetLogHttpStreamProtoCallback,
-                       status, &proto, &server_protos));
+                       status, &proto));
         if (ssl_socket->was_spdy_negotiated())
           SwitchToSpdyMode();
       }
@@ -1269,6 +1267,7 @@ void HttpStreamFactoryImpl::Job::InitSSLConfig(
 
 int HttpStreamFactoryImpl::Job::ReconsiderProxyAfterError(int error) {
   DCHECK(!pac_request_);
+  DCHECK(session_);
 
   // A failure to resolve the hostname or any error related to establishing a
   // TCP connection could be grounds for trying a new proxy configuration.
@@ -1322,8 +1321,8 @@ int HttpStreamFactoryImpl::Job::ReconsiderProxyAfterError(int error) {
   }
 
   int rv = session_->proxy_service()->ReconsiderProxyAfterError(
-      request_info_.url, error, &proxy_info_, io_callback_, &pac_request_,
-      net_log_);
+      request_info_.url, request_info_.load_flags, error, &proxy_info_,
+      io_callback_, &pac_request_, session_->network_delegate(), net_log_);
   if (rv == OK || rv == ERR_IO_PENDING) {
     // If the error was during connection setup, there is no socket to
     // disconnect.

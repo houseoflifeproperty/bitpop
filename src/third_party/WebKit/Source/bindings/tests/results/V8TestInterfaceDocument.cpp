@@ -7,12 +7,12 @@
 #include "config.h"
 #include "V8TestInterfaceDocument.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptController.h"
-#include "bindings/v8/V8DOMConfiguration.h"
-#include "bindings/v8/V8HiddenValue.h"
-#include "bindings/v8/V8ObjectConstructor.h"
-#include "bindings/v8/V8WindowShell.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ScriptController.h"
+#include "bindings/core/v8/V8DOMConfiguration.h"
+#include "bindings/core/v8/V8HiddenValue.h"
+#include "bindings/core/v8/V8ObjectConstructor.h"
+#include "bindings/core/v8/WindowProxy.h"
 #include "core/dom/ContextFeatures.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
@@ -21,7 +21,7 @@
 #include "wtf/GetPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 static void initializeScriptWrappableForInterface(TestInterfaceDocument* object)
 {
@@ -31,15 +31,15 @@ static void initializeScriptWrappableForInterface(TestInterfaceDocument* object)
         ASSERT_NOT_REACHED();
 }
 
-} // namespace WebCore
+} // namespace blink
 
-void webCoreInitializeScriptWrappableForInterface(WebCore::TestInterfaceDocument* object)
+void webCoreInitializeScriptWrappableForInterface(blink::TestInterfaceDocument* object)
 {
-    WebCore::initializeScriptWrappableForInterface(object);
+    blink::initializeScriptWrappableForInterface(object);
 }
 
-namespace WebCore {
-const WrapperTypeInfo V8TestInterfaceDocument::wrapperTypeInfo = { gin::kEmbedderBlink, V8TestInterfaceDocument::domTemplate, V8TestInterfaceDocument::derefObject, 0, V8TestInterfaceDocument::toEventTarget, 0, V8TestInterfaceDocument::installPerContextEnabledMethods, &V8Document::wrapperTypeInfo, WrapperTypeObjectPrototype, WillBeGarbageCollectedObject };
+namespace blink {
+const WrapperTypeInfo V8TestInterfaceDocument::wrapperTypeInfo = { gin::kEmbedderBlink, V8TestInterfaceDocument::domTemplate, V8TestInterfaceDocument::derefObject, 0, V8TestInterfaceDocument::toEventTarget, 0, V8TestInterfaceDocument::installConditionallyEnabledMethods, &V8Document::wrapperTypeInfo, WrapperTypeObjectPrototype, WillBeGarbageCollectedObject };
 
 namespace TestInterfaceDocumentV8Internal {
 
@@ -47,7 +47,7 @@ template <typename T> void V8_USE(T) { }
 
 } // namespace TestInterfaceDocumentV8Internal
 
-static void configureV8TestInterfaceDocumentTemplate(v8::Handle<v8::FunctionTemplate> functionTemplate, v8::Isolate* isolate)
+static void installV8TestInterfaceDocumentTemplate(v8::Handle<v8::FunctionTemplate> functionTemplate, v8::Isolate* isolate)
 {
     functionTemplate->ReadOnlyPrototype();
 
@@ -66,7 +66,7 @@ static void configureV8TestInterfaceDocumentTemplate(v8::Handle<v8::FunctionTemp
 
 v8::Handle<v8::FunctionTemplate> V8TestInterfaceDocument::domTemplate(v8::Isolate* isolate)
 {
-    return V8DOMConfiguration::domClassTemplate(isolate, const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), configureV8TestInterfaceDocumentTemplate);
+    return V8DOMConfiguration::domClassTemplate(isolate, const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), installV8TestInterfaceDocumentTemplate);
 }
 
 bool V8TestInterfaceDocument::hasInstance(v8::Handle<v8::Value> v8Value, v8::Isolate* isolate)
@@ -81,7 +81,7 @@ v8::Handle<v8::Object> V8TestInterfaceDocument::findInstanceInPrototypeChain(v8:
 
 TestInterfaceDocument* V8TestInterfaceDocument::toNativeWithTypeCheck(v8::Isolate* isolate, v8::Handle<v8::Value> value)
 {
-    return hasInstance(value, isolate) ? fromInternalPointer(v8::Handle<v8::Object>::Cast(value)->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex)) : 0;
+    return hasInstance(value, isolate) ? fromInternalPointer(blink::toInternalPointer(v8::Handle<v8::Object>::Cast(value))) : 0;
 }
 
 EventTarget* V8TestInterfaceDocument::toEventTarget(v8::Handle<v8::Object> object)
@@ -98,7 +98,7 @@ v8::Handle<v8::Object> wrap(TestInterfaceDocument* impl, v8::Handle<v8::Object> 
     DOMWrapperWorld& world = DOMWrapperWorld::current(isolate);
     if (world.isMainWorld()) {
         if (LocalFrame* frame = impl->frame())
-            frame->script().windowShell(world)->updateDocumentWrapper(wrapper);
+            frame->script().windowProxy(world)->updateDocumentWrapper(wrapper);
     }
     return wrapper;
 }
@@ -126,15 +126,15 @@ v8::Handle<v8::Object> V8TestInterfaceDocument::createWrapper(PassRefPtrWillBeRa
     if (UNLIKELY(wrapper.IsEmpty()))
         return wrapper;
 
-    installPerContextEnabledProperties(wrapper, impl.get(), isolate);
+    installConditionallyEnabledProperties(wrapper, isolate);
     V8DOMWrapper::associateObjectWithWrapper<V8TestInterfaceDocument>(impl, &wrapperTypeInfo, wrapper, isolate, WrapperConfiguration::Dependent);
     return wrapper;
 }
 
-void V8TestInterfaceDocument::derefObject(void* object)
+void V8TestInterfaceDocument::derefObject(ScriptWrappableBase* internalPointer)
 {
 #if !ENABLE(OILPAN)
-    fromInternalPointer(object)->deref();
+    fromInternalPointer(internalPointer)->deref();
 #endif // !ENABLE(OILPAN)
 }
 
@@ -144,4 +144,4 @@ v8::Handle<v8::Value> toV8NoInline(TestInterfaceDocument* impl, v8::Handle<v8::O
     return toV8(impl, creationContext, isolate);
 }
 
-} // namespace WebCore
+} // namespace blink

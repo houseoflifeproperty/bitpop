@@ -25,7 +25,7 @@
 #include "core/SVGNames.h"
 #include "core/svg/SVGFontFaceElement.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace SVGNames;
 
@@ -37,9 +37,9 @@ inline SVGFontFaceFormatElement::SVGFontFaceFormatElement(Document& document)
 
 DEFINE_NODE_FACTORY(SVGFontFaceFormatElement)
 
-void SVGFontFaceFormatElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void SVGFontFaceFormatElement::childrenChanged(const ChildrenChange& change)
 {
-    SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    SVGElement::childrenChanged(change);
 
     if (!isSVGFontFaceUriElement(parentNode()))
         return;

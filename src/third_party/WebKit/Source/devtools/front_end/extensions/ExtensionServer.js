@@ -28,11 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-
-importScript("ExtensionAPI.js");
-importScript("ExtensionRegistryStub.js");
-importScript("ExtensionAuditCategory.js");
-
 /**
  * @constructor
  * @implements {WebInspector.ExtensionServerAPI}
@@ -394,7 +389,7 @@ WebInspector.ExtensionServer.prototype = {
 
     _onGetConsoleMessages: function()
     {
-        return WebInspector.console.messages.map(this._makeConsoleMessage);
+        return WebInspector.multitargetConsoleModel.messages().map(this._makeConsoleMessage);
     },
 
     _onAddConsoleMessage: function(message)
@@ -416,15 +411,16 @@ WebInspector.ExtensionServer.prototype = {
         if (!level)
             return this._status.E_BADARG("message.severity", message.severity);
 
+        var mainTarget = WebInspector.targetManager.mainTarget();
         var consoleMessage = new WebInspector.ConsoleMessage(
-            WebInspector.console.target(),
+            mainTarget,
             WebInspector.ConsoleMessage.MessageSource.JS,
             level,
             message.text,
             WebInspector.ConsoleMessage.MessageType.Log,
             message.url,
             message.line);
-        WebInspector.console.addMessage(consoleMessage);
+        mainTarget.consoleModel.addMessage(consoleMessage);
     },
 
     _makeConsoleMessage: function(message)
@@ -563,9 +559,8 @@ WebInspector.ExtensionServer.prototype = {
         }
         uiSourceCode.setWorkingCopy(message.content);
         if (message.commit)
-            uiSourceCode.commitWorkingCopy(callbackWrapper.bind(this));
-        else
-            callbackWrapper.call(this, null);
+            uiSourceCode.commitWorkingCopy();
+        callbackWrapper.call(this, null);
     },
 
     _requestId: function(request)
@@ -665,14 +660,12 @@ WebInspector.ExtensionServer.prototype = {
 
     _initExtensions: function()
     {
-        this._registerAutosubscriptionHandler(WebInspector.extensionAPI.Events.ConsoleMessageAdded,
-            WebInspector.console, WebInspector.ConsoleModel.Events.MessageAdded, this._notifyConsoleMessageAdded);
-        this._registerAutosubscriptionHandler(WebInspector.extensionAPI.Events.NetworkRequestFinished,
-            WebInspector.networkManager, WebInspector.NetworkManager.EventTypes.RequestFinished, this._notifyRequestFinished);
+        this._registerAutosubscriptionTargetManagerHandler(WebInspector.extensionAPI.Events.ConsoleMessageAdded,
+            WebInspector.ConsoleModel, WebInspector.ConsoleModel.Events.MessageAdded, this._notifyConsoleMessageAdded);
         this._registerAutosubscriptionHandler(WebInspector.extensionAPI.Events.ResourceAdded,
-            WebInspector.workspace,
-            WebInspector.Workspace.Events.UISourceCodeAdded,
-            this._notifyResourceAdded);
+            WebInspector.workspace, WebInspector.Workspace.Events.UISourceCodeAdded, this._notifyResourceAdded);
+        this._registerAutosubscriptionTargetManagerHandler(WebInspector.extensionAPI.Events.NetworkRequestFinished,
+            WebInspector.NetworkManager, WebInspector.NetworkManager.EventTypes.RequestFinished, this._notifyRequestFinished);
 
         /**
          * @this {WebInspector.ExtensionServer}
@@ -698,29 +691,6 @@ WebInspector.ExtensionServer.prototype = {
             WebInspector.SourceFrame.Events.SelectionChanged,
             this._notifySourceFrameSelectionChanged);
         this._registerResourceContentCommittedHandler(this._notifyUISourceCodeContentCommitted);
-
-        /**
-         * @this {WebInspector.ExtensionServer}
-         */
-        function onTimelineSubscriptionStarted()
-        {
-            WebInspector.timelineManager.addEventListener(WebInspector.TimelineManager.EventTypes.TimelineEventRecorded,
-                this._notifyTimelineEventRecorded, this);
-            WebInspector.timelineManager.start();
-        }
-
-        /**
-         * @this {WebInspector.ExtensionServer}
-         */
-        function onTimelineSubscriptionStopped()
-        {
-            WebInspector.timelineManager.stop(function() {});
-            WebInspector.timelineManager.removeEventListener(WebInspector.TimelineManager.EventTypes.TimelineEventRecorded,
-                this._notifyTimelineEventRecorded, this);
-        }
-
-        this._registerSubscriptionHandler(WebInspector.extensionAPI.Events.TimelineEventRecorded,
-            onTimelineSubscriptionStarted.bind(this), onTimelineSubscriptionStopped.bind(this));
 
         WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.InspectedURLChanged,
             this._inspectedURLChanged, this);
@@ -779,11 +749,6 @@ WebInspector.ExtensionServer.prototype = {
     _notifyElementsSelectionChanged: function()
     {
         this._postNotification(WebInspector.extensionAPI.Events.PanelObjectSelected + "elements");
-    },
-
-    _notifyTimelineEventRecorded: function(event)
-    {
-        this._postNotification(WebInspector.extensionAPI.Events.TimelineEventRecorded, event.data);
     },
 
     /**
@@ -870,11 +835,30 @@ WebInspector.ExtensionServer.prototype = {
         this._subscriptionStopHandlers[eventTopic] = onUnsubscribeLast;
     },
 
+    /**
+     * @param {string} eventTopic
+     * @param {!Object} eventTarget
+     * @param {string} frontendEventType
+     * @param {function(!WebInspector.Event)} handler
+     */
     _registerAutosubscriptionHandler: function(eventTopic, eventTarget, frontendEventType, handler)
     {
         this._registerSubscriptionHandler(eventTopic,
             eventTarget.addEventListener.bind(eventTarget, frontendEventType, handler, this),
             eventTarget.removeEventListener.bind(eventTarget, frontendEventType, handler, this));
+    },
+
+    /**
+     * @param {string} eventTopic
+     * @param {!Function} modelClass
+     * @param {string} frontendEventType
+     * @param {function(!WebInspector.Event)} handler
+     */
+    _registerAutosubscriptionTargetManagerHandler: function(eventTopic, modelClass, frontendEventType, handler)
+    {
+        this._registerSubscriptionHandler(eventTopic,
+            WebInspector.targetManager.addModelListener.bind(WebInspector.targetManager, modelClass, frontendEventType, handler, this),
+            WebInspector.targetManager.removeModelListener.bind(WebInspector.targetManager, modelClass, frontendEventType, handler, this));
     },
 
     _registerResourceContentCommittedHandler: function(handler)
@@ -1081,6 +1065,3 @@ WebInspector.ExtensionStatus.Record;
 
 WebInspector.extensionAPI = {};
 defineCommonExtensionSymbols(WebInspector.extensionAPI);
-
-importScript("ExtensionPanel.js");
-importScript("ExtensionView.js");

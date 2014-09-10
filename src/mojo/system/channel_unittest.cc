@@ -21,11 +21,7 @@ namespace mojo {
 namespace system {
 namespace {
 
-enum Tristate {
-  TRISTATE_UNKNOWN = -1,
-  TRISTATE_FALSE = 0,
-  TRISTATE_TRUE = 1
-};
+enum Tristate { TRISTATE_UNKNOWN = -1, TRISTATE_FALSE = 0, TRISTATE_TRUE = 1 };
 
 Tristate BoolToTristate(bool b) {
   return b ? TRISTATE_TRUE : TRISTATE_FALSE;
@@ -95,16 +91,14 @@ class ChannelTest : public testing::Test {
 // ChannelTest.InitShutdown ----------------------------------------------------
 
 TEST_F(ChannelTest, InitShutdown) {
-  io_thread()->PostTaskAndWait(
-      FROM_HERE,
-      base::Bind(&ChannelTest::CreateChannelOnIOThread,
-                 base::Unretained(this)));
+  io_thread()->PostTaskAndWait(FROM_HERE,
+                               base::Bind(&ChannelTest::CreateChannelOnIOThread,
+                                          base::Unretained(this)));
   ASSERT_TRUE(channel());
 
   io_thread()->PostTaskAndWait(
       FROM_HERE,
-      base::Bind(&ChannelTest::InitChannelOnIOThread,
-                 base::Unretained(this)));
+      base::Bind(&ChannelTest::InitChannelOnIOThread, base::Unretained(this)));
   EXPECT_EQ(TRISTATE_TRUE, init_result());
 
   io_thread()->PostTaskAndWait(
@@ -125,32 +119,31 @@ class MockRawChannelOnInitFails : public RawChannel {
   virtual ~MockRawChannelOnInitFails() {}
 
   // |RawChannel| public methods:
-  virtual size_t GetSerializedPlatformHandleSize() const OVERRIDE {
-    return 0;
-  }
+  virtual size_t GetSerializedPlatformHandleSize() const OVERRIDE { return 0; }
 
  private:
   // |RawChannel| protected methods:
   virtual IOResult Read(size_t*) OVERRIDE {
     CHECK(false);
-    return IO_FAILED;
+    return IO_FAILED_UNKNOWN;
   }
   virtual IOResult ScheduleRead() OVERRIDE {
     CHECK(false);
-    return IO_FAILED;
+    return IO_FAILED_UNKNOWN;
   }
   virtual embedder::ScopedPlatformHandleVectorPtr GetReadPlatformHandles(
-      size_t, const void*) OVERRIDE {
+      size_t,
+      const void*) OVERRIDE {
     CHECK(false);
     return embedder::ScopedPlatformHandleVectorPtr();
   }
   virtual IOResult WriteNoLock(size_t*, size_t*) OVERRIDE {
     CHECK(false);
-    return IO_FAILED;
+    return IO_FAILED_UNKNOWN;
   }
   virtual IOResult ScheduleWriteNoLock() OVERRIDE {
     CHECK(false);
-    return IO_FAILED;
+    return IO_FAILED_UNKNOWN;
   }
   virtual bool OnInit() OVERRIDE {
     EXPECT_FALSE(on_init_called_);
@@ -168,10 +161,9 @@ class MockRawChannelOnInitFails : public RawChannel {
 };
 
 TEST_F(ChannelTest, InitFails) {
-  io_thread()->PostTaskAndWait(
-      FROM_HERE,
-      base::Bind(&ChannelTest::CreateChannelOnIOThread,
-                 base::Unretained(this)));
+  io_thread()->PostTaskAndWait(FROM_HERE,
+                               base::Bind(&ChannelTest::CreateChannelOnIOThread,
+                                          base::Unretained(this)));
   ASSERT_TRUE(channel());
 
   ASSERT_TRUE(raw_channel());
@@ -179,8 +171,7 @@ TEST_F(ChannelTest, InitFails) {
 
   io_thread()->PostTaskAndWait(
       FROM_HERE,
-      base::Bind(&ChannelTest::InitChannelOnIOThread,
-                 base::Unretained(this)));
+      base::Bind(&ChannelTest::InitChannelOnIOThread, base::Unretained(this)));
   EXPECT_EQ(TRISTATE_FALSE, init_result());
 
   // Should destroy |Channel| with no |Shutdown()| (on not-the-I/O-thread).
@@ -191,16 +182,14 @@ TEST_F(ChannelTest, InitFails) {
 // ChannelTest.CloseBeforeRun --------------------------------------------------
 
 TEST_F(ChannelTest, CloseBeforeRun) {
-  io_thread()->PostTaskAndWait(
-      FROM_HERE,
-      base::Bind(&ChannelTest::CreateChannelOnIOThread,
-                 base::Unretained(this)));
+  io_thread()->PostTaskAndWait(FROM_HERE,
+                               base::Bind(&ChannelTest::CreateChannelOnIOThread,
+                                          base::Unretained(this)));
   ASSERT_TRUE(channel());
 
   io_thread()->PostTaskAndWait(
       FROM_HERE,
-      base::Bind(&ChannelTest::InitChannelOnIOThread,
-                 base::Unretained(this)));
+      base::Bind(&ChannelTest::InitChannelOnIOThread, base::Unretained(this)));
   EXPECT_EQ(TRISTATE_TRUE, init_result());
 
   scoped_refptr<MessagePipe> mp(new MessagePipe(
@@ -233,16 +222,14 @@ TEST_F(ChannelTest, CloseBeforeRun) {
 // ChannelTest.ShutdownAfterAttachAndRun ---------------------------------------
 
 TEST_F(ChannelTest, ShutdownAfterAttach) {
-  io_thread()->PostTaskAndWait(
-      FROM_HERE,
-      base::Bind(&ChannelTest::CreateChannelOnIOThread,
-                 base::Unretained(this)));
+  io_thread()->PostTaskAndWait(FROM_HERE,
+                               base::Bind(&ChannelTest::CreateChannelOnIOThread,
+                                          base::Unretained(this)));
   ASSERT_TRUE(channel());
 
   io_thread()->PostTaskAndWait(
       FROM_HERE,
-      base::Bind(&ChannelTest::InitChannelOnIOThread,
-                 base::Unretained(this)));
+      base::Bind(&ChannelTest::InitChannelOnIOThread, base::Unretained(this)));
   EXPECT_EQ(TRISTATE_TRUE, init_result());
 
   scoped_refptr<MessagePipe> mp(new MessagePipe(
@@ -263,8 +250,8 @@ TEST_F(ChannelTest, ShutdownAfterAttach) {
 
   Waiter waiter;
   waiter.Init();
-  EXPECT_EQ(MOJO_RESULT_OK,
-            mp->AddWaiter(0, &waiter, MOJO_HANDLE_SIGNAL_READABLE, 123));
+  ASSERT_EQ(MOJO_RESULT_OK,
+            mp->AddWaiter(0, &waiter, MOJO_HANDLE_SIGNAL_READABLE, 123, NULL));
 
   // Don't wait for the shutdown to run ...
   io_thread()->PostTask(FROM_HERE,
@@ -274,7 +261,10 @@ TEST_F(ChannelTest, ShutdownAfterAttach) {
   // ... since this |Wait()| should fail once the channel is shut down.
   EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
             waiter.Wait(MOJO_DEADLINE_INDEFINITE, NULL));
-  mp->RemoveWaiter(0, &waiter);
+  HandleSignalsState hss;
+  mp->RemoveWaiter(0, &waiter, &hss);
+  EXPECT_EQ(0u, hss.satisfied_signals);
+  EXPECT_EQ(0u, hss.satisfiable_signals);
 
   mp->Close(0);
 
@@ -284,16 +274,14 @@ TEST_F(ChannelTest, ShutdownAfterAttach) {
 // ChannelTest.WaitAfterAttachRunAndShutdown -----------------------------------
 
 TEST_F(ChannelTest, WaitAfterAttachRunAndShutdown) {
-  io_thread()->PostTaskAndWait(
-      FROM_HERE,
-      base::Bind(&ChannelTest::CreateChannelOnIOThread,
-                 base::Unretained(this)));
+  io_thread()->PostTaskAndWait(FROM_HERE,
+                               base::Bind(&ChannelTest::CreateChannelOnIOThread,
+                                          base::Unretained(this)));
   ASSERT_TRUE(channel());
 
   io_thread()->PostTaskAndWait(
       FROM_HERE,
-      base::Bind(&ChannelTest::InitChannelOnIOThread,
-                 base::Unretained(this)));
+      base::Bind(&ChannelTest::InitChannelOnIOThread, base::Unretained(this)));
   EXPECT_EQ(TRISTATE_TRUE, init_result());
 
   scoped_refptr<MessagePipe> mp(new MessagePipe(
@@ -314,8 +302,11 @@ TEST_F(ChannelTest, WaitAfterAttachRunAndShutdown) {
 
   Waiter waiter;
   waiter.Init();
+  HandleSignalsState hss;
   EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
-            mp->AddWaiter(0, &waiter, MOJO_HANDLE_SIGNAL_READABLE, 123));
+            mp->AddWaiter(0, &waiter, MOJO_HANDLE_SIGNAL_READABLE, 123, &hss));
+  EXPECT_EQ(0u, hss.satisfied_signals);
+  EXPECT_EQ(0u, hss.satisfiable_signals);
 
   mp->Close(0);
 

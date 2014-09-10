@@ -46,7 +46,9 @@ IndexedDBCallbacks::IndexedDBCallbacks(IndexedDBDispatcherHost* dispatcher_host,
       host_transaction_id_(kNoTransaction),
       ipc_database_id_(kNoDatabase),
       ipc_database_callbacks_id_(kNoDatabaseCallbacks),
-      data_loss_(blink::WebIDBDataLossNone) {}
+      data_loss_(blink::WebIDBDataLossNone),
+      sent_blocked_(false) {
+}
 
 IndexedDBCallbacks::IndexedDBCallbacks(IndexedDBDispatcherHost* dispatcher_host,
                                        int32 ipc_thread_id,
@@ -59,7 +61,9 @@ IndexedDBCallbacks::IndexedDBCallbacks(IndexedDBDispatcherHost* dispatcher_host,
       host_transaction_id_(kNoTransaction),
       ipc_database_id_(kNoDatabase),
       ipc_database_callbacks_id_(kNoDatabaseCallbacks),
-      data_loss_(blink::WebIDBDataLossNone) {}
+      data_loss_(blink::WebIDBDataLossNone),
+      sent_blocked_(false) {
+}
 
 IndexedDBCallbacks::IndexedDBCallbacks(IndexedDBDispatcherHost* dispatcher_host,
                                        int32 ipc_thread_id,
@@ -75,7 +79,9 @@ IndexedDBCallbacks::IndexedDBCallbacks(IndexedDBDispatcherHost* dispatcher_host,
       origin_url_(origin_url),
       ipc_database_id_(kNoDatabase),
       ipc_database_callbacks_id_(ipc_database_callbacks_id),
-      data_loss_(blink::WebIDBDataLossNone) {}
+      data_loss_(blink::WebIDBDataLossNone),
+      sent_blocked_(false) {
+}
 
 IndexedDBCallbacks::~IndexedDBCallbacks() {}
 
@@ -114,6 +120,10 @@ void IndexedDBCallbacks::OnBlocked(int64 existing_version) {
             kNoDatabaseCallbacks == ipc_database_callbacks_id_);
   DCHECK_EQ(kNoDatabase, ipc_database_id_);
 
+  if (sent_blocked_)
+    return;
+
+  sent_blocked_ = true;
   dispatcher_host_->Send(new IndexedDBMsg_CallbacksIntBlocked(
       ipc_thread_id_, ipc_callbacks_id_, existing_version));
 }
@@ -191,7 +201,7 @@ static std::string CreateBlobData(
     // We're sending back a live blob, not a reference into our backing store.
     scoped_ptr<webkit_blob::BlobDataHandle> blob_data_handle(
         blob_storage_context->GetBlobDataFromUUID(uuid));
-    dispatcher_host->HoldBlobDataHandle(uuid, blob_data_handle);
+    dispatcher_host->HoldBlobDataHandle(uuid, blob_data_handle.Pass());
     return uuid;
   }
   scoped_refptr<ShareableFileReference> shareable_file =
@@ -212,7 +222,7 @@ static std::string CreateBlobData(
       blob_info.file_path(), 0, blob_info.size(), blob_info.last_modified());
   scoped_ptr<webkit_blob::BlobDataHandle> blob_data_handle(
       blob_storage_context->AddFinishedBlob(blob_data.get()));
-  dispatcher_host->HoldBlobDataHandle(uuid, blob_data_handle);
+  dispatcher_host->HoldBlobDataHandle(uuid, blob_data_handle.Pass());
 
   return uuid;
 }
@@ -394,9 +404,9 @@ void IndexedDBCallbacks::OnSuccess(const IndexedDBKey& key,
 void IndexedDBCallbacks::OnSuccessWithPrefetch(
     const std::vector<IndexedDBKey>& keys,
     const std::vector<IndexedDBKey>& primary_keys,
-    std::vector<IndexedDBValue>& values) {
+    std::vector<IndexedDBValue>* values) {
   DCHECK_EQ(keys.size(), primary_keys.size());
-  DCHECK_EQ(keys.size(), values.size());
+  DCHECK_EQ(keys.size(), values->size());
 
   DCHECK(dispatcher_host_.get());
 
@@ -422,14 +432,14 @@ void IndexedDBCallbacks::OnSuccessWithPrefetch(
   params->keys = msgKeys;
   params->primary_keys = msgPrimaryKeys;
   std::vector<std::string>& values_bits = params->values;
-  values_bits.resize(values.size());
+  values_bits.resize(values->size());
   std::vector<std::vector<IndexedDBMsg_BlobOrFileInfo> >& values_blob_infos =
       params->blob_or_file_infos;
-  values_blob_infos.resize(values.size());
+  values_blob_infos.resize(values->size());
 
   bool found_blob_info = false;
-  std::vector<IndexedDBValue>::iterator iter = values.begin();
-  for (size_t i = 0; iter != values.end(); ++iter, ++i) {
+  std::vector<IndexedDBValue>::iterator iter = values->begin();
+  for (size_t i = 0; iter != values->end(); ++iter, ++i) {
     values_bits[i].swap(iter->bits);
     if (iter->blob_info.size()) {
       found_blob_info = true;
@@ -445,13 +455,12 @@ void IndexedDBCallbacks::OnSuccessWithPrefetch(
   }
 
   if (found_blob_info) {
-    BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(BlobLookupForCursorPrefetch,
-                   base::Owned(params.release()),
-                   dispatcher_host_,
-                   values));
+    BrowserThread::PostTask(BrowserThread::IO,
+                            FROM_HERE,
+                            base::Bind(BlobLookupForCursorPrefetch,
+                                       base::Owned(params.release()),
+                                       dispatcher_host_,
+                                       *values));
   } else {
     dispatcher_host_->Send(
         new IndexedDBMsg_CallbacksSuccessCursorPrefetch(*params.get()));

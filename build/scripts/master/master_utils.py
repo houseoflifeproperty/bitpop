@@ -8,6 +8,7 @@ import re
 import buildbot
 from buildbot import interfaces, util
 from buildbot.buildslave import BuildSlave
+from buildbot.interfaces import IRenderable
 from buildbot.status import mail
 from buildbot.status.builder import BuildStatus
 from buildbot.status.status_push import HttpStatusPush
@@ -17,10 +18,12 @@ from zope.interface import implements
 from master.autoreboot_buildslave import AutoRebootBuildSlave
 from buildbot.status.web.authz import Authz
 from buildbot.status.web.baseweb import WebStatus
+from buildbot.status.web.baseweb import WebStatus
 
 import master.chromium_status_bb8 as chromium_status
 
 from common import chromium_utils
+from master import status_logger
 import config
 
 
@@ -182,7 +185,9 @@ class FilterDomain(util.ComparableMixin):
     return result
 
 
-def CreateWebStatus(port, templates=None, tagComparator=None, **kwargs):
+def CreateWebStatus(port, templates=None, tagComparator=None,
+                    customEndpoints=None, console_repo_filter=None,
+                    console_builder_filter=None, **kwargs):
   webstatus = WebStatus(port, **kwargs)
   if templates:
     # Manipulate the search path for jinja templates
@@ -195,7 +200,10 @@ def CreateWebStatus(port, templates=None, tagComparator=None, **kwargs):
     new_loaders.extend([jinja2.FileSystemLoader(x) for x in templates])
     new_loaders.extend(old_loaders[1:])
     webstatus.templates.loader.loaders = new_loaders
-  chromium_status.SetupChromiumPages(webstatus, tagComparator)
+  chromium_status.SetupChromiumPages(
+      webstatus, tagComparator, customEndpoints,
+      console_repo_filter=console_repo_filter,
+      console_builder_filter=console_builder_filter)
   return webstatus
 
 
@@ -209,7 +217,10 @@ def AutoSetupMaster(c, active_master, mail_notifier=False,
                     public_html=None, templates=None,
                     order_console_by_time=False,
                     tagComparator=None,
-                    enable_http_status_push=False):
+                    customEndpoints=None,
+                    enable_http_status_push=False,
+                    console_repo_filter=None,
+                    console_builder_filter=None):
   """Add common settings and status services to a master.
 
   If you wonder what all these mean, PLEASE go check the official doc!
@@ -287,18 +298,29 @@ def AutoSetupMaster(c, active_master, mail_notifier=False,
                   stopBuild=True,
                   stopAllBuilds=True,
                   cancelPendingBuild=True)
-    c['status'].append(CreateWebStatus(active_master.master_port,
-                                       tagComparator=tagComparator,
-                                       authz=authz,
-                                       num_events_max=3000,
-                                       templates=templates,
-                                       **kwargs))
+    c['status'].append(CreateWebStatus(
+        active_master.master_port,
+        tagComparator=tagComparator,
+        customEndpoints=customEndpoints,
+        authz=authz,
+        num_events_max=3000,
+        templates=templates,
+        console_repo_filter=console_repo_filter,
+        console_builder_filter=console_builder_filter,
+        **kwargs))
   if active_master.master_port_alt:
-    c['status'].append(CreateWebStatus(active_master.master_port_alt,
-                                       tagComparator=tagComparator,
-                                       num_events_max=3000,
-                                       templates=templates,
-                                       **kwargs))
+    c['status'].append(CreateWebStatus(
+        active_master.master_port_alt,
+        tagComparator=tagComparator,
+        customEndpoints=customEndpoints,
+        num_events_max=3000,
+        templates=templates,
+        console_repo_filter=console_repo_filter,
+        console_builder_filter=console_builder_filter,
+        **kwargs))
+
+  # Add a status logger, which is only active if '.logstatus' is touched.
+  c['status'].append(status_logger.StatusEventLogger())
 
   # Keep last build logs, the default is too low.
   c['buildHorizon'] = 1000
@@ -429,3 +451,56 @@ def Partition(item_tuples, num_partitions):
   for item in sorted(item_tuples, reverse=True):
     GetLowestSumPartition().append(item)
   return sorted([sorted([name for _, name in p]) for p in partitions])
+
+
+class ConditionalProperty(util.ComparableMixin):
+  """A IRenderable that chooses between IRenderable options given a condition.
+
+  A typical 'WithProperties' will be rendered as a string and included as an
+  argument. If it's an empty string, it will become a position argment, "".
+
+  This property wraps two IRenderables (which can be 'WithProperties' instances)
+  and chooses between them based on a condition. This allows the full exclusion
+  and tailoring of property output.
+
+  For example, to optionally add a parameter, one can use the following recipe:
+  args.append(
+      ConditionalProperty(
+          'author_name',
+          WithProperties('--author-name=%(author_name)s'),
+          [],
+      )
+  )
+
+  In this example, if 'author_name' is defined as a property, the first
+  IRenderable (WithProperties) will be rendered and the '--author-name' argument
+  will be inclided. Otherwise, the second will be rendered. Since 'step'
+  flattens the command list, returning '[]' will result in the argument being
+  completely omitted.
+
+  If a more complex condition is required, a callable function may be used
+  as the 'prop' argument. In this case, the function will be passed a single
+  parameter, the build object, and is expected to return True if the 'present'
+  IRenderable should be used and 'False' if the 'absent' one should be used.
+  """
+  implements(IRenderable)
+  compare_attrs = ('prop', 'present', 'absent')
+
+  def __init__(self, condition, present, absent):
+    if not callable(condition):
+      self.prop = condition
+      condition = lambda build: (self.prop in build.getProperties())
+    else:
+      self.prop = None
+    self.condition = condition
+    self.present = present
+    self.absent = absent
+
+  def getRenderingFor(self, build):
+    # Test whether we're going to render
+    is_present = self.condition(build)
+
+    # Choose our inner IRenderer and render it
+    renderer = (self.present) if is_present else (self.absent)
+    # Disable 'too many positional arguments' error | pylint: disable=E1121
+    return IRenderable(renderer).getRenderingFor(build)

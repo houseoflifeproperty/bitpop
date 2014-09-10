@@ -55,15 +55,6 @@ const vp9_tree_index vp9_coef_con_tree[TREE_SIZE(ENTROPY_TOKENS)] = {
   -CATEGORY5_TOKEN, -CATEGORY6_TOKEN   // 7 = CAT_FIVE
 };
 
-static const vp9_prob Pcat1[] = { 159};
-static const vp9_prob Pcat2[] = { 165, 145};
-static const vp9_prob Pcat3[] = { 173, 148, 140};
-static const vp9_prob Pcat4[] = { 176, 155, 140, 135};
-static const vp9_prob Pcat5[] = { 180, 157, 141, 134, 130};
-static const vp9_prob Pcat6[] = {
-  254, 254, 254, 252, 249, 243, 230, 196, 177, 153, 140, 133, 130, 129
-};
-
 static vp9_tree_index cat1[2], cat2[4], cat3[6], cat4[8], cat5[10], cat6[28];
 
 static void init_bit_tree(vp9_tree_index *p, int n) {
@@ -87,18 +78,18 @@ static void init_bit_trees() {
 }
 
 const vp9_extra_bit vp9_extra_bits[ENTROPY_TOKENS] = {
-  {0, 0, 0, 0},           // ZERO_TOKEN
-  {0, 0, 0, 1},           // ONE_TOKEN
-  {0, 0, 0, 2},           // TWO_TOKEN
-  {0, 0, 0, 3},           // THREE_TOKEN
-  {0, 0, 0, 4},           // FOUR_TOKEN
-  {cat1, Pcat1, 1, 5},    // CATEGORY1_TOKEN
-  {cat2, Pcat2, 2, 7},    // CATEGORY2_TOKEN
-  {cat3, Pcat3, 3, 11},   // CATEGORY3_TOKEN
-  {cat4, Pcat4, 4, 19},   // CATEGORY4_TOKEN
-  {cat5, Pcat5, 5, 35},   // CATEGORY5_TOKEN
-  {cat6, Pcat6, 14, 67},  // CATEGORY6_TOKEN
-  {0, 0, 0, 0}            // EOB_TOKEN
+  {0, 0, 0, 0},                              // ZERO_TOKEN
+  {0, 0, 0, 1},                              // ONE_TOKEN
+  {0, 0, 0, 2},                              // TWO_TOKEN
+  {0, 0, 0, 3},                              // THREE_TOKEN
+  {0, 0, 0, 4},                              // FOUR_TOKEN
+  {cat1, vp9_cat1_prob, 1,  CAT1_MIN_VAL},   // CATEGORY1_TOKEN
+  {cat2, vp9_cat2_prob, 2,  CAT2_MIN_VAL},   // CATEGORY2_TOKEN
+  {cat3, vp9_cat3_prob, 3,  CAT3_MIN_VAL},   // CATEGORY3_TOKEN
+  {cat4, vp9_cat4_prob, 4,  CAT4_MIN_VAL},   // CATEGORY4_TOKEN
+  {cat5, vp9_cat5_prob, 5,  CAT5_MIN_VAL},   // CATEGORY5_TOKEN
+  {cat6, vp9_cat6_prob, 14, CAT6_MIN_VAL},   // CATEGORY6_TOKEN
+  {0, 0, 0, 0}                               // EOB_TOKEN
 };
 
 struct vp9_token vp9_coef_encodings[ENTROPY_TOKENS];
@@ -288,7 +279,6 @@ struct is_skippable_args {
   MACROBLOCK *x;
   int *skippable;
 };
-
 static void is_skippable(int plane, int block,
                          BLOCK_SIZE plane_bsize, TX_SIZE tx_size,
                          void *argv) {
@@ -298,6 +288,8 @@ static void is_skippable(int plane, int block,
   args->skippable[0] &= (!args->x->plane[plane].eobs[block]);
 }
 
+// TODO(yaowu): rewrite and optimize this function to remove the usage of
+//              vp9_foreach_transform_block() and simplify is_skippable().
 int vp9_is_skippable_in_plane(MACROBLOCK *x, BLOCK_SIZE bsize, int plane) {
   int result = 1;
   struct is_skippable_args args = {x, &result};

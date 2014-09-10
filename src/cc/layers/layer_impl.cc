@@ -5,6 +5,7 @@
 #include "cc/layers/layer_impl.h"
 
 #include "base/debug/trace_event.h"
+#include "base/debug/trace_event_argument.h"
 #include "base/json/json_reader.h"
 #include "base/strings/stringprintf.h"
 #include "cc/animation/animation_registrar.h"
@@ -17,7 +18,6 @@
 #include "cc/input/layer_scroll_offset_delegate.h"
 #include "cc/layers/layer_utils.h"
 #include "cc/layers/painted_scrollbar_layer_impl.h"
-#include "cc/layers/quad_sink.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/quads/debug_border_draw_quad.h"
 #include "cc/trees/layer_tree_host_common.h"
@@ -64,6 +64,7 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
       background_color_(0),
       opacity_(1.0),
       blend_mode_(SkXfermode::kSrcOver_Mode),
+      num_descendants_that_draw_content_(0),
       draw_depth_(0.f),
       needs_push_properties_(false),
       num_dependents_need_push_properties_(0),
@@ -76,8 +77,10 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
   layer_animation_controller_ =
       registrar->GetAnimationControllerForId(layer_id_);
   layer_animation_controller_->AddValueObserver(this);
-  if (IsActive())
+  if (IsActive()) {
     layer_animation_controller_->set_value_provider(this);
+    layer_animation_controller_->set_layer_animation_delegate(this);
+  }
   SetNeedsPushProperties();
 }
 
@@ -86,6 +89,7 @@ LayerImpl::~LayerImpl() {
 
   layer_animation_controller_->RemoveValueObserver(this);
   layer_animation_controller_->remove_value_provider(this);
+  layer_animation_controller_->remove_layer_animation_delegate(this);
 
   if (!copy_requests_.empty() && layer_tree_impl_->IsActiveTree())
     layer_tree_impl()->RemoveLayerWithCopyOutputRequest(this);
@@ -170,6 +174,13 @@ void LayerImpl::SetScrollChildren(std::set<LayerImpl*>* children) {
   if (scroll_children_.get() == children)
     return;
   scroll_children_.reset(children);
+  SetNeedsPushProperties();
+}
+
+void LayerImpl::SetNumDescendantsThatDrawContent(int num_descendants) {
+  if (num_descendants_that_draw_content_ == num_descendants)
+    return;
+  num_descendants_that_draw_content_ = num_descendants;
   SetNeedsPushProperties();
 }
 
@@ -288,14 +299,14 @@ void LayerImpl::GetDebugBorderProperties(SkColor* color, float* width) const {
 }
 
 void LayerImpl::AppendDebugBorderQuad(
-    QuadSink* quad_sink,
+    RenderPass* render_pass,
     const gfx::Size& content_bounds,
     const SharedQuadState* shared_quad_state,
     AppendQuadsData* append_quads_data) const {
   SkColor color;
   float width;
   GetDebugBorderProperties(&color, &width);
-  AppendDebugBorderQuad(quad_sink,
+  AppendDebugBorderQuad(render_pass,
                         content_bounds,
                         shared_quad_state,
                         append_quads_data,
@@ -303,7 +314,7 @@ void LayerImpl::AppendDebugBorderQuad(
                         width);
 }
 
-void LayerImpl::AppendDebugBorderQuad(QuadSink* quad_sink,
+void LayerImpl::AppendDebugBorderQuad(RenderPass* render_pass,
                                       const gfx::Size& content_bounds,
                                       const SharedQuadState* shared_quad_state,
                                       AppendQuadsData* append_quads_data,
@@ -314,11 +325,10 @@ void LayerImpl::AppendDebugBorderQuad(QuadSink* quad_sink,
 
   gfx::Rect quad_rect(content_bounds);
   gfx::Rect visible_quad_rect(quad_rect);
-  scoped_ptr<DebugBorderDrawQuad> debug_border_quad =
-      DebugBorderDrawQuad::Create();
+  DebugBorderDrawQuad* debug_border_quad =
+      render_pass->CreateAndAppendDrawQuad<DebugBorderDrawQuad>();
   debug_border_quad->SetNew(
       shared_quad_state, quad_rect, visible_quad_rect, color, width);
-  quad_sink->Append(debug_border_quad.PassAs<DrawQuad>());
 }
 
 bool LayerImpl::HasDelegatedContent() const {
@@ -530,6 +540,7 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
       scroll_offset_, layer->ScrollDelta() - layer->sent_scroll_delta());
   layer->SetSentScrollDelta(gfx::Vector2d());
   layer->Set3dSortingContextId(sorting_context_id_);
+  layer->SetNumDescendantsThatDrawContent(num_descendants_that_draw_content_);
 
   LayerImpl* scroll_parent = NULL;
   if (scroll_parent_) {
@@ -760,7 +771,7 @@ bool LayerImpl::IsActive() const {
 
 // TODO(wjmaclean) Convert so that bounds returns SizeF.
 gfx::Size LayerImpl::bounds() const {
-  return ToFlooredSize(temporary_impl_bounds_);
+  return ToCeiledSize(temporary_impl_bounds_);
 }
 
 void LayerImpl::SetBounds(const gfx::Size& bounds) {
@@ -1389,7 +1400,7 @@ void LayerImpl::RemoveDependentNeedsPushProperties() {
       parent_->RemoveDependentNeedsPushProperties();
 }
 
-void LayerImpl::AsValueInto(base::DictionaryValue* state) const {
+void LayerImpl::AsValueInto(base::debug::TracedValue* state) const {
   TracedValue::MakeDictIntoImplicitSnapshotWithCategory(
       TRACE_DISABLED_BY_DEFAULT("cc.debug"),
       state,
@@ -1397,50 +1408,75 @@ void LayerImpl::AsValueInto(base::DictionaryValue* state) const {
       LayerTypeAsString(),
       this);
   state->SetInteger("layer_id", id());
-  state->Set("bounds", MathUtil::AsValue(bounds_).release());
-  state->Set("position", MathUtil::AsValue(position_).release());
+  state->BeginDictionary("bounds");
+  MathUtil::AddToTracedValue(bounds_, state);
+  state->EndDictionary();
+
+  state->BeginArray("position");
+  MathUtil::AddToTracedValue(position_, state);
+  state->EndArray();
+
   state->SetInteger("draws_content", DrawsContent());
   state->SetInteger("gpu_memory_usage", GPUMemoryUsageInBytes());
-  state->Set("scroll_offset", MathUtil::AsValue(scroll_offset_).release());
-  state->Set("transform_origin",
-             MathUtil::AsValue(transform_origin_).release());
+
+  state->BeginArray("scroll_offset");
+  MathUtil::AddToTracedValue(scroll_offset_, state);
+  state->EndArray();
+
+  state->BeginArray("transform_origin");
+  MathUtil::AddToTracedValue(transform_origin_, state);
+  state->EndArray();
 
   bool clipped;
   gfx::QuadF layer_quad = MathUtil::MapQuad(
       screen_space_transform(),
       gfx::QuadF(gfx::Rect(content_bounds())),
       &clipped);
-  state->Set("layer_quad", MathUtil::AsValue(layer_quad).release());
-
+  state->BeginArray("layer_quad");
+  MathUtil::AddToTracedValue(layer_quad, state);
+  state->EndArray();
   if (!touch_event_handler_region_.IsEmpty()) {
-    state->Set("touch_event_handler_region",
-               touch_event_handler_region_.AsValue().release());
+    state->BeginArray("touch_event_handler_region");
+    touch_event_handler_region_.AsValueInto(state);
+    state->EndArray();
   }
   if (have_wheel_event_handlers_) {
     gfx::Rect wheel_rect(content_bounds());
     Region wheel_region(wheel_rect);
-    state->Set("wheel_event_handler_region",
-               wheel_region.AsValue().release());
+    state->BeginArray("wheel_event_handler_region");
+    wheel_region.AsValueInto(state);
+    state->EndArray();
   }
   if (have_scroll_event_handlers_) {
     gfx::Rect scroll_rect(content_bounds());
     Region scroll_region(scroll_rect);
-    state->Set("scroll_event_handler_region",
-               scroll_region.AsValue().release());
+    state->BeginArray("scroll_event_handler_region");
+    scroll_region.AsValueInto(state);
+    state->EndArray();
   }
   if (!non_fast_scrollable_region_.IsEmpty()) {
-    state->Set("non_fast_scrollable_region",
-               non_fast_scrollable_region_.AsValue().release());
+    state->BeginArray("non_fast_scrollable_region");
+    non_fast_scrollable_region_.AsValueInto(state);
+    state->EndArray();
   }
 
-  scoped_ptr<base::ListValue> children_list(new base::ListValue());
-  for (size_t i = 0; i < children_.size(); ++i)
-    children_list->Append(children_[i]->AsValue().release());
-  state->Set("children", children_list.release());
-  if (mask_layer_)
-    state->Set("mask_layer", mask_layer_->AsValue().release());
-  if (replica_layer_)
-    state->Set("replica_layer", replica_layer_->AsValue().release());
+  state->BeginArray("children");
+  for (size_t i = 0; i < children_.size(); ++i) {
+    state->BeginDictionary();
+    children_[i]->AsValueInto(state);
+    state->EndDictionary();
+  }
+  state->EndArray();
+  if (mask_layer_) {
+    state->BeginDictionary("mask_layer");
+    mask_layer_->AsValueInto(state);
+    state->EndDictionary();
+  }
+  if (replica_layer_) {
+    state->BeginDictionary("replica_layer");
+    replica_layer_->AsValueInto(state);
+    state->EndDictionary();
+  }
 
   if (scroll_parent_)
     state->SetInteger("scroll_parent", scroll_parent_->id());
@@ -1456,8 +1492,11 @@ void LayerImpl::AsValueInto(base::DictionaryValue* state) const {
       layer_animation_controller()->HasAnimationThatInflatesBounds());
 
   gfx::BoxF box;
-  if (LayerUtils::GetAnimationBounds(*this, &box))
-    state->Set("animation_bounds", MathUtil::AsValue(box).release());
+  if (LayerUtils::GetAnimationBounds(*this, &box)) {
+    state->BeginArray("animation_bounds");
+    MathUtil::AddToTracedValue(box, state);
+    state->EndArray();
+  }
 
   if (debug_info_.get()) {
     std::string str;
@@ -1470,7 +1509,10 @@ void LayerImpl::AsValueInto(base::DictionaryValue* state) const {
       bool converted_to_dictionary =
           debug_info_value->GetAsDictionary(&dictionary_value);
       DCHECK(converted_to_dictionary);
-      state->MergeDictionary(dictionary_value);
+      for (base::DictionaryValue::Iterator it(*dictionary_value); !it.IsAtEnd();
+           it.Advance()) {
+        state->SetValue(it.key().data(), it.value().DeepCopy());
+      }
     } else {
       NOTREACHED();
     }
@@ -1484,13 +1526,19 @@ bool LayerImpl::IsDrawnRenderSurfaceLayerListMember() const {
 
 size_t LayerImpl::GPUMemoryUsageInBytes() const { return 0; }
 
-scoped_ptr<base::Value> LayerImpl::AsValue() const {
-  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
-  AsValueInto(state.get());
-  return state.PassAs<base::Value>();
-}
-
 void LayerImpl::RunMicroBenchmark(MicroBenchmarkImpl* benchmark) {
   benchmark->RunOnLayer(this);
 }
+
+int LayerImpl::NumDescendantsThatDrawContent() const {
+  return num_descendants_that_draw_content_;
+}
+
+void LayerImpl::NotifyAnimationFinished(
+    base::TimeTicks monotonic_time,
+    Animation::TargetProperty target_property) {
+  if (target_property == Animation::ScrollOffset)
+    layer_tree_impl_->InputScrollAnimationFinished();
+}
+
 }  // namespace cc

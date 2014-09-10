@@ -2,12 +2,6 @@
 # Copyright (c) 2014 The Native Client Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-#
-# IMPORTANT NOTE: If you make local mods to this file, you must run:
-#   %  pnacl/build.sh driver
-# in order for them to take effect in the scons build.  This command
-# updates the copy in the toolchain/ tree.
-#
 
 """Manages files that'll get deleted when the driver exits unless SAVE_TEMPS.
 """
@@ -37,7 +31,7 @@ class TempFileHandler(object):
         if os.path.exists(sys_path):
           os.remove(sys_path)
       except OSError as err:
-        Log.Fatal("TempFileHandler: Unable to wipe file %s w/ error %s",
+        Log.Error("TempFileHandler: Unable to wipe file %s w/ error %s",
                   pathtools.touser(path),
                   err.strerror)
     self.files = []

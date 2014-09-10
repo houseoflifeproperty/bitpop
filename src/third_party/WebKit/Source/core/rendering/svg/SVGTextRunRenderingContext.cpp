@@ -34,7 +34,7 @@
 #include "platform/fonts/WidthIterator.h"
 #include "platform/graphics/GraphicsContext.h"
 
-namespace WebCore {
+namespace blink {
 
 static inline const SVGFontData* svgFontAndFontFaceElementForFontData(const SimpleFontData* fontData, SVGFontFaceElement*& fontFace, SVGFontElement*& font)
 {
@@ -43,7 +43,7 @@ static inline const SVGFontData* svgFontAndFontFaceElementForFontData(const Simp
     ASSERT(fontData->isSVGFont());
 
     RefPtr<CustomFontData> customFontData = fontData->customFontData();
-    const SVGFontData* svgFontData = static_cast<const SVGFontData*>(customFontData.get());
+    const SVGFontData* svgFontData = toSVGFontData(customFontData);
 
     // FIXME crbug.com/359380 : The current editing impl references the font after the svg font nodes are removed.
     if (svgFontData->shouldSkipDrawing())
@@ -112,7 +112,7 @@ void SVGTextRunRenderingContext::drawSVGGlyphs(GraphicsContext* context, const T
     if (parentRenderObject) {
         parentRenderObjectStyle = parentRenderObject->style();
         ASSERT(parentRenderObjectStyle);
-        isVerticalText = parentRenderObjectStyle->svgStyle()->isVerticalWritingMode();
+        isVerticalText = parentRenderObjectStyle->svgStyle().isVerticalWritingMode();
     }
 
     float scale = scaleEmToUnits(fontData->platformData().size(), fontFaceElement->unitsPerEm());

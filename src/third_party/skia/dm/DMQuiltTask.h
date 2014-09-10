@@ -12,17 +12,30 @@
 namespace DM {
 
 class QuiltTask : public CpuTask {
-
 public:
-    QuiltTask(const Task& parent,   // QuiltTask must be a child task.  Pass its parent here.
-                skiagm::GM*,          // GM to run through a picture.  Takes ownership.
-                SkBitmap reference);  // Bitmap to compare picture replay results to.
+    enum BBH {
+        kNone_BBH,
+        kRTree_BBH,
+        kQuadTree_BBH,
+        kTileGrid_BBH,
+    };
+    enum Backend {
+        kDefault_Backend,
+        kSkRecord_Backend,
+    };
+
+    QuiltTask(const Task& parent,  // QuiltTask must be a child task.  Pass its parent here.
+              skiagm::GM*,         // GM to run through a picture.  Takes ownership.
+              SkBitmap reference,  // Bitmap to compare picture replay results to.
+              BBH, Backend);
 
     virtual void draw() SK_OVERRIDE;
     virtual bool shouldSkip() const SK_OVERRIDE;
     virtual SkString name() const SK_OVERRIDE { return fName; }
 
 private:
+    const BBH fBBH;
+    const Backend fBackend;
     const SkString fName;
     SkAutoTDelete<skiagm::GM> fGM;
     const SkBitmap fReference;

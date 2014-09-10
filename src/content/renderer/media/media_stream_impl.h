@@ -16,7 +16,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "content/common/content_export.h"
-#include "content/public/renderer/render_view_observer.h"
+#include "content/public/renderer/render_frame_observer.h"
 #include "content/renderer/media/media_stream_dispatcher_eventhandler.h"
 #include "content/renderer/media/media_stream_source.h"
 #include "third_party/WebKit/public/platform/WebMediaStream.h"
@@ -38,19 +38,22 @@ class VideoCapturerDelegate;
 // (via MediaStreamDispatcher and MediaStreamDispatcherHost)
 // in the browser process. It must be created, called and destroyed on the
 // render thread.
-// MediaStreamImpl have weak pointers to a MediaStreamDispatcher.
 class CONTENT_EXPORT MediaStreamImpl
-    : public RenderViewObserver,
+    : public RenderFrameObserver,
       NON_EXPORTED_BASE(public blink::WebUserMediaClient),
       public MediaStreamDispatcherEventHandler,
-      public base::SupportsWeakPtr<MediaStreamImpl>,
       NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
+  // |render_frame| and |dependency_factory| must outlive this instance.
   MediaStreamImpl(
-      RenderView* render_view,
-      MediaStreamDispatcher* media_stream_dispatcher,
-      PeerConnectionDependencyFactory* dependency_factory);
+      RenderFrame* render_frame,
+      PeerConnectionDependencyFactory* dependency_factory,
+      scoped_ptr<MediaStreamDispatcher> media_stream_dispatcher);
   virtual ~MediaStreamImpl();
+
+  MediaStreamDispatcher* media_stream_dispatcher() const {
+    return media_stream_dispatcher_.get();
+  }
 
   // blink::WebUserMediaClient implementation
   virtual void requestUserMedia(
@@ -70,7 +73,7 @@ class CONTENT_EXPORT MediaStreamImpl
       const StreamDeviceInfoArray& video_array) OVERRIDE;
   virtual void OnStreamGenerationFailed(
       int request_id,
-      content::MediaStreamRequestResult result) OVERRIDE;
+      MediaStreamRequestResult result) OVERRIDE;
   virtual void OnDeviceStopped(const std::string& label,
                                const StreamDeviceInfo& device_info) OVERRIDE;
   virtual void OnDevicesEnumerated(
@@ -82,9 +85,8 @@ class CONTENT_EXPORT MediaStreamImpl
       const StreamDeviceInfo& device_info) OVERRIDE;
   virtual void OnDeviceOpenFailed(int request_id) OVERRIDE;
 
-  // RenderViewObserver OVERRIDE
-  virtual void FrameDetached(blink::WebFrame* frame) OVERRIDE;
-  virtual void FrameWillClose(blink::WebFrame* frame) OVERRIDE;
+  // RenderFrameObserver OVERRIDE
+  virtual void FrameWillClose() OVERRIDE;
 
  protected:
   // Called when |source| has been stopped from JavaScript.
@@ -98,7 +100,11 @@ class CONTENT_EXPORT MediaStreamImpl
        blink::WebUserMediaRequest* request_info);
   virtual void GetUserMediaRequestFailed(
       blink::WebUserMediaRequest* request_info,
-      content::MediaStreamRequestResult result);
+      MediaStreamRequestResult result);
+  virtual void GetUserMediaRequestTrackStartedFailed(
+      blink::WebUserMediaRequest* request_info,
+      MediaStreamRequestResult result,
+      const blink::WebString& result_name);
   virtual void EnumerateDevicesSucceded(
       blink::WebMediaDevicesRequest* request,
       blink::WebVector<blink::WebMediaDeviceInfo>& devices);
@@ -115,11 +121,11 @@ class CONTENT_EXPORT MediaStreamImpl
       : public base::SupportsWeakPtr<UserMediaRequestInfo> {
    public:
     typedef base::Callback<void(UserMediaRequestInfo* request_info,
-                                content::MediaStreamRequestResult result)>
+                                MediaStreamRequestResult result,
+                                const blink::WebString& result_name)>
       ResourcesReady;
 
     UserMediaRequestInfo(int request_id,
-                         blink::WebFrame* frame,
                          const blink::WebUserMediaRequest& request,
                          bool enable_automatic_output_device_selection);
     ~UserMediaRequestInfo();
@@ -128,7 +134,6 @@ class CONTENT_EXPORT MediaStreamImpl
     // OnStreamGenerated.
     bool generated;
     const bool enable_automatic_output_device_selection;
-    blink::WebFrame* frame;  // WebFrame that requested the MediaStream.
     blink::WebMediaStream web_stream;
     blink::WebUserMediaRequest request;
 
@@ -146,31 +151,25 @@ class CONTENT_EXPORT MediaStreamImpl
     bool IsSourceUsed(const blink::WebMediaStreamSource& source) const;
     void RemoveSource(const blink::WebMediaStreamSource& source);
 
-    bool AreAllSourcesRemoved() const { return sources_.empty(); }
+    bool HasPendingSources() const;
 
    private:
-    void OnTrackStarted(MediaStreamSource* source, bool success);
+    void OnTrackStarted(
+        MediaStreamSource* source,
+        MediaStreamRequestResult result,
+        const blink::WebString& result_name);
     void CheckAllTracksStarted();
 
     ResourcesReady ready_callback_;
-    bool request_failed_;
+    MediaStreamRequestResult request_result_;
+    blink::WebString request_result_name_;
     // Sources used in this request.
     std::vector<blink::WebMediaStreamSource> sources_;
     std::vector<MediaStreamSource*> sources_waiting_for_callback_;
   };
   typedef ScopedVector<UserMediaRequestInfo> UserMediaRequests;
 
-  struct LocalStreamSource {
-    LocalStreamSource(blink::WebFrame* frame,
-                      const blink::WebMediaStreamSource& source)
-        : frame(frame), source(source) {
-    }
-    // |frame| is the WebFrame that requested |source|. NULL in unit tests.
-    // TODO(perkj): Change so that |frame| is not NULL in unit tests.
-    blink::WebFrame* frame;
-    blink::WebMediaStreamSource source;
-  };
-  typedef std::vector<LocalStreamSource> LocalStreamSources;
+  typedef std::vector<blink::WebMediaStreamSource> LocalStreamSources;
 
   struct MediaDevicesRequestInfo;
   typedef ScopedVector<MediaDevicesRequestInfo> MediaDevicesRequests;
@@ -181,7 +180,6 @@ class CONTENT_EXPORT MediaStreamImpl
       const StreamDeviceInfo& device,
       blink::WebMediaStreamSource::Type type,
       const blink::WebMediaConstraints& constraints,
-      blink::WebFrame* frame,
       blink::WebMediaStreamSource* webkit_source);
 
   void CreateVideoTracks(
@@ -200,17 +198,23 @@ class CONTENT_EXPORT MediaStreamImpl
   // underlying media sources and tracks have been created and started.
   void OnCreateNativeTracksCompleted(
       UserMediaRequestInfo* request,
-      content::MediaStreamRequestResult result);
+      MediaStreamRequestResult result,
+      const blink::WebString& result_name);
+
+  void OnStreamGeneratedForCancelledRequest(
+      const StreamDeviceInfoArray& audio_array,
+      const StreamDeviceInfoArray& video_array);
 
   UserMediaRequestInfo* FindUserMediaRequestInfo(int request_id);
   UserMediaRequestInfo* FindUserMediaRequestInfo(
       const blink::WebUserMediaRequest& request);
   void DeleteUserMediaRequestInfo(UserMediaRequestInfo* request);
+  void DeleteAllUserMediaRequests();
 
   MediaDevicesRequestInfo* FindMediaDevicesRequestInfo(int request_id);
   MediaDevicesRequestInfo* FindMediaDevicesRequestInfo(
       const blink::WebMediaDevicesRequest& request);
-  void DeleteMediaDevicesRequestInfo(MediaDevicesRequestInfo* request);
+  void CancelAndDeleteMediaDevicesRequest(MediaDevicesRequestInfo* request);
 
   // Returns the source that use a device with |device.session_id|
   // and |device.device.id|. NULL if such source doesn't exist.
@@ -224,11 +228,11 @@ class CONTENT_EXPORT MediaStreamImpl
   // It's valid for the lifetime of RenderThread.
   // TODO(xians): Remove this dependency once audio do not need it for local
   // audio.
-  PeerConnectionDependencyFactory* dependency_factory_;
+  PeerConnectionDependencyFactory* const dependency_factory_;
 
-  // media_stream_dispatcher_ is a weak reference, owned by RenderView. It's
-  // valid for the lifetime of RenderView.
-  MediaStreamDispatcher* media_stream_dispatcher_;
+  // MediaStreamImpl owns MediaStreamDispatcher instead of RenderFrameImpl
+  // (or RenderFrameObserver) to ensure tear-down occurs in the right order.
+  const scoped_ptr<MediaStreamDispatcher> media_stream_dispatcher_;
 
   LocalStreamSources local_sources_;
 
@@ -236,6 +240,10 @@ class CONTENT_EXPORT MediaStreamImpl
 
   // Requests to enumerate media devices.
   MediaDevicesRequests media_devices_requests_;
+
+  // Note: This member must be the last to ensure all outstanding weak pointers
+  // are invalidated first.
+  base::WeakPtrFactory<MediaStreamImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaStreamImpl);
 };

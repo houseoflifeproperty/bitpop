@@ -31,12 +31,13 @@
 #include "config.h"
 #include "modules/websockets/MainThreadWebSocketChannel.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/frame/LocalFrame.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/FrameLoader.h"
@@ -55,9 +56,7 @@
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 const double TCPMaximumSegmentLifetime = 2 * 60.0;
 
@@ -99,10 +98,10 @@ bool MainThreadWebSocketChannel::connect(const KURL& url, const String& protocol
         return false;
     if (MixedContentChecker::isMixedContent(m_document->securityOrigin(), url)) {
         String message = "Connecting to a non-secure WebSocket server from a secure origin is deprecated.";
-        m_document->addConsoleMessage(JSMessageSource, WarningMessageLevel, message);
+        m_document->addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel, message));
     }
 
-    m_handshake = adoptPtr(new WebSocketHandshake(url, protocol, m_document));
+    m_handshake = new WebSocketHandshake(url, protocol, m_document);
     m_handshake->reset();
     m_handshake->addExtensionProcessor(m_perMessageDeflate.createExtensionProcessor());
     m_handshake->addExtensionProcessor(m_deflateFramer.createExtensionProcessor());
@@ -124,40 +123,33 @@ bool MainThreadWebSocketChannel::connect(const KURL& url, const String& protocol
     return true;
 }
 
-WebSocketChannel::SendResult MainThreadWebSocketChannel::send(const String& message)
+void MainThreadWebSocketChannel::send(const String& message)
 {
     WTF_LOG(Network, "MainThreadWebSocketChannel %p send() Sending String '%s'", this, message.utf8().data());
     CString utf8 = message.utf8(StrictUTF8ConversionReplacingUnpairedSurrogatesWithFFFD);
     enqueueTextFrame(utf8);
     processOutgoingFrameQueue();
-    // m_channel->send() may happen later, thus it's not always possible to know whether
-    // the message has been sent to the socket successfully. In this case, we have no choice
-    // but to return SendSuccess.
-    return WebSocketChannel::SendSuccess;
 }
 
-WebSocketChannel::SendResult MainThreadWebSocketChannel::send(const ArrayBuffer& binaryData, unsigned byteOffset, unsigned byteLength)
+void MainThreadWebSocketChannel::send(const ArrayBuffer& binaryData, unsigned byteOffset, unsigned byteLength)
 {
     WTF_LOG(Network, "MainThreadWebSocketChannel %p send() Sending ArrayBuffer %p byteOffset=%u byteLength=%u", this, &binaryData, byteOffset, byteLength);
     enqueueRawFrame(WebSocketFrame::OpCodeBinary, static_cast<const char*>(binaryData.data()) + byteOffset, byteLength);
     processOutgoingFrameQueue();
-    return WebSocketChannel::SendSuccess;
 }
 
-WebSocketChannel::SendResult MainThreadWebSocketChannel::send(PassRefPtr<BlobDataHandle> binaryData)
+void MainThreadWebSocketChannel::send(PassRefPtr<BlobDataHandle> binaryData)
 {
     WTF_LOG(Network, "MainThreadWebSocketChannel %p send() Sending Blob '%s'", this, binaryData->uuid().utf8().data());
     enqueueBlobFrame(WebSocketFrame::OpCodeBinary, binaryData);
     processOutgoingFrameQueue();
-    return WebSocketChannel::SendSuccess;
 }
 
-WebSocketChannel::SendResult MainThreadWebSocketChannel::send(PassOwnPtr<Vector<char> > data)
+void MainThreadWebSocketChannel::send(PassOwnPtr<Vector<char> > data)
 {
     WTF_LOG(Network, "MainThreadWebSocketChannel %p send() Sending Vector %p", this, data.get());
     enqueueVector(WebSocketFrame::OpCodeBinary, data);
     processOutgoingFrameQueue();
-    return WebSocketChannel::SendSuccess;
 }
 
 void MainThreadWebSocketChannel::close(int code, const String& reason)
@@ -175,7 +167,7 @@ void MainThreadWebSocketChannel::clearDocument()
 {
     if (m_handshake)
         m_handshake->clearDocument();
-    m_document = 0;
+    m_document = nullptr;
 }
 
 void MainThreadWebSocketChannel::disconnectHandle()
@@ -200,11 +192,10 @@ void MainThreadWebSocketChannel::fail(const String& reason, MessageLevel level, 
     if (m_document) {
         InspectorInstrumentation::didReceiveWebSocketFrameError(m_document, m_identifier, reason);
         const String message = "WebSocket connection to '" + m_handshake->url().elidedString() + "' failed: " + reason;
-        m_document->addConsoleMessage(JSMessageSource, level, message, sourceURL, lineNumber);
+        m_document->addConsoleMessage(ConsoleMessage::create(JSMessageSource, level, message, sourceURL, lineNumber));
     }
     // Hybi-10 specification explicitly states we must not continue to handle incoming data
     // once the WebSocket connection is failed (section 7.1.7).
-    RefPtrWillBeRawPtr<MainThreadWebSocketChannel> protect(this); // The client can close the channel, potentially removing the last reference.
     m_shouldDiscardReceivedData = true;
     if (!m_buffer.isEmpty())
         skipBuffer(m_buffer.size()); // Save memory.
@@ -231,7 +222,7 @@ void MainThreadWebSocketChannel::disconnect()
 
     clearDocument();
 
-    m_client = 0;
+    m_client = nullptr;
     disconnectHandle();
 }
 
@@ -279,7 +270,7 @@ void MainThreadWebSocketChannel::didCloseSocketStream(SocketStreamHandle* handle
     // during opening handshake.
     if (!m_hasCalledDisconnectOnHandle && m_handshake->mode() == WebSocketHandshake::Incomplete && m_document) {
         const String message = "WebSocket connection to '" + m_handshake->url().elidedString() + "' failed: Connection closed before receiving a handshake response";
-        m_document->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message, m_sourceURLAtConstruction, m_lineNumberAtConstruction);
+        m_document->addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, message, m_sourceURLAtConstruction, m_lineNumberAtConstruction));
     }
 
     m_state = ChannelClosed;
@@ -289,7 +280,7 @@ void MainThreadWebSocketChannel::didCloseSocketStream(SocketStreamHandle* handle
         abortOutgoingFrameQueue();
     if (m_handle) {
         WebSocketChannelClient* client = m_client;
-        m_client = 0;
+        m_client = nullptr;
         clearDocument();
         m_handle = nullptr;
         if (client)
@@ -301,7 +292,6 @@ void MainThreadWebSocketChannel::didCloseSocketStream(SocketStreamHandle* handle
 void MainThreadWebSocketChannel::didReceiveSocketStreamData(SocketStreamHandle* handle, const char* data, int len)
 {
     WTF_LOG(Network, "MainThreadWebSocketChannel %p didReceiveSocketStreamData() Received %d bytes", this, len);
-    RefPtrWillBeRawPtr<MainThreadWebSocketChannel> protect(this); // The client can close the channel, potentially removing the last reference.
     ASSERT(handle == m_handle);
     if (!m_document)
         return;
@@ -372,8 +362,6 @@ void MainThreadWebSocketChannel::didFailSocketStream(SocketStreamHandle* handle,
     if (failingURL.isNull())
         failingURL = m_handshake->url().string();
     WTF_LOG(Network, "Error Message: '%s', FailURL: '%s'", message.utf8().data(), failingURL.utf8().data());
-
-    RefPtrWillBeRawPtr<WebSocketChannel> protect(this);
 
     if (m_state != ChannelClosing && m_state != ChannelClosed)
         callDidReceiveMessageError();
@@ -458,8 +446,6 @@ bool MainThreadWebSocketChannel::processOneItemFromBuffer()
         return false;
     }
 
-    RefPtrWillBeRawPtr<MainThreadWebSocketChannel> protect(this); // The client can close the channel, potentially removing the last reference.
-
     if (m_handshake->mode() == WebSocketHandshake::Incomplete) {
         int headerLength = m_handshake->readServerHandshake(m_buffer.data(), m_buffer.size());
         if (headerLength <= 0)
@@ -473,7 +459,7 @@ bool MainThreadWebSocketChannel::processOneItemFromBuffer()
 
             if (m_deflateFramer.enabled() && m_document) {
                 const String message = "WebSocket extension \"x-webkit-deflate-frame\" is deprecated";
-                m_document->addConsoleMessage(JSMessageSource, WarningMessageLevel, message, m_sourceURLAtConstruction, m_lineNumberAtConstruction);
+                m_document->addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel, message, m_sourceURLAtConstruction, m_lineNumberAtConstruction));
             }
 
             WTF_LOG(Network, "MainThreadWebSocketChannel %p Connected", this);
@@ -501,7 +487,6 @@ void MainThreadWebSocketChannel::resumeTimerFired(Timer<MainThreadWebSocketChann
 {
     ASSERT_UNUSED(timer, timer == &m_resumeTimer);
 
-    RefPtrWillBeRawPtr<MainThreadWebSocketChannel> protect(this); // The client can close the channel, potentially removing the last reference.
     processBuffer();
     if (!m_suspended && m_client && (m_state == ChannelClosed) && m_handle)
         didCloseSocketStream(m_handle.get());
@@ -867,4 +852,14 @@ bool MainThreadWebSocketChannel::sendFrame(WebSocketFrame::OpCode opCode, const 
     return m_handle->send(frameData.data(), frameData.size());
 }
 
-} // namespace WebCore
+void MainThreadWebSocketChannel::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
+    visitor->trace(m_client);
+    visitor->trace(m_handshake);
+    visitor->trace(m_handle);
+    WebSocketChannel::trace(visitor);
+    SocketStreamHandleClient::trace(visitor);
+}
+
+} // namespace blink

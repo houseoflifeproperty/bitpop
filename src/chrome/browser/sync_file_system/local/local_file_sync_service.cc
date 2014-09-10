@@ -4,7 +4,9 @@
 
 #include "chrome/browser/sync_file_system/local/local_file_sync_service.h"
 
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync_file_system/file_change.h"
@@ -38,6 +40,12 @@ void PrepareForProcessRemoteChangeCallbackAdapter(
     const LocalFileSyncInfo& sync_file_info,
     webkit_blob::ScopedFile snapshot) {
   callback.Run(status, sync_file_info.metadata, sync_file_info.changes);
+}
+
+void InvokeCallbackOnNthInvocation(int* count, const base::Closure& callback) {
+  --*count;
+  if (*count <= 0)
+    callback.Run();
 }
 
 }  // namespace
@@ -105,7 +113,10 @@ scoped_ptr<LocalFileSyncService> LocalFileSyncService::Create(
 scoped_ptr<LocalFileSyncService> LocalFileSyncService::CreateForTesting(
     Profile* profile,
     leveldb::Env* env) {
-  return make_scoped_ptr(new LocalFileSyncService(profile, env));
+  scoped_ptr<LocalFileSyncService> sync_service(
+      new LocalFileSyncService(profile, env));
+  sync_service->sync_context_->set_mock_notify_changes_duration_in_sec(0);
+  return sync_service.Pass();
 }
 
 LocalFileSyncService::~LocalFileSyncService() {
@@ -175,7 +186,7 @@ void LocalFileSyncService::HasPendingLocalChanges(
     const FileSystemURL& url,
     const HasPendingLocalChangeCallback& callback) {
   if (!ContainsKey(origin_to_contexts_, url.origin())) {
-    base::MessageLoopProxy::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::Bind(callback, SYNC_FILE_ERROR_INVALID_URL, false));
     return;
@@ -184,10 +195,20 @@ void LocalFileSyncService::HasPendingLocalChanges(
       origin_to_contexts_[url.origin()], url, callback);
 }
 
-void LocalFileSyncService::PromoteDemotedChanges() {
+void LocalFileSyncService::PromoteDemotedChanges(
+    const base::Closure& callback) {
+  if (origin_to_contexts_.empty()) {
+    callback.Run();
+    return;
+  }
+
+  base::Closure completion_callback =
+      base::Bind(&InvokeCallbackOnNthInvocation,
+                 base::Owned(new int(origin_to_contexts_.size())), callback);
   for (OriginToContext::iterator iter = origin_to_contexts_.begin();
        iter != origin_to_contexts_.end(); ++iter)
-    sync_context_->PromoteDemotedChanges(iter->first, iter->second);
+    sync_context_->PromoteDemotedChanges(iter->first, iter->second,
+                                         completion_callback);
 }
 
 void LocalFileSyncService::GetLocalFileMetadata(

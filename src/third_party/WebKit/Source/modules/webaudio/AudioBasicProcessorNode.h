@@ -26,11 +26,10 @@
 #define AudioBasicProcessorNode_h
 
 #include "modules/webaudio/AudioNode.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
+#include "wtf/Forward.h"
 #include "wtf/Threading.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBus;
 class AudioNodeInput;
@@ -40,8 +39,11 @@ class AudioProcessor;
 class AudioBasicProcessorNode : public AudioNode {
 public:
     AudioBasicProcessorNode(AudioContext*, float sampleRate);
+    virtual ~AudioBasicProcessorNode();
+    virtual void trace(Visitor*) OVERRIDE;
 
     // AudioNode
+    virtual void dispose() OVERRIDE FINAL;
     virtual void process(size_t framesToProcess) OVERRIDE FINAL;
     virtual void pullInputs(size_t framesToProcess) OVERRIDE FINAL;
     virtual void initialize() OVERRIDE FINAL;
@@ -58,9 +60,9 @@ protected:
     virtual double latencyTime() const OVERRIDE FINAL;
 
     AudioProcessor* processor() { return m_processor.get(); }
-    OwnPtr<AudioProcessor> m_processor;
+    OwnPtrWillBeMember<AudioProcessor> m_processor;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioBasicProcessorNode_h

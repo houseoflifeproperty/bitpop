@@ -31,10 +31,10 @@
 #include "config.h"
 #include "core/dom/custom/CustomElementException.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 
-namespace WebCore {
+namespace blink {
 
 String CustomElementException::preamble(const AtomicString& type)
 {
@@ -61,7 +61,7 @@ void CustomElementException::throwException(Reason reason, const AtomicString& t
         return;
 
     case ContextDestroyedRegisteringDefinition:
-        exceptionState.throwDOMException(NotSupportedError, preamble(type) + "The context is no longer valid.");
+        exceptionState.throwDOMException(InvalidStateError, preamble(type) + "The context is no longer valid.");
         return;
 
     case ExtendsIsInvalidName:
@@ -92,4 +92,4 @@ void CustomElementException::throwException(Reason reason, const AtomicString& t
     ASSERT_NOT_REACHED();
 }
 
-} // namespace WebCore
+} // namespace blink

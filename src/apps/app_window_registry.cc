@@ -2,9 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/app_window.h"
 #include "apps/app_window_registry.h"
-#include "apps/apps_client.h"
+
+#include <string>
+#include <vector>
+
+#include "apps/app_window.h"
+#include "apps/ui/apps_client.h"
 #include "apps/ui/native_app_window.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "content/public/browser/browser_context.h"
@@ -276,13 +280,13 @@ void AppWindowRegistry::CloseAllAppWindows() {
 void AppWindowRegistry::OnDevToolsStateChanged(
     content::DevToolsAgentHost* agent_host,
     bool attached) {
-  content::RenderViewHost* rvh = agent_host->GetRenderViewHost();
+  content::WebContents* web_contents = agent_host->GetWebContents();
   // Ignore unrelated notifications.
-  if (!rvh ||
-      rvh->GetSiteInstance()->GetProcess()->GetBrowserContext() != context_)
+  if (!web_contents || web_contents->GetBrowserContext() != context_)
     return;
 
-  std::string key = GetWindowKeyForRenderViewHost(this, rvh);
+  std::string key =
+      GetWindowKeyForRenderViewHost(this, web_contents->GetRenderViewHost());
   if (key.empty())
     return;
 

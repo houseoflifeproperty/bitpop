@@ -1,32 +1,30 @@
 // Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-//
-// A class to track the per-type scheduling data.
+
 #ifndef SYNC_SESSIONS_DATA_TYPE_TRACKER_H_
 #define SYNC_SESSIONS_DATA_TYPE_TRACKER_H_
 
-#include <deque>
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/time/time.h"
-#include "sync/notifier/dropped_invalidation_tracker.h"
-#include "sync/notifier/single_object_invalidation_set.h"
+#include "sync/internal_api/public/base/invalidation_interface.h"
+#include "sync/internal_api/public/base/model_type.h"
 #include "sync/protocol/sync.pb.h"
 
 namespace syncer {
 
-class Invalidation;
-class SingleObjectInvalidationSet;
+class InvalidationInterface;
 
 namespace sessions {
 
-typedef std::deque<std::string> PayloadList;
-
+// A class to track the per-type scheduling data.
 class DataTypeTracker {
  public:
-  explicit DataTypeTracker(const invalidation::ObjectId& object_id);
+  explicit DataTypeTracker();
   ~DataTypeTracker();
 
   // For STL compatibility, we do not forbid the creation of a default copy
@@ -39,8 +37,10 @@ class DataTypeTracker {
   void RecordLocalRefreshRequest();
 
   // Tracks that we received invalidation notifications for this type.
-  void RecordRemoteInvalidations(
-      const SingleObjectInvalidationSet& invalidations);
+  void RecordRemoteInvalidation(scoped_ptr<InvalidationInterface> incoming);
+
+  // Takes note that initial sync is pending for this type.
+  void RecordInitialSyncRequired();
 
   // Records that a sync cycle has been performed successfully.
   // Generally, this means that all local changes have been committed and all
@@ -69,6 +69,9 @@ class DataTypeTracker {
 
   // Returns true if an explicit refresh request is still outstanding.
   bool HasRefreshRequestPending() const;
+
+  // Returns true if this type is requesting an initial sync.
+  bool IsInitialSyncRequired() const;
 
   // Fills in the legacy invalidaiton payload information fields.
   void SetLegacyNotificationHint(
@@ -105,19 +108,27 @@ class DataTypeTracker {
   // The list of invalidations received since the last successful sync cycle.
   // This list may be incomplete.  See also:
   // drop_tracker_.IsRecoveringFromDropEvent() and server_payload_overflow_.
-  SingleObjectInvalidationSet pending_invalidations_;
+  //
+  // This list takes ownership of its contents.
+  ScopedVector<InvalidationInterface> pending_invalidations_;
 
   size_t payload_buffer_size_;
+
+  // Set to true if this type is ready for, but has not yet completed initial
+  // sync.
+  bool initial_sync_required_;
 
   // If !unthrottle_time_.is_null(), this type is throttled and may not download
   // or commit data until the specified time.
   base::TimeTicks unthrottle_time_;
 
   // A helper to keep track invalidations we dropped due to overflow.
-  DroppedInvalidationTracker drop_tracker_;
+  scoped_ptr<InvalidationInterface> last_dropped_invalidation_;
+
+  DISALLOW_COPY_AND_ASSIGN(DataTypeTracker);
 };
 
-}  // namespace syncer
 }  // namespace sessions
+}  // namespace syncer
 
 #endif  // SYNC_SESSIONS_DATA_TYPE_TRACKER_H_

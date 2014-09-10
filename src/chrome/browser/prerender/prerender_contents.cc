@@ -47,6 +47,7 @@ using content::DownloadItem;
 using content::OpenURLParams;
 using content::RenderViewHost;
 using content::ResourceRedirectDetails;
+using content::ResourceType;
 using content::SessionStorageNamespace;
 using content::WebContents;
 
@@ -239,7 +240,6 @@ PrerenderContents::PrerenderContents(
       origin_(origin),
       experiment_id_(experiment_id),
       creator_child_id_(-1),
-      main_frame_id_(0),
       cookie_status_(0),
       cookie_send_type_(COOKIE_SEND_TYPE_NONE),
       network_bytes_(0) {
@@ -619,21 +619,17 @@ void PrerenderContents::DidStopLoading(
 }
 
 void PrerenderContents::DocumentLoadedInFrame(
-    int64 frame_id,
-    RenderViewHost* render_view_host) {
-  if (frame_id == main_frame_id_)
+    content::RenderFrameHost* render_frame_host) {
+  if (!render_frame_host->GetParent())
     NotifyPrerenderDomContentLoaded();
 }
 
 void PrerenderContents::DidStartProvisionalLoadForFrame(
-    int64 frame_id,
-    int64 parent_frame_id,
-    bool is_main_frame,
+    content::RenderFrameHost* render_frame_host,
     const GURL& validated_url,
     bool is_error_page,
-    bool is_iframe_srcdoc,
-    RenderViewHost* render_view_host) {
-  if (is_main_frame) {
+    bool is_iframe_srcdoc) {
+  if (!render_frame_host->GetParent()) {
     if (!CheckURL(validated_url))
       return;
 
@@ -647,23 +643,10 @@ void PrerenderContents::DidStartProvisionalLoadForFrame(
   }
 }
 
-void PrerenderContents::DidCommitProvisionalLoadForFrame(
-      int64 frame_id,
-      const base::string16& frame_unique_name,
-      bool is_main_frame,
-      const GURL& url,
-      content::PageTransition transition_type,
-      RenderViewHost* render_view_host) {
-  if (is_main_frame) {
-    main_frame_id_ = frame_id;
-  }
-}
-
-void PrerenderContents::DidFinishLoad(int64 frame_id,
-                                      const GURL& validated_url,
-                                      bool is_main_frame,
-                                      RenderViewHost* render_view_host) {
-  if (is_main_frame)
+void PrerenderContents::DidFinishLoad(
+    content::RenderFrameHost* render_frame_host,
+    const GURL& validated_url) {
+  if (!render_frame_host->GetParent())
     has_finished_loading_ = true;
 }
 
@@ -701,7 +684,7 @@ void PrerenderContents::DidGetRedirectForResourceRequest(
   // it's a redirect on the top-level resource, the name needs to be remembered
   // for future matching, and if it redirects to an https resource, it needs to
   // be canceled. If a subresource is redirected, nothing changes.
-  if (details.resource_type != ResourceType::MAIN_FRAME)
+  if (details.resource_type != content::RESOURCE_TYPE_MAIN_FRAME)
     return;
   CheckURL(details.new_url);
 }

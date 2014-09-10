@@ -30,7 +30,7 @@
 #include "config.h"
 #include "core/inspector/InspectorDOMStorageAgent.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/InspectorFrontend.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
@@ -46,7 +46,7 @@
 #include "platform/JSONValues.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace DOMStorageAgentState {
 static const char domStorageAgentEnabled[] = "domStorageAgentEnabled";
@@ -76,6 +76,12 @@ InspectorDOMStorageAgent::InspectorDOMStorageAgent(InspectorPageAgent* pageAgent
 
 InspectorDOMStorageAgent::~InspectorDOMStorageAgent()
 {
+}
+
+void InspectorDOMStorageAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_pageAgent);
+    InspectorBaseAgent::trace(visitor);
 }
 
 void InspectorDOMStorageAgent::setFrontend(InspectorFrontend* frontend)
@@ -222,5 +228,5 @@ PassOwnPtrWillBeRawPtr<StorageArea> InspectorDOMStorageAgent::findStorageArea(Er
     return m_pageAgent->page()->sessionStorage()->storageArea(frame->document()->securityOrigin());
 }
 
-} // namespace WebCore
+} // namespace blink
 

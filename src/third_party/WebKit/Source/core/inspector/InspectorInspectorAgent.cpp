@@ -31,8 +31,8 @@
 #include "config.h"
 #include "core/inspector/InspectorInspectorAgent.h"
 
-#include "bindings/v8/DOMWrapperWorld.h"
-#include "bindings/v8/ScriptController.h"
+#include "bindings/core/v8/DOMWrapperWorld.h"
+#include "bindings/core/v8/ScriptController.h"
 #include "core/InspectorFrontend.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
@@ -46,7 +46,7 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace InspectorAgentState {
 static const char inspectorAgentEnabled[] = "inspectorAgentEnabled";
@@ -63,7 +63,16 @@ InspectorInspectorAgent::InspectorInspectorAgent(Page* page, InjectedScriptManag
 
 InspectorInspectorAgent::~InspectorInspectorAgent()
 {
+#if !ENABLE(OILPAN)
     m_instrumentingAgents->setInspectorInspectorAgent(0);
+#endif
+}
+
+void InspectorInspectorAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_inspectedPage);
+    visitor->trace(m_injectedScriptManager);
+    InspectorBaseAgent::trace(visitor);
 }
 
 void InspectorInspectorAgent::didClearDocumentOfWindowObject(LocalFrame* frame)
@@ -135,10 +144,12 @@ void InspectorInspectorAgent::domContentLoadedEventFired(LocalFrame* frame)
 
 void InspectorInspectorAgent::evaluateForTestInFrontend(long callId, const String& script)
 {
-    if (m_state->getBoolean(InspectorAgentState::inspectorAgentEnabled))
+    if (m_state->getBoolean(InspectorAgentState::inspectorAgentEnabled)) {
         m_frontend->inspector()->evaluateForTestInFrontend(static_cast<int>(callId), script);
-    else
+        m_frontend->inspector()->flush();
+    } else {
         m_pendingEvaluateTestCommands.append(pair<long, String>(callId, script));
+    }
 }
 
 void InspectorInspectorAgent::setInjectedScriptForOrigin(const String& origin, const String& source)
@@ -158,4 +169,4 @@ void InspectorInspectorAgent::inspect(PassRefPtr<TypeBuilder::Runtime::RemoteObj
     m_pendingInspectData.second = hints;
 }
 
-} // namespace WebCore
+} // namespace blink

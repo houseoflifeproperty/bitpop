@@ -40,7 +40,7 @@
 #include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/BitVector.h"
 
-namespace WebCore {
+namespace blink {
 
 static bool isSkippableComponentForInvalidation(const CSSSelector& selector)
 {
@@ -98,6 +98,7 @@ static bool isSkippableComponentForInvalidation(const CSSSelector& selector)
     case CSSSelector::PseudoInRange:
     case CSSSelector::PseudoOutOfRange:
     case CSSSelector::PseudoUnresolved:
+    case CSSSelector::PseudoListBox:
         return true;
     default:
         return false;
@@ -517,6 +518,7 @@ StyleInvalidator& RuleFeatureSet::styleInvalidator()
 
 void RuleFeatureSet::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(siblingRules);
     visitor->trace(uncommonAttributeRules);
     visitor->trace(m_classInvalidationSets);
@@ -524,6 +526,7 @@ void RuleFeatureSet::trace(Visitor* visitor)
     visitor->trace(m_idInvalidationSets);
     visitor->trace(m_pseudoInvalidationSets);
     visitor->trace(m_styleInvalidator);
+#endif
 }
 
-} // namespace WebCore
+} // namespace blink

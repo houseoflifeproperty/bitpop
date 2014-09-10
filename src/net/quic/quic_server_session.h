@@ -14,6 +14,7 @@
 #include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/quic/quic_crypto_server_stream.h"
+#include "net/quic/quic_per_connection_packet_writer.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_session.h"
 
@@ -38,13 +39,15 @@ class QuicServerSessionVisitor {
 
   virtual void OnConnectionClosed(QuicConnectionId connection_id,
                                   QuicErrorCode error) = 0;
-  virtual void OnWriteBlocked(QuicBlockedWriterInterface* writer) = 0;
+  virtual void OnWriteBlocked(QuicBlockedWriterInterface* blocked_writer) = 0;
 };
 
 class QuicServerSession : public QuicSession {
  public:
+  // Takes ownership of connection_packet_writer
   QuicServerSession(const QuicConfig& config,
                     QuicConnection* connection,
+                    QuicPerConnectionPacketWriter* connection_packet_writer,
                     QuicServerSessionVisitor* visitor);
 
   // Override the base class to notify the owner of the connection close.
@@ -58,6 +61,9 @@ class QuicServerSession : public QuicSession {
   const QuicCryptoServerStream* crypto_stream() const {
     return crypto_stream_.get();
   }
+
+  // Override base class to process FEC config received from client.
+  virtual void OnConfigNegotiated() OVERRIDE;
 
  protected:
   // QuicSession methods:
@@ -77,6 +83,7 @@ class QuicServerSession : public QuicSession {
   friend class test::QuicServerSessionPeer;
 
   scoped_ptr<QuicCryptoServerStream> crypto_stream_;
+  scoped_ptr<QuicPerConnectionPacketWriter> connection_packet_writer_;
   QuicServerSessionVisitor* visitor_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicServerSession);

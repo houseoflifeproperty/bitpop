@@ -7,13 +7,14 @@
 #ifndef V8TestException_h
 #define V8TestException_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8DOMWrapper.h"
+#include "bindings/core/v8/WrapperTypeInfo.h"
 #include "bindings/tests/idls/TestException.h"
-#include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8DOMWrapper.h"
-#include "bindings/v8/WrapperTypeInfo.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class V8TestException {
 public:
@@ -22,23 +23,23 @@ public:
     static v8::Handle<v8::FunctionTemplate> domTemplate(v8::Isolate*);
     static TestException* toNative(v8::Handle<v8::Object> object)
     {
-        return fromInternalPointer(object->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
+        return fromInternalPointer(blink::toInternalPointer(object));
     }
     static TestException* toNativeWithTypeCheck(v8::Isolate*, v8::Handle<v8::Value>);
     static const WrapperTypeInfo wrapperTypeInfo;
-    static void derefObject(void*);
+    static void derefObject(ScriptWrappableBase* internalPointer);
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + 0;
-    static inline void* toInternalPointer(TestException* impl)
+    static inline ScriptWrappableBase* toInternalPointer(TestException* impl)
     {
-        return impl;
+        return reinterpret_cast<ScriptWrappableBase*>(static_cast<void*>(impl));
     }
 
-    static inline TestException* fromInternalPointer(void* object)
+    static inline TestException* fromInternalPointer(ScriptWrappableBase* internalPointer)
     {
-        return static_cast<TestException*>(object);
+        return reinterpret_cast<TestException*>(static_cast<void*>(internalPointer));
     }
-    static void installPerContextEnabledProperties(v8::Handle<v8::Object>, TestException*, v8::Isolate*) { }
-    static void installPerContextEnabledMethods(v8::Handle<v8::Object>, v8::Isolate*) { }
+    static void installConditionallyEnabledProperties(v8::Handle<v8::Object>, v8::Isolate*) { }
+    static void installConditionallyEnabledMethods(v8::Handle<v8::Object>, v8::Isolate*) { }
 
 private:
     friend v8::Handle<v8::Object> wrap(TestException*, v8::Handle<v8::Object> creationContext, v8::Isolate*);

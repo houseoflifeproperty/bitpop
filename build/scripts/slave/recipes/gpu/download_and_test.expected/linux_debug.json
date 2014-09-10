@@ -17,15 +17,7 @@
       "--url",
       "https://chromium.googlesource.com/external/swarming.client.git"
     ],
-    "name": "git setup (swarming_client)",
-    "seed_steps": [
-      "git setup (swarming_client)",
-      "git fetch (swarming_client)",
-      "git checkout (swarming_client)",
-      "git clean (swarming_client)",
-      "submodule sync (swarming_client)",
-      "submodule update (swarming_client)"
-    ]
+    "name": "git setup (swarming_client)"
   },
   {
     "cmd": [
@@ -92,7 +84,6 @@
     ]
   },
   {
-    "can_fail_build": false,
     "cmd": [
       "killall",
       "-9",
@@ -102,7 +93,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -137,7 +127,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -172,7 +161,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -207,7 +195,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -245,7 +232,8 @@
       "--build-revision",
       "160000",
       "--test-machine-name",
-      "linux debug tester"
+      "linux debug tester",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "env": {
       "CHROME_DEVEL_SANDBOX": "/opt/chromium/chrome_sandbox"
@@ -254,7 +242,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -297,7 +284,8 @@
       "--os-type",
       "linux",
       "--test-machine-name",
-      "linux debug tester"
+      "linux debug tester",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "env": {
       "CHROME_DEVEL_SANDBOX": "/opt/chromium/chrome_sandbox"
@@ -306,7 +294,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -340,7 +327,8 @@
       "--output-format=gtest",
       "--browser=debug",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "env": {
       "CHROME_DEVEL_SANDBOX": "/opt/chromium/chrome_sandbox"
@@ -349,7 +337,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -383,7 +370,8 @@
       "--output-format=gtest",
       "--browser=debug",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "env": {
       "CHROME_DEVEL_SANDBOX": "/opt/chromium/chrome_sandbox"
@@ -392,7 +380,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -426,7 +413,8 @@
       "--output-format=gtest",
       "--browser=debug",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "env": {
       "CHROME_DEVEL_SANDBOX": "/opt/chromium/chrome_sandbox"
@@ -435,7 +423,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -469,7 +456,8 @@
       "--output-format=gtest",
       "--browser=debug",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "env": {
       "CHROME_DEVEL_SANDBOX": "/opt/chromium/chrome_sandbox"
@@ -478,7 +466,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -512,7 +499,8 @@
       "--output-format=gtest",
       "--browser=debug",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "env": {
       "CHROME_DEVEL_SANDBOX": "/opt/chromium/chrome_sandbox"
@@ -521,7 +509,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -555,7 +542,8 @@
       "--output-format=gtest",
       "--browser=debug",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "env": {
       "CHROME_DEVEL_SANDBOX": "/opt/chromium/chrome_sandbox"
@@ -564,7 +552,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -602,7 +589,8 @@
       "--build-revision",
       "160000",
       "--test-machine-name",
-      "linux debug tester"
+      "linux debug tester",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "env": {
       "CHROME_DEVEL_SANDBOX": "/opt/chromium/chrome_sandbox"
@@ -611,7 +599,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",

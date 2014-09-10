@@ -31,6 +31,7 @@
 #include "config.h"
 #include "modules/webdatabase/SQLTransactionClient.h"
 
+#include "core/dom/CrossThreadTask.h"
 #include "core/dom/ExecutionContext.h"
 #include "modules/webdatabase/DatabaseBackendBase.h"
 #include "modules/webdatabase/DatabaseContext.h"
@@ -40,12 +41,12 @@
 #include "public/platform/WebDatabaseObserver.h"
 #include "wtf/Functional.h"
 
-namespace WebCore {
+namespace blink {
 
 static void databaseModified(DatabaseBackendBase* database)
 {
-    if (blink::Platform::current()->databaseObserver()) {
-        blink::Platform::current()->databaseObserver()->databaseModified(
+    if (Platform::current()->databaseObserver()) {
+        Platform::current()->databaseObserver()->databaseModified(
             createDatabaseIdentifierFromSecurityOrigin(database->securityOrigin()),
             database->stringIdentifier());
     }
@@ -55,7 +56,7 @@ void SQLTransactionClient::didCommitWriteTransaction(DatabaseBackendBase* databa
 {
     ExecutionContext* executionContext = database->databaseContext()->executionContext();
     if (!executionContext->isContextThread()) {
-        executionContext->postTask(bind(&databaseModified, PassRefPtrWillBeRawPtr<DatabaseBackendBase>(database)));
+        executionContext->postTask(createCrossThreadTask(&databaseModified, PassRefPtrWillBeRawPtr<DatabaseBackendBase>(database)));
         return;
     }
 
@@ -70,4 +71,4 @@ bool SQLTransactionClient::didExceedQuota(DatabaseBackendBase* database)
     return false;
 }
 
-}
+} // namespace blink

@@ -23,7 +23,7 @@
 
 #include "core/rendering/RenderInline.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderSVGInline : public RenderInline {
 public:
@@ -39,15 +39,15 @@ public:
     // Chapter 10.4 of the SVG Specification say that we should use the
     // object bounding box of the parent text element.
     // We search for the root text element and take its bounding box.
-    // It is also necessary to take the stroke and repaint rect of
+    // It is also necessary to take the stroke and paint invalidation rect of
     // this element, since we need it for filters.
     virtual FloatRect objectBoundingBox() const OVERRIDE FINAL;
     virtual FloatRect strokeBoundingBox() const OVERRIDE FINAL;
     virtual FloatRect paintInvalidationRectInLocalCoordinates() const OVERRIDE FINAL;
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE FINAL;
-    virtual void computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect&, bool fixed = false) const OVERRIDE FINAL;
-    virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const OVERRIDE FINAL;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const OVERRIDE FINAL;
+    virtual void computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect&, const PaintInvalidationState*) const OVERRIDE FINAL;
+    virtual void mapLocalToContainer(const RenderLayerModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = 0) const OVERRIDE FINAL;
     virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const OVERRIDE FINAL;
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const OVERRIDE FINAL;
 

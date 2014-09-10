@@ -40,7 +40,7 @@
 #include "wtf/HashMap.h"
 #include "wtf/text/CString.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -57,18 +57,20 @@ static bool operator!=(const PresentationAttributeCacheKey& a, const Presentatio
     return a.attributesAndValues != b.attributesAndValues;
 }
 
-struct PresentationAttributeCacheEntry {
-    WTF_MAKE_FAST_ALLOCATED;
+struct PresentationAttributeCacheEntry FINAL : public NoBaseWillBeGarbageCollectedFinalized<PresentationAttributeCacheEntry> {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
+    void trace(Visitor* visitor) { visitor->trace(value); }
+
     PresentationAttributeCacheKey key;
-    RefPtr<StylePropertySet> value;
+    RefPtrWillBeMember<StylePropertySet> value;
 };
 
-typedef HashMap<unsigned, OwnPtr<PresentationAttributeCacheEntry>, AlreadyHashed> PresentationAttributeCache;
+typedef WillBeHeapHashMap<unsigned, OwnPtrWillBeMember<PresentationAttributeCacheEntry>, AlreadyHashed> PresentationAttributeCache;
 static PresentationAttributeCache& presentationAttributeCache()
 {
-    DEFINE_STATIC_LOCAL(PresentationAttributeCache, cache, ());
-    return cache;
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<PresentationAttributeCache>, cache, (adoptPtrWillBeNoop(new PresentationAttributeCache())));
+    return *cache;
 }
 
 class PresentationAttributeCacheCleaner {
@@ -124,9 +126,9 @@ static void makePresentationAttributeCacheKey(Element& element, PresentationAttr
     // Interpretation of the size attributes on <input> depends on the type attribute.
     if (isHTMLInputElement(element))
         return;
-    AttributeCollection attributes = element.attributes();
-    AttributeCollection::const_iterator end = attributes.end();
-    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+    AttributeCollection attributes = element.attributesWithoutUpdate();
+    AttributeCollection::iterator end = attributes.end();
+    for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
         if (!element.isPresentationAttribute(it->name()))
             continue;
         if (!it->namespaceURI().isNull())
@@ -153,7 +155,7 @@ static unsigned computePresentationAttributeCacheHash(const PresentationAttribut
     return WTF::pairIntHash(key.tagName->existingHash(), attributeHash);
 }
 
-PassRefPtr<StylePropertySet> computePresentationAttributeStyle(Element& element)
+PassRefPtrWillBeRawPtr<StylePropertySet> computePresentationAttributeStyle(Element& element)
 {
     DEFINE_STATIC_LOCAL(PresentationAttributeCacheCleaner, cacheCleaner, ());
 
@@ -173,22 +175,22 @@ PassRefPtr<StylePropertySet> computePresentationAttributeStyle(Element& element)
         cacheValue = 0;
     }
 
-    RefPtr<StylePropertySet> style;
+    RefPtrWillBeRawPtr<StylePropertySet> style = nullptr;
     if (cacheHash && cacheValue->value) {
         style = cacheValue->value->value;
         cacheCleaner.didHitPresentationAttributeCache();
     } else {
         style = MutableStylePropertySet::create(element.isSVGElement() ? SVGAttributeMode : HTMLAttributeMode);
-        AttributeCollection attributes = element.attributes();
-        AttributeCollection::const_iterator end = attributes.end();
-        for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it)
+        AttributeCollection attributes = element.attributesWithoutUpdate();
+        AttributeCollection::iterator end = attributes.end();
+        for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it)
             element.collectStyleForPresentationAttribute(it->name(), it->value(), toMutableStylePropertySet(style));
     }
 
     if (!cacheHash || cacheValue->value)
         return style.release();
 
-    OwnPtr<PresentationAttributeCacheEntry> newEntry = adoptPtr(new PresentationAttributeCacheEntry);
+    OwnPtrWillBeRawPtr<PresentationAttributeCacheEntry> newEntry = adoptPtrWillBeNoop(new PresentationAttributeCacheEntry);
     newEntry->key = cacheKey;
     newEntry->value = style;
 
@@ -205,4 +207,4 @@ PassRefPtr<StylePropertySet> computePresentationAttributeStyle(Element& element)
     return style.release();
 }
 
-} // namespace WebCore
+} // namespace blink

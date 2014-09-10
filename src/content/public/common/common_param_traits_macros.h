@@ -13,6 +13,7 @@
 #include "content/public/common/referrer.h"
 #include "content/public/common/security_style.h"
 #include "content/public/common/ssl_status.h"
+#include "content/public/common/web_preferences.h"
 #include "content/public/common/webplugininfo.h"
 #include "ipc/ipc_message_macros.h"
 #include "net/base/network_change_notifier.h"
@@ -23,7 +24,6 @@
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/web/WebWindowFeatures.h"
 #include "ui/base/window_open_disposition.h"
-#include "webkit/common/webpreferences.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -37,11 +37,13 @@ IPC_ENUM_TRAITS_MAX_VALUE(content::SecurityStyle,
                           content::SECURITY_STYLE_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebReferrerPolicy,
                           blink::WebReferrerPolicyLast)
-IPC_ENUM_TRAITS_MAX_VALUE(webkit_glue::EditingBehavior,
-                          webkit_glue::EDITING_BEHAVIOR_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(content::EditingBehavior,
+                          content::EDITING_BEHAVIOR_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(WindowOpenDisposition,
                           WINDOW_OPEN_DISPOSITION_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(net::RequestPriority, net::MAXIMUM_PRIORITY)
+IPC_ENUM_TRAITS_MAX_VALUE(content::V8CacheOptions,
+                          content::V8_CACHE_OPTIONS_LAST)
 
 IPC_STRUCT_TRAITS_BEGIN(blink::WebPoint)
   IPC_STRUCT_TRAITS_MEMBER(x)
@@ -87,7 +89,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPluginInfo)
   IPC_STRUCT_TRAITS_MEMBER(pepper_permissions)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(WebPreferences)
+IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(standard_font_family_map)
   IPC_STRUCT_TRAITS_MEMBER(fixed_font_family_map)
   IPC_STRUCT_TRAITS_MEMBER(serif_font_family_map)
@@ -107,7 +109,6 @@ IPC_STRUCT_TRAITS_BEGIN(WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(plugins_enabled)
   IPC_STRUCT_TRAITS_MEMBER(dom_paste_enabled)
   IPC_STRUCT_TRAITS_MEMBER(inspector_settings)
-  IPC_STRUCT_TRAITS_MEMBER(site_specific_quirks_enabled)
   IPC_STRUCT_TRAITS_MEMBER(shrinks_standalone_images_to_fit)
   IPC_STRUCT_TRAITS_MEMBER(uses_universal_detector)
   IPC_STRUCT_TRAITS_MEMBER(text_areas_are_resizable)
@@ -150,8 +151,6 @@ IPC_STRUCT_TRAITS_BEGIN(WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(accelerated_filters_enabled)
   IPC_STRUCT_TRAITS_MEMBER(deferred_filters_enabled)
   IPC_STRUCT_TRAITS_MEMBER(container_culling_enabled)
-  IPC_STRUCT_TRAITS_MEMBER(gesture_tap_highlight_enabled)
-  IPC_STRUCT_TRAITS_MEMBER(accelerated_compositing_for_video_enabled)
   IPC_STRUCT_TRAITS_MEMBER(allow_displaying_insecure_content)
   IPC_STRUCT_TRAITS_MEMBER(allow_running_insecure_content)
   IPC_STRUCT_TRAITS_MEMBER(enable_scroll_animator)
@@ -171,19 +170,22 @@ IPC_STRUCT_TRAITS_BEGIN(WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(supports_multiple_windows)
   IPC_STRUCT_TRAITS_MEMBER(viewport_enabled)
   IPC_STRUCT_TRAITS_MEMBER(viewport_meta_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(use_expanded_heuristics_for_gpu_rasterization)
   IPC_STRUCT_TRAITS_MEMBER(main_frame_resizes_are_orientation_changes)
   IPC_STRUCT_TRAITS_MEMBER(initialize_at_minimum_page_scale)
   IPC_STRUCT_TRAITS_MEMBER(smart_insert_delete_enabled)
-  IPC_STRUCT_TRAITS_MEMBER(compositor_touch_hit_testing)
   IPC_STRUCT_TRAITS_MEMBER(cookie_enabled)
   IPC_STRUCT_TRAITS_MEMBER(navigate_on_drag_drop)
   IPC_STRUCT_TRAITS_MEMBER(spatial_navigation_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(v8_cache_options)
   IPC_STRUCT_TRAITS_MEMBER(pepper_accelerated_video_decode_enabled)
 #if defined(OS_ANDROID)
   IPC_STRUCT_TRAITS_MEMBER(text_autosizing_enabled)
   IPC_STRUCT_TRAITS_MEMBER(font_scale_factor)
   IPC_STRUCT_TRAITS_MEMBER(device_scale_adjustment)
   IPC_STRUCT_TRAITS_MEMBER(force_enable_zoom)
+  IPC_STRUCT_TRAITS_MEMBER(fullscreen_supported)
+  IPC_STRUCT_TRAITS_MEMBER(disallow_fullscreen_for_non_media_elements)
   IPC_STRUCT_TRAITS_MEMBER(double_tap_to_zoom_enabled)
   IPC_STRUCT_TRAITS_MEMBER(user_gesture_required_for_media_playback)
   IPC_STRUCT_TRAITS_MEMBER(default_video_poster_url)

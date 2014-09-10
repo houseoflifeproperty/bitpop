@@ -19,6 +19,7 @@ import android.webkit.ValueCallback;
 
 import org.chromium.base.ContentUriUtils;
 import org.chromium.base.ThreadUtils;
+import org.chromium.content.browser.ContentVideoView;
 import org.chromium.content.browser.ContentViewCore;
 
 /**
@@ -178,13 +179,13 @@ class AwWebContentsDelegateAdapter extends AwWebContentsDelegate {
         params.capture = capture;
 
         mContentsClient.showFileChooser(new ValueCallback<String[]>() {
-            boolean completed = false;
+            boolean mCompleted = false;
             @Override
             public void onReceiveValue(String[] results) {
-                if (completed) {
+                if (mCompleted) {
                     throw new IllegalStateException("Duplicate showFileChooser result");
                 }
-                completed = true;
+                mCompleted = true;
                 if (results == null) {
                     nativeFilesSelectedInChooser(
                             processId, renderId, modeFlags, null, null);
@@ -205,6 +206,14 @@ class AwWebContentsDelegateAdapter extends AwWebContentsDelegate {
     @Override
     public void activateContents() {
         mContentsClient.onRequestFocus();
+    }
+
+    @Override
+    public void toggleFullscreenModeForTab(boolean enterFullscreen) {
+        if (!enterFullscreen) {
+            ContentVideoView videoView = ContentVideoView.getContentVideoView();
+            if (videoView != null) videoView.exitFullscreen(false);
+        }
     }
 
     private static class GetDisplayNameTask extends AsyncTask<Void, Void, String[]> {

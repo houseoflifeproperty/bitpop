@@ -28,7 +28,7 @@
 
 #include "core/html/HTMLTablePartElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLTableColElement FINAL : public HTMLTablePartElement {
 public:
@@ -50,18 +50,13 @@ private:
     int m_span;
 };
 
-inline bool isHTMLTableColElement(const Element& element)
+inline bool isHTMLTableColElement(const HTMLElement& element)
 {
     return element.hasTagName(HTMLNames::colTag) || element.hasTagName(HTMLNames::colgroupTag);
 }
 
-inline bool isHTMLTableColElement(const HTMLElement& element)
-{
-    return element.hasLocalName(HTMLNames::colTag) || element.hasLocalName(HTMLNames::colgroupTag);
-}
-
 DEFINE_HTMLELEMENT_TYPE_CASTS_WITH_FUNCTION(HTMLTableColElement);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

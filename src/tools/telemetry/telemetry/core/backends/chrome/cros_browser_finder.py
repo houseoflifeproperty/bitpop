@@ -6,49 +6,46 @@
 
 import logging
 
-from telemetry import decorators
+from telemetry.core import platform as platform_module
 from telemetry.core import browser
 from telemetry.core import possible_browser
-from telemetry.core.backends.chrome import cros_browser_with_oobe
 from telemetry.core.backends.chrome import cros_browser_backend
+from telemetry.core.backends.chrome import cros_browser_with_oobe
 from telemetry.core.backends.chrome import cros_interface
 from telemetry.core.platform import cros_platform_backend
-
-ALL_BROWSER_TYPES = [
-    'cros-chrome',
-    'cros-chrome-guest',
-    'system',
-    'system-guest',
-    ]
 
 
 class PossibleCrOSBrowser(possible_browser.PossibleBrowser):
   """A launchable CrOS browser instance."""
   def __init__(self, browser_type, finder_options, cri, is_guest):
     super(PossibleCrOSBrowser, self).__init__(browser_type, 'cros',
-        finder_options)
-    assert browser_type in ALL_BROWSER_TYPES, \
-        'Please add %s to ALL_BROWSER_TYPES' % browser_type
+        finder_options, True)
+    assert browser_type in FindAllBrowserTypes(), \
+        ('Please add %s to cros_browser_finder.FindAllBrowserTypes()' %
+         browser_type)
     self._cri = cri
     self._is_guest = is_guest
-    self._platform = None
 
   def __repr__(self):
     return 'PossibleCrOSBrowser(browser_type=%s)' % self.browser_type
 
-  @property
-  @decorators.Cache
-  def _platform_backend(self):
-    return cros_platform_backend.CrosPlatformBackend(self._cri)
+  def _InitPlatformIfNeeded(self):
+    if self._platform:
+      return
+    self._platform_backend = cros_platform_backend.CrosPlatformBackend(
+        self._cri)
+    self._platform = platform_module.Platform(self._platform_backend)
 
   def Create(self):
     if self.finder_options.output_profile_path:
       raise NotImplementedError(
           'Profile generation is not yet supported on CrOS.')
 
+    self._InitPlatformIfNeeded()
+
     browser_options = self.finder_options.browser_options
     backend = cros_browser_backend.CrOSBrowserBackend(
-        self.browser_type, browser_options, self._cri, self._is_guest,
+        browser_options, self._cri, self._is_guest,
         extensions_to_load=self.finder_options.extensions_to_load)
     if browser_options.create_browser_with_oobe:
       return cros_browser_with_oobe.CrOSBrowserWithOOBE(
@@ -74,6 +71,14 @@ def CanFindAvailableBrowsers(finder_options):
   return (cros_interface.IsRunningOnCrosDevice() or
           finder_options.cros_remote or
           cros_interface.HasSSH())
+
+def FindAllBrowserTypes():
+  return [
+      'cros-chrome',
+      'cros-chrome-guest',
+      'system',
+      'system-guest',
+  ]
 
 def FindAllAvailableBrowsers(finder_options):
   """Finds all available CrOS browsers, locally and remotely."""

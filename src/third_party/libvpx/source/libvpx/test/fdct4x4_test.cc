@@ -30,15 +30,15 @@ using libvpx_test::ACMRandom;
 
 namespace {
 const int kNumCoeffs = 16;
-typedef void (*fdct_t)(const int16_t *in, int16_t *out, int stride);
-typedef void (*idct_t)(const int16_t *in, uint8_t *out, int stride);
-typedef void (*fht_t) (const int16_t *in, int16_t *out, int stride,
-                       int tx_type);
-typedef void (*iht_t) (const int16_t *in, uint8_t *out, int stride,
-                       int tx_type);
+typedef void (*FdctFunc)(const int16_t *in, int16_t *out, int stride);
+typedef void (*IdctFunc)(const int16_t *in, uint8_t *out, int stride);
+typedef void (*FhtFunc)(const int16_t *in, int16_t *out, int stride,
+                        int tx_type);
+typedef void (*IhtFunc)(const int16_t *in, uint8_t *out, int stride,
+                        int tx_type);
 
-typedef std::tr1::tuple<fdct_t, idct_t, int> dct_4x4_param_t;
-typedef std::tr1::tuple<fht_t, iht_t, int> ht_4x4_param_t;
+typedef std::tr1::tuple<FdctFunc, IdctFunc, int> Dct4x4Param;
+typedef std::tr1::tuple<FhtFunc, IhtFunc, int> Ht4x4Param;
 
 void fdct4x4_ref(const int16_t *in, int16_t *out, int stride, int tx_type) {
   vp9_fdct4x4_c(in, out, stride);
@@ -79,9 +79,9 @@ class Trans4x4TestBase {
         test_input_block[j] = src[j] - dst[j];
       }
 
-      REGISTER_STATE_CHECK(RunFwdTxfm(test_input_block,
-                                      test_temp_block, pitch_));
-      REGISTER_STATE_CHECK(RunInvTxfm(test_temp_block, dst, pitch_));
+      ASM_REGISTER_STATE_CHECK(RunFwdTxfm(test_input_block,
+                                          test_temp_block, pitch_));
+      ASM_REGISTER_STATE_CHECK(RunInvTxfm(test_temp_block, dst, pitch_));
 
       for (int j = 0; j < kNumCoeffs; ++j) {
         const uint32_t diff = dst[j] - src[j];
@@ -114,7 +114,7 @@ class Trans4x4TestBase {
         input_block[j] = rnd.Rand8() - rnd.Rand8();
 
       fwd_txfm_ref(input_block, output_ref_block, pitch_, tx_type_);
-      REGISTER_STATE_CHECK(RunFwdTxfm(input_block, output_block, pitch_));
+      ASM_REGISTER_STATE_CHECK(RunFwdTxfm(input_block, output_block, pitch_));
 
       // The minimum quant value is 4.
       for (int j = 0; j < kNumCoeffs; ++j)
@@ -136,16 +136,17 @@ class Trans4x4TestBase {
         input_block[j] = rnd.Rand8() - rnd.Rand8();
         input_extreme_block[j] = rnd.Rand8() % 2 ? 255 : -255;
       }
-      if (i == 0)
+      if (i == 0) {
         for (int j = 0; j < kNumCoeffs; ++j)
           input_extreme_block[j] = 255;
-      if (i == 1)
+      } else if (i == 1) {
         for (int j = 0; j < kNumCoeffs; ++j)
           input_extreme_block[j] = -255;
+      }
 
       fwd_txfm_ref(input_extreme_block, output_ref_block, pitch_, tx_type_);
-      REGISTER_STATE_CHECK(RunFwdTxfm(input_extreme_block,
-                                      output_block, pitch_));
+      ASM_REGISTER_STATE_CHECK(RunFwdTxfm(input_extreme_block,
+                                          output_block, pitch_));
 
       // The minimum quant value is 4.
       for (int j = 0; j < kNumCoeffs; ++j) {
@@ -174,7 +175,7 @@ class Trans4x4TestBase {
 
       fwd_txfm_ref(in, coeff, pitch_, tx_type_);
 
-      REGISTER_STATE_CHECK(RunInvTxfm(coeff, dst, pitch_));
+      ASM_REGISTER_STATE_CHECK(RunInvTxfm(coeff, dst, pitch_));
 
       for (int j = 0; j < kNumCoeffs; ++j) {
         const uint32_t diff = dst[j] - src[j];
@@ -188,12 +189,12 @@ class Trans4x4TestBase {
 
   int pitch_;
   int tx_type_;
-  fht_t fwd_txfm_ref;
+  FhtFunc fwd_txfm_ref;
 };
 
 class Trans4x4DCT
     : public Trans4x4TestBase,
-      public ::testing::TestWithParam<dct_4x4_param_t> {
+      public ::testing::TestWithParam<Dct4x4Param> {
  public:
   virtual ~Trans4x4DCT() {}
 
@@ -214,8 +215,8 @@ class Trans4x4DCT
     inv_txfm_(out, dst, stride);
   }
 
-  fdct_t fwd_txfm_;
-  idct_t inv_txfm_;
+  FdctFunc fwd_txfm_;
+  IdctFunc inv_txfm_;
 };
 
 TEST_P(Trans4x4DCT, AccuracyCheck) {
@@ -236,7 +237,7 @@ TEST_P(Trans4x4DCT, InvAccuracyCheck) {
 
 class Trans4x4HT
     : public Trans4x4TestBase,
-      public ::testing::TestWithParam<ht_4x4_param_t> {
+      public ::testing::TestWithParam<Ht4x4Param> {
  public:
   virtual ~Trans4x4HT() {}
 
@@ -258,8 +259,8 @@ class Trans4x4HT
     inv_txfm_(out, dst, stride, tx_type_);
   }
 
-  fht_t fwd_txfm_;
-  iht_t inv_txfm_;
+  FhtFunc fwd_txfm_;
+  IhtFunc inv_txfm_;
 };
 
 TEST_P(Trans4x4HT, AccuracyCheck) {
@@ -280,7 +281,7 @@ TEST_P(Trans4x4HT, InvAccuracyCheck) {
 
 class Trans4x4WHT
     : public Trans4x4TestBase,
-      public ::testing::TestWithParam<dct_4x4_param_t> {
+      public ::testing::TestWithParam<Dct4x4Param> {
  public:
   virtual ~Trans4x4WHT() {}
 
@@ -301,8 +302,8 @@ class Trans4x4WHT
     inv_txfm_(out, dst, stride);
   }
 
-  fdct_t fwd_txfm_;
-  idct_t inv_txfm_;
+  FdctFunc fwd_txfm_;
+  IdctFunc inv_txfm_;
 };
 
 TEST_P(Trans4x4WHT, AccuracyCheck) {
@@ -373,6 +374,21 @@ INSTANTIATE_TEST_CASE_P(
         make_tuple(&vp9_fht4x4_sse2, &vp9_iht4x4_16_add_sse2, 1),
         make_tuple(&vp9_fht4x4_sse2, &vp9_iht4x4_16_add_sse2, 2),
         make_tuple(&vp9_fht4x4_sse2, &vp9_iht4x4_16_add_sse2, 3)));
+#endif
+
+#if HAVE_AVX2
+INSTANTIATE_TEST_CASE_P(
+    AVX2, Trans4x4DCT,
+    ::testing::Values(
+        make_tuple(&vp9_fdct4x4_avx2,
+                   &vp9_idct4x4_16_add_c, 0)));
+INSTANTIATE_TEST_CASE_P(
+    AVX2, Trans4x4HT,
+    ::testing::Values(
+        make_tuple(&vp9_fht4x4_avx2, &vp9_iht4x4_16_add_c, 0),
+        make_tuple(&vp9_fht4x4_avx2, &vp9_iht4x4_16_add_c, 1),
+        make_tuple(&vp9_fht4x4_avx2, &vp9_iht4x4_16_add_c, 2),
+        make_tuple(&vp9_fht4x4_avx2, &vp9_iht4x4_16_add_c, 3)));
 #endif
 
 }  // namespace

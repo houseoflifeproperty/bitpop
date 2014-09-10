@@ -196,17 +196,10 @@
               <script src='https://chromium-build.appspot.com/p/chromium/sheriff_ios_us.js'></script>(iOS),<br>
               <script src='https://chromium-build.appspot.com/p/chromium/sheriff_gpu.js'></script>(GPU),
               <script src='https://chromium-build.appspot.com/p/chromium/sheriff_v8.js'></script>(V8),<br>
-              <a href="https://www.google.com/calendar/render?cid=google.com_iqfka4i9asiva67vlqqf1es094%40group.calendar.google.com">trooper schedule</a>
-            </td>
-          </tr>
-          <tr>
-            <td style="text-align: right;">
-              <b>Gardeners:</b>
-            </td>
-            <td>
               <script src='https://chromium-build.appspot.com/p/chromium/sheriff_webkit.js'></script>(WebKit),
               <script src='https://chromium-build.appspot.com/p/chromium/sheriff_cr_cros_gardeners.js'></script>
-              (<a href="http://dev.chromium.org/developers/tree-sheriffs/chrome-in-chromeos-gardening">ChromeOS</a>)
+              (<a href="http://dev.chromium.org/developers/tree-sheriffs/chrome-in-chromeos-gardening">ChromeOS</a>),<br>
+              <a href="https://www.google.com/calendar/render?cid=google.com_iqfka4i9asiva67vlqqf1es094%40group.calendar.google.com">trooper schedule</a>
             </td>
           </tr>
           <tr>
@@ -216,8 +209,10 @@
             <td colspan="2">
               <script>
               document.write([
-                a("../tryserver.chromium/waterfall", "tryserver.chromium", ""),
                 a("../tryserver.chromium.gpu/waterfall", "tryserver.chromium.gpu", ""),
+                a("../tryserver.chromium.linux/waterfall", "tryserver.chromium.linux", ""),
+                a("../tryserver.chromium.mac/waterfall", "tryserver.chromium.mac", ""),
+                a("../tryserver.chromium.win/waterfall", "tryserver.chromium.win", ""),
                 a("../tryserver.blink/waterfall", "tryserver.blink", ""),
                 aView("../chromium.fyi", "", "chromium.fyi"),
                 aView("../chromium.memory", "", "chromium.memory"),

@@ -5,6 +5,8 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_DISPATCHER_HOST_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_DISPATCHER_HOST_H_
 
+#include <vector>
+
 #include "base/id_map.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
@@ -22,6 +24,7 @@ class ServiceWorkerContextWrapper;
 class ServiceWorkerHandle;
 class ServiceWorkerProviderHost;
 class ServiceWorkerRegistration;
+class ServiceWorkerRegistrationHandle;
 
 class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
  public:
@@ -45,6 +48,8 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   virtual bool Send(IPC::Message* message) OVERRIDE;
 
   void RegisterServiceWorkerHandle(scoped_ptr<ServiceWorkerHandle> handle);
+  void RegisterServiceWorkerRegistrationHandle(
+      scoped_ptr<ServiceWorkerRegistrationHandle> handle);
 
   MessagePortMessageFilter* message_port_message_filter() {
     return message_port_message_filter_;
@@ -76,6 +81,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   void OnWorkerStarted(int thread_id,
                        int embedded_worker_id);
   void OnWorkerStopped(int embedded_worker_id);
+  void OnPausedAfterDownload(int embedded_worker_id);
   void OnReportException(int embedded_worker_id,
                          const base::string16& error_message,
                          int line_number,
@@ -89,13 +95,23 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                      const std::vector<int>& sent_message_port_ids);
   void OnIncrementServiceWorkerRefCount(int handle_id);
   void OnDecrementServiceWorkerRefCount(int handle_id);
+  void OnIncrementRegistrationRefCount(int registration_handle_id);
+  void OnDecrementRegistrationRefCount(int registration_handle_id);
   void OnPostMessageToWorker(int handle_id,
                              const base::string16& message,
                              const std::vector<int>& sent_message_port_ids);
   void OnServiceWorkerObjectDestroyed(int handle_id);
 
+  ServiceWorkerHandle* FindHandle(
+      int provider_id,
+      int64 version_id);
+  ServiceWorkerRegistrationHandle* FindRegistrationHandle(
+      int provider_id,
+      int64 registration_id);
+
   // Callbacks from ServiceWorkerContextCore
   void RegistrationComplete(int thread_id,
+                            int provider_id,
                             int request_id,
                             ServiceWorkerStatusCode status,
                             int64 registration_id,
@@ -116,6 +132,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   scoped_refptr<ServiceWorkerContextWrapper> context_wrapper_;
 
   IDMap<ServiceWorkerHandle, IDMapOwnPointer> handles_;
+  IDMap<ServiceWorkerRegistrationHandle, IDMapOwnPointer> registration_handles_;
 
   bool channel_ready_;  // True after BrowserMessageFilter::sender_ != NULL.
   ScopedVector<IPC::Message> pending_messages_;

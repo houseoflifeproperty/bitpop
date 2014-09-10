@@ -64,7 +64,7 @@ FX_BOOL CPDF_PageOrganizer::PDFDocInit(CPDF_Document *pDestPDFDoc, CPDF_Document
 		pNewRoot->SetAt("Type", new CPDF_Name("Catalog"));
 	}
 	
-	CPDF_Dictionary* pNewPages = (CPDF_Dictionary*)pNewRoot->GetElement("Pages")->GetDirect();
+	CPDF_Dictionary* pNewPages = (CPDF_Dictionary*)(pNewRoot->GetElement("Pages")? pNewRoot->GetElement("Pages")->GetDirect() : NULL);
 	if(!pNewPages)
 	{
 		pNewPages = new CPDF_Dictionary;
@@ -215,8 +215,11 @@ CPDF_Object* CPDF_PageOrganizer::PageDictGetInheritableTag(CPDF_Dictionary *pDic
 	{
 		if(pp->KeyExist((const char*)nSrctag))	
 			return pp->GetElement((const char*)nSrctag);
-		else if(pp->KeyExist("Parent"))
+		else if (pp->KeyExist("Parent"))
+		{
 			pp = (CPDF_Dictionary*)pp->GetElement("Parent")->GetDirect();
+			if (pp->GetType() == PDFOBJ_NULL) break;
+		}
 		else break;
 	}
 	
@@ -311,7 +314,8 @@ int	CPDF_PageOrganizer::GetNewObjId(CPDF_Document *pDoc, CFX_MapPtrToPtr* pMapPt
 	else
 	{
 		CPDF_Object* pClone  = pRef->GetDirect()->Clone();
-		if(!pClone)			return 0;
+		if(!pClone)			
+			return 0;
 		
 		if(pClone->GetType() == PDFOBJ_DICTIONARY)
 		{

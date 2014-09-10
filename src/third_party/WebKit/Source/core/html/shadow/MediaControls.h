@@ -30,7 +30,7 @@
 #include "core/html/HTMLDivElement.h"
 #include "core/html/shadow/MediaControlElements.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class Event;
@@ -82,7 +82,8 @@ private:
 
     enum HideBehaviorFlags {
         IgnoreVideoHover = 1 << 0,
-        IgnoreFocus = 1 << 1
+        IgnoreFocus = 1 << 1,
+        IgnoreControlsHover = 1 << 2
     };
 
     bool shouldHideMediaControls(unsigned behaviorFlags = 0) const;

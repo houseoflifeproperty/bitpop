@@ -5,8 +5,12 @@
 #ifndef CHROME_BROWSER_METRICS_METRICS_SERVICE_ACCESSOR_H_
 #define CHROME_BROWSER_METRICS_METRICS_SERVICE_ACCESSOR_H_
 
+#include <stdint.h>
+#include <string>
+
 #include "base/macros.h"
 
+class MetricsService;
 class MetricsServiceObserver;
 
 // This class limits and documents access to metrics service helper methods.
@@ -22,6 +26,14 @@ class MetricsServiceAccessor {
   // from metrics service.
   static void AddMetricsServiceObserver(MetricsServiceObserver* observer);
   static void RemoveMetricsServiceObserver(MetricsServiceObserver* observer);
+
+  // Registers the specified synthetic field trial (identified by a hash of the
+  // trial name and group name) with |metrics_service|, if the service is not
+  // NULL, returning true on success.
+  // See the comment on MetricsService::RegisterSyntheticFieldTrial for details.
+  static bool RegisterSyntheticFieldTrial(MetricsService* metrics_service,
+                                          uint32_t trial_name_hash,
+                                          uint32_t group_name_hash);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MetricsServiceAccessor);

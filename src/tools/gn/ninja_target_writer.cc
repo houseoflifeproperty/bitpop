@@ -9,7 +9,6 @@
 
 #include "base/file_util.h"
 #include "tools/gn/err.h"
-#include "tools/gn/file_template.h"
 #include "tools/gn/ninja_action_target_writer.h"
 #include "tools/gn/ninja_binary_target_writer.h"
 #include "tools/gn/ninja_copy_target_writer.h"
@@ -86,17 +85,19 @@ std::string NinjaTargetWriter::WriteInputDepsStampAndGetDep(
     const std::vector<const Target*>& extra_hard_deps) const {
   // For an action (where we run a script only once) the sources are the same
   // as the source prereqs.
-  bool list_sources_as_input_deps = target_->output_type() == Target::ACTION;
+  bool list_sources_as_input_deps = (target_->output_type() == Target::ACTION);
 
   // Actions get implicit dependencies on the script itself.
-  bool add_script_source_as_dep = target_->output_type() == Target::ACTION ||
-    target_->output_type() == Target::ACTION_FOREACH;
+  bool add_script_source_as_dep =
+      (target_->output_type() == Target::ACTION) ||
+      (target_->output_type() == Target::ACTION_FOREACH);
 
   if (!add_script_source_as_dep &&
       extra_hard_deps.empty() &&
       target_->inputs().empty() &&
       target_->recursive_hard_deps().empty() &&
-      (!list_sources_as_input_deps || target_->sources().empty()))
+      (!list_sources_as_input_deps || target_->sources().empty()) &&
+      toolchain_->deps().empty())
     return std::string();  // No input/hard deps.
 
   // One potential optimization is if there are few input dependencies (or
@@ -145,6 +146,17 @@ std::string NinjaTargetWriter::WriteInputDepsStampAndGetDep(
     path_output_.WriteFile(out_, helper_.GetTargetOutputFile(*i));
   }
 
+  // Toolchain dependencies. These must be resolved before doing anything.
+  // This just writs all toolchain deps for simplicity. If we find that
+  // toolchains often have more than one dependency, we could consider writing
+  // a toolchain-specific stamp file and only include the stamp here.
+  const LabelTargetVector& toolchain_deps = toolchain_->deps();
+  for (size_t i = 0; i < toolchain_deps.size(); i++) {
+    out_ << " ";
+    path_output_.WriteFile(out_,
+                           helper_.GetTargetOutputFile(toolchain_deps[i].ptr));
+  }
+
   // Extra hard deps passed in.
   for (size_t i = 0; i < extra_hard_deps.size(); i++) {
     out_ << " ";
@@ -154,16 +166,4 @@ std::string NinjaTargetWriter::WriteInputDepsStampAndGetDep(
 
   out_ << "\n";
   return " | " + stamp_file_string;
-}
-
-FileTemplate NinjaTargetWriter::GetOutputTemplate() const {
-  const Target::FileList& outputs = target_->action_values().outputs();
-  std::vector<std::string> output_template_args;
-  for (size_t i = 0; i < outputs.size(); i++) {
-    // All outputs should be in the output dir.
-    output_template_args.push_back(
-        RemovePrefix(outputs[i].value(),
-                     settings_->build_settings()->build_dir().value()));
-  }
-  return FileTemplate(target_->settings(), output_template_args);
 }

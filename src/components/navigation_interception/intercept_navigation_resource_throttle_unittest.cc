@@ -31,6 +31,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using content::ResourceType;
 using testing::_;
 using testing::Eq;
 using testing::Ne;
@@ -129,7 +130,7 @@ class TestIOThreadState {
         render_frame_id != MSG_ROUTING_NONE) {
       content::ResourceRequestInfo::AllocateForTesting(
           &request_,
-          ResourceType::MAIN_FRAME,
+          content::RESOURCE_TYPE_MAIN_FRAME,
           &resource_context_,
           render_process_id,
           MSG_ROUTING_NONE,

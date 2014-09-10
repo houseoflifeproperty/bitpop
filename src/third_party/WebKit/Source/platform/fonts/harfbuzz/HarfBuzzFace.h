@@ -38,7 +38,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class FontPlatformData;
 
@@ -70,6 +70,6 @@ private:
     hb_script_t m_scriptForVerticalText;
 };
 
-}
+} // namespace blink
 
 #endif // HarfBuzzFace_h

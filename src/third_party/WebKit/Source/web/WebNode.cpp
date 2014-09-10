@@ -31,7 +31,7 @@
 #include "config.h"
 #include "public/web/WebNode.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
@@ -47,18 +47,14 @@
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
 #include "public/web/WebDOMEvent.h"
-#include "public/web/WebDOMEventListener.h"
 #include "public/web/WebDocument.h"
 #include "public/web/WebElement.h"
 #include "public/web/WebElementCollection.h"
 #include "public/web/WebNodeList.h"
 #include "public/web/WebPluginContainer.h"
-#include "web/EventListenerWrapper.h"
 #include "web/FrameLoaderClientImpl.h"
 #include "web/WebLocalFrameImpl.h"
 #include "web/WebPluginContainerImpl.h"
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -139,7 +135,7 @@ WebNodeList WebNode::childNodes()
 
 WebString WebNode::createMarkup() const
 {
-    return WebCore::createMarkup(m_private.get());
+    return blink::createMarkup(m_private.get());
 }
 
 bool WebNode::isLink() const
@@ -170,18 +166,6 @@ bool WebNode::isElementNode() const
     return m_private->isElementNode();
 }
 
-void WebNode::addEventListener(const WebString& eventType, WebDOMEventListener* listener, bool useCapture)
-{
-    // Please do not add more eventTypes to this list without an API review.
-    RELEASE_ASSERT(eventType == "mousedown");
-
-    EventListenerWrapper* listenerWrapper = listener->createEventListenerWrapper(eventType, useCapture, m_private.get());
-    // The listenerWrapper is only referenced by the actual Node.  Once it goes
-    // away, the wrapper notifies the WebEventListener so it can clear its
-    // pointer to it.
-    m_private->addEventListener(eventType, adoptRef(listenerWrapper), useCapture);
-}
-
 bool WebNode::dispatchEvent(const WebDOMEvent& event)
 {
     if (!event.isNull())
@@ -194,14 +178,10 @@ void WebNode::simulateClick()
     m_private->dispatchSimulatedClick(0);
 }
 
-WebElementCollection WebNode::getElementsByTagName(const WebString& tag) const
+WebElementCollection WebNode::getElementsByHTMLTagName(const WebString& tag) const
 {
-    if (m_private->isContainerNode()) {
-        // FIXME: Calling getElementsByTagNameNS here is inconsistent with the
-        // function name. This is a temporary fix for a serious bug, and should
-        // be reverted soon.
+    if (m_private->isContainerNode())
         return WebElementCollection(toContainerNode(m_private.get())->getElementsByTagNameNS(HTMLNames::xhtmlNamespaceURI, tag));
-    }
     return WebElementCollection();
 }
 
@@ -238,6 +218,11 @@ bool WebNode::hasNonEmptyBoundingBox() const
     return m_private->hasNonEmptyBoundingBox();
 }
 
+bool WebNode::containsIncludingShadowDOM(const WebNode& other) const
+{
+    return m_private->containsIncludingShadowDOM(other.m_private.get());
+}
+
 WebPluginContainer* WebNode::pluginContainer() const
 {
     if (isNull())
@@ -246,7 +231,7 @@ WebPluginContainer* WebNode::pluginContainer() const
     if (isHTMLObjectElement(coreNode) || isHTMLEmbedElement(coreNode)) {
         RenderObject* object = coreNode.renderer();
         if (object && object->isWidget()) {
-            Widget* widget = WebCore::toRenderWidget(object)->widget();
+            Widget* widget = blink::toRenderWidget(object)->widget();
             if (widget && widget->isPluginContainer())
                 return toWebPluginContainerImpl(widget);
         }

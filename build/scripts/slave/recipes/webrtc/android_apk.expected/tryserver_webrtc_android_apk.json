@@ -1,6 +1,5 @@
 [
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -14,18 +13,23 @@
       "--spec",
       "cache_dir = None\nsolutions = [{'custom_vars': {'googlecode_url': 'svn://svn-mirror.golo.chromium.org/%s', 'nacl_trunk': 'svn://svn-mirror.golo.chromium.org/native_client/trunk', 'sourceforge_url': 'svn://svn-mirror.golo.chromium.org/%(repo)s', 'webkit_trunk': 'svn://svn-mirror.golo.chromium.org/blink/trunk', 'webrtc_revision': '12345'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src'}, {'custom_vars': {'root_dir': 'src'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'webrtc-limited', 'url': 'svn://svn-mirror.golo.chromium.org/chrome-internal/trunk/webrtc-limited'}, {'deps_file': 'DEPS', 'managed': True, 'name': 'webrtc.DEPS', 'url': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/deps/third_party/webrtc/webrtc.DEPS'}]\ntarget_os = ['android']",
       "--revision_mapping_file",
-      "{\"src/native_client\": \"got_nacl_revision\", \"src/third_party/WebKit\": \"got_webkit_revision\", \"src/third_party/webrtc\": \"got_revision\", \"src/tools/swarm_client\": \"got_swarm_client_revision\", \"src/tools/swarming_client\": \"got_swarming_client_revision\", \"src/v8\": \"got_v8_revision\"}",
+      "{\"src/native_client\": \"got_nacl_revision\", \"src/third_party/WebKit\": \"got_webkit_revision\", \"src/third_party/webrtc\": \"got_revision\", \"src/tools/swarming_client\": \"got_swarming_client_revision\", \"src/v8\": \"got_v8_revision\"}",
       "--patch_url",
       "try_job_svn_patch",
       "--output_json",
       "/path/to/tmp/json",
       "--revision",
-      "src@HEAD"
+      "src@HEAD",
+      "--revision",
+      "src/third_party/libjingle/source/talk@HEAD",
+      "--revision",
+      "src/third_party/webrtc@HEAD"
     ],
     "name": "bot_update",
     "~followup_annotations": [
       "@@@STEP_LOG_LINE@json.output@{@@@",
-      "@@@STEP_LOG_LINE@json.output@  \"did_run\": false@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"did_run\": false, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_failure\": false@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@"
     ]
@@ -42,7 +46,6 @@
     "name": "gclient setup"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -53,7 +56,6 @@
     "name": "gclient revert"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -65,6 +67,10 @@
       "--verbose",
       "--revision",
       "src@HEAD",
+      "--revision",
+      "src/third_party/libjingle/source/talk@HEAD",
+      "--revision",
+      "src/third_party/webrtc@HEAD",
       "--output-json",
       "/path/to/tmp/json"
     ],
@@ -84,9 +90,6 @@
       "@@@STEP_LOG_LINE@json.output@    \"src/third_party/webrtc/\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"revision\": 120644@@@",
       "@@@STEP_LOG_LINE@json.output@    }, @@@",
-      "@@@STEP_LOG_LINE@json.output@    \"src/tools/swarm_client/\": {@@@",
-      "@@@STEP_LOG_LINE@json.output@      \"revision\": 200767@@@",
-      "@@@STEP_LOG_LINE@json.output@    }, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"src/tools/swarming_client/\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"revision\": 276089@@@",
       "@@@STEP_LOG_LINE@json.output@    }, @@@",
@@ -102,12 +105,38 @@
       "@@@STEP_LOG_LINE@json.output@  }@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@",
-      "@@@SET_BUILD_PROPERTY@got_nacl_revision@274981@@@",
-      "@@@SET_BUILD_PROPERTY@got_webkit_revision@124383@@@",
-      "@@@SET_BUILD_PROPERTY@got_swarming_client_revision@276089@@@",
       "@@@SET_BUILD_PROPERTY@got_revision@120644@@@",
+      "@@@SET_BUILD_PROPERTY@got_nacl_revision@274981@@@",
       "@@@SET_BUILD_PROPERTY@got_v8_revision@43426@@@",
-      "@@@SET_BUILD_PROPERTY@got_swarm_client_revision@200767@@@"
+      "@@@SET_BUILD_PROPERTY@got_webkit_revision@124383@@@",
+      "@@@SET_BUILD_PROPERTY@got_swarming_client_revision@276089@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport shutil, sys, os\nshutil.rmtree(sys.argv[1], True)\nshutil.rmtree(sys.argv[2], True)\ntry:\n  os.remove(sys.argv[3])\nexcept OSError:\n  pass\nfor base, _dirs, files in os.walk(sys.argv[4]):\n  for f in files:\n    if f.endswith('.pyc'):\n      os.remove(os.path.join(base, f))\n",
+      "[SLAVE_BUILD]/src/out/Debug/debug_info_dumps",
+      "[SLAVE_BUILD]/src/out/Debug/test_logs",
+      "[SLAVE_BUILD]/src/out/build_product.zip",
+      "[SLAVE_BUILD]/src"
+    ],
+    "name": "clean local files",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import shutil, sys, os@@@",
+      "@@@STEP_LOG_LINE@python.inline@shutil.rmtree(sys.argv[1], True)@@@",
+      "@@@STEP_LOG_LINE@python.inline@shutil.rmtree(sys.argv[2], True)@@@",
+      "@@@STEP_LOG_LINE@python.inline@try:@@@",
+      "@@@STEP_LOG_LINE@python.inline@  os.remove(sys.argv[3])@@@",
+      "@@@STEP_LOG_LINE@python.inline@except OSError:@@@",
+      "@@@STEP_LOG_LINE@python.inline@  pass@@@",
+      "@@@STEP_LOG_LINE@python.inline@for base, _dirs, files in os.walk(sys.argv[4]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  for f in files:@@@",
+      "@@@STEP_LOG_LINE@python.inline@    if f.endswith('.pyc'):@@@",
+      "@@@STEP_LOG_LINE@python.inline@      os.remove(os.path.join(base, f))@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
     ]
   },
   {
@@ -169,7 +198,6 @@
     "name": "cleanup_temp"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -196,7 +224,6 @@
     "name": "compile"
   },
   {
-    "can_fail_build": false,
     "cmd": [
       "[BUILD]/scripts/slave/daemonizer.py",
       "--",
@@ -218,7 +245,6 @@
     "name": "device_status_check"
   },
   {
-    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -226,6 +252,9 @@
       "-t",
       "Debug"
     ],
+    "env": {
+      "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
+    },
     "name": "provision_devices"
   },
   {
@@ -463,7 +492,6 @@
     "name": "webrtc_perf_tests"
   },
   {
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -476,9 +504,10 @@
     "name": "logcat_dump"
   },
   {
-    "always_run": true,
     "cmd": [
       "[SLAVE_BUILD]/src/third_party/android_platform/development/scripts/stack",
+      "--arch",
+      "arm",
       "--more-info",
       "[SLAVE_BUILD]/src/out/Debug/full_log"
     ],
@@ -488,7 +517,6 @@
     "name": "stack_tool_with_logcat_dump"
   },
   {
-    "always_run": true,
     "cmd": [
       "[SLAVE_BUILD]/src/build/android/tombstones.py",
       "-a",
@@ -501,7 +529,6 @@
     "name": "stack_tool_for_tombstones"
   },
   {
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -519,13 +546,5 @@
       "@@@STEP_LOG_LINE@python.inline@  os.remove(report)@@@",
       "@@@STEP_LOG_END@python.inline@@@"
     ]
-  },
-  {
-    "always_run": true,
-    "cmd": [
-      "rm",
-      "-rf"
-    ],
-    "name": "cleanup_build"
   }
 ]

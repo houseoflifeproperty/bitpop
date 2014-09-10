@@ -58,7 +58,9 @@ bool AreAliased(Register reg1,
                 Register reg3 = no_reg,
                 Register reg4 = no_reg,
                 Register reg5 = no_reg,
-                Register reg6 = no_reg);
+                Register reg6 = no_reg,
+                Register reg7 = no_reg,
+                Register reg8 = no_reg);
 #endif
 
 
@@ -76,12 +78,11 @@ class MacroAssembler: public Assembler {
   // macro assembler.
   MacroAssembler(Isolate* isolate, void* buffer, int size);
 
-  // Jump, Call, and Ret pseudo instructions implementing inter-working.
-  void Jump(Register target, Condition cond = al);
-  void Jump(Address target, RelocInfo::Mode rmode, Condition cond = al);
-  void Jump(Handle<Code> code, RelocInfo::Mode rmode, Condition cond = al);
+
+  // Returns the size of a call in instructions. Note, the value returned is
+  // only valid as long as no entries are added to the constant pool between
+  // checking the call size and emitting the actual call.
   static int CallSize(Register target, Condition cond = al);
-  void Call(Register target, Condition cond = al);
   int CallSize(Address target, RelocInfo::Mode rmode, Condition cond = al);
   int CallStubSize(CodeStub* stub,
                    TypeFeedbackId ast_id = TypeFeedbackId::None(),
@@ -90,6 +91,12 @@ class MacroAssembler: public Assembler {
                                             Address target,
                                             RelocInfo::Mode rmode,
                                             Condition cond = al);
+
+  // Jump, Call, and Ret pseudo instructions implementing inter-working.
+  void Jump(Register target, Condition cond = al);
+  void Jump(Address target, RelocInfo::Mode rmode, Condition cond = al);
+  void Jump(Handle<Code> code, RelocInfo::Mode rmode, Condition cond = al);
+  void Call(Register target, Condition cond = al);
   void Call(Address target, RelocInfo::Mode rmode,
             Condition cond = al,
             TargetAddressStorageMode mode = CAN_INLINE_TARGET_ADDRESS);
@@ -145,6 +152,9 @@ class MacroAssembler: public Assembler {
   // Register move. May do nothing if the registers are identical.
   void Move(Register dst, Handle<Object> value);
   void Move(Register dst, Register src, Condition cond = al);
+  void Move(Register dst, const Operand& src, Condition cond = al) {
+    if (!src.is_reg() || !src.rm().is(dst)) mov(dst, src, LeaveCC, cond);
+  }
   void Move(DwVfpRegister dst, DwVfpRegister src);
 
   void Load(Register dst, const MemOperand& src, Representation r);
@@ -304,7 +314,7 @@ class MacroAssembler: public Assembler {
 
   // Push two registers.  Pushes leftmost register first (to highest address).
   void Push(Register src1, Register src2, Condition cond = al) {
-    ASSERT(!src1.is(src2));
+    DCHECK(!src1.is(src2));
     if (src1.code() > src2.code()) {
       stm(db_w, sp, src1.bit() | src2.bit(), cond);
     } else {
@@ -315,9 +325,9 @@ class MacroAssembler: public Assembler {
 
   // Push three registers.  Pushes leftmost register first (to highest address).
   void Push(Register src1, Register src2, Register src3, Condition cond = al) {
-    ASSERT(!src1.is(src2));
-    ASSERT(!src2.is(src3));
-    ASSERT(!src1.is(src3));
+    DCHECK(!src1.is(src2));
+    DCHECK(!src2.is(src3));
+    DCHECK(!src1.is(src3));
     if (src1.code() > src2.code()) {
       if (src2.code() > src3.code()) {
         stm(db_w, sp, src1.bit() | src2.bit() | src3.bit(), cond);
@@ -337,12 +347,12 @@ class MacroAssembler: public Assembler {
             Register src3,
             Register src4,
             Condition cond = al) {
-    ASSERT(!src1.is(src2));
-    ASSERT(!src2.is(src3));
-    ASSERT(!src1.is(src3));
-    ASSERT(!src1.is(src4));
-    ASSERT(!src2.is(src4));
-    ASSERT(!src3.is(src4));
+    DCHECK(!src1.is(src2));
+    DCHECK(!src2.is(src3));
+    DCHECK(!src1.is(src3));
+    DCHECK(!src1.is(src4));
+    DCHECK(!src2.is(src4));
+    DCHECK(!src3.is(src4));
     if (src1.code() > src2.code()) {
       if (src2.code() > src3.code()) {
         if (src3.code() > src4.code()) {
@@ -366,7 +376,7 @@ class MacroAssembler: public Assembler {
 
   // Pop two registers. Pops rightmost register first (from lower address).
   void Pop(Register src1, Register src2, Condition cond = al) {
-    ASSERT(!src1.is(src2));
+    DCHECK(!src1.is(src2));
     if (src1.code() > src2.code()) {
       ldm(ia_w, sp, src1.bit() | src2.bit(), cond);
     } else {
@@ -377,9 +387,9 @@ class MacroAssembler: public Assembler {
 
   // Pop three registers.  Pops rightmost register first (from lower address).
   void Pop(Register src1, Register src2, Register src3, Condition cond = al) {
-    ASSERT(!src1.is(src2));
-    ASSERT(!src2.is(src3));
-    ASSERT(!src1.is(src3));
+    DCHECK(!src1.is(src2));
+    DCHECK(!src2.is(src3));
+    DCHECK(!src1.is(src3));
     if (src1.code() > src2.code()) {
       if (src2.code() > src3.code()) {
         ldm(ia_w, sp, src1.bit() | src2.bit() | src3.bit(), cond);
@@ -399,12 +409,12 @@ class MacroAssembler: public Assembler {
            Register src3,
            Register src4,
            Condition cond = al) {
-    ASSERT(!src1.is(src2));
-    ASSERT(!src2.is(src3));
-    ASSERT(!src1.is(src3));
-    ASSERT(!src1.is(src4));
-    ASSERT(!src2.is(src4));
-    ASSERT(!src3.is(src4));
+    DCHECK(!src1.is(src2));
+    DCHECK(!src2.is(src3));
+    DCHECK(!src1.is(src3));
+    DCHECK(!src1.is(src4));
+    DCHECK(!src2.is(src4));
+    DCHECK(!src3.is(src4));
     if (src1.code() > src2.code()) {
       if (src2.code() > src3.code()) {
         if (src3.code() > src4.code()) {
@@ -436,12 +446,9 @@ class MacroAssembler: public Assembler {
   // RegList constant kSafepointSavedRegisters.
   void PushSafepointRegisters();
   void PopSafepointRegisters();
-  void PushSafepointRegistersAndDoubles();
-  void PopSafepointRegistersAndDoubles();
   // Store value in register src in the safepoint stack slot for
   // register dst.
   void StoreToSafepointRegisterSlot(Register src, Register dst);
-  void StoreToSafepointRegistersAndDoublesSlot(Register src, Register dst);
   // Load the value of the src register from its safepoint stack slot
   // into register dst.
   void LoadFromSafepointRegisterSlot(Register dst, Register src);
@@ -680,7 +687,7 @@ class MacroAssembler: public Assembler {
   // These instructions are generated to mark special location in the code,
   // like some special IC code.
   static inline bool IsMarkedCode(Instr instr, int type) {
-    ASSERT((FIRST_IC_MARKER <= type) && (type < LAST_CODE_MARKER));
+    DCHECK((FIRST_IC_MARKER <= type) && (type < LAST_CODE_MARKER));
     return IsNop(instr, type);
   }
 
@@ -700,7 +707,7 @@ class MacroAssembler: public Assembler {
                (FIRST_IC_MARKER <= dst_reg) && (dst_reg < LAST_CODE_MARKER)
                    ? src_reg
                    : -1;
-    ASSERT((type == -1) ||
+    DCHECK((type == -1) ||
            ((FIRST_IC_MARKER <= type) && (type < LAST_CODE_MARKER)));
     return type;
   }
@@ -778,7 +785,8 @@ class MacroAssembler: public Assembler {
                           Register scratch2,
                           Register heap_number_map,
                           Label* gc_required,
-                          TaggingMode tagging_mode = TAG_RESULT);
+                          TaggingMode tagging_mode = TAG_RESULT,
+                          MutableMode mode = IMMUTABLE);
   void AllocateHeapNumberWithValue(Register result,
                                    DwVfpRegister value,
                                    Register scratch1,
@@ -939,7 +947,7 @@ class MacroAssembler: public Assembler {
     ldr(type, FieldMemOperand(obj, HeapObject::kMapOffset), cond);
     ldrb(type, FieldMemOperand(type, Map::kInstanceTypeOffset), cond);
     tst(type, Operand(kIsNotStringMask), cond);
-    ASSERT_EQ(0, kStringTag);
+    DCHECK_EQ(0, kStringTag);
     return eq;
   }
 
@@ -1136,7 +1144,7 @@ class MacroAssembler: public Assembler {
   void GetBuiltinFunction(Register target, Builtins::JavaScript id);
 
   Handle<Object> CodeObject() {
-    ASSERT(!code_object_.is_null());
+    DCHECK(!code_object_.is_null());
     return code_object_;
   }
 
@@ -1180,7 +1188,7 @@ class MacroAssembler: public Assembler {
   // EABI variant for double arguments in use.
   bool use_eabi_hardfloat() {
 #ifdef __arm__
-    return OS::ArmUsingHardFloat();
+    return base::OS::ArmUsingHardFloat();
 #elif USE_EABI_HARDFLOAT
     return true;
 #else
@@ -1353,8 +1361,8 @@ class MacroAssembler: public Assembler {
 
   // Get the location of a relocated constant (its address in the constant pool)
   // from its load site.
-  void GetRelocatedValueLocation(Register ldr_location,
-                                 Register result);
+  void GetRelocatedValueLocation(Register ldr_location, Register result,
+                                 Register scratch);
 
 
   void ClampUint8(Register output_reg, Register input_reg);
@@ -1539,7 +1547,7 @@ class FrameAndConstantPoolScope {
         old_constant_pool_available_(masm->is_constant_pool_available())  {
     // We only want to enable constant pool access for non-manual frame scopes
     // to ensure the constant pool pointer is valid throughout the scope.
-    ASSERT(type_ != StackFrame::MANUAL && type_ != StackFrame::NONE);
+    DCHECK(type_ != StackFrame::MANUAL && type_ != StackFrame::NONE);
     masm->set_has_frame(true);
     masm->set_constant_pool_available(true);
     masm->EnterFrame(type, !old_constant_pool_available_);
@@ -1557,7 +1565,7 @@ class FrameAndConstantPoolScope {
   // scope, the MacroAssembler is still marked as being in a frame scope, and
   // the code will be generated again when it goes out of scope.
   void GenerateLeaveFrame() {
-    ASSERT(type_ != StackFrame::MANUAL && type_ != StackFrame::NONE);
+    DCHECK(type_ != StackFrame::MANUAL && type_ != StackFrame::NONE);
     masm_->LeaveFrame(type_);
   }
 

@@ -27,7 +27,7 @@
 
 #include "core/html/canvas/OESTextureHalfFloatLinear.h"
 
-namespace WebCore {
+namespace blink {
 
 OESTextureHalfFloatLinear::OESTextureHalfFloatLinear(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
@@ -45,9 +45,9 @@ WebGLExtensionName OESTextureHalfFloatLinear::name() const
     return OESTextureHalfFloatLinearName;
 }
 
-PassRefPtr<OESTextureHalfFloatLinear> OESTextureHalfFloatLinear::create(WebGLRenderingContextBase* context)
+PassRefPtrWillBeRawPtr<OESTextureHalfFloatLinear> OESTextureHalfFloatLinear::create(WebGLRenderingContextBase* context)
 {
-    return adoptRef(new OESTextureHalfFloatLinear(context));
+    return adoptRefWillBeNoop(new OESTextureHalfFloatLinear(context));
 }
 
 bool OESTextureHalfFloatLinear::supported(WebGLRenderingContextBase* context)
@@ -60,4 +60,4 @@ const char* OESTextureHalfFloatLinear::extensionName()
     return "OES_texture_half_float_linear";
 }
 
-} // namespace WebCore
+} // namespace blink

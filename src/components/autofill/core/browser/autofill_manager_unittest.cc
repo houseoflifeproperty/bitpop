@@ -109,7 +109,7 @@ class TestPersonalDataManager : public PersonalDataManager {
 
   // Do nothing (auxiliary profiles will be created in
   // CreateTestAuxiliaryProfile).
-  virtual void LoadAuxiliaryProfiles() const OVERRIDE {}
+  virtual void LoadAuxiliaryProfiles(bool record_metrics) const OVERRIDE {}
 
   void ClearAutofillProfiles() {
     web_profiles_.clear();
@@ -188,7 +188,6 @@ void CreateTestCreditCardFormData(FormData* form,
                                   bool is_https,
                                   bool use_month_type) {
   form->name = ASCIIToUTF16("MyForm");
-  form->method = ASCIIToUTF16("POST");
   if (is_https) {
     form->origin = GURL("https://myform.com/form.html");
     form->action = GURL("https://myform.com/submit.html");
@@ -258,7 +257,6 @@ void ExpectFilledForm(int page_id,
 
   EXPECT_EQ(expected_page_id, page_id);
   EXPECT_EQ(ASCIIToUTF16("MyForm"), filled_form.name);
-  EXPECT_EQ(ASCIIToUTF16("POST"), filled_form.method);
   if (has_credit_card_fields) {
     EXPECT_EQ(GURL("https://myform.com/form.html"), filled_form.origin);
     EXPECT_EQ(GURL("https://myform.com/submit.html"), filled_form.action);
@@ -771,7 +769,6 @@ TEST_F(AutofillManagerTest, GetProfileSuggestionsUnknownFields) {
   // Set up our form data.
   FormData form;
   form.name = ASCIIToUTF16("MyForm");
-  form.method = ASCIIToUTF16("POST");
   form.origin = GURL("http://myform.com/form.html");
   form.action = GURL("http://myform.com/submit.html");
   form.user_submitted = true;
@@ -847,64 +844,6 @@ TEST_F(AutofillManagerTest, GetProfileSuggestionsAutofillDisabledByUser) {
   EXPECT_FALSE(external_delegate_->on_suggestions_returned_seen());
 }
 
-// Test that we return a warning explaining that autofill suggestions are
-// unavailable when the form method is GET rather than POST.
-TEST_F(AutofillManagerTest, GetProfileSuggestionsMethodGet) {
-  // Set up our form data.
-  FormData form;
-  test::CreateTestAddressFormData(&form);
-  form.method = ASCIIToUTF16("GET");
-  std::vector<FormData> forms(1, form);
-  FormsSeen(forms);
-
-  const FormFieldData& field = form.fields[0];
-  GetAutofillSuggestions(form, field);
-
-  // No suggestions provided, so send an empty vector as the results.
-  // This triggers the combined message send.
-  AutocompleteSuggestionsReturned(std::vector<base::string16>());
-
-  // Test that we sent the right values to the external delegate.
-  base::string16 expected_values[] = {
-    l10n_util::GetStringUTF16(IDS_AUTOFILL_WARNING_FORM_DISABLED)
-  };
-  base::string16 expected_labels[] = {base::string16()};
-  base::string16 expected_icons[] = {base::string16()};
-  int expected_unique_ids[] = {POPUP_ITEM_ID_WARNING_MESSAGE};
-  external_delegate_->CheckSuggestions(
-      kDefaultPageID, arraysize(expected_values), expected_values,
-      expected_labels, expected_icons, expected_unique_ids);
-
-  // Now add some Autocomplete suggestions. We should return the autocomplete
-  // suggestions and the warning; these will be culled by the renderer.
-  const int kPageID2 = 2;
-  GetAutofillSuggestions(kPageID2, form, field);
-
-  std::vector<base::string16> suggestions;
-  suggestions.push_back(ASCIIToUTF16("Jay"));
-  suggestions.push_back(ASCIIToUTF16("Jason"));
-  AutocompleteSuggestionsReturned(suggestions);
-
-  base::string16 expected_values2[] = {
-    l10n_util::GetStringUTF16(IDS_AUTOFILL_WARNING_FORM_DISABLED),
-    ASCIIToUTF16("Jay"),
-    ASCIIToUTF16("Jason")
-  };
-  base::string16 expected_labels2[] = { base::string16(), base::string16(),
-                                        base::string16()};
-  base::string16 expected_icons2[] = { base::string16(), base::string16(),
-                                       base::string16()};
-  int expected_unique_ids2[] = {-1, 0, 0};
-  external_delegate_->CheckSuggestions(
-      kPageID2, arraysize(expected_values2), expected_values2,
-      expected_labels2, expected_icons2, expected_unique_ids2);
-
-  // Now clear the test profiles and try again -- we shouldn't return a warning.
-  personal_data_.ClearAutofillProfiles();
-  GetAutofillSuggestions(form, field);
-  EXPECT_FALSE(external_delegate_->on_suggestions_returned_seen());
-}
-
 // Test that we return all credit card profile suggestions when all form fields
 // are empty.
 TEST_F(AutofillManagerTest, GetCreditCardSuggestionsEmptyValue) {
@@ -926,8 +865,8 @@ TEST_F(AutofillManagerTest, GetCreditCardSuggestionsEmptyValue) {
     ASCIIToUTF16("************3456"),
     ASCIIToUTF16("************8765")
   };
-  base::string16 expected_labels[] = { ASCIIToUTF16("*3456"),
-                                       ASCIIToUTF16("*8765")};
+  base::string16 expected_labels[] = { ASCIIToUTF16("04/12"),
+                                       ASCIIToUTF16("10/14")};
   base::string16 expected_icons[] = {
     ASCIIToUTF16(kVisaCard),
     ASCIIToUTF16(kMasterCard)
@@ -960,7 +899,7 @@ TEST_F(AutofillManagerTest, GetCreditCardSuggestionsMatchCharacter) {
 
   // Test that we sent the right values to the external delegate.
   base::string16 expected_values[] = {ASCIIToUTF16("************3456")};
-  base::string16 expected_labels[] = {ASCIIToUTF16("*3456")};
+  base::string16 expected_labels[] = {ASCIIToUTF16("04/12")};
   base::string16 expected_icons[] = {ASCIIToUTF16(kVisaCard)};
   int expected_unique_ids[] = {autofill_manager_->GetPackedCreditCardID(4)};
   external_delegate_->CheckSuggestions(
@@ -1069,7 +1008,7 @@ TEST_F(AutofillManagerTest, GetCreditCardSuggestionsRepeatedObfuscatedNumber) {
   CreditCard* credit_card = new CreditCard;
   test::SetCreditCardInfo(credit_card, "Elvis Presley",
                           "5231567890123456",  // Mastercard
-                          "04", "2012");
+                          "05", "2012");
   credit_card->set_guid("00000000-0000-0000-0000-000000000007");
   autofill_manager_->AddCreditCard(credit_card);
 
@@ -1093,9 +1032,9 @@ TEST_F(AutofillManagerTest, GetCreditCardSuggestionsRepeatedObfuscatedNumber) {
     ASCIIToUTF16("************3456")
   };
   base::string16 expected_labels[] = {
-    ASCIIToUTF16("*3456"),
-    ASCIIToUTF16("*8765"),
-    ASCIIToUTF16("*3456"),
+    ASCIIToUTF16("04/12"),
+    ASCIIToUTF16("10/14"),
+    ASCIIToUTF16("05/12"),
   };
   base::string16 expected_icons[] = {
     ASCIIToUTF16(kVisaCard),
@@ -1156,8 +1095,8 @@ TEST_F(AutofillManagerTest, GetAddressAndCreditCardSuggestions) {
     ASCIIToUTF16("************3456"),
     ASCIIToUTF16("************8765")
   };
-  base::string16 expected_labels2[] = { ASCIIToUTF16("*3456"),
-                                        ASCIIToUTF16("*8765")};
+  base::string16 expected_labels2[] = { ASCIIToUTF16("04/12"),
+                                        ASCIIToUTF16("10/14")};
   base::string16 expected_icons2[] = {
     ASCIIToUTF16(kVisaCard),
     ASCIIToUTF16(kMasterCard)
@@ -1386,9 +1325,12 @@ TEST_F(AutofillManagerTest, GetFieldSuggestionsForMultiValuedProfileUnfilled) {
                        "", "", "", "", "", "", "");
   profile->set_guid("00000000-0000-0000-0000-000000000101");
   std::vector<base::string16> multi_values(2);
-  multi_values[0] = ASCIIToUTF16("Elvis Presley");
-  multi_values[1] = ASCIIToUTF16("Elena Love");
-  profile->SetRawMultiInfo(NAME_FULL, multi_values);
+  multi_values[0] = ASCIIToUTF16("Elvis");
+  multi_values[1] = ASCIIToUTF16("Elena");
+  profile->SetRawMultiInfo(NAME_FIRST, multi_values);
+  multi_values[0] = ASCIIToUTF16("Presley");
+  multi_values[1] = ASCIIToUTF16("Love");
+  profile->SetRawMultiInfo(NAME_LAST, multi_values);
   personal_data_.ClearAutofillProfiles();
   autofill_manager_->AddProfile(profile);
 
@@ -1454,10 +1396,14 @@ TEST_F(AutofillManagerTest, GetFieldSuggestionsForMultiValuedProfileFilled) {
   AutofillProfile* profile = new AutofillProfile;
   profile->set_guid("00000000-0000-0000-0000-000000000102");
   std::vector<base::string16> multi_values(3);
-  multi_values[0] = ASCIIToUTF16("Travis Smith");
-  multi_values[1] = ASCIIToUTF16("Cynthia Love");
-  multi_values[2] = ASCIIToUTF16("Zac Mango");
-  profile->SetRawMultiInfo(NAME_FULL, multi_values);
+  multi_values[0] = ASCIIToUTF16("Travis");
+  multi_values[1] = ASCIIToUTF16("Cynthia");
+  multi_values[2] = ASCIIToUTF16("Zac");
+  profile->SetRawMultiInfo(NAME_FIRST, multi_values);
+  multi_values[0] = ASCIIToUTF16("Smith");
+  multi_values[1] = ASCIIToUTF16("Love");
+  multi_values[2] = ASCIIToUTF16("Mango");
+  profile->SetRawMultiInfo(NAME_LAST, multi_values);
   autofill_manager_->AddProfile(profile);
 
   // Get the first name field.  And start out with "Travis", hoping for all the
@@ -1495,11 +1441,10 @@ TEST_F(AutofillManagerTest, GetProfileSuggestionsFancyPhone) {
 
   AutofillProfile* profile = new AutofillProfile;
   profile->set_guid("00000000-0000-0000-0000-000000000103");
-  std::vector<base::string16> multi_values(1);
-  multi_values[0] = ASCIIToUTF16("Natty Bumppo");
-  profile->SetRawMultiInfo(NAME_FULL, multi_values);
-  multi_values[0] = ASCIIToUTF16("1800PRAIRIE");
-  profile->SetRawMultiInfo(PHONE_HOME_WHOLE_NUMBER, multi_values);
+  profile->SetInfo(AutofillType(NAME_FULL), ASCIIToUTF16("Natty Bumppo"),
+                   "en-US");
+  profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER,
+                      ASCIIToUTF16("1800PRAIRIE"));
   autofill_manager_->AddProfile(profile);
 
   const FormFieldData& field = form.fields[9];
@@ -1797,7 +1742,6 @@ TEST_F(AutofillManagerTest, FillFormWithAuthorSpecifiedSections) {
   // The billing section includes both address and credit card fields.
   FormData form;
   form.name = ASCIIToUTF16("MyForm");
-  form.method = ASCIIToUTF16("POST");
   form.origin = GURL("https://myform.com/form.html");
   form.action = GURL("https://myform.com/submit.html");
   form.user_submitted = true;
@@ -1862,7 +1806,6 @@ TEST_F(AutofillManagerTest, FillFormWithAuthorSpecifiedSections) {
     SCOPED_TRACE("Unnamed section");
     EXPECT_EQ(kDefaultPageID, response_page_id);
     EXPECT_EQ(ASCIIToUTF16("MyForm"), response_data.name);
-    EXPECT_EQ(ASCIIToUTF16("POST"), response_data.method);
     EXPECT_EQ(GURL("https://myform.com/form.html"), response_data.origin);
     EXPECT_EQ(GURL("https://myform.com/submit.html"), response_data.action);
     EXPECT_TRUE(response_data.user_submitted);
@@ -1894,7 +1837,6 @@ TEST_F(AutofillManagerTest, FillFormWithAuthorSpecifiedSections) {
     SCOPED_TRACE("Billing address");
     EXPECT_EQ(kPageID2, response_page_id);
     EXPECT_EQ(ASCIIToUTF16("MyForm"), response_data.name);
-    EXPECT_EQ(ASCIIToUTF16("POST"), response_data.method);
     EXPECT_EQ(GURL("https://myform.com/form.html"), response_data.origin);
     EXPECT_EQ(GURL("https://myform.com/submit.html"), response_data.action);
     EXPECT_TRUE(response_data.user_submitted);
@@ -1927,7 +1869,6 @@ TEST_F(AutofillManagerTest, FillFormWithAuthorSpecifiedSections) {
     SCOPED_TRACE("Credit card");
     EXPECT_EQ(kPageID3, response_page_id);
     EXPECT_EQ(ASCIIToUTF16("MyForm"), response_data.name);
-    EXPECT_EQ(ASCIIToUTF16("POST"), response_data.method);
     EXPECT_EQ(GURL("https://myform.com/form.html"), response_data.origin);
     EXPECT_EQ(GURL("https://myform.com/submit.html"), response_data.action);
     EXPECT_TRUE(response_data.user_submitted);
@@ -2049,12 +1990,21 @@ TEST_F(AutofillManagerTest, FillAddressFormWithVariantType) {
   // Add a name variant to the Elvis profile.
   AutofillProfile* profile = autofill_manager_->GetProfileWithGUID(
       "00000000-0000-0000-0000-000000000001");
-  const base::string16 elvis_name = profile->GetRawInfo(NAME_FULL);
 
   std::vector<base::string16> name_variants;
-  name_variants.push_back(ASCIIToUTF16("Some Other Guy"));
-  name_variants.push_back(elvis_name);
-  profile->SetRawMultiInfo(NAME_FULL, name_variants);
+  name_variants.push_back(ASCIIToUTF16("Some"));
+  name_variants.push_back(profile->GetRawInfo(NAME_FIRST));
+  profile->SetRawMultiInfo(NAME_FIRST, name_variants);
+
+  name_variants.clear();
+  name_variants.push_back(ASCIIToUTF16("Other"));
+  name_variants.push_back(profile->GetRawInfo(NAME_MIDDLE));
+  profile->SetRawMultiInfo(NAME_MIDDLE, name_variants);
+
+  name_variants.clear();
+  name_variants.push_back(ASCIIToUTF16("Guy"));
+  name_variants.push_back(profile->GetRawInfo(NAME_LAST));
+  profile->SetRawMultiInfo(NAME_LAST, name_variants);
 
   GUIDPair guid(profile->guid(), 1);
   GUIDPair empty(std::string(), 0);
@@ -2091,7 +2041,6 @@ TEST_F(AutofillManagerTest, FillPhoneNumber) {
   // In the other form, rely on the autocompletetype attribute.
   FormData form_with_maxlength;
   form_with_maxlength.name = ASCIIToUTF16("MyMaxlengthPhoneForm");
-  form_with_maxlength.method = ASCIIToUTF16("POST");
   form_with_maxlength.origin = GURL("http://myform.com/phone_form.html");
   form_with_maxlength.action = GURL("http://myform.com/phone_submit.html");
   form_with_maxlength.user_submitted = true;
@@ -2326,7 +2275,6 @@ TEST_F(AutofillManagerTest, FormSubmittedAutocompleteEnabled) {
   // Set up our form data.
   FormData form;
   test::CreateTestAddressFormData(&form);
-  form.method = ASCIIToUTF16("GET");
   MockAutocompleteHistoryManager* m = static_cast<
       MockAutocompleteHistoryManager*>(
           autofill_manager_->autocomplete_history_manager_.get());
@@ -2347,7 +2295,6 @@ TEST_F(AutofillManagerTest, AutocompleteSuggestionsWhenAutofillDisabled) {
   // Set up our form data.
   FormData form;
   test::CreateTestAddressFormData(&form);
-  form.method = ASCIIToUTF16("GET");
   std::vector<FormData> forms(1, form);
   FormsSeen(forms);
   const FormFieldData& field = form.fields[0];
@@ -2478,10 +2425,9 @@ TEST_F(AutofillManagerTest, FormSubmittedWithDefaultValues) {
 // thing on all platforms.
 TEST_F(AutofillManagerTest, AuxiliaryProfilesReset) {
   PrefService* prefs = autofill_client_.GetPrefs();
-#if defined(OS_MACOSX) || defined(OS_ANDROID)
-  // Auxiliary profiles is implemented on Mac and Android only.
+#if defined(OS_MACOSX)
+  // Auxiliary profiles is implemented on Mac only.
   // OSX: This preference exists for legacy reasons. It is no longer used.
-  // Android: enables integration with user's contact profile.
   ASSERT_TRUE(
       prefs->GetBoolean(::autofill::prefs::kAutofillAuxiliaryProfilesEnabled));
   prefs->SetBoolean(::autofill::prefs::kAutofillAuxiliaryProfilesEnabled,
@@ -2496,13 +2442,12 @@ TEST_F(AutofillManagerTest, AuxiliaryProfilesReset) {
   prefs->ClearPref(::autofill::prefs::kAutofillAuxiliaryProfilesEnabled);
   ASSERT_FALSE(
       prefs->GetBoolean(::autofill::prefs::kAutofillAuxiliaryProfilesEnabled));
-#endif  // defined(OS_MACOSX) || defined(OS_ANDROID)
+#endif  // defined(OS_MACOSX)
 }
 
 TEST_F(AutofillManagerTest, DeterminePossibleFieldTypesForUpload) {
   FormData form;
   form.name = ASCIIToUTF16("MyForm");
-  form.method = ASCIIToUTF16("POST");
   form.origin = GURL("http://myform.com/form.html");
   form.action = GURL("http://myform.com/submit.html");
   form.user_submitted = true;

@@ -22,6 +22,7 @@ import os
 import re
 
 from twisted.internet import defer
+from twisted.python import log as twlog
 from twisted.web import html, resource, server
 
 from buildbot.status.web.base import HtmlResource
@@ -162,6 +163,10 @@ class JsonResource(resource.Resource):
 
     def render_GET(self, request):
         """Renders a HTTP GET at the http request level."""
+        userAgent = request.requestHeaders.getRawHeaders(
+            'user-agent', ['unknown'])[0]
+        twlog.msg('Received request for %s from %s, id: %s' %
+                  (request.uri, userAgent, id(request)))
         d = defer.maybeDeferred(lambda : self.content(request))
         def handle(data):
             if isinstance(data, unicode):
@@ -183,6 +188,7 @@ class JsonResource(resource.Resource):
             return data
         d.addCallback(handle)
         def ok(data):
+            twlog.msg('Finished processing request with id: %s' % id(request))
             request.write(data)
             request.finish()
         def fail(f):

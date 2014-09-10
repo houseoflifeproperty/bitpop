@@ -5,15 +5,17 @@
 from telemetry import value as value_module
 from telemetry.value import list_of_string_values
 
+
 class StringValue(value_module.Value):
-  def __init__(self, page, name, units, value, important=True):
+  def __init__(self, page, name, units, value, important=True,
+               description=None):
     """A single value (float, integer or string) result from a test.
 
     A test that output a hash of the content in a page might produce a
     string value:
        StringValue(page, 'page_hash', 'hash', '74E377FF')
     """
-    super(StringValue, self).__init__(page, name, units, important)
+    super(StringValue, self).__init__(page, name, units, important, description)
     assert isinstance(value, basestring)
     self.value = value
 
@@ -22,11 +24,13 @@ class StringValue(value_module.Value):
       page_name = self.page.url
     else:
       page_name = None
-    return 'ScalarValue(%s, %s, %s, %s, important=%s)' % (
+    return 'StringValue(%s, %s, %s, %s, important=%s, description=%s)' % (
       page_name,
-      self.name, self.units,
+      self.name,
+      self.units,
       self.value,
-      self.important)
+      self.important,
+      self.description)
 
   def GetBuildbotDataType(self, output_context):
     if self._IsImportantGivenOutputIntent(output_context):
@@ -43,6 +47,22 @@ class StringValue(value_module.Value):
 
   def GetRepresentativeString(self):
     return str(self.value)
+
+  @staticmethod
+  def GetJSONTypeName():
+    return 'string'
+
+  def AsDict(self):
+    d = super(StringValue, self).AsDict()
+    d['value'] = self.value
+    return d
+
+  @staticmethod
+  def FromDict(value_dict, page_dict):
+    kwargs = value_module.Value.GetConstructorKwArgs(value_dict, page_dict)
+    kwargs['value'] = value_dict['value']
+
+    return StringValue(**kwargs)
 
   @classmethod
   def MergeLikeValuesFromSamePage(cls, values):

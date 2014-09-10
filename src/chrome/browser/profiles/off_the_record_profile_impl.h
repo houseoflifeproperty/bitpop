@@ -43,7 +43,6 @@ class OffTheRecordProfileImpl : public Profile {
   virtual bool HasOffTheRecordProfile() OVERRIDE;
   virtual Profile* GetOriginalProfile() OVERRIDE;
   virtual bool IsSupervised() OVERRIDE;
-  virtual ExtensionService* GetExtensionService() OVERRIDE;
   virtual ExtensionSpecialStoragePolicy*
       GetExtensionSpecialStoragePolicy() OVERRIDE;
   virtual PrefService* GetPrefs() OVERRIDE;
@@ -84,9 +83,6 @@ class OffTheRecordProfileImpl : public Profile {
   virtual void ClearNetworkingHistorySince(
       base::Time time,
       const base::Closure& completion) OVERRIDE;
-  virtual void ClearDomainReliabilityMonitor(
-      domain_reliability::DomainReliabilityClearMode mode,
-      const base::Closure& completion) OVERRIDE;
   virtual GURL GetHomePage() OVERRIDE;
 
   // content::BrowserContext implementation:
@@ -109,6 +105,7 @@ class OffTheRecordProfileImpl : public Profile {
   virtual content::BrowserPluginGuestManager* GetGuestManager() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
   virtual content::PushMessagingService* GetPushMessagingService() OVERRIDE;
+  virtual content::SSLHostStateDelegate* GetSSLHostStateDelegate() OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(OffTheRecordProfileImplTest, GetHostZoomMap);

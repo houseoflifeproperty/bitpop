@@ -26,14 +26,13 @@
 #ifndef Gamepad_h
 #define Gamepad_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/gamepad/GamepadButton.h"
 #include "modules/gamepad/GamepadCommon.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebGamepad.h"
-#include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class Gamepad FINAL : public GarbageCollectedFinalized<Gamepad>, public GamepadCommon, public ScriptWrappable {
 public:
@@ -44,7 +43,7 @@ public:
     ~Gamepad();
 
     const GamepadButtonVector& buttons() const { return m_buttons; }
-    void setButtons(unsigned count, const blink::WebGamepadButton* data);
+    void setButtons(unsigned count, const WebGamepadButton* data);
 
     void trace(Visitor*);
 
@@ -53,6 +52,6 @@ private:
     GamepadButtonVector m_buttons;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Gamepad_h

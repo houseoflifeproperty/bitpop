@@ -37,7 +37,7 @@
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkMallocPixelRef.h"
 
-namespace WebCore {
+namespace blink {
 
 // Creates a SkPixelRef such that the memory for pixels is given by an external body.
 // This is used to write directly to the memory given by Skia during decoding.
@@ -113,7 +113,7 @@ const ScaledImageFragment* ImageFrameGenerator::decodeAndScale(const SkISize& sc
     if (cachedImage)
         return cachedImage;
 
-    TRACE_EVENT2("webkit", "ImageFrameGenerator::decodeAndScale", "generator", this, "decodeCount", static_cast<int>(m_decodeCount));
+    TRACE_EVENT2("blink", "ImageFrameGenerator::decodeAndScale", "generator", this, "decodeCount", static_cast<int>(m_decodeCount));
 
     cachedImage = tryToResumeDecode(scaledSize, index);
     if (cachedImage)
@@ -135,7 +135,7 @@ bool ImageFrameGenerator::decodeAndScale(const SkImageInfo& info, size_t index, 
     if (m_decodeFailedAndEmpty)
         return 0;
 
-    TRACE_EVENT2("webkit", "ImageFrameGenerator::decodeAndScale", "generator", this, "decodeCount", static_cast<int>(m_decodeCount));
+    TRACE_EVENT2("blink", "ImageFrameGenerator::decodeAndScale", "generator", this, "decodeCount", static_cast<int>(m_decodeCount));
 
     // Don't use discardable memory for decoding if Skia is providing output
     // memory. Instead use ExternalMemoryAllocator such that we can
@@ -179,7 +179,7 @@ const ScaledImageFragment* ImageFrameGenerator::tryToLockCompleteCache(const SkI
 
 const ScaledImageFragment* ImageFrameGenerator::tryToResumeDecode(const SkISize& scaledSize, size_t index)
 {
-    TRACE_EVENT1("webkit", "ImageFrameGenerator::tryToResumeDecodeAndScale", "index", static_cast<int>(index));
+    TRACE_EVENT1("blink", "ImageFrameGenerator::tryToResumeDecodeAndScale", "index", static_cast<int>(index));
 
     ImageDecoder* decoder = 0;
     const bool resumeDecoding = ImageDecodingStore::instance()->lockDecoder(this, m_fullSize, &decoder);
@@ -228,7 +228,7 @@ const ScaledImageFragment* ImageFrameGenerator::tryToResumeDecode(const SkISize&
 
 PassOwnPtr<ScaledImageFragment> ImageFrameGenerator::decode(size_t index, ImageDecoder** decoder)
 {
-    TRACE_EVENT2("webkit", "ImageFrameGenerator::decode", "width", m_fullSize.width(), "height", m_fullSize.height());
+    TRACE_EVENT2("blink", "ImageFrameGenerator::decode", "width", m_fullSize.width(), "height", m_fullSize.height());
 
     ASSERT(decoder);
     SharedBuffer* data = 0;
@@ -324,4 +324,4 @@ bool ImageFrameGenerator::hasAlpha(size_t index)
     return true;
 }
 
-} // namespace
+} // namespace blink

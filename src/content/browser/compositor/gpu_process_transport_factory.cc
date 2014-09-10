@@ -67,11 +67,12 @@ struct GpuProcessTransportFactory::PerCompositorData {
 };
 
 GpuProcessTransportFactory::GpuProcessTransportFactory()
-    : callback_factory_(this) {
+    : callback_factory_(this),
+      next_surface_id_namespace_(1u) {
   output_surface_proxy_ = new BrowserCompositorOutputSurfaceProxy(
       &output_surface_map_);
 #if defined(OS_CHROMEOS)
-  bool use_thread = !CommandLine::ForCurrentProcess()->HasSwitch(
+  bool use_thread = !base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kUIDisableThreadedCompositing);
 #else
   bool use_thread = false;
@@ -123,8 +124,9 @@ scoped_ptr<cc::OverlayCandidateValidator> CreateOverlayCandidateValidator(
 #if defined(USE_OZONE)
   ui::OverlayCandidatesOzone* overlay_candidates =
       ui::SurfaceFactoryOzone::GetInstance()->GetOverlayCandidates(widget);
-  if (overlay_candidates && CommandLine::ForCurrentProcess()->HasSwitch(
-                                switches::kEnableHardwareOverlays)) {
+  if (overlay_candidates &&
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableHardwareOverlays)) {
     return scoped_ptr<cc::OverlayCandidateValidator>(
         new OverlayCandidateValidatorOzone(widget, overlay_candidates));
   }
@@ -159,6 +161,18 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
 
   UMA_HISTOGRAM_BOOLEAN("Aura.CreatedGpuBrowserCompositor", !!context_provider);
 
+  if (context_provider) {
+    scoped_refptr<base::SingleThreadTaskRunner> compositor_thread_task_runner =
+        GetCompositorMessageLoop();
+    if (!compositor_thread_task_runner.get())
+      compositor_thread_task_runner = base::MessageLoopProxy::current();
+
+    // Here we know the GpuProcessHost has been set up, because we created a
+    // context.
+    output_surface_proxy_->ConnectToGpuProcessHost(
+        compositor_thread_task_runner.get());
+  }
+
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kUseSurfaces)) {
     // This gets a bit confusing. Here we have a ContextProvider configured to
@@ -188,8 +202,10 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
           "Offscreen-Compositor");
     }
     scoped_ptr<SurfaceDisplayOutputSurface> output_surface(
-        new SurfaceDisplayOutputSurface(
-            display_client->display(), manager, offscreen_context_provider));
+        new SurfaceDisplayOutputSurface(manager,
+          next_surface_id_namespace_++,
+          offscreen_context_provider));
+    output_surface->set_display(display_client->display());
     data->display_client = display_client.Pass();
     return output_surface.PassAs<cc::OutputSurface>();
   }
@@ -209,16 +225,6 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
             compositor->vsync_manager()));
     return surface.PassAs<cc::OutputSurface>();
   }
-
-  scoped_refptr<base::SingleThreadTaskRunner> compositor_thread_task_runner =
-      GetCompositorMessageLoop();
-  if (!compositor_thread_task_runner.get())
-    compositor_thread_task_runner = base::MessageLoopProxy::current();
-
-  // Here we know the GpuProcessHost has been set up, because we created a
-  // context.
-  output_surface_proxy_->ConnectToGpuProcessHost(
-      compositor_thread_task_runner.get());
 
   scoped_ptr<BrowserCompositorOutputSurface> surface(
       new GpuBrowserCompositorOutputSurface(
@@ -308,6 +314,16 @@ gfx::GLSurfaceHandle GpuProcessTransportFactory::GetSharedSurfaceHandle() {
   handle.parent_client_id =
       BrowserGpuChannelHostFactory::instance()->GetGpuChannelId();
   return handle;
+}
+
+scoped_ptr<cc::SurfaceIdAllocator>
+GpuProcessTransportFactory::CreateSurfaceIdAllocator() {
+  return make_scoped_ptr(
+      new cc::SurfaceIdAllocator(next_surface_id_namespace_++));
+}
+
+cc::SurfaceManager* GpuProcessTransportFactory::GetSurfaceManager() {
+  return surface_manager_.get();
 }
 
 GLHelper* GpuProcessTransportFactory::GetGLHelper() {

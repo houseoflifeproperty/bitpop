@@ -7,11 +7,11 @@
 
 #include "core/animation/Animation.h"
 #include "core/animation/AnimationPlayer.h"
-#include "core/animation/interpolation/Interpolation.h"
+#include "core/animation/Interpolation.h"
 #include "wtf/BitArray.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class SampledEffect : public NoBaseWillBeGarbageCollected<SampledEffect> {
 public:
@@ -46,6 +46,6 @@ private:
     Animation::Priority m_priority;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

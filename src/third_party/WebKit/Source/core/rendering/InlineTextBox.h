@@ -28,7 +28,7 @@
 #include "platform/text/TextRun.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 struct CompositionUnderline;
 class DocumentMarker;
@@ -36,10 +36,6 @@ class GraphicsContext;
 
 const unsigned short cNoTruncation = USHRT_MAX;
 const unsigned short cFullTruncation = USHRT_MAX - 1;
-
-// Helper functions shared by InlineTextBox / SVGRootInlineBox
-void updateGraphicsContext(GraphicsContext*, const Color& fillColor, const Color& strokeColor, float strokeThickness, ColorSpace);
-Color correctedTextColor(Color textColor, Color backgroundColor);
 
 class InlineTextBox : public InlineBox {
 public:
@@ -52,6 +48,8 @@ public:
         , m_truncation(cNoTruncation)
     {
     }
+
+    RenderText& renderer() const { return toRenderText(InlineBox::renderer()); }
 
     virtual void destroy() OVERRIDE FINAL;
 
@@ -90,8 +88,6 @@ public:
     void setLogicalOverflowRect(const LayoutRect&);
     LayoutUnit logicalTopVisualOverflow() const { return logicalOverflowRect().y(); }
     LayoutUnit logicalBottomVisualOverflow() const { return logicalOverflowRect().maxY(); }
-    LayoutUnit logicalLeftVisualOverflow() const { return logicalOverflowRect().x(); }
-    LayoutUnit logicalRightVisualOverflow() const { return logicalOverflowRect().maxX(); }
 
 #ifndef NDEBUG
     virtual void showBox(int = 0) const OVERRIDE;
@@ -120,9 +116,6 @@ public:
 protected:
     virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE;
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE;
-
-public:
-    RenderText& textRenderer() const;
 
 private:
     virtual void deleteLine() OVERRIDE FINAL;
@@ -201,11 +194,6 @@ private:
 
 DEFINE_INLINE_BOX_TYPE_CASTS(InlineTextBox);
 
-inline RenderText& InlineTextBox::textRenderer() const
-{
-    return toRenderText(renderer());
-}
-
 void alignSelectionRectToDevicePixels(FloatRect&);
 
 inline AffineTransform InlineTextBox::rotation(const FloatRect& boxRect, RotationDirection rotationDirection)
@@ -214,6 +202,6 @@ inline AffineTransform InlineTextBox::rotation(const FloatRect& boxRect, Rotatio
         : AffineTransform(0, -1, 1, 0, boxRect.x() - boxRect.maxY(), boxRect.x() + boxRect.maxY());
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InlineTextBox_h

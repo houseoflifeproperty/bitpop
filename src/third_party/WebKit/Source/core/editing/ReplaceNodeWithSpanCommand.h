@@ -33,9 +33,10 @@
 
 #include "core/editing/CompositeEditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLElement;
+class HTMLSpanElement;
 
 // More accurately, this is ReplaceElementWithSpanPreservingChildrenAndAttributesCommand
 class ReplaceNodeWithSpanCommand FINAL : public SimpleEditCommand {
@@ -45,7 +46,7 @@ public:
         return adoptRefWillBeNoop(new ReplaceNodeWithSpanCommand(element));
     }
 
-    HTMLElement* spanElement() { return m_spanElement.get(); }
+    HTMLSpanElement* spanElement() { return m_spanElement.get(); }
 
     virtual void trace(Visitor*) OVERRIDE;
 
@@ -56,9 +57,9 @@ private:
     virtual void doUnapply() OVERRIDE;
 
     RefPtrWillBeMember<HTMLElement> m_elementToReplace;
-    RefPtrWillBeMember<HTMLElement> m_spanElement;
+    RefPtrWillBeMember<HTMLSpanElement> m_spanElement;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ReplaceNodeWithSpanCommand

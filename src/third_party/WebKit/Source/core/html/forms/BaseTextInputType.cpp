@@ -24,11 +24,11 @@
 #include "config.h"
 #include "core/html/forms/BaseTextInputType.h"
 
-#include "bindings/v8/ScriptRegexp.h"
+#include "bindings/core/v8/ScriptRegexp.h"
 #include "core/HTMLNames.h"
 #include "core/html/HTMLInputElement.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -60,4 +60,4 @@ bool BaseTextInputType::supportsSelectionAPI() const
     return true;
 }
 
-} // namespace WebCore
+} // namespace blink

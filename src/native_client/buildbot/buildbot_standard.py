@@ -165,6 +165,27 @@ def BuildScript(status, context):
     with Step('gclient_runhooks', status):
       CommandGclientRunhooks(context)
 
+  # Make sure our GN build is working.
+  gn_path = None
+  targets = ['trusted_' + context['arch'], 'untrusted']
+  if context.Linux() and context['arch'] != 'arm':
+    gn_path = '../buildtools/linux32/gn'
+
+  # TODO(noelallen) Disable Mac and Windows build, but
+  # check in so we can debug on the bots.
+  if 0:
+    if context.Windows():
+      gn_path = '../buildtools/win/gn.exe'
+    if context.Mac():
+      gn_path = '../buildtools/mac/gn'
+
+  if gn_path:
+    with Step('gn_compile', status):
+      Command(context,
+              cmd=[gn_path, '--dotfile=../native_client/.gn',
+                   '--root=..', 'gen', '../out'])
+      Command(context, cmd=['ninja', '-C', '../out', '-j10'] + targets)
+
   if context['clang']:
     with Step('update_clang', status):
       Command(context, cmd=['../tools/clang/scripts/update.sh'])
@@ -216,15 +237,6 @@ def BuildScript(status, context):
   # Run checkdeps script to vet #includes.
   with Step('checkdeps', status):
     Command(context, cmd=[sys.executable, 'tools/checkdeps/checkdeps.py'])
-
-  # Make sure our GN build is working.
-  if context.Linux() and context['arch'] == '64':
-    with Step('gn_compile', status):
-      Command(context,
-              cmd=['tools/gn/bin/linux/gn32', '--dotfile=../native_client/.gn',
-                   '--root=..', 'gen', '../out'])
-      Command(context, cmd=['ninja', '-C', '../out', '-j10', 'prep_toolchains'])
-      Command(context, cmd=['ninja', '-C', '../out', '-j10'])
 
   # Make sure our Gyp build is working.
   if not context['no_gyp']:
@@ -278,8 +290,23 @@ def BuildScript(status, context):
   with Step('medium_tests under IRT', status, halt_on_fail=False):
     SCons(context, mode=context['default_scons_mode'] + ['nacl_irt_test'],
           args=['medium_tests_irt'])
-
   ### END tests ###
+
+  ### BEGIN GN tests ###
+  if gn_path:
+    arch_name = {
+      'arm': 'arm',
+      '32': 'x86',
+      '64': 'x64'
+    }[context['arch']]
+    gn_sel_ldr = '../out/trusted_%s/sel_ldr' % arch_name
+    with Step('small_tests under GN', status, halt_on_fail=False):
+      SCons(context, args=['small_tests', 'force_sel_ldr=' + gn_sel_ldr])
+    with Step('medium_tests under GN', status, halt_on_fail=False):
+      SCons(context, args=['medium_tests', 'force_sel_ldr=' + gn_sel_ldr])
+    with Step('large_tests under GN', status, halt_on_fail=False):
+      SCons(context, args=['large_tests', 'force_sel_ldr=' + gn_sel_ldr])
+  ### END GN tests ###
 
   if not context['no_gyp']:
     # Build with ragel-based validator using GYP.

@@ -122,6 +122,16 @@ const FieldTranslationEntry cellular_apn_fields[] = {
     { ::onc::cellular_apn::kName, shill::kApnProperty},
     { ::onc::cellular_apn::kUsername, shill::kApnUsernameProperty},
     { ::onc::cellular_apn::kPassword, shill::kApnPasswordProperty},
+    { ::onc::cellular_apn::kLocalizedName, shill::kApnLocalizedNameProperty},
+    { ::onc::cellular_apn::kLanguage, shill::kApnLanguageProperty},
+    {NULL}};
+
+const FieldTranslationEntry cellular_found_network_fields[] = {
+    { ::onc::cellular_found_network::kNetworkId, shill::kNetworkIdProperty},
+    { ::onc::cellular_found_network::kStatus, shill::kStatusProperty},
+    { ::onc::cellular_found_network::kTechnology, shill::kTechnologyProperty},
+    { ::onc::cellular_found_network::kShortName, shill::kShortNameProperty},
+    { ::onc::cellular_found_network::kLongName, shill::kLongNameProperty},
     {NULL}};
 
 const FieldTranslationEntry cellular_provider_fields[] = {
@@ -130,11 +140,16 @@ const FieldTranslationEntry cellular_provider_fields[] = {
     { ::onc::cellular_provider::kName, shill::kOperatorNameKey},
     {NULL}};
 
+const FieldTranslationEntry sim_lock_status_fields[] = {
+    { ::onc::sim_lock_status::kLockEnabled, shill::kSIMLockEnabledProperty},
+    { ::onc::sim_lock_status::kLockType, shill::kSIMLockTypeProperty},
+    { ::onc::sim_lock_status::kRetriesLeft, shill::kSIMLockRetriesLeftProperty},
+    {NULL}};
+
 // This must only contain Service properties and not Device properties.
 // For Device properties see kCellularDeviceTable.
 const FieldTranslationEntry cellular_fields[] = {
-    { ::onc::cellular::kActivateOverNonCellularNetwork,
-      shill::kActivateOverNonCellularNetworkProperty},
+    { ::onc::cellular::kActivationType, shill::kActivationTypeProperty},
     { ::onc::cellular::kActivationState, shill::kActivationStateProperty},
     { ::onc::cellular::kNetworkTechnology, shill::kNetworkTechnologyProperty},
     { ::onc::cellular::kRoamingState, shill::kRoamingStateProperty},
@@ -185,7 +200,9 @@ const OncValueTranslationEntry onc_value_translation_table[] = {
   { &kWiFiSignature, wifi_fields },
   { &kWiFiWithStateSignature, wifi_fields },
   { &kCellularApnSignature, cellular_apn_fields },
+  { &kCellularFoundNetworkSignature, cellular_found_network_fields },
   { &kCellularProviderSignature, cellular_provider_fields },
+  { &kSIMLockStatusSignature, sim_lock_status_fields },
   { &kCellularSignature, cellular_fields },
   { &kCellularWithStateSignature, cellular_fields },
   { &kNetworkWithStateSignature, network_fields },
@@ -217,6 +234,7 @@ const StringTranslationEntry kNetworkTypeTable[] = {
     //  { network_type::kEthernet, shill::kTypeEthernet },
     //  { network_type::kEthernet, shill::kTypeEthernetEap },
     { ::onc::network_type::kWiFi, shill::kTypeWifi},
+    { ::onc::network_type::kWimax, shill::kTypeWimax},
     { ::onc::network_type::kCellular, shill::kTypeCellular},
     { ::onc::network_type::kVPN, shill::kTypeVPN},
     {NULL}};
@@ -227,7 +245,7 @@ const StringTranslationEntry kVPNTypeTable[] = {
 
 // The first matching line is chosen.
 const StringTranslationEntry kWiFiSecurityTable[] = {
-    { ::onc::wifi::kNone, shill::kSecurityNone},
+    { ::onc::wifi::kSecurityNone, shill::kSecurityNone},
     { ::onc::wifi::kWEP_PSK, shill::kSecurityWep},
     { ::onc::wifi::kWPA_PSK, shill::kSecurityPsk},
     { ::onc::wifi::kWPA_EAP, shill::kSecurity8021x},
@@ -257,12 +275,15 @@ const StringTranslationEntry kEAP_TTLS_InnerTable[] = {
 // This must contain only Shill Device properties and no Service properties.
 // For Service properties see cellular_fields.
 const FieldTranslationEntry kCellularDeviceTable[] = {
+    // This field is converted during translation, see onc_translator_*.
+    // { ::onc::cellular::kAPNList, shill::kCellularApnListProperty},
     { ::onc::cellular::kAllowRoaming, shill::kCellularAllowRoamingProperty},
     { ::onc::cellular::kCarrier, shill::kCarrierProperty},
     { ::onc::cellular::kESN, shill::kEsnProperty},
     { ::onc::cellular::kFamily, shill::kTechnologyFamilyProperty},
     { ::onc::cellular::kFirmwareRevision, shill::kFirmwareRevisionProperty},
-    { ::onc::cellular::kFoundNetworks, shill::kFoundNetworksProperty},
+    // This field is converted during translation, see onc_translator_*.
+    // { ::onc::cellular::kFoundNetworks, shill::kFoundNetworksProperty},
     { ::onc::cellular::kHardwareRevision, shill::kHardwareRevisionProperty},
     { ::onc::cellular::kHomeProvider, shill::kHomeProviderProperty},
     { ::onc::cellular::kICCID, shill::kIccidProperty},
@@ -277,9 +298,8 @@ const FieldTranslationEntry kCellularDeviceTable[] = {
     { ::onc::cellular::kProviderRequiresRoaming,
       shill::kProviderRequiresRoamingProperty},
     { ::onc::cellular::kSelectedNetwork, shill::kSelectedNetworkProperty},
-    { ::onc::cellular::kSIMLockEnabled, shill::kSIMLockEnabledProperty},
-    { ::onc::cellular::kSIMLockStatus, shill::kSIMLockStatusProperty},
-    { ::onc::cellular::kSIMLockType, shill::kSIMLockTypeProperty},
+    // This field is converted during translation, see onc_translator_*.
+    // { ::onc::cellular::kSIMLockStatus, shill::kSIMLockStatusProperty},
     { ::onc::cellular::kSIMPresent, shill::kSIMPresentProperty},
     { ::onc::cellular::kSupportedCarriers, shill::kSupportedCarriersProperty},
     { ::onc::cellular::kSupportNetworkScan, shill::kSupportNetworkScanProperty},

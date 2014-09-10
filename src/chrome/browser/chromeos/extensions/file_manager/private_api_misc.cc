@@ -18,7 +18,7 @@
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_util.h"
 #include "chrome/browser/chromeos/file_manager/app_installer.h"
 #include "chrome/browser/chromeos/file_manager/zip_file_creator.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/drive/event_logger.h"
@@ -35,6 +35,7 @@
 #include "chrome/common/pref_names.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/page_zoom.h"
@@ -46,6 +47,7 @@ namespace extensions {
 
 namespace {
 const char kCWSScope[] = "https://www.googleapis.com/auth/chromewebstore";
+const char kGoogleCastApiExtensionId[] = "mafeflapfdfljijmlienjedomfjfmhpd";
 
 // Obtains the current app window.
 apps::AppWindow* GetCurrentAppWindow(ChromeSyncExtensionFunction* function) {
@@ -61,7 +63,7 @@ apps::AppWindow* GetCurrentAppWindow(ChromeSyncExtensionFunction* function) {
 
 std::vector<linked_ptr<api::file_browser_private::ProfileInfo> >
 GetLoggedInProfileInfoList(content::WebContents* contents) {
-  DCHECK(chromeos::UserManager::IsInitialized());
+  DCHECK(user_manager::UserManager::IsInitialized());
   const std::vector<Profile*>& profiles =
       g_browser_process->profile_manager()->GetLoadedProfiles();
   std::set<Profile*> original_profiles;
@@ -74,8 +76,8 @@ GetLoggedInProfileInfoList(content::WebContents* contents) {
     if (original_profiles.count(profile))
       continue;
     original_profiles.insert(profile);
-    const chromeos::User* const user =
-        chromeos::UserManager::Get()->GetUserByProfile(profile);
+    const user_manager::User* const user =
+        chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
     if (!user || !user->is_logged_in())
       continue;
 
@@ -107,12 +109,11 @@ GetLoggedInProfileInfoList(content::WebContents* contents) {
 } // namespace
 
 bool FileBrowserPrivateLogoutUserForReauthenticationFunction::RunSync() {
-  chromeos::User* user =
-      chromeos::UserManager::Get()->GetUserByProfile(GetProfile());
+  user_manager::User* user =
+      chromeos::ProfileHelper::Get()->GetUserByProfile(GetProfile());
   if (user) {
-    chromeos::UserManager::Get()->SaveUserOAuthStatus(
-        user->email(),
-        chromeos::User::OAUTH2_TOKEN_STATUS_INVALID);
+    user_manager::UserManager::Get()->SaveUserOAuthStatus(
+        user->email(), user_manager::User::OAUTH2_TOKEN_STATUS_INVALID);
   }
 
   chrome::AttemptUserExit();
@@ -269,12 +270,19 @@ bool FileBrowserPrivateInstallWebstoreItemFunction::RunAsync() {
           &FileBrowserPrivateInstallWebstoreItemFunction::OnInstallComplete,
           this);
 
+  // Only GoogleCastAPI extension can use silent installation.
+  if (params->silent_installation &&
+      params->item_id != kGoogleCastApiExtensionId) {
+    SetError("Only whitelisted items can do silent installation.");
+    return false;
+  }
+
   scoped_refptr<file_manager::AppInstaller> installer(
-      new file_manager::AppInstaller(
-          GetAssociatedWebContents(),
-          params->item_id,
-          GetProfile(),
-          callback));
+      new file_manager::AppInstaller(GetAssociatedWebContents(),
+                                     params->item_id,
+                                     GetProfile(),
+                                     params->silent_installation,
+                                     callback));
   // installer will be AddRef()'d in BeginInstall().
   installer->BeginInstall();
   return true;
@@ -282,7 +290,8 @@ bool FileBrowserPrivateInstallWebstoreItemFunction::RunAsync() {
 
 void FileBrowserPrivateInstallWebstoreItemFunction::OnInstallComplete(
     bool success,
-    const std::string& error) {
+    const std::string& error,
+    extensions::webstore_install::Result result) {
   drive::EventLogger* logger = file_manager::util::GetLogger(GetProfile());
   if (success) {
     if (logger) {
@@ -448,21 +457,24 @@ bool FileBrowserPrivateOpenInspectorFunction::RunSync() {
   switch (params->type) {
     case extensions::api::file_browser_private::INSPECTION_TYPE_NORMAL:
       // Open inspector for foreground page.
-      DevToolsWindow::OpenDevToolsWindow(render_view_host());
+      DevToolsWindow::OpenDevToolsWindow(
+          content::WebContents::FromRenderViewHost(render_view_host()));
       break;
     case extensions::api::file_browser_private::INSPECTION_TYPE_CONSOLE:
       // Open inspector for foreground page and bring focus to the console.
-      DevToolsWindow::OpenDevToolsWindow(render_view_host(),
-                                         DevToolsToggleAction::ShowConsole());
+      DevToolsWindow::OpenDevToolsWindow(
+          content::WebContents::FromRenderViewHost(render_view_host()),
+          DevToolsToggleAction::ShowConsole());
       break;
     case extensions::api::file_browser_private::INSPECTION_TYPE_ELEMENT:
       // Open inspector for foreground page in inspect element mode.
-      DevToolsWindow::OpenDevToolsWindow(render_view_host(),
-                                         DevToolsToggleAction::Inspect());
+      DevToolsWindow::OpenDevToolsWindow(
+          content::WebContents::FromRenderViewHost(render_view_host()),
+          DevToolsToggleAction::Inspect());
       break;
     case extensions::api::file_browser_private::INSPECTION_TYPE_BACKGROUND:
       // Open inspector for background page.
-      extensions::devtools_util::InspectBackgroundPage(GetExtension(),
+      extensions::devtools_util::InspectBackgroundPage(extension(),
                                                        GetProfile());
       break;
     default:

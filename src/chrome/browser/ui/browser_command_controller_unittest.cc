@@ -175,7 +175,9 @@ TEST_F(BrowserCommandControllerTest, OldAvatarMenuEnabledForOneOrMoreProfiles) {
   if (!profiles::IsMultipleProfilesEnabled())
     return;
 
-  EXPECT_FALSE(switches::IsNewProfileManagement());
+  // The command line is reset at the end of every test by the test suite.
+  switches::DisableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
+  ASSERT_FALSE(switches::IsNewAvatarMenu());
 
   TestingProfileManager testing_profile_manager(
       TestingBrowserProcess::GetGlobal());
@@ -211,8 +213,7 @@ TEST_F(BrowserCommandControllerTest, NewAvatarMenuEnabledWhenOnlyOneProfile) {
     return;
 
   // The command line is reset at the end of every test by the test suite.
-  switches::EnableNewProfileManagementForTesting(
-      CommandLine::ForCurrentProcess());
+  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
 
   TestingProfileManager testing_profile_manager(
       TestingBrowserProcess::GetGlobal());
@@ -238,8 +239,7 @@ TEST_F(BrowserCommandControllerTest, NewAvatarMenuEnabledInGuestMode) {
     return;
 
   // The command line is reset at the end of every test by the test suite.
-  switches::EnableNewProfileManagementForTesting(
-      CommandLine::ForCurrentProcess());
+  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
 
   TestingProfileManager testing_profile_manager(
       TestingBrowserProcess::GetGlobal());
@@ -286,15 +286,15 @@ TEST_F(BrowserCommandControllerTest, AvatarMenuAlwaysDisabledInIncognitoMode) {
   chrome::BrowserCommandController command_controller(otr_browser.get());
   const CommandUpdater* command_updater = command_controller.command_updater();
 
-  // The old style avatar menu should be disabled.
-  EXPECT_FALSE(switches::IsNewProfileManagement());
+  // Both the old style and the new style avatar menu should be disabled.
   EXPECT_FALSE(command_updater->IsCommandEnabled(IDC_SHOW_AVATAR_MENU));
-
-  // The new style avatar menu should also be disabled.
+  if (switches::IsNewAvatarMenu()) {
+    switches::DisableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
+  } else {
+    switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
+  }
+  EXPECT_FALSE(command_updater->IsCommandEnabled(IDC_SHOW_AVATAR_MENU));
   // The command line is reset at the end of every test by the test suite.
-  switches::EnableNewProfileManagementForTesting(
-      CommandLine::ForCurrentProcess());
-  EXPECT_FALSE(command_updater->IsCommandEnabled(IDC_SHOW_AVATAR_MENU));
 }
 
 //////////////////////////////////////////////////////////////////////////////

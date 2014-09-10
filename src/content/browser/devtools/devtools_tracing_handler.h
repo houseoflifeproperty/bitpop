@@ -8,6 +8,7 @@
 #include <set>
 #include <string>
 
+#include "base/debug/trace_event.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/devtools/devtools_protocol.h"
 #include "content/public/browser/tracing_controller.h"
@@ -33,7 +34,7 @@ class DevToolsTracingHandler : public DevToolsProtocol::Handler {
   void BeginReadingRecordingResult(const base::FilePath& path);
   void ReadRecordingResult(const scoped_refptr<base::RefCountedString>& result);
   void OnTraceDataCollected(const std::string& trace_fragment);
-  void OnTracingStarted(scoped_refptr<DevToolsProtocol::Command> command);
+  void OnRecordingEnabled(scoped_refptr<DevToolsProtocol::Command> command);
   void OnBufferUsage(float usage);
 
   scoped_refptr<DevToolsProtocol::Response> OnStart(
@@ -43,10 +44,19 @@ class DevToolsTracingHandler : public DevToolsProtocol::Handler {
 
   scoped_refptr<DevToolsProtocol::Response> OnGetCategories(
       scoped_refptr<DevToolsProtocol::Command> command);
+
+  void OnTracingStarted(
+      scoped_refptr<DevToolsProtocol::Notification> notification);
+
+  void OnTracingStopped(
+      scoped_refptr<DevToolsProtocol::Notification> notification);
+
   void OnCategoriesReceived(scoped_refptr<DevToolsProtocol::Command> command,
                             const std::set<std::string>& category_set);
 
-  TracingController::Options TraceOptionsFromString(const std::string& options);
+  base::debug::TraceOptions TraceOptionsFromString(const std::string& options);
+
+  void SetupTimer(double usage_reporting_interval);
 
   void DisableRecording(
       const TracingController::TracingFileResultCallback& callback =
@@ -55,6 +65,12 @@ class DevToolsTracingHandler : public DevToolsProtocol::Handler {
   base::WeakPtrFactory<DevToolsTracingHandler> weak_factory_;
   scoped_ptr<base::Timer> buffer_usage_poll_timer_;
   Target target_;
+  bool is_recording_;
+
+  static const char* kDefaultCategories;
+  static const double kDefaultReportingInterval;
+  static const double kMinimumReportingInterval;
+
   DISALLOW_COPY_AND_ASSIGN(DevToolsTracingHandler);
 };
 

@@ -503,18 +503,21 @@ BOOL __stdcall LaunchGoogleChrome() {
     }
   }
 
+  CommandLine chrome_command(chrome_exe_path);
+
   bool ret = false;
   ScopedComPtr<IProcessLauncher> ipl;
   if (SUCCEEDED(ipl.CreateInstance(__uuidof(ProcessLauncherClass),
                                    NULL,
                                    CLSCTX_LOCAL_SERVER))) {
-    if (SUCCEEDED(ipl->LaunchCmdLine(chrome_exe_path.value().c_str())))
+    if (SUCCEEDED(ipl->LaunchCmdLine(
+            chrome_command.GetCommandLineString().c_str())))
       ret = true;
     ipl.Release();
   } else {
     // Couldn't get Omaha's process launcher, Omaha may not be installed at
     // system level. Try just running Chrome instead.
-    ret = base::LaunchProcess(chrome_exe_path.value(),
+    ret = base::LaunchProcess(chrome_command.GetCommandLineString(),
                               base::LaunchOptions(),
                               NULL);
   }
@@ -602,7 +605,7 @@ int __stdcall GoogleChromeDaysSinceLastRun() {
                         kChromeRegClientStateKey,
                         KEY_QUERY_VALUE | KEY_WOW64_32KEY);
     if (client_state.Valid()) {
-      std::wstring last_run;
+      base::string16 last_run;
       int64 last_run_value = 0;
       if (client_state.ReadValue(google_update::kRegLastRunTimeField,
                                  &last_run) == ERROR_SUCCESS &&
@@ -715,7 +718,7 @@ BOOL __stdcall CanOfferRelaunch(const wchar_t** partner_brandcode_list,
 
   // b) the installed brandcode should belong to that partner (in
   // brandcode_list);
-  std::wstring installed_brandcode;
+  base::string16 installed_brandcode;
   bool valid_brandcode = false;
   if (GoogleUpdateSettings::GetBrand(&installed_brandcode)) {
     for (int i = 0; i < partner_brandcode_list_length; ++i) {

@@ -39,7 +39,7 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class DatabaseSync;
 class SQLResultSet;
@@ -52,7 +52,7 @@ class ExceptionState;
 // Instances of this class should be created and used only on the worker's context thread.
 class SQLTransactionBackendSync : public RefCountedWillBeGarbageCollectedFinalized<SQLTransactionBackendSync> {
 public:
-    ~SQLTransactionBackendSync();
+    virtual ~SQLTransactionBackendSync();
     void trace(Visitor*);
 
     PassRefPtrWillBeRawPtr<SQLResultSet> executeSQL(const String& sqlStatement, const Vector<SQLValue>& arguments, ExceptionState&);
@@ -80,6 +80,6 @@ private:
     friend class SQLTransactionSync; // FIXME: Remove this once the front-end has been properly isolated.
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SQLTransactionBackendSync_h

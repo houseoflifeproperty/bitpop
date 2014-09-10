@@ -13,21 +13,6 @@
 #include "tools/gn/value_extractors.h"
 #include "tools/gn/variables.h"
 
-namespace {
-
-// Returns true if the list of files looks like it might have a {{ }} pattern
-// in it. Used for error checking.
-bool FileListHasPattern(const Target::FileList& files) {
-  for (size_t i = 0; i < files.size(); i++) {
-    if (files[i].value().find("{{") != std::string::npos &&
-        files[i].value().find("}}") != std::string::npos)
-      return true;
-  }
-  return false;
-}
-
-}  // namespace
-
 ActionTargetGenerator::ActionTargetGenerator(
     Target* target,
     Scope* scope,
@@ -67,7 +52,7 @@ void ActionTargetGenerator::DoRun() {
   if (err_->has_error())
     return;
 
-  FillOutputs();
+  FillOutputs(output_type_ == Target::ACTION_FOREACH);
   if (err_->has_error())
     return;
 
@@ -108,24 +93,27 @@ void ActionTargetGenerator::FillScriptArgs() {
   if (!value)
     return;
 
-  std::vector<std::string> args;
-  if (!ExtractListOfStringValues(*value, &args, err_))
+  if (!target_->action_values().args().Parse(*value, err_))
     return;
-  target_->action_values().swap_in_args(&args);
 }
 
 void ActionTargetGenerator::FillDepfile() {
   const Value* value = scope_->GetValue(variables::kDepfile, true);
   if (!value)
     return;
-  target_->action_values().set_depfile(
-      scope_->settings()->build_settings()->build_dir().ResolveRelativeFile(
-          value->string_value()));
+
+  SubstitutionPattern depfile;
+  if (!depfile.Parse(*value, err_))
+    return;
+  if (!EnsureSubstitutionIsInOutputDir(depfile, *value))
+    return;
+
+  target_->action_values().set_depfile(depfile);
 }
 
 void ActionTargetGenerator::CheckOutputs() {
-  const Target::FileList& outputs = target_->action_values().outputs();
-  if (outputs.empty()) {
+  const SubstitutionList& outputs = target_->action_values().outputs();
+  if (outputs.list().empty()) {
     *err_ = Err(function_call_, "Action has no outputs.",
         "If you have no outputs, the build system can not tell when your\n"
         "script needs to be run.");
@@ -133,8 +121,7 @@ void ActionTargetGenerator::CheckOutputs() {
   }
 
   if (output_type_ == Target::ACTION) {
-    // Make sure the outputs for an action have no patterns in them.
-    if (FileListHasPattern(outputs)) {
+    if (!outputs.required_types().empty()) {
       *err_ = Err(function_call_, "Action has patterns in the output.",
           "An action target should have the outputs completely specified. If\n"
           "you want to provide a mapping from source to output, use an\n"
@@ -143,7 +130,7 @@ void ActionTargetGenerator::CheckOutputs() {
     }
   } else if (output_type_ == Target::ACTION_FOREACH) {
     // A foreach target should always have a pattern in the outputs.
-    if (!FileListHasPattern(outputs)) {
+    if (outputs.required_types().empty()) {
       *err_ = Err(function_call_,
           "action_foreach should have a pattern in the output.",
           "An action_foreach target should have a source expansion pattern in\n"

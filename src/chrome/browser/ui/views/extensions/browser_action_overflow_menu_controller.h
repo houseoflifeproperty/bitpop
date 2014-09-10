@@ -41,15 +41,19 @@ class BrowserActionOverflowMenuController : public views::MenuDelegate {
       Browser* browser,
       views::MenuButton* menu_button,
       const std::vector<BrowserActionView*>& views,
-      int start_index);
+      int start_index,
+      bool for_drop);
 
   void set_observer(Observer* observer) { observer_ = observer; }
 
   // Shows the overflow menu.
-  bool RunMenu(views::Widget* widget, bool for_drop);
+  bool RunMenu(views::Widget* widget);
 
   // Closes the overflow menu (and its context menu if open as well).
   void CancelMenu();
+
+  // Notify the menu that the associated BrowserActionViews have been deleted.
+  void NotifyBrowserActionViewsDeleting();
 
   // Overridden from views::MenuDelegate:
   virtual bool IsCommandEnabled(int id) const OVERRIDE;

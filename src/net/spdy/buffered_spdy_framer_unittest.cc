@@ -21,8 +21,8 @@ class TestBufferedSpdyVisitor : public BufferedSpdyFramerVisitorInterface {
         syn_reply_frame_count_(0),
         headers_frame_count_(0),
         push_promise_frame_count_(0),
-        header_stream_id_(-1),
-        promised_stream_id_(-1) {
+        header_stream_id_(static_cast<SpdyStreamId>(-1)),
+        promised_stream_id_(static_cast<SpdyStreamId>(-1)) {
   }
 
   virtual void OnError(SpdyFramer::SpdyError error_code) OVERRIDE {
@@ -226,6 +226,10 @@ TEST_P(BufferedSpdyFramerTest, OnSetting) {
 }
 
 TEST_P(BufferedSpdyFramerTest, ReadSynStreamHeaderBlock) {
+  if (spdy_version() > SPDY3) {
+    // SYN_STREAM not supported in SPDY>3.
+    return;
+  }
   SpdyHeaderBlock headers;
   headers["aa"] = "vv";
   headers["bb"] = "ww";
@@ -251,6 +255,10 @@ TEST_P(BufferedSpdyFramerTest, ReadSynStreamHeaderBlock) {
 }
 
 TEST_P(BufferedSpdyFramerTest, ReadSynReplyHeaderBlock) {
+  if (spdy_version() > SPDY3) {
+    // SYN_REPLY not supported in SPDY>3.
+    return;
+  }
   SpdyHeaderBlock headers;
   headers["alpha"] = "beta";
   headers["gamma"] = "delta";

@@ -38,15 +38,16 @@
 #include "talk/app/webrtc/mediastreamsignaling.h"
 #include "talk/app/webrtc/peerconnectioninterface.h"
 #include "talk/app/webrtc/webrtcsessiondescriptionfactory.h"
-#include "talk/base/helpers.h"
-#include "talk/base/logging.h"
-#include "talk/base/stringencode.h"
-#include "talk/base/stringutils.h"
 #include "talk/media/base/constants.h"
 #include "talk/media/base/videocapturer.h"
 #include "talk/session/media/channel.h"
 #include "talk/session/media/channelmanager.h"
 #include "talk/session/media/mediasession.h"
+#include "webrtc/base/basictypes.h"
+#include "webrtc/base/helpers.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/stringencode.h"
+#include "webrtc/base/stringutils.h"
 
 using cricket::ContentInfo;
 using cricket::ContentInfos;
@@ -74,6 +75,7 @@ const char kSdpWithoutIceUfragPwd[] =
     "Called with SDP without ice-ufrag and ice-pwd.";
 const char kSessionError[] = "Session error code: ";
 const char kSessionErrorDesc[] = "Session error description: ";
+const int kMaxUnsignalledRecvStreams = 20;
 
 // Compares |answer| against |offer|. Comparision is done
 // for number of m-lines in answer against offer. If matches true will be
@@ -381,7 +383,7 @@ static void SetOptionFromOptionalConstraint(
   std::string string_value;
   T value;
   if (constraints->GetOptional().FindFirst(key, &string_value)) {
-    if (talk_base::FromString(string_value, &value)) {
+    if (rtc::FromString(string_value, &value)) {
       option->Set(value);
     }
   }
@@ -430,8 +432,10 @@ class IceRestartAnswerLatch {
         // No transport description exist. This is not an ice restart.
         continue;
       }
-      if (new_transport_desc->ice_pwd != old_transport_desc->ice_pwd &&
-          new_transport_desc->ice_ufrag != old_transport_desc->ice_ufrag) {
+      if (cricket::IceCredentialsChanged(old_transport_desc->ice_ufrag,
+                                         old_transport_desc->ice_pwd,
+                                         new_transport_desc->ice_ufrag,
+                                         new_transport_desc->ice_pwd)) {
         LOG(LS_INFO) << "Remote peer request ice restart.";
         ice_restart_ = true;
         break;
@@ -445,12 +449,12 @@ class IceRestartAnswerLatch {
 
 WebRtcSession::WebRtcSession(
     cricket::ChannelManager* channel_manager,
-    talk_base::Thread* signaling_thread,
-    talk_base::Thread* worker_thread,
+    rtc::Thread* signaling_thread,
+    rtc::Thread* worker_thread,
     cricket::PortAllocator* port_allocator,
     MediaStreamSignaling* mediastream_signaling)
     : cricket::BaseSession(signaling_thread, worker_thread, port_allocator,
-                           talk_base::ToString(talk_base::CreateRandomId64() &
+                           rtc::ToString(rtc::CreateRandomId64() &
                                                LLONG_MAX),
                            cricket::NS_JINGLE_RTP, false),
       // RFC 3264: The numeric value of the session id and version in the
@@ -546,14 +550,6 @@ bool WebRtcSession::Initialize(
     video_options_.suspend_below_min_bitrate.Set(value);
   }
 
-  if (FindConstraint(
-      constraints,
-      MediaConstraintsInterface::kSkipEncodingUnusedStreams,
-      &value,
-      NULL)) {
-    video_options_.skip_encoding_unused_streams.Set(value);
-  }
-
   SetOptionFromOptionalConstraint(constraints,
       MediaConstraintsInterface::kScreencastMinBitrate,
       &video_options_.screencast_min_bitrate);
@@ -593,6 +589,17 @@ bool WebRtcSession::Initialize(
   } else {
     // Enable by default if the constraint is not set.
     video_options_.use_improved_wifi_bandwidth_estimator.Set(true);
+  }
+
+  SetOptionFromOptionalConstraint(constraints,
+      MediaConstraintsInterface::kNumUnsignalledRecvStreams,
+      &video_options_.unsignalled_recv_stream_limit);
+  if (video_options_.unsignalled_recv_stream_limit.IsSet()) {
+    int stream_limit;
+    video_options_.unsignalled_recv_stream_limit.Get(&stream_limit);
+    stream_limit = rtc::_min(kMaxUnsignalledRecvStreams, stream_limit);
+    stream_limit = rtc::_max(0, stream_limit);
+    video_options_.unsignalled_recv_stream_limit.Set(stream_limit);
   }
 
   SetOptionFromOptionalConstraint(constraints,
@@ -679,7 +686,7 @@ cricket::SecurePolicy WebRtcSession::SdesPolicy() const {
   return webrtc_session_desc_factory_->SdesPolicy();
 }
 
-bool WebRtcSession::GetSslRole(talk_base::SSLRole* role) {
+bool WebRtcSession::GetSslRole(rtc::SSLRole* role) {
   if (local_description() == NULL || remote_description() == NULL) {
     LOG(LS_INFO) << "Local and Remote descriptions must be applied to get "
                  << "SSL Role of the session.";
@@ -699,9 +706,10 @@ bool WebRtcSession::GetSslRole(talk_base::SSLRole* role) {
   return false;
 }
 
-void WebRtcSession::CreateOffer(CreateSessionDescriptionObserver* observer,
-                                const MediaConstraintsInterface* constraints) {
-  webrtc_session_desc_factory_->CreateOffer(observer, constraints);
+void WebRtcSession::CreateOffer(
+    CreateSessionDescriptionObserver* observer,
+    const PeerConnectionInterface::RTCOfferAnswerOptions& options) {
+  webrtc_session_desc_factory_->CreateOffer(observer, options);
 }
 
 void WebRtcSession::CreateAnswer(CreateSessionDescriptionObserver* observer,
@@ -712,7 +720,7 @@ void WebRtcSession::CreateAnswer(CreateSessionDescriptionObserver* observer,
 bool WebRtcSession::SetLocalDescription(SessionDescriptionInterface* desc,
                                         std::string* err_desc) {
   // Takes the ownership of |desc| regardless of the result.
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc_temp(desc);
+  rtc::scoped_ptr<SessionDescriptionInterface> desc_temp(desc);
 
   // Validate SDP.
   if (!ValidateSessionDescription(desc, cricket::CS_LOCAL, err_desc)) {
@@ -757,7 +765,7 @@ bool WebRtcSession::SetLocalDescription(SessionDescriptionInterface* desc,
   // local session description.
   mediastream_signaling_->OnLocalDescriptionChanged(local_desc_.get());
 
-  talk_base::SSLRole role;
+  rtc::SSLRole role;
   if (data_channel_type_ == cricket::DCT_SCTP && GetSslRole(&role)) {
     mediastream_signaling_->OnDtlsRoleReadyForSctp(role);
   }
@@ -770,7 +778,7 @@ bool WebRtcSession::SetLocalDescription(SessionDescriptionInterface* desc,
 bool WebRtcSession::SetRemoteDescription(SessionDescriptionInterface* desc,
                                          std::string* err_desc) {
   // Takes the ownership of |desc| regardless of the result.
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc_temp(desc);
+  rtc::scoped_ptr<SessionDescriptionInterface> desc_temp(desc);
 
   // Validate SDP.
   if (!ValidateSessionDescription(desc, cricket::CS_REMOTE, err_desc)) {
@@ -813,7 +821,7 @@ bool WebRtcSession::SetRemoteDescription(SessionDescriptionInterface* desc,
                                                desc);
   remote_desc_.reset(desc_temp.release());
 
-  talk_base::SSLRole role;
+  rtc::SSLRole role;
   if (data_channel_type_ == cricket::DCT_SCTP && GetSslRole(&role)) {
     mediastream_signaling_->OnDtlsRoleReadyForSctp(role);
   }
@@ -890,36 +898,16 @@ bool WebRtcSession::ProcessIceMessage(const IceCandidateInterface* candidate) {
     return false;
   }
 
-  cricket::TransportProxy* transport_proxy = NULL;
-  if (remote_description()) {
-    size_t mediacontent_index =
-        static_cast<size_t>(candidate->sdp_mline_index());
-    size_t remote_content_size =
-        BaseSession::remote_description()->contents().size();
-    if (mediacontent_index >= remote_content_size) {
-      LOG(LS_ERROR)
-          << "ProcessIceMessage: Invalid candidate media index.";
-      return false;
+  bool valid = false;
+  if (!ReadyToUseRemoteCandidate(candidate, NULL, &valid)) {
+    if (valid) {
+      LOG(LS_INFO) << "ProcessIceMessage: Candidate saved";
+      saved_candidates_.push_back(
+          new JsepIceCandidate(candidate->sdp_mid(),
+                               candidate->sdp_mline_index(),
+                               candidate->candidate()));
     }
-
-    cricket::ContentInfo content =
-        BaseSession::remote_description()->contents()[mediacontent_index];
-    transport_proxy = GetTransportProxy(content.name);
-  }
-
-  // We need to check the local/remote description for the Transport instead of
-  // the session, because a new Transport added during renegotiation may have
-  // them unset while the session has them set from the previou negotiation. Not
-  // doing so may trigger the auto generation of transport description and mess
-  // up DTLS identity information, ICE credential, etc.
-  if (!transport_proxy || !(transport_proxy->local_description_set() &&
-                            transport_proxy->remote_description_set())) {
-    LOG(LS_INFO) << "ProcessIceMessage: Local/Remote description not set "
-                 << "on the Transport, save the candidate for later use.";
-    saved_candidates_.push_back(
-        new JsepIceCandidate(candidate->sdp_mid(), candidate->sdp_mline_index(),
-                             candidate->candidate()));
-    return true;
+    return valid;
   }
 
   // Add this candidate to the remote session description.
@@ -1108,7 +1096,7 @@ sigslot::signal0<>* WebRtcSession::GetOnDestroyedSignal() {
 }
 
 bool WebRtcSession::SendData(const cricket::SendDataParams& params,
-                             const talk_base::Buffer& payload,
+                             const rtc::Buffer& payload,
                              cricket::SendDataResult* result) {
   if (!data_channel_.get()) {
     LOG(LS_ERROR) << "SendData called when data_channel_ is NULL.";
@@ -1163,7 +1151,7 @@ bool WebRtcSession::ReadyToSendData() const {
   return data_channel_.get() && data_channel_->ready_to_send_data();
 }
 
-talk_base::scoped_refptr<DataChannel> WebRtcSession::CreateDataChannel(
+rtc::scoped_refptr<DataChannel> WebRtcSession::CreateDataChannel(
     const std::string& label,
     const InternalDataChannelInit* config) {
   if (state() == STATE_RECEIVEDTERMINATE) {
@@ -1177,7 +1165,7 @@ talk_base::scoped_refptr<DataChannel> WebRtcSession::CreateDataChannel(
       config ? (*config) : InternalDataChannelInit();
   if (data_channel_type_ == cricket::DCT_SCTP) {
     if (new_config.id < 0) {
-      talk_base::SSLRole role;
+      rtc::SSLRole role;
       if (GetSslRole(&role) &&
           !mediastream_signaling_->AllocateSctpSid(role, &new_config.id)) {
         LOG(LS_ERROR) << "No id can be allocated for the SCTP data channel.";
@@ -1190,7 +1178,7 @@ talk_base::scoped_refptr<DataChannel> WebRtcSession::CreateDataChannel(
     }
   }
 
-  talk_base::scoped_refptr<DataChannel> channel(DataChannel::Create(
+  rtc::scoped_refptr<DataChannel> channel(DataChannel::Create(
       this, data_channel_type_, label, new_config));
   if (channel && !mediastream_signaling_->AddDataChannel(channel))
     return NULL;
@@ -1210,7 +1198,7 @@ void WebRtcSession::ResetIceRestartLatch() {
   ice_restart_latch_->Reset();
 }
 
-void WebRtcSession::OnIdentityReady(talk_base::SSLIdentity* identity) {
+void WebRtcSession::OnIdentityReady(rtc::SSLIdentity* identity) {
   SetIdentity(identity);
 }
 
@@ -1384,10 +1372,24 @@ bool WebRtcSession::UseCandidatesInSessionDescription(
   if (!remote_desc)
     return true;
   bool ret = true;
+
   for (size_t m = 0; m < remote_desc->number_of_mediasections(); ++m) {
     const IceCandidateCollection* candidates = remote_desc->candidates(m);
     for  (size_t n = 0; n < candidates->count(); ++n) {
-      ret = UseCandidate(candidates->at(n));
+      const IceCandidateInterface* candidate = candidates->at(n);
+      bool valid = false;
+      if (!ReadyToUseRemoteCandidate(candidate, remote_desc, &valid)) {
+        if (valid) {
+          LOG(LS_INFO) << "UseCandidatesInSessionDescription: Candidate saved.";
+          saved_candidates_.push_back(
+              new JsepIceCandidate(candidate->sdp_mid(),
+                                   candidate->sdp_mline_index(),
+                                   candidate->candidate()));
+        }
+        continue;
+      }
+
+      ret = UseCandidate(candidate);
       if (!ret)
         break;
     }
@@ -1563,7 +1565,7 @@ void WebRtcSession::CopySavedCandidates(
 void WebRtcSession::OnDataChannelMessageReceived(
     cricket::DataChannel* channel,
     const cricket::ReceiveDataParams& params,
-    const talk_base::Buffer& payload) {
+    const rtc::Buffer& payload) {
   ASSERT(data_channel_type_ == cricket::DCT_SCTP);
   if (params.type == cricket::DMT_CONTROL &&
       mediastream_signaling_->IsSctpSidAvailable(params.ssrc)) {
@@ -1692,6 +1694,44 @@ std::string WebRtcSession::GetSessionErrorMsg() {
   desc << kSessionError << GetErrorCodeString(error()) << ". ";
   desc << kSessionErrorDesc << error_desc() << ".";
   return desc.str();
+}
+
+// We need to check the local/remote description for the Transport instead of
+// the session, because a new Transport added during renegotiation may have
+// them unset while the session has them set from the previous negotiation.
+// Not doing so may trigger the auto generation of transport description and
+// mess up DTLS identity information, ICE credential, etc.
+bool WebRtcSession::ReadyToUseRemoteCandidate(
+    const IceCandidateInterface* candidate,
+    const SessionDescriptionInterface* remote_desc,
+    bool* valid) {
+  *valid = true;;
+  cricket::TransportProxy* transport_proxy = NULL;
+
+  const SessionDescriptionInterface* current_remote_desc =
+      remote_desc ? remote_desc : remote_description();
+
+  if (!current_remote_desc)
+    return false;
+
+  size_t mediacontent_index =
+      static_cast<size_t>(candidate->sdp_mline_index());
+  size_t remote_content_size =
+      current_remote_desc->description()->contents().size();
+  if (mediacontent_index >= remote_content_size) {
+    LOG(LS_ERROR)
+        << "ReadyToUseRemoteCandidate: Invalid candidate media index.";
+
+    *valid = false;
+    return false;
+  }
+
+  cricket::ContentInfo content =
+      current_remote_desc->description()->contents()[mediacontent_index];
+  transport_proxy = GetTransportProxy(content.name);
+
+  return transport_proxy && transport_proxy->local_description_set() &&
+      transport_proxy->remote_description_set();
 }
 
 }  // namespace webrtc

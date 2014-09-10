@@ -30,7 +30,7 @@
 #include "wtf/Assertions.h"
 #include "wtf/MathExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace AudioUtilities {
 
@@ -61,6 +61,6 @@ size_t timeToSampleFrame(double time, double sampleRate)
 }
 } // AudioUtilites
 
-} // WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

@@ -6,12 +6,9 @@
 #include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/guest_view/guest_view_manager.h"
-#include "chrome/browser/guest_view/guest_view_manager_factory.h"
 #include "chrome/browser/prerender/prerender_link_manager.h"
 #include "chrome/browser/prerender/prerender_link_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -32,6 +29,8 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/fake_speech_recognition_manager.h"
 #include "content/public/test/test_renderer_host.h"
+#include "extensions/browser/guest_view/guest_view_manager.h"
+#include "extensions/browser/guest_view/guest_view_manager_factory.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extensions_client.h"
 #include "media/base/media_switches.h"
@@ -50,6 +49,7 @@
 #include "base/win/windows_version.h"
 #endif
 
+using extensions::ContextMenuMatcher;
 using extensions::MenuItem;
 using prerender::PrerenderLinkManager;
 using prerender::PrerenderLinkManagerFactory;
@@ -94,7 +94,7 @@ class TestInterstitialPageDelegate : public content::InterstitialPageDelegate {
   virtual std::string GetHTMLContents() OVERRIDE { return std::string(); }
 };
 
-class TestGuestViewManager : public GuestViewManager {
+class TestGuestViewManager : public extensions::GuestViewManager {
  public:
   explicit TestGuestViewManager(content::BrowserContext* context) :
       GuestViewManager(context),
@@ -113,7 +113,8 @@ class TestGuestViewManager : public GuestViewManager {
   // GuestViewManager override:
   virtual void AddGuest(int guest_instance_id,
                         content::WebContents* guest_web_contents) OVERRIDE{
-    GuestViewManager::AddGuest(guest_instance_id, guest_web_contents);
+    extensions::GuestViewManager::AddGuest(
+        guest_instance_id, guest_web_contents);
     web_contents_ = guest_web_contents;
 
     if (message_loop_runner_)
@@ -125,14 +126,15 @@ class TestGuestViewManager : public GuestViewManager {
 };
 
 // Test factory for creating test instances of GuestViewManager.
-class TestGuestViewManagerFactory : public GuestViewManagerFactory {
+class TestGuestViewManagerFactory :
+  public extensions::GuestViewManagerFactory {
  public:
   TestGuestViewManagerFactory() :
       test_guest_view_manager_(NULL) {}
 
   virtual ~TestGuestViewManagerFactory() {}
 
-  virtual GuestViewManager* CreateGuestViewManager(
+  virtual extensions::GuestViewManager* CreateGuestViewManager(
       content::BrowserContext* context) OVERRIDE {
     return GetManager(context);
   }
@@ -727,7 +729,7 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
 
   WebViewTest() : guest_web_contents_(NULL),
                   embedder_web_contents_(NULL) {
-    GuestViewManager::set_factory_for_testing(&factory_);
+    extensions::GuestViewManager::set_factory_for_testing(&factory_);
   }
 
  private:
@@ -853,7 +855,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestAutosizeRemoveAttributes) {
 }
 
 // This test is disabled due to being flaky. http://crbug.com/282116
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 #define MAYBE_Shim_TestAutosizeWithPartialAttributes \
     DISABLED_Shim_TestAutosizeWithPartialAttributes
 #else
@@ -1030,9 +1032,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestContentLoadEvent) {
   TestHelper("testContentLoadEvent", "web_view/shim", NO_TEST_SERVER);
 }
 
-// http://crbug.com/326330
-IN_PROC_BROWSER_TEST_F(WebViewTest,
-                       Shim_TestDeclarativeWebRequestAPI) {
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestDeclarativeWebRequestAPI) {
   TestHelper("testDeclarativeWebRequestAPI",
              "web_view/shim",
              NEEDS_TEST_SERVER);
@@ -1460,7 +1460,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, PRE_StoragePersistence) {
 
 // This is the post-reset portion of the StoragePersistence test.  See
 // PRE_StoragePersistence for main comment.
-IN_PROC_BROWSER_TEST_F(WebViewTest, StoragePersistence) {
+#if defined(OS_CHROMEOS)
+// http://crbug.com/223888
+#define MAYBE_StoragePersistence DISABLED_StoragePersistence
+#else
+#define MAYBE_StoragePersistence StoragePersistence
+#endif
+IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_StoragePersistence) {
   ASSERT_TRUE(StartEmbeddedTestServer());
 
   // We don't care where the main browser is on this test.
@@ -1769,7 +1775,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, ContextMenusAPI_Basic) {
       guest_web_contents, page_url, GURL(), GURL()));
 
   // Look for the extension item in the menu, and execute it.
-  int command_id = IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST;
+  int command_id = ContextMenuMatcher::ConvertToExtensionsCustomCommandId(0);
   ASSERT_TRUE(menu->IsCommandIdEnabled(command_id));
   menu->ExecuteCommand(command_id, 0);
 
@@ -1963,6 +1969,68 @@ IN_PROC_BROWSER_TEST_F(WebViewTest,
                        FileSystemAPIRequestFromWorkerDefaultAllow) {
   TestHelper(
       "testDefaultAllow", "web_view/filesystem/worker", NEEDS_TEST_SERVER);
+}
+
+// In following FilesystemAPIRequestFromSharedWorkerOfSingleWebViewGuest* tests,
+// embedder contains a single webview guest. The guest creates a shared worker
+// to request filesystem access from worker thread.
+// FileSystemAPIRequestFromSharedWorkerOfSingleWebViewGuest* test 1 of 3
+IN_PROC_BROWSER_TEST_F(
+    WebViewTest,
+    FileSystemAPIRequestFromSharedWorkerOfSingleWebViewGuestAllow) {
+  TestHelper("testAllow",
+             "web_view/filesystem/shared_worker/single",
+             NEEDS_TEST_SERVER);
+}
+
+// FileSystemAPIRequestFromSharedWorkerOfSingleWebViewGuest* test 2 of 3.
+IN_PROC_BROWSER_TEST_F(
+    WebViewTest,
+    FileSystemAPIRequestFromSharedWorkerOfSingleWebViewGuestDeny) {
+  TestHelper("testDeny",
+             "web_view/filesystem/shared_worker/single",
+             NEEDS_TEST_SERVER);
+}
+
+// FileSystemAPIRequestFromSharedWorkerOfSingleWebViewGuest* test 3 of 3.
+IN_PROC_BROWSER_TEST_F(
+    WebViewTest,
+    FileSystemAPIRequestFromSharedWorkerOfSingleWebViewGuestDefaultAllow) {
+  TestHelper(
+      "testDefaultAllow",
+      "web_view/filesystem/shared_worker/single",
+      NEEDS_TEST_SERVER);
+}
+
+// In following FilesystemAPIRequestFromSharedWorkerOfMultiWebViewGuests* tests,
+// embedder contains mutiple webview guests. Each guest creates a shared worker
+// to request filesystem access from worker thread.
+// FileSystemAPIRequestFromSharedWorkerOfMultiWebViewGuests* test 1 of 3
+IN_PROC_BROWSER_TEST_F(
+    WebViewTest,
+    FileSystemAPIRequestFromSharedWorkerOfMultiWebViewGuestsAllow) {
+  TestHelper("testAllow",
+             "web_view/filesystem/shared_worker/multiple",
+             NEEDS_TEST_SERVER);
+}
+
+// FileSystemAPIRequestFromSharedWorkerOfMultiWebViewGuests* test 2 of 3.
+IN_PROC_BROWSER_TEST_F(
+    WebViewTest,
+    FileSystemAPIRequestFromSharedWorkerOfMultiWebViewGuestsDeny) {
+  TestHelper("testDeny",
+             "web_view/filesystem/shared_worker/multiple",
+             NEEDS_TEST_SERVER);
+}
+
+// FileSystemAPIRequestFromSharedWorkerOfMultiWebViewGuests* test 3 of 3.
+IN_PROC_BROWSER_TEST_F(
+    WebViewTest,
+    FileSystemAPIRequestFromSharedWorkerOfMultiWebViewGuestsDefaultAllow) {
+  TestHelper(
+      "testDefaultAllow",
+      "web_view/filesystem/shared_worker/multiple",
+      NEEDS_TEST_SERVER);
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, ClearData) {
@@ -2183,4 +2251,17 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestFindAPI_findupdate) {
 IN_PROC_BROWSER_TEST_F(WebViewCaptureTest,
                        DISABLED_Shim_ScreenshotCapture) {
   TestHelper("testScreenshotCapture", "web_view/shim", NO_TEST_SERVER);
+}
+
+#if defined(OS_WIN)
+// Test is disabled on Windows because it times out often.
+// http://crbug.com/403325
+#define MAYBE_WebViewInBackgroundPage \
+    DISABLED_WebViewInBackgroundPage
+#else
+#define MAYBE_WebViewInBackgroundPage WebViewInBackgroundPage
+#endif
+IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_WebViewInBackgroundPage) {
+  ASSERT_TRUE(RunExtensionTest("platform_apps/web_view/background"))
+      << message_;
 }

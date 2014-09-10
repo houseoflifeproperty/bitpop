@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004-2007, 2009, 2014 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,7 +25,7 @@
 
 #include "core/dom/Element.h"
 
-namespace WebCore {
+namespace blink {
 
 class DocumentFragment;
 class HTMLCollection;
@@ -41,6 +41,8 @@ enum TranslateAttributeMode {
 class HTMLElement : public Element {
 public:
     DECLARE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLElement);
+
+    bool hasTagName(const HTMLQualifiedName& name) const { return hasLocalName(name.localName()); }
 
     virtual String title() const OVERRIDE FINAL;
     virtual short tabIndex() const OVERRIDE;
@@ -107,11 +109,14 @@ protected:
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
     unsigned parseBorderWidthAttribute(const AtomicString&) const;
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
+    virtual void childrenChanged(const ChildrenChange&) OVERRIDE;
     void calculateAndAdjustDirectionality();
 
 private:
     virtual String nodeName() const OVERRIDE FINAL;
+
+    bool isHTMLElement() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+    bool isStyledElement() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
 
     void mapLanguageAttributeToLocale(const AtomicString&, MutableStylePropertySet*);
 
@@ -119,7 +124,7 @@ private:
 
     void dirAttributeChanged(const AtomicString&);
     void adjustDirectionalityIfNeededAfterChildAttributeChanged(Element* child);
-    void adjustDirectionalityIfNeededAfterChildrenChanged(Node* beforeChange, int childCountDelta);
+    void adjustDirectionalityIfNeededAfterChildrenChanged(const ChildrenChange&);
     TextDirection directionality(Node** strongDirectionalityTextNode= 0) const;
 
     TranslateAttributeMode translateAttributeMode() const;
@@ -129,7 +134,6 @@ private:
 
 DEFINE_ELEMENT_TYPE_CASTS(HTMLElement, isHTMLElement());
 
-template <> inline bool isElementOfType<const HTMLElement>(const Node& node) { return node.isHTMLElement(); }
 template <typename T> bool isElementOfType(const HTMLElement&);
 template <> inline bool isElementOfType<const HTMLElement>(const HTMLElement&) { return true; }
 
@@ -140,21 +144,35 @@ inline HTMLElement::HTMLElement(const QualifiedName& tagName, Document& document
     ScriptWrappable::init(this);
 }
 
+inline bool Node::hasTagName(const HTMLQualifiedName& name) const
+{
+    return isHTMLElement() && toHTMLElement(*this).hasTagName(name);
+}
+
+// Functor used to match HTMLElements with a specific HTML tag when using the ElementTraversal API.
+class HasHTMLTagName {
+public:
+    explicit HasHTMLTagName(const HTMLQualifiedName& tagName): m_tagName(tagName) { }
+    bool operator() (const HTMLElement& element) const { return element.hasTagName(m_tagName); }
+private:
+    const HTMLQualifiedName& m_tagName;
+};
+
 // This requires isHTML*Element(const Element&) and isHTML*Element(const HTMLElement&).
 // When the input element is an HTMLElement, we don't need to check the namespace URI, just the local name.
 #define DEFINE_HTMLELEMENT_TYPE_CASTS_WITH_FUNCTION(thisType) \
     inline bool is##thisType(const thisType* element); \
     inline bool is##thisType(const thisType& element); \
     inline bool is##thisType(const HTMLElement* element) { return element && is##thisType(*element); } \
+    inline bool is##thisType(const Node& node) { return node.isHTMLElement() ? is##thisType(toHTMLElement(node)) : false; } \
+    inline bool is##thisType(const Node* node) { return node && is##thisType(*node); } \
     inline bool is##thisType(const Element* element) { return element && is##thisType(*element); } \
-    inline bool is##thisType(const Node& node) { return node.isElementNode() ? is##thisType(toElement(node)) : false; } \
-    inline bool is##thisType(const Node* node) { return node && node->isElementNode() ? is##thisType(*toElement(node)) : false; } \
     template<typename T> inline bool is##thisType(const PassRefPtr<T>& node) { return is##thisType(node.get()); } \
     template<typename T> inline bool is##thisType(const RefPtr<T>& node) { return is##thisType(node.get()); } \
     template <> inline bool isElementOfType<const thisType>(const HTMLElement& element) { return is##thisType(element); } \
     DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(thisType)
 
-} // namespace WebCore
+} // namespace blink
 
 #include "core/HTMLElementTypeHelpers.h"
 

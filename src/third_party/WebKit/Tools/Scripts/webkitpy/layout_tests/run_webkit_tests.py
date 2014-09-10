@@ -40,7 +40,7 @@ from webkitpy.layout_tests.models import test_run_results
 from webkitpy.layout_tests.port import configuration_options, platform_options
 from webkitpy.layout_tests.views import buildbot_results
 from webkitpy.layout_tests.views import printing
-
+from webkitpy.layout_tests.generate_results_dashboard import GenerateDashBoard
 
 _log = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ _log = logging.getLogger(__name__)
 def main(argv, stdout, stderr):
     options, args = parse_args(argv)
 
-    if options.platform and 'test' in options.platform:
+    if options.platform and 'test' in options.platform and not 'browser_test' in options.platform:
         # It's a bit lame to import mocks into real code, but this allows the user
         # to run tests against the test platform interactively, which is useful for
         # debugging test failures.
@@ -77,7 +77,12 @@ def main(argv, stdout, stderr):
             bot_printer = buildbot_results.BuildBotPrinter(stdout, options.debug_rwt_logging)
             bot_printer.print_results(run_details)
 
+        if options.enable_versioned_results:
+            gen_dash_board = GenerateDashBoard(port)
+            gen_dash_board.generate()
+
         return run_details.exit_code
+
     # We need to still handle KeyboardInterrupt, atleast for webkitpy unittest cases.
     except KeyboardInterrupt:
         return test_run_results.INTERRUPTED_EXIT_STATUS
@@ -166,6 +171,8 @@ def parse_args(args):
             help="Show all failures in results.html, rather than only regressions"),
         optparse.make_option("--clobber-old-results", action="store_true",
             default=False, help="Clobbers test results from previous runs."),
+        optparse.make_option("--enable-versioned-results", action="store_true",
+            default=False, help="Archive the test results for later access."),
         optparse.make_option("--smoke", action="store_true",
             help="Run just the SmokeTests"),
         optparse.make_option("--no-smoke", dest="smoke", action="store_false",
@@ -255,10 +262,6 @@ def parse_args(args):
             help="Print detailed logging of the driver/content_shell"),
         optparse.make_option("--disable-breakpad", action="store_true",
             help="Don't use breakpad to symbolize unexpected crashes."),
-        optparse.make_option("--use-apache", action="store_true",
-            help="Use Apache instead of LigHTTPd (default is port-specific)."),
-        optparse.make_option("--no-use-apache", action="store_false", dest="use_apache",
-            help="Use LigHTTPd instead of Apache (default is port-specific)."),
         optparse.make_option("--enable-leak-detection", action="store_true",
             help="Enable the leak detection of DOM objects."),
         optparse.make_option("--enable-sanitizer", action="store_true",
@@ -285,6 +288,9 @@ def parse_args(args):
         optparse.make_option("--test-results-server", default="",
             help=("If specified, upload results json files to this appengine "
                   "server.")),
+        optparse.make_option("--write-full-results-to",
+            help=("If specified, copy full_results.json from the results dir "
+                  "to the specified path.")),
     ]))
 
     option_parser = optparse.OptionParser()

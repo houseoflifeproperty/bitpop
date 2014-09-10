@@ -11,7 +11,6 @@
 #include "mojo/services/public/cpp/view_manager/util.h"
 
 namespace mojo {
-namespace view_manager {
 namespace service {
 
 std::string NodeIdToString(Id id) {
@@ -27,22 +26,14 @@ std::string RectToString(const gfx::Rect& rect) {
 }
 
 std::string DirectionToString(OrderDirection direction) {
-  return direction == ORDER_ABOVE ? "above" : "below";
+  return direction == ORDER_DIRECTION_ABOVE ? "above" : "below";
 }
 
 std::string ChangeToDescription1(const Change& change) {
   switch (change.type) {
-    case CHANGE_TYPE_CONNECTION_ESTABLISHED:
-      return base::StringPrintf("OnConnectionEstablished creator=%s",
+    case CHANGE_TYPE_EMBED:
+      return base::StringPrintf("OnEmbed creator=%s",
                                 change.creator_url.data());
-
-    case CHANGE_TYPE_ROOTS_ADDED:
-      return "OnRootsAdded";
-
-    case CHANGE_TYPE_SERVER_CHANGE_ID_ADVANCED:
-      return base::StringPrintf(
-          "ServerChangeIdAdvanced %d", static_cast<int>(change.change_id));
-
 
     case CHANGE_TYPE_NODE_BOUNDS_CHANGED:
       return base::StringPrintf(
@@ -53,41 +44,30 @@ std::string ChangeToDescription1(const Change& change) {
 
     case CHANGE_TYPE_NODE_HIERARCHY_CHANGED:
       return base::StringPrintf(
-            "HierarchyChanged change_id=%d node=%s new_parent=%s old_parent=%s",
-            static_cast<int>(change.change_id),
+            "HierarchyChanged node=%s new_parent=%s old_parent=%s",
             NodeIdToString(change.node_id).c_str(),
             NodeIdToString(change.node_id2).c_str(),
             NodeIdToString(change.node_id3).c_str());
 
     case CHANGE_TYPE_NODE_REORDERED:
       return base::StringPrintf(
-          "Reordered change_id=%d node=%s relative=%s direction=%s",
-          static_cast<int>(change.change_id),
+          "Reordered node=%s relative=%s direction=%s",
           NodeIdToString(change.node_id).c_str(),
           NodeIdToString(change.node_id2).c_str(),
           DirectionToString(change.direction).c_str());
 
     case CHANGE_TYPE_NODE_DELETED:
-      return base::StringPrintf("NodeDeleted change_id=%d node=%s",
-                                static_cast<int>(change.change_id),
+      return base::StringPrintf("NodeDeleted node=%s",
                                 NodeIdToString(change.node_id).c_str());
-
-    case CHANGE_TYPE_VIEW_DELETED:
-      return base::StringPrintf("ViewDeleted view=%s",
-                                NodeIdToString(change.view_id).c_str());
-
-    case CHANGE_TYPE_VIEW_REPLACED:
-      return base::StringPrintf(
-          "ViewReplaced node=%s new_view=%s old_view=%s",
-          NodeIdToString(change.node_id).c_str(),
-          NodeIdToString(change.view_id).c_str(),
-          NodeIdToString(change.view_id2).c_str());
 
     case CHANGE_TYPE_INPUT_EVENT:
       return base::StringPrintf(
-          "InputEvent view=%s event_action=%d",
-          NodeIdToString(change.view_id).c_str(),
+          "InputEvent node=%s event_action=%d",
+          NodeIdToString(change.node_id).c_str(),
           change.event_action);
+    case CHANGE_TYPE_DELEGATE_EMBED:
+      return base::StringPrintf("DelegateEmbed url=%s",
+                                change.embed_url.data());
   }
   return std::string();
 }
@@ -111,28 +91,28 @@ std::string ChangeNodeDescription(const std::vector<Change>& changes) {
   return JoinString(node_strings, ',');
 }
 
-void NodeDatasToTestNodes(const Array<NodeDataPtr>& data,
+TestNode ViewDataToTestNode(const ViewDataPtr& data) {
+  TestNode node;
+  node.parent_id = data->parent_id;
+  node.node_id = data->view_id;
+  return node;
+}
+
+void ViewDatasToTestNodes(const Array<ViewDataPtr>& data,
                           std::vector<TestNode>* test_nodes) {
-  for (size_t i = 0; i < data.size(); ++i) {
-    TestNode node;
-    node.parent_id = data[i]->parent_id;
-    node.node_id = data[i]->node_id;
-    node.view_id = data[i]->view_id;
-    test_nodes->push_back(node);
-  }
+  for (size_t i = 0; i < data.size(); ++i)
+    test_nodes->push_back(ViewDataToTestNode(data[i]));
 }
 
 Change::Change()
-    : type(CHANGE_TYPE_CONNECTION_ESTABLISHED),
+    : type(CHANGE_TYPE_EMBED),
       connection_id(0),
-      change_id(0),
       node_id(0),
       node_id2(0),
       node_id3(0),
-      view_id(0),
-      view_id2(0),
       event_action(0),
-      direction(ORDER_ABOVE) {}
+      direction(ORDER_DIRECTION_ABOVE) {
+}
 
 Change::~Change() {
 }
@@ -144,31 +124,14 @@ TestChangeTracker::TestChangeTracker()
 TestChangeTracker::~TestChangeTracker() {
 }
 
-void TestChangeTracker::OnViewManagerConnectionEstablished(
-    ConnectionSpecificId connection_id,
-    const String& creator_url,
-    Id next_server_change_id,
-    Array<NodeDataPtr> nodes) {
+void TestChangeTracker::OnEmbed(ConnectionSpecificId connection_id,
+                                const String& creator_url,
+                                ViewDataPtr root) {
   Change change;
-  change.type = CHANGE_TYPE_CONNECTION_ESTABLISHED;
+  change.type = CHANGE_TYPE_EMBED;
   change.connection_id = connection_id;
-  change.change_id = next_server_change_id;
   change.creator_url = creator_url;
-  NodeDatasToTestNodes(nodes, &change.nodes);
-  AddChange(change);
-}
-
-void TestChangeTracker::OnRootsAdded(Array<NodeDataPtr> nodes) {
-  Change change;
-  change.type = CHANGE_TYPE_ROOTS_ADDED;
-  NodeDatasToTestNodes(nodes, &change.nodes);
-  AddChange(change);
-}
-
-void TestChangeTracker::OnServerChangeIdAdvanced(Id change_id) {
-  Change change;
-  change.type = CHANGE_TYPE_SERVER_CHANGE_ID_ADVANCED;
-  change.change_id = change_id;
+  change.nodes.push_back(ViewDataToTestNode(root));
   AddChange(change);
 }
 
@@ -186,62 +149,46 @@ void TestChangeTracker::OnNodeBoundsChanged(Id node_id,
 void TestChangeTracker::OnNodeHierarchyChanged(Id node_id,
                                                Id new_parent_id,
                                                Id old_parent_id,
-                                               Id server_change_id,
-                                               Array<NodeDataPtr> nodes) {
+                                               Array<ViewDataPtr> nodes) {
   Change change;
   change.type = CHANGE_TYPE_NODE_HIERARCHY_CHANGED;
   change.node_id = node_id;
   change.node_id2 = new_parent_id;
   change.node_id3 = old_parent_id;
-  change.change_id = server_change_id;
-  NodeDatasToTestNodes(nodes, &change.nodes);
+  ViewDatasToTestNodes(nodes, &change.nodes);
   AddChange(change);
 }
 
 void TestChangeTracker::OnNodeReordered(Id node_id,
                                         Id relative_node_id,
-                                        OrderDirection direction,
-                                        Id server_change_id) {
+                                        OrderDirection direction) {
   Change change;
   change.type = CHANGE_TYPE_NODE_REORDERED;
   change.node_id = node_id;
   change.node_id2 = relative_node_id;
   change.direction = direction;
-  change.change_id = server_change_id;
   AddChange(change);
 }
 
-void TestChangeTracker::OnNodeDeleted(Id node_id, Id server_change_id) {
+void TestChangeTracker::OnNodeDeleted(Id node_id) {
   Change change;
   change.type = CHANGE_TYPE_NODE_DELETED;
   change.node_id = node_id;
-  change.change_id = server_change_id;
   AddChange(change);
 }
 
-void TestChangeTracker::OnViewDeleted(Id view_id) {
-  Change change;
-  change.type = CHANGE_TYPE_VIEW_DELETED;
-  change.view_id = view_id;
-  AddChange(change);
-}
-
-void TestChangeTracker::OnNodeViewReplaced(Id node_id,
-                                           Id new_view_id,
-                                           Id old_view_id) {
-  Change change;
-  change.type = CHANGE_TYPE_VIEW_REPLACED;
-  change.node_id = node_id;
-  change.view_id = new_view_id;
-  change.view_id2 = old_view_id;
-  AddChange(change);
-}
-
-void TestChangeTracker::OnViewInputEvent(Id view_id, EventPtr event) {
+void TestChangeTracker::OnNodeInputEvent(Id node_id, EventPtr event) {
   Change change;
   change.type = CHANGE_TYPE_INPUT_EVENT;
-  change.view_id = view_id;
+  change.node_id = node_id;
   change.event_action = event->action;
+  AddChange(change);
+}
+
+void TestChangeTracker::DelegateEmbed(const String& url) {
+  Change change;
+  change.type = CHANGE_TYPE_DELEGATE_EMBED;
+  change.embed_url = url;
   AddChange(change);
 }
 
@@ -252,12 +199,10 @@ void TestChangeTracker::AddChange(const Change& change) {
 }
 
 std::string TestNode::ToString() const {
-  return base::StringPrintf("node=%s parent=%s view=%s",
+  return base::StringPrintf("node=%s parent=%s",
                             NodeIdToString(node_id).c_str(),
-                            NodeIdToString(parent_id).c_str(),
-                            NodeIdToString(view_id).c_str());
+                            NodeIdToString(parent_id).c_str());
 }
 
 }  // namespace service
-}  // namespace view_manager
 }  // namespace mojo

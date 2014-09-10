@@ -21,6 +21,7 @@
 #include "content/renderer/render_frame_impl.h"
 #include "media/base/media_log.h"
 #include "media/base/video_frame.h"
+#include "media/base/video_rotation.h"
 #include "media/base/video_util.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
@@ -87,6 +88,7 @@ WebMediaPlayerMS::WebMediaPlayerMS(
       network_state_(WebMediaPlayer::NetworkStateEmpty),
       ready_state_(WebMediaPlayer::ReadyStateHaveNothing),
       buffered_(static_cast<size_t>(1)),
+      volume_(1.0f),
       client_(client),
       delegate_(delegate),
       paused_(true),
@@ -135,7 +137,6 @@ void WebMediaPlayerMS::load(LoadType load_type,
 
   GURL gurl(url);
 
-  setVolume(GetClient()->volume());
   SetNetworkState(WebMediaPlayer::NetworkStateLoading);
   SetReadyState(WebMediaPlayer::ReadyStateHaveNothing);
   media_log_->AddEvent(media_log_->CreateLoadEvent(url.spec()));
@@ -152,8 +153,10 @@ void WebMediaPlayerMS::load(LoadType load_type,
     frame->GetRoutingID());
 
   if (video_frame_provider_.get() || audio_renderer_.get()) {
-    if (audio_renderer_.get())
+    if (audio_renderer_.get()) {
+      audio_renderer_->SetVolume(volume_);
       audio_renderer_->Start();
+    }
 
     if (video_frame_provider_.get()) {
       video_frame_provider_->Start();
@@ -234,10 +237,10 @@ void WebMediaPlayerMS::setRate(double rate) {
 
 void WebMediaPlayerMS::setVolume(double volume) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!audio_renderer_.get())
-    return;
   DVLOG(1) << "WebMediaPlayerMS::setVolume(volume=" << volume << ")";
-  audio_renderer_->SetVolume(volume);
+  volume_ = volume;
+  if (audio_renderer_.get())
+    audio_renderer_->SetVolume(volume_);
 }
 
 void WebMediaPlayerMS::setPreload(WebMediaPlayer::Preload preload) {
@@ -323,7 +326,8 @@ void WebMediaPlayerMS::paint(WebCanvas* canvas,
   DCHECK(thread_checker_.CalledOnValidThread());
 
   gfx::RectF dest_rect(rect.x, rect.y, rect.width, rect.height);
-  video_renderer_.Paint(current_frame_.get(), canvas, dest_rect, alpha);
+  video_renderer_.Paint(
+      current_frame_.get(), canvas, dest_rect, alpha, media::VIDEO_ROTATION_0);
 
   {
     base::AutoLock auto_lock(current_frame_lock_);
@@ -414,7 +418,8 @@ void WebMediaPlayerMS::OnFrameAvailable(
     GetClient()->sizeChanged();
 
     if (video_frame_provider_) {
-      video_weblayer_.reset(new WebLayerImpl(cc::VideoLayer::Create(this)));
+      video_weblayer_.reset(new WebLayerImpl(
+          cc::VideoLayer::Create(this, media::VIDEO_ROTATION_0)));
       video_weblayer_->setOpaque(true);
       GetClient()->setWebLayer(video_weblayer_.get());
     }

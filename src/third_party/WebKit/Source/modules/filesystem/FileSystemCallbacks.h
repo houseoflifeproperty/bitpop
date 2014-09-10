@@ -37,13 +37,14 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class DOMFileSystemBase;
 class DirectoryReaderBase;
 class EntriesCallback;
 class EntryCallback;
 class ErrorCallback;
+class FileCallback;
 struct FileMetadata;
 class FileSystemCallback;
 class FileWriterBase;
@@ -78,6 +79,7 @@ protected:
     OwnPtr<ErrorCallback> m_errorCallback;
     Persistent<DOMFileSystemBase> m_fileSystem;
     RefPtrWillBePersistent<ExecutionContext> m_executionContext;
+    int m_asyncOperationId;
 };
 
 // Subclasses ----------------------------------------------------------------
@@ -142,12 +144,24 @@ private:
 class FileWriterBaseCallbacks FINAL : public FileSystemCallbacksBase {
 public:
     static PassOwnPtr<AsyncFileSystemCallbacks> create(PassRefPtrWillBeRawPtr<FileWriterBase>, PassOwnPtr<FileWriterBaseCallback>, PassOwnPtr<ErrorCallback>, ExecutionContext*);
-    virtual void didCreateFileWriter(PassOwnPtr<blink::WebFileWriter>, long long length) OVERRIDE;
+    virtual void didCreateFileWriter(PassOwnPtr<WebFileWriter>, long long length) OVERRIDE;
 
 private:
     FileWriterBaseCallbacks(PassRefPtrWillBeRawPtr<FileWriterBase>, PassOwnPtr<FileWriterBaseCallback>, PassOwnPtr<ErrorCallback>, ExecutionContext*);
     Persistent<FileWriterBase> m_fileWriter;
     OwnPtr<FileWriterBaseCallback> m_successCallback;
+};
+
+class SnapshotFileCallback FINAL : public FileSystemCallbacksBase {
+public:
+    static PassOwnPtr<AsyncFileSystemCallbacks> create(DOMFileSystemBase*, const String& name, const KURL&, PassOwnPtr<FileCallback>, PassOwnPtr<ErrorCallback>, ExecutionContext*);
+    virtual void didCreateSnapshotFile(const FileMetadata&, PassRefPtr<BlobDataHandle> snapshot);
+
+private:
+    SnapshotFileCallback(DOMFileSystemBase*, const String& name, const KURL&, PassOwnPtr<FileCallback>, PassOwnPtr<ErrorCallback>, ExecutionContext*);
+    String m_name;
+    KURL m_url;
+    OwnPtr<FileCallback> m_successCallback;
 };
 
 class VoidCallbacks FINAL : public FileSystemCallbacksBase {
@@ -160,6 +174,6 @@ private:
     OwnPtr<VoidCallback> m_successCallback;
 };
 
-} // namespace
+} // namespace blink
 
 #endif // FileSystemCallbacks_h

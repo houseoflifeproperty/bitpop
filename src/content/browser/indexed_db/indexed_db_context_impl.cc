@@ -23,7 +23,7 @@
 #include "content/browser/indexed_db/indexed_db_connection.h"
 #include "content/browser/indexed_db/indexed_db_database.h"
 #include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
-#include "content/browser/indexed_db/indexed_db_factory.h"
+#include "content/browser/indexed_db/indexed_db_factory_impl.h"
 #include "content/browser/indexed_db/indexed_db_quota_client.h"
 #include "content/browser/indexed_db/indexed_db_tracing.h"
 #include "content/browser/indexed_db/indexed_db_transaction.h"
@@ -123,7 +123,7 @@ IndexedDBFactory* IndexedDBContextImpl::GetIDBFactory() {
     // Prime our cache of origins with existing databases so we can
     // detect when dbs are newly created.
     GetOriginSet();
-    factory_ = new IndexedDBFactory(this);
+    factory_ = new IndexedDBFactoryImpl(this);
   }
   return factory_;
 }
@@ -181,7 +181,8 @@ base::ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
     info->SetString("size", ui::FormatBytes(GetOriginDiskUsage(origin_url)));
     info->SetDouble("last_modified",
                     GetOriginLastModified(origin_url).ToJsTime());
-    info->SetString("path", GetFilePath(origin_url).value());
+    if (!is_incognito())
+      info->SetString("path", GetFilePath(origin_url).value());
     info->SetDouble("connection_count", GetConnectionCount(origin_url));
 
     // This ends up being O(n^2) since we iterate over all open databases
@@ -571,7 +572,7 @@ void IndexedDBContextImpl::ResetCaches() {
   space_available_map_.clear();
 }
 
-base::TaskRunner* IndexedDBContextImpl::TaskRunner() const {
+base::SequencedTaskRunner* IndexedDBContextImpl::TaskRunner() const {
   return task_runner_;
 }
 

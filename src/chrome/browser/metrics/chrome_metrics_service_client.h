@@ -12,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
+#include "chrome/browser/memory_details.h"
 #include "chrome/browser/metrics/network_stats_uploader.h"
 #include "chrome/browser/metrics/tracking_synchronizer_observer.h"
 #include "components/metrics/metrics_service_client.h"
@@ -24,6 +25,10 @@ class MetricsService;
 class PluginMetricsProvider;
 class PrefRegistrySimple;
 class ProfilerMetricsProvider;
+
+#if !defined(OS_CHROMEOS) && !defined(OS_IOS)
+class SigninStatusMetricsProvider;
+#endif
 
 namespace base {
 class FilePath;
@@ -51,13 +56,12 @@ class ChromeMetricsServiceClient
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
   // metrics::MetricsServiceClient:
-  virtual void SetClientID(const std::string& client_id) OVERRIDE;
+  virtual void SetMetricsClientId(const std::string& client_id) OVERRIDE;
   virtual bool IsOffTheRecordSessionActive() OVERRIDE;
   virtual std::string GetApplicationLocale() OVERRIDE;
   virtual bool GetBrand(std::string* brand_code) OVERRIDE;
   virtual metrics::SystemProfileProto::Channel GetChannel() OVERRIDE;
   virtual std::string GetVersionString() OVERRIDE;
-  virtual int64 GetInstallDate() OVERRIDE;
   virtual void OnLogUploadComplete() OVERRIDE;
   virtual void StartGatheringMetrics(
       const base::Closure& done_callback) OVERRIDE;
@@ -162,8 +166,18 @@ class ChromeMetricsServiceClient
   GoogleUpdateMetricsProviderWin* google_update_metrics_provider_;
 #endif
 
+#if !defined(OS_CHROMEOS) && !defined(OS_IOS)
+  // The SigninStatusMetricsProvider instance that was registered with
+  // MetricsService. Has the same lifetime as |metrics_service_|.
+  SigninStatusMetricsProvider* signin_status_metrics_provider_;
+#endif
+
   // Callback that is called when initial metrics gathering is complete.
   base::Closure finished_gathering_initial_metrics_callback_;
+
+  // The MemoryGrowthTracker instance that tracks memory usage growth in
+  // MemoryDetails.
+  MemoryGrowthTracker memory_growth_tracker_;
 
   base::WeakPtrFactory<ChromeMetricsServiceClient> weak_ptr_factory_;
 

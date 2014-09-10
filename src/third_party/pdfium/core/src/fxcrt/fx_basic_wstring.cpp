@@ -1,19 +1,30 @@
 // Copyright 2014 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
- 
+
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "../../include/fxcrt/fx_basic.h"
+#include "../../../third_party/numerics/safe_math.h"
+
 static CFX_StringDataW* FX_AllocStringW(int nLen)
 {
-    if (nLen == 0) {
+    if (nLen == 0 || nLen < 0) {
         return NULL;
     }
-    CFX_StringDataW* pData = (CFX_StringDataW*)FX_Alloc(FX_BYTE, sizeof(long) * 3 + (nLen + 1) * sizeof(FX_WCHAR));
+
+    base::CheckedNumeric<int> iSize = static_cast<int>(sizeof(FX_WCHAR));
+    iSize *= nLen + 1;
+    iSize += sizeof(long) * 3;
+    CFX_StringDataW* pData = (CFX_StringDataW*)FX_Alloc(FX_BYTE, iSize.ValueOrDie());
     if (!pData) {
         return NULL;
     }
+
+    // TODO(palmer): |nLen| should really be declared as |size_t|, but for
+    // now I just want to fix the overflow without changing any interfaces.
+    // Declaring |nLen| as |size_t| will also simplify the above code
+    // somewhat.
     pData->m_nAllocLength = nLen;
     pData->m_nDataLength = nLen;
     pData->m_nRefs = 1;
@@ -387,15 +398,10 @@ CFX_WideString CFX_WideString::FromLocal(const char* str, FX_STRSIZE len)
 }
 CFX_WideString CFX_WideString::FromUTF8(const char* str, FX_STRSIZE len)
 {
-    if (!str) {
+    if (!str || 0 == len) {
         return CFX_WideString();
     }
-    if (len < 0) {
-        len = 0;
-        while (str[len]) {
-            len ++;
-        }
-    }
+
     CFX_UTF8Decoder decoder;
     for (FX_STRSIZE i = 0; i < len; i ++) {
         decoder.Input(str[i]);
@@ -404,15 +410,10 @@ CFX_WideString CFX_WideString::FromUTF8(const char* str, FX_STRSIZE len)
 }
 CFX_WideString CFX_WideString::FromUTF16LE(const unsigned short* wstr, FX_STRSIZE wlen)
 {
-    if (!wstr || !wlen) {
+    if (!wstr || 0 == wlen) {
         return CFX_WideString();
     }
-    if (wlen < 0) {
-        wlen = 0;
-        while (wstr[wlen]) {
-            wlen ++;
-        }
-    }
+
     CFX_WideString result;
     FX_WCHAR* buf = result.GetBuffer(wlen);
     for (int i = 0; i < wlen; i ++) {
@@ -421,17 +422,29 @@ CFX_WideString CFX_WideString::FromUTF16LE(const unsigned short* wstr, FX_STRSIZ
     result.ReleaseBuffer(wlen);
     return result;
 }
-void CFX_WideString::AllocCopy(CFX_WideString& dest, FX_STRSIZE nCopyLen, FX_STRSIZE nCopyIndex,
-                               FX_STRSIZE nExtraLen) const
+FX_STRSIZE CFX_WideString::WStringLength(const unsigned short* str)
 {
-    FX_STRSIZE nNewLen = nCopyLen + nExtraLen;
-    if (nNewLen == 0) {
+    FX_STRSIZE len = 0;
+    if (str)
+        while (str[len]) len++;
+    return len;
+}
+
+
+
+void CFX_WideString::AllocCopy(CFX_WideString& dest, FX_STRSIZE nCopyLen, FX_STRSIZE nCopyIndex) const
+{
+    // |FX_STRSIZE| is currently typedef'd as in |int|. TODO(palmer): It
+    // should be a |size_t|, or at least unsigned.
+    if (nCopyLen == 0 || nCopyLen < 0) {
         return;
     }
+    base::CheckedNumeric<FX_STRSIZE> iSize = static_cast<FX_STRSIZE>(sizeof(FX_WCHAR));
+    iSize *= nCopyLen;
     ASSERT(dest.m_pData == NULL);
-    dest.m_pData = FX_AllocStringW(nNewLen);
+    dest.m_pData = FX_AllocStringW(nCopyLen);
     if (dest.m_pData) {
-        FXSYS_memcpy32(dest.m_pData->m_String, m_pData->m_String + nCopyIndex, nCopyLen * sizeof(FX_WCHAR));
+        FXSYS_memcpy32(dest.m_pData->m_String, m_pData->m_String + nCopyIndex, iSize.ValueOrDie());
     }
 }
 CFX_WideString CFX_WideString::Left(FX_STRSIZE nCount) const
@@ -446,7 +459,7 @@ CFX_WideString CFX_WideString::Left(FX_STRSIZE nCount) const
         return *this;
     }
     CFX_WideString dest;
-    AllocCopy(dest, nCount, 0, 0);
+    AllocCopy(dest, nCount, 0);
     return dest;
 }
 CFX_WideString CFX_WideString::Mid(FX_STRSIZE nFirst) const
@@ -474,7 +487,7 @@ CFX_WideString CFX_WideString::Mid(FX_STRSIZE nFirst, FX_STRSIZE nCount) const
         return *this;
     }
     CFX_WideString dest;
-    AllocCopy(dest, nCount, nFirst, 0);
+    AllocCopy(dest, nCount, nFirst);
     return dest;
 }
 CFX_WideString CFX_WideString::Right(FX_STRSIZE nCount) const
@@ -489,7 +502,7 @@ CFX_WideString CFX_WideString::Right(FX_STRSIZE nCount) const
         return *this;
     }
     CFX_WideString dest;
-    AllocCopy(dest, nCount, m_pData->m_nDataLength - nCount, 0);
+    AllocCopy(dest, nCount, m_pData->m_nDataLength - nCount);
     return dest;
 }
 int CFX_WideString::CompareNoCase(FX_LPCWSTR lpsz) const
@@ -1048,58 +1061,6 @@ FX_FLOAT CFX_WideString::GetFloat() const
         return 0.0;
     }
     return FX_wtof(m_pData->m_String, m_pData->m_nDataLength);
-}
-void CFX_WideStringL::Empty(IFX_Allocator* pAllocator)
-{
-    if (m_Ptr) {
-        FX_Allocator_Free(pAllocator, (FX_LPVOID)m_Ptr);
-    }
-    m_Ptr = NULL, m_Length = 0;
-}
-void CFX_WideStringL::Set(FX_WSTR src, IFX_Allocator* pAllocator)
-{
-    Empty(pAllocator);
-    if (src.GetPtr() != NULL && src.GetLength() > 0) {
-        FX_LPWSTR str = FX_Allocator_Alloc(pAllocator, FX_WCHAR, src.GetLength() + 1);
-        if (!str) {
-            return;
-        }
-        FXSYS_memcpy32(str, src.GetPtr(), src.GetLength()*sizeof(FX_WCHAR));
-        str[src.GetLength()] = '\0';
-        *(FX_LPWSTR*)(&m_Ptr) = str;
-        m_Length = src.GetLength();
-    }
-}
-int CFX_WideStringL::GetInteger() const
-{
-    if (!m_Ptr) {
-        return 0;
-    }
-    return FXSYS_wtoi(m_Ptr);
-}
-FX_FLOAT CFX_WideStringL::GetFloat() const
-{
-    if (!m_Ptr) {
-        return 0.0f;
-    }
-    return FX_wtof(m_Ptr, m_Length);
-}
-void CFX_WideStringL::TrimRight(FX_LPCWSTR lpszTargets)
-{
-    if (!lpszTargets || *lpszTargets == 0 || !m_Ptr || m_Length < 1) {
-        return;
-    }
-    FX_STRSIZE pos = m_Length;
-    while (pos) {
-        if (FXSYS_wcschr(lpszTargets, m_Ptr[pos - 1]) == NULL) {
-            break;
-        }
-        pos --;
-    }
-    if (pos < m_Length) {
-        (*(FX_LPWSTR*)(&m_Ptr))[pos] = 0;
-        m_Length = pos;
-    }
 }
 static CFX_ByteString _DefMap_GetByteString(CFX_CharMap* pCharMap, const CFX_WideString& widestr)
 {

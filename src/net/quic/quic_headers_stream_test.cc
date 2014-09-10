@@ -4,12 +4,12 @@
 
 #include "net/quic/quic_headers_stream.h"
 
-#include "net/quic/quic_flags.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/spdy_utils.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
 #include "net/quic/test_tools/quic_session_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
+#include "net/quic/test_tools/reliable_quic_stream_peer.h"
 #include "net/spdy/spdy_protocol.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -324,9 +324,14 @@ TEST_P(QuicHeadersStreamTest, ProcessSpdyWindowUpdateFrame) {
   headers_stream_->ProcessRawData(frame->data(), frame->size());
 }
 
-TEST_P(QuicHeadersStreamTest, NoFlowControl) {
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control_2, true);
-  EXPECT_FALSE(headers_stream_->flow_controller()->IsEnabled());
+TEST_P(QuicHeadersStreamTest, NoConnectionLevelFlowControl) {
+  if (connection_->version() <= QUIC_VERSION_20) {
+    EXPECT_FALSE(headers_stream_->flow_controller()->IsEnabled());
+  } else {
+    EXPECT_TRUE(headers_stream_->flow_controller()->IsEnabled());
+  }
+  EXPECT_FALSE(ReliableQuicStreamPeer::StreamContributesToConnectionFlowControl(
+      headers_stream_));
 }
 
 }  // namespace

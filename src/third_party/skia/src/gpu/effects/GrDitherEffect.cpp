@@ -8,6 +8,7 @@
 #include "GrDitherEffect.h"
 
 #include "gl/GrGLEffect.h"
+#include "gl/GrGLShaderBuilder.h"
 #include "gl/GrGLSL.h"
 #include "GrTBackendEffectFactory.h"
 
@@ -19,8 +20,9 @@ class GLDitherEffect;
 
 class DitherEffect : public GrEffect {
 public:
-    static GrEffectRef* Create() {
-        return CreateEffectRef(AutoEffectUnref(SkNEW(DitherEffect)));
+    static GrEffect* Create() {
+        GR_CREATE_STATIC_EFFECT(gDitherEffect, DitherEffect, ())
+        return SkRef(gDitherEffect);
     }
 
     virtual ~DitherEffect() {};
@@ -55,10 +57,10 @@ void DitherEffect::getConstantColorComponents(GrColor* color, uint32_t* validFla
 
 GR_DEFINE_EFFECT_TEST(DitherEffect);
 
-GrEffectRef* DitherEffect::TestCreate(SkRandom*,
-                                      GrContext*,
-                                      const GrDrawTargetCaps&,
-                                      GrTexture*[]) {
+GrEffect* DitherEffect::TestCreate(SkRandom*,
+                                   GrContext*,
+                                   const GrDrawTargetCaps&,
+                                   GrTexture*[]) {
     return DitherEffect::Create();
 }
 
@@ -70,7 +72,7 @@ public:
 
     virtual void emitCode(GrGLShaderBuilder* builder,
                           const GrDrawEffect& drawEffect,
-                          EffectKey key,
+                          const GrEffectKey& key,
                           const char* outputColor,
                           const char* inputColor,
                           const TransformedCoordsArray&,
@@ -87,7 +89,7 @@ GLDitherEffect::GLDitherEffect(const GrBackendEffectFactory& factory,
 
 void GLDitherEffect::emitCode(GrGLShaderBuilder* builder,
                               const GrDrawEffect& drawEffect,
-                              EffectKey key,
+                              const GrEffectKey& key,
                               const char* outputColor,
                               const char* inputColor,
                               const TransformedCoordsArray&,
@@ -110,6 +112,4 @@ void GLDitherEffect::emitCode(GrGLShaderBuilder* builder,
 
 //////////////////////////////////////////////////////////////////////////////
 
-GrEffectRef* GrDitherEffect::Create() {
-    return DitherEffect::Create();
-}
+GrEffect* GrDitherEffect::Create() { return DitherEffect::Create(); }

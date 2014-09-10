@@ -6,6 +6,7 @@
 
 #include "base/files/file_path.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
@@ -17,13 +18,13 @@
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/api/managed_mode_private/managed_mode_handler.h"
+#include "chrome/common/extensions/api/supervised_user_private/supervised_user_handler.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/pref_names.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
-#include "extensions/browser/api/runtime/runtime_api.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
@@ -131,6 +132,27 @@ void RecordCreationFlags(const Extension* extension) {
       UMA_HISTOGRAM_ENUMERATION(
           "Extensions.LoadCreationFlags", i, Extension::kInitFromValueFlagBits);
     }
+  }
+}
+
+// Helper to record a single disable reason histogram value (see
+// RecordDisableReasons below).
+void RecordDisbleReasonHistogram(int reason) {
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Extensions.DisableReason", reason);
+}
+
+// Records the disable reasons for a single extension grouped by
+// Extension::DisableReason.
+void RecordDisableReasons(int reasons) {
+  // |reasons| is a bitmask with values from Extension::DisabledReason
+  // which are increasing powers of 2.
+  if (reasons == Extension::DISABLE_NONE) {
+    RecordDisbleReasonHistogram(Extension::DISABLE_NONE);
+    return;
+  }
+  for (int reason = 1; reason < Extension::DISABLE_REASON_LAST; reason <<= 1) {
+    if (reasons & reason)
+      RecordDisbleReasonHistogram(reason);
   }
 }
 
@@ -436,7 +458,7 @@ void InstalledLoader::LoadAllExtensions() {
     if (extension_action_manager->GetBrowserAction(*extension))
       ++browser_action_count;
 
-    if (ManagedModeInfo::IsContentPack(extension))
+    if (SupervisedUserInfo::IsContentPack(extension))
       ++content_pack_count;
 
     RecordCreationFlags(extension);
@@ -473,6 +495,7 @@ void InstalledLoader::LoadAllExtensions() {
     if (extension_prefs_->DidExtensionEscalatePermissions((*ex)->id())) {
       ++disabled_for_permissions_count;
     }
+    RecordDisableReasons(extension_prefs_->GetDisableReasons((*ex)->id()));
     if (Manifest::IsExternalLocation((*ex)->location())) {
       // See loop above for ENABLED.
       if (ManifestURL::UpdatesFromGallery(*ex)) {
@@ -542,6 +565,8 @@ void InstalledLoader::LoadAllExtensions() {
     UMA_HISTOGRAM_COUNTS_100("Extensions.FileAccessNotAllowed",
                              file_access_not_allowed_count);
   }
+  UMA_HISTOGRAM_COUNTS_100("Extensions.CorruptExtensionTotalDisables",
+                           extension_prefs_->GetCorruptedDisableCount());
 }
 
 int InstalledLoader::GetCreationFlags(const ExtensionInfo* info) {

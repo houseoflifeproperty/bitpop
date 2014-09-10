@@ -12,6 +12,10 @@ a {
   width: 100%;
 }
 
+a:focus {
+  outline: none;  /* Remove outline from tabIndex = -1. */
+}
+
 div {
   bottom: 24px;
   margin: 0 7px;
@@ -23,14 +27,7 @@ div {
   width: 90%;
 }
 
-img,
-.shadow {
-  border-radius: 2px;
+img {
   height: 100%;
   width: 100%;
-}
-
-.shadow {
-  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.09);
-  position: absolute;
 }

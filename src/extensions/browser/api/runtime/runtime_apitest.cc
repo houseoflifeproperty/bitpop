@@ -71,13 +71,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest,
 }
 
 // Tests chrome.runtime.reload
-// This test is flaky on Linux: crbug.com/366181
-#if defined(OS_LINUX) || defined(OS_CHROMEOS)
-#define MAYBE_ChromeRuntimeReload DISABLED_ChromeRuntimeReload
-#else
-#define MAYBE_ChromeRuntimeReload ChromeRuntimeReload
-#endif
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_ChromeRuntimeReload) {
+// This test is flaky: crbug.com/366181
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_ChromeRuntimeReload) {
   ExtensionRegistry* registry = ExtensionRegistry::Get(profile());
   const char kManifest[] =
       "{"
@@ -102,10 +97,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_ChromeRuntimeReload) {
   // anyway.
   for (int i = 0; i < 30; i++) {
     content::WindowedNotificationObserver unload_observer(
-        chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
+        extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
         content::NotificationService::AllSources());
     content::WindowedNotificationObserver load_observer(
-        chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+        extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
         content::NotificationService::AllSources());
 
     ASSERT_TRUE(ExecuteScriptInBackgroundPageNoWait(

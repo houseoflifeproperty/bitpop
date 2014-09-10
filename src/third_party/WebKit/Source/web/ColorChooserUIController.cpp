@@ -34,8 +34,6 @@
 #include "public/web/WebFrameClient.h"
 #include "web/WebLocalFrameImpl.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 

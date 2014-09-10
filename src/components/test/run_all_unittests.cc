@@ -4,6 +4,7 @@
 
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/statistics_recorder.h"
 #include "base/path_service.h"
 #include "base/test/launcher/unit_test_launcher.h"
 #include "base/test/test_suite.h"
@@ -35,6 +36,12 @@ class ComponentsTestSuite : public base::TestSuite {
  private:
   virtual void Initialize() OVERRIDE {
     base::TestSuite::Initialize();
+
+    // Initialize the histograms subsystem, so that any histograms hit in tests
+    // are correctly registered with the statistics recorder and can be queried
+    // by tests.
+    base::StatisticsRecorder::Initialize();
+
 #if !defined(OS_IOS)
     gfx::GLSurface::InitializeOneOffForTests();
 #endif
@@ -69,7 +76,8 @@ class ComponentsTestSuite : public base::TestSuite {
 
     // TODO(tfarina): This should be changed to InitSharedInstanceWithPakFile()
     // so we can load our pak file instead of chrome.pak. crbug.com/348563
-    ui::ResourceBundle::InitSharedInstanceWithLocale("en-US", NULL);
+    ui::ResourceBundle::InitSharedInstanceWithLocale(
+        "en-US", NULL, ui::ResourceBundle::LOAD_COMMON_RESOURCES);
     base::FilePath resources_pack_path;
     PathService::Get(base::DIR_MODULE, &resources_pack_path);
     ui::ResourceBundle::GetSharedInstance().AddDataPackFromPath(

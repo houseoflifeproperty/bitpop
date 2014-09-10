@@ -36,10 +36,9 @@
 #include "platform/graphics/skia/SkiaUtils.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 BitmapImage::BitmapImage(ImageObserver* observer)
     : Image(observer)
@@ -204,7 +203,7 @@ bool BitmapImage::getHotSpot(IntPoint& hotSpot) const
 
 bool BitmapImage::dataChanged(bool allDataReceived)
 {
-    TRACE_EVENT0("webkit", "BitmapImage::dataChanged");
+    TRACE_EVENT0("blink", "BitmapImage::dataChanged");
 
     // Clear all partially-decoded frames. For most image formats, there is only
     // one frame, but at least GIF and ICO can have more. With GIFs, the frames
@@ -259,12 +258,12 @@ String BitmapImage::filenameExtension() const
     return m_source.filenameExtension();
 }
 
-void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, blink::WebBlendMode blendMode)
+void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, WebBlendMode blendMode)
 {
     draw(ctxt, dstRect, srcRect, compositeOp, blendMode, DoNotRespectImageOrientation);
 }
 
-void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, blink::WebBlendMode blendMode, RespectImageOrientationEnum shouldRespectImageOrientation)
+void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, WebBlendMode blendMode, RespectImageOrientationEnum shouldRespectImageOrientation)
 {
     // Spin the animation to the correct frame before we try to draw it, so we
     // don't draw an old frame and then immediately need to draw a newer one,
@@ -303,7 +302,7 @@ void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const Fl
         }
     }
 
-    bm->draw(ctxt, normSrcRect, normDstRect, WebCoreCompositeToSkiaComposite(compositeOp, blendMode));
+    bm->draw(ctxt, normSrcRect, normDstRect, compositeOp, blendMode);
 
     if (ImageObserver* observer = imageObserver())
         observer->didDraw(this);
@@ -367,6 +366,14 @@ PassRefPtr<NativeImageSkia> BitmapImage::nativeImageForCurrentFrame()
     return frameAtIndex(currentFrame());
 }
 
+PassRefPtr<Image> BitmapImage::imageForDefaultFrame()
+{
+    if (isAnimated())
+        return BitmapImage::create(frameAtIndex(0));
+
+    return Image::imageForDefaultFrame();
+}
+
 bool BitmapImage::frameHasAlphaAtIndex(size_t index)
 {
     if (m_frames.size() <= index)
@@ -399,7 +406,7 @@ ImageOrientation BitmapImage::frameOrientationAtIndex(size_t index)
     return m_source.orientationAtIndex(index);
 }
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 bool BitmapImage::notSolidColor()
 {
     return size().width() != 1 || size().height() != 1 || frameCount() > 1;
@@ -546,9 +553,15 @@ bool BitmapImage::maybeAnimated()
 {
     if (m_animationFinished)
         return false;
-    if (frameCount() > 1)
+    if (isAnimated())
         return true;
+
     return m_source.repetitionCount() != cAnimationNone;
+}
+
+bool BitmapImage::isAnimated()
+{
+    return frameCount() > 1;
 }
 
 void BitmapImage::advanceAnimation(Timer<BitmapImage>*)
@@ -630,4 +643,4 @@ Color BitmapImage::solidColor() const
     return m_solidColor;
 }
 
-}
+} // namespace blink

@@ -14,7 +14,7 @@
 #include "public/platform/Platform.h"
 #include "wtf/CurrentTime.h"
 
-namespace WebCore {
+namespace blink {
 
 RemoteFontFaceSource::RemoteFontFaceSource(FontResource* font, PassRefPtrWillBeRawPtr<FontLoader> fontLoader)
     : m_font(font)
@@ -170,6 +170,10 @@ void RemoteFontFaceSource::FontLoadHistograms::recordRemoteFont(const FontResour
             : font->response().wasCached() ? Hit
             : Miss;
         blink::Platform::current()->histogramEnumeration("WebFont.CacheHit", histogramValue, CacheHitEnumMax);
+
+        enum { CORSFail, CORSSuccess, CORSEnumMax };
+        int corsValue = font->isCORSFailed() ? CORSFail : CORSSuccess;
+        blink::Platform::current()->histogramEnumeration("WebFont.CORSSuccess", corsValue, CORSEnumMax);
     }
 }
 
@@ -190,4 +194,4 @@ const char* RemoteFontFaceSource::FontLoadHistograms::histogramName(const FontRe
     return "WebFont.DownloadTime.4.Over1MB";
 }
 
-} // namespace WebCore
+} // namespace blink

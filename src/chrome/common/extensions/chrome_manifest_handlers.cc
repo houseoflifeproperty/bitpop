@@ -15,11 +15,11 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/common/extensions/api/input_ime/input_components_handler.h"
 #endif
-#include "chrome/common/extensions/api/managed_mode_private/managed_mode_handler.h"
 #include "chrome/common/extensions/api/omnibox/omnibox_handler.h"
 #include "chrome/common/extensions/api/plugins/plugins_handler.h"
 #include "chrome/common/extensions/api/speech/tts_engine_manifest_handler.h"
 #include "chrome/common/extensions/api/spellcheck/spellcheck_handler.h"
+#include "chrome/common/extensions/api/supervised_user_private/supervised_user_handler.h"
 #include "chrome/common/extensions/api/system_indicator/system_indicator_handler.h"
 #include "chrome/common/extensions/api/url_handlers/url_handlers_parser.h"
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
@@ -28,8 +28,8 @@
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "chrome/common/extensions/manifest_handlers/mime_types_handler.h"
 #include "chrome/common/extensions/manifest_handlers/minimum_chrome_version_checker.h"
-#include "chrome/common/extensions/manifest_handlers/nacl_modules_handler.h"
 #include "chrome/common/extensions/manifest_handlers/settings_overrides_handler.h"
+#include "chrome/common/extensions/manifest_handlers/synthesize_browser_action_handler.h"
 #include "chrome/common/extensions/manifest_handlers/theme_handler.h"
 #include "chrome/common/extensions/manifest_handlers/ui_overrides_handler.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
@@ -58,10 +58,8 @@ void RegisterChromeManifestHandlers() {
 #if defined(OS_CHROMEOS)
   (new InputComponentsHandler)->Register();
 #endif
-  (new ManagedModeHandler)->Register();
   (new MimeTypesHandlerParser)->Register();
   (new MinimumChromeVersionChecker)->Register();
-  (new NaClModulesHandler)->Register();
   (new OAuth2ManifestHandler)->Register();
   (new OmniboxHandler)->Register();
   (new OptionsPageHandler)->Register();
@@ -72,6 +70,8 @@ void RegisterChromeManifestHandlers() {
   (new SocketsManifestHandler)->Register();
   (new SpellcheckHandler)->Register();
   (new StorageSchemaManifestHandler)->Register();
+  (new SupervisedUserHandler)->Register();
+  (new SynthesizeBrowserActionHandler)->Register();
   (new SystemIndicatorHandler)->Register();
   (new ThemeHandler)->Register();
   (new TtsEngineManifestHandler)->Register();

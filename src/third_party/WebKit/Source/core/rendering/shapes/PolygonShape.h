@@ -34,7 +34,7 @@
 #include "core/rendering/shapes/ShapeInterval.h"
 #include "platform/geometry/FloatPolygon.h"
 
-namespace WebCore {
+namespace blink {
 
 class OffsetPolygonEdge FINAL : public VertexPair {
 public:
@@ -68,13 +68,13 @@ public:
 
     virtual LayoutRect shapeMarginLogicalBoundingBox() const OVERRIDE;
     virtual bool isEmpty() const OVERRIDE { return m_polygon.isEmpty(); }
-    virtual void getExcludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList&) const OVERRIDE;
+    virtual LineSegment getExcludedInterval(LayoutUnit logicalTop, LayoutUnit logicalHeight) const OVERRIDE;
     virtual void buildDisplayPaths(DisplayPaths&) const OVERRIDE;
 
 private:
     FloatPolygon m_polygon;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PolygonShape_h

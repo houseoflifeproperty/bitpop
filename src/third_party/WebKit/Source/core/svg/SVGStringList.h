@@ -31,11 +31,11 @@
 #ifndef SVGStringList_h
 #define SVGStringList_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/svg/SVGString.h"
-#include "core/svg/properties/SVGListPropertyHelper.h"
+#include "core/svg/properties/SVGPropertyHelper.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGStringListTearOff;
 
@@ -50,7 +50,7 @@ class SVGStringListTearOff;
 //   SVGStringList items are exposed to Javascript as DOMString (not SVGString) as in the spec.
 //   SVGString is used only for boxing values for non-list string property SVGAnimatedString,
 //   and not used for SVGStringList.
-class SVGStringList FINAL : public SVGPropertyBase {
+class SVGStringList FINAL : public SVGPropertyHelper<SVGStringList> {
 public:
     typedef SVGStringListTearOff TearOffType;
 
@@ -74,9 +74,7 @@ public:
     void replaceItem(const String&, size_t, ExceptionState&);
 
     // SVGPropertyBase:
-    PassRefPtr<SVGStringList> clone();
     void setValueAsString(const String&, ExceptionState&);
-    virtual PassRefPtr<SVGPropertyBase> cloneForAnimation(const String&) const OVERRIDE;
     virtual String valueAsString() const OVERRIDE;
 
     virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
@@ -95,6 +93,6 @@ private:
     Vector<String> m_values;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGStringList_h

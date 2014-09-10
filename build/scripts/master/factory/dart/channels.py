@@ -19,7 +19,7 @@ class Channel(object):
 CHANNELS = [
   Channel('be', 'branches/bleeding_edge', 0, '', 4),
   Channel('dev', 'trunk', 1, '-dev', 2),
-  Channel('stable', 'branches/1.4', 2, '-stable', 1),
+  Channel('stable', 'branches/1.5', 2, '-stable', 1),
   Channel('integration', 'branches/dartium_integration', 3, '-integration', 3),
 ]
 

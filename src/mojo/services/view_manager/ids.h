@@ -10,11 +10,11 @@
 #include "mojo/services/view_manager/view_manager_export.h"
 
 namespace mojo {
-namespace view_manager {
 namespace service {
 
-// Connection id reserved for the root.
-const ConnectionSpecificId kRootConnection = 0;
+// Connection id is used to indicate no connection. That is, no
+// ViewManagerServiceImpl ever gets this id.
+const ConnectionSpecificId kInvalidConnectionId = 0;
 
 // TODO(sky): remove this, temporary while window manager API is in existing
 // api.
@@ -78,17 +78,16 @@ inline Id ViewIdToTransportId(const ViewId& id) {
 }
 
 inline NodeId RootNodeId() {
-  return NodeId(kRootConnection, 1);
+  return NodeId(kInvalidConnectionId, 1);
 }
 
 // Returns a NodeId that is reserved to indicate no node. That is, no node will
 // ever be created with this id.
 inline NodeId InvalidNodeId() {
-  return NodeId(kRootConnection, 0);
+  return NodeId(kInvalidConnectionId, 0);
 }
 
 }  // namespace service
-}  // namespace view_manager
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_VIEW_MANAGER_IDS_H_

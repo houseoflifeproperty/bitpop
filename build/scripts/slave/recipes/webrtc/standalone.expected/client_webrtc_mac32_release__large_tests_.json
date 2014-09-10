@@ -11,7 +11,6 @@
     "name": "gclient setup"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -52,21 +51,9 @@
     "env": {
       "GYP_DEFINES": "clang=1 component=static_library gomadir='[BUILD]/goma' target_arch=ia32 use_goma=1"
     },
-    "name": "gclient runhooks",
-    "seed_steps": [
-      "gclient runhooks",
-      "compile",
-      "audio_device_tests",
-      "webcam_check",
-      "vie_auto_test",
-      "voe_auto_test",
-      "webcam_check (2)",
-      "video_capture_tests",
-      "webrtc_perf_tests"
-    ]
+    "name": "gclient runhooks"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -88,7 +75,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -117,7 +103,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -146,7 +131,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -176,7 +160,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -197,7 +180,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",

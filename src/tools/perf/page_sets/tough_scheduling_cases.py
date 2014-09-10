@@ -1,8 +1,6 @@
 # Copyright 2014 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-# pylint: disable=W0401,W0614
-from telemetry.page.actions.all_page_actions import *
 from telemetry.page import page as page_module
 from telemetry.page import page_set as page_set_module
 
@@ -13,7 +11,10 @@ class ToughSchedulingCasesPage(page_module.Page):
     super(ToughSchedulingCasesPage, self).__init__(url=url, page_set=page_set)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction())
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage()
+    interaction.End()
 
 
 class Page1(ToughSchedulingCasesPage):
@@ -293,6 +294,7 @@ class Page19(ToughSchedulingCasesPage):
   def RunSmoothness(self, action_runner):
     action_runner.Wait(3)
 
+
 class Page20(ToughSchedulingCasesPage):
 
   """ Why: Simple JS touch dragging """
@@ -303,17 +305,16 @@ class Page20(ToughSchedulingCasesPage):
       page_set=page_set)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction(
-      {
-        'scrollable_element_function': '''
-          function(callback) {
-            callback(document.getElementById('card'));
-          }''',
-        'scroll_requires_touch': True,
-        'direction': 'up',
-        'speed': 150,
-        'scroll_distance_function': 'function() { return 400; }'
-      }))
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollElement(
+        selector='#card',
+        use_touch=True,
+        direction='up',
+        speed_in_pixels_per_second=150,
+        distance=400)
+    interaction.End()
+
 
 class EmptyTouchHandlerPage(ToughSchedulingCasesPage):
 
@@ -335,18 +336,35 @@ class EmptyTouchHandlerPage(ToughSchedulingCasesPage):
 
   def RunSmoothness(self, action_runner):
     if self.bounce:
-      action = ScrollBounceAction()
+      interaction = action_runner.BeginGestureInteraction(
+          'ScrollBounceAction', is_smooth=True)
+      action_runner.ScrollBouncePage()
+      interaction.End()
     else:
-      action = ScrollAction(
-        {
-          'scroll_requires_touch': True,
-           """ Speed and distance are tuned to run exactly as long as a scroll
-                bounce """
-          'speed': 400,
-          'scroll_distance_function': 'function() { return 2100; }'
-        })
+      interaction = action_runner.BeginGestureInteraction(
+          'ScrollAction', is_smooth=True)
+      # Speed and distance are tuned to run exactly as long as a scroll
+      # bounce.
+      action_runner.ScrollPage(use_touch=True, speed_in_pixels_per_second=400,
+                               distance=2100)
+      interaction.End()
 
-    action_runner.RunAction(action)
+
+class SynchronizedScrollOffsetPage(ToughSchedulingCasesPage):
+
+  """Why: For measuring the latency of scroll-synchronized effects."""
+
+  def __init__(self, page_set):
+    super(SynchronizedScrollOffsetPage, self).__init__(
+      url='file://tough_scheduling_cases/sync_scroll_offset.html',
+      page_set=page_set)
+
+  def RunSmoothness(self, action_runner):
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollBounceAction', is_smooth=True)
+    action_runner.ScrollBouncePage()
+    interaction.End()
+
 
 class ToughSchedulingCasesPageSet(page_set_module.PageSet):
 
@@ -445,3 +463,5 @@ class ToughSchedulingCasesPageSet(page_set_module.PageSet):
       slow_handler=True,
       bounce=True,
       page_set=self))
+    # Why: For measuring the latency of scroll-synchronized effects.
+    self.AddPage(SynchronizedScrollOffsetPage(page_set=self))

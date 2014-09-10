@@ -433,7 +433,6 @@ void RunTest(std::string out_path) {
       printf("%i. Toggle receive-side NS \n", option_index++);
       printf("%i. AGC status \n", option_index++);
       printf("%i. Toggle microphone mute \n", option_index++);
-      printf("%i. Toggle on hold status \n", option_index++);
       printf("%i. Get last error code \n", option_index++);
       printf("%i. Toggle typing detection \n",
              option_index++);
@@ -446,6 +445,9 @@ void RunTest(std::string out_path) {
       printf("%i. Remove a file-playing channel \n", option_index++);
       printf("%i. Toggle Opus stereo (Opus must be selected again to apply "
              "the setting) \n", option_index++);
+      printf("%i. Set Opus maximum audio bandwidth \n", option_index++);
+      printf("%i. Set bit rate (only take effect on codecs that allow the "
+             "change) \n", option_index++);
 
       printf("Select action or %i to stop the call: ", option_index);
       int option_selection;
@@ -485,9 +487,9 @@ void RunTest(std::string out_path) {
           printf("\n NS is now off! \n");
       } else if (option_selection == option_index++) {
         experimental_ns_enabled = !experimental_ns_enabled;
-        res = base1->audio_processing()->EnableExperimentalNs(
-            experimental_ns_enabled);
-        VALIDATE;
+        Config config;
+        config.Set<ExperimentalNs>(new ExperimentalNs(experimental_ns_enabled));
+        base1->audio_processing()->SetExtraOptions(config);
         if (experimental_ns_enabled) {
           printf("\n Experimental NS is now on!\n");
         } else {
@@ -758,6 +760,19 @@ void RunTest(std::string out_path) {
         else
           printf("\n Opus mono enabled (select Opus again to apply the "
                  "setting). \n");
+      } else if (option_selection == option_index++) {
+        printf("\n Input bandwidth in Hz: ");
+        int max_playback_rate;
+        ASSERT_EQ(1, scanf("%i", &max_playback_rate));
+        res = codec->SetOpusMaxBandwidth(chan, max_playback_rate);
+        VALIDATE;
+      } else if (option_selection == option_index++) {
+        res = codec->GetSendCodec(chan, cinst);
+        VALIDATE;
+        printf("Current bit rate is %i bps, set to: ", cinst.rate);
+        ASSERT_EQ(1, scanf("%i", &cinst.rate));
+        res = codec->SetSendCodec(chan, cinst);
+        VALIDATE;
       } else {
         break;
       }

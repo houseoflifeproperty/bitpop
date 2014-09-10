@@ -14,8 +14,9 @@ def GenSteps(api):
   soln = src_cfg.solutions.add()
   soln.name = 'src'
   soln.url = 'svn://svn.chromium.org/chrome/trunk/src'
+  src_cfg.parent_got_revision_mapping['parent_got_revision'] = 'got_revision'
   api.gclient.c = src_cfg
-  yield api.gclient.checkout()
+  api.gclient.checkout()
 
   api.gclient.spec_alias = 'WebKit'
   bl_cfg = api.gclient.make_config()
@@ -23,11 +24,11 @@ def GenSteps(api):
   soln.name = 'WebKit'
   soln.url = 'svn://svn.chromium.org/blink/trunk'
   bl_cfg.got_revision_mapping['src/blatley'] = 'got_blatley_revision'
-  yield api.gclient.checkout(
+  api.gclient.checkout(
       gclient_config=bl_cfg,
       cwd=api.path['slave_build'].join('src', 'third_party'))
 
-  yield api.gclient.break_locks()
+  api.gclient.break_locks()
   del api.gclient.spec_alias
 
 def GenTests(api):

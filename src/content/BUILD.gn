@@ -9,35 +9,40 @@ config("content_implementation") {
   defines = [ "CONTENT_IMPLEMENTATION" ]
 }
 
-content_components = [
-  "//content/app",
-  "//content/browser",
-  "//content/child",
+content_shared_components = [
   "//content/gpu",
   "//content/plugin",
   "//content/ppapi_plugin",
   "//content/public/app",
-  "//content/public/browser",
+  "//content/public/browser:sources",
   "//content/public/child",
+  "//content/public/common",
   "//content/public/plugin",
   "//content/public/renderer",
   "//content/renderer",
   "//content/utility",
-  "//content/worker",
 ]
 
 if (is_component_build) {
   shared_library("content") {
-    deps = content_components
+    deps = content_shared_components + [
+      "//content/app",
+    ]
+    forward_dependent_configs_from = deps
   }
 } else {
   group("content") {
-    deps = content_components
+    deps = content_shared_components
   }
 }
 
 grit("resources") {
   source = "content_resources.grd"
+  outputs = [
+    "grit/content_resources.h",
+    "content_resources.pak",
+    "content_resources.rc",
+  ]
 }
 
 # This target exists to "hold" the content_export header so we can do proper
@@ -77,17 +82,18 @@ config("libjingle_stub_config") {
   ]
 
   if (is_mac) {
-    defines += [ "OSX" ]
+    defines += [ "OSX", "WEBRTC_MAC" ]
   } else if (is_linux) {
-    defines += [ "LINUX" ]
+    defines += [ "LINUX", "WEBRTC_LINUX" ]
   } else if (is_android) {
-    defines += [ "ANDROID" ]
+    defines += [ "ANDROID", "WEBRTC_LINUX", "WEBRTC_ANDROID" ]
   } else if (is_win) {
     libs = [ "secur32.lib", "crypt32.lib", "iphlpapi.lib" ]
+    defines += [ "WEBRTC_WIN" ]
   }
 
   if (is_posix) {
-    defines += [ "POSIX" ]
+    defines += [ "POSIX", "WEBRTC_POSIX" ]
   }
   if (is_chromeos) {
     defines += [ "CHROMEOS" ]

@@ -6,12 +6,12 @@
 #define NavigatorContentUtilsClientMock_h
 
 #include "modules/navigatorcontentutils/NavigatorContentUtilsClient.h"
-#include "platform/weborigin/KURL.h"
 #include "wtf/HashSet.h"
-#include "wtf/OwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
+
+class KURL;
 
 // Provides a mock object for the navigatorcontentutils client.
 class NavigatorContentUtilsClientMock : public NavigatorContentUtilsClient {
@@ -27,8 +27,8 @@ public:
 private:
     typedef struct {
         String scheme;
-        WebCore::KURL baseURL;
-        WebCore::KURL url;
+        KURL baseURL;
+        KURL url;
         String title;
     } ProtocolInfo;
 
@@ -36,6 +36,6 @@ private:
     RegisteredProtocolMap m_protocolMap;
 };
 
-}
+} // namespace blink
 
 #endif // NavigatorContentUtilsClientMock_h

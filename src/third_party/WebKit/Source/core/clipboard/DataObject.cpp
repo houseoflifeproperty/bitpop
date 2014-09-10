@@ -37,7 +37,7 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebClipboard.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<DataObject> DataObject::createFromPasteboard(PasteMode pasteMode)
 {
@@ -152,12 +152,11 @@ String DataObject::getData(const String& type) const
     return String();
 }
 
-bool DataObject::setData(const String& type, const String& data)
+void DataObject::setData(const String& type, const String& data)
 {
     clearData(type);
     if (!add(data, type))
         ASSERT_NOT_REACHED();
-    return true;
 }
 
 void DataObject::urlAndTitle(String& url, String* title) const
@@ -212,7 +211,7 @@ Vector<String> DataObject::filenames() const
 
 void DataObject::addFilename(const String& filename, const String& displayName)
 {
-    internalAddFileItem(DataObjectItem::createFromFile(File::createWithName(filename, displayName, File::AllContentTypes)));
+    internalAddFileItem(DataObjectItem::createFromFile(File::createForUserProvidedFile(filename, displayName)));
 }
 
 void DataObject::addSharedBuffer(const String& name, PassRefPtr<SharedBuffer> buffer)
@@ -264,4 +263,4 @@ void DataObject::trace(Visitor* visitor)
     WillBeHeapSupplementable<DataObject>::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

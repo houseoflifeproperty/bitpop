@@ -25,22 +25,20 @@
 #include "config.h"
 #include "core/rendering/RenderListMarker.h"
 
-#include "core/dom/Document.h"
 #include "core/fetch/ImageResource.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderListItem.h"
-#include "core/rendering/RenderView.h"
+#include "core/rendering/TextRunConstructor.h"
 #include "platform/fonts/Font.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/unicode/CharacterNames.h"
 
-using namespace std;
 using namespace WTF;
 using namespace Unicode;
 
-namespace WebCore {
+namespace blink {
 
 const int cMarkerPadding = 7;
 
@@ -1069,6 +1067,12 @@ RenderListMarker::~RenderListMarker()
         m_image->removeClient(this);
 }
 
+void RenderListMarker::trace(Visitor* visitor)
+{
+    visitor->trace(m_listItem);
+    RenderBox::trace(visitor);
+}
+
 RenderListMarker* RenderListMarker::createAnonymous(RenderListItem* item)
 {
     Document& document = item->document();
@@ -1264,7 +1268,7 @@ void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffse
         return;
 
     const Font& font = style()->font();
-    TextRun textRun = RenderBlockFlow::constructTextRun(this, font, m_text, style());
+    TextRun textRun = constructTextRun(this, font, m_text, style());
 
     GraphicsContextStateSaver stateSaver(*context, false);
     if (!style()->isHorizontalWritingMode()) {
@@ -1303,7 +1307,7 @@ void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffse
             style()->isLeftToRightDirection() ? suffix : ' ',
             style()->isLeftToRightDirection() ? ' ' : suffix
         };
-        TextRun suffixRun = RenderBlockFlow::constructTextRun(this, font, suffixStr, 2, style(), style()->direction());
+        TextRun suffixRun = constructTextRun(this, font, suffixStr, 2, style(), style()->direction());
         TextRunPaintInfo suffixRunInfo(suffixRun);
         suffixRunInfo.bounds = marker;
 
@@ -1580,7 +1584,7 @@ void RenderListMarker::computePreferredLogicalWidths()
             else {
                 LayoutUnit itemWidth = font.width(m_text);
                 UChar suffixSpace[2] = { listMarkerSuffix(type, m_listItem->value()), ' ' };
-                LayoutUnit suffixSpaceWidth = font.width(RenderBlockFlow::constructTextRun(this, font, suffixSpace, 2, style(), style()->direction()));
+                LayoutUnit suffixSpaceWidth = font.width(constructTextRun(this, font, suffixSpace, 2, style(), style()->direction()));
                 logicalWidth = itemWidth + suffixSpaceWidth;
             }
             break;
@@ -1806,7 +1810,7 @@ IntRect RenderListMarker::getRelativeMarkerRect()
             const Font& font = style()->font();
             int itemWidth = font.width(m_text);
             UChar suffixSpace[2] = { listMarkerSuffix(type, m_listItem->value()), ' ' };
-            int suffixSpaceWidth = font.width(RenderBlockFlow::constructTextRun(this, font, suffixSpace, 2, style(), style()->direction()));
+            int suffixSpaceWidth = font.width(constructTextRun(this, font, suffixSpace, 2, style(), style()->direction()));
             relativeRect = IntRect(0, 0, itemWidth + suffixSpaceWidth, font.fontMetrics().height());
     }
 
@@ -1838,11 +1842,11 @@ LayoutRect RenderListMarker::selectionRectForPaintInvalidation(const RenderLayer
     LayoutRect rect(0, root.selectionTop() - y(), width(), root.selectionHeight());
 
     if (clipToVisibleContent)
-        mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect);
+        mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, ViewportConstraintDoesNotMatter, 0);
     else
         rect = localToContainerQuad(FloatRect(rect), paintInvalidationContainer).enclosingBoundingBox();
 
     return rect;
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -134,11 +134,6 @@ Size GetDPI() {
 
 float GetDPIScale() {
   if (IsHighDPIEnabled()) {
-    if (GetDPI().width() <= 120) {
-      // 120 logical pixels is 125% scale. We do this to maintain previous
-      // (non-DPI-aware) behavior where only the font size was boosted.
-      return 1.0;
-    }
     return gfx::Display::HasForceDeviceScaleFactor() ?
         gfx::Display::GetForcedDeviceScaleFactor() :
         GetUnforcedDeviceScaleFactor();

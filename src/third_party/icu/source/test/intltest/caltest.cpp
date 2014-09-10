@@ -1,9 +1,8 @@
 /************************************************************************
  * COPYRIGHT: 
- * Copyright (c) 1997-2010, International Business Machines Corporation
+ * Copyright (c) 1997-2013, International Business Machines Corporation
  * and others. All Rights Reserved.
  ************************************************************************/
-
 #include "unicode/utypes.h"
 
 #if !UCONFIG_NO_FORMATTING
@@ -11,14 +10,28 @@
 #include "caltest.h"
 #include "unicode/dtfmtsym.h"
 #include "unicode/gregocal.h"
+#include "unicode/localpointer.h"
 #include "hebrwcal.h"
 #include "unicode/smpdtfmt.h"
 #include "unicode/simpletz.h"
 #include "dbgutil.h"
 #include "unicode/udat.h"
 #include "unicode/ustring.h"
+#include "cstring.h"
+#include "unicode/localpointer.h"
+#include "islamcal.h"
 
 #define mkcstr(U) u_austrcpy(calloc(8, u_strlen(U) + 1), U)
+
+#define TEST_CHECK_STATUS { \
+    if (U_FAILURE(status)) { \
+        if (status == U_MISSING_RESOURCE_ERROR) { \
+            dataerrln("%s:%d: Test failure.  status=%s", __FILE__, __LINE__, u_errorName(status)); \
+        } else { \
+            errln("%s:%d: Test failure.  status=%s", __FILE__, __LINE__, u_errorName(status)); \
+        } return;}}
+
+#define TEST_ASSERT(expr) {if ((expr)==FALSE) {errln("%s:%d: Test failure \n", __FILE__, __LINE__);};}
 
 // *****************************************************************************
 // class CalendarTest
@@ -229,6 +242,62 @@ void CalendarTest::runIndexedTest( int32_t index, UBool exec, const char* &name,
             Test1624();
           }
           break;
+        case 25:
+          name = "TestTimeStamp";
+          if(exec) {
+            logln("TestTimeStamp---"); logln("");
+            TestTimeStamp();
+          }
+          break;
+        case 26:
+          name = "TestISO8601";
+          if(exec) {
+            logln("TestISO8601---"); logln("");
+            TestISO8601();
+          }
+          break;
+        case 27:
+          name = "TestAmbiguousWallTimeAPIs";
+          if(exec) {
+            logln("TestAmbiguousWallTimeAPIs---"); logln("");
+            TestAmbiguousWallTimeAPIs();
+          }
+          break;
+        case 28:
+          name = "TestRepeatedWallTime";
+          if(exec) {
+            logln("TestRepeatedWallTime---"); logln("");
+            TestRepeatedWallTime();
+          }
+          break;
+        case 29:
+          name = "TestSkippedWallTime";
+          if(exec) {
+            logln("TestSkippedWallTime---"); logln("");
+            TestSkippedWallTime();
+          }
+          break;
+        case 30:
+          name = "TestCloneLocale";
+          if(exec) {
+            logln("TestCloneLocale---"); logln("");
+            TestCloneLocale();
+          }
+          break;
+        case 31:
+          name = "TestIslamicUmAlQura";
+          if(exec) {
+            logln("TestIslamicUmAlQura---"); logln("");
+            TestIslamicUmAlQura();
+          }
+          break;
+        case 32:
+          name = "TestIslamicTabularDates";
+          if(exec) {
+            logln("TestIslamicTabularDates---"); logln("");
+            TestIslamicTabularDates();
+          }
+          break;
         default: name = ""; break;
     }
 }
@@ -371,11 +440,11 @@ CalendarTest::TestGenericAPI()
     for (i=0; i<UCAL_FIELD_COUNT; ++i)
     {
         if (cal->getMinimum((UCalendarDateFields)i) > cal->getGreatestMinimum((UCalendarDateFields)i))
-            errln("FAIL: getMinimum larger than getGreatestMinimum for field " + i);
+            errln(UnicodeString("FAIL: getMinimum larger than getGreatestMinimum for field ") + i);
         if (cal->getLeastMaximum((UCalendarDateFields)i) > cal->getMaximum((UCalendarDateFields)i))
-            errln("FAIL: getLeastMaximum larger than getMaximum for field " + i);
+            errln(UnicodeString("FAIL: getLeastMaximum larger than getMaximum for field ") + i);
         if (cal->getMinimum((UCalendarDateFields)i) >= cal->getMaximum((UCalendarDateFields)i))
-            errln("FAIL: getMinimum not less than getMaximum for field " + i);
+            errln(UnicodeString("FAIL: getMinimum not less than getMaximum for field ") + i);
     }
 
     cal->adoptTimeZone(TimeZone::createDefault());
@@ -506,11 +575,49 @@ CalendarTest::TestGenericAPI()
         cal->roll(Calendar::MONTH, (int32_t)100, status);
     }
 
-    StringEnumeration *en = Calendar::getKeywordValuesForLocale(NULL, Locale::getDefault(),FALSE, status);
-    if (en == NULL || U_FAILURE(status)) {
-        dataerrln("FAIL: getKeywordValuesForLocale for Calendar. : %s", u_errorName(status));
+    LocalPointer<StringEnumeration> values(
+        Calendar::getKeywordValuesForLocale("calendar", Locale("he"), FALSE, status));
+    if (values.isNull() || U_FAILURE(status)) {
+        dataerrln("FAIL: Calendar::getKeywordValuesForLocale(he): %s", u_errorName(status));
+    } else {
+        UBool containsHebrew = FALSE;
+        const char *charValue;
+        int32_t valueLength;
+        while ((charValue = values->next(&valueLength, status)) != NULL) {
+            if (valueLength == 6 && strcmp(charValue, "hebrew") == 0) {
+                containsHebrew = TRUE;
+            }
+        }
+        if (!containsHebrew) {
+            errln("Calendar::getKeywordValuesForLocale(he)->next() does not contain \"hebrew\"");
+        }
+
+        values->reset(status);
+        containsHebrew = FALSE;
+        UnicodeString hebrew = UNICODE_STRING_SIMPLE("hebrew");
+        const UChar *ucharValue;
+        while ((ucharValue = values->unext(&valueLength, status)) != NULL) {
+            UnicodeString value(FALSE, ucharValue, valueLength);
+            if (value == hebrew) {
+                containsHebrew = TRUE;
+            }
+        }
+        if (!containsHebrew) {
+            errln("Calendar::getKeywordValuesForLocale(he)->unext() does not contain \"hebrew\"");
+        }
+
+        values->reset(status);
+        containsHebrew = FALSE;
+        const UnicodeString *stringValue;
+        while ((stringValue = values->snext(status)) != NULL) {
+            if (*stringValue == hebrew) {
+                containsHebrew = TRUE;
+            }
+        }
+        if (!containsHebrew) {
+            errln("Calendar::getKeywordValuesForLocale(he)->snext() does not contain \"hebrew\"");
+        }
     }
-    delete en;
     delete cal;
 }
 
@@ -1300,7 +1407,7 @@ CalendarTest::TestEpochStartFields()
         if (U_FAILURE(status)) { errln("Calendar::setTime failed"); return; }
         for (int32_t i = 0; i < UCAL_ZONE_OFFSET;++i) {
             if (c->get((UCalendarDateFields)i, status) != EPOCH_FIELDS[i])
-                errln(UnicodeString("Expected field ") + i + " to have value " + EPOCH_FIELDS[i] +
+                dataerrln(UnicodeString("Expected field ") + i + " to have value " + EPOCH_FIELDS[i] +
                       "; saw " + c->get((UCalendarDateFields)i, status) + " instead");
             if (U_FAILURE(status)) { errln("Calendar::get failed"); return; }
         }
@@ -1323,7 +1430,7 @@ CalendarTest::TestEpochStartFields()
 }
  
 int32_t CalendarTest::EPOCH_FIELDS[] = {
-    1, 1970, 0, 53, 0, 1, 1, 5, 1, 0, 0, 0, 0, 0, 0, - 28800000, 0
+    1, 1970, 0, 1, 1, 1, 1, 5, 1, 0, 0, 0, 0, 0, 0, - 28800000, 0
 };
  
 // -------------------------------------
@@ -1358,7 +1465,7 @@ CalendarTest::TestDOW_LOCALandYEAR_WOY()
     Calendar *cal=Calendar::createInstance(Locale::getGermany(), status);
     if (failure(status, "Calendar::createInstance", TRUE)) return;
     SimpleDateFormat *sdf=new SimpleDateFormat(UnicodeString("YYYY'-W'ww-ee"), Locale::getGermany(), status);
-    if (U_FAILURE(status)) { errcheckln(status, "Couldn't create SimpleDateFormat - %s", u_errorName(status)); return; }
+    if (U_FAILURE(status)) { dataerrln("Couldn't create SimpleDateFormat - %s", u_errorName(status)); return; }
 
     // ICU no longer use localized date-time pattern characters by default.
     // So we set pattern chars using 'J' instead of 'Y'.
@@ -1368,7 +1475,7 @@ CalendarTest::TestDOW_LOCALandYEAR_WOY()
     sdf->applyLocalizedPattern(UnicodeString("JJJJ'-W'ww-ee"), status);
     if (U_FAILURE(status)) { errln("Couldn't apply localized pattern"); return; }
 
-	cal->clear();
+    cal->clear();
     cal->set(1997, UCAL_DECEMBER, 25);
     doYEAR_WOYLoop(cal, sdf, times, status);
     //loop_addroll(cal, /*sdf,*/ times, UCAL_YEAR_WOY, UCAL_YEAR,  status);
@@ -1954,20 +2061,20 @@ void CalendarTest::TestJD()
 // make sure the ctestfw utilities are in sync with the Calendar
 void CalendarTest::TestDebug()
 {
-	for(int32_t  t=0;t<=UDBG_ENUM_COUNT;t++) {
-		int32_t count = udbg_enumCount((UDebugEnumType)t);
-		if(count == -1) {
-			logln("enumCount(%d) returned -1", count);
-			continue;
-		}
-	    for(int32_t i=0;i<=count;i++) {
-	  	  if(t<=UDBG_HIGHEST_CONTIGUOUS_ENUM && i<count) {
-	  		  if( i!=udbg_enumArrayValue((UDebugEnumType)t, i)) {
-	  			  errln("FAIL: udbg_enumArrayValue(%d,%d) returned %d, expected %d", t, i, udbg_enumArrayValue((UDebugEnumType)t,i), i);
-	  		  }
-	  	  } else {
-	  		  logln("Testing count+1:");
-	  	  }
+    for(int32_t  t=0;t<=UDBG_ENUM_COUNT;t++) {
+        int32_t count = udbg_enumCount((UDebugEnumType)t);
+        if(count == -1) {
+            logln("enumCount(%d) returned -1", count);
+            continue;
+        }
+        for(int32_t i=0;i<=count;i++) {
+            if(t<=UDBG_HIGHEST_CONTIGUOUS_ENUM && i<count) {
+                if( i!=udbg_enumArrayValue((UDebugEnumType)t, i)) {
+                    errln("FAIL: udbg_enumArrayValue(%d,%d) returned %d, expected %d", t, i, udbg_enumArrayValue((UDebugEnumType)t,i), i);
+                }
+            } else {
+                logln("Testing count+1:");
+            }
                   const char *name = udbg_enumName((UDebugEnumType)t,i);
                   if(name==NULL) {
                           if(i==count || t>UDBG_HIGHEST_CONTIGUOUS_ENUM  ) {
@@ -1977,16 +2084,16 @@ void CalendarTest::TestDebug()
                           }
                           name = "(null)";
                   }
-		  logln("udbg_enumArrayValue(%d,%d) = %s, returned %d", t, i, 
-				  	name, udbg_enumArrayValue((UDebugEnumType)t,i));
-	  	  logln("udbg_enumString = " + udbg_enumString((UDebugEnumType)t,i));
-	    }
-	    if(udbg_enumExpectedCount((UDebugEnumType)t) != count && t<=UDBG_HIGHEST_CONTIGUOUS_ENUM) {
-	  	  errln("FAIL: udbg_enumExpectedCount(%d): %d, != UCAL_FIELD_COUNT=%d ", t, udbg_enumExpectedCount((UDebugEnumType)t), count);
-	    } else {
-	  	  logln("udbg_ucal_fieldCount: %d, UCAL_FIELD_COUNT=udbg_enumCount %d ", udbg_enumExpectedCount((UDebugEnumType)t), count);
-	    }
-	}
+          logln("udbg_enumArrayValue(%d,%d) = %s, returned %d", t, i, 
+                      name, udbg_enumArrayValue((UDebugEnumType)t,i));
+            logln("udbg_enumString = " + udbg_enumString((UDebugEnumType)t,i));
+        }
+        if(udbg_enumExpectedCount((UDebugEnumType)t) != count && t<=UDBG_HIGHEST_CONTIGUOUS_ENUM) {
+            errln("FAIL: udbg_enumExpectedCount(%d): %d, != UCAL_FIELD_COUNT=%d ", t, udbg_enumExpectedCount((UDebugEnumType)t), count);
+        } else {
+            logln("udbg_ucal_fieldCount: %d, UCAL_FIELD_COUNT=udbg_enumCount %d ", udbg_enumExpectedCount((UDebugEnumType)t), count);
+        }
+    }
 }
 
 
@@ -2157,6 +2264,627 @@ void CalendarTest::Test1624() {
     }
     return;
 }
+
+void CalendarTest::TestTimeStamp() {
+    UErrorCode status = U_ZERO_ERROR;
+    UDate start = 0.0, time;
+    Calendar *cal;
+
+    // Create a new Gregorian Calendar.
+    cal = Calendar::createInstance("en_US@calender=gregorian", status);
+    if (U_FAILURE(status)) {
+        dataerrln("Error creating Gregorian calendar.");
+        return;
+    }
+
+    for (int i = 0; i < 20000; i++) {
+        // Set the Gregorian Calendar to a specific date for testing.
+        cal->set(2009, UCAL_JULY, 3, 0, 49, 46);
+
+        time = cal->getTime(status);
+        if (U_FAILURE(status)) {
+            errln("Error calling getTime()");
+            break;
+        }
+
+        if (i == 0) {
+            start = time;
+        } else {
+            if (start != time) {
+                errln("start and time not equal.");
+                break;
+            }
+        }
+    }
+
+    delete cal;
+}
+
+void CalendarTest::TestISO8601() {
+    const char* TEST_LOCALES[] = {
+        "en_US@calendar=iso8601",
+        "en_US@calendar=Iso8601",
+        "th_TH@calendar=iso8601",
+        "ar_EG@calendar=iso8601",
+        NULL
+    };
+
+    int32_t TEST_DATA[][3] = {
+        {2008, 1, 2008},
+        {2009, 1, 2009},
+        {2010, 53, 2009},
+        {2011, 52, 2010},
+        {2012, 52, 2011},
+        {2013, 1, 2013},
+        {2014, 1, 2014},
+        {0, 0, 0},
+    };
+
+    for (int i = 0; TEST_LOCALES[i] != NULL; i++) {
+        UErrorCode status = U_ZERO_ERROR;
+        Calendar *cal = Calendar::createInstance(TEST_LOCALES[i], status);
+        if (U_FAILURE(status)) {
+            errln("Error: Failed to create a calendar for locale: %s", TEST_LOCALES[i]);
+            continue;
+        }
+        if (uprv_strcmp(cal->getType(), "gregorian") != 0) {
+            errln("Error: Gregorian calendar is not used for locale: %s", TEST_LOCALES[i]);
+            continue;
+        }
+        for (int j = 0; TEST_DATA[j][0] != 0; j++) {
+            cal->set(TEST_DATA[j][0], UCAL_JANUARY, 1);
+            int32_t weekNum = cal->get(UCAL_WEEK_OF_YEAR, status);
+            int32_t weekYear = cal->get(UCAL_YEAR_WOY, status);
+            if (U_FAILURE(status)) {
+                errln("Error: Failed to get week of year");
+                break;
+            }
+            if (weekNum != TEST_DATA[j][1] || weekYear != TEST_DATA[j][2]) {
+                errln("Error: Incorrect week of year on January 1st, %d for locale %s: Returned [weekNum=%d, weekYear=%d], Expected [weekNum=%d, weekYear=%d]",
+                    TEST_DATA[j][0], TEST_LOCALES[i], weekNum, weekYear, TEST_DATA[j][1], TEST_DATA[j][2]);
+            }
+        }
+        delete cal;
+    }
+
+}
+
+void
+CalendarTest::TestAmbiguousWallTimeAPIs(void) {
+    UErrorCode status = U_ZERO_ERROR;
+    Calendar* cal = Calendar::createInstance(status);
+    if (U_FAILURE(status)) {
+        errln("Fail: Error creating a calendar instance.");
+        return;
+    }
+
+    if (cal->getRepeatedWallTimeOption() != UCAL_WALLTIME_LAST) {
+        errln("Fail: Default repeted time option is not UCAL_WALLTIME_LAST");
+    }
+    if (cal->getSkippedWallTimeOption() != UCAL_WALLTIME_LAST) {
+        errln("Fail: Default skipped time option is not UCAL_WALLTIME_LAST");
+    }
+
+    Calendar* cal2 = cal->clone();
+
+    if (*cal != *cal2) {
+        errln("Fail: Cloned calendar != the original");
+    }
+    if (!cal->equals(*cal2, status)) {
+        errln("Fail: The time of cloned calendar is not equal to the original");
+    } else if (U_FAILURE(status)) {
+        errln("Fail: Error equals");
+    }
+    status = U_ZERO_ERROR;
+
+    cal2->setRepeatedWallTimeOption(UCAL_WALLTIME_FIRST);
+    cal2->setSkippedWallTimeOption(UCAL_WALLTIME_FIRST);
+
+    if (*cal == *cal2) {
+        errln("Fail: Cloned and modified calendar == the original");
+    }
+    if (!cal->equals(*cal2, status)) {
+        errln("Fail: The time of cloned calendar is not equal to the original after changing wall time options");
+    } else if (U_FAILURE(status)) {
+        errln("Fail: Error equals after changing wall time options");
+    }
+    status = U_ZERO_ERROR;
+
+    if (cal2->getRepeatedWallTimeOption() != UCAL_WALLTIME_FIRST) {
+        errln("Fail: Repeted time option is not UCAL_WALLTIME_FIRST");
+    }
+    if (cal2->getSkippedWallTimeOption() != UCAL_WALLTIME_FIRST) {
+        errln("Fail: Skipped time option is not UCAL_WALLTIME_FIRST");
+    }
+
+    cal2->setRepeatedWallTimeOption(UCAL_WALLTIME_NEXT_VALID);
+    if (cal2->getRepeatedWallTimeOption() != UCAL_WALLTIME_FIRST) {
+        errln("Fail: Repeated wall time option was updated other than UCAL_WALLTIME_FIRST");
+    }
+
+    delete cal;
+    delete cal2;
+}
+
+class CalFields {
+public:
+    CalFields(int32_t year, int32_t month, int32_t day, int32_t hour, int32_t min, int32_t sec);
+    CalFields(const Calendar& cal, UErrorCode& status);
+    void setTo(Calendar& cal) const;
+    char* toString(char* buf, int32_t len) const;
+    UBool operator==(const CalFields& rhs) const;
+    UBool operator!=(const CalFields& rhs) const;
+
+private:
+    int32_t year;
+    int32_t month;
+    int32_t day;
+    int32_t hour;
+    int32_t min;
+    int32_t sec;
+};
+
+CalFields::CalFields(int32_t year, int32_t month, int32_t day, int32_t hour, int32_t min, int32_t sec)
+    : year(year), month(month), day(day), hour(hour), min(min), sec(sec) {
+}
+
+CalFields::CalFields(const Calendar& cal, UErrorCode& status) {
+    year = cal.get(UCAL_YEAR, status);
+    month = cal.get(UCAL_MONTH, status) + 1;
+    day = cal.get(UCAL_DAY_OF_MONTH, status);
+    hour = cal.get(UCAL_HOUR_OF_DAY, status);
+    min = cal.get(UCAL_MINUTE, status);
+    sec = cal.get(UCAL_SECOND, status);
+}
+
+void
+CalFields::setTo(Calendar& cal) const {
+    cal.clear();
+    cal.set(year, month - 1, day, hour, min, sec);
+}
+
+char*
+CalFields::toString(char* buf, int32_t len) const {
+    char local[32];
+    sprintf(local, "%04d-%02d-%02d %02d:%02d:%02d", year, month, day, hour, min, sec);
+    uprv_strncpy(buf, local, len - 1);
+    buf[len - 1] = 0;
+    return buf;
+}
+
+UBool
+CalFields::operator==(const CalFields& rhs) const {
+    return year == rhs.year
+        && month == rhs.month
+        && day == rhs.day
+        && hour == rhs.hour
+        && min == rhs.min
+        && sec == rhs.sec;
+}
+
+UBool
+CalFields::operator!=(const CalFields& rhs) const {
+    return !(*this == rhs);
+}
+
+typedef struct {
+    const char*     tzid;
+    const CalFields in;
+    const CalFields expLastGMT;
+    const CalFields expFirstGMT;
+} RepeatedWallTimeTestData;
+
+static const RepeatedWallTimeTestData RPDATA[] =
+{
+    // Time zone            Input wall time                 WALLTIME_LAST in GMT            WALLTIME_FIRST in GMT
+    {"America/New_York",    CalFields(2011,11,6,0,59,59),   CalFields(2011,11,6,4,59,59),   CalFields(2011,11,6,4,59,59)},
+    {"America/New_York",    CalFields(2011,11,6,1,0,0),     CalFields(2011,11,6,6,0,0),     CalFields(2011,11,6,5,0,0)},
+    {"America/New_York",    CalFields(2011,11,6,1,0,1),     CalFields(2011,11,6,6,0,1),     CalFields(2011,11,6,5,0,1)},
+    {"America/New_York",    CalFields(2011,11,6,1,30,0),    CalFields(2011,11,6,6,30,0),    CalFields(2011,11,6,5,30,0)},
+    {"America/New_York",    CalFields(2011,11,6,1,59,59),   CalFields(2011,11,6,6,59,59),   CalFields(2011,11,6,5,59,59)},
+    {"America/New_York",    CalFields(2011,11,6,2,0,0),     CalFields(2011,11,6,7,0,0),     CalFields(2011,11,6,7,0,0)},
+    {"America/New_York",    CalFields(2011,11,6,2,0,1),     CalFields(2011,11,6,7,0,1),     CalFields(2011,11,6,7,0,1)},
+
+    {"Australia/Lord_Howe", CalFields(2011,4,3,1,29,59),    CalFields(2011,4,2,14,29,59),   CalFields(2011,4,2,14,29,59)},
+    {"Australia/Lord_Howe", CalFields(2011,4,3,1,30,0),     CalFields(2011,4,2,15,0,0),     CalFields(2011,4,2,14,30,0)},
+    {"Australia/Lord_Howe", CalFields(2011,4,3,1,45,0),     CalFields(2011,4,2,15,15,0),    CalFields(2011,4,2,14,45,0)},
+    {"Australia/Lord_Howe", CalFields(2011,4,3,1,59,59),    CalFields(2011,4,2,15,29,59),   CalFields(2011,4,2,14,59,59)},
+    {"Australia/Lord_Howe", CalFields(2011,4,3,2,0,0),      CalFields(2011,4,2,15,30,0),    CalFields(2011,4,2,15,30,0)},
+    {"Australia/Lord_Howe", CalFields(2011,4,3,2,0,1),      CalFields(2011,4,2,15,30,1),    CalFields(2011,4,2,15,30,1)},
+
+    {NULL,                  CalFields(0,0,0,0,0,0),         CalFields(0,0,0,0,0,0),          CalFields(0,0,0,0,0,0)}
+};
+
+void CalendarTest::TestRepeatedWallTime(void) {
+    UErrorCode status = U_ZERO_ERROR;
+    GregorianCalendar calGMT((const TimeZone&)*TimeZone::getGMT(), status);
+    GregorianCalendar calDefault(status);
+    GregorianCalendar calLast(status);
+    GregorianCalendar calFirst(status);
+
+    if (U_FAILURE(status)) {
+        errln("Fail: Failed to create a calendar object.");
+        return;
+    }
+
+    calLast.setRepeatedWallTimeOption(UCAL_WALLTIME_LAST);
+    calFirst.setRepeatedWallTimeOption(UCAL_WALLTIME_FIRST);
+
+    for (int32_t i = 0; RPDATA[i].tzid != NULL; i++) {
+        char buf[32];
+        TimeZone *tz = TimeZone::createTimeZone(RPDATA[i].tzid);
+
+        // UCAL_WALLTIME_LAST
+        status = U_ZERO_ERROR;
+        calLast.setTimeZone(*tz);
+        RPDATA[i].in.setTo(calLast);
+        calGMT.setTime(calLast.getTime(status), status);
+        CalFields outLastGMT(calGMT, status);
+        if (U_FAILURE(status)) {
+            errln(UnicodeString("Fail: Failed to get/set time calLast/calGMT (UCAL_WALLTIME_LAST) - ")
+                + RPDATA[i].in.toString(buf, sizeof(buf)) + "[" + RPDATA[i].tzid + "]");
+        } else {
+            if (outLastGMT != RPDATA[i].expLastGMT) {
+                dataerrln(UnicodeString("Fail: UCAL_WALLTIME_LAST ") + RPDATA[i].in.toString(buf, sizeof(buf)) + "[" + RPDATA[i].tzid + "] is parsed as "
+                    + outLastGMT.toString(buf, sizeof(buf)) + "[GMT]. Expected: " + RPDATA[i].expLastGMT.toString(buf, sizeof(buf)) + "[GMT]");
+            }
+        }
+
+        // default
+        status = U_ZERO_ERROR;
+        calDefault.setTimeZone(*tz);
+        RPDATA[i].in.setTo(calDefault);
+        calGMT.setTime(calDefault.getTime(status), status);
+        CalFields outDefGMT(calGMT, status);
+        if (U_FAILURE(status)) {
+            errln(UnicodeString("Fail: Failed to get/set time calLast/calGMT (default) - ")
+                + RPDATA[i].in.toString(buf, sizeof(buf)) + "[" + RPDATA[i].tzid + "]");
+        } else {
+            if (outDefGMT != RPDATA[i].expLastGMT) {
+                dataerrln(UnicodeString("Fail: (default) ") + RPDATA[i].in.toString(buf, sizeof(buf)) + "[" + RPDATA[i].tzid + "] is parsed as "
+                    + outDefGMT.toString(buf, sizeof(buf)) + "[GMT]. Expected: " + RPDATA[i].expLastGMT.toString(buf, sizeof(buf)) + "[GMT]");
+            }
+        }
+
+        // UCAL_WALLTIME_FIRST
+        status = U_ZERO_ERROR;
+        calFirst.setTimeZone(*tz);
+        RPDATA[i].in.setTo(calFirst);
+        calGMT.setTime(calFirst.getTime(status), status);
+        CalFields outFirstGMT(calGMT, status);
+        if (U_FAILURE(status)) {
+            errln(UnicodeString("Fail: Failed to get/set time calLast/calGMT (UCAL_WALLTIME_FIRST) - ")
+                + RPDATA[i].in.toString(buf, sizeof(buf)) + "[" + RPDATA[i].tzid + "]");
+        } else {
+            if (outFirstGMT != RPDATA[i].expFirstGMT) {
+                dataerrln(UnicodeString("Fail: UCAL_WALLTIME_FIRST ") + RPDATA[i].in.toString(buf, sizeof(buf)) + "[" + RPDATA[i].tzid + "] is parsed as "
+                    + outFirstGMT.toString(buf, sizeof(buf)) + "[GMT]. Expected: " + RPDATA[i].expFirstGMT.toString(buf, sizeof(buf)) + "[GMT]");
+            }
+        }
+        delete tz;
+    }
+}
+
+typedef struct {
+    const char*     tzid;
+    const CalFields in;
+    UBool           isValid;
+    const CalFields expLastGMT;
+    const CalFields expFirstGMT;
+    const CalFields expNextAvailGMT;
+} SkippedWallTimeTestData;
+
+static SkippedWallTimeTestData SKDATA[] =
+{
+     // Time zone           Input wall time                 valid?  WALLTIME_LAST in GMT            WALLTIME_FIRST in GMT           WALLTIME_NEXT_VALID in GMT
+    {"America/New_York",    CalFields(2011,3,13,1,59,59),   TRUE,   CalFields(2011,3,13,6,59,59),   CalFields(2011,3,13,6,59,59),   CalFields(2011,3,13,6,59,59)},
+    {"America/New_York",    CalFields(2011,3,13,2,0,0),     FALSE,  CalFields(2011,3,13,7,0,0),     CalFields(2011,3,13,6,0,0),     CalFields(2011,3,13,7,0,0)},
+    {"America/New_York",    CalFields(2011,3,13,2,1,0),     FALSE,  CalFields(2011,3,13,7,1,0),     CalFields(2011,3,13,6,1,0),     CalFields(2011,3,13,7,0,0)},
+    {"America/New_York",    CalFields(2011,3,13,2,30,0),    FALSE,  CalFields(2011,3,13,7,30,0),    CalFields(2011,3,13,6,30,0),    CalFields(2011,3,13,7,0,0)},
+    {"America/New_York",    CalFields(2011,3,13,2,59,59),   FALSE,  CalFields(2011,3,13,7,59,59),   CalFields(2011,3,13,6,59,59),   CalFields(2011,3,13,7,0,0)},
+    {"America/New_York",    CalFields(2011,3,13,3,0,0),     TRUE,   CalFields(2011,3,13,7,0,0),     CalFields(2011,3,13,7,0,0),     CalFields(2011,3,13,7,0,0)},
+
+    {"Pacific/Apia",        CalFields(2011,12,29,23,59,59), TRUE,   CalFields(2011,12,30,9,59,59),  CalFields(2011,12,30,9,59,59),  CalFields(2011,12,30,9,59,59)},
+    {"Pacific/Apia",        CalFields(2011,12,30,0,0,0),    FALSE,  CalFields(2011,12,30,10,0,0),   CalFields(2011,12,29,10,0,0),   CalFields(2011,12,30,10,0,0)},
+    {"Pacific/Apia",        CalFields(2011,12,30,12,0,0),   FALSE,  CalFields(2011,12,30,22,0,0),   CalFields(2011,12,29,22,0,0),   CalFields(2011,12,30,10,0,0)},
+    {"Pacific/Apia",        CalFields(2011,12,30,23,59,59), FALSE,  CalFields(2011,12,31,9,59,59),  CalFields(2011,12,30,9,59,59),  CalFields(2011,12,30,10,0,0)},
+    {"Pacific/Apia",        CalFields(2011,12,31,0,0,0),    TRUE,   CalFields(2011,12,30,10,0,0),   CalFields(2011,12,30,10,0,0),   CalFields(2011,12,30,10,0,0)},
+
+    {NULL,                  CalFields(0,0,0,0,0,0),         TRUE,   CalFields(0,0,0,0,0,0),         CalFields(0,0,0,0,0,0),         CalFields(0,0,0,0,0,0)}
+};
+
+
+void CalendarTest::TestSkippedWallTime(void) {
+    UErrorCode status = U_ZERO_ERROR;
+    GregorianCalendar calGMT((const TimeZone&)*TimeZone::getGMT(), status);
+    GregorianCalendar calDefault(status);
+    GregorianCalendar calLast(status);
+    GregorianCalendar calFirst(status);
+    GregorianCalendar calNextAvail(status);
+
+    if (U_FAILURE(status)) {
+        errln("Fail: Failed to create a calendar object.");
+        return;
+    }
+
+    calLast.setSkippedWallTimeOption(UCAL_WALLTIME_LAST);
+    calFirst.setSkippedWallTimeOption(UCAL_WALLTIME_FIRST);
+    calNextAvail.setSkippedWallTimeOption(UCAL_WALLTIME_NEXT_VALID);
+
+    for (int32_t i = 0; SKDATA[i].tzid != NULL; i++) {
+        UDate d;
+        char buf[32];
+        TimeZone *tz = TimeZone::createTimeZone(SKDATA[i].tzid);
+
+        for (int32_t j = 0; j < 2; j++) {
+            UBool bLenient = (j == 0);
+
+            // UCAL_WALLTIME_LAST
+            status = U_ZERO_ERROR;
+            calLast.setLenient(bLenient);
+            calLast.setTimeZone(*tz);
+            SKDATA[i].in.setTo(calLast);
+            d = calLast.getTime(status);
+            if (bLenient || SKDATA[i].isValid) {
+                calGMT.setTime(d, status);
+                CalFields outLastGMT(calGMT, status);
+                if (U_FAILURE(status)) {
+                    errln(UnicodeString("Fail: Failed to get/set time calLast/calGMT (UCAL_WALLTIME_LAST) - ")
+                        + SKDATA[i].in.toString(buf, sizeof(buf)) + "[" + SKDATA[i].tzid + "]");
+                } else {
+                    if (outLastGMT != SKDATA[i].expLastGMT) {
+                        dataerrln(UnicodeString("Fail: UCAL_WALLTIME_LAST ") + SKDATA[i].in.toString(buf, sizeof(buf)) + "[" + SKDATA[i].tzid + "] is parsed as "
+                            + outLastGMT.toString(buf, sizeof(buf)) + "[GMT]. Expected: " + SKDATA[i].expLastGMT.toString(buf, sizeof(buf)) + "[GMT]");
+                    }
+                }
+            } else if (U_SUCCESS(status)) {
+                // strict, invalid wall time - must report an error
+                dataerrln(UnicodeString("Fail: An error expected (UCAL_WALLTIME_LAST)") +
+                    + SKDATA[i].in.toString(buf, sizeof(buf)) + "[" + SKDATA[i].tzid + "]");
+            }
+
+            // default
+            status = U_ZERO_ERROR;
+            calDefault.setLenient(bLenient);
+            calDefault.setTimeZone(*tz);
+            SKDATA[i].in.setTo(calDefault);
+            d = calDefault.getTime(status);
+            if (bLenient || SKDATA[i].isValid) {
+                calGMT.setTime(d, status);
+                CalFields outDefGMT(calGMT, status);
+                if (U_FAILURE(status)) {
+                    errln(UnicodeString("Fail: Failed to get/set time calDefault/calGMT (default) - ")
+                        + SKDATA[i].in.toString(buf, sizeof(buf)) + "[" + SKDATA[i].tzid + "]");
+                } else {
+                    if (outDefGMT != SKDATA[i].expLastGMT) {
+                        dataerrln(UnicodeString("Fail: (default) ") + SKDATA[i].in.toString(buf, sizeof(buf)) + "[" + SKDATA[i].tzid + "] is parsed as "
+                            + outDefGMT.toString(buf, sizeof(buf)) + "[GMT]. Expected: " + SKDATA[i].expLastGMT.toString(buf, sizeof(buf)) + "[GMT]");
+                    }
+                }
+            } else if (U_SUCCESS(status)) {
+                // strict, invalid wall time - must report an error
+                dataerrln(UnicodeString("Fail: An error expected (default)") +
+                    + SKDATA[i].in.toString(buf, sizeof(buf)) + "[" + SKDATA[i].tzid + "]");
+            }
+
+            // UCAL_WALLTIME_FIRST
+            status = U_ZERO_ERROR;
+            calFirst.setLenient(bLenient);
+            calFirst.setTimeZone(*tz);
+            SKDATA[i].in.setTo(calFirst);
+            d = calFirst.getTime(status);
+            if (bLenient || SKDATA[i].isValid) {
+                calGMT.setTime(d, status);
+                CalFields outFirstGMT(calGMT, status);
+                if (U_FAILURE(status)) {
+                    errln(UnicodeString("Fail: Failed to get/set time calFirst/calGMT (UCAL_WALLTIME_FIRST) - ")
+                        + SKDATA[i].in.toString(buf, sizeof(buf)) + "[" + SKDATA[i].tzid + "]");
+                } else {
+                    if (outFirstGMT != SKDATA[i].expFirstGMT) {
+                        dataerrln(UnicodeString("Fail: UCAL_WALLTIME_FIRST ") + SKDATA[i].in.toString(buf, sizeof(buf)) + "[" + SKDATA[i].tzid + "] is parsed as "
+                            + outFirstGMT.toString(buf, sizeof(buf)) + "[GMT]. Expected: " + SKDATA[i].expFirstGMT.toString(buf, sizeof(buf)) + "[GMT]");
+                    }
+                }
+            } else if (U_SUCCESS(status)) {
+                // strict, invalid wall time - must report an error
+                dataerrln(UnicodeString("Fail: An error expected (UCAL_WALLTIME_FIRST)") +
+                    + SKDATA[i].in.toString(buf, sizeof(buf)) + "[" + SKDATA[i].tzid + "]");
+            }
+
+            // UCAL_WALLTIME_NEXT_VALID
+            status = U_ZERO_ERROR;
+            calNextAvail.setLenient(bLenient);
+            calNextAvail.setTimeZone(*tz);
+            SKDATA[i].in.setTo(calNextAvail);
+            d = calNextAvail.getTime(status);
+            if (bLenient || SKDATA[i].isValid) {
+                calGMT.setTime(d, status);
+                CalFields outNextAvailGMT(calGMT, status);
+                if (U_FAILURE(status)) {
+                    errln(UnicodeString("Fail: Failed to get/set time calNextAvail/calGMT (UCAL_WALLTIME_NEXT_VALID) - ")
+                        + SKDATA[i].in.toString(buf, sizeof(buf)) + "[" + SKDATA[i].tzid + "]");
+                } else {
+                    if (outNextAvailGMT != SKDATA[i].expNextAvailGMT) {
+                        dataerrln(UnicodeString("Fail: UCAL_WALLTIME_NEXT_VALID ") + SKDATA[i].in.toString(buf, sizeof(buf)) + "[" + SKDATA[i].tzid + "] is parsed as "
+                            + outNextAvailGMT.toString(buf, sizeof(buf)) + "[GMT]. Expected: " + SKDATA[i].expNextAvailGMT.toString(buf, sizeof(buf)) + "[GMT]");
+                    }
+                }
+            } else if (U_SUCCESS(status)) {
+                // strict, invalid wall time - must report an error
+                dataerrln(UnicodeString("Fail: An error expected (UCAL_WALLTIME_NEXT_VALID)") +
+                    + SKDATA[i].in.toString(buf, sizeof(buf)) + "[" + SKDATA[i].tzid + "]");
+            }
+        }
+
+        delete tz;
+    }
+}
+
+void CalendarTest::TestCloneLocale(void) {
+  UErrorCode status = U_ZERO_ERROR;
+  LocalPointer<Calendar>  cal(Calendar::createInstance(TimeZone::getGMT()->clone(),
+                                                       Locale::createFromName("en"), status));
+  TEST_CHECK_STATUS;
+  Locale l0 = cal->getLocale(ULOC_VALID_LOCALE, status);
+  TEST_CHECK_STATUS;
+  LocalPointer<Calendar> cal2(cal->clone());
+  Locale l = cal2->getLocale(ULOC_VALID_LOCALE, status);
+  if(l0!=l) {
+    errln("Error: cloned locale %s != original locale %s, status %s\n", l0.getName(), l.getName(), u_errorName(status));
+  }
+  TEST_CHECK_STATUS;
+}
+
+void CalendarTest::setAndTestCalendar(Calendar* cal, int32_t initMonth, int32_t initDay, int32_t initYear, UErrorCode& status) {
+        cal->clear();
+        cal->setLenient(FALSE);
+        cal->set(initYear, initMonth, initDay);
+        int32_t day = cal->get(UCAL_DAY_OF_MONTH, status);
+        int32_t month = cal->get(UCAL_MONTH, status);
+        int32_t year = cal->get(UCAL_YEAR, status);
+        if(U_FAILURE(status))
+            return;
+
+        if(initDay != day || initMonth != month || initYear != year)
+        {
+            errln(" year init values:\tmonth %i\tday %i\tyear %i", initMonth, initDay, initYear);
+            errln("values post set():\tmonth %i\tday %i\tyear %i",month, day, year);
+        }
+}
+
+void CalendarTest::setAndTestWholeYear(Calendar* cal, int32_t startYear, UErrorCode& status) {
+        for(int32_t startMonth = 0; startMonth < 12; startMonth++) {
+            for(int32_t startDay = 1; startDay < 31; startDay++ ) {                
+                    setAndTestCalendar(cal, startMonth, startDay, startYear, status);
+                    if(U_FAILURE(status) && startDay == 30) {
+                        status = U_ZERO_ERROR;
+                        continue;
+                    }
+                    TEST_CHECK_STATUS;
+            }
+        }
+}
+          
+        
+void CalendarTest::TestIslamicUmAlQura() {
+               
+    UErrorCode status = U_ZERO_ERROR;
+    Locale islamicLoc("ar_SA@calendar=islamic-umalqura"); 
+    Calendar* tstCal = Calendar::createInstance(islamicLoc, status);
+    
+    IslamicCalendar* iCal = (IslamicCalendar*)tstCal;
+    if(strcmp(iCal->getType(), "islamic-umalqura") != 0) {
+        errln("wrong type of calendar created - %s", iCal->getType());
+    }
+   
+
+    int32_t firstYear = 1318;
+    int32_t lastYear = 1368;    // just enough to be pretty sure
+    //int32_t lastYear = 1480;    // the whole shootin' match
+        
+    tstCal->clear();
+    tstCal->setLenient(FALSE);
+        
+    int32_t day=0, month=0, year=0, initDay = 27, initMonth = IslamicCalendar::RAJAB, initYear = 1434;
+    
+    for( int32_t startYear = firstYear; startYear <= lastYear; startYear++) {
+        setAndTestWholeYear(tstCal, startYear, status);
+        status = U_ZERO_ERROR;
+    }
+    
+    initMonth = IslamicCalendar::RABI_2;
+    initDay = 5;
+    int32_t loopCnt = 25;
+    tstCal->clear();
+    setAndTestCalendar( tstCal, initMonth, initDay, initYear, status);
+    TEST_CHECK_STATUS;
+    
+    for(int x=1; x<=loopCnt; x++) {
+        day = tstCal->get(UCAL_DAY_OF_MONTH,status);
+        month = tstCal->get(UCAL_MONTH,status);
+        year = tstCal->get(UCAL_YEAR,status);
+        TEST_CHECK_STATUS;
+        tstCal->roll(UCAL_DAY_OF_MONTH, (UBool)TRUE, status);
+        TEST_CHECK_STATUS;
+    }
+
+    if(day != (initDay + loopCnt - 1) || month != IslamicCalendar::RABI_2 || year != 1434)
+      errln("invalid values for RABI_2 date after roll of %d", loopCnt);
+
+    status = U_ZERO_ERROR;
+    tstCal->clear();
+    initMonth = 2;
+    initDay = 30;
+    setAndTestCalendar( tstCal, initMonth, initDay, initYear, status);      
+    if(U_SUCCESS(status)) {
+        errln("error NOT detected status %i",status);
+        errln("      init values:\tmonth %i\tday %i\tyear %i", initMonth, initDay, initYear);
+        int32_t day = tstCal->get(UCAL_DAY_OF_MONTH, status);
+        int32_t month = tstCal->get(UCAL_MONTH, status);
+        int32_t year = tstCal->get(UCAL_YEAR, status);
+        errln("values post set():\tmonth %i\tday %i\tyear %i",month, day, year);
+    }
+
+    status = U_ZERO_ERROR;        
+    tstCal->clear();
+    initMonth = 3;
+    initDay = 30;
+    setAndTestCalendar( tstCal, initMonth, initDay, initYear, status);
+    TEST_CHECK_STATUS;
+       
+    SimpleDateFormat* formatter = new SimpleDateFormat("yyyy-MM-dd", Locale::getUS(), status);            
+    UDate date = formatter->parse("1975-05-06", status);
+    Calendar* is_cal = Calendar::createInstance(islamicLoc, status);
+    is_cal->setTime(date, status);
+    int32_t is_day = is_cal->get(UCAL_DAY_OF_MONTH,status);
+    int32_t is_month = is_cal->get(UCAL_MONTH,status);
+    int32_t is_year = is_cal->get(UCAL_YEAR,status);
+    TEST_CHECK_STATUS;
+    if(is_day != 29 || is_month != IslamicCalendar::RABI_2 || is_year != 1395)
+        errln("unexpected conversion date month %i not %i or day %i not 20 or year %i not 1395", is_month, IslamicCalendar::RABI_2, is_day, is_year);
+        
+    UDate date2 = is_cal->getTime(status);
+    TEST_CHECK_STATUS;
+    if(date2 != date) {
+        errln("before(%f) and after(%f) dates don't match up!",date, date2);
+    }
+
+    delete is_cal;
+    delete formatter;
+    delete tstCal;
+}            
+
+void CalendarTest::TestIslamicTabularDates() {
+    UErrorCode status = U_ZERO_ERROR;
+    Locale islamicLoc("ar_SA@calendar=islamic-civil"); 
+    Locale tblaLoc("ar_SA@calendar=islamic-tbla"); 
+    SimpleDateFormat* formatter = new SimpleDateFormat("yyyy-MM-dd", Locale::getUS(), status);            
+    UDate date = formatter->parse("1975-05-06", status);
+
+    Calendar* tstCal = Calendar::createInstance(islamicLoc, status);
+    tstCal->setTime(date, status);
+    int32_t is_day = tstCal->get(UCAL_DAY_OF_MONTH,status);
+    int32_t is_month = tstCal->get(UCAL_MONTH,status);
+    int32_t is_year = tstCal->get(UCAL_YEAR,status);
+    TEST_CHECK_STATUS;
+    delete tstCal;
+
+    tstCal = Calendar::createInstance(tblaLoc, status);
+    tstCal->setTime(date, status);
+    int32_t tbla_day = tstCal->get(UCAL_DAY_OF_MONTH,status);
+    int32_t tbla_month = tstCal->get(UCAL_MONTH,status);
+    int32_t tbla_year = tstCal->get(UCAL_YEAR,status);
+    TEST_CHECK_STATUS;
+
+    if(tbla_month != is_month || tbla_year != is_year)
+        errln("unexpected difference between islamic and tbla month %d : %d and/or year %d : %d",tbla_month,is_month,tbla_year,is_year);
+
+    if(tbla_day - is_day != 1)
+        errln("unexpected day difference between islamic and tbla: %d : %d ",tbla_day,is_day);
+    delete tstCal;
+    delete formatter;
+}
+
 
 #endif /* #if !UCONFIG_NO_FORMATTING */
 

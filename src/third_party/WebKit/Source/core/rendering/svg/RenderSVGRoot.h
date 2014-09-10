@@ -26,7 +26,7 @@
 #include "core/rendering/RenderReplaced.h"
 #include "platform/geometry/FloatRect.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGElement;
 
@@ -34,6 +34,7 @@ class RenderSVGRoot FINAL : public RenderReplaced {
 public:
     explicit RenderSVGRoot(SVGElement*);
     virtual ~RenderSVGRoot();
+    virtual void trace(Visitor*) OVERRIDE;
 
     bool isEmbeddedThroughSVGImage() const;
     bool isEmbeddedThroughFrameContainingSVGDocument() const;
@@ -95,14 +96,14 @@ private:
 
     virtual FloatRect objectBoundingBox() const OVERRIDE { return m_objectBoundingBox; }
     virtual FloatRect strokeBoundingBox() const OVERRIDE { return m_strokeBoundingBox; }
-    virtual FloatRect paintInvalidationRectInLocalCoordinates() const OVERRIDE { return m_repaintBoundingBox; }
+    virtual FloatRect paintInvalidationRectInLocalCoordinates() const OVERRIDE { return m_paintInvalidationBoundingBox; }
 
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE;
-    virtual void computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect& paintInvalidationRect, bool fixed) const OVERRIDE;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const OVERRIDE;
+    virtual void computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect& paintInvalidationRect, const PaintInvalidationState* = 0) const OVERRIDE;
 
-    virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const OVERRIDE;
+    virtual void mapLocalToContainer(const RenderLayerModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = 0) const OVERRIDE;
     virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const OVERRIDE;
 
     virtual bool canBeSelectionLeaf() const OVERRIDE { return false; }
@@ -117,16 +118,16 @@ private:
     FloatRect m_objectBoundingBox;
     bool m_objectBoundingBoxValid;
     FloatRect m_strokeBoundingBox;
-    FloatRect m_repaintBoundingBox;
+    FloatRect m_paintInvalidationBoundingBox;
     mutable AffineTransform m_localToParentTransform;
     AffineTransform m_localToBorderBoxTransform;
     bool m_isLayoutSizeChanged : 1;
     bool m_needsBoundariesOrTransformUpdate : 1;
-    bool m_hasBoxDecorations : 1;
+    bool m_hasBoxDecorationBackground : 1;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSVGRoot, isSVGRoot());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderSVGRoot_h

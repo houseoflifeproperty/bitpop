@@ -86,7 +86,6 @@
     step('chromedriver_tests', result=results.SKIPPED),
     step('content_browsertests', result=results.SKIPPED),
     step('installer_util_unittests', result=results.SKIPPED),
-    step('webkit_compositor_bindings_unittests', result=results.SKIPPED),
     step('sizes', result=results.SKIPPED),
     step('sync_integration_tests'),
     step('nacl_integration', result=results.SKIPPED),

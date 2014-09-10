@@ -33,7 +33,7 @@
 
 #include "core/dom/Element.h"
 
-namespace WebCore {
+namespace blink {
 
 PassOwnPtrWillBeRawPtr<CustomElementUpgradeCandidateMap> CustomElementUpgradeCandidateMap::create()
 {
@@ -112,8 +112,10 @@ PassOwnPtrWillBeRawPtr<CustomElementUpgradeCandidateMap::ElementSet> CustomEleme
 
 void CustomElementUpgradeCandidateMap::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_upgradeCandidates);
     visitor->trace(m_unresolvedDefinitions);
+#endif
     CustomElementObserver::trace(visitor);
 }
 

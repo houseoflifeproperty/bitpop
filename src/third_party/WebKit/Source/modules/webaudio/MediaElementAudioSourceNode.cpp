@@ -39,7 +39,7 @@
 const unsigned minSampleRate = 8000;
 const unsigned maxSampleRate = 192000;
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<MediaElementAudioSourceNode> MediaElementAudioSourceNode::create(AudioContext* context, HTMLMediaElement* mediaElement)
 {
@@ -53,8 +53,9 @@ MediaElementAudioSourceNode::MediaElementAudioSourceNode(AudioContext* context, 
     , m_sourceSampleRate(0)
 {
     ScriptWrappable::init(this);
-    // Default to stereo. This could change depending on what the media element .src is set to.
-    addOutput(adoptPtr(new AudioNodeOutput(this, 2)));
+    // Default to stereo. This could change depending on what the media element
+    // .src is set to.
+    addOutput(AudioNodeOutput::create(this, 2));
 
     setNodeType(NodeTypeMediaElementAudioSource);
 
@@ -63,10 +64,14 @@ MediaElementAudioSourceNode::MediaElementAudioSourceNode(AudioContext* context, 
 
 MediaElementAudioSourceNode::~MediaElementAudioSourceNode()
 {
-#if !ENABLE(OILPAN)
+    ASSERT(!isInitialized());
+}
+
+void MediaElementAudioSourceNode::dispose()
+{
     m_mediaElement->setAudioSourceNode(0);
-#endif
     uninitialize();
+    AudioSourceNode::dispose();
 }
 
 void MediaElementAudioSourceNode::setFormat(size_t numberOfChannels, float sourceSampleRate)
@@ -140,14 +145,18 @@ void MediaElementAudioSourceNode::process(size_t numberOfFrames)
 
 void MediaElementAudioSourceNode::lock()
 {
+#if !ENABLE(OILPAN)
     ref();
+#endif
     m_processLock.lock();
 }
 
 void MediaElementAudioSourceNode::unlock()
 {
     m_processLock.unlock();
+#if !ENABLE(OILPAN)
     deref();
+#endif
 }
 
 void MediaElementAudioSourceNode::trace(Visitor* visitor)
@@ -157,6 +166,6 @@ void MediaElementAudioSourceNode::trace(Visitor* visitor)
     AudioSourceProviderClient::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

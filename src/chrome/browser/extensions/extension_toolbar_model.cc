@@ -11,7 +11,6 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
-#include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_toolbar_model_factory.h"
@@ -122,23 +121,22 @@ void ExtensionToolbarModel::MoveBrowserAction(const Extension* extension,
   UpdatePrefs();
 }
 
-ExtensionToolbarModel::Action ExtensionToolbarModel::ExecuteBrowserAction(
+ExtensionAction::ShowAction ExtensionToolbarModel::ExecuteBrowserAction(
     const Extension* extension,
     Browser* browser,
     GURL* popup_url_out,
     bool should_grant) {
   content::WebContents* web_contents = NULL;
   int tab_id = 0;
-  if (!ExtensionTabUtil::GetDefaultTab(browser, &web_contents, &tab_id)) {
-    return ACTION_NONE;
-  }
+  if (!ExtensionTabUtil::GetDefaultTab(browser, &web_contents, &tab_id))
+    return ExtensionAction::ACTION_NONE;
 
   ExtensionAction* browser_action =
       ExtensionActionManager::Get(profile_)->GetBrowserAction(*extension);
 
   // For browser actions, visibility == enabledness.
   if (!browser_action->GetIsVisible(tab_id))
-    return ACTION_NONE;
+    return ExtensionAction::ACTION_NONE;
 
   if (should_grant) {
     TabHelper::FromWebContents(web_contents)
@@ -149,12 +147,12 @@ ExtensionToolbarModel::Action ExtensionToolbarModel::ExecuteBrowserAction(
   if (browser_action->HasPopup(tab_id)) {
     if (popup_url_out)
       *popup_url_out = browser_action->GetPopupUrl(tab_id);
-    return ACTION_SHOW_POPUP;
+    return ExtensionAction::ACTION_SHOW_POPUP;
   }
 
   ExtensionActionAPI::BrowserActionExecuted(
       browser->profile(), *browser_action, web_contents);
-  return ACTION_NONE;
+  return ExtensionAction::ACTION_NONE;
 }
 
 void ExtensionToolbarModel::SetVisibleIconCount(int count) {
@@ -192,7 +190,8 @@ void ExtensionToolbarModel::OnExtensionUnloaded(
 
 void ExtensionToolbarModel::OnExtensionUninstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension) {
+    const Extension* extension,
+    extensions::UninstallReason reason) {
   // Remove the extension id from the ordered list, if it exists (the extension
   // might not be represented in the list because it might not have an icon).
   ExtensionIdList::iterator pos =
@@ -209,8 +208,9 @@ void ExtensionToolbarModel::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  DCHECK_EQ(chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
-            type);
+  DCHECK_EQ(
+      extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
+      type);
   const Extension* extension =
       ExtensionRegistry::Get(profile_)->GetExtensionById(
           *content::Details<const std::string>(details).ptr(),
@@ -231,7 +231,7 @@ void ExtensionToolbarModel::OnReady() {
   extension_registry_observer_.Add(registry);
   registrar_.Add(
       this,
-      chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
+      extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
       content::Source<ExtensionPrefs>(extension_prefs_));
 }
 
@@ -256,7 +256,8 @@ size_t ExtensionToolbarModel::FindNewPositionFromLastKnownGood(
     }
   }
 
-  return -1;
+  // Position not found.
+  return toolbar_items_.size();
 }
 
 void ExtensionToolbarModel::AddExtension(const Extension* extension) {
@@ -264,7 +265,7 @@ void ExtensionToolbarModel::AddExtension(const Extension* extension) {
   if (!ExtensionActionManager::Get(profile_)->GetBrowserAction(*extension))
     return;
 
-  size_t new_index = -1;
+  size_t new_index = toolbar_items_.size();
 
   // See if we have a last known good position for this extension.
   ExtensionIdList::iterator last_pos = std::find(last_known_positions_.begin(),
@@ -280,10 +281,9 @@ void ExtensionToolbarModel::AddExtension(const Extension* extension) {
     }
   } else {
     // This is a never before seen extension, that was added to the end. Make
-    // sure to reflect that.
+    // sure to reflect that. (|new_index| was set above.)
     toolbar_items_.push_back(make_scoped_refptr(extension));
     last_known_positions_.push_back(extension->id());
-    new_index = toolbar_items_.size() - 1;
     UpdatePrefs();
   }
 

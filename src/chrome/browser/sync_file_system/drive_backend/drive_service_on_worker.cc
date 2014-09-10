@@ -277,12 +277,6 @@ bool DriveServiceOnWorker::CanSendRequest() const {
   return false;
 }
 
-drive::ResourceIdCanonicalizer
-DriveServiceOnWorker::GetResourceIdCanonicalizer() const {
-  NOTREACHED();
-  return drive::ResourceIdCanonicalizer();
-}
-
 bool DriveServiceOnWorker::HasAccessToken() const {
   NOTREACHED();
   return false;
@@ -352,14 +346,6 @@ google_apis::CancelCallback DriveServiceOnWorker::UpdateResource(
     const base::Time& last_modified,
     const base::Time& last_viewed_by_me,
     const google_apis::FileResourceCallback& callback) {
-  NOTREACHED();
-  return google_apis::CancelCallback();
-}
-
-google_apis::CancelCallback DriveServiceOnWorker::RenameResource(
-    const std::string& resource_id,
-    const std::string& new_title,
-    const google_apis::EntryActionCallback& callback) {
   NOTREACHED();
   return google_apis::CancelCallback();
 }

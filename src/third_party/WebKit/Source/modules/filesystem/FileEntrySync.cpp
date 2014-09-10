@@ -31,11 +31,11 @@
 #include "config.h"
 #include "modules/filesystem/FileEntrySync.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/fileapi/File.h"
 #include "modules/filesystem/FileWriterSync.h"
 
-namespace WebCore {
+namespace blink {
 
 FileEntrySync::FileEntrySync(DOMFileSystemBase* fileSystem, const String& fullPath)
     : EntrySync(fileSystem, fullPath)

@@ -1,0 +1,14 @@
+[
+  {
+    "cmd": [],
+    "name": "trigger cross-compiler",
+    "trigger_specs": [
+      {
+        "properties": {
+          "a": 1,
+          "buildername": "cross-compiler"
+        }
+      }
+    ]
+  }
+]

@@ -31,7 +31,7 @@
 #include "core/frame/LocalFrame.h"
 #include "platform/geometry/FloatPoint.h"
 
-namespace WebCore {
+namespace blink {
 
 static FloatPoint contentsOffset(LocalFrame* frame)
 {
@@ -55,7 +55,7 @@ Touch::Touch(LocalFrame* frame, EventTarget* target, unsigned identifier, const 
     , m_force(force)
 {
     ScriptWrappable::init(this);
-    float scaleFactor = frame->pageZoomFactor();
+    float scaleFactor = frame ? frame->pageZoomFactor() : 1.0f;
     m_absoluteLocation = roundedLayoutPoint(pagePos.scaledBy(scaleFactor));
 }
 
@@ -83,4 +83,4 @@ void Touch::trace(Visitor* visitor)
     visitor->trace(m_target);
 }
 
-} // namespace WebCore
+} // namespace blink

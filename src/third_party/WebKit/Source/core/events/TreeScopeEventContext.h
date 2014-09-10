@@ -34,12 +34,13 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class EventPath;
 class EventTarget;
 class Node;
-class StaticNodeList;
+template <typename NodeType> class StaticNodeTypeList;
+typedef StaticNodeTypeList<Node> StaticNodeList;
 class TouchEventContext;
 class TreeScope;
 
@@ -72,7 +73,7 @@ public:
 private:
     TreeScopeEventContext(TreeScope&);
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool isUnreachableNode(EventTarget&);
 #endif
 
@@ -87,7 +88,7 @@ private:
     int m_postOrder;
 };
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 inline bool TreeScopeEventContext::isUnreachableNode(EventTarget& target)
 {
     // FIXME: Checks also for SVG elements.

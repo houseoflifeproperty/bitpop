@@ -104,8 +104,8 @@ void UsbServiceImpl::RefreshDevices() {
   const ssize_t device_count =
       libusb_get_device_list(context_->context(), &platform_devices);
   if (device_count < 0) {
-    LOG(ERROR) << "Failed to get device list: " <<
-        ConvertErrorToString(device_count);
+    VLOG(1) << "Failed to get device list: "
+            << ConvertErrorToString(device_count);
   }
 
   std::set<UsbDevice*> connected_devices;
@@ -119,8 +119,8 @@ void UsbServiceImpl::RefreshDevices() {
           libusb_get_device_descriptor(platform_devices[i], &descriptor);
       // This test is needed. A valid vendor/produce pair is required.
       if (rv != LIBUSB_SUCCESS) {
-        LOG(WARNING) << "Failed to get device descriptor: "
-            << ConvertErrorToString(rv);
+        VLOG(1) << "Failed to get device descriptor: "
+                << ConvertErrorToString(rv);
         continue;
       }
       UsbDeviceImpl* new_device = new UsbDeviceImpl(context_,
@@ -154,14 +154,13 @@ void UsbServiceImpl::RefreshDevices() {
 
 // static
 UsbService* UsbService::GetInstance() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   UsbService* instance = g_usb_service_instance.Get().get();
   if (!instance) {
     PlatformUsbContext context = NULL;
 
     const int rv = libusb_init(&context);
     if (rv != LIBUSB_SUCCESS) {
-      LOG(ERROR) << "Failed to initialize libusb: " << ConvertErrorToString(rv);
+      VLOG(1) << "Failed to initialize libusb: " << ConvertErrorToString(rv);
       return NULL;
     }
     if (!context)
@@ -175,7 +174,6 @@ UsbService* UsbService::GetInstance() {
 
 // static
 void UsbService::SetInstanceForTest(UsbService* instance) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   g_usb_service_instance.Get().reset(instance);
 }
 

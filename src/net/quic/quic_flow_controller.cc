@@ -36,7 +36,7 @@ QuicFlowController::QuicFlowController(QuicConnection* connection,
            << ", max receive window to: "
            << max_receive_window_
            << ", setting send window offset to: " << send_window_offset_;
-  if (connection_->version() < QUIC_VERSION_17) {
+  if (connection_->version() <= QUIC_VERSION_16) {
     DVLOG(1) << ENDPOINT << "Disabling QuicFlowController for stream " << id_
              << ", QUIC version " << connection_->version();
     Disable();
@@ -179,14 +179,7 @@ void QuicFlowController::Disable() {
 }
 
 bool QuicFlowController::IsEnabled() const {
-  bool connection_flow_control_enabled =
-      (id_ == kConnectionLevelId &&
-       FLAGS_enable_quic_connection_flow_control_2);
-  bool stream_flow_control_enabled =
-      (id_ != kConnectionLevelId &&
-       FLAGS_enable_quic_stream_flow_control_2);
-  return (connection_flow_control_enabled || stream_flow_control_enabled) &&
-         is_enabled_;
+  return is_enabled_;
 }
 
 bool QuicFlowController::IsBlocked() const {

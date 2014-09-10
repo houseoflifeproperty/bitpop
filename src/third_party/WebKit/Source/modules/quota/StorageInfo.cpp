@@ -31,7 +31,7 @@
 #include "config.h"
 #include "modules/quota/StorageInfo.h"
 
-namespace WebCore {
+namespace blink {
 
 StorageInfo::StorageInfo(unsigned long long usage, unsigned long long quota)
     : m_usage(usage)
@@ -40,8 +40,4 @@ StorageInfo::StorageInfo(unsigned long long usage, unsigned long long quota)
     ScriptWrappable::init(this);
 }
 
-StorageInfo::~StorageInfo()
-{
-}
-
-} // namespace WebCore
+} // namespace blink

@@ -16,12 +16,12 @@
 #include "build/build_config.h"
 #include "content/common/view_messages.h"
 #include "content/public/renderer/content_renderer_client.h"
-#include "content/renderer/pepper/common.h"
 #include "content/renderer/pepper/host_dispatcher_wrapper.h"
 #include "content/renderer/pepper/host_globals.h"
 #include "content/renderer/pepper/pepper_hung_plugin_filter.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/pepper_plugin_registry.h"
+#include "content/renderer/pepper/ppapi_preferences_builder.h"
 #include "content/renderer/pepper/ppb_image_data_impl.h"
 #include "content/renderer/pepper/ppb_proxy_impl.h"
 #include "content/renderer/pepper/ppb_scrollbar_impl.h"
@@ -207,9 +207,9 @@ void CallOnMainThread(int delay_in_msec,
 }
 
 PP_Bool IsMainThread() {
-  return BoolToPPBool(PpapiGlobals::Get()
-                          ->GetMainThreadMessageLoop()
-                          ->BelongsToCurrentThread());
+  return PP_FromBool(PpapiGlobals::Get()
+                         ->GetMainThreadMessageLoop()
+                         ->BelongsToCurrentThread());
 }
 
 const PPB_Core core_interface = {&AddRefResource,   &ReleaseResource,
@@ -224,7 +224,7 @@ PP_Bool ReadImageData(PP_Resource device_context_2d,
   EnterResource<PPB_Graphics2D_API> enter(device_context_2d, true);
   if (enter.failed())
     return PP_FALSE;
-  return BoolToPPBool(enter.object()->ReadImageData(image, top_left));
+  return PP_FromBool(enter.object()->ReadImageData(image, top_left));
 }
 
 void RunMessageLoop(PP_Instance instance) {
@@ -281,12 +281,17 @@ void SetMinimumArrayBufferSizeForShmem(PP_Instance /*instance*/,
   // Does nothing. Not needed in-process.
 }
 
+void RunV8GC(PP_Instance instance) {
+  content::PepperPluginInstance::Get(instance)->GetIsolate()->
+      RequestGarbageCollectionForTesting(v8::Isolate::kFullGarbageCollection);
+}
+
 const PPB_Testing_Private testing_interface = {
     &ReadImageData,                    &RunMessageLoop,
     &QuitMessageLoop,                  &GetLiveObjectsForInstance,
     &IsOutOfProcess,                   &SimulateInputEvent,
     &GetDocumentURL,                   &GetLiveVars,
-    &SetMinimumArrayBufferSizeForShmem};
+    &SetMinimumArrayBufferSizeForShmem,&RunV8GC};
 
 // GetInterface ----------------------------------------------------------------
 
@@ -597,7 +602,7 @@ void PluginModule::SetReserveInstanceIDCallback(
 
 bool PluginModule::ReserveInstanceID(PP_Instance instance) {
   if (reserve_instance_id_)
-    return PPBoolToBool(reserve_instance_id_(pp_module_, instance));
+    return PP_ToBool(reserve_instance_id_(pp_module_, instance));
   return true;  // Instance ID is usable.
 }
 
@@ -620,11 +625,11 @@ RendererPpapiHostImpl* PluginModule::CreateOutOfProcessModule(
       path, render_frame->GetRoutingID(), plugin_child_id));
   scoped_ptr<HostDispatcherWrapper> dispatcher(new HostDispatcherWrapper(
       this, peer_pid, plugin_child_id, permissions, is_external));
-  if (!dispatcher->Init(
-          channel_handle,
-          &GetInterface,
-          ppapi::Preferences(render_frame->render_view()->webkit_preferences()),
-          hung_filter.get()))
+  if (!dispatcher->Init(channel_handle,
+                        &GetInterface,
+                        ppapi::Preferences(PpapiPreferencesBuilder::Build(
+                            render_frame->render_view()->webkit_preferences())),
+                        hung_filter.get()))
     return NULL;
 
   RendererPpapiHostImpl* host_impl =
@@ -691,7 +696,7 @@ scoped_refptr<PluginModule> PluginModule::Create(
 
   // Out of process: have the browser start the plugin process for us.
   IPC::ChannelHandle channel_handle;
-  base::ProcessId peer_pid;
+  base::ProcessId peer_pid = 0;
   int plugin_child_id = 0;
   render_frame->Send(new ViewHostMsg_OpenChannelToPepperPlugin(
       path, &channel_handle, &peer_pid, &plugin_child_id));

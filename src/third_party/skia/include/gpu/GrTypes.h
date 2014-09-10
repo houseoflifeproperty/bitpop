@@ -274,7 +274,7 @@ enum GrPixelConfig {
      * Premultiplied. Byte order is b,g,r,a.
      */
     kBGRA_8888_GrPixelConfig,
-    /** 
+    /**
      * ETC1 Compressed Data
      */
     kETC1_GrPixelConfig,
@@ -282,8 +282,29 @@ enum GrPixelConfig {
      * LATC/RGTC/3Dc/BC4 Compressed Data
      */
     kLATC_GrPixelConfig,
+    /**
+     * R11 EAC Compressed Data
+     * (Corresponds to section C.3.5 of the OpenGL 4.4 core profile spec)
+     */
+    kR11_EAC_GrPixelConfig,
 
-    kLast_GrPixelConfig = kLATC_GrPixelConfig
+    /**
+     * 12x12 ASTC Compressed Data
+     * ASTC stands for Adaptive Scalable Texture Compression. It is a technique
+     * that allows for a lot of customization in the compressed representataion
+     * of a block. The only thing fixed in the representation is the block size,
+     * which means that a texture that contains ASTC data must be treated as
+     * having RGBA values. However, there are single-channel encodings which set
+     * the alpha to opaque and all three RGB channels equal effectively making the
+     * compression format a single channel such as R11 EAC and LATC.
+     */
+    kASTC_12x12_GrPixelConfig,
+
+    /**
+     * Byte order is r, g, b, a.  This color format is 32 bits per channel
+     */
+    kRGBA_float_GrPixelConfig,
+    kLast_GrPixelConfig = kRGBA_float_GrPixelConfig
 };
 static const int kGrPixelConfigCnt = kLast_GrPixelConfig + 1;
 
@@ -303,8 +324,11 @@ static const int kGrPixelConfigCnt = kLast_GrPixelConfig + 1;
 // representation.
 static inline bool GrPixelConfigIsCompressed(GrPixelConfig config) {
     switch (config) {
+        case kIndex_8_GrPixelConfig:
         case kETC1_GrPixelConfig:
         case kLATC_GrPixelConfig:
+        case kR11_EAC_GrPixelConfig:
+        case kASTC_12x12_GrPixelConfig:
             return true;
         default:
             return false;
@@ -336,15 +360,34 @@ static inline GrPixelConfig GrPixelConfigSwapRAndB(GrPixelConfig config) {
 }
 
 static inline size_t GrBytesPerPixel(GrPixelConfig config) {
+    SkASSERT(!GrPixelConfigIsCompressed(config));
     switch (config) {
         case kAlpha_8_GrPixelConfig:
-        case kIndex_8_GrPixelConfig:
             return 1;
         case kRGB_565_GrPixelConfig:
         case kRGBA_4444_GrPixelConfig:
             return 2;
         case kRGBA_8888_GrPixelConfig:
         case kBGRA_8888_GrPixelConfig:
+            return 4;
+        case kRGBA_float_GrPixelConfig:
+            return 16;
+        default:
+            return 0;
+    }
+}
+
+static inline size_t GrUnpackAlignment(GrPixelConfig config) {
+    SkASSERT(!GrPixelConfigIsCompressed(config));
+    switch (config) {
+        case kAlpha_8_GrPixelConfig:
+            return 1;
+        case kRGB_565_GrPixelConfig:
+        case kRGBA_4444_GrPixelConfig:
+            return 2;
+        case kRGBA_8888_GrPixelConfig:
+        case kBGRA_8888_GrPixelConfig:
+        case kRGBA_float_GrPixelConfig:
             return 4;
         default:
             return 0;
@@ -363,7 +406,9 @@ static inline bool GrPixelConfigIsOpaque(GrPixelConfig config) {
 
 static inline bool GrPixelConfigIsAlphaOnly(GrPixelConfig config) {
     switch (config) {
+        case kR11_EAC_GrPixelConfig:
         case kLATC_GrPixelConfig:
+        case kASTC_12x12_GrPixelConfig:
         case kAlpha_8_GrPixelConfig:
             return true;
         default:
@@ -403,13 +448,6 @@ enum GrTextureFlags {
 };
 
 GR_MAKE_BITFIELD_OPS(GrTextureFlags)
-
-enum {
-   /**
-    *  For Index8 pixel config, the colortable must be 256 entries
-    */
-    kGrColorTableSize = 256 * 4 //sizeof(GrColor)
-};
 
 /**
  * Some textures will be stored such that the upper and left edges of the content meet at the
@@ -623,7 +661,7 @@ enum GrGLBackendState {
     // View state stands for scissor and viewport
     kView_GrGLBackendState             = 1 << 2,
     kBlend_GrGLBackendState            = 1 << 3,
-    kAA_GrGLBackendState               = 1 << 4,
+    kMSAAEnable_GrGLBackendState       = 1 << 4,
     kVertex_GrGLBackendState           = 1 << 5,
     kStencil_GrGLBackendState          = 1 << 6,
     kPixelStore_GrGLBackendState       = 1 << 7,
@@ -636,17 +674,26 @@ enum GrGLBackendState {
 
 /**
  * Returns the data size for the given compressed pixel config
- */ 
+ */
 static inline size_t GrCompressedFormatDataSize(GrPixelConfig config,
                                                 int width, int height) {
     SkASSERT(GrPixelConfigIsCompressed(config));
+    static const int kGrIndex8TableSize = 256 * 4; // 4 == sizeof(GrColor)
 
     switch (config) {
+        case kIndex_8_GrPixelConfig:
+            return width * height + kGrIndex8TableSize;
+        case kR11_EAC_GrPixelConfig:
         case kLATC_GrPixelConfig:
         case kETC1_GrPixelConfig:
             SkASSERT((width & 3) == 0);
             SkASSERT((height & 3) == 0);
             return (width >> 2) * (height >> 2) * 8;
+
+        case kASTC_12x12_GrPixelConfig:
+            SkASSERT((width % 12) == 0);
+            SkASSERT((height % 12) == 0);
+            return (width / 12) * (height / 12) * 16;
 
         default:
             SkFAIL("Unknown compressed pixel config");
@@ -661,4 +708,20 @@ static const uint32_t kAll_GrBackendState = 0xffffffff;
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#if GR_ALWAYS_ALLOCATE_ON_HEAP
+    #define GrAutoMallocBaseType SkAutoMalloc
+#else
+    #define GrAutoMallocBaseType SkAutoSMalloc<S>
+#endif
+
+template <size_t S> class GrAutoMalloc : public GrAutoMallocBaseType {
+public:
+    GrAutoMalloc() : INHERITED() {}
+    explicit GrAutoMalloc(size_t size) : INHERITED(size) {}
+    virtual ~GrAutoMalloc() {}
+private:
+    typedef GrAutoMallocBaseType INHERITED;
+};
+
+#undef GrAutoMallocBaseType
 #endif

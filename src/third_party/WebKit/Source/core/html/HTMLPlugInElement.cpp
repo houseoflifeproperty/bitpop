@@ -23,8 +23,8 @@
 #include "config.h"
 #include "core/html/HTMLPlugInElement.h"
 
-#include "bindings/v8/ScriptController.h"
-#include "bindings/v8/npruntime_impl.h"
+#include "bindings/core/v8/ScriptController.h"
+#include "bindings/core/v8/npruntime_impl.h"
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
@@ -33,6 +33,7 @@
 #include "core/events/Event.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLImageLoader.h"
@@ -40,7 +41,6 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
-#include "core/frame/Settings.h"
 #include "core/plugins/PluginView.h"
 #include "core/rendering/RenderEmbeddedObject.h"
 #include "core/rendering/RenderImage.h"
@@ -51,7 +51,7 @@
 #include "platform/Widget.h"
 #include "platform/plugins/PluginData.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -66,7 +66,6 @@ HTMLPlugInElement::HTMLPlugInElement(const QualifiedName& tagName, Document& doc
     // the same codepath in this class.
     , m_needsWidgetUpdate(!createdByParser)
     , m_shouldPreferPlugInsForImages(preferPlugInsForImagesOption == ShouldPreferPlugInsForImages)
-    , m_displayState(Playing)
 {
     setHasCustomStyleCallbacks();
 }
@@ -201,6 +200,10 @@ void HTMLPlugInElement::detach(const AttachContext& context)
     Widget* plugin = ownedWidget();
     if (plugin && plugin->pluginShouldPersist())
         m_persistedPluginWidget = plugin;
+#if ENABLE(OILPAN)
+    else if (plugin)
+        plugin->detach();
+#endif
     resetInstance();
     // FIXME - is this next line necessary?
     setWidget(nullptr);
@@ -332,8 +335,6 @@ void HTMLPlugInElement::defaultEventHandler(Event* event)
         return;
     if (r->isEmbeddedObject()) {
         if (toRenderEmbeddedObject(r)->showsUnavailablePluginIndicator())
-            return;
-        if (displayState() < Playing)
             return;
     }
     RefPtr<Widget> widget = toRenderWidget(r)->widget();

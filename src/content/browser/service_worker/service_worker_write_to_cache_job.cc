@@ -6,7 +6,7 @@
 
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
-#include "content/browser/service_worker/service_worker_histograms.h"
+#include "content/browser/service_worker/service_worker_metrics.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
@@ -21,10 +21,13 @@ namespace content {
 ServiceWorkerWriteToCacheJob::ServiceWorkerWriteToCacheJob(
     net::URLRequest* request,
     net::NetworkDelegate* network_delegate,
+    ResourceType resource_type,
     base::WeakPtr<ServiceWorkerContextCore> context,
     ServiceWorkerVersion* version,
+    int extra_load_flags,
     int64 response_id)
     : net::URLRequestJob(request, network_delegate),
+      resource_type_(resource_type),
       context_(context),
       url_(request->url()),
       response_id_(response_id),
@@ -33,7 +36,7 @@ ServiceWorkerWriteToCacheJob::ServiceWorkerWriteToCacheJob(
       did_notify_started_(false),
       did_notify_finished_(false),
       weak_factory_(this) {
-  InitNetRequest();
+  InitNetRequest(extra_load_flags);
 }
 
 ServiceWorkerWriteToCacheJob::~ServiceWorkerWriteToCacheJob() {
@@ -129,7 +132,8 @@ const net::HttpResponseInfo* ServiceWorkerWriteToCacheJob::http_info() const {
   return http_info_.get();
 }
 
-void ServiceWorkerWriteToCacheJob::InitNetRequest() {
+void ServiceWorkerWriteToCacheJob::InitNetRequest(
+    int extra_load_flags) {
   DCHECK(request());
   net_request_ = request()->context()->CreateRequest(
       request()->url(),
@@ -139,7 +143,14 @@ void ServiceWorkerWriteToCacheJob::InitNetRequest() {
   net_request_->set_first_party_for_cookies(
       request()->first_party_for_cookies());
   net_request_->SetReferrer(request()->referrer());
-  net_request_->SetExtraRequestHeaders(request()->extra_request_headers());
+  if (extra_load_flags)
+    net_request_->SetLoadFlags(net_request_->load_flags() | extra_load_flags);
+
+  if (resource_type_ == RESOURCE_TYPE_SERVICE_WORKER) {
+    // This will get copied into net_request_ when URLRequest::StartJob calls
+    // ServiceWorkerWriteToCacheJob::SetExtraRequestHeaders.
+    request()->SetExtraRequestHeaderByName("Service-Worker", "script", true);
+  }
 }
 
 void ServiceWorkerWriteToCacheJob::StartNetRequest() {
@@ -192,8 +203,8 @@ void ServiceWorkerWriteToCacheJob::WriteHeadersToCache() {
 void ServiceWorkerWriteToCacheJob::OnWriteHeadersComplete(int result) {
   SetStatus(net::URLRequestStatus());  // Clear the IO_PENDING status
   if (result < 0) {
-    ServiceWorkerHistograms::CountWriteResponseResult(
-        ServiceWorkerHistograms::WRITE_HEADERS_ERROR);
+    ServiceWorkerMetrics::CountWriteResponseResult(
+        ServiceWorkerMetrics::WRITE_HEADERS_ERROR);
     AsyncNotifyDoneHelper(net::URLRequestStatus(
         net::URLRequestStatus::FAILED, result));
     return;
@@ -221,21 +232,21 @@ void ServiceWorkerWriteToCacheJob::OnWriteDataComplete(int result) {
     return;
   }
   if (result < 0) {
-    ServiceWorkerHistograms::CountWriteResponseResult(
-        ServiceWorkerHistograms::WRITE_DATA_ERROR);
+    ServiceWorkerMetrics::CountWriteResponseResult(
+        ServiceWorkerMetrics::WRITE_DATA_ERROR);
     AsyncNotifyDoneHelper(net::URLRequestStatus(
         net::URLRequestStatus::FAILED, result));
     return;
   }
-  ServiceWorkerHistograms::CountWriteResponseResult(
-      ServiceWorkerHistograms::WRITE_OK);
+  ServiceWorkerMetrics::CountWriteResponseResult(
+      ServiceWorkerMetrics::WRITE_OK);
   SetStatus(net::URLRequestStatus());  // Clear the IO_PENDING status
   NotifyReadComplete(result);
 }
 
 void ServiceWorkerWriteToCacheJob::OnReceivedRedirect(
     net::URLRequest* request,
-    const GURL& new_url,
+    const net::RedirectInfo& redirect_info,
     bool* defer_redirect) {
   DCHECK_EQ(net_request_, request);
   // Script resources can't redirect.
@@ -293,6 +304,18 @@ void ServiceWorkerWriteToCacheJob::OnResponseStarted(
     // TODO(michaeln): Instead of error'ing immediately, send the net
     // response to our consumer, just don't cache it?
     return;
+  }
+  // To prevent most user-uploaded content from being used as a serviceworker.
+  if (version_->script_url() == url_) {
+    std::string mime_type;
+    request->GetMimeType(&mime_type);
+    if (mime_type != "application/x-javascript" &&
+        mime_type != "text/javascript" &&
+        mime_type != "application/javascript") {
+      AsyncNotifyDoneHelper(net::URLRequestStatus(
+          net::URLRequestStatus::FAILED, net::ERR_FAILED));
+      return;
+    }
   }
   WriteHeadersToCache();
 }

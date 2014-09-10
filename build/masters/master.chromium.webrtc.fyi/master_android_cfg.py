@@ -11,7 +11,11 @@ from master.factory import annotator_factory
 m_annotator = annotator_factory.AnnotatorFactory()
 
 def Update(c):
-  buildernames_list = ['Android Builder (dbg)']
+  buildernames_list = [
+      'Android Builder (dbg)',
+      'Android GN',
+      'Android GN (dbg)',
+  ]
   c['schedulers'].extend([
       SingleBranchScheduler(name='android_webrtc_scheduler',
                             branch='trunk',
@@ -33,6 +37,14 @@ def Update(c):
     },
     {'name': 'Android Tests (dbg) (KK Nexus5)'},
     {'name': 'Android Tests (dbg) (JB Nexus7.2)'},
+    {
+      'name': 'Android GN',
+      'slavebuilddir': 'android_gn',
+    },
+    {
+      'name': 'Android GN (dbg)',
+      'slavebuilddir': 'android_gn',
+    },
   ]
 
   c['builders'].extend([
@@ -43,5 +55,6 @@ def Update(c):
             triggers=spec.get('triggers')),
         'category': 'android',
         'notify_on_missing': True,
+        'slavebuilddir': spec.get('slavebuilddir', 'android'),
       } for spec in specs
   ])

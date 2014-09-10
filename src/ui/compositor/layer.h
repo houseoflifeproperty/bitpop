@@ -19,6 +19,7 @@
 #include "cc/layers/layer_client.h"
 #include "cc/layers/texture_layer_client.h"
 #include "cc/resources/texture_mailbox.h"
+#include "cc/surfaces/surface_id.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/compositor/compositor.h"
@@ -36,8 +37,10 @@ class CopyOutputRequest;
 class DelegatedFrameProvider;
 class DelegatedRendererLayer;
 class Layer;
+class NinePatchLayer;
 class ResourceUpdateQueue;
 class SolidColorLayer;
+class SurfaceLayer;
 class TextureLayer;
 struct ReturnedResource;
 typedef std::vector<ReturnedResource> ReturnedResourceArray;
@@ -142,6 +145,9 @@ class COMPOSITOR_EXPORT Layer
   // The offset from our parent (stored in bounds.origin()) is an integer but we
   // may need to be at a fractional pixel offset to align properly on screen.
   void SetSubpixelPositionOffset(const gfx::Vector2dF offset);
+  const gfx::Vector2dF& subpixel_position_offset() const {
+    return subpixel_position_offset_;
+  }
 
   // Return the target bounds if animator is running, or the current bounds
   // otherwise.
@@ -267,14 +273,27 @@ class COMPOSITOR_EXPORT Layer
   void SetShowDelegatedContent(cc::DelegatedFrameProvider* frame_provider,
                                gfx::Size frame_size_in_dip);
 
+  // Begins showing content from a surface with a particular id.
+  void SetShowSurface(cc::SurfaceId id, gfx::Size frame_size_in_dip);
+
   bool has_external_content() {
-    return texture_layer_.get() || delegated_renderer_layer_.get();
+    return texture_layer_.get() || delegated_renderer_layer_.get() ||
+           surface_layer_.get();
   }
 
   void SetShowPaintedContent();
 
   // Sets the layer's fill color.  May only be called for LAYER_SOLID_COLOR.
   void SetColor(SkColor color);
+
+  // Updates the nine patch layer's bitmap and aperture. May only be called for
+  // LAYER_NINE_PATCH.
+  void UpdateNinePatchLayerBitmap(const SkBitmap& bitmap,
+                                  const gfx::Rect& aperture);
+
+  // Updates the nine patch layer's border. May only be called for
+  // LAYER_NINE_PATCH.
+  void UpdateNinePatchLayerBorder(const gfx::Rect& border);
 
   // Adds |invalid_rect| to the Layer's pending invalid rect and calls
   // ScheduleDraw(). Returns false if the paint request is ignored.
@@ -469,9 +488,11 @@ class COMPOSITOR_EXPORT Layer
   // Ownership of the layer is held through one of the strongly typed layer
   // pointers, depending on which sort of layer this is.
   scoped_refptr<cc::Layer> content_layer_;
+  scoped_refptr<cc::NinePatchLayer> nine_patch_layer_;
   scoped_refptr<cc::TextureLayer> texture_layer_;
   scoped_refptr<cc::SolidColorLayer> solid_color_layer_;
   scoped_refptr<cc::DelegatedRendererLayer> delegated_renderer_layer_;
+  scoped_refptr<cc::SurfaceLayer> surface_layer_;
   cc::Layer* cc_layer_;
 
   // A cached copy of |Compositor::device_scale_factor()|.

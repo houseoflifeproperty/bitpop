@@ -21,6 +21,7 @@
 #include "content/browser/renderer_host/image_transport_factory_android.h"
 #include "content/browser/renderer_host/ime_adapter_android.h"
 #include "content/browser/renderer_host/input/gesture_text_selector.h"
+#include "content/browser/renderer_host/input/touch_selection_controller.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/content_export.h"
 #include "gpu/command_buffer/common/mailbox.h"
@@ -67,7 +68,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       public ui::GestureProviderClient,
       public ui::WindowAndroidObserver,
       public DelegatedFrameEvictorClient,
-      public GestureTextSelectorClient {
+      public GestureTextSelectorClient,
+      public TouchSelectionControllerClient {
  public:
   RenderWidgetHostViewAndroid(RenderWidgetHostImpl* widget,
                               ContentViewCoreImpl* content_view_core);
@@ -132,7 +134,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config config) OVERRIDE;
+      const SkColorType color_type) OVERRIDE;
   virtual void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
@@ -148,7 +150,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   virtual void OnSetNeedsFlushInput() OVERRIDE;
   virtual void GestureEventAck(const blink::WebGestureEvent& event,
                                InputEventAckState ack_result) OVERRIDE;
-  virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
+  virtual BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
+      BrowserAccessibilityDelegate* delegate) OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
   virtual void OnSwapCompositorFrame(
@@ -174,7 +177,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   // ui::WindowAndroidObserver implementation.
   virtual void OnCompositingDidCommit() OVERRIDE;
-  virtual void OnAttachCompositor() OVERRIDE {}
+  virtual void OnAttachCompositor() OVERRIDE;
   virtual void OnDetachCompositor() OVERRIDE;
   virtual void OnVSync(base::TimeTicks frame_time,
                        base::TimeDelta vsync_period) OVERRIDE;
@@ -186,7 +189,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   // DelegatedFrameEvictor implementation
   virtual void EvictDelegatedFrame() OVERRIDE;
 
-  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+  virtual SkColorType PreferredReadbackFormat() OVERRIDE;
 
   // GestureTextSelectorClient implementation.
   virtual void ShowSelectionHandlesAutomatically() OVERRIDE;
@@ -211,6 +214,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
                                 const gfx::Rect rect);
 
   bool OnTouchEvent(const ui::MotionEvent& event);
+  bool OnTouchHandleEvent(const ui::MotionEvent& event);
   void ResetGestureDetection();
   void SetDoubleTapSupportEnabled(bool enabled);
   void SetMultiTouchZoomSupportEnabled(bool enabled);
@@ -221,13 +225,15 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   void GetScaledContentBitmap(
       float scale,
-      SkBitmap::Config bitmap_config,
+      SkColorType color_type,
       gfx::Rect src_subrect,
       const base::Callback<void(bool, const SkBitmap&)>& result_callback);
 
   bool HasValidFrame() const;
 
   void MoveCaret(const gfx::Point& point);
+  void HideTextHandles();
+  void OnShowingPastePopup(const gfx::PointF& point);
 
   void SynchronousFrameMetadata(
       const cc::CompositorFrameMetadata& frame_metadata);
@@ -241,6 +247,16 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       const TextSurroundingSelectionCallback& callback);
 
  private:
+  // TouchSelectionControllerClient implementation.
+  virtual bool SupportsAnimation() const OVERRIDE;
+  virtual void SetNeedsAnimate() OVERRIDE;
+  virtual void MoveCaret(const gfx::PointF& position) OVERRIDE;
+  virtual void SelectBetweenCoordinates(const gfx::PointF& start,
+                                        const gfx::PointF& end) OVERRIDE;
+  virtual void OnSelectionEvent(SelectionEventType event,
+                                const gfx::PointF& anchor_position) OVERRIDE;
+  virtual scoped_ptr<TouchHandleDrawable> CreateDrawable() OVERRIDE;
+
   void RunAckCallbacks();
 
   void DestroyDelegatedContent();
@@ -252,8 +268,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void OnFrameMetadataUpdated(
       const cc::CompositorFrameMetadata& frame_metadata);
   void ComputeContentsSize(const cc::CompositorFrameMetadata& frame_metadata);
-  void ResetClipping();
-  void ClipContents(const gfx::Rect& clipping, const gfx::Size& content_size);
 
   void AttachLayers();
   void RemoveLayers();
@@ -262,13 +276,13 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   // of the copy.
   static void PrepareTextureCopyOutputResult(
       const gfx::Size& dst_size_in_pixel,
-      const SkBitmap::Config config,
+      const SkColorType color_type,
       const base::TimeTicks& start_time,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
       scoped_ptr<cc::CopyOutputResult> result);
   static void PrepareTextureCopyOutputResultForDelegatedReadback(
       const gfx::Size& dst_size_in_pixel,
-      const SkBitmap::Config config,
+      const SkColorType color_type,
       const base::TimeTicks& start_time,
       scoped_refptr<cc::Layer> readback_layer,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
@@ -279,9 +293,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       const gfx::Rect& src_subrect_in_pixel,
       const gfx::Size& dst_size_in_pixel,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config config);
+      const SkColorType color_type);
 
-  bool IsReadbackConfigSupported(SkBitmap::Config bitmap_config);
+  bool IsReadbackConfigSupported(SkColorType color_type);
 
   // If we have locks on a frame during a ContentViewCore swap or a context
   // lost, the frame is no longer valid and we can safely release all the locks.
@@ -296,14 +310,27 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void InternalSwapCompositorFrame(uint32 output_surface_id,
                                    scoped_ptr<cc::CompositorFrame> frame);
 
-  void SetNeedsAnimate();
+  enum VSyncRequestType {
+    FLUSH_INPUT = 1 << 0,
+    BEGIN_FRAME = 1 << 1,
+    PERSISTENT_BEGIN_FRAME = 1 << 2
+  };
+  void RequestVSyncUpdate(uint32 requests);
+  void StartObservingRootWindow();
+  void StopObservingRootWindow();
+  void SendBeginFrame(base::TimeTicks frame_time, base::TimeDelta vsync_period);
   bool Animate(base::TimeTicks frame_time);
+
+  void OnContentScrollingChange();
+  bool IsContentScrolling() const;
+
+  float GetDpiScale() const;
 
   // The model object.
   RenderWidgetHostImpl* host_;
 
-  // Used to track whether this render widget needs a BeginFrame.
-  bool needs_begin_frame_;
+  // Used to control action dispatch at the next |OnVSync()| call.
+  uint32 outstanding_vsync_requests_;
 
   bool is_showing_;
 
@@ -325,9 +352,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   // The most recent content size that was pushed to the texture layer.
   gfx::Size content_size_in_layer_;
 
-  // The device scale of the last received frame.
-  float device_scale_factor_;
-
   // The output surface id of the last received frame.
   uint32_t last_output_surface_id_;
 
@@ -337,7 +361,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   const bool overscroll_effect_enabled_;
   // Used to render overscroll overlays.
-  // Note: |overscroll_effect_| will never be NULL, even if it's never enabled.
   scoped_ptr<OverscrollGlow> overscroll_effect_;
 
   // Provides gesture synthesis given a stream of touch events (derived from
@@ -347,7 +370,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   // Handles gesture based text selection
   GestureTextSelector gesture_text_selector_;
 
-  bool flush_input_requested_;
+  // Manages selection handle rendering and manipulation.
+  // This will always be NULL if |content_view_core_| is NULL.
+  scoped_ptr<TouchSelectionController> selection_controller_;
+  bool touch_scrolling_;
+  size_t potentially_active_fling_count_;
 
   int accelerated_surface_route_id_;
 

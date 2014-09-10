@@ -11,20 +11,14 @@
 #ifndef WEBRTC_MODULES_AUDIO_PROCESSING_AEC_MAIN_SOURCE_AEC_RDFT_H_
 #define WEBRTC_MODULES_AUDIO_PROCESSING_AEC_MAIN_SOURCE_AEC_RDFT_H_
 
+#include "webrtc/modules/audio_processing/aec/aec_common.h"
+
 // These intrinsics were unavailable before VS 2008.
 // TODO(andrew): move to a common file.
 #if defined(_MSC_VER) && _MSC_VER < 1500
 #include <emmintrin.h>
 static __inline __m128 _mm_castsi128_ps(__m128i a) { return *(__m128*)&a; }
 static __inline __m128i _mm_castps_si128(__m128 a) { return *(__m128i*)&a; }
-#endif
-
-#ifdef _MSC_VER /* visual c++ */
-#define ALIGN16_BEG __declspec(align(16))
-#define ALIGN16_END
-#else /* gcc or icc */
-#define ALIGN16_BEG
-#define ALIGN16_END __attribute__((aligned(16)))
 #endif
 
 // constants shared by all paths (C, SSE2).
@@ -59,6 +53,9 @@ void aec_rdft_inverse_128(float* a);
 
 #if defined(MIPS_FPU_LE)
 void aec_rdft_init_mips(void);
+#endif
+#if defined(WEBRTC_DETECT_ARM_NEON) || defined(WEBRTC_ARCH_ARM_NEON)
+void aec_rdft_init_neon(void);
 #endif
 
 #endif  // WEBRTC_MODULES_AUDIO_PROCESSING_AEC_MAIN_SOURCE_AEC_RDFT_H_

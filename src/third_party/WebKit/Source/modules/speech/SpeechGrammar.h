@@ -26,12 +26,12 @@
 #ifndef SpeechGrammar_h
 #define SpeechGrammar_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 
@@ -57,6 +57,6 @@ private:
     double m_weight;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SpeechGrammar_h

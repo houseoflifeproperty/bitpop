@@ -42,8 +42,8 @@ void WebLayerTreeViewImplForTesting::Initialize() {
 
   // Accelerated animations are enabled for unit tests.
   settings.accelerated_animation_enabled = true;
-  layer_tree_host_ =
-      cc::LayerTreeHost::CreateSingleThreaded(this, this, NULL, settings);
+  layer_tree_host_ = cc::LayerTreeHost::CreateSingleThreaded(
+      this, this, NULL, settings, base::MessageLoopProxy::current());
   DCHECK(layer_tree_host_);
 }
 
@@ -165,6 +165,14 @@ void WebLayerTreeViewImplForTesting::clearViewportLayers() {
   layer_tree_host_->RegisterViewportLayers(scoped_refptr<cc::Layer>(),
                                            scoped_refptr<cc::Layer>(),
                                            scoped_refptr<cc::Layer>());
+}
+
+void WebLayerTreeViewImplForTesting::registerSelection(
+    const blink::WebSelectionBound& start,
+    const blink::WebSelectionBound& end) {
+}
+
+void WebLayerTreeViewImplForTesting::clearSelection() {
 }
 
 }  // namespace content

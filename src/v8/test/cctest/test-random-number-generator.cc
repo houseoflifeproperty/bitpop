@@ -26,10 +26,10 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/v8.h"
-
-#include "src/utils/random-number-generator.h"
-#include "src/isolate-inl.h"
 #include "test/cctest/cctest.h"
+
+#include "src/base/utils/random-number-generator.h"
+#include "src/isolate-inl.h"
 
 using namespace v8::internal;
 
@@ -40,48 +40,13 @@ static const int kRandomSeeds[] = {
 };
 
 
-TEST(NextIntWithMaxValue) {
-  for (unsigned n = 0; n < ARRAY_SIZE(kRandomSeeds); ++n) {
-    RandomNumberGenerator rng(kRandomSeeds[n]);
-    for (int max = 1; max <= kMaxRuns; ++max) {
-      int n = rng.NextInt(max);
-      CHECK_LE(0, n);
-      CHECK_LT(n, max);
-    }
-  }
-}
-
-
-TEST(NextBoolReturnsBooleanValue) {
-  for (unsigned n = 0; n < ARRAY_SIZE(kRandomSeeds); ++n) {
-    RandomNumberGenerator rng(kRandomSeeds[n]);
-    for (int k = 0; k < kMaxRuns; ++k) {
-      bool b = rng.NextBool();
-      CHECK(b == false || b == true);
-    }
-  }
-}
-
-
-TEST(NextDoubleRange) {
-  for (unsigned n = 0; n < ARRAY_SIZE(kRandomSeeds); ++n) {
-    RandomNumberGenerator rng(kRandomSeeds[n]);
-    for (int k = 0; k < kMaxRuns; ++k) {
-      double d = rng.NextDouble();
-      CHECK_LE(0.0, d);
-      CHECK_LT(d, 1.0);
-    }
-  }
-}
-
-
 TEST(RandomSeedFlagIsUsed) {
   for (unsigned n = 0; n < ARRAY_SIZE(kRandomSeeds); ++n) {
     FLAG_random_seed = kRandomSeeds[n];
     v8::Isolate* i = v8::Isolate::New();
-    RandomNumberGenerator& rng1 =
+    v8::base::RandomNumberGenerator& rng1 =
         *reinterpret_cast<Isolate*>(i)->random_number_generator();
-    RandomNumberGenerator rng2(kRandomSeeds[n]);
+    v8::base::RandomNumberGenerator rng2(kRandomSeeds[n]);
     for (int k = 1; k <= kMaxRuns; ++k) {
       int64_t i1, i2;
       rng1.NextBytes(&i1, sizeof(i1));

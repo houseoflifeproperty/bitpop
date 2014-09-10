@@ -33,7 +33,7 @@
 #include "platform/geometry/LayoutRect.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class AXSVGRoot;
 class AXObjectCache;
@@ -209,7 +209,7 @@ private:
     AXObject* accessibilityImageMapHitTest(HTMLAreaElement*, const IntPoint&) const;
     bool renderObjectIsObservable(RenderObject*) const;
     RenderObject* renderParentObject() const;
-    bool isDescendantOfElementType(const QualifiedName& tagName) const;
+    bool isDescendantOfElementType(const HTMLQualifiedName& tagName) const;
     bool isSVGImage() const;
     void detachRemoteSVGRoot();
     AXSVGRoot* remoteSVGRootElement() const;
@@ -234,6 +234,6 @@ private:
 
 DEFINE_AX_OBJECT_TYPE_CASTS(AXRenderObject, isAXRenderObject());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AXRenderObject_h

@@ -131,7 +131,6 @@
 }
 
 .responsive-design-toolbar label {
-    margin-right: 5px;
     cursor: default !important;
 }
 
@@ -158,7 +157,7 @@
 
 .responsive-design-toolbar input[type='checkbox'] {
     -webkit-appearance: none;
-    margin: auto 5px auto 0;
+    margin: auto 5px auto 2px;
     border: 1px solid rgb(45, 45, 45);
     border-radius: 3px;
     background-color: rgb(102, 102, 102);
@@ -324,14 +323,19 @@ body.platform-mac .responsive-design-toolbar select {
     background: rgb(255, 156, 0);
 }
 
+.responsive-design-device-select button {
+    display: none !important;
+}
+
 /* Network section */
 
 .responsive-design-section-network select {
-    width: 150px;
+    width: 180px;
 }
 
 .responsive-design-section-network input[type='text'] {
-    width: 192px;
+    width: 222px;
+    margin-left: 5px;
 }
 
 .responsive-design-section-network input[type='text'],
@@ -376,6 +380,7 @@ body.platform-mac .responsive-design-toolbar select {
     right: 0px;
     top: 0px;
     background-color: transparent;
+    overflow: hidden;
 }
 
 .responsive-design-toggle-media-inspector .glyph {
@@ -389,16 +394,19 @@ body.platform-mac .responsive-design-toolbar select {
 
 /* media */
 
+.responsive-design-media-container {
+    flex: none;
+}
+
 .view.media-inspector-view {
     overflow-y: auto;
     overflow-x: hidden;
     background-color: rgb(0, 0, 0);
-    border-bottom: 1px solid rgb(163, 163, 163);
-    flex: none;
+    max-height: 100px;
 }
 
-.view.media-inspector-view-fixed-height {
-    height: 100px;
+.media-inspector-view:not(.media-inspector-view-empty) {
+    border-bottom: 1px solid rgb(104, 104, 104);
 }
 
 .media-inspector-view::-webkit-scrollbar {
@@ -412,10 +420,6 @@ body.platform-mac .responsive-design-toolbar select {
 .media-inspector-marker-container {
     position: relative;
     margin: 2px 0 2px 0;
-}
-
-.media-inspector-min-width-label-container {
-    position: relative;
 }
 
 .media-inspector-marker {
@@ -433,37 +437,64 @@ body.platform-mac .responsive-design-toolbar select {
     -webkit-filter: brightness(125%);
 }
 
-.media-inspector-marker-max-width {
+.media-inspector-marker-container-max-width .media-inspector-marker {
     background-color: rgba(111, 168, 220, 0.66);
     border-right: 5px solid rgba(111, 168, 220, 0.86);
 }
 
-.media-inspector-marker-min-max-width {
+.media-inspector-marker-container-min-max-width .media-inspector-marker {
     background-color: rgba(100, 200, 0, 0.66);
     border-left: 5px solid rgba(100, 200, 0, 0.86);
     border-right: 5px solid rgba(100, 200, 0, 0.86);
 }
 
-.media-inspector-marker-min-width {
+.media-inspector-marker-container-min-width .media-inspector-marker {
     background-color: rgba(225, 124, 0, 0.66);
     border-left: 5px solid rgba(225, 124, 0, 0.86);
 }
 
+.media-inspector-marker-container:not(.media-inspector-marker-container-max-width) .media-inspector-max-label-filler,
+.media-inspector-marker-container:not(.media-inspector-marker-container-max-width) .media-inspector-min-label-filler {
+    min-width: 50px;
+}
+
+.media-inspector-max-label-filler {
+    flex: auto;
+}
+
+.media-inspector-min-label-filler {
+    display: flex;
+    justify-content: flex-end;
+}
+
 .media-inspector-marker-label {
-    position: absolute;
     color: rgb(180, 180, 180);
+    position: relative;
+    text-shadow: 0px 0px 2px black;
+}
+
+.media-inspector-min-label {
+    padding-right: 11px;
 }
 
 .media-inspector-min-label::after {
+    position: absolute;
     padding-left: 2px;
+    right: -1px;
     height: 6px;
-    width: 11px;
     content: url(Images/graphLabelCalloutLeft.png);
     -webkit-filter: invert(0.8);
+    box-sizing: border-box;
+}
+
+.media-inspector-max-label {
+    padding-left: 11px;
 }
 
 .media-inspector-max-label::before {
+    position: absolute;
     padding-right: 2px;
+    left: -1px;
     height: 6px;
     content: url(Images/graphLabelCalloutRight.png);
     -webkit-filter: invert(0.8);
@@ -485,10 +516,29 @@ body.platform-mac .responsive-design-toolbar select {
     right: 2px;
     top: 0px;
     bottom: 0px;
+    border-left: 1px solid rgba(225, 124, 0, 0.86);
+    box-sizing: border-box;
+}
+
+.media-inspector-threshold-serif:hover {
     background-color: rgba(225, 124, 0, 0.86);
 }
 
-.media-inspector-threshold-serif:hover::before {
-    left: 1px;
-    right: 1px;
+.media-inspector-marker-highlight-1 {
+    -webkit-animation: media-inspector-animation-highlight-1 0.7s 1;
+}
+
+.media-inspector-marker-highlight-2 {
+    -webkit-animation: media-inspector-animation-highlight-2 0.7s 1;
+}
+
+
+@-webkit-keyframes media-inspector-animation-highlight-1 {
+    from { -webkit-filter: brightness(135%); }
+    to { -webkit-filter: brightness(100%); }
+}
+
+@-webkit-keyframes media-inspector-animation-highlight-2 {
+    from { -webkit-filter: brightness(135%); }
+    to { -webkit-filter: brightness(100%); }
 }

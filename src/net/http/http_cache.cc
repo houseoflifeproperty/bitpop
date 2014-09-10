@@ -33,6 +33,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/upload_data_stream.h"
 #include "net/disk_cache/disk_cache.h"
+#include "net/http/disk_based_cert_cache.h"
 #include "net/http/disk_cache_based_quic_server_info.h"
 #include "net/http/http_cache_transaction.h"
 #include "net/http/http_network_layer.h"
@@ -44,6 +45,11 @@
 #include "net/quic/crypto/quic_server_info.h"
 
 namespace {
+
+bool UseCertCache() {
+  return base::FieldTrialList::FindFullName("CertCacheTrial") ==
+         "ExperimentGroup";
+}
 
 // Adaptor to delete a file on a worker thread.
 void DeletePath(base::FilePath path) {
@@ -290,6 +296,7 @@ HttpCache::HttpCache(const net::HttpNetworkSession::Params& params,
     : net_log_(params.net_log),
       backend_factory_(backend_factory),
       building_backend_(false),
+      bypass_lock_for_test_(false),
       mode_(NORMAL),
       network_layer_(new HttpNetworkLayer(new HttpNetworkSession(params))),
       weak_factory_(this) {
@@ -304,6 +311,7 @@ HttpCache::HttpCache(HttpNetworkSession* session,
     : net_log_(session->net_log()),
       backend_factory_(backend_factory),
       building_backend_(false),
+      bypass_lock_for_test_(false),
       mode_(NORMAL),
       network_layer_(new HttpNetworkLayer(session)),
       weak_factory_(this) {
@@ -315,6 +323,7 @@ HttpCache::HttpCache(HttpTransactionFactory* network_layer,
     : net_log_(net_log),
       backend_factory_(backend_factory),
       building_backend_(false),
+      bypass_lock_for_test_(false),
       mode_(NORMAL),
       network_layer_(network_layer),
       weak_factory_(this) {
@@ -343,6 +352,7 @@ HttpCache::~HttpCache() {
 
   // Before deleting pending_ops_, we have to make sure that the disk cache is
   // done with said operations, or it will attempt to use deleted data.
+  cert_cache_.reset();
   disk_cache_.reset();
 
   PendingOpsMap::iterator pending_it = pending_ops_.begin();
@@ -453,7 +463,12 @@ int HttpCache::CreateTransaction(RequestPriority priority,
     CreateBackend(NULL, net::CompletionCallback());
   }
 
-  trans->reset(new HttpCache::Transaction(priority, this));
+   HttpCache::Transaction* transaction =
+      new HttpCache::Transaction(priority, this);
+   if (bypass_lock_for_test_)
+    transaction->BypassLockForTest();
+
+  trans->reset(transaction);
   return OK;
 }
 
@@ -999,7 +1014,7 @@ bool HttpCache::RemovePendingTransactionFromPendingOp(PendingOp* pending_op,
 }
 
 void HttpCache::SetupQuicServerInfoFactory(HttpNetworkSession* session) {
-  if (session && session->params().enable_quic_persist_server_info &&
+  if (session &&
       !session->quic_stream_factory()->has_quic_server_info_factory()) {
     DCHECK(!quic_server_info_factory_);
     quic_server_info_factory_.reset(new QuicServerInfoFactoryAdaptor(this));
@@ -1160,8 +1175,11 @@ void HttpCache::OnBackendCreated(int result, PendingOp* pending_op) {
     // work items. The first call saves the backend and releases the factory,
     // and the last call clears building_backend_.
     backend_factory_.reset();  // Reclaim memory.
-    if (result == OK)
+    if (result == OK) {
       disk_cache_ = pending_op->backend.Pass();
+      if (UseCertCache())
+        cert_cache_.reset(new DiskBasedCertCache(disk_cache_.get()));
+    }
   }
 
   if (!pending_op->pending_queue.empty()) {

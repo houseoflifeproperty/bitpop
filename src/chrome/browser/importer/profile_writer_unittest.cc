@@ -95,18 +95,17 @@ class ProfileWriterTest : public testing::Test {
         HistoryServiceFactory::GetForProfile(profile,
                                              Profile::EXPLICIT_ACCESS);
     history::QueryOptions options;
-    CancelableRequestConsumer history_request_consumer;
+    base::CancelableTaskTracker history_task_tracker;
     history_service->QueryHistory(
         base::string16(),
         options,
-        &history_request_consumer,
         base::Bind(&ProfileWriterTest::HistoryQueryComplete,
-                   base::Unretained(this)));
+                   base::Unretained(this)),
+        &history_task_tracker);
     base::MessageLoop::current()->Run();
   }
 
-  void HistoryQueryComplete(HistoryService::Handle handle,
-                            history::QueryResults* results) {
+  void HistoryQueryComplete(history::QueryResults* results) {
     base::MessageLoop::current()->Quit();
     history_count_ = results->size();
   }
@@ -143,9 +142,8 @@ TEST_F(ProfileWriterTest, CheckBookmarksWithMultiProfile) {
   BookmarkModel* bookmark_model2 =
       BookmarkModelFactory::GetForProfile(&profile2);
   test::WaitForBookmarkModelToLoad(bookmark_model2);
-  bookmark_utils::AddIfNotBookmarked(bookmark_model2,
-                                     GURL("http://www.bing.com"),
-                                     base::ASCIIToUTF16("Bing"));
+  bookmarks::AddIfNotBookmarked(
+      bookmark_model2, GURL("http://www.bing.com"), base::ASCIIToUTF16("Bing"));
   TestingProfile profile1;
   profile1.CreateBookmarkModel(true);
 

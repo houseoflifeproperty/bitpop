@@ -34,7 +34,7 @@
 #include "core/html/forms/InputType.h"
 #include "core/html/shadow/SpinButtonElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class FormDataList;
 
@@ -42,6 +42,9 @@ class FormDataList;
 // It supports not only the types for BaseTextInputType but also type=number.
 class TextFieldInputType : public InputType, protected SpinButtonElement::SpinButtonOwner {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(TextFieldInputType);
+public:
+    virtual void trace(Visitor* visitor) OVERRIDE { InputType::trace(visitor); }
+
 protected:
     TextFieldInputType(HTMLInputElement&);
     virtual ~TextFieldInputType();
@@ -49,7 +52,6 @@ protected:
     virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE;
     void handleKeydownEventForSpinButton(KeyboardEvent*);
 
-protected:
     virtual bool needsContainer() const { return false; }
     bool shouldHaveSpinButton() const;
     virtual void createShadowSubtree() OVERRIDE;
@@ -80,7 +82,6 @@ private:
     virtual void forwardEvent(Event*) OVERRIDE FINAL;
     virtual bool shouldSubmitImplicitly(Event*) OVERRIDE FINAL;
     virtual RenderObject* createRenderer(RenderStyle*) const OVERRIDE;
-    virtual bool shouldUseInputMethod() const OVERRIDE;
     virtual String sanitizeValue(const String&) const OVERRIDE;
     virtual bool shouldRespectListAttribute() OVERRIDE;
     virtual void listAttributeTargetChanged() OVERRIDE;
@@ -99,6 +100,6 @@ private:
     SpinButtonElement* spinButtonElement() const;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TextFieldInputType_h

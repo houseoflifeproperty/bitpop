@@ -5,19 +5,12 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_TEXTURE_DEFINITION_H_
 #define GPU_COMMAND_BUFFER_SERVICE_TEXTURE_DEFINITION_H_
 
-#include <list>
 #include <vector>
 
-#include "base/callback.h"
-#include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/synchronization/lock.h"
 #include "gpu/command_buffer/service/gl_utils.h"
-#include "ui/gl/gl_fence.h"
 
 namespace gfx {
-class GLFence;
 class GLImage;
 }
 
@@ -29,35 +22,20 @@ class Texture;
 class NativeImageBuffer : public base::RefCountedThreadSafe<NativeImageBuffer> {
  public:
   static scoped_refptr<NativeImageBuffer> Create(GLuint texture_id);
+
+  virtual void AddClient(gfx::GLImage* client) = 0;
+  virtual void RemoveClient(gfx::GLImage* client) = 0;
+  virtual bool IsClient(gfx::GLImage* client) = 0;
   virtual void BindToTexture(GLenum target) = 0;
-
-  void AddClient(gfx::GLImage* client);
-  void RemoveClient(gfx::GLImage* client);
-  bool IsClient(gfx::GLImage* client);
-
-  void WillRead(gfx::GLImage* client);
-  void WillWrite(gfx::GLImage* client);
-  void DidRead(gfx::GLImage* client);
-  void DidWrite(gfx::GLImage* client);
+  virtual void WillRead(gfx::GLImage* client) = 0;
+  virtual void WillWrite(gfx::GLImage* client) = 0;
+  virtual void DidRead(gfx::GLImage* client) = 0;
+  virtual void DidWrite(gfx::GLImage* client) = 0;
 
  protected:
   friend class base::RefCountedThreadSafe<NativeImageBuffer>;
-  explicit NativeImageBuffer(scoped_ptr<gfx::GLFence> write_fence);
-  virtual ~NativeImageBuffer();
-
-  base::Lock lock_;
-
-  struct ClientInfo {
-    ClientInfo(gfx::GLImage* client);
-    ~ClientInfo();
-
-    gfx::GLImage* client;
-    bool needs_wait_before_read;
-    linked_ptr<gfx::GLFence> read_fence;
-  };
-  std::list<ClientInfo> client_infos_;
-  scoped_ptr<gfx::GLFence> write_fence_;
-  gfx::GLImage* write_client_;
+  NativeImageBuffer() {}
+  virtual ~NativeImageBuffer() {}
 
   DISALLOW_COPY_AND_ASSIGN(NativeImageBuffer);
 };

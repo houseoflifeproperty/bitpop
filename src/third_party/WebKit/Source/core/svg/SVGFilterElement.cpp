@@ -29,7 +29,7 @@
 #include "core/rendering/svg/RenderSVGResourceFilter.h"
 #include "core/svg/SVGParserUtilities.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGFilterElement::SVGFilterElement(Document& document)
     : SVGElement(SVGNames::filterTag, document)
@@ -64,7 +64,9 @@ DEFINE_NODE_FACTORY(SVGFilterElement)
 
 void SVGFilterElement::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_clientsToAdd);
+#endif
     SVGElement::trace(visitor);
 }
 
@@ -95,29 +97,7 @@ bool SVGFilterElement::isSupportedAttribute(const QualifiedName& attrName)
 
 void SVGFilterElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    SVGParsingError parseError = NoError;
-
-    if (!isSupportedAttribute(name))
-        SVGElement::parseAttribute(name, value);
-    else if (name == SVGNames::filterUnitsAttr)
-        m_filterUnits->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::primitiveUnitsAttr)
-        m_primitiveUnits->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::xAttr)
-        m_x->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::yAttr)
-        m_y->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::widthAttr)
-        m_width->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::heightAttr)
-        m_height->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::filterResAttr)
-        m_filterRes->setBaseValueAsString(value, parseError);
-    else if (SVGURIReference::parseAttribute(name, value, parseError)) {
-    } else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGFilterElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -140,11 +120,11 @@ void SVGFilterElement::svgAttributeChanged(const QualifiedName& attrName)
         renderer->invalidateCacheAndMarkForLayout();
 }
 
-void SVGFilterElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void SVGFilterElement::childrenChanged(const ChildrenChange& change)
 {
-    SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    SVGElement::childrenChanged(change);
 
-    if (changedByParser)
+    if (change.byParser)
         return;
 
     if (RenderObject* object = renderer())

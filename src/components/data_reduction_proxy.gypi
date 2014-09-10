@@ -6,6 +6,7 @@
 {
   'targets': [
     {
+      # GN version: //components/data_reduction_proxy/browser
       'target_name': 'data_reduction_proxy_browser',
       'type': 'static_library',
       'dependencies': [
@@ -19,6 +20,7 @@
         '..',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'data_reduction_proxy/browser/data_reduction_proxy_auth_request_handler.cc',
         'data_reduction_proxy/browser/data_reduction_proxy_auth_request_handler.h',
         'data_reduction_proxy/browser/data_reduction_proxy_config_service.cc',
@@ -34,11 +36,14 @@
         'data_reduction_proxy/browser/data_reduction_proxy_protocol.h',
         'data_reduction_proxy/browser/data_reduction_proxy_settings.cc',
         'data_reduction_proxy/browser/data_reduction_proxy_settings.h',
-        'data_reduction_proxy/browser/http_auth_handler_data_reduction_proxy.cc',
-        'data_reduction_proxy/browser/http_auth_handler_data_reduction_proxy.h',
+        'data_reduction_proxy/browser/data_reduction_proxy_tamper_detection.cc',
+        'data_reduction_proxy/browser/data_reduction_proxy_tamper_detection.h',
+        'data_reduction_proxy/browser/data_reduction_proxy_usage_stats.cc',
+        'data_reduction_proxy/browser/data_reduction_proxy_usage_stats.h',
       ],
     },
     {
+      # GN version: //components/data_reduction_proxy/common
       'target_name': 'data_reduction_proxy_common',
       'type': 'static_library',
       'dependencies': [
@@ -48,6 +53,7 @@
         '..',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'data_reduction_proxy/common/data_reduction_proxy_headers.cc',
         'data_reduction_proxy/common/data_reduction_proxy_headers.h',
         'data_reduction_proxy/common/data_reduction_proxy_pref_names.cc',
@@ -57,6 +63,7 @@
       ],
     },
     {
+      # GN version: //components/data_reduction_proxy/browser:test_support
       'target_name': 'data_reduction_proxy_test_support',
       'type': 'static_library',
       'dependencies' : [
@@ -72,6 +79,9 @@
         '..',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
+        'data_reduction_proxy/browser/data_reduction_proxy_params_test_utils.cc',
+        'data_reduction_proxy/browser/data_reduction_proxy_params_test_utils.h',
         'data_reduction_proxy/browser/data_reduction_proxy_settings_test_utils.cc',
         'data_reduction_proxy/browser/data_reduction_proxy_settings_test_utils.h',
       ],

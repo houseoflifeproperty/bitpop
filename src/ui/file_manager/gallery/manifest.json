@@ -17,17 +17,17 @@
     "256": "images/icon256.png"
   },
   "permissions": [
-    "fileSystem",
-    "fileBrowserHandler",
-    "fileBrowserPrivate",
-    "fullscreen",
-    "mediaPlayerPrivate",
-    "metricsPrivate",
-    "storage",
+    "chrome-extension://hhaomjibdihmijegdhdafkllkbggdgoj",
     "chrome://extension-icon/",
     "chrome://resources/",
     "chrome://theme/",
-    "chrome-extension://hhaomjibdihmijegdhdafkllkbggdgoj"
+    "fileBrowserHandler",
+    "fileBrowserPrivate",
+    "fileSystem",
+    "fullscreen",
+    "metricsPrivate",
+    "storage",
+    "webview"
   ],
   "file_handlers": {
     "open": {
@@ -42,9 +42,7 @@
         "jpeg",
         "png",
         "webp"
-      ],
-      // TODO(hirono): Rename and localize this.
-      "title": "Open"
+      ]
     }
   },
   "app": {

@@ -43,8 +43,6 @@
 #include "public/web/WebElementCollection.h"
 #include "wtf/PassRefPtr.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 bool WebInputElement::isTextField() const
@@ -55,6 +53,11 @@ bool WebInputElement::isTextField() const
 bool WebInputElement::isText() const
 {
     return constUnwrap<HTMLInputElement>()->isText();
+}
+
+bool WebInputElement::isEmailField() const
+{
+    return constUnwrap<HTMLInputElement>()->isEmailField();
 }
 
 bool WebInputElement::isPasswordField() const

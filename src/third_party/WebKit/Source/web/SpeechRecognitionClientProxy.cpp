@@ -41,8 +41,6 @@
 #include "public/web/WebSpeechRecognizer.h"
 #include "wtf/PassRefPtr.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 SpeechRecognitionClientProxy::~SpeechRecognitionClientProxy()

@@ -31,9 +31,8 @@
 #include "config.h"
 #include "modules/quota/StorageQuota.h"
 
-#include "bindings/v8/ScriptPromise.h"
-#include "bindings/v8/ScriptPromiseResolver.h"
-#include "bindings/v8/ScriptPromiseResolverWithContext.h"
+#include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/DOMError.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
@@ -45,28 +44,28 @@
 #include "public/platform/WebStorageQuotaCallbacks.h"
 #include "public/platform/WebStorageQuotaType.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
 struct StorageTypeMapping {
-    blink::WebStorageQuotaType type;
+    WebStorageQuotaType type;
     const char* const name;
 };
 
 const StorageTypeMapping storageTypeMappings[] = {
-    { blink::WebStorageQuotaTypeTemporary, "temporary" },
-    { blink::WebStorageQuotaTypePersistent, "persistent" },
+    { WebStorageQuotaTypeTemporary, "temporary" },
+    { WebStorageQuotaTypePersistent, "persistent" },
 };
 
-blink::WebStorageQuotaType stringToStorageQuotaType(const String& type)
+WebStorageQuotaType stringToStorageQuotaType(const String& type)
 {
     for (size_t i = 0; i < WTF_ARRAY_LENGTH(storageTypeMappings); ++i) {
         if (storageTypeMappings[i].name == type)
             return storageTypeMappings[i].type;
     }
     ASSERT_NOT_REACHED();
-    return blink::WebStorageQuotaTypeTemporary;
+    return WebStorageQuotaTypeTemporary;
 }
 
 } // namespace
@@ -86,7 +85,7 @@ Vector<String> StorageQuota::supportedTypes() const
 
 ScriptPromise StorageQuota::queryInfo(ScriptState* scriptState, String type)
 {
-    RefPtr<ScriptPromiseResolverWithContext> resolver = ScriptPromiseResolverWithContext::create(scriptState);
+    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
     SecurityOrigin* securityOrigin = scriptState->executionContext()->securityOrigin();
@@ -97,7 +96,7 @@ ScriptPromise StorageQuota::queryInfo(ScriptState* scriptState, String type)
 
     KURL storagePartition = KURL(KURL(), securityOrigin->toString());
     OwnPtr<StorageQuotaCallbacks> callbacks = StorageQuotaCallbacksImpl::create(resolver);
-    blink::Platform::current()->queryStorageUsageAndQuota(storagePartition, stringToStorageQuotaType(type), callbacks.release());
+    Platform::current()->queryStorageUsageAndQuota(storagePartition, stringToStorageQuotaType(type), callbacks.release());
     return promise;
 }
 
@@ -114,8 +113,4 @@ ScriptPromise StorageQuota::requestPersistentQuota(ScriptState* scriptState, uns
     return client->requestPersistentQuota(scriptState, newQuota);
 }
 
-StorageQuota::~StorageQuota()
-{
-}
-
-} // namespace WebCore
+} // namespace blink

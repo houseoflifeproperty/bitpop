@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004-2008, 2013, 2014 Apple Inc. All rights reserved.
  * Copyright (C) 2009 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
  * Copyright (C) 2011 Motorola Mobility. All rights reserved.
  *
@@ -25,8 +25,8 @@
 #include "config.h"
 #include "core/html/HTMLElement.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptEventListener.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ScriptEventListener.h"
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
 #include "core/HTMLNames.h"
@@ -35,6 +35,7 @@
 #include "core/css/CSSValuePool.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/DocumentFragment.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
@@ -57,7 +58,7 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/CString.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 using namespace WTF;
@@ -89,29 +90,30 @@ bool HTMLElement::ieForbidsInsertHTML() const
     // This is also called from editing and assumed to be the list of tags
     // for which no end tag should be serialized. It's unclear if the list for
     // IE compat and the list for serialization sanity are the same.
-    if (hasLocalName(areaTag)
-        || hasLocalName(baseTag)
-        || hasLocalName(basefontTag)
-        || hasLocalName(brTag)
-        || hasLocalName(colTag)
-        || hasLocalName(embedTag)
-        || hasLocalName(frameTag)
-        || hasLocalName(hrTag)
-        || hasLocalName(imageTag)
-        || hasLocalName(imgTag)
-        || hasLocalName(inputTag)
-        || hasLocalName(linkTag)
-        || hasLocalName(metaTag)
-        || hasLocalName(paramTag)
-        || hasLocalName(sourceTag)
-        || hasLocalName(wbrTag))
+    if (hasTagName(areaTag)
+        || hasTagName(baseTag)
+        || hasTagName(basefontTag)
+        || hasTagName(brTag)
+        || hasTagName(colTag)
+        || hasTagName(embedTag)
+        || hasTagName(frameTag)
+        || hasTagName(hrTag)
+        || hasTagName(imageTag)
+        || hasTagName(imgTag)
+        || hasTagName(inputTag)
+        || hasTagName(linkTag)
+        || (RuntimeEnabledFeatures::contextMenuEnabled() && hasTagName(menuitemTag))
+        || hasTagName(metaTag)
+        || hasTagName(paramTag)
+        || hasTagName(sourceTag)
+        || hasTagName(wbrTag))
         return true;
     return false;
 }
 
 static inline CSSValueID unicodeBidiAttributeForDirAuto(HTMLElement* element)
 {
-    if (element->hasLocalName(preTag) || element->hasLocalName(textareaTag))
+    if (element->hasTagName(preTag) || element->hasTagName(textareaTag))
         return CSSValueWebkitPlaintext;
     // FIXME: For bdo element, dir="auto" should result in "bidi-override isolate" but we don't support having multiple values in unicode-bidi yet.
     // See https://bugs.webkit.org/show_bug.cgi?id=73164.
@@ -122,7 +124,7 @@ unsigned HTMLElement::parseBorderWidthAttribute(const AtomicString& value) const
 {
     unsigned borderWidth = 0;
     if (value.isEmpty() || !parseHTMLNonNegativeInteger(value, borderWidth))
-        return hasLocalName(tableTag) ? 1 : borderWidth;
+        return hasTagName(tableTag) ? 1 : borderWidth;
     return borderWidth;
 }
 
@@ -350,16 +352,27 @@ PassRefPtrWillBeRawPtr<DocumentFragment> HTMLElement::textToFragment(const Strin
     return fragment;
 }
 
+static inline bool shouldProhibitSetInnerOuterText(const HTMLElement& element)
+{
+    return element.hasTagName(colTag)
+        || element.hasTagName(colgroupTag)
+        || element.hasTagName(framesetTag)
+        || element.hasTagName(headTag)
+        || element.hasTagName(htmlTag)
+        || element.hasTagName(tableTag)
+        || element.hasTagName(tbodyTag)
+        || element.hasTagName(tfootTag)
+        || element.hasTagName(theadTag)
+        || element.hasTagName(trTag);
+}
+
 void HTMLElement::setInnerText(const String& text, ExceptionState& exceptionState)
 {
     if (ieForbidsInsertHTML()) {
         exceptionState.throwDOMException(NoModificationAllowedError, "The '" + localName() + "' element does not support text insertion.");
         return;
     }
-    if (hasLocalName(colTag) || hasLocalName(colgroupTag) || hasLocalName(framesetTag) ||
-        hasLocalName(headTag) || hasLocalName(htmlTag) || hasLocalName(tableTag) ||
-        hasLocalName(tbodyTag) || hasLocalName(tfootTag) || hasLocalName(theadTag) ||
-        hasLocalName(trTag)) {
+    if (shouldProhibitSetInnerOuterText(*this)) {
         exceptionState.throwDOMException(NoModificationAllowedError, "The '" + localName() + "' element does not support text insertion.");
         return;
     }
@@ -397,16 +410,13 @@ void HTMLElement::setInnerText(const String& text, ExceptionState& exceptionStat
         replaceChildrenWithFragment(this, fragment.release(), exceptionState);
 }
 
-void HTMLElement::setOuterText(const String &text, ExceptionState& exceptionState)
+void HTMLElement::setOuterText(const String& text, ExceptionState& exceptionState)
 {
     if (ieForbidsInsertHTML()) {
         exceptionState.throwDOMException(NoModificationAllowedError, "The '" + localName() + "' element does not support text insertion.");
         return;
     }
-    if (hasLocalName(colTag) || hasLocalName(colgroupTag) || hasLocalName(framesetTag) ||
-        hasLocalName(headTag) || hasLocalName(htmlTag) || hasLocalName(tableTag) ||
-        hasLocalName(tbodyTag) || hasLocalName(tfootTag) || hasLocalName(theadTag) ||
-        hasLocalName(trTag)) {
+    if (shouldProhibitSetInnerOuterText(*this)) {
         exceptionState.throwDOMException(NoModificationAllowedError, "The '" + localName() + "' element does not support text insertion.");
         return;
     }
@@ -438,10 +448,10 @@ void HTMLElement::setOuterText(const String &text, ExceptionState& exceptionStat
 
     RefPtrWillBeRawPtr<Node> node = next ? next->previousSibling() : nullptr;
     if (!exceptionState.hadException() && node && node->isTextNode())
-        mergeWithNextTextNode(node.release(), exceptionState);
+        mergeWithNextTextNode(toText(node.get()), exceptionState);
 
     if (!exceptionState.hadException() && prev && prev->isTextNode())
-        mergeWithNextTextNode(prev.release(), exceptionState);
+        mergeWithNextTextNode(toText(prev.get()), exceptionState);
 }
 
 void HTMLElement::applyAlignmentAttributeToStyle(const AtomicString& alignment, MutableStylePropertySet* style)
@@ -626,7 +636,7 @@ HTMLFormElement* HTMLElement::findFormAncestor() const
 
 static inline bool elementAffectsDirectionality(const Node* node)
 {
-    return node->isHTMLElement() && (isHTMLBDIElement(*node) || toHTMLElement(node)->hasAttribute(dirAttr));
+    return node->isHTMLElement() && (isHTMLBDIElement(toHTMLElement(*node)) || toHTMLElement(*node).hasAttribute(dirAttr));
 }
 
 static void setHasDirAutoFlagRecursively(Node* firstNode, bool flag, Node* lastNode = 0)
@@ -649,10 +659,10 @@ static void setHasDirAutoFlagRecursively(Node* firstNode, bool flag, Node* lastN
     }
 }
 
-void HTMLElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void HTMLElement::childrenChanged(const ChildrenChange& change)
 {
-    Element::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
-    adjustDirectionalityIfNeededAfterChildrenChanged(beforeChange, childCountDelta);
+    Element::childrenChanged(change);
+    adjustDirectionalityIfNeededAfterChildrenChanged(change);
 }
 
 bool HTMLElement::hasDirectionAuto() const
@@ -756,22 +766,12 @@ void HTMLElement::calculateAndAdjustDirectionality()
         setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
-void HTMLElement::adjustDirectionalityIfNeededAfterChildrenChanged(Node* beforeChange, int childCountDelta)
+void HTMLElement::adjustDirectionalityIfNeededAfterChildrenChanged(const ChildrenChange& change)
 {
-    if (document().renderView() && childCountDelta < 0) {
-        Node* node = beforeChange ? NodeTraversal::nextSkippingChildren(*beforeChange) : 0;
-        for (int counter = 0; node && counter < childCountDelta; counter++, node = NodeTraversal::nextSkippingChildren(*node)) {
-            if (elementAffectsDirectionality(node))
-                continue;
-
-            setHasDirAutoFlagRecursively(node, false);
-        }
-    }
-
     if (!selfOrAncestorHasDirAutoAttribute())
         return;
 
-    Node* oldMarkedNode = beforeChange ? NodeTraversal::nextSkippingChildren(*beforeChange) : 0;
+    Node* oldMarkedNode = change.siblingBeforeChange ? NodeTraversal::nextSkippingChildren(*change.siblingBeforeChange) : 0;
     while (oldMarkedNode && elementAffectsDirectionality(oldMarkedNode))
         oldMarkedNode = NodeTraversal::nextSkippingChildren(*oldMarkedNode, this);
     if (oldMarkedNode)
@@ -929,7 +929,7 @@ bool HTMLElement::matchesReadWritePseudoClass() const
         // All other values should be treated as "inherit".
     }
 
-    return parentElement() && parentElement()->rendererIsEditable();
+    return parentElement() && parentElement()->hasEditableStyle();
 }
 
 void HTMLElement::handleKeypressEvent(KeyboardEvent* event)
@@ -954,14 +954,14 @@ const AtomicString& HTMLElement::eventParameterName()
     return eventString;
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
 
 // For use in the debugger
-void dumpInnerHTML(WebCore::HTMLElement*);
+void dumpInnerHTML(blink::HTMLElement*);
 
-void dumpInnerHTML(WebCore::HTMLElement* element)
+void dumpInnerHTML(blink::HTMLElement* element)
 {
     printf("%s\n", element->innerHTML().ascii().data());
 }

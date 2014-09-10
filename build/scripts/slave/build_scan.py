@@ -145,6 +145,9 @@ def propagate_build_json_to_db(build_db, builds):
 
     if build_json.get('results', None) is not None:
       build = build._replace(finished=True)  # pylint: disable=W0212
+    else:
+      # Builds can't be marked succeeded unless they are finished.
+      build = build._replace(succeeded=False)  # pylint: disable=W0212
 
     build_db.masters[master][builder][buildnum] = build
 

@@ -4,12 +4,12 @@
 
 #include "chrome/browser/chromeos/ownership/owner_settings_service_factory.h"
 
-#include "chrome/browser/chromeos/login/users/user.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/ownership/owner_settings_service.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 
 namespace chromeos {
 
@@ -36,12 +36,13 @@ OwnerSettingsServiceFactory* OwnerSettingsServiceFactory::GetInstance() {
 
 void OwnerSettingsServiceFactory::SetUsername(const std::string& username) {
   username_ = username;
-  if (!UserManager::IsInitialized())
+  if (!user_manager::UserManager::IsInitialized())
     return;
-  const User* user = UserManager::Get()->FindUser(username_);
+  const user_manager::User* user =
+      user_manager::UserManager::Get()->FindUser(username_);
   if (!user || !user->is_profile_created())
     return;
-  Profile* profile = UserManager::Get()->GetProfileByUser(user);
+  Profile* profile = ProfileHelper::Get()->GetProfileByUserUnsafe(user);
   if (!profile)
     return;
   OwnerSettingsService* service = GetForProfile(profile);

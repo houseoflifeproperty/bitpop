@@ -25,11 +25,10 @@
 
 #include "core/dom/CharacterData.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class RenderText;
-class ExecutionContext;
 
 class Text : public CharacterData {
 public:
@@ -37,6 +36,8 @@ public:
 
     static PassRefPtrWillBeRawPtr<Text> create(Document&, const String&);
     static PassRefPtrWillBeRawPtr<Text> createEditingText(Document&, const String&);
+
+    RenderText* renderer() const;
 
     // mergeNextSiblingNodesIfPossible() merges next sibling nodes if possible
     // then returns a node not merged.
@@ -69,6 +70,8 @@ private:
     virtual String nodeName() const OVERRIDE;
     virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) OVERRIDE FINAL;
 
+    bool isTextNode() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+
     bool needsWhitespaceRenderer();
 
     virtual PassRefPtrWillBeRawPtr<Text> cloneWithData(const String&);
@@ -80,6 +83,6 @@ private:
 
 DEFINE_NODE_TYPE_CASTS(Text, isTextNode());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Text_h

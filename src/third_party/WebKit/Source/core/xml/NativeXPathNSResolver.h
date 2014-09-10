@@ -29,7 +29,7 @@
 #include "core/xml/XPathNSResolver.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Node;
 
@@ -39,7 +39,6 @@ public:
     {
         return adoptRefWillBeNoop(new NativeXPathNSResolver(node));
     }
-    virtual ~NativeXPathNSResolver();
 
     virtual AtomicString lookupNamespaceURI(const String& prefix) OVERRIDE;
 
@@ -51,6 +50,6 @@ private:
     RefPtrWillBeMember<Node> m_node;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NativeXPathNSResolver_h

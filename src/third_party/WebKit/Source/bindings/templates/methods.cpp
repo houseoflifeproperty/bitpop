@@ -10,7 +10,7 @@ static void {{method.name}}{{method.overload_index}}Method{{world_suffix}}(const
     {# Overloaded methods have length checked during overload resolution #}
     {% if method.number_of_required_arguments and not method.overload_index %}
     if (UNLIKELY(info.Length() < {{method.number_of_required_arguments}})) {
-        {{throw_minimum_arity_type_error(method, method.number_of_required_arguments)}};
+        {{throw_minimum_arity_type_error(method, method.number_of_required_arguments) | indent(8)}}
         return;
     }
     {% endif %}
@@ -53,23 +53,8 @@ static void {{method.name}}{{method.overload_index}}Method{{world_suffix}}(const
     {% else %}
     {{cpp_method_call(method, method.v8_set_return_value, method.cpp_value) | indent}}
     {% endif %}
-    {# Post-call #}
-    {% if method.has_event_listener_argument %}
-    {{hidden_dependency_action(method.name) | indent}}
-    {% endif %}
 }
 {% endfilter %}
-{% endmacro %}
-
-
-{######################################}
-{% macro hidden_dependency_action(method_name) %}
-if (listener && !impl->toNode())
-    {% if method_name == 'addEventListener' %}
-    addHiddenValueToArray(info.Holder(), info[1], {{v8_class}}::eventListenerCacheIndex, info.GetIsolate());
-    {% else %}{# method_name == 'removeEventListener' #}
-    removeHiddenValueFromArray(info.Holder(), info[1], {{v8_class}}::eventListenerCacheIndex, info.GetIsolate());
-    {% endif %}
 {% endmacro %}
 
 
@@ -84,7 +69,15 @@ if (listener && !impl->toNode())
     V8RethrowTryCatchScope rethrow(block);
     {% endif %}
     {% for argument in method.arguments %}
+    {% if argument.default_value %}
+    if (!info[{{argument.index}}]->IsUndefined()) {
+        {{generate_argument(method, argument, world_suffix) | indent(8)}}
+    } else {
+        {{argument.name}} = {{argument.default_value}};
+    }
+    {% else %}
     {{generate_argument(method, argument, world_suffix) | indent}}
+    {% endif %}
     {% endfor %}
 }
 {% endmacro %}
@@ -128,9 +121,11 @@ if (UNLIKELY(info.Length() <= {{argument.index}})) {
     return;
 }
 {% endif %}
-{% if argument.has_type_checking_interface %}
+{% if argument.has_type_checking_interface and not argument.is_variadic_wrapper_type %}
 {# Type checking for wrapper interface types (if interface not implemented,
-   throw a TypeError), per http://www.w3.org/TR/WebIDL/#es-interface #}
+   throw a TypeError), per http://www.w3.org/TR/WebIDL/#es-interface
+   Note: for variadic arguments, the type checking is done for each matched
+   argument instead; see argument.is_variadic_wrapper_type code-path below. #}
 if (info.Length() > {{argument.index}} && {% if argument.is_nullable %}!isUndefinedOrNull(info[{{argument.index}}]) && {% endif %}!V8{{argument.idl_type}}::hasInstance(info[{{argument.index}}], info.GetIsolate())) {
     {{throw_type_error(method, '"parameter %s is not of type \'%s\'."' %
                                (argument.index + 1, argument.idl_type)) | indent}}
@@ -141,9 +136,9 @@ if (info.Length() > {{argument.index}} && {% if argument.is_nullable %}!isUndefi
 {# FIXME: remove EventListener special case #}
 {% if argument.idl_type == 'EventListener' %}
 {% if method.name == 'removeEventListener' %}
-{{argument.name}} = V8EventListenerList::getEventListener(ScriptState::current(info.GetIsolate()), info[1], false, ListenerFindOnly);
+{{argument.name}} = V8EventListenerList::getEventListener(ScriptState::current(info.GetIsolate()), info[{{argument.index}}], false, ListenerFindOnly);
 {% else %}{# method.name == 'addEventListener' #}
-{{argument.name}} = V8EventListenerList::getEventListener(ScriptState::current(info.GetIsolate()), info[1], false, ListenerFindOrCreate);
+{{argument.name}} = V8EventListenerList::getEventListener(ScriptState::current(info.GetIsolate()), info[{{argument.index}}], false, ListenerFindOrCreate);
 {% endif %}{# method.name #}
 {% else %}{# argument.idl_type == 'EventListener' #}
 {# Callback functions must be functions:
@@ -171,7 +166,11 @@ if (info.Length() <= {{argument.index}} || !{% if argument.is_nullable %}(info[{
 {% elif argument.is_clamp %}{# argument.is_callback_interface #}
 {# NaN is treated as 0: http://www.w3.org/TR/WebIDL/#es-type-mapping #}
 double {{argument.name}}NativeValue;
+{% if method.idl_type == 'Promise' %}
+TONATIVE_VOID_PROMISE_INTERNAL({{argument.name}}NativeValue, info[{{argument.index}}]->NumberValue(), info);
+{% else %}
 TONATIVE_VOID_INTERNAL({{argument.name}}NativeValue, info[{{argument.index}}]->NumberValue());
+{% endif %}
 if (!std::isnan({{argument.name}}NativeValue))
     {# IDL type is used for clamping, for the right bounds, since different
        IDL integer types have same internal C++ type (int or unsigned) #}
@@ -232,21 +231,32 @@ if (!{{argument.name}}.isUndefinedOrNull() && !{{argument.name}}.isObject()) {
 {% macro cpp_method_call(method, v8_set_return_value, cpp_value) %}
 {# Local variables #}
 {% if method.is_call_with_script_state %}
+{# [CallWith=ScriptState] #}
 ScriptState* scriptState = ScriptState::current(info.GetIsolate());
 {% endif %}
 {% if method.is_call_with_execution_context %}
+{# [ConstructorCallWith=ExecutionContext] #}
+{# [CallWith=ExecutionContext] #}
 ExecutionContext* executionContext = currentExecutionContext(info.GetIsolate());
 {% endif %}
 {% if method.is_call_with_script_arguments %}
+{# [CallWith=ScriptArguments] #}
 RefPtrWillBeRawPtr<ScriptArguments> scriptArguments(createScriptArguments(scriptState, info, {{method.number_of_arguments}}));
+{% endif %}
+{% if method.is_call_with_document %}
+{# [ConstructorCallWith=Document] #}
+Document& document = *toDocument(currentExecutionContext(info.GetIsolate()));
 {% endif %}
 {# Call #}
 {% if method.idl_type == 'void' %}
 {{cpp_value}};
+{% elif method.is_implemented_in_private_script %}
+{{method.cpp_type}} result{{method.cpp_type_initializer}};
+if (!{{method.cpp_value}})
+    return;
 {% elif method.is_constructor %}
 {{method.cpp_type}} impl = {{cpp_value}};
-{% elif method.is_call_with_script_state or method.is_raises_exception %}
-{# FIXME: consider always using a local variable #}
+{% elif method.use_local_result and not method.union_arguments %}
 {{method.cpp_type}} result = {{cpp_value}};
 {% endif %}
 {# Post-call #}
@@ -258,32 +268,55 @@ if (exceptionState.hadException()) {
 {% endif %}
 {# Set return value #}
 {% if method.is_constructor %}
-{{generate_constructor_wrapper(method)}}{% elif method.union_arguments %}
+{{generate_constructor_wrapper(method)}}
+{%- elif method.union_arguments %}
 {{union_type_method_call_and_set_return_value(method)}}
-{% elif v8_set_return_value %}{{v8_set_return_value}};{% endif %}{# None for void #}
+{%- elif v8_set_return_value %}
+{% if method.is_explicit_nullable %}
+if (result.isNull())
+    v8SetReturnValueNull(info);
+else
+    {{v8_set_return_value}};
+{% else %}
+{{v8_set_return_value}};
+{% endif %}
+{%- endif %}{# None for void #}
+{# Post-set #}
+{% if interface_name == 'EventTarget' and method.name in ('addEventListener',
+                                                          'removeEventListener') %}
+{% set hidden_dependency_action = 'addHiddenValueToArray'
+       if method.name == 'addEventListener' else 'removeHiddenValueFromArray' %}
+{# Length check needed to skip action on legacy calls without enough arguments.
+   http://crbug.com/353484 #}
+if (info.Length() >= 2 && listener && !impl->toNode())
+    {{hidden_dependency_action}}(info.Holder(), info[1], {{v8_class}}::eventListenerCacheIndex, info.GetIsolate());
+{% endif %}
 {% endmacro %}
 
 
 {######################################}
 {% macro union_type_method_call_and_set_return_value(method) %}
-{% for cpp_type in method.cpp_type %}
-bool result{{loop.index0}}Enabled = false;
-{{cpp_type}} result{{loop.index0}};
+{% for argument in method.union_arguments %}
+{{argument.cpp_type}} {{argument.cpp_value}};
 {% endfor %}
 {{method.cpp_value}};
 {% if method.is_null_expression %}{# used by getters #}
 if ({{method.is_null_expression}})
     return;
 {% endif %}
-{% for v8_set_return_value in method.v8_set_return_value %}
-if (result{{loop.index0}}Enabled) {
-    {{v8_set_return_value}};
+{% for argument in method.union_arguments %}
+if ({{argument.null_check_value}}) {
+    {{argument.v8_set_return_value}};
     return;
 }
 {% endfor %}
 {# Fall back to null if none of the union members results are returned #}
+{% if method.is_null_expression %}
+ASSERT_NOT_REACHED();
+{% else %}
 v8SetReturnValueNull(info);
-{%- endmacro %}
+{% endif %}
+{% endmacro %}
 
 
 {######################################}
@@ -291,56 +324,70 @@ v8SetReturnValueNull(info);
 {% if method.has_exception_state %}
 exceptionState.throwTypeError({{error_message}});
 {{throw_from_exception_state(method)}};
-{% elif method.is_constructor %}
-throwTypeError(ExceptionMessages::failedToConstruct("{{interface_name}}", {{error_message}}), info.GetIsolate());
-{% else %}{# method.has_exception_state #}
-throwTypeError(ExceptionMessages::failedToExecute("{{method.name}}", "{{interface_name}}", {{error_message}}), info.GetIsolate());
+{% elif method.idl_type == 'Promise' %}
+v8SetReturnValue(info, ScriptPromise::rejectRaw(info.GetIsolate(), V8ThrowException::createTypeError({{type_error_message(method, error_message)}}, info.GetIsolate())));
+{% else %}
+V8ThrowException::throwTypeError({{type_error_message(method, error_message)}}, info.GetIsolate());
 {% endif %}{# method.has_exception_state #}
 {% endmacro %}
 
 
 {######################################}
-{# FIXME: return a rejected Promise if method.idl_type == 'Promise' #}
-{% macro throw_from_exception_state(method) %}
-exceptionState.throwIfNeeded()
+{% macro type_error_message(method, error_message) %}
+{% if method.is_constructor %}
+ExceptionMessages::failedToConstruct("{{interface_name}}", {{error_message}})
+{%- else %}
+ExceptionMessages::failedToExecute("{{method.name}}", "{{interface_name}}", {{error_message}})
+{%- endif %}
 {%- endmacro %}
 
 
 {######################################}
-{% macro throw_arity_type_error(method, valid_arities) %}
-{% if method.has_exception_state %}
-throwArityTypeError(exceptionState, {{valid_arities}}, info.Length())
-{%- elif method.is_constructor %}
-throwArityTypeErrorForConstructor("{{interface_name}}", {{valid_arities}}, info.Length(), info.GetIsolate())
+{% macro throw_from_exception_state(method) %}
+{% if method.idl_type == 'Promise' %}
+v8SetReturnValue(info, exceptionState.reject(ScriptState::current(info.GetIsolate())).v8Value())
 {%- else %}
-throwArityTypeErrorForMethod("{{method.name}}", "{{interface_name}}", {{valid_arities}}, info.Length(), info.GetIsolate())
+exceptionState.throwIfNeeded()
 {%- endif %}
-{% endmacro %}
+{%- endmacro %}
 
 
 {######################################}
 {% macro throw_minimum_arity_type_error(method, number_of_required_arguments) %}
 {% if method.has_exception_state %}
-throwMinimumArityTypeError(exceptionState, {{number_of_required_arguments}}, info.Length())
-{%- elif method.is_constructor %}
-throwMinimumArityTypeErrorForConstructor("{{interface_name}}", {{number_of_required_arguments}}, info.Length(), info.GetIsolate())
+setMinimumArityTypeError(exceptionState, {{number_of_required_arguments}}, info.Length());
+{{throw_from_exception_state(method)}};
+{%- elif method.idl_type == 'Promise' %}
+v8SetReturnValue(info, ScriptPromise::rejectRaw(info.GetIsolate(), {{create_minimum_arity_type_error_without_exception_state(method, number_of_required_arguments)}}));
 {%- else %}
-throwMinimumArityTypeErrorForMethod("{{method.name}}", "{{interface_name}}", {{number_of_required_arguments}}, info.Length(), info.GetIsolate())
+V8ThrowException::throwException({{create_minimum_arity_type_error_without_exception_state(method, number_of_required_arguments)}}, info.GetIsolate());
 {%- endif %}
-{% endmacro %}
+{%- endmacro %}
+
+
+{######################################}
+{% macro create_minimum_arity_type_error_without_exception_state(method, number_of_required_arguments) %}
+{% if method.is_constructor %}
+createMinimumArityTypeErrorForConstructor("{{interface_name}}", {{number_of_required_arguments}}, info.Length(), info.GetIsolate())
+{%- else %}
+createMinimumArityTypeErrorForMethod("{{method.name}}", "{{interface_name}}", {{number_of_required_arguments}}, info.Length(), info.GetIsolate())
+{%- endif %}
+{%- endmacro %}
 
 
 {##############################################################################}
+{# FIXME: We should return a rejected Promise if an error occurs in this
+function when ALL methods in this overload return Promise. In order to do so,
+we must ensure either ALL or NO methods in this overload return Promise #}
 {% macro overload_resolution_method(overloads, world_suffix) %}
 static void {{overloads.name}}Method{{world_suffix}}(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    v8::Isolate* isolate = info.GetIsolate();
-    ExceptionState exceptionState(ExceptionState::ExecutionContext, "{{overloads.name}}", "{{interface_name}}", info.Holder(), isolate);
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "{{overloads.name}}", "{{interface_name}}", info.Holder(), info.GetIsolate());
     {% if overloads.measure_all_as %}
-    UseCounter::count(callingExecutionContext(isolate), UseCounter::{{overloads.measure_all_as}});
+    UseCounter::count(callingExecutionContext(info.GetIsolate()), UseCounter::{{overloads.measure_all_as}});
     {% endif %}
     {% if overloads.deprecate_all_as %}
-    UseCounter::countDeprecation(callingExecutionContext(isolate), UseCounter::{{overloads.deprecate_all_as}});
+    UseCounter::countDeprecation(callingExecutionContext(info.GetIsolate()), UseCounter::{{overloads.deprecate_all_as}});
     {% endif %}
     {# First resolve by length #}
     {# 2. Initialize argcount to be min(maxarg, n). #}
@@ -355,10 +402,10 @@ static void {{overloads.name}}Method{{world_suffix}}(const v8::FunctionCallbackI
                                   method.runtime_enabled_function) %}
         if ({{test}}) {
             {% if method.measure_as and not overloads.measure_all_as %}
-            UseCounter::count(callingExecutionContext(isolate), UseCounter::{{method.measure_as}});
+            UseCounter::count(callingExecutionContext(info.GetIsolate()), UseCounter::{{method.measure_as}});
             {% endif %}
             {% if method.deprecate_as and not overloads.deprecate_all_as %}
-            UseCounter::countDeprecation(callingExecutionContext(isolate), UseCounter::{{method.deprecate_as}});
+            UseCounter::countDeprecation(callingExecutionContext(info.GetIsolate()), UseCounter::{{method.deprecate_as}});
             {% endif %}
             {{method.name}}{{method.overload_index}}Method{{world_suffix}}(info);
             return;
@@ -372,7 +419,8 @@ static void {{overloads.name}}Method{{world_suffix}}(const v8::FunctionCallbackI
         {# Report full list of valid arities if gaps and above minimum #}
         {% if overloads.valid_arities %}
         if (info.Length() >= {{overloads.minarg}}) {
-            throwArityTypeError(exceptionState, "{{overloads.valid_arities}}", info.Length());
+            setArityTypeError(exceptionState, "{{overloads.valid_arities}}", info.Length());
+            exceptionState.throwIfNeeded();
             return;
         }
         {% endif %}
@@ -393,7 +441,7 @@ static void {{overloads.name}}Method{{world_suffix}}(const v8::FunctionCallbackI
 {% filter conditional(method.conditional_string) %}
 static void {{method.name}}MethodCallback{{world_suffix}}(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    TRACE_EVENT_SET_SAMPLING_STATE("Blink", "DOMMethod");
+    TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMMethod");
     {% if not method.overloads %}{# Overloaded methods are measured in overload_resolution_method() #}
     {% if method.measure_as %}
     UseCounter::count(callingExecutionContext(info.GetIsolate()), UseCounter::{{method.measure_as}});
@@ -410,8 +458,6 @@ static void {{method.name}}MethodCallback{{world_suffix}}(const v8::FunctionCall
     {% else %}
     if (contextData && contextData->activityLogger()) {
     {% endif %}
-        {# FIXME: replace toVectorOfArguments with toNativeArguments(info, 0)
-           and delete toVectorOfArguments #}
         Vector<v8::Handle<v8::Value> > loggerArgs = toNativeArguments<v8::Handle<v8::Value> >(info, 0);
         contextData->activityLogger()->logMethod("{{interface_name}}.{{method.name}}", info.Length(), loggerArgs.data());
     }
@@ -421,7 +467,7 @@ static void {{method.name}}MethodCallback{{world_suffix}}(const v8::FunctionCall
     {% else %}
     {{cpp_class}}V8Internal::{{method.name}}Method{{world_suffix}}(info);
     {% endif %}
-    TRACE_EVENT_SET_SAMPLING_STATE("V8", "V8Execution");
+    TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
 {% endfilter %}
 {% endmacro %}
@@ -433,14 +479,13 @@ static void {{method.name}}OriginSafeMethodGetter{{world_suffix}}(const v8::Prop
 {
     {% set signature = 'v8::Local<v8::Signature>()'
                        if method.is_do_not_check_signature else
-                       'v8::Signature::New(isolate, %s::domTemplate(isolate))' % v8_class %}
-    v8::Isolate* isolate = info.GetIsolate();
+                       'v8::Signature::New(info.GetIsolate(), %s::domTemplate(info.GetIsolate()))' % v8_class %}
     static int domTemplateKey; // This address is used for a key to look up the dom template.
-    V8PerIsolateData* data = V8PerIsolateData::from(isolate);
+    V8PerIsolateData* data = V8PerIsolateData::from(info.GetIsolate());
     {# FIXME: 1 case of [DoNotCheckSignature] in Window.idl may differ #}
     v8::Handle<v8::FunctionTemplate> privateTemplate = data->domTemplate(&domTemplateKey, {{cpp_class}}V8Internal::{{method.name}}MethodCallback{{world_suffix}}, v8Undefined(), {{signature}}, {{method.length}});
 
-    v8::Handle<v8::Object> holder = {{v8_class}}::findInstanceInPrototypeChain(info.This(), isolate);
+    v8::Handle<v8::Object> holder = {{v8_class}}::findInstanceInPrototypeChain(info.This(), info.GetIsolate());
     if (holder.IsEmpty()) {
         // This is only reachable via |object.__proto__.func|, in which case it
         // has already passed the same origin security check
@@ -448,7 +493,7 @@ static void {{method.name}}OriginSafeMethodGetter{{world_suffix}}(const v8::Prop
         return;
     }
     {{cpp_class}}* impl = {{v8_class}}::toNative(holder);
-    if (!BindingSecurity::shouldAllowAccessToFrame(isolate, impl->frame(), DoNotReportSecurityError)) {
+    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), impl->frame(), DoNotReportSecurityError)) {
         static int sharedTemplateKey; // This address is used for a key to look up the dom template.
         v8::Handle<v8::FunctionTemplate> sharedTemplate = data->domTemplate(&sharedTemplateKey, {{cpp_class}}V8Internal::{{method.name}}MethodCallback{{world_suffix}}, v8Undefined(), {{signature}}, {{method.length}});
         v8SetReturnValue(info, sharedTemplate->GetFunction());
@@ -456,7 +501,7 @@ static void {{method.name}}OriginSafeMethodGetter{{world_suffix}}(const v8::Prop
     }
 
     {# The findInstanceInPrototypeChain() call above only returns a non-empty handle if info.This() is an Object. #}
-    v8::Local<v8::Value> hiddenValue = v8::Handle<v8::Object>::Cast(info.This())->GetHiddenValue(v8AtomicString(isolate, "{{method.name}}"));
+    v8::Local<v8::Value> hiddenValue = v8::Handle<v8::Object>::Cast(info.This())->GetHiddenValue(v8AtomicString(info.GetIsolate(), "{{method.name}}"));
     if (!hiddenValue.IsEmpty()) {
         v8SetReturnValue(info, hiddenValue);
         return;
@@ -467,45 +512,103 @@ static void {{method.name}}OriginSafeMethodGetter{{world_suffix}}(const v8::Prop
 
 static void {{method.name}}OriginSafeMethodGetterCallback{{world_suffix}}(v8::Local<v8::String>, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
-    TRACE_EVENT_SET_SAMPLING_STATE("Blink", "DOMGetter");
+    TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMGetter");
     {{cpp_class}}V8Internal::{{method.name}}OriginSafeMethodGetter{{world_suffix}}(info);
-    TRACE_EVENT_SET_SAMPLING_STATE("V8", "V8Execution");
+    TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
+}
+{% endmacro %}
+
+
+{##############################################################################}
+{% macro method_implemented_in_private_script(method) %}
+bool {{v8_class}}::PrivateScript::{{method.name}}Method({{method.argument_declarations_for_private_script | join(', ')}})
+{
+    if (!frame)
+        return false;
+    v8::HandleScope handleScope(toIsolate(frame));
+    ScriptForbiddenScope::AllowUserAgentScript script;
+    v8::Handle<v8::Context> context = toV8Context(frame, DOMWrapperWorld::privateScriptIsolatedWorld());
+    if (context.IsEmpty())
+        return false;
+    ScriptState* scriptState = ScriptState::from(context);
+    if (!scriptState->executionContext())
+        return false;
+
+    ScriptState::Scope scope(scriptState);
+    v8::Handle<v8::Value> holder = toV8(holderImpl, scriptState->context()->Global(), scriptState->isolate());
+
+    {% for argument in method.arguments %}
+    v8::Handle<v8::Value> {{argument.handle}} = {{argument.private_script_cpp_value_to_v8_value}};
+    {% endfor %}
+    {% if method.arguments %}
+    v8::Handle<v8::Value> argv[] = { {{method.arguments | join(', ', 'handle')}} };
+    {% else %}
+    {# Empty array initializers are illegal, and don\'t compile in MSVC. #}
+    v8::Handle<v8::Value> *argv = 0;
+    {% endif %}
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "{{method.name}}", "{{cpp_class}}", scriptState->context()->Global(), scriptState->isolate());
+    v8::TryCatch block;
+    {% if method.idl_type == 'void' %}
+    PrivateScriptRunner::runDOMMethod(scriptState, "{{cpp_class}}", "{{method.name}}", holder, {{method.arguments | length}}, argv);
+    if (block.HasCaught()) {
+        if (!PrivateScriptRunner::rethrowExceptionInPrivateScript(scriptState->isolate(), exceptionState, block)) {
+            // FIXME: We should support more exceptions.
+            RELEASE_ASSERT_NOT_REACHED();
+        }
+        block.ReThrow();
+        return false;
+    }
+    {% else %}
+    v8::Handle<v8::Value> v8Value = PrivateScriptRunner::runDOMMethod(scriptState, "{{cpp_class}}", "{{method.name}}", holder, {{method.arguments | length}}, argv);
+    if (block.HasCaught()) {
+        if (!PrivateScriptRunner::rethrowExceptionInPrivateScript(scriptState->isolate(), exceptionState, block)) {
+            // FIXME: We should support more exceptions.
+            RELEASE_ASSERT_NOT_REACHED();
+        }
+        block.ReThrow();
+        return false;
+    }
+    {{method.private_script_v8_value_to_local_cpp_value}};
+    RELEASE_ASSERT(!exceptionState.hadException());
+    *result = cppValue;
+    {% endif %}
+    return true;
 }
 {% endmacro %}
 
 
 {##############################################################################}
 {% macro generate_constructor(constructor) %}
-static void constructor{{constructor.overload_index}}(const v8::FunctionCallbackInfo<v8::Value>& info)
+{% set name = '%sConstructorCallback' % v8_class
+              if constructor.is_named_constructor else
+              'constructor%s' % (constructor.overload_index or '') %}
+static void {{name}}(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    v8::Isolate* isolate = info.GetIsolate();
+    {% if constructor.is_named_constructor %}
+    if (!info.IsConstructCall()) {
+        V8ThrowException::throwTypeError(ExceptionMessages::constructorNotCallableAsFunction("{{constructor.name}}"), info.GetIsolate());
+        return;
+    }
+
+    if (ConstructorMode::current(info.GetIsolate()) == ConstructorMode::WrapExistingObject) {
+        v8SetReturnValue(info, info.Holder());
+        return;
+    }
+    {% endif %}
     {% if constructor.has_exception_state %}
-    ExceptionState exceptionState(ExceptionState::ConstructionContext, "{{interface_name}}", info.Holder(), isolate);
+    ExceptionState exceptionState(ExceptionState::ConstructionContext, "{{interface_name}}", info.Holder(), info.GetIsolate());
     {% endif %}
     {# Overloaded constructors have length checked during overload resolution #}
-    {% if interface_length and not constructor.overload_index %}
-    {# FIXME: remove UNLIKELY: constructors are expensive, so no difference. #}
-    if (UNLIKELY(info.Length() < {{interface_length}})) {
-        {{throw_minimum_arity_type_error(constructor, interface_length)}};
+    {% if constructor.number_of_required_arguments and not constructor.overload_index %}
+    if (UNLIKELY(info.Length() < {{constructor.number_of_required_arguments}})) {
+        {{throw_minimum_arity_type_error(constructor, constructor.number_of_required_arguments) | indent(8)}}
         return;
     }
     {% endif %}
     {% if constructor.arguments %}
     {{generate_arguments(constructor) | indent}}
     {% endif %}
-    {% if is_constructor_call_with_execution_context %}
-    ExecutionContext* executionContext = currentExecutionContext(isolate);
-    {% endif %}
-    {% if is_constructor_call_with_document %}
-    Document& document = *toDocument(currentExecutionContext(isolate));
-    {% endif %}
-    {{constructor.cpp_type}} impl = {{constructor.cpp_value}};
-    {% if is_constructor_raises_exception %}
-    if (exceptionState.throwIfNeeded())
-        return;
-    {% endif %}
-
-    {{generate_constructor_wrapper(constructor) | indent}}
+    {{cpp_method_call(constructor, constructor.v8_set_return_value, constructor.cpp_value) | indent}}
 }
 {% endmacro %}
 
@@ -513,59 +616,13 @@ static void constructor{{constructor.overload_index}}(const v8::FunctionCallback
 {##############################################################################}
 {% macro generate_constructor_wrapper(constructor) %}
 {% if has_custom_wrap %}
-v8::Handle<v8::Object> wrapper = wrap(impl.get(), info.Holder(), isolate);
+v8::Handle<v8::Object> wrapper = wrap(impl.get(), info.Holder(), info.GetIsolate());
 {% else %}
 {% set constructor_class = v8_class + ('Constructor'
                                        if constructor.is_named_constructor else
                                        '') %}
 v8::Handle<v8::Object> wrapper = info.Holder();
-V8DOMWrapper::associateObjectWithWrapper<{{v8_class}}>(impl.release(), &{{constructor_class}}::wrapperTypeInfo, wrapper, isolate, {{wrapper_configuration}});
+V8DOMWrapper::associateObjectWithWrapper<{{v8_class}}>(impl.release(), &{{constructor_class}}::wrapperTypeInfo, wrapper, info.GetIsolate(), {{wrapper_configuration}});
 {% endif %}
 v8SetReturnValue(info, wrapper);
-{% endmacro %}
-
-
-{##############################################################################}
-{% macro named_constructor_callback(constructor) %}
-static void {{v8_class}}ConstructorCallback(const v8::FunctionCallbackInfo<v8::Value>& info)
-{
-    v8::Isolate* isolate = info.GetIsolate();
-    if (!info.IsConstructCall()) {
-        throwTypeError(ExceptionMessages::constructorNotCallableAsFunction("{{constructor.name}}"), isolate);
-        return;
-    }
-
-    if (ConstructorMode::current(isolate) == ConstructorMode::WrapExistingObject) {
-        v8SetReturnValue(info, info.Holder());
-        return;
-    }
-
-    Document* documentPtr = currentDOMWindow(isolate)->document();
-    ASSERT(documentPtr);
-    Document& document = *documentPtr;
-
-    // Make sure the document is added to the DOM Node map. Otherwise, the {{cpp_class}} instance
-    // may end up being the only node in the map and get garbage-collected prematurely.
-    toV8(documentPtr, info.Holder(), isolate);
-
-    {% if constructor.has_exception_state %}
-    ExceptionState exceptionState(ExceptionState::ConstructionContext, "{{interface_name}}", info.Holder(), isolate);
-    {% endif %}
-    {% if constructor.number_of_required_arguments %}
-    if (UNLIKELY(info.Length() < {{constructor.number_of_required_arguments}})) {
-        {{throw_minimum_arity_type_error(constructor, constructor.number_of_required_arguments)}};
-        return;
-    }
-    {% endif %}
-    {% if constructor.arguments %}
-    {{generate_arguments(constructor) | indent}}
-    {% endif %}
-    {{constructor.cpp_type}} impl = {{constructor.cpp_value}};
-    {% if is_constructor_raises_exception %}
-    if (exceptionState.throwIfNeeded())
-        return;
-    {% endif %}
-
-    {{generate_constructor_wrapper(constructor) | indent}}
-}
 {% endmacro %}

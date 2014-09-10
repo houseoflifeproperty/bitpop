@@ -6,6 +6,7 @@
 
 cr.define('options', function() {
   /** @const */ var SettingsBannerBase = options.SettingsBannerBase;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
 
   /**
    * AutomaticSettingsResetBanner class
@@ -38,6 +39,12 @@ cr.define('options', function() {
       $('automatic-settings-reset-learn-more').onclick = function(event) {
         chrome.send('metricsHandler:recordAction',
             ['AutomaticSettingsReset_WebUIBanner_LearnMoreClicked']);
+      };
+      $('automatic-settings-reset-banner-activate-reset').onclick =
+          function(event) {
+        chrome.send('metricsHandler:recordAction',
+            ['AutomaticSettingsReset_WebUIBanner_ResetClicked']);
+        PageManager.showPageByName('resetProfileSettings');
       };
     },
   };

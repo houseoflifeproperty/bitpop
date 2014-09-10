@@ -18,7 +18,7 @@
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_cache.h"
-#include "chrome/browser/ui/options/options_util.h"
+#include "chrome/browser/metrics/metrics_reporting_state.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
@@ -47,6 +47,7 @@ const char* kKnownSettings[] = {
   kAccountsPrefEphemeralUsersEnabled,
   kAccountsPrefShowUserNamesOnSignIn,
   kAccountsPrefSupervisedUsersEnabled,
+  kAccountsPrefTransferSAMLCookies,
   kAccountsPrefUsers,
   kAllowRedeemChromeOsRegistrationOffers,
   kAllowedConnectionTypesForUpdate,
@@ -397,6 +398,7 @@ void DeviceSettingsProvider::SetInPolicy() {
   } else {
     // The remaining settings don't support Set(), since they are not
     // intended to be customizable by the user:
+    //   kAccountsPrefTransferSAMLCookies
     //   kAppPack
     //   kDeviceAttestationEnabled
     //   kDeviceOwner
@@ -448,6 +450,7 @@ void DeviceSettingsProvider::DecodeLoginPolicies(
   //   kAccountsPrefEphemeralUsersEnabled has a default value of false.
   //   kAccountsPrefSupervisedUsersEnabled has a default value of false
   //     for enterprise devices and true for consumer devices.
+  //   kAccountsPrefTransferSAMLCookies has a default value of false.
   if (policy.has_allow_new_users() &&
       policy.allow_new_users().has_allow_new_users()) {
     if (policy.allow_new_users().allow_new_users()) {
@@ -573,6 +576,12 @@ void DeviceSettingsProvider::DecodeLoginPolicies(
       list->Append(new base::StringValue(*it));
     }
     new_values_cache->SetValue(kStartUpFlags, list);
+  }
+
+  if (policy.has_saml_settings()) {
+    new_values_cache->SetBoolean(
+        kAccountsPrefTransferSAMLCookies,
+        policy.saml_settings().transfer_saml_cookies());
   }
 }
 
@@ -828,8 +837,7 @@ void DeviceSettingsProvider::ApplyMetricsSetting(bool use_file,
   if (use_file) {
     new_value = HasOldMetricsFile();
     // Make sure the values will get eventually written to the policy file.
-    migration_values_.SetValue(kStatsReportingPref,
-                               base::Value::CreateBooleanValue(new_value));
+    migration_values_.SetBoolean(kStatsReportingPref, new_value);
     AttemptMigration();
     VLOG(1) << "No metrics policy set will revert to checking "
             << "consent file which is "
@@ -840,7 +848,7 @@ void DeviceSettingsProvider::ApplyMetricsSetting(bool use_file,
           << "(use file : " << use_file << ")";
   // TODO(pastarmovj): Remove this once we don't need to regenerate the
   // consent file for the GUID anymore.
-  OptionsUtil::ResolveMetricsReportingEnabled(new_value);
+  ResolveMetricsReportingEnabled(new_value);
 }
 
 void DeviceSettingsProvider::ApplySideEffects(

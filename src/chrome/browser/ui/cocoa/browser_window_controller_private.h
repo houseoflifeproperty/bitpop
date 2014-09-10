@@ -91,6 +91,9 @@
 // sends a message to the renderer to resize.
 - (void)layoutTabContentArea:(NSRect)frame;
 
+// Updates whether the bottom two corners are rounded.
+- (void)updateRoundedBottomCorners;
+
 // Sets the toolbar's height to a value appropriate for the given compression.
 // Also adjusts the bookmark bar's height by the opposite amount in order to
 // keep the total height of the two views constant.
@@ -103,6 +106,11 @@
 - (void)moveViewsForImmersiveFullscreen:(BOOL)fullscreen
                           regularWindow:(NSWindow*)regularWindow
                        fullscreenWindow:(NSWindow*)fullscreenWindow;
+
+// Called when a permission bubble closes, and informs the presentation
+// controller that the dropdown can be hidden.  (The dropdown should never be
+// hidden while a permissions bubble is visible.)
+- (void)permissionBubbleWindowWillClose:(NSNotification*)notification;
 
 // Sets presentation mode, creating the PresentationModeController if needed and
 // forcing a relayout.  If |forceDropdown| is YES, this method will always
@@ -132,6 +140,10 @@
 // timers/animation.
 - (void)enableBarVisibilityUpdates;
 - (void)disableBarVisibilityUpdates;
+
+// If there are no visibility locks and bar visibity updates are enabled, hides
+// the bar with |animation| and |delay|.  Otherwise, does nothing.
+- (void)hideOverlayIfPossibleWithAnimation:(BOOL)animation delay:(BOOL)delay;
 
 // The opacity for the toolbar divider; 0 means that it shouldn't be shown.
 - (CGFloat)toolbarDividerOpacity;

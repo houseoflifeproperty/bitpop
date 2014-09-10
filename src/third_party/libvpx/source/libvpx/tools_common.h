@@ -89,7 +89,8 @@ struct VpxInputContext {
   enum VideoFileType file_type;
   uint32_t width;
   uint32_t height;
-  int use_i420;
+  vpx_img_fmt_t fmt;
+  vpx_bit_depth_t bit_depth;
   int only_i420;
   uint32_t fourcc;
   struct VpxRational framerate;
@@ -119,7 +120,7 @@ int read_yuv_frame(struct VpxInputContext *input_ctx, vpx_image_t *yuv_frame);
 typedef struct VpxInterface {
   const char *const name;
   const uint32_t fourcc;
-  vpx_codec_iface_t *(*const interface)();
+  vpx_codec_iface_t *(*const codec_interface)();
 } VpxInterface;
 
 int get_vpx_encoder_count();

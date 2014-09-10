@@ -5,10 +5,10 @@
 #ifndef VideoTrack_h
 #define VideoTrack_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/track/TrackBase.h"
 
-namespace WebCore {
+namespace blink {
 
 class VideoTrack FINAL : public TrackBase, public ScriptWrappable {
 public:
@@ -42,6 +42,8 @@ private:
 
     bool m_selected;
 };
+
+DEFINE_TRACK_TYPE_CASTS(VideoTrack, TrackBase::VideoTrack);
 
 }
 

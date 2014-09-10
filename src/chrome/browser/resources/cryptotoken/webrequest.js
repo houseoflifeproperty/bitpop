@@ -26,178 +26,13 @@ function getOriginFromUrl(url) {
 }
 
 /**
- * Parses the text as JSON and returns it as an array of strings.
- * @param {string} text Input JSON
- * @return {Array.<string>} Array of origins
+ * Returns whether the array of SignChallenges appears to be valid.
+ * @param {Array.<SignChallenge>} signChallenges The array of sign challenges.
+ * @return {boolean} Whether the array appears valid.
  */
-function getOriginsFromJson(text) {
-  try {
-    var urls = JSON.parse(text);
-    var origins = [];
-    for (var i = 0, url; url = urls[i]; i++) {
-      var origin = getOriginFromUrl(url);
-      if (origin)
-        origins.push(origin);
-    }
-    return origins;
-  } catch (e) {
-    console.log(UTIL_fmt('could not parse ' + text));
-    return [];
-  }
-}
-
-/**
- * Fetches the app id, and calls a callback with list of allowed origins for it.
- * @param {string} appId the app id to fetch.
- * @param {Function} cb called with a list of allowed origins for the app id.
- */
-function fetchAppId(appId, cb) {
-  var origin = getOriginFromUrl(appId);
-  if (!origin) {
-    cb(404, appId);
-    return;
-  }
-  var xhr = new XMLHttpRequest();
-  var origins = [];
-  xhr.open('GET', appId, true);
-  xhr.onloadend = function() {
-    if (xhr.status != 200) {
-      cb(xhr.status, appId);
-      return;
-    }
-    cb(xhr.status, appId, getOriginsFromJson(xhr.responseText));
-  };
-  xhr.send();
-}
-
-/**
- * Retrieves a set of distinct app ids from the SignData.
- * @param {SignData=} signData Input signature data
- * @return {Array.<string>} array of distinct app ids.
- */
-function getDistinctAppIds(signData) {
-  var appIds = [];
-  if (!signData) {
-    return appIds;
-  }
-  for (var i = 0, request; request = signData[i]; i++) {
-    var appId = request['appId'];
-    if (appId && appIds.indexOf(appId) == -1) {
-      appIds.push(appId);
-    }
-  }
-  return appIds;
-}
-
-/**
- * Reorganizes the requests from the SignData to an array of
- * (appId, [Request]) tuples.
- * @param {SignData} signData Input signature data
- * @return {Array.<[string, Array.<Request>]>} array of
- *     (appId, [Request]) tuples.
- */
-function requestsByAppId(signData) {
-  var requests = {};
-  var appIdOrder = {};
-  var orderToAppId = {};
-  var lastOrder = 0;
-  for (var i = 0, request; request = signData[i]; i++) {
-    var appId = request['appId'];
-    if (appId) {
-      if (!appIdOrder.hasOwnProperty(appId)) {
-        appIdOrder[appId] = lastOrder;
-        orderToAppId[lastOrder] = appId;
-        lastOrder++;
-      }
-      if (requests[appId]) {
-        requests[appId].push(request);
-      } else {
-        requests[appId] = [request];
-      }
-    }
-  }
-  var orderedRequests = [];
-  for (var order = 0; order < lastOrder; order++) {
-    appId = orderToAppId[order];
-    orderedRequests.push([appId, requests[appId]]);
-  }
-  return orderedRequests;
-}
-
-/**
- * Fetches the allowed origins for an appId.
- * @param {string} appId Application id
- * @param {boolean} allowHttp Whether http is a valid scheme for an appId.
- *     (This should be false except on test domains.)
- * @param {function(number, !Array.<string>)} cb Called back with an HTTP
- *     response code and a list of allowed origins for appId.
- */
-function fetchAllowedOriginsForAppId(appId, allowHttp, cb) {
-  var allowedOrigins = [];
-  if (!appId) {
-    cb(200, allowedOrigins);
-    return;
-  }
-  if (appId.indexOf('http://') == 0 && !allowHttp) {
-    console.log(UTIL_fmt('http app ids disallowed, ' + appId + ' requested'));
-    cb(200, allowedOrigins);
-    return;
-  }
-  // TODO: hack for old enrolled gnubbies, don't treat
-  // accounts.google.com/login.corp.google.com specially when cryptauth server
-  // stops reporting them as appId.
-  if (appId == 'https://accounts.google.com') {
-    allowedOrigins = ['https://login.corp.google.com'];
-    cb(200, allowedOrigins);
-    return;
-  }
-  if (appId == 'https://login.corp.google.com') {
-    allowedOrigins = ['https://accounts.google.com'];
-    cb(200, allowedOrigins);
-    return;
-  }
-  // Termination of this function relies in fetchAppId completing.
-  // (Not completing would be a bug in XMLHttpRequest.)
-  // TODO: provide a termination guarantee, e.g. with a timer?
-  fetchAppId(appId, function(rc, fetchedAppId, origins) {
-    if (rc != 200) {
-      console.log(UTIL_fmt('fetching ' + fetchedAppId + ' failed: ' + rc));
-      allowedOrigins = [];
-    } else {
-      allowedOrigins = origins;
-    }
-    cb(rc, allowedOrigins);
-  });
-}
-
-/**
- * Checks whether an appId is valid for a given origin.
- * @param {!string} appId Application id
- * @param {!string} origin Origin
- * @param {!Array.<string>} allowedOrigins the list of allowed origins for each
- *    appId.
- * @return {boolean} whether the appId is allowed for the origin.
- */
-function isValidAppIdForOrigin(appId, origin, allowedOrigins) {
-  if (!appId)
-    return false;
-  if (appId == origin) {
-    // trivially allowed
-    return true;
-  }
-  if (!allowedOrigins)
-    return false;
-  return allowedOrigins.indexOf(origin) >= 0;
-}
-
-/**
- * Returns whether the signData object appears to be valid.
- * @param {Array.<Object>} signData the signData object.
- * @return {boolean} whether the object appears valid.
- */
-function isValidSignData(signData) {
-  for (var i = 0; i < signData.length; i++) {
-    var incomingChallenge = signData[i];
+function isValidSignChallengeArray(signChallenges) {
+  for (var i = 0; i < signChallenges.length; i++) {
+    var incomingChallenge = signChallenges[i];
     if (!incomingChallenge.hasOwnProperty('challenge'))
       return false;
     if (!incomingChallenge.hasOwnProperty('appId')) {
@@ -232,43 +67,153 @@ function logMessage(logMsg, opt_logMsgUrl) {
 }
 
 /**
- * Logs the result of fetching an appId.
- * @param {!string} appId Application Id
- * @param {number} millis elapsed time while fetching the appId.
- * @param {Array.<string>} allowedOrigins the allowed origins retrieved.
- * @param {string=} opt_logMsgUrl the url to post log messages to.
+ * Makes a response to a request.
+ * @param {Object} request The request to make a response to.
+ * @param {string} responseSuffix How to name the response's type.
+ * @param {string=} opt_defaultType The default response type, if none is
+ *     present in the request.
+ * @return {Object} The response object.
  */
-function logFetchAppIdResult(appId, millis, allowedOrigins, opt_logMsgUrl) {
-  var logMsg = 'log=fetchappid&appid=' + appId + '&millis=' + millis +
-      '&numorigins=' + allowedOrigins.length;
-  logMessage(logMsg, opt_logMsgUrl);
+function makeResponseForRequest(request, responseSuffix, opt_defaultType) {
+  var type;
+  if (request && request.type) {
+    type = request.type.replace(/_request$/, responseSuffix);
+  } else {
+    type = opt_defaultType;
+  }
+  var reply = { 'type': type };
+  if (request && request.requestId) {
+    reply.requestId = request.requestId;
+  }
+  return reply;
 }
 
 /**
- * Logs a mismatch between an origin and an appId.
- * @param {string} origin Origin
- * @param {!string} appId Application id
- * @param {string=} opt_logMsgUrl the url to post log messages to
+ * Makes a response to a U2F request with an error code.
+ * @param {Object} request The request to make a response to.
+ * @param {ErrorCodes} code The error code to return.
+ * @param {string=} opt_detail An error detail string.
+ * @param {string=} opt_defaultType The default response type, if none is
+ *     present in the request.
+ * @return {Object} The U2F error.
  */
-function logInvalidOriginForAppId(origin, appId, opt_logMsgUrl) {
-  var logMsg = 'log=originrejected&origin=' + origin + '&appid=' + appId;
-  logMessage(logMsg, opt_logMsgUrl);
+function makeU2fErrorResponse(request, code, opt_detail, opt_defaultType) {
+  var reply = makeResponseForRequest(request, '_response', opt_defaultType);
+  var error = {'errorCode': code};
+  if (opt_detail) {
+    error['errorMessage'] = opt_detail;
+  }
+  reply['responseData'] = error;
+  return reply;
 }
 
 /**
- * Formats response parameters as an object.
- * @param {string} type type of the post message.
- * @param {number} code status code of the operation.
- * @param {Object=} responseData the response data of the operation.
- * @return {Object} formatted response.
+ * Makes a success response to a web request with a responseData object.
+ * @param {Object} request The request to make a response to.
+ * @param {Object} responseData The response data.
+ * @return {Object} The web error.
  */
-function formatWebPageResponse(type, code, responseData) {
-  var responseJsonObject = {};
-  responseJsonObject['type'] = type;
-  responseJsonObject['code'] = code;
-  if (responseData)
-    responseJsonObject['responseData'] = responseData;
-  return responseJsonObject;
+function makeU2fSuccessResponse(request, responseData) {
+  var reply = makeResponseForRequest(request, '_response');
+  reply['responseData'] = responseData;
+  return reply;
+}
+
+/**
+ * Makes a response to a web request with an error code.
+ * @param {Object} request The request to make a response to.
+ * @param {GnubbyCodeTypes} code The error code to return.
+ * @param {string=} opt_defaultType The default response type, if none is
+ *     present in the request.
+ * @return {Object} The web error.
+ */
+function makeWebErrorResponse(request, code, opt_defaultType) {
+  var reply = makeResponseForRequest(request, '_reply', opt_defaultType);
+  reply['code'] = code;
+  return reply;
+}
+
+/**
+ * Makes a success response to a web request with a responseData object.
+ * @param {Object} request The request to make a response to.
+ * @param {Object} responseData The response data.
+ * @return {Object} The web error.
+ */
+function makeWebSuccessResponse(request, responseData) {
+  var reply = makeResponseForRequest(request, '_reply');
+  reply['code'] = GnubbyCodeTypes.OK;
+  reply['responseData'] = responseData;
+  return reply;
+}
+
+/**
+ * Maps an error code from the ErrorCodes namespace to the GnubbyCodeTypes
+ * namespace.
+ * @param {ErrorCodes} errorCode Error in the ErrorCodes namespace.
+ * @param {boolean} forSign Whether the error is for a sign request.
+ * @return {GnubbyCodeTypes} Error code in the GnubbyCodeTypes namespace.
+ */
+function mapErrorCodeToGnubbyCodeType(errorCode, forSign) {
+  var code;
+  switch (errorCode) {
+    case ErrorCodes.BAD_REQUEST:
+      return GnubbyCodeTypes.BAD_REQUEST;
+
+    case ErrorCodes.DEVICE_INELIGIBLE:
+      return forSign ? GnubbyCodeTypes.NONE_PLUGGED_ENROLLED :
+          GnubbyCodeTypes.ALREADY_ENROLLED;
+
+    case ErrorCodes.TIMEOUT:
+      return GnubbyCodeTypes.WAIT_TOUCH;
+  }
+  return GnubbyCodeTypes.UNKNOWN_ERROR;
+}
+
+/**
+ * Maps a helper's error code from the DeviceStatusCodes namespace to the
+ * ErrorCodes namespace.
+ * @param {number} code Error code from DeviceStatusCodes namespace.
+ * @return {ErrorCodes} A ErrorCodes error code.
+ */
+function mapDeviceStatusCodeToErrorCode(code) {
+  var reportedError = ErrorCodes.OTHER_ERROR;
+  switch (code) {
+    case DeviceStatusCodes.WRONG_DATA_STATUS:
+      reportedError = ErrorCodes.DEVICE_INELIGIBLE;
+      break;
+
+    case DeviceStatusCodes.TIMEOUT_STATUS:
+    case DeviceStatusCodes.WAIT_TOUCH_STATUS:
+      reportedError = ErrorCodes.TIMEOUT;
+      break;
+  }
+  return reportedError;
+}
+
+/**
+ * Sends a response, using the given sentinel to ensure at most one response is
+ * sent. Also closes the closeable, if it's given.
+ * @param {boolean} sentResponse Whether a response has already been sent.
+ * @param {?Closeable} closeable A thing to close.
+ * @param {*} response The response to send.
+ * @param {Function} sendResponse A function to send the response.
+ */
+function sendResponseOnce(sentResponse, closeable, response, sendResponse) {
+  if (closeable) {
+    closeable.close();
+  }
+  if (!sentResponse) {
+    sentResponse = true;
+    try {
+      // If the page has gone away or the connection has otherwise gone,
+      // sendResponse fails.
+      sendResponse(response);
+    } catch (exception) {
+      console.warn('sendResponse failed: ' + exception);
+    }
+  } else {
+    console.warn(UTIL_fmt('Tried to reply more than once! Juan, FIX ME'));
+  }
 }
 
 /**
@@ -363,23 +308,53 @@ function makeSignBrowserData(serverChallenge, origin, opt_tlsChannelId) {
 }
 
 /**
- * @param {string} browserData Browser data as JSON
- * @param {string} appId Application Id
- * @param {string} encodedKeyHandle B64 encoded key handle
- * @param {string=} version Protocol version
- * @return {SignHelperChallenge} Challenge object
+ * Encodes the sign data as an array of sign helper challenges.
+ * @param {Array.<SignChallenge>} signChallenges The sign challenges to encode.
+ * @param {function(string, string): string=} opt_challengeHashFunction
+ *     A function that produces, from a key handle and a raw challenge, a hash
+ *     of the raw challenge. If none is provided, a default hash function is
+ *     used.
+ * @return {!Array.<SignHelperChallenge>} The sign challenges, encoded.
  */
-function makeChallenge(browserData, appId, encodedKeyHandle, version) {
-  var appIdHash = B64_encode(sha256HashOfString(appId));
-  var browserDataHash = B64_encode(sha256HashOfString(browserData));
-  var keyHandle = encodedKeyHandle;
+function encodeSignChallenges(signChallenges, opt_challengeHashFunction) {
+  function encodedSha256(keyHandle, challenge) {
+    return B64_encode(sha256HashOfString(challenge));
+  }
+  var challengeHashFn = opt_challengeHashFunction || encodedSha256;
+  var encodedSignChallenges = [];
+  if (signChallenges) {
+    for (var i = 0; i < signChallenges.length; i++) {
+      var challenge = signChallenges[i];
+      var challengeHash =
+          challengeHashFn(challenge['keyHandle'], challenge['challenge']);
+      var encodedChallenge = {
+        'challengeHash': challengeHash,
+        'appIdHash': B64_encode(sha256HashOfString(challenge['appId'])),
+        'keyHandle': challenge['keyHandle'],
+        'version': (challenge['version'] || 'U2F_V1')
+      };
+      encodedSignChallenges.push(encodedChallenge);
+    }
+  }
+  return encodedSignChallenges;
+}
 
-  var challenge = {
-    'challengeHash': browserDataHash,
-    'appIdHash': appIdHash,
-    'keyHandle': keyHandle
+/**
+ * Makes a sign helper request from an array of challenges.
+ * @param {Array.<SignHelperChallenge>} challenges The sign challenges.
+ * @param {number=} opt_timeoutSeconds Timeout value.
+ * @param {string=} opt_logMsgUrl URL to log to.
+ * @return {SignHelperRequest} The sign helper request.
+ */
+function makeSignHelperRequest(challenges, opt_timeoutSeconds, opt_logMsgUrl) {
+  var request = {
+    'type': 'sign_helper_request',
+    'signData': challenges,
+    'timeout': opt_timeoutSeconds || 0,
+    'timeoutSeconds': opt_timeoutSeconds || 0
   };
-  // Version is implicitly U2F_V1 if not specified.
-  challenge['version'] = (version || 'U2F_V1');
-  return challenge;
+  if (opt_logMsgUrl !== undefined) {
+    request.logMsgUrl = opt_logMsgUrl;
+  }
+  return request;
 }

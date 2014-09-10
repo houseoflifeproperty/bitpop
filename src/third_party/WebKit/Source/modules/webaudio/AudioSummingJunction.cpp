@@ -32,20 +32,29 @@
 #include "modules/webaudio/AudioNodeOutput.h"
 #include <algorithm>
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 AudioSummingJunction::AudioSummingJunction(AudioContext* context)
     : m_context(context)
     , m_renderingStateNeedUpdating(false)
 {
+    ASSERT(context);
+#if ENABLE(OILPAN)
+    m_context->registerLiveAudioSummingJunction(*this);
+#endif
 }
 
 AudioSummingJunction::~AudioSummingJunction()
 {
+#if !ENABLE(OILPAN)
     if (m_renderingStateNeedUpdating && m_context.get())
         m_context->removeMarkedSummingJunction(this);
+#endif
+}
+
+void AudioSummingJunction::trace(Visitor* visitor)
+{
+    visitor->trace(m_context);
 }
 
 void AudioSummingJunction::changedOutputs()
@@ -60,7 +69,6 @@ void AudioSummingJunction::changedOutputs()
 void AudioSummingJunction::updateRenderingState()
 {
     ASSERT(context()->isAudioThread() && context()->isGraphOwner());
-
     if (m_renderingStateNeedUpdating && canUpdateState()) {
         // Copy from m_outputs to m_renderingOutputs.
         m_renderingOutputs.resize(m_outputs.size());
@@ -77,6 +85,6 @@ void AudioSummingJunction::updateRenderingState()
     }
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

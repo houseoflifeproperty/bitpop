@@ -80,6 +80,10 @@
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/gfx/display.h"
+#include "ui/gfx/geometry/size.h"
+#include "ui/gfx/geometry/size_conversions.h"
+#include "ui/gfx/screen.h"
 
 namespace content {
 
@@ -137,6 +141,7 @@ class FrameSubscriber : public RenderWidgetHostViewFrameSubscriber {
         delivery_log_(delivery_log) {}
 
   virtual bool ShouldCaptureFrame(
+      const gfx::Rect& damage_rect,
       base::TimeTicks present_time,
       scoped_refptr<media::VideoFrame>* storage,
       RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback*
@@ -225,7 +230,7 @@ class WebContentsCaptureMachine
     : public VideoCaptureMachine,
       public WebContentsObserver {
  public:
-  WebContentsCaptureMachine(int render_process_id, int render_view_id);
+  WebContentsCaptureMachine(int render_process_id, int main_render_frame_id);
   virtual ~WebContentsCaptureMachine();
 
   // VideoCaptureMachine overrides.
@@ -272,11 +277,14 @@ class WebContentsCaptureMachine
   virtual void WebContentsDestroyed() OVERRIDE;
 
  private:
+  // Computes the preferred size of the target RenderWidget for optimal capture.
+  gfx::Size ComputeOptimalTargetSize() const;
+
   // Starts observing the web contents, returning false if lookup fails.
   bool StartObservingWebContents();
 
   // Helper function to determine the view that we are currently tracking.
-  RenderWidgetHost* GetTarget();
+  RenderWidgetHost* GetTarget() const;
 
   // Response callback for RenderWidgetHost::CopyFromBackingStore().
   void DidCopyFromBackingStore(
@@ -301,7 +309,7 @@ class WebContentsCaptureMachine
 
   // Parameters saved in constructor.
   const int initial_render_process_id_;
-  const int initial_render_view_id_;
+  const int initial_main_render_frame_id_;
 
   // A dedicated worker thread on which SkBitmap->VideoFrame conversion will
   // occur. Only used when this activity cannot be done on the GPU.
@@ -332,6 +340,7 @@ class WebContentsCaptureMachine
 };
 
 bool FrameSubscriber::ShouldCaptureFrame(
+    const gfx::Rect& damage_rect,
     base::TimeTicks present_time,
     scoped_refptr<media::VideoFrame>* storage,
     DeliverFrameCallback* deliver_frame_cb) {
@@ -340,7 +349,7 @@ bool FrameSubscriber::ShouldCaptureFrame(
 
   ThreadSafeCaptureOracle::CaptureFrameCallback capture_frame_cb;
   bool oracle_decision = oracle_proxy_->ObserveEventAndDecideCapture(
-      event_type_, present_time, storage, &capture_frame_cb);
+      event_type_, damage_rect, present_time, storage, &capture_frame_cb);
 
   if (!capture_frame_cb.is_null())
     *deliver_frame_cb = base::Bind(capture_frame_cb, *storage);
@@ -384,7 +393,7 @@ ContentCaptureSubscription::ContentCaptureSubscription(
       Source<RenderWidgetHost>(&source));
 
   // Subscribe to timer events. This instance will service these as well.
-  timer_.Start(FROM_HERE, oracle_proxy->capture_period(),
+  timer_.Start(FROM_HERE, oracle_proxy->min_capture_period(),
                base::Bind(&ContentCaptureSubscription::OnTimer,
                           base::Unretained(this)));
 }
@@ -433,7 +442,8 @@ void ContentCaptureSubscription::Observe(
   scoped_refptr<media::VideoFrame> frame;
   RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback deliver_frame_cb;
   const base::TimeTicks start_time = base::TimeTicks::Now();
-  if (paint_subscriber_.ShouldCaptureFrame(start_time,
+  if (paint_subscriber_.ShouldCaptureFrame(gfx::Rect(),
+                                           start_time,
                                            &frame,
                                            &deliver_frame_cb)) {
     // This message happens just before paint. If we post a task to do the copy,
@@ -452,7 +462,8 @@ void ContentCaptureSubscription::OnTimer() {
   RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback deliver_frame_cb;
 
   const base::TimeTicks start_time = base::TimeTicks::Now();
-  if (timer_subscriber_.ShouldCaptureFrame(start_time,
+  if (timer_subscriber_.ShouldCaptureFrame(gfx::Rect(),
+                                           start_time,
                                            &frame,
                                            &deliver_frame_cb)) {
     capture_callback_.Run(start_time, frame, deliver_frame_cb);
@@ -469,12 +480,12 @@ void RenderVideoFrame(const SkBitmap& input,
   // Sanity-check the captured bitmap.
   if (input.empty() ||
       !input.readyToDraw() ||
-      input.config() != SkBitmap::kARGB_8888_Config ||
+      input.colorType() != kN32_SkColorType ||
       input.width() < 2 || input.height() < 2) {
     DVLOG(1) << "input unacceptable (size="
              << input.getSize()
              << ", ready=" << input.readyToDraw()
-             << ", config=" << input.config() << ')';
+             << ", colorType=" << input.colorType() << ')';
     return;
   }
 
@@ -558,9 +569,9 @@ void VideoFrameDeliveryLog::ChronicleFrameDelivery(base::TimeTicks frame_time) {
 }
 
 WebContentsCaptureMachine::WebContentsCaptureMachine(int render_process_id,
-                                                     int render_view_id)
+                                                     int main_render_frame_id)
     : initial_render_process_id_(render_process_id),
-      initial_render_view_id_(render_view_id),
+      initial_main_render_frame_id_(main_render_frame_id),
       fullscreen_widget_id_(MSG_ROUTING_NONE),
       weak_ptr_factory_(this) {}
 
@@ -667,37 +678,67 @@ void WebContentsCaptureMachine::Capture(
                    start_time,
                    target,
                    deliver_frame_cb),
-        SkBitmap::kARGB_8888_Config);
+        kN32_SkColorType);
   }
 }
 
+gfx::Size WebContentsCaptureMachine::ComputeOptimalTargetSize() const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  gfx::Size optimal_size = oracle_proxy_->GetCaptureSize();
+
+  // If the ratio between physical and logical pixels is greater than 1:1,
+  // shrink |optimal_size| by that amount.  Then, when external code resizes the
+  // render widget to the "preferred size," the widget will be physically
+  // rendered at the exact capture size, thereby eliminating unnecessary scaling
+  // operations in the graphics pipeline.
+  RenderWidgetHost* const rwh = GetTarget();
+  RenderWidgetHostView* const rwhv = rwh ? rwh->GetView() : NULL;
+  if (rwhv) {
+    const gfx::NativeView view = rwhv->GetNativeView();
+    gfx::Screen* const screen = gfx::Screen::GetScreenFor(view);
+    if (screen->IsDIPEnabled()) {
+      const gfx::Display display = screen->GetDisplayNearestWindow(view);
+      const float scale = display.device_scale_factor();
+      if (scale > 1.0f) {
+        const gfx::Size shrunk_size(
+            gfx::ToFlooredSize(gfx::ScaleSize(optimal_size, 1.0f / scale)));
+        if (shrunk_size.width() > 0 && shrunk_size.height() > 0)
+          optimal_size = shrunk_size;
+      }
+    }
+  }
+
+  VLOG(1) << "Computed optimal target size: " << optimal_size.ToString();
+  return optimal_size;
+}
+
 bool WebContentsCaptureMachine::StartObservingWebContents() {
-  // Look-up the RenderViewHost and, from that, the WebContents that wraps it.
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  // Look-up the RenderFrameHost and, from that, the WebContents that wraps it.
   // If successful, begin observing the WebContents instance.
   //
   // Why this can be unsuccessful: The request for mirroring originates in a
-  // render process, and this request is based on the current RenderView
+  // render process, and this request is based on the current main RenderFrame
   // associated with a tab.  However, by the time we get up-and-running here,
   // there have been multiple back-and-forth IPCs between processes, as well as
   // a bit of indirection across threads.  It's easily possible that, in the
-  // meantime, the original RenderView may have gone away.
-  RenderViewHost* const rvh =
-      RenderViewHost::FromID(initial_render_process_id_,
-                             initial_render_view_id_);
-  DVLOG_IF(1, !rvh) << "RenderViewHost::FromID("
-                    << initial_render_process_id_ << ", "
-                    << initial_render_view_id_ << ") returned NULL.";
-  Observe(rvh ? WebContents::FromRenderViewHost(rvh) : NULL);
+  // meantime, the original RenderFrame may have gone away.
+  Observe(WebContents::FromRenderFrameHost(RenderFrameHost::FromID(
+      initial_render_process_id_, initial_main_render_frame_id_)));
+  DVLOG_IF(1, !web_contents())
+      << "Could not find WebContents associated with main RenderFrameHost "
+      << "referenced by render_process_id=" << initial_render_process_id_
+      << ", routing_id=" << initial_main_render_frame_id_;
 
   WebContentsImpl* contents = static_cast<WebContentsImpl*>(web_contents());
   if (contents) {
-    contents->IncrementCapturerCount(oracle_proxy_->GetCaptureSize());
+    contents->IncrementCapturerCount(ComputeOptimalTargetSize());
     fullscreen_widget_id_ = contents->GetFullscreenWidgetRoutingID();
     RenewFrameSubscription();
     return true;
   }
-
-  DVLOG(1) << "WebContents::FromRenderViewHost(" << rvh << ") returned NULL.";
   return false;
 }
 
@@ -709,7 +750,7 @@ void WebContentsCaptureMachine::WebContentsDestroyed() {
   oracle_proxy_->ReportError("WebContentsDestroyed()");
 }
 
-RenderWidgetHost* WebContentsCaptureMachine::GetTarget() {
+RenderWidgetHost* WebContentsCaptureMachine::GetTarget() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!web_contents())
     return NULL;
@@ -786,9 +827,10 @@ void WebContentsCaptureMachine::RenewFrameSubscription() {
 }  // namespace
 
 WebContentsVideoCaptureDevice::WebContentsVideoCaptureDevice(
-    int render_process_id, int render_view_id)
+    int render_process_id, int main_render_frame_id)
     : core_(new ContentVideoCaptureDeviceCore(scoped_ptr<VideoCaptureMachine>(
-        new WebContentsCaptureMachine(render_process_id, render_view_id)))) {}
+        new WebContentsCaptureMachine(
+            render_process_id, main_render_frame_id)))) {}
 
 WebContentsVideoCaptureDevice::~WebContentsVideoCaptureDevice() {
   DVLOG(2) << "WebContentsVideoCaptureDevice@" << this << " destroying.";
@@ -799,13 +841,14 @@ media::VideoCaptureDevice* WebContentsVideoCaptureDevice::Create(
     const std::string& device_id) {
   // Parse device_id into render_process_id and render_view_id.
   int render_process_id = -1;
-  int render_view_id = -1;
+  int main_render_frame_id = -1;
   if (!WebContentsCaptureUtil::ExtractTabCaptureTarget(
-           device_id, &render_process_id, &render_view_id)) {
+           device_id, &render_process_id, &main_render_frame_id)) {
     return NULL;
   }
 
-  return new WebContentsVideoCaptureDevice(render_process_id, render_view_id);
+  return new WebContentsVideoCaptureDevice(
+      render_process_id, main_render_frame_id);
 }
 
 void WebContentsVideoCaptureDevice::AllocateAndStart(

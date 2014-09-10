@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// ASan internally uses some syscalls which non-SFI NaCl disallows.
-// Seccomp-BPF tests die under TSan v2. See http://crbug.com/356588
-#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER)
+// Sanitizers internally use some syscalls which non-SFI NaCl disallows.
+#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && \
+    !defined(MEMORY_SANITIZER) && !defined(LEAK_SANITIZER)
 
 #include "components/nacl/loader/nonsfi/nonsfi_sandbox.h"
 
@@ -35,6 +35,7 @@
 #include "base/time/time.h"
 #include "sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h"
 #include "sandbox/linux/seccomp-bpf/bpf_tests.h"
+#include "sandbox/linux/seccomp-bpf/syscall.h"
 #include "sandbox/linux/services/linux_syscalls.h"
 #include "third_party/lss/linux_syscall_support.h"  // for MAKE_PROCESS_CPUCLOCK
 
@@ -482,6 +483,13 @@ BPF_DEATH_TEST_C(NaClNonSfiSandboxTest,
   clock_gettime(kInitCPUClockID, &ts);
 }
 
+BPF_DEATH_TEST_C(NaClNonSfiSandboxTest,
+                 invalid_syscall_crash,
+                 DEATH_SEGV_MESSAGE(sandbox::GetErrorMessageContentForTests()),
+                 nacl::nonsfi::NaClNonSfiBPFSandboxPolicy) {
+  sandbox::Syscall::InvalidCall();
+}
+
 // The following test cases check if syscalls return EPERM regardless
 // of arguments.
 #define RESTRICT_SYSCALL_EPERM_TEST(name)                      \
@@ -514,4 +522,5 @@ RESTRICT_SYSCALL_EPERM_TEST(time);
 
 }  // namespace
 
-#endif  // !ADDRESS_SANITIZER && !THREAD_SANITIZER
+#endif  // !ADDRESS_SANITIZER && !THREAD_SANITIZER &&
+        // !MEMORY_SANITIZER && !LEAK_SANITIZER

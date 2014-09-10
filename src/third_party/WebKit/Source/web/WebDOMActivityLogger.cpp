@@ -31,14 +31,14 @@
 #include "config.h"
 #include "public/web/WebDOMActivityLogger.h"
 
-#include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8DOMActivityLogger.h"
+#include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
-using namespace WebCore;
+using namespace blink;
 
 namespace blink {
 
@@ -67,6 +67,14 @@ public:
     virtual void logMethod(const String& apiName, int argc, const v8::Handle<v8::Value>* argv) OVERRIDE
     {
         m_domActivityLogger->logMethod(WebString(apiName), argc, argv, getURL(), getTitle());
+    }
+
+    virtual void logEvent(const String& eventName, int argc, const String* argv) OVERRIDE
+    {
+        Vector<WebString> webStringArgv;
+        for (int i = 0; i < argc; i++)
+            webStringArgv.append(argv[i]);
+        m_domActivityLogger->logEvent(WebString(eventName), argc, webStringArgv.data(), getURL(), getTitle());
     }
 
 private:

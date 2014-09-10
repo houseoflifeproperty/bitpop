@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/stl_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "chrome/browser/sync_file_system/local/canned_syncable_file_system.h"
 #include "chrome/browser/sync_file_system/local/local_file_change_tracker.h"
 #include "chrome/browser/sync_file_system/local/local_file_sync_context.h"
@@ -37,8 +38,8 @@ class SyncableFileSystemTest : public testing::Test {
       : in_memory_env_(leveldb::NewMemEnv(leveldb::Env::Default())),
         file_system_(GURL("http://example.com/"),
                      in_memory_env_.get(),
-                     base::MessageLoopProxy::current().get(),
-                     base::MessageLoopProxy::current().get()),
+                     base::ThreadTaskRunnerHandle::Get().get(),
+                     base::ThreadTaskRunnerHandle::Get().get()),
         weak_factory_(this) {}
 
   virtual void SetUp() {
@@ -48,8 +49,8 @@ class SyncableFileSystemTest : public testing::Test {
     sync_context_ =
         new LocalFileSyncContext(data_dir_.path(),
                                  in_memory_env_.get(),
-                                 base::MessageLoopProxy::current().get(),
-                                 base::MessageLoopProxy::current().get());
+                                 base::ThreadTaskRunnerHandle::Get().get(),
+                                 base::ThreadTaskRunnerHandle::Get().get());
     ASSERT_EQ(
         sync_file_system::SYNC_STATUS_OK,
         file_system_.MaybeInitializeFileSystemContext(sync_context_.get()));
@@ -96,8 +97,6 @@ class SyncableFileSystemTest : public testing::Test {
   LocalFileChangeTracker* change_tracker() {
     return file_system_.backend()->change_tracker();
   }
-
-  ScopedEnableSyncFSDirectoryOperation enable_directory_operation_;
 
   base::ScopedTempDir data_dir_;
   content::TestBrowserThreadBundle thread_bundle_;
@@ -253,8 +252,6 @@ TEST_F(SyncableFileSystemTest, ChangeTrackerSimple) {
 TEST_F(SyncableFileSystemTest, DisableDirectoryOperations) {
   ScopedDisableSyncFSV2 scoped_disable_v2;
 
-  bool was_enabled = IsSyncFSDirectoryOperationEnabled();
-  SetEnableSyncFSDirectoryOperation(false);
   EXPECT_EQ(base::File::FILE_OK,
             file_system_.OpenFileSystem());
 
@@ -284,7 +281,6 @@ TEST_F(SyncableFileSystemTest, DisableDirectoryOperations) {
             file_system_.Copy(kSrcDir, URL("dest")));
 
   other_file_system_.TearDown();
-  SetEnableSyncFSDirectoryOperation(was_enabled);
 }
 
 }  // namespace sync_file_system

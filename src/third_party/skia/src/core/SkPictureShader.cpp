@@ -18,17 +18,21 @@
 #include "GrContext.h"
 #endif
 
-SkPictureShader::SkPictureShader(SkPicture* picture, TileMode tmx, TileMode tmy,
-                                 const SkMatrix* localMatrix)
+SkPictureShader::SkPictureShader(const SkPicture* picture, TileMode tmx, TileMode tmy,
+                                 const SkMatrix* localMatrix, const SkRect* tile)
     : INHERITED(localMatrix)
     , fPicture(SkRef(picture))
     , fTmx(tmx)
-    , fTmy(tmy) { }
+    , fTmy(tmy) {
+    fTile = tile ? *tile : SkRect::MakeWH(SkIntToScalar(picture->width()),
+                                          SkIntToScalar(picture->height()));
+}
 
 SkPictureShader::SkPictureShader(SkReadBuffer& buffer)
         : INHERITED(buffer) {
     fTmx = static_cast<SkShader::TileMode>(buffer.read32());
     fTmy = static_cast<SkShader::TileMode>(buffer.read32());
+    buffer.readRect(&fTile);
     fPicture = SkPicture::CreateFromBuffer(buffer);
 }
 
@@ -36,12 +40,13 @@ SkPictureShader::~SkPictureShader() {
     fPicture->unref();
 }
 
-SkPictureShader* SkPictureShader::Create(SkPicture* picture, TileMode tmx, TileMode tmy,
-                                         const SkMatrix* localMatrix) {
-    if (!picture || 0 == picture->width() || 0 == picture->height()) {
+SkPictureShader* SkPictureShader::Create(const SkPicture* picture, TileMode tmx, TileMode tmy,
+                                         const SkMatrix* localMatrix, const SkRect* tile) {
+    if (!picture || 0 == picture->width() || 0 == picture->height()
+        || (NULL != tile && tile->isEmpty())) {
         return NULL;
     }
-    return SkNEW_ARGS(SkPictureShader, (picture, tmx, tmy, localMatrix));
+    return SkNEW_ARGS(SkPictureShader, (picture, tmx, tmy, localMatrix, tile));
 }
 
 void SkPictureShader::flatten(SkWriteBuffer& buffer) const {
@@ -49,6 +54,7 @@ void SkPictureShader::flatten(SkWriteBuffer& buffer) const {
 
     buffer.write32(fTmx);
     buffer.write32(fTmy);
+    buffer.writeRect(fTile);
     fPicture->flatten(buffer);
 }
 
@@ -68,22 +74,29 @@ SkShader* SkPictureShader::refBitmapShader(const SkMatrix& matrix, const SkMatri
         scale.set(SkScalarSqrt(m.getScaleX() * m.getScaleX() + m.getSkewX() * m.getSkewX()),
                   SkScalarSqrt(m.getScaleY() * m.getScaleY() + m.getSkewY() * m.getSkewY()));
     }
-    SkSize scaledSize = SkSize::Make(scale.x() * fPicture->width(), scale.y() * fPicture->height());
+    SkSize scaledSize = SkSize::Make(scale.x() * fTile.width(), scale.y() * fTile.height());
+
+    // Clamp the tile size to about 16M pixels
+    static const SkScalar kMaxTileArea = 4096 * 4096;
+    SkScalar tileArea = SkScalarMul(scaledSize.width(), scaledSize.height());
+    if (tileArea > kMaxTileArea) {
+        SkScalar clampScale = SkScalarSqrt(SkScalarDiv(kMaxTileArea, tileArea));
+        scaledSize.set(SkScalarMul(scaledSize.width(), clampScale),
+                       SkScalarMul(scaledSize.height(), clampScale));
+    }
 
     SkISize tileSize = scaledSize.toRound();
     if (tileSize.isEmpty()) {
         return NULL;
     }
 
-    // The actual scale, compensating for rounding.
-    SkSize tileScale = SkSize::Make(SkIntToScalar(tileSize.width()) / fPicture->width(),
-                                    SkIntToScalar(tileSize.height()) / fPicture->height());
+    // The actual scale, compensating for rounding & clamping.
+    SkSize tileScale = SkSize::Make(SkIntToScalar(tileSize.width()) / fTile.width(),
+                                    SkIntToScalar(tileSize.height()) / fTile.height());
 
     SkAutoMutexAcquire ama(fCachedBitmapShaderMutex);
 
-    // TODO(fmalita): remove fCachedLocalMatrix from this key after getLocalMatrix is removed.
-    if (!fCachedBitmapShader || tileScale != fCachedTileScale ||
-        this->getLocalMatrix() != fCachedLocalMatrix) {
+    if (!fCachedBitmapShader || tileScale != fCachedTileScale) {
         SkBitmap bm;
         if (!bm.allocN32Pixels(tileSize.width(), tileSize.height())) {
             return NULL;
@@ -92,10 +105,10 @@ SkShader* SkPictureShader::refBitmapShader(const SkMatrix& matrix, const SkMatri
 
         SkCanvas canvas(bm);
         canvas.scale(tileScale.width(), tileScale.height());
+        canvas.translate(fTile.x(), fTile.y());
         canvas.drawPicture(fPicture);
 
         fCachedTileScale = tileScale;
-        fCachedLocalMatrix = this->getLocalMatrix();
 
         SkMatrix shaderMatrix = this->getLocalMatrix();
         shaderMatrix.preScale(1 / tileScale.width(), 1 / tileScale.height());
@@ -189,18 +202,18 @@ void SkPictureShader::toString(SkString* str) const {
 
 #if SK_SUPPORT_GPU
 bool SkPictureShader::asNewEffect(GrContext* context, const SkPaint& paint,
-                                  const SkMatrix* localMatrix, GrColor* grColor,
-                                  GrEffectRef** grEffect) const {
+                                  const SkMatrix* localMatrix, GrColor* paintColor,
+                                  GrEffect** effect) const {
     SkAutoTUnref<SkShader> bitmapShader(this->refBitmapShader(context->getMatrix(), localMatrix));
     if (!bitmapShader) {
         return false;
     }
-    return bitmapShader->asNewEffect(context, paint, NULL, grColor, grEffect);
+    return bitmapShader->asNewEffect(context, paint, NULL, paintColor, effect);
 }
 #else
 bool SkPictureShader::asNewEffect(GrContext* context, const SkPaint& paint,
-                                  const SkMatrix* localMatrix, GrColor* grColor,
-                                  GrEffectRef** grEffect) const {
+                                  const SkMatrix* localMatrix, GrColor* paintColor,
+                                  GrEffect** effect) const {
     SkDEBUGFAIL("Should not call in GPU-less build");
     return false;
 }

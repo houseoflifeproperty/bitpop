@@ -84,6 +84,11 @@ def SplitUrlRevision(url):
   return tuple(components)
 
 
+def IsGitSha(revision):
+  """Returns true if the given string is a valid hex-encoded sha"""
+  return re.match('^[a-fA-F0-9]{6,40}$', revision) is not None
+
+
 def IsDateRevision(revision):
   """Returns true if the given revision is of the form "{ ... }"."""
   return bool(revision and re.match(r'^\{.+\}$', str(revision)))
@@ -650,6 +655,57 @@ def GetMacWinOrLinux():
   raise Error('Unknown platform: ' + sys.platform)
 
 
+def GetBuildtoolsPath():
+  """Returns the full path to the buildtools directory.
+  This is based on the root of the checkout containing the current directory."""
+
+  # Overriding the build tools path by environment is highly unsupported and may
+  # break without warning.  Do not rely on this for anything important.
+  override = os.environ.get('CHROMIUM_BUILDTOOLS_PATH')
+  if override is not None:
+    return override
+
+  gclient_root = FindGclientRoot(os.getcwd())
+  if not gclient_root:
+    # Some projects might not use .gclient. Try to see whether we're in a git
+    # checkout.
+    top_dir = [os.getcwd()]
+    def filter_fn(line):
+      top_dir[0] = os.path.normpath(line.rstrip('\n'))
+    try:
+      CheckCallAndFilter(["git", "rev-parse", "--show-toplevel"],
+                         print_stdout=False, filter_fn=filter_fn)
+    except Exception:
+      pass
+    top_dir = top_dir[0]
+    if os.path.exists(os.path.join(top_dir, 'buildtools')):
+      return os.path.join(top_dir, 'buildtools')
+    return None
+  return os.path.join(gclient_root, 'src', 'buildtools')
+
+
+def GetBuildtoolsPlatformBinaryPath():
+  """Returns the full path to the binary directory for the current platform."""
+  # Mac and Windows just have one directory, Linux has two according to whether
+  # it's 32 or 64 bits.
+  buildtools_path = GetBuildtoolsPath()
+  if not buildtools_path:
+    return None
+
+  if sys.platform.startswith(('cygwin', 'win')):
+    subdir = 'win'
+  elif sys.platform == 'darwin':
+    subdir = 'mac'
+  elif sys.platform.startswith('linux'):
+    if sys.maxsize > 2**32:
+      subdir = 'linux64'
+    else:
+      subdir = 'linux32'
+  else:
+    raise Error('Unknown platform: ' + sys.platform)
+  return os.path.join(buildtools_path, subdir)
+
+
 def GetExeSuffix():
   """Returns '' or '.exe' depending on how executables work on this platform."""
   if sys.platform.startswith(('cygwin', 'win')):
@@ -753,9 +809,11 @@ class ExecutionQueue(object):
     try:
       self.queued.append(d)
       total = len(self.queued) + len(self.ran) + len(self.running)
+      if self.jobs == 1:
+        total += 1
       logging.debug('enqueued(%s)' % d.name)
       if self.progress:
-        self.progress._total = total + 1
+        self.progress._total = total
         self.progress.update(0)
       self.ready_cond.notifyAll()
     finally:

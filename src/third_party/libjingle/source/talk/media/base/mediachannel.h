@@ -31,20 +31,20 @@
 #include <string>
 #include <vector>
 
-#include "talk/base/basictypes.h"
-#include "talk/base/buffer.h"
-#include "talk/base/dscp.h"
-#include "talk/base/logging.h"
-#include "talk/base/sigslot.h"
-#include "talk/base/socket.h"
-#include "talk/base/window.h"
 #include "talk/media/base/codec.h"
 #include "talk/media/base/constants.h"
 #include "talk/media/base/streamparams.h"
+#include "webrtc/base/basictypes.h"
+#include "webrtc/base/buffer.h"
+#include "webrtc/base/dscp.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/sigslot.h"
+#include "webrtc/base/socket.h"
+#include "webrtc/base/window.h"
 // TODO(juberti): re-evaluate this include
 #include "talk/session/media/audiomonitor.h"
 
-namespace talk_base {
+namespace rtc {
 class Buffer;
 class RateLimiter;
 class Timing;
@@ -104,7 +104,7 @@ class Settable {
   }
 
   std::string ToString() const {
-    return set_ ? talk_base::ToString(val_) : "";
+    return set_ ? rtc::ToString(val_) : "";
   }
 
   bool operator==(const Settable<T>& o) const {
@@ -312,8 +312,6 @@ struct VideoOptions {
     video_start_bitrate.SetFrom(change.video_start_bitrate);
     video_temporal_layer_screencast.SetFrom(
         change.video_temporal_layer_screencast);
-    video_temporal_layer_realtime.SetFrom(
-        change.video_temporal_layer_realtime);
     video_leaky_bucket.SetFrom(change.video_leaky_bucket);
     video_highest_bitrate.SetFrom(change.video_highest_bitrate);
     cpu_overuse_detection.SetFrom(change.cpu_overuse_detection);
@@ -331,12 +329,10 @@ struct VideoOptions {
     system_high_adaptation_threshhold.SetFrom(
         change.system_high_adaptation_threshhold);
     buffered_mode_latency.SetFrom(change.buffered_mode_latency);
-    lower_min_bitrate.SetFrom(change.lower_min_bitrate);
     dscp.SetFrom(change.dscp);
     suspend_below_min_bitrate.SetFrom(change.suspend_below_min_bitrate);
     unsignalled_recv_stream_limit.SetFrom(change.unsignalled_recv_stream_limit);
     use_simulcast_adapter.SetFrom(change.use_simulcast_adapter);
-    skip_encoding_unused_streams.SetFrom(change.skip_encoding_unused_streams);
     screencast_min_bitrate.SetFrom(change.screencast_min_bitrate);
     use_improved_wifi_bandwidth_estimator.SetFrom(
         change.use_improved_wifi_bandwidth_estimator);
@@ -354,7 +350,6 @@ struct VideoOptions {
         video_high_bitrate == o.video_high_bitrate &&
         video_start_bitrate == o.video_start_bitrate &&
         video_temporal_layer_screencast == o.video_temporal_layer_screencast &&
-        video_temporal_layer_realtime == o.video_temporal_layer_realtime &&
         video_leaky_bucket == o.video_leaky_bucket &&
         video_highest_bitrate == o.video_highest_bitrate &&
         cpu_overuse_detection == o.cpu_overuse_detection &&
@@ -372,12 +367,10 @@ struct VideoOptions {
         system_high_adaptation_threshhold ==
             o.system_high_adaptation_threshhold &&
         buffered_mode_latency == o.buffered_mode_latency &&
-        lower_min_bitrate == o.lower_min_bitrate &&
         dscp == o.dscp &&
         suspend_below_min_bitrate == o.suspend_below_min_bitrate &&
         unsignalled_recv_stream_limit == o.unsignalled_recv_stream_limit &&
         use_simulcast_adapter == o.use_simulcast_adapter &&
-        skip_encoding_unused_streams == o.skip_encoding_unused_streams &&
         screencast_min_bitrate == o.screencast_min_bitrate &&
         use_improved_wifi_bandwidth_estimator ==
             o.use_improved_wifi_bandwidth_estimator &&
@@ -398,8 +391,6 @@ struct VideoOptions {
     ost << ToStringIfSet("start bitrate", video_start_bitrate);
     ost << ToStringIfSet("video temporal layer screencast",
                          video_temporal_layer_screencast);
-    ost << ToStringIfSet("video temporal layer realtime",
-                         video_temporal_layer_realtime);
     ost << ToStringIfSet("leaky bucket", video_leaky_bucket);
     ost << ToStringIfSet("highest video bitrate", video_highest_bitrate);
     ost << ToStringIfSet("cpu overuse detection", cpu_overuse_detection);
@@ -416,15 +407,12 @@ struct VideoOptions {
     ost << ToStringIfSet("low", system_low_adaptation_threshhold);
     ost << ToStringIfSet("high", system_high_adaptation_threshhold);
     ost << ToStringIfSet("buffered mode latency", buffered_mode_latency);
-    ost << ToStringIfSet("lower min bitrate", lower_min_bitrate);
     ost << ToStringIfSet("dscp", dscp);
     ost << ToStringIfSet("suspend below min bitrate",
                          suspend_below_min_bitrate);
     ost << ToStringIfSet("num channels for early receive",
                          unsignalled_recv_stream_limit);
     ost << ToStringIfSet("use simulcast adapter", use_simulcast_adapter);
-    ost << ToStringIfSet("skip encoding unused streams",
-                         skip_encoding_unused_streams);
     ost << ToStringIfSet("screencast min bitrate", screencast_min_bitrate);
     ost << ToStringIfSet("improved wifi bwe",
                          use_improved_wifi_bandwidth_estimator);
@@ -453,8 +441,6 @@ struct VideoOptions {
   Settable<int> video_start_bitrate;
   // Experimental: Enable WebRTC layered screencast.
   Settable<bool> video_temporal_layer_screencast;
-  // Experimental: Enable WebRTC temporal layer strategy for realtime video.
-  Settable<bool> video_temporal_layer_realtime;
   // Enable WebRTC leaky bucket when sending media packets.
   Settable<bool> video_leaky_bucket;
   // Set highest bitrate mode for video.
@@ -491,8 +477,6 @@ struct VideoOptions {
   SettablePercent system_high_adaptation_threshhold;
   // Specify buffered mode latency in milliseconds.
   Settable<int> buffered_mode_latency;
-  // Make minimum configured send bitrate even lower than usual, at 30kbit.
-  Settable<bool> lower_min_bitrate;
   // Set DSCP value for packet sent from video channel.
   Settable<bool> dscp;
   // Enable WebRTC suspension of video. No video frames will be sent when the
@@ -502,9 +486,6 @@ struct VideoOptions {
   Settable<int> unsignalled_recv_stream_limit;
   // Enable use of simulcast adapter.
   Settable<bool> use_simulcast_adapter;
-  // Enables the encoder to skip encoding stream not actually sent due to too
-  // low available bit rate.
-  Settable<bool> skip_encoding_unused_streams;
   // Force screencast to use a minimum bitrate
   Settable<int> screencast_min_bitrate;
   // Enable improved bandwidth estiamtor on wifi.
@@ -579,12 +560,12 @@ class MediaChannel : public sigslot::has_slots<> {
    public:
     enum SocketType { ST_RTP, ST_RTCP };
     virtual bool SendPacket(
-        talk_base::Buffer* packet,
-        talk_base::DiffServCodePoint dscp = talk_base::DSCP_NO_CHANGE) = 0;
+        rtc::Buffer* packet,
+        rtc::DiffServCodePoint dscp = rtc::DSCP_NO_CHANGE) = 0;
     virtual bool SendRtcp(
-        talk_base::Buffer* packet,
-        talk_base::DiffServCodePoint dscp = talk_base::DSCP_NO_CHANGE) = 0;
-    virtual int SetOption(SocketType type, talk_base::Socket::Option opt,
+        rtc::Buffer* packet,
+        rtc::DiffServCodePoint dscp = rtc::DSCP_NO_CHANGE) = 0;
+    virtual int SetOption(SocketType type, rtc::Socket::Option opt,
                           int option) = 0;
     virtual ~NetworkInterface() {}
   };
@@ -594,16 +575,16 @@ class MediaChannel : public sigslot::has_slots<> {
 
   // Sets the abstract interface class for sending RTP/RTCP data.
   virtual void SetInterface(NetworkInterface *iface) {
-    talk_base::CritScope cs(&network_interface_crit_);
+    rtc::CritScope cs(&network_interface_crit_);
     network_interface_ = iface;
   }
 
   // Called when a RTP packet is received.
-  virtual void OnPacketReceived(talk_base::Buffer* packet,
-                                const talk_base::PacketTime& packet_time) = 0;
+  virtual void OnPacketReceived(rtc::Buffer* packet,
+                                const rtc::PacketTime& packet_time) = 0;
   // Called when a RTCP packet is received.
-  virtual void OnRtcpReceived(talk_base::Buffer* packet,
-                              const talk_base::PacketTime& packet_time) = 0;
+  virtual void OnRtcpReceived(rtc::Buffer* packet,
+                              const rtc::PacketTime& packet_time) = 0;
   // Called when the socket's ability to send has changed.
   virtual void OnReadyToSend(bool ready) = 0;
   // Creates a new outgoing media stream with SSRCs and CNAME as described
@@ -639,18 +620,18 @@ class MediaChannel : public sigslot::has_slots<> {
   virtual bool SetMaxSendBandwidth(int bps) = 0;
 
   // Base method to send packet using NetworkInterface.
-  bool SendPacket(talk_base::Buffer* packet) {
+  bool SendPacket(rtc::Buffer* packet) {
     return DoSendPacket(packet, false);
   }
 
-  bool SendRtcp(talk_base::Buffer* packet) {
+  bool SendRtcp(rtc::Buffer* packet) {
     return DoSendPacket(packet, true);
   }
 
   int SetOption(NetworkInterface::SocketType type,
-                talk_base::Socket::Option opt,
+                rtc::Socket::Option opt,
                 int option) {
-    talk_base::CritScope cs(&network_interface_crit_);
+    rtc::CritScope cs(&network_interface_crit_);
     if (!network_interface_)
       return -1;
 
@@ -659,22 +640,22 @@ class MediaChannel : public sigslot::has_slots<> {
 
  protected:
   // This method sets DSCP |value| on both RTP and RTCP channels.
-  int SetDscp(talk_base::DiffServCodePoint value) {
+  int SetDscp(rtc::DiffServCodePoint value) {
     int ret;
     ret = SetOption(NetworkInterface::ST_RTP,
-                    talk_base::Socket::OPT_DSCP,
+                    rtc::Socket::OPT_DSCP,
                     value);
     if (ret == 0) {
       ret = SetOption(NetworkInterface::ST_RTCP,
-                      talk_base::Socket::OPT_DSCP,
+                      rtc::Socket::OPT_DSCP,
                       value);
     }
     return ret;
   }
 
  private:
-  bool DoSendPacket(talk_base::Buffer* packet, bool rtcp) {
-    talk_base::CritScope cs(&network_interface_crit_);
+  bool DoSendPacket(rtc::Buffer* packet, bool rtcp) {
+    rtc::CritScope cs(&network_interface_crit_);
     if (!network_interface_)
       return false;
 
@@ -685,7 +666,7 @@ class MediaChannel : public sigslot::has_slots<> {
   // |network_interface_| can be accessed from the worker_thread and
   // from any MediaEngine threads. This critical section is to protect accessing
   // of network_interface_ object.
-  talk_base::CriticalSection network_interface_crit_;
+  rtc::CriticalSection network_interface_crit_;
   NetworkInterface* network_interface_;
 };
 
@@ -901,6 +882,7 @@ struct VideoSenderInfo : public MediaSenderInfo {
         nominal_bitrate(0),
         preferred_bitrate(0),
         adapt_reason(0),
+        adapt_changes(0),
         capture_jitter_ms(0),
         avg_encode_ms(0),
         encode_usage_percent(0),
@@ -922,6 +904,7 @@ struct VideoSenderInfo : public MediaSenderInfo {
   int nominal_bitrate;
   int preferred_bitrate;
   int adapt_reason;
+  int adapt_changes;
   int capture_jitter_ms;
   int avg_encode_ms;
   int encode_usage_percent;
@@ -1305,7 +1288,7 @@ class DataMediaChannel : public MediaChannel {
 
   virtual bool SendData(
       const SendDataParams& params,
-      const talk_base::Buffer& payload,
+      const rtc::Buffer& payload,
       SendDataResult* result = NULL) = 0;
   // Signals when data is received (params, data, len)
   sigslot::signal3<const ReceiveDataParams&,

@@ -88,6 +88,10 @@ void SigninManagerFactory::RegisterProfilePrefs(
       prefs::kGoogleServicesUsername,
       std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kGoogleServicesSigninScopedDeviceId,
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kAutologinEnabled,
       true,
@@ -99,6 +103,10 @@ void SigninManagerFactory::RegisterProfilePrefs(
   registry->RegisterListPref(prefs::kReverseAutologinRejectedEmailList,
                              new base::ListValue,
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterInt64Pref(
+      prefs::kSignedInTime,
+      base::Time().ToInternalValue(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   chrome::RegisterLocalAuthPrefs(registry);
 }
 

@@ -23,13 +23,13 @@
 #ifndef HTMLPlugInElement_h
 #define HTMLPlugInElement_h
 
-#include "bindings/v8/SharedPersistent.h"
+#include "bindings/core/v8/SharedPersistent.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include <v8.h>
 
 struct NPObject;
 
-namespace WebCore {
+namespace blink {
 
 class HTMLImageLoader;
 class RenderEmbeddedObject;
@@ -124,13 +124,6 @@ private:
     virtual RenderWidget* existingRenderWidget() const = 0;
     virtual void updateWidgetInternal() = 0;
 
-    enum DisplayState {
-        Restarting,
-        RestartingWithPendingMouseClick,
-        Playing
-    };
-    DisplayState displayState() const { return m_displayState; }
-    void setDisplayState(DisplayState state) { m_displayState = state; }
     bool loadPlugin(const KURL&, const String& mimeType, const Vector<String>& paramNames, const Vector<String>& paramValues, bool useFallback, bool requireRenderer);
     bool pluginIsLoadable(const KURL&, const String& mimeType);
     bool wouldLoadAsNetscapePlugin(const String& url, const String& serviceType);
@@ -140,7 +133,6 @@ private:
     bool m_isCapturingMouseEvents;
     bool m_needsWidgetUpdate;
     bool m_shouldPreferPlugInsForImages;
-    DisplayState m_displayState;
 
     // Normally the Widget is stored in HTMLFrameOwnerElement::m_widget.
     // However, plugins can persist even when not rendered. In order to
@@ -150,11 +142,6 @@ private:
     RefPtr<Widget> m_persistedPluginWidget;
 };
 
-inline bool isHTMLPlugInElement(const Element& element)
-{
-    return element.isHTMLElement() && toHTMLElement(element).isPluginElement();
-}
-
 inline bool isHTMLPlugInElement(const HTMLElement& element)
 {
     return element.isPluginElement();
@@ -162,6 +149,6 @@ inline bool isHTMLPlugInElement(const HTMLElement& element)
 
 DEFINE_HTMLELEMENT_TYPE_CASTS_WITH_FUNCTION(HTMLPlugInElement);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLPlugInElement_h

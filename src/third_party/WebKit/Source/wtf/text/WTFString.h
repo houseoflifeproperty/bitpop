@@ -132,9 +132,6 @@ public:
     String& operator=(String&& other) { m_impl = other.m_impl.release(); return *this; }
 #endif
 
-    // Inline the destructor.
-    ALWAYS_INLINE ~String() { }
-
     void swap(String& o) { m_impl.swap(o.m_impl); }
 
     template<typename CharType>
@@ -667,12 +664,7 @@ template<> struct DefaultHash<String> {
 
 // Shared global empty string.
 WTF_EXPORT const String& emptyString();
-
-#ifndef STRING_HIDE_GLOBALS
-
-WTF_EXPORT extern const String xmlnsWithColon;
-
-#endif // STRING_HIDE_GLOBALS
+WTF_EXPORT extern const String& xmlnsWithColon;
 
 } // namespace WTF
 

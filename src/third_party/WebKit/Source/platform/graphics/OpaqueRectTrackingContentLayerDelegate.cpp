@@ -33,10 +33,7 @@
 #include "public/platform/WebFloatRect.h"
 #include "public/platform/WebRect.h"
 
-using blink::WebFloatRect;
-using blink::WebRect;
-
-namespace WebCore {
+namespace blink {
 
 OpaqueRectTrackingContentLayerDelegate::OpaqueRectTrackingContentLayerDelegate(GraphicsContextPainter* painter)
     : m_painter(painter)
@@ -50,15 +47,15 @@ OpaqueRectTrackingContentLayerDelegate::~OpaqueRectTrackingContentLayerDelegate(
 
 void OpaqueRectTrackingContentLayerDelegate::paintContents(
     SkCanvas* canvas, const WebRect& clip, bool canPaintLCDText, WebFloatRect& opaque,
-    blink::WebContentLayerClient::GraphicsContextStatus contextStatus)
+    WebContentLayerClient::GraphicsContextStatus contextStatus)
 {
     static const unsigned char* annotationsEnabled = 0;
     if (UNLIKELY(!annotationsEnabled))
         annotationsEnabled = EventTracer::getTraceCategoryEnabledFlag(TRACE_DISABLED_BY_DEFAULT("blink.graphics_context_annotations"));
 
     GraphicsContext context(canvas,
-        contextStatus == blink::WebContentLayerClient::GraphicsContextEnabled ? GraphicsContext::NothingDisabled : GraphicsContext::FullyDisabled);
-    context.setTrackOpaqueRegion(!m_opaque);
+        contextStatus == WebContentLayerClient::GraphicsContextEnabled ? GraphicsContext::NothingDisabled : GraphicsContext::FullyDisabled);
+    context.setRegionTrackingMode(m_opaque ? GraphicsContext::RegionTrackingDisabled : GraphicsContext::RegionTrackingOpaque);
     context.setCertainlyOpaque(m_opaque);
     context.setShouldSmoothFonts(canPaintLCDText);
 
@@ -77,4 +74,4 @@ void OpaqueRectTrackingContentLayerDelegate::paintContents(
     opaque = canvasToContentTransform.mapRect(context.opaqueRegion().asRect());
 }
 
-}
+} // namespace blink

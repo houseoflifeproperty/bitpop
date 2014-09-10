@@ -31,17 +31,18 @@
 #ifndef MutationRecord_h
 #define MutationRecord_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Node;
 class QualifiedName;
-class StaticNodeList;
+template <typename NodeType> class StaticNodeTypeList;
+typedef StaticNodeTypeList<Node> StaticNodeList;
 
 class MutationRecord : public RefCountedWillBeGarbageCollectedFinalized<MutationRecord>, public ScriptWrappable {
 public:
@@ -74,6 +75,6 @@ public:
 
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MutationRecord_h

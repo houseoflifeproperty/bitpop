@@ -26,14 +26,14 @@
 #ifndef SpeechSynthesisVoice_h
 #define SpeechSynthesisVoice_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "platform/speech/PlatformSpeechSynthesisVoice.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class SpeechSynthesisVoice FINAL : public GarbageCollectedFinalized<SpeechSynthesisVoice>, public ScriptWrappable {
+class SpeechSynthesisVoice FINAL : public GarbageCollected<SpeechSynthesisVoice>, public ScriptWrappable {
 public:
     static SpeechSynthesisVoice* create(PlatformSpeechSynthesisVoice*);
 
@@ -53,6 +53,6 @@ private:
     Member<PlatformSpeechSynthesisVoice> m_platformVoice;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SpeechSynthesisVoice_h

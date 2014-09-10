@@ -23,5 +23,49 @@
       "friend": "Darth Vader"
     },
     "name": "goodbye"
+  },
+  {
+    "cmd": [
+      "bash",
+      "-c",
+      "exit 3"
+    ],
+    "name": "anything is cool"
+  },
+  {
+    "cmd": [
+      "echo",
+      "hello"
+    ],
+    "name": "hello (3)",
+    "~followup_annotations": [
+      "@@@STEP_EXCEPTION@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "echo",
+      "goodbye"
+    ],
+    "name": "goodbye (2)"
+  },
+  {
+    "cmd": [
+      "echo",
+      "testa"
+    ],
+    "name": "testa"
+  },
+  {
+    "cmd": [
+      "echo",
+      "testb"
+    ],
+    "name": "testb"
+  },
+  {
+    "name": "$final_result",
+    "reason": "Warning, robots approaching!",
+    "status_code": 1
   }
 ]

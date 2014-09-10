@@ -374,11 +374,12 @@ static uint16_t get_argb4444_neighbor_avg_color(const SkBitmap& bitmap,
 static SkBitmap unpremultiply_bitmap(const SkBitmap& bitmap,
                                      const SkIRect& srcRect) {
     SkBitmap outBitmap;
-    outBitmap.allocPixels(bitmap.info().makeWH(srcRect.width(), srcRect.height()));
+    SkAssertResult(outBitmap.allocPixels(
+            bitmap.info().makeWH(srcRect.width(), srcRect.height())));
     int dstRow = 0;
 
-    outBitmap.lockPixels();
-    bitmap.lockPixels();
+    SkAutoLockPixels outBitmapPixelLock(outBitmap);
+    SkAutoLockPixels bitmapPixelLock(bitmap);
     switch (bitmap.colorType()) {
         case kARGB_4444_SkColorType: {
             for (int y = srcRect.fTop; y < srcRect.fBottom; y++) {
@@ -428,8 +429,6 @@ static SkBitmap unpremultiply_bitmap(const SkBitmap& bitmap,
         default:
             SkASSERT(false);
     }
-    bitmap.unlockPixels();
-    outBitmap.unlockPixels();
 
     outBitmap.setImmutable();
 
@@ -512,7 +511,7 @@ SkPDFImage::SkPDFImage(SkStream* stream,
     }
 
     if (stream != NULL) {
-        setData(stream);
+        this->setData(stream);
         fStreamValid = true;
     } else {
         fStreamValid = false;
@@ -598,13 +597,11 @@ bool SkPDFImage::populate(SkPDFCatalog* catalog) {
             SkAutoTUnref<SkData> data(fEncoder(&pixelRefOffset, subset));
             if (data.get() && data->size() < get_uncompressed_size(fBitmap,
                                                                    fSrcRect)) {
-                SkAutoTUnref<SkStream> stream(SkNEW_ARGS(SkMemoryStream,
-                                                         (data)));
-                setData(stream.get());
+                this->setData(data.get());
 
                 insertName("Filter", "DCTDecode");
                 insertInt("ColorTransform", kNoColorTransform);
-                insertInt("Length", getData()->getLength());
+                insertInt("Length", this->dataSize());
                 setState(kCompressed_State);
                 return true;
             }
@@ -613,7 +610,7 @@ bool SkPDFImage::populate(SkPDFCatalog* catalog) {
         if (!fStreamValid) {
             SkAutoTUnref<SkStream> stream(
                     extract_image_data(fBitmap, fSrcRect, fIsAlpha, NULL));
-            setData(stream);
+            this->setData(stream);
             fStreamValid = true;
         }
         return INHERITED::populate(catalog);

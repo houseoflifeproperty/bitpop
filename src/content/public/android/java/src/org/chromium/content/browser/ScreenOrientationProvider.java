@@ -6,13 +6,13 @@ package org.chromium.content.browser;
 
 import android.app.Activity;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.util.Log;
-
-import com.google.common.annotations.VisibleForTesting;
 
 import org.chromium.base.ApplicationStatus;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
+import org.chromium.base.ThreadUtils;
 import org.chromium.content.common.ScreenOrientationValues;
 
 /**
@@ -22,7 +22,7 @@ import org.chromium.content.common.ScreenOrientationValues;
 class ScreenOrientationProvider {
     private static final String TAG = "ScreenOrientationProvider";
 
-    private int getOrientationFromWebScreenOrientations(byte orientations) {
+    private static int getOrientationFromWebScreenOrientations(byte orientations) {
         switch (orientations) {
             case ScreenOrientationValues.DEFAULT:
                 return ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
@@ -46,14 +46,8 @@ class ScreenOrientationProvider {
         }
     }
 
-    @VisibleForTesting
     @CalledByNative
-    static ScreenOrientationProvider create() {
-        return new ScreenOrientationProvider();
-    }
-
-    @CalledByNative
-    void lockOrientation(byte orientations) {
+    static void lockOrientation(byte orientations) {
         Activity activity = ApplicationStatus.getLastTrackedFocusedActivity();
         if (activity == null) {
             return;
@@ -68,13 +62,43 @@ class ScreenOrientationProvider {
     }
 
     @CalledByNative
-    void unlockOrientation() {
+    static void unlockOrientation() {
         Activity activity = ApplicationStatus.getLastTrackedFocusedActivity();
         if (activity == null) {
             return;
         }
 
-        activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        int defaultOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+
+        try {
+            ActivityInfo info = activity.getPackageManager().getActivityInfo(
+                    activity.getComponentName(), PackageManager.GET_META_DATA);
+            defaultOrientation = info.screenOrientation;
+        } catch (PackageManager.NameNotFoundException e) {
+            // Do nothing, defaultOrientation should be SCREEN_ORIENTATION_UNSPECIFIED.
+        } finally {
+            activity.setRequestedOrientation(defaultOrientation);
+        }
+    }
+
+    @CalledByNative
+    static void startAccurateListening() {
+        ThreadUtils.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                ScreenOrientationListener.getInstance().startAccurateListening();
+            }
+        });
+    }
+
+    @CalledByNative
+    static void stopAccurateListening() {
+        ThreadUtils.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                ScreenOrientationListener.getInstance().stopAccurateListening();
+            }
+        });
     }
 
     private ScreenOrientationProvider() {

@@ -1512,6 +1512,7 @@ class PBXFileReference(XCFileLikeElement, XCContainerPortal, XCRemoteObject):
         'xcassets':    'folder.assetcatalog',
         'xcconfig':    'text.xcconfig',
         'xcdatamodel': 'wrapper.xcdatamodel',
+        'xcdatamodeld':'wrapper.xcdatamodeld',
         'xib':         'file.xib',
         'y':           'sourcecode.yacc',
       }
@@ -2237,10 +2238,12 @@ class PBXNativeTarget(XCTarget):
   # Mapping from Xcode product-types to settings.  The settings are:
   #  filetype : used for explicitFileType in the project file
   #  prefix : the prefix for the file name
-  #  suffix : the suffix for the filen ame
+  #  suffix : the suffix for the file name
   _product_filetypes = {
     'com.apple.product-type.application':       ['wrapper.application',
                                                  '', '.app'],
+    'com.apple.product-type.app-extension':     ['wrapper.app-extension',
+                                                 '', '.appex'],
     'com.apple.product-type.bundle':            ['wrapper.cfbundle',
                                                  '', '.bundle'],
     'com.apple.product-type.framework':         ['wrapper.framework',
@@ -2313,11 +2316,11 @@ class PBXNativeTarget(XCTarget):
 
         if force_extension is not None:
           # If it's a wrapper (bundle), set WRAPPER_EXTENSION.
+          # Extension override.
+          suffix = '.' + force_extension
           if filetype.startswith('wrapper.'):
             self.SetBuildSetting('WRAPPER_EXTENSION', force_extension)
           else:
-            # Extension override.
-            suffix = '.' + force_extension
             self.SetBuildSetting('EXECUTABLE_EXTENSION', force_extension)
 
           if filetype.startswith('compiled.mach-o.executable'):

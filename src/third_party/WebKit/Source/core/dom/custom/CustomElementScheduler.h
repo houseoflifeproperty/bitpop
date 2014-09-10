@@ -39,11 +39,13 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class CustomElementDescriptor;
 class CustomElementMicrotaskImportStep;
+class CustomElementMicrotaskStep;
 class CustomElementRegistrationContext;
+class Document;
 class Element;
 class HTMLImportChild;
 
@@ -66,6 +68,7 @@ private:
     CustomElementScheduler() { }
 
     static CustomElementScheduler& instance();
+    static void enqueueMicrotaskStep(Document&, PassOwnPtrWillBeRawPtr<CustomElementMicrotaskStep>, bool importIsSync = true);
 
     CustomElementCallbackQueue& ensureCallbackQueue(PassRefPtrWillBeRawPtr<Element>);
     CustomElementCallbackQueue& schedule(PassRefPtrWillBeRawPtr<Element>);

@@ -26,7 +26,6 @@
 #include "base/task/cancelable_task_tracker.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/download_danger_prompt.h"
 #include "chrome/browser/download/download_file_icon_extractor.h"
 #include "chrome/browser/download/download_prefs.h"
@@ -64,6 +63,7 @@
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/notification_types.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "net/base/filename_util.h"
 #include "net/base/load_flags.h"
@@ -1087,8 +1087,7 @@ void DownloadsDownloadFunction::OnStarted(
       data->CreatorSuggestedFilename(
           creator_suggested_filename, creator_conflict_action);
     }
-    new DownloadedByExtension(
-        item, GetExtension()->id(), GetExtension()->name());
+    new DownloadedByExtension(item, extension()->id(), extension()->name());
     item->UpdateObservers();
   } else {
     DCHECK_NE(content::DOWNLOAD_INTERRUPT_REASON_NONE, interrupt_reason);
@@ -1387,7 +1386,7 @@ bool DownloadsOpenFunction::RunSync() {
       Fault(download_item->GetState() != DownloadItem::COMPLETE,
             errors::kNotComplete,
             &error_) ||
-      Fault(!GetExtension()->permissions_data()->HasAPIPermission(
+      Fault(!extension()->permissions_data()->HasAPIPermission(
                 APIPermission::kDownloadsOpen),
             errors::kOpenPermission,
             &error_))
@@ -1433,7 +1432,7 @@ bool DownloadsSetShelfEnabledFunction::RunSync() {
   scoped_ptr<downloads::SetShelfEnabled::Params> params(
       downloads::SetShelfEnabled::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
-  if (!GetExtension()->permissions_data()->HasAPIPermission(
+  if (!extension()->permissions_data()->HasAPIPermission(
           APIPermission::kDownloadsShelf)) {
     error_ = download_extension_errors::kShelfPermission;
     return false;
@@ -1448,14 +1447,14 @@ bool DownloadsSetShelfEnabledFunction::RunSync() {
   if (manager) {
     service = DownloadServiceFactory::GetForBrowserContext(
         manager->GetBrowserContext());
-    service->GetExtensionEventRouter()->SetShelfEnabled(
-        GetExtension(), params->enabled);
+    service->GetExtensionEventRouter()->SetShelfEnabled(extension(),
+                                                        params->enabled);
   }
   if (incognito_manager) {
     incognito_service = DownloadServiceFactory::GetForBrowserContext(
         incognito_manager->GetBrowserContext());
     incognito_service->GetExtensionEventRouter()->SetShelfEnabled(
-        GetExtension(), params->enabled);
+        extension(), params->enabled);
   }
 
   BrowserList* browsers = BrowserList::GetInstance(chrome::GetActiveDesktop());
@@ -1912,7 +1911,7 @@ void ExtensionDownloadsEventRouter::DispatchEvent(
   content::Source<DownloadsNotificationSource> content_source(
       &notification_source);
   content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_EXTENSION_DOWNLOADS_EVENT,
+      extensions::NOTIFICATION_EXTENSION_DOWNLOADS_EVENT,
       content_source,
       content::Details<std::string>(&json_args));
 }

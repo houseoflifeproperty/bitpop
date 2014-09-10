@@ -2,8 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from os import path
+
 from slave.recipe_config import config_item_context, ConfigGroup
-from slave.recipe_config import Set, Single, Static
+from slave.recipe_config import List, Set, Single, Static
 
 
 def BaseConfig(**_kwargs):
@@ -14,6 +16,18 @@ def BaseConfig(**_kwargs):
   assert shard_run <= shard_count
 
   return ConfigGroup(
+    gyp_env = ConfigGroup(
+      CC = Single(basestring, required=False),
+      CXX = Single(basestring, required=False),
+      CXX_host = Single(basestring, required=False),
+      LINK = Single(basestring, required=False),
+      GYP_MSVS_VERSION = Single(basestring, required=False),
+    ),
+    nacl = ConfigGroup(
+      update_nacl_sdk = Single(basestring, required=False),
+      compile_extra_args = List(basestring),
+      NACL_SDK_ROOT = Single(basestring, required=False),
+    ),
     # Test configuration that is the equal for all tests of a builder. It
     # might be refined later in the test runner for distinct tests.
     testing = ConfigGroup(
@@ -41,8 +55,27 @@ def v8(c):
 
 
 @config_ctx()
+def arm_hard_float(c):
+  c.gyp_env.CXX = '/usr/bin/arm-linux-gnueabihf-g++'
+  c.gyp_env.LINK = '/usr/bin/arm-linux-gnueabihf-g++'
+
+
+@config_ctx()
 def deadcode(c):
   c.testing.test_args.add('--shell_flags="--dead-code-elimination"')
+
+
+@config_ctx()
+def deopt_fuzz_normal(c):
+  c.testing.test_args.add('--coverage=0.4')
+  c.testing.test_args.add('--distribution-mode=smooth')
+
+
+@config_ctx()
+def deopt_fuzz_random(c):
+  c.testing.test_args.add('--coverage=0.4')
+  c.testing.test_args.add('--coverage-lift=50')
+  c.testing.test_args.add('--distribution-mode=random')
 
 
 @config_ctx()
@@ -56,6 +89,45 @@ def isolates(c):
 
 
 @config_ctx()
+def msvs2013(c):
+  c.gyp_env.GYP_MSVS_VERSION = '2013'
+  
+
+@config_ctx()
+def nacl(c):
+  c.testing.test_args.add('--command_prefix=%s'
+                          % path.join('tools', 'nacl-run.py'))
+  # This switches off buildbot flavor for NaCl, i.e. uses the directory layout
+  # out/nacl_ia32.release instead of out/Release.
+  c.testing.test_args.add('--buildbot=False')
+  c.testing.test_args.add('--no-presubmit')
+
+
+@config_ctx(includes=['nacl'])
+def nacl_stable(c):
+  c.nacl.update_nacl_sdk = 'stable'
+
+
+@config_ctx(includes=['nacl'])
+def nacl_canary(c):
+  c.nacl.update_nacl_sdk = 'canary'
+
+
+@config_ctx(includes=['nacl'])
+def nacl_ia32(c):
+  # Make is executed in the out dir. NaCl points to the toplevel Makefile in
+  # the v8 dir.
+  c.nacl.compile_extra_args.extend(['-C', '..' , 'nacl_ia32.release'])
+
+
+@config_ctx(includes=['nacl'])
+def nacl_x64(c):
+  # Make is executed in the out dir. NaCl points to the toplevel Makefile in
+  # the v8 dir.
+  c.nacl.compile_extra_args.extend(['-C', '..' , 'nacl_x64.release'])
+
+
+@config_ctx()
 def no_i18n(c):
   c.testing.test_args.add('--noi18n')
 
@@ -63,12 +135,6 @@ def no_i18n(c):
 @config_ctx()
 def no_snapshot(c):
   c.testing.test_args.add('--no-snap')
-
-
-@config_ctx()
-def nosse2(c):
-  # TODO(machenbach): Remove nosse2 bot from infrastructure.
-  pass
 
 
 @config_ctx()
@@ -87,8 +153,18 @@ def no_test_results(c):
 
 
 @config_ctx()
+def no_variants(c):
+  c.testing.test_args.add('--no-variants')
+
+
+@config_ctx()
 def novfp3(c):
   c.testing.test_args.add('--shell_flags="--noenable-vfp3"')
+
+
+@config_ctx()
+def predictable(c):
+  c.testing.test_args.add('--predictable')
 
 
 @config_ctx()

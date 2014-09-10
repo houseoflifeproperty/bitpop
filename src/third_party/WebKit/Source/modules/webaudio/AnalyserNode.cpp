@@ -28,13 +28,13 @@
 
 #include "modules/webaudio/AnalyserNode.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/webaudio/AudioNodeInput.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 
-namespace WebCore {
+namespace blink {
 
 AnalyserNode::AnalyserNode(AudioContext* context, float sampleRate)
     : AudioBasicInspectorNode(context, sampleRate, 2)
@@ -46,7 +46,13 @@ AnalyserNode::AnalyserNode(AudioContext* context, float sampleRate)
 
 AnalyserNode::~AnalyserNode()
 {
+    ASSERT(!isInitialized());
+}
+
+void AnalyserNode::dispose()
+{
     uninitialize();
+    AudioBasicInspectorNode::dispose();
 }
 
 void AnalyserNode::process(size_t framesToProcess)
@@ -113,6 +119,6 @@ void AnalyserNode::setSmoothingTimeConstant(double k, ExceptionState& exceptionS
     }
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

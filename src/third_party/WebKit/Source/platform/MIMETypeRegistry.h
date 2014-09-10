@@ -28,11 +28,10 @@
 
 #include "platform/PlatformExport.h"
 #include "wtf/HashSet.h"
-#include "wtf/Vector.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT MIMETypeRegistry {
 public:
@@ -70,6 +69,6 @@ public:
     static bool isJavaAppletMIMEType(const String& mimeType);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MIMETypeRegistry_h

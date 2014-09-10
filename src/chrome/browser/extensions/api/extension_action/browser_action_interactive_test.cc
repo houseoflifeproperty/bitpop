@@ -18,7 +18,10 @@
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "extensions/common/permissions/permissions_data.h"
 
 #if defined(OS_WIN)
@@ -263,6 +266,31 @@ IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest, TabSwitchClosesPopup) {
   EXPECT_FALSE(BrowserActionTestUtil(browser()).HasPopup());
 }
 
+IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest,
+                       DeleteBrowserActionWithPopupOpen) {
+  if (!ShouldRunPopupTest())
+    return;
+
+  // First, we open a popup.
+  OpenExtensionPopupViaAPI();
+  BrowserActionTestUtil browser_action_test_util(browser());
+  EXPECT_TRUE(browser_action_test_util.HasPopup());
+
+  // Then, find the extension that created it.
+  content::WebContents* active_web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_TRUE(active_web_contents);
+  GURL url = active_web_contents->GetLastCommittedURL();
+  const Extension* extension = ExtensionRegistry::Get(browser()->profile())->
+      enabled_extensions().GetExtensionOrAppByURL(url);
+  ASSERT_TRUE(extension);
+
+  // Finally, uninstall the extension, which causes the view to be deleted and
+  // the popup to go away. This should not crash.
+  UninstallExtension(extension->id());
+  EXPECT_FALSE(browser_action_test_util.HasPopup());
+}
+
 #if defined(TOOLKIT_VIEWS)
 // Test closing the browser while inspecting an extension popup with dev tools.
 IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest, CloseBrowserWithDevTools) {
@@ -290,7 +318,9 @@ IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest, CloseBrowserWithDevTools) {
 
 #if defined(OS_WIN)
 // Test that forcibly closing the browser and popup HWND does not cause a crash.
-IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest, DestroyHWNDDoesNotCrash) {
+// http://crbug.com/400646
+IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest,
+                       DISABLED_DestroyHWNDDoesNotCrash) {
   if (!ShouldRunPopupTest())
     return;
 

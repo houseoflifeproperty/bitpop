@@ -17,6 +17,7 @@
 #include "content/browser/indexed_db/indexed_db_backing_store.h"
 #include "content/browser/indexed_db/indexed_db_database.h"
 #include "content/browser/indexed_db/indexed_db_database_error.h"
+#include "third_party/WebKit/public/platform/WebIDBTypes.h"
 
 namespace content {
 
@@ -33,24 +34,24 @@ class CONTENT_EXPORT IndexedDBTransaction
       int64 id,
       scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
       const std::set<int64>& object_store_ids,
-      indexed_db::TransactionMode,
+      blink::WebIDBTransactionMode,
       IndexedDBDatabase* db,
       IndexedDBBackingStore::Transaction* backing_store_transaction);
 
   virtual void Abort();
-  void Commit();
+  leveldb::Status Commit();
   void Abort(const IndexedDBDatabaseError& error);
 
   // Called by the transaction coordinator when this transaction is unblocked.
   void Start();
 
-  indexed_db::TransactionMode mode() const { return mode_; }
+  blink::WebIDBTransactionMode mode() const { return mode_; }
   const std::set<int64>& scope() const { return object_store_ids_; }
 
   void ScheduleTask(Operation task) {
-    ScheduleTask(IndexedDBDatabase::NORMAL_TASK, task);
+    ScheduleTask(blink::WebIDBTaskTypeNormal, task);
   }
-  void ScheduleTask(IndexedDBDatabase::TaskType, Operation task);
+  void ScheduleTask(blink::WebIDBTaskType, Operation task);
   void ScheduleAbortTask(Operation abort_task);
   void RegisterOpenCursor(IndexedDBCursor* cursor);
   void UnregisterOpenCursor(IndexedDBCursor* cursor);
@@ -108,12 +109,12 @@ class CONTENT_EXPORT IndexedDBTransaction
   void BlobWriteComplete(bool success);
   void ProcessTaskQueue();
   void CloseOpenCursors();
-  void CommitPhaseTwo();
+  leveldb::Status CommitPhaseTwo();
   void Timeout();
 
   const int64 id_;
   const std::set<int64> object_store_ids_;
-  const indexed_db::TransactionMode mode_;
+  const blink::WebIDBTransactionMode mode_;
 
   bool used_;
   State state_;

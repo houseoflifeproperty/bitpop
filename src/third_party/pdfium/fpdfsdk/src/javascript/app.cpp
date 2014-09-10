@@ -120,7 +120,6 @@ IMPLEMENT_JS_CLASS(CJS_App,app)
 
 app::app(CJS_Object * pJSObject) : CJS_EmbedObj(pJSObject) ,
 	m_bCalculate(true),
-	m_pRuntime(NULL),
 	m_bRuntimeHighLight(false)
 //	m_pMenuHead(NULL)
 {
@@ -153,8 +152,8 @@ FX_BOOL app::activeDocs(OBJ_PROP_PARAMS)
 		CJS_Array aDocs(pRuntime->GetIsolate());
 //		int iNumDocs = pApp->CountDocuments();
 		
-// 		for(int iIndex = 0; iIndex<iNumDocs; iIndex++)
-// 		{
+//		for(int iIndex = 0; iIndex<iNumDocs; iIndex++)
+//		{
 			CPDFSDK_Document* pDoc = pApp->GetCurrentDoc();
 			if (pDoc)
 			{
@@ -210,10 +209,10 @@ FX_BOOL app::calculate(OBJ_PROP_PARAMS)
 		ASSERT(pRuntime != NULL);
 
 		CJS_Array aDocs(pRuntime->GetIsolate());
-// 		int iNumDocs = pApp->CountDocuments();
-// 		
-// 		for (int iIndex = 0;iIndex < iNumDocs; iIndex++)
-// 		{
+//		int iNumDocs = pApp->CountDocuments();
+//		
+//		for (int iIndex = 0;iIndex < iNumDocs; iIndex++)
+//		{
 			if (CPDFSDK_Document* pDoc = pApp->GetCurrentDoc())
 			{
 				CPDFSDK_InterForm* pInterForm = (CPDFSDK_InterForm*)pDoc->GetInterForm();
@@ -251,10 +250,10 @@ FX_BOOL app::viewerType(OBJ_PROP_PARAMS)
 
 	if (vp.IsGetting())
 	{
-// 		if (pApp->GetAppName() == PHANTOM)
-// 			vp << JS_STR_VIEWERTYPE_STANDARD;
-// 		else
-// 			vp << JS_STR_VIEWERTYPE_READER;
+//		if (pApp->GetAppName() == PHANTOM)
+//			vp << JS_STR_VIEWERTYPE_STANDARD;
+//		else
+//			vp << JS_STR_VIEWERTYPE_READER;
 		vp << L"unknown";
 
 		//vp << pApp->GetAppTitle();
@@ -367,8 +366,8 @@ FX_BOOL app::alert(OBJ_METHOD_PARAMS)
 					CJS_Value* pValue = new CJS_Value(isolate);
 //					if (iLenth == 1)
 //						pValue = new CJS_Value(isolate);
-// 					else if (iLenth > 1)
-// 						pValue = new CJS_Value[iLenth];
+//					else if (iLenth > 1)
+//						pValue = new CJS_Value[iLenth];
 
 					for(int i = 0; i < iLenth; i++)
 					{
@@ -379,16 +378,16 @@ FX_BOOL app::alert(OBJ_METHOD_PARAMS)
 					}
 
 					if(pValue) delete pValue;
-// 					if ((iLenth > 1) && pValue)
-// 					{
-// 						delete[]pValue;
-// 						pValue = NULL;
-// 					}
-// 					else if ((iLenth == 1) && pValue)
-// 					{
-// 						delete pValue;
-// 						pValue = NULL;
-// 					}
+//					if ((iLenth > 1) && pValue)
+//					{
+//						delete[]pValue;
+//						pValue = NULL;
+//					}
+//					else if ((iLenth == 1) && pValue)
+//					{
+//						delete pValue;
+//						pValue = NULL;
+//					}
 				}
 			}
 
@@ -886,15 +885,15 @@ FX_BOOL app::browseForDoc(OBJ_METHOD_PARAMS)
 	{
 		JSObject pObj = (JSObject )params[0];
 
- 		v8::Handle<v8::Value> pValue = JS_GetObjectElement(isolate,pObj,L"bSave");
- 			bSave = (bool)CJS_Value(isolate,pValue,GET_VALUE_TYPE(pValue));
- 		
+		v8::Handle<v8::Value> pValue = JS_GetObjectElement(isolate,pObj,L"bSave");
+			bSave = (bool)CJS_Value(isolate,pValue,GET_VALUE_TYPE(pValue));
+		
 		pValue = JS_GetObjectElement(isolate, pObj,L"cFilenameInit");
 		{
 			CJS_Value t = CJS_Value(isolate, pValue, GET_VALUE_TYPE(pValue));
- 			cFilenameInit = t.operator CFX_ByteString();
+			cFilenameInit = t.operator CFX_ByteString();
 		}
- 		
+		
 		pValue = JS_GetObjectElement(isolate,pObj,L"cFSInit");
 		{
 			CJS_Value t = CJS_Value(isolate, pValue, GET_VALUE_TYPE(pValue));
@@ -947,7 +946,7 @@ FX_BOOL app::browseForDoc(OBJ_METHOD_PARAMS)
 		JS_PutObjectString(isolate,pRetObj, L"cFS", CFX_WideString::FromLocal("DOS"));
 	}
 	
-	vRet =  pRetObj;
+	vRet =	pRetObj;
 
 	return TRUE;
 }
@@ -1037,15 +1036,13 @@ FX_BOOL app::response(OBJ_METHOD_PARAMS)
 	CFX_WideString swTitle = L"PDF";
 #endif
 	CFX_WideString swDefault = L"";
-	CFX_WideString swResponse = L"";
 	bool bPassWord = false;
-	
+
 	v8::Isolate* isolate = GetIsolate(cc);
-	
-	int iLength = params.size();	
+
+	int iLength = params.size();
 	if (iLength > 0 && params[0].GetType() == VT_object)
 	{
-		
 		JSObject pObj = (JSObject )params[0];
 		v8::Handle<v8::Value> pValue = JS_GetObjectElement(isolate,pObj,L"cQuestion");
 			swQuestion = CJS_Value(isolate,pValue,GET_VALUE_TYPE(pValue)).operator CFX_WideString();
@@ -1097,28 +1094,29 @@ FX_BOOL app::response(OBJ_METHOD_PARAMS)
 	}
 
 	CJS_Context* pContext = (CJS_Context *)cc;
- 	ASSERT(pContext != NULL);
+	ASSERT(pContext != NULL);
 
 	CPDFDoc_Environment* pApp = pContext->GetReaderApp();
- 	ASSERT(pApp != NULL);
-	int nLength = 2048;
-	char* pBuff = new char[nLength];
-	nLength = pApp->JS_appResponse(swQuestion, swTitle, swDefault, swLabel, bPassWord, pBuff, nLength);
-	if(nLength<=0)
+	ASSERT(pApp != NULL);
+
+	const int MAX_INPUT_BYTES = 2048;
+	char* pBuff = new char[MAX_INPUT_BYTES + 2];
+	if (!pBuff)
+		return FALSE;
+
+	memset(pBuff, 0, MAX_INPUT_BYTES + 2);
+	int nLengthBytes = pApp->JS_appResponse(swQuestion, swTitle, swDefault, swLabel, bPassWord, pBuff, MAX_INPUT_BYTES);
+	if (nLengthBytes <= 0)
 	{
 		vRet.SetNull();
+		delete[] pBuff;
 		return FALSE;
 	}
-	else
-	{
-		nLength = nLength>2046?2046:nLength;
-    pBuff[nLength] = 0;
-    pBuff[nLength+1] = 0;
-		swResponse = CFX_WideString::FromUTF16LE((unsigned short*)pBuff, nLength);
-		vRet = swResponse;
-	}
-	delete[] pBuff;
+	if (nLengthBytes > MAX_INPUT_BYTES)
+		nLengthBytes = MAX_INPUT_BYTES;
 
+	vRet = CFX_WideString::FromUTF16LE((unsigned short*)pBuff, nLengthBytes);
+	delete[] pBuff;
 	return TRUE;
 }
 

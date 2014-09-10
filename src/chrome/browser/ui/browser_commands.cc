@@ -46,13 +46,14 @@
 #include "chrome/browser/ui/find_bar/find_bar_controller.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
-#include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
 #include "chrome/browser/ui/status_bubble.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
+#include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
@@ -64,7 +65,7 @@
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/google/core/browser/google_util.h"
 #include "components/translate/core/browser/language_state.h"
-#include "components/web_modal/web_contents_modal_dialog_manager.h"
+#include "components/web_modal/popup_manager.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -79,6 +80,7 @@
 #include "content/public/common/url_utils.h"
 #include "content/public/common/user_agent.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
 #include "net/base/escape.h"
@@ -108,7 +110,6 @@ using content::OpenURLParams;
 using content::Referrer;
 using content::SSLStatus;
 using content::WebContents;
-using web_modal::WebContentsModalDialogManager;
 
 namespace chrome {
 namespace {
@@ -182,9 +183,9 @@ void BookmarkCurrentPageInternal(Browser* browser) {
     // so that bookmarks have an icon for the page.
     FaviconTabHelper::FromWebContents(web_contents)->SaveFavicon();
   }
-  bool was_bookmarked_by_user = bookmark_utils::IsBookmarkedByUser(model, url);
-  bookmark_utils::AddIfNotBookmarked(model, url, title);
-  bool is_bookmarked_by_user = bookmark_utils::IsBookmarkedByUser(model, url);
+  bool was_bookmarked_by_user = bookmarks::IsBookmarkedByUser(model, url);
+  bookmarks::AddIfNotBookmarked(model, url, title);
+  bool is_bookmarked_by_user = bookmarks::IsBookmarkedByUser(model, url);
   // Make sure the model actually added a bookmark before showing the star. A
   // bookmark isn't created if the url is invalid.
   if (browser->window()->IsActive() && is_bookmarked_by_user) {
@@ -244,15 +245,21 @@ void ReloadInternal(Browser* browser,
     new_tab->GetController().Reload(true);
 }
 
-bool IsShowingWebContentsModalDialog(const Browser* browser) {
+bool IsShowingWebContentsModalDialog(Browser* browser) {
   WebContents* web_contents =
       browser->tab_strip_model()->GetActiveWebContents();
   if (!web_contents)
     return false;
 
-  WebContentsModalDialogManager* web_contents_modal_dialog_manager =
-      WebContentsModalDialogManager::FromWebContents(web_contents);
-  return web_contents_modal_dialog_manager->IsDialogActive();
+  // In test code we may not have a popup manager.
+  if (!browser->popup_manager())
+    return false;
+
+  // TODO(gbillock): This is currently called in production by the CanPrint
+  // method, and may be too restrictive if we allow print preview to overlap.
+  // Re-assess how to queue print preview after we know more about popup
+  // management policy.
+  return browser->popup_manager()->IsWebModalDialogActive(web_contents);
 }
 
 bool PrintPreviewShowing(const Browser* browser) {
@@ -518,7 +525,8 @@ void OpenCurrentURL(Browser* browser) {
       TabStripModel::ADD_FORCE_INDEX | TabStripModel::ADD_INHERIT_OPENER;
   Navigate(&params);
 
-  DCHECK(browser->profile()->GetExtensionService());
+  DCHECK(extensions::ExtensionSystem::Get(
+      browser->profile())->extension_service());
   const extensions::Extension* extension =
       extensions::ExtensionRegistry::Get(browser->profile())
           ->enabled_extensions().GetAppByURL(url);
@@ -578,13 +586,21 @@ void CloseTab(Browser* browser) {
   browser->tab_strip_model()->CloseSelectedTabs();
 }
 
-void RestoreTab(Browser* browser) {
-  content::RecordAction(UserMetricsAction("RestoreTab"));
-  TabRestoreService* service =
-      TabRestoreServiceFactory::GetForProfile(browser->profile());
-  if (service)
-    service->RestoreMostRecentEntry(browser->tab_restore_service_delegate(),
-                                    browser->host_desktop_type());
+bool CanZoomIn(content::WebContents* contents) {
+  ZoomController* zoom_controller = ZoomController::FromWebContents(contents);
+  return zoom_controller->GetZoomPercent() !=
+      contents->GetMaximumZoomPercent() + 1;
+}
+
+bool CanZoomOut(content::WebContents* contents) {
+  ZoomController* zoom_controller = ZoomController::FromWebContents(contents);
+  return zoom_controller->GetZoomPercent() !=
+      contents->GetMinimumZoomPercent();
+}
+
+bool ActualSize(content::WebContents* contents) {
+  ZoomController* zoom_controller = ZoomController::FromWebContents(contents);
+  return zoom_controller->GetZoomPercent() != 100.0f;
 }
 
 TabStripModelDelegate::RestoreTabType GetRestoreTabType(
@@ -777,7 +793,7 @@ void Translate(Browser* browser) {
       step = translate::TRANSLATE_STEP_AFTER_TRANSLATE;
   }
   browser->window()->ShowTranslateBubble(
-      web_contents, step, TranslateErrors::NONE);
+      web_contents, step, translate::TranslateErrors::NONE, true);
 }
 
 void ManagePasswordsForPage(Browser* browser) {
@@ -851,9 +867,13 @@ void Print(Browser* browser) {
 #endif  // defined(ENABLE_PRINTING)
 }
 
-bool CanPrint(const Browser* browser) {
+bool CanPrint(Browser* browser) {
   // Do not print when printing is disabled via pref or policy.
   // Do not print when a constrained window is showing. It's confusing.
+  // TODO(gbillock): Need to re-assess the call to
+  // IsShowingWebContentsModalDialog after a popup management policy is
+  // refined -- we will probably want to just queue the print request, not
+  // block it.
   return browser->profile()->GetPrefs()->GetBoolean(prefs::kPrintingEnabled) &&
       !(IsShowingWebContentsModalDialog(browser) ||
       GetContentRestrictions(browser) & CONTENT_RESTRICTION_PRINT);
@@ -868,7 +888,7 @@ void AdvancedPrint(Browser* browser) {
 #endif
 }
 
-bool CanAdvancedPrint(const Browser* browser) {
+bool CanAdvancedPrint(Browser* browser) {
   // If printing is not disabled via pref or policy, it is always possible to
   // advanced print when the print preview is visible.  The exception to this
   // is under Win8 ash, since showing the advanced print dialog will open it

@@ -31,6 +31,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
@@ -80,48 +81,56 @@ void ManageProfileHandler::GetLocalizedValues(
     base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
+  const bool using_new_profiles_ui = switches::IsNewAvatarMenu();
+
   static OptionsStringResource resources[] = {
     { "manageProfilesNameLabel", IDS_PROFILES_MANAGE_NAME_LABEL },
     { "manageProfilesDuplicateNameError",
         IDS_PROFILES_MANAGE_DUPLICATE_NAME_ERROR },
     { "manageProfilesIconLabel", IDS_PROFILES_MANAGE_ICON_LABEL },
     { "manageProfilesExistingSupervisedUser",
-        IDS_PROFILES_CREATE_EXISTING_MANAGED_USER_ERROR },
-    { "manageProfilesManagedSignedInLabel",
-        IDS_PROFILES_CREATE_MANAGED_SIGNED_IN_LABEL },
-    { "manageProfilesManagedNotSignedInLabel",
-        IDS_PROFILES_CREATE_MANAGED_NOT_SIGNED_IN_LABEL },
-    { "manageProfilesManagedAccountDetailsOutOfDate",
-        IDS_PROFILES_CREATE_MANAGED_ACCOUNT_DETAILS_OUT_OF_DATE_LABEL },
-    { "manageProfilesManagedSignInAgainLink",
-        IDS_PROFILES_CREATE_MANAGED_ACCOUNT_SIGN_IN_AGAIN_LINK },
-    { "manageProfilesManagedNotSignedInLink",
-        IDS_PROFILES_CREATE_MANAGED_NOT_SIGNED_IN_LINK },
-    { "deleteProfileTitle", IDS_PROFILES_DELETE_TITLE },
-    { "deleteProfileOK", IDS_PROFILES_DELETE_OK_BUTTON_LABEL },
-    { "deleteProfileMessage", IDS_PROFILES_DELETE_MESSAGE },
-    { "deleteManagedProfileAddendum", IDS_PROFILES_DELETE_MANAGED_ADDENDUM },
+        IDS_PROFILES_CREATE_EXISTING_SUPERVISED_USER_ERROR },
+    { "manageProfilesSupervisedSignedInLabel",
+        IDS_PROFILES_CREATE_SUPERVISED_SIGNED_IN_LABEL },
+    { "manageProfilesSupervisedNotSignedIn",
+        IDS_PROFILES_CREATE_SUPERVISED_NOT_SIGNED_IN_HTML },
+    { "manageProfilesSupervisedAccountDetailsOutOfDate",
+        IDS_PROFILES_CREATE_SUPERVISED_ACCOUNT_DETAILS_OUT_OF_DATE_LABEL },
+    { "manageProfilesSupervisedSignInAgainLink",
+        IDS_PROFILES_CREATE_SUPERVISED_SIGN_IN_AGAIN_LINK },
+    { "manageProfilesConfirm", using_new_profiles_ui ? IDS_SAVE : IDS_OK },
+    { "deleteProfileTitle", using_new_profiles_ui ?
+          IDS_NEW_PROFILES_DELETE_TITLE : IDS_PROFILES_DELETE_TITLE },
+    { "deleteProfileOK", using_new_profiles_ui ?
+          IDS_NEW_PROFILES_DELETE_OK_BUTTON_LABEL :
+          IDS_PROFILES_DELETE_OK_BUTTON_LABEL },
+    { "deleteProfileMessage", using_new_profiles_ui ?
+        IDS_NEW_PROFILES_DELETE_MESSAGE : IDS_PROFILES_DELETE_MESSAGE },
+    { "deleteSupervisedProfileAddendum",
+        IDS_PROFILES_DELETE_SUPERVISED_ADDENDUM },
     { "disconnectManagedProfileTitle",
         IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_TITLE },
     { "disconnectManagedProfileOK",
         IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_OK_BUTTON_LABEL },
-    { "createProfileTitle", IDS_PROFILES_CREATE_TITLE },
+    { "createProfileTitle", using_new_profiles_ui ?
+          IDS_NEW_PROFILES_CREATE_TITLE : IDS_PROFILES_CREATE_TITLE },
     { "createProfileInstructions", IDS_PROFILES_CREATE_INSTRUCTIONS },
-    { "createProfileConfirm", IDS_PROFILES_CREATE_CONFIRM },
+    { "createProfileConfirm", using_new_profiles_ui ?
+          IDS_ADD : IDS_PROFILES_CREATE_CONFIRM },
     { "createProfileShortcutCheckbox", IDS_PROFILES_CREATE_SHORTCUT_CHECKBOX },
     { "createProfileShortcutButton", IDS_PROFILES_CREATE_SHORTCUT_BUTTON },
     { "removeProfileShortcutButton", IDS_PROFILES_REMOVE_SHORTCUT_BUTTON },
-    { "importExistingManagedUserLink",
-        IDS_PROFILES_IMPORT_EXISTING_MANAGED_USER_LINK },
-    { "signInToImportManagedUsers",
-        IDS_PROFILES_IMPORT_MANAGED_USER_NOT_SIGNED_IN },
+    { "importExistingSupervisedUserLink",
+        IDS_PROFILES_IMPORT_EXISTING_SUPERVISED_USER_LINK },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
   RegisterTitle(localized_strings, "manageProfile",
-                IDS_PROFILES_MANAGE_TITLE);
+                using_new_profiles_ui ? IDS_NEW_PROFILES_MANAGE_TITLE :
+                                        IDS_PROFILES_MANAGE_TITLE);
   RegisterTitle(localized_strings, "createProfile",
-                IDS_PROFILES_CREATE_TITLE);
+                using_new_profiles_ui ? IDS_NEW_PROFILES_CREATE_TITLE :
+                                        IDS_PROFILES_CREATE_TITLE);
 
   localized_strings->SetBoolean("profileShortcutsEnabled",
                                 ProfileShortcutManager::IsFeatureEnabled());
@@ -331,12 +340,6 @@ void ManageProfileHandler::SetProfileIconAndName(const base::ListValue* args) {
   if (!GetProfilePathFromArgs(args, &profile_file_path))
     return;
 
-  ProfileInfoCache& cache =
-      g_browser_process->profile_manager()->GetProfileInfoCache();
-  size_t profile_index = cache.GetIndexOfProfileWithPath(profile_file_path);
-  if (profile_index == std::string::npos)
-    return;
-
   Profile* profile =
       g_browser_process->profile_manager()->GetProfile(profile_file_path);
   if (!profile)
@@ -346,13 +349,17 @@ void ManageProfileHandler::SetProfileIconAndName(const base::ListValue* args) {
   if (!args->GetString(1, &icon_url))
     return;
 
+  PrefService* pref_service = profile->GetPrefs();
+  // Updating the profile preferences will cause the cache to be updated.
+
   // Metrics logging variable.
   bool previously_using_gaia_icon =
-      cache.IsUsingGAIAPictureOfProfileAtIndex(profile_index);
+      pref_service->GetBoolean(prefs::kProfileUsingGAIAAvatar);
 
   size_t new_icon_index;
   if (icon_url == gaia_picture_url_) {
-    cache.SetIsUsingGAIAPictureOfProfileAtIndex(profile_index, true);
+    pref_service->SetBoolean(prefs::kProfileUsingDefaultAvatar, false);
+    pref_service->SetBoolean(prefs::kProfileUsingGAIAAvatar, true);
     if (!previously_using_gaia_icon) {
       // Only log if they changed to the GAIA photo.
       // Selection of GAIA photo as avatar is logged as part of the function
@@ -361,11 +368,9 @@ void ManageProfileHandler::SetProfileIconAndName(const base::ListValue* args) {
     }
   } else if (profiles::IsDefaultAvatarIconUrl(icon_url, &new_icon_index)) {
     ProfileMetrics::LogProfileAvatarSelection(new_icon_index);
-    PrefService* pref_service = profile->GetPrefs();
-    // Updating the profile preference will cause the cache to be updated for
-    // this preference.
     pref_service->SetInteger(prefs::kProfileAvatarIndex, new_icon_index);
-    cache.SetIsUsingGAIAPictureOfProfileAtIndex(profile_index, false);
+    pref_service->SetBoolean(prefs::kProfileUsingDefaultAvatar, false);
+    pref_service->SetBoolean(prefs::kProfileUsingGAIAAvatar, false);
   }
   ProfileMetrics::LogProfileUpdate(profile_file_path);
 
@@ -487,7 +492,7 @@ void ManageProfileHandler::OnCreateSupervisedUserPrefChange() {
   base::FundamentalValue allowed(
       prefs->GetBoolean(prefs::kSupervisedUserCreationAllowed));
   web_ui()->CallJavascriptFunction(
-      "CreateProfileOverlay.updateManagedUsersAllowed", allowed);
+      "CreateProfileOverlay.updateSupervisedUsersAllowed", allowed);
 }
 
 void ManageProfileHandler::OnHasProfileShortcuts(bool has_shortcuts) {

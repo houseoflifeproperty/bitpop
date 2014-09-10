@@ -30,7 +30,6 @@
 #include "core/svg/graphics/SVGImage.h"
 
 #include "core/animation/AnimationTimeline.h"
-#include "core/dom/NoEventDispatchAssertion.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/shadow/ComposedTreeWalker.h"
 #include "core/frame/FrameView.h"
@@ -46,6 +45,7 @@
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/animation/SMILTimeContainer.h"
 #include "core/svg/graphics/SVGImageChromeClient.h"
+#include "platform/EventDispatchForbiddenScope.h"
 #include "platform/LengthFunctions.h"
 #include "platform/TraceEvent.h"
 #include "platform/geometry/IntRect.h"
@@ -54,7 +54,7 @@
 #include "platform/graphics/ImageObserver.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGImage::SVGImage(ImageObserver* observer)
     : Image(observer)
@@ -287,9 +287,7 @@ void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const Fl
     if (!m_url.isEmpty())
         view->scrollToFragment(m_url);
 
-    if (view->needsLayout())
-        view->layout();
-
+    view->updateLayoutAndStyleForPainting();
     view->paint(context, enclosingIntRect(srcRect));
     ASSERT(!view->needsLayout());
 
@@ -375,7 +373,7 @@ bool SVGImage::hasAnimations() const
 
 bool SVGImage::dataChanged(bool allDataReceived)
 {
-    TRACE_EVENT0("webkit", "SVGImage::dataChanged");
+    TRACE_EVENT0("blink", "SVGImage::dataChanged");
 
     // Don't do anything if is an empty image.
     if (!data()->size())
@@ -386,7 +384,7 @@ bool SVGImage::dataChanged(bool allDataReceived)
         // actually allow script to run so it's fine to call into it. We allow this
         // since it means an SVG data url can synchronously load like other image
         // types.
-        NoEventDispatchAssertion::AllowSVGImageEvents allowSVGImageEvents;
+        EventDispatchForbiddenScope::AllowUserAgentEvents allowUserAgentEvents;
 
         static FrameLoaderClient* dummyFrameLoaderClient = new EmptyFrameLoaderClient;
 
@@ -401,14 +399,23 @@ bool SVGImage::dataChanged(bool allDataReceived)
         // This will become an issue when SVGImage will be able to load other
         // SVGImage objects, but we're safe now, because SVGImage can only be
         // loaded by a top-level document.
-        OwnPtrWillBeRawPtr<Page> page = adoptPtrWillBeNoop(new Page(pageClients));
-        page->settings().setScriptEnabled(false);
-        page->settings().setPluginsEnabled(false);
-        page->settings().setAcceleratedCompositingEnabled(false);
+        OwnPtrWillBeRawPtr<Page> page;
+        {
+            TRACE_EVENT0("blink", "SVGImage::dataChanged::createPage");
+            page = adoptPtrWillBeNoop(new Page(pageClients));
+            page->settings().setScriptEnabled(false);
+            page->settings().setPluginsEnabled(false);
+            page->settings().setAcceleratedCompositingEnabled(false);
+        }
 
-        RefPtr<LocalFrame> frame = LocalFrame::create(dummyFrameLoaderClient, &page->frameHost(), 0);
-        frame->setView(FrameView::create(frame.get()));
-        frame->init();
+        RefPtr<LocalFrame> frame;
+        {
+            TRACE_EVENT0("blink", "SVGImage::dataChanged::createFrame");
+            frame = LocalFrame::create(dummyFrameLoaderClient, &page->frameHost(), 0);
+            frame->setView(FrameView::create(frame.get()));
+            frame->init();
+        }
+
         FrameLoader& loader = frame->loader();
         loader.forceSandboxFlags(SandboxAll);
 
@@ -418,6 +425,7 @@ bool SVGImage::dataChanged(bool allDataReceived)
 
         m_page = page.release();
 
+        TRACE_EVENT0("blink", "SVGImage::dataChanged::load");
         loader.load(FrameLoadRequest(0, blankURL(), SubstituteData(data(), "image/svg+xml", "UTF-8", KURL(), ForceSynchronousLoad)));
         // Set the intrinsic size before a container size is available.
         m_intrinsicSize = containerSize();

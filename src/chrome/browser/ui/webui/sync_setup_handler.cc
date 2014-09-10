@@ -34,6 +34,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/sync/signin_histogram.h"
+#include "chrome/browser/ui/webui/options/options_handlers_helper.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/chrome_switches.h"
@@ -371,6 +372,7 @@ void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
   args.SetBoolean("syncAllDataTypes", sync_prefs.HasKeepEverythingSynced());
   args.SetBoolean("syncNothing", false);  // Always false during initial setup.
   args.SetBoolean("encryptAllData", service->EncryptEverythingEnabled());
+  args.SetBoolean("isSupervised", GetProfile()->IsSupervised());
 
   // We call IsPassphraseRequired() here, instead of calling
   // IsPassphraseRequiredForDecryption(), because we want to show the passphrase
@@ -527,7 +529,7 @@ void SyncSetupHandler::DisplayGaiaLoginInNewTabOrWindow() {
         ProfileOAuth2TokenServiceFactory::GetForProfile(browser->profile())->
             signin_error_controller();
     DCHECK(error_controller->HasError());
-    if (switches::IsNewProfileManagement()) {
+    if (switches::IsNewAvatarMenu()) {
       browser->window()->ShowAvatarBubbleFromAvatarButton(
           BrowserWindow::AVATAR_BUBBLE_MODE_REAUTH,
           signin::ManageAccountsParams());
@@ -536,7 +538,7 @@ void SyncSetupHandler::DisplayGaiaLoginInNewTabOrWindow() {
                                  error_controller->error_account_id());
     }
   } else {
-    if (switches::IsNewProfileManagement()) {
+    if (switches::IsNewAvatarMenu()) {
       browser->window()->ShowAvatarBubbleFromAvatarButton(
           BrowserWindow::AVATAR_BUBBLE_MODE_SIGNIN,
           signin::ManageAccountsParams());
@@ -677,6 +679,11 @@ void SyncSetupHandler::HandleConfigure(const base::ListValue* args) {
     return;
   }
 
+  // Don't allow supervised users to enable "encrypt all". The UI is hidden,
+  // but the user may have enabled it e.g. by fiddling with the web inspector.
+  if (GetProfile()->IsSupervised())
+    configuration.encrypt_all = false;
+
   // Note: Data encryption will not occur until configuration is complete
   // (when the PSS receives its CONFIGURE_DONE notification from the sync
   // backend), so the user still has a chance to cancel out of the operation
@@ -811,8 +818,8 @@ void SyncSetupHandler::HandleStopSyncing(const base::ListValue* args) {
 
   bool delete_profile = false;
   if (args->GetBoolean(0, &delete_profile) && delete_profile) {
-    web_ui()->CallJavascriptFunction(
-        "BrowserOptions.deleteCurrentProfile");
+    // Do as BrowserOptionsHandler::DeleteProfile().
+    options::helper::DeleteProfileAtPath(GetProfile()->GetPath(), web_ui());
   }
 }
 #endif

@@ -33,11 +33,12 @@
 
 #include "core/dom/Document.h"
 #include "core/inspector/InspectorController.h"
+#include "core/page/Page.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/InspectorDatabaseAgent.h"
 
-namespace WebCore {
+namespace blink {
 
 DatabaseClient::DatabaseClient()
     : m_inspectorAgent(0)
@@ -66,7 +67,7 @@ void DatabaseClient::didOpenDatabase(PassRefPtrWillBeRawPtr<Database> database, 
 void DatabaseClient::createInspectorAgentFor(Page* page)
 {
     ASSERT(!m_inspectorAgent);
-    OwnPtr<InspectorDatabaseAgent> inspectorAgent = InspectorDatabaseAgent::create();
+    OwnPtrWillBeRawPtr<InspectorDatabaseAgent> inspectorAgent = InspectorDatabaseAgent::create();
     m_inspectorAgent = inspectorAgent.get();
     page->inspectorController().registerModuleAgent(inspectorAgent.release());
 }
@@ -83,4 +84,4 @@ void provideDatabaseClientToWorker(WorkerClients* workerClients, PassOwnPtrWillB
     workerClients->provideSupplement(DatabaseClient::supplementName(), client);
 }
 
-} // namespace WebCore
+} // namespace blink

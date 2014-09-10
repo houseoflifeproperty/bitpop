@@ -27,12 +27,14 @@
 #include "config.h"
 #include "core/frame/LocalDOMWindow.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "bindings/v8/ScriptCallStackFactory.h"
-#include "bindings/v8/ScriptController.h"
-#include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ScriptCallStackFactory.h"
+#include "bindings/core/v8/ScriptController.h"
+#include "bindings/core/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
 #include "core/css/CSSRuleList.h"
 #include "core/css/DOMWindowCSS.h"
@@ -46,7 +48,6 @@
 #include "core/dom/Element.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/dom/NoEventDispatchAssertion.h"
 #include "core/dom/RequestAnimationFrameCallback.h"
 #include "core/editing/Editor.h"
 #include "core/events/DOMWindowEventQueue.h"
@@ -57,7 +58,6 @@
 #include "core/events/PopStateEvent.h"
 #include "core/frame/BarProp.h"
 #include "core/frame/Console.h"
-#include "core/frame/DOMPoint.h"
 #include "core/frame/DOMWindowLifecycleNotifier.h"
 #include "core/frame/EventHandlerRegistry.h"
 #include "core/frame/FrameConsole.h"
@@ -70,6 +70,7 @@
 #include "core/frame/Screen.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLFrameOwnerElement.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/inspector/ScriptCallStack.h"
@@ -94,6 +95,7 @@
 #include "core/storage/StorageArea.h"
 #include "core/storage/StorageNamespace.h"
 #include "core/timing/Performance.h"
+#include "platform/EventDispatchForbiddenScope.h"
 #include "platform/PlatformScreen.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/UserGestureIndicator.h"
@@ -111,7 +113,7 @@
 using std::min;
 using std::max;
 
-namespace WebCore {
+namespace blink {
 
 class PostMessageTimer FINAL : public SuspendableTimer {
 public:
@@ -126,6 +128,7 @@ public:
         , m_stackTrace(stackTrace)
         , m_userGestureToken(userGestureToken)
     {
+        m_asyncOperationId = InspectorInstrumentation::traceAsyncOperationStarting(executionContext(), "postMessage");
     }
 
     PassRefPtrWillBeRawPtr<MessageEvent> event()
@@ -140,8 +143,10 @@ public:
 private:
     virtual void fired() OVERRIDE
     {
+        InspectorInstrumentationCookie cookie = InspectorInstrumentation::traceAsyncOperationCompletedCallbackStarting(executionContext(), m_asyncOperationId);
         m_window->postMessageTimerFired(this);
         // This object is deleted now.
+        InspectorInstrumentation::traceAsyncCallbackCompleted(cookie);
     }
 
     // FIXME: Oilpan: This raw pointer is safe because the PostMessageTimer is
@@ -155,6 +160,7 @@ private:
     RefPtr<SecurityOrigin> m_targetOrigin;
     RefPtrWillBePersistent<ScriptCallStack> m_stackTrace;
     RefPtr<UserGestureToken> m_userGestureToken;
+    int m_asyncOperationId;
 };
 
 static void disableSuddenTermination()
@@ -330,7 +336,7 @@ bool LocalDOMWindow::canShowModalDialogNow(const LocalFrame* frame)
 LocalDOMWindow::LocalDOMWindow(LocalFrame& frame)
     : FrameDestructionObserver(&frame)
     , m_shouldPrintWhenFinishedLoading(false)
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     , m_hasBeenReset(false)
 #endif
 {
@@ -400,10 +406,8 @@ PassRefPtrWillBeRawPtr<Document> LocalDOMWindow::installNewDocument(const String
     m_eventQueue = DOMWindowEventQueue::create(m_document.get());
     m_document->attach();
 
-    if (!m_frame) {
-        // FIXME: Oilpan: Remove .get() when m_document becomes Member<>.
-        return m_document.get();
-    }
+    if (!m_frame)
+        return m_document;
 
     m_frame->script().updateDocument();
     m_document->updateViewportDescription();
@@ -417,14 +421,7 @@ PassRefPtrWillBeRawPtr<Document> LocalDOMWindow::installNewDocument(const String
     }
 
     m_frame->selection().updateSecureKeyboardEntryIfActive();
-
-    if (m_frame->isMainFrame()) {
-        if (m_document->hasTouchEventHandlers())
-            m_frame->host()->chrome().client().needTouchEvents(true);
-    }
-
-    // FIXME: Oilpan: Remove .get() when m_document becomes Member<>.
-    return m_document.get();
+    return m_document;
 }
 
 EventQueue* LocalDOMWindow::eventQueue() const
@@ -450,7 +447,7 @@ void LocalDOMWindow::enqueueDocumentEvent(PassRefPtrWillBeRawPtr<Event> event)
 
 void LocalDOMWindow::dispatchWindowLoadEvent()
 {
-    ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
+    ASSERT(!EventDispatchForbiddenScope::isEventDispatchForbidden());
     dispatchLoadEvent();
 }
 
@@ -611,7 +608,7 @@ void LocalDOMWindow::resetDOMWindowProperties()
     m_sessionStorage = nullptr;
     m_localStorage = nullptr;
     m_applicationCache = nullptr;
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     m_hasBeenReset = true;
 #endif
 }
@@ -903,7 +900,9 @@ void LocalDOMWindow::dispatchMessageEventWithOriginCheck(SecurityOrigin* intende
         // Check target origin now since the target document may have changed since the timer was scheduled.
         if (!intendedTargetOrigin->isSameSchemeHostPort(document()->securityOrigin())) {
             String message = ExceptionMessages::failedToExecute("postMessage", "DOMWindow", "The target origin provided ('" + intendedTargetOrigin->toString() + "') does not match the recipient window's origin ('" + document()->securityOrigin()->toString() + "').");
-            frameConsole()->addMessage(SecurityMessageSource, ErrorMessageLevel, message, stackTrace);
+            RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, message);
+            consoleMessage->setCallStack(stackTrace);
+            frameConsole()->addMessage(consoleMessage.release());
             return;
         }
     }
@@ -983,12 +982,14 @@ void LocalDOMWindow::close(ExecutionContext* context)
     bool allowScriptsToCloseWindows = settings && settings->allowScriptsToCloseWindows();
 
     if (!(page->openedByDOM() || page->backForward().backForwardListCount() <= 1 || allowScriptsToCloseWindows)) {
-        frameConsole()->addMessage(JSMessageSource, WarningMessageLevel, "Scripts may close only the windows that were opened by it.");
+        frameConsole()->addMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel, "Scripts may close only the windows that were opened by it."));
         return;
     }
 
     if (!m_frame->loader().shouldClose())
         return;
+
+    InspectorInstrumentation::willCloseWindow(context);
 
     page->chrome().closeWindowSoon();
 }
@@ -1340,36 +1341,6 @@ PassRefPtrWillBeRawPtr<CSSRuleList> LocalDOMWindow::getMatchedCSSRules(Element* 
     return m_frame->document()->ensureStyleResolver().pseudoCSSRulesForElement(element, pseudoId, rulesToInclude);
 }
 
-PassRefPtrWillBeRawPtr<DOMPoint> LocalDOMWindow::webkitConvertPointFromNodeToPage(Node* node, const DOMPoint* p) const
-{
-    if (!node || !p)
-        return nullptr;
-
-    if (!document())
-        return nullptr;
-
-    document()->updateLayoutIgnorePendingStylesheets();
-
-    FloatPoint pagePoint(p->x(), p->y());
-    pagePoint = node->convertToPage(pagePoint);
-    return DOMPoint::create(pagePoint.x(), pagePoint.y());
-}
-
-PassRefPtrWillBeRawPtr<DOMPoint> LocalDOMWindow::webkitConvertPointFromPageToNode(Node* node, const DOMPoint* p) const
-{
-    if (!node || !p)
-        return nullptr;
-
-    if (!document())
-        return nullptr;
-
-    document()->updateLayoutIgnorePendingStylesheets();
-
-    FloatPoint nodePoint(p->x(), p->y());
-    nodePoint = node->convertFromPage(nodePoint);
-    return DOMPoint::create(nodePoint.x(), nodePoint.y());
-}
-
 double LocalDOMWindow::devicePixelRatio() const
 {
     if (!m_frame)
@@ -1381,7 +1352,7 @@ double LocalDOMWindow::devicePixelRatio() const
 static bool scrollBehaviorFromScrollOptions(const Dictionary& scrollOptions, ScrollBehavior& scrollBehavior, ExceptionState& exceptionState)
 {
     String scrollBehaviorString;
-    if (!scrollOptions.get("behavior", scrollBehaviorString)) {
+    if (!DictionaryHelper::get(scrollOptions, "behavior", scrollBehaviorString)) {
         scrollBehavior = ScrollBehaviorAuto;
         return true;
     }
@@ -1393,7 +1364,7 @@ static bool scrollBehaviorFromScrollOptions(const Dictionary& scrollOptions, Scr
     return false;
 }
 
-void LocalDOMWindow::scrollBy(int x, int y) const
+void LocalDOMWindow::scrollBy(int x, int y, ScrollBehavior scrollBehavior) const
 {
     if (!isCurrentlyDisplayedInFrame())
         return;
@@ -1405,8 +1376,7 @@ void LocalDOMWindow::scrollBy(int x, int y) const
         return;
 
     IntSize scaledOffset(x * m_frame->pageZoomFactor(), y * m_frame->pageZoomFactor());
-    // FIXME: Use scrollBehavior to decide whether to scroll smoothly or instantly.
-    view->scrollBy(scaledOffset);
+    view->scrollBy(scaledOffset, scrollBehavior);
 }
 
 void LocalDOMWindow::scrollBy(int x, int y, const Dictionary& scrollOptions, ExceptionState &exceptionState) const
@@ -1414,10 +1384,10 @@ void LocalDOMWindow::scrollBy(int x, int y, const Dictionary& scrollOptions, Exc
     ScrollBehavior scrollBehavior = ScrollBehaviorAuto;
     if (!scrollBehaviorFromScrollOptions(scrollOptions, scrollBehavior, exceptionState))
         return;
-    scrollBy(x, y);
+    scrollBy(x, y, scrollBehavior);
 }
 
-void LocalDOMWindow::scrollTo(int x, int y) const
+void LocalDOMWindow::scrollTo(int x, int y, ScrollBehavior scrollBehavior) const
 {
     if (!isCurrentlyDisplayedInFrame())
         return;
@@ -1429,8 +1399,7 @@ void LocalDOMWindow::scrollTo(int x, int y) const
         return;
 
     IntPoint layoutPos(x * m_frame->pageZoomFactor(), y * m_frame->pageZoomFactor());
-    // FIXME: Use scrollBehavior to decide whether to scroll smoothly or instantly.
-    view->setScrollPosition(layoutPos);
+    view->setScrollPosition(layoutPos, scrollBehavior);
 }
 
 void LocalDOMWindow::scrollTo(int x, int y, const Dictionary& scrollOptions, ExceptionState& exceptionState) const
@@ -1438,7 +1407,7 @@ void LocalDOMWindow::scrollTo(int x, int y, const Dictionary& scrollOptions, Exc
     ScrollBehavior scrollBehavior = ScrollBehaviorAuto;
     if (!scrollBehaviorFromScrollOptions(scrollOptions, scrollBehavior, exceptionState))
         return;
-    scrollTo(x, y);
+    scrollTo(x, y, scrollBehavior);
 }
 
 void LocalDOMWindow::moveBy(float x, float y) const
@@ -1532,7 +1501,7 @@ DOMWindowCSS& LocalDOMWindow::css() const
 
 static void didAddStorageEventListener(LocalDOMWindow* window)
 {
-    // Creating these WebCore::Storage objects informs the system that we'd like to receive
+    // Creating these blink::Storage objects informs the system that we'd like to receive
     // notifications about storage events that might be triggered in other processes. Rather
     // than subscribe to these notifications explicitly, we subscribe to them implicitly to
     // simplify the work done by the system.
@@ -1550,9 +1519,7 @@ bool LocalDOMWindow::addEventListener(const AtomicString& eventType, PassRefPtr<
 
     if (Document* document = this->document()) {
         document->addListenerTypeIfNeeded(eventType);
-        if (isTouchEventType(eventType))
-            document->didAddTouchEventHandler(document);
-        else if (eventType == EventTypeNames::storage)
+        if (eventType == EventTypeNames::storage)
             didAddStorageEventListener(this);
     }
 
@@ -1577,18 +1544,13 @@ bool LocalDOMWindow::addEventListener(const AtomicString& eventType, PassRefPtr<
     return true;
 }
 
-bool LocalDOMWindow::removeEventListener(const AtomicString& eventType, EventListener* listener, bool useCapture)
+bool LocalDOMWindow::removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
 {
     if (!EventTarget::removeEventListener(eventType, listener, useCapture))
         return false;
 
     if (m_frame && m_frame->host())
         m_frame->host()->eventHandlerRegistry().didRemoveEventHandler(*this, eventType);
-
-    if (Document* document = this->document()) {
-        if (isTouchEventType(eventType))
-            document->didRemoveTouchEventHandler(document);
-    }
 
     lifecycleNotifier().notifyRemoveEventListener(this, eventType);
 
@@ -1629,7 +1591,7 @@ void LocalDOMWindow::dispatchLoadEvent()
 
 bool LocalDOMWindow::dispatchEvent(PassRefPtrWillBeRawPtr<Event> prpEvent, PassRefPtrWillBeRawPtr<EventTarget> prpTarget)
 {
-    ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
+    ASSERT(!EventDispatchForbiddenScope::isEventDispatchForbidden());
 
     RefPtrWillBeRawPtr<EventTarget> protect(this);
     RefPtrWillBeRawPtr<Event> event = prpEvent;
@@ -1638,7 +1600,7 @@ bool LocalDOMWindow::dispatchEvent(PassRefPtrWillBeRawPtr<Event> prpEvent, PassR
     event->setCurrentTarget(this);
     event->setEventPhase(Event::AT_TARGET);
 
-    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "EventDispatch", "type", event->type().ascii());
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "EventDispatch", "data", InspectorEventDispatchEvent::data(*event));
     // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentationCookie cookie = InspectorInstrumentation::willDispatchEventOnWindow(frame(), *event, this);
 
@@ -1658,9 +1620,6 @@ void LocalDOMWindow::removeAllEventListenersInternal(BroadcastListenerRemoval mo
     if (mode == DoBroadcastListenerRemoval) {
         if (m_frame && m_frame->host())
             m_frame->host()->eventHandlerRegistry().didRemoveAllEventHandlers(*this);
-
-        if (Document* document = this->document())
-            document->didClearTouchEventHandlers(document);
     }
 
     removeAllUnloadEventListeners(this);
@@ -1704,6 +1663,16 @@ void LocalDOMWindow::setLocation(const String& urlString, LocalDOMWindow* callin
     if (isInsecureScriptAccess(*callingWindow, completedURL))
         return;
 
+    V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
+    if (activityLogger) {
+        Vector<String> argv;
+        argv.append("LocalDOMWindow");
+        argv.append("url");
+        argv.append(firstFrame->document()->url());
+        argv.append(completedURL);
+        activityLogger->logEvent("blinkSetAttribute", argv.size(), argv.data());
+    }
+
     // We want a new history item if we are processing a user gesture.
     m_frame->navigationScheduler().scheduleLocationChange(activeDocument,
         // FIXME: What if activeDocument()->frame() is 0?
@@ -1713,10 +1682,13 @@ void LocalDOMWindow::setLocation(const String& urlString, LocalDOMWindow* callin
 
 void LocalDOMWindow::printErrorMessage(const String& message)
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return;
+
     if (message.isEmpty())
         return;
 
-    frameConsole()->addMessage(JSMessageSource, ErrorMessageLevel, message);
+    frameConsole()->addMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, message));
 }
 
 // FIXME: Once we're throwing exceptions for cross-origin access violations, we will always sanitize the target
@@ -1822,6 +1794,10 @@ PassRefPtrWillBeRawPtr<LocalDOMWindow> LocalDOMWindow::open(const String& urlStr
     LocalFrame* firstFrame = enteredWindow->frame();
     if (!firstFrame)
         return nullptr;
+
+    UseCounter::count(*activeDocument, UseCounter::DOMWindowOpen);
+    if (!windowFeaturesString.isEmpty())
+        UseCounter::count(*activeDocument, UseCounter::DOMWindowOpenFeatures);
 
     if (!enteredWindow->allowPopUp()) {
         // Because FrameTree::find() returns true for empty strings, we must check for empty frame names.
@@ -1941,6 +1917,7 @@ void LocalDOMWindow::trace(Visitor* visitor)
     visitor->trace(m_eventQueue);
     WillBeHeapSupplementable<LocalDOMWindow>::trace(visitor);
     EventTargetWithInlineData::trace(visitor);
+    LifecycleContext<LocalDOMWindow>::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

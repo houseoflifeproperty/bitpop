@@ -33,6 +33,7 @@
 #include "core/html/track/TextTrackCue.h"
 #include "core/html/track/vtt/VTTCue.h"
 #include "platform/PODIntervalTree.h"
+#include "platform/Supplementable.h"
 #include "platform/graphics/media/MediaPlayer.h"
 #include "public/platform/WebMediaPlayerClient.h"
 #include "public/platform/WebMimeRegistry.h"
@@ -43,7 +44,7 @@ class WebInbandTextTrack;
 class WebLayer;
 }
 
-namespace WebCore {
+namespace blink {
 
 #if ENABLE(WEB_AUDIO)
 class AudioSourceProvider;
@@ -121,7 +122,7 @@ public:
     String preload() const;
     void setPreload(const AtomicString&);
 
-    PassRefPtr<TimeRanges> buffered() const;
+    PassRefPtrWillBeRawPtr<TimeRanges> buffered() const;
     void load();
     String canPlayType(const String& mimeType, const String& keySystem = String()) const;
 
@@ -140,8 +141,8 @@ public:
     double playbackRate() const;
     void setPlaybackRate(double);
     void updatePlaybackRate();
-    PassRefPtr<TimeRanges> played();
-    PassRefPtr<TimeRanges> seekable() const;
+    PassRefPtrWillBeRawPtr<TimeRanges> played();
+    PassRefPtrWillBeRawPtr<TimeRanges> seekable() const;
     bool ended() const;
     bool autoplay() const;
     bool loop() const;
@@ -158,8 +159,7 @@ public:
     void durationChanged(double duration, bool requestSeek);
 
     // controls
-    bool controls() const;
-    void setControls(bool);
+    bool shouldShowControls() const;
     double volume() const;
     void setVolume(double, ExceptionState&);
     bool muted() const;
@@ -251,7 +251,7 @@ public:
     // of one of them here.
     using HTMLElement::executionContext;
 
-    bool hasSingleSecurityOrigin() const { return !m_player || m_player->hasSingleSecurityOrigin(); }
+    bool hasSingleSecurityOrigin() const { return !m_player || (webMediaPlayer() && webMediaPlayer()->hasSingleSecurityOrigin()); }
 
     bool isFullscreen() const;
     void enterFullscreen();
@@ -287,12 +287,20 @@ public:
 
     void scheduleEvent(PassRefPtrWillBeRawPtr<Event>);
 
-    // Current volume that should be used by the webMediaPlayer(). This method takes muted state
-    // and m_mediaController multipliers into account.
-    double playerVolume() const;
+    // Returns the "effective media volume" value as specified in the HTML5 spec.
+    double effectiveMediaVolume() const;
 
 #if ENABLE(OILPAN)
     bool isFinalizing() const { return m_isFinalizing; }
+
+    // Oilpan: finalization of the media element is observable from its
+    // attached MediaSource; it entering a closed state.
+    //
+    // Express that by having the MediaSource keep a weak reference
+    // to the media element and signal that it wants to be notified
+    // of destruction if it survives a GC, but the media element
+    // doesn't.
+    void setCloseMediaSourceWhenFinalizing();
 #endif
 
 protected:
@@ -342,7 +350,7 @@ private:
     virtual void updateDisplayState() { }
 
     void setReadyState(ReadyState);
-    void setNetworkState(MediaPlayer::NetworkState);
+    void setNetworkState(blink::WebMediaPlayer::NetworkState);
 
     virtual void mediaPlayerNetworkStateChanged() OVERRIDE FINAL;
     virtual void mediaPlayerReadyStateChanged() OVERRIDE FINAL;
@@ -393,7 +401,7 @@ private:
 
     KURL selectNextSourceChild(ContentType*, String* keySystem, InvalidURLAction);
 
-    void mediaLoadingFailed(MediaPlayer::NetworkState);
+    void mediaLoadingFailed(blink::WebMediaPlayer::NetworkState);
 
     // deferred loading (preload=none)
     bool loadIsDeferred() const;
@@ -470,7 +478,7 @@ private:
     Timer<HTMLMediaElement> m_progressEventTimer;
     Timer<HTMLMediaElement> m_playbackProgressTimer;
     Timer<HTMLMediaElement> m_audioTracksTimer;
-    RefPtr<TimeRanges> m_playedTimeRanges;
+    RefPtrWillBeMember<TimeRanges> m_playedTimeRanges;
     OwnPtrWillBeMember<GenericEventQueue> m_asyncEventQueue;
 
     double m_playbackRate;
@@ -525,7 +533,7 @@ private:
 
     DisplayMode m_displayMode;
 
-    RefPtr<HTMLMediaSource> m_mediaSource;
+    RefPtrWillBeMember<HTMLMediaSource> m_mediaSource;
 
     mutable double m_cachedTime;
     mutable double m_cachedTimeWallClockUpdateTime;
@@ -567,6 +575,7 @@ private:
     bool m_processingPreferenceChange : 1;
 #if ENABLE(OILPAN)
     bool m_isFinalizing : 1;
+    bool m_closeMediaSourceWhenFinalizing : 1;
 #endif
     double m_lastTextTrackUpdateTime;
 
@@ -613,11 +622,6 @@ struct ValueToString<TextTrackCue*> {
     }
 };
 #endif
-
-inline bool isHTMLMediaElement(const Element& element)
-{
-    return isHTMLAudioElement(element) || isHTMLVideoElement(element);
-}
 
 inline bool isHTMLMediaElement(const HTMLElement& element)
 {

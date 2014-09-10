@@ -19,7 +19,6 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/common/extensions/api/file_browser_handlers/file_browser_handler.h"
 #include "chrome/common/extensions/api/file_browser_private.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/render_process_host.h"
@@ -28,6 +27,7 @@
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/browser/lazy_background_task_queue.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest_handlers/background_info.h"
@@ -114,6 +114,8 @@ FileBrowserHandlerList FindFileBrowserHandlersForURL(
     const Extension* extension = iter->get();
     if (profile->IsOffTheRecord() &&
         !extensions::util::IsIncognitoEnabled(extension->id(), profile))
+      continue;
+    if (extensions::util::IsEphemeralApp(extension->id(), profile))
       continue;
 
     FileBrowserHandler::List* handler_list =
@@ -480,17 +482,6 @@ bool ExecuteFileBrowserHandler(
   (new FileBrowserHandlerExecutor(
       profile, extension, action_id))->Execute(file_urls, done);
   return true;
-}
-
-bool IsFallbackFileBrowserHandler(const file_tasks::TaskDescriptor& task) {
-  return ((task.task_type == file_tasks::TASK_TYPE_FILE_BROWSER_HANDLER ||
-           task.task_type == file_tasks::TASK_TYPE_FILE_HANDLER) &&
-          (task.app_id == kFileManagerAppId ||
-           task.app_id == kVideoPlayerAppId ||
-           task.app_id == kGalleryAppId ||
-           task.app_id == extension_misc::kQuickOfficeComponentExtensionId ||
-           task.app_id == extension_misc::kQuickOfficeInternalExtensionId ||
-           task.app_id == extension_misc::kQuickOfficeExtensionId));
 }
 
 FileBrowserHandlerList FindFileBrowserHandlers(

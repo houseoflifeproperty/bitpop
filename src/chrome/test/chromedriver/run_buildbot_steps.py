@@ -31,6 +31,10 @@ GS_SERVER_LOGS_URL = GS_CHROMEDRIVER_DATA_BUCKET + '/server_logs'
 SERVER_LOGS_LINK = (
     'http://chromedriver-data.storage.googleapis.com/server_logs')
 TEST_LOG_FORMAT = '%s_log.json'
+GS_GITHASH_TO_SVN_URL = (
+    'https://chromium.googlesource.com/chromium/src/+/%s?format=json')
+GS_SEARCH_PATTERN = (
+    r'.*git-svn-id: svn://svn.chromium.org/chrome/trunk/src@(\d+) ')
 
 SCRIPT_DIR = os.path.join(_THIS_DIR, os.pardir, os.pardir, os.pardir, os.pardir,
                           os.pardir, os.pardir, os.pardir, 'scripts')
@@ -380,14 +384,46 @@ def _CleanTmpDir():
       os.remove(file_path)
 
 
+def _GetSVNRevisionFromGitHash(snapshot_hashcode):
+  json_url = GS_GITHASH_TO_SVN_URL % snapshot_hashcode
+  try:
+    response = urllib2.urlopen(json_url)
+  except urllib2.HTTPError as error:
+    util.PrintAndFlush('HTTP Error %d' % error.getcode())
+  except urllib2.URLError as error:
+    util.PrintAndFlush('URL Error %s' % error.message)
+    return None
+  data = json.loads(response.read()[4:])
+  if 'message' in data:
+    message = data['message'].split('\n')
+    message = [line for line in message if line.strip()]
+    search_pattern = re.compile(GS_SEARCH_PATTERN)
+    result = search_pattern.search(message[len(message)-1])
+    if result:
+      return result.group(1)
+  util.PrintAndFlush('Failed to get svn revision number for %s' %
+                     snapshot_hashcode)
+  return None
+
+
 def _WaitForLatestSnapshot(revision):
   util.MarkBuildStepStart('wait_for_snapshot')
+  def _IsRevisionNumber(revision):
+    if isinstance(revision, int):
+      return True
+    else:
+      return revision.isdigit()
   while True:
     snapshot_revision = archive.GetLatestSnapshotVersion()
-    if int(snapshot_revision) >= int(revision):
-      break
-    util.PrintAndFlush('Waiting for snapshot >= %s, found %s' %
-                       (revision, snapshot_revision))
+    if not _IsRevisionNumber(revision):
+      revision = _GetSVNRevisionFromGitHash(revision)
+    if not _IsRevisionNumber(snapshot_revision):
+      snapshot_revision = _GetSVNRevisionFromGitHash(snapshot_revision)
+    if revision is not None and snapshot_revision is not None:
+      if int(snapshot_revision) >= int(revision):
+        break
+      util.PrintAndFlush('Waiting for snapshot >= %s, found %s' %
+                         (revision, snapshot_revision))
     time.sleep(60)
   util.PrintAndFlush('Got snapshot revision %s' % snapshot_revision)
 

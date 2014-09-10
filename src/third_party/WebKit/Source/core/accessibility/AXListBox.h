@@ -31,7 +31,7 @@
 
 #include "core/accessibility/AXRenderObject.h"
 
-namespace WebCore {
+namespace blink {
 
 class AXListBox FINAL : public AXRenderObject {
 
@@ -42,14 +42,8 @@ public:
     virtual ~AXListBox();
 
     virtual AccessibilityRole roleValue() const OVERRIDE { return ListBoxRole; }
-
-    virtual void addChildren() OVERRIDE;
-
-private:
-    AXObject* listBoxOptionAXObject(HTMLElement*) const;
-    virtual AXObject* elementAccessibilityHitTest(const IntPoint&) const OVERRIDE;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AXListBox_h

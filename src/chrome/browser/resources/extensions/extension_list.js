@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-<include src="extension_error.js"></include>
+<include src="extension_error.js">
 
 cr.define('options', function() {
   'use strict';
@@ -85,7 +85,8 @@ cr.define('options', function() {
       if (!extension.enabled || extension.terminated)
         node.classList.add('inactive-extension');
 
-      if (extension.managedInstall) {
+      if (extension.managedInstall ||
+          extension.dependentExtensions.length > 0) {
         node.classList.add('may-not-modify');
         node.classList.add('may-not-remove');
       } else if (extension.suspiciousInstall || extension.corruptInstall) {
@@ -133,6 +134,8 @@ cr.define('options', function() {
       }
 
       // The 'allow in incognito' checkbox.
+      node.querySelector('.incognito-control').hidden =
+          !this.data_.incognitoAvailable;
       var incognito = node.querySelector('.incognito-control input');
       incognito.disabled = !extension.incognitoCanBeEnabled;
       incognito.checked = extension.enabledIncognito;
@@ -236,12 +239,13 @@ cr.define('options', function() {
         // The 'Enabled' checkbox.
         var enable = node.querySelector('.enable-checkbox');
         enable.hidden = false;
-        var managedOrHosedExtension = extension.managedInstall ||
-                                      extension.suspiciousInstall ||
-                                      extension.corruptInstall;
-        enable.querySelector('input').disabled = managedOrHosedExtension;
+        var enableCheckboxDisabled = extension.managedInstall ||
+                                     extension.suspiciousInstall ||
+                                     extension.corruptInstall ||
+                                     extension.dependentExtensions.length > 0;
+        enable.querySelector('input').disabled = enableCheckboxDisabled;
 
-        if (!managedOrHosedExtension) {
+        if (!enableCheckboxDisabled) {
           enable.addEventListener('click', function(e) {
             // When e.target is the label instead of the checkbox, it doesn't
             // have the checked property and the state of the checkbox is
@@ -290,8 +294,12 @@ cr.define('options', function() {
       if (extension.isUnpacked) {
         var loadPath = node.querySelector('.load-path');
         loadPath.hidden = false;
-        loadPath.querySelector('span:nth-of-type(2)').textContent =
-            ' ' + extension.path;
+        var pathLink = loadPath.querySelector('a:nth-of-type(1)');
+        pathLink.textContent = ' ' + extension.prettifiedPath;
+        pathLink.addEventListener('click', function(e) {
+          chrome.send('extensionSettingsShowPath', [String(extension.id)]);
+          e.preventDefault();
+        });
       }
 
       // Then the 'managed, cannot uninstall/disable' message.
@@ -306,6 +314,21 @@ cr.define('options', function() {
           // Then the 'This is a corrupt extension' message.
           node.querySelector('.corrupt-install-message').hidden = false;
         }
+      }
+
+      if (extension.dependentExtensions.length > 0) {
+        var dependentMessage =
+            node.querySelector('.dependent-extensions-message');
+        dependentMessage.hidden = false;
+        var dependentList = dependentMessage.querySelector('ul');
+        var dependentTemplate = $('template-collection').querySelector(
+            '.dependent-list-item');
+        extension.dependentExtensions.forEach(function(elem) {
+          var depNode = dependentTemplate.cloneNode(true);
+          depNode.querySelector('.dep-extension-title').textContent = elem.name;
+          depNode.querySelector('.dep-extension-id').textContent = elem.id;
+          dependentList.appendChild(depNode);
+        });
       }
 
       // Then active views.

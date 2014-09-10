@@ -8,6 +8,7 @@ var CMD_PROCEED = 1;
 var CMD_MORE = 2;
 var CMD_RELOAD = 3;
 var CMD_HELP = 4;
+var CMD_CLOCK = 5;
 
 var keyPressState = 0;
 
@@ -42,3 +43,4 @@ function sharedSetup() {
 }
 
 document.addEventListener('DOMContentLoaded', sharedSetup);
+

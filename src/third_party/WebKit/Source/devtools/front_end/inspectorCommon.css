@@ -30,7 +30,7 @@ body.platform-windows {
   font-family: 'Segoe UI', Tahoma, sans-serif;
 }
 
-*, *::before, *::after {
+* {
     box-sizing: border-box;
 }
 
@@ -106,14 +106,6 @@ iframe.view {
     background-color: rgba(0, 0, 0, 0.1);
 }
 
-.resources-event-divider-padding {
-    position: absolute;
-    width: 8px;
-    top: 0;
-    bottom: 0;
-    pointer-events: auto;
-}
-
 .resources-event-divider {
     position: absolute;
     width: 2px;
@@ -186,38 +178,6 @@ iframe.view {
 .overview-grid-window-resizer-right {
     margin-left: -3px;
     margin-right: -2px;
-}
-
-/* Network timing is shared between popover and network item view pane */
-
-.network-timing-table td {
-    padding: 0;
-}
-
-.network-timing-table td.caution {
-    font-weight: bold;
-    color: rgb(255, 128, 0);
-    padding: 2px 0;
-}
-
-.network-timing-row {
-    position: relative;
-    height: 16px;
-}
-
-.network-timing-bar {
-    position: absolute;
-    background-color: red;
-    border-left: 1px solid red;
-    opacity: 0.4;
-    top: 0;
-    bottom: 0;
-}
-
-.network-timing-bar-title {
-    position: absolute;
-    color: #222;
-    top: 1px;
 }
 
 .highlighted-search-result {

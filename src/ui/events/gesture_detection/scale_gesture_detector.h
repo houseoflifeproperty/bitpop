@@ -142,6 +142,7 @@ class ScaleGestureDetector : public GestureDetector::SimpleGestureListener {
   int touch_history_direction_;
   base::TimeTicks touch_history_last_accepted_time_;
   float touch_min_major_;
+  float touch_max_major_;
   float double_tap_focus_x_;
   float double_tap_focus_y_;
   DoubleTapMode double_tap_mode_;

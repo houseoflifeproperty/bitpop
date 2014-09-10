@@ -31,8 +31,8 @@
 #include "config.h"
 #include "core/html/forms/ColorInputType.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "bindings/v8/ScriptController.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ScriptController.h"
 #include "core/CSSPropertyNames.h"
 #include "core/InputTypeNames.h"
 #include "core/events/MouseEvent.h"
@@ -50,7 +50,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -252,4 +252,4 @@ Vector<ColorSuggestion> ColorInputType::suggestions() const
     return suggestions;
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -11,7 +11,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/content_browser_client.h"
 #include "net/http/http_network_session.h"
-#include "net/ssl/server_bound_cert_service.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_job_factory.h"
 
@@ -24,10 +23,9 @@ class URLRequestJobFactory;
 }
 
 namespace data_reduction_proxy {
+class DataReductionProxyAuthRequestHandler;
 class DataReductionProxyConfigService;
 }
-
-using data_reduction_proxy::DataReductionProxyConfigService;
 
 namespace android_webview {
 
@@ -35,8 +33,11 @@ class AwNetworkDelegate;
 
 class AwURLRequestContextGetter : public net::URLRequestContextGetter {
  public:
-  AwURLRequestContextGetter(const base::FilePath& partition_path,
-                            net::CookieStore* cookie_store);
+  AwURLRequestContextGetter(
+      const base::FilePath& partition_path,
+      net::CookieStore* cookie_store,
+      scoped_ptr<data_reduction_proxy::DataReductionProxyConfigService>
+          config_service);
 
   void InitializeOnNetworkThread();
 
@@ -45,7 +46,8 @@ class AwURLRequestContextGetter : public net::URLRequestContextGetter {
   virtual scoped_refptr<base::SingleThreadTaskRunner>
       GetNetworkTaskRunner() const OVERRIDE;
 
-  DataReductionProxyConfigService* proxy_config_service();
+  data_reduction_proxy::DataReductionProxyAuthRequestHandler*
+      GetDataReductionProxyAuthRequestHandler() const;
 
  private:
   friend class AwBrowserContext;
@@ -66,10 +68,12 @@ class AwURLRequestContextGetter : public net::URLRequestContextGetter {
   const base::FilePath partition_path_;
   scoped_refptr<net::CookieStore> cookie_store_;
   scoped_ptr<net::URLRequestContext> url_request_context_;
-  scoped_ptr<DataReductionProxyConfigService> proxy_config_service_;
+  scoped_ptr<data_reduction_proxy::DataReductionProxyConfigService>
+      data_reduction_proxy_config_service_;
+  scoped_ptr<data_reduction_proxy::DataReductionProxyAuthRequestHandler>
+      data_reduction_proxy_auth_request_handler_;
   scoped_ptr<net::URLRequestJobFactory> job_factory_;
   scoped_ptr<net::HttpTransactionFactory> main_http_factory_;
-  scoped_ptr<net::ServerBoundCertService> server_bound_cert_service_;
 
   // ProtocolHandlers and interceptors are stored here between
   // SetHandlersAndInterceptors() and the first GetURLRequestContext() call.

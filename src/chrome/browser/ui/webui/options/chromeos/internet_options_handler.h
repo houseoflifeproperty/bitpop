@@ -10,13 +10,11 @@
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
-#include "chromeos/login/login_state.h"
 #include "chromeos/network/network_state_handler_observer.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "ui/gfx/native_widget_types.h"
 
 class Browser;
+class PrefService;
 
 namespace chromeos {
 class DeviceState;
@@ -38,9 +36,7 @@ namespace options {
 // ChromeOS internet options page UI handler.
 class InternetOptionsHandler
     : public ::options::OptionsPageUIHandler,
-      public chromeos::NetworkStateHandlerObserver,
-      public chromeos::LoginState::Observer,
-      public content::NotificationObserver {
+      public chromeos::NetworkStateHandlerObserver {
  public:
   InternetOptionsHandler();
   virtual ~InternetOptionsHandler();
@@ -95,17 +91,11 @@ class InternetOptionsHandler
       const chromeos::NetworkState* network) OVERRIDE;
   virtual void NetworkPropertiesUpdated(
       const chromeos::NetworkState* network) OVERRIDE;
-
-  // chromeos::LoginState::Observer
-  virtual void LoggedInStateChanged() OVERRIDE;
+  virtual void DevicePropertiesUpdated(
+      const chromeos::DeviceState* device) OVERRIDE;
 
   // Updates the logged in user type.
   void UpdateLoggedInUserType();
-
-  // content::NotificationObserver
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
 
   // Additional callbacks to set network state properties.
   void SetServerHostnameCallback(const base::ListValue* args);
@@ -124,6 +114,12 @@ class InternetOptionsHandler
 
   // Gets the native window for hosting dialogs, etc.
   gfx::NativeWindow GetNativeWindow() const;
+
+  // Gets the UI scale factor.
+  float GetScaleFactor() const;
+
+  // Gets the user PrefService associated with the WebUI.
+  const PrefService* GetPrefs() const;
 
   // Handle various network commands and clicks on a network item
   // in the network list.
@@ -148,8 +144,6 @@ class InternetOptionsHandler
 
   // Fills network information into JS dictionary for displaying network lists.
   void FillNetworkInfo(base::DictionaryValue* dictionary);
-
-  content::NotificationRegistrar registrar_;
 
   // Keep track of the service path for the network shown in the Details view.
   std::string details_path_;

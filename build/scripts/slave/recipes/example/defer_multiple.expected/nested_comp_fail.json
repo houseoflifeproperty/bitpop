@@ -1,0 +1,53 @@
+[
+  {
+    "cmd": [
+      "true"
+    ],
+    "name": "prelude"
+  },
+  {
+    "cmd": [
+      "true"
+    ],
+    "name": "aggregated start"
+  },
+  {
+    "cmd": [
+      "true"
+    ],
+    "name": "aggregated finish"
+  },
+  {
+    "cmd": [
+      "true"
+    ],
+    "name": "normal start"
+  },
+  {
+    "cmd": [
+      "true"
+    ],
+    "name": "normal finish"
+  },
+  {
+    "cmd": [
+      "true"
+    ],
+    "name": "composite start",
+    "~followup_annotations": [
+      "step returned non-zero exit code: 1",
+      "@@@STEP_FAILURE@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "true"
+    ],
+    "name": "clean up"
+  },
+  {
+    "name": "$final_result",
+    "reason": "1 out of 6 aggregated steps failed. Failures: Step('composite start') failed with return_code 1",
+    "status_code": 1
+  }
+]

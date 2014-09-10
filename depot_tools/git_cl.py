@@ -7,7 +7,6 @@
 
 """A git-command for integrating reviews on Rietveld."""
 
-import datetime
 from distutils.version import LooseVersion
 import glob
 import json
@@ -19,7 +18,6 @@ import re
 import stat
 import sys
 import textwrap
-import time
 import threading
 import urllib2
 import urlparse
@@ -698,7 +696,7 @@ or verify this branch is set up to track another (via the --track argument to
         issue = self.GetIssue()
         try:
           self.description = self.RpcServer().get_description(issue).strip()
-        except urllib2.HTTPError, e:
+        except urllib2.HTTPError as e:
           if e.code == 404:
             DieWithError(
                 ('\nWhile fetching the description for issue %d, received a '
@@ -712,6 +710,12 @@ or verify this branch is set up to track another (via the --track argument to
           else:
             DieWithError(
                 '\nFailed to fetch issue description. HTTP error %d' % e.code)
+        except urllib2.URLError as e:
+          print >> sys.stderr, (
+              'Warning: Failed to retrieve CL description due to network '
+              'failure.')
+          self.description = ''
+
       self.has_description = True
     if pretty:
       wrapper = textwrap.TextWrapper()
@@ -1316,8 +1320,9 @@ def CMDstatus(parser, args):
     return 0
   print cl.GetBranch()
   print 'Issue number: %s (%s)' % (cl.GetIssue(), cl.GetIssueURL())
-  print 'Issue description:'
-  print cl.GetDescription(pretty=True)
+  if not options.fast:
+    print 'Issue description:'
+    print cl.GetDescription(pretty=True)
   return 0
 
 
@@ -1552,7 +1557,7 @@ def GerritUpload(options, args, cl):
   return 0
 
 
-def RietveldUpload(options, args, cl):
+def RietveldUpload(options, args, cl, change):
   """upload the patch to rietveld."""
   upload_args = ['--assume_yes']  # Don't ask about untracked files.
   upload_args.extend(['--server', cl.GetRietveldServer()])
@@ -1579,6 +1584,22 @@ def RietveldUpload(options, args, cl):
     change_desc = ChangeDescription(message)
     if options.reviewers:
       change_desc.update_reviewers(options.reviewers)
+    if options.auto_bots:
+      masters = presubmit_support.DoGetTryMasters(
+          change,
+          change.LocalPaths(),
+          settings.GetRoot(),
+          None,
+          None,
+          options.verbose,
+          sys.stdout)
+
+      if masters:
+        change_description = change_desc.description + '\nCQ_TRYBOTS='
+        lst = []
+        for master, mapping in masters.iteritems():
+          lst.append(master + ':' + ','.join(mapping.keys()))
+        change_desc.set_description(change_description + ';'.join(lst))
     if not options.force:
       change_desc.prompt()
 
@@ -1697,7 +1718,9 @@ def CMDupload(parser, args):
                     help='cc email addresses')
   parser.add_option('-s', '--send-mail', action='store_true',
                     help='send email to reviewer immediately')
-  parser.add_option("--emulate_svn_auto_props", action="store_true",
+  parser.add_option('--emulate_svn_auto_props',
+                    '--emulate-svn-auto-props',
+                    action="store_true",
                     dest="emulate_svn_auto_props",
                     help="Emulate Subversion's auto properties feature.")
   parser.add_option('-c', '--use-commit-queue', action='store_true',
@@ -1705,10 +1728,13 @@ def CMDupload(parser, args):
   parser.add_option('--private', action='store_true',
                     help='set the review private (rietveld only)')
   parser.add_option('--target_branch',
+                    '--target-branch',
                     help='When uploading to gerrit, remote branch to '
                          'use for CL.  Default: master')
   parser.add_option('--email', default=None,
                     help='email address to use to connect to Rietveld')
+  parser.add_option('--auto-bots', default=False, action='store_true',
+                    help='Autogenerate which trybots to use for this CL')
 
   add_git_similarity(parser)
   (options, args) = parser.parse_args(args)
@@ -1768,7 +1794,7 @@ def CMDupload(parser, args):
   print_stats(options.similarity, options.find_copies, args)
   if settings.GetIsGerrit():
     return GerritUpload(options, args, cl)
-  ret = RietveldUpload(options, args, cl)
+  ret = RietveldUpload(options, args, cl, change)
   if not ret:
     git_set_branch_value('last-upload-hash',
                          RunGit(['rev-parse', 'HEAD']).strip())
@@ -1926,7 +1952,6 @@ def SendUpstream(parser, args, cmd):
   branches = [base_branch, cl.GetBranchRef()]
   if not options.force:
     print_stats(options.similarity, options.find_copies, branches)
-    ask_for_data('About to commit; enter to confirm.')
 
   # We want to squash all this branch's commits into one commit with the proper
   # description. We do this by doing a "reset --soft" to the base branch (which
@@ -1991,7 +2016,7 @@ def SendUpstream(parser, args, cmd):
     if cmd == 'dcommit' and 'Committed r' in output:
       revision = re.match('.*?\nCommitted r(\\d+)', output, re.DOTALL).group(1)
     elif cmd == 'push' and retcode == 0:
-      match = (re.match(r'.*?([a-f0-9]{7})\.\.([a-f0-9]{7})$', l)
+      match = (re.match(r'.*?([a-f0-9]{7,})\.\.([a-f0-9]{7,})$', l)
                for l in output.splitlines(False))
       match = filter(None, match)
       if len(match) != 1:
@@ -2011,7 +2036,7 @@ def SendUpstream(parser, args, cmd):
     cl.CloseIssue()
     props = cl.GetIssueProperties()
     patch_num = len(props['patchsets'])
-    comment = "Committed patchset #%d manually as r%s" % (patch_num, revision)
+    comment = "Committed patchset #%d manually as %s" % (patch_num, revision)
     if options.bypass_hooks:
       comment += ' (tree was closed).' if GetTreeStatus() == 'closed' else '.'
     else:
@@ -2035,7 +2060,7 @@ def CMDdcommit(parser, args):
 If your project has a git mirror with an upstream SVN master, you probably need
 to run 'git svn init', see your project's git mirror documentation.
 If your project has a true writeable upstream repository, you probably want
-to run 'git cl push' instead.
+to run 'git cl land' instead.
 Choose wisely, if you get this wrong, your commit might appear to succeed but
 will instead be silently ignored."""
     print(message)
@@ -2051,27 +2076,6 @@ def CMDland(parser, args):
     print('Are you sure you didn\'t mean \'git cl dcommit\'?')
     ask_for_data('[Press enter to push or ctrl-C to quit]')
   return SendUpstream(parser, args, 'push')
-
-
-@subcommand.usage('[upstream branch to apply against]')
-def CMDpush(parser, args):
-  """Temporary alias for 'land'.
-  """
-  print(
-    "\n=======\n"
-    "'git cl push' has been renamed to 'git cl land'.\n"
-    "Currently they are treated as synonyms, but 'git cl push' will stop\n"
-    "working after 2014/07/01.\n"
-    "=======\n")
-  now = datetime.datetime.utcfromtimestamp(time.time())
-  if now > datetime.datetime(2014, 7, 1):
-    print('******\nReally, you should not use this command anymore... \n'
-    'Pausing 10 sec to help you remember :-)')
-    for n in xrange(10):
-      time.sleep(1)
-      print('%s seconds...' % (n+1))
-    print('******')
-  return CMDland(parser, args)
 
 
 @subcommand.usage('<patch url or issue id>')
@@ -2207,6 +2211,37 @@ def GetTreeStatusReason():
   return status['message']
 
 
+def GetBuilderMaster(bot_list):
+  """For a given builder, fetch the master from AE if available."""
+  map_url = 'https://builders-map.appspot.com/'
+  try:
+    master_map = json.load(urllib2.urlopen(map_url))
+  except urllib2.URLError as e:
+    return None, ('Failed to fetch builder-to-master map from %s. Error: %s.' %
+                  (map_url, e))
+  except ValueError as e:
+    return None, ('Invalid json string from %s. Error: %s.' % (map_url, e))
+  if not master_map:
+    return None, 'Failed to build master map.'
+
+  result_master = ''
+  for bot in bot_list:
+    builder = bot.split(':', 1)[0]
+    master_list = master_map.get(builder, [])
+    if not master_list:
+      return None, ('No matching master for builder %s.' % builder)
+    elif len(master_list) > 1:
+      return None, ('The builder name %s exists in multiple masters %s.' %
+                    (builder, master_list))
+    else:
+      cur_master = master_list[0]
+      if not result_master:
+        result_master = cur_master
+      elif result_master != cur_master:
+        return None, 'The builders do not belong to the same master.'
+  return result_master, None
+
+
 def CMDtree(parser, args):
   """Shows the status of the tree."""
   _, args = parser.parse_args(args)
@@ -2230,10 +2265,10 @@ def CMDtry(parser, args):
       "-b", "--bot", action="append",
       help=("IMPORTANT: specify ONE builder per --bot flag. Use it multiple "
             "times to specify multiple builders. ex: "
-            "'-bwin_rel:ui_tests,webkit_unit_tests -bwin_layout'. See "
+            "'-b win_rel:ui_tests,webkit_unit_tests -b win_layout'. See "
             "the try server waterfall for the builders name and the tests "
             "available. Can also be used to specify gtest_filter, e.g. "
-            "-bwin_rel:base_unittests:ValuesTest.*Value"))
+            "-b win_rel:base_unittests:ValuesTest.*Value"))
   group.add_option(
       "-m", "--master", default='',
       help=("Specify a try master where to run the tries."))
@@ -2267,12 +2302,19 @@ def CMDtry(parser, args):
   if not cl.GetIssue():
     parser.error('Need to upload first')
 
+  props = cl.GetIssueProperties()
+  if props.get('private'):
+    parser.error('Cannot use trybots with private issue')
+
   if not options.name:
     options.name = cl.GetBranch()
 
   if options.bot and not options.master:
-    parser.error('For manually specified bots please also specify the '
-                 'tryserver master, e.g. "-m tryserver.chromium".')
+    options.master, err_msg = GetBuilderMaster(options.bot)
+    if err_msg:
+      parser.error('Tryserver master cannot be found because: %s\n'
+                   'Please manually specify the tryserver master'
+                   ', e.g. "-m tryserver.chromium.linux".' % err_msg)
 
   def GetMasterMap():
     # Process --bot and --testfilter.
@@ -2412,6 +2454,9 @@ def CMDset_commit(parser, args):
   if args:
     parser.error('Unrecognized args: %s' % ' '.join(args))
   cl = Changelist()
+  props = cl.GetIssueProperties()
+  if props.get('private'):
+    parser.error('Cannot set commit on private issue')
   cl.SetFlag('commit', '1')
   return 0
 

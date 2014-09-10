@@ -2,11 +2,37 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from telemetry.core.platform import factory
+import sys
+
+from telemetry.core.platform import tracing_controller
+
+
+_host_platform = None
+
+
+def _InitHostPlatformIfNeeded():
+  global _host_platform
+  if _host_platform:
+    return
+
+  if sys.platform.startswith('linux'):
+    from telemetry.core.platform import linux_platform_backend
+    backend = linux_platform_backend.LinuxPlatformBackend()
+  elif sys.platform == 'darwin':
+    from telemetry.core.platform import mac_platform_backend
+    backend = mac_platform_backend.MacPlatformBackend()
+  elif sys.platform == 'win32':
+    from telemetry.core.platform import win_platform_backend
+    backend = win_platform_backend.WinPlatformBackend()
+  else:
+    raise NotImplementedError()
+
+  _host_platform = Platform(backend)
 
 
 def GetHostPlatform():
-  return Platform(factory.GetPlatformBackendForCurrentOS())
+  _InitHostPlatformIfNeeded()
+  return _host_platform
 
 
 class Platform(object):
@@ -18,6 +44,13 @@ class Platform(object):
   """
   def __init__(self, platform_backend):
     self._platform_backend = platform_backend
+    self._platform_backend.SetPlatform(self)
+    self._tracing_controller = tracing_controller.TracingController(
+        self._platform_backend.tracing_controller_backend)
+
+  @property
+  def tracing_controller(self):
+    return self._tracing_controller
 
   def IsRawDisplayFrameRateSupported(self):
     """Platforms may be able to collect GL surface stats."""
@@ -52,16 +85,6 @@ class Platform(object):
   def GetRawDisplayFrameRateMeasurements(self):
     """Returns a list of RawDisplayFrameRateMeasurement."""
     return self._platform_backend.GetRawDisplayFrameRateMeasurements()
-
-  def SetFullPerformanceModeEnabled(self, enabled):
-    """Platforms may tweak their CPU governor, system status, etc.
-
-    Most platforms can operate in a battery saving mode. While good for battery
-    life, this can cause confusing performance results and add noise. Turning
-    full performance mode on disables these features, which is useful for
-    performance testing.
-    """
-    return self._platform_backend.SetFullPerformanceModeEnabled(enabled)
 
   def CanMonitorThermalThrottling(self):
     """Platforms may be able to detect thermal throttling.
@@ -176,6 +199,13 @@ class Platform(object):
     """
     return self._platform_backend.CanMonitorPower()
 
+  def CanMeasurePerApplicationPower(self):
+    """Returns True if the power monitor can measure power for the target
+    application in isolation. False if power measurement is for full system
+    energy consumption."""
+    return self._platform_backend.CanMeasurePerApplicationPower()
+
+
   def StartMonitoringPower(self, browser):
     """Starts monitoring power utilization statistics.
 
@@ -199,10 +229,15 @@ class Platform(object):
         # each sample.
         'power_samples_mw':  [mw0, mw1, ..., mwN],
 
-        # The total energy consumption during the sampling period in milliwatt
-        # hours. May be estimated by integrating power samples or may be exact
-        # on supported hardware.
+        # The full system energy consumption during the sampling period in
+        # milliwatt hours. May be estimated by integrating power samples or may
+        # be exact on supported hardware.
         'energy_consumption_mwh': mwh,
+
+        # The target application's energy consumption during the sampling period
+        # in milliwatt hours. Should be returned iff
+        # CanMeasurePerApplicationPower() return true.
+        'application_energy_consumption_mwh': mwh,
 
         # A platform-specific dictionary of additional details about the
         # utilization of individual hardware components.

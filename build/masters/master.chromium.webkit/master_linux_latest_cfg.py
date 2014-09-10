@@ -36,7 +36,6 @@ F('f_linux_tests_rel', linux().ChromiumFactory(
         'content_browsertests',
         'interactive_ui_tests',
         'unit',
-        'webkit_compositor_bindings_unittests',
     ],
     options=[
         '--build-tool=ninja',
@@ -60,7 +59,6 @@ F('f_linux_tests_dbg', linux().ChromiumFactory(
         'content_browsertests',
         'interactive_ui_tests',
         'unit',
-        'webkit_compositor_bindings_unittests',
     ],
     options=[
         '--build-tool=ninja',

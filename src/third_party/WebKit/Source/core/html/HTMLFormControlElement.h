@@ -27,13 +27,13 @@
 #include "core/html/FormAssociatedElement.h"
 #include "core/html/LabelableElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class FormDataList;
 class HTMLFieldSetElement;
 class HTMLFormElement;
 class HTMLLegendElement;
-class ValidationMessage;
+class ValidationMessageClient;
 class ValidityState;
 
 // HTMLFormControlElement is the default implementation of FormAssociatedElement,
@@ -94,6 +94,7 @@ public:
     // This must be called when a validation constraint or control value is changed.
     void setNeedsValidityCheck();
     virtual void setCustomValidity(const String&) OVERRIDE FINAL;
+    void findCustomValidationMessageTextDirection(const String& message, TextDirection &messageDir, String& subMessage, TextDirection& subMessageDir);
 
     bool isReadOnly() const { return m_isReadOnly; }
     bool isDisabledOrReadOnly() const { return isDisabledFormControl() || m_isReadOnly; }
@@ -157,11 +158,14 @@ private:
     virtual bool isValidFormControlElement() OVERRIDE FINAL;
     void updateAncestorDisabledState() const;
 
-    OwnPtr<ValidationMessage> m_validationMessage;
+    bool isValidationMessageVisible() const;
+    ValidationMessageClient* validationMessageClient() const;
+
     bool m_disabled : 1;
     bool m_isAutofilled : 1;
     bool m_isReadOnly : 1;
     bool m_isRequired : 1;
+    bool m_hasValidationMessage : 1;
 
     enum AncestorDisabledState { AncestorDisabledStateUnknown, AncestorDisabledStateEnabled, AncestorDisabledStateDisabled };
     mutable AncestorDisabledState m_ancestorDisabledState;

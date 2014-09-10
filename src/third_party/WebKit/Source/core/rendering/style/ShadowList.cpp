@@ -32,8 +32,9 @@
 #include "core/rendering/style/ShadowList.h"
 
 #include "platform/geometry/FloatRect.h"
+#include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 static inline void calculateShadowExtent(const ShadowList* shadowList, float additionalOutlineSize, float& shadowLeft, float& shadowRight, float& shadowTop, float& shadowBottom)
 {
@@ -97,4 +98,18 @@ PassRefPtr<ShadowList> ShadowList::blend(const ShadowList* from, const ShadowLis
     return ShadowList::adopt(shadows);
 }
 
-} // namespace WebCore
+PassOwnPtr<DrawLooperBuilder> ShadowList::createDrawLooper(DrawLooperBuilder::ShadowAlphaMode alphaMode, bool isHorizontal) const
+{
+    OwnPtr<DrawLooperBuilder> drawLooperBuilder = DrawLooperBuilder::create();
+    for (size_t i = shadows().size(); i--; ) {
+        const ShadowData& shadow = shadows()[i];
+        float shadowX = isHorizontal ? shadow.x() : shadow.y();
+        float shadowY = isHorizontal ? shadow.y() : -shadow.x();
+        drawLooperBuilder->addShadow(FloatSize(shadowX, shadowY), shadow.blur(), shadow.color(),
+            DrawLooperBuilder::ShadowRespectsTransforms, alphaMode);
+    }
+    drawLooperBuilder->addUnmodifiedContent();
+    return drawLooperBuilder.release();
+}
+
+} // namespace blink

@@ -18,6 +18,9 @@
 #include "ui/gfx/size.h"
 
 namespace base {
+namespace debug {
+class TracedValue;
+}
 class Value;
 }
 
@@ -29,8 +32,7 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   explicit PicturePileBase(const PicturePileBase* other);
   PicturePileBase(const PicturePileBase* other, unsigned thread_index);
 
-  void SetTilingRect(const gfx::Rect& tiling_rect);
-  gfx::Rect tiling_rect() const { return tiling_.tiling_rect(); }
+  gfx::Size tiling_size() const { return tiling_.tiling_size(); }
   void SetMinContentsScale(float min_contents_scale);
 
   // If non-empty, all pictures tiles inside this rect are recorded. There may
@@ -53,7 +55,7 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   void SetTileGridSize(const gfx::Size& tile_grid_size);
   TilingData& tiling() { return tiling_; }
 
-  scoped_ptr<base::Value> AsValue() const;
+  void AsValueInto(base::debug::TracedValue* array) const;
 
  protected:
   class CC_EXPORT PictureInfo {

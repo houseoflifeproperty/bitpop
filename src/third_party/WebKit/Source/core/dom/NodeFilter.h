@@ -25,14 +25,14 @@
 #ifndef NodeFilter_h
 #define NodeFilter_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/NodeFilterCondition.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class NodeFilter FINAL : public RefCountedWillBeGarbageCollectedFinalized<NodeFilter>, public ScriptWrappable {
+class NodeFilter FINAL : public RefCountedWillBeGarbageCollected<NodeFilter>, public ScriptWrappable {
 public:
     /**
      * The following constants are returned by the acceptNode()
@@ -99,6 +99,6 @@ private:
     RefPtrWillBeMember<NodeFilterCondition> m_condition;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NodeFilter_h

@@ -15,8 +15,12 @@
 #include "components/autofill/core/browser/phone_number.h"
 #include "components/autofill/core/browser/state_names.h"
 #include "grit/components_strings.h"
+#include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_data.h"
+#include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_formatter.h"
 #include "ui/base/l10n/l10n_util.h"
 
+using ::i18n::addressinput::AddressData;
+using ::i18n::addressinput::GetStreetAddressLinesAsSingleLine;
 using base::ASCIIToUTF16;
 using base::StringToInt;
 
@@ -39,7 +43,7 @@ const char* const kMonthsFull[] = {
 // the list of select options in |field|.
 bool SetSelectControlValue(const base::string16& value,
                            FormFieldData* field) {
-  base::string16 value_lowercase = StringToLowerASCII(value);
+  base::string16 value_lowercase = base::StringToLowerASCII(value);
 
   DCHECK_EQ(field->option_values.size(), field->option_contents.size());
   base::string16 best_match;
@@ -51,8 +55,9 @@ bool SetSelectControlValue(const base::string16& value,
       break;
     }
 
-    if (value_lowercase == StringToLowerASCII(field->option_values[i]) ||
-        value_lowercase == StringToLowerASCII(field->option_contents[i])) {
+    if (value_lowercase == base::StringToLowerASCII(field->option_values[i]) ||
+        value_lowercase ==
+            base::StringToLowerASCII(field->option_contents[i])) {
       // A match, but not in the same case. Save it in case an exact match is
       // not found.
       best_match = field->option_values[i];
@@ -66,6 +71,65 @@ bool SetSelectControlValue(const base::string16& value,
   return true;
 }
 
+// Like SetSelectControlValue, but searches within the field values and options
+// for |value|. For example, "NC - North Carolina" would match "north carolina".
+bool SetSelectControlValueSubstringMatch(const base::string16& value,
+                                         FormFieldData* field) {
+  base::string16 value_lowercase = base::StringToLowerASCII(value);
+  DCHECK_EQ(field->option_values.size(), field->option_contents.size());
+  int best_match = -1;
+
+  for (size_t i = 0; i < field->option_values.size(); ++i) {
+    if (base::StringToLowerASCII(field->option_values[i]).find(value_lowercase) !=
+            std::string::npos ||
+        base::StringToLowerASCII(field->option_contents[i]).find(
+            value_lowercase) != std::string::npos) {
+      // The best match is the shortest one.
+      if (best_match == -1 ||
+          field->option_values[best_match].size() >
+              field->option_values[i].size()) {
+        best_match = i;
+      }
+    }
+  }
+
+  if (best_match >= 0) {
+    field->value = field->option_values[best_match];
+    return true;
+  }
+
+  return false;
+}
+
+// Like SetSelectControlValue, but searches within the field values and options
+// for |value|. First it tokenizes the options, then tries to match against
+// tokens. For example, "NC - North Carolina" would match "nc" but not "ca".
+bool SetSelectControlValueTokenMatch(const base::string16& value,
+                                     FormFieldData* field) {
+  base::string16 value_lowercase = base::StringToLowerASCII(value);
+  std::vector<base::string16> tokenized;
+  DCHECK_EQ(field->option_values.size(), field->option_contents.size());
+
+  for (size_t i = 0; i < field->option_values.size(); ++i) {
+    base::SplitStringAlongWhitespace(
+        base::StringToLowerASCII(field->option_values[i]), &tokenized);
+    if (std::find(tokenized.begin(), tokenized.end(), value_lowercase) !=
+        tokenized.end()) {
+      field->value = field->option_values[i];
+      return true;
+    }
+
+    base::SplitStringAlongWhitespace(
+        base::StringToLowerASCII(field->option_contents[i]), &tokenized);
+    if (std::find(tokenized.begin(), tokenized.end(), value_lowercase) !=
+        tokenized.end()) {
+      field->value = field->option_values[i];
+      return true;
+    }
+  }
+
+  return false;
+}
 
 // Try to fill a numeric |value| into the given |field|.
 bool FillNumericSelectControl(int value,
@@ -88,11 +152,24 @@ bool FillStateSelectControl(const base::string16& value,
   base::string16 full, abbreviation;
   state_names::GetNameAndAbbreviation(value, &full, &abbreviation);
 
-  // Try the abbreviation first.
-  if (!abbreviation.empty() && SetSelectControlValue(abbreviation, field))
+  // Try an exact match of the abbreviation first.
+  if (!abbreviation.empty() && SetSelectControlValue(abbreviation, field)) {
     return true;
+  }
 
-  return !full.empty() && SetSelectControlValue(full, field);
+  // Try an exact match of the full name.
+  if (!full.empty() && SetSelectControlValue(full, field)) {
+    return true;
+  }
+
+  // Then try an inexact match of the full name.
+  if (!full.empty() && SetSelectControlValueSubstringMatch(full, field)) {
+    return true;
+  }
+
+  // Then try an inexact match of the abbreviation name.
+  return !abbreviation.empty() &&
+      SetSelectControlValueTokenMatch(abbreviation, field);
 }
 
 bool FillCountrySelectControl(const base::string16& value,
@@ -170,15 +247,15 @@ bool FillCreditCardTypeSelectControl(const base::string16& value,
                                      FormFieldData* field) {
   // Try stripping off spaces.
   base::string16 value_stripped;
-  base::RemoveChars(StringToLowerASCII(value), base::kWhitespaceUTF16,
+  base::RemoveChars(base::StringToLowerASCII(value), base::kWhitespaceUTF16,
                     &value_stripped);
 
   for (size_t i = 0; i < field->option_values.size(); ++i) {
     base::string16 option_value_lowercase;
-    base::RemoveChars(StringToLowerASCII(field->option_values[i]),
+    base::RemoveChars(base::StringToLowerASCII(field->option_values[i]),
                       base::kWhitespaceUTF16, &option_value_lowercase);
     base::string16 option_contents_lowercase;
-    base::RemoveChars(StringToLowerASCII(field->option_contents[i]),
+    base::RemoveChars(base::StringToLowerASCII(field->option_contents[i]),
                       base::kWhitespaceUTF16, &option_contents_lowercase);
 
     // Perform a case-insensitive comparison; but fill the form with the
@@ -282,18 +359,23 @@ bool FillMonthControl(const base::string16& value, FormFieldData* field) {
   return true;
 }
 
-// Fills |field| with the street address in |value|.  Translates newlines into
+// Fills |field| with the street address in |value|. Translates newlines into
 // equivalent separators when necessary, i.e. when filling a single-line field.
+// The separators depend on |address_language_code|.
 void FillStreetAddress(const base::string16& value,
+                       const std::string& address_language_code,
                        FormFieldData* field) {
   if (field->form_control_type == "textarea") {
     field->value = value;
     return;
   }
 
-  const base::string16& separator =
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_ADDRESS_LINE_SEPARATOR);
-  base::ReplaceChars(value, base::ASCIIToUTF16("\n"), separator, &field->value);
+  AddressData address_data;
+  address_data.language_code = address_language_code;
+  base::SplitString(base::UTF16ToUTF8(value), '\n', &address_data.address_line);
+  std::string line;
+  GetStreetAddressLinesAsSingleLine(address_data, &line);
+  field->value = base::UTF8ToUTF16(line);
 }
 
 std::string Hash32Bit(const std::string& str) {
@@ -390,6 +472,7 @@ bool AutofillField::IsFieldFillable() const {
 // static
 bool AutofillField::FillFormField(const AutofillField& field,
                                   const base::string16& value,
+                                  const std::string& address_language_code,
                                   const std::string& app_locale,
                                   FormFieldData* field_data) {
   AutofillType type = field.Type();
@@ -402,7 +485,7 @@ bool AutofillField::FillFormField(const AutofillField& field,
   } else if (field_data->form_control_type == "month") {
     return FillMonthControl(value, field_data);
   } else if (type.GetStorableType() == ADDRESS_HOME_STREET_ADDRESS) {
-    FillStreetAddress(value, field_data);
+    FillStreetAddress(value, address_language_code, field_data);
     return true;
   }
 

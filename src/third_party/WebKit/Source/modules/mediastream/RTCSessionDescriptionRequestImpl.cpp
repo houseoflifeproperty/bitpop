@@ -39,16 +39,16 @@
 #include "public/platform/WebRTCSessionDescription.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtr<RTCSessionDescriptionRequestImpl> RTCSessionDescriptionRequestImpl::create(ExecutionContext* context, PassRefPtrWillBeRawPtr<RTCPeerConnection> requester, PassOwnPtr<RTCSessionDescriptionCallback> successCallback, PassOwnPtr<RTCErrorCallback> errorCallback)
+PassRefPtr<RTCSessionDescriptionRequestImpl> RTCSessionDescriptionRequestImpl::create(ExecutionContext* context, RTCPeerConnection* requester, PassOwnPtr<RTCSessionDescriptionCallback> successCallback, PassOwnPtr<RTCErrorCallback> errorCallback)
 {
     RefPtr<RTCSessionDescriptionRequestImpl> request = adoptRef(new RTCSessionDescriptionRequestImpl(context, requester, successCallback, errorCallback));
     request->suspendIfNeeded();
     return request.release();
 }
 
-RTCSessionDescriptionRequestImpl::RTCSessionDescriptionRequestImpl(ExecutionContext* context, PassRefPtrWillBeRawPtr<RTCPeerConnection> requester, PassOwnPtr<RTCSessionDescriptionCallback> successCallback, PassOwnPtr<RTCErrorCallback> errorCallback)
+RTCSessionDescriptionRequestImpl::RTCSessionDescriptionRequestImpl(ExecutionContext* context, RTCPeerConnection* requester, PassOwnPtr<RTCSessionDescriptionCallback> successCallback, PassOwnPtr<RTCErrorCallback> errorCallback)
     : ActiveDOMObject(context)
     , m_successCallback(successCallback)
     , m_errorCallback(errorCallback)
@@ -61,14 +61,11 @@ RTCSessionDescriptionRequestImpl::~RTCSessionDescriptionRequestImpl()
 {
 }
 
-void RTCSessionDescriptionRequestImpl::requestSucceeded(const blink::WebRTCSessionDescription& webSessionDescription)
+void RTCSessionDescriptionRequestImpl::requestSucceeded(const WebRTCSessionDescription& webSessionDescription)
 {
     bool shouldFireCallback = m_requester ? m_requester->shouldFireDefaultCallbacks() : false;
-    if (shouldFireCallback && m_successCallback) {
-        RefPtrWillBeRawPtr<RTCSessionDescription> sessionDescription = RTCSessionDescription::create(webSessionDescription);
-        m_successCallback->handleEvent(sessionDescription.get());
-    }
-
+    if (shouldFireCallback && m_successCallback)
+        m_successCallback->handleEvent(RTCSessionDescription::create(webSessionDescription));
     clear();
 }
 
@@ -93,4 +90,4 @@ void RTCSessionDescriptionRequestImpl::clear()
     m_requester.clear();
 }
 
-} // namespace WebCore
+} // namespace blink

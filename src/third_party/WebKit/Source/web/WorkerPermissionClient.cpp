@@ -37,8 +37,6 @@
 #include "public/web/WebWorkerPermissionClientProxy.h"
 #include "wtf/PassOwnPtr.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 PassOwnPtrWillBeRawPtr<WorkerPermissionClient> WorkerPermissionClient::create(PassOwnPtr<WebWorkerPermissionClientProxy> proxy)

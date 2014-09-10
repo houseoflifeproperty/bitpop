@@ -30,7 +30,7 @@ namespace addressinput {
 //    class MyClass {
 //     public:
 //      MyClass() : storage_(),
-//                  callback(BuildCallback(this, &MyClass::OnDataReady)) {}
+//                  data_ready_(BuildCallback(this, &MyClass::OnDataReady)) {}
 //
 //      ~MyClass() {}
 //
@@ -39,7 +39,7 @@ namespace addressinput {
 //      }
 //
 //      void Read() {
-//        storage_.Get("key", *callback_);
+//        storage_.Get("key", *data_ready_);
 //      }
 //
 //     private:
@@ -51,7 +51,7 @@ namespace addressinput {
 //      }
 //
 //      FakeStorage storage_;
-//      scoped_ptr<Storage::Callback> callback_;
+//      const scoped_ptr<const Storage::Callback> data_ready_;
 //
 //      DISALLOW_COPY_AND_ASSIGN(MyClass);
 //    };

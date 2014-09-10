@@ -53,7 +53,10 @@ namespace nacl_io {
 KernelProxy::KernelProxy()
     : dev_(0),
       ppapi_(NULL),
-      exit_handler_(NULL),
+      exit_callback_(NULL),
+      exit_callback_user_data_(NULL),
+      mount_callback_(NULL),
+      mount_callback_user_data_(NULL),
       signal_emitter_(new EventEmitter) {
   memset(&sigwinch_handler_, 0, sizeof(sigwinch_handler_));
   sigwinch_handler_.sa_handler = SIG_DFL;
@@ -153,13 +156,16 @@ bool KernelProxy::UnregisterFsType(const char* fs_type) {
   return true;
 }
 
-bool KernelProxy::RegisterExitHandler(nacl_io_exit_handler_t exit_handler,
-                                      void* user_data) {
-  if (exit_handler_ != NULL)
-    return false;
-  exit_handler_ = exit_handler;
-  exit_handler_user_data_ = user_data;
-  return true;
+void KernelProxy::SetExitCallback(nacl_io_exit_callback_t exit_callback,
+                                  void* user_data) {
+  exit_callback_ = exit_callback;
+  exit_callback_user_data_ = user_data;
+}
+
+void KernelProxy::SetMountCallback(nacl_io_mount_callback_t mount_callback,
+                                   void* user_data) {
+  mount_callback_ = mount_callback;
+  mount_callback_user_data_ = user_data;
 }
 
 int KernelProxy::open_resource(const char* path) {
@@ -287,8 +293,8 @@ int KernelProxy::chdir(const char* path) {
 }
 
 void KernelProxy::exit(int status) {
-  if (exit_handler_)
-    exit_handler_(status, exit_handler_user_data_);
+  if (exit_callback_)
+    exit_callback_(status, exit_callback_user_data_);
 }
 
 char* KernelProxy::getcwd(char* buf, size_t size) {
@@ -418,8 +424,10 @@ Error KernelProxy::MountInternal(const char* source,
 
   // Find a factory of that type
   FsFactoryMap_t::iterator factory = factories_.find(filesystemtype);
-  if (factory == factories_.end())
+  if (factory == factories_.end()) {
+    LOG_ERROR("Unknown filesystem type: %s", filesystemtype);
     return ENODEV;
+  }
 
   // Create a map of settings
   StringMap_t smap;
@@ -459,11 +467,24 @@ Error KernelProxy::MountInternal(const char* source,
 
   if (create_fs_node) {
     error = CreateFsNode(fs);
-    if (error)
+    if (error) {
+      DetachFsAtPath(abs_path, &fs);
       return error;
+    }
   }
 
   *out_filesystem = fs;
+
+  if (mount_callback_) {
+    mount_callback_(source,
+                    target,
+                    filesystemtype,
+                    mountflags,
+                    data,
+                    fs->dev(),
+                    mount_callback_user_data_);
+  }
+
   return 0;
 }
 
@@ -840,22 +861,26 @@ int KernelProxy::access(const char* path, int amode) {
 }
 
 int KernelProxy::readlink(const char* path, char* buf, size_t count) {
+  LOG_TRACE("readlink is not implemented.");
   errno = EINVAL;
   return -1;
 }
 
 int KernelProxy::utimes(const char* filename, const struct timeval times[2]) {
+  LOG_TRACE("utimes is not implemented.");
   errno = EINVAL;
   return -1;
 }
 
 // TODO(noelallen): Needs implementation.
 int KernelProxy::link(const char* oldpath, const char* newpath) {
+  LOG_TRACE("link is not implemented.");
   errno = EINVAL;
   return -1;
 }
 
 int KernelProxy::symlink(const char* oldpath, const char* newpath) {
+  LOG_TRACE("symlink is not implemented.");
   errno = EINVAL;
   return -1;
 }
@@ -1001,6 +1026,7 @@ int KernelProxy::kill(pid_t pid, int sig) {
       break;
 
     default:
+      LOG_TRACE("Unsupported signal: %d", sig);
       errno = EINVAL;
       return -1;
   }
@@ -1044,6 +1070,7 @@ int KernelProxy::sigaction(int signum,
       if (action && action->sa_handler != SIG_DFL) {
         // Trying to set this action to anything other than SIG_DFL
         // is not yet supported.
+        LOG_TRACE("sigaction on signal %d != SIG_DFL not supported.", sig);
         errno = EINVAL;
         return -1;
       }
@@ -1057,6 +1084,7 @@ int KernelProxy::sigaction(int signum,
     // KILL and STOP cannot be handled
     case SIGKILL:
     case SIGSTOP:
+      LOG_TRACE("sigaction on SIGKILL/SIGSTOP not supported.");
       errno = EINVAL;
       return -1;
   }
@@ -1109,6 +1137,9 @@ int KernelProxy::select(int nfds,
     if ((timeout->tv_sec < 0) || (timeout->tv_sec >= (INT_MAX / 1000)) ||
         (timeout->tv_usec < 0) || (timeout->tv_usec >= 1000000) || (ms < 0) ||
         (ms >= INT_MAX)) {
+      LOG_TRACE("Invalid timeout: tv_sec=%d tv_usec=%d.",
+                timeout->tv_sec,
+                timeout->tv_usec);
       errno = EINVAL;
       return -1;
     }

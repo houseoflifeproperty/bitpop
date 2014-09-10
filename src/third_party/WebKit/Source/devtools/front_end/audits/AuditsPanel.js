@@ -51,7 +51,7 @@ WebInspector.AuditsPanel = function()
 
     this._constructCategories();
 
-    var target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget());
+    var target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.mainTarget());
     this._auditController = new WebInspector.AuditController(target, this);
     this._launcherView = new WebInspector.AuditLauncherView(this._auditController);
     for (var id in this.categoriesById)
@@ -267,9 +267,6 @@ WebInspector.AuditRule.Severity = {
     Severe: "severe"
 }
 
-/**
- * @enum {number}
- */
 WebInspector.AuditRule.SeverityOrder = {
     "info": 3,
     "warning": 2,
@@ -522,11 +519,3 @@ WebInspector.AuditRules = {};
  * @type {!Object.<string, function(new:WebInspector.AuditCategory)>}
  */
 WebInspector.AuditCategories = {};
-
-importScript("AuditCategory.js");
-importScript("AuditCategories.js");
-importScript("AuditController.js");
-importScript("AuditFormatters.js");
-importScript("AuditLauncherView.js");
-importScript("AuditResultView.js");
-importScript("AuditRules.js");

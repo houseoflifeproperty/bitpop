@@ -24,12 +24,13 @@
 #ifndef SVGRenderSupport_h
 #define SVGRenderSupport_h
 
-namespace WebCore {
+namespace blink {
 
 class AffineTransform;
 class FloatPoint;
 class FloatRect;
 class GraphicsContext;
+class PaintInvalidationState;
 class LayoutRect;
 struct PaintInfo;
 class RenderGeometryMap;
@@ -51,8 +52,8 @@ public:
     // Helper function determining wheter overflow is hidden
     static bool isOverflowHidden(const RenderObject*);
 
-    // Calculates the repaintRect in combination with filter, clipper and masker in local coordinates.
-    static void intersectRepaintRectWithResources(const RenderObject*, FloatRect&);
+    // Calculates the paintInvalidationRect in combination with filter, clipper and masker in local coordinates.
+    static void intersectPaintInvalidationRectWithResources(const RenderObject*, FloatRect&);
 
     // Determines whether a container needs to be laid out because it's filtered and a child is being laid out.
     static bool filtersForceContainerLayout(RenderObject*);
@@ -60,18 +61,20 @@ public:
     // Determines whether the passed point lies in a clipping area
     static bool pointInClippingArea(RenderObject*, const FloatPoint&);
 
-    static void computeContainerBoundingBoxes(const RenderObject* container, FloatRect& objectBoundingBox, bool& objectBoundingBoxValid, FloatRect& strokeBoundingBox, FloatRect& repaintBoundingBox);
+    // Transform |pointInParent| to |object|'s user-space and check if it is
+    // within the clipping area. Returns false if the transform is singular or
+    // the point is outside the clipping area.
+    static bool transformToUserSpaceAndCheckClipping(RenderObject*, const AffineTransform& localTransform, const FloatPoint& pointInParent, FloatPoint& localPoint);
 
-    static bool paintInfoIntersectsRepaintRect(const FloatRect& localRepaintRect, const AffineTransform& localTransform, const PaintInfo&);
+    static void computeContainerBoundingBoxes(const RenderObject* container, FloatRect& objectBoundingBox, bool& objectBoundingBoxValid, FloatRect& strokeBoundingBox, FloatRect& paintInvalidationBoundingBox);
 
-    static bool parentTransformDidChange(RenderObject*);
+    static bool paintInfoIntersectsPaintInvalidationRect(const FloatRect& localPaintInvalidationRect, const AffineTransform& localTransform, const PaintInfo&);
 
-    // Important functions used by nearly all SVG renderers centralizing coordinate transformations / repaint rect calculations
-    static LayoutRect clippedOverflowRectForRepaint(const RenderObject*, const RenderLayerModelObject* repaintContainer);
-    static void computeFloatRectForRepaint(const RenderObject*, const RenderLayerModelObject* repaintContainer, FloatRect&, bool fixed);
-    static void mapLocalToContainer(const RenderObject*, const RenderLayerModelObject* repaintContainer, TransformState&, bool* wasFixed = 0);
+    // Important functions used by nearly all SVG renderers centralizing coordinate transformations / paint invalidation rect calculations
+    static LayoutRect clippedOverflowRectForPaintInvalidation(const RenderObject*, const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState*);
+    static void computeFloatRectForPaintInvalidation(const RenderObject*, const RenderLayerModelObject* paintInvalidationContainer, FloatRect&, const PaintInvalidationState*);
+    static void mapLocalToContainer(const RenderObject*, const RenderLayerModelObject* paintInvalidationContainer, TransformState&, bool* wasFixed = 0, const PaintInvalidationState* = 0);
     static const RenderObject* pushMappingToContainer(const RenderObject*, const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&);
-    static bool checkForSVGRepaintDuringLayout(RenderObject*);
 
     // Shared between SVG renderers and resources.
     static void applyStrokeStyleToContext(GraphicsContext*, const RenderStyle*, const RenderObject*);
@@ -89,10 +92,9 @@ public:
 
 private:
     static void updateObjectBoundingBox(FloatRect& objectBoundingBox, bool& objectBoundingBoxValid, RenderObject* other, FloatRect otherBoundingBox);
-    static void invalidateResourcesOfChildren(RenderObject* start);
     static bool layoutSizeOfNearestViewportChanged(const RenderObject* start);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGRenderSupport_h

@@ -7,13 +7,14 @@
 #ifndef V8TestInterface2_h
 #define V8TestInterface2_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8DOMWrapper.h"
+#include "bindings/core/v8/WrapperTypeInfo.h"
 #include "bindings/tests/idls/TestInterface2.h"
-#include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8DOMWrapper.h"
-#include "bindings/v8/WrapperTypeInfo.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class V8TestInterface2 {
 public:
@@ -22,25 +23,25 @@ public:
     static v8::Handle<v8::FunctionTemplate> domTemplate(v8::Isolate*);
     static TestInterface2* toNative(v8::Handle<v8::Object> object)
     {
-        return fromInternalPointer(object->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
+        return fromInternalPointer(blink::toInternalPointer(object));
     }
     static TestInterface2* toNativeWithTypeCheck(v8::Isolate*, v8::Handle<v8::Value>);
     static const WrapperTypeInfo wrapperTypeInfo;
-    static void derefObject(void*);
-    static void visitDOMWrapper(void*, const v8::Persistent<v8::Object>&, v8::Isolate*);
+    static void derefObject(ScriptWrappableBase* internalPointer);
+    static void visitDOMWrapper(ScriptWrappableBase* internalPointer, const v8::Persistent<v8::Object>&, v8::Isolate*);
     static void constructorCallback(const v8::FunctionCallbackInfo<v8::Value>&);
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + 0;
-    static inline void* toInternalPointer(TestInterface2* impl)
+    static inline ScriptWrappableBase* toInternalPointer(TestInterface2* impl)
     {
-        return impl;
+        return reinterpret_cast<ScriptWrappableBase*>(static_cast<void*>(impl));
     }
 
-    static inline TestInterface2* fromInternalPointer(void* object)
+    static inline TestInterface2* fromInternalPointer(ScriptWrappableBase* internalPointer)
     {
-        return static_cast<TestInterface2*>(object);
+        return reinterpret_cast<TestInterface2*>(static_cast<void*>(internalPointer));
     }
-    static void installPerContextEnabledProperties(v8::Handle<v8::Object>, TestInterface2*, v8::Isolate*) { }
-    static void installPerContextEnabledMethods(v8::Handle<v8::Object>, v8::Isolate*) { }
+    static void installConditionallyEnabledProperties(v8::Handle<v8::Object>, v8::Isolate*) { }
+    static void installConditionallyEnabledMethods(v8::Handle<v8::Object>, v8::Isolate*) { }
 
 private:
     friend v8::Handle<v8::Object> wrap(TestInterface2*, v8::Handle<v8::Object> creationContext, v8::Isolate*);

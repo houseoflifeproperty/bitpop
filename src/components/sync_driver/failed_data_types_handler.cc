@@ -5,9 +5,7 @@
 #include "components/sync_driver/data_type_manager.h"
 #include "components/sync_driver/failed_data_types_handler.h"
 
-using browser_sync::DataTypeManager;
-
-namespace browser_sync {
+namespace sync_driver {
 
 namespace {
 
@@ -34,6 +32,8 @@ bool FailedDataTypesHandler::UpdateFailedDataTypes(const TypeErrorMap& errors) {
   if (errors.empty())
     return false;
 
+  DVLOG(1) << "Setting " << errors.size() << " new failed types.";
+
   for (TypeErrorMap::const_iterator iter = errors.begin(); iter != errors.end();
        ++iter) {
     syncer::SyncError::ErrorType failure_type = iter->second.error_type();
@@ -45,6 +45,7 @@ bool FailedDataTypesHandler::UpdateFailedDataTypes(const TypeErrorMap& errors) {
         unrecoverable_errors_.insert(*iter);
         break;
       case syncer::SyncError::DATATYPE_ERROR:
+      case syncer::SyncError::DATATYPE_POLICY_ERROR:
         data_type_errors_.insert(*iter);
         break;
       case syncer::SyncError::CRYPTO_ERROR:
@@ -92,11 +93,11 @@ bool FailedDataTypesHandler::ResetUnreadyErrorFor(syncer::ModelType type) {
 FailedDataTypesHandler::TypeErrorMap FailedDataTypesHandler::GetAllErrors()
     const {
   TypeErrorMap result;
-  result = unrecoverable_errors_;
   result.insert(data_type_errors_.begin(), data_type_errors_.end());
   result.insert(crypto_errors_.begin(), crypto_errors_.end());
   result.insert(persistence_errors_.begin(), persistence_errors_.end());
   result.insert(unready_errors_.begin(), unready_errors_.end());
+  result.insert(unrecoverable_errors_.begin(), unrecoverable_errors_.end());
   return result;
 }
 
@@ -109,8 +110,9 @@ syncer::ModelTypeSet FailedDataTypesHandler::GetFailedTypes() const {
 
 syncer::ModelTypeSet FailedDataTypesHandler::GetFatalErrorTypes()
     const {
-  syncer::ModelTypeSet result = GetTypesFromErrorMap(unrecoverable_errors_);
+  syncer::ModelTypeSet result;
   result.PutAll(GetTypesFromErrorMap(data_type_errors_));
+  result.PutAll(GetTypesFromErrorMap(unrecoverable_errors_));
   return result;
 }
 
@@ -129,12 +131,27 @@ syncer::ModelTypeSet FailedDataTypesHandler::GetUnreadyErrorTypes() const {
   return result;
 }
 
+syncer::ModelTypeSet FailedDataTypesHandler::GetUnrecoverableErrorTypes()
+    const {
+  syncer::ModelTypeSet result = GetTypesFromErrorMap(unrecoverable_errors_);
+  return result;
+}
+
+syncer::SyncError FailedDataTypesHandler::GetUnrecoverableError() const {
+  // Just return the first one. It is assumed all the unrecoverable errors
+  // have the same cause. The others are just tracked to know which types
+  // were involved.
+  return (unrecoverable_errors_.empty()
+              ? syncer::SyncError()
+              : unrecoverable_errors_.begin()->second);
+}
+
 bool FailedDataTypesHandler::AnyFailedDataType() const {
   // Note: persistence errors are not failed types. They just trigger automatic
   // unapply + getupdates, at which point they are associated like normal.
-  return !unrecoverable_errors_.empty() ||
+  return unrecoverable_errors_.empty() ||
          !data_type_errors_.empty() ||
          !crypto_errors_.empty();
 }
 
-}  // namespace browser_sync
+}  // namespace sync_driver

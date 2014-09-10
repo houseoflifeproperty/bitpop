@@ -31,7 +31,7 @@
 #include "config.h"
 #include "public/web/WebHistoryItem.h"
 
-#include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/SerializedScriptValue.h"
 #include "core/loader/HistoryItem.h"
 #include "platform/network/FormData.h"
 #include "platform/weborigin/KURL.h"
@@ -43,7 +43,7 @@
 #include "public/web/WebSerializedScriptValue.h"
 #include "wtf/text/StringHash.h"
 
-using namespace WebCore;
+using namespace blink;
 
 namespace blink {
 
@@ -159,6 +159,16 @@ long long WebHistoryItem::documentSequenceNumber() const
 void WebHistoryItem::setDocumentSequenceNumber(long long documentSequenceNumber)
 {
     m_private->setDocumentSequenceNumber(documentSequenceNumber);
+}
+
+long long WebHistoryItem::frameSequenceNumber() const
+{
+    return m_private->frameSequenceNumber();
+}
+
+void WebHistoryItem::setFrameSequenceNumber(long long frameSequenceNumber)
+{
+    m_private->setFrameSequenceNumber(frameSequenceNumber);
 }
 
 WebSerializedScriptValue WebHistoryItem::stateObject() const

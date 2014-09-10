@@ -36,7 +36,7 @@
 #include "wtf/HashMap.h"
 #include "wtf/ListHashSet.h"
 
-namespace WebCore {
+namespace blink {
 
 class SimpleFontData;
 
@@ -94,6 +94,6 @@ private:
     ListHashSet<RefPtr<SimpleFontData> > m_inactiveFontData;
 };
 
-}
+} // namespace blink
 
 #endif

@@ -12,8 +12,10 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -61,6 +63,7 @@ class RunIsolatedTest(auto_stub.TestCase):
     self.tempdir = tempfile.mkdtemp(prefix='run_isolated_test')
     logging.debug(self.tempdir)
     self.mock(run_isolated, 'make_temp_dir', self.fake_make_temp_dir)
+    self.mock(run_isolated.auth, 'ensure_logged_in', lambda _: None)
 
   def tearDown(self):
     for dirpath, dirnames, filenames in os.walk(self.tempdir, topdown=True):
@@ -455,6 +458,30 @@ class RunIsolatedTest(auto_stub.TestCase):
       '[/run_isolated_out_hack]'
     ]) + '\n'
     self.assertEqual(expected, sys.stdout.getvalue())
+
+  if sys.platform == 'win32':
+    def test_rmtree_win(self):
+      # Mock our sleep for faster test case execution.
+      sleeps = []
+      self.mock(time, 'sleep', sleeps.append)
+      self.mock(sys, 'stderr', StringIO.StringIO())
+
+      # Open a child process, so the file is locked.
+      subdir = os.path.join(self.tempdir, 'to_be_deleted')
+      os.mkdir(subdir)
+      script = 'import time; open(\'a\', \'w\'); time.sleep(60)'
+      proc = subprocess.Popen([sys.executable, '-c', script], cwd=subdir)
+      try:
+        # Wait until the file exist.
+        while not os.path.isfile(os.path.join(subdir, 'a')):
+          self.assertEqual(None, proc.poll())
+        run_isolated.rmtree(subdir)
+        self.assertEqual([2, 4, 2], sleeps)
+        # sys.stderr.getvalue() would return a fair amount of output but it is
+        # not completely deterministic so we're not testing it here.
+      finally:
+        proc.wait()
+
 
 if __name__ == '__main__':
   logging.basicConfig(

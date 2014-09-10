@@ -184,7 +184,7 @@ void MediaGalleriesPrivateAddGalleryWatchFunction::OnPreferencesInit(
   MediaGalleryPrefId gallery_pref_id = 0;
   if (!GetGalleryFilePathAndId(pref_id,
                                GetProfile(),
-                               GetExtension(),
+                               extension(),
                                &gallery_file_path,
                                &gallery_pref_id)) {
     error_ = kInvalidGalleryIDError;
@@ -194,6 +194,10 @@ void MediaGalleriesPrivateAddGalleryWatchFunction::OnPreferencesInit(
 
   MediaGalleriesPrivateEventRouter* router =
       MediaGalleriesPrivateAPI::Get(GetProfile())->GetEventRouter();
+
+  // TODO(tommycli): The new GalleryWatchManager no longer checks that there is
+  // an event listener attached. There should be a check for that here.
+
   DCHECK(router);
   content::BrowserThread::PostTaskAndReplyWithResult(
       content::BrowserThread::FILE,
@@ -262,7 +266,7 @@ void MediaGalleriesPrivateRemoveGalleryWatchFunction::OnPreferencesInit(
   MediaGalleryPrefId gallery_pref_id = 0;
   if (!GetGalleryFilePathAndId(pref_id,
                                GetProfile(),
-                               GetExtension(),
+                               extension(),
                                &gallery_file_path,
                                &gallery_pref_id)) {
     error_ = kInvalidGalleryIDError;

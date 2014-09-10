@@ -18,12 +18,16 @@
 #include "ui/gfx/transform.h"
 
 namespace base {
+namespace debug {
+class TracedValue;
+}
 class Value;
 };
 
 namespace cc {
 
 class DrawQuad;
+class RenderPassDrawQuad;
 class CopyOutputRequest;
 class SharedQuadState;
 
@@ -86,10 +90,22 @@ class CC_EXPORT RenderPass {
               const gfx::Transform& transform_to_root_target,
               bool has_transparent_background);
 
-  scoped_ptr<base::Value> AsValue() const;
+  void AsValueInto(base::debug::TracedValue* dict) const;
 
   SharedQuadState* CreateAndAppendSharedQuadState();
-  void AppendDrawQuad(scoped_ptr<DrawQuad> draw_quad);
+  template <typename DrawQuadType>
+  DrawQuadType* CreateAndAppendDrawQuad() {
+    scoped_ptr<DrawQuadType> draw_quad = make_scoped_ptr(new DrawQuadType);
+    quad_list.push_back(draw_quad.template PassAs<DrawQuad>());
+    return static_cast<DrawQuadType*>(quad_list.back());
+  }
+
+  RenderPassDrawQuad* CopyFromAndAppendRenderPassDrawQuad(
+      const RenderPassDrawQuad* quad,
+      const SharedQuadState* shared_quad_state,
+      RenderPass::Id render_pass_id);
+  DrawQuad* CopyFromAndAppendDrawQuad(const DrawQuad* quad,
+                                      const SharedQuadState* shared_quad_state);
 
   // Uniquely identifies the render pass in the compositor's current frame.
   Id id;
@@ -119,6 +135,14 @@ class CC_EXPORT RenderPass {
   RenderPass();
 
  private:
+  template <typename DrawQuadType>
+  DrawQuadType* CopyFromAndAppendTypedDrawQuad(const DrawQuad* quad) {
+    scoped_ptr<DrawQuadType> draw_quad =
+        make_scoped_ptr(new DrawQuadType(*DrawQuadType::MaterialCast(quad)));
+    quad_list.push_back(draw_quad.template PassAs<DrawQuad>());
+    return static_cast<DrawQuadType*>(quad_list.back());
+  }
+
   DISALLOW_COPY_AND_ASSIGN(RenderPass);
 };
 

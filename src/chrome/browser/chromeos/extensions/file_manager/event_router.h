@@ -42,6 +42,10 @@ namespace chromeos {
 class NetworkState;
 }
 
+namespace drive {
+class FileChange;
+}
+
 namespace file_manager {
 
 // Monitors changes in disk mounts, network connection state and preferences
@@ -109,6 +113,7 @@ class EventRouter
 
   // drive::FileSystemObserver overrides.
   virtual void OnDirectoryChanged(const base::FilePath& drive_path) OVERRIDE;
+  virtual void OnFileChanged(const drive::FileChange& changed_files) OVERRIDE;
   virtual void OnDriveSyncError(drive::file_system::DriveSyncErrorType type,
                                 const base::FilePath& drive_path) OVERRIDE;
 
@@ -119,13 +124,13 @@ class EventRouter
   virtual void OnDiskRemoved(
       const chromeos::disks::DiskMountManager::Disk& disk) OVERRIDE;
   virtual void OnDeviceAdded(const std::string& device_path) OVERRIDE;
-  virtual void OnDeviceRemoved(const std::string& device_path,
-                               bool hard_unplugged) OVERRIDE;
+  virtual void OnDeviceRemoved(const std::string& device_path) OVERRIDE;
   virtual void OnVolumeMounted(chromeos::MountError error_code,
                                const VolumeInfo& volume_info,
                                bool is_remounting) OVERRIDE;
   virtual void OnVolumeUnmounted(chromeos::MountError error_code,
                                  const VolumeInfo& volume_info) OVERRIDE;
+  virtual void OnHardUnplugged(const std::string& device_path) OVERRIDE;
   virtual void OnFormatStarted(
       const std::string& device_path, bool success) OVERRIDE;
   virtual void OnFormatCompleted(
@@ -146,20 +151,31 @@ class EventRouter
   void OnFileManagerPrefsChanged();
 
   // Process file watch notifications.
-  void HandleFileWatchNotification(const base::FilePath& path,
+  void HandleFileWatchNotification(const drive::FileChange* list,
+                                   const base::FilePath& path,
                                    bool got_error);
 
   // Sends directory change event.
   void DispatchDirectoryChangeEvent(
       const base::FilePath& path,
-      bool error,
+      const drive::FileChange* list,
+      bool got_error,
       const std::vector<std::string>& extension_ids);
 
   // Sends directory change event, after converting the file definition to entry
   // definition.
   void DispatchDirectoryChangeEventWithEntryDefinition(
+      const linked_ptr<drive::FileChange> list,
+      const std::string* extension_id,
       bool watcher_error,
       const EntryDefinition& entry_definition);
+
+  // Dispatches the mount completed event.
+  void DispatchMountCompletedEvent(
+      extensions::api::file_browser_private::MountCompletedEventType event_type,
+      chromeos::MountError error,
+      const VolumeInfo& volume_info,
+      bool is_remounting);
 
   // If needed, opens a file manager window for the removable device mounted at
   // |mount_path|. Disk.mount_path() is empty, since it is being filled out

@@ -13,7 +13,9 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sched.h>
+#include <signal.h>
 #include <stdarg.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <time.h>
@@ -21,9 +23,14 @@
 
 #include "native_client/src/include/elf32.h"
 #include "native_client/src/nonsfi/linux/abi_conversion.h"
+#include "native_client/src/nonsfi/linux/linux_sys_private.h"
+#include "native_client/src/nonsfi/linux/linux_syscall_defines.h"
 #include "native_client/src/nonsfi/linux/linux_syscall_structs.h"
 #include "native_client/src/nonsfi/linux/linux_syscall_wrappers.h"
 #include "native_client/src/nonsfi/linux/linux_syscalls.h"
+#include "native_client/src/public/linux_syscalls/poll.h"
+#include "native_client/src/public/linux_syscalls/sys/prctl.h"
+#include "native_client/src/public/linux_syscalls/sys/socket.h"
 #include "native_client/src/untrusted/nacl/tls.h"
 
 
@@ -208,10 +215,8 @@ off_t lseek(int fd, off_t offset, int whence) {
   int rc = errno_value_call(
       linux_syscall5(__NR__llseek, fd, offset_high, offset_low,
                      (uintptr_t) &result, whence));
-  if (linux_is_error_result(rc)) {
-    errno = -rc;
+  if (rc == -1)
     return -1;
-  }
   return result;
 #else
 # error Unsupported architecture
@@ -224,6 +229,267 @@ int dup(int fd) {
 
 int dup2(int oldfd, int newfd) {
   return errno_value_call(linux_syscall2(__NR_dup2, oldfd, newfd));
+}
+
+int fstat(int fd, struct stat *st) {
+  struct linux_abi_stat64 linux_st;
+  int rc = errno_value_call(
+      linux_syscall2(__NR_fstat64, fd, (uintptr_t) &linux_st));
+  if (rc == -1)
+    return -1;
+  linux_stat_to_nacl_stat(&linux_st, st);
+  return 0;
+}
+
+int stat(const char *file, struct stat *st) {
+  struct linux_abi_stat64 linux_st;
+  int rc = errno_value_call(
+      linux_syscall2(__NR_stat64, (uintptr_t) file, (uintptr_t) &linux_st));
+  if (rc == -1)
+    return -1;
+  linux_stat_to_nacl_stat(&linux_st, st);
+  return 0;
+}
+
+int lstat(const char *file, struct stat *st) {
+  struct linux_abi_stat64 linux_st;
+  int rc = errno_value_call(
+      linux_syscall2(__NR_lstat64, (uintptr_t) file, (uintptr_t) &linux_st));
+  if (rc == -1)
+    return -1;
+  linux_stat_to_nacl_stat(&linux_st, st);
+  return 0;
+}
+
+int mkdir(const char *path, mode_t mode) {
+  return errno_value_call(linux_syscall2(__NR_mkdir, (uintptr_t) path, mode));
+}
+
+int rmdir(const char *path) {
+  return errno_value_call(linux_syscall1(__NR_rmdir, (uintptr_t) path));
+}
+
+int chdir(const char *path) {
+  return errno_value_call(linux_syscall1(__NR_chdir, (uintptr_t) path));
+}
+
+char *getcwd(char *buffer, size_t len) {
+  int rc = errno_value_call(
+      linux_syscall2(__NR_getcwd, (uintptr_t) buffer, len));
+  if (rc == -1)
+    return NULL;
+  return buffer;
+}
+
+int unlink(const char *path) {
+  return errno_value_call(linux_syscall1(__NR_unlink, (uintptr_t) path));
+}
+
+int truncate(const char *path, off_t length) {
+  uint32_t length_low = (uint32_t) length;
+  uint32_t length_high = length >> 32;
+#if defined(__i386__)
+  return errno_value_call(
+      linux_syscall3(__NR_truncate64, (uintptr_t) path,
+                     length_low, length_high));
+#elif defined(__arm__)
+  /*
+   * On ARM, a 64-bit parameter has to be in an even-odd register
+   * pair. Hence these calls ignore their second argument (r1) so that
+   * their third and fourth make such a pair (r2,r3).
+   */
+  return errno_value_call(
+      linux_syscall4(__NR_truncate64, (uintptr_t) path,
+                     0  /* dummy */, length_low, length_high));
+#else
+# error Unsupported architecture
+#endif
+}
+
+int link(const char *oldpath, const char *newpath) {
+  return errno_value_call(
+      linux_syscall2(__NR_link, (uintptr_t) oldpath, (uintptr_t) newpath));
+}
+
+int rename(const char *oldpath, const char* newpath) {
+  return errno_value_call(
+      linux_syscall2(__NR_rename, (uintptr_t) oldpath, (uintptr_t) newpath));
+}
+
+int symlink(const char *oldpath, const char* newpath) {
+  return errno_value_call(
+      linux_syscall2(__NR_symlink, (uintptr_t) oldpath, (uintptr_t) newpath));
+}
+
+int chmod(const char *path, mode_t mode) {
+  return errno_value_call(
+      linux_syscall2(__NR_chmod, (uintptr_t) path, mode));
+}
+
+int access(const char *path, int amode) {
+  return errno_value_call(
+      linux_syscall2(__NR_access, (uintptr_t) path, amode));
+}
+
+int readlink(const char *path, char *buf, int bufsize) {
+  return errno_value_call(
+      linux_syscall3(__NR_readlink, (uintptr_t) path,
+                     (uintptr_t) buf, bufsize));
+}
+
+int fcntl(int fd, int cmd, ...) {
+  if (cmd == F_GETFL || cmd == F_GETFD) {
+    return errno_value_call(linux_syscall2(__NR_fcntl64, fd, cmd));
+  }
+  if (cmd == F_SETFL || cmd == F_SETFD) {
+    va_list ap;
+    va_start(ap, cmd);
+    int32_t arg = va_arg(ap, int32_t);
+    va_end(ap);
+    return errno_value_call(linux_syscall3(__NR_fcntl64, fd, cmd, arg));
+  }
+  /* We only support the fcntl commands above. */
+  errno = EINVAL;
+  return -1;
+}
+
+int getpid(void) {
+  return errno_value_call(linux_syscall0(__NR_getpid));
+}
+
+int fork(void) {
+  /* Set SIGCHLD as flag so we can wait. */
+  return errno_value_call(
+      linux_syscall5(__NR_clone, LINUX_SIGCHLD,
+                     0 /* stack */, 0 /* ptid */, 0 /* tls */, 0 /* ctid */));
+}
+
+#if defined(__i386__) || defined(__arm__)
+struct linux_termios {
+  uint32_t c_iflag;
+  uint32_t c_oflag;
+  uint32_t c_cflag;
+  uint32_t c_lflag;
+  int8_t c_line;
+  int8_t c_cc[19];
+};
+#else
+# error Unsupported architecture
+#endif
+
+int isatty(int fd) {
+  struct linux_termios term;
+  return errno_value_call(
+      linux_syscall3(__NR_ioctl, fd, LINUX_TCGETS, (uintptr_t) &term)) == 0;
+}
+
+int pipe(int pipefd[2]) {
+  return errno_value_call(linux_syscall1(__NR_pipe, (uintptr_t) pipefd));
+}
+
+int poll(struct pollfd *fds, nfds_t nfds, int timeout) {
+  return errno_value_call(
+      linux_syscall3(__NR_poll, (uintptr_t) fds, nfds, timeout));
+}
+
+int prctl(int option, uintptr_t arg2, uintptr_t arg3,
+          uintptr_t arg4, uintptr_t arg5) {
+  return errno_value_call(
+      linux_syscall5(__NR_prctl, option, arg2, arg3, arg4, arg5));
+}
+
+#if defined(__i386__)
+/* On x86-32 Linux, socket related syscalls are defined by using socketcall. */
+
+static uintptr_t socketcall(int op, void *args) {
+  return errno_value_call(
+      linux_syscall2(__NR_socketcall, op, (uintptr_t) args));
+}
+
+ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags) {
+  uint32_t args[] = { sockfd, (uintptr_t) msg, flags };
+  return socketcall(SYS_RECVMSG, args);
+}
+
+ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags) {
+  uint32_t args[] = { sockfd, (uintptr_t) msg, flags };
+  return socketcall(SYS_SENDMSG, args);
+}
+
+int shutdown(int sockfd, int how) {
+  uint32_t args[] = { sockfd, how };
+  return socketcall(SYS_SHUTDOWN, args);
+}
+
+int socketpair(int domain, int type, int protocol, int sv[2]) {
+  uint32_t args[] = { domain, type, protocol, (uintptr_t) sv };
+  return socketcall(SYS_SOCKETPAIR, args);
+}
+
+#elif defined(__arm__)
+/* On ARM Linux, socketcall is not defined. Instead use each syscall. */
+
+ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags) {
+  return errno_value_call(
+      linux_syscall3(__NR_recvmsg, sockfd, (uintptr_t) msg, flags));
+}
+
+ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags) {
+  return errno_value_call(
+      linux_syscall3(__NR_sendmsg, sockfd, (uintptr_t) msg, flags));
+}
+
+int shutdown(int sockfd, int how) {
+  return errno_value_call(linux_syscall2(__NR_shutdown, sockfd, how));
+}
+
+int socketpair(int domain, int type, int protocol, int sv[2]) {
+  return errno_value_call(
+      linux_syscall4(__NR_socketpair, domain, type, protocol, (uintptr_t) sv));
+}
+
+#else
+# error Unsupported architecture
+#endif
+
+pid_t waitpid(pid_t pid, int *status, int options) {
+  return errno_value_call(
+      linux_syscall4(__NR_wait4, pid, (uintptr_t) status, options,
+                     0  /* rusage */));
+}
+
+int linux_sigaction(int signum, const struct linux_sigaction *act,
+                    struct linux_sigaction *oldact) {
+  /* This is the size of Linux kernel's sigset_t. */
+  const int kSigsetSize = 8;
+  /*
+   * We do not support returning from a signal handler invoked by a
+   * real time signal. To support this, we need to set sa_restorer
+   * when it is not set by the caller, but we probably will not need
+   * this. See the following for how we do it.
+   * https://code.google.com/p/linux-syscall-support/source/browse/trunk/lss/linux_syscall_support.h
+   */
+  return errno_value_call(
+      linux_syscall4(__NR_rt_sigaction, signum,
+                     (uintptr_t) act, (uintptr_t) oldact, kSigsetSize));
+}
+
+sighandler_t signal(int signum, sighandler_t handler) {
+  struct linux_sigaction sa;
+  memset(&sa, 0, sizeof(sa));
+  /*
+   * In Linux's sigaction, sa_sigaction and sa_handler share the same
+   * memory region by union.
+   */
+  sa.sa_sigaction = (void (*)(int, linux_siginfo_t *, void *)) handler;
+  sa.sa_flags = LINUX_SA_RESTART;
+  sigemptyset(&sa.sa_mask);
+  sigaddset(&sa.sa_mask, signum);
+  struct linux_sigaction osa;
+  int result = linux_sigaction(signum, &sa, &osa);
+  if (result != 0)
+    return SIG_ERR;
+  return (sighandler_t) osa.sa_sigaction;
 }
 
 /*

@@ -24,18 +24,18 @@
 
 #include "core/svg/SVGPathSegLinetoVertical.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGPathSegLinetoVerticalRel FINAL : public SVGPathSegLinetoVertical {
 public:
-    static PassRefPtr<SVGPathSegLinetoVerticalRel> create(SVGPathElement* element, SVGPathSegRole role, float y)
+    static PassRefPtr<SVGPathSegLinetoVerticalRel> create(SVGPathElement* element, float y)
     {
-        return adoptRef(new SVGPathSegLinetoVerticalRel(element, role, y));
+        return adoptRef(new SVGPathSegLinetoVerticalRel(element, y));
     }
 
 private:
-    SVGPathSegLinetoVerticalRel(SVGPathElement* element, SVGPathSegRole role, float y)
-        : SVGPathSegLinetoVertical(element, role, y)
+    SVGPathSegLinetoVerticalRel(SVGPathElement* element, float y)
+        : SVGPathSegLinetoVertical(element, y)
     {
         ScriptWrappable::init(this);
     }
@@ -44,6 +44,6 @@ private:
     virtual String pathSegTypeAsLetter() const OVERRIDE { return "v"; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

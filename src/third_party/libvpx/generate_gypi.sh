@@ -143,9 +143,7 @@ function write_special_flags {
     write_target_definition ssse3_sources[@] $2 libvpx_intrinsics_ssse3 ssse3
   fi
   if [ 0 -ne ${#sse4_1_sources} ]; then
-    #write_target_definition sse4_1_sources[@] $2 libvpx_intrinsics_sse4_1 sse4.1
-    echo "ERROR: Uncomment sse4_1 sections in libvpx.gyp"
-    exit 1
+    write_target_definition sse4_1_sources[@] $2 libvpx_intrinsics_sse4_1 sse4.1
   fi
   if [ 0 -ne ${#avx_sources} ]; then
     #write_target_definition avx_sources[@] $2 libvpx_intrinsics_avx avx

@@ -31,10 +31,10 @@
 #include "config.h"
 #include "core/events/ErrorEvent.h"
 
-#include "bindings/v8/V8Binding.h"
+#include "bindings/core/v8/V8Binding.h"
 #include <v8.h>
 
-namespace WebCore {
+namespace blink {
 
 ErrorEventInit::ErrorEventInit()
     : message()
@@ -45,6 +45,11 @@ ErrorEventInit::ErrorEventInit()
 }
 
 ErrorEvent::ErrorEvent()
+    : m_sanitizedMessage()
+    , m_fileName()
+    , m_lineNumber(0)
+    , m_columnNumber(0)
+    , m_world(DOMWrapperWorld::current(v8::Isolate::GetCurrent()))
 {
     ScriptWrappable::init(this);
 }
@@ -91,4 +96,4 @@ void ErrorEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

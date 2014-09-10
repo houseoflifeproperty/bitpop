@@ -43,7 +43,7 @@ import argparse
 # (i.e. before the tests would pass on the main NaCl buildbots/trybots).
 # If you are adding a test that depends on a toolchain change, you can
 # increment this version number manually.
-FEATURE_VERSION = 5
+FEATURE_VERSION = 7
 
 # For backward compatibility, these key names match the directory names
 # previously used with gclient
@@ -57,14 +57,18 @@ GIT_REPOS = {
     'nacl-newlib': 'nacl-newlib.git',
     'llvm-test-suite': 'pnacl-llvm-testsuite.git',
     'compiler-rt': 'pnacl-compiler-rt.git',
+    'subzero': 'pnacl-subzero.git',
     }
 
 GIT_BASE_URL = 'https://chromium.googlesource.com/native_client/'
 GIT_PUSH_URL = 'ssh://gerrit.chromium.org/native_client/'
 GIT_DEPS_FILE = os.path.join(NACL_DIR, 'pnacl', 'COMPONENT_REVISIONS')
 
+ALT_GIT_BASE_URL = 'https://chromium.googlesource.com/a/native_client/'
+
 KNOWN_MIRRORS = [('http://git.chromium.org/native_client/', GIT_BASE_URL)]
 PUSH_MIRRORS = [('http://git.chromium.org/native_client/', GIT_PUSH_URL),
+                (ALT_GIT_BASE_URL, GIT_PUSH_URL),
                 (GIT_BASE_URL, GIT_PUSH_URL)]
 
 # TODO(dschuff): Some of this mingw logic duplicates stuff in command.py
@@ -137,7 +141,7 @@ def ConfigureHostArchFlags(host):
     # that we don't want to have to distribute alongside our binaries.
     # So just disable it, and compiler messages will always be in US English.
     configure_args.append('--disable-nls')
-    configure_args.extend(['LDFLAGS=-L%(abs_libdl)s',
+    configure_args.extend(['LDFLAGS=-L%(abs_libdl)s -ldl',
                            'CFLAGS=-isystem %(abs_libdl)s',
                            'CXXFLAGS=-isystem %(abs_libdl)s'])
   return configure_args
@@ -167,6 +171,13 @@ def CmakeHostArchFlags(host, options):
     cmake_flags.append('-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=%s' %
                        options.sanitize)
   return cmake_flags
+
+
+def LLVMConfigureAssertionsFlags(options):
+  if options.enable_llvm_assertions:
+    return []
+  else:
+    return ['--disable-debug', '--disable-assertions']
 
 
 def MakeCommand(host):
@@ -256,6 +267,11 @@ def HostToolsSources(GetGitSyncCmds):
           'output_dirname': 'llvm',
           'commands': GetGitSyncCmds('llvm'),
       },
+      'subzero_src': {
+          'type': 'source',
+          'output_dirname': 'subzero',
+          'commands': GetGitSyncCmds('subzero'),
+      },
   }
   return sources
 
@@ -285,15 +301,16 @@ def HostLibs(host):
           'inputs' : { 'src' : os.path.join(NACL_DIR, '..', 'third_party',
                                             'dlfcn-win32') },
           'commands': [
-              command.CopyTree('%(src)s', '.'),
+              command.CopyTree('%(src)s', 'src'),
               command.Command(['i686-w64-mingw32-gcc',
-                               '-o', 'dlfcn.o', '-c', 'dlfcn.c',
+                               '-o', 'dlfcn.o', '-c',
+                               os.path.join('src', 'dlfcn.c'),
                                '-Wall', '-O3', '-fomit-frame-pointer']),
               command.Command([ar, 'cru',
                                'libdl.a', 'dlfcn.o']),
               command.Copy('libdl.a',
                            os.path.join('%(output)s', 'libdl.a')),
-              command.Copy('dlfcn.h',
+              command.Copy(os.path.join('src', 'dlfcn.h'),
                            os.path.join('%(output)s', 'dlfcn.h')),
           ],
       },
@@ -387,7 +404,8 @@ def HostTools(host, options):
   }
   llvm_autoconf = {
       H('llvm'): {
-          'dependencies': ['clang_src', 'llvm_src', 'binutils_pnacl_src'],
+          'dependencies': ['clang_src', 'llvm_src', 'binutils_pnacl_src',
+                           'subzero_src'],
           'type': 'build',
           'output_subdir': HostSubdir(host),
           'commands': [
@@ -395,6 +413,7 @@ def HostTools(host, options):
                   'sh',
                   '%(llvm_src)s/configure'] +
                   ConfigureHostArchFlags(host) +
+                  LLVMConfigureAssertionsFlags(options) +
                   ['--prefix=/',
                    '--enable-shared',
                    '--disable-zlib',
@@ -409,6 +428,7 @@ def HostTools(host, options):
               command.Command(MakeCommand(host) + [
                   'VERBOSE=1',
                   'NACL_SANDBOX=0',
+                  'SUBZERO_SRC_ROOT=%(abs_subzero_src)s',
                   'all']),
               command.Command(MAKE_DESTDIR_CMD + ['install']),
               command.Remove(*[os.path.join('%(output)s', 'lib', f) for f in
@@ -540,7 +560,7 @@ def GetUploadPackageTargets():
 
   # Host components
   host_packages = {}
-  for os_name, arch in (('cygwin', 'x86-32'),
+  for os_name, arch in (('win', 'x86-32'),
                         ('mac', 'x86-64'),
                         ('linux', 'x86-32'),
                         ('linux', 'x86-64')):
@@ -576,6 +596,8 @@ if __name__ == '__main__':
   parser.add_argument('--build-64bit-host', action='store_true',
                       dest='build_64bit_host', default=False,
                       help='Build 64-bit Linux host binaries in addition to 32')
+  parser.add_argument('--disable-llvm-assertions', action='store_false',
+                      dest='enable_llvm_assertions', default=True)
   parser.add_argument('--cmake', action='store_true', default=False,
                       help="Use LLVM's cmake ninja build instead of autoconf")
   parser.add_argument('--clang', action='store_true', default=False,

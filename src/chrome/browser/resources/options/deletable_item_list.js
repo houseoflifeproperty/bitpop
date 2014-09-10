@@ -92,6 +92,13 @@ cr.define('options', function() {
      * @private
      */
     handleFocus_: function() {
+      // This handler is also fired when the child receives focus as a result of
+      // the item getting selected by the customized mouse/keyboard handling in
+      // SelectionController. Take care not to destroy a potential multiple
+      // selection in this case.
+      if (this.selected)
+        return;
+
       var list = this.parentNode;
       var index = list.getIndexOfListItem(this);
       list.selectionModel.selectedIndex = index;
@@ -137,17 +144,8 @@ cr.define('options', function() {
       var target = e.target;
       if (target.classList.contains('row-delete-button')) {
         var listItem = this.getListItemAncestor(target);
-        var selected = this.selectionModel.selectedIndexes;
-
-        // Check if the list item that contains the close button being clicked
-        // is not in the list of selected items. Only delete this item in that
-        // case.
         var idx = this.getIndexOfListItem(listItem);
-        if (selected.indexOf(idx) == -1) {
-          this.deleteItemAtIndex(idx);
-        } else {
-          this.deleteSelectedItems_();
-        }
+        this.deleteItemAtIndex(idx);
       }
     },
 

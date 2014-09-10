@@ -26,12 +26,12 @@
 #include "config.h"
 #include "core/storage/Storage.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<Storage> Storage::create(LocalFrame* frame, PassOwnPtrWillBeRawPtr<StorageArea> storageArea)
 {

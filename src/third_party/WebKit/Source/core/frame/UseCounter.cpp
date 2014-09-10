@@ -35,10 +35,11 @@
 #include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "public/platform/Platform.h"
 
-namespace WebCore {
+namespace blink {
 
 static int totalPagesMeasuredCSSSampleId() { return 1; }
 
@@ -184,24 +185,12 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyTextAlign: return 128;
     case CSSPropertyTextDecoration: return 129;
     case CSSPropertyTextIndent: return 130;
-    /* Removed CSSPropertyTextLineThrough - 131 */
-    case CSSPropertyTextLineThroughColor: return 132;
-    case CSSPropertyTextLineThroughMode: return 133;
-    case CSSPropertyTextLineThroughStyle: return 134;
-    case CSSPropertyTextLineThroughWidth: return 135;
+    /* Removed CSSPropertyTextLineThrough* - 131-135 */
     case CSSPropertyTextOverflow: return 136;
-    /* Removed CSSPropertyTextOverline - 137 */
-    case CSSPropertyTextOverlineColor: return 138;
-    case CSSPropertyTextOverlineMode: return 139;
-    case CSSPropertyTextOverlineStyle: return 140;
-    case CSSPropertyTextOverlineWidth: return 141;
+    /* Removed CSSPropertyTextOverline* - 137-141 */
     case CSSPropertyTextShadow: return 142;
     case CSSPropertyTextTransform: return 143;
-    /* Removed CSSPropertyTextUnderline - 144 */
-    case CSSPropertyTextUnderlineColor: return 145;
-    case CSSPropertyTextUnderlineMode: return 146;
-    case CSSPropertyTextUnderlineStyle: return 147;
-    case CSSPropertyTextUnderlineWidth: return 148;
+    /* Removed CSSPropertyTextUnderline* - 144-148 */
     case CSSPropertyTop: return 149;
     case CSSPropertyTransition: return 150;
     case CSSPropertyTransitionDelay: return 151;
@@ -398,8 +387,8 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyShapeOutside: return 347;
     case CSSPropertyShapeMargin: return 348;
     // case CSSPropertyShapePadding: return 349;
-    case CSSPropertyWebkitWrapFlow: return 350;
-    case CSSPropertyWebkitWrapThrough: return 351;
+    // case CSSPropertyWebkitWrapFlow: return 350;
+    // case CSSPropertyWebkitWrapThrough: return 351;
     // CSSPropertyWebkitWrap was 352.
 #if defined(ENABLE_TOUCH_EVENTS) && ENABLE_TOUCH_EVENTS
     case CSSPropertyWebkitTapHighlightColor: return 353;
@@ -511,6 +500,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyGridTemplate: return 452;
     case CSSPropertyGrid: return 453;
     case CSSPropertyAll: return 454;
+    case CSSPropertyJustifyItems: return 455;
 
     // 1. Add new features above this line (don't change the assigned numbers of the existing
     // items).
@@ -533,7 +523,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     return 0;
 }
 
-static int maximumCSSSampleId() { return 454; }
+static int maximumCSSSampleId() { return 455; }
 
 void UseCounter::muteForInspector()
 {
@@ -645,8 +635,14 @@ void UseCounter::countDeprecation(const Document& document, Feature feature)
 
     if (host->useCounter().recordMeasurement(feature)) {
         ASSERT(!host->useCounter().deprecationMessage(feature).isEmpty());
-        frame->console().addMessage(DeprecationMessageSource, WarningMessageLevel, host->useCounter().deprecationMessage(feature));
+        frame->console().addMessage(ConsoleMessage::create(DeprecationMessageSource, WarningMessageLevel, host->useCounter().deprecationMessage(feature)));
     }
+}
+
+// FIXME: Update other UseCounter::deprecationMessage() cases to use this.
+static String replacedBy(const char* oldString, const char* newString)
+{
+    return String::format("'%s' is deprecated. Please use '%s' instead.", oldString, newString);
 }
 
 String UseCounter::deprecationMessage(Feature feature)
@@ -658,7 +654,7 @@ String UseCounter::deprecationMessage(Feature feature)
 
     // Keyboard Event (DOM Level 3)
     case KeyboardEventKeyLocation:
-        return "'KeyboardEvent.keyLocation' is deprecated. Please use 'KeyboardEvent.location' instead.";
+        return replacedBy("KeyboardEvent.keyLocation", "KeyboardEvent.location");
 
     case ConsoleMarkTimeline:
         return "console.markTimeline is deprecated. Please use the console.timeStamp instead.";
@@ -694,7 +690,34 @@ String UseCounter::deprecationMessage(Feature feature)
         return "'MediaError.MEDIA_ERR_ENCRYPTED' is deprecated. This error code is never used.";
 
     case PrefixedGamepad:
-        return "'navigator.webkitGetGamepads' is deprecated. Please use 'navigator.getGamepads' instead.";
+        return replacedBy("navigator.webkitGetGamepads", "navigator.getGamepads");
+
+    case PrefixedIndexedDB:
+        return replacedBy("webkitIndexedDB", "indexedDB");
+
+    case PrefixedIDBCursorConstructor:
+        return replacedBy("webkitIDBCursor", "IDBCursor");
+
+    case PrefixedIDBDatabaseConstructor:
+        return replacedBy("webkitIDBDatabase", "IDBDatabase");
+
+    case PrefixedIDBFactoryConstructor:
+        return replacedBy("webkitIDBFactory", "IDBFactory");
+
+    case PrefixedIDBIndexConstructor:
+        return replacedBy("webkitIDBIndex", "IDBIndex");
+
+    case PrefixedIDBKeyRangeConstructor:
+        return replacedBy("webkitIDBKeyRange", "IDBKeyRange");
+
+    case PrefixedIDBObjectStoreConstructor:
+        return replacedBy("webkitIDBObjectStore", "IDBObjectStore");
+
+    case PrefixedIDBRequestConstructor:
+        return replacedBy("webkitIDBRequest", "IDBRequest");
+
+    case PrefixedIDBTransactionConstructor:
+        return replacedBy("webkitIDBTransaction", "IDBTransaction");
 
     case PrefixedRequestAnimationFrame:
         return "'webkitRequestAnimationFrame' is vendor-specific. Please use the standard 'requestAnimationFrame' instead.";
@@ -718,10 +741,10 @@ String UseCounter::deprecationMessage(Feature feature)
         return "'NodeIterator.detach' is now a no-op, as per DOM (http://dom.spec.whatwg.org/#dom-nodeiterator-detach).";
 
     case AttrNodeValue:
-        return "'Attr.nodeValue' is deprecated. Please use 'value' instead.";
+        return replacedBy("Attr.nodeValue", "value");
 
     case AttrTextContent:
-        return "'Attr.textContent' is deprecated. Please use 'value' instead.";
+        return replacedBy("Attr.textContent", "value");
 
     case NodeIteratorExpandEntityReferences:
         return "'NodeIterator.expandEntityReferences' is deprecated and has been removed from DOM. It always returns false.";
@@ -731,10 +754,6 @@ String UseCounter::deprecationMessage(Feature feature)
 
     case RangeDetach:
         return "'Range.detach' is now a no-op, as per DOM (http://dom.spec.whatwg.org/#dom-range-detach).";
-
-    case DocumentImportNodeOptionalArgument:
-        return "The behavior of importNode() with no boolean argument is about to change from doing a deep clone to doing a shallow clone.  "
-            "Make sure to pass an explicit boolean argument to keep your current behavior.";
 
     case OverflowChangedEvent:
         return "The 'overflowchanged' event is deprecated and may be removed. Please do not use it.";
@@ -747,6 +766,27 @@ String UseCounter::deprecationMessage(Feature feature)
 
     case SyncXHRWithCredentials:
         return "Setting 'XMLHttpRequest.withCredentials' for synchronous requests is deprecated.";
+
+    case OpenWebDatabaseInWorker:
+        return "'openDatabase' in Workers is deprecated. Please switch to Indexed Database API.";
+
+    case OpenWebDatabaseSyncInWorker:
+        return "'openDatabaseSync' is deprecated. Please switch to Indexed Database API.";
+
+    case EventSourceURL:
+        return "'EventSource.URL' is deprecated. Please use 'EventSource.url' instead.";
+
+    case WebSocketURL:
+        return "'WebSocket.URL' is deprecated. Please use 'WebSocket.url' instead.";
+
+    case HTMLTableElementVspace:
+        return "The 'vspace' attribute on table is deprecated. Please use CSS instead.";
+
+    case HTMLTableElementHspace:
+        return "The 'hspace' attribute on table is deprecated. Please use CSS instead.";
+
+    case PictureSourceSrc:
+        return "<source src> with a <picture> parent is invalid and therefore ignored. Please use <source srcset> instead.";
 
     // Features that aren't deprecated don't have a deprecation message.
     default:
@@ -795,4 +835,4 @@ UseCounter* UseCounter::getFrom(const StyleSheetContents* sheetContents)
     return 0;
 }
 
-} // namespace WebCore
+} // namespace blink

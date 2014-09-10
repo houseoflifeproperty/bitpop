@@ -26,7 +26,7 @@
 #ifndef DOMError_h
 #define DOMError_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/heap/Handle.h"
@@ -34,7 +34,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class DOMError : public RefCountedWillBeGarbageCollectedFinalized<DOMError>, public ScriptWrappable {
 public:
@@ -71,6 +71,6 @@ private:
     const String m_message;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMError_h

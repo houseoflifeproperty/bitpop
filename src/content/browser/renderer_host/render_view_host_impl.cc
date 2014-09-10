@@ -23,9 +23,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "cc/base/switches.h"
-#include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/child_process_security_policy_impl.h"
-#include "content/browser/cross_site_request_manager.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/gpu/compositor_util.h"
@@ -41,18 +39,15 @@
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_delegate_view.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
-#include "content/common/accessibility_messages.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/drag_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/inter_process_time_ticks_converter.h"
-#include "content/common/mojo/mojo_service_names.h"
 #include "content/common/speech_recognition_messages.h"
 #include "content/common/swapped_out_messages.h"
 #include "content/common/view_messages.h"
-#include "content/common/web_ui_setup.mojom.h"
 #include "content/public/browser/ax_event_notification_details.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_context.h"
@@ -78,7 +73,6 @@
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/accessibility/ax_tree.h"
 #include "ui/base/touch/touch_device.h"
 #include "ui/base/touch/touch_enabled.h"
 #include "ui/base/ui_base_switches.h"
@@ -194,7 +188,6 @@ RenderViewHostImpl::RenderViewHostImpl(
       instance_(static_cast<SiteInstanceImpl*>(instance)),
       waiting_for_drag_context_response_(false),
       enabled_bindings_(0),
-      navigations_suspended_(false),
       main_frame_routing_id_(main_frame_routing_id),
       run_modal_reply_msg_(NULL),
       run_modal_opener_id_(MSG_ROUTING_NONE),
@@ -204,7 +197,8 @@ RenderViewHostImpl::RenderViewHostImpl(
       render_view_termination_status_(base::TERMINATION_STATUS_STILL_RUNNING),
       virtual_keyboard_requested_(false),
       weak_factory_(this),
-      is_focused_element_editable_(false) {
+      is_focused_element_editable_(false),
+      updating_web_preferences_(false) {
   DCHECK(instance_.get());
   CHECK(delegate_);  // http://crbug.com/82827
 
@@ -243,10 +237,6 @@ RenderViewHostImpl::~RenderViewHostImpl() {
   }
 
   delegate_->RenderViewDeleted(this);
-
-  // Be sure to clean up any leftover state from cross-site requests.
-  CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
-      GetProcess()->GetID(), GetRoutingID(), false);
 
   // If this was swapped out, it already decremented the active view
   // count of the SiteInstance it belongs to.
@@ -294,7 +284,7 @@ bool RenderViewHostImpl::CreateRenderView(
   ViewMsg_New_Params params;
   params.renderer_preferences =
       delegate_->GetRendererPrefs(GetProcess()->GetBrowserContext());
-  params.web_preferences = delegate_->GetWebkitPrefs();
+  params.web_preferences = GetWebkitPreferences();
   params.view_id = GetRoutingID();
   params.main_frame_routing_id = main_frame_routing_id_;
   params.surface_id = surface_id();
@@ -310,7 +300,6 @@ bool RenderViewHostImpl::CreateRenderView(
   params.window_was_created_with_opener = window_was_created_with_opener;
   params.next_page_id = next_page_id;
   GetWebScreenInfo(&params.screen_info);
-  params.accessibility_mode = accessibility_mode();
 
   Send(new ViewMsg_New(params));
 
@@ -335,11 +324,12 @@ void RenderViewHostImpl::SyncRendererPrefs() {
                                         GetProcess()->GetBrowserContext())));
 }
 
-WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
+WebPreferences RenderViewHostImpl::ComputeWebkitPrefs(const GURL& url) {
   TRACE_EVENT0("browser", "RenderViewHostImpl::GetWebkitPrefs");
   WebPreferences prefs;
 
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 
   prefs.javascript_enabled =
       !command_line.HasSwitch(switches::kDisableJavaScript);
@@ -387,8 +377,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
       GpuProcessHost::gpu_enabled() &&
       !command_line.HasSwitch(switches::kDisableFlashStage3d);
 
-  prefs.site_specific_quirks_enabled =
-      !command_line.HasSwitch(switches::kDisableSiteSpecificQuirks);
   prefs.allow_file_access_from_file_urls =
       command_line.HasSwitch(switches::kAllowFileAccessFromFiles);
 
@@ -435,8 +423,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
 
   prefs.touch_adjustment_enabled =
       !command_line.HasSwitch(switches::kDisableTouchAdjustment);
-  prefs.compositor_touch_hit_testing =
-      !command_line.HasSwitch(cc::switches::kDisableCompositorTouchHitTesting);
 
 #if defined(OS_MACOSX) || defined(OS_CHROMEOS)
   bool default_enable_scroll_animator = true;
@@ -462,9 +448,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
   prefs.is_online =
       prefs.connection_type != net::NetworkChangeNotifier::CONNECTION_NONE;
 
-  prefs.gesture_tap_highlight_enabled = !command_line.HasSwitch(
-      switches::kDisableGestureTapHighlight);
-
   prefs.number_of_cpu_cores = base::SysInfo::NumberOfProcessors();
 
   prefs.viewport_meta_enabled =
@@ -484,6 +467,18 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
   prefs.spatial_navigation_enabled = command_line.HasSwitch(
       switches::kEnableSpatialNavigation);
 
+  if (command_line.HasSwitch(switches::kV8CacheOptions)) {
+    const std::string v8_cache_options =
+        command_line.GetSwitchValueASCII(switches::kV8CacheOptions);
+    if (v8_cache_options == "parse") {
+      prefs.v8_cache_options = V8_CACHE_OPTIONS_PARSE;
+    } else if (v8_cache_options == "code") {
+      prefs.v8_cache_options = V8_CACHE_OPTIONS_CODE;
+    } else {
+      prefs.v8_cache_options = V8_CACHE_OPTIONS_OFF;
+    }
+  }
+
   GetContentClient()->browser()->OverrideWebkitPrefs(this, url, &prefs);
   return prefs;
 }
@@ -495,34 +490,6 @@ void RenderViewHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
 
 void RenderViewHostImpl::NavigateToURL(const GURL& url) {
   delegate_->GetFrameTree()->GetMainFrame()->NavigateToURL(url);
-}
-
-void RenderViewHostImpl::SetNavigationsSuspended(
-    bool suspend,
-    const base::TimeTicks& proceed_time) {
-  // This should only be called to toggle the state.
-  DCHECK(navigations_suspended_ != suspend);
-
-  navigations_suspended_ = suspend;
-  if (!suspend && suspended_nav_params_) {
-    // There's navigation message params waiting to be sent.  Now that we're not
-    // suspended anymore, resume navigation by sending them.  If we were swapped
-    // out, we should also stop filtering out the IPC messages now.
-    SetState(STATE_DEFAULT);
-
-    DCHECK(!proceed_time.is_null());
-    suspended_nav_params_->browser_navigation_start = proceed_time;
-    Send(new FrameMsg_Navigate(
-        main_frame_routing_id_, *suspended_nav_params_.get()));
-    suspended_nav_params_.reset();
-  }
-}
-
-void RenderViewHostImpl::CancelSuspendedNavigations() {
-  // Clear any state if a pending navigation is canceled or pre-empted.
-  if (suspended_nav_params_)
-    suspended_nav_params_.reset();
-  navigations_suspended_ = false;
 }
 
 void RenderViewHostImpl::SuppressDialogsUntilSwapOut() {
@@ -643,38 +610,6 @@ void RenderViewHostImpl::ClosePageIgnoringUnloadEvents() {
 
   sudden_termination_allowed_ = true;
   delegate_->Close(this);
-}
-
-bool RenderViewHostImpl::HasPendingCrossSiteRequest() {
-  return CrossSiteRequestManager::GetInstance()->HasPendingCrossSiteRequest(
-      GetProcess()->GetID(), GetRoutingID());
-}
-
-void RenderViewHostImpl::SetHasPendingCrossSiteRequest(
-    bool has_pending_request) {
-  CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
-      GetProcess()->GetID(), GetRoutingID(), has_pending_request);
-}
-
-void RenderViewHostImpl::SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) {
-  // Never grant any bindings to browser plugin guests.
-  if (GetProcess()->IsIsolatedGuest()) {
-    NOTREACHED() << "Never grant bindings to a guest process.";
-    return;
-  }
-
-  if ((enabled_bindings_ & BINDINGS_POLICY_WEB_UI) == 0) {
-    NOTREACHED() << "You must grant bindings before setting the handle";
-    return;
-  }
-
-  DCHECK(renderer_initialized_);
-
-  WebUISetupPtr web_ui_setup;
-  static_cast<RenderProcessHostImpl*>(GetProcess())->ConnectTo(
-      kRendererService_WebUISetup, &web_ui_setup);
-
-  web_ui_setup->SetWebUIHandle(GetRoutingID(), handle.Pass());
 }
 
 #if defined(OS_ANDROID)
@@ -839,7 +774,8 @@ void RenderViewHostImpl::AllowBindings(int bindings_flags) {
         static_cast<RenderProcessHostImpl*>(GetProcess());
     // --single-process only has one renderer.
     if (process->GetActiveViewCount() > 1 &&
-        !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+        !base::CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kSingleProcess))
       return;
   }
 
@@ -1003,9 +939,6 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_HidePopup, OnHidePopup)
 #endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_RunFileChooser, OnRunFileChooser)
-    IPC_MESSAGE_HANDLER(AccessibilityHostMsg_Events, OnAccessibilityEvents)
-    IPC_MESSAGE_HANDLER(AccessibilityHostMsg_LocationChanges,
-                        OnAccessibilityLocationChanges)
     IPC_MESSAGE_HANDLER(ViewHostMsg_FocusedNodeTouched, OnFocusedNodeTouched)
     // Have the super handle all other messages.
     IPC_MESSAGE_UNHANDLED(
@@ -1453,7 +1386,10 @@ void RenderViewHostImpl::ExitFullscreen() {
 }
 
 WebPreferences RenderViewHostImpl::GetWebkitPreferences() {
-  return delegate_->GetWebkitPrefs();
+  if (!web_preferences_.get()) {
+    OnWebkitPreferencesChanged();
+  }
+  return *web_preferences_;
 }
 
 void RenderViewHostImpl::DisownOpener() {
@@ -1463,13 +1399,20 @@ void RenderViewHostImpl::DisownOpener() {
   Send(new ViewMsg_DisownOpener(GetRoutingID()));
 }
 
-void RenderViewHostImpl::SetAccessibilityCallbackForTesting(
-    const base::Callback<void(ui::AXEvent, int)>& callback) {
-  accessibility_testing_callback_ = callback;
+void RenderViewHostImpl::UpdateWebkitPreferences(const WebPreferences& prefs) {
+  web_preferences_.reset(new WebPreferences(prefs));
+  Send(new ViewMsg_UpdateWebPreferences(GetRoutingID(), prefs));
 }
 
-void RenderViewHostImpl::UpdateWebkitPreferences(const WebPreferences& prefs) {
-  Send(new ViewMsg_UpdateWebPreferences(GetRoutingID(), prefs));
+void RenderViewHostImpl::OnWebkitPreferencesChanged() {
+  // This is defensive code to avoid infinite loops due to code run inside
+  // UpdateWebkitPreferences() accidentally updating more preferences and thus
+  // calling back into this code. See crbug.com/398751 for one past example.
+  if (updating_web_preferences_)
+    return;
+  updating_web_preferences_ = true;
+  UpdateWebkitPreferences(delegate_->ComputeWebkitPrefs());
+  updating_web_preferences_ = false;
 }
 
 void RenderViewHostImpl::GetAudioOutputControllers(
@@ -1509,6 +1452,8 @@ void RenderViewHostImpl::EnableAutoResize(const gfx::Size& min_size,
 void RenderViewHostImpl::DisableAutoResize(const gfx::Size& new_size) {
   SetShouldAutoResize(false);
   Send(new ViewMsg_DisableAutoResize(GetRoutingID(), new_size));
+  if (!new_size.IsEmpty())
+    GetView()->SetSize(new_size);
 }
 
 void RenderViewHostImpl::CopyImageAt(int x, int y) {
@@ -1531,66 +1476,6 @@ void RenderViewHostImpl::ExecutePluginActionAtLocation(
 
 void RenderViewHostImpl::NotifyMoveOrResizeStarted() {
   Send(new ViewMsg_MoveOrResizeStarted(GetRoutingID()));
-}
-
-void RenderViewHostImpl::OnAccessibilityEvents(
-    const std::vector<AccessibilityHostMsg_EventParams>& params) {
-  if ((accessibility_mode() != AccessibilityModeOff) && view_ &&
-      IsRVHStateActive(rvh_state_)) {
-    if (accessibility_mode() & AccessibilityModeFlagPlatform) {
-      view_->CreateBrowserAccessibilityManagerIfNeeded();
-      BrowserAccessibilityManager* manager =
-          view_->GetBrowserAccessibilityManager();
-      if (manager)
-        manager->OnAccessibilityEvents(params);
-    }
-
-    std::vector<AXEventNotificationDetails> details;
-    for (unsigned int i = 0; i < params.size(); ++i) {
-      const AccessibilityHostMsg_EventParams& param = params[i];
-      AXEventNotificationDetails detail(param.update.nodes,
-                                        param.event_type,
-                                        param.id,
-                                        GetProcess()->GetID(),
-                                        GetRoutingID());
-      details.push_back(detail);
-    }
-
-    delegate_->AccessibilityEventReceived(details);
-  }
-
-  // Always send an ACK or the renderer can be in a bad state.
-  Send(new AccessibilityMsg_Events_ACK(GetRoutingID()));
-
-  // The rest of this code is just for testing; bail out if we're not
-  // in that mode.
-  if (accessibility_testing_callback_.is_null())
-    return;
-
-  for (unsigned i = 0; i < params.size(); i++) {
-    const AccessibilityHostMsg_EventParams& param = params[i];
-    if (static_cast<int>(param.event_type) < 0)
-      continue;
-    if (!ax_tree_)
-      ax_tree_.reset(new ui::AXTree(param.update));
-    else
-      CHECK(ax_tree_->Unserialize(param.update)) << ax_tree_->error();
-    accessibility_testing_callback_.Run(param.event_type, param.id);
-  }
-}
-
-void RenderViewHostImpl::OnAccessibilityLocationChanges(
-    const std::vector<AccessibilityHostMsg_LocationChangeParams>& params) {
-  if (view_ && IsRVHStateActive(rvh_state_)) {
-    if (accessibility_mode() & AccessibilityModeFlagPlatform) {
-      view_->CreateBrowserAccessibilityManagerIfNeeded();
-      BrowserAccessibilityManager* manager =
-          view_->GetBrowserAccessibilityManager();
-      if (manager)
-        manager->OnLocationChanges(params);
-    }
-    // TODO(aboxhall): send location change events to web contents observers too
-  }
 }
 
 void RenderViewHostImpl::OnDidZoomURL(double zoom_level,

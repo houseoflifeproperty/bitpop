@@ -202,6 +202,10 @@ class QuicReceivedPacketManagerTest : public ::testing::Test {
     received_manager_.RecordPacketReceived(0u, header, receipt_time);
   }
 
+  void RecordPacketRevived(QuicPacketSequenceNumber sequence_number) {
+    received_manager_.RecordPacketRevived(sequence_number);
+  }
+
   QuicConnectionStats stats_;
   QuicReceivedPacketManager received_manager_;
 };
@@ -303,18 +307,18 @@ TEST_F(QuicReceivedPacketManagerTest, UpdateReceivedPacketInfo) {
   QuicTime two_ms = QuicTime::Zero().Add(QuicTime::Delta::FromMilliseconds(2));
   received_manager_.RecordPacketReceived(0u, header, two_ms);
 
-  ReceivedPacketInfo info;
-  received_manager_.UpdateReceivedPacketInfo(&info, QuicTime::Zero());
+  QuicAckFrame ack;
+  received_manager_.UpdateReceivedPacketInfo(&ack, QuicTime::Zero());
   // When UpdateReceivedPacketInfo with a time earlier than the time of the
   // largest observed packet, make sure that the delta is 0, not negative.
-  EXPECT_EQ(QuicTime::Delta::Zero(), info.delta_time_largest_observed);
+  EXPECT_EQ(QuicTime::Delta::Zero(), ack.delta_time_largest_observed);
 
   QuicTime four_ms = QuicTime::Zero().Add(QuicTime::Delta::FromMilliseconds(4));
-  received_manager_.UpdateReceivedPacketInfo(&info, four_ms);
+  received_manager_.UpdateReceivedPacketInfo(&ack, four_ms);
   // When UpdateReceivedPacketInfo after not having received a new packet,
   // the delta should still be accurate.
   EXPECT_EQ(QuicTime::Delta::FromMilliseconds(2),
-            info.delta_time_largest_observed);
+            ack.delta_time_largest_observed);
 }
 
 TEST_F(QuicReceivedPacketManagerTest, UpdateReceivedConnectionStats) {
@@ -327,6 +331,32 @@ TEST_F(QuicReceivedPacketManagerTest, UpdateReceivedConnectionStats) {
   EXPECT_EQ(1000u, stats_.max_time_reordering_us);
   EXPECT_EQ(1u, stats_.packets_reordered);
 }
+
+TEST_F(QuicReceivedPacketManagerTest, RevivedPacket) {
+  RecordPacketReceipt(1, 0);
+  RecordPacketReceipt(3, 0);
+  RecordPacketRevived(2);
+
+  QuicAckFrame ack;
+  received_manager_.UpdateReceivedPacketInfo(&ack, QuicTime::Zero());
+  EXPECT_EQ(1u, ack.missing_packets.size());
+  EXPECT_EQ(2u, *ack.missing_packets.begin());
+  EXPECT_EQ(1u, ack.revived_packets.size());
+  EXPECT_EQ(2u, *ack.missing_packets.begin());
+}
+
+TEST_F(QuicReceivedPacketManagerTest, PacketRevivedThenReceived) {
+  RecordPacketReceipt(1, 0);
+  RecordPacketReceipt(3, 0);
+  RecordPacketRevived(2);
+  RecordPacketReceipt(2, 0);
+
+  QuicAckFrame ack;
+  received_manager_.UpdateReceivedPacketInfo(&ack, QuicTime::Zero());
+  EXPECT_TRUE(ack.missing_packets.empty());
+  EXPECT_TRUE(ack.revived_packets.empty());
+}
+
 
 }  // namespace
 }  // namespace test

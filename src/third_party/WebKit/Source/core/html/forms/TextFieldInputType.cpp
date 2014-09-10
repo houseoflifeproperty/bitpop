@@ -32,7 +32,7 @@
 #include "config.h"
 #include "core/html/forms/TextFieldInputType.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -55,7 +55,7 @@
 #include "core/rendering/RenderTheme.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -380,11 +380,6 @@ bool TextFieldInputType::supportsReadOnly() const
     return true;
 }
 
-bool TextFieldInputType::shouldUseInputMethod() const
-{
-    return true;
-}
-
 static bool isASCIILineBreak(UChar c)
 {
     return c == '\r' || c == '\n';
@@ -560,4 +555,4 @@ void TextFieldInputType::spinButtonDidReleaseMouseCapture(SpinButtonElement::Eve
         element().dispatchFormControlChangeEvent();
 }
 
-} // namespace WebCore
+} // namespace blink

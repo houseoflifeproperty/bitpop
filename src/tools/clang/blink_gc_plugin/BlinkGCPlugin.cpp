@@ -129,6 +129,14 @@ const char kClassDeclaresPureVirtualTrace[] =
     "[blink-gc] Garbage collected class %0"
     " is not permitted to declare a pure-virtual trace method.";
 
+const char kLeftMostBaseMustBePolymorphic[] =
+    "[blink-gc] Left-most base class %0 of derived class %1"
+    " must be polymorphic.";
+
+const char kBaseClassMustDeclareVirtualTrace[] =
+    "[blink-gc] Left-most base class %0 of derived class %1"
+    " must define a virtual trace method.";
+
 struct BlinkGCPluginOptions {
   BlinkGCPluginOptions() : enable_oilpan(false), dump_graph(false) {}
   bool enable_oilpan;
@@ -307,70 +315,187 @@ class CheckTraceVisitor : public RecursiveASTVisitor<CheckTraceVisitor> {
   CheckTraceVisitor(CXXMethodDecl* trace, RecordInfo* info)
       : trace_(trace), info_(info) {}
 
-  // Allow recursive traversal by using VisitMemberExpr.
   bool VisitMemberExpr(MemberExpr* member) {
-    // If this member expression references a field decl, mark it as traced.
-    if (FieldDecl* field = dyn_cast<FieldDecl>(member->getMemberDecl())) {
-      if (IsTemplateInstantiation(info_->record())) {
-        // Pointer equality on fields does not work for template instantiations.
-        // The trace method refers to fields of the template definition which
-        // are different from the instantiated fields that need to be traced.
-        const string& name = field->getNameAsString();
-        for (RecordInfo::Fields::iterator it = info_->GetFields().begin();
-             it != info_->GetFields().end();
-             ++it) {
-          if (it->first->getNameAsString() == name) {
-            MarkTraced(it);
-            break;
-          }
-        }
-      } else {
-        RecordInfo::Fields::iterator it = info_->GetFields().find(field);
-        if (it != info_->GetFields().end())
-          MarkTraced(it);
-      }
-      return true;
+    // In weak callbacks, consider any occurrence as a correct usage.
+    // TODO: We really want to require that isAlive is checked on manually
+    // processed weak fields.
+    if (IsWeakCallback()) {
+      if (FieldDecl* field = dyn_cast<FieldDecl>(member->getMemberDecl()))
+        FoundField(field);
     }
+    return true;
+  }
 
-    // If this is a weak callback function we only check field tracing.
+  bool VisitCallExpr(CallExpr* call) {
+    // In weak callbacks we don't check calls (see VisitMemberExpr).
     if (IsWeakCallback())
       return true;
 
-    // For method calls, check tracing of bases and other special GC methods.
-    if (CXXMethodDecl* fn = dyn_cast<CXXMethodDecl>(member->getMemberDecl())) {
-      const string& name = fn->getNameAsString();
-      // Check weak callbacks.
-      if (name == kRegisterWeakMembersName) {
-        if (fn->isTemplateInstantiation()) {
-          const TemplateArgumentList& args =
-              *fn->getTemplateSpecializationInfo()->TemplateArguments;
-          // The second template argument is the callback method.
-          if (args.size() > 1 &&
-              args[1].getKind() == TemplateArgument::Declaration) {
-            if (FunctionDecl* callback =
-                    dyn_cast<FunctionDecl>(args[1].getAsDecl())) {
-              if (callback->hasBody()) {
-                CheckTraceVisitor nested_visitor(info_);
-                nested_visitor.TraverseStmt(callback->getBody());
-              }
-            }
-          }
+    Expr* callee = call->getCallee();
+
+    // Trace calls from a templated derived class result in a
+    // DependentScopeMemberExpr because the concrete trace call depends on the
+    // instantiation of any shared template parameters. In this case the call is
+    // "unresolved" and we resort to comparing the syntactic type names.
+    if (CXXDependentScopeMemberExpr* expr =
+        dyn_cast<CXXDependentScopeMemberExpr>(callee)) {
+      CheckCXXDependentScopeMemberExpr(call, expr);
+      return true;
+    }
+
+    // A tracing call will have either a |visitor| or a |m_field| argument.
+    // A registerWeakMembers call will have a |this| argument.
+    if (call->getNumArgs() != 1)
+      return true;
+    Expr* arg = call->getArg(0);
+
+    if (UnresolvedMemberExpr* expr = dyn_cast<UnresolvedMemberExpr>(callee)) {
+      // If we find a call to registerWeakMembers which is unresolved we
+      // unsoundly consider all weak members as traced.
+      // TODO: Find out how to validate weak member tracing for unresolved call.
+      if (expr->getMemberName().getAsString() == kRegisterWeakMembersName) {
+        for (RecordInfo::Fields::iterator it = info_->GetFields().begin();
+             it != info_->GetFields().end();
+             ++it) {
+          if (it->second.edge()->IsWeakMember())
+            it->second.MarkTraced();
         }
-        return true;
       }
 
-      // Currently, a manually dispatched class cannot have mixin bases (having
-      // one would add a vtable which we explicitly check against). This means
-      // that we can only make calls to a trace method of the same name. Revisit
-      // this if our mixin/vtable assumption changes.
-      if (Config::IsTraceMethod(fn) &&
-          fn->getName() == trace_->getName() &&
-          member->hasQualifier()) {
-        if (const Type* type = member->getQualifier()->getAsType()) {
-          if (CXXRecordDecl* decl = type->getAsCXXRecordDecl()) {
-            RecordInfo::Bases::iterator it = info_->GetBases().find(decl);
-            if (it != info_->GetBases().end())
-              it->second.MarkTraced();
+      QualType base = expr->getBaseType();
+      if (!base->isPointerType())
+        return true;
+      CXXRecordDecl* decl = base->getPointeeType()->getAsCXXRecordDecl();
+      if (decl)
+        CheckTraceFieldCall(expr->getMemberName().getAsString(), decl, arg);
+      return true;
+    }
+
+    if (CXXMemberCallExpr* expr = dyn_cast<CXXMemberCallExpr>(call)) {
+      if (CheckTraceFieldCall(expr) || CheckRegisterWeakMembers(expr))
+        return true;
+    }
+
+    CheckTraceBaseCall(call);
+    return true;
+  }
+
+ private:
+
+  CXXRecordDecl* GetDependentTemplatedDecl(CXXDependentScopeMemberExpr* expr) {
+    NestedNameSpecifier* qual = expr->getQualifier();
+    if (!qual)
+      return 0;
+
+    const Type* type = qual->getAsType();
+    if (!type)
+      return 0;
+
+    const TemplateSpecializationType* tmpl_type =
+        type->getAs<TemplateSpecializationType>();
+    if (!tmpl_type)
+      return 0;
+
+    TemplateDecl* tmpl_decl = tmpl_type->getTemplateName().getAsTemplateDecl();
+    if (!tmpl_decl)
+      return 0;
+
+    return dyn_cast<CXXRecordDecl>(tmpl_decl->getTemplatedDecl());
+  }
+
+  void CheckCXXDependentScopeMemberExpr(CallExpr* call,
+                                        CXXDependentScopeMemberExpr* expr) {
+    string fn_name = expr->getMember().getAsString();
+    CXXRecordDecl* tmpl = GetDependentTemplatedDecl(expr);
+    if (!tmpl)
+      return;
+
+    // Check for Super<T>::trace(visitor)
+    if (call->getNumArgs() == 1 && fn_name == trace_->getName()) {
+      RecordInfo::Bases::iterator it = info_->GetBases().begin();
+      for (; it != info_->GetBases().end(); ++it) {
+        if (it->first->getName() == tmpl->getName())
+          it->second.MarkTraced();
+      }
+      return;
+    }
+
+    // Check for TraceIfNeeded<T>::trace(visitor, &field)
+    if (call->getNumArgs() == 2 && fn_name == kTraceName &&
+        tmpl->getName() == kTraceIfNeededName) {
+      FindFieldVisitor finder;
+      finder.TraverseStmt(call->getArg(1));
+      if (finder.field())
+        FoundField(finder.field());
+    }
+  }
+
+  bool CheckTraceBaseCall(CallExpr* call) {
+    MemberExpr* callee = dyn_cast<MemberExpr>(call->getCallee());
+    if (!callee)
+      return false;
+
+    FunctionDecl* fn = dyn_cast<FunctionDecl>(callee->getMemberDecl());
+    if (!fn || !Config::IsTraceMethod(fn))
+      return false;
+
+    // Currently, a manually dispatched class cannot have mixin bases (having
+    // one would add a vtable which we explicitly check against). This means
+    // that we can only make calls to a trace method of the same name. Revisit
+    // this if our mixin/vtable assumption changes.
+    if (fn->getName() != trace_->getName())
+      return false;
+
+    CXXRecordDecl* decl = 0;
+    if (callee && callee->hasQualifier()) {
+      if (const Type* type = callee->getQualifier()->getAsType())
+        decl = type->getAsCXXRecordDecl();
+    }
+    if (!decl)
+      return false;
+
+    RecordInfo::Bases::iterator it = info_->GetBases().find(decl);
+    if (it != info_->GetBases().end()) {
+      it->second.MarkTraced();
+    }
+
+    return true;
+  }
+
+  bool CheckTraceFieldCall(CXXMemberCallExpr* call) {
+    return CheckTraceFieldCall(call->getMethodDecl()->getNameAsString(),
+                               call->getRecordDecl(),
+                               call->getArg(0));
+  }
+
+  bool CheckTraceFieldCall(string name, CXXRecordDecl* callee, Expr* arg) {
+    if (name != kTraceName || !Config::IsVisitor(callee->getName()))
+      return false;
+
+    FindFieldVisitor finder;
+    finder.TraverseStmt(arg);
+    if (finder.field())
+      FoundField(finder.field());
+
+    return true;
+  }
+
+  bool CheckRegisterWeakMembers(CXXMemberCallExpr* call) {
+    CXXMethodDecl* fn = call->getMethodDecl();
+    if (fn->getName() != kRegisterWeakMembersName)
+      return false;
+
+    if (fn->isTemplateInstantiation()) {
+      const TemplateArgumentList& args =
+          *fn->getTemplateSpecializationInfo()->TemplateArguments;
+      // The second template argument is the callback method.
+      if (args.size() > 1 &&
+          args[1].getKind() == TemplateArgument::Declaration) {
+        if (FunctionDecl* callback =
+            dyn_cast<FunctionDecl>(args[1].getAsDecl())) {
+          if (callback->hasBody()) {
+            CheckTraceVisitor nested_visitor(info_);
+            nested_visitor.TraverseStmt(callback->getBody());
           }
         }
       }
@@ -378,7 +503,24 @@ class CheckTraceVisitor : public RecursiveASTVisitor<CheckTraceVisitor> {
     return true;
   }
 
- private:
+  class FindFieldVisitor : public RecursiveASTVisitor<FindFieldVisitor> {
+   public:
+    FindFieldVisitor() : member_(0), field_(0) {}
+    MemberExpr* member() const { return member_; }
+    FieldDecl* field() const { return field_; }
+    bool TraverseMemberExpr(MemberExpr* member) {
+      if (FieldDecl* field = dyn_cast<FieldDecl>(member->getMemberDecl())) {
+        member_ = member;
+        field_ = field;
+        return false;
+      }
+      return true;
+    }
+   private:
+    MemberExpr* member_;
+    FieldDecl* field_;
+  };
+
   // Nested checking for weak callbacks.
   CheckTraceVisitor(RecordInfo* info) : trace_(0), info_(info) {}
 
@@ -389,6 +531,27 @@ class CheckTraceVisitor : public RecursiveASTVisitor<CheckTraceVisitor> {
     if (IsWeakCallback() && !it->second.edge()->IsWeakMember())
       return;
     it->second.MarkTraced();
+  }
+
+  void FoundField(FieldDecl* field) {
+    if (IsTemplateInstantiation(info_->record())) {
+      // Pointer equality on fields does not work for template instantiations.
+      // The trace method refers to fields of the template definition which
+      // are different from the instantiated fields that need to be traced.
+      const string& name = field->getNameAsString();
+      for (RecordInfo::Fields::iterator it = info_->GetFields().begin();
+           it != info_->GetFields().end();
+           ++it) {
+        if (it->first->getNameAsString() == name) {
+          MarkTraced(it);
+          break;
+        }
+      }
+    } else {
+      RecordInfo::Fields::iterator it = info_->GetFields().find(field);
+      if (it != info_->GetFields().end())
+        MarkTraced(it);
+    }
   }
 
   CXXMethodDecl* trace_;
@@ -574,9 +737,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         options_(options),
         json_(0) {
 
-    // Only check structures in the blink, WebCore and WebKit namespaces.
+    // Only check structures in the blink and WebKit namespaces.
     options_.checked_namespaces.insert("blink");
-    options_.checked_namespaces.insert("WebCore");
     options_.checked_namespaces.insert("WebKit");
 
     // Ignore GC implementation files.
@@ -617,6 +779,10 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         diagnostic_.getCustomDiagID(getErrorLevel(), kClassOverridesNew);
     diag_class_declares_pure_virtual_trace_ = diagnostic_.getCustomDiagID(
         getErrorLevel(), kClassDeclaresPureVirtualTrace);
+    diag_left_most_base_must_be_polymorphic_ = diagnostic_.getCustomDiagID(
+        getErrorLevel(), kLeftMostBaseMustBePolymorphic);
+    diag_base_class_must_declare_virtual_trace_ = diagnostic_.getCustomDiagID(
+        getErrorLevel(), kBaseClassMustDeclareVirtualTrace);
 
     // Register note messages.
     diag_base_requires_tracing_note_ = diagnostic_.getCustomDiagID(
@@ -746,6 +912,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     if (CXXMethodDecl* trace = info->GetTraceMethod()) {
       if (trace->isPure())
         ReportClassDeclaresPureVirtualTrace(info, trace);
+      if (info->record()->isPolymorphic())
+        CheckPolymorphicClass(info, trace);
     } else if (info->RequiresTraceMethod()) {
       ReportClassRequiresTraceMethod(info);
     }
@@ -776,6 +944,121 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     }
 
     DumpClass(info);
+  }
+
+  CXXRecordDecl* GetDependentTemplatedDecl(const Type& type) {
+    const TemplateSpecializationType* tmpl_type =
+        type.getAs<TemplateSpecializationType>();
+    if (!tmpl_type)
+      return 0;
+
+    TemplateDecl* tmpl_decl = tmpl_type->getTemplateName().getAsTemplateDecl();
+    if (!tmpl_decl)
+      return 0;
+
+    return dyn_cast<CXXRecordDecl>(tmpl_decl->getTemplatedDecl());
+  }
+
+  // The GC infrastructure assumes that if the vtable of a polymorphic
+  // base-class is not initialized for a given object (ie, it is partially
+  // initialized) then the object does not need to be traced. Thus, we must
+  // ensure that any polymorphic class with a trace method does not have any
+  // tractable fields that are initialized before we are sure that the vtable
+  // and the trace method are both defined.  There are two cases that need to
+  // hold to satisfy that assumption:
+  //
+  // 1. If trace is virtual, then it must be defined in the left-most base.
+  // This ensures that if the vtable is initialized and it contains a pointer to
+  // the trace method.
+  //
+  // 2. If trace is non-virtual, then the trace method is defined and we must
+  // ensure that the left-most base defines a vtable. This ensures that the
+  // first thing to be initialized when constructing the object is the vtable
+  // itself.
+  void CheckPolymorphicClass(RecordInfo* info, CXXMethodDecl* trace) {
+    CXXRecordDecl* left_most = info->record();
+    CXXRecordDecl::base_class_iterator it = left_most->bases_begin();
+    CXXRecordDecl* left_most_base = 0;
+    while (it != left_most->bases_end()) {
+      left_most_base = it->getType()->getAsCXXRecordDecl();
+      if (!left_most_base && it->getType()->isDependentType())
+        left_most_base = GetDependentTemplatedDecl(*it->getType());
+
+      // TODO: Find a way to correctly check actual instantiations
+      // for dependent types. The escape below will be hit, eg, when
+      // we have a primary template with no definition and
+      // specializations for each case (such as SupplementBase) in
+      // which case we don't succeed in checking the required
+      // properties.
+      if (!left_most_base || !left_most_base->hasDefinition())
+        return;
+
+      StringRef name = left_most_base->getName();
+      // We know GCMixin base defines virtual trace.
+      if (Config::IsGCMixinBase(name))
+        return;
+
+      // Stop with the left-most prior to a safe polymorphic base (a safe base
+      // is non-polymorphic and contains no fields that need tracing).
+      if (Config::IsSafePolymorphicBase(name))
+        break;
+
+      left_most = left_most_base;
+      it = left_most->bases_begin();
+    }
+
+    if (RecordInfo* left_most_info = cache_.Lookup(left_most)) {
+
+      // Check condition (1):
+      if (trace->isVirtual()) {
+        if (CXXMethodDecl* trace = left_most_info->GetTraceMethod()) {
+          if (trace->isVirtual())
+            return;
+        }
+        ReportBaseClassMustDeclareVirtualTrace(info, left_most);
+        return;
+      }
+
+      // Check condition (2):
+      if (DeclaresVirtualMethods(info->record()))
+        return;
+      if (left_most_base) {
+        ++it; // Get the base next to the "safe polymorphic base"
+        if (it != left_most->bases_end()) {
+          if (CXXRecordDecl* next_base = it->getType()->getAsCXXRecordDecl()) {
+            if (CXXRecordDecl* next_left_most = GetLeftMostBase(next_base)) {
+              if (DeclaresVirtualMethods(next_left_most))
+                return;
+              ReportLeftMostBaseMustBePolymorphic(info, next_left_most);
+              return;
+            }
+          }
+        }
+      }
+      ReportLeftMostBaseMustBePolymorphic(info, left_most);
+    }
+  }
+
+  CXXRecordDecl* GetLeftMostBase(CXXRecordDecl* left_most) {
+    CXXRecordDecl::base_class_iterator it = left_most->bases_begin();
+    while (it != left_most->bases_end()) {
+      if (it->getType()->isDependentType())
+        left_most = GetDependentTemplatedDecl(*it->getType());
+      else
+        left_most = it->getType()->getAsCXXRecordDecl();
+      if (!left_most || !left_most->hasDefinition())
+        return 0;
+      it = left_most->bases_begin();
+    }
+    return left_most;
+  }
+
+  bool DeclaresVirtualMethods(CXXRecordDecl* decl) {
+    CXXRecordDecl::method_iterator it = decl->method_begin();
+    for (; it != decl->method_end(); ++it)
+      if (it->isVirtual() && !it->isPure())
+        return true;
+    return false;
   }
 
   void CheckLeftMostDerived(RecordInfo* info) {
@@ -920,16 +1203,12 @@ class BlinkGCPluginConsumer : public ASTConsumer {
   void CheckTraceMethod(RecordInfo* parent,
                         CXXMethodDecl* trace,
                         bool isTraceAfterDispatch) {
-    // A non-virtual trace method must not override another trace.
-    if (!isTraceAfterDispatch && !trace->isVirtual()) {
+    // A trace method must not override any non-virtual trace methods.
+    if (!isTraceAfterDispatch) {
       for (RecordInfo::Bases::iterator it = parent->GetBases().begin();
            it != parent->GetBases().end();
            ++it) {
         RecordInfo* base = it->second.info();
-        // We allow mixin bases to contain a non-virtual trace since it will
-        // never be used for dispatching.
-        if (base->IsGCMixin())
-          continue;
         if (CXXMethodDecl* other = base->InheritsNonVirtualTrace())
           ReportOverriddenNonVirtualTrace(parent, trace, other);
       }
@@ -1330,6 +1609,24 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         << info->record();
   }
 
+  void ReportLeftMostBaseMustBePolymorphic(RecordInfo* derived,
+                                           CXXRecordDecl* base) {
+    SourceLocation loc = base->getLocStart();
+    SourceManager& manager = instance_.getSourceManager();
+    FullSourceLoc full_loc(loc, manager);
+    diagnostic_.Report(full_loc, diag_left_most_base_must_be_polymorphic_)
+        << base << derived->record();
+  }
+
+  void ReportBaseClassMustDeclareVirtualTrace(RecordInfo* derived,
+                                              CXXRecordDecl* base) {
+    SourceLocation loc = base->getLocStart();
+    SourceManager& manager = instance_.getSourceManager();
+    FullSourceLoc full_loc(loc, manager);
+    diagnostic_.Report(full_loc, diag_base_class_must_declare_virtual_trace_)
+        << base << derived->record();
+  }
+
   void NoteManualDispatchMethod(CXXMethodDecl* dispatch) {
     SourceLocation loc = dispatch->getLocStart();
     SourceManager& manager = instance_.getSourceManager();
@@ -1420,6 +1717,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
   unsigned diag_derives_non_stack_allocated_;
   unsigned diag_class_overrides_new_;
   unsigned diag_class_declares_pure_virtual_trace_;
+  unsigned diag_left_most_base_must_be_polymorphic_;
+  unsigned diag_base_class_must_declare_virtual_trace_;
 
   unsigned diag_base_requires_tracing_note_;
   unsigned diag_field_requires_tracing_note_;

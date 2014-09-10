@@ -42,9 +42,8 @@ defaults['category'] = 'layout'
 ################################################################################
 
 # Archive location
-rel_archive = master_config.GetArchiveUrl('ChromiumWebkit',
-                                          'WebKit Mac Builder',
-                                          'webkit-mac-latest-rel', 'mac')
+rel_archive = master_config.GetGSUtilUrl('chromium-build-transfer',
+                                         'WebKit Mac Builder')
 
 #
 # Triggerable scheduler for testers
@@ -59,6 +58,7 @@ B('WebKit Mac Builder', 'f_webkit_mac_rel',
   builddir='webkit-mac-latest-rel')
 F('f_webkit_mac_rel', mac().ChromiumFactory(
     slave_type='Builder',
+    build_url=rel_archive,
     options=['--build-tool=ninja', '--compiler=goma-clang', '--',
         'blink_tests'],
     factory_properties={
@@ -168,9 +168,8 @@ F('f_webkit_mac_oilpan_rel', mac().ChromiumFactory(
 ################################################################################
 
 # Archive location
-dbg_archive = master_config.GetArchiveUrl('ChromiumWebkit',
-                                          'WebKit Mac Builder (dbg)',
-                                          'webkit-mac-latest-dbg', 'mac')
+dbg_archive = master_config.GetGSUtilUrl('chromium-build-transfer',
+                                         'WebKit Mac Builder (dbg)')
 
 #
 # Triggerable scheduler for testers
@@ -185,6 +184,7 @@ B('WebKit Mac Builder (dbg)', 'f_webkit_mac_dbg', auto_reboot=False,
 F('f_webkit_mac_dbg', mac().ChromiumFactory(
     target='Debug',
     slave_type='Builder',
+    build_url=dbg_archive,
     options=['--build-tool=ninja', '--compiler=goma-clang', '--',
         'blink_tests'],
     factory_properties={

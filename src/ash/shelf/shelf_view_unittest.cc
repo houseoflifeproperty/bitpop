@@ -29,7 +29,6 @@
 #include "ash/test/shell_test_api.h"
 #include "ash/test/test_shelf_delegate.h"
 #include "ash/test/test_shelf_item_delegate.h"
-#include "ash/wm/coordinate_conversion.h"
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
@@ -37,16 +36,17 @@
 #include "base/strings/string_number_conversions.h"
 #include "grit/ash_resources.h"
 #include "ui/aura/test/aura_test_base.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/views/view_model.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/wm/core/coordinate_conversion.h"
 
 namespace ash {
 namespace test {
@@ -517,8 +517,8 @@ class ShelfViewTest : public AshTestBase {
     gfx::Point center_point_of_drag_item =
         drag_button->GetBoundsInScreen().CenterPoint();
 
-    aura::test::EventGenerator generator(ash::Shell::GetPrimaryRootWindow(),
-                                         center_point_of_drag_item);
+    ui::test::EventGenerator generator(ash::Shell::GetPrimaryRootWindow(),
+                                       center_point_of_drag_item);
     // Rip an item off to OverflowBubble.
     generator.PressLeftButton();
     gfx::Point rip_off_point(center_point_of_drag_item.x(), 0);
@@ -1301,7 +1301,7 @@ TEST_F(ShelfViewTest, ShouldHideTooltipTest) {
 }
 
 TEST_F(ShelfViewTest, ShouldHideTooltipWithAppListWindowTest) {
-  Shell::GetInstance()->ToggleAppList(NULL);
+  Shell::GetInstance()->ShowAppList(NULL);
   ASSERT_TRUE(Shell::GetInstance()->GetAppListWindow());
 
   // The tooltip shouldn't hide if the mouse is on normal buttons.
@@ -1326,7 +1326,7 @@ TEST_F(ShelfViewTest, ShouldHideTooltipWithAppListWindowTest) {
 TEST_F(ShelfViewTest, ShouldHideTooltipWhenHoveringOnTooltip) {
   ShelfTooltipManager* tooltip_manager = shelf_view_->tooltip_manager();
   tooltip_manager->CreateZeroDelayTimerForTest();
-  aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow());
+  ui::test::EventGenerator generator(Shell::GetPrimaryRootWindow());
 
   // Move the mouse off any item and check that no tooltip is shown.
   generator.MoveMouseTo(gfx::Point(0, 0));
@@ -1418,8 +1418,8 @@ TEST_F(ShelfViewTest, OverflowBubbleSize) {
   int item_width = test_for_overflow_view.GetButtonSize() +
       test_for_overflow_view.GetButtonSpacing();
 
-  aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
-                                       gfx::Point());
+  ui::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
+                                     gfx::Point());
   ShelfButton* button = test_for_overflow_view.GetButton(ripped_index);
   // Rip off the last visible item.
   gfx::Point start_point = button->GetBoundsInScreen().CenterPoint();
@@ -1604,9 +1604,9 @@ TEST_F(ShelfViewTest, CheckRipOffFromLeftShelfAlignmentWithMultiMonitor) {
 
   // Fetch the start point of dragging.
   gfx::Point start_point = button->GetBoundsInScreen().CenterPoint();
-  wm::ConvertPointFromScreen(second_root, &start_point);
+  ::wm::ConvertPointFromScreen(second_root, &start_point);
 
-  aura::test::EventGenerator generator(second_root, start_point);
+  ui::test::EventGenerator generator(second_root, start_point);
 
   // Rip off the browser item.
   generator.PressLeftButton();

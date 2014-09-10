@@ -34,7 +34,7 @@
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderView.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -68,9 +68,17 @@ void RenderHTMLCanvas::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& pa
     // FIXME: InterpolationNone should be used if ImageRenderingOptimizeContrast is set.
     // See bug for more details: crbug.com/353716.
     InterpolationQuality interpolationQuality = style()->imageRendering() == ImageRenderingOptimizeContrast ? InterpolationLow : CanvasDefaultInterpolationQuality;
+
+    HTMLCanvasElement* canvas = toHTMLCanvasElement(node());
+    LayoutSize layoutSize = contentRect.size();
+    if (style()->imageRendering() == ImageRenderingPixelated
+        && (layoutSize.width() > canvas->width() || layoutSize.height() > canvas->height() || layoutSize == canvas->size())) {
+        interpolationQuality = InterpolationNone;
+    }
+
     InterpolationQuality previousInterpolationQuality = context->imageInterpolationQuality();
     context->setImageInterpolationQuality(interpolationQuality);
-    toHTMLCanvasElement(node())->paint(context, paintRect);
+    canvas->paint(context, paintRect);
     context->setImageInterpolationQuality(previousInterpolationQuality);
 
     if (clip)
@@ -103,11 +111,8 @@ void RenderHTMLCanvas::canvasSizeChanged()
         setNeedsLayoutAndFullPaintInvalidation();
 }
 
-CompositingReasons RenderHTMLCanvas::additionalCompositingReasons(CompositingTriggerFlags triggers) const
+CompositingReasons RenderHTMLCanvas::additionalCompositingReasons() const
 {
-    if (!(triggers & CanvasTrigger))
-        return CompositingReasonNone;
-
     HTMLCanvasElement* canvas = toHTMLCanvasElement(node());
     if (canvas->renderingContext() && canvas->renderingContext()->isAccelerated())
         return CompositingReasonCanvas;
@@ -115,4 +120,4 @@ CompositingReasons RenderHTMLCanvas::additionalCompositingReasons(CompositingTri
     return CompositingReasonNone;
 }
 
-} // namespace WebCore
+} // namespace blink

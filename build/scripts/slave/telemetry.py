@@ -78,9 +78,6 @@ def _GenerateTelemetryCommandSequence(options):
       '-v',
       # Output results in the format the buildbot expects.
       '--output-format=buildbot',
-      # Try to report metrics that require elevated privileges.
-      # Bots should be configured to allow this without interaction.
-      '--report-root-metrics',
       ]
 
   if profile_type:

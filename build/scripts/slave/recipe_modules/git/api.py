@@ -11,22 +11,30 @@ class GitApi(recipe_api.RecipeApi):
 
   def __call__(self, *args, **kwargs):
     """Return a git command step."""
+    run = kwargs.pop('run', True)
     name = kwargs.pop('name', 'git '+args[0])
     if 'cwd' not in kwargs:
       kwargs.setdefault('cwd', self.m.path['checkout'])
     git_cmd = 'git'
     if self.m.platform.is_win:
       git_cmd = self.m.path['depot_tools'].join('git.bat')
-    return self.m.step(name, [git_cmd] + list(args), **kwargs)
+    can_fail_build = kwargs.pop('can_fail_build', True)
+    try:
+      return self.m.step(name, [git_cmd] + list(args), **kwargs)
+    except self.m.step.StepFailure as f:
+      if can_fail_build:
+        raise
+      else:
+        return f.result
 
   def fetch_tags(self, **kwargs):
     """Fetches all tags from the origin."""
     kwargs.setdefault('name', 'git fetch tags')
-    return self('fetch', 'origin', '--tags', **kwargs)
+    self('fetch', 'origin', '--tags', **kwargs)
 
   def checkout(self, url, ref=None, dir_path=None, recursive=False,
                submodules=True, keep_paths=None, step_suffix=None,
-               curl_trace_file=None):
+               curl_trace_file=None, can_fail_build=True):
     """Returns an iterable of steps to perform a full git checkout.
     Args:
       url (string): url of remote repo to use as upstream
@@ -40,6 +48,7 @@ class GitApi(recipe_api.RecipeApi):
       curl_trace_file (Path): if not None, dump GIT_CURL_VERBOSE=1 trace to that
           file. Useful for debugging git issue reproducible only on bots. It has
           a side effect of all stderr output of 'git fetch' going to that file.
+      can_fail_build (bool): if False, ignore errors during fetch or checkout.
     """
     if not dir_path:
       dir_path = url.rsplit('/', 1)[-1]
@@ -105,30 +114,31 @@ class GitApi(recipe_api.RecipeApi):
       fetch_env['GIT_CURL_VERBOSE'] = '1'
       fetch_stderr = self.m.raw_io.output(leak_to=curl_trace_file)
 
-    steps.append([
-      self('fetch', *fetch_args,
-           cwd=dir_path,
-           name='git fetch%s' % step_suffix,
-           env=fetch_env,
-           stderr=fetch_stderr),
-      self('checkout', '-f', checkout_ref,
-           cwd=dir_path,
-           name='git checkout%s' % step_suffix),
-    ])
+    self('fetch', *fetch_args,
+      cwd=dir_path,
+      name='git fetch%s' % step_suffix,
+      env=fetch_env,
+      stderr=fetch_stderr,
+      can_fail_build=can_fail_build)
+    self('checkout', '-f', checkout_ref,
+      cwd=dir_path,
+      name='git checkout%s' % step_suffix,
+      can_fail_build=can_fail_build)
 
     clean_args = list(self.m.itertools.chain(
         *[('-e', path) for path in keep_paths or []]))
 
-    steps.append([
-      self('clean', '-f', '-d', '-x', *clean_args, cwd=dir_path,
-           name='git clean%s' % step_suffix),
-    ])
+    self('clean', '-f', '-d', '-x', *clean_args,
+      name='git clean%s' % step_suffix,
+      cwd=dir_path,
+      can_fail_build=can_fail_build)
 
     if submodules:
-      steps.append([
-        self('submodule', 'sync', name='submodule sync%s' % step_suffix, cwd=dir_path),
-        self('submodule', 'update', '--init', '--recursive',
-             name='submodule update%s' % step_suffix, cwd=dir_path),
-      ])
-
-    return steps
+      self('submodule', 'sync',
+        name='submodule sync%s' % step_suffix,
+        cwd=dir_path,
+        can_fail_build=can_fail_build)
+      self('submodule', 'update', '--init', '--recursive',
+        name='submodule update%s' % step_suffix,
+        cwd=dir_path,
+        can_fail_build=can_fail_build)

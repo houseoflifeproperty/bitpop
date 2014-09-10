@@ -61,10 +61,6 @@ TEST_F(SplTest, MacroTest) {
     EXPECT_EQ(-3, WEBRTC_SPL_MUL_16_32_RSFT14(a, b));
     EXPECT_EQ(-24, WEBRTC_SPL_MUL_16_32_RSFT11(a, b));
 
-    int a32a = (WEBRTC_SPL_WORD32_MAX >> 16);
-    int a32b = (WEBRTC_SPL_WORD32_MAX & 0x0000ffff);
-    EXPECT_EQ(5, WEBRTC_SPL_MUL_32_32_RSFT32(a32a, a32b, A));
-
     EXPECT_EQ(-12288, WEBRTC_SPL_MUL_16_16_RSFT(a, b, 2));
     EXPECT_EQ(-12287, WEBRTC_SPL_MUL_16_16_RSFT_WITH_ROUND(a, b, 2));
 
@@ -73,13 +69,11 @@ TEST_F(SplTest, MacroTest) {
     EXPECT_EQ(21, WEBRTC_SPL_SAT(a, B, A));
     EXPECT_EQ(-49149, WEBRTC_SPL_MUL_32_16(a, b));
 
-    EXPECT_EQ(16386, WEBRTC_SPL_SUB_SAT_W32(a, b));
     EXPECT_EQ(16380, WEBRTC_SPL_ADD_SAT_W16(a, b));
 
     // Shifting with negative numbers allowed
     int shift_amount = 1;  // Workaround compiler warning using variable here.
     // Positive means left shift
-    EXPECT_EQ(32766, WEBRTC_SPL_SHIFT_W16(a, shift_amount));
     EXPECT_EQ(32766, WEBRTC_SPL_SHIFT_W32(a, shift_amount));
 
     // Shifting with negative numbers not allowed
@@ -105,14 +99,10 @@ TEST_F(SplTest, MacroTest) {
     EXPECT_EQ(-1073741824,
               WEBRTC_SPL_MUL_16_32_RSFT16(WEBRTC_SPL_WORD16_MIN,
                                           WEBRTC_SPL_WORD32_MAX));
-    EXPECT_EQ(0x3fffffff, WEBRTC_SPL_MUL_32_32_RSFT32(WEBRTC_SPL_WORD16_MAX,
-              0xffff, WEBRTC_SPL_WORD32_MAX));
 #else
     EXPECT_EQ(-1073741823,
               WEBRTC_SPL_MUL_16_32_RSFT16(WEBRTC_SPL_WORD16_MIN,
                                           WEBRTC_SPL_WORD32_MAX));
-    EXPECT_EQ(0x3fff7ffe, WEBRTC_SPL_MUL_32_32_RSFT32(WEBRTC_SPL_WORD16_MAX,
-              0xffff, WEBRTC_SPL_WORD32_MAX));
 #endif
 }
 
@@ -135,10 +125,9 @@ TEST_F(SplTest, InlineTest) {
     EXPECT_EQ(0, WebRtcSpl_NormW16(WEBRTC_SPL_WORD16_MIN));
     EXPECT_EQ(4, WebRtcSpl_NormW16(b32));
 
-    EXPECT_EQ(0, WebRtcSpl_NormU32(0));
-    EXPECT_EQ(0, WebRtcSpl_NormU32(-1));
-    EXPECT_EQ(0, WebRtcSpl_NormU32(WEBRTC_SPL_WORD32_MIN));
-    EXPECT_EQ(15, WebRtcSpl_NormU32(a32));
+    EXPECT_EQ(0, WebRtcSpl_NormU32(0u));
+    EXPECT_EQ(0, WebRtcSpl_NormU32(0xffffffff));
+    EXPECT_EQ(15, WebRtcSpl_NormU32(static_cast<uint32_t>(a32)));
 
     EXPECT_EQ(104, WebRtcSpl_AddSatW16(a16, b16));
     EXPECT_EQ(138, WebRtcSpl_SubSatW16(a16, b16));

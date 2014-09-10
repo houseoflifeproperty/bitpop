@@ -8,6 +8,7 @@ from telemetry import value
 from telemetry.page import page_set
 from telemetry.value import string
 
+
 class TestBase(unittest.TestCase):
   def setUp(self):
     self.page_set = page_set.PageSet(file_path=os.path.dirname(__file__))
@@ -59,3 +60,24 @@ class StringValueTest(TestBase):
     self.assertEquals('label', vM.units)
     self.assertEquals(True, vM.important)
     self.assertEquals(['L1', 'L2'], vM.values)
+
+  def testAsDict(self):
+    v = string.StringValue(None, 'x', 'unit', 'foo', important=False)
+    d = v.AsDictWithoutBaseClassEntries()
+
+    self.assertEquals(d, {
+          'value': 'foo'
+        })
+
+  def testFromDict(self):
+    d = {
+      'type': 'string',
+      'name': 'x',
+      'units': 'unit',
+      'value': 'foo'
+    }
+
+    v = value.Value.FromDict(d, {})
+
+    self.assertTrue(isinstance(v, string.StringValue))
+    self.assertEquals(v.value, 'foo')

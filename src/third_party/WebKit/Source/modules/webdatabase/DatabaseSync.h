@@ -31,7 +31,7 @@
 #ifndef DatabaseSync_h
 #define DatabaseSync_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/webdatabase/DatabaseBackendSync.h"
 #include "modules/webdatabase/DatabaseBase.h"
 #include "modules/webdatabase/DatabaseBasicTypes.h"
@@ -39,17 +39,12 @@
 #include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
 
-#ifndef NDEBUG
-#include "platform/weborigin/SecurityOrigin.h"
-#endif
-
-namespace WebCore {
+namespace blink {
 
 class DatabaseCallback;
 class ExceptionState;
 class SQLTransactionSync;
 class SQLTransactionSyncCallback;
-class SecurityOrigin;
 
 // Instances of this class should be created and used only on the worker's context thread.
 class DatabaseSync FINAL : public DatabaseBackendSync, public DatabaseBase, public ScriptWrappable {
@@ -103,6 +98,6 @@ private:
     friend class DatabaseServer; // FIXME: remove this when the backend has been split out.
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

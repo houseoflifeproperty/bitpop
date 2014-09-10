@@ -33,7 +33,7 @@
 #include "platform/heap/Handle.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class TextTrackLoader;
@@ -69,7 +69,6 @@ public:
     void trace(Visitor*);
 
 private:
-
     // RawResourceClient
     virtual void dataReceived(Resource*, const char* data, int length) OVERRIDE;
     virtual void notifyFinished(Resource*) OVERRIDE;
@@ -84,15 +83,17 @@ private:
     void cueLoadTimerFired(Timer<TextTrackLoader>*);
     void corsPolicyPreventedLoad(SecurityOrigin*, const KURL&);
 
+    Document& document() const { return *m_document; }
+
     TextTrackLoaderClient& m_client;
     OwnPtrWillBeMember<VTTParser> m_cueParser;
     // FIXME: Remove this pointer and get the Document from m_client.
-    Document& m_document;
+    RawPtrWillBeMember<Document> m_document;
     Timer<TextTrackLoader> m_cueLoadTimer;
     State m_state;
     bool m_newCuesAvailable;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

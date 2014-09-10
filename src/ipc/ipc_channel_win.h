@@ -35,6 +35,8 @@ class ChannelWin : public Channel,
   virtual void Close() OVERRIDE;
   virtual bool Send(Message* message) OVERRIDE;
   virtual base::ProcessId GetPeerPID() const OVERRIDE;
+  virtual base::ProcessId GetSelfPID() const OVERRIDE;
+  virtual ChannelHandle TakePipeHandle() OVERRIDE;
 
   static bool IsNamedServerInitialized(const std::string& channel_id);
 
@@ -91,6 +93,12 @@ class ChannelWin : public Channel,
 
   // Determines if we should validate a client's secret on connection.
   bool validate_client_;
+
+  // True if there is a write in progress. TODO(rvargas): remove this.
+  bool writing_;
+
+  // Tracks the lifetime of this object, for debugging purposes.
+  int32 debug_flags_;
 
   // This is a unique per-channel value used to authenticate the client end of
   // a connection. If the value is non-zero, the client passes it in the hello

@@ -176,8 +176,9 @@ void RenderViewTest::SetUp() {
   // ResourceBundle isn't initialized (since we have to use a diferent test
   // suite implementation than for content_unittests). For browser_tests, this
   // is already initialized.
-  if (!ResourceBundle::HasSharedInstance())
-    ResourceBundle::InitSharedInstanceWithLocale("en-US", NULL);
+  if (!ui::ResourceBundle::HasSharedInstance())
+    ui::ResourceBundle::InitSharedInstanceWithLocale(
+        "en-US", NULL, ui::ResourceBundle::LOAD_COMMON_RESOURCES);
 
   mock_process_.reset(new MockRenderProcess);
 
@@ -198,8 +199,7 @@ void RenderViewTest::SetUp() {
                              false,  // hidden
                              false,  // never_visible
                              1,      // next_page_id
-                             blink::WebScreenInfo(),
-                             AccessibilityModeOff);
+                             blink::WebScreenInfo());
   view->AddRef();
   view_ = view;
 }
@@ -415,7 +415,7 @@ void RenderViewTest::GoToOffset(int offset, const PageState& state) {
   navigate_params.current_history_list_length = history_list_length;
   navigate_params.current_history_list_offset = impl->history_list_offset();
   navigate_params.pending_history_list_offset = pending_offset;
-  navigate_params.page_id = impl->GetPageId() + offset;
+  navigate_params.page_id = impl->page_id_ + offset;
   navigate_params.page_state = state;
   navigate_params.request_time = base::Time::Now();
 

@@ -8,7 +8,6 @@
     "name": "cleanup temp"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -24,7 +23,7 @@
       "--root",
       "src",
       "--revision_mapping_file",
-      "{\"src\": \"got_revision\", \"src/native_client\": \"got_nacl_revision\", \"src/third_party/WebKit\": \"got_webkit_revision\", \"src/third_party/webrtc\": \"got_webrtc_revision\", \"src/tools/swarm_client\": \"got_swarm_client_revision\", \"src/tools/swarming_client\": \"got_swarming_client_revision\", \"src/v8\": \"got_v8_revision\"}",
+      "{\"src\": \"got_revision\", \"src/native_client\": \"got_nacl_revision\", \"src/third_party/WebKit\": \"got_webkit_revision\", \"src/third_party/webrtc\": \"got_webrtc_revision\", \"src/tools/swarming_client\": \"got_swarming_client_revision\", \"src/v8\": \"got_v8_revision\"}",
       "--issue",
       "12853011",
       "--patchset",
@@ -37,14 +36,13 @@
     "name": "bot_update",
     "~followup_annotations": [
       "@@@STEP_LOG_LINE@json.output@{@@@",
-      "@@@STEP_LOG_LINE@json.output@  \"did_run\": false@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"did_run\": false, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_failure\": false@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@"
     ]
   },
   {
-    "abort_on_failure": false,
-    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -56,8 +54,6 @@
     "name": "gclient setup"
   },
   {
-    "abort_on_failure": false,
-    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -68,8 +64,6 @@
     "name": "gclient revert"
   },
   {
-    "abort_on_failure": false,
-    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -103,9 +97,6 @@
       "@@@STEP_LOG_LINE@json.output@    \"src/third_party/webrtc/\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"revision\": 120644@@@",
       "@@@STEP_LOG_LINE@json.output@    }, @@@",
-      "@@@STEP_LOG_LINE@json.output@    \"src/tools/swarm_client/\": {@@@",
-      "@@@STEP_LOG_LINE@json.output@      \"revision\": 200767@@@",
-      "@@@STEP_LOG_LINE@json.output@    }, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"src/tools/swarming_client/\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"revision\": 276089@@@",
       "@@@STEP_LOG_LINE@json.output@    }, @@@",
@@ -120,12 +111,10 @@
       "@@@SET_BUILD_PROPERTY@got_swarming_client_revision@276089@@@",
       "@@@SET_BUILD_PROPERTY@got_webrtc_revision@120644@@@",
       "@@@SET_BUILD_PROPERTY@got_revision@170242@@@",
-      "@@@SET_BUILD_PROPERTY@got_v8_revision@43426@@@",
-      "@@@SET_BUILD_PROPERTY@got_swarm_client_revision@200767@@@"
+      "@@@SET_BUILD_PROPERTY@got_v8_revision@43426@@@"
     ]
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -140,7 +129,10 @@
       "https://codereview.chromium.org",
       "--no-auth"
     ],
-    "name": "apply_issue"
+    "name": "apply_issue",
+    "~followup_annotations": [
+      "@@@STEP_LINK@Applied issue 12853011@https://codereview.chromium.org/12853011@@@"
+    ]
   },
   {
     "cmd": [
@@ -150,13 +142,11 @@
       "runhooks"
     ],
     "env": {
-      "GYP_DEFINES": "clang=1 component=static_library dcheck_always_on=1 disable_glibcxx_debug=1 gomadir='[BUILD]/goma' internal_gles2_conform_tests=1 target_arch=ia32 test_isolation_mode=archive test_isolation_outdir=https://isolateserver.appspot.com use_goma=1"
+      "GYP_DEFINES": "archive_gpu_tests=1 blink_asserts_always_on=1 clang=1 component=static_library dcheck_always_on=1 disable_glibcxx_debug=1 gomadir='[BUILD]/goma' internal_gles2_conform_tests=1 target_arch=ia32 test_isolation_mode=archive test_isolation_outdir=https://isolateserver.appspot.com use_goma=1"
     },
     "name": "gclient runhooks"
   },
   {
-    "abort_on_failure": false,
-    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -183,7 +173,6 @@
     "name": "compile"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -209,7 +198,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -242,7 +230,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -275,7 +262,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -308,7 +294,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -344,13 +329,13 @@
       "--build-revision",
       "170242",
       "--test-machine-name",
-      "TestBuilder"
+      "TestBuilder",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "maps_pixel_test"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -391,13 +376,13 @@
       "--os-type",
       "mac",
       "--test-machine-name",
-      "TestBuilder"
+      "TestBuilder",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "pixel_test"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -429,13 +414,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "webgl_conformance_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -467,13 +452,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "context_lost_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -505,13 +490,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "memory_test"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -543,13 +528,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "screenshot_sync_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -581,13 +566,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "hardware_accelerated_feature_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -619,13 +604,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "gpu_process_launch_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -661,13 +646,13 @@
       "--build-revision",
       "170242",
       "--test-machine-name",
-      "TestBuilder"
+      "TestBuilder",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "gpu_rasterization_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",

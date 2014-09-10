@@ -20,18 +20,18 @@
 #ifndef XMLSerializer_h
 #define XMLSerializer_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class Node;
 
-class XMLSerializer : public RefCountedWillBeGarbageCollectedFinalized<XMLSerializer>, public ScriptWrappable {
+class XMLSerializer FINAL : public RefCountedWillBeGarbageCollected<XMLSerializer>, public ScriptWrappable {
 public:
     static PassRefPtrWillBeRawPtr<XMLSerializer> create()
     {
@@ -49,6 +49,6 @@ private:
     }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // XMLSerializer_h

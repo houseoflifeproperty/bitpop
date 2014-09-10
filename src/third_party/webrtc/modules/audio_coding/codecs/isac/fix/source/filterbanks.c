@@ -86,10 +86,13 @@ void WebRtcIsacfix_AllpassFilter2FixDec16C(
   filter_state_ch2[1] = state1_ch2;
 }
 
-void WebRtcIsacfix_HighpassFilterFixDec32(int16_t *io,
-                                          int16_t len,
-                                          const int16_t *coefficient,
-                                          int32_t *state)
+// Declare a function pointer.
+HighpassFilterFixDec32 WebRtcIsacfix_HighpassFilterFixDec32;
+
+void WebRtcIsacfix_HighpassFilterFixDec32C(int16_t *io,
+                                           int16_t len,
+                                           const int16_t *coefficient,
+                                           int32_t *state)
 {
   int k;
   int32_t a1 = 0, b1 = 0, c = 0, in = 0;
@@ -126,12 +129,16 @@ void WebRtcIsacfix_HighpassFilterFixDec32(int16_t *io,
     }
 #else
     /* Q35 * Q4 = Q39 ; shift 32 bit => Q7 */
-    a1 = WEBRTC_SPL_MUL_32_32_RSFT32(coefficient[5], coefficient[4], state0);
-    b1 = WEBRTC_SPL_MUL_32_32_RSFT32(coefficient[7], coefficient[6], state1);
+    a1 = WEBRTC_SPL_MUL_16_32_RSFT16(coefficient[5], state0) +
+        (WEBRTC_SPL_MUL_16_32_RSFT16(coefficient[4], state0) >> 16);
+    b1 = WEBRTC_SPL_MUL_16_32_RSFT16(coefficient[7], state1) +
+        (WEBRTC_SPL_MUL_16_32_RSFT16(coefficient[6], state1) >> 16);
 
     /* Q30 * Q4 = Q34 ; shift 32 bit => Q2 */
-    a2 = WEBRTC_SPL_MUL_32_32_RSFT32(coefficient[1], coefficient[0], state0);
-    b2 = WEBRTC_SPL_MUL_32_32_RSFT32(coefficient[3], coefficient[2], state1);
+    a2 = WEBRTC_SPL_MUL_16_32_RSFT16(coefficient[1], state0) +
+        (WEBRTC_SPL_MUL_16_32_RSFT16(coefficient[0], state0) >> 16);
+    b2 = WEBRTC_SPL_MUL_16_32_RSFT16(coefficient[3], state1) +
+        (WEBRTC_SPL_MUL_16_32_RSFT16(coefficient[2], state1) >> 16);
 #endif
 
     c = ((int32_t)in) + WEBRTC_SPL_RSHIFT_W32(a1+b1, 7);  // Q0

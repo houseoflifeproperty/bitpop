@@ -7,11 +7,12 @@
 #include "base/bind.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_test_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
+#include "chrome/browser/sync_file_system/drive_backend/leveldb_wrapper.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database_index.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database_index_interface.h"
@@ -54,9 +55,12 @@ struct TrackedFile {
   TrackedFile() : should_be_absent(false), tracker_only(false) {}
 };
 
-void ExpectEquivalent(const ServiceMetadata* left,
-                      const ServiceMetadata* right) {
-  test_util::ExpectEquivalentServiceMetadata(*left, *right);
+void ExpectEquivalentServiceMetadata(
+    const MetadataDatabaseIndexInterface* left,
+    const MetadataDatabaseIndexInterface* right) {
+  EXPECT_EQ(left->GetLargestChangeID(), right->GetLargestChangeID());
+  EXPECT_EQ(left->GetSyncRootTrackerID(), right->GetSyncRootTrackerID());
+  EXPECT_EQ(left->GetNextTrackerID(), right->GetNextTrackerID());
 }
 
 void ExpectEquivalent(const FileMetadata* left, const FileMetadata* right) {
@@ -197,8 +201,7 @@ class MetadataDatabaseTest : public testing::Test {
 
   SyncStatusCode InitializeMetadataDatabase() {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    MetadataDatabase::Create(base::MessageLoopProxy::current(),
-                             base::MessageLoopProxy::current(),
+    MetadataDatabase::Create(base::ThreadTaskRunnerHandle::Get(),
                              database_dir_.path(),
                              in_memory_env_.get(),
                              CreateResultReceiver(&status,
@@ -214,7 +217,7 @@ class MetadataDatabaseTest : public testing::Test {
 
   void SetUpDatabaseByTrackedFiles(const TrackedFile** tracked_files,
                                    int size) {
-    scoped_ptr<leveldb::DB> db = InitializeLevelDB();
+    scoped_ptr<LevelDBWrapper> db = InitializeLevelDB();
     ASSERT_TRUE(db);
 
     for (int i = 0; i < size; ++i) {
@@ -252,7 +255,7 @@ class MetadataDatabaseTest : public testing::Test {
 
   MetadataDatabase* metadata_database() { return metadata_database_.get(); }
 
-  scoped_ptr<leveldb::DB> InitializeLevelDB() {
+  scoped_ptr<LevelDBWrapper> InitializeLevelDB() {
     leveldb::DB* db = NULL;
     leveldb::Options options;
     options.create_if_missing = true;
@@ -262,22 +265,21 @@ class MetadataDatabaseTest : public testing::Test {
         leveldb::DB::Open(options, database_dir_.path().AsUTF8Unsafe(), &db);
     EXPECT_TRUE(status.ok());
 
-    db->Put(leveldb::WriteOptions(),
-            kDatabaseVersionKey,
-            base::Int64ToString(3));
-    SetUpServiceMetadata(db);
+    scoped_ptr<LevelDBWrapper> wrapper(new LevelDBWrapper(make_scoped_ptr(db)));
 
-    return make_scoped_ptr(db);
+    wrapper->Put(kDatabaseVersionKey, base::Int64ToString(3));
+    SetUpServiceMetadata(wrapper.get());
+
+    return wrapper.Pass();
   }
 
-  void SetUpServiceMetadata(leveldb::DB* db) {
+  void SetUpServiceMetadata(LevelDBWrapper* db) {
     ServiceMetadata service_metadata;
     service_metadata.set_largest_change_id(kInitialChangeID);
     service_metadata.set_sync_root_tracker_id(kSyncRootTrackerID);
     service_metadata.set_next_tracker_id(next_tracker_id_);
-    leveldb::WriteBatch batch;
-    PutServiceMetadataToBatch(service_metadata, &batch);
-    EXPECT_TRUE(db->Write(leveldb::WriteOptions(), &batch).ok());
+    PutServiceMetadataToDB(service_metadata, db);
+    EXPECT_TRUE(db->Commit().ok());
   }
 
   FileMetadata CreateSyncRootMetadata() {
@@ -386,12 +388,14 @@ class MetadataDatabaseTest : public testing::Test {
 
     file_resource->set_file_id(file.file_id());
     file_resource->set_title(file.details().title());
-    if (file.details().file_kind() == FILE_KIND_FOLDER)
+    if (file.details().file_kind() == FILE_KIND_FOLDER) {
       file_resource->set_mime_type("application/vnd.google-apps.folder");
-    else if (file.details().file_kind() == FILE_KIND_FILE)
+    } else if (file.details().file_kind() == FILE_KIND_FILE) {
       file_resource->set_mime_type("text/plain");
-    else
+      file_resource->set_file_size(0);
+    } else {
       file_resource->set_mime_type("application/vnd.google-apps.document");
+    }
     file_resource->set_md5_checksum(file.details().md5());
     file_resource->set_etag(file.details().etag());
     file_resource->set_created_date(base::Time::FromInternalValue(
@@ -447,17 +451,15 @@ class MetadataDatabaseTest : public testing::Test {
     changes->push_back(change.release());
   }
 
-  leveldb::Status PutFileToDB(leveldb::DB* db, const FileMetadata& file) {
-    leveldb::WriteBatch batch;
-    PutFileMetadataToBatch(file, &batch);
-    return db->Write(leveldb::WriteOptions(), &batch);
+  leveldb::Status PutFileToDB(LevelDBWrapper* db, const FileMetadata& file) {
+    PutFileMetadataToDB(file, db);
+    return db->Commit();
   }
 
-  leveldb::Status PutTrackerToDB(leveldb::DB* db,
+  leveldb::Status PutTrackerToDB(LevelDBWrapper* db,
                                  const FileTracker& tracker) {
-    leveldb::WriteBatch batch;
-    PutFileTrackerToBatch(tracker, &batch);
-    return db->Write(leveldb::WriteOptions(), &batch);
+    PutFileTrackerToDB(tracker, db);
+    return db->Commit();
   }
 
   void VerifyReloadConsistency() {
@@ -475,8 +477,8 @@ class MetadataDatabaseTest : public testing::Test {
 
     {
       SCOPED_TRACE("Expect equivalent service_metadata");
-      ExpectEquivalent(metadata_database_->service_metadata_.get(),
-                       metadata_database_2->service_metadata_.get());
+      ExpectEquivalentServiceMetadata(metadata_database_->index_.get(),
+                                      metadata_database_2->index_.get());
     }
 
     {
@@ -742,7 +744,7 @@ TEST_F(MetadataDatabaseTest, BuildPathTest) {
   inactive_folder_tracker.set_active(false);
 
   {
-    scoped_ptr<leveldb::DB> db = InitializeLevelDB();
+    scoped_ptr<LevelDBWrapper> db = InitializeLevelDB();
     ASSERT_TRUE(db);
 
     EXPECT_TRUE(PutFileToDB(db.get(), sync_root).ok());
@@ -795,7 +797,7 @@ TEST_F(MetadataDatabaseTest, FindNearestActiveAncestorTest) {
   inactive_folder_tracker.set_active(false);
 
   {
-    scoped_ptr<leveldb::DB> db = InitializeLevelDB();
+    scoped_ptr<LevelDBWrapper> db = InitializeLevelDB();
     ASSERT_TRUE(db);
 
     EXPECT_TRUE(PutFileToDB(db.get(), sync_root).ok());

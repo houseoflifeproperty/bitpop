@@ -25,7 +25,7 @@
 
 #include "core/html/HTMLPlugInElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLEmbedElement FINAL : public HTMLPlugInElement {
 public:
@@ -44,7 +44,6 @@ private:
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
     virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
-    virtual const AtomicString imageSourceURL() const OVERRIDE;
 
     virtual RenderWidget* existingRenderWidget() const OVERRIDE;
 

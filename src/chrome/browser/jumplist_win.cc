@@ -16,7 +16,6 @@
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_service.h"
-#include "chrome/browser/history/page_usage_data.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_types.h"
@@ -27,6 +26,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "components/favicon_base/favicon_types.h"
+#include "components/history/core/browser/page_usage_data.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_source.h"
 #include "grit/chromium_strings.h"
@@ -397,8 +397,7 @@ void JumpList::StartLoadingFavicon() {
   FaviconService* favicon_service =
       FaviconServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
   task_id_ = favicon_service->GetFaviconImageForPageURL(
-      FaviconService::FaviconForPageURLParams(
-          url, favicon_base::FAVICON, gfx::kFaviconSize),
+      url,
       base::Bind(&JumpList::OnFaviconDataAvailable, base::Unretained(this)),
       &cancelable_task_tracker_);
 }

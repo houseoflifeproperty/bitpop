@@ -58,9 +58,7 @@ using testing::_;
 
 namespace policy {
 
-namespace {
-
-const char kOAuthTokenCookie[] = "oauth_token=1234";
+const char kOAuthCodeCookie[] = "oauth_code=1234; Secure; HttpOnly";
 
 const char kOAuth2TokenPairData[] =
     "{"
@@ -74,8 +72,6 @@ const char kOAuth2AccessTokenData[] =
     "  \"access_token\": \"5678\","
     "  \"expires_in\": 3600"
     "}";
-
-}  // namespace
 
 class UserCloudPolicyManagerChromeOSTest : public testing::Test {
  protected:
@@ -117,7 +113,7 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
                     NULL);
     policy_map_.Set(key::kChromeOsMultiProfileUserBehavior,
                     POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
-                    new base::StringValue("not-allowed"),
+                    new base::StringValue("primary-only"),
                     NULL);
     expected_bundle_.Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
         .CopyFrom(policy_map_);
@@ -233,7 +229,8 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
       if (!fetcher)
         return NULL;
       net::ResponseCookies cookies;
-      cookies.push_back(kOAuthTokenCookie);
+      cookies.push_back(kOAuthCodeCookie);
+
       fetcher->set_cookies(cookies);
       fetcher->delegate()->OnURLFetchComplete(fetcher);
 

@@ -31,12 +31,16 @@
 #include "config.h"
 #include "platform/heap/ThreadState.h"
 
+#include "platform/ScriptForbiddenScope.h"
 #include "platform/TraceEvent.h"
 #include "platform/heap/AddressSanitizer.h"
 #include "platform/heap/Handle.h"
 #include "platform/heap/Heap.h"
 #include "public/platform/Platform.h"
 #include "wtf/ThreadingPrimitives.h"
+#if ENABLE(GC_PROFILE_HEAP)
+#include "platform/TracedValue.h"
+#endif
 
 #if OS(WIN)
 #include <stddef.h>
@@ -50,7 +54,7 @@ extern "C" void* __libc_stack_end;  // NOLINT
 #include <sanitizer/msan_interface.h>
 #endif
 
-namespace WebCore {
+namespace blink {
 
 static void* getStackStart()
 {
@@ -198,7 +202,6 @@ public:
             if (locker)
                 locker->reset();
             pushAllRegisters(this, state, parkAfterPushRegisters);
-            state->performPendingSweep();
         }
     }
 
@@ -261,6 +264,17 @@ private:
     ThreadCondition m_resume;
 };
 
+
+BaseHeapPage::BaseHeapPage(PageMemory* storage, const GCInfo* gcInfo, ThreadState* state)
+    : m_storage(storage)
+    , m_gcInfo(gcInfo)
+    , m_threadState(state)
+    , m_terminating(false)
+    , m_tracedAfterOrphaned(false)
+{
+    ASSERT(isPageHeaderAddress(reinterpret_cast<Address>(this)));
+}
+
 ThreadState::ThreadState()
     : m_thread(currentThread())
     , m_persistents(adoptPtr(new PersistentAnchor()))
@@ -276,7 +290,8 @@ ThreadState::ThreadState()
     , m_noAllocationCount(0)
     , m_inGC(false)
     , m_heapContainsCache(adoptPtr(new HeapContainsCache()))
-    , m_isCleaningUp(false)
+    , m_isTerminating(false)
+    , m_lowCollectionRate(false)
 #if defined(ADDRESS_SANITIZER)
     , m_asanFakeStack(__asan_get_current_fake_stack())
 #endif
@@ -288,9 +303,9 @@ ThreadState::ThreadState()
     m_statsAfterLastGC.clear();
     // First allocate the general heap, second iterate through to
     // allocate the type specific heaps
-    m_heaps[GeneralHeap] = new ThreadHeap<FinalizedHeapObjectHeader>(this);
+    m_heaps[GeneralHeap] = new ThreadHeap<FinalizedHeapObjectHeader>(this, GeneralHeap);
     for (int i = GeneralHeap + 1; i < NumberOfHeaps; i++)
-        m_heaps[i] = new ThreadHeap<HeapObjectHeader>(this);
+        m_heaps[i] = new ThreadHeap<HeapObjectHeader>(this, i);
 
     CallbackStack::init(&m_weakCallbackStack);
 }
@@ -334,12 +349,14 @@ void ThreadState::detachMainThread()
     // threadAttachMutex and waiting for other threads to pause or reach a
     // safepoint.
     ThreadState* state = mainThreadState();
-    if (!state->isAtSafePoint())
-        state->enterSafePointWithoutPointers();
 
     {
-        MutexLocker locker(threadAttachMutex());
-        state->leaveSafePoint();
+        SafePointAwareMutexLocker locker(threadAttachMutex(), NoHeapPointersOnStack);
+
+        // First add the main thread's heap pages to the orphaned pool.
+        state->cleanupPages();
+
+        // Second detach thread.
         ASSERT(attachedThreads().contains(state));
         attachedThreads().remove(state);
         state->~ThreadState();
@@ -367,60 +384,73 @@ void ThreadState::attach()
     attachedThreads().add(state);
 }
 
-void ThreadState::cleanup()
+void ThreadState::cleanupPages()
 {
-    // From here on ignore all conservatively discovered
-    // pointers into the heap owned by this thread.
-    m_isCleaningUp = true;
-
-    // After this GC we expect heap to be empty because
-    // preCleanup tasks should have cleared all persistent
-    // handles that were externally owned.
-    Heap::collectAllGarbage();
-
-    // Verify that all heaps are empty now.
-    for (int i = 0; i < NumberOfHeaps; i++)
-        m_heaps[i]->assertEmpty();
+    for (int i = GeneralHeap; i < NumberOfHeaps; ++i)
+        m_heaps[i]->cleanupPages();
 }
 
-void ThreadState::preCleanup()
+void ThreadState::cleanup()
 {
     for (size_t i = 0; i < m_cleanupTasks.size(); i++)
         m_cleanupTasks[i]->preCleanup();
-}
 
-void ThreadState::postCleanup()
-{
+    {
+        // Grab the threadAttachMutex to ensure only one thread can shutdown at
+        // a time and that no other thread can do a global GC. It also allows
+        // safe iteration of the attachedThreads set which happens as part of
+        // thread local GC asserts. We enter a safepoint while waiting for the
+        // lock to avoid a dead-lock where another thread has already requested
+        // GC.
+        SafePointAwareMutexLocker locker(threadAttachMutex(), NoHeapPointersOnStack);
+
+        // From here on ignore all conservatively discovered
+        // pointers into the heap owned by this thread.
+        m_isTerminating = true;
+
+        // Set the terminate flag on all heap pages of this thread. This is used to
+        // ensure we don't trace pages on other threads that are not part of the
+        // thread local GC.
+        setupHeapsForTermination();
+
+        // Do thread local GC's as long as the count of thread local Persistents
+        // changes and is above zero.
+        PersistentAnchor* anchor = static_cast<PersistentAnchor*>(m_persistents.get());
+        int oldCount = -1;
+        int currentCount = anchor->numberOfPersistents();
+        ASSERT(currentCount >= 0);
+        while (currentCount != oldCount) {
+            Heap::collectGarbageForTerminatingThread(this);
+            oldCount = currentCount;
+            currentCount = anchor->numberOfPersistents();
+        }
+        // We should not have any persistents left when getting to this point,
+        // if we have it is probably a bug so adding a debug ASSERT to catch this.
+        ASSERT(!currentCount);
+
+        // Add pages to the orphaned page pool to ensure any global GCs from this point
+        // on will not trace objects on this thread's heaps.
+        cleanupPages();
+
+        ASSERT(attachedThreads().contains(this));
+        attachedThreads().remove(this);
+    }
+
     for (size_t i = 0; i < m_cleanupTasks.size(); i++)
         m_cleanupTasks[i]->postCleanup();
     m_cleanupTasks.clear();
 }
 
+
 void ThreadState::detach()
 {
     ThreadState* state = current();
-    state->preCleanup();
     state->cleanup();
-
-    // Enter a safe point before trying to acquire threadAttachMutex
-    // to avoid dead lock if another thread is preparing for GC, has acquired
-    // threadAttachMutex and waiting for other threads to pause or reach a
-    // safepoint.
-    if (!state->isAtSafePoint())
-        state->enterSafePointWithoutPointers();
-
-    {
-        MutexLocker locker(threadAttachMutex());
-        state->leaveSafePoint();
-        state->postCleanup();
-        ASSERT(attachedThreads().contains(state));
-        attachedThreads().remove(state);
-        delete state;
-    }
+    delete state;
     shutdownHeapIfNecessary();
 }
 
-void ThreadState::visitRoots(Visitor* visitor)
+void ThreadState::visitPersistentRoots(Visitor* visitor)
 {
     {
         // All threads are at safepoints so this is not strictly necessary.
@@ -432,7 +462,14 @@ void ThreadState::visitRoots(Visitor* visitor)
 
     AttachedThreadStateSet& threads = attachedThreads();
     for (AttachedThreadStateSet::iterator it = threads.begin(), end = threads.end(); it != end; ++it)
-        (*it)->trace(visitor);
+        (*it)->visitPersistents(visitor);
+}
+
+void ThreadState::visitStackRoots(Visitor* visitor)
+{
+    AttachedThreadStateSet& threads = attachedThreads();
+    for (AttachedThreadStateSet::iterator it = threads.begin(), end = threads.end(); it != end; ++it)
+        (*it)->visitStack(visitor);
 }
 
 NO_SANITIZE_ADDRESS
@@ -466,6 +503,9 @@ void ThreadState::visitAsanFakeStackForPointer(Visitor* visitor, Address ptr)
 NO_SANITIZE_ADDRESS
 void ThreadState::visitStack(Visitor* visitor)
 {
+    if (m_stackState == NoHeapPointersOnStack)
+        return;
+
     Address* start = reinterpret_cast<Address*>(m_startOfStack);
     // If there is a safepoint scope marker we should stop the stack
     // scanning there to not touch active parts of the stack. Anything
@@ -510,17 +550,10 @@ void ThreadState::visitPersistents(Visitor* visitor)
     m_persistents->trace(visitor);
 }
 
-void ThreadState::trace(Visitor* visitor)
-{
-    if (m_stackState == HeapPointersOnStack)
-        visitStack(visitor);
-    visitPersistents(visitor);
-}
-
 bool ThreadState::checkAndMarkPointer(Visitor* visitor, Address address)
 {
-    // If thread is cleaning up ignore conservative pointers.
-    if (m_isCleaningUp)
+    // If thread is terminating ignore conservative pointers.
+    if (m_isTerminating)
         return false;
 
     // This checks for normal pages and for large objects which span the extent
@@ -538,7 +571,7 @@ bool ThreadState::checkAndMarkPointer(Visitor* visitor, Address address)
     return false;
 }
 
-#if ENABLE(GC_TRACING)
+#if ENABLE(GC_PROFILE_MARKING)
 const GCInfo* ThreadState::findGCInfo(Address address)
 {
     BaseHeapPage* page = heapPageFromAddress(address);
@@ -546,6 +579,66 @@ const GCInfo* ThreadState::findGCInfo(Address address)
         return page->findGCInfo(address);
     }
     return 0;
+}
+#endif
+
+#if ENABLE(GC_PROFILE_HEAP)
+size_t ThreadState::SnapshotInfo::getClassTag(const GCInfo* gcinfo)
+{
+    HashMap<const GCInfo*, size_t>::AddResult result = classTags.add(gcinfo, classTags.size());
+    if (result.isNewEntry) {
+        liveCount.append(0);
+        deadCount.append(0);
+        generations.append(Vector<int, 8>());
+        generations.last().fill(0, 8);
+    }
+    return result.storedValue->value;
+}
+
+void ThreadState::snapshot()
+{
+    SnapshotInfo info(this);
+    RefPtr<TracedValue> json = TracedValue::create();
+
+#define SNAPSHOT_HEAP(HeapType)                                         \
+    {                                                                   \
+        json->beginDictionary();                                        \
+        json->setString("name", #HeapType);                             \
+        m_heaps[HeapType##Heap]->snapshot(json.get(), &info);          \
+        json->endDictionary();                                          \
+    }
+    json->beginArray("heaps");
+    SNAPSHOT_HEAP(General);
+    FOR_EACH_TYPED_HEAP(SNAPSHOT_HEAP);
+    json->endArray();
+#undef SNAPSHOT_HEAP
+
+    json->setInteger("allocatedSpace", m_stats.totalAllocatedSpace());
+    json->setInteger("objectSpace", m_stats.totalObjectSpace());
+    json->setInteger("liveSize", info.liveSize);
+    json->setInteger("deadSize", info.deadSize);
+    json->setInteger("freeSize", info.freeSize);
+    json->setInteger("pageCount", info.freeSize);
+
+    Vector<String> classNameVector(info.classTags.size());
+    for (HashMap<const GCInfo*, size_t>::iterator it = info.classTags.begin(); it != info.classTags.end(); ++it)
+        classNameVector[it->value] = it->key->m_className;
+
+    json->beginArray("classes");
+    for (size_t i = 0; i < classNameVector.size(); ++i) {
+        json->beginDictionary();
+        json->setString("name", classNameVector[i]);
+        json->setInteger("liveCount", info.liveCount[i]);
+        json->setInteger("deadCount", info.deadCount[i]);
+        json->beginArray("generations");
+        for (size_t j = 0; j < heapObjectGenerations; ++j)
+            json->pushInteger(info.generations[i][j]);
+        json->endArray();
+        json->endDictionary();
+    }
+    json->endArray();
+
+    TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID("blink_gc", "ThreadState", this, json);
 }
 #endif
 
@@ -557,7 +650,7 @@ void ThreadState::pushWeakObjectPointerCallback(void* object, WeakPointerCallbac
 
 bool ThreadState::popAndInvokeWeakPointerCallback(Visitor* visitor)
 {
-    return m_weakCallbackStack->popAndInvokeCallback(&m_weakCallbackStack, visitor);
+    return m_weakCallbackStack->popAndInvokeCallback<WeaknessProcessing>(&m_weakCallbackStack, visitor);
 }
 
 PersistentNode* ThreadState::globalRoots()
@@ -574,11 +667,12 @@ Mutex& ThreadState::globalRootsMutex()
 
 // Trigger garbage collection on a 50% increase in size, but not for
 // less than 512kbytes.
-static bool increasedEnoughToGC(size_t newSize, size_t oldSize)
+bool ThreadState::increasedEnoughToGC(size_t newSize, size_t oldSize)
 {
     if (newSize < 1 << 19)
         return false;
-    return newSize > oldSize + (oldSize >> 1);
+    size_t limit = oldSize + (oldSize >> 1);
+    return newSize > limit;
 }
 
 // FIXME: The heuristics are local for a thread at this
@@ -593,12 +687,14 @@ bool ThreadState::shouldGC()
 }
 
 // Trigger conservative garbage collection on a 100% increase in size,
-// but not for less than 4Mbytes.
-static bool increasedEnoughToForceConservativeGC(size_t newSize, size_t oldSize)
+// but not for less than 4Mbytes. If the system currently has a low
+// collection rate, then require a 300% increase in size.
+bool ThreadState::increasedEnoughToForceConservativeGC(size_t newSize, size_t oldSize)
 {
     if (newSize < 1 << 22)
         return false;
-    return newSize > 2 * oldSize;
+    size_t limit = (m_lowCollectionRate ? 4 : 2) * oldSize;
+    return newSize > limit;
 }
 
 // FIXME: The heuristics are local for a thread at this
@@ -695,19 +791,28 @@ void ThreadState::prepareForGC()
     for (int i = 0; i < NumberOfHeaps; i++) {
         BaseHeap* heap = m_heaps[i];
         heap->makeConsistentForGC();
-        // If there are parked threads with outstanding sweep requests, clear their mark bits.
-        // This happens if a thread did not have time to wake up and sweep,
-        // before the next GC arrived.
+        // If a new GC is requested before this thread got around to sweep, ie. due to the
+        // thread doing a long running operation, we clear the mark bits and mark any of
+        // the dead objects as dead. The latter is used to ensure the next GC marking does
+        // not trace already dead objects. If we trace a dead object we could end up tracing
+        // into garbage or the middle of another object via the newly conservatively found
+        // object.
         if (sweepRequested())
-            heap->clearMarks();
+            heap->clearLiveAndMarkDead();
     }
     setSweepRequested();
+}
+
+void ThreadState::setupHeapsForTermination()
+{
+    for (int i = 0; i < NumberOfHeaps; i++)
+        m_heaps[i]->prepareHeapForTermination();
 }
 
 BaseHeapPage* ThreadState::heapPageFromAddress(Address address)
 {
     BaseHeapPage* cachedPage = heapContainsCache()->lookup(address);
-#ifdef NDEBUG
+#if !ENABLE(ASSERT)
     if (cachedPage)
         return cachedPage;
 #endif
@@ -734,7 +839,7 @@ BaseHeapPage* ThreadState::heapPageFromAddress(Address address)
 void ThreadState::getStats(HeapStats& stats)
 {
     stats = m_stats;
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     if (isConsistentForGC()) {
         HeapStats scannedStats;
         scannedStats.clear();
@@ -765,6 +870,7 @@ void ThreadState::safePoint(StackState stackState)
     s_safePointBarrier->checkAndPark(this);
     m_atSafePoint = false;
     m_stackState = HeapPointersOnStack;
+    performPendingSweep();
 }
 
 #ifdef ADDRESS_SANITIZER
@@ -843,11 +949,24 @@ void ThreadState::performPendingSweep()
     if (!sweepRequested())
         return;
 
-    TRACE_EVENT0("Blink", "ThreadState::performPendingSweep");
+#if ENABLE(GC_PROFILE_HEAP)
+    // We snapshot the heap prior to sweeping to get numbers for both resources
+    // that have been allocated since the last GC and for resources that are
+    // going to be freed.
+    bool gcTracingEnabled;
+    TRACE_EVENT_CATEGORY_GROUP_ENABLED("blink_gc", &gcTracingEnabled);
+    if (gcTracingEnabled && m_stats.totalObjectSpace() > 0)
+        snapshot();
+#endif
+
+    TRACE_EVENT0("blink_gc", "ThreadState::performPendingSweep");
+
     double timeStamp = WTF::currentTimeMS();
     const char* samplingState = TRACE_EVENT_GET_SAMPLING_STATE();
-    if (isMainThread())
-        TRACE_EVENT_SET_SAMPLING_STATE("Blink", "BlinkGCSweeping");
+    if (isMainThread()) {
+        ScriptForbiddenScope::enter();
+        TRACE_EVENT_SET_SAMPLING_STATE("blink", "BlinkGCSweeping");
+    }
 
     m_sweepInProgress = true;
     // Disallow allocation during weak processing.
@@ -856,6 +975,7 @@ void ThreadState::performPendingSweep()
     while (popAndInvokeWeakPointerCallback(Heap::s_markingVisitor)) { }
     leaveNoAllocationScope();
     // Perform sweeping and finalization.
+    size_t objectSpaceBeforeSweep = m_stats.totalObjectSpace();
     m_stats.clear(); // Sweeping will recalculate the stats
     for (int i = 0; i < NumberOfHeaps; i++)
         m_heaps[i]->sweep();
@@ -863,13 +983,19 @@ void ThreadState::performPendingSweep()
     m_sweepInProgress = false;
     clearGCRequested();
     clearSweepRequested();
+    // If we collected less than 50% of objects, record that the
+    // collection rate is low which we use to determine when to
+    // perform the next GC.
+    setLowCollectionRate(m_stats.totalObjectSpace() > (objectSpaceBeforeSweep >> 1));
 
     if (blink::Platform::current()) {
         blink::Platform::current()->histogramCustomCounts("BlinkGC.PerformPendingSweep", WTF::currentTimeMS() - timeStamp, 0, 10 * 1000, 50);
     }
 
-    if (isMainThread())
+    if (isMainThread()) {
         TRACE_EVENT_SET_NONCONST_SAMPLING_STATE(samplingState);
+        ScriptForbiddenScope::exit();
+    }
 }
 
 void ThreadState::addInterruptor(Interruptor* interruptor)
@@ -908,7 +1034,7 @@ ThreadState::AttachedThreadStateSet& ThreadState::attachedThreads()
     return threads;
 }
 
-#if ENABLE(GC_TRACING)
+#if ENABLE(GC_PROFILE_MARKING)
 const GCInfo* ThreadState::findGCInfoFromAllThreads(Address address)
 {
     bool needLockForIteration = !isAnyThreadInGC();
@@ -928,4 +1054,5 @@ const GCInfo* ThreadState::findGCInfoFromAllThreads(Address address)
     return 0;
 }
 #endif
+
 }

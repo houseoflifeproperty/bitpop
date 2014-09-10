@@ -12,7 +12,7 @@ def Update(c):
   c['schedulers'].extend([
       SingleBranchScheduler(name='webrtc_linux_scheduler',
                             branch='trunk',
-                            treeStableTimer=0,
+                            treeStableTimer=30,
                             builderNames=[
           'Linux32 Debug',
           'Linux32 Release',
@@ -22,6 +22,8 @@ def Update(c):
           'Linux Memcheck',
           'Linux Tsan v2',
           'Linux64 Release [large tests]',
+          'Linux64 Debug (GN)',
+          'Linux64 Release (GN)',
           'Chrome OS',
       ]),
   ])
@@ -41,6 +43,8 @@ def Update(c):
       'category': 'compile|baremetal',
       'slavebuilddir': 'linux_baremetal',
     },
+    {'name': 'Linux64 Debug (GN)', 'slavebuilddir': 'linux64_gn'},
+    {'name': 'Linux64 Release (GN)', 'slavebuilddir': 'linux64_gn'},
     {'name': 'Chrome OS', 'slavebuilddir': 'chromeos'},
   ]
 

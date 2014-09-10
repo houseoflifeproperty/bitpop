@@ -6,4 +6,8 @@ source_set("plugin") {
   sources = [
     "content_plugin_client.h",
   ]
+
+  deps = [
+    "//content/plugin",
+  ]
 }

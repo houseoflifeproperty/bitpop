@@ -29,7 +29,7 @@
 #include "core/html/forms/StepRange.h"
 #include "platform/FileChooser.h"
 
-namespace WebCore {
+namespace blink {
 
 class DragData;
 class ExceptionState;
@@ -181,7 +181,6 @@ public:
     int maxResults() const { return m_maxResults; }
 
     const AtomicString& defaultValue() const;
-    void setDefaultValue(const AtomicString&);
 
     Vector<String> acceptMIMETypes();
     Vector<String> acceptFileExtensions();
@@ -270,6 +269,8 @@ public:
     void setShouldRevealPassword(bool value);
     bool shouldRevealPassword() const { return m_shouldRevealPassword; }
 
+    virtual void didNotifySubtreeInsertionsToDocument() OVERRIDE;
+
 protected:
     HTMLInputElement(Document&, HTMLFormElement*, bool createdByParser);
 
@@ -294,7 +295,6 @@ private:
     virtual bool isEnumeratable() const OVERRIDE FINAL;
     virtual bool isInteractiveContent() const OVERRIDE FINAL;
     virtual bool supportLabels() const OVERRIDE FINAL;
-    virtual bool shouldUseInputMethod() OVERRIDE FINAL;
 
     virtual bool isTextFormControl() const OVERRIDE FINAL { return isTextField(); }
 
@@ -310,6 +310,7 @@ private:
 
     virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE FINAL;
 
+    virtual void attributeWillChange(const QualifiedName&, const AtomicString& oldValue, const AtomicString& newValue) OVERRIDE;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE FINAL;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE FINAL;

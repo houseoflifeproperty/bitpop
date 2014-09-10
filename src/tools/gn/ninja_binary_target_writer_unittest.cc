@@ -29,8 +29,6 @@ TEST(NinjaBinaryTargetWriter, SourceSet) {
     NinjaBinaryTargetWriter writer(&target, setup.toolchain(), out);
     writer.Run();
 
-    // TODO(brettw) I think we'll need to worry about backslashes here
-    // depending if we're on actual Windows or Linux pretending to be Windows.
     const char expected_win[] =
         "defines =\n"
         "includes =\n"
@@ -39,6 +37,9 @@ TEST(NinjaBinaryTargetWriter, SourceSet) {
         "cflags_cc =\n"
         "cflags_objc =\n"
         "cflags_objcc =\n"
+        "target_name = bar\n"
+        "target_out_dir = obj/foo\n"
+        "root_out_dir = \n"
         "\n"
         "build obj/foo/bar.input1.obj: cxx ../../foo/input1.cc\n"
         "build obj/foo/bar.input2.obj: cxx ../../foo/input2.cc\n"
@@ -63,8 +64,6 @@ TEST(NinjaBinaryTargetWriter, SourceSet) {
     NinjaBinaryTargetWriter writer(&shlib_target, setup.toolchain(), out);
     writer.Run();
 
-    // TODO(brettw) I think we'll need to worry about backslashes here
-    // depending if we're on actual Windows or Linux pretending to be Windows.
     const char expected_win[] =
         "defines =\n"
         "includes =\n"
@@ -73,17 +72,21 @@ TEST(NinjaBinaryTargetWriter, SourceSet) {
         "cflags_cc =\n"
         "cflags_objc =\n"
         "cflags_objcc =\n"
+        "target_name = shlib\n"
+        "target_out_dir = obj/foo\n"
+        "root_out_dir = \n"
         "\n"
         "\n"
         "manifests = obj/foo/shlib.intermediate.manifest\n"
         "ldflags = /MANIFEST /ManifestFile:obj/foo/shlib.intermediate."
             "manifest\n"
         "libs =\n"
-        // Ordering of the obj files here is arbitrary. Currently they're put
-        // in a set and come out sorted.
-        "build shlib.dll shlib.dll.lib: solink ../../foo/input3.o "
-            "../../foo/input4.obj obj/foo/bar.input1.obj "
-            "obj/foo/bar.input2.obj\n"
+        // Ordering of the obj files here should come out in the order
+        // specified, with the target's first, followed by the source set's, in
+        // order.
+        "build shlib.dll shlib.dll.lib: solink obj/foo/bar.input1.obj "
+            "obj/foo/bar.input2.obj ../../foo/input3.o "
+            "../../foo/input4.obj\n"
         "  soname = shlib.dll\n"
         "  lib = shlib.dll\n"
         "  dll = shlib.dll\n"
@@ -106,8 +109,6 @@ TEST(NinjaBinaryTargetWriter, SourceSet) {
     NinjaBinaryTargetWriter writer(&stlib_target, setup.toolchain(), out);
     writer.Run();
 
-    // TODO(brettw) I think we'll need to worry about backslashes here
-    // depending if we're on actual Windows or Linux pretending to be Windows.
     const char expected_win[] =
         "defines =\n"
         "includes =\n"
@@ -116,6 +117,9 @@ TEST(NinjaBinaryTargetWriter, SourceSet) {
         "cflags_cc =\n"
         "cflags_objc =\n"
         "cflags_objcc =\n"
+        "target_name = stlib\n"
+        "target_out_dir = obj/foo\n"
+        "root_out_dir = \n"
         "\n"
         "\n"
         "manifests = obj/foo/stlib.intermediate.manifest\n"
@@ -149,8 +153,6 @@ TEST(NinjaBinaryTargetWriter, ProductExtension) {
   NinjaBinaryTargetWriter writer(&target, setup.toolchain(), out);
   writer.Run();
 
-  // TODO(brettw) I think we'll need to worry about backslashes here
-  // depending if we're on actual Windows or Linux pretending to be Windows.
   const char expected[] =
       "defines =\n"
       "includes =\n"
@@ -159,16 +161,19 @@ TEST(NinjaBinaryTargetWriter, ProductExtension) {
       "cflags_cc =\n"
       "cflags_objc =\n"
       "cflags_objcc =\n"
+      "target_name = shlib\n"
+      "target_out_dir = obj/foo\n"
+      "root_out_dir = \n"
       "\n"
       "build obj/foo/shlib.input1.o: cxx ../../foo/input1.cc\n"
       "build obj/foo/shlib.input2.o: cxx ../../foo/input2.cc\n"
       "\n"
       "ldflags =\n"
       "libs =\n"
-      "build lib/libshlib.so.6: solink obj/foo/shlib.input1.o "
+      "build libshlib.so.6: solink obj/foo/shlib.input1.o "
           "obj/foo/shlib.input2.o\n"
       "  soname = libshlib.so.6\n"
-      "  lib = lib/libshlib.so.6\n"
+      "  lib = libshlib.so.6\n"
       "\n";
 
   std::string out_str = out.str();
@@ -195,8 +200,6 @@ TEST(NinjaBinaryTargetWriter, EmptyProductExtension) {
   NinjaBinaryTargetWriter writer(&target, setup.toolchain(), out);
   writer.Run();
 
-  // TODO(brettw) I think we'll need to worry about backslashes here
-  // depending if we're on actual Windows or Linux pretending to be Windows.
   const char expected[] =
       "defines =\n"
       "includes =\n"
@@ -205,16 +208,19 @@ TEST(NinjaBinaryTargetWriter, EmptyProductExtension) {
       "cflags_cc =\n"
       "cflags_objc =\n"
       "cflags_objcc =\n"
+      "target_name = shlib\n"
+      "target_out_dir = obj/foo\n"
+      "root_out_dir = \n"
       "\n"
       "build obj/foo/shlib.input1.o: cxx ../../foo/input1.cc\n"
       "build obj/foo/shlib.input2.o: cxx ../../foo/input2.cc\n"
       "\n"
       "ldflags =\n"
       "libs =\n"
-      "build lib/libshlib.so: solink obj/foo/shlib.input1.o "
+      "build libshlib.so: solink obj/foo/shlib.input1.o "
           "obj/foo/shlib.input2.o\n"
       "  soname = libshlib.so\n"
-      "  lib = lib/libshlib.so\n"
+      "  lib = libshlib.so\n"
       "\n";
 
   std::string out_str = out.str();

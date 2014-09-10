@@ -29,15 +29,16 @@
 #ifndef AudioListener_h
 #define AudioListener_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/geometry/FloatPoint3D.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
+class HRTFDatabaseLoader;
 class PannerNode;
 
 // AudioListener maintains the state of the listener in the audio scene as defined in the OpenAL specification.
@@ -79,7 +80,13 @@ public:
     void addPanner(PannerNode*);
     void removePanner(PannerNode*);
 
-    void trace(Visitor*) { }
+    // HRTF DB loader
+    HRTFDatabaseLoader* hrtfDatabaseLoader() { return m_hrtfDatabaseLoader.get(); }
+    void createAndLoadHRTFDatabaseLoader(float);
+    bool isHRTFDatabaseLoaded();
+    void waitForHRTFDatabaseLoaderThreadCompletion();
+
+    void trace(Visitor*);
 
 private:
     AudioListener();
@@ -100,11 +107,13 @@ private:
 
     // Synchronize a panner's process() with setting of the state of the listener.
     mutable Mutex m_listenerLock;
-
-    // List for pannerNodes in context.
-    Vector<PannerNode*> m_panners;
+    // List for pannerNodes in context. This is updated only in the main thread,
+    // and can be referred in audio thread.
+    WillBeHeapVector<RawPtrWillBeMember<PannerNode> > m_panners;
+    // HRTF DB loader for panner node.
+    RefPtr<HRTFDatabaseLoader> m_hrtfDatabaseLoader;
 };
 
-} // WebCore
+} // namespace blink
 
 #endif // AudioListener_h

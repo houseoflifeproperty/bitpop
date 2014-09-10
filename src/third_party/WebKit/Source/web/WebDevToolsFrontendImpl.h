@@ -36,7 +36,6 @@
 #include "wtf/Deque.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
-#include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -47,12 +46,12 @@ struct WebDevToolsMessageData;
 
 using WTF::String;
 
-class WebDevToolsFrontendImpl FINAL : public blink::WebDevToolsFrontend {
+class WebDevToolsFrontendImpl FINAL : public WebDevToolsFrontend {
     WTF_MAKE_NONCOPYABLE(WebDevToolsFrontendImpl);
 public:
     WebDevToolsFrontendImpl(
-        blink::WebViewImpl* webViewImpl,
-        blink::WebDevToolsFrontendClient* client,
+        WebViewImpl*,
+        WebDevToolsFrontendClient*,
         const String& applicationLocale);
     virtual ~WebDevToolsFrontendImpl();
 
@@ -62,15 +61,15 @@ public:
 private:
     class InspectorFrontendResumeObserver;
     void resume();
-    void maybeDispatch(WebCore::Timer<WebDevToolsFrontendImpl>*);
+    void maybeDispatch(Timer<WebDevToolsFrontendImpl>*);
     void doDispatchOnInspectorFrontend(const WebString& message);
 
-    blink::WebViewImpl* m_webViewImpl;
-    blink::WebDevToolsFrontendClient* m_client;
+    WebViewImpl* m_webViewImpl;
+    WebDevToolsFrontendClient* m_client;
     String m_applicationLocale;
     OwnPtr<InspectorFrontendResumeObserver> m_inspectorFrontendResumeObserver;
     Deque<WebString> m_messages;
-    WebCore::Timer<WebDevToolsFrontendImpl> m_inspectorFrontendDispatchTimer;
+    Timer<WebDevToolsFrontendImpl> m_inspectorFrontendDispatchTimer;
 };
 
 } // namespace blink

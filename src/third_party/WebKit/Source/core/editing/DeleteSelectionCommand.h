@@ -28,9 +28,10 @@
 
 #include "core/editing/CompositeEditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
 class EditingStyle;
+class HTMLTableRowElement;
 
 class DeleteSelectionCommand FINAL : public CompositeEditCommand {
 public:
@@ -92,13 +93,13 @@ private:
     RefPtrWillBeMember<Node> m_endBlock;
     RefPtrWillBeMember<EditingStyle> m_typingStyle;
     RefPtrWillBeMember<EditingStyle> m_deleteIntoBlockquoteStyle;
-    RefPtrWillBeMember<Node> m_startRoot;
-    RefPtrWillBeMember<Node> m_endRoot;
-    RefPtrWillBeMember<Node> m_startTableRow;
-    RefPtrWillBeMember<Node> m_endTableRow;
+    RefPtrWillBeMember<Element> m_startRoot;
+    RefPtrWillBeMember<Element> m_endRoot;
+    RefPtrWillBeMember<HTMLTableRowElement> m_startTableRow;
+    RefPtrWillBeMember<HTMLTableRowElement> m_endTableRow;
     RefPtrWillBeMember<Node> m_temporaryPlaceholder;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeleteSelectionCommand_h

@@ -40,10 +40,6 @@ extern const char kAllowedTypes[];
 // by default.
 extern const char kBookmarkAppCreationLaunchType[];
 
-// Integer boolean representing the width (in pixels) of the container for
-// browser actions.
-extern const char kBrowserActionContainerWidth[];
-
 // Dictionary pref that keeps track of per-extension settings. The keys are
 // extension ids.
 extern const char kExtensions[];
@@ -63,9 +59,6 @@ extern const char kInstallDenyList[];
 // This preference is set by an admin policy, and meant to be only
 // accessed through extensions::ExternalPolicyProvider.
 extern const char kInstallForceList[];
-
-// A list of known disabled extensions IDs.
-extern const char kKnownDisabled[];
 
 // String pref for what version chrome was last time the extension prefs were
 // loaded.

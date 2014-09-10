@@ -12,9 +12,13 @@
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "webrtc/modules/audio_coding/main/acm2/acm_receive_test.h"
 #include "webrtc/modules/audio_coding/main/interface/audio_coding_module.h"
 #include "webrtc/modules/audio_coding/main/interface/audio_coding_module_typedefs.h"
+#include "webrtc/modules/audio_coding/neteq/tools/audio_checksum.h"
 #include "webrtc/modules/audio_coding/neteq/tools/audio_loop.h"
+#include "webrtc/modules/audio_coding/neteq/tools/output_audio_file.h"
+#include "webrtc/modules/audio_coding/neteq/tools/rtp_file_source.h"
 #include "webrtc/modules/interface/module_common_types.h"
 #include "webrtc/system_wrappers/interface/clock.h"
 #include "webrtc/system_wrappers/interface/compile_assert.h"
@@ -511,4 +515,76 @@ TEST_F(AcmIsacMtTest, DoTest) {
   EXPECT_EQ(kEventSignaled, RunTest());
 }
 
+class AcmReceiverBitExactness : public ::testing::Test {
+ protected:
+  void Run(int output_freq_hz, const std::string& checksum_ref) {
+    const std::string input_file_name =
+        webrtc::test::ResourcePath("audio_coding/neteq_universal_new", "rtp");
+    scoped_ptr<test::RtpFileSource> packet_source(
+        test::RtpFileSource::Create(input_file_name));
+#ifdef WEBRTC_ANDROID
+    // Filter out iLBC and iSAC-swb since they are not supported on Android.
+    packet_source->FilterOutPayloadType(102);  // iLBC.
+    packet_source->FilterOutPayloadType(104);  // iSAC-swb.
+#endif
+
+    test::AudioChecksum checksum;
+    const std::string output_file_name =
+        webrtc::test::OutputPath() +
+        ::testing::UnitTest::GetInstance()
+            ->current_test_info()
+            ->test_case_name() +
+        "_" + ::testing::UnitTest::GetInstance()->current_test_info()->name() +
+        "_output.pcm";
+    test::OutputAudioFile output_file(output_file_name);
+    test::AudioSinkFork output(&checksum, &output_file);
+
+    test::AcmReceiveTest test(packet_source.get(), &output, output_freq_hz);
+    ASSERT_NO_FATAL_FAILURE(test.RegisterNetEqTestCodecs());
+    test.Run();
+
+    std::string checksum_string = checksum.Finish();
+    EXPECT_EQ(checksum_ref, checksum_string);
+  }
+
+  static std::string PlatformChecksum(std::string win64,
+                                      std::string android,
+                                      std::string others) {
+#if defined(_WIN32) && defined(WEBRTC_ARCH_64_BITS)
+    return win64;
+#elif defined(WEBRTC_ANDROID)
+    return android;
+#else
+    return others;
+#endif
+  }
+};
+
+TEST_F(AcmReceiverBitExactness, 8kHzOutput) {
+  Run(8000,
+      PlatformChecksum("bd6f8d9602cd82444ea2539e674df747",
+                       "6ac89c7145072c26bfeba602cd661afb",
+                       "8a8440f5511eb729221b9aac25cda3a0"));
+}
+
+TEST_F(AcmReceiverBitExactness, 16kHzOutput) {
+  Run(16000,
+      PlatformChecksum("a39bc6ee0c4eb15f3ad2f43cebcc571d",
+                       "3e888eb04f57db2c6ef952fe64f17fe6",
+                       "7be583092c5adbcb0f6cd66eca20ea63"));
+}
+
+TEST_F(AcmReceiverBitExactness, 32kHzOutput) {
+  Run(32000,
+      PlatformChecksum("80964572aaa2dc92f9e34896dd3802b3",
+                       "aeca37e963310f5b6552b7edea23c2f1",
+                       "3a84188abe9fca25fedd6034760f3e22"));
+}
+
+TEST_F(AcmReceiverBitExactness, 48kHzOutput) {
+  Run(48000,
+      PlatformChecksum("8aacde91f390e0d5a9c2ed571a25fd37",
+                       "76b9e99e0a3998aa28355e7a2bd836f7",
+                       "89b4b19bdb4de40f1d88302ef8cb9f9b"));
+}
 }  // namespace webrtc

@@ -24,7 +24,7 @@ config = {
           (
             <class buildbot.steps.shell.ShellCommand>,
             {
-              'command': 'rm -rf chromite && /usr/bin/git clone https://chromium.googlesource.com/chromiumos/chromite.git && cd chromite && /usr/bin/git checkout master',
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
               'description': 'Clear and Clone chromite',
               'haltOnFailure': True,
               'name': 'Clear and Clone chromite',
@@ -36,10 +36,11 @@ config = {
               'command': [
                 'chromite/bin/cbuildbot',
                 <buildbot.process.properties.WithProperties instance>,
-                '--buildroot=/b/cbuild',
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
                 '--buildbot',
                 '--debug',
-                <buildbot.process.properties.WithProperties instance>,
+                <master.master_utils.ConditionalProperty instance>,
                 'x86-generic-paladin',
               ],
               'description': 'cbuildbot',
@@ -53,7 +54,7 @@ config = {
         properties: Properties(**{}),
       },
       'name': 'x86-generic paladin',
-      'slavenames': ['build119-m2'],
+      'slavenames': ['build174-m2'],
     },
     {
       'auto_reboot': False,
@@ -76,7 +77,7 @@ config = {
           (
             <class buildbot.steps.shell.ShellCommand>,
             {
-              'command': 'rm -rf chromite && /usr/bin/git clone https://chromium.googlesource.com/chromiumos/chromite.git && cd chromite && /usr/bin/git checkout master',
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
               'description': 'Clear and Clone chromite',
               'haltOnFailure': True,
               'name': 'Clear and Clone chromite',
@@ -88,10 +89,11 @@ config = {
               'command': [
                 'chromite/bin/cbuildbot',
                 <buildbot.process.properties.WithProperties instance>,
-                '--buildroot=/b/cbuild',
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
                 '--buildbot',
                 '--debug',
-                <buildbot.process.properties.WithProperties instance>,
+                <master.master_utils.ConditionalProperty instance>,
                 'amd64-generic-paladin',
               ],
               'description': 'cbuildbot',
@@ -106,6 +108,112 @@ config = {
       },
       'name': 'amd64-generic paladin',
       'slavenames': ['build141-m2'],
+    },
+    {
+      'auto_reboot': False,
+      'builddir': 'gizmo-paladin',
+      'category': '1release full|info',
+      'factory': BuildFactory {
+        steps: [
+          (
+            <class buildbot.steps.shell.ShellCommand>,
+            {
+              'command': ['gclient', 'sync', '--delete_unversioned_trees'],
+              'description': 'Sync buildbot slave files',
+              'name': 'update_scripts',
+              'timeout': 300,
+              'want_stderr': False,
+              'want_stdout': False,
+              'workdir': '/b',
+            },
+          ),
+          (
+            <class buildbot.steps.shell.ShellCommand>,
+            {
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
+              'description': 'Clear and Clone chromite',
+              'haltOnFailure': True,
+              'name': 'Clear and Clone chromite',
+            },
+          ),
+          (
+            <class master.chromium_step.AnnotatedCommand>,
+            {
+              'command': [
+                'chromite/bin/cbuildbot',
+                <buildbot.process.properties.WithProperties instance>,
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
+                '--buildbot',
+                '--debug',
+                <master.master_utils.ConditionalProperty instance>,
+                'gizmo-paladin',
+              ],
+              'description': 'cbuildbot',
+              'maxTime': 57600,
+              'name': 'cbuildbot',
+              'timeout': 9000,
+              'usePTY': False,
+            },
+          ),
+        ],
+        properties: Properties(**{}),
+      },
+      'name': 'gizmo paladin',
+      'slavenames': ['build118-m2'],
+    },
+    {
+      'auto_reboot': False,
+      'builddir': 'mipsel-o32-generic-paladin',
+      'category': '1release full|info',
+      'factory': BuildFactory {
+        steps: [
+          (
+            <class buildbot.steps.shell.ShellCommand>,
+            {
+              'command': ['gclient', 'sync', '--delete_unversioned_trees'],
+              'description': 'Sync buildbot slave files',
+              'name': 'update_scripts',
+              'timeout': 300,
+              'want_stderr': False,
+              'want_stdout': False,
+              'workdir': '/b',
+            },
+          ),
+          (
+            <class buildbot.steps.shell.ShellCommand>,
+            {
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
+              'description': 'Clear and Clone chromite',
+              'haltOnFailure': True,
+              'name': 'Clear and Clone chromite',
+            },
+          ),
+          (
+            <class master.chromium_step.AnnotatedCommand>,
+            {
+              'command': [
+                'chromite/bin/cbuildbot',
+                <buildbot.process.properties.WithProperties instance>,
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
+                '--buildbot',
+                '--debug',
+                <master.master_utils.ConditionalProperty instance>,
+                'mipsel-o32-generic-paladin',
+              ],
+              'description': 'cbuildbot',
+              'maxTime': 57600,
+              'name': 'cbuildbot',
+              'timeout': 9000,
+              'usePTY': False,
+            },
+          ),
+        ],
+        properties: Properties(**{}),
+      },
+      'name': 'mipsel-o32-generic paladin',
+      'slavenames': ['build112-m2'],
     },
     {
       'auto_reboot': False,
@@ -128,7 +236,7 @@ config = {
           (
             <class buildbot.steps.shell.ShellCommand>,
             {
-              'command': 'rm -rf chromite && /usr/bin/git clone https://chromium.googlesource.com/chromiumos/chromite.git && cd chromite && /usr/bin/git checkout master',
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
               'description': 'Clear and Clone chromite',
               'haltOnFailure': True,
               'name': 'Clear and Clone chromite',
@@ -140,10 +248,11 @@ config = {
               'command': [
                 'chromite/bin/cbuildbot',
                 <buildbot.process.properties.WithProperties instance>,
-                '--buildroot=/b/cbuild',
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
                 '--buildbot',
                 '--debug',
-                <buildbot.process.properties.WithProperties instance>,
+                <master.master_utils.ConditionalProperty instance>,
                 'x86-generic-incremental',
               ],
               'description': 'cbuildbot',
@@ -180,7 +289,7 @@ config = {
           (
             <class buildbot.steps.shell.ShellCommand>,
             {
-              'command': 'rm -rf chromite && /usr/bin/git clone https://chromium.googlesource.com/chromiumos/chromite.git && cd chromite && /usr/bin/git checkout master',
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
               'description': 'Clear and Clone chromite',
               'haltOnFailure': True,
               'name': 'Clear and Clone chromite',
@@ -192,10 +301,11 @@ config = {
               'command': [
                 'chromite/bin/cbuildbot',
                 <buildbot.process.properties.WithProperties instance>,
-                '--buildroot=/b/cbuild',
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
                 '--buildbot',
                 '--debug',
-                <buildbot.process.properties.WithProperties instance>,
+                <master.master_utils.ConditionalProperty instance>,
                 'amd64-generic-incremental',
               ],
               'description': 'cbuildbot',
@@ -232,7 +342,7 @@ config = {
           (
             <class buildbot.steps.shell.ShellCommand>,
             {
-              'command': 'rm -rf chromite && /usr/bin/git clone https://chromium.googlesource.com/chromiumos/chromite.git && cd chromite && /usr/bin/git checkout master',
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
               'description': 'Clear and Clone chromite',
               'haltOnFailure': True,
               'name': 'Clear and Clone chromite',
@@ -244,10 +354,11 @@ config = {
               'command': [
                 'chromite/bin/cbuildbot',
                 <buildbot.process.properties.WithProperties instance>,
-                '--buildroot=/b/cbuild',
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
                 '--buildbot',
                 '--debug',
-                <buildbot.process.properties.WithProperties instance>,
+                <master.master_utils.ConditionalProperty instance>,
                 'daisy-incremental',
               ],
               'description': 'cbuildbot',
@@ -284,7 +395,7 @@ config = {
           (
             <class buildbot.steps.shell.ShellCommand>,
             {
-              'command': 'rm -rf chromite && /usr/bin/git clone https://chromium.googlesource.com/chromiumos/chromite.git && cd chromite && /usr/bin/git checkout master',
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
               'description': 'Clear and Clone chromite',
               'haltOnFailure': True,
               'name': 'Clear and Clone chromite',
@@ -296,10 +407,11 @@ config = {
               'command': [
                 'chromite/bin/cbuildbot',
                 <buildbot.process.properties.WithProperties instance>,
-                '--buildroot=/b/cbuild',
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
                 '--buildbot',
                 '--debug',
-                <buildbot.process.properties.WithProperties instance>,
+                <master.master_utils.ConditionalProperty instance>,
                 'x86-generic-full',
               ],
               'description': 'cbuildbot',
@@ -336,7 +448,7 @@ config = {
           (
             <class buildbot.steps.shell.ShellCommand>,
             {
-              'command': 'rm -rf chromite && /usr/bin/git clone https://chromium.googlesource.com/chromiumos/chromite.git && cd chromite && /usr/bin/git checkout master',
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
               'description': 'Clear and Clone chromite',
               'haltOnFailure': True,
               'name': 'Clear and Clone chromite',
@@ -348,10 +460,11 @@ config = {
               'command': [
                 'chromite/bin/cbuildbot',
                 <buildbot.process.properties.WithProperties instance>,
-                '--buildroot=/b/cbuild',
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
                 '--buildbot',
                 '--debug',
-                <buildbot.process.properties.WithProperties instance>,
+                <master.master_utils.ConditionalProperty instance>,
                 'amd64-generic-full',
               ],
               'description': 'cbuildbot',
@@ -388,7 +501,7 @@ config = {
           (
             <class buildbot.steps.shell.ShellCommand>,
             {
-              'command': 'rm -rf chromite && /usr/bin/git clone https://chromium.googlesource.com/chromiumos/chromite.git && cd chromite && /usr/bin/git checkout master',
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
               'description': 'Clear and Clone chromite',
               'haltOnFailure': True,
               'name': 'Clear and Clone chromite',
@@ -400,10 +513,11 @@ config = {
               'command': [
                 'chromite/bin/cbuildbot',
                 <buildbot.process.properties.WithProperties instance>,
-                '--buildroot=/b/cbuild',
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
                 '--buildbot',
                 '--debug',
-                <buildbot.process.properties.WithProperties instance>,
+                <master.master_utils.ConditionalProperty instance>,
                 'daisy-full',
               ],
               'description': 'cbuildbot',
@@ -440,7 +554,7 @@ config = {
           (
             <class buildbot.steps.shell.ShellCommand>,
             {
-              'command': 'rm -rf chromite && /usr/bin/git clone https://chromium.googlesource.com/chromiumos/chromite.git && cd chromite && /usr/bin/git checkout master',
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
               'description': 'Clear and Clone chromite',
               'haltOnFailure': True,
               'name': 'Clear and Clone chromite',
@@ -452,10 +566,11 @@ config = {
               'command': [
                 'chromite/bin/cbuildbot',
                 <buildbot.process.properties.WithProperties instance>,
-                '--buildroot=/b/cbuild',
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
                 '--buildbot',
                 '--debug',
-                <buildbot.process.properties.WithProperties instance>,
+                <master.master_utils.ConditionalProperty instance>,
                 'arm-generic-full',
               ],
               'description': 'cbuildbot',
@@ -470,6 +585,112 @@ config = {
       },
       'name': 'arm-generic full',
       'slavenames': ['build92-m2'],
+    },
+    {
+      'auto_reboot': False,
+      'builddir': 'gizmo-full',
+      'category': '1release full|closer',
+      'factory': BuildFactory {
+        steps: [
+          (
+            <class buildbot.steps.shell.ShellCommand>,
+            {
+              'command': ['gclient', 'sync', '--delete_unversioned_trees'],
+              'description': 'Sync buildbot slave files',
+              'name': 'update_scripts',
+              'timeout': 300,
+              'want_stderr': False,
+              'want_stdout': False,
+              'workdir': '/b',
+            },
+          ),
+          (
+            <class buildbot.steps.shell.ShellCommand>,
+            {
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
+              'description': 'Clear and Clone chromite',
+              'haltOnFailure': True,
+              'name': 'Clear and Clone chromite',
+            },
+          ),
+          (
+            <class master.chromium_step.AnnotatedCommand>,
+            {
+              'command': [
+                'chromite/bin/cbuildbot',
+                <buildbot.process.properties.WithProperties instance>,
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
+                '--buildbot',
+                '--debug',
+                <master.master_utils.ConditionalProperty instance>,
+                'gizmo-full',
+              ],
+              'description': 'cbuildbot',
+              'maxTime': 57600,
+              'name': 'cbuildbot',
+              'timeout': 9000,
+              'usePTY': False,
+            },
+          ),
+        ],
+        properties: Properties(**{}),
+      },
+      'name': 'gizmo full',
+      'slavenames': ['build156-m2'],
+    },
+    {
+      'auto_reboot': False,
+      'builddir': 'mipsel-o32-generic-full',
+      'category': '1release full|closer',
+      'factory': BuildFactory {
+        steps: [
+          (
+            <class buildbot.steps.shell.ShellCommand>,
+            {
+              'command': ['gclient', 'sync', '--delete_unversioned_trees'],
+              'description': 'Sync buildbot slave files',
+              'name': 'update_scripts',
+              'timeout': 300,
+              'want_stderr': False,
+              'want_stdout': False,
+              'workdir': '/b',
+            },
+          ),
+          (
+            <class buildbot.steps.shell.ShellCommand>,
+            {
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
+              'description': 'Clear and Clone chromite',
+              'haltOnFailure': True,
+              'name': 'Clear and Clone chromite',
+            },
+          ),
+          (
+            <class master.chromium_step.AnnotatedCommand>,
+            {
+              'command': [
+                'chromite/bin/cbuildbot',
+                <buildbot.process.properties.WithProperties instance>,
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
+                '--buildbot',
+                '--debug',
+                <master.master_utils.ConditionalProperty instance>,
+                'mipsel-o32-generic-full',
+              ],
+              'description': 'cbuildbot',
+              'maxTime': 57600,
+              'name': 'cbuildbot',
+              'timeout': 9000,
+              'usePTY': False,
+            },
+          ),
+        ],
+        properties: Properties(**{}),
+      },
+      'name': 'mipsel-o32-generic full',
+      'slavenames': ['build93-m2'],
     },
     {
       'auto_reboot': False,
@@ -492,7 +713,7 @@ config = {
           (
             <class buildbot.steps.shell.ShellCommand>,
             {
-              'command': 'rm -rf chromite && /usr/bin/git clone https://chromium.googlesource.com/chromiumos/chromite.git && cd chromite && /usr/bin/git checkout master',
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
               'description': 'Clear and Clone chromite',
               'haltOnFailure': True,
               'name': 'Clear and Clone chromite',
@@ -504,10 +725,11 @@ config = {
               'command': [
                 'chromite/bin/cbuildbot',
                 <buildbot.process.properties.WithProperties instance>,
-                '--buildroot=/b/cbuild',
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
                 '--buildbot',
                 '--debug',
-                <buildbot.process.properties.WithProperties instance>,
+                <master.master_utils.ConditionalProperty instance>,
                 'chromiumos-sdk',
               ],
               'description': 'cbuildbot',
@@ -558,7 +780,7 @@ config = {
           (
             <class buildbot.steps.shell.ShellCommand>,
             {
-              'command': 'rm -rf chromite && /usr/bin/git clone https://chromium.googlesource.com/chromiumos/chromite.git && cd chromite && /usr/bin/git checkout master',
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
               'description': 'Clear and Clone chromite',
               'haltOnFailure': True,
               'name': 'Clear and Clone chromite',
@@ -570,10 +792,11 @@ config = {
               'command': [
                 'chromite/bin/cbuildbot',
                 <buildbot.process.properties.WithProperties instance>,
-                '--buildroot=/b/cbuild',
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
                 '--buildbot',
                 '--debug',
-                <buildbot.process.properties.WithProperties instance>,
+                <master.master_utils.ConditionalProperty instance>,
                 'refresh-packages',
               ],
               'description': 'cbuildbot',
@@ -610,7 +833,7 @@ config = {
           (
             <class buildbot.steps.shell.ShellCommand>,
             {
-              'command': 'rm -rf chromite && /usr/bin/git clone https://chromium.googlesource.com/chromiumos/chromite.git && cd chromite && /usr/bin/git checkout master',
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
               'description': 'Clear and Clone chromite',
               'haltOnFailure': True,
               'name': 'Clear and Clone chromite',
@@ -622,10 +845,11 @@ config = {
               'command': [
                 'chromite/bin/cbuildbot',
                 <buildbot.process.properties.WithProperties instance>,
-                '--buildroot=/b/cbuild',
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
                 '--buildbot',
                 '--debug',
-                <buildbot.process.properties.WithProperties instance>,
+                <master.master_utils.ConditionalProperty instance>,
                 'x86-generic-asan',
               ],
               'description': 'cbuildbot',
@@ -662,7 +886,7 @@ config = {
           (
             <class buildbot.steps.shell.ShellCommand>,
             {
-              'command': 'rm -rf chromite && /usr/bin/git clone https://chromium.googlesource.com/chromiumos/chromite.git && cd chromite && /usr/bin/git checkout master',
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
               'description': 'Clear and Clone chromite',
               'haltOnFailure': True,
               'name': 'Clear and Clone chromite',
@@ -674,10 +898,11 @@ config = {
               'command': [
                 'chromite/bin/cbuildbot',
                 <buildbot.process.properties.WithProperties instance>,
-                '--buildroot=/b/cbuild',
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
                 '--buildbot',
                 '--debug',
-                <buildbot.process.properties.WithProperties instance>,
+                <master.master_utils.ConditionalProperty instance>,
                 'amd64-generic-asan',
               ],
               'description': 'cbuildbot',
@@ -714,7 +939,7 @@ config = {
     'mastername': 'chromiumos',
   },
   'schedulers': [
-    SingleBranchScheduler {
+    ChromeOSManifestSingleBranchScheduler {
       fileIsImportant: None,
       change_filter: <ChangeFilter on repository == https://chromium.googlesource.com/chromiumos/manifest-versions>,
       name: 'paladin',
@@ -723,11 +948,16 @@ config = {
       schedulerid: None,
       master: None,
       services: [],
-      builderNames: ['x86-generic paladin', 'amd64-generic paladin'],
+      builderNames: [
+        'x86-generic paladin',
+        'amd64-generic paladin',
+        'mipsel-o32-generic paladin',
+        'gizmo paladin',
+      ],
       treeStableTimer: None,
       properties: Properties(**{'scheduler': 'paladin'}),
     },
-    AnyBranchScheduler {
+    ChromeOSManifestAnyBranchScheduler {
       fileIsImportant: None,
       change_filter: <ChangeFilter on <lambda>(repository) and branch == master>,
       name: 'chromeos',
@@ -744,6 +974,8 @@ config = {
         'amd64-generic full',
         'daisy full',
         'arm-generic full',
+        'gizmo full',
+        'mipsel-o32-generic full',
         'chromiumos sdk',
         'x86-generic ASAN',
         'amd64-generic ASAN',
@@ -770,20 +1002,28 @@ config = {
       periodicBuildTimer: 86400,
     },
   ],
-  'slavePortnum': 8114,
+  'slavePortnum': 8182,
   'slaves': [
     <BuildSlave 'build162-m2', (no builders yet)>,
     <BuildSlave 'build85-m2', (no builders yet)>,
     <BuildSlave 'build141-m2', (no builders yet)>,
     <BuildSlave 'build91-m2', (no builders yet)>,
+    <BuildSlave 'build156-m2', (no builders yet)>,
     <BuildSlave 'build89-m2', (no builders yet)>,
+    <BuildSlave 'build93-m2', (no builders yet)>,
+    <BuildSlave 'build174-m2', (no builders yet)>,
     <BuildSlave 'build86-m2', (no builders yet)>,
-    <BuildSlave 'build90-m2', (no builders yet)>,
+    <BuildSlave 'build118-m2', (no builders yet)>,
+    <BuildSlave 'build112-m2', (no builders yet)>,
     <BuildSlave 'build92-m2', (no builders yet)>,
+    <BuildSlave 'build90-m2', (no builders yet)>,
     <BuildSlave 'build84-m2', (no builders yet)>,
     <BuildSlave 'build94-m2', (no builders yet)>,
-    <BuildSlave 'build119-m2', (no builders yet)>,
     <BuildSlave 'build87-m2', (no builders yet)>,
   ],
-  'status': [<WebStatus on port tcp:8014>, <WebStatus on port tcp:8214>],
+  'status': [
+    <WebStatus on port tcp:8082>,
+    <WebStatus on port tcp:8282>,
+    <master.status_logger.StatusEventLogger instance>,
+  ],
 }

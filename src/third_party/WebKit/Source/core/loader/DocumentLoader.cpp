@@ -50,8 +50,10 @@
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
 #include "core/frame/Settings.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "platform/Logging.h"
 #include "platform/UserGestureIndicator.h"
+#include "platform/mhtml/ArchiveResource.h"
 #include "platform/mhtml/ArchiveResourceCollection.h"
 #include "platform/mhtml/MHTMLArchive.h"
 #include "platform/plugins/PluginData.h"
@@ -63,7 +65,7 @@
 #include "wtf/Assertions.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 static bool isArchiveMIMEType(const String& mimeType)
 {
@@ -296,16 +298,16 @@ bool DocumentLoader::isRedirectAfterPost(const ResourceRequest& newRequest, cons
     return false;
 }
 
-bool DocumentLoader::shouldContinueForNavigationPolicy(const ResourceRequest& request)
+bool DocumentLoader::shouldContinueForNavigationPolicy(const ResourceRequest& request, ContentSecurityPolicyCheck shouldCheckMainWorldContentSecurityPolicy, bool isTransitionNavigation)
 {
     // Don't ask if we are loading an empty URL.
     if (request.url().isEmpty() || m_substituteData.isValid())
         return true;
 
     // If we're loading content into a subframe, check against the parent's Content Security Policy
-    // and kill the load if that check fails.
+    // and kill the load if that check fails, unless we should bypass the main world's CSP.
     // FIXME: CSP checks are broken for OOPI. For now, this policy always allows frames with a remote parent...
-    if (m_frame->deprecatedLocalOwner() && !m_frame->deprecatedLocalOwner()->document().contentSecurityPolicy()->allowChildFrameFromSource(request.url())) {
+    if ((shouldCheckMainWorldContentSecurityPolicy == CheckContentSecurityPolicy) && (m_frame->deprecatedLocalOwner() && !m_frame->deprecatedLocalOwner()->document().contentSecurityPolicy()->allowChildFrameFromSource(request.url()))) {
         // Fire a load event, as timing attacks would otherwise reveal that the
         // frame was blocked. This way, it looks like every other cross-origin
         // page load.
@@ -315,7 +317,7 @@ bool DocumentLoader::shouldContinueForNavigationPolicy(const ResourceRequest& re
     }
 
     NavigationPolicy policy = m_triggeringAction.policy();
-    policy = frameLoader()->client()->decidePolicyForNavigation(request, this, policy);
+    policy = frameLoader()->client()->decidePolicyForNavigation(request, this, policy, isTransitionNavigation);
     if (policy == NavigationPolicyCurrentTab)
         return true;
     if (policy == NavigationPolicyIgnore)
@@ -374,11 +376,9 @@ void DocumentLoader::willSendRequest(ResourceRequest& newRequest, const Resource
     if (newRequest.cachePolicy() == UseProtocolCachePolicy && isRedirectAfterPost(newRequest, redirectResponse))
         newRequest.setCachePolicy(ReloadBypassingCache);
 
-    // If this is a sub-frame, check for mixed content blocking against the top frame.
-    if (m_frame->tree().parent()) {
-        // FIXME: This does not yet work with out-of-process iframes.
-        Frame* top = m_frame->tree().top();
-        if (top->isLocalFrame() && !toLocalFrame(top)->loader().mixedContentChecker()->canRunInsecureContent(toLocalFrame(top)->document()->securityOrigin(), newRequest.url())) {
+    // If this is a sub-frame, check for mixed content blocking against the parent frame.
+    if (Frame* parent = m_frame->tree().parent()) {
+        if (parent->isLocalFrame() && !toLocalFrame(parent)->loader().mixedContentChecker()->canFrameInsecureContent(toLocalFrame(parent)->document()->securityOrigin(), newRequest.url())) {
             cancelMainResourceLoad(ResourceError::cancelledError(newRequest.url()));
             return;
         }
@@ -391,7 +391,7 @@ void DocumentLoader::willSendRequest(ResourceRequest& newRequest, const Resource
 
     appendRedirect(newRequest.url());
     frameLoader()->client()->dispatchDidReceiveServerRedirectForProvisionalLoad();
-    if (!shouldContinueForNavigationPolicy(newRequest))
+    if (!shouldContinueForNavigationPolicy(newRequest, CheckContentSecurityPolicy))
         cancelMainResourceLoad(ResourceError::cancelledError(m_request.url()));
 }
 
@@ -454,7 +454,9 @@ void DocumentLoader::responseReceived(Resource* resource, const ResourceResponse
         if (frameLoader()->shouldInterruptLoadForXFrameOptions(content, response.url(), identifier)) {
             InspectorInstrumentation::continueAfterXFrameOptionsDenied(m_frame, this, identifier, response);
             String message = "Refused to display '" + response.url().elidedString() + "' in a frame because it set 'X-Frame-Options' to '" + content + "'.";
-            frame()->document()->addConsoleMessageWithRequestIdentifier(SecurityMessageSource, ErrorMessageLevel, message, identifier);
+            RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, message);
+            consoleMessage->setRequestIdentifier(identifier);
+            frame()->document()->addMessage(consoleMessage.release());
             frame()->document()->enforceSandboxFlags(SandboxOrigin);
             if (FrameOwner* owner = frame()->owner())
                 owner->dispatchLoad();
@@ -501,7 +503,7 @@ void DocumentLoader::ensureWriter(const AtomicString& mimeType, const KURL& over
         return;
 
     const AtomicString& encoding = overrideEncoding().isNull() ? response().textEncodingName() : overrideEncoding();
-    m_writer = createWriterFor(m_frame, 0, url(), mimeType, encoding, false, false);
+    m_writer = createWriterFor(m_frame, 0, url(), mimeType, encoding, false);
     m_writer->setDocumentWasLoadedAsPartOfNavigation();
     // This should be set before receivedFirstData().
     if (!overridingURL.isEmpty())
@@ -622,7 +624,7 @@ void DocumentLoader::addAllArchiveResources(MHTMLArchive* archive)
 {
     ASSERT(archive);
     if (!m_archiveResourceCollection)
-        m_archiveResourceCollection = adoptPtr(new ArchiveResourceCollection);
+        m_archiveResourceCollection = ArchiveResourceCollection::create();
     m_archiveResourceCollection->addAllResources(archive);
 }
 
@@ -774,7 +776,7 @@ void DocumentLoader::endWriting(DocumentWriter* writer)
     m_writer.clear();
 }
 
-PassRefPtrWillBeRawPtr<DocumentWriter> DocumentLoader::createWriterFor(LocalFrame* frame, const Document* ownerDocument, const KURL& url, const AtomicString& mimeType, const AtomicString& encoding, bool userChosen, bool dispatch)
+PassRefPtrWillBeRawPtr<DocumentWriter> DocumentLoader::createWriterFor(LocalFrame* frame, const Document* ownerDocument, const KURL& url, const AtomicString& mimeType, const AtomicString& encoding, bool dispatch)
 {
     // Create a new document before clearing the frame, because it may need to
     // inherit an aliased security context.
@@ -802,11 +804,13 @@ PassRefPtrWillBeRawPtr<DocumentWriter> DocumentLoader::createWriterFor(LocalFram
     if (ownerDocument) {
         document->setCookieURL(ownerDocument->cookieURL());
         document->setSecurityOrigin(ownerDocument->securityOrigin());
+        if (ownerDocument->isTransitionDocument())
+            document->setIsTransitionDocument();
     }
 
     frame->loader().didBeginDocument(dispatch);
 
-    return DocumentWriter::create(document.get(), mimeType, encoding, userChosen);
+    return DocumentWriter::create(document.get(), mimeType, encoding);
 }
 
 const AtomicString& DocumentLoader::mimeType() const
@@ -828,10 +832,10 @@ void DocumentLoader::setUserChosenEncoding(const String& charset)
 void DocumentLoader::replaceDocument(const String& source, Document* ownerDocument)
 {
     m_frame->loader().stopAllLoaders();
-    m_writer = createWriterFor(m_frame, ownerDocument, m_frame->document()->url(), mimeType(), m_writer ? m_writer->encoding() : emptyAtom,  m_writer ? m_writer->encodingWasChosenByUser() : false, true);
+    m_writer = createWriterFor(m_frame, ownerDocument, m_frame->document()->url(), mimeType(), m_writer ? m_writer->encoding() : emptyAtom, true);
     if (!source.isNull())
         m_writer->appendReplacingData(source);
     endWriting(m_writer.get());
 }
 
-} // namespace WebCore
+} // namespace blink

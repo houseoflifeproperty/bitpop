@@ -42,30 +42,17 @@ void ActiveTabPermissionGranter::GrantIfRequested(const Extension* extension) {
 
   const PermissionsData* permissions_data = extension->permissions_data();
 
-  // If the extension requires action for script execution, we grant it
+  // If the extension requested all-hosts but has had it withheld, we grant it
   // active tab-style permissions, even if it doesn't have the activeTab
   // permission in the manifest.
-  // We don't take tab id into account, because we want to know if the extension
-  // should require active tab in general (not for the current tab).
-  bool requires_action_for_script_execution =
-      permissions_data->RequiresActionForScriptExecution(extension,
-                                                         -1,  // No tab id.
-                                                         GURL());
-
-  if (extension->permissions_data()->HasAPIPermission(
-          APIPermission::kActiveTab) ||
-      requires_action_for_script_execution) {
-    URLPattern pattern(UserScript::ValidUserScriptSchemes());
-    // Pattern parsing could fail if this is an unsupported URL e.g. chrome://.
-    if (pattern.Parse(web_contents()->GetURL().spec()) ==
-            URLPattern::PARSE_SUCCESS) {
-      new_hosts.AddPattern(pattern);
-    }
+  if (permissions_data->HasAPIPermission(APIPermission::kActiveTab) ||
+      permissions_data->HasWithheldImpliedAllHosts()) {
+    new_hosts.AddOrigin(UserScript::ValidUserScriptSchemes(),
+                        web_contents()->GetVisibleURL().GetOrigin());
     new_apis.insert(APIPermission::kTab);
   }
 
-  if (extension->permissions_data()->HasAPIPermission(
-          APIPermission::kTabCapture))
+  if (permissions_data->HasAPIPermission(APIPermission::kTabCapture))
     new_apis.insert(APIPermission::kTabCaptureForTab);
 
   if (!new_apis.empty() || !new_hosts.is_empty()) {
@@ -78,7 +65,7 @@ void ActiveTabPermissionGranter::GrantIfRequested(const Extension* extension) {
         web_contents()->GetController().GetVisibleEntry();
     if (navigation_entry) {
       Send(new ExtensionMsg_UpdateTabSpecificPermissions(
-          navigation_entry->GetPageID(),
+          navigation_entry->GetURL(),
           tab_id_,
           extension->id(),
           new_hosts));

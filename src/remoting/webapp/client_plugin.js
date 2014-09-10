@@ -17,14 +17,17 @@
 var remoting = remoting || {};
 
 /**
- * @param {remoting.ViewerPlugin} plugin The plugin embed element.
+ * @param {Element} container The container for the embed element.
  * @param {function(string, string):boolean} onExtensionMessage The handler for
  *     protocol extension messages. Returns true if a message is recognized;
  *     false otherwise.
  * @constructor
  */
-remoting.ClientPlugin = function(plugin, onExtensionMessage) {
-  this.plugin = plugin;
+remoting.ClientPlugin = function(container, onExtensionMessage) {
+  this.plugin_ = remoting.ClientPlugin.createPluginElement_();
+  this.plugin_.id = 'session-client-plugin';
+  container.appendChild(this.plugin_);
+
   this.onExtensionMessage_ = onExtensionMessage;
 
   this.desktopWidth = 0;
@@ -87,7 +90,7 @@ remoting.ClientPlugin = function(plugin, onExtensionMessage) {
   /** @type {remoting.ClientPlugin} */
   var that = this;
   /** @param {Event} event Message event from the plugin. */
-  this.plugin.addEventListener('message', function(event) {
+  this.plugin_.addEventListener('message', function(event) {
       that.handleMessage_(event.data);
     }, false);
 
@@ -95,6 +98,45 @@ remoting.ClientPlugin = function(plugin, onExtensionMessage) {
     window.setTimeout(this.showPluginForClickToPlay_.bind(this), 500);
   }
 };
+
+/**
+ * Creates plugin element without adding it to a container.
+ *
+ * @return {remoting.ViewerPlugin} Plugin element
+ */
+remoting.ClientPlugin.createPluginElement_ = function() {
+  var plugin = /** @type {remoting.ViewerPlugin} */
+      document.createElement('embed');
+  if (remoting.settings.CLIENT_PLUGIN_TYPE == 'pnacl') {
+    plugin.src = 'remoting_client_pnacl.nmf';
+    plugin.type = 'application/x-pnacl';
+  } else if (remoting.settings.CLIENT_PLUGIN_TYPE == 'nacl') {
+    plugin.src = 'remoting_client_nacl.nmf';
+    plugin.type = 'application/x-nacl';
+  } else {
+    plugin.src = 'about://none';
+    plugin.type = 'application/vnd.chromium.remoting-viewer';
+  }
+  plugin.width = 0;
+  plugin.height = 0;
+  plugin.tabIndex = 0;  // Required, otherwise focus() doesn't work.
+  return plugin;
+}
+
+/**
+ * Preloads the plugin to make instantiation faster when the user tries
+ * to connect.
+ */
+remoting.ClientPlugin.preload = function() {
+  if (remoting.settings.CLIENT_PLUGIN_TYPE != 'pnacl') {
+    return;
+  }
+
+  var plugin = remoting.ClientPlugin.createPluginElement_();
+  plugin.addEventListener(
+      'loadend', function() { document.body.removeChild(plugin); }, false);
+  document.body.appendChild(plugin);
+}
 
 /**
  * Set of features for which hasFeature() can be used to test.
@@ -217,6 +259,10 @@ remoting.ClientPlugin.prototype.handleMessageMethod_ = function(message) {
       // it rate-limits desktop-resize requests.
       this.capabilities_.push(
           remoting.ClientSession.Capability.RATE_LIMIT_RESIZE_REQUESTS);
+
+      // Let the host know that we can use the video framerecording extension.
+      this.capabilities_.push(
+          remoting.ClientSession.Capability.VIDEO_RECORDER);
     } else if (this.pluginApiVersion_ >= 6) {
       this.pluginApiFeatures_ = ['highQualityScaling', 'injectKeyEvent'];
     } else {
@@ -376,14 +422,17 @@ remoting.ClientPlugin.prototype.handleMessageMethod_ = function(message) {
  * Deletes the plugin.
  */
 remoting.ClientPlugin.prototype.cleanup = function() {
-  this.plugin.parentNode.removeChild(this.plugin);
+  if (this.plugin_) {
+    this.plugin_.parentNode.removeChild(this.plugin_);
+    this.plugin_ = null;
+  }
 };
 
 /**
- * @return {HTMLEmbedElement} HTML element that correspods to the plugin.
+ * @return {HTMLEmbedElement} HTML element that corresponds to the plugin.
  */
 remoting.ClientPlugin.prototype.element = function() {
-  return this.plugin;
+  return this.plugin_;
 };
 
 /**
@@ -434,8 +483,8 @@ remoting.ClientPlugin.prototype.isInjectKeyEventSupported = function() {
  * @param {string} iq Incoming IQ stanza.
  */
 remoting.ClientPlugin.prototype.onIncomingIq = function(iq) {
-  if (this.plugin && this.plugin.postMessage) {
-    this.plugin.postMessage(JSON.stringify(
+  if (this.plugin_ && this.plugin_.postMessage) {
+    this.plugin_.postMessage(JSON.stringify(
         { method: 'incomingIq', data: { iq: iq } }));
   } else {
     // plugin.onIq may not be set after the plugin has been shut
@@ -466,14 +515,14 @@ remoting.ClientPlugin.prototype.connect = function(
     authenticationMethods, authenticationTag,
     clientPairingId, clientPairedSecret) {
   var keyFilter = '';
-  if (navigator.platform.indexOf('Mac') == -1) {
+  if (remoting.platformIsMac()) {
     keyFilter = 'mac';
-  } else if (navigator.userAgent.match(/\bCrOS\b/)) {
+  } else if (remoting.platformIsChromeOS()) {
     keyFilter = 'cros';
   }
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
       { method: 'delegateLargeCursors', data: {} }));
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
     { method: 'connect', data: {
         hostJid: hostJid,
         hostPublicKey: hostPublicKey,
@@ -493,7 +542,7 @@ remoting.ClientPlugin.prototype.connect = function(
  * Release all currently pressed keys.
  */
 remoting.ClientPlugin.prototype.releaseAllKeys = function() {
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
       { method: 'releaseAllKeys', data: {} }));
 };
 
@@ -505,7 +554,7 @@ remoting.ClientPlugin.prototype.releaseAllKeys = function() {
  */
 remoting.ClientPlugin.prototype.injectKeyEvent =
     function(usbKeycode, pressed) {
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
       { method: 'injectKeyEvent', data: {
           'usbKeycode': usbKeycode,
           'pressed': pressed}
@@ -520,7 +569,7 @@ remoting.ClientPlugin.prototype.injectKeyEvent =
  */
 remoting.ClientPlugin.prototype.remapKey =
     function(fromKeycode, toKeycode) {
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
       { method: 'remapKey', data: {
           'fromKeycode': fromKeycode,
           'toKeycode': toKeycode}
@@ -534,7 +583,7 @@ remoting.ClientPlugin.prototype.remapKey =
  * @param {Boolean} trap True to enable trapping, False to disable.
  */
 remoting.ClientPlugin.prototype.trapKey = function(keycode, trap) {
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
       { method: 'trapKey', data: {
           'keycode': keycode,
           'trap': trap}
@@ -560,7 +609,7 @@ remoting.ClientPlugin.prototype.sendClipboardItem =
     function(mimeType, item) {
   if (!this.hasFeature(remoting.ClientPlugin.Feature.SEND_CLIPBOARD_ITEM))
     return;
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
       { method: 'sendClipboardItem',
         data: { mimeType: mimeType, item: item }}));
 };
@@ -576,7 +625,7 @@ remoting.ClientPlugin.prototype.notifyClientResolution =
     function(width, height, device_scale) {
   if (this.hasFeature(remoting.ClientPlugin.Feature.NOTIFY_CLIENT_RESOLUTION)) {
     var dpi = Math.floor(device_scale * 96);
-    this.plugin.postMessage(JSON.stringify(
+    this.plugin_.postMessage(JSON.stringify(
         { method: 'notifyClientResolution',
           data: { width: Math.floor(width * device_scale),
                   height: Math.floor(height * device_scale),
@@ -592,10 +641,10 @@ remoting.ClientPlugin.prototype.notifyClientResolution =
 remoting.ClientPlugin.prototype.pauseVideo =
     function(pause) {
   if (this.hasFeature(remoting.ClientPlugin.Feature.VIDEO_CONTROL)) {
-    this.plugin.postMessage(JSON.stringify(
+    this.plugin_.postMessage(JSON.stringify(
         { method: 'videoControl', data: { pause: pause }}));
   } else if (this.hasFeature(remoting.ClientPlugin.Feature.PAUSE_VIDEO)) {
-    this.plugin.postMessage(JSON.stringify(
+    this.plugin_.postMessage(JSON.stringify(
         { method: 'pauseVideo', data: { pause: pause }}));
   }
 };
@@ -610,7 +659,7 @@ remoting.ClientPlugin.prototype.pauseAudio =
   if (!this.hasFeature(remoting.ClientPlugin.Feature.PAUSE_AUDIO)) {
     return;
   }
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
       { method: 'pauseAudio', data: { pause: pause }}));
 };
 
@@ -624,7 +673,7 @@ remoting.ClientPlugin.prototype.setLosslessEncode =
   if (!this.hasFeature(remoting.ClientPlugin.Feature.VIDEO_CONTROL)) {
     return;
   }
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
       { method: 'videoControl', data: { losslessEncode: wantLossless }}));
 };
 
@@ -638,7 +687,7 @@ remoting.ClientPlugin.prototype.setLosslessColor =
   if (!this.hasFeature(remoting.ClientPlugin.Feature.VIDEO_CONTROL)) {
     return;
   }
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
       { method: 'videoControl', data: { losslessColor: wantLossless }}));
 };
 
@@ -652,7 +701,7 @@ remoting.ClientPlugin.prototype.onPinFetched =
   if (!this.hasFeature(remoting.ClientPlugin.Feature.ASYNC_PIN)) {
     return;
   }
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
       { method: 'onPinFetched', data: { pin: pin }}));
 };
 
@@ -664,7 +713,7 @@ remoting.ClientPlugin.prototype.useAsyncPinDialog =
   if (!this.hasFeature(remoting.ClientPlugin.Feature.ASYNC_PIN)) {
     return;
   }
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
       { method: 'useAsyncPinDialog', data: {} }));
 };
 
@@ -676,7 +725,7 @@ remoting.ClientPlugin.prototype.useAsyncPinDialog =
  */
 remoting.ClientPlugin.prototype.onThirdPartyTokenFetched = function(
     token, sharedSecret) {
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
     { method: 'onThirdPartyTokenFetched',
       data: { token: token, sharedSecret: sharedSecret}}));
 };
@@ -694,7 +743,7 @@ remoting.ClientPlugin.prototype.requestPairing =
     return;
   }
   this.onPairingComplete_ = onDone;
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
       { method: 'requestPairing', data: { clientName: clientName } }));
 };
 
@@ -709,7 +758,7 @@ remoting.ClientPlugin.prototype.sendClientMessage =
   if (!this.hasFeature(remoting.ClientPlugin.Feature.EXTENSION_MESSAGE)) {
     return;
   }
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
       { method: 'extensionMessage',
         data: { type: type, data: message } }));
 
@@ -726,7 +775,7 @@ remoting.ClientPlugin.prototype.enableMediaSourceRendering =
     return;
   }
   this.mediaSourceRenderer_ = mediaSourceRenderer;
-  this.plugin.postMessage(JSON.stringify(
+  this.plugin_.postMessage(JSON.stringify(
       { method: 'enableMediaSourceRendering', data: {} }));
 };
 
@@ -740,14 +789,14 @@ remoting.ClientPlugin.prototype.showPluginForClickToPlay_ = function() {
   if (!this.helloReceived_) {
     var width = 200;
     var height = 200;
-    this.plugin.style.width = width + 'px';
-    this.plugin.style.height = height + 'px';
+    this.plugin_.style.width = width + 'px';
+    this.plugin_.style.height = height + 'px';
     // Center the plugin just underneath the "Connnecting..." dialog.
     var dialog = document.getElementById('client-dialog');
     var dialogRect = dialog.getBoundingClientRect();
-    this.plugin.style.top = (dialogRect.bottom + 16) + 'px';
-    this.plugin.style.left = (window.innerWidth - width) / 2 + 'px';
-    this.plugin.style.position = 'fixed';
+    this.plugin_.style.top = (dialogRect.bottom + 16) + 'px';
+    this.plugin_.style.left = (window.innerWidth - width) / 2 + 'px';
+    this.plugin_.style.position = 'fixed';
   }
 };
 
@@ -756,9 +805,9 @@ remoting.ClientPlugin.prototype.showPluginForClickToPlay_ = function() {
  * @private
  */
 remoting.ClientPlugin.prototype.hidePluginForClickToPlay_ = function() {
-  this.plugin.style.width = '';
-  this.plugin.style.height = '';
-  this.plugin.style.top = '';
-  this.plugin.style.left = '';
-  this.plugin.style.position = '';
+  this.plugin_.style.width = '';
+  this.plugin_.style.height = '';
+  this.plugin_.style.top = '';
+  this.plugin_.style.left = '';
+  this.plugin_.style.position = '';
 };

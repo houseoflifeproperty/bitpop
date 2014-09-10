@@ -3,7 +3,7 @@
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Peter Kelly (pmk@post.com)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2003-2011, 2013, 2014 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -35,9 +35,8 @@
 #include "core/html/CollectionType.h"
 #include "core/page/FocusType.h"
 #include "platform/heap/Handle.h"
-#include "platform/scroll/ScrollTypes.h"
 
-namespace WebCore {
+namespace blink {
 
 class ActiveAnimations;
 class Attr;
@@ -107,8 +106,6 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(touchend);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(touchmove);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(touchstart);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitfullscreenchange);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitfullscreenerror);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(wheel);
 
     bool hasAttribute(const QualifiedName&) const;
@@ -132,7 +129,7 @@ public:
     // attribute or one of the SVG animatable attributes.
     bool fastHasAttribute(const QualifiedName&) const;
     const AtomicString& fastGetAttribute(const QualifiedName&) const;
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool fastAttributeLookupAllowed(const QualifiedName&) const;
 #endif
 
@@ -140,9 +137,6 @@ public:
     bool hasNamedNodeMap() const;
 #endif
     bool hasAttributes() const;
-    // This variant will not update the potentially invalid attributes. To be used when not interested
-    // in style attribute or one of the SVG animation attributes.
-    bool hasAttributesWithoutUpdate() const;
 
     bool hasAttribute(const AtomicString& name) const;
     bool hasAttributeNS(const AtomicString& namespaceURI, const AtomicString& localName) const;
@@ -168,21 +162,17 @@ public:
     // so this function is not suitable for non-style uses.
     const AtomicString& idForStyleResolution() const;
 
-    // Internal methods that assume the existence of attribute storage, one should use hasAttributes()
-    // before calling them. This is not a trivial getter and its return value should be cached for
-    // performance.
-    AttributeCollection attributes() const { return elementData()->attributes(); }
-    size_t attributeCount() const;
-    const Attribute& attributeAt(unsigned index) const;
-    const Attribute* findAttributeByName(const QualifiedName&) const;
-    size_t findAttributeIndexByName(const QualifiedName& name) const { return elementData()->findAttributeIndexByName(name); }
-    size_t findAttributeIndexByName(const AtomicString& name, bool shouldIgnoreAttributeCase) const { return elementData()->findAttributeIndexByName(name, shouldIgnoreAttributeCase); }
+    // This getter takes care of synchronizing all attributes before returning the
+    // AttributeCollection. If the Element has no attributes, an empty AttributeCollection
+    // will be returned. This is not a trivial getter and its return value should be cached
+    // for performance.
+    AttributeCollection attributes() const;
+    // This variant will not update the potentially invalid attributes. To be used when not interested
+    // in style attribute or one of the SVG animation attributes.
+    AttributeCollection attributesWithoutUpdate() const;
 
     void scrollIntoView(bool alignToTop = true);
     void scrollIntoViewIfNeeded(bool centerIfNeeded = true);
-
-    void scrollByLines(int lines);
-    void scrollByPages(int pages);
 
     int offsetLeft();
     int offsetTop();
@@ -237,14 +227,16 @@ public:
 
     const QualifiedName& tagQName() const { return m_tagName; }
     String tagName() const { return nodeName(); }
+
     bool hasTagName(const QualifiedName& tagName) const { return m_tagName.matches(tagName); }
+    bool hasTagName(const HTMLQualifiedName& tagName) const { return ContainerNode::hasTagName(tagName); }
+    bool hasTagName(const SVGQualifiedName& tagName) const { return ContainerNode::hasTagName(tagName); }
 
     // Should be called only by Document::createElementNS to fix up m_tagName immediately after construction.
     void setTagNameForCreateElementNS(const QualifiedName&);
 
     // A fast function for checking the local name against another atomic string.
     bool hasLocalName(const AtomicString& other) const { return m_tagName.localName() == other; }
-    bool hasLocalName(const QualifiedName& other) const { return m_tagName.localName() == other.localName(); }
 
     virtual const AtomicString& localName() const OVERRIDE FINAL { return m_tagName.localName(); }
     const AtomicString& prefix() const { return m_tagName.prefix(); }
@@ -291,6 +283,7 @@ public:
     };
 
     // This method is called whenever an attribute is added, changed or removed.
+    virtual void attributeWillChange(const QualifiedName&, const AtomicString& oldValue, const AtomicString& newValue) { }
     virtual void attributeChanged(const QualifiedName&, const AtomicString&, AttributeModificationReason = ModifiedDirectly);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&);
 
@@ -303,10 +296,7 @@ public:
     // Remove attributes that might introduce scripting from the vector leaving the element unchanged.
     void stripScriptingAttributes(Vector<Attribute>&) const;
 
-    const ElementData* elementData() const { return m_elementData.get(); }
-    UniqueElementData& ensureUniqueElementData();
-
-    void synchronizeAllAttributes() const;
+    bool sharesSameElementData(const Element& other) const { return elementData() == other.elementData(); }
 
     // Clones attributes only.
     void cloneAttributesFromElement(const Element&);
@@ -363,6 +353,9 @@ public:
 
     virtual bool isURLAttribute(const Attribute&) const { return false; }
     virtual bool isHTMLContentAttribute(const Attribute&) const { return false; }
+
+    virtual bool isLiveLink() const { return false; }
+    KURL hrefURL() const;
 
     KURL getURLAttribute(const QualifiedName&) const;
     KURL getNonEmptyURLAttribute(const QualifiedName&) const;
@@ -465,23 +458,13 @@ public:
     void setCustomElementDefinition(PassRefPtr<CustomElementDefinition>);
     CustomElementDefinition* customElementDefinition() const;
 
-    enum {
-        ALLOW_KEYBOARD_INPUT = 1 << 0,
-        LEGACY_MOZILLA_REQUEST = 1 << 1,
-    };
-
-    void webkitRequestFullScreen(unsigned short flags);
     bool containsFullScreenElement() const { return hasElementFlag(ContainsFullScreenElement); }
     void setContainsFullScreenElement(bool);
     void setContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(bool);
 
-    // W3C API
-    void webkitRequestFullscreen();
-
     bool isInTopLayer() const { return hasElementFlag(IsInTopLayer); }
     void setIsInTopLayer(bool);
 
-    void webkitRequestPointerLock();
     void requestPointerLock();
 
     bool isSpellCheckingEnabled() const;
@@ -518,13 +501,16 @@ public:
 protected:
     Element(const QualifiedName& tagName, Document*, ConstructionType);
 
+    const ElementData* elementData() const { return m_elementData.get(); }
+    UniqueElementData& ensureUniqueElementData();
+
     void addPropertyToPresentationAttributeStyle(MutableStylePropertySet*, CSSPropertyID, CSSValueID identifier);
     void addPropertyToPresentationAttributeStyle(MutableStylePropertySet*, CSSPropertyID, double value, CSSPrimitiveValue::UnitType);
     void addPropertyToPresentationAttributeStyle(MutableStylePropertySet*, CSSPropertyID, const String& value);
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
+    virtual void childrenChanged(const ChildrenChange&) OVERRIDE;
 
     virtual void willRecalcStyle(StyleRecalcChange);
     virtual void didRecalcStyle(StyleRecalcChange);
@@ -533,7 +519,7 @@ protected:
     virtual bool shouldRegisterAsNamedItem() const { return false; }
     virtual bool shouldRegisterAsExtraNamedItem() const { return false; }
 
-    virtual bool supportsSpatialNavigationFocus() const;
+    bool supportsSpatialNavigationFocus() const;
 
     void clearTabIndexExplicitlyIfNeeded();
     void setTabIndexExplicitly(short);
@@ -543,8 +529,6 @@ protected:
     // moved to RenderObject because some focusable nodes don't have renderers,
     // e.g., HTMLOptionElement.
     virtual bool rendererIsFocusable() const;
-    PassRefPtrWillBeRawPtr<HTMLCollection> ensureCachedHTMLCollection(CollectionType);
-    HTMLCollection* cachedHTMLCollection(CollectionType);
 
     // classAttributeChanged() exists to share code between
     // parseAttribute (called via setAttribute()) and
@@ -560,6 +544,10 @@ private:
     void setElementFlag(ElementFlags, bool value = true);
     void clearElementFlag(ElementFlags);
     bool hasElementFlagInternal(ElementFlags) const;
+
+    bool isElementNode() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+    bool isDocumentFragment() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+    bool isDocumentNode() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
 
     void styleAttributeChanged(const AtomicString& newStyleString, AttributeModificationReason);
 
@@ -593,14 +581,12 @@ private:
     void didModifyAttribute(const QualifiedName&, const AtomicString&);
     void didRemoveAttribute(const QualifiedName&);
 
+    void synchronizeAllAttributes() const;
     void synchronizeAttribute(const QualifiedName&) const;
 
     void updateId(const AtomicString& oldId, const AtomicString& newId);
     void updateId(TreeScope&, const AtomicString& oldId, const AtomicString& newId);
     void updateName(const AtomicString& oldName, const AtomicString& newName);
-    void updateLabel(TreeScope&, const AtomicString& oldForAttributeValue, const AtomicString& newForAttributeValue);
-
-    void scrollByUnits(int units, ScrollGranularity);
 
     virtual NodeType nodeType() const OVERRIDE FINAL;
     virtual bool childTypeAllowed(NodeType) const OVERRIDE FINAL;
@@ -651,12 +637,13 @@ private:
 
     bool isJavaScriptURLAttribute(const Attribute&) const;
 
-    RefPtr<ElementData> m_elementData;
+    RefPtrWillBeMember<ElementData> m_elementData;
 };
 
 DEFINE_NODE_TYPE_CASTS(Element, isElementNode());
-template <typename T> bool isElementOfType(const Element&);
-template <typename T> inline bool isElementOfType(const Node& node) { return node.isElementNode() && isElementOfType<const T>(toElement(node)); }
+template <typename T> bool isElementOfType(const Node&);
+template <> inline bool isElementOfType<const Element>(const Node& node) { return node.isElementNode(); }
+template <typename T> inline bool isElementOfType(const Element& element) { return isElementOfType<T>(static_cast<const Node&>(element)); }
 template <> inline bool isElementOfType<const Element>(const Element&) { return true; }
 
 // Type casting.
@@ -687,11 +674,6 @@ inline bool isDisabledFormControl(const Node* node)
     return node->isElementNode() && toElement(node)->isDisabledFormControl();
 }
 
-inline bool Node::hasTagName(const QualifiedName& name) const
-{
-    return isElementNode() && toElement(this)->hasTagName(name);
-}
-
 inline Element* Node::parentElement() const
 {
     ContainerNode* parent = parentNode();
@@ -701,22 +683,37 @@ inline Element* Node::parentElement() const
 inline bool Element::fastHasAttribute(const QualifiedName& name) const
 {
     ASSERT(fastAttributeLookupAllowed(name));
-    return elementData() && findAttributeByName(name);
+    return elementData() && elementData()->attributes().findIndex(name) != kNotFound;
 }
 
 inline const AtomicString& Element::fastGetAttribute(const QualifiedName& name) const
 {
     ASSERT(fastAttributeLookupAllowed(name));
     if (elementData()) {
-        if (const Attribute* attribute = findAttributeByName(name))
+        if (const Attribute* attribute = elementData()->attributes().find(name))
             return attribute->value();
     }
     return nullAtom;
 }
 
-inline bool Element::hasAttributesWithoutUpdate() const
+inline AttributeCollection Element::attributes() const
 {
-    return elementData() && elementData()->hasAttributes();
+    if (!elementData())
+        return AttributeCollection();
+    synchronizeAllAttributes();
+    return elementData()->attributes();
+}
+
+inline AttributeCollection Element::attributesWithoutUpdate() const
+{
+    if (!elementData())
+        return AttributeCollection();
+    return elementData()->attributes();
+}
+
+inline bool Element::hasAttributes() const
+{
+    return !attributes().isEmpty();
 }
 
 inline const AtomicString& Element::idForStyleResolution() const
@@ -765,24 +762,6 @@ inline const SpaceSplitString& Element::classNames() const
     return elementData()->classNames();
 }
 
-inline size_t Element::attributeCount() const
-{
-    ASSERT(elementData());
-    return elementData()->attributeCount();
-}
-
-inline const Attribute& Element::attributeAt(unsigned index) const
-{
-    ASSERT(elementData());
-    return elementData()->attributeAt(index);
-}
-
-inline const Attribute* Element::findAttributeByName(const QualifiedName& name) const
-{
-    ASSERT(elementData());
-    return elementData()->findAttributeByName(name);
-}
-
 inline bool Element::hasID() const
 {
     return elementData() && elementData()->hasID();
@@ -797,18 +776,7 @@ inline UniqueElementData& Element::ensureUniqueElementData()
 {
     if (!elementData() || !elementData()->isUnique())
         createUniqueElementData();
-    return static_cast<UniqueElementData&>(*m_elementData);
-}
-
-// Put here to make them inline.
-inline bool Node::hasID() const
-{
-    return isElementNode() && toElement(this)->hasID();
-}
-
-inline bool Node::hasClass() const
-{
-    return isElementNode() && toElement(this)->hasClass();
+    return toUniqueElementData(*m_elementData);
 }
 
 inline Node::InsertionNotificationRequest Node::insertedInto(ContainerNode* insertionPoint)
@@ -872,11 +840,11 @@ inline bool isShadowHost(const Element* element)
 // These macros do the same as their NODE equivalents but additionally provide a template specialization
 // for isElementOfType<>() so that the Traversal<> API works for these Element types.
 #define DEFINE_ELEMENT_TYPE_CASTS(thisType, predicate) \
-    template <> inline bool isElementOfType<const thisType>(const Element& element) { return element.predicate; } \
+    template <> inline bool isElementOfType<const thisType>(const Node& node) { return node.predicate; } \
     DEFINE_NODE_TYPE_CASTS(thisType, predicate)
 
 #define DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(thisType) \
-    template <> inline bool isElementOfType<const thisType>(const Element& element) { return is##thisType(element); } \
+    template <> inline bool isElementOfType<const thisType>(const Node& node) { return is##thisType(node); } \
     DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(thisType)
 
 #define DECLARE_ELEMENT_FACTORY_WITH_TAGNAME(T) \

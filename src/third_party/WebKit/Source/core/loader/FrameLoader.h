@@ -46,7 +46,7 @@
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Resource;
 class Chrome;
@@ -75,6 +75,8 @@ bool isBackForwardLoadType(FrameLoadType);
 class FrameLoader {
     WTF_MAKE_NONCOPYABLE(FrameLoader);
 public:
+    static ResourceRequest requestFromHistoryItem(HistoryItem*, ResourceRequestCachePolicy);
+
     FrameLoader(LocalFrame*);
     ~FrameLoader();
 
@@ -87,7 +89,7 @@ public:
 
     // These functions start a load. All eventually call into loadWithNavigationAction() or loadInSameDocument().
     void load(const FrameLoadRequest&); // The entry point for non-reload, non-history loads.
-    void reload(ReloadPolicy = NormalReload, const KURL& overrideURL = KURL(), const AtomicString& overrideEncoding = nullAtom);
+    void reload(ReloadPolicy = NormalReload, const KURL& overrideURL = KURL(), const AtomicString& overrideEncoding = nullAtom, ClientRedirectPolicy = NotClientRedirect);
     void loadHistoryItem(HistoryItem*, HistoryLoadType = HistoryDifferentDocumentLoad, ResourceRequestCachePolicy = UseProtocolCachePolicy); // The entry point for all back/forward loads
 
     static void reportLocalLoadFailed(LocalFrame*, const String& url);
@@ -131,8 +133,6 @@ public:
 
     void checkLoadComplete();
 
-    static void addHTTPOriginIfNeeded(ResourceRequest&, const AtomicString& origin);
-
     FrameLoaderClient* client() const;
 
     void setDefersLoading(bool);
@@ -158,7 +158,7 @@ public:
     LocalFrame* opener();
     void setOpener(LocalFrame*);
 
-    void frameDetached();
+    void detachFromParent();
 
     void loadDone();
     void finishedParsing();
@@ -212,10 +212,10 @@ private:
 
     // Calls continueLoadAfterNavigationPolicy
     void loadWithNavigationAction(const NavigationAction&, FrameLoadType, PassRefPtrWillBeRawPtr<FormState>,
-        const SubstituteData&, ClientRedirectPolicy = NotClientRedirect, const AtomicString& overrideEncoding = nullAtom);
+        const SubstituteData&, ContentSecurityPolicyCheck shouldCheckMainWorldContentSecurityPolicy, ClientRedirectPolicy = NotClientRedirect, const AtomicString& overrideEncoding = nullAtom);
 
-    void detachFromParent();
-    void detachChildren();
+    bool validateTransitionNavigationMode();
+    bool dispatchNavigationTransitionData();
     void detachClient();
 
     void setHistoryItemStateForCommit(HistoryCommitType, bool isPushOrReplaceState = false, PassRefPtr<SerializedScriptValue> = nullptr);
@@ -223,7 +223,6 @@ private:
     void loadInSameDocument(const KURL&, PassRefPtr<SerializedScriptValue> stateObject, FrameLoadType, ClientRedirectPolicy);
 
     void scheduleCheckCompleted();
-    void startCheckCompleteTimer();
 
     LocalFrame* m_frame;
 
@@ -273,7 +272,6 @@ private:
     bool m_isComplete;
 
     Timer<FrameLoader> m_checkTimer;
-    bool m_shouldCallCheckCompleted;
 
     bool m_didAccessInitialDocument;
     Timer<FrameLoader> m_didAccessInitialDocumentTimer;
@@ -283,6 +281,6 @@ private:
     bool m_willDetachClient;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FrameLoader_h

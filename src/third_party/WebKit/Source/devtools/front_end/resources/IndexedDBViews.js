@@ -191,10 +191,10 @@ WebInspector.IDBDataView.prototype = {
     _keyPathStringFragment: function(keyPathString)
     {
         var keyPathStringFragment = document.createDocumentFragment();
-        keyPathStringFragment.appendChild(document.createTextNode("\""));
+        keyPathStringFragment.createTextChild("\"");
         var keyPathSpan = keyPathStringFragment.createChild("span", "source-code console-formatted-string");
         keyPathSpan.textContent = keyPathString;
-        keyPathStringFragment.appendChild(document.createTextNode("\""));
+        keyPathStringFragment.createTextChild("\"");
         return keyPathStringFragment;
     },
 
@@ -330,7 +330,7 @@ WebInspector.IDBDataView.prototype = {
             this._pageForwardButton.disabled = !hasMore;
         }
 
-        var idbKeyRange = key ? window.webkitIDBKeyRange.lowerBound(key) : null;
+        var idbKeyRange = key ? window.IDBKeyRange.lowerBound(key) : null;
         if (this._isIndex)
             this._model.loadIndexData(this._databaseId, this._objectStore.name, this._index.name, idbKeyRange, skipCount, pageSize, callback.bind(this));
         else
@@ -417,14 +417,13 @@ WebInspector.IDBDataGridNode.prototype = {
             break;
         case "string":
             contents.classList.add("primitive-value");
-            contents.appendChild(document.createTextNode("\"" + value.description + "\""));
+            contents.createTextChildren("\"", value.description, "\"");
             break;
         default:
             contents.classList.add("primitive-value");
-            contents.appendChild(document.createTextNode(value.description));
+            contents.createTextChild(value.description);
         }
     },
 
     __proto__: WebInspector.DataGridNode.prototype
 }
-

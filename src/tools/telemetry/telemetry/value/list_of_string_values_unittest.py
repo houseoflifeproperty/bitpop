@@ -8,6 +8,7 @@ from telemetry import value
 from telemetry.page import page_set
 from telemetry.value import list_of_string_values
 
+
 class TestBase(unittest.TestCase):
   def setUp(self):
     self.page_set = page_set.PageSet(file_path=os.path.dirname(__file__))
@@ -76,3 +77,25 @@ class ListOfStringValuesTest(TestBase):
     self.assertEquals(value.PICK_FIRST, vM.same_page_merge_policy)
     self.assertEquals(True, vM.important)
     self.assertEquals(['L1', 'L2', 'L3', 'L4'], vM.values)
+
+  def testAsDict(self):
+    v = list_of_string_values.ListOfStringValues(
+        None, 'x', 'unit', ['foo', 'bar'],
+        same_page_merge_policy=value.PICK_FIRST, important=False)
+    d = v.AsDictWithoutBaseClassEntries()
+
+    self.assertEquals(d, {
+          'values': ['foo', 'bar']
+        })
+
+  def testFromDict(self):
+    d = {
+      'type': 'list_of_string_values',
+      'name': 'x',
+      'units': 'unit',
+      'values': ['foo', 'bar']
+    }
+    v = value.Value.FromDict(d, {})
+
+    self.assertTrue(isinstance(v, list_of_string_values.ListOfStringValues))
+    self.assertEquals(v.values, ['foo', 'bar'])

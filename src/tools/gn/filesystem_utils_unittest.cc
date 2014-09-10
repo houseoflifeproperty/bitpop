@@ -90,6 +90,33 @@ TEST(FilesystemUtils, FindLastDirComponent) {
   EXPECT_EQ("bar", FindLastDirComponent(regular2));
 }
 
+TEST(FilesystemUtils, EnsureStringIsInOutputDir) {
+  SourceDir output_dir("//out/Debug/");
+
+  // Some outside.
+  Err err;
+  EXPECT_FALSE(EnsureStringIsInOutputDir(output_dir, "//foo", Value(), &err));
+  EXPECT_TRUE(err.has_error());
+  err = Err();
+  EXPECT_FALSE(EnsureStringIsInOutputDir(output_dir, "//out/Debugit", Value(),
+                                         &err));
+  EXPECT_TRUE(err.has_error());
+
+  // Some inside.
+  err = Err();
+  EXPECT_TRUE(EnsureStringIsInOutputDir(output_dir, "//out/Debug/", Value(),
+                                        &err));
+  EXPECT_FALSE(err.has_error());
+  EXPECT_TRUE(EnsureStringIsInOutputDir(output_dir, "//out/Debug/foo", Value(),
+                                        &err));
+  EXPECT_FALSE(err.has_error());
+
+  // Pattern but no template expansions are allowed.
+  EXPECT_FALSE(EnsureStringIsInOutputDir(output_dir, "{{source_gen_dir}}",
+                                         Value(), &err));
+  EXPECT_TRUE(err.has_error());
+}
+
 TEST(FilesystemUtils, IsPathAbsolute) {
   EXPECT_TRUE(IsPathAbsolute("/foo/bar"));
   EXPECT_TRUE(IsPathAbsolute("/"));

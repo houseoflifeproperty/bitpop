@@ -119,8 +119,11 @@ std::string DevToolsProtocol::Response::Serialize() {
     error_object->SetInteger(kErrorCodeParam, error_code_);
     if (!error_message_.empty())
       error_object->SetString(kErrorMessageParam, error_message_);
-  } else if (result_) {
-    response.Set(kResultParam, result_->DeepCopy());
+  } else {
+    if (result_)
+      response.Set(kResultParam, result_->DeepCopy());
+    else
+      response.Set(kResultParam, new base::DictionaryValue());
   }
 
   std::string json_response;
@@ -175,6 +178,15 @@ DevToolsProtocol::Handler::HandleCommand(
   return (it->second).Run(command);
 }
 
+void DevToolsProtocol::Handler::HandleNotification(
+    scoped_refptr<DevToolsProtocol::Notification> notification) {
+  NotificationHandlers::iterator it =
+    notification_handlers_.find(notification->method());
+  if (it == notification_handlers_.end())
+    return;
+  (it->second).Run(notification);
+}
+
 void DevToolsProtocol::Handler::SetNotifier(const Notifier& notifier) {
   notifier_ = notifier;
 }
@@ -186,6 +198,12 @@ void DevToolsProtocol::Handler::RegisterCommandHandler(
     const std::string& command,
     const CommandHandler& handler) {
   command_handlers_[command] = handler;
+}
+
+void DevToolsProtocol::Handler::RegisterNotificationHandler(
+    const std::string& notification,
+    const NotificationHandler& handler) {
+  notification_handlers_[notification] = handler;
 }
 
 void DevToolsProtocol::Handler::SendNotification(

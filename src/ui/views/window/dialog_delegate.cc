@@ -31,11 +31,20 @@ DialogDelegate::~DialogDelegate() {
 
 // static
 Widget* DialogDelegate::CreateDialogWidget(WidgetDelegate* delegate,
-                                           gfx::NativeView context,
+                                           gfx::NativeWindow context,
                                            gfx::NativeView parent) {
+  return CreateDialogWidgetWithBounds(delegate, context, parent, gfx::Rect());
+}
+
+// static
+Widget* DialogDelegate::CreateDialogWidgetWithBounds(WidgetDelegate* delegate,
+                                                     gfx::NativeWindow context,
+                                                     gfx::NativeView parent,
+                                                     const gfx::Rect& bounds) {
   views::Widget* widget = new views::Widget;
   views::Widget::InitParams params;
   params.delegate = delegate;
+  params.bounds = bounds;
   DialogDelegate* dialog = delegate->AsDialogDelegate();
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)

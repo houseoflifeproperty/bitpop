@@ -48,7 +48,8 @@ struct GpuFeatureInfo {
 };
 
 const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   GpuDataManagerImpl* manager = GpuDataManagerImpl::GetInstance();
 
   const GpuFeatureInfo kGpuFeatureInfo[] = {
@@ -163,7 +164,8 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
 }  // namespace
 
 bool IsPinchVirtualViewportEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 
   // Command line switches take precedence over platform default.
   if (command_line.HasSwitch(cc::switches::kDisablePinchVirtualViewport))
@@ -178,49 +180,25 @@ bool IsPinchVirtualViewportEnabled() {
 #endif
 }
 
-bool IsThreadedCompositingEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-
-  // Command line switches take precedence over blacklist.
-  if (command_line.HasSwitch(switches::kDisableThreadedCompositing))
-    return false;
-  if (command_line.HasSwitch(switches::kEnableThreadedCompositing))
-    return true;
-
-#if defined(USE_AURA) || defined(OS_MACOSX)
-  // We always want threaded compositing on Aura and Mac (the fallback is a
-  // threaded software compositor).
-  return true;
-#else
-  return false;
-#endif
-}
-
 bool IsDelegatedRendererEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   bool enabled = false;
 
-#if defined(USE_AURA)
-  // Enable on Aura.
+#if defined(USE_AURA) || defined(OS_MACOSX)
+  // Enable on Aura and Mac.
   enabled = true;
 #endif
 
   // Flags override.
   enabled |= command_line.HasSwitch(switches::kEnableDelegatedRenderer);
   enabled &= !command_line.HasSwitch(switches::kDisableDelegatedRenderer);
-
-  // Needs compositing, and thread.
-  if (enabled && !IsThreadedCompositingEnabled()) {
-    enabled = false;
-    LOG(ERROR) << "Disabling delegated-rendering because it needs "
-               << "force-compositing-mode and threaded-compositing.";
-  }
-
   return enabled;
 }
 
 bool IsImplSidePaintingEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 
   if (command_line.HasSwitch(switches::kDisableImplSidePainting))
     return false;
@@ -233,12 +211,13 @@ bool IsImplSidePaintingEnabled() {
 #if defined(OS_MACOSX) || defined(OS_WIN)
   return false;
 #else
-  return IsThreadedCompositingEnabled();
+  return true;
 #endif
 }
 
 bool IsGpuRasterizationEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 
   if (!IsImplSidePaintingEnabled())
     return false;
@@ -256,7 +235,8 @@ bool IsGpuRasterizationEnabled() {
 }
 
 bool IsForceGpuRasterizationEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 
   if (!IsImplSidePaintingEnabled())
     return false;
@@ -302,10 +282,6 @@ base::Value* GetFeatureStatus() {
       }
       if (gpu_feature_info.name == kThreadedRasterizationFeatureName)
         status += "_on";
-    }
-    if (gpu_feature_info.name == kGpuCompositingFeatureName) {
-      if (IsThreadedCompositingEnabled())
-        status += "_threaded";
     }
     if (gpu_feature_info.name == kWebGLFeatureName &&
         (gpu_feature_info.blocked || gpu_access_blocked) &&

@@ -21,7 +21,8 @@ class ScriptContextTest : public content::RenderViewTest {
   }
 };
 
-TEST_F(ScriptContextTest, GetEffectiveDocumentURL) {
+// http://crbug.com/391894
+TEST_F(ScriptContextTest, DISABLED_GetEffectiveDocumentURL) {
   GURL top_url("http://example.com/");
   GURL different_url("http://example.net/");
   GURL blank_url("about:blank");

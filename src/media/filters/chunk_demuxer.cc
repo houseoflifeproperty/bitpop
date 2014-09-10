@@ -561,8 +561,7 @@ bool SourceState::OnNewConfigs(
         return false;
       }
 
-      if (!frame_processor_->AddTrack(FrameProcessorBase::kAudioTrackId,
-                                      audio_)) {
+      if (!frame_processor_->AddTrack(FrameProcessor::kAudioTrackId, audio_)) {
         DVLOG(1) << "Failed to add audio track to frame processor.";
         return false;
       }
@@ -581,8 +580,7 @@ bool SourceState::OnNewConfigs(
         return false;
       }
 
-      if (!frame_processor_->AddTrack(FrameProcessorBase::kVideoTrackId,
-                                      video_)) {
+      if (!frame_processor_->AddTrack(FrameProcessor::kVideoTrackId, video_)) {
         DVLOG(1) << "Failed to add video track to frame processor.";
         return false;
       }
@@ -614,10 +612,13 @@ bool SourceState::OnNewConfigs(
       MEDIA_LOG(log_cb_) << "The number of text track configs changed.";
     } else if (text_count == 1) {
       TextConfigItr config_itr = text_configs.begin();
-      const TextTrackConfig& new_config = config_itr->second;
       TextStreamMap::iterator stream_itr = text_stream_map_.begin();
       ChunkDemuxerStream* text_stream = stream_itr->second;
       TextTrackConfig old_config = text_stream->text_track_config();
+      TextTrackConfig new_config(config_itr->second.kind(),
+                                 config_itr->second.label(),
+                                 config_itr->second.language(),
+                                 old_config.id());
       if (!new_config.Matches(old_config)) {
         success &= false;
         MEDIA_LOG(log_cb_) << "New text track config does not match old one.";
@@ -853,7 +854,7 @@ TimeDelta ChunkDemuxerStream::GetBufferedDuration() const {
   return stream_->GetBufferedDuration();
 }
 
-void ChunkDemuxerStream::OnNewMediaSegment(TimeDelta start_timestamp) {
+void ChunkDemuxerStream::OnNewMediaSegment(DecodeTimestamp start_timestamp) {
   DVLOG(2) << "ChunkDemuxerStream::OnNewMediaSegment("
            << start_timestamp.InSecondsF() << ")";
   base::AutoLock auto_lock(lock_);
@@ -952,6 +953,10 @@ TextTrackConfig ChunkDemuxerStream::text_track_config() {
   CHECK_EQ(type_, TEXT);
   base::AutoLock auto_lock(lock_);
   return stream_->GetCurrentTextTrackConfig();
+}
+
+VideoRotation ChunkDemuxerStream::video_rotation() {
+  return VIDEO_ROTATION_0;
 }
 
 void ChunkDemuxerStream::ChangeState_Locked(State state) {
@@ -1099,10 +1104,6 @@ DemuxerStream* ChunkDemuxer::GetStream(DemuxerStream::Type type) {
     return audio_.get();
 
   return NULL;
-}
-
-TimeDelta ChunkDemuxer::GetStartTime() const {
-  return TimeDelta();
 }
 
 base::Time ChunkDemuxer::GetTimelineOffset() const {
@@ -1310,9 +1311,16 @@ void ChunkDemuxer::Abort(const std::string& id,
   base::AutoLock auto_lock(lock_);
   DCHECK(!id.empty());
   CHECK(IsValidId(id));
+  bool old_waiting_for_data = IsSeekWaitingForData_Locked();
   source_state_map_[id]->Abort(append_window_start,
                                append_window_end,
                                timestamp_offset);
+  // Abort can possibly emit some buffers.
+  // Need to check whether seeking can be completed.
+  if (old_waiting_for_data && !IsSeekWaitingForData_Locked() &&
+      !seek_cb_.is_null()) {
+    base::ResetAndReturn(&seek_cb_).Run(PIPELINE_OK);
+  }
 }
 
 void ChunkDemuxer::Remove(const std::string& id, TimeDelta start,
@@ -1597,7 +1605,7 @@ void ChunkDemuxer::OnSourceInitDone(
     return;
   }
 
-  SeekAllSources(GetStartTime());
+  SeekAllSources(base::TimeDelta());
   StartReturningData();
 
   if (duration_ == kNoTimestamp())

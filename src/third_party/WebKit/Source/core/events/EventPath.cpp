@@ -28,20 +28,15 @@
 #include "core/events/EventPath.h"
 
 #include "core/EventNames.h"
-#include "core/SVGNames.h"
-#include "core/dom/FullscreenElementStack.h"
+#include "core/dom/Document.h"
 #include "core/dom/Touch.h"
 #include "core/dom/TouchList.h"
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRoot.h"
-#include "core/events/FocusEvent.h"
-#include "core/events/MouseEvent.h"
 #include "core/events/TouchEvent.h"
 #include "core/events/TouchEventContext.h"
-#include "core/svg/SVGUseElement.h"
-#include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+namespace blink {
 
 EventTarget* EventPath::eventTargetRespectingTargetRules(Node* referenceNode)
 {
@@ -119,6 +114,8 @@ void EventPath::calculatePath()
     if (!m_node->inDocument())
         return;
     while (current) {
+        if (m_event && current->keepEventInNode(m_event))
+            break;
         if (current->isShadowRoot() && m_event && determineDispatchBehavior(m_event, toShadowRoot(current), m_node) == StayInsideShadowDOM)
             break;
         WillBeHeapVector<RawPtrWillBeMember<InsertionPoint>, 8> insertionPoints;
@@ -182,7 +179,8 @@ TreeScopeEventContext* EventPath::ensureTreeScopeEventContext(Node* currentTarge
     bool isNewEntry;
     {
         TreeScopeEventContextMap::AddResult addResult = treeScopeEventContextMap.add(treeScope, nullptr);
-        if ((isNewEntry = addResult.isNewEntry))
+        isNewEntry = addResult.isNewEntry;
+        if (isNewEntry)
             addResult.storedValue->value = TreeScopeEventContext::create(*treeScope);
         treeScopeEventContext = addResult.storedValue->value.get();
     }
@@ -312,7 +310,7 @@ void EventPath::adjustForTouchEvent(Node* node, TouchEvent& touchEvent)
     adjustTouchList(node, touchEvent.targetTouches(), adjustedTargetTouches, treeScopes);
     adjustTouchList(node, touchEvent.changedTouches(), adjustedChangedTouches, treeScopes);
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     for (size_t i = 0; i < m_treeScopeEventContexts.size(); ++i) {
         TreeScope& treeScope = m_treeScopeEventContexts[i]->treeScope();
         TouchEventContext* touchEventContext = m_treeScopeEventContexts[i]->touchEventContext();
@@ -337,7 +335,7 @@ void EventPath::adjustTouchList(const Node* node, const TouchList* touchList, Wi
     }
 }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 void EventPath::checkReachability(TreeScope& treeScope, TouchList& touchList)
 {
     for (size_t i = 0; i < touchList.length(); ++i)

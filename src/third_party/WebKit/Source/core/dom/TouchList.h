@@ -26,15 +26,15 @@
 #ifndef TouchList_h
 #define TouchList_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/Touch.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class TouchList : public RefCountedWillBeGarbageCollectedFinalized<TouchList>, public ScriptWrappable {
+class TouchList FINAL : public RefCountedWillBeGarbageCollected<TouchList>, public ScriptWrappable {
 public:
     static PassRefPtrWillBeRawPtr<TouchList> create()
     {
@@ -70,6 +70,6 @@ private:
     WillBeHeapVector<RefPtrWillBeMember<Touch> > m_values;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif /* TouchList_h */

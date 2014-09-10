@@ -13,7 +13,10 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/pref_names.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/constants.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -40,6 +43,10 @@ const int kMinBubbleWidth = 300;
 const int kMinTextfieldWidth = 200;
 // Size of the icon.
 const int kIconSize = extension_misc::EXTENSION_ICON_MEDIUM;
+
+ExtensionService* GetExtensionService(Profile* profile) {
+  return extensions::ExtensionSystem::Get(profile)->extension_service();
+}
 
 }  // namespace
 
@@ -158,7 +165,8 @@ void BookmarkAppBubbleView::Init() {
   layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
 
   const extensions::Extension* extension =
-      profile_->GetExtensionService()->GetInstalledExtension(extension_id_);
+      extensions::ExtensionRegistry::Get(profile_)->GetExtensionById(
+          extension_id_, extensions::ExtensionRegistry::EVERYTHING);
 
   layout->StartRow(0, TITLE_TEXT_COLUMN_SET_ID);
   icon_image_view_ = new views::ImageView();
@@ -199,8 +207,11 @@ void BookmarkAppBubbleView::WindowClosing() {
   bookmark_app_bubble_ = NULL;
 
   if (remove_app_) {
-    profile_->GetExtensionService()->UninstallExtension(
-        extension_id_, false, NULL);
+    GetExtensionService(profile_)
+        ->UninstallExtension(extension_id_,
+                             extensions::UNINSTALL_REASON_INSTALL_CANCELED,
+                             base::Bind(&base::DoNothing),
+                             NULL);
   } else {
     ApplyEdits();
   }
@@ -248,12 +259,13 @@ void BookmarkAppBubbleView::ApplyEdits() {
       : extensions::LAUNCH_TYPE_WINDOW;
   profile_->GetPrefs()->SetInteger(
           extensions::pref_names::kBookmarkAppCreationLaunchType, launch_type);
-  extensions::SetLaunchType(profile_->GetExtensionService(),
+  extensions::SetLaunchType(GetExtensionService(profile_),
                             extension_id_,
                             launch_type);
 
   const extensions::Extension* extension =
-      profile_->GetExtensionService()->GetInstalledExtension(extension_id_);
+      extensions::ExtensionRegistry::Get(profile_)->GetExtensionById(
+          extension_id_, extensions::ExtensionRegistry::EVERYTHING);
   if (extension && base::UTF8ToUTF16(extension->name()) == title_tf_->text())
     return;
 
@@ -261,6 +273,6 @@ void BookmarkAppBubbleView::ApplyEdits() {
   WebApplicationInfo install_info(web_app_info_);
   install_info.title = title_tf_->text();
 
-  extensions::CreateOrUpdateBookmarkApp(profile_->GetExtensionService(),
+  extensions::CreateOrUpdateBookmarkApp(GetExtensionService(profile_),
                                         install_info);
 }

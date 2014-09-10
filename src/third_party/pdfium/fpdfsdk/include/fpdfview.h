@@ -34,6 +34,7 @@ typedef void*	FPDF_BOOKMARK;
 typedef void*	FPDF_DEST;
 typedef void*	FPDF_ACTION;
 typedef void*	FPDF_LINK;
+typedef void*   FPDF_PAGERANGE;
 
 // Basic data types
 typedef int				FPDF_BOOL;
@@ -41,6 +42,14 @@ typedef int				FPDF_ERROR;
 typedef unsigned long	FPDF_DWORD;
 
 typedef	float			FS_FLOAT;
+
+// Duplex types
+typedef enum _FPDF_DUPLEXTYPE_ {
+    DuplexUndefined = 0,
+    Simplex,
+    DuplexFlipShortEdge,
+    DuplexFlipLongEdge
+} FPDF_DUPLEXTYPE;
 
 // String types
 typedef unsigned short			FPDF_WCHAR;
@@ -487,11 +496,7 @@ DLLEXPORT FPDF_BITMAP STDCALL FPDFBitmap_CreateEx(int width, int height, int for
 //			top			-	The top side position. Starting from 0 at the top-most scan line.
 //			width		-	Number of pixels to be filled in each scan line.
 //			height		-	Number of scan lines to be filled.
-//			red			-	A number from 0 to 255, identifying the red intensity.
-//			green		-	A number from 0 to 255, identifying the green intensity.
-//			blue		-	A number from 0 to 255, identifying the blue intensity.
-//			alpha		-	(Only if the alpha channeled is used when bitmap created) A number from 0 to 255,
-//							identifying the alpha value.
+//			color		-	A 32-bit value specifing the color, in 8888 ARGB format.
 // Return value:
 //			None.
 // Comments:
@@ -500,8 +505,7 @@ DLLEXPORT FPDF_BITMAP STDCALL FPDFBitmap_CreateEx(int width, int height, int for
 //			instead the background will be replaced by the source color and alpha.
 //			If alpha channel is not used, the "alpha" parameter is ignored.
 //
-DLLEXPORT void STDCALL FPDFBitmap_FillRect(FPDF_BITMAP bitmap, int left, int top, int width, int height, 
-									int red, int green, int blue, int alpha);
+DLLEXPORT void STDCALL FPDFBitmap_FillRect(FPDF_BITMAP bitmap, int left, int top, int width, int height, FPDF_DWORD color);
 
 // Function: FPDFBitmap_GetBuffer
 //			Get data buffer of an FXDIB
@@ -560,6 +564,33 @@ DLLEXPORT void STDCALL FPDFBitmap_Destroy(FPDF_BITMAP bitmap);
 //			None.
 //
 DLLEXPORT FPDF_BOOL STDCALL FPDF_VIEWERREF_GetPrintScaling(FPDF_DOCUMENT document);
+
+// Function: FPDF_VIEWERREF_GetNumCopies
+//			Returns the number of copies to be printed.
+// Parameters:
+//			document	-	Handle to the loaded document.
+// Return value:
+//          The number of copies to be printed.
+//
+DLLEXPORT int STDCALL FPDF_VIEWERREF_GetNumCopies(FPDF_DOCUMENT document);
+
+// Function: FPDF_VIEWERREF_GetPrintPageRange
+//			Page numbers to initialize print dialog box when file is printed.
+// Parameters:
+//			document	-	Handle to the loaded document.
+// Return value:
+//          The print page range to be used for printing.
+//
+DLLEXPORT FPDF_PAGERANGE STDCALL FPDF_VIEWERREF_GetPrintPageRange(FPDF_DOCUMENT document);
+
+// Function: FPDF_VIEWERREF_GetDuplex
+//			Returns the paper handling option to be used when printing from print dialog.
+// Parameters:
+//			document	-	Handle to the loaded document.
+// Return value:
+//          The paper handling option to be used when printing.
+//
+DLLEXPORT FPDF_DUPLEXTYPE STDCALL FPDF_VIEWERREF_GetDuplex(FPDF_DOCUMENT document);
 
 // Function: FPDF_GetNamedDestByName
 //			get a special dest handle by the index.

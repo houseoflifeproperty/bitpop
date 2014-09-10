@@ -28,15 +28,16 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/web_preferences.h"
 #include "grit/ui_resources.h"
 #include "net/android/network_library.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_info.h"
 #include "ui/base/l10n/l10n_util_android.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "webkit/common/webpreferences.h"
 
 using content::BrowserThread;
+using content::ResourceType;
 
 namespace android_webview {
 namespace {
@@ -167,7 +168,7 @@ std::string AwContentBrowserClient::GetAcceptLangsImpl() {
 
   // If we're not en-US, add in en-US which will be
   // used with a lower q-value.
-  if (StringToLowerASCII(langs) != "en-us") {
+  if (base::StringToLowerASCII(langs) != "en-us") {
     langs += ",en-US";
   }
   return langs;
@@ -331,12 +332,13 @@ bool AwContentBrowserClient::AllowWorkerDatabase(
   return false;
 }
 
-bool AwContentBrowserClient::AllowWorkerFileSystem(
+void AwContentBrowserClient::AllowWorkerFileSystem(
     const GURL& url,
     content::ResourceContext* context,
-    const std::vector<std::pair<int, int> >& render_frames) {
+    const std::vector<std::pair<int, int> >& render_frames,
+    base::Callback<void(bool)> callback) {
   // Android WebView does not yet support web workers.
-  return false;
+  callback.Run(false);
 }
 
 bool AwContentBrowserClient::AllowWorkerIndexedDB(
@@ -359,9 +361,10 @@ void AwContentBrowserClient::AllowCertificateError(
     int cert_error,
     const net::SSLInfo& ssl_info,
     const GURL& request_url,
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     bool overridable,
     bool strict_enforcement,
+    bool expired_previous_decision,
     const base::Callback<void(bool)>& callback,
     content::CertificateRequestResultType* result) {
   AwContentsClientBridgeBase* client =
@@ -392,19 +395,19 @@ void AwContentBrowserClient::SelectClientCertificate(
   }
 }
 
-blink::WebNotificationPresenter::Permission
+blink::WebNotificationPermission
     AwContentBrowserClient::CheckDesktopNotificationPermission(
         const GURL& source_url,
         content::ResourceContext* context,
         int render_process_id) {
   // Android WebView does not support notifications, so return Denied here.
-  return blink::WebNotificationPresenter::PermissionDenied;
+  return blink::WebNotificationPermissionDenied;
 }
 
 void AwContentBrowserClient::ShowDesktopNotification(
     const content::ShowDesktopNotificationHostMsgParams& params,
     content::RenderFrameHost* render_frame_host,
-    content::DesktopNotificationDelegate* delegate,
+    scoped_ptr<content::DesktopNotificationDelegate> delegate,
     base::Closure* cancel_callback) {
   NOTREACHED() << "Android WebView does not support desktop notifications.";
 }
@@ -572,9 +575,10 @@ bool AwContentBrowserClient::AllowPepperSocketAPI(
   return false;
 }
 
-void AwContentBrowserClient::OverrideWebkitPrefs(content::RenderViewHost* rvh,
-                                                 const GURL& url,
-                                                 WebPreferences* web_prefs) {
+void AwContentBrowserClient::OverrideWebkitPrefs(
+    content::RenderViewHost* rvh,
+    const GURL& url,
+    content::WebPreferences* web_prefs) {
   if (!preferences_populater_.get()) {
     preferences_populater_ = make_scoped_ptr(native_factory_->
         CreateWebPreferencesPopulater());

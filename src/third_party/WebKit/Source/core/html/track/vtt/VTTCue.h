@@ -30,11 +30,10 @@
 #ifndef VTTCue_h
 #define VTTCue_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/html/track/TextTrackCue.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class ExecutionContext;
@@ -61,7 +60,7 @@ private:
     RawPtrWillBeMember<VTTCue> m_cue;
 };
 
-class VTTCue FINAL : public TextTrackCue, public ScriptWrappable {
+class VTTCue FINAL : public TextTrackCue {
 public:
     static PassRefPtrWillBeRawPtr<VTTCue> create(Document& document, double startTime, double endTime, const String& text)
     {
@@ -195,6 +194,6 @@ private:
 // VTTCue is currently the only TextTrackCue subclass.
 DEFINE_TYPE_CASTS(VTTCue, TextTrackCue, cue, true, true);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

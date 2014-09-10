@@ -92,7 +92,9 @@ def build_to_priority(build_properties):
       '/chromium.win/',
   )
   try_masters = (
-      '/tryserver.chromium/',
+      '/tryserver.chromium.linux/',
+      '/tryserver.chromium.mac/',
+      '/tryserver.chromium.win/',
       '/tryserver.nacl/',
   )
 

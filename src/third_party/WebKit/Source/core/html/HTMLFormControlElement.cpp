@@ -32,13 +32,16 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLLegendElement.h"
 #include "core/html/ValidityState.h"
-#include "core/html/forms/ValidationMessage.h"
 #include "core/frame/UseCounter.h"
+#include "core/inspector/ConsoleMessage.h"
+#include "core/page/Page.h"
+#include "core/page/ValidationMessageClient.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderTheme.h"
+#include "platform/text/BidiTextRun.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -48,6 +51,7 @@ HTMLFormControlElement::HTMLFormControlElement(const QualifiedName& tagName, Doc
     , m_isAutofilled(false)
     , m_isReadOnly(false)
     , m_isRequired(false)
+    , m_hasValidationMessage(false)
     , m_ancestorDisabledState(AncestorDisabledStateUnknown)
     , m_dataListAncestorState(Unknown)
     , m_willValidateInitialized(false)
@@ -209,7 +213,7 @@ static bool shouldAutofocusOnAttach(const HTMLFormControlElement* element)
         return false;
     if (element->document().isSandboxed(SandboxAutomaticFeatures)) {
         // FIXME: This message should be moved off the console once a solution to https://bugs.webkit.org/show_bug.cgi?id=103274 exists.
-        element->document().addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, "Blocked autofocusing on a form control because the form's frame is sandboxed and the 'allow-scripts' permission is not set.");
+        element->document().addConsoleMessage(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, "Blocked autofocusing on a form control because the form's frame is sandboxed and the 'allow-scripts' permission is not set."));
         return false;
     }
 
@@ -253,7 +257,7 @@ Node::InsertionNotificationRequest HTMLFormControlElement::insertedInto(Containe
 void HTMLFormControlElement::removedFrom(ContainerNode* insertionPoint)
 {
     hideVisibleValidationMessage();
-    m_validationMessage = nullptr;
+    m_hasValidationMessage = false;
     m_ancestorDisabledState = AncestorDisabledStateUnknown;
     m_dataListAncestorState = Unknown;
     HTMLElement::removedFrom(insertionPoint);
@@ -403,6 +407,15 @@ void HTMLFormControlElement::setNeedsWillValidateCheck()
         hideVisibleValidationMessage();
 }
 
+void HTMLFormControlElement::findCustomValidationMessageTextDirection(const String& message, TextDirection &messageDir, String& subMessage, TextDirection &subMessageDir)
+{
+    bool hasStrongDirection;
+    subMessage = fastGetAttribute(titleAttr);
+    messageDir = determineDirectionality(message, hasStrongDirection);
+    if (!subMessage.isEmpty())
+        subMessageDir = renderer()->style()->direction();
+}
+
 void HTMLFormControlElement::updateVisibleValidationMessage()
 {
     Page* page = document().page();
@@ -411,15 +424,47 @@ void HTMLFormControlElement::updateVisibleValidationMessage()
     String message;
     if (renderer() && willValidate())
         message = validationMessage().stripWhiteSpace();
-    if (!m_validationMessage)
-        m_validationMessage = ValidationMessage::create(this);
-    m_validationMessage->updateValidationMessage(message);
+
+    m_hasValidationMessage = true;
+    ValidationMessageClient* client = &page->validationMessageClient();
+    TextDirection messageDir = LTR;
+    TextDirection subMessageDir = LTR;
+    String subMessage = String();
+    if (message.isEmpty())
+        client->hideValidationMessage(*this);
+    else
+        findCustomValidationMessageTextDirection(message, messageDir, subMessage, subMessageDir);
+    client->showValidationMessage(*this, message, messageDir, subMessage, subMessageDir);
 }
 
 void HTMLFormControlElement::hideVisibleValidationMessage()
 {
-    if (m_validationMessage)
-        m_validationMessage->requestToHideMessage();
+    if (!m_hasValidationMessage)
+        return;
+
+    if (ValidationMessageClient* client = validationMessageClient())
+        client->hideValidationMessage(*this);
+}
+
+bool HTMLFormControlElement::isValidationMessageVisible() const
+{
+    if (!m_hasValidationMessage)
+        return false;
+
+    ValidationMessageClient* client = validationMessageClient();
+    if (!client)
+        return false;
+
+    return client->isValidationMessageVisible(*this);
+}
+
+ValidationMessageClient* HTMLFormControlElement::validationMessageClient() const
+{
+    Page* page = document().page();
+    if (!page)
+        return 0;
+
+    return &page->validationMessageClient();
 }
 
 bool HTMLFormControlElement::checkValidity(WillBeHeapVector<RefPtrWillBeMember<FormAssociatedElement> >* unhandledInvalidControls)
@@ -453,9 +498,9 @@ void HTMLFormControlElement::setNeedsValidityCheck()
     m_isValid = newIsValid;
 
     // Updates only if this control already has a validation message.
-    if (m_validationMessage && m_validationMessage->isVisible()) {
+    if (isValidationMessageVisible()) {
         // Calls updateVisibleValidationMessage() even if m_isValid is not
-        // changed because a validation message can be chagned.
+        // changed because a validation message can be changed.
         updateVisibleValidationMessage();
     }
 }

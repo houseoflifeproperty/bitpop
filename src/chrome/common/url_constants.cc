@@ -32,11 +32,15 @@ const char kChromeUICloudPrintResourcesURL[] = "chrome://cloudprintresources/";
 const char kChromeUIComponentsURL[] = "chrome://components/";
 const char kChromeUIConflictsURL[] = "chrome://conflicts/";
 const char kChromeUIConstrainedHTMLTestURL[] = "chrome://constrained-test/";
+const char kChromeUIContextualSearchPromoURL[] =
+    "chrome://contextual-search-promo";
 const char kChromeUICrashesURL[] = "chrome://crashes/";
 const char kChromeUICreditsURL[] = "chrome://credits/";
 const char kChromeUIDevicesURL[] = "chrome://devices/";
 const char kChromeUIDevToolsURL[] =
     "chrome-devtools://devtools/bundled/devtools.html";
+const char kChromeUIDomainReliabilityInternalsURL[] =
+    "chrome://domain-reliability-internals/";
 const char kChromeUIDownloadsURL[] = "chrome://downloads/";
 const char kChromeUIEditSearchEngineDialogURL[] = "chrome://editsearchengine/";
 const char kChromeUIExtensionIconURL[] = "chrome://extension-icon/";
@@ -54,10 +58,9 @@ const char kChromeUIHistoryFrameURL[] = "chrome://history-frame/";
 const char kChromeUIIdentityInternalsURL[] = "chrome://identity-internals/";
 const char kChromeUIInspectURL[] = "chrome://inspect/";
 const char kChromeUIInstantURL[] = "chrome://instant/";
+const char kChromeUIInterstitialURL[] = "chrome://interstitials/";
 const char kChromeUIInvalidationsURL[] = "chrome://invalidations/";
 const char kChromeUIIPCURL[] = "chrome://ipc/";
-const char kChromeUIManagedUserPassphrasePageURL[] =
-    "chrome://managed-user-passphrase/";
 const char kChromeUIMemoryRedirectURL[] = "chrome://memory-redirect/";
 const char kChromeUIMemoryURL[] = "chrome://memory/";
 const char kChromeUIMetroFlowURL[] = "chrome://make-metro/";
@@ -77,10 +80,12 @@ const char kChromeUIQuitURL[] = "chrome://quit/";
 const char kChromeUIRestartURL[] = "chrome://restart/";
 const char kChromeUISettingsURL[] = "chrome://settings/";
 const char kChromeUISettingsFrameURL[] = "chrome://settings-frame/";
+const char kChromeUISSLClientCertificateSelectorURL[] = "chrome://select-cert/";
 const char kChromeUISuggestions[] = "chrome://suggestions/";
 const char kChromeUISuggestionsInternalsURL[] =
     "chrome://suggestions-internals/";
-const char kChromeUISSLClientCertificateSelectorURL[] = "chrome://select-cert/";
+const char kChromeUISupervisedUserPassphrasePageURL[] =
+    "chrome://managed-user-passphrase/";
 const char kChromeUITermsURL[] = "chrome://terms/";
 const char kChromeUIThemeURL[] = "chrome://theme/";
 const char kChromeUIThumbnailURL[] = "chrome://thumb/";
@@ -89,6 +94,7 @@ const char kChromeUIUberURL[] = "chrome://chrome/";
 const char kChromeUIUberFrameURL[] = "chrome://uber-frame/";
 const char kChromeUIUserActionsURL[] = "chrome://user-actions/";
 const char kChromeUIVersionURL[] = "chrome://version/";
+const char kChromeUIVoiceSearchURL[] = "chrome://voicesearch/";
 
 #if defined(OS_ANDROID)
 const char kChromeUINativeNewTabURL[] = "chrome-native://newtab/";
@@ -160,6 +166,7 @@ const char kChromeUICloudPrintResourcesHost[] = "cloudprintresources";
 const char kChromeUICloudPrintSetupHost[] = "cloudprintsetup";
 const char kChromeUIConflictsHost[] = "conflicts";
 const char kChromeUIConstrainedHTMLTestHost[] = "constrained-test";
+const char kChromeUIContextualSearchPromoHost[] = "contextual-search-promo";
 const char kChromeUICrashesHost[] = "crashes";
 const char kChromeUICrashHost[] = "crash";
 const char kChromeUICreditsHost[] = "credits";
@@ -169,6 +176,8 @@ const char kChromeUIDevToolsHost[] = "devtools";
 const char kChromeUIDevToolsBundledPath[] = "bundled";
 const char kChromeUIDevToolsRemotePath[] = "remote";
 const char kChromeUIDNSHost[] = "dns";
+const char kChromeUIDomainReliabilityInternalsHost[] =
+    "domain-reliability-internals";
 const char kChromeUIDownloadsHost[] = "downloads";
 const char kChromeUIDriveInternalsHost[] = "drive-internals";
 const char kChromeUIEditSearchEngineDialogHost[] = "editsearchengine";
@@ -189,10 +198,10 @@ const char kChromeUIHistoryFrameHost[] = "history-frame";
 const char kChromeUIIdentityInternalsHost[] = "identity-internals";
 const char kChromeUIInspectHost[] = "inspect";
 const char kChromeUIInstantHost[] = "instant";
+const char kChromeUIInterstitialHost[] = "interstitials";
 const char kChromeUIInvalidationsHost[] = "invalidations";
 const char kChromeUIIPCHost[] = "ipc";
 const char kChromeUIKillHost[] = "kill";
-const char kChromeUIManagedUserPassphrasePageHost[] = "managed-user-passphrase";
 const char kChromeUIMemoryHost[] = "memory";
 const char kChromeUIMemoryInternalsHost[] = "memory-internals";
 const char kChromeUIMemoryRedirectHost[] = "memory-redirect";
@@ -221,10 +230,12 @@ const char kChromeUISettingsHost[] = "settings";
 const char kChromeUISettingsFrameHost[] = "settings-frame";
 const char kChromeUIShorthangHost[] = "shorthang";
 const char kChromeUISignInInternalsHost[] = "signin-internals";
-const char kChromeUISuggestionsHost[] = "suggestions";
-const char kChromeUISuggestionsInternalsHost[] = "suggestions-internals";
 const char kChromeUISSLClientCertificateSelectorHost[] = "select-cert";
 const char kChromeUIStatsHost[] = "stats";
+const char kChromeUISuggestionsHost[] = "suggestions";
+const char kChromeUISuggestionsInternalsHost[] = "suggestions-internals";
+const char kChromeUISupervisedUserPassphrasePageHost[] =
+    "managed-user-passphrase";
 const char kChromeUISyncHost[] = "sync";
 const char kChromeUISyncFileSystemInternalsHost[] = "syncfs-internals";
 const char kChromeUISyncInternalsHost[] = "sync-internals";
@@ -242,6 +253,7 @@ const char kChromeUIUberFrameHost[] = "uber-frame";
 const char kChromeUIUberHost[] = "chrome";
 const char kChromeUIUserActionsHost[] = "user-actions";
 const char kChromeUIVersionHost[] = "version";
+const char kChromeUIVoiceSearchHost[] = "voicesearch";
 const char kChromeUIWorkersHost[] = "workers";
 
 const char kChromeUIScreenshotPath[] = "screenshots";
@@ -320,13 +332,13 @@ const char kExtensionsSubPage[] = "extensions";
 const char kHandlerSettingsSubPage[] = "handlers";
 const char kImportDataSubPage[] = "importData";
 const char kLanguageOptionsSubPage[] = "languages";
-const char kSupervisedUserSettingsSubPage[] = "managedUser";
 const char kManageProfileSubPage[] = "manageProfile";
 const char kPasswordManagerSubPage[] = "passwords";
 const char kResetProfileSettingsSubPage[] = "resetProfileSettings";
 const char kSearchEnginesSubPage[] = "searchEngines";
 const char kSearchSubPage[] = "search";
 const char kSearchUsersSubPage[] = "search#Users";
+const char kSupervisedUserSettingsSubPage[] = "managedUser";
 const char kSyncSetupSubPage[] = "syncSetup";
 #if defined(OS_CHROMEOS)
 const char kInternetOptionsSubPage[] = "internet";
@@ -353,6 +365,9 @@ const char kPasswordManagerLearnMoreURL[] =
 #else
     "https://support.google.com/chrome/?p=settings_password";
 #endif
+
+const char kPasswordManagerAccountDashboardURL[] =
+    "https://passwords.google.com/settings/passwords";
 
 const char kExtensionControlledSettingLearnMoreURL[] =
     "https://support.google.com/chrome/?p=ui_settings_api_extension";
@@ -572,11 +587,14 @@ const char* const kChromeHostURLs[] = {
   kChromeUIProfilerHost,
   kChromeUISignInInternalsHost,
   kChromeUIStatsHost,
+  kChromeUISuggestionsHost,
   kChromeUISyncInternalsHost,
   kChromeUITermsHost,
+  kChromeUIThumbnailListHost,
   kChromeUITranslateInternalsHost,
   kChromeUIUserActionsHost,
   kChromeUIVersionHost,
+  kChromeUIVoiceSearchHost,
   content::kChromeUIAccessibilityHost,
   content::kChromeUIAppCacheInternalsHost,
   content::kChromeUIBlobInternalsHost,
@@ -681,8 +699,6 @@ const char kChromeSearchRemoteNtpHost[] = "remote-ntp";
 const char kChromeSearchMostVisitedHost[] = "most-visited";
 const char kChromeSearchMostVisitedUrl[] = "chrome-search://most-visited/";
 
-const char kDomDistillerScheme[] = "chrome-distiller";
-
 // Google SafeSearch query parameters.
 const char kSafeSearchSafeParameter[] = "safe=active";
 const char kSafeSearchSsuiParameter[] = "ssui=on";
@@ -706,9 +722,7 @@ const char kMac32BitDeprecationURL[] =
 #endif
 #endif
 
-// TODO(tengs): Replace with real URL when ready.
 const char kEasyUnlockLearnMoreUrl[] =
-    "https://support.google.com/chromebook/?p=easy_unlock";
-const char kEasyUnlockManagementUrl[] = "https://chrome.com";
+    "https://support.google.com/chromebook/answer/6070209";
 
 }  // namespace chrome

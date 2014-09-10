@@ -934,7 +934,8 @@ Channel::Channel(int32_t channelId,
                                                    true)),
     rtcp_bandwidth_observer_(
         bitrate_controller_->CreateRtcpBandwidthObserver()),
-    send_bitrate_observer_(new VoEBitrateObserver(this))
+    send_bitrate_observer_(new VoEBitrateObserver(this)),
+    network_predictor_(new NetworkPredictor(Clock::GetRealTimeClock()))
 {
     WEBRTC_TRACE(kTraceMemory, kTraceVoice, VoEId(_instanceId,_channelId),
                  "Channel::Channel() - ctor");
@@ -1537,8 +1538,13 @@ Channel::OnNetworkChanged(const uint32_t bitrate_bps,
   WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
       "Channel::OnNetworkChanged(bitrate_bps=%d, fration_lost=%d, rtt=%d)",
       bitrate_bps, fraction_lost, rtt);
+  // |fraction_lost| from BitrateObserver is short time observation of packet
+  // loss rate from past. We use network predictor to make a more reasonable
+  // loss rate estimation.
+  network_predictor_->UpdatePacketLossRate(fraction_lost);
+  uint8_t loss_rate = network_predictor_->GetLossRate();
   // Normalizes rate to 0 - 100.
-  if (audio_coding_->SetPacketLossRate(100 * fraction_lost / 255) != 0) {
+  if (audio_coding_->SetPacketLossRate(100 * loss_rate / 255) != 0) {
     _engineStatisticsPtr->SetLastError(VE_AUDIO_CODING_MODULE_ERROR,
         kTraceError, "OnNetworkChanged() failed to set packet loss rate");
     assert(false);  // This should not happen.
@@ -1741,6 +1747,19 @@ Channel::SetSendCNPayloadType(int type, PayloadFrequencies frequency)
         }
     }
     return 0;
+}
+
+int Channel::SetOpusMaxBandwidth(int bandwidth_hz) {
+  WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId, _channelId),
+               "Channel::SetOpusMaxBandwidth()");
+
+  if (audio_coding_->SetOpusMaxBandwidth(bandwidth_hz) != 0) {
+    _engineStatisticsPtr->SetLastError(
+        VE_AUDIO_CODING_MODULE_ERROR, kTraceError,
+        "SetOpusMaxBandwidth() failed to set maximum encoding bandwidth");
+    return -1;
+  }
+  return 0;
 }
 
 int32_t Channel::RegisterExternalTransport(Transport& transport)
@@ -3179,22 +3198,6 @@ Channel::SetRTCP_CNAME(const char cName[256])
 }
 
 int
-Channel::GetRTCP_CNAME(char cName[256])
-{
-    if (_rtpRtcpModule->CNAME(cName) != 0)
-    {
-        _engineStatisticsPtr->SetLastError(
-            VE_RTP_RTCP_MODULE_ERROR, kTraceError,
-            "GetRTCP_CNAME() failed to retrieve RTCP CNAME");
-        return -1;
-    }
-    WEBRTC_TRACE(kTraceStateInfo, kTraceVoice,
-                 VoEId(_instanceId, _channelId),
-                 "GetRTCP_CNAME() => cName=%s", cName);
-    return 0;
-}
-
-int
 Channel::GetRemoteRTCP_CNAME(char cName[256])
 {
     if (cName == NULL)
@@ -3781,7 +3784,7 @@ Channel::PrepareEncodeAndSend(int mixingFrequency)
     {
         WEBRTC_TRACE(kTraceWarning, kTraceVoice, VoEId(_instanceId,_channelId),
                      "Channel::PrepareEncodeAndSend() invalid audio frame");
-        return -1;
+        return 0xFFFFFFFF;
     }
 
     if (channel_state_.Get().input_file_playing)
@@ -3835,7 +3838,7 @@ Channel::EncodeAndSend()
     {
         WEBRTC_TRACE(kTraceWarning, kTraceVoice, VoEId(_instanceId,_channelId),
                      "Channel::EncodeAndSend() invalid audio frame");
-        return -1;
+        return 0xFFFFFFFF;
     }
 
     _audioFrame.id_ = _channelId;
@@ -3848,7 +3851,7 @@ Channel::EncodeAndSend()
     {
         WEBRTC_TRACE(kTraceError, kTraceVoice, VoEId(_instanceId,_channelId),
                      "Channel::EncodeAndSend() ACM encoding failed");
-        return -1;
+        return 0xFFFFFFFF;
     }
 
     _timeStamp += _audioFrame.samples_per_channel_;
@@ -4035,12 +4038,8 @@ void Channel::UpdatePlayoutTimestamp(bool rtcp) {
   uint32_t playout_timestamp = 0;
 
   if (audio_coding_->PlayoutTimestamp(&playout_timestamp) == -1)  {
-    WEBRTC_TRACE(kTraceWarning, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::UpdatePlayoutTimestamp() failed to read playout"
-                 " timestamp from the ACM");
-    _engineStatisticsPtr->SetLastError(
-        VE_CANNOT_RETRIEVE_VALUE, kTraceError,
-        "UpdatePlayoutTimestamp() failed to retrieve timestamp");
+    // This can happen if this channel has not been received any RTP packet. In
+    // this case, NetEq is not capable of computing playout timestamp.
     return;
   }
 
@@ -4198,7 +4197,7 @@ Channel::MixOrReplaceAudioWithFile(int mixingFrequency)
         // Currently file stream is always mono.
         // TODO(xians): Change the code when FilePlayer supports real stereo.
         _audioFrame.UpdateFrame(_channelId,
-                                -1,
+                                0xFFFFFFFF,
                                 fileBuffer.get(),
                                 fileSamples,
                                 mixingFrequency,
@@ -4214,9 +4213,9 @@ int32_t
 Channel::MixAudioWithFile(AudioFrame& audioFrame,
                           int mixingFrequency)
 {
-    assert(mixingFrequency <= 32000);
+    assert(mixingFrequency <= 48000);
 
-    scoped_ptr<int16_t[]> fileBuffer(new int16_t[640]);
+    scoped_ptr<int16_t[]> fileBuffer(new int16_t[960]);
     int fileSamples(0);
 
     {

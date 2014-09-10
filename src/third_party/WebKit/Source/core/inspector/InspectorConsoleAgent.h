@@ -25,8 +25,8 @@
 #ifndef InspectorConsoleAgent_h
 #define InspectorConsoleAgent_h
 
-#include "bindings/v8/ScriptState.h"
-#include "bindings/v8/ScriptString.h"
+#include "bindings/core/v8/ScriptState.h"
+#include "bindings/core/v8/ScriptString.h"
 #include "core/InspectorFrontend.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/inspector/InspectorBaseAgent.h"
@@ -38,15 +38,17 @@
 #include "wtf/Vector.h"
 #include "wtf/text/StringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 class ConsoleMessage;
 class DocumentLoader;
 class LocalDOMWindow;
 class LocalFrame;
+class InspectorConsoleMessage;
 class InspectorFrontend;
 class InjectedScriptManager;
 class InspectorTimelineAgent;
+class InspectorTracingAgent;
 class InstrumentingAgents;
 class ResourceError;
 class ResourceLoader;
@@ -55,6 +57,7 @@ class ScriptArguments;
 class ScriptCallStack;
 class ScriptProfile;
 class ThreadableLoaderClient;
+class WorkerGlobalScopeProxy;
 class XMLHttpRequest;
 
 typedef String ErrorString;
@@ -62,8 +65,9 @@ typedef String ErrorString;
 class InspectorConsoleAgent : public InspectorBaseAgent<InspectorConsoleAgent>, public InspectorBackendDispatcher::ConsoleCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorConsoleAgent);
 public:
-    InspectorConsoleAgent(InspectorTimelineAgent*, InjectedScriptManager*);
+    InspectorConsoleAgent(InspectorTimelineAgent*, InspectorTracingAgent*, InjectedScriptManager*);
     virtual ~InspectorConsoleAgent();
+    virtual void trace(Visitor*) OVERRIDE;
 
     virtual void init() OVERRIDE;
     virtual void enable(ErrorString*) OVERRIDE FINAL;
@@ -76,16 +80,14 @@ public:
     virtual void clearFrontend() OVERRIDE FINAL;
     virtual void restore() OVERRIDE FINAL;
 
-    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>, unsigned long requestIdentifier = 0);
-    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, const String& scriptId, unsigned lineNumber, unsigned columnNumber = 0, ScriptState* = 0, unsigned long requestIdentifier = 0);
-
-    // FIXME: Remove once we no longer generate stacks outside of Inspector.
-    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack>, unsigned long requestIdentifier = 0);
-
+    void addConsoleAPIMessageToConsole(MessageType, MessageLevel, const String& message, ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>, unsigned long requestIdentifier = 0);
+    void addMessageToConsole(ConsoleMessage*);
+    void adoptWorkerConsoleMessages(WorkerGlobalScopeProxy*);
     Vector<unsigned> consoleMessageArgumentCounts();
 
     void consoleTime(ExecutionContext*, const String& title);
     void consoleTimeEnd(ExecutionContext*, const String& title, ScriptState*);
+    void setTracingBasedTimeline(ErrorString*, bool enabled);
     void consoleTimeline(ExecutionContext*, const String& title, ScriptState*);
     void consoleTimelineEnd(ExecutionContext*, const String& title, ScriptState*);
 
@@ -106,12 +108,13 @@ public:
     virtual bool isWorkerAgent() = 0;
 
 protected:
-    void addConsoleMessage(PassOwnPtr<ConsoleMessage>);
+    void addConsoleMessage(PassOwnPtr<InspectorConsoleMessage>);
 
-    InspectorTimelineAgent* m_timelineAgent;
-    InjectedScriptManager* m_injectedScriptManager;
+    RawPtrWillBeMember<InspectorTimelineAgent> m_timelineAgent;
+    RawPtrWillBeMember<InspectorTracingAgent> m_tracingAgent;
+    RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
     InspectorFrontend::Console* m_frontend;
-    Vector<OwnPtr<ConsoleMessage> > m_consoleMessages;
+    Vector<OwnPtr<InspectorConsoleMessage> > m_consoleMessages;
     int m_expiredConsoleMessageCount;
     HashCountedSet<String> m_counts;
     HashMap<String, double> m_times;
@@ -120,7 +123,7 @@ private:
     static int s_enabledAgentCount;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // !defined(InspectorConsoleAgent_h)

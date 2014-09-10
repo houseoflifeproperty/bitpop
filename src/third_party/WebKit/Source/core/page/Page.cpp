@@ -30,7 +30,6 @@
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/DOMTimer.h"
 #include "core/frame/LocalDOMWindow.h"
-#include "core/frame/EventHandlerRegistry.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
@@ -53,7 +52,6 @@
 #include "core/page/StorageClient.h"
 #include "core/page/ValidationMessageClient.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/rendering/FastTextAutosizer.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/TextAutosizer.h"
 #include "core/storage/StorageNamespace.h"
@@ -63,7 +61,7 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/Base64.h"
 
-namespace WebCore {
+namespace blink {
 
 DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, pageCounter, ("Page"));
 
@@ -137,7 +135,7 @@ Page::Page(PageClients& pageClients)
     , m_timerAlignmentInterval(DOMTimer::visiblePageAlignmentInterval())
     , m_visibilityState(PageVisibilityStateVisible)
     , m_isCursorVisible(true)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     , m_isPainting(false)
 #endif
     , m_frameHost(FrameHost::create(*this))
@@ -202,7 +200,11 @@ PassRefPtrWillBeRawPtr<ClientRectList> Page::nonFastScrollableRects(const LocalF
 
 void Page::setMainFrame(Frame* mainFrame)
 {
-    ASSERT(!m_mainFrame); // Should only be called during initialization
+    // Should only be called during initialization or swaps between local and
+    // remote frames.
+    // FIXME: Unfortunately we can't assert on this at the moment, because this
+    // is called in the base constructor for both LocalFrame and RemoteFrame,
+    // when the vtables for the derived classes have not yet been setup.
     m_mainFrame = mainFrame;
 }
 
@@ -213,7 +215,6 @@ void Page::documentDetached(Document* document)
     m_contextMenuController->documentDetached(document);
     if (m_validationMessageClient)
         m_validationMessageClient->documentDetached(*document);
-    m_frameHost->eventHandlerRegistry().documentDetached(*document);
 }
 
 bool Page::openedByDOM() const
@@ -428,7 +429,7 @@ double Page::timerAlignmentInterval() const
     return m_timerAlignmentInterval;
 }
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 void Page::checkSubframeCountConsistency() const
 {
     ASSERT(m_subframeCount >= 0);
@@ -447,10 +448,10 @@ void Page::setVisibilityState(PageVisibilityState visibilityState, bool isInitia
         return;
     m_visibilityState = visibilityState;
 
-    if (visibilityState == WebCore::PageVisibilityStateHidden)
-        setTimerAlignmentInterval(DOMTimer::hiddenPageAlignmentInterval());
-    else
+    if (visibilityState == blink::PageVisibilityStateVisible)
         setTimerAlignmentInterval(DOMTimer::visiblePageAlignmentInterval());
+    else
+        setTimerAlignmentInterval(DOMTimer::hiddenPageAlignmentInterval());
 
     if (!isInitialState)
         lifecycleNotifier().notifyPageVisibilityChanged();
@@ -518,19 +519,8 @@ void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
     case SettingsDelegate::TextAutosizingChange:
         if (!mainFrame() || !mainFrame()->isLocalFrame())
             break;
-        if (FastTextAutosizer* textAutosizer = deprecatedLocalMainFrame()->document()->fastTextAutosizer()) {
+        if (TextAutosizer* textAutosizer = deprecatedLocalMainFrame()->document()->textAutosizer())
             textAutosizer->updatePageInfoInAllFrames();
-        } else {
-            for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
-                if (!frame->isLocalFrame())
-                    continue;
-                if (TextAutosizer* textAutosizer = toLocalFrame(frame)->document()->textAutosizer())
-                    textAutosizer->recalculateMultipliers();
-            }
-            // TextAutosizing updates RenderStyle during layout phase (via TextAutosizer::processSubtree).
-            // We should invoke setNeedsLayout here.
-            setNeedsLayoutInAllFrames();
-        }
         break;
     case SettingsDelegate::ScriptEnableChange:
         m_inspectorController->scriptsEnabled(settings().scriptEnabled());
@@ -594,22 +584,26 @@ PassOwnPtr<LifecycleNotifier<Page> > Page::createLifecycleNotifier()
 
 void Page::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_dragCaretController);
     visitor->trace(m_dragController);
+    visitor->trace(m_contextMenuController);
+    visitor->trace(m_inspectorController);
     visitor->trace(m_pointerLockController);
     visitor->trace(m_undoStack);
     visitor->trace(m_validationMessageClient);
     visitor->trace(m_multisamplingChangedObservers);
     visitor->trace(m_frameHost);
+#endif
     WillBeHeapSupplementable<Page>::trace(visitor);
+    LifecycleContext<Page>::trace(visitor);
 }
 
 void Page::willBeDestroyed()
 {
     RefPtr<Frame> mainFrame = m_mainFrame;
 
-    if (mainFrame->isLocalFrame())
-        toLocalFrame(mainFrame.get())->loader().frameDetached();
+    mainFrame->detach();
 
     // Disable all agents prior to resetting the frame view.
     m_inspectorController->willBeDestroyed();
@@ -655,4 +649,4 @@ Page::PageClients::~PageClients()
 {
 }
 
-} // namespace WebCore
+} // namespace blink

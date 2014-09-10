@@ -16,11 +16,15 @@ assert(is_win)
 gyp_win_tool_path = rebase_path("//tools/gyp/pylib/gyp/win_tool.py",
                                 root_build_dir)
 exec_script("setup_toolchain.py",
-            [ visual_studio_path, gyp_win_tool_path, windows_sdk_path ],
-            "string")
+            [ visual_studio_path, gyp_win_tool_path, windows_sdk_path ])
 
 stamp_command = "$python_path gyp-win-tool stamp \$out"
 copy_command = "$python_path gyp-win-tool recursive-mirror \$in \$out"
+
+# MSVC can't share PDB files between compilers compiling C and C++ files, so
+# we construct different names for each type.
+c_pdb_suffix = " /Fd\${target_out_dir}/\${target_name}_c.pdb"
+cc_pdb_suffix = " /Fd\${target_out_dir}/\${target_name}_cc.pdb"
 
 # 32-bit toolchain -------------------------------------------------------------
 
@@ -29,20 +33,20 @@ toolchain("32") {
   lib_prefix = ""
   lib_dir_prefix="/LIBPATH:"
 
-  cc_command = "ninja -t msvc -e environment.x86 -- cl.exe /nologo /showIncludes /FC @\$out.rsp /c \$in /Fo\$out /Fd\$pdbname"
+  cc_command = "ninja -t msvc -e environment.x86 -- cl.exe /nologo /showIncludes /FC @\$out.rsp /c \$in /Fo\$out"
   tool("cc") {
-    command = cc_command
+    command = cc_command + c_pdb_suffix
     description = "CC \$out"
     rspfile = "\$out.rsp"
     rspfile_content = "\$defines \$includes \$cflags \$cflags_c"
-    deps = "msvc"
+    depsformat = "msvc"
   }
   tool("cxx") {
-    command = cc_command  # Same as above
+    command = cc_command + cc_pdb_suffix
     description = "CXX \$out"
     rspfile = "\$out.rsp"
     rspfile_content = "\$defines \$includes \$cflags \$cflags_cc"
-    deps = "msvc"
+    depsformat = "msvc"
   }
   tool("rc") {
     command = "$python_path gyp-win-tool rc-wrapper environment.x86 rc.exe \$defines \$includes \$rcflags /fo\$out \$in"
@@ -88,20 +92,20 @@ toolchain("64") {
   lib_prefix = ""
   lib_dir_prefix="/LIBPATH:"
 
-  cc_command = "ninja -t msvc -e environment.x64 -- cl.exe /nologo /showIncludes /FC @\$out.rsp /c \$in /Fo\$out /Fd\$pdbname"
+  cc_command = "ninja -t msvc -e environment.x64 -- cl.exe /nologo /showIncludes /FC @\$out.rsp /c \$in /Fo\$out"
   tool("cc") {
-    command = cc_command
+    command = cc_command + c_pdb_suffix
     description = "CC \$out"
     rspfile = "\$out.rsp"
     rspfile_content = "\$defines \$includes \$cflags \$cflags_c"
-    deps = "msvc"
+    depsformat = "msvc"
   }
   tool("cxx") {
-    command = cc_command  # Same as above
+    command = cc_command + cc_pdb_suffix
     description = "CXX \$out"
     rspfile = "\$out.rsp"
     rspfile_content = "\$defines \$includes \$cflags \$cflags_cc"
-    deps = "msvc"
+    depsformat = "msvc"
   }
   tool("rc") {
     command = "$python_path gyp-win-tool rc-wrapper environment.x64 rc.exe \$defines \$includes \$rcflags /fo\$out \$in"

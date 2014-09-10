@@ -35,7 +35,7 @@
 #include <gtest/gtest.h>
 
 using testing::Test;
-using namespace WebCore;
+using namespace blink;
 
 class ImageFilterBuilderTest : public Test {
 protected:
@@ -56,7 +56,7 @@ protected:
 
         // Add a blend effect (with inputs : blur, source)
         RefPtr<FilterEffect> blendEffect =
-            FEBlend::create(referenceFilter.get(), FEBLEND_MODE_NORMAL);
+            FEBlend::create(referenceFilter.get(), WebBlendModeNormal);
         blendEffect->setOperatingColorSpace(ColorSpaceDeviceRGB);
         FilterEffectVector& blendInputs = blendEffect->inputEffects();
         blendInputs.reserveCapacity(2);

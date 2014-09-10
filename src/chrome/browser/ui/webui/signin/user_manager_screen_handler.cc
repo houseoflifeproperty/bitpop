@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/webui/signin/user_manager_screen_handler.h"
 
 #include "base/bind.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/value_conversions.h"
 #include "base/values.h"
@@ -15,12 +16,14 @@
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/local_auth.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/singleton_tabs.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -38,10 +41,6 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_util.h"
 
-#if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/supervised_user/supervised_user_service.h"
-#endif
-
 namespace {
 // User dictionary keys.
 const char kKeyUsername[] = "username";
@@ -49,7 +48,7 @@ const char kKeyDisplayName[]= "displayName";
 const char kKeyEmailAddress[] = "emailAddress";
 const char kKeyProfilePath[] = "profilePath";
 const char kKeyPublicAccount[] = "publicAccount";
-const char kKeyLocallyManagedUser[] = "locallyManagedUser";
+const char kKeySupervisedUser[] = "supervisedUser";
 const char kKeySignedIn[] = "signedIn";
 const char kKeyCanRemove[] = "canRemove";
 const char kKeyIsOwner[] = "isOwner";
@@ -124,7 +123,9 @@ size_t GetIndexOfProfileWithEmailAndName(const ProfileInfoCache& info_cache,
                                          const base::string16& name) {
   for (size_t i = 0; i < info_cache.GetNumberOfProfiles(); ++i) {
     if (info_cache.GetUserNameOfProfileAtIndex(i) == email &&
-        (name.empty() || info_cache.GetNameOfProfileAtIndex(i) == name)) {
+        (name.empty() ||
+         profiles::GetAvatarNameForProfile(
+             info_cache.GetPathOfProfileAtIndex(i)) == name)) {
       return i;
     }
   }
@@ -141,6 +142,12 @@ extensions::ScreenlockPrivateEventRouter* GetScreenlockRouter(
       ->GetProfileByPath(info_cache.GetPathOfProfileAtIndex(profile_index));
   return extensions::ScreenlockPrivateEventRouter::GetFactoryInstance()->Get(
       profile);
+}
+
+bool IsGuestModeEnabled() {
+  PrefService* service = g_browser_process->local_state();
+  DCHECK(service);
+  return service->GetBoolean(prefs::kBrowserGuestModeEnabled);
 }
 
 }  // namespace
@@ -216,7 +223,8 @@ UserManagerScreenHandler::~UserManagerScreenHandler() {
   ScreenlockBridge::Get()->SetLockHandler(NULL);
 }
 
-void UserManagerScreenHandler::ShowBannerMessage(const std::string& message) {
+void UserManagerScreenHandler::ShowBannerMessage(
+    const base::string16& message) {
   web_ui()->CallJavascriptFunction(
       "login.AccountPickerScreen.showBannerMessage",
       base::StringValue(message));
@@ -224,19 +232,14 @@ void UserManagerScreenHandler::ShowBannerMessage(const std::string& message) {
 
 void UserManagerScreenHandler::ShowUserPodCustomIcon(
     const std::string& user_email,
-    const gfx::Image& icon) {
-  gfx::ImageSkia icon_skia = icon.AsImageSkia();
-  base::DictionaryValue icon_representations;
-  icon_representations.SetString(
-      "scale1x",
-      webui::GetBitmapDataUrl(icon_skia.GetRepresentation(1.0f).sk_bitmap()));
-  icon_representations.SetString(
-      "scale2x",
-      webui::GetBitmapDataUrl(icon_skia.GetRepresentation(2.0f).sk_bitmap()));
+    const ScreenlockBridge::UserPodCustomIconOptions& icon_options) {
+  scoped_ptr<base::DictionaryValue> icon = icon_options.ToDictionaryValue();
+  if (!icon || icon->empty())
+    return;
   web_ui()->CallJavascriptFunction(
       "login.AccountPickerScreen.showUserPodCustomIcon",
       base::StringValue(user_email),
-      icon_representations);
+      *icon);
 }
 
 void UserManagerScreenHandler::HideUserPodCustomIcon(
@@ -253,7 +256,11 @@ void UserManagerScreenHandler::EnableInput() {
 void UserManagerScreenHandler::SetAuthType(
     const std::string& user_email,
     ScreenlockBridge::LockHandler::AuthType auth_type,
-    const std::string& auth_value) {
+    const base::string16& auth_value) {
+  if (GetAuthType(user_email) ==
+          ScreenlockBridge::LockHandler::FORCE_OFFLINE_PASSWORD)
+    return;
+
   user_auth_type_map_[user_email] = auth_type;
   web_ui()->CallJavascriptFunction(
       "login.AccountPickerScreen.setAuthType",
@@ -283,7 +290,8 @@ void UserManagerScreenHandler::Unlock(const std::string& user_email) {
 
 void UserManagerScreenHandler::HandleInitialize(const base::ListValue* args) {
   SendUserList();
-  web_ui()->CallJavascriptFunction("cr.ui.Oobe.showUserManagerScreen");
+  web_ui()->CallJavascriptFunction("cr.ui.Oobe.showUserManagerScreen",
+      base::FundamentalValue(IsGuestModeEnabled()));
   desktop_type_ = chrome::GetHostDesktopTypeForNativeView(
       web_ui()->GetWebContents()->GetNativeView());
 
@@ -366,13 +374,20 @@ void UserManagerScreenHandler::HandleRemoveUser(const base::ListValue* args) {
   g_browser_process->profile_manager()->ScheduleProfileForDeletion(
       profile_path,
       base::Bind(&OpenNewWindowForProfile, desktop_type_));
-  ProfileMetrics::LogProfileDeleteUser(ProfileMetrics::PROFILE_DELETED);
+  ProfileMetrics::LogProfileDeleteUser(
+      ProfileMetrics::DELETE_PROFILE_USER_MANAGER);
 }
 
 void UserManagerScreenHandler::HandleLaunchGuest(const base::ListValue* args) {
-  profiles::SwitchToGuestProfile(desktop_type_,
-                                 base::Bind(&OnSwitchToProfileComplete));
-  ProfileMetrics::LogProfileSwitchUser(ProfileMetrics::SWITCH_PROFILE_GUEST);
+  if (IsGuestModeEnabled()) {
+    profiles::SwitchToGuestProfile(desktop_type_,
+                                   base::Bind(&OnSwitchToProfileComplete));
+    ProfileMetrics::LogProfileSwitchUser(ProfileMetrics::SWITCH_PROFILE_GUEST);
+  } else {
+    // The UI should have prevented the user from allowing the selection of
+    // guest mode.
+    NOTREACHED();
+  }
 }
 
 void UserManagerScreenHandler::HandleLaunchUser(const base::ListValue* args) {
@@ -417,6 +432,16 @@ void UserManagerScreenHandler::HandleAttemptUnlock(
   std::string email;
   CHECK(args->GetString(0, &email));
   GetScreenlockRouter(email)->OnAuthAttempted(GetAuthType(email), "");
+}
+
+void UserManagerScreenHandler::HandleHardlockUserPod(
+    const base::ListValue* args) {
+  std::string email;
+  CHECK(args->GetString(0, &email));
+  SetAuthType(email,
+              ScreenlockBridge::LockHandler::FORCE_OFFLINE_PASSWORD,
+              base::string16());
+  HideUserPodCustomIcon(email);
 }
 
 void UserManagerScreenHandler::OnClientLoginSuccess(
@@ -500,7 +525,7 @@ void UserManagerScreenHandler::GetLocalizedValues(
   localized_strings->SetString("screenType", "login-add-user");
   localized_strings->SetString("highlightStrength", "normal");
   localized_strings->SetString("title",
-      l10n_util::GetStringUTF16(IDS_USER_MANAGER_SCREEN_TITLE));
+      l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
   localized_strings->SetString("passwordHint",
       l10n_util::GetStringUTF16(IDS_LOGIN_POD_EMPTY_PASSWORD_TEXT));
   localized_strings->SetString("podMenuButtonAccessibleName",
@@ -525,10 +550,6 @@ void UserManagerScreenHandler::GetLocalizedValues(
           base::UTF8ToUTF16(chrome::kSupervisedUserManagementDisplayURL)));
 
   // Strings needed for the User Manager tutorial slides.
-  localized_strings->SetString("tutorialStart",
-      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_START));
-  localized_strings->SetString("tutorialSkip",
-      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_SKIP));
   localized_strings->SetString("tutorialNext",
       l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_NEXT));
   localized_strings->SetString("tutorialDone",
@@ -564,9 +585,13 @@ void UserManagerScreenHandler::GetLocalizedValues(
   // Strings needed for the user_pod_template public account div, but not ever
   // actually displayed for desktop users.
   localized_strings->SetString("publicAccountReminder", base::string16());
+  localized_strings->SetString("publicSessionLanguageAndInput",
+                               base::string16());
   localized_strings->SetString("publicAccountEnter", base::string16());
   localized_strings->SetString("publicAccountEnterAccessibleName",
                                base::string16());
+  localized_strings->SetString("publicSessionSelectLanguage", base::string16());
+  localized_strings->SetString("publicSessionSelectKeyboard", base::string16());
   localized_strings->SetString("signinBannerText", base::string16());
   localized_strings->SetString("launchAppButton", base::string16());
   localized_strings->SetString("multiProfilesRestrictedPolicyTitle",
@@ -574,6 +599,8 @@ void UserManagerScreenHandler::GetLocalizedValues(
   localized_strings->SetString("multiProfilesNotAllowedPolicyMsg",
                                 base::string16());
   localized_strings->SetString("multiProfilesPrimaryOnlyPolicyMsg",
+                                base::string16());
+  localized_strings->SetString("multiProfilesOwnerPrimaryOnlyMsg",
                                 base::string16());
 }
 
@@ -599,12 +626,14 @@ void UserManagerScreenHandler::SendUserList() {
         kKeyUsername, info_cache.GetUserNameOfProfileAtIndex(i));
     profile_value->SetString(
         kKeyEmailAddress, info_cache.GetUserNameOfProfileAtIndex(i));
+    // The profiles displayed in the User Manager are never guest profiles.
     profile_value->SetString(
-        kKeyDisplayName, info_cache.GetNameOfProfileAtIndex(i));
+        kKeyDisplayName,
+        profiles::GetAvatarNameForProfile(profile_path));
     profile_value->SetString(kKeyProfilePath, profile_path.MaybeAsASCII());
     profile_value->SetBoolean(kKeyPublicAccount, false);
     profile_value->SetBoolean(
-        kKeyLocallyManagedUser, info_cache.ProfileIsSupervisedAtIndex(i));
+        kKeySupervisedUser, info_cache.ProfileIsSupervisedAtIndex(i));
     profile_value->SetBoolean(kKeySignedIn, is_active_user);
     profile_value->SetBoolean(
         kKeyNeedsSignin, info_cache.ProfileIsSigninRequiredAtIndex(i));
@@ -622,7 +651,7 @@ void UserManagerScreenHandler::SendUserList() {
   }
 
   web_ui()->CallJavascriptFunction("login.AccountPickerScreen.loadUsers",
-    users_list, base::FundamentalValue(false), base::FundamentalValue(true));
+      users_list, base::FundamentalValue(IsGuestModeEnabled()));
 }
 
 void UserManagerScreenHandler::ReportAuthenticationResult(

@@ -28,7 +28,7 @@
 
 #include "core/rendering/RenderBox.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderTable;
 class RenderTableCell;
@@ -36,6 +36,7 @@ class RenderTableCell;
 class RenderTableCol FINAL : public RenderBox {
 public:
     explicit RenderTableCol(Element*);
+    virtual void trace(Visitor*) OVERRIDE;
 
     RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
     RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
@@ -96,7 +97,7 @@ private:
     virtual bool canHaveChildren() const OVERRIDE;
     virtual LayerType layerTypeRequired() const OVERRIDE { return NoLayer; }
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const OVERRIDE;
     virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) OVERRIDE;
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;

@@ -41,6 +41,10 @@ reproduced here:
   %(revision): build revision
   %(buildnumber): buildnumber
 
+The 'status_template' is what is sent to the status app if the tree is set to be
+closed. Its formatting arguments are found in gatekeeper_ng.py's
+close_tree_if_necessary().
+
 'forgive_all' converts all closing_steps to be forgiving_steps. Since
 forgiving_steps only email sheriffs + watchlist (not the committer), this is a
 great way to set up experimental or informational builders without spamming
@@ -113,6 +117,8 @@ DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Keys which have defaults besides None or set([]).
 DEFAULTS = {
+    'status_template': ('Tree is closed (Automatic: "%(unsatisfied)s" on '
+                        '"%(builder_name)s" %(blamelist)s)'),
     'subject_template': ('buildbot %(result)s in %(project_name)s on '
                          '%(builder_name)s, revision %(revision)s'),
 }
@@ -134,6 +140,7 @@ def load_gatekeeper_config(filename):
                  'excluded_steps',
                  'forgive_all',
                  'sheriff_classes',
+                 'status_template',
                  'subject_template',
                  'tree_notify',
   ]
@@ -146,6 +153,7 @@ def load_gatekeeper_config(filename):
                   'forgiving_optional',
                   'forgiving_steps',
                   'sheriff_classes',
+                  'status_template',
                   'subject_template',
                   'tree_notify',
   ]
@@ -153,7 +161,7 @@ def load_gatekeeper_config(filename):
   # These keys are strings instead of sets. Strings can't be merged,
   # so more specific (master -> category -> builder) strings clobber
   # more generic ones.
-  strings = ['forgive_all', 'subject_template']
+  strings = ['forgive_all', 'status_template', 'subject_template']
 
   with open(filename) as f:
     raw_gatekeeper_config = json.load(f)

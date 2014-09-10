@@ -32,9 +32,10 @@
 #define ResourceLoaderOptions_h
 
 #include "core/fetch/FetchInitiatorInfo.h"
+#include "platform/CrossThreadCopier.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
-namespace WebCore {
+namespace blink {
 
 enum ContentSniffingPolicy {
     SniffContent,
@@ -122,7 +123,27 @@ struct ResourceLoaderOptions {
     {
     }
 
-    ContentSniffingPolicy sniffContent;
+    // Answers the question "can a separate request with these
+    // different options be re-used" (e.g. preload request)
+    // The safe (but possibly slow) answer is always false.
+    bool canReuseRequest(const ResourceLoaderOptions& other) const
+    {
+        // sniffContent is dead code.
+        // dataBufferingPolicy differences are believed to be safe for re-use.
+        // FIXME: check allowCredentials.
+        // FIXME: check credentialsRequested.
+        // FIXME: check contentSecurityPolicyOption.
+        // initiatorInfo is purely informational and should be benign for re-use.
+        // requestInitiatorContext is benign (indicates document vs. worker)
+        // FIXME: check mixedContentBlockingTreatment.
+        // synchronousPolicy (safe to re-use an async XHR response for sync, etc.)
+        return corsEnabled == other.corsEnabled;
+        // securityOrigin has more complicated checks which callers are responsible for.
+    }
+
+    // When adding members, CrossThreadResourceLoaderOptionsData should be
+    // updated.
+    ContentSniffingPolicy sniffContent; // FIXME: Dead code, please remove.
     DataBufferingPolicy dataBufferingPolicy;
     StoredCredentials allowCredentials; // Whether HTTP credentials and cookies are sent with the request.
     CredentialRequest credentialsRequested; // Whether the client (e.g. XHR) wanted credentials in the first place.
@@ -135,6 +156,59 @@ struct ResourceLoaderOptions {
     RefPtr<SecurityOrigin> securityOrigin;
 };
 
-} // namespace WebCore
+// Encode AtomicString (in FetchInitiatorInfo) as String to cross threads.
+struct CrossThreadResourceLoaderOptionsData {
+    explicit CrossThreadResourceLoaderOptionsData(const ResourceLoaderOptions& options)
+        : sniffContent(options.sniffContent)
+        , dataBufferingPolicy(options.dataBufferingPolicy)
+        , allowCredentials(options.allowCredentials)
+        , credentialsRequested(options.credentialsRequested)
+        , contentSecurityPolicyOption(options.contentSecurityPolicyOption)
+        , initiatorInfo(options.initiatorInfo)
+        , requestInitiatorContext(options.requestInitiatorContext)
+        , mixedContentBlockingTreatment(options.mixedContentBlockingTreatment)
+        , synchronousPolicy(options.synchronousPolicy)
+        , corsEnabled(options.corsEnabled)
+        , securityOrigin(options.securityOrigin) { }
+
+    operator ResourceLoaderOptions() const
+    {
+        ResourceLoaderOptions options;
+        options.sniffContent = sniffContent;
+        options.dataBufferingPolicy = dataBufferingPolicy;
+        options.allowCredentials = allowCredentials;
+        options.credentialsRequested = credentialsRequested;
+        options.contentSecurityPolicyOption = contentSecurityPolicyOption;
+        options.initiatorInfo = initiatorInfo;
+        options.requestInitiatorContext = requestInitiatorContext;
+        options.mixedContentBlockingTreatment = mixedContentBlockingTreatment;
+        options.synchronousPolicy = synchronousPolicy;
+        options.corsEnabled = corsEnabled;
+        options.securityOrigin = securityOrigin;
+        return options;
+    }
+
+    ContentSniffingPolicy sniffContent;
+    DataBufferingPolicy dataBufferingPolicy;
+    StoredCredentials allowCredentials;
+    CredentialRequest credentialsRequested;
+    ContentSecurityPolicyCheck contentSecurityPolicyOption;
+    CrossThreadFetchInitiatorInfoData initiatorInfo;
+    RequestInitiatorContext requestInitiatorContext;
+    MixedContentBlockingTreatment mixedContentBlockingTreatment;
+    SynchronousPolicy synchronousPolicy;
+    CORSEnabled corsEnabled;
+    RefPtr<SecurityOrigin> securityOrigin;
+};
+
+template<> struct CrossThreadCopierBase<false, false, false, ResourceLoaderOptions> {
+    typedef CrossThreadResourceLoaderOptionsData Type;
+    static Type copy(const ResourceLoaderOptions& options)
+    {
+        return CrossThreadResourceLoaderOptionsData(options);
+    }
+};
+
+} // namespace blink
 
 #endif // ResourceLoaderOptions_h

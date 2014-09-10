@@ -578,7 +578,7 @@ function preparePeerConnection() {
     error_('creating peer connection, but we already have one.');
 
   global.peerConnection = createPeerConnection(STUN_SERVER);
-  print_('ok-peerconnection-created');
+  success_('ok-peerconnection-created');
 }
 
 /**
@@ -911,7 +911,8 @@ function getUserMediaFailedCallback_(error) {
 
 /** @private */
 function success_(method) {
-  print_(method + '(): success.');
+  $('messages').innerHTML += '<span style="color:green;">' + method +
+                             '(): success. </span><br>';
 }
 
 /** @private */
@@ -989,14 +990,21 @@ function onDataChannelReadyStateChange_() {
 function getUserMediaOkCallback_(stream) {
   global.localStream = stream;
   global.requestWebcamAndMicrophoneResult = 'ok-got-stream';
+  success_('getUserMedia');
 
   if (stream.getVideoTracks().length > 0) {
     // Show the video tag if we did request video in the getUserMedia call.
     var videoTag = $('local-view');
     attachMediaStream(videoTag, stream);
 
-   window.addEventListener('loadedmetadata', function() {
-       displayVideoSize_(videoTag);}, true);
+    window.addEventListener('loadedmetadata', function() {
+        displayVideoSize_(videoTag);}, true);
+
+    // Throw an error when no video is sent from camera but gUM returns OK.
+    stream.getVideoTracks()[0].onended = function() {
+      error_(global.localStream + ' getUserMedia successful but ' +
+             'MediaStreamTrack.onended event fired, no frames from camera.');
+    };
   }
 }
 
@@ -1054,11 +1062,12 @@ function registerLocalStorage_(element_id) {
           'Element \"' + element.tagName + '\" is not an input element. ');
   }
 
-  if (localStorage.getItem(element.id) == 'undefined') {
+  if (localStorage.getItem(element.id) == null) {
     storeLocalStorageField_(element);
   } else {
     getLocalStorageField_(element);
   }
+
   // Registers the appropriate events for input elements.
   if (element.type == 'checkbox') {
     element.onclick = function() { storeLocalStorageField_(this); };
@@ -1132,7 +1141,7 @@ function debug_(message) {
 /**
  * Print error message in the debug log + JS console and throw an Error.
  * @private
- * @param {string} message Text to print.
+ * @param {string} message Text to print in red.
  */
 function error_(message) {
   $('debug').innerHTML += '<span style="color:red;">' + message + '</span><br>';

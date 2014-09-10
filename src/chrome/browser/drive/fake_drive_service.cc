@@ -50,6 +50,7 @@ using google_apis::GetContentCallback;
 using google_apis::GetShareUrlCallback;
 using google_apis::HTTP_BAD_REQUEST;
 using google_apis::HTTP_CREATED;
+using google_apis::HTTP_FORBIDDEN;
 using google_apis::HTTP_NOT_FOUND;
 using google_apis::HTTP_NO_CONTENT;
 using google_apis::HTTP_PRECONDITION;
@@ -115,12 +116,6 @@ void ScheduleUploadRangeCallback(const UploadRangeCallback& callback,
                  base::Passed(&entry)));
 }
 
-void EntryActionCallbackAdapter(
-    const EntryActionCallback& callback,
-    GDataErrorCode error, scoped_ptr<FileResource> file) {
-  callback.Run(error);
-}
-
 void FileListCallbackAdapter(const FileListCallback& callback,
                              GDataErrorCode error,
                              scoped_ptr<ChangeList> change_list) {
@@ -137,12 +132,30 @@ void FileListCallbackAdapter(const FileListCallback& callback,
   callback.Run(error, file_list.Pass());
 }
 
+bool UserHasWriteAccess(google_apis::drive::PermissionRole user_permission) {
+  switch (user_permission) {
+    case google_apis::drive::PERMISSION_ROLE_OWNER:
+    case google_apis::drive::PERMISSION_ROLE_WRITER:
+      return true;
+    case google_apis::drive::PERMISSION_ROLE_READER:
+    case google_apis::drive::PERMISSION_ROLE_COMMENTER:
+      break;
+  }
+  return false;
+}
+
 }  // namespace
 
 struct FakeDriveService::EntryInfo {
+  EntryInfo() : user_permission(google_apis::drive::PERMISSION_ROLE_OWNER) {}
+
   google_apis::ChangeResource change_resource;
   GURL share_url;
   std::string content_data;
+
+  // Behaves in the same way as "userPermission" described in
+  // https://developers.google.com/drive/v2/reference/files
+  google_apis::drive::PermissionRole user_permission;
 };
 
 struct FakeDriveService::UploadSession {
@@ -301,10 +314,6 @@ void FakeDriveService::RemoveObserver(DriveServiceObserver* observer) {
 bool FakeDriveService::CanSendRequest() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return true;
-}
-
-ResourceIdCanonicalizer FakeDriveService::GetResourceIdCanonicalizer() const {
-  return util::GetIdentityResourceIdCanonicalizer();
 }
 
 bool FakeDriveService::HasAccessToken() const {
@@ -619,6 +628,12 @@ CancelCallback FakeDriveService::DeleteResource(
       return CancelCallback();
     }
 
+    if (entry->user_permission != google_apis::drive::PERMISSION_ROLE_OWNER) {
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE, base::Bind(callback, HTTP_FORBIDDEN));
+      return CancelCallback();
+    }
+
     change->set_deleted(true);
     AddNewChangestamp(change);
     change->set_file(scoped_ptr<FileResource>());
@@ -651,6 +666,9 @@ CancelCallback FakeDriveService::TrashResource(
     GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
     if (change->is_deleted() || file->labels().is_trashed()) {
       error = HTTP_NOT_FOUND;
+    } else if (entry->user_permission !=
+               google_apis::drive::PERMISSION_ROLE_OWNER) {
+      error = HTTP_FORBIDDEN;
     } else {
       file->mutable_labels()->set_trashed(true);
       AddNewChangestamp(change);
@@ -685,7 +703,7 @@ CancelCallback FakeDriveService::DownloadFile(
   }
 
   EntryInfo* entry = FindEntryByResourceId(resource_id);
-  if (!entry) {
+  if (!entry || entry->change_resource.file()->IsHostedDocument()) {
     base::MessageLoopProxy::current()->PostTask(
         FROM_HERE,
         base::Bind(download_action_callback, HTTP_NOT_FOUND, base::FilePath()));
@@ -824,6 +842,14 @@ CancelCallback FakeDriveService::UpdateResource(
 
   EntryInfo* entry = FindEntryByResourceId(resource_id);
   if (entry) {
+    if (!UserHasWriteAccess(entry->user_permission)) {
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE,
+          base::Bind(callback, HTTP_FORBIDDEN,
+                     base::Passed(scoped_ptr<FileResource>())));
+      return CancelCallback();
+    }
+
     ChangeResource* change = &entry->change_resource;
     FileResource* file = change->mutable_file();
 
@@ -862,18 +888,6 @@ CancelCallback FakeDriveService::UpdateResource(
       base::Bind(callback, HTTP_NOT_FOUND,
                  base::Passed(scoped_ptr<FileResource>())));
   return CancelCallback();
-}
-
-CancelCallback FakeDriveService::RenameResource(
-    const std::string& resource_id,
-    const std::string& new_title,
-    const EntryActionCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  return UpdateResource(
-      resource_id, std::string(), new_title, base::Time(), base::Time(),
-      base::Bind(&EntryActionCallbackAdapter, callback));
 }
 
 CancelCallback FakeDriveService::AddResourceToDirectory(
@@ -1019,6 +1033,13 @@ CancelCallback FakeDriveService::InitiateUploadExistingFile(
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback, HTTP_NOT_FOUND, GURL()));
+    return CancelCallback();
+  }
+
+  if (!UserHasWriteAccess(entry->user_permission)) {
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(callback, HTTP_FORBIDDEN, GURL()));
     return CancelCallback();
   }
 
@@ -1168,6 +1189,16 @@ CancelCallback FakeDriveService::AuthorizeApp(
     const AuthorizeAppCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
+
+  if (entries_.count(resource_id) == 0) {
+    callback.Run(google_apis::HTTP_NOT_FOUND, GURL());
+    return CancelCallback();
+  }
+
+  callback.Run(HTTP_SUCCESS,
+               GURL(base::StringPrintf(open_url_format_.c_str(),
+                                       resource_id.c_str(),
+                                       app_id.c_str())));
   return CancelCallback();
 }
 
@@ -1328,6 +1359,19 @@ void FakeDriveService::SetLastModifiedTime(
                  base::Passed(make_scoped_ptr(new FileResource(*file)))));
 }
 
+google_apis::GDataErrorCode FakeDriveService::SetUserPermission(
+    const std::string& resource_id,
+    google_apis::drive::PermissionRole user_permission) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  EntryInfo* entry = FindEntryByResourceId(resource_id);
+  if (!entry)
+    return HTTP_NOT_FOUND;
+
+  entry->user_permission = user_permission;
+  return HTTP_SUCCESS;
+}
+
 FakeDriveService::EntryInfo* FakeDriveService::FindEntryByResourceId(
     const std::string& resource_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -1387,7 +1431,8 @@ const FakeDriveService::EntryInfo* FakeDriveService::AddNewEntry(
   new_file->set_file_id(resource_id);
   new_file->set_title(title);
   // Set the contents, size and MD5 for a file.
-  if (content_type != util::kDriveFolderMimeType) {
+  if (content_type != util::kDriveFolderMimeType &&
+      !util::IsKnownHostedDocumentMimeType(content_type)) {
     new_entry->content_data = content_data;
     new_file->set_file_size(content_data.size());
     new_file->set_md5_checksum(base::MD5String(content_data));

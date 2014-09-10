@@ -7,6 +7,11 @@
 #include "../../../include/fxge/fx_ge.h"
 #if _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_
 #include <windows.h>
+#include <algorithm>
+namespace Gdiplus {
+  using std::min;
+  using std::max;
+}  // namespace Gdiplus
 #include <gdiplus.h>
 #include "../../../include/fxge/fx_ge_win32.h"
 #include "win32_int.h"
@@ -1003,7 +1008,7 @@ BOOL CGdiplusExt::DrawPath(HDC hDC, const CFX_PathData* pPathData,
     CallFunc(GdipDeleteGraphics)(pGraphics);
     return TRUE;
 }
-class GpStream : public IStream, public CFX_Object
+class GpStream FX_FINAL : public IStream, public CFX_Object
 {
     LONG	m_RefCount;
     int     m_ReadPos;
@@ -1200,7 +1205,6 @@ static PREVIEW3_DIBITMAP* LoadDIBitmap(WINDIB_Open_Args_ args)
         return NULL;
     }
     BITMAPINFOHEADER* pbmih = (BITMAPINFOHEADER*)buf;
-    FXSYS_memset32(buf, 0, info_size);
     pbmih->biBitCount = bpp;
     pbmih->biCompression = BI_RGB;
     pbmih->biHeight = -(int)height;

@@ -40,25 +40,6 @@
 
 using namespace v8::internal;
 
-// Go through all incremental marking steps in one swoop.
-static void SimulateIncrementalMarking() {
-  MarkCompactCollector* collector = CcTest::heap()->mark_compact_collector();
-  IncrementalMarking* marking = CcTest::heap()->incremental_marking();
-  if (collector->IsConcurrentSweepingInProgress()) {
-    collector->WaitUntilSweepingCompleted();
-  }
-  CHECK(marking->IsMarking() || marking->IsStopped());
-  if (marking->IsStopped()) {
-    marking->Start();
-  }
-  CHECK(marking->IsMarking());
-  while (!marking->IsComplete()) {
-    marking->Step(MB, IncrementalMarking::NO_GC_VIA_STACK_GUARD);
-  }
-  CHECK(marking->IsComplete());
-}
-
-
 static void CheckMap(Map* map, int type, int instance_size) {
   CHECK(map->IsHeapObject());
 #ifdef DEBUG
@@ -179,7 +160,8 @@ TEST(HeapObjects) {
   CHECK(value->IsNumber());
   CHECK_EQ(Smi::kMaxValue, Handle<Smi>::cast(value)->value());
 
-#if !defined(V8_TARGET_ARCH_X64) && !defined(V8_TARGET_ARCH_ARM64)
+#if !defined(V8_TARGET_ARCH_X64) && !defined(V8_TARGET_ARCH_ARM64) && \
+    !defined(V8_TARGET_ARCH_MIPS64)
   // TODO(lrn): We need a NumberFromIntptr function in order to test this.
   value = factory->NewNumberFromInt(Smi::kMinValue - 1);
   CHECK(value->IsHeapNumber());
@@ -209,7 +191,9 @@ TEST(HeapObjects) {
 
   Handle<String> object_string = Handle<String>::cast(factory->Object_string());
   Handle<GlobalObject> global(CcTest::i_isolate()->context()->global_object());
-  CHECK(JSReceiver::HasOwnProperty(global, object_string));
+  v8::Maybe<bool> maybe = JSReceiver::HasOwnProperty(global, object_string);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
 
   // Check ToString for oddballs
   CheckOddball(isolate, heap->true_value(), "true");
@@ -261,13 +245,11 @@ TEST(GarbageCollection) {
     HandleScope inner_scope(isolate);
     // Allocate a function and keep it in global object's property.
     Handle<JSFunction> function = factory->NewFunction(name);
-    JSReceiver::SetProperty(global, name, function, NONE, SLOPPY).Check();
+    JSReceiver::SetProperty(global, name, function, SLOPPY).Check();
     // Allocate an object.  Unrooted after leaving the scope.
     Handle<JSObject> obj = factory->NewJSObject(function);
-    JSReceiver::SetProperty(
-        obj, prop_name, twenty_three, NONE, SLOPPY).Check();
-    JSReceiver::SetProperty(
-        obj, prop_namex, twenty_four, NONE, SLOPPY).Check();
+    JSReceiver::SetProperty(obj, prop_name, twenty_three, SLOPPY).Check();
+    JSReceiver::SetProperty(obj, prop_namex, twenty_four, SLOPPY).Check();
 
     CHECK_EQ(Smi::FromInt(23),
              *Object::GetProperty(obj, prop_name).ToHandleChecked());
@@ -278,7 +260,9 @@ TEST(GarbageCollection) {
   heap->CollectGarbage(NEW_SPACE);
 
   // Function should be alive.
-  CHECK(JSReceiver::HasOwnProperty(global, name));
+  v8::Maybe<bool> maybe = JSReceiver::HasOwnProperty(global, name);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
   // Check function is retained.
   Handle<Object> func_value =
       Object::GetProperty(global, name).ToHandleChecked();
@@ -289,15 +273,16 @@ TEST(GarbageCollection) {
     HandleScope inner_scope(isolate);
     // Allocate another object, make it reachable from global.
     Handle<JSObject> obj = factory->NewJSObject(function);
-    JSReceiver::SetProperty(global, obj_name, obj, NONE, SLOPPY).Check();
-    JSReceiver::SetProperty(
-        obj, prop_name, twenty_three, NONE, SLOPPY).Check();
+    JSReceiver::SetProperty(global, obj_name, obj, SLOPPY).Check();
+    JSReceiver::SetProperty(obj, prop_name, twenty_three, SLOPPY).Check();
   }
 
   // After gc, it should survive.
   heap->CollectGarbage(NEW_SPACE);
 
-  CHECK(JSReceiver::HasOwnProperty(global, obj_name));
+  maybe = JSReceiver::HasOwnProperty(global, obj_name);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
   Handle<Object> obj =
       Object::GetProperty(global, obj_name).ToHandleChecked();
   CHECK(obj->IsJSObject());
@@ -626,12 +611,11 @@ TEST(FunctionAllocation) {
 
   Handle<String> prop_name = factory->InternalizeUtf8String("theSlot");
   Handle<JSObject> obj = factory->NewJSObject(function);
-  JSReceiver::SetProperty(obj, prop_name, twenty_three, NONE, SLOPPY).Check();
+  JSReceiver::SetProperty(obj, prop_name, twenty_three, SLOPPY).Check();
   CHECK_EQ(Smi::FromInt(23),
            *Object::GetProperty(obj, prop_name).ToHandleChecked());
   // Check that we can add properties to function objects.
-  JSReceiver::SetProperty(
-      function, prop_name, twenty_four, NONE, SLOPPY).Check();
+  JSReceiver::SetProperty(function, prop_name, twenty_four, SLOPPY).Check();
   CHECK_EQ(Smi::FromInt(24),
            *Object::GetProperty(function, prop_name).ToHandleChecked());
 }
@@ -655,55 +639,85 @@ TEST(ObjectProperties) {
   Handle<Smi> two(Smi::FromInt(2), isolate);
 
   // check for empty
-  CHECK(!JSReceiver::HasOwnProperty(obj, first));
+  v8::Maybe<bool> maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(!maybe.value);
 
   // add first
-  JSReceiver::SetProperty(obj, first, one, NONE, SLOPPY).Check();
-  CHECK(JSReceiver::HasOwnProperty(obj, first));
+  JSReceiver::SetProperty(obj, first, one, SLOPPY).Check();
+  maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
 
   // delete first
   JSReceiver::DeleteProperty(obj, first, JSReceiver::NORMAL_DELETION).Check();
-  CHECK(!JSReceiver::HasOwnProperty(obj, first));
+  maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(!maybe.value);
 
   // add first and then second
-  JSReceiver::SetProperty(obj, first, one, NONE, SLOPPY).Check();
-  JSReceiver::SetProperty(obj, second, two, NONE, SLOPPY).Check();
-  CHECK(JSReceiver::HasOwnProperty(obj, first));
-  CHECK(JSReceiver::HasOwnProperty(obj, second));
+  JSReceiver::SetProperty(obj, first, one, SLOPPY).Check();
+  JSReceiver::SetProperty(obj, second, two, SLOPPY).Check();
+  maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
+  maybe = JSReceiver::HasOwnProperty(obj, second);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
 
   // delete first and then second
   JSReceiver::DeleteProperty(obj, first, JSReceiver::NORMAL_DELETION).Check();
-  CHECK(JSReceiver::HasOwnProperty(obj, second));
+  maybe = JSReceiver::HasOwnProperty(obj, second);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
   JSReceiver::DeleteProperty(obj, second, JSReceiver::NORMAL_DELETION).Check();
-  CHECK(!JSReceiver::HasOwnProperty(obj, first));
-  CHECK(!JSReceiver::HasOwnProperty(obj, second));
+  maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(!maybe.value);
+  maybe = JSReceiver::HasOwnProperty(obj, second);
+  CHECK(maybe.has_value);
+  CHECK(!maybe.value);
 
   // add first and then second
-  JSReceiver::SetProperty(obj, first, one, NONE, SLOPPY).Check();
-  JSReceiver::SetProperty(obj, second, two, NONE, SLOPPY).Check();
-  CHECK(JSReceiver::HasOwnProperty(obj, first));
-  CHECK(JSReceiver::HasOwnProperty(obj, second));
+  JSReceiver::SetProperty(obj, first, one, SLOPPY).Check();
+  JSReceiver::SetProperty(obj, second, two, SLOPPY).Check();
+  maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
+  maybe = JSReceiver::HasOwnProperty(obj, second);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
 
   // delete second and then first
   JSReceiver::DeleteProperty(obj, second, JSReceiver::NORMAL_DELETION).Check();
-  CHECK(JSReceiver::HasOwnProperty(obj, first));
+  maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
   JSReceiver::DeleteProperty(obj, first, JSReceiver::NORMAL_DELETION).Check();
-  CHECK(!JSReceiver::HasOwnProperty(obj, first));
-  CHECK(!JSReceiver::HasOwnProperty(obj, second));
+  maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(!maybe.value);
+  maybe = JSReceiver::HasOwnProperty(obj, second);
+  CHECK(maybe.has_value);
+  CHECK(!maybe.value);
 
   // check string and internalized string match
   const char* string1 = "fisk";
   Handle<String> s1 = factory->NewStringFromAsciiChecked(string1);
-  JSReceiver::SetProperty(obj, s1, one, NONE, SLOPPY).Check();
+  JSReceiver::SetProperty(obj, s1, one, SLOPPY).Check();
   Handle<String> s1_string = factory->InternalizeUtf8String(string1);
-  CHECK(JSReceiver::HasOwnProperty(obj, s1_string));
+  maybe = JSReceiver::HasOwnProperty(obj, s1_string);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
 
   // check internalized string and string match
   const char* string2 = "fugl";
   Handle<String> s2_string = factory->InternalizeUtf8String(string2);
-  JSReceiver::SetProperty(obj, s2_string, one, NONE, SLOPPY).Check();
+  JSReceiver::SetProperty(obj, s2_string, one, SLOPPY).Check();
   Handle<String> s2 = factory->NewStringFromAsciiChecked(string2);
-  CHECK(JSReceiver::HasOwnProperty(obj, s2));
+  maybe = JSReceiver::HasOwnProperty(obj, s2);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
 }
 
 
@@ -722,7 +736,7 @@ TEST(JSObjectMaps) {
 
   // Set a propery
   Handle<Smi> twenty_three(Smi::FromInt(23), isolate);
-  JSReceiver::SetProperty(obj, prop_name, twenty_three, NONE, SLOPPY).Check();
+  JSReceiver::SetProperty(obj, prop_name, twenty_three, SLOPPY).Check();
   CHECK_EQ(Smi::FromInt(23),
            *Object::GetProperty(obj, prop_name).ToHandleChecked());
 
@@ -800,8 +814,8 @@ TEST(JSObjectCopy) {
   Handle<Smi> one(Smi::FromInt(1), isolate);
   Handle<Smi> two(Smi::FromInt(2), isolate);
 
-  JSReceiver::SetProperty(obj, first, one, NONE, SLOPPY).Check();
-  JSReceiver::SetProperty(obj, second, two, NONE, SLOPPY).Check();
+  JSReceiver::SetProperty(obj, first, one, SLOPPY).Check();
+  JSReceiver::SetProperty(obj, second, two, SLOPPY).Check();
 
   JSReceiver::SetElement(obj, 0, first, NONE, SLOPPY).Check();
   JSReceiver::SetElement(obj, 1, second, NONE, SLOPPY).Check();
@@ -826,8 +840,8 @@ TEST(JSObjectCopy) {
   CHECK_EQ(*value1, *value2);
 
   // Flip the values.
-  JSReceiver::SetProperty(clone, first, two, NONE, SLOPPY).Check();
-  JSReceiver::SetProperty(clone, second, one, NONE, SLOPPY).Check();
+  JSReceiver::SetProperty(clone, first, two, SLOPPY).Check();
+  JSReceiver::SetProperty(clone, second, one, SLOPPY).Check();
 
   JSReceiver::SetElement(clone, 0, second, NONE, SLOPPY).Check();
   JSReceiver::SetElement(clone, 1, first, NONE, SLOPPY).Check();
@@ -1190,7 +1204,7 @@ TEST(TestCodeFlushingIncremental) {
   // Simulate several GCs that use incremental marking.
   const int kAgingThreshold = 6;
   for (int i = 0; i < kAgingThreshold; i++) {
-    SimulateIncrementalMarking();
+    SimulateIncrementalMarking(CcTest::heap());
     CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
   }
   CHECK(!function->shared()->is_compiled() || function->IsOptimized());
@@ -1204,7 +1218,7 @@ TEST(TestCodeFlushingIncremental) {
   // Simulate several GCs that use incremental marking but make sure
   // the loop breaks once the function is enqueued as a candidate.
   for (int i = 0; i < kAgingThreshold; i++) {
-    SimulateIncrementalMarking();
+    SimulateIncrementalMarking(CcTest::heap());
     if (!function->next_function_link()->IsUndefined()) break;
     CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
   }
@@ -1280,7 +1294,7 @@ TEST(TestCodeFlushingIncrementalScavenge) {
   // Simulate incremental marking so that the functions are enqueued as
   // code flushing candidates. Then kill one of the functions. Finally
   // perform a scavenge while incremental marking is still running.
-  SimulateIncrementalMarking();
+  SimulateIncrementalMarking(CcTest::heap());
   *function2.location() = NULL;
   CcTest::heap()->CollectGarbage(NEW_SPACE, "test scavenge while marking");
 
@@ -1334,7 +1348,7 @@ TEST(TestCodeFlushingIncrementalAbort) {
 
   // Simulate incremental marking so that the function is enqueued as
   // code flushing candidate.
-  SimulateIncrementalMarking();
+  SimulateIncrementalMarking(heap);
 
   // Enable the debugger and add a breakpoint while incremental marking
   // is running so that incremental marking aborts and code flushing is
@@ -1594,8 +1608,8 @@ TEST(TestSizeOfObjects) {
   CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
   CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
   MarkCompactCollector* collector = CcTest::heap()->mark_compact_collector();
-  if (collector->IsConcurrentSweepingInProgress()) {
-    collector->WaitUntilSweepingCompleted();
+  if (collector->sweeping_in_progress()) {
+    collector->EnsureSweepingCompleted();
   }
   int initial_size = static_cast<int>(CcTest::heap()->SizeOfObjects());
 
@@ -1621,8 +1635,8 @@ TEST(TestSizeOfObjects) {
   CHECK_EQ(initial_size, static_cast<int>(CcTest::heap()->SizeOfObjects()));
 
   // Waiting for sweeper threads should not change heap size.
-  if (collector->IsConcurrentSweepingInProgress()) {
-    collector->WaitUntilSweepingCompleted();
+  if (collector->sweeping_in_progress()) {
+    collector->EnsureSweepingCompleted();
   }
   CHECK_EQ(initial_size, static_cast<int>(CcTest::heap()->SizeOfObjects()));
 }
@@ -1800,7 +1814,7 @@ TEST(LeakNativeContextViaMap) {
     ctx2->Exit();
     v8::Local<v8::Context>::New(isolate, ctx1)->Exit();
     ctx1p.Reset();
-    v8::V8::ContextDisposedNotification();
+    isolate->ContextDisposedNotification();
   }
   CcTest::heap()->CollectAllAvailableGarbage();
   CHECK_EQ(2, NumberOfGlobalObjects());
@@ -1846,7 +1860,7 @@ TEST(LeakNativeContextViaFunction) {
     ctx2->Exit();
     ctx1->Exit();
     ctx1p.Reset();
-    v8::V8::ContextDisposedNotification();
+    isolate->ContextDisposedNotification();
   }
   CcTest::heap()->CollectAllAvailableGarbage();
   CHECK_EQ(2, NumberOfGlobalObjects());
@@ -1890,7 +1904,7 @@ TEST(LeakNativeContextViaMapKeyed) {
     ctx2->Exit();
     ctx1->Exit();
     ctx1p.Reset();
-    v8::V8::ContextDisposedNotification();
+    isolate->ContextDisposedNotification();
   }
   CcTest::heap()->CollectAllAvailableGarbage();
   CHECK_EQ(2, NumberOfGlobalObjects());
@@ -1938,7 +1952,7 @@ TEST(LeakNativeContextViaMapProto) {
     ctx2->Exit();
     ctx1->Exit();
     ctx1p.Reset();
-    v8::V8::ContextDisposedNotification();
+    isolate->ContextDisposedNotification();
   }
   CcTest::heap()->CollectAllAvailableGarbage();
   CHECK_EQ(2, NumberOfGlobalObjects());
@@ -2099,8 +2113,8 @@ TEST(ResetSharedFunctionInfoCountersDuringIncrementalMarking) {
 
   // The following two calls will increment CcTest::heap()->global_ic_age().
   const int kLongIdlePauseInMs = 1000;
-  v8::V8::ContextDisposedNotification();
-  v8::V8::IdleNotification(kLongIdlePauseInMs);
+  CcTest::isolate()->ContextDisposedNotification();
+  CcTest::isolate()->IdleNotification(kLongIdlePauseInMs);
 
   while (!marking->IsStopped() && !marking->IsComplete()) {
     marking->Step(1 * MB, IncrementalMarking::NO_GC_VIA_STACK_GUARD);
@@ -2155,8 +2169,8 @@ TEST(ResetSharedFunctionInfoCountersDuringMarkSweep) {
   // The following two calls will increment CcTest::heap()->global_ic_age().
   // Since incremental marking is off, IdleNotification will do full GC.
   const int kLongIdlePauseInMs = 1000;
-  v8::V8::ContextDisposedNotification();
-  v8::V8::IdleNotification(kLongIdlePauseInMs);
+  CcTest::isolate()->ContextDisposedNotification();
+  CcTest::isolate()->IdleNotification(kLongIdlePauseInMs);
 
   CHECK_EQ(CcTest::heap()->global_ic_age(), f->shared()->ic_age());
   CHECK_EQ(0, f->shared()->opt_count());
@@ -2725,7 +2739,7 @@ TEST(Regress1465) {
   CompileRun("%DebugPrint(root);");
   CHECK_EQ(transitions_count, transitions_before);
 
-  SimulateIncrementalMarking();
+  SimulateIncrementalMarking(CcTest::heap());
   CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
 
   // Count number of live transitions after marking.  Note that one transition
@@ -2763,8 +2777,7 @@ static void AddPropertyTo(
   i::FLAG_gc_interval = gc_count;
   i::FLAG_gc_global = true;
   CcTest::heap()->set_allocation_timeout(gc_count);
-  JSReceiver::SetProperty(
-      object, prop_name, twenty_three, NONE, SLOPPY).Check();
+  JSReceiver::SetProperty(object, prop_name, twenty_three, SLOPPY).Check();
 }
 
 
@@ -2867,7 +2880,7 @@ TEST(TransitionArraySimpleToFull) {
   CompileRun("o = new F;"
              "root = new F");
   root = GetByName("root");
-  ASSERT(root->map()->transitions()->IsSimpleTransition());
+  DCHECK(root->map()->transitions()->IsSimpleTransition());
   AddPropertyTo(2, root, "happy");
 
   // Count number of live transitions after marking.  Note that one transition
@@ -2891,7 +2904,7 @@ TEST(Regress2143a) {
              "root.foo = 0;"
              "root = new Object;");
 
-  SimulateIncrementalMarking();
+  SimulateIncrementalMarking(CcTest::heap());
 
   // Compile a StoreIC that performs the prepared map transition. This
   // will restart incremental marking and should make sure the root is
@@ -2932,7 +2945,7 @@ TEST(Regress2143b) {
              "root.foo = 0;"
              "root = new Object;");
 
-  SimulateIncrementalMarking();
+  SimulateIncrementalMarking(CcTest::heap());
 
   // Compile an optimized LStoreNamedField that performs the prepared
   // map transition. This will restart incremental marking and should
@@ -2988,7 +3001,8 @@ TEST(ReleaseOverReservedPages) {
 
   // Triggering one GC will cause a lot of garbage to be discovered but
   // even spread across all allocated pages.
-  heap->CollectAllGarbage(Heap::kNoGCFlags, "triggered for preparation");
+  heap->CollectAllGarbage(Heap::kAbortIncrementalMarkingMask,
+                          "triggered for preparation");
   CHECK_GE(number_of_test_pages + 1, old_pointer_space->CountTotalPages());
 
   // Triggering subsequent GCs should cause at least half of the pages
@@ -3054,8 +3068,9 @@ TEST(PrintSharedFunctionInfo) {
           *v8::Handle<v8::Function>::Cast(
               CcTest::global()->Get(v8_str("g"))));
 
-  DisallowHeapAllocation no_allocation;
-  g->shared()->PrintLn();
+  OFStream os(stdout);
+  g->shared()->Print(os);
+  os << endl;
 }
 #endif  // OBJECT_PRINT
 
@@ -3126,18 +3141,22 @@ TEST(IncrementalMarkingClearsTypeFeedbackInfo) {
 
   Handle<FixedArray> feedback_vector(f->shared()->feedback_vector());
 
-  CHECK_EQ(2, feedback_vector->length());
-  CHECK(feedback_vector->get(0)->IsJSFunction());
-  CHECK(feedback_vector->get(1)->IsJSFunction());
+  int expected_length = FLAG_vector_ics ? 4 : 2;
+  CHECK_EQ(expected_length, feedback_vector->length());
+  for (int i = 0; i < expected_length; i++) {
+    if ((i % 2) == 1) {
+      CHECK(feedback_vector->get(i)->IsJSFunction());
+    }
+  }
 
-  SimulateIncrementalMarking();
+  SimulateIncrementalMarking(CcTest::heap());
   CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
 
-  CHECK_EQ(2, feedback_vector->length());
-  CHECK_EQ(feedback_vector->get(0),
-           *TypeFeedbackInfo::UninitializedSentinel(CcTest::i_isolate()));
-  CHECK_EQ(feedback_vector->get(1),
-           *TypeFeedbackInfo::UninitializedSentinel(CcTest::i_isolate()));
+  CHECK_EQ(expected_length, feedback_vector->length());
+  for (int i = 0; i < expected_length; i++) {
+    CHECK_EQ(feedback_vector->get(i),
+             *TypeFeedbackInfo::UninitializedSentinel(CcTest::i_isolate()));
+  }
 }
 
 
@@ -3173,7 +3192,7 @@ TEST(IncrementalMarkingPreservesMonomorphicIC) {
   Code* ic_before = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
   CHECK(ic_before->ic_state() == MONOMORPHIC);
 
-  SimulateIncrementalMarking();
+  SimulateIncrementalMarking(CcTest::heap());
   CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
 
   Code* ic_after = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
@@ -3206,8 +3225,8 @@ TEST(IncrementalMarkingClearsMonomorphicIC) {
   CHECK(ic_before->ic_state() == MONOMORPHIC);
 
   // Fire context dispose notification.
-  v8::V8::ContextDisposedNotification();
-  SimulateIncrementalMarking();
+  CcTest::isolate()->ContextDisposedNotification();
+  SimulateIncrementalMarking(CcTest::heap());
   CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
 
   Code* ic_after = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
@@ -3247,8 +3266,8 @@ TEST(IncrementalMarkingClearsPolymorphicIC) {
   CHECK(ic_before->ic_state() == POLYMORPHIC);
 
   // Fire context dispose notification.
-  v8::V8::ContextDisposedNotification();
-  SimulateIncrementalMarking();
+  CcTest::isolate()->ContextDisposedNotification();
+  SimulateIncrementalMarking(CcTest::heap());
   CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
 
   Code* ic_after = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
@@ -3409,7 +3428,7 @@ TEST(Regress159140) {
   // Simulate incremental marking so that the functions are enqueued as
   // code flushing candidates. Then optimize one function. Finally
   // finish the GC to complete code flushing.
-  SimulateIncrementalMarking();
+  SimulateIncrementalMarking(heap);
   CompileRun("%OptimizeFunctionOnNextCall(g); g(3);");
   heap->CollectAllGarbage(Heap::kNoGCFlags);
 
@@ -3456,7 +3475,7 @@ TEST(Regress165495) {
 
   // Simulate incremental marking so that unoptimized code is flushed
   // even though it still is cached in the optimized code map.
-  SimulateIncrementalMarking();
+  SimulateIncrementalMarking(heap);
   heap->CollectAllGarbage(Heap::kNoGCFlags);
 
   // Make a new closure that will get code installed from the code map.
@@ -3524,7 +3543,7 @@ TEST(Regress169209) {
   }
 
   // Simulate incremental marking and collect code flushing candidates.
-  SimulateIncrementalMarking();
+  SimulateIncrementalMarking(heap);
   CHECK(shared1->code()->gc_metadata() != NULL);
 
   // Optimize function and make sure the unoptimized code is replaced.
@@ -3670,7 +3689,7 @@ TEST(Regress168801) {
   // Simulate incremental marking so that unoptimized function is enqueued as a
   // candidate for code flushing. The shared function info however will not be
   // explicitly enqueued.
-  SimulateIncrementalMarking();
+  SimulateIncrementalMarking(heap);
 
   // Now optimize the function so that it is taken off the candidate list.
   {
@@ -3727,7 +3746,7 @@ TEST(Regress173458) {
   // Simulate incremental marking so that unoptimized function is enqueued as a
   // candidate for code flushing. The shared function info however will not be
   // explicitly enqueued.
-  SimulateIncrementalMarking();
+  SimulateIncrementalMarking(heap);
 
   // Now enable the debugger which in turn will disable code flushing.
   CHECK(isolate->debug()->Load());
@@ -3756,7 +3775,7 @@ TEST(DeferredHandles) {
   }
   // An entire block of handles has been filled.
   // Next handle would require a new block.
-  ASSERT(data->next == data->limit);
+  DCHECK(data->next == data->limit);
 
   DeferredHandleScope deferred(isolate);
   DummyVisitor visitor;
@@ -3777,7 +3796,7 @@ TEST(IncrementalMarkingStepMakesBigProgressWithLargeObjects) {
   if (marking->IsStopped()) marking->Start();
   // This big step should be sufficient to mark the whole array.
   marking->Step(100 * MB, IncrementalMarking::NO_GC_VIA_STACK_GUARD);
-  ASSERT(marking->IsComplete());
+  DCHECK(marking->IsComplete());
 }
 
 
@@ -3917,7 +3936,7 @@ TEST(CellsInOptimizedCodeAreWeak) {
     heap->CollectAllGarbage(Heap::kAbortIncrementalMarkingMask);
   }
 
-  ASSERT(code->marked_for_deoptimization());
+  DCHECK(code->marked_for_deoptimization());
 }
 
 
@@ -3958,7 +3977,7 @@ TEST(ObjectsInOptimizedCodeAreWeak) {
     heap->CollectAllGarbage(Heap::kAbortIncrementalMarkingMask);
   }
 
-  ASSERT(code->marked_for_deoptimization());
+  DCHECK(code->marked_for_deoptimization());
 }
 
 
@@ -3975,7 +3994,7 @@ TEST(NoWeakHashTableLeakWithIncrementalMarking) {
   if (!isolate->use_crankshaft()) return;
   HandleScope outer_scope(heap->isolate());
   for (int i = 0; i < 3; i++) {
-    SimulateIncrementalMarking();
+    SimulateIncrementalMarking(heap);
     {
       LocalContext context;
       HandleScope scope(heap->isolate());
@@ -4290,7 +4309,7 @@ TEST(Regress357137) {
   global->Set(v8::String::NewFromUtf8(isolate, "interrupt"),
               v8::FunctionTemplate::New(isolate, RequestInterrupt));
   v8::Local<v8::Context> context = v8::Context::New(isolate, NULL, global);
-  ASSERT(!context.IsEmpty());
+  DCHECK(!context.IsEmpty());
   v8::Context::Scope cscope(context);
 
   v8::Local<v8::Value> result = CompileRun(
@@ -4315,6 +4334,7 @@ TEST(ArrayShiftSweeping) {
       "var tmp = new Array(100000);"
       "array[0] = 10;"
       "gc();"
+      "gc();"
       "array.shift();"
       "array;");
 
@@ -4323,8 +4343,180 @@ TEST(ArrayShiftSweeping) {
   CHECK(heap->InOldPointerSpace(o->elements()));
   CHECK(heap->InOldPointerSpace(*o));
   Page* page = Page::FromAddress(o->elements()->address());
-  CHECK(page->WasSwept() ||
+  CHECK(page->parallel_sweeping() <= MemoryChunk::SWEEPING_FINALIZE ||
         Marking::IsBlack(Marking::MarkBitFrom(o->elements())));
+}
+
+
+TEST(PromotionQueue) {
+  i::FLAG_expose_gc = true;
+  i::FLAG_max_semi_space_size = 2;
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  Isolate* isolate = CcTest::i_isolate();
+  Heap* heap = isolate->heap();
+  NewSpace* new_space = heap->new_space();
+
+  // In this test we will try to overwrite the promotion queue which is at the
+  // end of to-space. To actually make that possible, we need at least two
+  // semi-space pages and take advantage of fragementation.
+  // (1) Grow semi-space to two pages.
+  // (2) Create a few small long living objects and call the scavenger to
+  // move them to the other semi-space.
+  // (3) Create a huge object, i.e., remainder of first semi-space page and
+  // create another huge object which should be of maximum allocatable memory
+  // size of the second semi-space page.
+  // (4) Call the scavenger again.
+  // What will happen is: the scavenger will promote the objects created in (2)
+  // and will create promotion queue entries at the end of the second
+  // semi-space page during the next scavenge when it promotes the objects to
+  // the old generation. The first allocation of (3) will fill up the first
+  // semi-space page. The second allocation in (3) will not fit into the first
+  // semi-space page, but it will overwrite the promotion queue which are in
+  // the second semi-space page. If the right guards are in place, the promotion
+  // queue will be evacuated in that case.
+
+  // Grow the semi-space to two pages to make semi-space copy overwrite the
+  // promotion queue, which will be at the end of the second page.
+  intptr_t old_capacity = new_space->Capacity();
+  new_space->Grow();
+  CHECK(new_space->IsAtMaximumCapacity());
+  CHECK(2 * old_capacity == new_space->Capacity());
+
+  // Call the scavenger two times to get an empty new space
+  heap->CollectGarbage(NEW_SPACE);
+  heap->CollectGarbage(NEW_SPACE);
+
+  // First create a few objects which will survive a scavenge, and will get
+  // promoted to the old generation later on. These objects will create
+  // promotion queue entries at the end of the second semi-space page.
+  const int number_handles = 12;
+  Handle<FixedArray> handles[number_handles];
+  for (int i = 0; i < number_handles; i++) {
+    handles[i] = isolate->factory()->NewFixedArray(1, NOT_TENURED);
+  }
+  heap->CollectGarbage(NEW_SPACE);
+
+  // Create the first huge object which will exactly fit the first semi-space
+  // page.
+  int new_linear_size = static_cast<int>(
+      *heap->new_space()->allocation_limit_address() -
+          *heap->new_space()->allocation_top_address());
+  int length = new_linear_size / kPointerSize - FixedArray::kHeaderSize;
+  Handle<FixedArray> first =
+    isolate->factory()->NewFixedArray(length, NOT_TENURED);
+  CHECK(heap->InNewSpace(*first));
+
+  // Create the second huge object of maximum allocatable second semi-space
+  // page size.
+  new_linear_size = static_cast<int>(
+      *heap->new_space()->allocation_limit_address() -
+          *heap->new_space()->allocation_top_address());
+  length = Page::kMaxRegularHeapObjectSize / kPointerSize -
+      FixedArray::kHeaderSize;
+  Handle<FixedArray> second =
+      isolate->factory()->NewFixedArray(length, NOT_TENURED);
+  CHECK(heap->InNewSpace(*second));
+
+  // This scavenge will corrupt memory if the promotion queue is not evacuated.
+  heap->CollectGarbage(NEW_SPACE);
+}
+
+
+TEST(Regress388880) {
+  i::FLAG_expose_gc = true;
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  Isolate* isolate = CcTest::i_isolate();
+  Factory* factory = isolate->factory();
+  Heap* heap = isolate->heap();
+
+  Handle<Map> map1 = Map::Create(isolate->object_function(), 1);
+  Handle<Map> map2 =
+      Map::CopyWithField(map1, factory->NewStringFromStaticAscii("foo"),
+                         HeapType::Any(isolate), NONE, Representation::Tagged(),
+                         OMIT_TRANSITION).ToHandleChecked();
+
+  int desired_offset = Page::kPageSize - map1->instance_size();
+
+  // Allocate fixed array in old pointer space so, that object allocated
+  // afterwards would end at the end of the page.
+  {
+    SimulateFullSpace(heap->old_pointer_space());
+    int padding_size = desired_offset - Page::kObjectStartOffset;
+    int padding_array_length =
+        (padding_size - FixedArray::kHeaderSize) / kPointerSize;
+
+    Handle<FixedArray> temp2 =
+        factory->NewFixedArray(padding_array_length, TENURED);
+    Page* page = Page::FromAddress(temp2->address());
+    CHECK_EQ(Page::kObjectStartOffset, page->Offset(temp2->address()));
+  }
+
+  Handle<JSObject> o = factory->NewJSObjectFromMap(map1, TENURED, false);
+  o->set_properties(*factory->empty_fixed_array());
+
+  // Ensure that the object allocated where we need it.
+  Page* page = Page::FromAddress(o->address());
+  CHECK_EQ(desired_offset, page->Offset(o->address()));
+
+  // Now we have an object right at the end of the page.
+
+  // Enable incremental marking to trigger actions in Heap::AdjustLiveBytes()
+  // that would cause crash.
+  IncrementalMarking* marking = CcTest::heap()->incremental_marking();
+  marking->Abort();
+  marking->Start();
+  CHECK(marking->IsMarking());
+
+  // Now everything is set up for crashing in JSObject::MigrateFastToFast()
+  // when it calls heap->AdjustLiveBytes(...).
+  JSObject::MigrateToMap(o, map2);
+}
+
+
+TEST(RegressStoreBufferMapUpdate) {
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  Isolate* isolate = CcTest::i_isolate();
+  Factory* factory = isolate->factory();
+  Heap* heap = isolate->heap();
+
+  // This test checks that we do not treat instance size field of the map
+  // as a heap pointer when processing the store buffer.
+
+  Handle<Map> map1 = Map::Create(isolate->object_function(), 1);
+
+  // Allocate a throw-away object.
+  factory->NewFixedArray(1, NOT_TENURED);
+
+  // Allocate a new-space object that will be moved by the GC (because
+  // the throw-away object will die).
+  Handle<FixedArray> object_to_move = factory->NewFixedArray(1, NOT_TENURED);
+
+  // Record the address before the GC.
+  Object* object_to_move_address = *object_to_move;
+
+  // Smash the new space pointer to the moving object into the instance size
+  // field of the map. The idea is to trick the GC into updating this pointer
+  // when the object moves. This would be wrong because instance size should
+  // not be treated as a heap pointer.
+  *(reinterpret_cast<Object**>(map1->address() + Map::kInstanceSizeOffset)) =
+      object_to_move_address;
+
+  // Make sure we scan the map's page on scavenge.
+  Page* page = Page::FromAddress(map1->address());
+  page->set_scan_on_scavenge(true);
+
+  heap->CollectGarbage(NEW_SPACE);
+
+  // Check the object has really moved.
+  CHECK(*object_to_move != object_to_move_address);
+
+  // Now check that we have not updated the instance size field of the map.
+  CHECK_EQ(object_to_move_address,
+           *(reinterpret_cast<Object**>(map1->address() +
+                                        Map::kInstanceSizeOffset)));
 }
 
 

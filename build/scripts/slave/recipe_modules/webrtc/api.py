@@ -83,13 +83,13 @@ class WebRTCApi(recipe_api.RecipeApi):
       elif self.m.platform.is_linux:
         f = self.m.path['checkout'].join
         steps.append(self.add_test(
-            'audioproc', name='audioproc_perf',
+            'audioproc',
             args=['-aecm', '-ns', '-agc', '--fixed_digital', '--perf', '-pb',
                   f('resources', 'audioproc.aecdump')],
             revision=revision,
             perf_test=True))
         steps.append(self.add_test(
-            'iSACFixtest', name='isac_fixed_perf',
+            'iSACFixtest',
             args=['32000', f('resources', 'speech_and_misc_wb.pcm'),
                   'isac_speech_and_misc_wb.pcm'],
             revision=revision,
@@ -100,7 +100,8 @@ class WebRTCApi(recipe_api.RecipeApi):
             env={'LD_PRELOAD': '/usr/lib/x86_64-linux-gnu/libpulse.so.0'}))
 
       steps.append(self.virtual_webcam_check())
-      steps.append(self.add_test('vie_auto_test',
+      steps.append(self.add_test(
+          'vie_auto_test',
           args=['--automated',
                 '--capture_test_ensure_resolution_alignment_in_capture_device='
                 'false'],
@@ -117,13 +118,13 @@ class WebRTCApi(recipe_api.RecipeApi):
       # because they rely on physical audio and video devices, which are only
       # available at bare-metal machines.
       steps.append(self.add_test(
-          test='content_browsertests', name='content_browsertests (webrtc)',
+          'content_browsertests',
           args=['--gtest_filter=WebRtc*', '--run-manual',
                 '--test-launcher-print-test-stdio=always'],
           revision=revision,
           perf_test=True))
       steps.append(self.add_test(
-          test='browser_tests', name='browser_tests (webrtc)',
+          'browser_tests',
           # These tests needs --test-launcher-jobs=1 since some of them are
           # not able to run in parallel (due to the usage of the
           # peerconnection server).
@@ -134,27 +135,33 @@ class WebRTCApi(recipe_api.RecipeApi):
           revision=revision,
           perf_test=True))
       steps.append(self.add_test(
-          test='content_unittests', name='content_unittests (webrtc)',
+          'content_unittests',
           args=['--gtest_filter=WebRtc*:WebRTC*:RTC*:MediaStream*']))
 
     return steps
 
   def add_test(self, test, name=None, args=None, revision=None, env=None,
                perf_test=False, perf_dashboard_id=None):
+    """Helper function to invoke chromium.runtest().
+
+    Notice that the name parameter should be the same as the test executable in
+    order to get the stdio links in the perf dashboard to become correct.
+    """
+    name = name or test
     args = args or []
     env = env or {}
     if self.c.PERF_ID and perf_test:
       perf_dashboard_id = perf_dashboard_id or test
       assert revision, ('Revision must be specified for perf tests as they '
                         'upload data to the perf dashboard.')
-      return self.m.chromium.runtest(
+      self.m.chromium.runtest(
           test=test, args=args, name=name,
           results_url=self.DASHBOARD_UPLOAD_URL, annotate='graphing',
           xvfb=True, perf_dashboard_id=perf_dashboard_id, test_type=test,
           env=env, revision=revision, perf_id=self.c.PERF_ID,
           perf_config=self.c.PERF_CONFIG)
     else:
-      return self.m.chromium.runtest(
+      self.m.chromium.runtest(
           test=test, args=args, name=name, annotate='gtest', xvfb=True,
           test_type=test, env=env)
 
@@ -168,7 +175,7 @@ class WebRTCApi(recipe_api.RecipeApi):
     args = ['--target', self.m.chromium.c.BUILD_CONFIG,
             '--platform', self.m.chromium.c.TARGET_PLATFORM]
     test_name = 'sizes'
-    yield self.add_test(
+    self.add_test(
         test=sizes_script,
         name=test_name,
         perf_dashboard_id=test_name,
@@ -177,19 +184,18 @@ class WebRTCApi(recipe_api.RecipeApi):
         perf_test=True)
 
   def package_build(self, gs_url, revision):
-    yield self.m.archive.zip_and_upload_build(
+    self.m.archive.zip_and_upload_build(
         'package build',
         self.m.chromium.c.build_config_fs,
         gs_url,
         build_revision=revision)
 
   def extract_build(self, gs_url, revision):
-    yield self.m.archive.download_and_unzip_build(
+    self.m.archive.download_and_unzip_build(
         'extract build',
         self.m.chromium.c.build_config_fs,
         gs_url,
-        build_revision=revision,
-        abort_on_failure=True)
+        build_revision=revision)
 
   def apply_svn_patch(self):
     """Patch step for applying WebRTC patches to Chromium checkouts.
@@ -208,10 +214,10 @@ class WebRTCApi(recipe_api.RecipeApi):
       args += ['--filter-script', self.c.patch_filter_script,
                '--strip-level', self.c.patch_strip_level,
                '--', '--path-filter', self.c.patch_path_filter]
-    return self.m.python('apply_patch', script, args)
+    self.m.python('apply_patch', script, args)
 
   def virtual_webcam_check(self):
-    return self.m.python(
+    self.m.python(
       'webcam_check',
       self.m.path['build'].join('scripts', 'slave', 'webrtc',
                                 'ensure_webcam_is_running.py'))

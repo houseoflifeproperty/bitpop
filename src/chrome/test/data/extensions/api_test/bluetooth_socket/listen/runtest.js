@@ -11,7 +11,7 @@ function testListen() {
   // First socket should be the listening one.
   chrome.test.assertEq(serverSocketId, sockets[0].socketId);
   chrome.test.assertEq(false, sockets[0].persistent);
-  chrome.test.assertEq(undefined, sockets[0].name);
+  chrome.test.assertEq('MyServiceName', sockets[0].name);
   chrome.test.assertEq(false, sockets[0].paused);
   chrome.test.assertEq(false, sockets[0].connected);
   chrome.test.assertEq(undefined, sockets[0].address);
@@ -75,7 +75,26 @@ function secondStage() {
                       function() {
                         expectError("Permission denied");
 
-                        chrome.test.sendMessage('ready', startTests);
+                        chrome.bluetoothSocket.listenUsingL2cap(
+                          socket.socketId, uuid, {'psm': 1234},
+                          function() {
+                            expectError("Invalid PSM");
+
+                            chrome.bluetoothSocket.listenUsingL2cap(
+                              socket.socketId, uuid, {'psm': 4369},
+                              function() {
+                                expectError("Invalid PSM");
+
+                                chrome.bluetoothSocket.listenUsingL2cap(
+                                  socket.socketId, uuid, {'psm': 13},
+                                  function() {
+                                    expectError("Invalid PSM");
+
+                                    chrome.test.sendMessage(
+                                        'ready', startTests);
+                                  });
+                              });
+                          });
                       });
                   });
               });
@@ -84,6 +103,7 @@ function secondStage() {
 }
 
 chrome.bluetoothSocket.create(
+  {'name': 'MyServiceName'},
   function(socket) {
     failOnError();
 

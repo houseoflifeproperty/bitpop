@@ -26,7 +26,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.system.systemhost_mock import MockSystemHost
 
@@ -220,7 +220,7 @@ class DriverTest(unittest.TestCase):
         port = TestWebKitPort()
         port._server_process_constructor = MockServerProcess
         driver = Driver(port, 0, pixel_tests=True)
-        driver.start(True, [])
+        driver.start(True, [], None)
         last_tmpdir = port._filesystem.last_tmpdir
         self.assertNotEquals(last_tmpdir, None)
         driver.stop()
@@ -230,7 +230,7 @@ class DriverTest(unittest.TestCase):
         port = TestWebKitPort()
         port._server_process_constructor = MockServerProcess
         driver = Driver(port, 0, pixel_tests=True)
-        driver.start(True, [])
+        driver.start(True, [], None)
         last_tmpdir = port._filesystem.last_tmpdir
         driver._start(True, [])
         self.assertFalse(port._filesystem.isdir(last_tmpdir))
@@ -239,5 +239,5 @@ class DriverTest(unittest.TestCase):
         port = TestWebKitPort()
         port._server_process_constructor = MockServerProcess
         driver = Driver(port, 0, pixel_tests=True)
-        driver.start(True, [])
+        driver.start(True, [], None)
         self.assertTrue(driver._server_process.started)

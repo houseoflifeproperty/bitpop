@@ -24,13 +24,15 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_utility_messages.h"
+#include "chrome/common/extensions/chrome_utility_extensions_messages.h"
 #include "chrome/common/extensions/extension_file_util.h"
+#include "components/crx_file/constants.h"
+#include "components/crx_file/crx_file.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/utility_process_host.h"
 #include "content/public/common/common_param_traits.h"
 #include "crypto/signature_verifier.h"
 #include "extensions/common/constants.h"
-#include "extensions/common/crx_file.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_l10n_util.h"
 #include "extensions/common/file_util.h"
@@ -45,6 +47,7 @@
 using base::ASCIIToUTF16;
 using content::BrowserThread;
 using content::UtilityProcessHost;
+using crx_file::CrxFile;
 
 // The following macro makes histograms that record the length of paths
 // in this file much easier to read.
@@ -542,8 +545,8 @@ bool SandboxedUnpacker::ValidateSignature() {
   }
 
   crypto::SignatureVerifier verifier;
-  if (!verifier.VerifyInit(extension_misc::kSignatureAlgorithm,
-                           sizeof(extension_misc::kSignatureAlgorithm),
+  if (!verifier.VerifyInit(crx_file::kSignatureAlgorithm,
+                           sizeof(crx_file::kSignatureAlgorithm),
                            &signature.front(),
                            signature.size(),
                            &key.front(),
@@ -693,9 +696,8 @@ bool SandboxedUnpacker::RewriteImageFiles(SkBitmap* install_icon) {
     }
   }
 
-  std::string install_icon_path = IconsInfo::GetIcons(extension_).Get(
-      extension_misc::EXTENSION_ICON_LARGE,
-      ExtensionIconSet::MATCH_BIGGER);
+  const std::string& install_icon_path = IconsInfo::GetIcons(extension_).Get(
+      extension_misc::EXTENSION_ICON_LARGE, ExtensionIconSet::MATCH_BIGGER);
 
   // Write our parsed images back to disk as well.
   for (size_t i = 0; i < images.size(); ++i) {

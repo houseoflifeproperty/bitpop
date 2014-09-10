@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2003, 2006, 2008, 2011 Apple Inc. All rights reserved.
  * Copyright (C) 2008 Holger Hans Peter Freyther
+ * Copyright (C) 2014 Google Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,14 +24,13 @@
 #define WidthIterator_h
 
 #include "platform/PlatformExport.h"
-#include "platform/fonts/Font.h"
 #include "platform/fonts/SVGGlyph.h"
 #include "platform/text/TextRun.h"
 #include "wtf/HashSet.h"
 #include "wtf/unicode/Unicode.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Font;
 class GlyphBuffer;
@@ -43,8 +43,8 @@ struct PLATFORM_EXPORT WidthIterator {
 public:
     WidthIterator(const Font*, const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts = 0, bool accountForGlyphBounds = false, bool forTextEmphasis = false);
 
-    unsigned advance(int to, GlyphBuffer*);
-    bool advanceOneCharacter(float& width, GlyphBuffer&);
+    unsigned advance(int to, GlyphBuffer* = 0);
+    bool advanceOneCharacter(float& width);
 
     float maxGlyphBoundingBoxY() const { ASSERT(m_accountForGlyphBounds); return m_maxGlyphBoundingBoxY; }
     float minGlyphBoundingBoxY() const { ASSERT(m_accountForGlyphBounds); return m_minGlyphBoundingBoxY; }
@@ -58,12 +58,6 @@ public:
     Vector<SVGGlyph::ArabicForm>& arabicForms() { return m_arabicForms; }
 #endif
 
-    static bool supportsTypesettingFeatures(const Font& font)
-    {
-
-        return !font.fontDescription().typesettingFeatures();
-    }
-
     const Font* m_font;
 
     const TextRun& m_run;
@@ -73,29 +67,37 @@ public:
     float m_expansion;
     float m_expansionPerOpportunity;
     bool m_isAfterExpansion;
-    float m_finalRoundingWidth;
 
 #if ENABLE(SVG_FONTS)
     Vector<SVGGlyph::ArabicForm> m_arabicForms;
 #endif
 
 private:
-    GlyphData glyphDataForCharacter(UChar32, bool mirror, int currentCharacter, unsigned& advanceLength);
+    struct CharacterData {
+        UChar32 character;
+        unsigned clusterLength;
+        int characterOffset;
+    };
+
+    GlyphData glyphDataForCharacter(CharacterData&);
+    float characterWidth(UChar32, const GlyphData&) const;
+    void cacheFallbackFont(UChar32, const SimpleFontData*, const SimpleFontData* primaryFont);
+    float adjustSpacing(float, const CharacterData&, const SimpleFontData&, GlyphBuffer*);
+    void updateGlyphBounds(const GlyphData&, float width, bool firstCharacter);
+
     template <typename TextIterator>
-    inline unsigned advanceInternal(TextIterator&, GlyphBuffer*);
+    unsigned advanceInternal(TextIterator&, GlyphBuffer*);
 
-    bool shouldApplyFontTransforms() const { return m_run.length() > 1 && (m_typesettingFeatures & (Kerning | Ligatures)); }
-
-    TypesettingFeatures m_typesettingFeatures;
     HashSet<const SimpleFontData*>* m_fallbackFonts;
-    bool m_accountForGlyphBounds;
     float m_maxGlyphBoundingBoxY;
     float m_minGlyphBoundingBoxY;
     float m_firstGlyphOverflow;
     float m_lastGlyphOverflow;
-    bool m_forTextEmphasis;
+
+    bool m_accountForGlyphBounds : 1;
+    bool m_forTextEmphasis : 1;
 };
 
-}
+} // namespace blink
 
 #endif

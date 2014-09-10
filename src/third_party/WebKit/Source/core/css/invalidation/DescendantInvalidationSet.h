@@ -39,7 +39,7 @@
 #include "wtf/text/AtomicStringHash.h"
 #include "wtf/text/StringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 
@@ -74,6 +74,10 @@ public:
 
     void trace(Visitor*);
 
+#ifndef NDEBUG
+    void show() const;
+#endif
+
 private:
     DescendantInvalidationSet();
 
@@ -98,6 +102,6 @@ private:
     unsigned m_treeBoundaryCrossing : 1;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DescendantInvalidationSet_h

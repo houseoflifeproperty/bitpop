@@ -29,7 +29,7 @@
 #include "public/platform/Platform.h"
 #include <string.h>
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
@@ -82,7 +82,7 @@ DiscardablePixelRef::~DiscardablePixelRef()
 
 bool DiscardablePixelRef::allocAndLockDiscardableMemory(size_t bytes)
 {
-    m_discardable = adoptPtr(blink::Platform::current()->allocateAndLockDiscardableMemory(bytes));
+    m_discardable = adoptPtr(Platform::current()->allocateAndLockDiscardableMemory(bytes));
     if (m_discardable) {
         m_lockedMemory = m_discardable->data();
         return true;
@@ -116,4 +116,4 @@ bool DiscardablePixelRef::isDiscardable(SkPixelRef* pixelRef)
     return pixelRef && pixelRef->getURI() && !strcmp(pixelRef->getURI(), labelDiscardable);
 }
 
-} // namespace WebCore
+} // namespace blink

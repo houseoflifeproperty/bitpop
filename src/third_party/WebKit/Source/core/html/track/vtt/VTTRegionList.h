@@ -26,14 +26,15 @@
 #ifndef VTTRegionList_h
 #define VTTRegionList_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/track/vtt/VTTRegion.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class VTTRegionList FINAL : public RefCountedWillBeGarbageCollected<VTTRegionList> {
+class VTTRegionList FINAL : public RefCountedWillBeGarbageCollected<VTTRegionList>, public ScriptWrappable {
 public:
     static PassRefPtrWillBeRawPtr<VTTRegionList> create()
     {
@@ -56,6 +57,6 @@ private:
     WillBeHeapVector<RefPtrWillBeMember<VTTRegion> > m_list;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

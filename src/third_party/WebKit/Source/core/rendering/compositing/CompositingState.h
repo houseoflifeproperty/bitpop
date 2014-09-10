@@ -5,14 +5,14 @@
 #ifndef CompositingState_h
 #define CompositingState_h
 
-namespace WebCore {
+namespace blink {
 
 enum CompositingState {
     // The layer paints into its enclosing composited ancestor.
     NotComposited = 0,
 
     // The layer is composited, but its contents still paint into enclosing composited ancestor.
-    // In this state, repaint invalidations must be sent to the enclosing composited ancestor.
+    // In this state, paint invalidations must be sent to the enclosing composited ancestor.
     // Typically this happens when a layer's properties need to be represented in the compositor
     // output data structures, but it doesn't actually have any other reasons to be composited.
     HasOwnBackingButPaintsIntoAncestor = 1,
@@ -24,6 +24,6 @@ enum CompositingState {
     PaintsIntoGroupedBacking = 3
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CompositingState_h

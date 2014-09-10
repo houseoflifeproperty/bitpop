@@ -31,7 +31,7 @@
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 
@@ -41,14 +41,12 @@ public:
     LiveNodeList(ContainerNode& ownerNode, CollectionType collectionType, NodeListInvalidationType invalidationType, NodeListRootType rootType = NodeListIsRootedAtNode)
         : LiveNodeListBase(ownerNode, rootType, invalidationType, collectionType) { }
 
-    virtual unsigned length() const OVERRIDE FINAL { return m_collectionIndexCache.nodeCount(*this); }
-    virtual Element* item(unsigned offset) const OVERRIDE FINAL { return m_collectionIndexCache.nodeAt(*this, offset); }
+    virtual unsigned length() const OVERRIDE FINAL;
+    virtual Element* item(unsigned offset) const OVERRIDE FINAL;
     virtual bool elementMatches(const Element&) const = 0;
 
     virtual void invalidateCache(Document* oldDocument = 0) const OVERRIDE FINAL;
     void invalidateCacheForAttribute(const QualifiedName*) const;
-
-    bool shouldOnlyIncludeDirectChildren() const { return false; }
 
     // Collection IndexCache API.
     bool canTraverseBackward() const { return true; }
@@ -73,6 +71,6 @@ inline void LiveNodeList::invalidateCacheForAttribute(const QualifiedName* attrN
         invalidateCache();
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // LiveNodeList_h

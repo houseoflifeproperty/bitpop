@@ -27,15 +27,13 @@
 #ifndef TextTrack_h
 #define TextTrack_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/events/EventTarget.h"
 #include "core/html/track/TrackBase.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class Document;
 class ExceptionState;
 class HTMLMediaElement;
 class TextTrack;
@@ -45,13 +43,13 @@ class TextTrackList;
 class VTTRegion;
 class VTTRegionList;
 
-class TextTrack : public TrackBase, public ScriptWrappable, public EventTargetWithInlineData {
+class TextTrack : public TrackBase, public EventTargetWithInlineData {
     REFCOUNTED_EVENT_TARGET(TrackBase);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(TextTrack);
 public:
-    static PassRefPtrWillBeRawPtr<TextTrack> create(Document& document, const AtomicString& kind, const AtomicString& label, const AtomicString& language)
+    static PassRefPtrWillBeRawPtr<TextTrack> create(const AtomicString& kind, const AtomicString& label, const AtomicString& language)
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new TextTrack(document, kind, label, language, emptyAtom, AddTrack));
+        return adoptRefWillBeRefCountedGarbageCollected(new TextTrack(kind, label, language, emptyAtom, AddTrack));
     }
     virtual ~TextTrack();
 
@@ -120,7 +118,7 @@ public:
     virtual void trace(Visitor*) OVERRIDE;
 
 protected:
-    TextTrack(Document&, const AtomicString& kind, const AtomicString& label, const AtomicString& language, const AtomicString& id, TextTrackType);
+    TextTrack(const AtomicString& kind, const AtomicString& label, const AtomicString& language, const AtomicString& id, TextTrackType);
 
     virtual bool isValidKind(const AtomicString& kind) const OVERRIDE { return isValidKindKeyword(kind); }
     virtual AtomicString defaultKind() const OVERRIDE { return subtitlesKeyword(); }
@@ -142,6 +140,8 @@ private:
     bool m_hasBeenConfigured;
 };
 
-} // namespace WebCore
+DEFINE_TRACK_TYPE_CASTS(TextTrack, TrackBase::TextTrack);
+
+} // namespace blink
 
 #endif

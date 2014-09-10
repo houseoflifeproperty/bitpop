@@ -14,7 +14,7 @@ function registerWebViewElement() {
   var proto = Object.create(HTMLElement.prototype);
 
   proto.createdCallback = function() {
-    console.error(errorMessage);
+    window.console.error(errorMessage);
   };
 
   window.WebView =
@@ -23,8 +23,8 @@ function registerWebViewElement() {
   // Delete the callbacks so developers cannot call them and produce unexpected
   // behavior.
   delete proto.createdCallback;
-  delete proto.enteredDocumentCallback;
-  delete proto.leftDocumentCallback;
+  delete proto.attachedCallback;
+  delete proto.detachedCallback;
   delete proto.attributeChangedCallback;
 }
 

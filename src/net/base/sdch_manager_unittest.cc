@@ -65,11 +65,11 @@ TEST_F(SdchManagerTest, DomainBlacklisting) {
   GURL test_url("http://www.test.com");
   GURL google_url("http://www.google.com");
 
-  sdch_manager()->BlacklistDomain(test_url);
+  sdch_manager()->BlacklistDomain(test_url, SdchManager::MIN_PROBLEM_CODE);
   EXPECT_FALSE(sdch_manager()->IsInSupportedDomain(test_url));
   EXPECT_TRUE(sdch_manager()->IsInSupportedDomain(google_url));
 
-  sdch_manager()->BlacklistDomain(google_url);
+  sdch_manager()->BlacklistDomain(google_url, SdchManager::MIN_PROBLEM_CODE);
   EXPECT_FALSE(sdch_manager()->IsInSupportedDomain(google_url));
 }
 
@@ -79,7 +79,7 @@ TEST_F(SdchManagerTest, DomainBlacklistingCaseSensitivity) {
 
   EXPECT_TRUE(sdch_manager()->IsInSupportedDomain(test_url));
   EXPECT_TRUE(sdch_manager()->IsInSupportedDomain(test2_url));
-  sdch_manager()->BlacklistDomain(test_url);
+  sdch_manager()->BlacklistDomain(test_url, SdchManager::MIN_PROBLEM_CODE);
   EXPECT_FALSE(sdch_manager()->IsInSupportedDomain(test2_url));
 }
 
@@ -98,7 +98,7 @@ TEST_F(SdchManagerTest, BlacklistingSingleBlacklist) {
   std::string domain(gurl.host());
   sdch_manager()->ClearBlacklistings();
 
-  sdch_manager()->BlacklistDomain(gurl);
+  sdch_manager()->BlacklistDomain(gurl, SdchManager::MIN_PROBLEM_CODE);
   EXPECT_EQ(sdch_manager()->BlackListDomainCount(domain), 1);
   EXPECT_EQ(sdch_manager()->BlacklistDomainExponential(domain), 1);
 
@@ -115,7 +115,7 @@ TEST_F(SdchManagerTest, BlacklistingExponential) {
 
   int exponential = 1;
   for (int i = 1; i < 100; ++i) {
-    sdch_manager()->BlacklistDomain(gurl);
+    sdch_manager()->BlacklistDomain(gurl, SdchManager::MIN_PROBLEM_CODE);
     EXPECT_EQ(sdch_manager()->BlacklistDomainExponential(domain), exponential);
 
     EXPECT_EQ(sdch_manager()->BlackListDomainCount(domain), exponential);
@@ -212,6 +212,29 @@ TEST_F(SdchManagerTest, CanNotUseHTTPDictionaryOverHTTPS) {
   // HTTPS target URL should not advertise dictionary acquired over HTTP even if
   // secure scheme support is enabled.
   SdchManager::EnableSecureSchemeSupport(true);
+  sdch_manager()->GetAvailDictionaryList(target_url, &dictionary_list);
+  EXPECT_TRUE(dictionary_list.empty());
+
+  scoped_refptr<SdchManager::Dictionary> dictionary;
+  std::string client_hash;
+  std::string server_hash;
+  sdch_manager()->GenerateHash(dictionary_text, &client_hash, &server_hash);
+  sdch_manager()->GetVcdiffDictionary(server_hash, target_url, &dictionary);
+  EXPECT_TRUE(dictionary == NULL);
+}
+
+TEST_F(SdchManagerTest, CanNotUseHTTPSDictionaryOverHTTP) {
+  std::string dictionary_domain("x.y.z.google.com");
+  std::string dictionary_text(NewSdchDictionary(dictionary_domain));
+
+  SdchManager::EnableSecureSchemeSupport(true);
+  EXPECT_TRUE(sdch_manager()->AddSdchDictionary(dictionary_text,
+              GURL("https://" + dictionary_domain)));
+
+  GURL target_url("http://" + dictionary_domain + "/test");
+  std::string dictionary_list;
+  // HTTP target URL should not advertise dictionary acquired over HTTPS even if
+  // secure scheme support is enabled.
   sdch_manager()->GetAvailDictionaryList(target_url, &dictionary_list);
   EXPECT_TRUE(dictionary_list.empty());
 
@@ -460,7 +483,8 @@ TEST_F(SdchManagerTest, ClearDictionaryData) {
       &dictionary);
   EXPECT_TRUE(dictionary);
 
-  sdch_manager()->BlacklistDomain(GURL(blacklist_url));
+  sdch_manager()->BlacklistDomain(GURL(blacklist_url),
+                                  SdchManager::MIN_PROBLEM_CODE);
   EXPECT_FALSE(sdch_manager()->IsInSupportedDomain(blacklist_url));
 
   sdch_manager()->ClearData();

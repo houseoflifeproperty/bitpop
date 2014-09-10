@@ -10,7 +10,7 @@
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
-#include "base/memory/linked_ptr.h"
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -52,10 +52,28 @@ class ShaderTranslatorCache;
 }
 
 class CommandBufferServiceBase;
-class GpuControlService;
-class GpuMemoryBufferFactory;
 class GpuScheduler;
 class TransferBufferManagerInterface;
+
+// TODO(reveman): Remove this interface when InProcessCommandBuffer doesn't need
+// a custom factory interface and android_webview implementation of GPU memory
+// buffers can use the same mechanism for buffer allocation as what's used for
+// out of process GPU service.
+class GPU_EXPORT InProcessGpuMemoryBufferFactory {
+ public:
+  virtual scoped_ptr<gfx::GpuMemoryBuffer> AllocateGpuMemoryBuffer(
+      size_t width,
+      size_t height,
+      unsigned internalformat,
+      unsigned usage) = 0;
+  virtual scoped_refptr<gfx::GLImage> CreateImageForGpuMemoryBuffer(
+      const gfx::GpuMemoryBufferHandle& handle,
+      const gfx::Size& size,
+      unsigned internalformat) = 0;
+
+ protected:
+  virtual ~InProcessGpuMemoryBufferFactory() {}
+};
 
 // This class provides a thread-safe interface to the global GPU service (for
 // example GPU thread) when being run in single process mode.
@@ -68,7 +86,8 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   explicit InProcessCommandBuffer(const scoped_refptr<Service>& service);
   virtual ~InProcessCommandBuffer();
 
-  static void SetGpuMemoryBufferFactory(GpuMemoryBufferFactory* factory);
+  static void SetGpuMemoryBufferFactory(
+      InProcessGpuMemoryBufferFactory* factory);
 
   // If |surface| is not NULL, use it directly; in this case, the command
   // buffer gpu thread must be the same as the client thread. Otherwise create
@@ -105,9 +124,11 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
                                                       int32* id) OVERRIDE;
   virtual void DestroyGpuMemoryBuffer(int32 id) OVERRIDE;
   virtual uint32 InsertSyncPoint() OVERRIDE;
+  virtual uint32 InsertFutureSyncPoint() OVERRIDE;
+  virtual void RetireSyncPoint(uint32 sync_point) OVERRIDE;
   virtual void SignalSyncPoint(uint32 sync_point,
                                const base::Closure& callback) OVERRIDE;
-  virtual void SignalQuery(uint32 query,
+  virtual void SignalQuery(uint32 query_id,
                            const base::Closure& callback) OVERRIDE;
   virtual void SetSurfaceVisible(bool visible) OVERRIDE;
   virtual void Echo(const base::Closure& callback) OVERRIDE;
@@ -168,6 +189,7 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   bool InitializeOnGpuThread(const InitializeOnGpuThreadParams& params);
   bool DestroyOnGpuThread();
   void FlushOnGpuThread(int32 put_offset);
+  void ScheduleIdleWorkOnGpuThread();
   uint32 CreateStreamTextureOnGpuThread(uint32 client_texture_id);
   bool MakeCurrent();
   base::Closure WrapCallback(const base::Closure& callback);
@@ -177,14 +199,22 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   void RetireSyncPointOnGpuThread(uint32 sync_point);
   void SignalSyncPointOnGpuThread(uint32 sync_point,
                                   const base::Closure& callback);
-  void DestroyTransferBufferOnGputhread(int32 id);
+  void SignalQueryOnGpuThread(unsigned query_id, const base::Closure& callback);
+  void DestroyTransferBufferOnGpuThread(int32 id);
+  void RegisterGpuMemoryBufferOnGpuThread(
+      int32 id,
+      const gfx::GpuMemoryBufferHandle& handle,
+      size_t width,
+      size_t height,
+      unsigned internalformat);
+  void UnregisterGpuMemoryBufferOnGpuThread(int32 id);
 
   // Callbacks:
   void OnContextLost();
   void OnResizeView(gfx::Size size, float scale_factor);
   bool GetBufferChanged(int32 transfer_buffer_id);
   void PumpCommands();
-  void ScheduleMoreIdleWork();
+  void PerformIdleWork();
 
   static scoped_refptr<Service> GetDefaultService();
 
@@ -197,12 +227,14 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   scoped_refptr<gfx::GLContext> context_;
   scoped_refptr<gfx::GLSurface> surface_;
   base::Closure context_lost_callback_;
+  bool idle_work_pending_;  // Used to throttle PerformIdleWork.
 
   // Members accessed on the client thread:
   State last_state_;
   int32 last_put_offset_;
   gpu::Capabilities capabilities_;
-  typedef std::map<int32, linked_ptr<gfx::GpuMemoryBuffer> > GpuMemoryBufferMap;
+  typedef base::ScopedPtrHashMap<int32, gfx::GpuMemoryBuffer>
+      GpuMemoryBufferMap;
   GpuMemoryBufferMap gpu_memory_buffers_;
 
   // Accessed on both threads:
@@ -212,7 +244,6 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   scoped_refptr<Service> service_;
   State state_after_last_flush_;
   base::Lock state_after_last_flush_lock_;
-  scoped_ptr<GpuControlService> gpu_control_;
   scoped_refptr<gfx::GLShareGroup> gl_share_group_;
 
 #if defined(OS_ANDROID)

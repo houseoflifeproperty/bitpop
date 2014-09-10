@@ -12,12 +12,12 @@
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/test/wizard_in_process_browser_test.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_test_impl.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_update_engine_client.h"
+#include "chromeos/network/portal_detector/network_portal_detector.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -32,8 +32,8 @@ namespace chromeos {
 
 namespace {
 
-const char kStubEthernetServicePath[] = "eth0";
-const char kStubWifiServicePath[] = "wlan0";
+const char kStubEthernetGuid[] = "eth0";
+const char kStubWifiGuid[] = "wlan0";
 
 }  // namespace
 
@@ -64,9 +64,9 @@ class UpdateScreenTest : public WizardInProcessBrowserTest {
     NetworkPortalDetector::CaptivePortalState online_state;
     online_state.status = NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE;
     online_state.response_code = 204;
-    SetDefaultNetworkPath(kStubEthernetServicePath);
-    SetDetectionResults(kStubEthernetServicePath, online_state);
-    SetDetectionResults(kStubWifiServicePath, online_state);
+    SetDefaultNetwork(kStubEthernetGuid);
+    SetDetectionResults(kStubEthernetGuid, online_state);
+    SetDetectionResults(kStubWifiGuid, online_state);
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
@@ -91,10 +91,10 @@ class UpdateScreenTest : public WizardInProcessBrowserTest {
     update_screen_->screen_observer_ = mock_screen_observer_.get();
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     mock_error_screen_.reset();
     mock_error_screen_actor_.reset();
-    WizardInProcessBrowserTest::CleanUpOnMainThread();
+    WizardInProcessBrowserTest::TearDownOnMainThread();
   }
 
   virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
@@ -102,19 +102,16 @@ class UpdateScreenTest : public WizardInProcessBrowserTest {
     WizardInProcessBrowserTest::TearDownInProcessBrowserTestFixture();
   }
 
-  void SetDefaultNetworkPath(const std::string& service_path) {
+  void SetDefaultNetwork(const std::string& guid) {
     DCHECK(network_portal_detector_);
-    network_portal_detector_->SetDefaultNetworkPathForTesting(
-        service_path,
-        service_path /* guid */);
+    network_portal_detector_->SetDefaultNetworkForTesting(guid);
   }
 
   void SetDetectionResults(
-      const std::string& service_path,
+      const std::string& guid,
       const NetworkPortalDetector::CaptivePortalState& state) {
     DCHECK(network_portal_detector_);
-    network_portal_detector_->SetDetectionResultsForTesting(service_path,
-                                                            state);
+    network_portal_detector_->SetDetectionResultsForTesting(guid, state);
   }
 
   void NotifyPortalDetectionCompleted() {
@@ -248,7 +245,7 @@ IN_PROC_BROWSER_TEST_F(UpdateScreenTest, TestTemproraryOfflineNetwork) {
   NetworkPortalDetector::CaptivePortalState portal_state;
   portal_state.status = NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_PORTAL;
   portal_state.response_code = 200;
-  SetDetectionResults(kStubEthernetServicePath, portal_state);
+  SetDetectionResults(kStubEthernetGuid, portal_state);
 
   // Update screen will show error message about portal state because
   // ethernet is behind captive portal.
@@ -268,7 +265,7 @@ IN_PROC_BROWSER_TEST_F(UpdateScreenTest, TestTemproraryOfflineNetwork) {
   NetworkPortalDetector::CaptivePortalState online_state;
   online_state.status = NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE;
   online_state.response_code = 204;
-  SetDetectionResults(kStubEthernetServicePath, online_state);
+  SetDetectionResults(kStubEthernetGuid, online_state);
 
   // Second notification from portal detector will be about online state,
   // so update screen will hide error message and proceed to update.
@@ -294,7 +291,7 @@ IN_PROC_BROWSER_TEST_F(UpdateScreenTest, TestTwoOfflineNetworks) {
   NetworkPortalDetector::CaptivePortalState portal_state;
   portal_state.status = NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_PORTAL;
   portal_state.response_code = 200;
-  SetDetectionResults(kStubEthernetServicePath, portal_state);
+  SetDetectionResults(kStubEthernetGuid, portal_state);
 
   // Update screen will show error message about portal state because
   // ethernet is behind captive portal.
@@ -316,8 +313,8 @@ IN_PROC_BROWSER_TEST_F(UpdateScreenTest, TestTwoOfflineNetworks) {
   proxy_state.status =
       NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_PROXY_AUTH_REQUIRED;
   proxy_state.response_code = -1;
-  SetDefaultNetworkPath(kStubWifiServicePath);
-  SetDetectionResults(kStubWifiServicePath, proxy_state);
+  SetDefaultNetwork(kStubWifiGuid);
+  SetDetectionResults(kStubWifiGuid, proxy_state);
 
   // Update screen will show message about proxy error because wifie
   // network requires proxy authentication.
@@ -329,7 +326,7 @@ IN_PROC_BROWSER_TEST_F(UpdateScreenTest, TestTwoOfflineNetworks) {
 }
 
 IN_PROC_BROWSER_TEST_F(UpdateScreenTest, TestVoidNetwork) {
-  SetDefaultNetworkPath("");
+  SetDefaultNetwork(std::string());
 
   // Cancels pending update request.
   EXPECT_CALL(*mock_screen_observer_,
@@ -373,7 +370,7 @@ IN_PROC_BROWSER_TEST_F(UpdateScreenTest, TestAPReselection) {
   NetworkPortalDetector::CaptivePortalState portal_state;
   portal_state.status = NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_PORTAL;
   portal_state.response_code = 200;
-  SetDetectionResults(kStubEthernetServicePath, portal_state);
+  SetDetectionResults(kStubEthernetGuid, portal_state);
 
   // Update screen will show error message about portal state because
   // ethernet is behind captive portal.
@@ -401,7 +398,7 @@ IN_PROC_BROWSER_TEST_F(UpdateScreenTest, TestAPReselection) {
               OnExit(ScreenObserver::UPDATE_ERROR_CHECKING_FOR_UPDATE))
       .Times(1);
 
-  update_screen_->OnConnectToNetworkRequested(kStubEthernetServicePath);
+  update_screen_->OnConnectToNetworkRequested();
   base::MessageLoop::current()->RunUntilIdle();
 }
 

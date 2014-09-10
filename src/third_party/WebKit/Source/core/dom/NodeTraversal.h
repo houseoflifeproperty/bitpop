@@ -26,9 +26,10 @@
 #ifndef NodeTraversal_h
 #define NodeTraversal_h
 
+#include "core/dom/ContainerNode.h"
 #include "core/dom/Node.h"
 
-namespace WebCore {
+namespace blink {
 
 class NodeTraversal {
 public:
@@ -42,13 +43,13 @@ public:
     static Node* next(const ContainerNode& current, const Node* stayWithin) { return traverseNextTemplate(current, stayWithin); }
 
     // Like next, but skips children and starts with the next sibling.
-    static Node* nextSkippingChildren(const Node& current) { return traverseNextSkippingChildrenTemplate(current); }
-    static Node* nextSkippingChildren(const ContainerNode& current) { return traverseNextSkippingChildrenTemplate(current); }
-    static Node* nextSkippingChildren(const Node& current, const Node* stayWithin) { return traverseNextSkippingChildrenTemplate(current, stayWithin); }
-    static Node* nextSkippingChildren(const ContainerNode& current, const Node* stayWithin) { return traverseNextSkippingChildrenTemplate(current, stayWithin); }
+    static Node* nextSkippingChildren(const Node&);
+    static Node* nextSkippingChildren(const Node&, const Node* stayWithin);
+
+    static Node* lastWithin(const ContainerNode&);
+    static Node& lastWithinOrSelf(Node&);
 
     // Does a reverse pre-order traversal to find the node that comes before the current one in document order
-    static Node* lastWithin(const ContainerNode&);
     static Node* previous(const Node&, const Node* stayWithin = 0);
 
     // Like previous, but skips children and starts with the next sibling.
@@ -67,6 +68,11 @@ public:
 
     static Node* nextAncestorSibling(const Node&);
     static Node* nextAncestorSibling(const Node&, const Node* stayWithin);
+    static Node& highestAncestorOrSelf(Node&);
+
+    // Children traversal.
+    static Node* childAt(const Node& parent, unsigned index) { return childAtTemplate(parent, index); }
+    static Node* childAt(const ContainerNode& parent, unsigned index) { return childAtTemplate(parent, index); }
 
 private:
     template <class NodeType>
@@ -74,15 +80,13 @@ private:
     template <class NodeType>
     static Node* traverseNextTemplate(NodeType&, const Node* stayWithin);
     template <class NodeType>
-    static Node* traverseNextSkippingChildrenTemplate(NodeType&);
-    template <class NodeType>
-    static Node* traverseNextSkippingChildrenTemplate(NodeType&, const Node* stayWithin);
+    static Node* childAtTemplate(NodeType&, unsigned);
 };
 
 template <class NodeType>
 inline Node* NodeTraversal::traverseNextTemplate(NodeType& current)
 {
-    if (current.firstChild())
+    if (current.hasChildren())
         return current.firstChild();
     if (current.nextSibling())
         return current.nextSibling();
@@ -92,7 +96,7 @@ inline Node* NodeTraversal::traverseNextTemplate(NodeType& current)
 template <class NodeType>
 inline Node* NodeTraversal::traverseNextTemplate(NodeType& current, const Node* stayWithin)
 {
-    if (current.firstChild())
+    if (current.hasChildren())
         return current.firstChild();
     if (current == stayWithin)
         return 0;
@@ -101,16 +105,14 @@ inline Node* NodeTraversal::traverseNextTemplate(NodeType& current, const Node* 
     return nextAncestorSibling(current, stayWithin);
 }
 
-template <class NodeType>
-inline Node* NodeTraversal::traverseNextSkippingChildrenTemplate(NodeType& current)
+inline Node* NodeTraversal::nextSkippingChildren(const Node& current)
 {
     if (current.nextSibling())
         return current.nextSibling();
     return nextAncestorSibling(current);
 }
 
-template <class NodeType>
-inline Node* NodeTraversal::traverseNextSkippingChildrenTemplate(NodeType& current, const Node* stayWithin)
+inline Node* NodeTraversal::nextSkippingChildren(const Node& current, const Node* stayWithin)
 {
     if (current == stayWithin)
         return 0;
@@ -119,6 +121,23 @@ inline Node* NodeTraversal::traverseNextSkippingChildrenTemplate(NodeType& curre
     return nextAncestorSibling(current, stayWithin);
 }
 
-} // namespace WebCore
+inline Node& NodeTraversal::highestAncestorOrSelf(Node& current)
+{
+    Node* highest = &current;
+    while (highest->parentNode())
+        highest = highest->parentNode();
+    return *highest;
+}
+
+template <class NodeType>
+inline Node* NodeTraversal::childAtTemplate(NodeType& parent, unsigned index)
+{
+    Node* child = parent.firstChild();
+    while (child && index--)
+        child = child->nextSibling();
+    return child;
+}
+
+} // namespace blink
 
 #endif

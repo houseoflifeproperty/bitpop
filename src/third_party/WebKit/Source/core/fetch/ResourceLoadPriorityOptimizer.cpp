@@ -35,7 +35,7 @@
 
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 ResourceLoadPriorityOptimizer* ResourceLoadPriorityOptimizer::resourceLoadPriorityOptimizer()
 {
@@ -78,7 +78,7 @@ void ResourceLoadPriorityOptimizer::removeRenderObject(RenderObject* renderer)
 
 void ResourceLoadPriorityOptimizer::updateAllImageResourcePriorities()
 {
-    TRACE_EVENT0("webkit", "ResourceLoadPriorityOptimizer::updateAllImageResourcePriorities");
+    TRACE_EVENT0("blink", "ResourceLoadPriorityOptimizer::updateAllImageResourcePriorities");
 
     m_imageResources.clear();
 
@@ -101,7 +101,7 @@ void ResourceLoadPriorityOptimizer::updateImageResourcesWithLoadPriority()
             ResourceLoadPriorityLow : ResourceLoadPriorityVeryLow;
 
         if (priority != it->value->imageResource->resourceRequest().priority()) {
-            it->value->imageResource->resourceRequest().setPriority(priority, it->value->screenArea);
+            it->value->imageResource->mutableResourceRequest().setPriority(priority, it->value->screenArea);
             it->value->imageResource->didChangePriority(priority, it->value->screenArea);
         }
     }

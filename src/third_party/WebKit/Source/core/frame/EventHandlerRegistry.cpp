@@ -9,10 +9,12 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFrameOwnerElement.h"
+#include "core/page/Chrome.h"
+#include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 
-namespace WebCore {
+namespace blink {
 
 EventHandlerRegistry::EventHandlerRegistry(FrameHost& frameHost)
     : m_frameHost(frameHost)
@@ -30,7 +32,9 @@ bool EventHandlerRegistry::eventTypeToClass(const AtomicString& eventType, Event
         *result = ScrollEvent;
     } else if (eventType == EventTypeNames::wheel || eventType == EventTypeNames::mousewheel) {
         *result = WheelEvent;
-#if ASSERT_ENABLED
+    } else if (isTouchEventType(eventType)) {
+        *result = TouchEvent;
+#if ENABLE(ASSERT)
     } else if (eventType == EventTypeNames::load || eventType == EventTypeNames::mousemove || eventType == EventTypeNames::touchstart) {
         *result = EventsForTesting;
 #endif
@@ -48,6 +52,7 @@ const EventTargetSet* EventHandlerRegistry::eventHandlerTargets(EventHandlerClas
 
 bool EventHandlerRegistry::hasEventHandlers(EventHandlerClass handlerClass) const
 {
+    checkConsistency();
     return m_targets[handlerClass].size();
 }
 
@@ -79,14 +84,15 @@ bool EventHandlerRegistry::updateEventHandlerTargets(ChangeOperation op, EventHa
 
 void EventHandlerRegistry::updateEventHandlerInternal(ChangeOperation op, EventHandlerClass handlerClass, EventTarget* target)
 {
-    bool hadHandlers = hasEventHandlers(handlerClass);
-    updateEventHandlerTargets(op, handlerClass, target);
-    bool hasHandlers = hasEventHandlers(handlerClass);
+    bool hadHandlers = m_targets[handlerClass].size();
+    bool targetSetChanged = updateEventHandlerTargets(op, handlerClass, target);
+    bool hasHandlers = m_targets[handlerClass].size();
 
-    if (hadHandlers != hasHandlers) {
+    if (hadHandlers != hasHandlers)
         notifyHasHandlersChanged(handlerClass, hasHandlers);
-    }
-    checkConsistency();
+
+    if (targetSetChanged)
+        notifyDidAddOrRemoveEventHandlerTarget(handlerClass);
 }
 
 void EventHandlerRegistry::updateEventHandlerOfType(ChangeOperation op, const AtomicString& eventType, EventTarget* target)
@@ -119,24 +125,6 @@ void EventHandlerRegistry::didRemoveEventHandler(EventTarget& target, EventHandl
 
 void EventHandlerRegistry::didMoveIntoFrameHost(EventTarget& target)
 {
-    updateAllEventHandlers(Add, target);
-}
-
-void EventHandlerRegistry::didMoveOutOfFrameHost(EventTarget& target)
-{
-    updateAllEventHandlers(RemoveAll, target);
-}
-
-void EventHandlerRegistry::didRemoveAllEventHandlers(EventTarget& target)
-{
-    for (size_t i = 0; i < EventHandlerClassCount; ++i) {
-        EventHandlerClass handlerClass = static_cast<EventHandlerClass>(i);
-        updateEventHandlerInternal(RemoveAll, handlerClass, &target);
-    }
-}
-
-void EventHandlerRegistry::updateAllEventHandlers(ChangeOperation op, EventTarget& target)
-{
     if (!target.hasEventListeners())
         return;
 
@@ -145,12 +133,33 @@ void EventHandlerRegistry::updateAllEventHandlers(ChangeOperation op, EventTarge
         EventHandlerClass handlerClass;
         if (!eventTypeToClass(eventTypes[i], &handlerClass))
             continue;
-        if (op == RemoveAll) {
-            updateEventHandlerInternal(op, handlerClass, &target);
-            continue;
-        }
         for (unsigned count = target.getEventListeners(eventTypes[i]).size(); count > 0; --count)
-            updateEventHandlerInternal(op, handlerClass, &target);
+            didAddEventHandler(target, handlerClass);
+    }
+}
+
+void EventHandlerRegistry::didMoveOutOfFrameHost(EventTarget& target)
+{
+    didRemoveAllEventHandlers(target);
+}
+
+void EventHandlerRegistry::didMoveBetweenFrameHosts(EventTarget& target, FrameHost* oldFrameHost, FrameHost* newFrameHost)
+{
+    ASSERT(newFrameHost != oldFrameHost);
+    for (size_t i = 0; i < EventHandlerClassCount; ++i) {
+        EventHandlerClass handlerClass = static_cast<EventHandlerClass>(i);
+        const EventTargetSet* targets = &oldFrameHost->eventHandlerRegistry().m_targets[handlerClass];
+        for (unsigned count = targets->count(&target); count > 0; --count)
+            newFrameHost->eventHandlerRegistry().didAddEventHandler(target, handlerClass);
+        oldFrameHost->eventHandlerRegistry().didRemoveAllEventHandlers(target);
+    }
+}
+
+void EventHandlerRegistry::didRemoveAllEventHandlers(EventTarget& target)
+{
+    for (size_t i = 0; i < EventHandlerClassCount; ++i) {
+        EventHandlerClass handlerClass = static_cast<EventHandlerClass>(i);
+        updateEventHandlerInternal(RemoveAll, handlerClass, &target);
     }
 }
 
@@ -167,7 +176,10 @@ void EventHandlerRegistry::notifyHasHandlersChanged(EventHandlerClass handlerCla
         if (scrollingCoordinator)
             scrollingCoordinator->updateHaveWheelEventHandlers();
         break;
-#if ASSERT_ENABLED
+    case TouchEvent:
+        m_frameHost.chrome().client().needTouchEvents(hasActiveHandlers);
+        break;
+#if ENABLE(ASSERT)
     case EventsForTesting:
         break;
 #endif
@@ -175,6 +187,13 @@ void EventHandlerRegistry::notifyHasHandlersChanged(EventHandlerClass handlerCla
         ASSERT_NOT_REACHED();
         break;
     }
+}
+
+void EventHandlerRegistry::notifyDidAddOrRemoveEventHandlerTarget(EventHandlerClass handlerClass)
+{
+    ScrollingCoordinator* scrollingCoordinator = m_frameHost.page().scrollingCoordinator();
+    if (scrollingCoordinator && handlerClass == TouchEvent)
+        scrollingCoordinator->touchEventTargetRectsDidChange();
 }
 
 void EventHandlerRegistry::trace(Visitor* visitor)
@@ -231,7 +250,7 @@ void EventHandlerRegistry::documentDetached(Document& document)
 
 void EventHandlerRegistry::checkConsistency() const
 {
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     for (size_t i = 0; i < EventHandlerClassCount; ++i) {
         EventHandlerClass handlerClass = static_cast<EventHandlerClass>(i);
         const EventTargetSet* targets = &m_targets[handlerClass];
@@ -249,7 +268,7 @@ void EventHandlerRegistry::checkConsistency() const
             }
         }
     }
-#endif // ASSERT_ENABLED
+#endif // ENABLE(ASSERT)
 }
 
-} // namespace WebCore
+} // namespace blink

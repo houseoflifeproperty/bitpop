@@ -29,11 +29,12 @@
 
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
-class LocalFrame;
 class LayoutRect;
+class LocalFrame;
+class Node;
 class RenderLayer;
 class RenderObject;
 class TextStream;
@@ -72,6 +73,8 @@ String counterValueForElement(Element*);
 
 String markerTextForListItem(Element*);
 
-} // namespace WebCore
+String nodePositionAsStringForTesting(Node*);
+
+} // namespace blink
 
 #endif // RenderTreeAsText_h

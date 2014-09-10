@@ -1,6 +1,5 @@
 [
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -25,6 +24,7 @@
       "@@@STEP_TEXT@Some step text@@@",
       "@@@STEP_LOG_LINE@json.output@{@@@",
       "@@@STEP_LOG_LINE@json.output@  \"did_run\": true, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_failure\": false, @@@",
       "@@@STEP_LOG_LINE@json.output@  \"patch_root\": \"src\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"properties\": {}, @@@",
       "@@@STEP_LOG_LINE@json.output@  \"root\": \"src\", @@@",
@@ -127,7 +127,6 @@
       "-rav",
       "--delete",
       "--delete-excluded",
-      "--include=third_party/angle/.git",
       "--exclude=.svn",
       "--exclude=.git",
       "--exclude=blacklist/project/1",
@@ -154,10 +153,6 @@
       "--verbose"
     ],
     "cwd": "[SLAVE_BUILD]",
-    "env": {
-      "ALTERNATE_JAVAC": "/usr/lib/jvm/java-7-openjdk-amd64/bin/javac",
-      "USE_LEGACY_COMMON_JAVAC": "false"
-    },
     "name": "compile android"
   }
 ]

@@ -41,6 +41,10 @@ v8.log
 /bitpop_specific/extensions/upload
 /build/util/LASTCHANGE.blink
 /chrome/browser/extensions/default_extensions/*.crx
+/chrome/tools/test/reference_build/chrome
+/chrome/tools/test/reference_build/chrome_mac
+/chrome/tools/test/reference_build/chrome_win
+/chrome/tools/test/reference_build/chrome_linux
 /native_client/toolchain
 /third_party/llvm-build
 /third_party/clang_format/bin

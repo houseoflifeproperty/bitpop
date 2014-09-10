@@ -91,7 +91,6 @@ FX_BOOL CFX_DIBitmap::Create(int width, int height, FXDIB_Format format, FX_LPBY
         if (m_pBuffer == NULL) {
             return FALSE;
         }
-        FXSYS_memset32(m_pBuffer, 0, sizeof (FX_BYTE) * size);
     }
     m_Width = width;
     m_Height = height;
@@ -448,7 +447,6 @@ FX_BOOL CFX_DIBitmap::TransferMask(int dest_left, int dest_top, int width, int h
     if (width == 0 || height == 0) {
         return TRUE;
     }
-    int src_pitch = pMask->GetPitch();
     int src_bpp = pMask->GetBPP();
     int alpha;
     FX_DWORD dst_color;

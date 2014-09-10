@@ -5,16 +5,16 @@
 #include "config.h"
 #include "public/platform/WebServiceWorkerProxy.h"
 
-namespace WebCore { class ServiceWorker; }
-
 namespace blink {
 
-WebServiceWorkerProxy::WebServiceWorkerProxy(WebCore::ServiceWorker* serviceWorker)
+class ServiceWorker;
+
+WebServiceWorkerProxy::WebServiceWorkerProxy(ServiceWorker* serviceWorker)
     : m_private(serviceWorker)
 {
 }
 
-WebCore::ServiceWorker* WebServiceWorkerProxy::unwrap() const
+ServiceWorker* WebServiceWorkerProxy::unwrap() const
 {
     return m_private;
 }

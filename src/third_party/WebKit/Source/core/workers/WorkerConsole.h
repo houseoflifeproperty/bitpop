@@ -30,7 +30,6 @@
 #ifndef WorkerConsole_h
 #define WorkerConsole_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/frame/ConsoleBase.h"
 #include "core/frame/ConsoleTypes.h"
@@ -41,11 +40,11 @@
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ScriptArguments;
 
-class WorkerConsole FINAL : public ConsoleBase, public ScriptWrappable {
+class WorkerConsole FINAL : public ConsoleBase {
 public:
     static PassRefPtrWillBeRawPtr<WorkerConsole> create(WorkerGlobalScope* scope)
     {
@@ -65,6 +64,6 @@ private:
     RawPtrWillBeMember<WorkerGlobalScope> m_scope;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerConsole_h

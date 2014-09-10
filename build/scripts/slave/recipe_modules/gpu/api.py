@@ -39,14 +39,22 @@ class GpuApi(recipe_api.RecipeApi):
       self.m.chromium.set_config(self._configuration + '_clang',
                                  GIT_MODE=self._use_git)
     self.m.gclient.apply_config('chrome_internal')
-    if self.m.tryserver.is_tryserver:
-      # Force dcheck on in try server builds.
-      self.m.chromium.apply_config('dcheck')
+
+    # To catch errors earlier on Release bots, in particular the try
+    # servers which are Release mode only, force dcheck and blink
+    # asserts on.
+    self.m.chromium.apply_config('dcheck')
+    self.m.chromium.apply_config('blink_asserts_on')
 
     # Use the default Ash and Aura settings on all bots (specifically Blink
     # bots).
     self.m.chromium.c.gyp_env.GYP_DEFINES.pop('use_ash', None)
     self.m.chromium.c.gyp_env.GYP_DEFINES.pop('use_aura', None)
+
+    # Enable archiving the GPU tests' isolates in chrome_tests.gypi.
+    # The non-GPU trybots build the "all" target, and these tests
+    # shouldn't be built or run on those bots.
+    self.m.chromium.c.gyp_env.GYP_DEFINES['archive_gpu_tests'] = 1
 
     # TODO(kbr): remove the workaround for http://crbug.com/328249 .
     # See crbug.com/335827 for background on the conditional.
@@ -75,8 +83,9 @@ class GpuApi(recipe_api.RecipeApi):
     # TODO(phajdan.jr): Remove the workaround, http://crbug.com/357767 .
     self.m.step.auto_resolve_conflicts = True
 
-  @property
-  def _build_revision(self):
+  # TODO(martinis) change this to a property that grabs the revision
+  # the first time its run, and then caches the value.
+  def get_build_revision(self):
     """Returns the revision of the current build. The pixel and maps
     tests use this value when uploading error images to cloud storage,
     only for naming purposes. This could be changed to use a different
@@ -98,13 +107,9 @@ class GpuApi(recipe_api.RecipeApi):
     # build_and_test recipe is being run locally and the checkout is being
     # skipped, then the 'parent_got_revision' property can be specified on
     # the command line as a workaround.
-    update_step = self.m.step_history.get('gclient sync', None)
-    if not update_step:
-      update_step = self.m.step_history['bot_update']
-    return update_step.presentation.properties['got_revision']
+    return self._bot_update.presentation.properties['got_revision']
 
-  @property
-  def _webkit_revision(self):
+  def get_webkit_revision(self):
     """Returns the webkit revision of the current build."""
     # In all cases on the waterfall, the tester is triggered from a
     # builder which sends down parent_got_webkit_revision. The only
@@ -119,10 +124,7 @@ class GpuApi(recipe_api.RecipeApi):
     # build_and_test recipe is being run locally and the checkout is being
     # skipped, then the 'parent_got_webkit_revision' property can be
     # specified on the command line as a workaround.
-    update_step = self.m.step_history.get('gclient sync', None)
-    if not update_step:
-      update_step = self.m.step_history['bot_update']
-    return update_step.presentation.properties['got_webkit_revision']
+    return self._bot_update.presentation.properties['got_webkit_revision']
 
   @property
   def _master_class_name_for_testing(self):
@@ -145,28 +147,23 @@ class GpuApi(recipe_api.RecipeApi):
     # Always force a gclient-revert in order to avoid problems when
     # directories are added to, removed from, and re-added to the repo.
     # crbug.com/329577
-    yield self.m.bot_update.ensure_checkout()
-    bot_update_mode = self.m.step_history.last_step().json.output['did_run']
+    self._bot_update = self.m.bot_update.ensure_checkout()
+    bot_update_mode = self._bot_update.json.output['did_run']
     if not bot_update_mode:
-      yield self.m.gclient.checkout(revert=True,
-                                    can_fail_build=False,
-                                    abort_on_failure=False)
-
-      # Workaround for flakiness during gclient revert.
-      if any(step.retcode != 0 for step in self.m.step_history.values()):
+      try:
+        self._bot_update = self.m.gclient.checkout(revert=True)
+      except self.m.step.StepFailure:
         # TODO(phajdan.jr): Remove the workaround, http://crbug.com/357767 .
-        yield (
-          self.m.path.rmcontents('slave build directory',
-                                self.m.path['slave_build']),
-          self.m.gclient.checkout(),
-        )
+        self.m.path.rmcontents('slave build directory',
+                                self.m.path['slave_build'])
+        self.m.gclient.checkout()
 
       # If being run as a try server, apply the CL.
-      yield self.m.tryserver.maybe_apply_issue()
+      self.m.tryserver.maybe_apply_issue()
 
   def compile_steps(self):
     # We only need to runhooks if we're going to compile locally.
-    yield self.m.chromium.runhooks()
+    self.m.chromium.runhooks()
     # Since performance tests aren't run on the debug builders, it isn't
     # necessary to build all of the targets there.
     build_tag = '' if self.m.chromium.is_release_build else 'debug_'
@@ -174,22 +171,22 @@ class GpuApi(recipe_api.RecipeApi):
     # aren't supported on the current configuration (because the component
     # build is used).
     is_tryserver = self.m.tryserver.is_tryserver
-    targets=['chromium_gpu_%sbuilder' % build_tag] + [
+    targets = ['chromium_gpu_%sbuilder' % build_tag] + [
       '%s_run' % test for test in common.GPU_ISOLATES]
-    yield self.m.chromium.compile(
-        targets=targets,
-        name='compile',
-        abort_on_failure=(not is_tryserver),
-        can_fail_build=(not is_tryserver))
-    if is_tryserver and self.m.step_history['compile'].retcode != 0:
-      # crbug.com/368875: have seen situations where autogenerated
-      # files aren't regenerated properly on the tryservers. Try a
-      # clobber build before failing the job.
-      yield self.m.chromium.compile(
-        targets=targets,
-        name='compile (clobber)',
-        force_clobber=True)
-    yield self.m.isolate.find_isolated_tests(
+    try:
+      self.m.chromium.compile(targets=targets, name='compile')
+    except self.m.step.StepFailure:
+      if is_tryserver:
+        # crbug.com/368875: have seen situations where autogenerated
+        # files aren't regenerated properly on the tryservers. Try a
+        # clobber build before failing the job.
+        self.m.chromium.compile(
+          targets=targets,
+          name='compile (clobber)',
+          force_clobber=True)
+      else:
+        raise
+    self.m.isolate.find_isolated_tests(
         self.m.chromium.c.build_dir.join(self.m.chromium.c.build_config_fs),
         common.GPU_ISOLATES)
 
@@ -209,12 +206,19 @@ class GpuApi(recipe_api.RecipeApi):
     # Until this is more fully tested, leave this cleanup step local
     # to the GPU recipe.
     if self.m.platform.is_linux:
-      def ignore_failure(step_result):
-        step_result.presentation.status = 'SUCCESS'
-      yield self.m.step('killall gnome-keyring-daemon',
-                        ['killall', '-9', 'gnome-keyring-daemon'],
-                        followup_fn=ignore_failure,
-                        can_fail_build=False)
+      try:
+        result = self.m.step('killall gnome-keyring-daemon',
+                        ['killall', '-9', 'gnome-keyring-daemon'])
+      except self.m.step.StepFailure as f:
+        result = f.result
+      result.presentation.status = self.m.step.SUCCESS
+
+    # Accumulate a list of all the failed test names.
+    failures = []
+    #TODO(martiniss) change how this processes everything
+    def capture(failure):
+      if failure:
+        failures.append(failure)
 
     # Note: --no-xvfb is the default.
     # Copy the test list to avoid mutating it.
@@ -223,18 +227,20 @@ class GpuApi(recipe_api.RecipeApi):
     # available in the open-source repository.
     if self.is_fyi_waterfall:
       basic_tests += SIMPLE_NON_OPEN_SOURCE_TESTS_TO_RUN
+
+    #TODO(martiniss) convert loop
     for test in basic_tests:
-      yield self._run_isolate(test, args=['--use-gpu-in-tests'])
+      capture(self._run_isolate(test, args=['--use-gpu-in-tests']))
 
     # Google Maps Pixel tests.
-    yield self._run_isolated_telemetry_gpu_test(
+    capture(self._run_isolated_telemetry_gpu_test(
       'maps', name='maps_pixel_test',
       args=[
         '--build-revision',
-        str(self._build_revision),
+        str(self.get_build_revision()),
         '--test-machine-name',
         self.m.properties['buildername']
-      ])
+      ]))
 
     # Pixel tests.
     # Try servers pull their results from cloud storage; the other
@@ -242,7 +248,7 @@ class GpuApi(recipe_api.RecipeApi):
     #
     # NOTE that ALL of the bots need to share a bucket. They can't be split
     # by mastername/waterfall, because the try servers are on a different
-    # waterfall (tryserver.chromium) than the other test bots (chromium.gpu
+    # waterfall (tryserver.chromium.*) than the other test bots (chromium.gpu
     # and chromium.webkit, as of this writing). This means there will be
     # races between bots with identical OS/GPU combinations, on different
     # waterfalls, attempting to upload results for new versions of each
@@ -252,10 +258,10 @@ class GpuApi(recipe_api.RecipeApi):
     if self.m.tryserver.is_tryserver:
       ref_img_arg = '--download-refimg-from-cloud-storage'
     cloud_storage_bucket = 'chromium-gpu-archive/reference-images'
-    yield self._run_isolated_telemetry_gpu_test('pixel',
+    capture(self._run_isolated_telemetry_gpu_test('pixel',
         args=[
             '--build-revision',
-            str(self._build_revision),
+            str(self.get_build_revision()),
             ref_img_arg,
             '--refimg-cloud-storage-bucket',
             cloud_storage_bucket,
@@ -264,44 +270,56 @@ class GpuApi(recipe_api.RecipeApi):
             '--test-machine-name',
             self.m.properties['buildername']
         ],
-        name='pixel_test')
+        name='pixel_test'))
 
     # WebGL conformance tests.
-    yield self._run_isolated_telemetry_gpu_test('webgl_conformance')
+    capture(self._run_isolated_telemetry_gpu_test('webgl_conformance'))
+
+    # Run extra D3D9 conformance in Windows FYI GPU bots
+    # This ensures the ANGLE/D3D9 gets some testing
+    if self.is_fyi_waterfall and self.m.platform.is_win:
+      capture(self._run_isolated_telemetry_gpu_test('webgl_conformance',
+        extra_browser_args=[
+          '--disable-d3d11'
+        ],
+        name='webgl_conformance_d3d9'))
 
     # Context lost tests.
-    yield self._run_isolated_telemetry_gpu_test('context_lost')
+    capture(self._run_isolated_telemetry_gpu_test('context_lost'))
 
     # Memory tests.
-    yield self._run_isolated_telemetry_gpu_test('memory_test')
+    capture(self._run_isolated_telemetry_gpu_test('memory_test'))
 
     # Screenshot synchronization tests.
-    yield self._run_isolated_telemetry_gpu_test('screenshot_sync')
+    capture(self._run_isolated_telemetry_gpu_test('screenshot_sync'))
 
     # Hardware acceleration tests.
-    yield self._run_isolated_telemetry_gpu_test(
-      'hardware_accelerated_feature')
+    capture(self._run_isolated_telemetry_gpu_test(
+      'hardware_accelerated_feature'))
 
     # GPU process launch tests.
-    yield self._run_isolated_telemetry_gpu_test('gpu_process',
-                                                name='gpu_process_launch')
+    capture(self._run_isolated_telemetry_gpu_test('gpu_process',
+                                                  name='gpu_process_launch'))
 
     # Smoke test for gpu rasterization of web content.
-    yield self._run_isolated_telemetry_gpu_test(
+    capture(self._run_isolated_telemetry_gpu_test(
       'gpu_rasterization',
       args=[
-        '--build-revision', str(self._build_revision),
+        '--build-revision', str(self.get_build_revision()),
         '--test-machine-name', self.m.properties['buildername']
-      ])
+      ]))
 
     # Tab capture end-to-end (correctness) tests.
-    yield self._run_isolate(
+    capture(self._run_isolate(
         'tab_capture_end2end_tests',
         name='tab_capture_end2end_tests',
-        spawn_dbus=True)
+        spawn_dbus=True))
 
     # TODO(kbr): after the conversion to recipes, add all GPU related
     # steps from the main waterfall, like gpu_unittests.
+
+    if failures:
+      raise self.m.step.StepFailure('%d tests failed: %r' % (len(failures), failures))
 
   def _run_isolate(self, test, isolate_name=None, **kwargs):
     test_name = isolate_name or test
@@ -315,29 +333,41 @@ class GpuApi(recipe_api.RecipeApi):
     # with the recipe simulation test in doing so and cleaning it up.
     results_directory = self.m.path['slave_build'].join(
       'gtest-results', test_name)
-    yield self.m.isolate.runtest(
-      isolate_name or test,
-      self._build_revision,
-      self._webkit_revision,
-      annotate='gtest',
-      test_type=test_name,
-      generate_json_file=True,
-      results_directory=results_directory,
-      master_class_name=self._master_class_name_for_testing,
-      **kwargs)
+    try:
+      self.m.isolate.runtest(
+        isolate_name or test,
+        self.get_build_revision(),
+        self.get_webkit_revision(),
+        annotate='gtest',
+        test_type=test_name,
+        generate_json_file=True,
+        results_directory=results_directory,
+        master_class_name=self._master_class_name_for_testing,
+        **kwargs)
+    except self.m.step.StepFailure:
+      # Return test name in the event of failure
+      return test
 
   def _run_isolated_telemetry_gpu_test(self, test, args=None, name=None,
-                                       **kwargs):
+                                       extra_browser_args=None, **kwargs):
     test_args = ['-v', '--use-devtools-active-port']
     if args:
       test_args.extend(args)
-    yield self.m.isolate.run_telemetry_test(
-      'telemetry_gpu_test',
-      test,
-      self._build_revision,
-      self._webkit_revision,
-      args=test_args,
-      name=name,
-      master_class_name=self._master_class_name_for_testing,
-      spawn_dbus=True,
-      **kwargs)
+    extra_browser_args_string = '--extra-browser-args=--enable-logging=stderr'
+    if extra_browser_args:
+      extra_browser_args_string += ' ' + ' '.join(extra_browser_args)
+    test_args.append(extra_browser_args_string)
+    try:
+      self.m.isolate.run_telemetry_test(
+        'telemetry_gpu_test',
+        test,
+        self.get_build_revision(),
+        self.get_webkit_revision(),
+        args=test_args,
+        name=name,
+        master_class_name=self._master_class_name_for_testing,
+        spawn_dbus=True,
+        **kwargs)
+    except self.m.step.StepFailure:
+      # Return test name in the event of failure
+      return test

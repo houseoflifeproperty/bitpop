@@ -25,6 +25,8 @@
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using content::ResourceType;
+
 namespace extensions {
 
 scoped_refptr<Extension> CreateTestExtension(const std::string& name,
@@ -118,7 +120,7 @@ class ExtensionProtocolTest : public testing::Test {
   }
 
   void StartRequest(net::URLRequest* request,
-                    ResourceType::Type resource_type) {
+                    ResourceType resource_type) {
     content::ResourceRequestInfo::AllocateForTesting(request,
                                                      resource_type,
                                                      &resource_context_,
@@ -179,7 +181,7 @@ TEST_F(ExtensionProtocolTest, IncognitoRequest) {
                               net::DEFAULT_PRIORITY,
                               &test_delegate_,
                               resource_context_.GetRequestContext());
-      StartRequest(&request, ResourceType::MAIN_FRAME);
+      StartRequest(&request, content::RESOURCE_TYPE_MAIN_FRAME);
       EXPECT_EQ(net::URLRequestStatus::FAILED, request.status().status());
 
       if (cases[i].should_allow_main_frame_load) {
@@ -197,7 +199,7 @@ TEST_F(ExtensionProtocolTest, IncognitoRequest) {
                               net::DEFAULT_PRIORITY,
                               &test_delegate_,
                               resource_context_.GetRequestContext());
-      StartRequest(&request, ResourceType::SUB_FRAME);
+      StartRequest(&request, content::RESOURCE_TYPE_SUB_FRAME);
       EXPECT_EQ(net::URLRequestStatus::FAILED, request.status().status());
 
       if (cases[i].should_allow_sub_frame_load) {
@@ -239,7 +241,7 @@ TEST_F(ExtensionProtocolTest, ComponentResourceRequest) {
                             net::DEFAULT_PRIORITY,
                             &test_delegate_,
                             resource_context_.GetRequestContext());
-    StartRequest(&request, ResourceType::MEDIA);
+    StartRequest(&request, content::RESOURCE_TYPE_MEDIA);
     EXPECT_EQ(net::URLRequestStatus::SUCCESS, request.status().status());
     CheckForContentLengthHeader(&request);
   }
@@ -252,7 +254,7 @@ TEST_F(ExtensionProtocolTest, ComponentResourceRequest) {
                             net::DEFAULT_PRIORITY,
                             &test_delegate_,
                             resource_context_.GetRequestContext());
-    StartRequest(&request, ResourceType::MEDIA);
+    StartRequest(&request, content::RESOURCE_TYPE_MEDIA);
     EXPECT_EQ(net::URLRequestStatus::SUCCESS, request.status().status());
     CheckForContentLengthHeader(&request);
   }
@@ -275,7 +277,7 @@ TEST_F(ExtensionProtocolTest, ResourceRequestResponseHeaders) {
                             net::DEFAULT_PRIORITY,
                             &test_delegate_,
                             resource_context_.GetRequestContext());
-    StartRequest(&request, ResourceType::MEDIA);
+    StartRequest(&request, content::RESOURCE_TYPE_MEDIA);
     EXPECT_EQ(net::URLRequestStatus::SUCCESS, request.status().status());
 
     // Check that cache-related headers are set.
@@ -314,7 +316,7 @@ TEST_F(ExtensionProtocolTest, AllowFrameRequests) {
                             net::DEFAULT_PRIORITY,
                             &test_delegate_,
                             resource_context_.GetRequestContext());
-    StartRequest(&request, ResourceType::MAIN_FRAME);
+    StartRequest(&request, content::RESOURCE_TYPE_MAIN_FRAME);
     EXPECT_EQ(net::URLRequestStatus::SUCCESS, request.status().status());
   }
   {
@@ -322,7 +324,7 @@ TEST_F(ExtensionProtocolTest, AllowFrameRequests) {
                             net::DEFAULT_PRIORITY,
                             &test_delegate_,
                             resource_context_.GetRequestContext());
-    StartRequest(&request, ResourceType::SUB_FRAME);
+    StartRequest(&request, content::RESOURCE_TYPE_SUB_FRAME);
     EXPECT_EQ(net::URLRequestStatus::SUCCESS, request.status().status());
   }
 
@@ -332,7 +334,7 @@ TEST_F(ExtensionProtocolTest, AllowFrameRequests) {
                             net::DEFAULT_PRIORITY,
                             &test_delegate_,
                             resource_context_.GetRequestContext());
-    StartRequest(&request, ResourceType::MEDIA);
+    StartRequest(&request, content::RESOURCE_TYPE_MEDIA);
     EXPECT_EQ(net::URLRequestStatus::FAILED, request.status().status());
   }
 }

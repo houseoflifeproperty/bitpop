@@ -48,6 +48,7 @@
 #include "platform/SharedBuffer.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
+#include "public/platform/WebURLRequest.h"
 #include "public/web/WebServiceWorkerContextClient.h"
 #include "public/web/WebServiceWorkerNetworkProvider.h"
 #include "public/web/WebSettings.h"
@@ -60,7 +61,7 @@
 #include "web/WorkerPermissionClient.h"
 #include "wtf/Functional.h"
 
-using namespace WebCore;
+using namespace blink;
 
 namespace blink {
 
@@ -81,7 +82,7 @@ public:
     {
         ASSERT(loadingContext);
         m_callback = callback;
-        m_scriptLoader->setTargetType(ResourceRequest::TargetIsServiceWorker);
+        m_scriptLoader->setRequestContext(blink::WebURLRequest::RequestContextServiceWorker);
         m_scriptLoader->loadAsynchronously(
             *loadingContext, scriptURL, DenyCrossOriginRequests, this);
     }
@@ -125,7 +126,8 @@ public:
     {
         if (m_embeddedWorker.m_askedToTerminate || !m_embeddedWorker.m_workerThread)
             return false;
-        return m_embeddedWorker.m_workerThread->runLoop().postTask(task);
+        m_embeddedWorker.m_workerThread->postTask(task);
+        return !m_embeddedWorker.m_workerThread->terminated();
     }
 
 private:
@@ -145,6 +147,12 @@ WebEmbeddedWorker* WebEmbeddedWorker::create(
     return new WebEmbeddedWorkerImpl(adoptPtr(client), adoptPtr(permissionClient));
 }
 
+static HashSet<WebEmbeddedWorkerImpl*>& runningWorkerInstances()
+{
+    DEFINE_STATIC_LOCAL(HashSet<WebEmbeddedWorkerImpl*>, set, ());
+    return set;
+}
+
 WebEmbeddedWorkerImpl::WebEmbeddedWorkerImpl(
     PassOwnPtr<WebServiceWorkerContextClient> client,
     PassOwnPtr<WebWorkerPermissionClientProxy> permissionClient)
@@ -155,10 +163,13 @@ WebEmbeddedWorkerImpl::WebEmbeddedWorkerImpl(
     , m_askedToTerminate(false)
     , m_pauseAfterDownloadState(DontPauseAfterDownload)
 {
+    runningWorkerInstances().add(this);
 }
 
 WebEmbeddedWorkerImpl::~WebEmbeddedWorkerImpl()
 {
+    ASSERT(runningWorkerInstances().contains(this));
+    runningWorkerInstances().remove(this);
     ASSERT(m_webView);
 
     // Detach the client before closing the view to avoid getting called back.
@@ -166,6 +177,14 @@ WebEmbeddedWorkerImpl::~WebEmbeddedWorkerImpl()
 
     m_webView->close();
     m_mainFrame->close();
+}
+
+void WebEmbeddedWorkerImpl::terminateAll()
+{
+    HashSet<WebEmbeddedWorkerImpl*> instances = runningWorkerInstances();
+    for (HashSet<WebEmbeddedWorkerImpl*>::iterator it = instances.begin(), itEnd = instances.end(); it != itEnd; ++it) {
+        (*it)->terminateWorkerContext();
+    }
 }
 
 void WebEmbeddedWorkerImpl::startWorkerContext(
@@ -185,8 +204,18 @@ void WebEmbeddedWorkerImpl::terminateWorkerContext()
     if (m_askedToTerminate)
         return;
     m_askedToTerminate = true;
-    if (m_mainScriptLoader)
+    if (m_mainScriptLoader) {
         m_mainScriptLoader->cancel();
+        m_mainScriptLoader.clear();
+        // This may delete 'this'.
+        m_workerContextClient->workerContextFailedToStart();
+        return;
+    }
+    if (m_pauseAfterDownloadState == IsPausedAfterDownload) {
+        // This may delete 'this'.
+        m_workerContextClient->workerContextFailedToStart();
+        return;
+    }
     if (m_workerThread)
         m_workerThread->stop();
 }
@@ -224,6 +253,7 @@ void dispatchOnInspectorBackendTask(ExecutionContext* context, const String& mes
 
 void WebEmbeddedWorkerImpl::resumeAfterDownload()
 {
+    ASSERT(!m_askedToTerminate);
     bool wasPaused = (m_pauseAfterDownloadState == IsPausedAfterDownload);
     m_pauseAfterDownloadState = DontPauseAfterDownload;
     if (wasPaused)
@@ -233,29 +263,31 @@ void WebEmbeddedWorkerImpl::resumeAfterDownload()
 void WebEmbeddedWorkerImpl::resumeWorkerContext()
 {
     if (m_workerThread)
-        m_workerThread->runLoop().postDebuggerTask(createCallbackTask(resumeWorkerContextTask, true));
+        m_workerThread->postDebuggerTask(createCrossThreadTask(resumeWorkerContextTask, true));
 }
 
 void WebEmbeddedWorkerImpl::attachDevTools()
 {
     if (m_workerThread)
-        m_workerThread->runLoop().postDebuggerTask(createCallbackTask(connectToWorkerContextInspectorTask, true));
+        m_workerThread->postDebuggerTask(createCrossThreadTask(connectToWorkerContextInspectorTask, true));
 }
 
 void WebEmbeddedWorkerImpl::reattachDevTools(const WebString& savedState)
 {
-    m_workerThread->runLoop().postDebuggerTask(createCallbackTask(reconnectToWorkerContextInspectorTask, String(savedState)));
+    m_workerThread->postDebuggerTask(createCrossThreadTask(reconnectToWorkerContextInspectorTask, String(savedState)));
 }
 
 void WebEmbeddedWorkerImpl::detachDevTools()
 {
-    m_workerThread->runLoop().postDebuggerTask(createCallbackTask(disconnectFromWorkerContextInspectorTask, true));
+    m_workerThread->postDebuggerTask(createCrossThreadTask(disconnectFromWorkerContextInspectorTask, true));
 }
 
 void WebEmbeddedWorkerImpl::dispatchDevToolsMessage(const WebString& message)
 {
-    m_workerThread->runLoop().postDebuggerTask(createCallbackTask(dispatchOnInspectorBackendTask, String(message)));
-    WorkerDebuggerAgent::interruptAndDispatchInspectorCommands(m_workerThread.get());
+    if (m_askedToTerminate)
+        return;
+    m_workerThread->postDebuggerTask(createCrossThreadTask(dispatchOnInspectorBackendTask, String(message)));
+    m_workerThread->interruptAndDispatchInspectorCommands();
 }
 
 void WebEmbeddedWorkerImpl::prepareShadowPageForLoader()
@@ -310,7 +342,10 @@ void WebEmbeddedWorkerImpl::onScriptLoaderFinished()
 {
     ASSERT(m_mainScriptLoader);
 
-    if (m_mainScriptLoader->failed() || m_askedToTerminate) {
+    if (m_askedToTerminate)
+        return;
+
+    if (m_mainScriptLoader->failed()) {
         m_mainScriptLoader.clear();
         // This may delete 'this'.
         m_workerContextClient->workerContextFailedToStart();
@@ -328,12 +363,10 @@ void WebEmbeddedWorkerImpl::onScriptLoaderFinished()
 void WebEmbeddedWorkerImpl::startWorkerThread()
 {
     ASSERT(m_pauseAfterDownloadState == DontPauseAfterDownload);
-    if (m_askedToTerminate)
-        return;
+    ASSERT(!m_askedToTerminate);
 
-    // FIXME: startMode is deprecated, switch to waitForDebuggerMode once chromium is setting that value.
     WorkerThreadStartMode startMode =
-        (m_workerStartData.startMode == WebEmbeddedWorkerStartModePauseOnStart)
+        (m_workerStartData.waitForDebuggerMode == WebEmbeddedWorkerStartData::WaitForDebugger)
         ? PauseWorkerGlobalScopeOnStart : DontPauseWorkerGlobalScopeOnStart;
 
     OwnPtrWillBeRawPtr<WorkerClients> workerClients = WorkerClients::create();

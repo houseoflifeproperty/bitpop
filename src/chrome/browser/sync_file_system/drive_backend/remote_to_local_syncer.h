@@ -39,14 +39,15 @@ namespace drive_backend {
 class MetadataDatabase;
 class SyncEngineContext;
 
-class RemoteToLocalSyncer : public ExclusiveTask {
+class RemoteToLocalSyncer : public SyncTask {
  public:
   // Conflicting trackers will have low priority for RemoteToLocalSyncer so that
   // it should be resolved by LocatToRemoteSyncer.
   explicit RemoteToLocalSyncer(SyncEngineContext* sync_context);
   virtual ~RemoteToLocalSyncer();
 
-  virtual void RunExclusive(const SyncStatusCallback& callback) OVERRIDE;
+  virtual void RunPreflight(scoped_ptr<SyncTaskToken> token) OVERRIDE;
+  void RunExclusive(scoped_ptr<SyncTaskToken> token);
 
   const fileapi::FileSystemURL& url() const { return url_; }
   SyncAction sync_action() const { return sync_action_; }
@@ -99,17 +100,17 @@ class RemoteToLocalSyncer : public ExclusiveTask {
   //   - Dispatch to HandleFolderContentListing()
   // Else, there should be no change to sync.
   //   - Dispatch to HandleOfflineSolvable()
-  void ResolveRemoteChange(const SyncStatusCallback& callback);
+  void ResolveRemoteChange(scoped_ptr<SyncTaskToken> token);
 
   // Handles missing remote metadata case.
   // Fetches remote metadata and updates MetadataDatabase by that.  The sync
   // operation itself will be deferred to the next sync round.
   // Note: if the file is not found, it should be handled as if deleted.
-  void HandleMissingRemoteMetadata(const SyncStatusCallback& callback);
-  void DidGetRemoteMetadata(const SyncStatusCallback& callback,
+  void HandleMissingRemoteMetadata(scoped_ptr<SyncTaskToken> token);
+  void DidGetRemoteMetadata(scoped_ptr<SyncTaskToken> token,
                             google_apis::GDataErrorCode error,
                             scoped_ptr<google_apis::FileResource> entry);
-  void DidUpdateDatabaseForRemoteMetadata(const SyncStatusCallback& callback,
+  void DidUpdateDatabaseForRemoteMetadata(scoped_ptr<SyncTaskToken> token,
                                           SyncStatusCode status);
 
   // This implements the body of the HandleNewFile and HandleContentUpdate.
@@ -124,16 +125,16 @@ class RemoteToLocalSyncer : public ExclusiveTask {
   //  # The file has local modification.
   //  - Handle this case as a conflict.  Lower the priority of the tracker, and
   //    defer further handling to local-to-remote change.
-  void DidPrepareForAddOrUpdateFile(const SyncStatusCallback& callback,
+  void DidPrepareForAddOrUpdateFile(scoped_ptr<SyncTaskToken> token,
                                     SyncStatusCode status);
 
   // Handles remotely added folder.  Needs Prepare() call.
   // TODO(tzik): Write details and implement this.
-  void HandleFolderUpdate(const SyncStatusCallback& callback);
-  void DidPrepareForFolderUpdate(const SyncStatusCallback& callback,
+  void HandleFolderUpdate(scoped_ptr<SyncTaskToken> token);
+  void DidPrepareForFolderUpdate(scoped_ptr<SyncTaskToken> token,
                                  SyncStatusCode status);
 
-  void HandleSyncRootDeletion(const SyncStatusCallback& callback);
+  void HandleSyncRootDeletion(scoped_ptr<SyncTaskToken> token);
 
   // Handles deleted remote file.  Needs Prepare() call.
   // If the deleted tracker is the sync-root:
@@ -147,23 +148,22 @@ class RemoteToLocalSyncer : public ExclusiveTask {
   // Else, if the local file is not modified:
   //  - Delete local file.
   //  # Note: if the local file is a folder, delete recursively.
-  void HandleDeletion(const SyncStatusCallback& callback);
-  void DidPrepareForDeletion(const SyncStatusCallback& callback,
+  void HandleDeletion(scoped_ptr<SyncTaskToken> token);
+  void DidPrepareForDeletion(scoped_ptr<SyncTaskToken> token,
                              SyncStatusCode status);
 
   // Handles new file.  Needs Prepare() call.
-  void HandleContentUpdate(const SyncStatusCallback& callback);
+  void HandleContentUpdate(scoped_ptr<SyncTaskToken> token);
 
-  void ListFolderContent(const SyncStatusCallback& callback);
+  void ListFolderContent(scoped_ptr<SyncTaskToken> token);
   void DidListFolderContent(
-      const SyncStatusCallback& callback,
+      scoped_ptr<SyncTaskToken> token,
       scoped_ptr<FileIDList> children,
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::FileList> file_list);
 
-  void SyncCompleted(const SyncStatusCallback& callback, SyncStatusCode status);
-  void FinalizeSync(const SyncStatusCallback& callback, SyncStatusCode status);
-
+  void SyncCompleted(scoped_ptr<SyncTaskToken> token, SyncStatusCode status);
+  void FinalizeSync(scoped_ptr<SyncTaskToken> token, SyncStatusCode status);
 
   void Prepare(const SyncStatusCallback& callback);
   void DidPrepare(const SyncStatusCallback& callback,
@@ -171,22 +171,21 @@ class RemoteToLocalSyncer : public ExclusiveTask {
                   const SyncFileMetadata& metadata,
                   const FileChangeList& changes);
 
-  void DeleteLocalFile(const SyncStatusCallback& callback);
-  void DownloadFile(const SyncStatusCallback& callback);
-  void DidCreateTemporaryFileForDownload(const SyncStatusCallback& callback,
-                                         webkit_blob::ScopedFile file);
-  void DidDownloadFile(const SyncStatusCallback& callback,
+  void DeleteLocalFile(scoped_ptr<SyncTaskToken> token);
+  void DownloadFile(scoped_ptr<SyncTaskToken> token);
+  void DidDownloadFile(scoped_ptr<SyncTaskToken> token,
                        webkit_blob::ScopedFile file,
                        google_apis::GDataErrorCode error,
                        const base::FilePath&);
-  void DidCalculateMD5ForDownload(const SyncStatusCallback& callback,
-                                  webkit_blob::ScopedFile file,
-                                  const std::string& md5);
-  void DidApplyDownload(const SyncStatusCallback& callback,
+  void DidApplyDownload(scoped_ptr<SyncTaskToken> token,
                         webkit_blob::ScopedFile,
                         SyncStatusCode status);
 
-  void CreateFolder(const SyncStatusCallback& callback);
+  void CreateFolder(scoped_ptr<SyncTaskToken> token);
+
+  // TODO(tzik): After we convert all callbacks to token-passing style,
+  // drop this function.
+  SyncStatusCallback SyncCompletedCallback(scoped_ptr<SyncTaskToken> token);
 
   drive::DriveServiceInterface* drive_service();
   MetadataDatabase* metadata_database();

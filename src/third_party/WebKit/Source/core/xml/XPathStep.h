@@ -30,7 +30,7 @@
 #include "core/xml/XPathExpressionNode.h"
 #include "core/xml/XPathNodeSet.h"
 
-namespace WebCore {
+namespace blink {
 
 class Node;
 
@@ -100,7 +100,7 @@ public:
 
     void optimize();
 
-    void evaluate(Node* context, NodeSet&) const;
+    void evaluate(EvaluationContext&, Node* context, NodeSet&) const;
 
     Axis axis() const { return m_axis; }
     const NodeTest& nodeTest() const { return *m_nodeTest; }
@@ -111,7 +111,7 @@ private:
     NodeTest& nodeTest() { return *m_nodeTest; }
 
     void parseNodeTest(const String&);
-    void nodesInAxis(Node* context, NodeSet&) const;
+    void nodesInAxis(EvaluationContext&, Node* context, NodeSet&) const;
     String namespaceFromNodetest(const String& nodeTest) const;
 
     Axis m_axis;
@@ -123,6 +123,6 @@ void optimizeStepPair(Step*, Step*, bool& dropSecondStep);
 
 } // namespace XPath
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // XPathStep_h

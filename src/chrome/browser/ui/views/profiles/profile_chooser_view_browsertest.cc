@@ -28,7 +28,6 @@
 #include "chrome/test/base/uma_histogram_helper.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/test/test_utils.h"
-#include "grit/generated_resources.h"
 #include "ui/views/controls/button/label_button.h"
 
 class ProfileChooserViewBrowserTest : public InProcessBrowserTest {
@@ -53,13 +52,12 @@ ProfileChooserViewBrowserTest::~ProfileChooserViewBrowserTest() {
 
 void ProfileChooserViewBrowserTest::SetUp() {
   InProcessBrowserTest::SetUp();
-  DCHECK(CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kNewAvatarMenu));
+  DCHECK(switches::IsNewAvatarMenu());
 }
 
 void ProfileChooserViewBrowserTest::SetUpCommandLine(
     CommandLine* command_line) {
-  command_line->AppendSwitch(switches::kNewAvatarMenu);
+  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
 }
 
 void ProfileChooserViewBrowserTest::OpenProfileChooserView() {
@@ -85,8 +83,9 @@ void ProfileChooserViewBrowserTest::OpenProfileChooserView() {
 #define MAYBE_ViewProfileUMA ViewProfileUMA
 #endif
 
-IN_PROC_BROWSER_TEST_F(ProfileChooserViewBrowserTest, MAYBE_ViewProfileUMA) {
-  UMAHistogramHelper histograms;
+// TODO(mlerman): Re-enable the test to MAYBE_ViewProfileUMA once there is a
+// launch plan for EnableAccountConsistency.
+IN_PROC_BROWSER_TEST_F(ProfileChooserViewBrowserTest, DISABLED_ViewProfileUMA) {
   // If multiprofile mode is not enabled, you can't switch between profiles.
   if (!profiles::IsMultipleProfilesEnabled())
     return;
@@ -95,8 +94,4 @@ IN_PROC_BROWSER_TEST_F(ProfileChooserViewBrowserTest, MAYBE_ViewProfileUMA) {
   profile->GetPrefs()->SetInteger(prefs::kProfileAvatarTutorialShown, 0);
 
   ASSERT_NO_FATAL_FAILURE(OpenProfileChooserView());
-
-  histograms.Fetch();
-  histograms.ExpectUniqueSample("Profile.UpgradeEnrollment",
-      ProfileMetrics::PROFILE_ENROLLMENT_SHOW_PREVIEW_PROMO, 1);
 }

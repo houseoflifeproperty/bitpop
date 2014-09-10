@@ -33,6 +33,7 @@
 #include "components/password_manager/core/browser/password_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
@@ -61,6 +62,7 @@ const char kAccelFocusPrev[] = "focus_prev";
 const char kAccelFocusNext[] = "focus_next";
 const char kAccelNameDeviceRequisition[] = "device_requisition";
 const char kAccelNameDeviceRequisitionRemora[] = "device_requisition_remora";
+const char kAccelNameDeviceRequisitionShark[] = "device_requisition_shark";
 const char kAccelNameAppLaunchBailout[] = "app_launch_bailout";
 const char kAccelNameAppLaunchNetworkConfig[] = "app_launch_network_config";
 
@@ -139,6 +141,10 @@ WebUILoginView::WebUILoginView()
   accel_map_[
       ui::Accelerator(ui::VKEY_H, ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN)] =
       kAccelNameDeviceRequisitionRemora;
+  accel_map_[
+      ui::Accelerator(ui::VKEY_H,
+          ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN | ui::EF_SHIFT_DOWN)] =
+      kAccelNameDeviceRequisitionShark;
 
   accel_map_[ui::Accelerator(ui::VKEY_S,
                              ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN)] =
@@ -186,6 +192,9 @@ void WebUILoginView::Init() {
   WebContentsModalDialogManager::CreateForWebContents(web_contents);
   WebContentsModalDialogManager::FromWebContents(web_contents)->
       SetDelegate(this);
+  if (!popup_manager_.get())
+    popup_manager_.reset(new web_modal::PopupManager(this));
+  popup_manager_->RegisterWith(web_contents);
 
   web_contents->SetDelegate(this);
   extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
@@ -311,6 +320,18 @@ void WebUILoginView::SetUIEnabled(bool enabled) {
   ash::Shell::GetInstance()->GetPrimarySystemTray()->SetEnabled(enabled);
 }
 
+void WebUILoginView::AddFrameObserver(FrameObserver* frame_observer) {
+  DCHECK(frame_observer);
+  DCHECK(!frame_observer_list_.HasObserver(frame_observer));
+  frame_observer_list_.AddObserver(frame_observer);
+}
+
+void WebUILoginView::RemoveFrameObserver(FrameObserver* frame_observer) {
+  DCHECK(frame_observer);
+  DCHECK(frame_observer_list_.HasObserver(frame_observer));
+  frame_observer_list_.RemoveObserver(frame_observer);
+}
+
 // WebUILoginView protected: ---------------------------------------------------
 
 void WebUILoginView::Layout() {
@@ -423,14 +444,14 @@ bool WebUILoginView::PreHandleGestureEvent(
 }
 
 void WebUILoginView::DidFailProvisionalLoad(
-    int64 frame_id,
-    const base::string16& frame_unique_name,
-    bool is_main_frame,
+    content::RenderFrameHost* render_frame_host,
     const GURL& validated_url,
     int error_code,
-    const base::string16& error_description,
-    content::RenderViewHost* render_view_host) {
-  if (frame_unique_name != base::UTF8ToUTF16("gaia-frame"))
+    const base::string16& error_description) {
+  FOR_EACH_OBSERVER(FrameObserver,
+                    frame_observer_list_,
+                    OnFrameError(render_frame_host->GetFrameName()));
+  if (render_frame_host->GetFrameName() != "gaia-frame")
     return;
 
   GetWebUI()->CallJavascriptFunction("login.GaiaSigninScreen.onFrameError",
@@ -441,13 +462,12 @@ void WebUILoginView::DidFailProvisionalLoad(
 void WebUILoginView::OnLoginPromptVisible() {
   // If we're hidden than will generate this signal once we're shown.
   if (is_hidden_ || webui_visible_) {
-    LOG(WARNING) << "Login WebUI >> not emitting signal, hidden: "
-                 << is_hidden_;
+    VLOG(1) << "Login WebUI >> not emitting signal, hidden: " << is_hidden_;
     return;
   }
   TRACE_EVENT0("chromeos", "WebUILoginView::OnLoginPromoptVisible");
   if (should_emit_login_prompt_visible_) {
-    LOG(WARNING) << "Login WebUI >> login-prompt-visible";
+    VLOG(1) << "Login WebUI >> login-prompt-visible";
     chromeos::DBusThreadManager::Get()->GetSessionManagerClient()->
         EmitLoginPromptVisible();
   }

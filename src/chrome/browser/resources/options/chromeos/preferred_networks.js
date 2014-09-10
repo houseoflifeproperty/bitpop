@@ -4,7 +4,8 @@
 
 cr.define('options', function() {
 
-  var OptionsPage = options.OptionsPage;
+  var Page = cr.ui.pageManager.Page;
+  var PageManager = cr.ui.pageManager.PageManager;
   var ArrayDataModel = cr.ui.ArrayDataModel;
   var DeletableItem = options.DeletableItem;
   var DeletableItemList = options.DeletableItemList;
@@ -17,25 +18,20 @@ cr.define('options', function() {
    * @constructor
    */
   function PreferredNetworks(model) {
-    OptionsPage.call(this,
-                     'preferredNetworksPage',
-                     null,
-                     'preferredNetworksPage');
+    Page.call(this, 'preferredNetworksPage', null, 'preferredNetworksPage');
   }
 
   cr.addSingletonGetter(PreferredNetworks);
 
   PreferredNetworks.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
-   /**
-     * Initializes the preferred networks page.
-     */
+    /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
       PreferredNetworkList.decorate($('remembered-network-list'));
       $('preferred-networks-confirm').onclick =
-          OptionsPage.closeOverlay.bind(OptionsPage);
+          PageManager.closeOverlay.bind(PageManager);
     },
 
     update: function(rememberedNetworks) {
@@ -51,10 +47,8 @@ cr.define('options', function() {
 
   /**
    * Creates a list entry for a remembered network.
-   * @param{{networkName: string,
-             networkType: string,
-             servicePath: string}} data
-   *    Description of the network.
+   * @param {{Name: string, Type: string, servicePath: string}} data
+   *     Description of the network.
    * @constructor
    */
   function PreferredNetworkListItem(data) {
@@ -72,9 +66,7 @@ cr.define('options', function() {
 
     /**
      * Description of the network.
-     * @type {{networkName: string,
-     *         networkType: string,
-     *         servicePath: string}}
+     * @type {{Name: string, Type: string, servicePath: string}}
      */
     data: null,
 
@@ -82,7 +74,7 @@ cr.define('options', function() {
     decorate: function() {
       DeletableItem.prototype.decorate.call(this);
       var label = this.ownerDocument.createElement('div');
-      label.textContent = this.data.networkName;
+      label.textContent = this.data.Name;
       if (this.data.policyManaged)
         this.deletable = false;
       this.contentElement.appendChild(label);
@@ -125,7 +117,7 @@ cr.define('options', function() {
       if (item) {
         // Inform the network library that we are forgetting this network.
         chrome.send('networkCommand',
-                    [item.networkType,
+                    [item.Type,
                     item.servicePath,
                     'forget']);
       }
@@ -146,9 +138,7 @@ cr.define('options', function() {
 
     /**
      * Adds a remembered network to the list.
-     * @param {{networkName: string,
-                networkType: string,
-                servicePath: string} data
+     * @param {{Name: string, Type: string, servicePath: string}} data
      *     Description of the network.
      */
     append: function(data) {

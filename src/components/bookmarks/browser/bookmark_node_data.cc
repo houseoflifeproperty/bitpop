@@ -13,6 +13,8 @@
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 
+namespace bookmarks {
+
 const char* BookmarkNodeData::kClipboardFormatString =
     "chromium/x-bookmark-entries";
 
@@ -284,3 +286,5 @@ bool BookmarkNodeData::IsFromProfilePath(
   // An empty path means the data is not associated with any profile.
   return !profile_path_.empty() && profile_path_ == profile_path;
 }
+
+}  // namespace bookmarks

@@ -31,7 +31,7 @@
 #include "core/svg/SVGPreserveAspectRatio.h"
 #include "platform/graphics/Image.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGFEImageElement::SVGFEImageElement(Document& document)
     : SVGFilterPrimitiveStandardAttributes(SVGNames::feImageTag, document)
@@ -71,7 +71,7 @@ void SVGFEImageElement::clearResourceReferences()
         m_cachedImage = 0;
     }
 
-    document().accessSVGExtensions().removeAllTargetReferencesForElement(this);
+    removeAllOutgoingReferences();
 }
 
 void SVGFEImageElement::fetchImageResource()
@@ -101,7 +101,7 @@ void SVGFEImageElement::buildPendingResource()
     } else if (target->isSVGElement()) {
         // Register us with the target in the dependencies map. Any change of hrefElement
         // that leads to relayout/repainting now informs us, so we can react to it.
-        document().accessSVGExtensions().addElementReferencingTarget(this, toSVGElement(target));
+        addReferenceTo(toSVGElement(target));
     }
 
     invalidate();
@@ -119,21 +119,7 @@ bool SVGFEImageElement::isSupportedAttribute(const QualifiedName& attrName)
 
 void SVGFEImageElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGFilterPrimitiveStandardAttributes::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::preserveAspectRatioAttr) {
-        m_preserveAspectRatio->setBaseValueAsString(value, parseError);
-    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
-    } else {
-        ASSERT_NOT_REACHED();
-    }
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGFEImageElement::svgAttributeChanged(const QualifiedName& attrName)

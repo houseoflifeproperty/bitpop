@@ -16,6 +16,11 @@ VPX_TEST_TOOLS_COMMON_SH=included
 
 set -e
 devnull='> /dev/null 2>&1'
+VPX_TEST_PREFIX=""
+
+elog() {
+  echo "$@" 1>&2
+}
 
 vlog() {
   if [ "${VPX_TEST_VERBOSE_OUTPUT}" = "yes" ]; then
@@ -200,9 +205,12 @@ vpxdec() {
   local decoder="${LIBVPX_BIN_PATH}/vpxdec${VPX_TEST_EXE_SUFFIX}"
 
   if [ -z "${pipe_input}" ]; then
-    eval "${decoder}" "$input" --summary --noblit "$@" ${devnull}
+    eval "${VPX_TEST_PREFIX}" "${decoder}" "$input" --summary --noblit "$@" \
+        ${devnull}
   else
-    cat "${input}" | eval "${decoder}" - --summary --noblit "$@" ${devnull}
+    cat "${input}" \
+        | eval "${VPX_TEST_PREFIX}" "${decoder}" - --summary --noblit "$@" \
+            ${devnull}
   fi
 }
 
@@ -248,16 +256,14 @@ vpxenc() {
   fi
 
   if [ -z "${pipe_input}" ]; then
-    eval "${encoder}" --codec=${codec} --width=${width} --height=${height} \
-        --limit=${frames} ${use_ivf} ${extra_flags} --output="${output}" \
-        "${input}" \
-        ${devnull}
+    eval "${VPX_TEST_PREFIX}" "${encoder}" --codec=${codec} --width=${width} \
+        --height=${height} --limit=${frames} ${use_ivf} ${extra_flags} \
+        --output="${output}" "${input}" ${devnull}
   else
     cat "${input}" \
-        | eval "${encoder}" --codec=${codec} --width=${width} \
-              --height=${height} --limit=${frames} ${use_ivf} ${extra_flags} \
-              --output="${output}" - \
-              ${devnull}
+        | eval "${VPX_TEST_PREFIX}" "${encoder}" --codec=${codec} \
+            --width=${width} --height=${height} --limit=${frames} ${use_ivf} \
+            ${extra_flags} --output="${output}" - ${devnull}
   fi
 
   if [ ! -e "${output}" ]; then
@@ -302,8 +308,13 @@ filter_strings() {
 # functions and are run unconditionally. Functions in positional parameter two
 # are run according to the rules specified in vpx_test_usage().
 run_tests() {
-  env_tests="verify_vpx_test_environment ${1}"
-  tests_to_filter="${2}"
+  local env_tests="verify_vpx_test_environment $1"
+  local tests_to_filter="$2"
+  local test_name="${VPX_TEST_NAME}"
+
+  if [ -z "${test_name}" ]; then
+    test_name="$(basename "${0%.*}")"
+  fi
 
   if [ "${VPX_TEST_RUN_DISABLED_TESTS}" != "yes" ]; then
     # Filter out DISABLED tests.
@@ -315,7 +326,7 @@ run_tests() {
     tests_to_filter=$(filter_strings "${tests_to_filter}" ${VPX_TEST_FILTER})
   fi
 
-  tests_to_run="${env_tests} ${tests_to_filter}"
+  local tests_to_run="${env_tests} ${tests_to_filter}"
 
   check_git_hashes
 
@@ -328,8 +339,8 @@ run_tests() {
     test_end "${test}"
   done
 
-  tested_config="$(test_configuration_target) @ $(current_hash)"
-  echo $(basename "${0%.*}"): Done, all tests pass for ${tested_config}.
+  local tested_config="$(test_configuration_target) @ $(current_hash)"
+  echo "${test_name}: Done, all tests pass for ${tested_config}."
 }
 
 vpx_test_usage() {
@@ -342,6 +353,9 @@ cat << EOF
     --help: Display this message and exit.
     --test-data-path <path to libvpx test data directory>
     --show-program-output: Shows output from all programs being tested.
+    --prefix: Allows for a user specified prefix to be inserted before all test
+              programs. Grants the ability, for example, to run test programs
+              within valgrind.
     --verbose: Verbose output.
 
     When the --bin-path option is not specified the script attempts to use
@@ -389,6 +403,10 @@ while [ -n "$1" ]; do
       ;;
     --test-data-path)
       LIBVPX_TEST_DATA_PATH="$2"
+      shift
+      ;;
+    --prefix)
+      VPX_TEST_PREFIX="$2"
       shift
       ;;
     --verbose)
@@ -451,10 +469,20 @@ vlog "$(basename "${0%.*}") test configuration:
   LIBVPX_BIN_PATH=${LIBVPX_BIN_PATH}
   LIBVPX_CONFIG_PATH=${LIBVPX_CONFIG_PATH}
   LIBVPX_TEST_DATA_PATH=${LIBVPX_TEST_DATA_PATH}
-  VPX_TEST_OUTPUT_DIR=${VPX_TEST_OUTPUT_DIR}
-  VPX_TEST_VERBOSE_OUTPUT=${VPX_TEST_VERBOSE_OUTPUT}
+  VP8_IVF_FILE=${VP8_IVF_FILE}
+  VP9_IVF_FILE=${VP9_IVF_FILE}
+  VP9_WEBM_FILE=${VP9_WEBM_FILE}
+  VPX_TEST_EXE_SUFFIX=${VPX_TEST_EXE_SUFFIX}
   VPX_TEST_FILTER=${VPX_TEST_FILTER}
+  VPX_TEST_OUTPUT_DIR=${VPX_TEST_OUTPUT_DIR}
+  VPX_TEST_PREFIX=${VPX_TEST_PREFIX}
+  VPX_TEST_RAND=${VPX_TEST_RAND}
   VPX_TEST_RUN_DISABLED_TESTS=${VPX_TEST_RUN_DISABLED_TESTS}
-  VPX_TEST_SHOW_PROGRAM_OUTPUT=${VPX_TEST_SHOW_PROGRAM_OUTPUT}"
+  VPX_TEST_SHOW_PROGRAM_OUTPUT=${VPX_TEST_SHOW_PROGRAM_OUTPUT}
+  VPX_TEST_TEMP_ROOT=${VPX_TEST_TEMP_ROOT}
+  VPX_TEST_VERBOSE_OUTPUT=${VPX_TEST_VERBOSE_OUTPUT}
+  YUV_RAW_INPUT=${YUV_RAW_INPUT}
+  YUV_RAW_INPUT_WIDTH=${YUV_RAW_INPUT_WIDTH}
+  YUV_RAW_INPUT_HEIGHT=${YUV_RAW_INPUT_HEIGHT}"
 
 fi  # End $VPX_TEST_TOOLS_COMMON_SH pseudo include guard.

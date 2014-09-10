@@ -27,7 +27,7 @@
 #include "config.h"
 #include "core/dom/shadow/ShadowRoot.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/css/StyleSheetList.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/css/resolver/StyleResolverParentScope.h"
@@ -41,7 +41,7 @@
 #include "core/html/HTMLShadowElement.h"
 #include "public/platform/Platform.h"
 
-namespace WebCore {
+namespace blink {
 
 struct SameSizeAsShadowRoot : public DocumentFragment, public TreeScope, public DoublyLinkedListNode<ShadowRoot> {
     void* pointers[3];
@@ -204,11 +204,12 @@ void ShadowRoot::removedFrom(ContainerNode* insertionPoint)
     DocumentFragment::removedFrom(insertionPoint);
 }
 
-void ShadowRoot::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void ShadowRoot::childrenChanged(const ChildrenChange& change)
 {
-    ContainerNode::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    ContainerNode::childrenChanged(change);
 
-    checkForSiblingStyleChanges(false, beforeChange, afterChange, childCountDelta);
+    if (change.isChildElementChange())
+        checkForSiblingStyleChanges(change.type == ElementRemoved ? SiblingElementRemoved : SiblingElementInserted, change.siblingBeforeChange, change.siblingAfterChange);
 
     if (InsertionPoint* point = shadowInsertionPointOfYoungerShadowRoot()) {
         if (ShadowRoot* root = point->containingShadowRoot())
@@ -316,10 +317,8 @@ const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> >& ShadowRoot::descend
         return emptyList;
 
     WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> > insertionPoints;
-    for (Element* element = ElementTraversal::firstWithin(*this); element; element = ElementTraversal::next(*element, this)) {
-        if (element->isInsertionPoint())
-            insertionPoints.append(toInsertionPoint(element));
-    }
+    for (InsertionPoint* insertionPoint = Traversal<InsertionPoint>::firstWithin(*this); insertionPoint; insertionPoint = Traversal<InsertionPoint>::next(*insertionPoint, this))
+        insertionPoints.append(insertionPoint);
 
     ensureShadowRootRareData()->setDescendantInsertionPoints(insertionPoints);
 

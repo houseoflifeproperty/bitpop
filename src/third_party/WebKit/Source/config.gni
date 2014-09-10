@@ -25,6 +25,8 @@ declare_args() {
   # garbage-collection infrastructure during compilation.
   blink_gc_plugin = false
   blink_gc_plugin_dump_graph = false
+
+  blink_asserts_always_on = false
 }
 
 use_default_render_theme = use_aura
@@ -63,14 +65,9 @@ if (use_concatenated_impulse_responses) {
   feature_defines_list += [ "WTF_USE_CONCATENATED_IMPULSE_RESPONSES=1" ]
 }
 
-if (is_android) {
-  feature_defines_list += [
-    "ENABLE_MEDIA_CAPTURE=1",
-  ]
-} else {
+if (!is_android) {
   feature_defines_list += [
     "ENABLE_INPUT_MULTIPLE_FIELDS_UI=1",
-    "ENABLE_MEDIA_CAPTURE=0",
     "ENABLE_WEB_AUDIO=1",
   ]
 }
@@ -98,6 +95,9 @@ if (use_default_render_theme) {
 }
 if (enable_oilpan) {
   feature_defines_list += [ "ENABLE_OILPAN=1" ]
+}
+if (blink_asserts_always_on) {
+  feature_defines_list += [ "ENABLE_ASSERT=1" ]
 }
 
 # feature_defines_string -------------------------------------------------------

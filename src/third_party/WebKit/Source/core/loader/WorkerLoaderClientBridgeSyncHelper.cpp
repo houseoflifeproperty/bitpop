@@ -39,7 +39,7 @@
 #include "wtf/MainThread.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 PassOwnPtr<WorkerLoaderClientBridgeSyncHelper> WorkerLoaderClientBridgeSyncHelper::create(ThreadableLoaderClient& client, PassOwnPtr<blink::WebWaitableEvent> event)
 {
@@ -114,7 +114,7 @@ void WorkerLoaderClientBridgeSyncHelper::didFinishLoading(unsigned long identifi
 void WorkerLoaderClientBridgeSyncHelper::didFail(const ResourceError& error)
 {
     ASSERT(isMainThread());
-    m_clientTasks.append(bind(&ThreadableLoaderClient::didFail, &m_client, error));
+    m_clientTasks.append(bind(&ThreadableLoaderClient::didFail, &m_client, error.copy()));
     m_done = true;
     m_event->signal();
 }
@@ -122,7 +122,7 @@ void WorkerLoaderClientBridgeSyncHelper::didFail(const ResourceError& error)
 void WorkerLoaderClientBridgeSyncHelper::didFailAccessControlCheck(const ResourceError& error)
 {
     ASSERT(isMainThread());
-    m_clientTasks.append(bind(&ThreadableLoaderClient::didFailAccessControlCheck, &m_client, error));
+    m_clientTasks.append(bind(&ThreadableLoaderClient::didFailAccessControlCheck, &m_client, error.copy()));
     m_done = true;
     m_event->signal();
 }
@@ -143,4 +143,4 @@ WorkerLoaderClientBridgeSyncHelper::WorkerLoaderClientBridgeSyncHelper(Threadabl
     ASSERT(m_event);
 }
 
-} // namespace WebCore
+} // namespace blink

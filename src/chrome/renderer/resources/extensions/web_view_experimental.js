@@ -13,49 +13,18 @@ var ContextMenusSchema =
 var CreateEvent = require('webViewEvents').CreateEvent;
 var EventBindings = require('event_bindings');
 var MessagingNatives = requireNative('messaging_natives');
-var WebView = require('webView').WebView;
+var WebView = require('webViewInternal').WebView;
 var WebViewInternal = require('webView').WebViewInternal;
-var WebViewSchema = requireNative('schema_registry').GetSchema('webview');
+var WebViewSchema =
+    requireNative('schema_registry').GetSchema('webViewInternal');
 var idGeneratorNatives = requireNative('id_generator');
 var utils = require('utils');
-
-// WEB_VIEW_EXPERIMENTAL_EVENTS is a map of experimental <webview> DOM event
-//     names to their associated extension event descriptor objects.
-// An event listener will be attached to the extension event |evt| specified in
-//     the descriptor.
-// |fields| specifies the public-facing fields in the DOM event that are
-//     accessible to <webview> developers.
-// |customHandler| allows a handler function to be called each time an extension
-//     event is caught by its event listener. The DOM event should be dispatched
-//     within this handler function. With no handler function, the DOM event
-//     will be dispatched by default each time the extension event is caught.
-// |cancelable| (default: false) specifies whether the event's default
-//     behavior can be canceled. If the default action associated with the event
-//     is prevented, then its dispatch function will return false in its event
-//     handler. The event must have a custom handler for this to be meaningful.
-var WEB_VIEW_EXPERIMENTAL_EVENTS = {
-  'findupdate': {
-    evt: CreateEvent('webview.onFindReply'),
-    fields: [
-      'searchText',
-      'numberOfMatches',
-      'activeMatchOrdinal',
-      'selectionRect',
-      'canceled',
-      'finalUpdate'
-    ]
-  },
-  'zoomchange': {
-    evt: CreateEvent('webview.onZoomChange'),
-    fields: ['oldZoomFactor', 'newZoomFactor']
-  }
-};
 
 function GetUniqueSubEventName(eventName) {
   return eventName + "/" + idGeneratorNatives.GetNextId();
 }
 
-// This is the only "webview.onClicked" named event for this renderer.
+// This is the only "webViewInternal.onClicked" named event for this renderer.
 //
 // Since we need an event per <webview>, we define events with suffix
 // (subEventName) in each of the <webview>. Behind the scenes, this event is
@@ -63,7 +32,7 @@ function GetUniqueSubEventName(eventName) {
 // |viewInstanceId|. Any time a ContextMenusEvent is dispatched, we re-dispatch
 // it to the subEvent's listeners. This way
 // <webview>.contextMenus.onClicked behave as a regular chrome Event type.
-var ContextMenusEvent = CreateEvent('webview.onClicked');
+var ContextMenusEvent = CreateEvent('webViewInternal.onClicked');
 
 /**
  * This event is exposed as <webview>.contextMenus.onClicked.
@@ -161,18 +130,8 @@ WebViewInternal.prototype.maybeHandleContextMenu = function(e, webViewEvent) {
   } //  else we will ignore showing the context menu completely.
 };
 
-/**
- * @private
- */
-WebViewInternal.prototype.setZoom = function(zoomFactor) {
-  if (!this.instanceId) {
-    return;
-  }
-  WebView.setZoom(this.instanceId, zoomFactor);
-};
-
 WebViewInternal.prototype.maybeGetExperimentalEvents = function() {
-  return WEB_VIEW_EXPERIMENTAL_EVENTS;
+  return {};
 };
 
 /** @private */
@@ -181,66 +140,13 @@ WebViewInternal.prototype.maybeGetExperimentalPermissions = function() {
 };
 
 /** @private */
-WebViewInternal.prototype.maybeSetCurrentZoomFactor =
-    function(zoomFactor) {
-  this.currentZoomFactor = zoomFactor;
-};
-
-/** @private */
-WebViewInternal.prototype.setZoom = function(zoomFactor, callback) {
-  if (!this.instanceId) {
-    return;
-  }
-  WebView.setZoom(this.instanceId, zoomFactor, callback);
-};
-
-WebViewInternal.prototype.getZoom = function(callback) {
-  if (!this.instanceId) {
-    return;
-  }
-  WebView.getZoom(this.instanceId, callback);
-};
-
-/** @private */
 WebViewInternal.prototype.captureVisibleRegion = function(spec, callback) {
   WebView.captureVisibleRegion(this.instanceId, spec, callback);
 };
 
-/** @private */
-WebViewInternal.prototype.find = function(search_text, options, callback) {
-  if (!this.instanceId) {
-    return;
-  }
-  WebView.find(this.instanceId, search_text, options, callback);
-};
-
-/** @private */
-WebViewInternal.prototype.stopFinding = function(action) {
-  if (!this.instanceId) {
-    return;
-  }
-  WebView.stopFinding(this.instanceId, action);
-};
-
 WebViewInternal.maybeRegisterExperimentalAPIs = function(proto) {
-  proto.setZoom = function(zoomFactor, callback) {
-    privates(this).internal.setZoom(zoomFactor, callback);
-  };
-
-  proto.getZoom = function(callback) {
-    return privates(this).internal.getZoom(callback);
-  };
-
   proto.captureVisibleRegion = function(spec, callback) {
     privates(this).internal.captureVisibleRegion(spec, callback);
-  };
-
-  proto.find = function(search_text, options, callback) {
-    privates(this).internal.find(search_text, options, callback);
-  };
-
-  proto.stopFinding = function(action) {
-    privates(this).internal.stopFinding(action);
   };
 };
 
@@ -259,7 +165,7 @@ WebViewInternal.prototype.setupExperimentalContextMenus = function() {
       var getOnClickedEvent = function() {
         return function() {
           if (!self.contextMenusOnClickedEvent_) {
-            var eventName = 'webview.onClicked';
+            var eventName = 'webViewInternal.onClicked';
             // TODO(lazyboy): Find event by name instead of events[0].
             var eventSchema = WebViewSchema.events[0];
             var eventOptions = {supportsListeners: true};

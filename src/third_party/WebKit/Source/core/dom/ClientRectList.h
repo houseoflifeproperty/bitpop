@@ -27,18 +27,19 @@
 #ifndef ClientRectList_h
 #define ClientRectList_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class ClientRect;
 
-class ClientRectList FINAL : public RefCountedWillBeGarbageCollectedFinalized<ClientRectList>, public ScriptWrappable {
+class ClientRectList FINAL : public RefCountedWillBeGarbageCollected<ClientRectList>, public ScriptWrappable {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ClientRectList);
 public:
     static PassRefPtrWillBeRawPtr<ClientRectList> create()
     {
@@ -48,8 +49,6 @@ public:
     {
         return adoptRefWillBeNoop(new ClientRectList(quads));
     }
-    ~ClientRectList();
-
     unsigned length() const;
     ClientRect* item(unsigned index);
 
@@ -62,6 +61,6 @@ private:
     WillBeHeapVector<RefPtrWillBeMember<ClientRect> > m_list;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ClientRectList_h

@@ -30,7 +30,6 @@
 #include "modules/webdatabase/Database.h"
 
 #include "core/dom/CrossThreadTask.h"
-#include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/html/VoidCallback.h"
 #include "core/page/Page.h"
@@ -55,7 +54,7 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/CString.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<Database> Database::create(ExecutionContext*, PassRefPtrWillBeRawPtr<DatabaseBackendBase> backend)
 {
@@ -142,7 +141,7 @@ void Database::runTransaction(PassOwnPtr<SQLTransactionCallback> callback, PassO
     // FIXME: Rather than passing errorCallback to SQLTransaction and then sometimes firing it ourselves,
     // this code should probably be pushed down into DatabaseBackend so that we only create the SQLTransaction
     // if we're actually going to run it.
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     SQLTransactionErrorCallback* originalErrorCallback = errorCallback.get();
 #endif
     RefPtrWillBeRawPtr<SQLTransaction> transaction = SQLTransaction::create(this, callback, successCallback, errorCallback, readOnly);
@@ -152,7 +151,7 @@ void Database::runTransaction(PassOwnPtr<SQLTransactionCallback> callback, PassO
         ASSERT(callback == originalErrorCallback);
         if (callback) {
             OwnPtr<SQLErrorData> error = SQLErrorData::create(SQLError::UNKNOWN_ERR, "database has been closed");
-            executionContext()->postTask(createCallbackTask(&callTransactionErrorCallback, callback.release(), error.release()));
+            executionContext()->postTask(createCrossThreadTask(&callTransactionErrorCallback, callback.release(), error.release()));
         }
     }
 }
@@ -250,4 +249,4 @@ void Database::reportCommitTransactionResult(int errorSite, int webSqlErrorCode,
 }
 
 
-} // namespace WebCore
+} // namespace blink

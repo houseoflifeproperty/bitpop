@@ -34,8 +34,6 @@
 #include "platform/network/ResourceLoadTiming.h"
 #include "public/platform/WebString.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 void WebURLLoadTiming::initialize()

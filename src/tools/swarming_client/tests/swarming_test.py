@@ -150,6 +150,19 @@ def get_swarm_results(keys, output_collector=None):
           'http://host:9001', keys, 10., None, True, output_collector))
 
 
+def collect(url, task_name, shards):
+  """Simplifies the call to swarming.collect()."""
+  return swarming.collect(
+    url=url,
+    task_name=task_name,
+    shards=shards,
+    timeout=10,
+    decorate=True,
+    print_status_updates=True,
+    task_summary_json=None,
+    task_output_dir=None)
+
+
 def gen_trigger_response(priority=101):
   # As seen in services/swarming/handlers_frontend.py.
   return {
@@ -192,8 +205,9 @@ class TestCase(auto_stub.TestCase):
     super(TestCase, self).setUp()
     self._lock = threading.Lock()
     self.requests = []
+    self.mock(swarming.auth, 'ensure_logged_in', lambda _: None)
     self.mock(swarming.net.HttpService, 'request', self._url_open)
-    self.mock(swarming.time, 'sleep', lambda x: None)
+    self.mock(swarming.time, 'sleep', lambda _: None)
     self.mock(swarming.subprocess, 'call', lambda *_: self.fail())
     self.mock(swarming.threading, 'Event', NonBlockingEvent)
     self.mock(sys, 'stdout', StringIO.StringIO())
@@ -420,9 +434,7 @@ class TestGetSwarmResults(TestCase):
   def test_collect_nothing(self):
     self.mock(swarming, 'get_task_keys', lambda *_: ['task_key'])
     self.mock(swarming, 'yield_results', lambda *_: [])
-    self.assertEqual(
-        1,
-        swarming.collect('url', 'name', 2, 'timeout', 'decorate', True, None))
+    self.assertEqual(1, collect('url', 'name', 2))
     self._check_output('', 'Results from some shards are missing: 0, 1\n')
 
   def test_collect_success(self):
@@ -434,9 +446,7 @@ class TestGetSwarmResults(TestCase):
       'output': 'Foo\n',
     }
     self.mock(swarming, 'yield_results', lambda *_: [(0, data)])
-    self.assertEqual(
-        0,
-        swarming.collect('url', 'name', 1, 'timeout', 'decorate', True, None))
+    self.assertEqual(0, collect('url', 'name', 1))
     self._check_output(
         '\n================================================================\n'
         'Begin output from shard index 0 (machine tag: 0, id: unknown)\n'
@@ -457,9 +467,7 @@ class TestGetSwarmResults(TestCase):
       'output': 'Foo\n',
     }
     self.mock(swarming, 'yield_results', lambda *_: [(0, data)])
-    self.assertEqual(
-        1,
-        swarming.collect('url', 'name', 1, 'timeout', 'decorate', True, None))
+    self.assertEqual(1, collect('url', 'name', 1))
     self._check_output(
         '\n================================================================\n'
         'Begin output from shard index 0 (machine tag: 0, id: unknown)\n'
@@ -480,9 +488,7 @@ class TestGetSwarmResults(TestCase):
       'output': 'Foo\n',
     }
     self.mock(swarming, 'yield_results', lambda *_: [(0, data)])
-    self.assertEqual(
-        1,
-        swarming.collect('url', 'name', 1, 'timeout', 'decorate', True, None))
+    self.assertEqual(1, collect('url', 'name', 1))
     self._check_output(
         '\n================================================================\n'
         'Begin output from shard index 0 (machine tag: 0, id: unknown)\n'
@@ -503,9 +509,7 @@ class TestGetSwarmResults(TestCase):
       'output': 'Foo\n',
     }
     self.mock(swarming, 'yield_results', lambda *_: [(0, data)])
-    self.assertEqual(
-        1,
-        swarming.collect('url', 'name', 2, 'timeout', 'decorate', True, None))
+    self.assertEqual(1, collect('url', 'name', 2))
     self._check_output(
         '\n================================================================\n'
         'Begin output from shard index 0 (machine tag: 0, id: unknown)\n'
@@ -739,7 +743,14 @@ class TriggerTaskShardsTest(TestCase):
         verbose=False,
         profile=False,
         priority=101)
-    self.assertEqual({'unit_tests': '123'}, tasks)
+    expected = {
+      'unit_tests': {
+        'shard_index': 0,
+        'task_id': '123',
+        'view_url': 'http://localhost:8082/user/task/123',
+      }
+    }
+    self.assertEqual(expected, tasks)
 
   def test_trigger_task_shards_priority_override(self):
     self.mock(
@@ -762,7 +773,18 @@ class TriggerTaskShardsTest(TestCase):
         verbose=False,
         profile=False,
         priority=101)
-    expected = {u'unit_tests:2:0': u'123', u'unit_tests:2:1': u'123'}
+    expected = {
+      u'unit_tests:2:0': {
+        u'shard_index': 0,
+        u'task_id': u'123',
+        u'view_url': u'http://localhost:8082/user/task/123',
+      },
+      u'unit_tests:2:1': {
+        u'shard_index': 1,
+        u'task_id': u'123',
+        u'view_url': u'http://localhost:8082/user/task/123',
+      }
+    }
     self.assertEqual(expected, tasks)
     self._check_output('', 'Priority was reset to 200\n')
 
@@ -788,7 +810,15 @@ class TriggerTaskShardsTest(TestCase):
         verbose=False,
         profile=False,
         priority=101)
-    self.assertEqual({'unit_tests': '123'}, tasks)
+
+    expected = {
+      'unit_tests': {
+        'shard_index': 0,
+        'task_id': '123',
+        'view_url': 'http://localhost:8082/user/task/123',
+      }
+    }
+    self.assertEqual(expected, tasks)
 
   def test_isolated_to_hash(self):
     calls = []
@@ -835,22 +865,26 @@ def mock_swarming_api_v1_bots():
       {
         'dimensions': {},
         'id': 'no-dimensions',
-        'last_seen': now,
+        'is_dead': False,
+        'last_seen_ts': now,
       },
       {
         'dimensions': {'os': 'amiga'},
         'id': 'amig1',
-        'last_seen': now,
+        'is_dead': False,
+        'last_seen_ts': now,
       },
       {
         'dimensions': {'os': ['amiga', 'atari'], 'foo': 1},
         'id': 'amig2',
-        'last_seen': now,
+        'is_dead': False,
+        'last_seen_ts': now,
       },
       {
         'dimensions': {'os': 'amiga'},
         'id': 'dead',
-        'last_seen': dead,
+        'is_dead': True,
+        'last_seen_ts': dead,
       },
     ],
   }
@@ -1285,7 +1319,16 @@ class MainTest(TestCase):
     expected = [
       (
         'foo.json',
-        {'base_task_name': u'unit_tests', 'tasks': {u'unit_tests': u'123'}},
+        {
+          u'base_task_name': u'unit_tests',
+          u'tasks': {
+            u'unit_tests': {
+              u'shard_index': 0,
+              u'task_id': u'123',
+              u'view_url': u'https://host1/user/task/123',
+            }
+          },
+        },
         True,
       ),
     ]
@@ -1400,7 +1443,7 @@ class TaskOutputCollectorTest(auto_stub.TestCase):
         self.tempdir, 'task/name', len(logs))
     for index, log in enumerate(logs):
       collector.process_shard_result(index, gen_data(log, '0, 0'))
-    collector.finalize()
+    summary = collector.finalize()
 
     # Ensure it fetches the files from first two shards only.
     expected_calls = [
@@ -1426,9 +1469,7 @@ class TaskOutputCollectorTest(auto_stub.TestCase):
     self.assertEqual('https://server', storage.location)
     self.assertEqual('namespace', storage.namespace)
 
-    # Ensure summary dump is correct.
-    with open(os.path.join(self.tempdir, 'summary.json'), 'r') as f:
-      summary = json.load(f)
+    # Ensure collected summary is correct.
     expected_summary = {
       'task_name': 'task/name',
       'shards': [
@@ -1436,6 +1477,11 @@ class TaskOutputCollectorTest(auto_stub.TestCase):
       ]
     }
     self.assertEqual(expected_summary, summary)
+
+    # Ensure summary dumped to a file is correct as well.
+    with open(os.path.join(self.tempdir, 'summary.json'), 'r') as f:
+      summary_dump = json.load(f)
+    self.assertEqual(expected_summary, summary_dump)
 
   def test_ensures_same_server(self):
     # Two shard results, attempt to use different servers.

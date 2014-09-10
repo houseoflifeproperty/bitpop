@@ -15,18 +15,7 @@
     # These duplicate other lists and are the only ones used on Android. They
     # should be eliminated. See crbug.com/305852.
     'android_schema_files': [
-      'activity_log_private.json',
-      'events.json',
-      'file_system.idl',
       'manifest_types.json',
-      'permissions.json',
-      'sync_file_system.idl',
-      'tab_capture.idl',
-      'tabs.json',
-      'types.json',
-      'web_navigation.json',
-      'webview.json',
-      'windows.json',
     ],
 
     # These are used everywhere except Android.
@@ -48,22 +37,26 @@
       'bookmarks.json',
       'braille_display_private.idl',
       'browser.idl',
-      'cast_channel.idl',
       'cloud_print_private.json',
       'command_line_private.json',
       'content_settings.json',
       'context_menus_internal.json',
       'context_menus.json',
       'cookies.json',
+      'copresence.idl',
+      'copresence_private.idl',
       'debugger.json',
       'desktop_capture.json',
       'developer_private.idl',
       'dial.idl',
       'downloads.idl',
       'downloads_internal.idl',
+      'easy_unlock_private.idl',
       'echo_private.json',
       'enterprise_platform_keys_private.json',
       'events.json',
+      'experience_sampling_private.json',
+      'extension_options_internal.idl',
       'feedback_private.idl',
       'file_browser_private.idl',
       'file_browser_private_internal.idl',
@@ -75,7 +68,6 @@
       'gcm.json',
       'guest_view_internal.json',
       'hangouts_private.idl',
-      'hid.idl',
       'history.json',
       'hotword_private.idl',
       'i18n.json',
@@ -92,16 +84,15 @@
       'media_galleries_private.idl',
       'metrics_private.json',
       'networking_private.json',
+      'notification_provider.idl',
       'notifications.idl',
       'omnibox.json',
       'page_capture.json',
       'permissions.json',
-      'power.idl',
       'preferences_private.json',
       'push_messaging.idl',
       'reading_list_private.json',
       'screenlock_private.idl',
-      'serial.idl',
       'sessions.json',
       'signed_in_devices.idl',
       'streams_private.idl',
@@ -123,11 +114,11 @@
       'web_request.json',
       # Despite the name, this API does not rely on any
       # WebRTC-specific bits and as such does not belong in
-      # the enable_webrtc=0 section below.
+      # the enable_webrtc==0 section below.
       'webrtc_audio_private.idl',
       'webrtc_logging_private.idl',
       'webstore_private.json',
-      'webview.json',
+      'web_view_internal.json',
       'windows.json',
     ],
     'main_non_compiled_schema_files': [
@@ -185,14 +176,14 @@
         # Disable schema compiler to generate model extension API code.
         # Only register the extension functions in extension system.
         'conditions': [
-          ['OS!="android"', {
+          ['enable_extensions==1', {
             'non_compiled_schema_files': [
               '<@(main_non_compiled_schema_files)',
             ],
             'schema_files': [
               '<@(main_schema_files)',
             ],
-          }, {  # OS=="android"
+          }, {  # enable_extensions==0
             'non_compiled_schema_files': [
             ],
             'schema_files': [
@@ -205,7 +196,7 @@
               '<@(chromeos_schema_files)',
             ],
           }],
-          ['enable_webrtc==1', {
+          ['enable_extensions==1 and enable_webrtc==1', {
             'schema_files': [
               '<@(webrtc_schema_files)',
             ],
@@ -217,14 +208,13 @@
           }],
         ],
         'cc_dir': 'chrome/common/extensions/api',
-        'root_namespace': 'extensions::api',
+        'root_namespace': 'extensions::api::%(namespace)s',
       },
       'dependencies': [
-        # Different APIs include some headers crom chrome/common that in turn
+        # Different APIs include some headers from chrome/common that in turn
         # include generated headers from these targets.
         # TODO(brettw) this should be made unnecessary if possible.
         '<(DEPTH)/components/components.gyp:component_metrics_proto',
-        '<(DEPTH)/device/serial/serial.gyp:device_serial',
 
         '<(DEPTH)/content/content.gyp:content_browser',
         '<(DEPTH)/skia/skia.gyp:skia',

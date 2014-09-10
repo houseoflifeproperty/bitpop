@@ -15,6 +15,7 @@
 #include "content/shell/renderer/test_runner/WebTask.h"
 #include "third_party/WebKit/public/platform/WebCompositeAndReadbackAsyncCallback.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/web/WebAXEnums.h"
@@ -22,6 +23,7 @@
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebFrameClient.h"
 #include "third_party/WebKit/public/web/WebHistoryCommitType.h"
 #include "third_party/WebKit/public/web/WebIconURL.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
@@ -75,6 +77,7 @@ typedef unsigned WebColor;
 
 namespace content {
 
+class MockScreenOrientationClient;
 class MockWebPushClient;
 class MockWebSpeechRecognizer;
 class MockWebUserMediaClient;
@@ -114,6 +117,8 @@ class WebTestProxyBase : public blink::WebCompositeAndReadbackAsyncCallback {
   std::string CaptureTree(bool debug_render_tree);
   void CapturePixelsForPrinting(
       const base::Callback<void(const SkBitmap&)>& callback);
+  void CopyImageAtAndCapturePixels(
+      int x, int y, const base::Callback<void(const SkBitmap&)>& callback);
   void CapturePixelsAsync(
       const base::Callback<void(const SkBitmap&)>& callback);
 
@@ -125,6 +130,8 @@ class WebTestProxyBase : public blink::WebCompositeAndReadbackAsyncCallback {
 
   void DisplayAsyncThen(const base::Closure& callback);
 
+  void GetScreenOrientationForTesting(blink::WebScreenInfo&);
+  MockScreenOrientationClient* GetScreenOrientationClientMock();
   blink::WebMIDIClientMock* GetMIDIClientMock();
   MockWebSpeechRecognizer* GetSpeechRecognizerMock();
 
@@ -224,12 +231,7 @@ class WebTestProxyBase : public blink::WebCompositeAndReadbackAsyncCallback {
                                  int intra_priority_value);
   void DidFinishResourceLoad(blink::WebLocalFrame* frame, unsigned identifier);
   blink::WebNavigationPolicy DecidePolicyForNavigation(
-      blink::WebLocalFrame* frame,
-      blink::WebDataSource::ExtraData* data,
-      const blink::WebURLRequest& request,
-      blink::WebNavigationType navigation_type,
-      blink::WebNavigationPolicy default_policy,
-      bool is_redirect);
+      const blink::WebFrameClient::NavigationPolicyInfo& info);
   bool WillCheckAndDispatchMessageEvent(blink::WebLocalFrame* source_frame,
                                         blink::WebFrame* target_frame,
                                         blink::WebSecurityOrigin target,
@@ -269,6 +271,7 @@ class WebTestProxyBase : public blink::WebCompositeAndReadbackAsyncCallback {
   scoped_ptr<blink::WebMIDIClientMock> midi_client_;
   scoped_ptr<MockWebSpeechRecognizer> speech_recognizer_;
   scoped_ptr<MockWebPushClient> push_client_;
+  scoped_ptr<MockScreenOrientationClient> screen_orientation_client_;
 
   std::string accept_languages_;
 
@@ -298,6 +301,13 @@ class WebTestProxy : public Base, public WebTestProxyBase {
   explicit WebTestProxy(T t) : Base(t) {}
 
   virtual ~WebTestProxy() {}
+
+  // WebWidgetClient implementation.
+  virtual blink::WebScreenInfo screenInfo() {
+    blink::WebScreenInfo info = Base::screenInfo();
+    WebTestProxyBase::GetScreenOrientationForTesting(info);
+    return info;
+  }
 
   // WebViewClient implementation.
   virtual void scheduleAnimation() { WebTestProxyBase::ScheduleAnimation(); }
@@ -334,9 +344,6 @@ class WebTestProxy : public Base, public WebTestProxyBase {
   virtual void setStatusText(const blink::WebString& text) {
     WebTestProxyBase::SetStatusText(text);
     Base::setStatusText(text);
-  }
-  virtual blink::WebUserMediaClient* userMediaClient() {
-    return WebTestProxyBase::GetUserMediaClient();
   }
   virtual void printPage(blink::WebLocalFrame* frame) {
     WebTestProxyBase::PrintPage(frame);

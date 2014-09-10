@@ -34,8 +34,7 @@ struct NaClValidationCache;
  *   struct NaClChromeMainArgs *args = NaClChromeMainArgsCreate();
  *   // Fill out args...
  *   NaClAppSetDesc(nap, NACL_CHROME_DESC_BASE, NaClDescMakeCustomDesc(...));
- *   NaClChromeMainLoad(nap, args);
- *   NaClChromeMainStart(nap);
+ *   NaClChromeMainStartApp(nap, args);
  */
 
 /*
@@ -191,23 +190,21 @@ void NaClChromeMainSetUrandomFd(int urandom_fd);
 /* Initialize NaCl.  This must be called before NaClAppCreate(). */
 void NaClChromeMainInit(void);
 
+/*
+ * Sets a function to be called when a fatal error is logged. When the passed
+ * function is invoked, recent log messages will be passed in the data
+ * parameter, and its length in the bytes parameter.
+ * This function is only safe to call after NaClChromeMainInit().
+ *
+ * If NaClSetFatalErrorCallback() is not called, recent log messages will be
+ * written to the IMC bootstrap channel on a fatal error.
+ */
+void NaClSetFatalErrorCallback(void (*func)(const char *data, size_t bytes));
+
 /* Create a new args struct containing default values. */
 struct NaClChromeMainArgs *NaClChromeMainArgsCreate(void);
 
-/*
- * Prepare to launch NaCl. Returns zero on success or a non-zero error code on
- * failure.
- */
-int NaClChromeMainLoad(struct NaClApp *nap,
-                       struct NaClChromeMainArgs *args);
-
 /* Start NaCl. This does not return. */
-void NaClChromeMainStart(struct NaClApp *nap);
-
-/*
- * DEPRECATED. Calls NaClChromeMainLoad and NaClChromeMainStart.
- * TODO(teravest): Remove this old interface after current users are migrated.
- */
 void NaClChromeMainStartApp(struct NaClApp *nap,
                             struct NaClChromeMainArgs *args);
 

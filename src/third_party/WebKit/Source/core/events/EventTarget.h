@@ -32,11 +32,12 @@
 #ifndef EventTarget_h
 #define EventTarget_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/events/EventListenerMap.h"
 #include "core/events/ThreadLocalEventNames.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalDOMWindow;
 class Event;
@@ -72,7 +73,31 @@ public:
     OwnPtr<FiringEventIteratorVector> firingEventIterators;
 };
 
-class EventTarget : public WillBeGarbageCollectedMixin {
+// This is the base class for all DOM event targets. To make your class an
+// EventTarget, follow these steps:
+// - Make your IDL interface inherit from EventTarget.
+//   Optionally add "attribute EventHandler onfoo;" attributes.
+// - Inherit from EventTargetWithInlineData (only in rare cases should you use
+//   EventTarget directly).
+// - Figure out if you now need to inherit from ActiveDOMObject as well.
+// - In your class declaration, you will typically use
+//   REFCOUNTED_EVENT_TARGET(YourClassName) and
+//   WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(YourClassName). Make sure to include
+//   this header file in your .h file, or you will get very strange compiler
+//   errors.
+// - If you added an onfoo attribute, use DEFINE_ATTRIBUTE_EVENT_LISTENER(foo)
+//   in your class declaration.
+// - Call ScriptWrappable::init(this) in your constructor, unless you are already
+//   doing so.
+// - Override EventTarget::interfaceName() and executionContext(). The former
+//   will typically return EventTargetNames::YourClassName. The latter will
+//   return ActiveDOMObject::executionContext (if you are an ActiveDOMObject)
+//   or the document you're in.
+// - Your trace() method will need to call EventTargetWithInlineData::trace.
+//
+// Optionally, add a FooEvent.idl class, but that's outside the scope of this
+// comment (and much more straightforward).
+class EventTarget : public WillBeGarbageCollectedMixin, public ScriptWrappable {
 public:
 #if !ENABLE(OILPAN)
     void ref() { refEventTarget(); }
@@ -94,7 +119,7 @@ public:
     virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false);
     bool removeEventListener() { return false; }
     bool removeEventListener(const AtomicString& eventType) { return false; }
-    virtual bool removeEventListener(const AtomicString& eventType, EventListener*, bool useCapture = false);
+    virtual bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false);
     virtual void removeAllEventListeners();
     virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>);
     bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>, ExceptionState&); // DOM API
@@ -114,7 +139,10 @@ public:
 
     virtual void trace(Visitor*) { }
 
+    virtual bool keepEventInNode(Event*) { return false; };
+
 protected:
+    EventTarget();
     virtual ~EventTarget();
 
     // Subclasses should likely not override these themselves; instead, they should subclass EventTargetWithInlineData.
@@ -215,7 +243,7 @@ inline bool EventTarget::hasCapturingEventListeners(const AtomicString& eventTyp
     return d->eventListenerMap.containsCapturing(eventType);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #if ENABLE(OILPAN)
 #define DEFINE_EVENT_TARGET_REFCOUNTING(baseClass) \

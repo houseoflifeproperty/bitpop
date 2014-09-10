@@ -30,7 +30,7 @@
 #include "core/svg/SVGUnitTypes.h"
 #include "platform/graphics/Gradient.h"
 
-namespace WebCore {
+namespace blink {
 
 enum SVGSpreadMethodType {
     SVGSpreadMethodUnknown = 0,
@@ -66,20 +66,20 @@ protected:
 private:
     virtual bool needsPendingResourceHandling() const OVERRIDE FINAL { return false; }
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE FINAL;
+    virtual void childrenChanged(const ChildrenChange&) OVERRIDE FINAL;
 
     RefPtr<SVGAnimatedTransformList> m_gradientTransform;
     RefPtr<SVGAnimatedEnumeration<SVGSpreadMethodType> > m_spreadMethod;
     RefPtr<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType> > m_gradientUnits;
 };
 
-inline bool isSVGGradientElement(const Node& node)
+inline bool isSVGGradientElement(const SVGElement& element)
 {
-    return node.hasTagName(SVGNames::radialGradientTag) || node.hasTagName(SVGNames::linearGradientTag);
+    return element.hasTagName(SVGNames::radialGradientTag) || element.hasTagName(SVGNames::linearGradientTag);
 }
 
-DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGGradientElement);
+DEFINE_SVGELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGGradientElement);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

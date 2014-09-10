@@ -40,11 +40,14 @@
 #include "native_client/src/trusted/service_runtime/osx/mach_exception_handler.h"
 #include "native_client/src/trusted/service_runtime/sel_addrspace.h"
 #include "native_client/src/trusted/service_runtime/sel_ldr.h"
+#include "native_client/src/trusted/service_runtime/sel_main_common.h"
 #include "native_client/src/trusted/service_runtime/sel_qualify.h"
 #include "native_client/src/trusted/service_runtime/win/exception_patch/ntdll_patch.h"
 #include "native_client/src/trusted/validator/validation_metadata.h"
 
 static int g_initialized = 0;
+
+static void (*g_fatal_error_handler)(const char *data, size_t bytes) = NULL;
 
 #if NACL_LINUX || NACL_OSX
 void NaClChromeMainSetUrandomFd(int urandom_fd) {
@@ -57,6 +60,21 @@ void NaClChromeMainInit(void) {
   CHECK(!g_initialized);
   NaClAllModulesInit();
   g_initialized = 1;
+}
+
+static void NaClFatalErrorHandlerCallback(void *state,
+                                          char *buf,
+                                          size_t buf_bytes) {
+  CHECK(state == NULL);
+  g_fatal_error_handler(buf, buf_bytes);
+}
+
+void NaClSetFatalErrorCallback(void (*func)(const char *data, size_t bytes)) {
+  CHECK(g_initialized);
+  if (g_fatal_error_handler != NULL)
+    NaClLog(LOG_FATAL, "NaClSetFatalErrorCallback called twice.\n");
+  g_fatal_error_handler = func;
+  NaClErrorLogHookInit(NaClFatalErrorHandlerCallback, NULL);
 }
 
 struct NaClChromeMainArgs *NaClChromeMainArgsCreate(void) {
@@ -127,27 +145,30 @@ static void NaClLoadIrt(struct NaClApp *nap, int irt_fd) {
             " descriptor\n");
   }
 
-  errcode = NaClAppLoadFileDynamically(nap, nd, &metadata);
+  errcode = NaClMainLoadIrt(nap, nd, &metadata);
   if (errcode != LOAD_OK) {
     NaClLog(LOG_FATAL,
             "NaClLoadIrt: Failed to load the integrated runtime (IRT): %s\n",
             NaClErrorString(errcode));
   }
 
-  CHECK(NULL == nap->irt_nexe_desc);
-  nap->irt_nexe_desc = nd;
   NaClMetadataDtor(&metadata);
+  NaClDescUnref(nd);
 }
 
-int NaClChromeMainLoad(struct NaClApp *nap,
-                       struct NaClChromeMainArgs *args) {
+static int LoadApp(struct NaClApp *nap, struct NaClChromeMainArgs *args) {
   NaClErrorCode errcode = LOAD_OK;
   int skip_qualification;
 
   CHECK(g_initialized);
 
-  NaClBootstrapChannelErrorReporterInit();
-  NaClErrorLogHookInit(NaClBootstrapChannelErrorReporter, nap);
+  /*
+   * TODO(teravest): Remove this once Chromium uses NaClSetFatalErrorCallback.
+   */
+  if (g_fatal_error_handler == NULL) {
+    NaClBootstrapChannelErrorReporterInit();
+    NaClErrorLogHookInit(NaClBootstrapChannelErrorReporter, nap);
+  }
 
   /* Allow or disallow dyncode API based on args. */
   nap->enable_dyncode_syscalls = args->enable_dyncode_syscalls;
@@ -230,8 +251,7 @@ int NaClChromeMainLoad(struct NaClApp *nap,
     /* NaCl's signal handler is always enabled on Linux. */
 #elif NACL_OSX
     if (!NaClInterceptMachExceptions()) {
-      NaClLog(LOG_FATAL, "NaClChromeMainLoad: "
-              "Failed to set up Mach exception handler\n");
+      NaClLog(LOG_FATAL, "LoadApp: Failed to set up Mach exception handler\n");
     }
 #elif NACL_WINDOWS
     nap->attach_debug_exception_handler_func =
@@ -303,9 +323,8 @@ int NaClChromeMainLoad(struct NaClApp *nap,
   /*
    * Load the integrated runtime (IRT) library.
    */
-  if (args->irt_fd != -1 && !nap->irt_loaded) {
+  if (args->irt_fd != -1) {
     NaClLoadIrt(nap, args->irt_fd);
-    nap->irt_loaded = 1;
   }
 
   if (NACL_FI_ERROR_COND("LaunchServiceThreads",
@@ -354,7 +373,7 @@ done:
   return errcode;
 }
 
-void NaClChromeMainStart(struct NaClApp *nap) {
+static void StartApp(struct NaClApp *nap) {
   int ac = 1;
   char *av[1];
   int ret_code;
@@ -417,7 +436,7 @@ void NaClChromeMainStart(struct NaClApp *nap) {
 
 void NaClChromeMainStartApp(struct NaClApp *nap,
                             struct NaClChromeMainArgs *args) {
-  if (NaClChromeMainLoad(nap, args) != 0)
+  if (LoadApp(nap, args) != 0)
     NaClExit(1);
-  NaClChromeMainStart(nap);
+  StartApp(nap);
 }

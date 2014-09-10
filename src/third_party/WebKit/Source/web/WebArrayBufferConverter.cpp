@@ -31,11 +31,11 @@
 #include "config.h"
 #include "public/web/WebArrayBufferConverter.h"
 
-#include "bindings/v8/custom/V8ArrayBufferCustom.h"
+#include "bindings/core/v8/custom/V8ArrayBufferCustom.h"
 #include "wtf/ArrayBuffer.h"
 #include "wtf/PassOwnPtr.h"
 
-using namespace WebCore;
+using namespace blink;
 
 namespace blink {
 

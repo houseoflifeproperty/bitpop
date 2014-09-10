@@ -21,6 +21,7 @@
 #include "ui/accessibility/ax_text_utils.h"
 #include "ui/base/win/accessibility_ids_win.h"
 #include "ui/base/win/accessibility_misc_utils.h"
+#include "ui/base/win/atl_module.h"
 
 namespace content {
 
@@ -179,6 +180,7 @@ STDMETHODIMP BrowserAccessibilityRelation::get_targets(long max_targets,
 
 // static
 BrowserAccessibility* BrowserAccessibility::Create() {
+  ui::win::CreateATLModuleIfNeeded();
   CComObject<BrowserAccessibilityWin>* instance;
   HRESULT hr = CComObject<BrowserAccessibilityWin>::CreateInstance(&instance);
   DCHECK(SUCCEEDED(hr));
@@ -498,7 +500,7 @@ STDMETHODIMP BrowserAccessibilityWin::get_accParent(IDispatch** disp_parent) {
     // This happens if we're the root of the tree;
     // return the IAccessible for the window.
     parent_obj =
-         manager()->ToBrowserAccessibilityManagerWin()->parent_iaccessible();
+        manager()->ToBrowserAccessibilityManagerWin()->GetParentIAccessible();
     // |parent| can only be NULL if the manager was created before the parent
     // IAccessible was known and it wasn't subsequently set before a client
     // requested it. This has been fixed. |parent| may also be NULL during
@@ -738,7 +740,8 @@ STDMETHODIMP BrowserAccessibilityWin::get_windowHandle(HWND* window_handle) {
   if (!window_handle)
     return E_INVALIDARG;
 
-  *window_handle = manager()->ToBrowserAccessibilityManagerWin()->parent_hwnd();
+  *window_handle =
+      manager()->ToBrowserAccessibilityManagerWin()->GetParentHWND();
   if (!*window_handle)
     return E_FAIL;
 
@@ -994,7 +997,7 @@ STDMETHODIMP BrowserAccessibilityWin::get_imagePosition(
 
   if (coordinate_type == IA2_COORDTYPE_SCREEN_RELATIVE) {
     HWND parent_hwnd =
-        manager()->ToBrowserAccessibilityManagerWin()->parent_hwnd();
+        manager()->ToBrowserAccessibilityManagerWin()->GetParentHWND();
     if (!parent_hwnd)
       return E_FAIL;
     POINT top_left = {0, 0};
@@ -2561,7 +2564,7 @@ STDMETHODIMP BrowserAccessibilityWin::get_computedStyleForProperties(
 
   for (unsigned short i = 0; i < num_style_properties; ++i) {
     base::string16 name = (LPCWSTR)style_properties[i];
-    StringToLowerASCII(&name);
+    base::StringToLowerASCII(&name);
     if (name == L"display") {
       base::string16 display = GetString16Attribute(
           ui::AX_ATTR_DISPLAY);

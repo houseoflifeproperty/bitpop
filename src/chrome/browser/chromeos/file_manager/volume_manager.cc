@@ -215,12 +215,12 @@ VolumeInfo CreateProvidedFileSystemVolumeInfo(
   VolumeInfo volume_info;
   volume_info.file_system_id = file_system_info.file_system_id();
   volume_info.extension_id = file_system_info.extension_id();
-  volume_info.volume_label = file_system_info.file_system_name();
+  volume_info.volume_label = file_system_info.display_name();
   volume_info.type = VOLUME_TYPE_PROVIDED;
   volume_info.mount_path = file_system_info.mount_path();
   volume_info.mount_condition = chromeos::disks::MOUNT_CONDITION_NONE;
   volume_info.is_parent = true;
-  volume_info.is_read_only = true;
+  volume_info.is_read_only = !file_system_info.writable();
   volume_info.volume_id = GenerateVolumeId(volume_info);
   return volume_info;
 }
@@ -254,8 +254,7 @@ VolumeManager::VolumeManager(
     : profile_(profile),
       drive_integration_service_(drive_integration_service),
       disk_mount_manager_(disk_mount_manager),
-      mounted_disk_monitor_(
-          new MountedDiskMonitor(power_manager_client, disk_mount_manager)),
+      mounted_disk_monitor_(new MountedDiskMonitor(power_manager_client)),
       file_system_provider_service_(file_system_provider_service),
       snapshot_manager_(new SnapshotManager(profile_)),
       weak_ptr_factory_(this) {
@@ -311,6 +310,9 @@ void VolumeManager::Initialize() {
 
   // Subscribe to DiskMountManager.
   disk_mount_manager_->AddObserver(this);
+  disk_mount_manager_->EnsureMountInfoRefreshed(
+      base::Bind(&VolumeManager::OnDiskMountManagerRefreshed,
+                 weak_ptr_factory_.GetWeakPtr()));
 
   // Subscribe to FileSystemProviderService and register currently mounted
   // volumes for the profile.
@@ -326,54 +328,6 @@ void VolumeManager::Initialize() {
       DoMountEvent(chromeos::MOUNT_ERROR_NONE, volume_info, kNotRemounting);
     }
   }
-
-  std::vector<VolumeInfo> archives;
-
-  const chromeos::disks::DiskMountManager::MountPointMap& mount_points =
-      disk_mount_manager_->mount_points();
-  for (chromeos::disks::DiskMountManager::MountPointMap::const_iterator it =
-           mount_points.begin();
-       it != mount_points.end();
-       ++it) {
-    if (it->second.mount_type == chromeos::MOUNT_TYPE_ARCHIVE) {
-      // Archives are mounted after other type of volumes. See below.
-      archives.push_back(CreateVolumeInfoFromMountPointInfo(it->second, NULL));
-      continue;
-    }
-    DoMountEvent(
-        chromeos::MOUNT_ERROR_NONE,
-        CreateVolumeInfoFromMountPointInfo(
-            it->second,
-            disk_mount_manager_->FindDiskBySourcePath(it->second.source_path)),
-            kNotRemounting);
-  }
-
-  // We mount archives only if they are opened from currently mounted volumes.
-  // To check the condition correctly in DoMountEvent, we care the order.
-  std::vector<bool> done(archives.size(), false);
-  for (size_t i = 0; i < archives.size(); ++i) {
-    if (!done[i]) {
-      std::vector<VolumeInfo> chain;
-      done[i] = true;
-      chain.push_back(archives[i]);
-
-      // If archives[i]'s source_path is in another archive, mount it first.
-      for (size_t parent = 0; parent < archives.size(); ++parent) {
-        if (!done[parent] &&
-            archives[parent].mount_path.IsParent(chain.back().source_path)) {
-          done[parent] = true;
-          chain.push_back(archives[parent]);
-          parent = 0;  // Search archives[parent]'s parent from the beginning.
-        }
-      }
-
-      // Mount from the tail of chain.
-      for (size_t i = chain.size(); i > 0; --i)
-        DoMountEvent(chromeos::MOUNT_ERROR_NONE, chain[i - 1], kNotRemounting);
-    }
-  }
-
-  disk_mount_manager_->RequestMountInfoRefresh();
 
   // Subscribe to Profile Preference change.
   pref_change_registrar_.Init(profile_->GetPrefs());
@@ -394,7 +348,7 @@ void VolumeManager::Initialize() {
   // Subscribe to storage monitor for MTP notifications.
   const bool disable_mtp =
       CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          chromeos::switches::kEnableFileManagerMTP) != "true";
+          chromeos::switches::kEnableFileManagerMTP) == "false";
   if (!disable_mtp && storage_monitor::StorageMonitor::GetInstance()) {
     storage_monitor::StorageMonitor::GetInstance()->EnsureInitialized(
         base::Bind(&VolumeManager::OnStorageMonitorInitialized,
@@ -505,6 +459,8 @@ void VolumeManager::OnDiskEvent(
     const chromeos::disks::DiskMountManager::Disk* disk) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
+  mounted_disk_monitor_->OnDiskEvent(event, disk);
+
   // Disregard hidden devices.
   if (disk->is_hidden())
     return;
@@ -549,6 +505,13 @@ void VolumeManager::OnDiskEvent(
       // Notify to observers.
       FOR_EACH_OBSERVER(VolumeManagerObserver, observers_,
                         OnDiskRemoved(*disk));
+      const std::string& device_path = disk->system_path_prefix();
+      if (mounted_disk_monitor_->DeviceIsHardUnpluggedButNotReported(
+              device_path)) {
+        FOR_EACH_OBSERVER(VolumeManagerObserver, observers_,
+                          OnHardUnplugged(device_path));
+        mounted_disk_monitor_->MarkAsHardUnpluggedReported(device_path);
+      }
       return;
   }
   NOTREACHED();
@@ -558,20 +521,18 @@ void VolumeManager::OnDeviceEvent(
     chromeos::disks::DiskMountManager::DeviceEvent event,
     const std::string& device_path) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  DVLOG(1) << "OnDeviceEvent: " << event << ", " << device_path;
 
+  mounted_disk_monitor_->OnDeviceEvent(event, device_path);
+
+  DVLOG(1) << "OnDeviceEvent: " << event << ", " << device_path;
   switch (event) {
     case chromeos::disks::DiskMountManager::DEVICE_ADDED:
       FOR_EACH_OBSERVER(VolumeManagerObserver, observers_,
                         OnDeviceAdded(device_path));
       return;
     case chromeos::disks::DiskMountManager::DEVICE_REMOVED: {
-      const bool hard_unplugged =
-          mounted_disk_monitor_->DeviceIsHardUnplugged(device_path);
-      FOR_EACH_OBSERVER(VolumeManagerObserver,
-                        observers_,
-                        OnDeviceRemoved(device_path, hard_unplugged));
-      mounted_disk_monitor_->ClearHardUnpluggedFlag(device_path);
+      FOR_EACH_OBSERVER(
+          VolumeManagerObserver, observers_, OnDeviceRemoved(device_path));
       return;
     }
     case chromeos::disks::DiskMountManager::DEVICE_SCANNED:
@@ -587,6 +548,10 @@ void VolumeManager::OnMountEvent(
     const chromeos::disks::DiskMountManager::MountPointInfo& mount_info) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK_NE(chromeos::MOUNT_TYPE_INVALID, mount_info.mount_type);
+
+  const chromeos::disks::DiskMountManager::Disk* disk =
+      disk_mount_manager_->FindDiskBySourcePath(mount_info.source_path);
+  mounted_disk_monitor_->OnMountEvent(event, error_code, mount_info, disk);
 
   if (mount_info.mount_type == chromeos::MOUNT_TYPE_ARCHIVE) {
     // If the file is not mounted now, tell it to drive file system so that
@@ -608,8 +573,6 @@ void VolumeManager::OnMountEvent(
   }
 
   // Notify a mounting/unmounting event to observers.
-  const chromeos::disks::DiskMountManager::Disk* disk =
-      disk_mount_manager_->FindDiskBySourcePath(mount_info.source_path);
   VolumeInfo volume_info =
       CreateVolumeInfoFromMountPointInfo(mount_info, disk);
   switch (event) {
@@ -776,6 +739,60 @@ void VolumeManager::OnRemovableStorageDetached(
               fsid));
       return;
     }
+  }
+}
+
+void VolumeManager::OnDiskMountManagerRefreshed(bool success) {
+  if (!success) {
+    LOG(ERROR) << "Failed to refresh disk mount manager";
+    return;
+  }
+
+  std::vector<VolumeInfo> archives;
+
+  const chromeos::disks::DiskMountManager::MountPointMap& mount_points =
+      disk_mount_manager_->mount_points();
+  for (chromeos::disks::DiskMountManager::MountPointMap::const_iterator it =
+           mount_points.begin();
+       it != mount_points.end();
+       ++it) {
+    if (it->second.mount_type == chromeos::MOUNT_TYPE_ARCHIVE) {
+      // Archives are mounted after other types of volume. See below.
+      archives.push_back(CreateVolumeInfoFromMountPointInfo(it->second, NULL));
+      continue;
+    }
+    DoMountEvent(
+        chromeos::MOUNT_ERROR_NONE,
+        CreateVolumeInfoFromMountPointInfo(
+            it->second,
+            disk_mount_manager_->FindDiskBySourcePath(it->second.source_path)),
+            kNotRemounting);
+  }
+
+  // We mount archives only if they are opened from currently mounted volumes.
+  // To check the condition correctly in DoMountEvent, we care about the order.
+  std::vector<bool> done(archives.size(), false);
+  for (size_t i = 0; i < archives.size(); ++i) {
+    if (done[i])
+      continue;
+
+    std::vector<VolumeInfo> chain;
+    done[i] = true;
+    chain.push_back(archives[i]);
+
+    // If archives[i]'s source_path is in another archive, mount it first.
+    for (size_t parent = i + 1; parent < archives.size(); ++parent) {
+      if (!done[parent] &&
+          archives[parent].mount_path.IsParent(chain.back().source_path)) {
+        done[parent] = true;
+        chain.push_back(archives[parent]);
+        parent = i + 1;  // Search archives[parent]'s parent from the beginning.
+      }
+    }
+
+    // Mount from the tail of chain.
+    for (size_t i = chain.size(); i > 0; --i)
+      DoMountEvent(chromeos::MOUNT_ERROR_NONE, chain[i - 1], kNotRemounting);
   }
 }
 

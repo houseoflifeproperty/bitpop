@@ -194,7 +194,8 @@ class ChangesConnectorComponent(base.DBConnectorComponent):
         d = self.db.pool.do(thd)
         return d
 
-    def getRecentChanges(self, count):
+    def getRecentChanges(self, count, repository=None, author=None,
+                         branch=None):
         """
         Get a list of the C{count} most recent changes, represented as
         dictionaies; returns fewer if that many do not exist.
@@ -207,8 +208,15 @@ class ChangesConnectorComponent(base.DBConnectorComponent):
             # get the changeids from the 'changes' table
             changes_tbl = self.db.model.changes
             q = sa.select([changes_tbl.c.changeid],
-                    order_by=[sa.desc(changes_tbl.c.changeid)],
-                    limit=count)
+                    order_by=[sa.desc(changes_tbl.c.changeid)])
+            if repository:
+              q = q.where(changes_tbl.c.repository == repository)
+            if author:
+              q = q.where(changes_tbl.c.author == author)
+            if branch:
+              q = q.where(changes_tbl.c.branch == branch)
+            if count:
+              q = q.limit(count)
             rp = conn.execute(q)
             changeids = [ row.changeid for row in rp ]
             rp.close()

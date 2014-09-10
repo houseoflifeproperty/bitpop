@@ -24,7 +24,6 @@
 #include <string>
 #include <vector>
 
-#include "address_field_util.h"
 #include "format_element.h"
 #include "grit.h"
 #include "language.h"
@@ -99,9 +98,9 @@ std::vector<AddressUiComponent> BuildComponents(
   *best_address_language_tag = best_address_language.tag;
 
   const std::vector<FormatElement>& format =
-      !rule.GetLatinFormat().empty() &&
-      best_address_language.has_latin_script
-          ? rule.GetLatinFormat() : rule.GetFormat();
+      !rule.GetLatinFormat().empty() && best_address_language.has_latin_script
+          ? rule.GetLatinFormat()
+          : rule.GetFormat();
 
   // For avoiding showing an input field twice, when the field is displayed
   // twice on an envelope.
@@ -127,8 +126,10 @@ std::vector<AddressUiComponent> BuildComponents(
                                 : AddressUiComponent::HINT_SHORT;
     preceded_by_newline = false;
     component.field = format_it->GetField();
-    component.name = GetLabelForField(localization, format_it->GetField(),
-        rule.GetAdminAreaNameMessageId(), rule.GetPostalCodeNameMessageId());
+    component.name = GetLabelForField(localization,
+                                      format_it->GetField(),
+                                      rule.GetAdminAreaNameMessageId(),
+                                      rule.GetPostalCodeNameMessageId());
     result.push_back(component);
   }
 

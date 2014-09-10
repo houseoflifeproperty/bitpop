@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/editing/VisibleSelection.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Range.h"
@@ -44,7 +44,7 @@
 #include <stdio.h>
 #endif
 
-namespace WebCore {
+namespace blink {
 
 VisibleSelection::VisibleSelection()
     : m_affinity(DOWNSTREAM)
@@ -266,18 +266,17 @@ bool VisibleSelection::expandUsingGranularity(TextGranularity granularity)
 
 static PassRefPtrWillBeRawPtr<Range> makeSearchRange(const Position& pos)
 {
-    Node* n = pos.deprecatedNode();
-    if (!n)
+    Node* node = pos.deprecatedNode();
+    if (!node)
         return nullptr;
-    Document& d = n->document();
-    Node* de = d.documentElement();
-    if (!de)
+    Document& document = node->document();
+    if (!document.documentElement())
         return nullptr;
-    Node* boundary = n->enclosingBlockFlowElement();
+    Element* boundary = enclosingBlockFlowElement(*node);
     if (!boundary)
         return nullptr;
 
-    RefPtrWillBeRawPtr<Range> searchRange(Range::create(d));
+    RefPtrWillBeRawPtr<Range> searchRange(Range::create(document));
     TrackExceptionState exceptionState;
 
     Position start(pos.parentAnchoredEquivalent());
@@ -374,7 +373,7 @@ void VisibleSelection::setStartAndEndFromBaseAndExtentRespectingGranularity(Text
                 // the next one) to match TextEdit.
                 end = wordEnd.next();
 
-                if (Node* table = isFirstPositionAfterTable(end)) {
+                if (Element* table = isFirstPositionAfterTable(end)) {
                     // The paragraph break after the last paragraph in the last cell of a block table ends
                     // at the start of the paragraph after the table.
                     if (isBlock(table))
@@ -424,7 +423,7 @@ void VisibleSelection::setStartAndEndFromBaseAndExtentRespectingGranularity(Text
             // of the next one) in the selection.
             VisiblePosition end(visibleParagraphEnd.next());
 
-            if (Node* table = isFirstPositionAfterTable(end)) {
+            if (Element* table = isFirstPositionAfterTable(end)) {
                 // The paragraph break after the last paragraph in the last cell of a block table ends
                 // at the start of the paragraph after the table, not at the position just after the table.
                 if (isBlock(table))
@@ -588,11 +587,11 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
     if (m_base.isNull() || m_start.isNull() || m_end.isNull())
         return;
 
-    Node* baseRoot = highestEditableRoot(m_base);
-    Node* startRoot = highestEditableRoot(m_start);
-    Node* endRoot = highestEditableRoot(m_end);
+    ContainerNode* baseRoot = highestEditableRoot(m_base);
+    ContainerNode* startRoot = highestEditableRoot(m_start);
+    ContainerNode* endRoot = highestEditableRoot(m_end);
 
-    Node* baseEditableAncestor = lowestEditableAncestor(m_base.containerNode());
+    Element* baseEditableAncestor = lowestEditableAncestor(m_base.containerNode());
 
     // The base, start and end are all in the same region.  No adjustment necessary.
     if (baseRoot == startRoot && baseRoot == endRoot)
@@ -627,15 +626,15 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
 
         // The selection ends in editable content or non-editable content inside a different editable ancestor,
         // move backward until non-editable content inside the same lowest editable ancestor is reached.
-        Node* endEditableAncestor = lowestEditableAncestor(m_end.containerNode());
+        Element* endEditableAncestor = lowestEditableAncestor(m_end.containerNode());
         if (endRoot || endEditableAncestor != baseEditableAncestor) {
 
             Position p = previousVisuallyDistinctCandidate(m_end);
-            Node* shadowAncestor = endRoot ? endRoot->shadowHost() : 0;
+            Element* shadowAncestor = endRoot ? endRoot->shadowHost() : 0;
             if (p.isNull() && shadowAncestor)
                 p = positionAfterNode(shadowAncestor);
             while (p.isNotNull() && !(lowestEditableAncestor(p.containerNode()) == baseEditableAncestor && !isEditablePosition(p))) {
-                Node* root = editableRootForPosition(p);
+                Element* root = editableRootForPosition(p);
                 shadowAncestor = root ? root->shadowHost() : 0;
                 p = isAtomicNode(p.containerNode()) ? positionInParentBeforeNode(*p.containerNode()) : previousVisuallyDistinctCandidate(p);
                 if (p.isNull() && shadowAncestor)
@@ -657,14 +656,14 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
 
         // The selection starts in editable content or non-editable content inside a different editable ancestor,
         // move forward until non-editable content inside the same lowest editable ancestor is reached.
-        Node* startEditableAncestor = lowestEditableAncestor(m_start.containerNode());
+        Element* startEditableAncestor = lowestEditableAncestor(m_start.containerNode());
         if (startRoot || startEditableAncestor != baseEditableAncestor) {
             Position p = nextVisuallyDistinctCandidate(m_start);
-            Node* shadowAncestor = startRoot ? startRoot->shadowHost() : 0;
+            Element* shadowAncestor = startRoot ? startRoot->shadowHost() : 0;
             if (p.isNull() && shadowAncestor)
                 p = positionBeforeNode(shadowAncestor);
             while (p.isNotNull() && !(lowestEditableAncestor(p.containerNode()) == baseEditableAncestor && !isEditablePosition(p))) {
-                Node* root = editableRootForPosition(p);
+                Element* root = editableRootForPosition(p);
                 shadowAncestor = root ? root->shadowHost() : 0;
                 p = isAtomicNode(p.containerNode()) ? positionInParentAfterNode(*p.containerNode()) : nextVisuallyDistinctCandidate(p);
                 if (p.isNull() && shadowAncestor)
@@ -716,7 +715,7 @@ bool VisibleSelection::isContentEditable() const
     return isEditablePosition(start());
 }
 
-bool VisibleSelection::rendererIsEditable() const
+bool VisibleSelection::hasEditableStyle() const
 {
     return isEditablePosition(start(), ContentIsEditable, DoNotUpdateStyle);
 }
@@ -848,16 +847,16 @@ void VisibleSelection::showTreeForThis() const
 
 #endif
 
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
 
-void showTree(const WebCore::VisibleSelection& sel)
+void showTree(const blink::VisibleSelection& sel)
 {
     sel.showTreeForThis();
 }
 
-void showTree(const WebCore::VisibleSelection* sel)
+void showTree(const blink::VisibleSelection* sel)
 {
     if (sel)
         sel->showTreeForThis();

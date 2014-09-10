@@ -22,6 +22,7 @@
 #include "content/common/input/input_event_ack_state.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "ipc/ipc_listener.h"
+#include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "ui/base/ime/text_input_mode.h"
@@ -49,6 +50,7 @@ struct WebScreenInfo;
 }
 
 namespace content {
+class BrowserAccessibilityDelegate;
 class BrowserAccessibilityManager;
 class SyntheticGesture;
 class SyntheticGestureTarget;
@@ -86,11 +88,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   void SetPopupType(blink::WebPopupType popup_type);
 
   blink::WebPopupType GetPopupType();
-
-  // Get the BrowserAccessibilityManager if it exists, may return NULL.
-  BrowserAccessibilityManager* GetBrowserAccessibilityManager() const;
-
-  void SetBrowserAccessibilityManager(BrowserAccessibilityManager* manager);
 
   // Return a value that is incremented each time the renderer swaps a new frame
   // to the view.
@@ -150,16 +147,16 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // Return true if frame subscription is supported on this platform.
   virtual bool CanSubscribeFrame() const;
 
-  // Create a BrowserAccessibilityManager for this view if it's possible to
-  // create one and if one doesn't exist already. Some ports may not create
-  // one depending on the current state.
-  virtual void CreateBrowserAccessibilityManagerIfNeeded();
+  // Create a BrowserAccessibilityManager for this view.
+  virtual BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
+      BrowserAccessibilityDelegate* delegate);
 
-  virtual void OnAccessibilitySetFocus(int acc_obj_id);
-  virtual void AccessibilityShowMenu(int acc_obj_id);
+  virtual void AccessibilityShowMenu(const gfx::Point& point);
   virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds);
+  virtual gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget();
+  virtual gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible();
 
-  virtual SkBitmap::Config PreferredReadbackFormat();
+  virtual SkColorType PreferredReadbackFormat();
 
   // Informs that the focused DOM node has changed.
   virtual void FocusedNodeChanged(bool is_editable_node) {}
@@ -246,27 +243,27 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // Notifies the view that the scroll offset has changed.
   virtual void ScrollOffsetChanged() = 0;
 
-  // Copies the contents of the compositing surface into the given
-  // (uninitialized) PlatformCanvas if any.
-  // The rectangle region specified with |src_subrect| is copied from the
-  // contents, scaled to |dst_size|, and written to |output|.
-  // |callback| is invoked with true on success, false otherwise. |output| can
-  // be initialized even on failure.
-  // A smaller region than |src_subrect| may be copied if the underlying surface
-  // is smaller than |src_subrect|.
-  // NOTE: |callback| is called asynchronously.
+  // Copies the contents of the compositing surface, providing a new SkBitmap
+  // result via an asynchronously-run |callback|. |src_subrect| is specified in
+  // layer space coordinates for the current platform (e.g., DIP for Aura/Mac,
+  // physical for Android), and is the region to be copied from this view. The
+  // copy is then scaled to a SkBitmap of size |dst_size|. |callback| is run
+  // with true on success, false otherwise. A smaller region than |src_subrect|
+  // may be copied if the underlying surface is smaller than |src_subrect|.
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config config) = 0;
+      const SkColorType color_type) = 0;
 
-  // Copies a given subset of the compositing surface's content into a YV12
-  // VideoFrame, and invokes a callback with a success/fail parameter. |target|
-  // must contain an allocated, YV12 video frame of the intended size. If the
-  // copy rectangle does not match |target|'s size, the copied content will be
-  // scaled and letterboxed with black borders. The copy will happen
-  // asynchronously. This operation will fail if there is no available
+  // Copies the contents of the compositing surface, populating the given
+  // |target| with YV12 image data. |src_subrect| is specified in layer space
+  // coordinates for the current platform (e.g., DIP for Aura/Mac, physical for
+  // Android), and is the region to be copied from this view. The copy is then
+  // scaled and letterboxed with black borders to fit |target|. Finally,
+  // |callback| is asynchronously run with true/false for
+  // success/failure. |target| must point to an allocated, YV12 video frame of
+  // the intended size. This operation will fail if there is no available
   // compositing surface.
   virtual void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
@@ -307,6 +304,14 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // presented frame for the view. If |desired_size| is non-empty, true is
   // returned only if the accelerated surface size matches.
   virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) = 0;
+
+  // Compute the orientation type of the display assuming it is a mobile device.
+  static blink::WebScreenOrientationType GetOrientationTypeForMobile(
+      const gfx::Display& display);
+
+  // Compute the orientation type of the display assuming it is a desktop.
+  static blink::WebScreenOrientationType GetOrientationTypeForDesktop(
+      const gfx::Display& display);
 
   virtual void GetScreenInfo(blink::WebScreenInfo* results) = 0;
 
@@ -416,9 +421,6 @@ protected:
 
  private:
   void FlushInput();
-
-  // Manager of the tree representation of the WebKit render tree.
-  scoped_ptr<BrowserAccessibilityManager> browser_accessibility_manager_;
 
   gfx::Rect current_display_area_;
 

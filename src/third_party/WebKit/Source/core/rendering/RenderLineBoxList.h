@@ -32,7 +32,7 @@
 
 #include "core/rendering/RenderObject.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderLineBoxList {
 public:
@@ -42,7 +42,7 @@ public:
     {
     }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     ~RenderLineBoxList();
 #endif
 
@@ -79,12 +79,12 @@ private:
 };
 
 
-#ifdef NDEBUG
+#if !ENABLE(ASSERT)
 inline void RenderLineBoxList::checkConsistency() const
 {
 }
 #endif
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderFlow_h

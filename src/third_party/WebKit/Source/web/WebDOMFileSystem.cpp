@@ -31,10 +31,10 @@
 #include "config.h"
 #include "public/web/WebDOMFileSystem.h"
 
-#include "V8DOMFileSystem.h"
-#include "V8DirectoryEntry.h"
-#include "V8FileEntry.h"
-#include "bindings/v8/WrapperTypeInfo.h"
+#include "bindings/core/v8/WrapperTypeInfo.h"
+#include "bindings/modules/v8/V8DOMFileSystem.h"
+#include "bindings/modules/v8/V8DirectoryEntry.h"
+#include "bindings/modules/v8/V8FileEntry.h"
 #include "core/dom/Document.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/DirectoryEntry.h"
@@ -42,7 +42,7 @@
 #include "web/WebLocalFrameImpl.h"
 #include <v8.h>
 
-using namespace WebCore;
+using namespace blink;
 
 namespace blink {
 
@@ -72,7 +72,7 @@ WebDOMFileSystem WebDOMFileSystem::create(
     SerializableType serializableType)
 {
     ASSERT(frame && toWebLocalFrameImpl(frame)->frame());
-    DOMFileSystem* domFileSystem = DOMFileSystem::create(toWebLocalFrameImpl(frame)->frame()->document(), name, static_cast<WebCore::FileSystemType>(type), rootURL);
+    DOMFileSystem* domFileSystem = DOMFileSystem::create(toWebLocalFrameImpl(frame)->frame()->document(), name, static_cast<blink::FileSystemType>(type), rootURL);
     if (serializableType == SerializableTypeSerializable)
         domFileSystem->makeClonable();
     return WebDOMFileSystem(domFileSystem);
@@ -144,7 +144,7 @@ WebDOMFileSystem::WebDOMFileSystem(DOMFileSystem* domFileSystem)
 {
 }
 
-WebDOMFileSystem& WebDOMFileSystem::operator=(WebCore::DOMFileSystem* domFileSystem)
+WebDOMFileSystem& WebDOMFileSystem::operator=(blink::DOMFileSystem* domFileSystem)
 {
     m_private = domFileSystem;
     return *this;

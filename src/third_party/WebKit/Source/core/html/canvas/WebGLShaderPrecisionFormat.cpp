@@ -28,12 +28,12 @@
 
 #include "core/html/canvas/WebGLShaderPrecisionFormat.h"
 
-namespace WebCore {
+namespace blink {
 
 // static
-PassRefPtr<WebGLShaderPrecisionFormat> WebGLShaderPrecisionFormat::create(GLint rangeMin, GLint rangeMax, GLint precision)
+PassRefPtrWillBeRawPtr<WebGLShaderPrecisionFormat> WebGLShaderPrecisionFormat::create(GLint rangeMin, GLint rangeMax, GLint precision)
 {
-    return adoptRef(new WebGLShaderPrecisionFormat(rangeMin, rangeMax, precision));
+    return adoptRefWillBeNoop(new WebGLShaderPrecisionFormat(rangeMin, rangeMax, precision));
 }
 
 GLint WebGLShaderPrecisionFormat::rangeMin() const

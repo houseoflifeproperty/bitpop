@@ -87,6 +87,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
+        '../base/base.gyp:base_prefs',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../crypto/crypto.gyp:crypto',
         '../sdch/sdch.gyp:sdch',
@@ -254,7 +255,7 @@
               'third_party/mozilla_security_manager/nsPKCS12Blob.h',
             ],
             'dependencies': [
-              '../third_party/openssl/openssl.gyp:openssl',
+              '../third_party/boringssl/boringssl.gyp:boringssl',
             ],
           },
           {  # else !use_openssl: remove the unneeded files
@@ -265,6 +266,7 @@
               'cert/jwk_serializer_openssl.cc',
               'cert/x509_util_openssl.cc',
               'cert/x509_util_openssl.h',
+              'crypto/scoped_openssl_types.h',
               'quic/crypto/aead_base_decrypter_openssl.cc',
               'quic/crypto/aead_base_encrypter_openssl.cc',
               'quic/crypto/aes_128_gcm_12_decrypter_openssl.cc',
@@ -275,14 +277,17 @@
               'quic/crypto/p256_key_exchange_openssl.cc',
               'quic/crypto/scoped_evp_aead_ctx.cc',
               'quic/crypto/scoped_evp_aead_ctx.h',
-              'socket/openssl_ssl_util.cc',
-              'socket/openssl_ssl_util.h',
               'socket/ssl_client_socket_openssl.cc',
               'socket/ssl_client_socket_openssl.h',
               'socket/ssl_server_socket_openssl.cc',
               'socket/ssl_server_socket_openssl.h',
               'socket/ssl_session_cache_openssl.cc',
               'socket/ssl_session_cache_openssl.h',
+              'ssl/openssl_platform_key_mac.cc',
+              'ssl/openssl_platform_key_win.cc',
+              'ssl/openssl_platform_key.h',
+              'ssl/openssl_ssl_util.cc',
+              'ssl/openssl_ssl_util.h',
             ],
           },
         ],
@@ -392,6 +397,8 @@
         [ 'OS == "win"', {
             'sources!': [
               'http/http_auth_handler_ntlm_portable.cc',
+              'socket/socket_libevent.cc',
+              'socket/socket_libevent.h',
               'socket/tcp_socket_libevent.cc',
               'socket/tcp_socket_libevent.h',
               'udp/udp_socket_libevent.cc',
@@ -462,7 +469,7 @@
         }],
         [ 'OS == "android"', {
             'dependencies': [
-              '../third_party/openssl/openssl.gyp:openssl',
+              '../third_party/boringssl/boringssl.gyp:boringssl',
               'net_jni_headers',
             ],
             'sources!': [
@@ -470,11 +477,6 @@
               'cert/cert_database_openssl.cc',
               'cert/cert_verify_proc_openssl.cc',
               'cert/test_root_certs_openssl.cc',
-            ],
-            # The net/android/keystore_openssl.cc source file needs to
-            # access an OpenSSL-internal header.
-            'include_dirs': [
-              '../third_party/openssl',
             ],
           },
         ],
@@ -535,8 +537,10 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
+        '../base/base.gyp:base_prefs_test_support',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../crypto/crypto.gyp:crypto',
+        '../crypto/crypto.gyp:crypto_test_support',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../third_party/zlib/zlib.gyp:zlib',
@@ -546,6 +550,7 @@
         'net',
         'net_derived_sources',
         'net_test_support',
+        'quic_tools',
       ],
       'sources': [
         '<@(net_test_sources)',
@@ -563,7 +568,6 @@
         }],
         ['chromeos==1', {
           'sources!': [
-            'base/network_change_notifier_linux_unittest.cc',
             'proxy/proxy_config_service_linux_unittest.cc',
           ],
         }],
@@ -589,7 +593,7 @@
         [ 'use_openssl == 1', {
           # Avoid compiling/linking with the system library.
           'dependencies': [
-            '../third_party/openssl/openssl.gyp:openssl',
+            '../third_party/boringssl/boringssl.gyp:boringssl',
           ],
         }, {  # use_openssl == 0
           'conditions': [
@@ -784,7 +788,9 @@
               # The following tests are disabled because they don't apply to
               # iOS.
               # OS is not "linux" or "freebsd" or "openbsd".
-              'socket/unix_domain_socket_posix_unittest.cc',
+              'socket/unix_domain_client_socket_posix_unittest.cc',
+              'socket/unix_domain_listen_socket_posix_unittest.cc',
+              'socket/unix_domain_server_socket_posix_unittest.cc',
 
               # See bug http://crbug.com/344533.
               'disk_cache/blockfile/index_table_v3_unittest.cc',
@@ -792,7 +798,7 @@
         }],
         [ 'OS == "android"', {
             'dependencies': [
-              '../third_party/openssl/openssl.gyp:openssl',
+              '../third_party/boringssl/boringssl.gyp:boringssl',
             ],
             'sources!': [
               'dns/dns_config_service_posix_unittest.cc',
@@ -933,6 +939,7 @@
         'socket/socket_test_util.h',
         'test/cert_test_util.cc',
         'test/cert_test_util.h',
+        'test/cert_test_util_nss.cc',
         'test/ct_test_util.cc',
         'test/ct_test_util.h',
         'test/embedded_test_server/embedded_test_server.cc',
@@ -973,7 +980,7 @@
           'conditions': [
             ['use_openssl==1', {
               'dependencies': [
-                '../third_party/openssl/openssl.gyp:openssl',
+                '../third_party/boringssl/boringssl.gyp:boringssl',
               ],
             }, {
               'dependencies': [
@@ -1015,6 +1022,11 @@
               'dns/mock_mdns_socket_factory.cc',
               'dns/mock_mdns_socket_factory.h'
             ]
+        }],
+        [ 'use_nss != 1', {
+            'sources!': [
+              'test/cert_test_util_nss.cc',
+            ],
         }],
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
@@ -1113,6 +1125,36 @@
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],
+    },
+    {
+      # This is a temporary target which will be merged into 'net' once the
+      # dependency on balsa is eliminated and the classes are actually used.
+      'target_name': 'quic_tools',
+      'type': 'static_library',
+      'dependencies': [
+	'../base/base.gyp:base',
+	'../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+	'../url/url.gyp:url_lib',
+	'net',
+      ],
+      'sources': [
+	'quic/quic_dispatcher.cc',
+	'quic/quic_dispatcher.h',
+	'quic/quic_in_memory_cache.cc',
+	'quic/quic_in_memory_cache.h',
+	'quic/quic_per_connection_packet_writer.cc',
+	'quic/quic_per_connection_packet_writer.h',
+	'quic/quic_server.cc',
+	'quic/quic_server.h',
+	'quic/quic_server_packet_writer.cc',
+	'quic/quic_server_packet_writer.h',
+	'quic/quic_server_session.cc',
+	'quic/quic_server_session.h',
+	'quic/quic_spdy_server_stream.cc',
+	'quic/quic_spdy_server_stream.h',
+	'quic/quic_time_wait_list_manager.cc',
+	'quic/quic_time_wait_list_manager.h',
+      ],
     },
   ],
   'conditions': [
@@ -1341,7 +1383,7 @@
           ],
           'dependencies': [
             '../base/base.gyp:base',
-            '../third_party/openssl/openssl.gyp:openssl',
+            '../third_party/boringssl/boringssl.gyp:boringssl',
             'balsa',
             'epoll_server',
             'net',
@@ -1386,7 +1428,7 @@
           'dependencies': [
               '../testing/gtest.gyp:gtest',
               '../testing/gmock.gyp:gmock',
-              '../third_party/openssl/openssl.gyp:openssl',
+              '../third_party/boringssl/boringssl.gyp:boringssl',
               'flip_in_mem_edsm_server_base',
               'net',
               'net_test_support',
@@ -1475,10 +1517,10 @@
           'dependencies': [
             '../base/base.gyp:base',
             'net',
-            'quic_base',
+            'quic_tools',
           ],
           'sources': [
-            'tools/quic/quic_server_bin.cc',
+            'quic/quic_server_bin.cc',
           ],
         },
       ]

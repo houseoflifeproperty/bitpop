@@ -2,44 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/callback_helpers.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_fetcher.h"
-#include "chrome/browser/search_engines/template_url_fetcher_callbacks.h"
-#include "chrome/browser/search_engines/template_url_fetcher_factory.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_fetcher.h"
+#include "components/search_engines/template_url_service.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
 using base::ASCIIToUTF16;
-
-class TemplateURLFetcherTest;
-
-// Handles callbacks from TemplateURLFetcher.
-class TemplateURLFetcherTestCallbacks : public TemplateURLFetcherCallbacks {
- public:
-  explicit TemplateURLFetcherTestCallbacks(TemplateURLFetcherTest* test)
-      : test_(test) {
-  }
-  virtual ~TemplateURLFetcherTestCallbacks();
-
-  // TemplateURLFetcherCallbacks implementation.
-  virtual void ConfirmAddSearchProvider(TemplateURL* template_url,
-                                        Profile* profile) OVERRIDE;
-
- private:
-  TemplateURLFetcherTest* test_;
-
-  DISALLOW_COPY_AND_ASSIGN(TemplateURLFetcherTestCallbacks);
-};
 
 // Basic set-up for TemplateURLFetcher tests.
 class TemplateURLFetcherTest : public testing::Test {
@@ -47,26 +26,26 @@ class TemplateURLFetcherTest : public testing::Test {
   TemplateURLFetcherTest();
 
   virtual void SetUp() OVERRIDE {
-    test_util_.SetUp();
     TestingProfile* profile = test_util_.profile();
-    ASSERT_TRUE(profile);
-    ASSERT_TRUE(TemplateURLFetcherFactory::GetForProfile(profile));
-
     ASSERT_TRUE(profile->GetRequestContext());
+    template_url_fetcher_.reset(new TemplateURLFetcher(
+        test_util_.model(), profile->GetRequestContext()));
+
     ASSERT_TRUE(test_server_.InitializeAndWaitUntilReady());
   }
 
   virtual void TearDown() OVERRIDE {
     ASSERT_TRUE(test_server_.ShutdownAndWaitUntilComplete());
-    test_util_.TearDown();
   }
 
-  // Called by ~TemplateURLFetcherTestCallbacks.
-  void DestroyedCallback(TemplateURLFetcherTestCallbacks* callbacks);
+  // Called when the callback is destroyed.
+  void DestroyedCallback();
 
   // TemplateURLFetcherCallbacks implementation.  (Although not derived from
   // this class, this method handles those calls for the test.)
-  void ConfirmAddSearchProvider(TemplateURL* template_url, Profile* profile);
+  void ConfirmAddSearchProvider(
+      base::ScopedClosureRunner* callback_destruction_notifier,
+      scoped_ptr<TemplateURL> template_url);
 
  protected:
   // Schedules the download of the url.
@@ -79,6 +58,7 @@ class TemplateURLFetcherTest : public testing::Test {
   void WaitForDownloadToFinish();
 
   TemplateURLServiceTestUtil test_util_;
+  scoped_ptr<TemplateURLFetcher> template_url_fetcher_;
   net::test_server::EmbeddedTestServer test_server_;
 
   // The last TemplateURL to come from a callback.
@@ -98,16 +78,6 @@ class TemplateURLFetcherTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(TemplateURLFetcherTest);
 };
 
-TemplateURLFetcherTestCallbacks::~TemplateURLFetcherTestCallbacks() {
-  test_->DestroyedCallback(this);
-}
-
-void TemplateURLFetcherTestCallbacks::ConfirmAddSearchProvider(
-    TemplateURL* template_url,
-    Profile* profile) {
-  test_->ConfirmAddSearchProvider(template_url, profile);
-}
-
 TemplateURLFetcherTest::TemplateURLFetcherTest()
     : callbacks_destroyed_(0),
       add_provider_called_(0),
@@ -118,17 +88,16 @@ TemplateURLFetcherTest::TemplateURLFetcherTest()
       src_dir.AppendASCII("chrome/test/data"));
 }
 
-void TemplateURLFetcherTest::DestroyedCallback(
-    TemplateURLFetcherTestCallbacks* callbacks) {
+void TemplateURLFetcherTest::DestroyedCallback() {
   callbacks_destroyed_++;
   if (waiting_for_download_)
     base::MessageLoop::current()->Quit();
 }
 
 void TemplateURLFetcherTest::ConfirmAddSearchProvider(
-    TemplateURL* template_url,
-    Profile* profile) {
-  last_callback_template_url_.reset(template_url);
+    base::ScopedClosureRunner* callback_destruction_notifier,
+    scoped_ptr<TemplateURL> template_url) {
+  last_callback_template_url_ = template_url.Pass();
   add_provider_called_++;
 }
 
@@ -149,10 +118,18 @@ void TemplateURLFetcherTest::StartDownload(
   // Start the fetch.
   GURL osdd_url = test_server_.GetURL("/" + osdd_file_name);
   GURL favicon_url;
-  TemplateURLFetcherFactory::GetForProfile(
-      test_util_.profile())->ScheduleDownload(
-          keyword, osdd_url, favicon_url, NULL,
-          new TemplateURLFetcherTestCallbacks(this), provider_type);
+  base::ScopedClosureRunner* callback_destruction_notifier =
+      new base::ScopedClosureRunner(
+          base::Bind(&TemplateURLFetcherTest::DestroyedCallback,
+                     base::Unretained(this)));
+
+  template_url_fetcher_->ScheduleDownload(
+      keyword, osdd_url, favicon_url,
+      TemplateURLFetcher::URLFetcherCustomizeCallback(),
+      base::Bind(&TemplateURLFetcherTest::ConfirmAddSearchProvider,
+                 base::Unretained(this),
+                 base::Owned(callback_destruction_notifier)),
+      provider_type);
 }
 
 void TemplateURLFetcherTest::WaitForDownloadToFinish() {
@@ -217,11 +194,8 @@ TEST_F(TemplateURLFetcherTest, DuplicatesThrownAway) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
     StartDownload(test_cases[i].keyword, test_cases[i].osdd_file_name,
                   test_cases[i].provider_type, false);
-    ASSERT_EQ(
-        1,
-        TemplateURLFetcherFactory::GetForProfile(
-            test_util_.profile())->requests_count()) <<
-        test_cases[i].description;
+    ASSERT_EQ(1, template_url_fetcher_->requests_count())
+        << test_cases[i].description;
     ASSERT_EQ(i + 1, static_cast<size_t>(callbacks_destroyed_));
   }
 

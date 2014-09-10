@@ -27,10 +27,10 @@
 #include "core/dom/NodeRenderStyle.h"
 #include "core/frame/FrameHost.h"
 
-namespace WebCore {
+namespace blink {
 
 StyleResolverState::StyleResolverState(Document& document, Element* element, RenderStyle* parentStyle)
-    : m_elementContext(element ? ElementResolveContext(*element) : ElementResolveContext())
+    : m_elementContext(element ? ElementResolveContext(*element) : ElementResolveContext(document))
     , m_document(document)
     , m_style(nullptr)
     , m_cssToLengthConversionData(0, rootElementStyle(), document.renderView())
@@ -66,4 +66,4 @@ PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> StyleResolverState::takeAnimationUpda
     return m_animationUpdate.release();
 }
 
-} // namespace WebCore
+} // namespace blink

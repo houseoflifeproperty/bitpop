@@ -39,11 +39,10 @@ public:
 
     uint16_t FECPacketOverhead() const;
 
-    int32_t RegisterVideoPayload(
-        const char payloadName[RTP_PAYLOAD_NAME_SIZE],
-        const int8_t payloadType,
-        const uint32_t maxBitRate,
-        ModuleRTPUtility::Payload*& payload);
+    int32_t RegisterVideoPayload(const char payloadName[RTP_PAYLOAD_NAME_SIZE],
+                                 const int8_t payloadType,
+                                 const uint32_t maxBitRate,
+                                 RtpUtility::Payload*& payload);
 
     int32_t SendVideo(const RtpVideoCodecTypes videoType,
                       const FrameType frameType,
@@ -110,6 +109,15 @@ private:
                     const uint32_t payloadSize,
                     const RTPFragmentationHeader* fragmentation,
                     const RTPVideoTypeHeader* rtpTypeHdr);
+
+    bool SendH264(const FrameType frameType,
+                  const int8_t payloadType,
+                  const uint32_t captureTimeStamp,
+                  int64_t capture_time_ms,
+                  const uint8_t* payloadData,
+                  const uint32_t payloadSize,
+                  const RTPFragmentationHeader* fragmentation,
+                  const RTPVideoTypeHeader* rtpTypeHdr);
 
 private:
     RTPSenderInterface&        _rtpSender;

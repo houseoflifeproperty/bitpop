@@ -11,6 +11,7 @@ import logging
 import os
 import time
 
+from twisted.internet import defer
 from twisted.python import log
 
 from buildbot import interfaces, util
@@ -280,7 +281,6 @@ class GClient(source.Source):
     properties = (
       ('got_revision', primary_revision_key),
       ('got_nacl_revision', 'got_nacl_revision'),
-      ('got_swarm_client_revision', 'got_swarm_client_revision'),
       ('got_swarming_client_revision', 'got_swarming_client_revision'),
       ('got_v8_revision', 'got_v8_revision'),
       ('got_webkit_revision', 'got_webkit_revision'),
@@ -533,6 +533,11 @@ class AnnotationObserver(buildstep.LogLineObserver):
   @@@HONOR_ZERO_RETURN_CODE@@@
   Honor the return code being zero (success), even if steps have other results.
 
+  @@@STEP_TRIGGER@<spec>@@@
+  Trigger build(s), where <spec> is a JSON-encoded dict with keys:
+    builderNames - A list of builder names that should be triggered.
+    properties - A dictionary of properties to override the default ones.
+
   Deprecated annotations:
   TODO(bradnelson): drop these when all users have been tracked down.
 
@@ -641,6 +646,17 @@ class AnnotationObserver(buildstep.LogLineObserver):
     self.sections[0]['started'] = util.now()
     self.cursor = self.sections[0]
 
+  def sectionIsPreamble(self, section):
+    return section is self.sections[0]
+
+  def cursorIsPreamble(self):
+    return self.sectionIsPreamble(self.cursor)
+
+  def ensureCursorIsNotPreamble(self):
+    if self.cursorIsPreamble():
+      raise ValueError('This operation is not supported when the cursor is '
+                       'set to preamble.')
+
   def describe(self):
     """Used for the 'original' step, when updated by buildbot's getText().
 
@@ -650,10 +666,19 @@ class AnnotationObserver(buildstep.LogLineObserver):
 
     return self.sections[0]['step_text']
 
-  def cleanupSteps(self):
-    """Mark any unfinished steps as failure (except for parent step)."""
+  def cleanupSteps(self, exclude_async_pending=False):
+    """Prepares steps for build finalization.
+
+    Closes open started steps and marks any unfinished steps as failure (except
+    for parent step).
+
+    Args:
+      exclude_async_pending - if True, do not finish steps that have async ops.
+    """
+    self.closeSections()
     for section in self.sections[1:]:
-      if section['step'].isStarted() and not section['step'].isFinished():
+      if (section['step'].isStarted() and not section['step'].isFinished() and
+          not (exclude_async_pending and section['async_ops'])):
         reason = 'step was unfinished at finalization.'
         self.finishStep(section, status=builder.FAILURE, reason=reason)
 
@@ -661,8 +686,23 @@ class AnnotationObserver(buildstep.LogLineObserver):
     if not section['step'].isStarted():
       self.startStep(section)
 
+  def addAsyncOpToCursor(self, deferred, description):
+    section = self.cursor
+    if section['closed']:
+      raise Exception('Can\'t add an async operation to a closed step')
+    section['async_ops'].append({
+        'deferred': deferred,
+        'description': description,
+    })
+
   def finishStep(self, section, status=None, reason=None):
     """Mark the specified step as 'finished.'"""
+
+    # The initial section will be closed by self.finished when runCommand
+    # completes, so finishStep should not close it.
+    assert not self.sectionIsPreamble(section), ('The initial section cannot '
+                                                 'be finalized at annotator '
+                                                 'level.')
 
     status_map = {
         builder.SUCCESS: 'SUCCESS',
@@ -717,6 +757,62 @@ class AnnotationObserver(buildstep.LogLineObserver):
 
     self.finishStep(self.cursor, status=status, reason=reason)
 
+  def closeSection(self, section):
+    """Closes the step and finalizes when async_ops complete."""
+    assert not section['closed'], 'Can\'t close a closed step'
+    # The initial section will be closed by self.finished when runCommand
+    # completes.
+    assert not self.sectionIsPreamble(section), ('The initial section cannot '
+                                                 'be closed')
+    section['closed'] = True
+    if section['step'].isFinished():
+      return
+
+    # Everything was fine on the slave side,
+    # so the final result depends on async operations.
+    async_ops = section['async_ops']
+    if async_ops:
+      op_list = '\n'.join('* %s' % o['description']
+                          for o in async_ops)
+      msg = 'Will wait till async operations complete:\n%s' % (op_list,)
+      section['log'].addStdout(msg)
+
+    d = defer.DeferredList([o['deferred'] for o in async_ops])
+    def finish(results):
+      try:
+        reasons = []
+        status = section['status']
+        for succeeded, defer_result in results:
+          if succeeded:
+            # callback was called.
+            op_result, reason = defer_result
+          else:
+            # errback was called
+            op_result = builder.FAILURE
+            reason = defer_result
+          status = BuilderStatus.combine(status, op_result)
+          if reason is not None:
+            reasons.append(reason)
+
+        if not section['step'].isFinished():
+          reason = '\n'.join(map(str, reasons))
+          self.finishStep(section, status=status, reason=reason)
+          self.annotate_status = BuilderStatus.combine(self.annotate_status,
+                                                       status)
+      except Exception as ex:
+        self.finishStep(section, status=builder.EXCEPTION, reason=ex)
+
+    d.addCallback(finish)
+
+  def closeCursor(self):
+    self.closeSection(self.cursor)
+
+  def closeSections(self):
+    """Closes open started sections."""
+    for section in self.sections[1:]:
+      if section['step'].isStarted() and not section['closed']:
+        self.closeSection(section)
+
   def errLineReceived(self, line):
     self.handleOutputLine(line)
 
@@ -767,7 +863,8 @@ class AnnotationObserver(buildstep.LogLineObserver):
     self.cursor['status'] = BuilderStatus.combine(self.cursor['status'], status)
     if self.halt_on_failure and self.cursor['status'] in [
         builder.FAILURE, builder.EXCEPTION]:
-      self.finishCursor()
+      if not self.sectionIsPreamble(self.cursor):
+        self.finishCursor()
       self.cleanupSteps()
       self.command.finished(self.cursor['status'])
 
@@ -803,6 +900,7 @@ class AnnotationObserver(buildstep.LogLineObserver):
     self.sections.append({
         'name': step_name,
         'step': step,
+        'closed': False,
         'log': None,
         'annotated_logs': {},
         'status': builder.SUCCESS,
@@ -810,6 +908,7 @@ class AnnotationObserver(buildstep.LogLineObserver):
         'step_summary_text': [],
         'step_text': [],
         'started': None,
+        'async_ops': [],
     })
 
     return self.sections[-1]
@@ -953,11 +1052,13 @@ class AnnotationObserver(buildstep.LogLineObserver):
 
   def STEP_STARTED(self):
     # Support: @@@STEP_STARTED@@@ (start a step at cursor)
+    self.ensureCursorIsNotPreamble()
     self.startStep(self.cursor)
 
   def STEP_CLOSED(self):
     # Support: @@@STEP_CLOSED@@@
-    self.finishCursor()
+    self.ensureCursorIsNotPreamble()
+    self.closeCursor()
     self.cursor = self.sections[0]
 
   def STEP_WARNINGS(self):
@@ -968,11 +1069,15 @@ class AnnotationObserver(buildstep.LogLineObserver):
   def STEP_FAILURE(self):
     # Support: @@@STEP_FAILURE@@@ (fail a stage)
     # Also support deprecated @@@BUILD_FAILED@@@
+    if self.halt_on_failure:
+      self.ensureCursorIsNotPreamble()
     self.updateStepStatus(builder.FAILURE)
 
   def STEP_EXCEPTION(self):
     # Support: @@@STEP_EXCEPTION@@@ (exception on a stage)
     # Also support deprecated @@@BUILD_FAILED@@@
+    if self.halt_on_failure:
+      self.ensureCursorIsNotPreamble()
     self.updateStepStatus(builder.EXCEPTION)
 
   def HALT_ON_FAILURE(self):
@@ -1023,15 +1128,67 @@ class AnnotationObserver(buildstep.LogLineObserver):
     # Support: @@@BUILD_STEP <step_name>@@@ (start a new section)
     # Ignore duplicate consecutive step labels (for robustness).
     if step_name != self.sections[-1]['name']:
-      # Don't close already closed steps or the initial step
-      # when using BUILD_STEP.
-      if not (self.cursor['step'].isFinished() or
-              self.cursor == self.sections[0]):
-        # Finish up last section.
-        self.finishCursor()
+      # When using BUILD_STEP, close the last section, unless it is a preamble.
+      if not (self.cursor['step'].isFinished() or self.cursorIsPreamble()):
+        self.closeCursor()
       section = self.addSection(step_name)
       self.startStep(section)
       self.cursor = section
+
+  def STEP_TRIGGER(self, spec):
+    # Support: @@@STEP_TRIGGER <json spec>@@@ (trigger build(s)).
+    try:
+      spec = json.loads(spec)
+      builder_names = spec.get('builderNames')
+      if not builder_names:
+        raise ValueError('builderNames is not specified: %r' % (spec,))
+
+      # Start builds.
+      d = self.triggerBuilds(builder_names, spec.get('properties') or {})
+      # addAsyncOpToCursor expects a deferred to return a build result. If a
+      # buildset is added, then it is a success. This lambda function returns a
+      # tuple, which is received by addAsyncOpToCursor.
+      d.addCallback(lambda _: (builder.SUCCESS, None))
+      description = 'Triggering build(s) on %s' % (', '.join(builder_names),)
+      self.addAsyncOpToCursor(d, description)
+    except Exception as ex:
+      self.finishStep(self.cursor, builder.FAILURE, ex)
+
+  @staticmethod
+  def getPropertiesForTriggeredBuild(current_properties, new_properties):
+    props = {
+        'parent_buildername': current_properties.getProperty('buildername'),
+        'parent_buildnumber': current_properties.getProperty('buildnumber'),
+    }
+    props.update(new_properties)
+    # Specify property sources.
+    return dict((k, (v, 'ParentBuild'))
+            for k, v in props.iteritems())
+
+  @defer.inlineCallbacks
+  def triggerBuilds(self, builder_names, properties):
+    """Creates a new buildset."""
+    build = self.command.build
+    master = build.builder.botmaster.parent
+    current_properties = build.getProperties()
+
+    # Use the same source stamp.
+    source_stamp = build.getSourceStamp()
+    revision = current_properties.getProperty('got_revision')
+    if revision:
+      source_stamp = source_stamp.getAbsoluteSourceStamp(revision)
+    ssid = yield source_stamp.getSourceStampId(master)
+
+    properties = self.getPropertiesForTriggeredBuild(current_properties,
+                                                     properties)
+
+    bsid, brids = yield master.addBuildset(
+        ssid=ssid,
+        reason='Triggered by %s' % build.builder.name,
+        properties=properties,
+        builderNames=builder_names)
+    log.msg('Triggered a buildset %s with builders %s' % (bsid, builder_names))
+    defer.returnValue((bsid, brids))
 
   def handleReturnCode(self, return_code):
     # Treat all non-zero return codes as failure.
@@ -1039,15 +1196,38 @@ class AnnotationObserver(buildstep.LogLineObserver):
     # this might conflict with some existing use of a return code.
     # Besides, applications can always intercept return codes and emit
     # STEP_* tags.
-    if return_code == 0:
-      self.finishCursor()
+    succeeded = return_code == 0
+    if succeeded:
+      # Do not close the initial section because it will be closed by
+      # self.finished when runCommand completes.
+      if not self.cursorIsPreamble():
+        self.closeCursor()
       if self.honor_zero_return_code:
         self.annotate_status = builder.SUCCESS
     else:
       self.annotate_status = builder.FAILURE
-      self.finishCursor(builder.FAILURE,
-                        reason='return code was %d.' % return_code)
-    self.cleanupSteps()
+      if not self.cursorIsPreamble():
+        self.finishCursor(builder.FAILURE,
+                          reason='return code was %d.' % return_code)
+    self.cleanupSteps(exclude_async_pending=succeeded)
+
+  def stepsToWait(self):
+    return [s for s in self.sections[1:]
+            if s['step'].isStarted() and not s['step'].isFinished()]
+
+  def waitForSteps(self):
+    sections_to_wait = self.stepsToWait()
+
+    # Assume this function is called after annotated script execution completes
+    # for assertion only.
+    for section in sections_to_wait:
+      assert section['async_ops'], ('The annotated script finished execution '
+                                    'but a step without async ops was not '
+                                    'closed')
+
+    step_deferreds = [s['step'].waitUntilFinished()
+                      for s in sections_to_wait]
+    return defer.DeferredList(step_deferreds)
 
 
 class AnnotatedCommand(ProcessLogShellStep):
@@ -1074,10 +1254,12 @@ class AnnotatedCommand(ProcessLogShellStep):
     env = {
         'BUILDBOT_BLAMELIST': WithProperties('%(blamelist:-[])s'),
         'BUILDBOT_BRANCH': WithProperties('%(branch:-None)s'),
+        'BUILDBOT_BUILDBOTURL': WithProperties('%(buildbotURL:-None)s'),
         'BUILDBOT_BUILDERNAME': WithProperties('%(buildername:-None)s'),
         'BUILDBOT_BUILDNUMBER': WithProperties('%(buildnumber:-None)s'),
         'BUILDBOT_CLOBBER': clobber or WithProperties('%(clobber:+1)s'),
         'BUILDBOT_GOT_REVISION': WithProperties('%(got_revision:-None)s'),
+        'BUILDBOT_MASTERNAME': WithProperties('%(mastername:-None)s'),
         'BUILDBOT_REVISION': WithProperties('%(revision:-None)s'),
         'BUILDBOT_SCHEDULER': WithProperties('%(scheduler:-None)s'),
         'BUILDBOT_SLAVENAME': WithProperties('%(slavename:-None)s'),
@@ -1115,8 +1297,9 @@ class AnnotatedCommand(ProcessLogShellStep):
                                x.name != 'preamble']
 
   def interrupt(self, reason):
-    self.script_observer.finishCursor(builder.EXCEPTION,
-                                      reason='step was interrupted.')
+    if not self.script_observer.cursorIsPreamble():
+      self.script_observer.finishCursor(builder.EXCEPTION,
+                                        reason='step was interrupted.')
     self.script_observer.cleanupSteps()
     self._removePreamble()
     return ProcessLogShellStep.interrupt(self, reason)
@@ -1127,7 +1310,22 @@ class AnnotatedCommand(ProcessLogShellStep):
     log_processor_result = ProcessLogShellStep.evaluateCommand(self, cmd)
     return BuilderStatus.combine(observer_result, log_processor_result)
 
-  def commandComplete(self, cmd):
+  def scriptComplete(self, cmd):
     self.script_observer.handleReturnCode(cmd.rc)
     self._removePreamble()
-    return ProcessLogShellStep.commandComplete(self, cmd)
+
+  def runCommand(self, command):
+    """Runs command and waits for emitted steps to finish."""
+    d = ProcessLogShellStep.runCommand(self, command)
+    def onCommandFinished(command_result):
+      """Gets executed after remote command completes. Handles command_result
+      and starts to wait for remaining steps to finish. Returns command_result
+      as Deferred."""
+      self.scriptComplete(command_result)
+      steps_d = self.script_observer.waitForSteps()
+      # Ignore the waitForSteps' result and return the original result,
+      # so the caller of runCommand receives command_result.
+      steps_d.addCallback(lambda *_: command_result)
+      return steps_d
+    d.addCallback(onCommandFinished)
+    return d

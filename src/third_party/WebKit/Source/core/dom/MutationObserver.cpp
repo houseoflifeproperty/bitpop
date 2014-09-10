@@ -31,10 +31,8 @@
 #include "config.h"
 #include "core/dom/MutationObserver.h"
 
-#include <algorithm>
-#include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ExceptionState.h"
-#include "core/dom/Document.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/Microtask.h"
 #include "core/dom/MutationCallback.h"
@@ -43,8 +41,9 @@
 #include "core/dom/Node.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "wtf/MainThread.h"
+#include <algorithm>
 
-namespace WebCore {
+namespace blink {
 
 static unsigned s_observerPriority = 0;
 
@@ -87,36 +86,36 @@ void MutationObserver::observe(Node* node, const Dictionary& optionsDictionary, 
     MutationObserverOptions options = 0;
 
     bool attributeOldValue = false;
-    bool attributeOldValuePresent = optionsDictionary.get("attributeOldValue", attributeOldValue);
+    bool attributeOldValuePresent = DictionaryHelper::get(optionsDictionary, "attributeOldValue", attributeOldValue);
     if (attributeOldValue)
         options |= AttributeOldValue;
 
     HashSet<AtomicString> attributeFilter;
-    bool attributeFilterPresent = optionsDictionary.get("attributeFilter", attributeFilter);
+    bool attributeFilterPresent = DictionaryHelper::get(optionsDictionary, "attributeFilter", attributeFilter);
     if (attributeFilterPresent)
         options |= AttributeFilter;
 
     bool attributes = false;
-    bool attributesPresent = optionsDictionary.get("attributes", attributes);
+    bool attributesPresent = DictionaryHelper::get(optionsDictionary, "attributes", attributes);
     if (attributes || (!attributesPresent && (attributeOldValuePresent || attributeFilterPresent)))
         options |= Attributes;
 
     bool characterDataOldValue = false;
-    bool characterDataOldValuePresent = optionsDictionary.get("characterDataOldValue", characterDataOldValue);
+    bool characterDataOldValuePresent = DictionaryHelper::get(optionsDictionary, "characterDataOldValue", characterDataOldValue);
     if (characterDataOldValue)
         options |= CharacterDataOldValue;
 
     bool characterData = false;
-    bool characterDataPresent = optionsDictionary.get("characterData", characterData);
+    bool characterDataPresent = DictionaryHelper::get(optionsDictionary, "characterData", characterData);
     if (characterData || (!characterDataPresent && characterDataOldValuePresent))
         options |= CharacterData;
 
     bool childListValue = false;
-    if (optionsDictionary.get("childList", childListValue) && childListValue)
+    if (DictionaryHelper::get(optionsDictionary, "childList", childListValue) && childListValue)
         options |= ChildList;
 
     bool subtreeValue = false;
-    if (optionsDictionary.get("subtree", subtreeValue) && subtreeValue)
+    if (DictionaryHelper::get(optionsDictionary, "subtree", subtreeValue) && subtreeValue)
         options |= Subtree;
 
     if (!(options & Attributes)) {
@@ -174,24 +173,14 @@ void MutationObserver::observationEnded(MutationObserverRegistration* registrati
 
 static MutationObserverSet& activeMutationObservers()
 {
-#if ENABLE(OILPAN)
-    DEFINE_STATIC_LOCAL(Persistent<MutationObserverSet>, activeObservers, (new MutationObserverSet()));
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<MutationObserverSet>, activeObservers, (adoptPtrWillBeNoop(new MutationObserverSet())));
     return *activeObservers;
-#else
-    DEFINE_STATIC_LOCAL(MutationObserverSet, activeObservers, ());
-    return activeObservers;
-#endif
 }
 
 static MutationObserverSet& suspendedMutationObservers()
 {
-#if ENABLE(OILPAN)
-    DEFINE_STATIC_LOCAL(Persistent<MutationObserverSet>, suspendedObservers, (new MutationObserverSet()));
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<MutationObserverSet>, suspendedObservers, (adoptPtrWillBeNoop(new MutationObserverSet())));
     return *suspendedObservers;
-#else
-    DEFINE_STATIC_LOCAL(MutationObserverSet, suspendedObservers, ());
-    return suspendedObservers;
-#endif
 }
 
 static void activateObserver(PassRefPtrWillBeRawPtr<MutationObserver> observer)
@@ -216,9 +205,9 @@ void MutationObserver::setHasTransientRegistration()
     activateObserver(this);
 }
 
-HashSet<Node*> MutationObserver::getObservedNodes() const
+WillBeHeapHashSet<RawPtrWillBeMember<Node> > MutationObserver::getObservedNodes() const
 {
-    HashSet<Node*> observedNodes;
+    WillBeHeapHashSet<RawPtrWillBeMember<Node> > observedNodes;
     for (MutationObserverRegistrationSet::const_iterator iter = m_registrations.begin(); iter != m_registrations.end(); ++iter)
         (*iter)->addRegistrationNodesToSet(observedNodes);
     return observedNodes;
@@ -287,8 +276,10 @@ void MutationObserver::deliverMutations()
 
 void MutationObserver::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_records);
     visitor->trace(m_registrations);
+#endif
 }
 
-} // namespace WebCore
+} // namespace blink

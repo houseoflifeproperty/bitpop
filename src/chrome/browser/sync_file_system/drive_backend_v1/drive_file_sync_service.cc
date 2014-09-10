@@ -12,8 +12,8 @@
 #include "base/file_util.h"
 #include "base/location.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_notification_manager.h"
@@ -77,7 +77,7 @@ scoped_ptr<DriveFileSyncService> DriveFileSyncService::Create(
   scoped_ptr<drive_backend::SyncTaskManager> task_manager(
       new drive_backend::SyncTaskManager(service->AsWeakPtr(),
                                          0 /* maximum_background_task */,
-                                         base::MessageLoopProxy::current()));
+                                         base::ThreadTaskRunnerHandle::Get()));
   SyncStatusCallback callback = base::Bind(
       &drive_backend::SyncTaskManager::Initialize, task_manager->AsWeakPtr());
   service->Initialize(task_manager.Pass(), callback);
@@ -102,7 +102,7 @@ scoped_ptr<DriveFileSyncService> DriveFileSyncService::CreateForTesting(
   scoped_ptr<drive_backend::SyncTaskManager> task_manager(
       new drive_backend::SyncTaskManager(service->AsWeakPtr(),
                                          0 /* maximum_background_task */,
-                                         base::MessageLoopProxy::current()));
+                                         base::ThreadTaskRunnerHandle::Get()));
   SyncStatusCallback callback = base::Bind(
       &drive_backend::SyncTaskManager::Initialize, task_manager->AsWeakPtr());
   service->InitializeForTesting(task_manager.Pass(),
@@ -253,7 +253,9 @@ void DriveFileSyncService::SetSyncEnabled(bool enabled) {
       OnRemoteServiceStateUpdated(GetCurrentState(), status_message));
 }
 
-void DriveFileSyncService::PromoteDemotedChanges() {
+void DriveFileSyncService::PromoteDemotedChanges(
+    const base::Closure& callback) {
+  callback.Run();
 }
 
 void DriveFileSyncService::ApplyLocalChange(
@@ -346,7 +348,7 @@ void DriveFileSyncService::InitializeForTesting(
   api_util_ = api_util.Pass();
   metadata_store_ = metadata_store.Pass();
 
-  base::MessageLoopProxy::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(&DriveFileSyncService::DidInitializeMetadataStore,
                  AsWeakPtr(), callback, SYNC_STATUS_OK, false));
@@ -779,8 +781,6 @@ void DriveFileSyncService::DidGetDirectoryContentForBatchSync(
     SyncFileType file_type = SYNC_FILE_TYPE_UNKNOWN;
     if (entry.is_file())
       file_type = SYNC_FILE_TYPE_FILE;
-    else if (entry.is_folder() && IsSyncFSDirectoryOperationEnabled())
-      file_type = SYNC_FILE_TYPE_DIRECTORY;
     else
       continue;
 
@@ -858,7 +858,7 @@ bool DriveFileSyncService::AppendRemoteChange(
   if (!entry.is_folder() && !entry.is_file() && !entry.deleted())
     return false;
 
-  if (entry.is_folder() && !IsSyncFSDirectoryOperationEnabled())
+  if (entry.is_folder())
     return false;
 
   SyncFileType file_type = entry.is_file() ?
@@ -959,8 +959,7 @@ bool DriveFileSyncService::AppendRemoteChangeInternal(
     if (!remote_resource_id.empty() &&
         !local_resource_id.empty() &&
         remote_resource_id == local_resource_id) {
-      DCHECK(IsSyncFSDirectoryOperationEnabled() ||
-             DriveMetadata::RESOURCE_TYPE_FILE == metadata.type());
+      DCHECK(DriveMetadata::RESOURCE_TYPE_FILE == metadata.type());
       file_type = metadata.type() == DriveMetadata::RESOURCE_TYPE_FILE ?
           SYNC_FILE_TYPE_FILE : SYNC_FILE_TYPE_DIRECTORY;
     }
@@ -1096,19 +1095,12 @@ void DriveFileSyncService::RecordTaskLog(scoped_ptr<TaskLogger::TaskLog> log) {
 
 // static
 std::string DriveFileSyncService::PathToTitle(const base::FilePath& path) {
-  if (!IsSyncFSDirectoryOperationEnabled())
-    return path.AsUTF8Unsafe();
-
-  return fileapi::FilePathToString(
-      base::FilePath(fileapi::VirtualPath::GetNormalizedFilePath(path)));
+  return path.AsUTF8Unsafe();
 }
 
 // static
 base::FilePath DriveFileSyncService::TitleToPath(const std::string& title) {
-  if (!IsSyncFSDirectoryOperationEnabled())
-    return base::FilePath::FromUTF8Unsafe(title);
-
-  return fileapi::StringToFilePath(title).NormalizePathSeparators();
+  return base::FilePath::FromUTF8Unsafe(title);
 }
 
 // static

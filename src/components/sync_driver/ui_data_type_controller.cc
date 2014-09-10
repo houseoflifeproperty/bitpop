@@ -13,12 +13,11 @@
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/util/data_type_histogram.h"
 
-namespace browser_sync {
+namespace sync_driver {
 
 UIDataTypeController::UIDataTypeController()
     : DataTypeController(base::MessageLoopProxy::current(),
-                         base::Closure(),
-                         DisableTypeCallback()),
+                         base::Closure()),
       sync_factory_(NULL),
       state_(NOT_RUNNING),
       type_(syncer::UNSPECIFIED) {
@@ -27,10 +26,9 @@ UIDataTypeController::UIDataTypeController()
 UIDataTypeController::UIDataTypeController(
     scoped_refptr<base::MessageLoopProxy> ui_thread,
     const base::Closure& error_callback,
-    const DisableTypeCallback& disable_callback,
     syncer::ModelType type,
     SyncApiComponentFactory* sync_factory)
-    : DataTypeController(ui_thread, error_callback, disable_callback),
+    : DataTypeController(ui_thread, error_callback),
       sync_factory_(sync_factory),
       state_(NOT_RUNNING),
       type_(type),
@@ -145,6 +143,11 @@ void UIDataTypeController::Associate() {
   }
 
   if (!shared_change_processor_->CryptoReadyIfNecessary()) {
+    syncer::SyncError error(FROM_HERE,
+                            syncer::SyncError::CRYPTO_ERROR,
+                            "",
+                            type());
+    local_merge_result.set_error(error);
     StartDone(NEEDS_CRYPTO,
               local_merge_result,
               syncer_merge_result);
@@ -237,7 +240,7 @@ void UIDataTypeController::AbortModelLoad() {
 }
 
 void UIDataTypeController::StartDone(
-    StartResult start_result,
+    ConfigureResult start_result,
     const syncer::SyncMergeResult& local_merge_result,
     const syncer::SyncMergeResult& syncer_merge_result) {
   DCHECK(ui_thread_->BelongsToCurrentThread());
@@ -257,17 +260,15 @@ void UIDataTypeController::StartDone(
     }
   }
 
-  // We have to release the callback before we call it, since it's possible
-  // invoking the callback will trigger a call to Stop(), which will get
-  // confused by the non-NULL start_callback_.
-  StartCallback callback = start_callback_;
-  start_callback_.Reset();
-  callback.Run(start_result, local_merge_result, syncer_merge_result);
+  start_callback_.Run(start_result, local_merge_result, syncer_merge_result);
 }
 
 void UIDataTypeController::Stop() {
   DCHECK(ui_thread_->BelongsToCurrentThread());
   DCHECK(syncer::IsRealDataType(type_));
+
+  if (state_ == NOT_RUNNING)
+    return;
 
   State prev_state = state_;
   state_ = STOPPING;
@@ -285,7 +286,6 @@ void UIDataTypeController::Stop() {
     // still in MODEL_STARTING.
     return;
   }
-  DCHECK(start_callback_.is_null());
 
   StopModels();
 
@@ -319,16 +319,25 @@ DataTypeController::State UIDataTypeController::state() const {
   return state_;
 }
 
-void UIDataTypeController::OnSingleDatatypeUnrecoverableError(
-    const tracked_objects::Location& from_here, const std::string& message) {
+void UIDataTypeController::OnSingleDataTypeUnrecoverableError(
+    const syncer::SyncError& error) {
+  DCHECK_EQ(type(), error.model_type());
   UMA_HISTOGRAM_ENUMERATION("Sync.DataTypeRunFailures",
                             ModelTypeToHistogramInt(type()),
                             syncer::MODEL_TYPE_COUNT);
   // TODO(tim): We double-upload some errors.  See bug 383480.
   if (!error_callback_.is_null())
     error_callback_.Run();
-  if (!disable_callback().is_null())
-    disable_callback().Run(from_here, message);
+  if (!start_callback_.is_null()) {
+    syncer::SyncMergeResult local_merge_result(type());
+    local_merge_result.set_error(error);
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(start_callback_,
+                   RUNTIME_ERROR,
+                   local_merge_result,
+                   syncer::SyncMergeResult(type())));
+  }
 }
 
 void UIDataTypeController::RecordAssociationTime(base::TimeDelta time) {
@@ -339,7 +348,7 @@ void UIDataTypeController::RecordAssociationTime(base::TimeDelta time) {
 #undef PER_DATA_TYPE_MACRO
 }
 
-void UIDataTypeController::RecordStartFailure(StartResult result) {
+void UIDataTypeController::RecordStartFailure(ConfigureResult result) {
   DCHECK(ui_thread_->BelongsToCurrentThread());
   UMA_HISTOGRAM_ENUMERATION("Sync.DataTypeStartFailures",
                             ModelTypeToHistogramInt(type()),
@@ -351,4 +360,4 @@ void UIDataTypeController::RecordStartFailure(StartResult result) {
 #undef PER_DATA_TYPE_MACRO
 }
 
-}  // namespace browser_sync
+}  // namespace sync_driver

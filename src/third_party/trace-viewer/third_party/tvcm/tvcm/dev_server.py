@@ -2,13 +2,13 @@
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+import base64
 import json
 import optparse
 import os
 import sys
 import time
 import traceback
-import base64
 
 from tvcm import project as project_module
 from tvcm import generate
@@ -16,9 +16,10 @@ from tvcm import resource_loader
 
 import SocketServer
 import SimpleHTTPServer
+import StringIO
 import BaseHTTPServer
 
-DEPS_CHECK_DELAY = 30
+RELOAD_CHECK_DELAY = 30
 
 class DevServerHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
   def __init__(self, *args, **kwargs):
@@ -30,6 +31,12 @@ class DevServerHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
       self.send_header('Cache-Control', 'no-cache')
 
   def do_GET(self):
+    try:
+      self.server.ReloadProjectIfNeeded()
+    except Exception, ex:
+      send_500(self, "While processing project files", ex)
+      return
+
     if self.do_path_handler('GET'):
       return
 
@@ -47,17 +54,12 @@ class DevServerHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
       try:
         handler(self)
       except Exception, ex:
-        msg = json.dumps({"details": traceback.format_exc(),
-                          "message": ex.message});
-        self.log_error('While parsing %s: %s', self.path, ex.message)
-        self.send_response(500)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Cache-Control', 'no-cache')
-        self.send_header('Content-Length', len(msg))
-        self.end_headers()
-        self.wfile.write(msg)
+        send_500(self, "While parsing %s" % self.path, ex)
       return True
     return False
+
+  def send_head(self):
+    return SimpleHTTPServer.SimpleHTTPRequestHandler.send_head(self)
 
   def translate_path(self, path):
     path = path.split('?',1)[0]
@@ -81,6 +83,14 @@ class DevServerHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
     # Dont spam the console unless it is important.
     pass
 
+  def finish(self):
+    try:
+      SimpleHTTPServer.SimpleHTTPRequestHandler.finish(self)
+    except socket.error:
+        # An final socket error may have occurred here, such as
+        # the local error ECONNABORTED.
+        pass
+
 def do_GET_json_tests(self):
   test_module_resources = self.server.project.FindAllTestModuleResources()
   if self.server.test_module_resource_filter:
@@ -100,35 +110,18 @@ def do_GET_json_tests(self):
   self.end_headers()
   self.wfile.write(tests_as_json)
 
-
-def do_GET_deps(self):
-  try:
-    self.server.UpdateDepsAndTemplate()
-  except Exception, ex:
-    msg = json.dumps({"details": traceback.format_exc(),
-                      "message": ex.message});
-    self.log_error('While parsing deps: %s', ex.message)
-    self.send_response(500)
-    self.send_header('Content-Type', 'application/json')
-    self.send_header('Cache-Control', 'no-cache')
-    self.send_header('Content-Length', len(msg))
-    self.end_headers()
-    self.wfile.write(msg)
-    return
-  self.send_response(200)
-  self.send_header('Content-Type', 'application/javascript')
-  self.send_header('Content-Length', len(self.server.deps))
+def send_500(self, msg, ex, log_error=True):
+  msg = json.dumps({"details": traceback.format_exc(),
+                    "message": ex.message});
+  if log_error:
+    self.log_error('%s: %s', msg, ex.message)
+  self.send_response(500)
+  self.send_header('Content-Type', 'application/json')
+  self.send_header('Cache-Control', 'no-cache')
+  self.send_header('Content-Length', len(msg))
   self.end_headers()
-  self.wfile.write(self.server.deps)
-
-def do_GET_templates(self):
-  self.server.UpdateDepsAndTemplate()
-  self.send_response(200)
-  self.send_header('Content-Type', 'text/html')
-  self.send_header('Content-Length', len(self.server.templates))
-  self.end_headers()
-  self.wfile.write(self.server.templates)
-
+  self.wfile.write(msg)
+  return
 
 class PathHandler(object):
   def __init__(self, path, handler, supports_get, supports_post):
@@ -165,9 +158,8 @@ class DevServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
     else:
       self._project = project_module.Project([])
 
-    self._next_deps_check = -1
+    self._next_reload_check = -1
     self.test_module_resource_filter = None
-    self.deps = None
 
     self.AddPathHandler('/', do_GET_root)
     self.AddPathHandler('', do_GET_root)
@@ -178,8 +170,6 @@ class DevServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
     self.AddPathHandler('/tests.html', do_GET_root)
 
     self.AddPathHandler('/tvcm/json/tests', do_GET_json_tests)
-    self.AddPathHandler('/tvcm/all_templates.html', do_GET_templates)
-    self.AddPathHandler('/tvcm/deps.js', do_GET_deps)
 
   def AddPathHandler(self, path, handler, supports_get=True, supports_post=False):
     self._path_handlers.append(PathHandler(path, handler, supports_get, supports_post))
@@ -210,21 +200,21 @@ class DevServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
   def project(self):
     return self._project
 
-  def UpdateDepsAndTemplate(self):
+  @property
+  def loader(self):
+    return self._project.loader
+
+  def ReloadProjectIfNeeded(self):
     current_time = time.time()
-    if self._next_deps_check >= current_time:
+    if self._next_reload_check >= current_time:
       return
 
     if not self._quiet:
-      sys.stderr.write('Regenerating deps and templates\n')
+      sys.stderr.write('Reloading project to check for errors...\n')
 
     self.project.ResetLoader()
     load_sequence = self.project.CalcLoadSequenceForAllModules()
-    self.deps = generate.GenerateDepsJS(
-        load_sequence, self.project)
-    self.templates = generate.GenerateHTMLForCombinedTemplates(
-        load_sequence)
-    self._next_deps_check = current_time + DEPS_CHECK_DELAY
+    self._next_reload_check = current_time + RELOAD_CHECK_DELAY
 
   @property
   def port(self):

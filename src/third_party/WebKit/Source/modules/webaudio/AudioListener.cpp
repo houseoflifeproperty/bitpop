@@ -34,8 +34,10 @@
 
 #include "modules/webaudio/PannerNode.h"
 #include "platform/audio/AudioBus.h"
+#include "platform/audio/HRTFDatabaseLoader.h"
+#include "wtf/MainThread.h"
 
-namespace WebCore {
+namespace blink {
 
 AudioListener::AudioListener()
     : m_position(0, 0, 0)
@@ -50,11 +52,18 @@ AudioListener::AudioListener()
 
 AudioListener::~AudioListener()
 {
-    m_panners.clear();
+}
+
+void AudioListener::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_panners);
+#endif
 }
 
 void AudioListener::addPanner(PannerNode* panner)
 {
+    ASSERT(isMainThread());
     if (!panner)
         return;
 
@@ -63,12 +72,29 @@ void AudioListener::addPanner(PannerNode* panner)
 
 void AudioListener::removePanner(PannerNode* panner)
 {
+    ASSERT(isMainThread());
     for (unsigned i = 0; i < m_panners.size(); ++i) {
         if (panner == m_panners[i]) {
             m_panners.remove(i);
             break;
         }
     }
+}
+
+void AudioListener::createAndLoadHRTFDatabaseLoader(float sampleRate)
+{
+    if (!m_hrtfDatabaseLoader)
+        m_hrtfDatabaseLoader = HRTFDatabaseLoader::createAndLoadAsynchronouslyIfNecessary(sampleRate);
+}
+
+bool AudioListener::isHRTFDatabaseLoaded()
+{
+    return m_hrtfDatabaseLoader->isLoaded();
+}
+
+void AudioListener::waitForHRTFDatabaseLoaderThreadCompletion()
+{
+    m_hrtfDatabaseLoader->waitForLoaderThreadCompletion();
 }
 
 void AudioListener::markPannersAsDirty(unsigned type)
@@ -143,6 +169,6 @@ void AudioListener::setSpeedOfSound(double speedOfSound)
     markPannersAsDirty(PannerNode::DopplerRateDirty);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

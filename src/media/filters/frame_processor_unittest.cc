@@ -124,7 +124,6 @@ class FrameProcessorTest : public testing::TestWithParam<bool> {
       base::TimeDelta timestamp = base::TimeDelta::FromSecondsD(
           time_in_ms / base::Time::kMillisecondsPerSecond);
       buffer->set_timestamp(timestamp);
-      buffer->SetDecodeTimestamp(timestamp);
       buffer->set_duration(frame_duration_);
       buffers.push_back(buffer);
     }
@@ -605,6 +604,19 @@ TEST_P(FrameProcessorTest, AppendWindowFilterWithInexactPreroll) {
   ProcessFrames("0K 9.75K 20K", "");
   CheckExpectedRangesByTimestamp(audio_.get(), "{ [0,20) }");
   CheckReadsThenReadStalls(audio_.get(), "0P 0:9.75 10:20");
+}
+
+TEST_P(FrameProcessorTest, AppendWindowFilterWithInexactPreroll_2) {
+  InSequence s;
+  AddTestTracks(HAS_AUDIO);
+  new_media_segment_ = true;
+  if (GetParam())
+    frame_processor_->SetSequenceMode(true);
+  SetTimestampOffset(-frame_duration_);
+  EXPECT_CALL(callbacks_, PossibleDurationIncrease(frame_duration_ * 2));
+  ProcessFrames("0K 10.25K 20K", "");
+  CheckExpectedRangesByTimestamp(audio_.get(), "{ [0,20) }");
+  CheckReadsThenReadStalls(audio_.get(), "0P 0:10.25 10:20");
 }
 
 TEST_P(FrameProcessorTest, AllowNegativeFramePTSAndDTSBeforeOffsetAdjustment) {

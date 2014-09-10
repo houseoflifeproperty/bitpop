@@ -25,23 +25,33 @@
 #include "core/css/MediaQueryListListener.h"
 #include "core/css/MediaQueryMatcher.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<MediaQueryList> MediaQueryList::create(PassRefPtrWillBeRawPtr<MediaQueryMatcher> vector, PassRefPtrWillBeRawPtr<MediaQuerySet> media, bool matches)
+PassRefPtrWillBeRawPtr<MediaQueryList> MediaQueryList::create(ExecutionContext* context, PassRefPtrWillBeRawPtr<MediaQueryMatcher> matcher, PassRefPtrWillBeRawPtr<MediaQuerySet> media)
 {
-    return adoptRefWillBeNoop(new MediaQueryList(vector, media, matches));
+    RefPtrWillBeRawPtr<MediaQueryList> list = adoptRefWillBeNoop(new MediaQueryList(context, matcher, media));
+    list->suspendIfNeeded();
+    return list.release();
 }
 
-MediaQueryList::MediaQueryList(PassRefPtrWillBeRawPtr<MediaQueryMatcher> vector, PassRefPtrWillBeRawPtr<MediaQuerySet> media, bool matches)
-    : m_matcher(vector)
+MediaQueryList::MediaQueryList(ExecutionContext* context, PassRefPtrWillBeRawPtr<MediaQueryMatcher> matcher, PassRefPtrWillBeRawPtr<MediaQuerySet> media)
+    : ActiveDOMObject(context)
+    , m_matcher(matcher)
     , m_media(media)
-    , m_evaluationRound(m_matcher->evaluationRound())
-    , m_changeRound(m_evaluationRound - 1) // m_evaluationRound and m_changeRound initial values must be different.
-    , m_matches(matches)
+    , m_matchesDirty(true)
+    , m_matches(false)
 {
+    ScriptWrappable::init(this);
+    m_matcher->addMediaQueryList(this);
+    updateMatches();
 }
 
-DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(MediaQueryList)
+MediaQueryList::~MediaQueryList()
+{
+#if !ENABLE(OILPAN)
+    m_matcher->removeMediaQueryList(this);
+#endif
+}
 
 String MediaQueryList::media() const
 {
@@ -53,7 +63,8 @@ void MediaQueryList::addListener(PassRefPtrWillBeRawPtr<MediaQueryListListener> 
     if (!listener)
         return;
 
-    m_matcher->addListener(listener, this);
+    listener->setMediaQueryList(this);
+    m_listeners.add(listener);
 }
 
 void MediaQueryList::removeListener(PassRefPtrWillBeRawPtr<MediaQueryListListener> listener)
@@ -61,38 +72,64 @@ void MediaQueryList::removeListener(PassRefPtrWillBeRawPtr<MediaQueryListListene
     if (!listener)
         return;
 
-    m_matcher->removeListener(listener.get(), this);
+    RefPtrWillBeRawPtr<MediaQueryList> protect(this);
+    listener->clearMediaQueryList();
+
+    for (ListenerList::iterator it = m_listeners.begin(), end = m_listeners.end(); it != end; ++it) {
+        // We can't just use m_listeners.remove() here, because we get a new wrapper for the
+        // listener callback every time. We have to use MediaQueryListListener::operator==.
+        if (**it == *listener.get()) {
+            m_listeners.remove(it);
+            break;
+        }
+    }
 }
 
-bool MediaQueryList::evaluate(MediaQueryEvaluator* evaluator)
+bool MediaQueryList::hasPendingActivity() const
 {
-    if (m_evaluationRound != m_matcher->evaluationRound() && evaluator)
-        setMatches(evaluator->eval(m_media.get()));
-    return m_changeRound == m_matcher->evaluationRound();
+    return m_listeners.size();
 }
 
-void MediaQueryList::setMatches(bool newValue)
+void MediaQueryList::stop()
 {
-    m_evaluationRound = m_matcher->evaluationRound();
+    // m_listeners.clear() can drop the last ref to this MediaQueryList.
+    RefPtrWillBeRawPtr<MediaQueryList> protect(this);
+    m_listeners.clear();
+}
 
-    if (newValue == m_matches)
+void MediaQueryList::mediaFeaturesChanged(WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener> >* listenersToNotify)
+{
+    m_matchesDirty = true;
+    if (!updateMatches())
         return;
+    for (ListenerList::const_iterator it = m_listeners.begin(), end = m_listeners.end(); it != end; ++it) {
+        listenersToNotify->append(*it);
+    }
+}
 
-    m_matches = newValue;
-    m_changeRound = m_evaluationRound;
+bool MediaQueryList::updateMatches()
+{
+    m_matchesDirty = false;
+    if (m_matches != m_matcher->evaluate(m_media.get())) {
+        m_matches = !m_matches;
+        return true;
+    }
+    return false;
 }
 
 bool MediaQueryList::matches()
 {
-    if (m_evaluationRound != m_matcher->evaluationRound())
-        setMatches(m_matcher->evaluate(m_media.get()));
+    updateMatches();
     return m_matches;
 }
 
 void MediaQueryList::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_matcher);
     visitor->trace(m_media);
+    visitor->trace(m_listeners);
+#endif
 }
 
 }

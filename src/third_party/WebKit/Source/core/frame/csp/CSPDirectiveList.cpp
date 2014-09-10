@@ -5,12 +5,14 @@
 #include "config.h"
 #include "core/frame/csp/CSPDirectiveList.h"
 
+#include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "platform/ParsingUtilities.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 CSPDirectiveList::CSPDirectiveList(ContentSecurityPolicy* policy, ContentSecurityPolicyHeaderType type, ContentSecurityPolicyHeaderSource source)
     : m_policy(policy)
@@ -44,21 +46,23 @@ PassOwnPtr<CSPDirectiveList> CSPDirectiveList::create(ContentSecurityPolicy* pol
 void CSPDirectiveList::reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL) const
 {
     String message = m_reportOnly ? "[Report Only] " + consoleMessage : consoleMessage;
-    m_policy->executionContext()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message);
+    m_policy->executionContext()->addConsoleMessage(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, message));
     m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportURIs, m_header);
 }
 
 void CSPDirectiveList::reportViolationWithLocation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const String& contextURL, const WTF::OrdinalNumber& contextLine) const
 {
     String message = m_reportOnly ? "[Report Only] " + consoleMessage : consoleMessage;
-    m_policy->executionContext()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message, contextURL, contextLine.oneBasedInt());
+    m_policy->executionContext()->addConsoleMessage(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, message, contextURL, contextLine.oneBasedInt()));
     m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportURIs, m_header);
 }
 
-void CSPDirectiveList::reportViolationWithState(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, ScriptState* scriptState) const
+void CSPDirectiveList::reportViolationWithState(const String& directiveText, const String& effectiveDirective, const String& message, const KURL& blockedURL, ScriptState* scriptState) const
 {
-    String message = m_reportOnly ? "[Report Only] " + consoleMessage : consoleMessage;
-    m_policy->executionContext()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message, scriptState);
+    String reportMessage = m_reportOnly ? "[Report Only] " + message : message;
+    RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, reportMessage);
+    consoleMessage->setScriptState(scriptState);
+    m_policy->executionContext()->addConsoleMessage(consoleMessage.release());
     m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportURIs, m_header);
 }
 
@@ -676,4 +680,4 @@ void CSPDirectiveList::addDirective(const String& name, const String& value)
 }
 
 
-} // namespace WebCore
+} // namespace blink

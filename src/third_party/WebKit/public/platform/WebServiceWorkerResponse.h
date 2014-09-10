@@ -8,20 +8,18 @@
 #include "WebCommon.h"
 #include "public/platform/WebPrivatePtr.h"
 #include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
 #include "public/platform/WebVector.h"
 
 #if INSIDE_BLINK
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/StringHash.h"
-
-namespace WebCore {
-class BlobDataHandle;
-}
 #endif
 
 namespace blink {
 
+class BlobDataHandle;
 class WebServiceWorkerResponsePrivate;
 
 // Represents a response to a fetch operation. ServiceWorker uses this to
@@ -40,6 +38,9 @@ public:
     void reset();
     void assign(const WebServiceWorkerResponse&);
 
+    void setURL(const WebURL&);
+    WebURL url() const;
+
     void setStatus(unsigned short);
     unsigned short status() const;
 
@@ -56,8 +57,8 @@ public:
     void setHeaders(const HashMap<String, String>&);
     const HashMap<String, String>& headers() const;
 
-    void setBlobDataHandle(PassRefPtr<WebCore::BlobDataHandle>);
-    PassRefPtr<WebCore::BlobDataHandle> blobDataHandle() const;
+    void setBlobDataHandle(PassRefPtr<BlobDataHandle>);
+    PassRefPtr<BlobDataHandle> blobDataHandle() const;
 #endif
 
 private:

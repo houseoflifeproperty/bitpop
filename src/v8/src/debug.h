@@ -8,13 +8,13 @@
 #include "src/allocation.h"
 #include "src/arguments.h"
 #include "src/assembler.h"
+#include "src/base/platform/platform.h"
 #include "src/execution.h"
 #include "src/factory.h"
 #include "src/flags.h"
 #include "src/frames-inl.h"
 #include "src/hashmap.h"
 #include "src/liveedit.h"
-#include "src/platform.h"
 #include "src/string-stream.h"
 #include "src/v8threads.h"
 
@@ -159,9 +159,6 @@ class ScriptCache : private HashMap {
   // Return the scripts in the cache.
   Handle<FixedArray> GetScripts();
 
-  // Generate debugger events for collected scripts.
-  void ProcessCollectedScripts();
-
  private:
   // Calculate the hash value from the key (script id).
   static uint32_t Hash(int key) {
@@ -176,8 +173,6 @@ class ScriptCache : private HashMap {
       const v8::WeakCallbackData<v8::Value, void>& data);
 
   Isolate* isolate_;
-  // List used during GC to temporarily store id's of collected scripts.
-  List<int> collected_scripts_;
 };
 
 
@@ -333,24 +328,23 @@ class LockingCommandMessageQueue BASE_EMBEDDED {
  private:
   Logger* logger_;
   CommandMessageQueue queue_;
-  mutable Mutex mutex_;
+  mutable base::Mutex mutex_;
   DISALLOW_COPY_AND_ASSIGN(LockingCommandMessageQueue);
 };
 
 
 class PromiseOnStack {
  public:
-  PromiseOnStack(Isolate* isolate,
-                 PromiseOnStack* prev,
-                 Handle<JSFunction> getter);
+  PromiseOnStack(Isolate* isolate, PromiseOnStack* prev,
+                 Handle<JSObject> getter);
   ~PromiseOnStack();
   StackHandler* handler() { return handler_; }
-  Handle<JSFunction> getter() { return getter_; }
+  Handle<JSObject> promise() { return promise_; }
   PromiseOnStack* prev() { return prev_; }
  private:
   Isolate* isolate_;
   StackHandler* handler_;
-  Handle<JSFunction> getter_;
+  Handle<JSObject> promise_;
   PromiseOnStack* prev_;
 };
 
@@ -364,18 +358,16 @@ class PromiseOnStack {
 // DebugInfo.
 class Debug {
  public:
-  enum AfterCompileFlags {
-    NO_AFTER_COMPILE_FLAGS,
-    SEND_WHEN_DEBUGGING
-  };
-
   // Debug event triggers.
   void OnDebugBreak(Handle<Object> break_points_hit, bool auto_continue);
-  void OnException(Handle<Object> exception, bool uncaught);
+
+  void OnThrow(Handle<Object> exception, bool uncaught);
+  void OnPromiseReject(Handle<JSObject> promise, Handle<Object> value);
+  void OnCompileError(Handle<Script> script);
   void OnBeforeCompile(Handle<Script> script);
-  void OnAfterCompile(Handle<Script> script,
-                      AfterCompileFlags after_compile_flags);
-  void OnScriptCollected(int id);
+  void OnAfterCompile(Handle<Script> script);
+  void OnPromiseEvent(Handle<JSObject> data);
+  void OnAsyncTaskEvent(Handle<JSObject> data);
 
   // API facing.
   void SetEventListener(Handle<Object> callback, Handle<Object> data);
@@ -461,8 +453,9 @@ class Debug {
   bool IsBreakAtReturn(JavaScriptFrame* frame);
 
   // Promise handling.
-  void PromiseHandlePrologue(Handle<JSFunction> promise_getter);
-  void PromiseHandleEpilogue();
+  // Push and pop a promise and the current try-catch handler.
+  void PushPromise(Handle<JSObject> promise);
+  void PopPromise();
 
   // Support for LiveEdit
   void FramesHaveBeenDropped(StackFrame::Id new_break_frame_id,
@@ -481,9 +474,6 @@ class Debug {
 
   // Record function from which eval was called.
   static void RecordEvalCaller(Handle<Script> script);
-
-  // Garbage collection notifications.
-  void AfterGarbageCollection();
 
   // Flags and states.
   DebugScope* debugger_entry() { return thread_local_.current_debug_scope_; }
@@ -505,6 +495,10 @@ class Debug {
   int break_id() { return thread_local_.break_id_; }
 
   // Support for embedding into generated code.
+  Address is_active_address() {
+    return reinterpret_cast<Address>(&is_active_);
+  }
+
   Address after_break_target_address() {
     return reinterpret_cast<Address>(&after_break_target_);
   }
@@ -531,6 +525,9 @@ class Debug {
   inline bool has_commands() const { return !command_queue_.IsEmpty(); }
   inline bool ignore_events() const { return is_suppressed_ || !is_active_; }
 
+  void OnException(Handle<Object> exception, bool uncaught,
+                   Handle<Object> promise);
+
   // Constructors for debug event objects.
   MUST_USE_RESULT MaybeHandle<Object> MakeJSObject(
       const char* constructor_name,
@@ -544,14 +541,18 @@ class Debug {
       bool uncaught,
       Handle<Object> promise);
   MUST_USE_RESULT MaybeHandle<Object> MakeCompileEvent(
-      Handle<Script> script, bool before);
-  MUST_USE_RESULT MaybeHandle<Object> MakeScriptCollectedEvent(int id);
+      Handle<Script> script, v8::DebugEvent type);
+  MUST_USE_RESULT MaybeHandle<Object> MakePromiseEvent(
+      Handle<JSObject> promise_event);
+  MUST_USE_RESULT MaybeHandle<Object> MakeAsyncTaskEvent(
+      Handle<JSObject> task_event);
 
   // Mirror cache handling.
   void ClearMirrorCache();
 
-  // Returns a promise if it does not have a reject handler.
-  Handle<Object> GetPromiseForUncaughtException();
+  // Returns a promise if the pushed try-catch handler matches the current one.
+  Handle<Object> GetPromiseOnStackOnThrow();
+  bool PromiseHasRejectHandler(Handle<JSObject> promise);
 
   void CallEventCallback(v8::DebugEvent event,
                          Handle<Object> exec_state,
@@ -578,8 +579,8 @@ class Debug {
   bool CheckBreakPoint(Handle<Object> break_point_object);
 
   inline void AssertDebugContext() {
-    ASSERT(isolate_->context() == *debug_context());
-    ASSERT(in_debug_scope());
+    DCHECK(isolate_->context() == *debug_context());
+    DCHECK(in_debug_scope());
   }
 
   void ThreadInit();
@@ -592,7 +593,7 @@ class Debug {
   v8::Debug::MessageHandler message_handler_;
 
   static const int kQueueInitialSize = 4;
-  Semaphore command_received_;  // Signaled for each command received.
+  base::Semaphore command_received_;  // Signaled for each command received.
   LockingCommandMessageQueue command_queue_;
   LockingCommandMessageQueue event_command_queue_;
 
@@ -710,6 +711,7 @@ class DebugScope BASE_EMBEDDED {
   int break_id_;                   // Previous break id.
   bool failed_;                    // Did the debug context fail to load?
   SaveContext save_;               // Saves previous context.
+  PostponeInterruptsScope no_termination_exceptons_;
 };
 
 

@@ -6,10 +6,12 @@
 #define ANDROID_WEBVIEW_BROWSER_DEFERRED_GPU_COMMAND_SERVICE_H_
 
 #include <queue>
+#include <utility>
 
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
 #include "base/threading/thread_local.h"
+#include "base/time/time.h"
 #include "gpu/command_buffer/service/in_process_command_buffer.h"
 
 namespace android_webview {
@@ -41,6 +43,12 @@ class DeferredGpuCommandService
       shader_translator_cache() OVERRIDE;
 
   void RunTasks();
+  // If |is_idle| is false, this will only run older idle tasks.
+  void PerformIdleWork(bool is_idle);
+  // Flush the idle queue until it is empty. This is different from
+  // PerformIdleWork(is_idle = true), which does not run any newly scheduled
+  // idle tasks during the idle run.
+  void PerformAllIdleWork();
 
   virtual void AddRef() const OVERRIDE;
   virtual void Release() const OVERRIDE;
@@ -50,12 +58,15 @@ class DeferredGpuCommandService
   friend class base::RefCountedThreadSafe<DeferredGpuCommandService>;
 
  private:
+  friend class ScopedAllowGL;
   static void RequestProcessGL();
 
   DeferredGpuCommandService();
+  size_t IdleQueueSize();
 
   base::Lock tasks_lock_;
   std::queue<base::Closure> tasks_;
+  std::queue<std::pair<base::Time, base::Closure> > idle_tasks_;
 
   scoped_refptr<gpu::gles2::ShaderTranslatorCache> shader_translator_cache_;
   DISALLOW_COPY_AND_ASSIGN(DeferredGpuCommandService);

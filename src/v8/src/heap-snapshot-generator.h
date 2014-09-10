@@ -35,11 +35,11 @@ class HeapGraphEdge BASE_EMBEDDED {
 
   Type type() const { return static_cast<Type>(type_); }
   int index() const {
-    ASSERT(type_ == kElement || type_ == kHidden);
+    DCHECK(type_ == kElement || type_ == kHidden);
     return index_;
   }
   const char* name() const {
-    ASSERT(type_ == kContextVariable
+    DCHECK(type_ == kContextVariable
         || type_ == kProperty
         || type_ == kInternal
         || type_ == kShortcut
@@ -370,6 +370,7 @@ class V8HeapExplorer : public HeapEntriesAllocator {
   void ExtractJSObjectReferences(int entry, JSObject* js_obj);
   void ExtractStringReferences(int entry, String* obj);
   void ExtractSymbolReferences(int entry, Symbol* symbol);
+  void ExtractJSCollectionReferences(int entry, JSCollection* collection);
   void ExtractJSWeakCollectionReferences(int entry,
                                          JSWeakCollection* collection);
   void ExtractContextReferences(int entry, Context* context);

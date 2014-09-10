@@ -94,6 +94,65 @@ const GritResourceMap kTheRcHeader[] = {
 };
 const size_t kTheRcHeaderSize = arraysize(kTheRcHeader);''', output)
 
+  def testFormatResourceMapOutputAllEqualsFalse(self):
+    grd = grd_reader.Parse(StringIO.StringIO(
+      '''<?xml version="1.0" encoding="UTF-8"?>
+      <grit latest_public_release="2" source_lang_id="en" current_release="3"
+            base_dir="." output_all_resource_defines="false">
+        <outputs>
+          <output type="rc_header" filename="the_rc_header.h" />
+          <output type="resource_map_header"
+                  filename="the_resource_map_header.h" />
+          <output type="resource_map_source"
+                  filename="the_resource_map_header.cc" />
+        </outputs>
+        <release seq="3">
+          <structures first_id="300">
+            <structure type="chrome_scaled_image" name="IDR_KLONKMENU"
+                       file="foo.png" />
+            <if expr="False">
+              <structure type="chrome_scaled_image" name="IDR_MISSING"
+                         file="bar.png" />
+            </if>
+         </structures>
+        </release>
+      </grit>'''), util.PathFromRoot('.'))
+    grd.SetOutputLanguage('en')
+    grd.RunGatherers()
+    output = util.StripBlankLinesAndComments(''.join(
+        resource_map.GetFormatter('resource_map_header')(grd, 'en', '.')))
+    self.assertEqual('''\
+#include <stddef.h>
+#ifndef GRIT_RESOURCE_MAP_STRUCT_
+#define GRIT_RESOURCE_MAP_STRUCT_
+struct GritResourceMap {
+  const char* const name;
+  int value;
+};
+#endif // GRIT_RESOURCE_MAP_STRUCT_
+extern const GritResourceMap kTheRcHeader[];
+extern const size_t kTheRcHeaderSize;''', output)
+    output = util.StripBlankLinesAndComments(''.join(
+        resource_map.GetFormatter('resource_map_source')(grd, 'en', '.')))
+    self.assertEqual('''\
+#include "the_resource_map_header.h"
+#include "base/basictypes.h"
+#include "the_rc_header.h"
+const GritResourceMap kTheRcHeader[] = {
+  {"IDR_KLONKMENU", IDR_KLONKMENU},
+};
+const size_t kTheRcHeaderSize = arraysize(kTheRcHeader);''', output)
+    output = util.StripBlankLinesAndComments(''.join(
+        resource_map.GetFormatter('resource_map_source')(grd, 'en', '.')))
+    self.assertEqual('''\
+#include "the_resource_map_header.h"
+#include "base/basictypes.h"
+#include "the_rc_header.h"
+const GritResourceMap kTheRcHeader[] = {
+  {"IDR_KLONKMENU", IDR_KLONKMENU},
+};
+const size_t kTheRcHeaderSize = arraysize(kTheRcHeader);''', output)
+
   def testFormatStringResourceMap(self):
     grd = grd_reader.Parse(StringIO.StringIO(
       '''<?xml version="1.0" encoding="UTF-8"?>

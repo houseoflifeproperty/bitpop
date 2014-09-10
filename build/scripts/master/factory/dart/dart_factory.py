@@ -10,7 +10,7 @@ Based on gclient_factory.py.
 
 import random
 
-from buildbot.changes import svnpoller
+from buildbot.changes import svnpoller, gitpoller
 from buildbot.process.buildstep import RemoteShellCommand
 from buildbot.status.mail import MailNotifier
 from buildbot.status.status_push import HttpStatusPush
@@ -60,10 +60,12 @@ CUSTOM_VARS_SOURCEFORGE_URL = ('sourceforge_url', config.Master.sourceforge_url)
 CUSTOM_VARS_GOOGLECODE_URL = ('googlecode_url', config.Master.googlecode_url)
 CUSTOM_VARS_CHROMIUM_URL = (
   'chromium_url', config.Master.server_url + config.Master.repo_root)
+CUSTOM_VARS_DARTIUM_BASE = ('dartium_base', config.Master.server_url)
 
 custom_vars_list = [CUSTOM_VARS_SOURCEFORGE_URL,
                     CUSTOM_VARS_GOOGLECODE_URL,
-                    CUSTOM_VARS_CHROMIUM_URL]
+                    CUSTOM_VARS_CHROMIUM_URL,
+                    CUSTOM_VARS_DARTIUM_BASE]
 
 # gclient custom deps
 if config.Master.trunk_internal_url:
@@ -514,6 +516,25 @@ class DartUtils(object):
                                pollinterval=10,
                                revlinktmpl=dart_revision_url)
 
+
+  @staticmethod
+  def get_git_poller(repo, project, revlink):
+    return gitpoller.GitPoller(repourl=repo,
+                               pollinterval=10,
+                               project=project,
+                               revlinktmpl=revlink)
+
+
+  @staticmethod
+  def get_dartlang_git_repo(name):
+    return 'https://github.com/dart-lang/%s' % name
+
+  @staticmethod
+  def get_dartlang_git_poller(name):
+    revlink = "https://github.com/dart-lang/" + name + "/commit/%s"
+    repo = DartUtils.get_dartlang_git_repo(name)
+    return DartUtils.get_git_poller(repo, name, revlink)
+
   @staticmethod
   def prioritize_builders(buildmaster, builders):
     def get_priority(name):
@@ -566,6 +587,11 @@ class DartUtils(object):
             env=env,
             triggers=trigger_instances,
         )
+      elif v['name'].startswith('packages'):
+        v['factory_builder'] = base.DartAnnotatedFactory(
+            python_script='client/tools/buildbot_annotated_steps.py',
+            env=env,
+        )
       else:
         v['factory_builder'] = base.DartAnnotatedFactory(
             python_script='client/tools/buildbot_annotated_steps.py',
@@ -573,6 +599,12 @@ class DartUtils(object):
             triggers=trigger_instances,
             secondAnnotatedRun=v.get('second_annotated_steps_run', False)
         )
+
+    def setup_package_factory_base(v):
+      extra_deps = v.get('deps', [])
+      return DartFactory(channel=CHANNELS_BY_NAME['dev'],
+                         custom_deps_list=extra_deps)
+
 
     def setup_v8_factory(v):
       factory = None
@@ -614,6 +646,9 @@ class DartUtils(object):
       platform = v['platform']
       if platform == 'v8_vm':
         setup_v8_factory(v)
+      elif platform == 'packages':
+        base = setup_package_factory_base(v)
+        setup_dart_factory(v, base, False)
       else:
         base = self.factory_base[platform]
         name = v['name']
@@ -632,20 +667,25 @@ class DartUtils(object):
       name = variant['name']
       variant['factory_builder'] = self.factory_base_dartium[name]
 
-  def get_web_statuses(self):
+  def get_web_statuses(self, order_console_by_time=False):
     public_html = '../master.chromium/public_html'
     templates = ['../master.client.dart/templates',
                  '../master.chromium/templates']
     master_port = self._active_master.master_port
     master_port_alt = self._active_master.master_port_alt
+    kwargs = {
+      'public_html' : public_html,
+      'templates' : templates,
+      'order_console_by_time' : order_console_by_time,
+    }
 
     statuses = []
     statuses.append(master_utils.CreateWebStatus(master_port,
                                                  allowForce=True,
-                                                 public_html=public_html,
-                                                 templates=templates))
+                                                 **kwargs))
     statuses.append(
-        master_utils.CreateWebStatus(master_port_alt, allowForce=False))
+        master_utils.CreateWebStatus(master_port_alt, allowForce=False,
+                                     **kwargs))
 
     http_status_push_url = self._active_master.http_status_push_url
     if self._active_master.is_production_host and http_status_push_url:
@@ -661,7 +701,7 @@ class DartUtils(object):
     for v in variants:
       builder = {
          'name': v['name'],
-         'builddir': v['name'],
+         'builddir': v.get('builddir', v['name']),
          'factory': v['factory_builder'],
          'slavenames': slaves.GetSlavesName(builder=v['name']),
          'category': v['category'],
@@ -709,4 +749,3 @@ class DartUtils(object):
                          lookup=master_utils.FilterDomain(),
                          builders=notifying_builders))
     return statuses
-

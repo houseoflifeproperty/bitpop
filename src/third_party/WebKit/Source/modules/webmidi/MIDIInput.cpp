@@ -35,13 +35,12 @@
 #include "modules/webmidi/MIDIMessageEvent.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<MIDIInput> MIDIInput::create(MIDIAccess* access, const String& id, const String& manufacturer, const String& name, const String& version)
+MIDIInput* MIDIInput::create(MIDIAccess* access, const String& id, const String& manufacturer, const String& name, const String& version)
 {
     ASSERT(access);
-    RefPtrWillBeRawPtr<MIDIInput> input = adoptRefWillBeRefCountedGarbageCollected(new MIDIInput(access, id, manufacturer, name, version));
-    return input.release();
+    return adoptRefCountedGarbageCollectedWillBeNoop(new MIDIInput(access, id, manufacturer, name, version));
 }
 
 MIDIInput::MIDIInput(MIDIAccess* access, const String& id, const String& manufacturer, const String& name, const String& version)
@@ -71,4 +70,4 @@ void MIDIInput::trace(Visitor* visitor)
     MIDIPort::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -26,8 +26,7 @@
 #ifndef IDBDatabase_h
 #define IDBDatabase_h
 
-#include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/Dictionary.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/DOMStringList.h"
 #include "modules/EventModules.h"
@@ -44,7 +43,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class DOMError;
 class ExceptionState;
@@ -52,13 +51,12 @@ class ExecutionContext;
 
 class IDBDatabase FINAL
     : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<IDBDatabase>
-    , public ScriptWrappable
     , public EventTargetWithInlineData
     , public ActiveDOMObject {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<IDBDatabase>);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(IDBDatabase);
 public:
-    static IDBDatabase* create(ExecutionContext*, PassOwnPtr<blink::WebIDBDatabase>, IDBDatabaseCallbacks*);
+    static IDBDatabase* create(ExecutionContext*, PassOwnPtr<WebIDBDatabase>, IDBDatabaseCallbacks*);
     virtual ~IDBDatabase();
     virtual void trace(Visitor*) OVERRIDE;
 
@@ -114,11 +112,11 @@ public:
     }
 
     // Will return nullptr if this database is stopped.
-    blink::WebIDBDatabase* backend() const { return m_backend.get(); }
+    WebIDBDatabase* backend() const { return m_backend.get(); }
 
     static int64_t nextTransactionId();
 
-    void ackReceivedBlobs(const Vector<blink::WebBlobInfo>*);
+    void ackReceivedBlobs(const Vector<WebBlobInfo>*);
 
     static const char indexDeletedErrorMessage[];
     static const char isKeyCursorErrorMessage[];
@@ -137,12 +135,12 @@ public:
     static const char databaseClosedErrorMessage[];
 
 private:
-    IDBDatabase(ExecutionContext*, PassOwnPtr<blink::WebIDBDatabase>, IDBDatabaseCallbacks*);
+    IDBDatabase(ExecutionContext*, PassOwnPtr<WebIDBDatabase>, IDBDatabaseCallbacks*);
 
     void closeConnection();
 
     IDBDatabaseMetadata m_metadata;
-    OwnPtr<blink::WebIDBDatabase> m_backend;
+    OwnPtr<WebIDBDatabase> m_backend;
     Member<IDBTransaction> m_versionChangeTransaction;
     typedef HeapHashMap<int64_t, Member<IDBTransaction> > TransactionMap;
     TransactionMap m_transactions;
@@ -157,6 +155,6 @@ private:
     Member<IDBDatabaseCallbacks> m_databaseCallbacks;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // IDBDatabase_h

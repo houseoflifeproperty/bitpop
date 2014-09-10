@@ -217,33 +217,77 @@ void TargetGenerator::FillDependencies() {
     return;
 }
 
-void TargetGenerator::FillOutputs() {
+void TargetGenerator::FillOutputs(bool allow_substitutions) {
   const Value* value = scope_->GetValue(variables::kOutputs, true);
   if (!value)
     return;
 
-  Target::FileList outputs;
-  if (!ExtractListOfRelativeFiles(scope_->settings()->build_settings(), *value,
-                                  scope_->GetSourceDir(), &outputs, err_))
+  SubstitutionList& outputs = target_->action_values().outputs();
+  if (!outputs.Parse(*value, err_))
+    return;
+
+  if (!allow_substitutions) {
+    // Verify no substitutions were actually used.
+    if (!outputs.required_types().empty()) {
+      *err_ = Err(*value, "Source expansions not allowed here.",
+          "The outputs of this target used source {{expansions}} but this "
+          "targe type\ndoesn't support them. Just express the outputs "
+          "literally.");
+      return;
+    }
+  }
+
+  // Check the substitutions used are valid for this purpose.
+  if (!EnsureValidSourcesSubstitutions(outputs.required_types(),
+                                       value->origin(), err_))
     return;
 
   // Validate that outputs are in the output dir.
-  CHECK(outputs.size() == value->list_value().size());
-  for (size_t i = 0; i < outputs.size(); i++) {
-    if (!EnsureStringIsInOutputDir(
-            GetBuildSettings()->build_dir(),
-            outputs[i].value(), value->list_value()[i], err_))
+  CHECK(outputs.list().size() == value->list_value().size());
+  for (size_t i = 0; i < outputs.list().size(); i++) {
+    if (!EnsureSubstitutionIsInOutputDir(outputs.list()[i],
+                                         value->list_value()[i]))
       return;
   }
-  target_->action_values().outputs().swap(outputs);
+}
+
+bool TargetGenerator::EnsureSubstitutionIsInOutputDir(
+    const SubstitutionPattern& pattern,
+    const Value& original_value) {
+  if (pattern.ranges().empty()) {
+    // Pattern is empty, error out (this prevents weirdness below).
+    *err_ = Err(original_value, "This has an empty value in it.");
+    return false;
+  }
+
+  if (pattern.ranges()[0].type == SUBSTITUTION_LITERAL) {
+    // If the first thing is a literal, it must start with the output dir.
+    if (!EnsureStringIsInOutputDir(
+            GetBuildSettings()->build_dir(),
+            pattern.ranges()[0].literal, original_value, err_))
+      return false;
+  } else {
+    // Otherwise, the first subrange must be a pattern that expands to
+    // something in the output directory.
+    if (!SubstitutionIsInOutputDir(pattern.ranges()[0].type)) {
+      *err_ = Err(original_value,
+          "File is not inside output directory.",
+          "The given file should be in the output directory. Normally you\n"
+          "would specify\n\"$target_out_dir/foo\" or "
+          "\"{{source_gen_dir}}/foo\".");
+      return false;
+    }
+  }
+
+  return true;
 }
 
 void TargetGenerator::FillGenericConfigs(const char* var_name,
-                                         LabelConfigVector* dest) {
+                                         UniqueVector<LabelConfigPair>* dest) {
   const Value* value = scope_->GetValue(var_name, true);
   if (value) {
-    ExtractListOfLabels(*value, scope_->GetSourceDir(),
-                        ToolchainLabelForScope(scope_), dest, err_);
+    ExtractListOfUniqueLabels(*value, scope_->GetSourceDir(),
+                              ToolchainLabelForScope(scope_), dest, err_);
   }
 }
 
@@ -260,8 +304,8 @@ void TargetGenerator::FillForwardDependentConfigs() {
   const Value* value = scope_->GetValue(
       variables::kForwardDependentConfigsFrom, true);
   if (value) {
-    ExtractListOfLabels(*value, scope_->GetSourceDir(),
-                        ToolchainLabelForScope(scope_),
-                        &target_->forward_dependent_configs(), err_);
+    ExtractListOfUniqueLabels(*value, scope_->GetSourceDir(),
+                              ToolchainLabelForScope(scope_),
+                              &target_->forward_dependent_configs(), err_);
   }
 }

@@ -31,16 +31,17 @@
 #include "config.h"
 #include "core/animation/CompositorAnimations.h"
 
-#include "core/animation/AnimatableDouble.h"
-#include "core/animation/AnimatableFilterOperations.h"
-#include "core/animation/AnimatableTransform.h"
-#include "core/animation/AnimatableValue.h"
 #include "core/animation/AnimationTranslationUtil.h"
 #include "core/animation/CompositorAnimationsImpl.h"
+#include "core/animation/animatable/AnimatableDouble.h"
+#include "core/animation/animatable/AnimatableFilterOperations.h"
+#include "core/animation/animatable/AnimatableTransform.h"
+#include "core/animation/animatable/AnimatableValue.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/compositing/CompositedLayerMapping.h"
+#include "platform/geometry/FloatBox.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebAnimation.h"
 #include "public/platform/WebCompositorSupport.h"
@@ -54,7 +55,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
@@ -125,13 +126,71 @@ PassRefPtr<TimingFunction> CompositorAnimationsTimingFunctionReverser::reverse(c
     }
 }
 
+bool CompositorAnimations::getAnimatedBoundingBox(FloatBox& box, const AnimationEffect& effect, double minValue, double maxValue) const
+{
+    const KeyframeEffectModelBase& keyframeEffect = toKeyframeEffectModelBase(effect);
+
+    PropertySet properties = keyframeEffect.properties();
+
+    if (properties.isEmpty())
+        return true;
+
+    minValue = std::min(minValue, 0.0);
+    maxValue = std::max(maxValue, 1.0);
+
+    for (PropertySet::const_iterator it = properties.begin(); it != properties.end(); ++it) {
+        // TODO: Add the ability to get expanded bounds for filters as well.
+        if (*it != CSSPropertyTransform && *it != CSSPropertyWebkitTransform)
+            continue;
+
+        const PropertySpecificKeyframeVector& frames = keyframeEffect.getPropertySpecificKeyframes(*it);
+        if (frames.isEmpty() || frames.size() < 2)
+            continue;
+
+        FloatBox originalBox(box);
+
+        for (size_t j = 0; j < frames.size() - 1; ++j) {
+            const AnimatableTransform* startTransform = toAnimatableTransform(frames[j]->getAnimatableValue().get());
+            const AnimatableTransform* endTransform = toAnimatableTransform(frames[j+1]->getAnimatableValue().get());
+            // TODO: Add support for inflating modes other than Replace.
+            if (frames[j]->composite() != AnimationEffect::CompositeReplace)
+                return false;
+
+            const TimingFunction* timing = frames[j]->easing();
+            double min = 0;
+            double max = 1;
+            if (j == 0) {
+                float frameLength = frames[j+1]->offset();
+                if (frameLength > 0) {
+                    min = minValue / frameLength;
+                }
+            }
+
+            if (j == frames.size() - 2) {
+                float frameLength = frames[j+1]->offset() - frames[j]->offset();
+                if (frameLength > 0) {
+                    max = 1 + (maxValue - 1) / frameLength;
+                }
+            }
+
+            FloatBox bounds;
+            if (timing)
+                timing->range(&min, &max);
+            if (!endTransform->transformOperations().blendedBoundsForBox(originalBox, startTransform->transformOperations(), min, max, &bounds))
+                return false;
+            box.expandTo(bounds);
+        }
+    }
+    return true;
+}
+
 // -----------------------------------------------------------------------
 // CompositorAnimations public API
 // -----------------------------------------------------------------------
 
 bool CompositorAnimations::isCandidateForAnimationOnCompositor(const Timing& timing, const AnimationEffect& effect)
 {
-    const KeyframeEffectModelBase& keyframeEffect = *toKeyframeEffectModelBase(&effect);
+    const KeyframeEffectModelBase& keyframeEffect = toKeyframeEffectModelBase(effect);
 
     PropertySet properties = keyframeEffect.properties();
 
@@ -193,7 +252,7 @@ bool CompositorAnimations::startAnimationOnCompositor(const Element& element, do
     ASSERT(isCandidateForAnimationOnCompositor(timing, effect));
     ASSERT(canStartAnimationOnCompositor(element));
 
-    const KeyframeEffectModelBase& keyframeEffect = *toKeyframeEffectModelBase(&effect);
+    const KeyframeEffectModelBase& keyframeEffect = toKeyframeEffectModelBase(effect);
 
     RenderLayer* layer = toRenderBoxModelObject(element.renderer())->layer();
     ASSERT(layer);
@@ -375,8 +434,7 @@ void CompositorAnimationsImpl::addKeyframesToCurve(blink::WebAnimationCurve& cur
         switch (curve.type()) {
         case blink::WebAnimationCurve::AnimationCurveTypeFilter: {
             OwnPtr<blink::WebFilterOperations> ops = adoptPtr(blink::Platform::current()->compositorSupport()->createFilterOperations());
-            bool converted = toWebFilterOperations(toAnimatableFilterOperations(value)->operations(), ops.get());
-            ASSERT_UNUSED(converted, converted);
+            toWebFilterOperations(toAnimatableFilterOperations(value)->operations(), ops.get());
 
             blink::WebFilterKeyframe filterKeyframe(keyframes[i]->offset(), ops.release());
             blink::WebFilterAnimationCurve* filterCurve = static_cast<blink::WebFilterAnimationCurve*>(&curve);
@@ -463,4 +521,4 @@ void CompositorAnimationsImpl::getAnimationOnCompositor(const Timing& timing, do
     ASSERT(!animations.isEmpty());
 }
 
-} // namespace WebCore
+} // namespace blink

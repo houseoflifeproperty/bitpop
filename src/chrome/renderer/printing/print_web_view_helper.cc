@@ -19,12 +19,12 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/print_messages.h"
 #include "chrome/common/render_messages.h"
+#include "chrome/grit/browser_resources.h"
 #include "chrome/renderer/prerender/prerender_helper.h"
+#include "content/public/common/web_preferences.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
-#include "content/public/renderer/web_preferences.h"
-#include "grit/browser_resources.h"
 #include "net/base/escape.h"
 #include "printing/metafile.h"
 #include "printing/metafile_impl.h"
@@ -46,7 +46,8 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/web/WebViewClient.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "webkit/common/webpreferences.h"
+
+using content::WebPreferences;
 
 namespace printing {
 
@@ -696,7 +697,7 @@ void PrepareFrameAndViewForPrint::CopySelection(
 
   blink::WebView* web_view = blink::WebView::create(this);
   owns_web_view_ = true;
-  content::ApplyWebPreferences(prefs, web_view);
+  content::RenderView::ApplyWebPreferences(prefs, web_view);
   web_view->setMainFrame(blink::WebLocalFrame::create(this));
   frame_.Reset(web_view->mainFrame()->toWebLocalFrame());
   node_to_print_.reset();
@@ -819,7 +820,10 @@ void PrintWebViewHelper::DidStartLoading() {
 
 void PrintWebViewHelper::DidStopLoading() {
   is_loading_ = false;
-  ShowScriptedPrintPreview();
+  if (!on_stop_loading_closure_.is_null()) {
+    on_stop_loading_closure_.Run();
+    on_stop_loading_closure_.Reset();
+  }
 }
 
 // Prints |frame| which called window.print().
@@ -890,7 +894,7 @@ void PrintWebViewHelper::OnPrintForPrintPreview(
   blink::WebLocalFrame* plugin_frame = pdf_element.document().frame();
   blink::WebElement plugin_element = pdf_element;
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kOutOfProcessPdf)) {
-    if (!pdf_element.hasTagName("iframe")) {
+    if (!pdf_element.hasHTMLTagName("iframe")) {
       NOTREACHED();
       return;
     }
@@ -1024,13 +1028,13 @@ void PrintWebViewHelper::OnPrintPreview(const base::DictionaryValue& settings) {
     return;
   }
 
-  // If we are previewing a pdf and the print scaling is disabled, send a
+  // Set the options from document if we are previewing a pdf and send a
   // message to browser.
   if (print_pages_params_->params.is_first_request &&
-      !print_preview_context_.IsModifiable() &&
-      print_preview_context_.source_frame()->isPrintScalingDisabledForPlugin(
-          print_preview_context_.source_node())) {
-    Send(new PrintHostMsg_PrintPreviewScalingDisabled(routing_id()));
+      !print_preview_context_.IsModifiable()) {
+    PrintHostMsg_SetOptionsFromDocument_Params params;
+    SetOptionsFromDocument(params);
+    Send(new PrintHostMsg_SetOptionsFromDocument(routing_id(), params));
   }
 
   is_print_ready_metafile_sent_ = false;
@@ -1465,6 +1469,15 @@ bool PrintWebViewHelper::CalculateNumberOfPages(blink::WebLocalFrame* frame,
   return true;
 }
 
+void PrintWebViewHelper::SetOptionsFromDocument(
+    PrintHostMsg_SetOptionsFromDocument_Params& params) {
+  blink::WebLocalFrame* source_frame = print_preview_context_.source_frame();
+  const blink::WebNode& source_node = print_preview_context_.source_node();
+
+  params.is_scaling_disabled =
+      source_frame->isPrintScalingDisabledForPlugin(source_node);
+}
+
 bool PrintWebViewHelper::UpdatePrintSettings(
     blink::WebLocalFrame* frame,
     const blink::WebNode& node,
@@ -1596,9 +1609,8 @@ bool PrintWebViewHelper::RenderPagesForPrint(blink::WebLocalFrame* frame,
     return false;
   const PrintMsg_PrintPages_Params& params = *print_pages_params_;
   const PrintMsg_Print_Params& print_params = params.params;
-  prep_frame_view_.reset(
-      new PrepareFrameAndViewForPrint(print_params, frame, node,
-                                      ignore_css_margins_));
+  prep_frame_view_.reset(new PrepareFrameAndViewForPrint(
+      print_params, frame, node, ignore_css_margins_));
   DCHECK(!print_pages_params_->params.selection_only ||
          print_pages_params_->pages.empty());
   prep_frame_view_->CopySelectionIfNeeded(
@@ -1702,6 +1714,9 @@ void PrintWebViewHelper::RequestPrintPreview(PrintPreviewRequestType type) {
         // Wait for DidStopLoading. Plugins may not know the correct
         // |is_modifiable| value until they are fully loaded, which occurs when
         // DidStopLoading() is called. Defer showing the preview until then.
+        on_stop_loading_closure_ =
+            base::Bind(&PrintWebViewHelper::ShowScriptedPrintPreview,
+                       base::Unretained(this));
       } else {
         base::MessageLoop::current()->PostTask(
             FROM_HERE,
@@ -1716,14 +1731,34 @@ void PrintWebViewHelper::RequestPrintPreview(PrintPreviewRequestType type) {
       return;
     }
     case PRINT_PREVIEW_USER_INITIATED_ENTIRE_FRAME: {
+      // Wait for DidStopLoading. Continuing with this function while
+      // |is_loading_| is true will cause print preview to hang when try to
+      // print a PDF document.
+      if (is_loading_ && GetPlugin(print_preview_context_.source_frame())) {
+        on_stop_loading_closure_ =
+            base::Bind(&PrintWebViewHelper::RequestPrintPreview,
+                       base::Unretained(this),
+                       type);
+        return;
+      }
+
       break;
     }
     case PRINT_PREVIEW_USER_INITIATED_SELECTION: {
       DCHECK(has_selection);
+      DCHECK(!GetPlugin(print_preview_context_.source_frame()));
       params.selection_only = has_selection;
       break;
     }
     case PRINT_PREVIEW_USER_INITIATED_CONTEXT_NODE: {
+      if (is_loading_ && GetPlugin(print_preview_context_.source_frame())) {
+        on_stop_loading_closure_ =
+            base::Bind(&PrintWebViewHelper::RequestPrintPreview,
+                       base::Unretained(this),
+                       type);
+        return;
+      }
+
       params.webnode_only = true;
       break;
     }

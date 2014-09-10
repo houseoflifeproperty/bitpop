@@ -30,11 +30,9 @@
 #include "../platform/WebPrivatePtr.h"
 #include "../platform/WebURL.h"
 
-namespace WebCore {
-class SpeechGrammar;
-}
-
 namespace blink {
+
+class SpeechGrammar;
 
 class WebSpeechGrammar {
 public:
@@ -49,12 +47,12 @@ public:
     BLINK_EXPORT void assign(const WebSpeechGrammar&);
 
 #if BLINK_IMPLEMENTATION
-    explicit WebSpeechGrammar(WebCore::SpeechGrammar*);
-    WebSpeechGrammar& operator=(WebCore::SpeechGrammar*);
+    explicit WebSpeechGrammar(SpeechGrammar*);
+    WebSpeechGrammar& operator=(SpeechGrammar*);
 #endif
 
 private:
-    WebPrivatePtr<WebCore::SpeechGrammar> m_private;
+    WebPrivatePtr<SpeechGrammar> m_private;
 };
 
 } // namespace blink

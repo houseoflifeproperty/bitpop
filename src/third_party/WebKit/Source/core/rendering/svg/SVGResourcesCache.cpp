@@ -26,7 +26,7 @@
 #include "core/rendering/svg/SVGResourcesCycleSolver.h"
 #include "core/svg/SVGDocumentExtensions.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGResourcesCache::SVGResourcesCache()
 {
@@ -42,8 +42,7 @@ void SVGResourcesCache::addResourcesFromRenderObject(RenderObject* object, const
     ASSERT(style);
     ASSERT(!m_cache.contains(object));
 
-    const SVGRenderStyle* svgStyle = style->svgStyle();
-    ASSERT(svgStyle);
+    const SVGRenderStyle& svgStyle = style->svgStyle();
 
     // Build a list of all resources associated with the passed RenderObject
     OwnPtr<SVGResources> newResources = SVGResources::buildResources(object, svgStyle);
@@ -122,10 +121,10 @@ void SVGResourcesCache::clientStyleChanged(RenderObject* renderer, StyleDifferen
     ASSERT(renderer->node());
     ASSERT(renderer->node()->isSVGElement());
 
-    if (diff.hasNoChange() || !renderer->parent())
+    if (!diff.hasDifference() || !renderer->parent())
         return;
 
-    // In this case the proper SVGFE*Element will decide whether the modified CSS properties require a relayout or repaint.
+    // In this case the proper SVGFE*Element will decide whether the modified CSS properties require a relayout or paintInvalidation.
     if (renderer->isSVGResourceFilterPrimitive() && !diff.needsLayout())
         return;
 

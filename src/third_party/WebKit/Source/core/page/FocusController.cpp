@@ -59,7 +59,7 @@
 #include "core/rendering/RenderLayer.h"
 #include <limits>
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -174,7 +174,7 @@ static inline bool hasCustomFocusLogic(Element* element)
     return element->isHTMLElement() && toHTMLElement(element)->hasCustomFocusLogic();
 }
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 static inline bool isNonFocusableShadowHost(Node* node)
 {
     ASSERT(node);
@@ -304,6 +304,14 @@ Frame* FocusController::focusedOrMainFrame() const
 {
     if (Frame* frame = focusedFrame())
         return frame;
+
+    // FIXME: This is a temporary hack to ensure that we return a LocalFrame, even when the mainFrame is remote.
+    // FocusController needs to be refactored to deal with RemoteFrames cross-process focus transfers.
+    for (Frame* frame = m_page->mainFrame()->tree().top(); frame; frame = frame->tree().traverseNext()) {
+        if (frame->isLocalRoot())
+            return frame;
+    }
+
     return m_page->mainFrame();
 }
 
@@ -633,7 +641,7 @@ Node* FocusController::previousFocusableNode(FocusNavigationScope scope, Node* s
 static bool relinquishesEditingFocus(Node *node)
 {
     ASSERT(node);
-    ASSERT(node->rendererIsEditable());
+    ASSERT(node->hasEditableStyle());
     return node->document().frame() && node->rootEditableElement();
 }
 
@@ -654,17 +662,14 @@ static void clearSelectionIfNeeded(LocalFrame* oldFocusedFrame, LocalFrame* newF
         return;
 
     Node* selectionStartNode = selection.selection().start().deprecatedNode();
-    if (selectionStartNode == newFocusedNode || selectionStartNode->isDescendantOf(newFocusedNode) || selectionStartNode->deprecatedShadowAncestorNode() == newFocusedNode)
+    if (selectionStartNode == newFocusedNode || selectionStartNode->isDescendantOf(newFocusedNode))
         return;
 
-    if (Node* mousePressNode = newFocusedFrame->eventHandler().mousePressNode()) {
-        if (mousePressNode->renderer() && !mousePressNode->canStartSelection()) {
-            // Don't clear the selection for contentEditable elements, but do
-            // clear it for input and textarea. See bug 38696.
-            if (!enclosingTextFormControl(selection.start()))
-                return;
-        }
-    }
+    if (!enclosingTextFormControl(selectionStartNode))
+        return;
+
+    if (selectionStartNode->isInShadowTree() && selectionStartNode->shadowHost() == newFocusedNode)
+        return;
 
     selection.clear();
 }
@@ -722,12 +727,9 @@ void FocusController::setActive(bool active)
 
     m_isActive = active;
 
-    if (m_page->mainFrame()->isLocalFrame()) {
-        if (FrameView* view = m_page->deprecatedLocalMainFrame()->view())
-            view->updateControlTints();
-    }
-
-    toLocalFrame(focusedOrMainFrame())->selection().pageActivationChanged();
+    Frame* frame = focusedOrMainFrame();
+    if (frame->isLocalFrame())
+        toLocalFrame(frame)->selection().pageActivationChanged();
 }
 
 static void updateFocusCandidateIfNeeded(FocusType type, const FocusCandidate& current, FocusCandidate& candidate, FocusCandidate& closest)
@@ -763,7 +765,7 @@ static void updateFocusCandidateIfNeeded(FocusType type, const FocusCandidate& c
         LayoutUnit y = intersectionRect.y() + intersectionRect.height() / 2;
         if (!candidate.visibleNode->document().page()->mainFrame()->isLocalFrame())
             return;
-        HitTestResult result = candidate.visibleNode->document().page()->deprecatedLocalMainFrame()->eventHandler().hitTestResultAtPoint(IntPoint(x, y), HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::IgnoreClipping | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent);
+        HitTestResult result = candidate.visibleNode->document().page()->deprecatedLocalMainFrame()->eventHandler().hitTestResultAtPoint(IntPoint(x, y), HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::IgnoreClipping);
         if (candidate.visibleNode->contains(result.innerNode())) {
             closest = candidate;
             return;
@@ -923,4 +925,4 @@ bool FocusController::advanceFocusDirectionally(FocusType type)
     return consumed;
 }
 
-} // namespace WebCore
+} // namespace blink

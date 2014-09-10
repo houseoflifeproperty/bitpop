@@ -29,12 +29,11 @@ class BrowsingDataIndexedDBHelper
     : public base::RefCountedThreadSafe<BrowsingDataIndexedDBHelper> {
  public:
   // Create a BrowsingDataIndexedDBHelper instance for the indexed databases
-  // stored in |profile|'s user data directory.
-  explicit BrowsingDataIndexedDBHelper(content::IndexedDBContext* content);
+  // stored in |context|'s associated profile's user data directory.
+  explicit BrowsingDataIndexedDBHelper(content::IndexedDBContext* context);
 
   // Starts the fetching process, which will notify its completion via
-  // callback.
-  // This must be called only in the UI thread.
+  // |callback|. This must be called only on the UI thread.
   virtual void StartFetching(
       const base::Callback<void(const std::list<content::IndexedDBInfo>&)>&
           callback);
@@ -54,14 +53,14 @@ class BrowsingDataIndexedDBHelper
   // context's IndexedDB thread.
   std::list<content::IndexedDBInfo> indexed_db_info_;
 
-  // This only mutates on the UI thread.
+  // This member is only mutated on the UI thread.
   base::Callback<void(const std::list<content::IndexedDBInfo>&)>
       completion_callback_;
 
   // Indicates whether or not we're currently fetching information:
   // it's true when StartFetching() is called in the UI thread, and it's reset
   // after we notified the callback in the UI thread.
-  // This only mutates on the UI thread.
+  // This member is only mutated on the UI thread.
   bool is_fetching_;
 
  private:

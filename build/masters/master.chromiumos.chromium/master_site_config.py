@@ -6,9 +6,9 @@
 
 from config_bootstrap import Master
 
-class ChromiumOSChromium(Master.Master1):
+class ChromiumOSChromium(Master.Master2):
   project_name = 'ChromiumOS Chromium'
-  master_port = 8082
-  slave_port = 8182
-  master_port_alt = 8282
+  master_port = 8073
+  slave_port = 8173
+  master_port_alt = 8273
   buildbot_url = 'http://build.chromium.org/p/chromiumos.chromium/'

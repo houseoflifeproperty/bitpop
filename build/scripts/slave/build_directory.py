@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Functions for discovering the build directory."""
+"""Functions for discovering and clearing the build directory."""
 
 import os
 import sys
@@ -71,3 +71,32 @@ def GetBuildOutputDirectory(src_dir=None):
     return os.path.join(src_dir, 'build')
 
   raise NotImplementedError('Unexpected platform %s' % sys.platform)
+
+
+def RmtreeExceptNinjaFiles(build_output_dir):
+  """Recursively removes everything but ninja files from a build directory."""
+  for root, _, files in os.walk(build_output_dir, topdown=False):
+    for f in files:
+      # For .manifest in particular, gyp windows ninja generates manifest
+      # files at generation time but clobber nukes at the beginning of
+      # compile, so make sure not to delete those generated files, otherwise
+      # compile will fail.
+      if (f.endswith('.ninja') or f.endswith('.manifest') or
+          f == 'args.gn' or
+          f.startswith('msvc') or  # VS runtime DLLs.
+          f in ('gyp-mac-tool', 'gyp-win-tool',
+                'environment.x86', 'environment.x64')):
+        continue
+      os.unlink(os.path.join(root, f))
+    # Delete the directory if empty; this works because the walk is bottom-up.
+    try:
+      os.rmdir(root)
+    except OSError, e:
+      if e.errno in (39, 41, 66):
+        # If the directory isn't empty, ignore it.
+        # On Windows, os.rmdir will raise WindowsError with winerror 145,
+        # which e.errno is 41.
+        # On Linux, e.errno is 39.
+        pass
+      else:
+        raise

@@ -9,6 +9,7 @@
 #include "base/memory/shared_memory.h"
 #include "base/timer/timer.h"
 #include "content/browser/browser_thread_impl.h"
+#include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/input/input_router_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
@@ -28,13 +29,15 @@
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #endif
 
+#if defined(USE_AURA) || (defined(OS_MACOSX) && !defined(OS_IOS))
+#include "content/browser/compositor/test/no_transport_image_transport_factory.h"
+#endif
+
 #if defined(USE_AURA)
-#include "content/browser/compositor/image_transport_factory.h"
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "content/browser/renderer_host/ui_events_helper.h"
 #include "ui/aura/env.h"
 #include "ui/aura/test/test_screen.h"
-#include "ui/compositor/test/in_process_context_factory.h"
 #include "ui/events/event.h"
 #endif
 
@@ -200,15 +203,11 @@ class RenderWidgetHostProcess : public MockRenderProcessHost {
  public:
   explicit RenderWidgetHostProcess(BrowserContext* browser_context)
       : MockRenderProcessHost(browser_context),
-        update_msg_should_reply_(false),
         update_msg_reply_flags_(0) {
   }
   virtual ~RenderWidgetHostProcess() {
   }
 
-  void set_update_msg_should_reply(bool reply) {
-    update_msg_should_reply_ = reply;
-  }
   void set_update_msg_reply_flags(int flags) {
     update_msg_reply_flags_ = flags;
   }
@@ -219,14 +218,6 @@ class RenderWidgetHostProcess : public MockRenderProcessHost {
   virtual bool HasConnection() const OVERRIDE { return true; }
 
  protected:
-  virtual bool WaitForBackingStoreMsg(int render_widget_id,
-                                      const base::TimeDelta& max_delay,
-                                      IPC::Message* msg) OVERRIDE;
-
-  // Set to true when WaitForBackingStoreMsg should return a successful update
-  // message reply. False implies timeout.
-  bool update_msg_should_reply_;
-
   // Indicates the flags that should be sent with a repaint request. This
   // only has an effect when update_msg_should_reply_ is true.
   int update_msg_reply_flags_;
@@ -240,22 +231,6 @@ void RenderWidgetHostProcess::InitUpdateRectParams(
 
   params->view_size = gfx::Size(w, h);
   params->flags = update_msg_reply_flags_;
-}
-
-bool RenderWidgetHostProcess::WaitForBackingStoreMsg(
-    int render_widget_id,
-    const base::TimeDelta& max_delay,
-    IPC::Message* msg) {
-  if (!update_msg_should_reply_)
-    return false;
-
-  // Construct a fake update reply.
-  ViewHostMsg_UpdateRect_Params params;
-  InitUpdateRectParams(&params);
-
-  ViewHostMsg_UpdateRect message(render_widget_id, params);
-  *msg = message;
-  return true;
 }
 
 // TestView --------------------------------------------------------------------
@@ -456,15 +431,20 @@ class RenderWidgetHostTest : public testing::Test {
  protected:
   // testing::Test
   virtual void SetUp() {
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
     command_line->AppendSwitch(switches::kValidateInputEventStream);
 
     browser_context_.reset(new TestBrowserContext());
     delegate_.reset(new MockRenderWidgetHostDelegate());
     process_ = new RenderWidgetHostProcess(browser_context_.get());
+#if defined(USE_AURA) || (defined(OS_MACOSX) && !defined(OS_IOS))
+    if (IsDelegatedRendererEnabled()) {
+      ImageTransportFactory::InitializeForUnitTests(
+          scoped_ptr<ImageTransportFactory>(
+              new NoTransportImageTransportFactory));
+    }
+#endif
 #if defined(USE_AURA)
-    ImageTransportFactory::InitializeForUnitTests(
-        scoped_ptr<ui::ContextFactory>(new ui::InProcessContextFactory));
     aura::Env::CreateInstance(true);
     screen_.reset(aura::TestScreen::Create(gfx::Size()));
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, screen_.get());
@@ -486,7 +466,10 @@ class RenderWidgetHostTest : public testing::Test {
 #if defined(USE_AURA)
     aura::Env::DeleteInstance();
     screen_.reset();
-    ImageTransportFactory::Terminate();
+#endif
+#if defined(USE_AURA) || (defined(OS_MACOSX) && !defined(OS_IOS))
+    if (IsDelegatedRendererEnabled())
+      ImageTransportFactory::Terminate();
 #endif
 
     // Process all pending tasks to avoid leaks.
@@ -825,14 +808,14 @@ TEST_F(RenderWidgetHostTest, HiddenPaint) {
 
   // Now unhide.
   process_->sink().ClearMessages();
-  host_->WasShown();
+  host_->WasShown(ui::LatencyInfo());
   EXPECT_FALSE(host_->is_hidden_);
 
   // It should have sent out a restored message with a request to paint.
   const IPC::Message* restored = process_->sink().GetUniqueMessageMatching(
       ViewMsg_WasShown::ID);
   ASSERT_TRUE(restored);
-  Tuple1<bool> needs_repaint;
+  Tuple2<bool, ui::LatencyInfo> needs_repaint;
   ViewMsg_WasShown::Read(restored, &needs_repaint);
   EXPECT_TRUE(needs_repaint.a);
 }

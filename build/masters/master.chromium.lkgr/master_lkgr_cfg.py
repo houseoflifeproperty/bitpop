@@ -269,28 +269,56 @@ F('linux_tsan_dbg', linux().ChromiumFactory(
 
 # The build process for MSan is described at
 # http://dev.chromium.org/developers/testing/memorysanitizer
-# NOTE: building targets other than pdfium_test (which has no DSO dependencies)
-# won't make sense until we can add instrumented_libraries=1 here (i.e. until
-# that option is sufficiently stable).
-msan_gyp = ('msan=1 use_allocator=none '
-            'use_custom_libcxx=1 v8_target_arch=arm64 ')
+msan_gyp = ('msan=1 use_instrumented_libraries=1 '
+            'instrumented_libraries_jobs=5 ')
 
-B('MSAN Release', 'linux_msan_rel', 'compile', 'chromium_lkgr')
-F('linux_msan_rel', linux().ChromiumFactory(
+B('MSAN Release (no origins)', 'linux_msan_rel_no_origins', 'compile',
+  'chromium_lkgr')
+F('linux_msan_rel_no_origins', linux().ChromiumFactory(
     clobber=True,
     target='Release',
-    options=['--compiler=goma-clang', 'pdfium_test'],
+    options=['--compiler=goma-clang', 'chromium_builder_asan'],
     factory_properties={
        'cf_archive_build': ActiveMaster.is_production_host,
-       'cf_archive_name': 'msan',
+       'cf_archive_name': 'msan-no-origins',
        'gs_bucket': 'gs://chromium-browser-msan',
        'gs_acl': 'public-read',
-       'gclient_env': {'GYP_DEFINES': msan_gyp}}))
+       'gclient_env': {'GYP_DEFINES': msan_gyp + 'msan_track_origins=0 '}}))
+
+B('MSAN Release (chained origins)', 'linux_msan_rel_chained_origins', 'compile',
+  'chromium_lkgr')
+F('linux_msan_rel_chained_origins', linux().ChromiumFactory(
+    clobber=True,
+    target='Release',
+    options=['--compiler=goma-clang', 'chromium_builder_asan'],
+    factory_properties={
+       'cf_archive_build': ActiveMaster.is_production_host,
+       'cf_archive_name': 'msan-chained-origins',
+       'gs_bucket': 'gs://chromium-browser-msan',
+       'gs_acl': 'public-read',
+       'gclient_env': {'GYP_DEFINES': msan_gyp + 'msan_track_origins=2 '}}))
 
 # This is a bot that uploads LKGR telemetry harnesses to Google Storage.
 B('Telemetry Harness Upload', 'telemetry_harness_upload', None, 'chromium_lkgr')
 F('telemetry_harness_upload',
   m_annotator.BaseFactory('perf/telemetry_harness_upload'))
+
+# The build process for UBSan vptr is described at
+# http://dev.chromium.org/developers/testing/undefinedbehaviorsanitizer
+ubsan_vptr_gyp = ('ubsan_vptr=1 release_extra_cflags="-gline-tables-only"')
+
+B('UBSan vptr Release', 'linux_ubsan_vptr_rel', 'compile','chromium_lkgr')
+F('linux_ubsan_vptr_rel', linux().ChromiumFactory(
+    clobber=True,
+    target='Release',
+    options=['--compiler=goma-clang', 'chromium_builder_asan'],
+    factory_properties={
+       'cf_archive_build': ActiveMaster.is_production_host,
+       'cf_archive_subdir_suffix': 'vptr',
+       'cf_archive_name': 'ubsan-vptr',
+       'gs_bucket': 'gs://chromium-browser-ubsan',
+       'gs_acl': 'public-read',
+       'gclient_env': {'GYP_DEFINES': ubsan_vptr_gyp}}))
 
 ################################################################################
 ## Android

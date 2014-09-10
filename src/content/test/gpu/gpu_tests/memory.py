@@ -4,14 +4,14 @@
 import memory_expectations
 import page_sets
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.page import page_test
 from telemetry.timeline import counter
 from telemetry.timeline import model
 
 MEMORY_LIMIT_MB = 192
 SINGLE_TAB_LIMIT_MB = 192
-WIGGLE_ROOM_MB = 8
+WIGGLE_ROOM_MB = 12
 
 test_harness_script = r"""
   var domAutomationController = {};
@@ -63,7 +63,7 @@ test_harness_script = r"""
 """ % MEMORY_LIMIT_MB
 
 class _MemoryValidator(page_test.PageTest):
-  def ValidatePage(self, page, tab, results):
+  def ValidateAndMeasurePage(self, page, tab, results):
     timeline_data = tab.browser.StopTracing()
     timeline_model = model.TimelineModel(timeline_data)
     for process in timeline_model.GetAllProcesses():
@@ -92,7 +92,7 @@ class _MemoryValidator(page_test.PageTest):
     return 'Memory allocation too %s (was %d MB, should be %d MB +/- %d MB)' % (
       low_or_high, mb_used, SINGLE_TAB_LIMIT_MB, WIGGLE_ROOM_MB)
 
-class Memory(test.Test):
+class Memory(benchmark.Benchmark):
   """Tests GPU memory limits"""
   test = _MemoryValidator
   page_set = page_sets.MemoryTestsPageSet

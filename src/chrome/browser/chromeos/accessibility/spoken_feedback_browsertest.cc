@@ -5,6 +5,7 @@
 #include <queue>
 
 #include "ash/shell.h"
+#include "ash/system/tray/system_tray.h"
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -13,7 +14,6 @@
 #include "chrome/browser/chromeos/login/ui/login_display_host.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/ui/webui_login_view.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/extensions/api/braille_display_private/stub_braille_controller.h"
 #include "chrome/browser/speech/tts_controller.h"
@@ -22,13 +22,18 @@
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/login/user_names.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/extension_host.h"
+#include "extensions/browser/process_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/test/ui_controls.h"
 #include "ui/views/widget/widget.h"
@@ -50,7 +55,7 @@ class LoggedInSpokenFeedbackTest : public InProcessBrowserTest {
     AccessibilityManager::SetBrailleControllerForTest(&braille_controller_);
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     AccessibilityManager::SetBrailleControllerForTest(NULL);
   }
 
@@ -62,12 +67,26 @@ class LoggedInSpokenFeedbackTest : public InProcessBrowserTest {
             root_window, key, false, false, false, false));
   }
 
+  void SimulateTouchScreenInChromeVox() {
+    // ChromeVox looks at whether 'ontouchstart' exists to know whether
+    // or not it should respond to hover events. Fake it so that touch
+    // exploration events get spoken.
+    extensions::ExtensionHost* host =
+        extensions::ExtensionSystem::Get(browser()->profile())->
+        process_manager()->GetBackgroundHostForExtension(
+            extension_misc::kChromeVoxExtensionId);
+    CHECK(content::ExecuteScript(
+        host->host_contents(),
+        "window.ontouchstart = function() {};"));
+  }
+
  private:
   StubBrailleController braille_controller_;
   DISALLOW_COPY_AND_ASSIGN(LoggedInSpokenFeedbackTest);
 };
 
-IN_PROC_BROWSER_TEST_F(LoggedInSpokenFeedbackTest, AddBookmark) {
+// http://crbug.com/396507
+IN_PROC_BROWSER_TEST_F(LoggedInSpokenFeedbackTest, DISABLED_AddBookmark) {
   EXPECT_FALSE(AccessibilityManager::Get()->IsSpokenFeedbackEnabled());
 
   SpeechMonitor monitor;
@@ -140,7 +159,7 @@ class SpokenFeedbackTest
       command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile,
                                       "user");
       command_line->AppendSwitchASCII(chromeos::switches::kLoginUser,
-                                      chromeos::UserManager::kGuestUserName);
+                                      chromeos::login::kGuestUserName);
     }
   }
 };
@@ -205,6 +224,27 @@ IN_PROC_BROWSER_TEST_P(SpokenFeedbackTest, TypeInOmnibox) {
   EXPECT_EQ("z", monitor.GetNextUtterance());
 }
 
+IN_PROC_BROWSER_TEST_P(SpokenFeedbackTest, TouchExploreStatusTray) {
+  EXPECT_FALSE(AccessibilityManager::Get()->IsSpokenFeedbackEnabled());
+
+  SpeechMonitor monitor;
+  AccessibilityManager::Get()->EnableSpokenFeedback(
+      true, ash::A11Y_NOTIFICATION_NONE);
+  EXPECT_TRUE(monitor.SkipChromeVoxEnabledMessage());
+
+  SimulateTouchScreenInChromeVox();
+
+  // Send an accessibility hover event on the system tray, which is
+  // what we get when you tap it on a touch screen when ChromeVox is on.
+  ash::SystemTray* tray = ash::Shell::GetInstance()->GetPrimarySystemTray();
+  tray->NotifyAccessibilityEvent(ui::AX_EVENT_HOVER, true);
+
+  EXPECT_EQ("Status tray,", monitor.GetNextUtterance());
+  EXPECT_TRUE(MatchPattern(monitor.GetNextUtterance(), "time*,"));
+  EXPECT_TRUE(MatchPattern(monitor.GetNextUtterance(), "Battery*,"));
+  EXPECT_EQ("button", monitor.GetNextUtterance());
+}
+
 //
 // Spoken feedback tests that run only in guest mode.
 //
@@ -219,7 +259,7 @@ class GuestSpokenFeedbackTest : public LoggedInSpokenFeedbackTest {
     command_line->AppendSwitch(::switches::kIncognito);
     command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile, "user");
     command_line->AppendSwitchASCII(chromeos::switches::kLoginUser,
-                                    chromeos::UserManager::kGuestUserName);
+                                    chromeos::login::kGuestUserName);
   }
 
  private:

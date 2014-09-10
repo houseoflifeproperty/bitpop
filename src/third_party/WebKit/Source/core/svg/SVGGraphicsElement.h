@@ -27,7 +27,7 @@
 #include "core/svg/SVGRectTearOff.h"
 #include "core/svg/SVGTests.h"
 
-namespace WebCore {
+namespace blink {
 
 class AffineTransform;
 class Path;
@@ -86,13 +86,13 @@ private:
     OwnPtr<AffineTransform> m_supplementalTransform;
 };
 
-inline bool isSVGGraphicsElement(const Node& node)
+inline bool isSVGGraphicsElement(const SVGElement& element)
 {
-    return node.isSVGElement() && toSVGElement(node).isSVGGraphicsElement();
+    return element.isSVGGraphicsElement();
 }
 
-DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGGraphicsElement);
+DEFINE_SVGELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGGraphicsElement);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGGraphicsElement_h

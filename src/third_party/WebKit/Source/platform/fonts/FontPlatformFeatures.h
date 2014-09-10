@@ -33,7 +33,7 @@
 
 #include "platform/PlatformExport.h"
 
-namespace WebCore {
+namespace blink {
 
 class FontPlatformFeatures {
 public:
@@ -44,6 +44,6 @@ private:
     FontPlatformFeatures();
 };
 
-}
+} // namespace blink
 
 #endif

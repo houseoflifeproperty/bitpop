@@ -17,10 +17,16 @@ from common import chromium_utils
 def main():
   builder_name = os.getenv('BUILDBOT_BUILDERNAME', default='')
 
-  script = 'src/dartium_tools/buildbot_annotated_steps.py'
+  # Temporary until 1.6 ships on stable.
+  if builder_name.endswith('-be') or builder_name.endswith("-dev"):
+    script = 'src/dart/tools/dartium/buildbot_annotated_steps.py'
+  else:
+    script = 'src/dartium_tools/buildbot_annotated_steps.py'
+  result = chromium_utils.RunCommand([sys.executable, script])
 
-  chromium_utils.RunCommand([sys.executable, script])
-
+  if result:
+    print 'Running annotated steps % failed' % script
+    return 1
   # BIG HACK
   # Normal ninja clobbering does not work due to symlinks/python on windows
   # Full clobbering before building does not work since it will destroy

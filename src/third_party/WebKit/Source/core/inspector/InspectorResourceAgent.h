@@ -31,18 +31,19 @@
 #ifndef InspectorResourceAgent_h
 #define InspectorResourceAgent_h
 
-#include "bindings/v8/ScriptString.h"
+#include "bindings/core/v8/ScriptString.h"
 #include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
+#include "platform/Timer.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
-
 
 namespace WTF {
 class String;
 }
 
-namespace WebCore {
+namespace blink {
 
 class Resource;
 struct FetchInitiatorInfo;
@@ -73,9 +74,9 @@ typedef String ErrorString;
 
 class InspectorResourceAgent FINAL : public InspectorBaseAgent<InspectorResourceAgent>, public InspectorBackendDispatcher::NetworkCommandHandler {
 public:
-    static PassOwnPtr<InspectorResourceAgent> create(InspectorPageAgent* pageAgent)
+    static PassOwnPtrWillBeRawPtr<InspectorResourceAgent> create(InspectorPageAgent* pageAgent)
     {
-        return adoptPtr(new InspectorResourceAgent(pageAgent));
+        return adoptPtrWillBeNoop(new InspectorResourceAgent(pageAgent));
     }
 
     virtual void setFrontend(InspectorFrontend*) OVERRIDE;
@@ -83,6 +84,7 @@ public:
     virtual void restore() OVERRIDE;
 
     virtual ~InspectorResourceAgent();
+    virtual void trace(Visitor*) OVERRIDE;
 
     // Called from instrumentation.
     void willSendRequest(unsigned long identifier, DocumentLoader*, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo&);
@@ -137,26 +139,29 @@ public:
 
     virtual void canClearBrowserCache(ErrorString*, bool*) OVERRIDE;
     virtual void canClearBrowserCookies(ErrorString*, bool*) OVERRIDE;
+    virtual void emulateNetworkConditions(ErrorString*, bool, double, double, double) OVERRIDE;
     virtual void setCacheDisabled(ErrorString*, bool cacheDisabled) OVERRIDE;
 
     virtual void loadResourceForFrontend(ErrorString*, const String& frameId, const String& url, const RefPtr<JSONObject>* requestHeaders, PassRefPtr<LoadResourceForFrontendCallback>) OVERRIDE;
 
     // Called from other agents.
     void setHostId(const String&);
-    bool fetchResourceContent(LocalFrame*, const KURL&, String* content, bool* base64Encoded);
+    bool fetchResourceContent(Document*, const KURL&, String* content, bool* base64Encoded);
 
 private:
-    InspectorResourceAgent(InspectorPageAgent*);
+    explicit InspectorResourceAgent(InspectorPageAgent*);
 
     void enable();
+    void delayedRemoveReplayXHR(XMLHttpRequest*);
+    void removeFinishedReplayXHRFired(Timer<InspectorResourceAgent>*);
 
-    InspectorPageAgent* m_pageAgent;
+    RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
     InspectorFrontend::Network* m_frontend;
     String m_userAgentOverride;
     String m_hostId;
     OwnPtr<NetworkResourcesData> m_resourcesData;
 
-    typedef HashMap<ThreadableLoaderClient*, RefPtr<XHRReplayData> > PendingXHRReplayDataMap;
+    typedef WillBeHeapHashMap<ThreadableLoaderClient*, RefPtrWillBeMember<XHRReplayData> > PendingXHRReplayDataMap;
     PendingXHRReplayDataMap m_pendingXHRReplayData;
 
     typedef HashMap<String, RefPtr<TypeBuilder::Network::Initiator> > FrameNavigationInitiatorMap;
@@ -165,9 +170,13 @@ private:
     // FIXME: InspectorResourceAgent should now be aware of style recalculation.
     RefPtr<TypeBuilder::Network::Initiator> m_styleRecalculationInitiator;
     bool m_isRecalculatingStyle;
+
+    WillBeHeapHashSet<RefPtrWillBeMember<XMLHttpRequest> > m_replayXHRs;
+    WillBeHeapHashSet<RefPtrWillBeMember<XMLHttpRequest> > m_replayXHRsToBeDeleted;
+    Timer<InspectorResourceAgent> m_removeFinishedReplayXHRTimer;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // !defined(InspectorResourceAgent_h)

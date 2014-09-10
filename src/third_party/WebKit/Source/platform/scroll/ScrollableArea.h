@@ -32,13 +32,14 @@
 #include "wtf/Noncopyable.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class FloatPoint;
 class GraphicsContext;
 class GraphicsLayer;
 class PlatformGestureEvent;
 class PlatformWheelEvent;
+class ProgrammaticScrollAnimator;
 class ScrollAnimator;
 
 enum ScrollBehavior {
@@ -62,6 +63,8 @@ public:
     bool scroll(ScrollDirection, ScrollGranularity, float delta = 1);
     void scrollToOffsetWithoutAnimation(const FloatPoint&);
     void scrollToOffsetWithoutAnimation(ScrollbarOrientation, float offset);
+
+    void programmaticallyScrollSmoothlyToOffset(const FloatPoint&);
 
     // Should be called when the scroll position changes externally, for example if the scroll layer position
     // is updated on the scrolling thread and we need to notify the main thread.
@@ -109,7 +112,13 @@ public:
     ScrollAnimator* scrollAnimator() const;
 
     // This getter will return null if the ScrollAnimator hasn't been created yet.
-    ScrollAnimator* existingScrollAnimator() const { return m_scrollAnimator.get(); }
+    ScrollAnimator* existingScrollAnimator() const { return m_animators ? m_animators->scrollAnimator.get() : 0; }
+
+    ProgrammaticScrollAnimator* programmaticScrollAnimator() const;
+    ProgrammaticScrollAnimator* existingProgrammaticScrollAnimator() const
+    {
+        return m_animators ? m_animators->programmaticScrollAnimator.get() : 0;
+    }
 
     const IntPoint& scrollOrigin() const { return m_scrollOrigin; }
     bool scrollOriginChanged() const { return m_scrollOriginChanged; }
@@ -179,11 +188,12 @@ public:
     // Let subclasses provide a way of asking for and servicing scroll
     // animations.
     virtual bool scheduleAnimation() { return false; }
-    void serviceScrollAnimations();
+    void serviceScrollAnimations(double monotonicTime);
 
     virtual bool usesCompositedScrolling() const { return false; }
 
-    virtual void updateAfterCompositingChange() { }
+    // Returns true if the GraphicsLayer tree needs to be rebuilt.
+    virtual bool updateAfterCompositingChange() { return false; }
 
     virtual bool userInputScrollable(ScrollbarOrientation) const = 0;
     virtual bool shouldPlaceVerticalScrollbarOnLeft() const = 0;
@@ -194,26 +204,25 @@ public:
     int maximumScrollPosition(ScrollbarOrientation orientation) { return orientation == HorizontalScrollbar ? maximumScrollPosition().x() : maximumScrollPosition().y(); }
     int clampScrollPosition(ScrollbarOrientation orientation, int pos)  { return std::max(std::min(pos, maximumScrollPosition(orientation)), minimumScrollPosition(orientation)); }
 
-    bool hasVerticalBarDamage() const { return m_hasVerticalBarDamage; }
-    bool hasHorizontalBarDamage() const { return m_hasHorizontalBarDamage; }
+    bool hasVerticalBarDamage() const { return !m_verticalBarDamage.isEmpty(); }
+    bool hasHorizontalBarDamage() const { return !m_horizontalBarDamage.isEmpty(); }
+    const IntRect& verticalBarDamage() const { return m_verticalBarDamage; }
+    const IntRect& horizontalBarDamage() const { return m_horizontalBarDamage; }
 
-    const IntRect& verticalBarDamage() const
+    void addScrollbarDamage(Scrollbar* scrollbar, const IntRect& rect)
     {
-        ASSERT(m_hasVerticalBarDamage);
-        return m_verticalBarDamage;
-    }
-
-    const IntRect& horizontalBarDamage() const
-    {
-        ASSERT(m_hasHorizontalBarDamage);
-        return m_horizontalBarDamage;
+        if (scrollbar == horizontalScrollbar())
+            m_horizontalBarDamage.unite(rect);
+        else
+            m_verticalBarDamage.unite(rect);
     }
 
     void resetScrollbarDamage()
     {
-        m_hasVerticalBarDamage = false;
-        m_hasHorizontalBarDamage = false;
+        m_verticalBarDamage = IntRect();
+        m_horizontalBarDamage = IntRect();
     }
+
     virtual GraphicsLayer* layerForContainer() const;
     virtual GraphicsLayer* layerForScrolling() const { return 0; }
     virtual GraphicsLayer* layerForHorizontalScrollbar() const { return 0; }
@@ -222,6 +231,8 @@ public:
     bool hasLayerForHorizontalScrollbar() const;
     bool hasLayerForVerticalScrollbar() const;
     bool hasLayerForScrollCorner() const;
+
+    void cancelProgrammaticScrollAnimation();
 
 protected:
     ScrollableArea();
@@ -232,13 +243,6 @@ protected:
 
     virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&) = 0;
     virtual void invalidateScrollCornerRect(const IntRect&) = 0;
-
-    // For repaint after layout, stores the damage to be repainted for the
-    // scrollbars.
-    unsigned m_hasHorizontalBarDamage : 1;
-    unsigned m_hasVerticalBarDamage : 1;
-    IntRect m_horizontalBarDamage;
-    IntRect m_verticalBarDamage;
 
 private:
     void scrollPositionChanged(const IntPoint&);
@@ -256,7 +260,16 @@ private:
     virtual int documentStep(ScrollbarOrientation) const;
     virtual float pixelStep(ScrollbarOrientation) const;
 
-    mutable OwnPtr<ScrollAnimator> m_scrollAnimator;
+    // Stores the paint invalidations for the scrollbars during layout.
+    IntRect m_horizontalBarDamage;
+    IntRect m_verticalBarDamage;
+
+    struct ScrollableAreaAnimators {
+        OwnPtr<ScrollAnimator> scrollAnimator;
+        OwnPtr<ProgrammaticScrollAnimator> programmaticScrollAnimator;
+    };
+
+    mutable OwnPtr<ScrollableAreaAnimators> m_animators;
     unsigned m_constrainsScrollingToContentEdge : 1;
 
     unsigned m_inLiveResize : 1;
@@ -282,6 +295,6 @@ private:
     IntPoint m_scrollOrigin;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ScrollableArea_h

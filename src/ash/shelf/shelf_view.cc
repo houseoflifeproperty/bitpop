@@ -55,6 +55,7 @@
 #include "ui/views/view_model.h"
 #include "ui/views/view_model_utils.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/coordinate_conversion.h"
 
 using gfx::Animation;
 using views::View;
@@ -617,9 +618,8 @@ bool ShelfView::StartDrag(const std::string& app_id,
   gfx::Point pt = drag_and_drop_view->GetBoundsInScreen().CenterPoint();
   views::View::ConvertPointFromScreen(drag_and_drop_view, &pt);
   gfx::Point point_in_root = location_in_screen_coordinates;
-  ash::wm::ConvertPointFromScreen(
-      ash::wm::GetRootWindowAt(location_in_screen_coordinates),
-      &point_in_root);
+  ::wm::ConvertPointFromScreen(
+      ash::wm::GetRootWindowAt(location_in_screen_coordinates), &point_in_root);
   ui::MouseEvent event(ui::ET_MOUSE_PRESSED, pt, point_in_root, 0, 0);
   PointerPressedOnButton(drag_and_drop_view,
                          ShelfButtonHost::DRAG_AND_DROP,
@@ -640,9 +640,8 @@ bool ShelfView::Drag(const gfx::Point& location_in_screen_coordinates) {
       model_->ItemIndexByID(drag_and_drop_shelf_id_));
   ConvertPointFromScreen(drag_and_drop_view, &pt);
   gfx::Point point_in_root = location_in_screen_coordinates;
-  ash::wm::ConvertPointFromScreen(
-      ash::wm::GetRootWindowAt(location_in_screen_coordinates),
-      &point_in_root);
+  ::wm::ConvertPointFromScreen(
+      ash::wm::GetRootWindowAt(location_in_screen_coordinates), &point_in_root);
   ui::MouseEvent event(ui::ET_MOUSE_DRAGGED, pt, point_in_root, 0, 0);
   PointerDraggedOnButton(drag_and_drop_view,
                          ShelfButtonHost::DRAG_AND_DROP,
@@ -1010,8 +1009,8 @@ bool ShelfView::HandleRipOffDrag(const ui::LocatedEvent& event) {
       delegate_->GetAppIDForShelfID(model_->items()[current_index].id);
 
   gfx::Point screen_location = event.root_location();
-  ash::wm::ConvertPointToScreen(GetWidget()->GetNativeWindow()->GetRootWindow(),
-                                &screen_location);
+  ::wm::ConvertPointToScreen(GetWidget()->GetNativeWindow()->GetRootWindow(),
+                             &screen_location);
 
   // To avoid ugly forwards and backwards flipping we use different constants
   // for ripping off / re-inserting the items.
@@ -1764,7 +1763,8 @@ void ShelfView::ShowMenu(ui::MenuModel* menu_model,
                          bool context_menu,
                          ui::MenuSourceType source_type) {
   closing_event_time_ = base::TimeDelta();
-  launcher_menu_runner_.reset(new views::MenuRunner(menu_model));
+  launcher_menu_runner_.reset(new views::MenuRunner(
+      menu_model, context_menu ? views::MenuRunner::CONTEXT_MENU : 0));
 
   ScopedTargetRootWindow scoped_target(
       source->GetWidget()->GetNativeView()->GetRootWindow());
@@ -1816,13 +1816,11 @@ void ShelfView::ShowMenu(ui::MenuModel* menu_model,
   shelf->ForceUndimming(true);
   // NOTE: if you convert to HAS_MNEMONICS be sure and update menu building
   // code.
-  if (launcher_menu_runner_->RunMenuAt(
-          source->GetWidget(),
-          NULL,
-          anchor_point,
-          menu_alignment,
-          source_type,
-          context_menu ? views::MenuRunner::CONTEXT_MENU : 0) ==
+  if (launcher_menu_runner_->RunMenuAt(source->GetWidget(),
+                                       NULL,
+                                       anchor_point,
+                                       menu_alignment,
+                                       source_type) ==
       views::MenuRunner::MENU_DELETED) {
     if (!got_deleted) {
       got_deleted_ = NULL;

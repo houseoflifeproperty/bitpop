@@ -25,14 +25,25 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
     #     ['mac', 'amd', ('nvidia', 0x1234)], bug=123)
 
     # Fails on all platforms
-    self.Fail('conformance/glsl/misc/shaders-with-mis-matching-uniforms.html',
+    self.Fail('conformance/glsl/misc/shaders-with-uniform-structs.html',
         bug=351396)
 
     # Flaky on Win
     self.Fail('conformance/extensions/webgl-draw-buffers.html',
         ['win'], bug=369349)
-    self.Fail('conformance/context/context-lost-restored.html',
-        ['win'], bug=374378)
+
+    # Win failures
+    self.Fail('conformance/glsl/misc/struct-equals.html',
+        ['win'], bug=391957)
+    self.Fail('conformance/glsl/bugs/conditional-discard-in-loop.html',
+        ['win'], bug=402195)
+    self.Fail('conformance/rendering/negative-one-index.html',
+        ['win'], bug=396058)
+
+    # Win D3D9 failures (unfortunately can not target just this
+    # configuration with test expectations)
+    self.Fail('conformance/extensions/angle-instanced-arrays.html',
+        ['win'], bug=401713)
 
     # Win7 / Intel failures
     self.Fail('conformance/rendering/gl-scissor-test.html',
@@ -62,7 +73,8 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
     self.Skip('conformance/ogles/GL/control_flow/control_flow_009_to_010.html',
         ['mac', ('intel', 0x116)], bug=322795)
     # Radar 13499677
-    self.Fail('conformance/glsl/functions/glsl-function-smoothstep-gentype.html',
+    self.Fail('conformance/glsl/functions/' +
+        'glsl-function-smoothstep-gentype.html',
         ['mac', ('intel', 0x116)], bug=225642)
     self.Fail('conformance/extensions/webgl-draw-buffers.html',
         ['mac', ('intel', 0x116)], bug=369349)
@@ -80,7 +92,8 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
 
     # Mac 10.8 / ATI failures
     self.Fail(
-        'conformance/rendering/point-with-gl-pointcoord-in-fragment-shader.html',
+        'conformance/rendering/' +
+        'point-with-gl-pointcoord-in-fragment-shader.html',
         ['mountainlion', 'amd'])
 
     # Mac 10.7 / Intel failures
@@ -114,6 +127,36 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         ['lion', 'intel'], bug=323736)
     self.Skip('conformance/ogles/GL/tan/tan_001_to_006.html',
         ['lion', 'intel'], bug=323736)
+    # Two flaky tests.
+    self.Fail('conformance/ogles/GL/functions/functions_049_to_056.html',
+        ['lion', 'intel'], bug=393331)
+    self.Fail('conformance/extensions/webgl-compressed-texture-size-limit.html',
+        ['lion', 'intel'], bug=393331)
+
+    # Linux NVIDIA failures
+    self.Fail('conformance/glsl/constructors/glsl-construct-bvec2.html',
+        ['linux', 'nvidia'], bug=391960)
+    self.Fail('conformance/glsl/constructors/glsl-construct-bvec3.html',
+        ['linux', 'nvidia'], bug=391960)
+    self.Fail('conformance/glsl/constructors/glsl-construct-bvec4.html',
+        ['linux', 'nvidia'], bug=391960)
+    self.Fail('conformance/glsl/constructors/glsl-construct-ivec2.html',
+        ['linux', 'nvidia'], bug=391960)
+    self.Fail('conformance/glsl/constructors/glsl-construct-ivec3.html',
+        ['linux', 'nvidia'], bug=391960)
+    self.Fail('conformance/glsl/constructors/glsl-construct-ivec4.html',
+        ['linux', 'nvidia'], bug=391960)
+    self.Fail('conformance/glsl/constructors/glsl-construct-vec2.html',
+        ['linux', 'nvidia'], bug=391960)
+    self.Fail('conformance/glsl/constructors/glsl-construct-vec3.html',
+        ['linux', 'nvidia'], bug=391960)
+    self.Fail('conformance/glsl/constructors/glsl-construct-vec4.html',
+        ['linux', 'nvidia'], bug=391960)
+    self.Fail(
+        'conformance/glsl/constructors/' +
+        'glsl-construct-vec-mat-corner-cases.html',
+        ['linux', 'nvidia'], bug=391960)
+
 
     # Android failures
     # The following test is very slow and therefore times out on Android bot.
@@ -129,11 +172,14 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
     # The following tests are disabled due to security issues.
     self.Fail('conformance/textures/tex-image-and-sub-image-2d-with-video.html',
         ['android'], bug=334204)
-    self.Fail('conformance/textures/tex-image-and-sub-image-2d-with-video-rgb565.html',
+    self.Fail('conformance/textures/' +
+        'tex-image-and-sub-image-2d-with-video-rgb565.html',
         ['android'], bug=334204)
-    self.Fail('conformance/textures/tex-image-and-sub-image-2d-with-video-rgba4444.html',
+    self.Fail('conformance/textures/' +
+        'tex-image-and-sub-image-2d-with-video-rgba4444.html',
         ['android'], bug=334204)
-    self.Fail('conformance/textures/tex-image-and-sub-image-2d-with-video-rgba5551.html',
+    self.Fail('conformance/textures/' +
+        'tex-image-and-sub-image-2d-with-video-rgba5551.html',
         ['android'], bug=334204)
     self.Fail('conformance/textures/texture-npot-video.html',
         ['android'], bug=334204)

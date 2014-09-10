@@ -11,24 +11,28 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/i18n/time_formatting.h"
+#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/browsing_data/browsing_data_channel_id_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_cookie_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_database_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_file_system_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_indexed_db_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_local_storage_helper.h"
-#include "chrome/browser/browsing_data/browsing_data_server_bound_cert_helper.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/local_shared_objects_container.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ssl/chrome_ssl_host_state_delegate.h"
+#include "chrome/browser/ssl/chrome_ssl_host_state_delegate_factory.h"
 #include "chrome/browser/ssl/ssl_error_info.h"
 #include "chrome/browser/ui/website_settings/website_settings_infobar_delegate.h"
 #include "chrome/browser/ui/website_settings/website_settings_ui.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cert_store.h"
@@ -44,7 +48,6 @@
 #include "net/ssl/ssl_cipher_suite_names.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/policy/policy_cert_service.h"
@@ -122,6 +125,33 @@ WebsiteSettings::SiteIdentityStatus GetSiteIdentityStatusByCTInfo(
                : WebsiteSettings::SITE_IDENTITY_STATUS_CERT;
 }
 
+const char kRememberCertificateErrorDecisionsFieldTrialName[] =
+    "RememberCertificateErrorDecisions";
+const char kRememberCertificateErrorDecisionsFieldTrialDefaultGroup[] =
+    "Default";
+const char kRememberCertificateErrorDecisionsFieldTrialDisableGroup[] =
+    "Disable";
+// Returns true if the user is in the experimental group or has the flag enabled
+// for remembering SSL error decisions, otherwise false.
+//
+// TODO(jww): The field trial is scheduled to end 2015/02/28. This should be
+// removed at that point unless the field trial or flag continues.
+bool InRememberCertificateErrorDecisionsGroup() {
+  std::string group_name = base::FieldTrialList::FindFullName(
+      kRememberCertificateErrorDecisionsFieldTrialName);
+
+  // The Default and Disable groups are the "old-style" forget-at-session
+  // restart groups, so they do not get the button.
+  bool in_experimental_group = !group_name.empty() &&
+      group_name.compare(
+          kRememberCertificateErrorDecisionsFieldTrialDefaultGroup) != 0 &&
+      group_name.compare(
+          kRememberCertificateErrorDecisionsFieldTrialDisableGroup) != 0;
+  bool has_command_line_switch = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kRememberCertErrorDecisions);
+  return in_experimental_group || has_command_line_switch;
+}
+
 }  // namespace
 
 WebsiteSettings::WebsiteSettings(
@@ -142,7 +172,9 @@ WebsiteSettings::WebsiteSettings(
       cert_id_(0),
       site_connection_status_(SITE_CONNECTION_STATUS_UNKNOWN),
       cert_store_(cert_store),
-      content_settings_(profile->GetHostContentSettingsMap()) {
+      content_settings_(profile->GetHostContentSettingsMap()),
+      chrome_ssl_host_state_delegate_(
+          ChromeSSLHostStateDelegateFactory::GetForProfile(profile)) {
   Init(profile, url, ssl);
 
   HistoryService* history_service = HistoryServiceFactory::GetForProfile(
@@ -150,9 +182,9 @@ WebsiteSettings::WebsiteSettings(
   if (history_service) {
     history_service->GetVisibleVisitCountToHost(
         site_url_,
-        &visit_count_request_consumer_,
         base::Bind(&WebsiteSettings::OnGotVisitCountToHost,
-                   base::Unretained(this)));
+                   base::Unretained(this)),
+        &visit_count_task_tracker_);
   }
 
   PresentSitePermissions();
@@ -254,7 +286,7 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
 
     base::Value* value = NULL;
     if (setting != CONTENT_SETTING_DEFAULT)
-      value = base::Value::CreateIntegerValue(setting);
+      value = new base::FundamentalValue(setting);
     content_settings_->SetWebsiteSetting(
         primary_pattern, secondary_pattern, type, std::string(), value);
   }
@@ -269,8 +301,7 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
 #endif
 }
 
-void WebsiteSettings::OnGotVisitCountToHost(HistoryService::Handle handle,
-                                            bool found_visits,
+void WebsiteSettings::OnGotVisitCountToHost(bool found_visits,
                                             int visit_count,
                                             base::Time first_visit) {
   if (!found_visits) {
@@ -534,6 +565,17 @@ void WebsiteSettings::Init(Profile* profile,
     }
   }
 
+  // Check if a user decision has been made to allow or deny certificates with
+  // errors on this site.
+  ChromeSSLHostStateDelegate* delegate =
+      ChromeSSLHostStateDelegateFactory::GetForProfile(profile);
+  DCHECK(delegate);
+  // Only show an SSL decision revoke button if both the user has chosen to
+  // bypass SSL host errors for this host in the past and the user is not using
+  // the traditional "forget-at-session-restart" error decision memory.
+  show_ssl_decision_revoke_button_ = delegate->HasUserDecision(url.host()) &&
+      InRememberCertificateErrorDecisionsGroup();
+
   // By default select the permissions tab that displays all the site
   // permissions. In case of a connection error or an issue with the
   // certificate presented by the website, select the connection tab to draw
@@ -667,6 +709,7 @@ void WebsiteSettings::PresentSiteIdentity() {
   info.signed_certificate_timestamp_ids.assign(
       signed_certificate_timestamp_ids_.begin(),
       signed_certificate_timestamp_ids_.end());
+  info.show_ssl_decision_revoke_button = show_ssl_decision_revoke_button_;
   ui_->SetIdentityInfo(info);
 }
 

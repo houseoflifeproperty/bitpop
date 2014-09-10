@@ -36,8 +36,9 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
+class ConsoleMessage;
 class ExecutionContext;
 class ExecutionContextTask;
 class WorkerMessagingProxy;
@@ -60,12 +61,12 @@ public:
 
     // WorkerReportingProxy overrides.
     virtual void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL) OVERRIDE;
-    virtual void reportConsoleMessage(MessageSource, MessageLevel, const String& message, int lineNumber, const String& sourceURL) OVERRIDE;
+    virtual void reportConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) OVERRIDE;
     virtual void postMessageToPageInspector(const String&) OVERRIDE;
     virtual void updateInspectorStateCookie(const String&) OVERRIDE;
     virtual void workerGlobalScopeStarted(WorkerGlobalScope*) OVERRIDE { }
     virtual void workerGlobalScopeClosed() OVERRIDE;
-    virtual void workerGlobalScopeDestroyed() OVERRIDE;
+    virtual void workerThreadTerminated() OVERRIDE;
     virtual void willDestroyWorkerGlobalScope() OVERRIDE { }
 
 private:
@@ -76,6 +77,6 @@ private:
     WorkerMessagingProxy* m_messagingProxy;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerObjectProxy_h

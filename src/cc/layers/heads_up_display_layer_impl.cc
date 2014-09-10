@@ -7,12 +7,12 @@
 #include <algorithm>
 #include <vector>
 
+#include "base/debug/trace_event.h"
+#include "base/debug/trace_event_argument.h"
 #include "base/strings/stringprintf.h"
 #include "cc/debug/debug_colors.h"
 #include "cc/debug/frame_rate_counter.h"
 #include "cc/debug/paint_time_counter.h"
-#include "cc/debug/traced_value.h"
-#include "cc/layers/quad_sink.h"
 #include "cc/output/renderer.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/resources/memory_history.h"
@@ -105,12 +105,15 @@ bool HeadsUpDisplayLayerImpl::WillDraw(DrawMode draw_mode,
   return LayerImpl::WillDraw(draw_mode, resource_provider);
 }
 
-void HeadsUpDisplayLayerImpl::AppendQuads(QuadSink* quad_sink,
-                                          AppendQuadsData* append_quads_data) {
+void HeadsUpDisplayLayerImpl::AppendQuads(
+    RenderPass* render_pass,
+    const OcclusionTracker<LayerImpl>& occlusion_tracker,
+    AppendQuadsData* append_quads_data) {
   if (!hud_resource_->id())
     return;
 
-  SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
+  SharedQuadState* shared_quad_state =
+      render_pass->CreateAndAppendSharedQuadState();
   PopulateSharedQuadState(shared_quad_state);
 
   gfx::Rect quad_rect(content_bounds());
@@ -121,7 +124,8 @@ void HeadsUpDisplayLayerImpl::AppendQuads(QuadSink* quad_sink,
   gfx::PointF uv_bottom_right(1.f, 1.f);
   const float vertex_opacity[] = { 1.f, 1.f, 1.f, 1.f };
   bool flipped = false;
-  scoped_ptr<TextureDrawQuad> quad = TextureDrawQuad::Create();
+  TextureDrawQuad* quad =
+      render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
   quad->SetNew(shared_quad_state,
                quad_rect,
                opaque_rect,
@@ -133,7 +137,6 @@ void HeadsUpDisplayLayerImpl::AppendQuads(QuadSink* quad_sink,
                SK_ColorTRANSPARENT,
                vertex_opacity,
                flipped);
-  quad_sink->Append(quad.PassAs<DrawQuad>());
 }
 
 void HeadsUpDisplayLayerImpl::UpdateHudTexture(
@@ -175,7 +178,7 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
   const void* pixels = hud_canvas_->peekPixels(&info, &row_bytes);
   DCHECK(pixels);
   gfx::Rect content_rect(content_bounds());
-  DCHECK(info.colorType() == kPMColor_SkColorType);
+  DCHECK(info.colorType() == kN32_SkColorType);
   resource_provider->SetPixels(hud_resource_->id(),
                                static_cast<const uint8_t*>(pixels),
                                content_rect,
@@ -593,7 +596,7 @@ SkRect HeadsUpDisplayLayerImpl::DrawPaintTimeDisplay(
 
 void HeadsUpDisplayLayerImpl::DrawDebugRect(
     SkCanvas* canvas,
-    SkPaint& paint,
+    SkPaint* paint,
     const DebugRect& rect,
     SkColor stroke_color,
     SkColor fill_color,
@@ -602,14 +605,14 @@ void HeadsUpDisplayLayerImpl::DrawDebugRect(
   gfx::Rect debug_layer_rect = gfx::ScaleToEnclosingRect(
       rect.rect, 1.0 / contents_scale_x(), 1.0 / contents_scale_y());
   SkIRect sk_rect = RectToSkIRect(debug_layer_rect);
-  paint.setColor(fill_color);
-  paint.setStyle(SkPaint::kFill_Style);
-  canvas->drawIRect(sk_rect, paint);
+  paint->setColor(fill_color);
+  paint->setStyle(SkPaint::kFill_Style);
+  canvas->drawIRect(sk_rect, *paint);
 
-  paint.setColor(stroke_color);
-  paint.setStyle(SkPaint::kStroke_Style);
-  paint.setStrokeWidth(SkFloatToScalar(stroke_width));
-  canvas->drawIRect(sk_rect, paint);
+  paint->setColor(stroke_color);
+  paint->setStyle(SkPaint::kStroke_Style);
+  paint->setStrokeWidth(SkFloatToScalar(stroke_width));
+  canvas->drawIRect(sk_rect, *paint);
 
   if (label_text.length()) {
     const int kFontHeight = 12;
@@ -729,7 +732,7 @@ void HeadsUpDisplayLayerImpl::DrawDebugRects(
     }
 
     DrawDebugRect(canvas,
-                  paint,
+                  &paint,
                   debug_rects[i],
                   stroke_color,
                   fill_color,
@@ -745,7 +748,7 @@ void HeadsUpDisplayLayerImpl::DrawDebugRects(
     fade_step_--;
     for (size_t i = 0; i < paint_rects_.size(); ++i) {
       DrawDebugRect(canvas,
-                    paint,
+                    &paint,
                     paint_rects_[i],
                     DebugColors::PaintRectBorderColor(fade_step_),
                     DebugColors::PaintRectFillColor(fade_step_),
@@ -759,7 +762,8 @@ const char* HeadsUpDisplayLayerImpl::LayerTypeAsString() const {
   return "cc::HeadsUpDisplayLayerImpl";
 }
 
-void HeadsUpDisplayLayerImpl::AsValueInto(base::DictionaryValue* dict) const {
+void HeadsUpDisplayLayerImpl::AsValueInto(
+    base::debug::TracedValue* dict) const {
   LayerImpl::AsValueInto(dict);
   dict->SetString("layer_name", "Heads Up Display Layer");
 }

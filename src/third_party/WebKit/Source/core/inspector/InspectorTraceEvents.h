@@ -9,9 +9,10 @@
 #include "platform/TraceEvent.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
+class Event;
 class ExecutionContext;
 class FrameView;
 class GraphicsContext;
@@ -138,7 +139,17 @@ public:
     static PassRefPtr<TraceEvent::ConvertableToTraceFormat> currentCallStack();
 };
 
-} // namespace WebCore
+class InspectorEventDispatchEvent {
+public:
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const Event&);
+};
+
+class InspectorTimeStampEvent {
+public:
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(ExecutionContext*, const String& message);
+};
+
+} // namespace blink
 
 
 #endif // !defined(InspectorTraceEvents_h)

@@ -51,7 +51,7 @@ namespace WTF {
 class SchedulePair;
 }
 
-namespace WebCore {
+namespace blink {
     class ApplicationCacheHost;
     class ArchiveResource;
     class ArchiveResourceCollection;
@@ -115,7 +115,7 @@ namespace WebCore {
 
         bool scheduleArchiveLoad(Resource*, const ResourceRequest&);
 
-        bool shouldContinueForNavigationPolicy(const ResourceRequest&);
+        bool shouldContinueForNavigationPolicy(const ResourceRequest&, ContentSecurityPolicyCheck shouldCheckMainWorldContentSecurityPolicy, bool isTransitionNavigation = false);
         const NavigationAction& triggeringAction() const { return m_triggeringAction; }
         void setTriggeringAction(const NavigationAction& action) { m_triggeringAction = action; }
 
@@ -141,7 +141,7 @@ namespace WebCore {
         Vector<KURL> m_redirectChain;
 
     private:
-        static PassRefPtrWillBeRawPtr<DocumentWriter> createWriterFor(LocalFrame*, const Document* ownerDocument, const KURL&, const AtomicString& mimeType, const AtomicString& encoding, bool userChosen, bool dispatch);
+        static PassRefPtrWillBeRawPtr<DocumentWriter> createWriterFor(LocalFrame*, const Document* ownerDocument, const KURL&, const AtomicString& mimeType, const AtomicString& encoding, bool dispatch);
 
         void ensureWriter(const AtomicString& mimeType, const KURL& overridingURL = KURL());
         void endWriting(DocumentWriter*);
@@ -209,8 +209,8 @@ namespace WebCore {
         // benefit of the various policy handlers.
         NavigationAction m_triggeringAction;
 
-        OwnPtr<ArchiveResourceCollection> m_archiveResourceCollection;
-        RefPtr<MHTMLArchive> m_archive;
+        OwnPtrWillBePersistent<ArchiveResourceCollection> m_archiveResourceCollection;
+        RefPtrWillBePersistent<MHTMLArchive> m_archive;
 
         bool m_loadingMainResource;
         DocumentLoadTiming m_documentLoadTiming;

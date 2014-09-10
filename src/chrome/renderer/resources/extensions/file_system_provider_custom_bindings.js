@@ -36,8 +36,32 @@ function annotateMetadata(metadata) {
     size: metadata.size,
     modificationTime: annotateDate(metadata.modificationTime)
   };
+  if ('mimeType' in metadata)
+    result.mimeType = metadata.mimeType;
   return result;
 }
+
+/**
+ * Massages arguments of an event raised by the File System Provider API.
+ * @param {Array.<*>} args Input arguments.
+ * @param {function(Array.<*>)} dispatch Closure to be called with massaged
+ *     arguments.
+ */
+function massageArgumentsDefault(args, dispatch) {
+  var executionStart = Date.now();
+  var options = args[0];
+  var onSuccessCallback = function(hasNext) {
+    fileSystemProviderInternal.operationRequestedSuccess(
+        options.fileSystemId, options.requestId, Date.now() - executionStart);
+  };
+  var onErrorCallback = function(error) {
+    fileSystemProviderInternal.operationRequestedError(
+        options.fileSystemId, options.requestId, error,
+        Date.now() - executionStart);
+  }
+  dispatch([options, onSuccessCallback, onErrorCallback]);
+}
+
 
 binding.registerCustomHook(function(bindingsAPI) {
   var apiFunctions = bindingsAPI.apiFunctions;
@@ -109,32 +133,24 @@ binding.registerCustomHook(function(bindingsAPI) {
 
 eventBindings.registerArgumentMassager(
     'fileSystemProvider.onUnmountRequested',
-    function(args, dispatch) {
-      var options = args[0];
-      var onSuccessCallback = function() {
-        fileSystemProviderInternal.unmountRequestedSuccess(
-            options.fileSystemId, options.requestId);
-      };
-      var onErrorCallback = function(error) {
-        fileSystemProviderInternal.unmountRequestedError(
-            options.fileSystemId, options.requestId, error);
-      }
-      dispatch([options, onSuccessCallback, onErrorCallback]);
-    });
+    massageArgumentsDefault);
 
 eventBindings.registerArgumentMassager(
     'fileSystemProvider.onGetMetadataRequested',
     function(args, dispatch) {
+      var executionStart = Date.now();
       var options = args[0];
       var onSuccessCallback = function(metadata) {
         fileSystemProviderInternal.getMetadataRequestedSuccess(
             options.fileSystemId,
             options.requestId,
-            annotateMetadata(metadata));
+            annotateMetadata(metadata),
+            Date.now() - executionStart);
       };
       var onErrorCallback = function(error) {
-        fileSystemProviderInternal.getMetadataRequestedError(
-            options.fileSystemId, options.requestId, error);
+        fileSystemProviderInternal.operationRequestedError(
+            options.fileSystemId, options.requestId, error,
+            Date.now() - executionStart);
       }
       dispatch([options, onSuccessCallback, onErrorCallback]);
     });
@@ -142,62 +158,74 @@ eventBindings.registerArgumentMassager(
 eventBindings.registerArgumentMassager(
     'fileSystemProvider.onReadDirectoryRequested',
     function(args, dispatch) {
+      var executionStart = Date.now();
       var options = args[0];
       var onSuccessCallback = function(entries, hasNext) {
         var annotatedEntries = entries.map(annotateMetadata);
         fileSystemProviderInternal.readDirectoryRequestedSuccess(
-            options.fileSystemId, options.requestId, annotatedEntries, hasNext);
+            options.fileSystemId, options.requestId, annotatedEntries, hasNext,
+            Date.now() - executionStart);
       };
       var onErrorCallback = function(error) {
-        fileSystemProviderInternal.readDirectoryRequestedError(
-            options.fileSystemId, options.requestId, error);
+        fileSystemProviderInternal.operationRequestedError(
+            options.fileSystemId, options.requestId, error,
+            Date.now() - executionStart);
       }
       dispatch([options, onSuccessCallback, onErrorCallback]);
     });
 
 eventBindings.registerArgumentMassager(
     'fileSystemProvider.onOpenFileRequested',
-    function(args, dispatch) {
-      var options = args[0];
-      var onSuccessCallback = function() {
-        fileSystemProviderInternal.openFileRequestedSuccess(
-            options.fileSystemId, options.requestId);
-      };
-      var onErrorCallback = function(error) {
-        fileSystemProviderInternal.openFileRequestedError(
-            options.fileSystemId, options.requestId, error);
-      }
-      dispatch([options, onSuccessCallback, onErrorCallback]);
-    });
+    massageArgumentsDefault);
 
 eventBindings.registerArgumentMassager(
     'fileSystemProvider.onCloseFileRequested',
-    function(args, dispatch) {
-      var options = args[0];
-      var onSuccessCallback = function() {
-        fileSystemProviderInternal.closeFileRequestedSuccess(
-            options.fileSystemId, options.requestId);
-      };
-      var onErrorCallback = function(error) {
-        fileSystemProviderInternal.closeFileRequestedError(
-            options.fileSystemId, options.requestId, error);
-      }
-      dispatch([options, onSuccessCallback, onErrorCallback]);
-    });
+    massageArgumentsDefault);
 
 eventBindings.registerArgumentMassager(
     'fileSystemProvider.onReadFileRequested',
     function(args, dispatch) {
+      var executionStart = Date.now();
       var options = args[0];
       var onSuccessCallback = function(data, hasNext) {
         fileSystemProviderInternal.readFileRequestedSuccess(
-            options.fileSystemId, options.requestId, data, hasNext);
+            options.fileSystemId, options.requestId, data, hasNext,
+            Date.now() - executionStart);
       };
       var onErrorCallback = function(error) {
-        fileSystemProviderInternal.readFileRequestedError(
-            options.fileSystemId, options.requestId, error);
+        fileSystemProviderInternal.operationRequestedError(
+            options.fileSystemId, options.requestId, error,
+            Date.now() - executionStart);
       }
       dispatch([options, onSuccessCallback, onErrorCallback]);
     });
+
+eventBindings.registerArgumentMassager(
+    'fileSystemProvider.onCreateDirectoryRequested',
+    massageArgumentsDefault);
+
+eventBindings.registerArgumentMassager(
+    'fileSystemProvider.onDeleteEntryRequested',
+    massageArgumentsDefault);
+
+eventBindings.registerArgumentMassager(
+    'fileSystemProvider.onCreateFileRequested',
+    massageArgumentsDefault);
+
+eventBindings.registerArgumentMassager(
+    'fileSystemProvider.onCopyEntryRequested',
+    massageArgumentsDefault);
+
+eventBindings.registerArgumentMassager(
+    'fileSystemProvider.onMoveEntryRequested',
+    massageArgumentsDefault);
+
+eventBindings.registerArgumentMassager(
+    'fileSystemProvider.onTruncateRequested',
+    massageArgumentsDefault);
+
+eventBindings.registerArgumentMassager(
+    'fileSystemProvider.onWriteFileRequested',
+    massageArgumentsDefault);
 
 exports.binding = binding.generate();

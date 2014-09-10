@@ -12,6 +12,7 @@
 #include "chrome/browser/extensions/api/capture_web_contents_function.h"
 #include "chrome/browser/extensions/api/execute_code_function.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
+#include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/common/extensions/api/tabs.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -40,6 +41,10 @@ class PrefRegistrySyncable;
 }
 
 namespace extensions {
+
+// Converts a ZoomMode to its ZoomSettings representation.
+void ZoomModeToZoomSettings(ZoomController::ZoomMode zoom_mode,
+                            api::tabs::ZoomSettings* zoom_settings);
 
 // Windows
 class WindowsGetFunction : public ChromeSyncExtensionFunction {
@@ -150,7 +155,6 @@ class TabsUpdateFunction : public ChromeAsyncExtensionFunction {
  private:
   virtual bool RunAsync() OVERRIDE;
   void OnExecuteCodeFinished(const std::string& error,
-                             int32 on_page_id,
                              const GURL& on_url,
                              const base::ListValue& script_result);
 
@@ -240,7 +244,6 @@ class TabsExecuteScriptFunction : public ExecuteCodeInTabFunction {
 
   virtual void OnExecuteCodeFinished(
       const std::string& error,
-      int32 on_page_id,
       const GURL& on_url,
       const base::ListValue& script_result) OVERRIDE;
 
@@ -254,6 +257,55 @@ class TabsInsertCSSFunction : public ExecuteCodeInTabFunction {
   virtual bool ShouldInsertCSS() const OVERRIDE;
 
   DECLARE_EXTENSION_FUNCTION("tabs.insertCSS", TABS_INSERTCSS)
+};
+
+class ZoomAPIFunction : public ChromeAsyncExtensionFunction {
+ protected:
+  virtual ~ZoomAPIFunction() {}
+
+  // Gets the WebContents for |tab_id| if it is specified. Otherwise get the
+  // WebContents for the active tab in the current window. Calling this function
+  // may set error_.
+  //
+  // TODO(...) many other tabs API functions use similar behavior. There should
+  // be a way to share this implementation somehow.
+  content::WebContents* GetWebContents(int tab_id);
+};
+
+class TabsSetZoomFunction : public ZoomAPIFunction {
+ private:
+  virtual ~TabsSetZoomFunction() {}
+
+  virtual bool RunAsync() OVERRIDE;
+
+  DECLARE_EXTENSION_FUNCTION("tabs.setZoom", TABS_SETZOOM)
+};
+
+class TabsGetZoomFunction : public ZoomAPIFunction {
+ private:
+  virtual ~TabsGetZoomFunction() {}
+
+  virtual bool RunAsync() OVERRIDE;
+
+  DECLARE_EXTENSION_FUNCTION("tabs.getZoom", TABS_GETZOOM)
+};
+
+class TabsSetZoomSettingsFunction : public ZoomAPIFunction {
+ private:
+  virtual ~TabsSetZoomSettingsFunction() {}
+
+  virtual bool RunAsync() OVERRIDE;
+
+  DECLARE_EXTENSION_FUNCTION("tabs.setZoomSettings", TABS_SETZOOMSETTINGS)
+};
+
+class TabsGetZoomSettingsFunction : public ZoomAPIFunction {
+ private:
+  virtual ~TabsGetZoomSettingsFunction() {}
+
+  virtual bool RunAsync() OVERRIDE;
+
+  DECLARE_EXTENSION_FUNCTION("tabs.getZoomSettings", TABS_GETZOOMSETTINGS)
 };
 
 }  // namespace extensions

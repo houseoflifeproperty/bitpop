@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/loader/appcache/ApplicationCache.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/events/EventListener.h"
@@ -34,7 +34,7 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 
-namespace WebCore {
+namespace blink {
 
 ApplicationCache::ApplicationCache(LocalFrame* frame)
     : DOMWindowProperty(frame)
@@ -124,4 +124,4 @@ const AtomicString& ApplicationCache::toEventType(ApplicationCacheHost::EventID 
     return EventTypeNames::error;
 }
 
-} // namespace WebCore
+} // namespace blink

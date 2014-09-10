@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "mojo/public/cpp/gles2/gles2.h"
+#include "mojo/public/cpp/bindings/callback.h"
 #include "mojo/services/view_manager/view_manager_export.h"
 
 namespace aura {
@@ -26,9 +26,8 @@ class Screen;
 
 namespace mojo {
 
-class ServiceProvider;
+class ApplicationConnection;
 
-namespace view_manager {
 namespace service {
 
 class RootNodeManager;
@@ -37,9 +36,10 @@ class RootViewManagerDelegate;
 // RootViewManager binds the root node to an actual display.
 class MOJO_VIEW_MANAGER_EXPORT RootViewManager {
  public:
-  RootViewManager(ServiceProvider* service_provider,
+  RootViewManager(ApplicationConnection* app_connection,
                   RootNodeManager* root_node,
-                  RootViewManagerDelegate* delegate);
+                  RootViewManagerDelegate* delegate,
+                  const Callback<void()>& native_viewport_closed_callback);
   virtual ~RootViewManager();
 
   // See description above field for details.
@@ -51,8 +51,6 @@ class MOJO_VIEW_MANAGER_EXPORT RootViewManager {
   RootViewManagerDelegate* delegate_;
 
   RootNodeManager* root_node_manager_;
-
-  GLES2Initializer gles_initializer_;
 
   // Returns true if adding the root node's window to |window_tree_host_|.
   bool in_setup_;
@@ -66,7 +64,6 @@ class MOJO_VIEW_MANAGER_EXPORT RootViewManager {
 };
 
 }  // namespace service
-}  // namespace view_manager
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_VIEW_MANAGER_ROOT_VIEW_MANAGER_H_

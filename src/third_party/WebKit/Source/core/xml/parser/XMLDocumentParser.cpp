@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2000 Peter Kelly (pmk@post.com)
- * Copyright (C) 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2005, 2006, 2008, 2014 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Alexey Proskuryakov (ap@webkit.org)
  * Copyright (C) 2007 Samuel Weinig (sam@webkit.org)
  * Copyright (C) 2008 Nokia Corporation and/or its subsidiary(-ies)
@@ -26,10 +26,10 @@
 #include "config.h"
 #include "core/xml/parser/XMLDocumentParser.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "bindings/v8/ScriptController.h"
-#include "bindings/v8/ScriptSourceCode.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ScriptController.h"
+#include "bindings/core/v8/ScriptSourceCode.h"
 #include "core/FetchInitiatorTypeNames.h"
 #include "core/HTMLNames.h"
 #include "core/XMLNSNames.h"
@@ -58,6 +58,7 @@
 #include "core/xml/parser/XMLParserInput.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/SharedBuffer.h"
+#include "platform/TraceEvent.h"
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
@@ -72,7 +73,7 @@
 #include <libxml/parserInternals.h>
 #include <libxslt/xslt.h>
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -404,6 +405,7 @@ void XMLDocumentParser::detach()
 
 void XMLDocumentParser::end()
 {
+    TRACE_EVENT0("blink", "XMLDocumentParser::end");
     // XMLDocumentParserLibxml2 will do bad things to the document if doEnd() is called.
     // I don't believe XMLDocumentParserQt needs doEnd called in the fragment case.
     ASSERT(!m_parsingFragment);
@@ -503,7 +505,7 @@ bool XMLDocumentParser::parseDocumentFragment(const String& chunk, DocumentFragm
     // FIXME: We need to implement the HTML5 XML Fragment parsing algorithm:
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/the-xhtml-syntax.html#xml-fragment-parsing-algorithm
     // For now we have a hack for script/style innerHTML support:
-    if (contextElement && (contextElement->hasLocalName(HTMLNames::scriptTag) || contextElement->hasLocalName(HTMLNames::styleTag))) {
+    if (contextElement && (contextElement->hasLocalName(scriptTag.localName()) || contextElement->hasLocalName(styleTag.localName()))) {
         fragment->parserAppendChild(fragment->document().createTextNode(chunk));
         return true;
     }
@@ -810,15 +812,13 @@ XMLDocumentParser::XMLDocumentParser(DocumentFragment* fragment, Element* parent
 
     for (; !elemStack.isEmpty(); elemStack.removeLast()) {
         Element* element = elemStack.last();
-        if (element->hasAttributes()) {
-            AttributeCollection attributes = element->attributes();
-            AttributeCollection::const_iterator end = attributes.end();
-            for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
-                if (it->localName() == xmlnsAtom)
-                    m_defaultNamespaceURI = it->value();
-                else if (it->prefix() == xmlnsAtom)
-                    m_prefixToNamespaceMap.set(it->localName(), it->value());
-            }
+        AttributeCollection attributes = element->attributes();
+        AttributeCollection::iterator end = attributes.end();
+        for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
+            if (it->localName() == xmlnsAtom)
+                m_defaultNamespaceURI = it->value();
+            else if (it->prefix() == xmlnsAtom)
+                m_prefixToNamespaceMap.set(it->localName(), it->value());
         }
     }
 
@@ -861,6 +861,7 @@ void XMLDocumentParser::trace(Visitor* visitor)
 
 void XMLDocumentParser::doWrite(const String& parseString)
 {
+    TRACE_EVENT0("blink", "XMLDocumentParser::doWrite");
     ASSERT(!isDetached());
     if (!m_context)
         initializeParserContext();
@@ -1563,6 +1564,7 @@ bool XMLDocumentParser::appendFragmentSource(const String& chunk)
     if (chunkAsUtf8.length() > INT_MAX)
         return false;
 
+    TRACE_EVENT0("blink", "XMLDocumentParser::appendFragmentSource");
     initializeParserContext(chunkAsUtf8);
     xmlParseContent(context());
     endDocument(); // Close any open text nodes.
@@ -1633,4 +1635,4 @@ HashMap<String, String> parseAttributes(const String& string, bool& attrsOK)
     return state.attributes;
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -3,17 +3,19 @@
 // found in the LICENSE file.
 
 /**
- * @param {!WebInspector.TracingModel} tracingModel
  * @constructor
+ * @param {!WebInspector.TracingModel} tracingModel
+ * @param {!WebInspector.TimelineModel.Filter} recordFilter
  * @extends {WebInspector.TimelineModel}
  */
-WebInspector.TracingTimelineModel = function(tracingModel)
+WebInspector.TracingTimelineModel = function(tracingModel, recordFilter)
 {
-    WebInspector.TimelineModel.call(this, tracingModel.target());
+    WebInspector.TimelineModel.call(this);
     this._tracingModel = tracingModel;
-    this._mainThreadEvents = [];
     this._inspectedTargetEvents = [];
-
+    this._recordFilter = recordFilter;
+    this._tracingModel.addEventListener(WebInspector.TracingModel.Events.TracingStarted, this._onTracingStarted, this);
+    this._tracingModel.addEventListener(WebInspector.TracingModel.Events.TracingComplete, this._onTracingComplete, this);
     this.reset();
 }
 
@@ -33,6 +35,7 @@ WebInspector.TracingTimelineModel.RecordType = {
     InvalidateLayout: "InvalidateLayout",
     Layout: "Layout",
     UpdateLayer: "UpdateLayer",
+    UpdateLayerTree: "UpdateLayerTree",
     PaintSetup: "PaintSetup",
     Paint: "Paint",
     PaintImage: "PaintImage",
@@ -66,6 +69,7 @@ WebInspector.TracingTimelineModel.RecordType = {
     FunctionCall: "FunctionCall",
     GCEvent: "GCEvent",
     JSFrame: "JSFrame",
+    JSSample: "JSSample",
 
     UpdateCounters: "UpdateCounters",
 
@@ -83,6 +87,7 @@ WebInspector.TracingTimelineModel.RecordType = {
     CallStack: "CallStack",
     SetLayerTreeId: "SetLayerTreeId",
     TracingStartedInPage: "TracingStartedInPage",
+    TracingStartedInWorker: "TracingStartedInWorker",
 
     DecodeImage: "Decode Image",
     ResizeImage: "Resize Image",
@@ -94,7 +99,16 @@ WebInspector.TracingTimelineModel.RecordType = {
     PictureSnapshot: "cc::Picture"
 };
 
-WebInspector.TracingTimelineModel.defaultTracingCategoryFilter = "*,disabled-by-default-cc.debug,disabled-by-default-devtools.timeline,disabled-by-default-devtools.timeline.frame";
+/**
+ * @constructor
+ * @param {string} name
+ */
+WebInspector.TracingTimelineModel.VirtualThread = function(name)
+{
+    this.name = name;
+    /** @type {!Array.<!WebInspector.TracingModel.Event>} */
+    this.events = [];
+}
 
 WebInspector.TracingTimelineModel.prototype = {
     /**
@@ -104,23 +118,38 @@ WebInspector.TracingTimelineModel.prototype = {
      */
     startRecording: function(captureStacks, captureMemory, capturePictures)
     {
-        var categories;
-        if (WebInspector.experimentsSettings.timelineTracingMode.isEnabled()) {
-            categories = WebInspector.TracingTimelineModel.defaultTracingCategoryFilter;
-        } else {
-            var categoriesArray = ["disabled-by-default-devtools.timeline", "disabled-by-default-devtools.timeline.frame", "devtools"];
-            if (captureStacks)
-                categoriesArray.push("disabled-by-default-devtools.timeline.stack");
-            if (capturePictures)
-                categoriesArray.push("disabled-by-default-devtools.timeline.layers", "disabled-by-default-devtools.timeline.picture");
-            categories = categoriesArray.join(",");
+        function disabledByDefault(category)
+        {
+            return "disabled-by-default-" + category;
         }
+        var categoriesArray = ["-*", disabledByDefault("devtools.timeline"), disabledByDefault("devtools.timeline.frame")];
+        if (captureStacks) {
+            categoriesArray.push(disabledByDefault("devtools.timeline.stack"));
+            if (WebInspector.experimentsSettings.timelineJSCPUProfile.isEnabled()) {
+                this._jsProfilerStarted = true;
+                this._currentTarget = WebInspector.context.flavor(WebInspector.Target);
+                this._configureCpuProfilerSamplingInterval();
+                this._currentTarget.profilerAgent().start();
+            }
+        }
+        if (capturePictures) {
+            categoriesArray = categoriesArray.concat([
+                disabledByDefault("devtools.timeline.layers"),
+                disabledByDefault("devtools.timeline.picture"),
+                disabledByDefault("blink.graphics_context_annotations")]);
+        }
+        var categories = categoriesArray.join(",");
         this._startRecordingWithCategories(categories);
     },
 
     stopRecording: function()
     {
-        this._tracingModel.stop(this._didStopRecordingTraceEvents.bind(this));
+        this._stopCallbackBarrier = new CallbackBarrier();
+        if (this._jsProfilerStarted) {
+            this._currentTarget.profilerAgent().stop(this._stopCallbackBarrier.createCallback(this._didStopRecordingJSSamples.bind(this)));
+            this._jsProfilerStarted = false;
+        }
+        this._tracingModel.stop();
     },
 
     /**
@@ -129,10 +158,21 @@ WebInspector.TracingTimelineModel.prototype = {
      */
     setEventsForTest: function(sessionId, events)
     {
-        this.reset();
-        this._didStartRecordingTraceEvents();
+        this._onTracingStarted();
         this._tracingModel.setEventsForTest(sessionId, events);
-        this._didStopRecordingTraceEvents();
+        this._onTracingComplete();
+    },
+
+    _configureCpuProfilerSamplingInterval: function()
+    {
+        var intervalUs = WebInspector.settings.highResolutionCpuProfiling.get() ? 100 : 1000;
+        this._currentTarget.profilerAgent().setSamplingInterval(intervalUs, didChangeInterval);
+
+        function didChangeInterval(error)
+        {
+            if (error)
+                WebInspector.console.error(error);
+        }
     },
 
     /**
@@ -141,17 +181,39 @@ WebInspector.TracingTimelineModel.prototype = {
     _startRecordingWithCategories: function(categories)
     {
         this.reset();
-        this._tracingModel.start(categories, "", this._didStartRecordingTraceEvents.bind(this));
+        this._tracingModel.start(categories, "");
     },
 
-    _didStartRecordingTraceEvents: function()
+    _onTracingStarted: function()
     {
+        this.reset();
         this.dispatchEventToListeners(WebInspector.TimelineModel.Events.RecordingStarted);
+    },
+
+    _onTracingComplete: function()
+    {
+        if (this._stopCallbackBarrier)
+            this._stopCallbackBarrier.callWhenDone(this._didStopRecordingTraceEvents.bind(this));
+        else
+            this._didStopRecordingTraceEvents();
+    },
+
+    /**
+     * @param {?Protocol.Error} error
+     * @param {?ProfilerAgent.CPUProfile} cpuProfile
+     */
+    _didStopRecordingJSSamples: function(error, cpuProfile)
+    {
+        if (error)
+            WebInspector.console.error(error);
+        this._cpuProfile = cpuProfile;
     },
 
     _didStopRecordingTraceEvents: function()
     {
-        var events = this._tracingModel.devtoolsMetadataEvents();
+        this._stopCallbackBarrier = null;
+        var events = this._tracingModel.devtoolsPageMetadataEvents();
+        var workerMetadataEvents = this._tracingModel.devtoolsWorkerMetadataEvents();
         events.sort(WebInspector.TracingModel.Event.compareStartTime);
 
         this._resetProcessingState();
@@ -164,11 +226,24 @@ WebInspector.TracingTimelineModel.prototype = {
             if (i + 1 < length)
                 endTime = events[i + 1].startTime;
 
-            process.sortedThreads().forEach(this._processThreadEvents.bind(this, startTime, endTime, event.thread));
+            var threads = process.sortedThreads();
+            for (var j = 0; j < threads.length; j++) {
+                var thread = threads[j];
+                if (thread.name() === "WebCore: Worker" && !workerMetadataEvents.some(function(e) { return e.thread === thread; }))
+                    continue;
+                this._processThreadEvents(startTime, endTime, event.thread, thread);
+            }
         }
         this._resetProcessingState();
 
         this._inspectedTargetEvents.sort(WebInspector.TracingModel.Event.compareStartTime);
+
+        if (this._cpuProfile) {
+            var jsSamples = WebInspector.TimelineJSProfileProcessor.generateTracingEventsFromCpuProfile(this, this._cpuProfile);
+            this._inspectedTargetEvents = this._inspectedTargetEvents.mergeOrdered(jsSamples, WebInspector.TracingModel.Event.orderedCompareStartTime);
+            this._setMainThreadEvents(this.mainThreadEvents().mergeOrdered(jsSamples, WebInspector.TracingModel.Event.orderedCompareStartTime));
+            this._cpuProfile = null;
+        }
 
         this._buildTimelineRecords();
         this.dispatchEventToListeners(WebInspector.TimelineModel.Events.RecordingStopped);
@@ -206,8 +281,45 @@ WebInspector.TracingTimelineModel.prototype = {
         return this._mainThreadEvents;
     },
 
+    /**
+     * @param {!Array.<!WebInspector.TracingModel.Event>} events
+     */
+    _setMainThreadEvents: function(events)
+    {
+        this._mainThreadEvents = events;
+    },
+
+    /**
+     * @return {!Array.<!WebInspector.TracingTimelineModel.VirtualThread>}
+     */
+    virtualThreads: function()
+    {
+        return this._virtualThreads;
+    },
+
+    /**
+     * @param {!WebInspector.ChunkedFileReader} fileReader
+     * @param {!WebInspector.Progress} progress
+     * @return {!WebInspector.OutputStream}
+     */
+    createLoader: function(fileReader, progress)
+    {
+        return new WebInspector.TracingModelLoader(this, fileReader, progress);
+    },
+
+    /**
+     * @param {!WebInspector.OutputStream} stream
+     */
+    writeToStream: function(stream)
+    {
+        var saver = new WebInspector.TracingTimelineSaver(stream);
+        var events = this._tracingModel.rawEvents();
+        saver.save(events);
+    },
+
     reset: function()
     {
+        this._virtualThreads = [];
         this._mainThreadEvents = [];
         this._inspectedTargetEvents = [];
         WebInspector.TimelineModel.prototype.reset.call(this);
@@ -216,7 +328,7 @@ WebInspector.TracingTimelineModel.prototype = {
     _buildTimelineRecords: function()
     {
         var recordStack = [];
-        var mainThreadEvents = this._mainThreadEvents;
+        var mainThreadEvents = this.mainThreadEvents();
         for (var i = 0, size = mainThreadEvents.length; i < size; ++i) {
             var event = mainThreadEvents[i];
             while (recordStack.length) {
@@ -224,16 +336,22 @@ WebInspector.TracingTimelineModel.prototype = {
                 if (top._event.endTime >= event.startTime)
                     break;
                 recordStack.pop();
+                if (!recordStack.length)
+                    this._addTopLevelRecord(top);
             }
-            var parentRecord = recordStack.peekLast() || null;
-            var record = new WebInspector.TracingTimelineModel.TraceEventRecord(this, event, parentRecord);
-            if (WebInspector.TracingTimelineUIUtils.isEventDivider(record))
+            var record = new WebInspector.TracingTimelineModel.TraceEventRecord(this, event);
+            if (WebInspector.TracingTimelineUIUtils.isMarkerEvent(event))
                 this._eventDividerRecords.push(record);
-            if (!recordStack.length)
-                this._addTopLevelRecord(record);
+            if (!this._recordFilter.accept(record))
+                continue;
+            var parentRecord = recordStack.peekLast();
+            if (parentRecord)
+                parentRecord._addChild(record);
             if (event.endTime)
                 recordStack.push(record);
         }
+        if (recordStack.length)
+            this._addTopLevelRecord(recordStack[0]);
     },
 
     /**
@@ -243,9 +361,9 @@ WebInspector.TracingTimelineModel.prototype = {
     {
         this._updateBoundaries(record);
         this._records.push(record);
-        if (record.type() === WebInspector.TimelineModel.RecordType.Program)
+        if (record.type() === WebInspector.TracingTimelineModel.RecordType.Program)
             this._mainThreadTasks.push(record);
-        if (record.type() === WebInspector.TimelineModel.RecordType.GPUTask)
+        if (record.type() === WebInspector.TracingTimelineModel.RecordType.GPUTask)
             this._gpuThreadTasks.push(record);
         this.dispatchEventToListeners(WebInspector.TimelineModel.Events.RecordAdded, record);
     },
@@ -277,14 +395,22 @@ WebInspector.TracingTimelineModel.prototype = {
         var length = events.length;
         var i = events.lowerBound(startTime, function (time, event) { return time - event.startTime });
 
+        var threadEvents;
+        if (thread === mainThread) {
+            threadEvents = this._mainThreadEvents;
+        } else {
+            var virtualThread = new WebInspector.TracingTimelineModel.VirtualThread(thread.name());
+            threadEvents = virtualThread.events;
+            this._virtualThreads.push(virtualThread);
+        }
+
         this._eventStack = [];
         for (; i < length; i++) {
             var event = events[i];
             if (endTime && event.startTime >= endTime)
                 break;
             this._processEvent(event);
-            if (thread === mainThread)
-                this._mainThreadEvents.push(event);
+            threadEvents.push(event);
             this._inspectedTargetEvents.push(event);
         }
     },
@@ -314,46 +440,46 @@ WebInspector.TracingTimelineModel.prototype = {
 
         switch (event.name) {
         case recordTypes.CallStack:
-            var lastMainThreadEvent = this._mainThreadEvents.peekLast();
-            if (lastMainThreadEvent && event.args.stack && event.args.stack.length)
-                lastMainThreadEvent.stackTrace = event.args.stack;
+            var lastMainThreadEvent = this.mainThreadEvents().peekLast();
+            if (lastMainThreadEvent && event.args["stack"] && event.args["stack"].length)
+                lastMainThreadEvent.stackTrace = event.args["stack"];
             break;
 
         case recordTypes.ResourceSendRequest:
-            this._sendRequestEvents[event.args.data["requestId"]] = event;
-            event.imageURL = event.args.data["url"];
+            this._sendRequestEvents[event.args["data"]["requestId"]] = event;
+            event.imageURL = event.args["data"]["url"];
             break;
 
         case recordTypes.ResourceReceiveResponse:
         case recordTypes.ResourceReceivedData:
         case recordTypes.ResourceFinish:
-            event.initiator = this._sendRequestEvents[event.args.data["requestId"]];
+            event.initiator = this._sendRequestEvents[event.args["data"]["requestId"]];
             if (event.initiator)
                 event.imageURL = event.initiator.imageURL;
             break;
 
         case recordTypes.TimerInstall:
-            this._timerEvents[event.args.data["timerId"]] = event;
+            this._timerEvents[event.args["data"]["timerId"]] = event;
             break;
 
         case recordTypes.TimerFire:
-            event.initiator = this._timerEvents[event.args.data["timerId"]];
+            event.initiator = this._timerEvents[event.args["data"]["timerId"]];
             break;
 
         case recordTypes.RequestAnimationFrame:
-            this._requestAnimationFrameEvents[event.args.data["id"]] = event;
+            this._requestAnimationFrameEvents[event.args["data"]["id"]] = event;
             break;
 
         case recordTypes.FireAnimationFrame:
-            event.initiator = this._requestAnimationFrameEvents[event.args.data["id"]];
+            event.initiator = this._requestAnimationFrameEvents[event.args["data"]["id"]];
             break;
 
         case recordTypes.ScheduleStyleRecalculation:
-            this._lastScheduleStyleRecalculation[event.args.frame] = event;
+            this._lastScheduleStyleRecalculation[event.args["frame"]] = event;
             break;
 
         case recordTypes.RecalculateStyles:
-            event.initiator = this._lastScheduleStyleRecalculation[event.args.frame];
+            event.initiator = this._lastScheduleStyleRecalculation[event.args["frame"]];
             this._lastRecalculateStylesEvent = event;
             break;
 
@@ -361,7 +487,7 @@ WebInspector.TracingTimelineModel.prototype = {
             // Consider style recalculation as a reason for layout invalidation,
             // but only if we had no earlier layout invalidation records.
             var layoutInitator = event;
-            var frameId = event.args.frame;
+            var frameId = event.args["frame"];
             if (!this._layoutInvalidate[frameId] && this._lastRecalculateStylesEvent && this._lastRecalculateStylesEvent.endTime >  event.startTime)
                 layoutInitator = this._lastRecalculateStylesEvent.initiator;
             this._layoutInvalidate[frameId] = layoutInitator;
@@ -378,13 +504,13 @@ WebInspector.TracingTimelineModel.prototype = {
             break;
 
         case recordTypes.WebSocketCreate:
-            this._webSocketCreateEvents[event.args.data["identifier"]] = event;
+            this._webSocketCreateEvents[event.args["data"]["identifier"]] = event;
             break;
 
         case recordTypes.WebSocketSendHandshakeRequest:
         case recordTypes.WebSocketReceiveHandshakeResponse:
         case recordTypes.WebSocketDestroy:
-            event.initiator = this._webSocketCreateEvents[event.args.data["identifier"]];
+            event.initiator = this._webSocketCreateEvents[event.args["data"]["identifier"]];
             break;
 
         case recordTypes.EvaluateScript:
@@ -403,6 +529,9 @@ WebInspector.TracingTimelineModel.prototype = {
             var layerUpdateEvent = this._findAncestorEvent(recordTypes.UpdateLayer);
             if (!layerUpdateEvent || layerUpdateEvent.args["layerTreeId"] !== this._inspectedTargetLayerTreeId)
                 break;
+            // Only keep layer paint events, skip paints for subframes that get painted to the same layer as parent.
+            if (!event.args["data"]["layerId"])
+                break;
             this._lastPaintForLayer[layerUpdateEvent.args["layerId"]] = event;
             break;
 
@@ -411,9 +540,10 @@ WebInspector.TracingTimelineModel.prototype = {
             if (!layerUpdateEvent || layerUpdateEvent.args["layerTreeId"] !== this._inspectedTargetLayerTreeId)
                 break;
             var paintEvent = this._lastPaintForLayer[layerUpdateEvent.args["layerId"]];
-            if (!paintEvent)
+            if (!paintEvent || !event.args["snapshot"] || !event.args["snapshot"]["params"])
                 break;
             paintEvent.picture = event.args["snapshot"]["skp64"];
+            paintEvent.layerRect = event.args["snapshot"]["params"]["layer_rect"];
             break;
 
         case recordTypes.ScrollLayer:
@@ -467,21 +597,96 @@ WebInspector.TracingTimelineModel.prototype = {
 }
 
 /**
+ * @interface
+ */
+WebInspector.TracingTimelineModel.Filter = function() { }
+
+WebInspector.TracingTimelineModel.Filter.prototype = {
+    /**
+     * @param {!WebInspector.TracingModel.Event} event
+     * @return {boolean}
+     */
+    accept: function(event) { }
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.TracingTimelineModel.Filter}
+ * @param {!Array.<string>} eventNames
+ */
+WebInspector.TracingTimelineModel.EventNameFilter = function(eventNames)
+{
+    this._eventNames = eventNames.keySet();
+}
+
+WebInspector.TracingTimelineModel.EventNameFilter.prototype = {
+    /**
+     * @param {!WebInspector.TracingModel.Event} event
+     * @return {boolean}
+     */
+    accept: function(event)
+    {
+        throw new Error("Not implemented.");
+    }
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.TracingTimelineModel.EventNameFilter}
+ * @param {!Array.<string>} includeNames
+ */
+WebInspector.TracingTimelineModel.InclusiveEventNameFilter = function(includeNames)
+{
+    WebInspector.TracingTimelineModel.EventNameFilter.call(this, includeNames)
+}
+
+WebInspector.TracingTimelineModel.InclusiveEventNameFilter.prototype = {
+    /**
+     * @override
+     * @param {!WebInspector.TracingModel.Event} event
+     * @return {boolean}
+     */
+    accept: function(event)
+    {
+        return !!this._eventNames[event.name];
+    },
+    __proto__: WebInspector.TracingTimelineModel.EventNameFilter.prototype
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.TracingTimelineModel.EventNameFilter}
+ * @param {!Array.<string>} excludeNames
+ */
+WebInspector.TracingTimelineModel.ExclusiveEventNameFilter = function(excludeNames)
+{
+    WebInspector.TracingTimelineModel.EventNameFilter.call(this, excludeNames)
+}
+
+WebInspector.TracingTimelineModel.ExclusiveEventNameFilter.prototype = {
+    /**
+     * @override
+     * @param {!WebInspector.TracingModel.Event} event
+     * @return {boolean}
+     */
+    accept: function(event)
+    {
+        return !this._eventNames[event.name];
+    },
+    __proto__: WebInspector.TracingTimelineModel.EventNameFilter.prototype
+}
+
+/**
  * @constructor
  * @implements {WebInspector.TimelineModel.Record}
  * @param {!WebInspector.TimelineModel} model
  * @param {!WebInspector.TracingModel.Event} traceEvent
- * @param {?WebInspector.TracingTimelineModel.TraceEventRecord} parentRecord
  */
-WebInspector.TracingTimelineModel.TraceEventRecord = function(model, traceEvent, parentRecord)
+WebInspector.TracingTimelineModel.TraceEventRecord = function(model, traceEvent)
 {
     this._model = model;
     this._event = traceEvent;
     traceEvent._timelineRecord = this;
-    if (parentRecord) {
-        this.parent = parentRecord;
-        parentRecord._children.push(this);
-    }
     this._children = [];
 }
 
@@ -505,11 +710,11 @@ WebInspector.TracingTimelineModel.TraceEventRecord.prototype = {
     },
 
     /**
-     * @return {!WebInspector.Target}
+     * @return {?WebInspector.Target}
      */
     target: function()
     {
-        return this._model.target();
+        return this._event.thread.target();
     },
 
     /**
@@ -529,15 +734,6 @@ WebInspector.TracingTimelineModel.TraceEventRecord.prototype = {
     },
 
     /**
-     * @return {!WebInspector.TimelineCategory}
-     */
-    category: function()
-    {
-        var style = WebInspector.TracingTimelineUIUtils.styleForTraceEvent(this._event.name);
-        return style.category;
-    },
-
-    /**
      * @return {number}
      */
     startTime: function()
@@ -546,11 +742,12 @@ WebInspector.TracingTimelineModel.TraceEventRecord.prototype = {
     },
 
     /**
-     * @return {string|undefined}
+     * @return {string}
      */
     thread: function()
     {
-        return "CPU";
+        // FIXME: Should return the actual thread name.
+        return WebInspector.TimelineModel.MainThreadName;
     },
 
     /**
@@ -574,7 +771,7 @@ WebInspector.TracingTimelineModel.TraceEventRecord.prototype = {
      */
     data: function()
     {
-        return this._event.args.data;
+        return this._event.args["data"];
     },
 
     /**
@@ -598,7 +795,7 @@ WebInspector.TracingTimelineModel.TraceEventRecord.prototype = {
         case WebInspector.TracingTimelineModel.RecordType.Layout:
             return this._event.args["beginData"]["frameId"];
         default:
-            var data = this._event.args.data;
+            var data = this._event.args["data"];
             return (data && data["frame"]) || "";
         }
     },
@@ -634,14 +831,6 @@ WebInspector.TracingTimelineModel.TraceEventRecord.prototype = {
     },
 
     /**
-     * @return {!Object.<string, number>}
-     */
-    aggregatedStats: function()
-    {
-        return {};
-    },
-
-    /**
      * @return {?Array.<string>}
      */
     warnings: function()
@@ -657,5 +846,166 @@ WebInspector.TracingTimelineModel.TraceEventRecord.prototype = {
     traceEvent: function()
     {
         return this._event;
+    },
+
+    /**
+     * @param {!WebInspector.TracingTimelineModel.TraceEventRecord} child
+     */
+    _addChild: function(child)
+    {
+        this._children.push(child);
+        child.parent = this;
+    },
+
+    /**
+     * @return {!WebInspector.TimelineModel}
+     */
+    timelineModel: function()
+    {
+        return this._model;
+    }
+}
+
+
+
+/**
+ * @constructor
+ * @implements {WebInspector.OutputStream}
+ * @param {!WebInspector.TracingTimelineModel} model
+ * @param {!{cancel: function()}} reader
+ * @param {!WebInspector.Progress} progress
+ */
+WebInspector.TracingModelLoader = function(model, reader, progress)
+{
+    this._model = model;
+    this._reader = reader;
+    this._progress = progress;
+    this._buffer = "";
+    this._firstChunk = true;
+    this._loader = new WebInspector.TracingModel.Loader(model._tracingModel);
+}
+
+WebInspector.TracingModelLoader.prototype = {
+    /**
+     * @param {string} chunk
+     */
+    write: function(chunk)
+    {
+        var data = this._buffer + chunk;
+        var lastIndex = 0;
+        var index;
+        do {
+            index = lastIndex;
+            lastIndex = WebInspector.TextUtils.findBalancedCurlyBrackets(data, index);
+        } while (lastIndex !== -1)
+
+        var json = data.slice(0, index) + "]";
+        this._buffer = data.slice(index);
+
+        if (!index)
+            return;
+
+        if (this._firstChunk) {
+            this._model.reset();
+        } else {
+            var commaIndex = json.indexOf(",");
+            if (commaIndex !== -1)
+                json = json.slice(commaIndex + 1);
+            json = "[" + json;
+        }
+
+        var items;
+        try {
+            items = /** @type {!Array.<!WebInspector.TracingModel.EventPayload>} */ (JSON.parse(json));
+        } catch (e) {
+            this._reportErrorAndCancelLoading("Malformed timeline data: " + e);
+            return;
+        }
+
+        if (this._firstChunk) {
+            this._firstChunk = false;
+            if (this._looksLikeAppVersion(items[0])) {
+                this._reportErrorAndCancelLoading("Old Timeline format is not supported.");
+                return;
+            }
+        }
+
+        try {
+            this._loader.loadNextChunk(items);
+        } catch(e) {
+            this._reportErrorAndCancelLoading("Malformed timeline data: " + e);
+            return;
+        }
+    },
+
+    _reportErrorAndCancelLoading: function(messsage)
+    {
+        WebInspector.console.error(messsage);
+        this._model.reset();
+        this._reader.cancel();
+        this._progress.done();
+    },
+
+    _looksLikeAppVersion: function(item)
+    {
+        return typeof item === "string" && item.indexOf("Chrome") !== -1;
+    },
+
+    close: function()
+    {
+        this._loader.finish();
+    }
+}
+
+/**
+ * @constructor
+ * @param {!WebInspector.OutputStream} stream
+ */
+WebInspector.TracingTimelineSaver = function(stream)
+{
+    this._stream = stream;
+}
+
+WebInspector.TracingTimelineSaver.prototype = {
+    /**
+     * @param {!Array.<*>} payloads
+     */
+    save: function(payloads)
+    {
+        this._payloads = payloads;
+        this._recordIndex = 0;
+        this._writeNextChunk(this._stream);
+    },
+
+    _writeNextChunk: function(stream)
+    {
+        const separator = ",\n";
+        var data = [];
+        var length = 0;
+
+        if (this._recordIndex === 0)
+            data.push("[");
+        while (this._recordIndex < this._payloads.length) {
+            var item = JSON.stringify(this._payloads[this._recordIndex]);
+            var itemLength = item.length + separator.length;
+            if (length + itemLength > WebInspector.TimelineModelImpl.TransferChunkLengthBytes)
+                break;
+            length += itemLength;
+            if (this._recordIndex > 0)
+                data.push(separator);
+            data.push(item);
+            ++this._recordIndex;
+        }
+        if (this._recordIndex === this._payloads.length)
+            data.push("]");
+        stream.write(data.join(""), this._didWriteNextChunk.bind(this, stream));
+    },
+
+    _didWriteNextChunk: function(stream)
+    {
+        if (this._recordIndex === this._payloads.length)
+            stream.close();
+        else
+            this._writeNextChunk(stream);
     }
 }

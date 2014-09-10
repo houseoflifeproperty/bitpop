@@ -31,10 +31,10 @@
 #include "config.h"
 #include "core/html/HTMLOutputElement.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 
-namespace WebCore {
+namespace blink {
 
 inline HTMLOutputElement::HTMLOutputElement(Document& document, HTMLFormElement* form)
     : HTMLFormControlElement(HTMLNames::outputTag, document, form)
@@ -79,9 +79,9 @@ void HTMLOutputElement::setFor(const AtomicString& value)
     m_tokens->setValue(value);
 }
 
-void HTMLOutputElement::childrenChanged(bool createdByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void HTMLOutputElement::childrenChanged(const ChildrenChange& change)
 {
-    HTMLFormControlElement::childrenChanged(createdByParser, beforeChange, afterChange, childCountDelta);
+    HTMLFormControlElement::childrenChanged(change);
 
     if (m_isDefaultValueMode)
         m_defaultValue = textContent();

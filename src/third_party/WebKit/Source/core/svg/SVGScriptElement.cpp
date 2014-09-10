@@ -22,14 +22,14 @@
 
 #include "core/svg/SVGScriptElement.h"
 
-#include "bindings/v8/ScriptEventListener.h"
+#include "bindings/core/v8/ScriptEventListener.h"
 #include "core/HTMLNames.h"
 #include "core/XLinkNames.h"
 #include "core/dom/Attribute.h"
-#include "core/dom/Document.h"
 #include "core/dom/ScriptLoader.h"
+#include "core/events/Event.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGScriptElement::SVGScriptElement(Document& document, bool wasInsertedByParser, bool alreadyStarted)
     : SVGElement(SVGNames::scriptTag, document)
@@ -38,6 +38,10 @@ inline SVGScriptElement::SVGScriptElement(Document& document, bool wasInsertedBy
     , m_loader(ScriptLoader::create(this, wasInsertedByParser, alreadyStarted))
 {
     ScriptWrappable::init(this);
+}
+
+SVGScriptElement::~SVGScriptElement()
+{
 }
 
 PassRefPtrWillBeRawPtr<SVGScriptElement> SVGScriptElement::create(Document& document, bool insertedByParser)
@@ -113,9 +117,9 @@ void SVGScriptElement::didNotifySubtreeInsertionsToDocument()
     }
 }
 
-void SVGScriptElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void SVGScriptElement::childrenChanged(const ChildrenChange& change)
 {
-    SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    SVGElement::childrenChanged(change);
     m_loader->childrenChanged();
 }
 
@@ -190,7 +194,7 @@ void SVGScriptElement::dispatchLoadEvent()
     dispatchEvent(Event::create(EventTypeNames::load));
 }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 bool SVGScriptElement::isAnimatableAttribute(const QualifiedName& name) const
 {
     if (name == SVGNames::typeAttr)

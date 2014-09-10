@@ -8,18 +8,20 @@
 #include "core/dom/DocumentSupplementable.h"
 #include "core/frame/DeviceSingleWindowEventController.h"
 
-namespace WebCore {
+namespace blink {
 
 class DeviceMotionData;
 class Event;
 
-class DeviceMotionController FINAL : public NoBaseWillBeGarbageCollectedFinalized<DeviceMotionController>, public DeviceSingleWindowEventController, public DocumentSupplement {
+class DeviceMotionController FINAL : public DeviceSingleWindowEventController, public DocumentSupplement {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DeviceMotionController);
 public:
     virtual ~DeviceMotionController();
 
     static const char* supplementName();
     static DeviceMotionController& from(Document&);
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     explicit DeviceMotionController(Document&);
@@ -35,6 +37,6 @@ private:
     virtual bool isNullEvent(Event*) const OVERRIDE;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeviceMotionController_h

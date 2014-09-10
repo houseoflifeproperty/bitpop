@@ -42,14 +42,18 @@ class GESTURE_DETECTION_EXPORT GestureProvider {
 
     // If |gesture_begin_end_types_enabled| is true, fire an ET_GESTURE_BEGIN
     // event for every added touch point, and an ET_GESTURE_END event for every
-    // removed touch point. Defaults to false.
+    // removed touch point. This requires one ACTION_CANCEL event to be sent per
+    // touch point, which only occurs on Aura. Defaults to false.
     bool gesture_begin_end_types_enabled;
 
-    // The minimum size (both length and width, in dips) of the generated
+    // The min and max size (both length and width, in dips) of the generated
     // bounding box for all gesture types. This is useful for touch streams
-    // that may report zero or unreasonably small touch sizes.
-    // Defaults to 0.
+    // that may report zero or unreasonably small or large touch sizes.
+    // Note that these bounds are only applied for touch or unknown tool types;
+    // mouse and stylus-derived gestures will not be affected.
+    // Both values default to 0 (disabled).
     float min_gesture_bounds_length;
+    float max_gesture_bounds_length;
   };
 
   GestureProvider(const Config& config, GestureProviderClient* client);
@@ -129,6 +133,7 @@ class GESTURE_DETECTION_EXPORT GestureProvider {
   const bool gesture_begin_end_types_enabled_;
 
   const float min_gesture_bounds_length_;
+  const float max_gesture_bounds_length_;
 };
 
 }  //  namespace ui

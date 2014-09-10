@@ -8,9 +8,9 @@
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "content/public/common/page_zoom.h"
-#include "content/shell/renderer/test_runner/MockSpellCheck.h"
-#include "content/shell/renderer/test_runner/TestInterfaces.h"
 #include "content/shell/renderer/test_runner/WebTestDelegate.h"
+#include "content/shell/renderer/test_runner/mock_spell_check.h"
+#include "content/shell/renderer/test_runner/test_interfaces.h"
 #include "content/shell/renderer/test_runner/web_test_proxy.h"
 #include "gin/handle.h"
 #include "gin/object_template_builder.h"
@@ -32,6 +32,7 @@ using blink::WebFrame;
 using blink::WebGestureEvent;
 using blink::WebInputEvent;
 using blink::WebKeyboardEvent;
+using blink::WebMenuItemInfo;
 using blink::WebMouseEvent;
 using blink::WebMouseWheelEvent;
 using blink::WebPoint;
@@ -121,10 +122,26 @@ int GetKeyModifiersFromV8(v8::Handle<v8::Value> value) {
 // double or triple click.
 const double kMultipleClickTimeSec = 1;
 const int kMultipleClickRadiusPixels = 5;
+const char kSubMenuDepthIdentifier[] = "_";
+const char kSubMenuIdentifier[] = " >";
 
 bool OutsideMultiClickRadius(const WebPoint& a, const WebPoint& b) {
   return ((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)) >
          kMultipleClickRadiusPixels * kMultipleClickRadiusPixels;
+}
+
+void PopulateCustomItems(const WebVector<WebMenuItemInfo>& customItems,
+    const std::string& prefix, std::vector<std::string>* strings) {
+  for (size_t i = 0; i < customItems.size(); ++i) {
+    if (customItems[i].type == blink::WebMenuItemInfo::SubMenu) {
+      strings->push_back(prefix + customItems[i].label.utf8() +
+          kSubMenuIdentifier);
+      PopulateCustomItems(customItems[i].subMenuItems, prefix +
+          kSubMenuDepthIdentifier, strings);
+    } else {
+      strings->push_back(prefix + customItems[i].label.utf8());
+    }
+  }
 }
 
 // Because actual context menu is implemented by the browser side,
@@ -172,13 +189,16 @@ std::vector<std::string> MakeMenuItemStringsFor(
 
   std::vector<std::string> strings;
 
+  // Populate custom menu items if provided by blink.
+  PopulateCustomItems(context_menu->customItems, "", &strings);
+
   if (context_menu->isEditable) {
     for (const char** item = kEditableMenuStrings; *item; ++item) {
       strings.push_back(*item);
     }
     WebVector<WebString> suggestions;
-    MockSpellCheck::fillSuggestionList(
-        context_menu->misspelledWord, &suggestions);
+    MockSpellCheck::FillSuggestionList(context_menu->misspelledWord,
+                                       &suggestions);
     for (size_t i = 0; i < suggestions.size(); ++i) {
       strings.push_back(suggestions[i].utf8());
     }
@@ -1406,7 +1426,8 @@ void EventSender::TextZoomOut() {
 }
 
 void EventSender::ZoomPageIn() {
-  const std::vector<WebTestProxyBase*>& window_list = interfaces_->windowList();
+  const std::vector<WebTestProxyBase*>& window_list =
+      interfaces_->GetWindowList();
 
   for (size_t i = 0; i < window_list.size(); ++i) {
     window_list.at(i)->GetWebView()->setZoomLevel(
@@ -1415,7 +1436,8 @@ void EventSender::ZoomPageIn() {
 }
 
 void EventSender::ZoomPageOut() {
-  const std::vector<WebTestProxyBase*>& window_list = interfaces_->windowList();
+  const std::vector<WebTestProxyBase*>& window_list =
+      interfaces_->GetWindowList();
 
   for (size_t i = 0; i < window_list.size(); ++i) {
     window_list.at(i)->GetWebView()->setZoomLevel(
@@ -1424,7 +1446,8 @@ void EventSender::ZoomPageOut() {
 }
 
 void EventSender::SetPageZoomFactor(double zoom_factor) {
-  const std::vector<WebTestProxyBase*>& window_list = interfaces_->windowList();
+  const std::vector<WebTestProxyBase*>& window_list =
+      interfaces_->GetWindowList();
 
   for (size_t i = 0; i < window_list.size(); ++i) {
     window_list.at(i)->GetWebView()->setZoomLevel(
@@ -1923,21 +1946,36 @@ void EventSender::GestureEvent(WebInputEvent::Type type,
       event.x = current_gesture_location_.x;
       event.y = current_gesture_location_.y;
       break;
-    case WebInputEvent::GestureTap:
+    case WebInputEvent::GestureTap: 
+    {
+      float tap_count = 1;
+      float width = 30;
+      float height = 30;
       if (!args->PeekNext().IsEmpty()) {
-        float tap_count;
         if (!args->GetNext(&tap_count)) {
           args->ThrowError();
           return;
         }
-        event.data.tap.tapCount = tap_count;
-      } else {
-        event.data.tap.tapCount = 1;
       }
-
+      if (!args->PeekNext().IsEmpty()) {
+        if (!args->GetNext(&width)) {
+          args->ThrowError();
+          return;
+        }
+      }
+      if (!args->PeekNext().IsEmpty()) {
+        if (!args->GetNext(&height)) {
+          args->ThrowError();
+          return;
+        }
+      }
+      event.data.tap.tapCount = tap_count;
+      event.data.tap.width = width;
+      event.data.tap.height = height;
       event.x = point.x;
       event.y = point.y;
       break;
+    }
     case WebInputEvent::GestureTapUnconfirmed:
       if (!args->PeekNext().IsEmpty()) {
         float tap_count;
@@ -1953,45 +1991,49 @@ void EventSender::GestureEvent(WebInputEvent::Type type,
       event.y = point.y;
       break;
     case WebInputEvent::GestureTapDown:
-      event.x = point.x;
-      event.y = point.y;
+    {
+      float width = 30;
+      float height = 30;
       if (!args->PeekNext().IsEmpty()) {
-        float width;
         if (!args->GetNext(&width)) {
           args->ThrowError();
           return;
         }
-        event.data.tapDown.width = width;
       }
       if (!args->PeekNext().IsEmpty()) {
-        float height;
         if (!args->GetNext(&height)) {
           args->ThrowError();
           return;
         }
-        event.data.tapDown.height = height;
       }
-      break;
-    case WebInputEvent::GestureShowPress:
       event.x = point.x;
       event.y = point.y;
+      event.data.tapDown.width = width;
+      event.data.tapDown.height = height;
+      break;
+    }
+    case WebInputEvent::GestureShowPress:
+    {
+      float width = 30;
+      float height = 30;
       if (!args->PeekNext().IsEmpty()) {
-        float width;
         if (!args->GetNext(&width)) {
           args->ThrowError();
           return;
         }
-        event.data.showPress.width = width;
         if (!args->PeekNext().IsEmpty()) {
-          float height;
           if (!args->GetNext(&height)) {
             args->ThrowError();
             return;
           }
-          event.data.showPress.height = height;
         }
       }
+      event.x = point.x;
+      event.y = point.y;
+      event.data.showPress.width = width;
+      event.data.showPress.height = height;
       break;
+    }
     case WebInputEvent::GestureTapCancel:
       event.x = point.x;
       event.y = point.y;

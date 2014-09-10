@@ -14,12 +14,12 @@ namespace gfx {
 
 class GL_EXPORT GLImageGLX : public GLImage {
  public:
-  explicit GLImageGLX(gfx::PluginWindowHandle window);
+  GLImageGLX(const gfx::Size& size, unsigned internalformat);
 
-  virtual bool Initialize();
+  bool Initialize(XID pixmap);
 
   // Overridden from GLImage:
-  virtual void Destroy() OVERRIDE;
+  virtual void Destroy(bool have_context) OVERRIDE;
   virtual gfx::Size GetSize() OVERRIDE;
   virtual bool BindTexImage(unsigned target) OVERRIDE;
   virtual void ReleaseTexImage(unsigned target) OVERRIDE;
@@ -27,16 +27,19 @@ class GL_EXPORT GLImageGLX : public GLImage {
   virtual void DidUseTexImage() OVERRIDE {}
   virtual void WillModifyTexImage() OVERRIDE {}
   virtual void DidModifyTexImage() OVERRIDE {}
+  virtual bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                                    int z_order,
+                                    OverlayTransform transform,
+                                    const Rect& bounds_rect,
+                                    const RectF& crop_rect) OVERRIDE;
 
  protected:
   virtual ~GLImageGLX();
 
  private:
-  XDisplay* display_;
-  gfx::PluginWindowHandle window_;
-  XID pixmap_;
   XID glx_pixmap_;
-  gfx::Size size_;
+  const gfx::Size size_;
+  unsigned internalformat_;
 
   DISALLOW_COPY_AND_ASSIGN(GLImageGLX);
 };

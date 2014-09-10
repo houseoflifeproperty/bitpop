@@ -18,7 +18,6 @@ def Update(_config, active_master, c):
           'Linux Builder',
           'Linux Builder (dbg)(32)',
           'Linux Builder (dbg)',
-          'Linux Clang (dbg)',
           'Linux GN',
           'Linux GN (dbg)',
       ]),
@@ -48,7 +47,6 @@ def Update(_config, active_master, c):
     {'name': 'Linux Builder (dbg)', 'triggers': ['linux_dbg_trigger']},
     {'name': 'Linux Tests (dbg)(1)'},
     {'name': 'Linux Tests (dbg)(2)'},
-    {'name': 'Linux Clang (dbg)'},
     {'name': 'Linux GN', 'recipe': 'chromium_gn'},
     {'name': 'Linux GN (dbg)', 'recipe': 'chromium_gn'},
   ]

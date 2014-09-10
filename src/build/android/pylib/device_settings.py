@@ -6,6 +6,9 @@ import logging
 
 from pylib import content_settings
 
+_LOCK_SCREEN_SETTINGS_PATH = '/data/system/locksettings.db'
+PASSWORD_QUALITY_UNSPECIFIED = '0'
+
 
 def ConfigureContentSettingsDict(device, desired_settings):
   """Configures device content setings from a dictionary.
@@ -23,28 +26,76 @@ def ConfigureContentSettingsDict(device, desired_settings):
         settings to configure.
   """
   try:
-    sdk_version = int(device.old_interface.system_properties[
-        'ro.build.version.sdk'])
+    sdk_version = int(device.GetProp('ro.build.version.sdk'))
   except ValueError:
     logging.error('Skipping content settings configuration, unknown sdk %s',
-                  device.old_interface.system_properties[
-                      'ro.build.version.sdk'])
+                  device.GetProp('ro.build.version.sdk'))
     return
 
   if sdk_version < 16:
     logging.error('Skipping content settings configuration due to outdated sdk')
     return
 
-  device.old_interface.system_properties['persist.sys.usb.config'] = 'adb'
+  device.SetProp('persist.sys.usb.config', 'adb')
   device.old_interface.WaitForDevicePm()
 
-  for table, key_value in sorted(desired_settings.iteritems()):
-    settings = content_settings.ContentSettings(table, device)
-    for key, value in key_value.iteritems():
-      settings[key] = value
-    logging.info('\n%s %s', table, (80 - len(table)) * '-')
-    for key, value in sorted(settings.iteritems()):
-      logging.info('\t%s: %s', key, value)
+  if device.GetProp('ro.build.type') == 'userdebug':
+    for table, key_value in sorted(desired_settings.iteritems()):
+      settings = content_settings.ContentSettings(table, device)
+      for key, value in key_value.iteritems():
+        settings[key] = value
+      logging.info('\n%s %s', table, (80 - len(table)) * '-')
+      for key, value in sorted(settings.iteritems()):
+        logging.info('\t%s: %s', key, value)
+
+
+def SetLockScreenSettings(device):
+  """Sets lock screen settings on the device.
+
+  On certain device/Android configurations we need to disable the lock screen in
+  a different database. Additionally, the password type must be set to
+  DevicePolicyManager.PASSWORD_QUALITY_UNSPECIFIED.
+  Lock screen settings are stored in sqlite on the device in:
+      /data/system/locksettings.db
+
+  IMPORTANT: The first column is used as a primary key so that all rows with the
+  same value for that column are removed from the table prior to inserting the
+  new values.
+
+  Args:
+    device: A DeviceUtils instance for the device to configure.
+
+  Raises:
+    Exception if the setting was not properly set.
+  """
+  if (not device.old_interface.FileExistsOnDevice(_LOCK_SCREEN_SETTINGS_PATH) or
+      device.GetProp('ro.build.type') != 'userdebug'):
+    return
+
+  db = _LOCK_SCREEN_SETTINGS_PATH
+  locksettings = [('locksettings', 'lockscreen.disabled', '1'),
+                  ('locksettings', 'lockscreen.password_type',
+                   PASSWORD_QUALITY_UNSPECIFIED),
+                  ('locksettings', 'lockscreen.password_type_alternate',
+                   PASSWORD_QUALITY_UNSPECIFIED)]
+  for table, key, value in locksettings:
+    # Set the lockscreen setting for default user '0'
+    columns = ['name', 'user', 'value']
+    values = [key, '0', value]
+
+    cmd = """begin transaction;
+delete from '%(table)s' where %(primary_key)s='%(primary_value)s';
+insert into '%(table)s' (%(columns)s) values (%(values)s);
+commit transaction;""" % {
+      'table': table,
+      'primary_key': columns[0],
+      'primary_value': values[0],
+      'columns': ', '.join(columns),
+      'values': ', '.join(["'%s'" % value for value in values])
+    }
+    output_msg = device.RunShellCommand('\'sqlite3 %s "%s"\'' % (db, cmd))
+    if output_msg:
+      print ' '.join(output_msg)
 
 
 ENABLE_LOCATION_SETTING = {

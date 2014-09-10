@@ -38,16 +38,6 @@ base::TimeDelta GetNextRequestDelayMs(base::TimeDelta last_delay) {
   return next_delay;
 }
 
-void CallOpenPersistentNSSDB() {
-  // Called from crypto_task_runner_.
-  VLOG(1) << "CallOpenPersistentNSSDB";
-
-  // Ensure we've opened the user's key/certificate database.
-  if (base::SysInfo::IsRunningOnChromeOS())
-    crypto::OpenPersistentNSSDB();
-  crypto::EnableTPMTokenForNSS();
-}
-
 void PostResultToTaskRunner(scoped_refptr<base::SequencedTaskRunner> runner,
                             const base::Callback<void(bool)>& callback,
                             bool success) {
@@ -140,8 +130,7 @@ void TPMTokenLoader::MaybeStartTokenInitialization() {
   if (!LoginState::IsInitialized())
     return;
 
-  bool start_initialization = LoginState::Get()->IsUserLoggedIn() ||
-      LoginState::Get()->IsInSafeMode();
+  bool start_initialization = LoginState::Get()->IsUserLoggedIn();
 
   VLOG(1) << "StartTokenInitialization: " << start_initialization;
   if (!start_initialization)
@@ -151,7 +140,7 @@ void TPMTokenLoader::MaybeStartTokenInitialization() {
     tpm_token_state_ = TPM_DISABLED;
 
   // Treat TPM as disabled for guest users since they do not store certs.
-  if (LoginState::Get()->IsGuestUser())
+  if (LoginState::Get()->IsGuestSessionUser())
     tpm_token_state_ = TPM_DISABLED;
 
   ContinueTokenInitialization();
@@ -167,8 +156,8 @@ void TPMTokenLoader::ContinueTokenInitialization() {
     case TPM_STATE_UNKNOWN: {
       crypto_task_runner_->PostTaskAndReply(
           FROM_HERE,
-          base::Bind(&CallOpenPersistentNSSDB),
-          base::Bind(&TPMTokenLoader::OnPersistentNSSDBOpened,
+          base::Bind(&crypto::EnableTPMTokenForNSS),
+          base::Bind(&TPMTokenLoader::OnTPMTokenEnabledForNSS,
                      weak_factory_.GetWeakPtr()));
       tpm_token_state_ = TPM_INITIALIZATION_STARTED;
       return;
@@ -177,7 +166,7 @@ void TPMTokenLoader::ContinueTokenInitialization() {
       NOTREACHED();
       return;
     }
-    case TPM_DB_OPENED: {
+    case TPM_TOKEN_ENABLED_FOR_NSS: {
       DBusThreadManager::Get()->GetCryptohomeClient()->TpmIsEnabled(
           base::Bind(&TPMTokenLoader::OnTpmIsEnabled,
                      weak_factory_.GetWeakPtr()));
@@ -195,7 +184,7 @@ void TPMTokenLoader::ContinueTokenInitialization() {
       return;
     }
     case TPM_TOKEN_READY: {
-      // Retrieve token_name_ and user_pin_ here since they will never change
+      // Retrieve user_pin_ here since they will never change
       // and CryptohomeClient calls are not thread safe.
       DBusThreadManager::Get()->GetCryptohomeClient()->Pkcs11GetTpmTokenInfo(
           base::Bind(&TPMTokenLoader::OnPkcs11GetTpmTokenInfo,
@@ -206,7 +195,7 @@ void TPMTokenLoader::ContinueTokenInitialization() {
       crypto_task_runner_->PostTask(
           FROM_HERE,
           base::Bind(
-              &crypto::InitializeTPMToken,
+              &crypto::InitializeTPMTokenAndSystemSlot,
               tpm_token_slot_id_,
               base::Bind(&PostResultToTaskRunner,
                          base::MessageLoopProxy::current(),
@@ -223,7 +212,7 @@ void TPMTokenLoader::ContinueTokenInitialization() {
 
 void TPMTokenLoader::RetryTokenInitializationLater() {
   CHECK(thread_checker_.CalledOnValidThread());
-  LOG(WARNING) << "Retry token initialization later.";
+  VLOG(1) << "Retry token initialization later.";
   base::MessageLoopProxy::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&TPMTokenLoader::ContinueTokenInitialization,
@@ -232,9 +221,9 @@ void TPMTokenLoader::RetryTokenInitializationLater() {
   tpm_request_delay_ = GetNextRequestDelayMs(tpm_request_delay_);
 }
 
-void TPMTokenLoader::OnPersistentNSSDBOpened() {
-  VLOG(1) << "PersistentNSSDBOpened";
-  tpm_token_state_ = TPM_DB_OPENED;
+void TPMTokenLoader::OnTPMTokenEnabledForNSS() {
+  VLOG(1) << "TPMTokenEnabledForNSS";
+  tpm_token_state_ = TPM_TOKEN_ENABLED_FOR_NSS;
   ContinueTokenInitialization();
 }
 
@@ -274,7 +263,6 @@ void TPMTokenLoader::OnPkcs11GetTpmTokenInfo(DBusMethodCallStatus call_status,
     return;
   }
 
-  tpm_token_name_ = token_name;
   tpm_token_slot_id_ = token_slot_id;
   tpm_user_pin_ = user_pin;
   tpm_token_state_ = TPM_TOKEN_INFO_RECEIVED;

@@ -10,12 +10,12 @@
 #include "base/strings/stringprintf.h"
 #include "components/sync_driver/data_type_error_handler_mock.h"
 #include "components/sync_driver/sync_api_component_factory.h"
-#include "sync/api/attachments/attachment_service_impl.h"
+#include "sync/api/attachments/fake_attachment_store.h"
 #include "sync/api/fake_syncable_service.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_merge_result.h"
+#include "sync/internal_api/public/attachments/attachment_service_impl.h"
 #include "sync/internal_api/public/attachments/fake_attachment_downloader.h"
-#include "sync/internal_api/public/attachments/fake_attachment_store.h"
 #include "sync/internal_api/public/attachments/fake_attachment_uploader.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/read_node.h"
@@ -27,7 +27,7 @@
 #include "sync/internal_api/public/write_transaction.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace browser_sync {
+namespace sync_driver {
 
 namespace {
 
@@ -87,6 +87,7 @@ class MockSyncApiComponentFactory : public SyncApiComponentFactory {
   }
 
   virtual scoped_ptr<syncer::AttachmentService> CreateAttachmentService(
+      const syncer::UserShare& user_share,
       syncer::AttachmentService::Delegate* delegate) OVERRIDE {
     EXPECT_TRUE(attachment_service_ != NULL);
     return attachment_service_.Pass();
@@ -418,4 +419,4 @@ TEST_F(SyncGenericChangeProcessorTest, AttachmentUploaded) {
 
 }  // namespace
 
-}  // namespace browser_sync
+}  // namespace sync_driver

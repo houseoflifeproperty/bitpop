@@ -24,17 +24,19 @@ namespace embedder {
 // outside world. But we need to define it before our (internal-only) functions
 // that use it.
 struct ChannelInfo {
-  explicit ChannelInfo(scoped_refptr<system::Channel> channel)
-      : channel(channel) {}
+  ChannelInfo() {}
   ~ChannelInfo() {}
 
   scoped_refptr<system::Channel> channel;
+
+  // May be null, in which case |DestroyChannelOnIOThread()| must be used (from
+  // the IO thread), instead of |DestroyChannel()|.
+  scoped_refptr<base::TaskRunner> io_thread_task_runner;
 };
 
 namespace {
 
-// Helper for |CreateChannelOnIOThread()|. (Note: May return null for some
-// failures.)
+// Helper for |CreateChannel...()|. (Note: May return null for some failures.)
 scoped_refptr<system::Channel> MakeChannel(
     ScopedPlatformHandle platform_handle,
     scoped_refptr<system::MessagePipe> message_pipe) {
@@ -73,19 +75,18 @@ scoped_refptr<system::Channel> MakeChannel(
   return channel;
 }
 
-void CreateChannelOnIOThread(
+void CreateChannelHelper(
     ScopedPlatformHandle platform_handle,
+    scoped_ptr<ChannelInfo> channel_info,
     scoped_refptr<system::MessagePipe> message_pipe,
     DidCreateChannelCallback callback,
     scoped_refptr<base::TaskRunner> callback_thread_task_runner) {
-  scoped_ptr<ChannelInfo> channel_info(
-      new ChannelInfo(MakeChannel(platform_handle.Pass(), message_pipe)));
+  channel_info->channel = MakeChannel(platform_handle.Pass(), message_pipe);
 
   // Hand the channel back to the embedder.
   if (callback_thread_task_runner) {
-    callback_thread_task_runner->PostTask(FROM_HERE,
-                                          base::Bind(callback,
-                                                     channel_info.release()));
+    callback_thread_task_runner->PostTask(
+        FROM_HERE, base::Bind(callback, channel_info.release()));
   } else {
     callback.Run(channel_info.release());
   }
@@ -95,6 +96,29 @@ void CreateChannelOnIOThread(
 
 void Init() {
   system::entrypoints::SetCore(new system::Core());
+}
+
+// TODO(vtl): Write tests for this.
+ScopedMessagePipeHandle CreateChannelOnIOThread(
+    ScopedPlatformHandle platform_handle,
+    ChannelInfo** channel_info) {
+  DCHECK(platform_handle.is_valid());
+  DCHECK(channel_info);
+
+  std::pair<scoped_refptr<system::MessagePipeDispatcher>,
+            scoped_refptr<system::MessagePipe> > remote_message_pipe =
+      system::MessagePipeDispatcher::CreateRemoteMessagePipe();
+
+  system::Core* core = system::entrypoints::GetCore();
+  DCHECK(core);
+  ScopedMessagePipeHandle rv(
+      MessagePipeHandle(core->AddDispatcher(remote_message_pipe.first)));
+
+  *channel_info = new ChannelInfo();
+  (*channel_info)->channel =
+      MakeChannel(platform_handle.Pass(), remote_message_pipe.second);
+
+  return rv.Pass();
 }
 
 ScopedMessagePipeHandle CreateChannel(
@@ -112,15 +136,24 @@ ScopedMessagePipeHandle CreateChannel(
   DCHECK(core);
   ScopedMessagePipeHandle rv(
       MessagePipeHandle(core->AddDispatcher(remote_message_pipe.first)));
-  // TODO(vtl): Do we properly handle the failure case here?
+
+  scoped_ptr<ChannelInfo> channel_info(new ChannelInfo());
+  channel_info->io_thread_task_runner = io_thread_task_runner;
+
   if (rv.is_valid()) {
     io_thread_task_runner->PostTask(FROM_HERE,
-                                    base::Bind(&CreateChannelOnIOThread,
+                                    base::Bind(&CreateChannelHelper,
                                                base::Passed(&platform_handle),
+                                               base::Passed(&channel_info),
                                                remote_message_pipe.second,
                                                callback,
                                                callback_thread_task_runner));
+  } else {
+    (callback_thread_task_runner ? callback_thread_task_runner
+                                 : io_thread_task_runner)
+        ->PostTask(FROM_HERE, base::Bind(callback, channel_info.release()));
   }
+
   return rv.Pass();
 }
 
@@ -133,6 +166,26 @@ void DestroyChannelOnIOThread(ChannelInfo* channel_info) {
 
   channel_info->channel->Shutdown();
   delete channel_info;
+}
+
+// TODO(vtl): Write tests for this.
+void DestroyChannel(ChannelInfo* channel_info) {
+  DCHECK(channel_info);
+  DCHECK(channel_info->io_thread_task_runner);
+
+  if (!channel_info->channel) {
+    // Presumably, |Init()| on the channel failed.
+    return;
+  }
+
+  channel_info->channel->WillShutdownSoon();
+  channel_info->io_thread_task_runner->PostTask(
+      FROM_HERE, base::Bind(&DestroyChannelOnIOThread, channel_info));
+}
+
+void WillDestroyChannelSoon(ChannelInfo* channel_info) {
+  DCHECK(channel_info);
+  channel_info->channel->WillShutdownSoon();
 }
 
 MojoResult CreatePlatformHandleWrapper(
@@ -170,8 +223,10 @@ MojoResult PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
   if (dispatcher->GetType() != system::Dispatcher::kTypePlatformHandle)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
-  *platform_handle = static_cast<system::PlatformHandleDispatcher*>(
-      dispatcher.get())->PassPlatformHandle().Pass();
+  *platform_handle =
+      static_cast<system::PlatformHandleDispatcher*>(dispatcher.get())
+          ->PassPlatformHandle()
+          .Pass();
   return MOJO_RESULT_OK;
 }
 

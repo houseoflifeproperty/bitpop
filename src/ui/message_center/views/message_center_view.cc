@@ -13,7 +13,6 @@
 #include "grit/ui_resources.h"
 #include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/animation/multi_animation.h"
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
@@ -181,7 +180,7 @@ MessageListView::MessageListView(MessageCenterView* message_center_view,
       weak_ptr_factory_(this) {
   views::BoxLayout* layout =
       new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 1);
-  layout->set_main_axis_alignment(views::BoxLayout::MAIN_AXIS_ALIGNMENT_FILL);
+  layout->SetDefaultFlex(1);
   SetLayoutManager(layout);
 
   // Set the margin to 0 for the layout. BoxLayout assumes the same margin

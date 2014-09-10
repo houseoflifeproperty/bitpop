@@ -47,28 +47,38 @@ void WebServiceWorkerProviderImpl::setClient(
   // for more context)
   GetDispatcher()->AddScriptClient(provider_id_, client);
 
-  if (context_->waiting_handle_id() != kInvalidServiceWorkerHandleId) {
-    client->setWaiting(
-        GetDispatcher()->GetServiceWorker(context_->waiting()->info(), false));
+  if (context_->installing_handle_id() != kInvalidServiceWorkerHandleId) {
+    client->setInstalling(GetDispatcher()->GetServiceWorker(
+        context_->installing()->info(), false));
   }
 
-  if (context_->current_handle_id() != kInvalidServiceWorkerHandleId) {
-    client->setController(
-        GetDispatcher()->GetServiceWorker(context_->current()->info(), false));
+  if (context_->waiting_handle_id() != kInvalidServiceWorkerHandleId) {
+    client->setWaiting(GetDispatcher()->GetServiceWorker(
+        context_->waiting()->info(), false));
+  }
+
+  if (context_->active_handle_id() != kInvalidServiceWorkerHandleId) {
+    client->setActive(GetDispatcher()->GetServiceWorker(
+        context_->active()->info(), false));
+  }
+
+  if (context_->controller_handle_id() != kInvalidServiceWorkerHandleId) {
+    client->setController(GetDispatcher()->GetServiceWorker(
+        context_->controller()->info(), false));
   }
 }
 
 void WebServiceWorkerProviderImpl::registerServiceWorker(
     const WebURL& pattern,
     const WebURL& script_url,
-    WebServiceWorkerCallbacks* callbacks) {
+    WebServiceWorkerRegistrationCallbacks* callbacks) {
   GetDispatcher()->RegisterServiceWorker(
       provider_id_, pattern, script_url, callbacks);
 }
 
 void WebServiceWorkerProviderImpl::unregisterServiceWorker(
     const WebURL& pattern,
-    WebServiceWorkerCallbacks* callbacks) {
+    WebServiceWorkerRegistrationCallbacks* callbacks) {
   GetDispatcher()->UnregisterServiceWorker(
       provider_id_, pattern, callbacks);
 }

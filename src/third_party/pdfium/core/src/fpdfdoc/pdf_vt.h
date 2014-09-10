@@ -4,7 +4,9 @@
  
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#ifndef _PDF_VT_H_
 #define _PDF_VT_H_
+
 class CPVT_Size;
 class CPVT_FloatRect;
 struct CPVT_SectionInfo;
@@ -518,8 +520,8 @@ public:
         return m_fCharSpace;
     }
 
-    inline CPVT_WordPlace					GetBeginWordPlace() const;
-    inline CPVT_WordPlace					GetEndWordPlace() const;
+    CPVT_WordPlace							GetBeginWordPlace() const;
+    CPVT_WordPlace							GetEndWordPlace() const;
     CPVT_WordPlace							GetPrevWordPlace(const CPVT_WordPlace & place) const;
     CPVT_WordPlace							GetNextWordPlace(const CPVT_WordPlace & place) const;
     CPVT_WordPlace							SearchWordPlace(const CPDF_Point & point) const;
@@ -603,14 +605,11 @@ private:
     FX_FLOAT								m_fCharSpace;
     FX_INT32								m_nHorzScale;
     FX_WORD									m_wSubWord;
-    FX_FLOAT								m_fWordSpace;
     FX_FLOAT								m_fFontSize;
 
 private:
     FX_BOOL									m_bInitial;
     FX_BOOL									m_bRichText;
-    FX_FLOAT								m_fCaretOriginX;
-    FX_INT32								m_nCurFontIndex;
     IPDF_VariableText_Provider *			m_pVTProvider;
     CPDF_VariableText_Iterator *			m_pVTIterator;
 };
@@ -640,3 +639,5 @@ private:
     CPVT_WordPlace							m_CurPos;
     CPDF_VariableText *						m_pVT;
 };
+
+#endif  // _PDF_VT_H_

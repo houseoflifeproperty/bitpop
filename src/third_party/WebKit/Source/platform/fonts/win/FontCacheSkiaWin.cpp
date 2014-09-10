@@ -36,11 +36,12 @@
 #include "SkTypeface_win.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/FontDescription.h"
+#include "platform/fonts/FontFaceCreationParams.h"
 #include "platform/fonts/SimpleFontData.h"
 #include "platform/fonts/harfbuzz/FontPlatformDataHarfbuzz.h"
 #include "platform/fonts/win/FontFallbackWin.h"
 
-namespace WebCore {
+namespace blink {
 
 HashMap<String, SkTypeface*>* FontCache::s_sideloadedFonts = 0;
 
@@ -72,21 +73,20 @@ FontCache::FontCache()
     m_fontManager = adoptPtr(fontManager);
 }
 
-static bool fontContainsCharacter(const FontPlatformData* fontData, const wchar_t* family, UChar32 character)
-{
-    SkPaint paint;
-    fontData->setupPaint(&paint);
-    paint.setTextEncoding(SkPaint::kUTF32_TextEncoding);
-
-    uint16_t glyph;
-    paint.textToGlyphs(&character, sizeof(character), &glyph);
-    return glyph;
-}
 
 // Given the desired base font, this will create a SimpleFontData for a specific
 // font that can be used to render the given range of characters.
 PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(const FontDescription& fontDescription, UChar32 character, const SimpleFontData*)
 {
+    // First try the specified font with standard style & weight.
+    if (fontDescription.style() == FontStyleItalic
+        || fontDescription.weight() >= FontWeightBold) {
+        RefPtr<SimpleFontData> fontData = fallbackOnStandardFontStyle(
+            fontDescription, character);
+        if (fontData)
+            return fontData;
+    }
+
     // FIXME: Consider passing fontDescription.dominantScript()
     // to GetFallbackFamily here.
     UScriptCode script;
@@ -95,8 +95,10 @@ PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(const FontDescrip
         &script,
         m_fontManager.get());
     FontPlatformData* data = 0;
-    if (family)
-        data = getFontPlatformData(fontDescription,  AtomicString(family, wcslen(family)));
+    if (family) {
+        FontFaceCreationParams createByFamily(AtomicString(family, wcslen(family)));
+        data = getFontPlatformData(fontDescription, createByFamily);
+    }
 
     // Last resort font list : PanUnicode. CJK fonts have a pretty
     // large repertoire. Eventually, we need to scan all the fonts
@@ -153,9 +155,10 @@ PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(const FontDescrip
     // critical enough for non-Latin scripts (especially Han) to
     // warrant an additional (real coverage) check with fontCotainsCharacter.
     int i;
-    for (i = 0; (!data || !fontContainsCharacter(data, family, character)) && i < numFonts; ++i) {
+    for (i = 0; (!data || !data->fontContainsCharacter(character)) && i < numFonts; ++i) {
         family = panUniFonts[i];
-        data = getFontPlatformData(fontDescription, AtomicString(family, wcslen(family)));
+        FontFaceCreationParams createByFamily(AtomicString(family, wcslen(family)));
+        data = getFontPlatformData(fontDescription, createByFamily);
     }
 
     // When i-th font (0-base) in |panUniFonts| contains a character and
@@ -201,10 +204,11 @@ static bool typefacesMatchesFamily(const SkTypeface* tf, const AtomicString& fam
     return matchesRequestedFamily;
 }
 
-FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontDescription, const AtomicString& family, float fontSize)
+FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontDescription, const FontFaceCreationParams& creationParams, float fontSize)
 {
+    ASSERT(creationParams.creationType() == CreateFontByFamily);
     CString name;
-    RefPtr<SkTypeface> tf = createTypeface(fontDescription, family, name);
+    RefPtr<SkTypeface> tf = createTypeface(fontDescription, creationParams, name);
     if (!tf)
         return 0;
 
@@ -213,14 +217,14 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
     // really used.
     // FIXME: Do we need to use predefined fonts "guaranteed" to exist
     // when we're running in layout-test mode?
-    if (!typefacesMatchesFamily(tf.get(), family)) {
+    if (!typefacesMatchesFamily(tf.get(), creationParams.family())) {
         return 0;
     }
 
     FontPlatformData* result = new FontPlatformData(tf,
         name.data(),
         fontSize,
-        fontDescription.weight() >= FontWeightBold && !tf->isBold() || fontDescription.isSyntheticBold(),
+        fontDescription.weight() >= FontWeight600 && !tf->isBold() || fontDescription.isSyntheticBold(),
         fontDescription.style() == FontStyleItalic && !tf->isItalic() || fontDescription.isSyntheticItalic(),
         fontDescription.orientation(),
         s_useSubpixelPositioning);
@@ -230,9 +234,10 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
         unsigned minSize;
     };
     const static FamilyMinSize minAntiAliasSizeForFont[] = {
-        { L"simsun", 16 },
+        { L"simsun", 11 },
         { L"dotum", 12 },
-        { L"gulim", 12 }
+        { L"gulim", 12 },
+        { L"pmingliu", 11 }
     };
     size_t numFonts = WTF_ARRAY_LENGTH(minAntiAliasSizeForFont);
     for (size_t i = 0; i < numFonts; i++) {
@@ -246,4 +251,4 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
     return result;
 }
 
-}
+} // namespace blink

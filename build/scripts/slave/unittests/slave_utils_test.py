@@ -29,7 +29,7 @@ class TestGetZipFileNames(unittest.TestCase):
     self.assertEqual('_123', version_suffix)
 
   def testNormalBuildNameTryBot(self):
-    build_properties = {'mastername': 'master.tryserver.chromium',
+    build_properties = {'mastername': 'master.tryserver.chromium.linux',
                         'buildnumber': 666}
     (base_name, version_suffix) = slave_utils.GetZipFileNames(
         build_properties, 123)
@@ -37,14 +37,14 @@ class TestGetZipFileNames(unittest.TestCase):
     self.assertEqual('_666', version_suffix)
 
   def testNormalBuildNameTryBotExtractNoParentBuildNumber(self):
-    build_properties = {'mastername': 'master.tryserver.chromium',
+    build_properties = {'mastername': 'master.tryserver.chromium.linux',
                         'buildnumber': 666}
     def dummy():
       slave_utils.GetZipFileNames(build_properties, 123, extract=True)
     self.assertRaises(Exception, dummy)
 
   def testNormalBuildNameTryBotExtractWithParentBuildNumber(self):
-    build_properties = {'mastername': 'master.tryserver.chromium',
+    build_properties = {'mastername': 'master.tryserver.chromium.linux',
                         'buildnumber': 666,
                         'parent_buildnumber': 999}
     (base_name, version_suffix) = slave_utils.GetZipFileNames(

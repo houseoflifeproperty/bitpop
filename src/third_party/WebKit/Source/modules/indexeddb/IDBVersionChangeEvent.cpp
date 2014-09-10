@@ -26,10 +26,9 @@
 #include "config.h"
 #include "modules/indexeddb/IDBVersionChangeEvent.h"
 
-#include "bindings/v8/IDBBindingUtilities.h"
+#include "modules/IndexedDBNames.h"
 
-namespace WebCore {
-
+namespace blink {
 
 IDBVersionChangeEventInit::IDBVersionChangeEventInit()
     : oldVersion(0)
@@ -37,12 +36,12 @@ IDBVersionChangeEventInit::IDBVersionChangeEventInit()
 }
 
 IDBVersionChangeEvent::IDBVersionChangeEvent()
-    : m_dataLoss(blink::WebIDBDataLossNone)
+    : m_dataLoss(WebIDBDataLossNone)
 {
     ScriptWrappable::init(this);
 }
 
-IDBVersionChangeEvent::IDBVersionChangeEvent(const AtomicString& eventType, unsigned long long oldVersion, const Nullable<unsigned long long>& newVersion, blink::WebIDBDataLoss dataLoss, const String& dataLossMessage)
+IDBVersionChangeEvent::IDBVersionChangeEvent(const AtomicString& eventType, unsigned long long oldVersion, const Nullable<unsigned long long>& newVersion, WebIDBDataLoss dataLoss, const String& dataLossMessage)
     : Event(eventType, false /*canBubble*/, false /*cancelable*/)
     , m_oldVersion(oldVersion)
     , m_newVersion(newVersion)
@@ -56,8 +55,12 @@ IDBVersionChangeEvent::IDBVersionChangeEvent(const AtomicString& eventType, cons
     : Event(eventType, false /*canBubble*/, false /*cancelable*/)
     , m_oldVersion(initializer.oldVersion)
     , m_newVersion(initializer.newVersion)
-    , m_dataLoss(blink::WebIDBDataLossNone)
+    , m_dataLoss(WebIDBDataLossNone)
 {
+    if (initializer.dataLoss.isEmpty() || initializer.dataLoss == "none")
+        m_dataLoss = WebIDBDataLossNone;
+    else if (initializer.dataLoss == "total")
+        m_dataLoss = WebIDBDataLossTotal;
     ScriptWrappable::init(this);
 }
 
@@ -69,11 +72,9 @@ unsigned long long IDBVersionChangeEvent::newVersion(bool& isNull) const
 
 const AtomicString& IDBVersionChangeEvent::dataLoss() const
 {
-    DEFINE_STATIC_LOCAL(AtomicString, total, ("total", AtomicString::ConstructFromLiteral));
-    if (m_dataLoss == blink::WebIDBDataLossTotal)
-        return total;
-    DEFINE_STATIC_LOCAL(AtomicString, none, ("none", AtomicString::ConstructFromLiteral));
-    return none;
+    if (m_dataLoss == WebIDBDataLossTotal)
+        return IndexedDBNames::total;
+    return IndexedDBNames::none;
 }
 
 const AtomicString& IDBVersionChangeEvent::interfaceName() const
@@ -86,4 +87,4 @@ void IDBVersionChangeEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

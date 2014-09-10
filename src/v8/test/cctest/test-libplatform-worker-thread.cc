@@ -33,6 +33,7 @@
 #include "test/cctest/test-libplatform.h"
 
 using namespace v8::internal;
+using namespace v8::platform;
 
 
 TEST(WorkerThread) {
@@ -54,7 +55,7 @@ TEST(WorkerThread) {
   queue.Append(task3);
   queue.Append(task4);
 
-  // TaskQueue ASSERTs that it is empty in its destructor.
+  // TaskQueue DCHECKs that it is empty in its destructor.
   queue.Terminate();
 
   delete thread1;

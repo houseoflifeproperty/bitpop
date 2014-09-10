@@ -47,6 +47,7 @@ struct GPUCreateCommandBufferConfig;
 
 namespace content {
 class GpuChannel;
+class GpuMemoryBufferFactory;
 class GpuWatchdog;
 class MessageRouter;
 class SyncPointManager;
@@ -98,19 +99,25 @@ class GpuChannelManager : public IPC::Listener,
 
   gfx::GLSurface* GetDefaultOffscreenSurface();
 
+  GpuMemoryBufferFactory* gpu_memory_buffer_factory() {
+    return gpu_memory_buffer_factory_.get();
+  }
+
  private:
-  struct ImageOperation {
-    ImageOperation(int32 sync_point, base::Closure callback);
-    ~ImageOperation();
+  struct GpuMemoryBufferOperation {
+    GpuMemoryBufferOperation(int32 sync_point, base::Closure callback);
+    ~GpuMemoryBufferOperation();
 
     int32 sync_point;
     base::Closure callback;
   };
   typedef base::ScopedPtrHashMap<int, GpuChannel> GpuChannelMap;
-  typedef std::deque<ImageOperation*> ImageOperationQueue;
+  typedef std::deque<GpuMemoryBufferOperation*> GpuMemoryBufferOperationQueue;
 
   // Message handlers.
-  void OnEstablishChannel(int client_id, bool share_context);
+  void OnEstablishChannel(int client_id,
+                          bool share_context,
+                          bool allow_future_sync_points);
   void OnCloseChannel(const IPC::ChannelHandle& channel_handle);
   void OnVisibilityChanged(
       int32 render_view_id, int32 client_id, bool visible);
@@ -120,20 +127,20 @@ class GpuChannelManager : public IPC::Listener,
       int32 client_id,
       const GPUCreateCommandBufferConfig& init_params,
       int32 route_id);
-  void CreateImage(
-      gfx::PluginWindowHandle window, int32 client_id, int32 image_id);
-  void OnCreateImage(
-      gfx::PluginWindowHandle window, int32 client_id, int32 image_id);
-  void DeleteImage(int32 client_id, int32 image_id);
-  void OnDeleteImage(int32 client_id, int32 image_id, int32 sync_point);
-  void OnDeleteImageSyncPointRetired(ImageOperation*);
   void OnLoadedShader(std::string shader);
+  void CreateGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle,
+                             const gfx::Size& size,
+                             unsigned internalformat,
+                             unsigned usage);
   void OnCreateGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle,
                                const gfx::Size& size,
                                unsigned internalformat,
                                unsigned usage);
+  void DestroyGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle);
   void OnDestroyGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle,
                                 int32 sync_point);
+  void OnDestroyGpuMemoryBufferSyncPointRetired(
+      GpuMemoryBufferOperation* gpu_memory_buffer_operation);
 
   void OnLoseAllContexts();
 
@@ -156,7 +163,8 @@ class GpuChannelManager : public IPC::Listener,
   scoped_ptr<gpu::gles2::ProgramCache> program_cache_;
   scoped_refptr<gpu::gles2::ShaderTranslatorCache> shader_translator_cache_;
   scoped_refptr<gfx::GLSurface> default_offscreen_surface_;
-  ImageOperationQueue image_operations_;
+  GpuMemoryBufferOperationQueue gpu_memory_buffer_operations_;
+  scoped_ptr<GpuMemoryBufferFactory> gpu_memory_buffer_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChannelManager);
 };

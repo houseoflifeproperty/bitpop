@@ -43,7 +43,8 @@ void* GetCdmHost(int host_interface_version, void* user_data);
 class CdmAdapter : public pp::Instance,
                    public pp::ContentDecryptor_Private,
                    public cdm::Host_4,
-                   public cdm::Host_5 {
+                   public cdm::Host_5,
+                   public cdm::Host_6 {
  public:
   CdmAdapter(PP_Instance instance, pp::Module* module);
   virtual ~CdmAdapter();
@@ -66,8 +67,15 @@ class CdmAdapter : public pp::Instance,
   virtual void UpdateSession(uint32_t promise_id,
                              const std::string& web_session_id,
                              pp::VarArrayBuffer response) OVERRIDE;
+  // TODO(jrummell): Pass this function through Pepper and add OVERRIDE.
+  virtual void CloseSession(uint32_t promise_id,
+                            const std::string& web_session_id);
+  // TODO(jrummell): Rename to RemoveSession().
   virtual void ReleaseSession(uint32_t promise_id,
                               const std::string& web_session_id) OVERRIDE;
+  // TODO(jrummell): Pass this function through Pepper and add OVERRIDE.
+  virtual void GetUsableKeyIds(uint32_t promise_id,
+                               const std::string& web_session_id);
   virtual void Decrypt(
       pp::Buffer_Dev encrypted_buffer,
       const PP_EncryptedBlockInfo& encrypted_block_info) OVERRIDE;
@@ -86,7 +94,7 @@ class CdmAdapter : public pp::Instance,
       pp::Buffer_Dev encrypted_buffer,
       const PP_EncryptedBlockInfo& encrypted_block_info) OVERRIDE;
 
-  // cdm::Host_4 and cdm::Host_5 implementation.
+  // cdm::Host_4, cdm::Host_5 and cdm::Host_6 implementation.
   virtual cdm::Buffer* Allocate(uint32_t capacity) OVERRIDE;
   virtual void SetTimer(int64_t delay_ms, void* context) OVERRIDE;
 
@@ -126,10 +134,10 @@ class CdmAdapter : public pp::Instance,
                                 uint32_t destination_url_length) OVERRIDE;
   virtual void OnSessionKeysChange(const char* web_session_id,
                                    uint32_t web_session_id_length,
-                                   bool has_additional_usable_key);
+                                   bool has_additional_usable_key) OVERRIDE;
   virtual void OnExpirationChange(const char* web_session_id,
                                   uint32_t web_session_id_length,
-                                  cdm::Time new_expiry_time);
+                                  cdm::Time new_expiry_time) OVERRIDE;
   virtual void OnSessionReady(const char* web_session_id,
                               uint32_t web_session_id_length) OVERRIDE;
   virtual void OnSessionClosed(const char* web_session_id,
@@ -141,7 +149,17 @@ class CdmAdapter : public pp::Instance,
                               const char* error_message,
                               uint32_t error_message_length) OVERRIDE;
 
-  // cdm::Host_4 and cdm::Host_5 implementation.
+  // cdm::Host_6 implementation.
+  virtual cdm::Time GetCurrentWallTime() OVERRIDE;
+  virtual void OnResolveKeyIdsPromise(uint32_t promise_id,
+                                      const cdm::BinaryData* usable_key_ids,
+                                      uint32_t usable_key_ids_length) OVERRIDE;
+  virtual void OnSessionUsableKeysChange(
+      const char* web_session_id,
+      uint32_t web_session_id_length,
+      bool has_additional_usable_key) OVERRIDE;
+
+  // cdm::Host_4, cdm::Host_5 and cdm::Host_6 implementation.
   virtual void SendPlatformChallenge(const char* service_id,
                                      uint32_t service_id_length,
                                      const char* challenge,
@@ -186,6 +204,10 @@ class CdmAdapter : public pp::Instance,
       int32_t result,
       uint32_t promise_id,
       const std::string& web_session_id);
+  void SendPromiseResolvedWithUsableKeyIdsInternal(
+      int32_t result,
+      uint32_t promise_id,
+      std::vector<std::vector<uint8> > key_ids);
   void SendPromiseRejectedInternal(int32_t result,
                                    uint32_t promise_id,
                                    const SessionError& error);
@@ -200,6 +222,12 @@ class CdmAdapter : public pp::Instance,
   void SendSessionErrorInternal(int32_t result,
                                 const std::string& web_session_id,
                                 const SessionError& error);
+  void SendSessionUsableKeysChangeInternal(int32_t result,
+                                           const std::string& web_session_id,
+                                           bool has_additional_usable_key);
+  void SendExpirationChangeInternal(int32_t result,
+                                    const std::string& web_session_id,
+                                    cdm::Time new_expiry_time);
   void RejectPromise(uint32_t promise_id,
                      cdm::Error error,
                      uint32_t system_code,
@@ -245,20 +273,20 @@ class CdmAdapter : public pp::Instance,
   void ReportOutputProtectionQuery();
   void ReportOutputProtectionQueryResult();
 
-  void SendPlatformChallengeDone(int32_t result);
+  struct PepperPlatformChallengeResponse {
+    pp::Var signed_data;
+    pp::Var signed_data_signature;
+    pp::Var platform_key_certificate;
+  };
+
+  void SendPlatformChallengeDone(
+      int32_t result,
+      const linked_ptr<PepperPlatformChallengeResponse>& response);
   void EnableProtectionDone(int32_t result);
   void QueryOutputProtectionStatusDone(int32_t result);
 
   pp::OutputProtection_Private output_protection_;
   pp::PlatformVerification platform_verification_;
-
-  // Since PPAPI doesn't provide handlers for CompletionCallbacks with more than
-  // one output we need to manage our own.  These values are only read by
-  // SendPlatformChallengeDone().
-  pp::Var signed_data_output_;
-  pp::Var signed_data_signature_output_;
-  pp::Var platform_key_certificate_output_;
-  bool challenge_in_progress_;
 
   // Same as above, these are only read by QueryOutputProtectionStatusDone().
   uint32_t output_link_mask_;

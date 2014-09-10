@@ -1,0 +1,183 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\kill_processes.py"
+    ],
+    "name": "taskkill"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\bot_update.py",
+      "--master",
+      "tryserver.v8",
+      "--builder",
+      "v8_win64_rel",
+      "--slave",
+      "TestSlavename",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]",
+      "--revision_mapping_file",
+      "{\"v8\": \"got_revision\"}",
+      "--patch_url",
+      "svn://svn-mirror.golo.chromium.org/patch",
+      "--output_json",
+      "/path/to/tmp/json",
+      "--revision",
+      "v8@bleeding_edge:12345",
+      "--no_shallow"
+    ],
+    "name": "bot_update",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"did_run\": false, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_failure\": false@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\gclient.py",
+      "config",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
+    ],
+    "name": "gclient setup"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\gclient_safe_revert.py",
+      ".",
+      "[DEPOT_TOOLS]\\gclient.bat"
+    ],
+    "name": "gclient revert"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\gclient.py",
+      "sync",
+      "--nohooks",
+      "--delete_unversioned_trees",
+      "--force",
+      "--verbose",
+      "--revision",
+      "v8@12345",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "gclient sync",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"v8/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 50110@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@50110@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "svn.bat",
+      "export",
+      "--force",
+      "svn://svn-mirror.golo.chromium.org/patch",
+      "/path/to/tmp/diff"
+    ],
+    "name": "download patch",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 1)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 2)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@@@@",
+      "@@@STEP_LOG_END@patch.diff@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport sys\nout = open(sys.argv[1], \"w\")\nfor line in sys.stdin:\n  out.write(line)\n",
+      "/path/to/tmp/"
+    ],
+    "name": "convert line endings (win32)",
+    "stdin": "fake patch.diff content (line 1)\nfake patch.diff content (line 2)\n",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@out = open(sys.argv[1], \"w\")@@@",
+      "@@@STEP_LOG_LINE@python.inline@for line in sys.stdin:@@@",
+      "@@@STEP_LOG_LINE@python.inline@  out.write(line)@@@",
+      "@@@STEP_LOG_END@python.inline@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content for Windows (line 1)",
+      "@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content for Windows (line 2)",
+      "@@@",
+      "@@@STEP_LOG_LINE@patch.diff@@@@",
+      "@@@STEP_LOG_END@patch.diff@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "patch",
+      "--dir",
+      "[SLAVE_BUILD]\\v8",
+      "--force",
+      "--forward",
+      "--remove-empty-files",
+      "--strip",
+      "0"
+    ],
+    "name": "apply patch",
+    "stdin": "fake patch.diff content for Windows (line 1)\r\nfake patch.diff content for Windows (line 2)\r\n"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\gclient.py",
+      "runhooks"
+    ],
+    "env": {
+      "GYP_DEFINES": "dcheck_always_on=1 fastbuild=1 target_arch=x64 v8_target_arch=x64",
+      "GYP_MSVS_VERSION": "2013"
+    },
+    "name": "gclient runhooks"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\cleanup_temp.py"
+    ],
+    "name": "cleanup_temp"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\compile.py",
+      "--target",
+      "Release",
+      "--src-dir",
+      "[SLAVE_BUILD]\\v8",
+      "--build-tool",
+      "vs",
+      "--arch",
+      "x64",
+      "--"
+    ],
+    "name": "compile (with patch)"
+  }
+]

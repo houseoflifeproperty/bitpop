@@ -11,4 +11,5 @@ DEPS = [
   'python',
   'swarming_client',
   'time',
+  'step',
 ]

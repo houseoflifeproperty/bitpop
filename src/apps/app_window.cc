@@ -5,11 +5,15 @@
 #include "apps/app_window.h"
 
 #include <algorithm>
+#include <string>
+#include <vector>
 
+#include "apps/app_delegate.h"
+#include "apps/app_web_contents_helper.h"
 #include "apps/app_window_geometry_cache.h"
 #include "apps/app_window_registry.h"
-#include "apps/apps_client.h"
 #include "apps/size_constraints.h"
+#include "apps/ui/apps_client.h"
 #include "apps/ui/native_app_window.h"
 #include "apps/ui/web_contents_sizer.h"
 #include "base/command_line.h"
@@ -36,10 +40,11 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extensions_browser_client.h"
+#include "extensions/browser/notification_types.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/view_type_utils.h"
+#include "extensions/common/draggable_region.h"
 #include "extensions/common/extension.h"
-#include "extensions/common/extension_messages.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "grit/theme_resources.h"
@@ -65,10 +70,6 @@ namespace {
 
 const int kDefaultWidth = 512;
 const int kDefaultHeight = 384;
-
-bool IsFullscreen(int fullscreen_types) {
-  return fullscreen_types != apps::AppWindow::FULLSCREEN_TYPE_NONE;
-}
 
 void SetConstraintProperty(const std::string& name,
                            int value,
@@ -159,13 +160,14 @@ AppWindow::CreateParams::CreateParams()
       has_frame_color(false),
       active_frame_color(SK_ColorBLACK),
       inactive_frame_color(SK_ColorBLACK),
-      transparent_background(false),
+      alpha_enabled(false),
       creator_process_id(0),
       state(ui::SHOW_STATE_DEFAULT),
       hidden(false),
       resizable(true),
       focused(true),
-      always_on_top(false) {}
+      always_on_top(false) {
+}
 
 AppWindow::CreateParams::~CreateParams() {}
 
@@ -225,19 +227,15 @@ gfx::Size AppWindow::CreateParams::GetWindowMaximumSize(
                                       frame_insets);
 }
 
-// AppWindow::Delegate
-
-AppWindow::Delegate::~Delegate() {}
-
 // AppWindow
 
 AppWindow::AppWindow(BrowserContext* context,
-                     Delegate* delegate,
+                     AppDelegate* app_delegate,
                      const extensions::Extension* extension)
     : browser_context_(context),
       extension_id_(extension->id()),
       window_type_(WINDOW_TYPE_DEFAULT),
-      delegate_(delegate),
+      app_delegate_(app_delegate),
       image_loader_ptr_factory_(this),
       fullscreen_types_(FULLSCREEN_TYPE_NONE),
       show_on_first_paint_(false),
@@ -246,7 +244,7 @@ AppWindow::AppWindow(BrowserContext* context,
       can_send_events_(false),
       is_hidden_(false),
       cached_always_on_top_(false),
-      requested_transparent_background_(false) {
+      requested_alpha_enabled_(false) {
   extensions::ExtensionsBrowserClient* client =
       extensions::ExtensionsBrowserClient::Get();
   CHECK(!client->IsGuestSession(context) || context->IsOffTheRecord())
@@ -264,7 +262,8 @@ void AppWindow::Init(const GURL& url,
           switches::kEnableAppsShowOnFirstPaint)) {
     content::WebContentsObserver::Observe(web_contents);
   }
-  delegate_->InitWebContents(web_contents);
+  app_delegate_->InitWebContents(web_contents);
+
   WebContentsModalDialogManager::CreateForWebContents(web_contents);
   // TODO(jamescook): Delegate out this creation.
   extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
@@ -285,12 +284,21 @@ void AppWindow::Init(const GURL& url,
   if (new_params.state == ui::SHOW_STATE_FULLSCREEN)
     new_params.always_on_top = false;
 
-  requested_transparent_background_ = new_params.transparent_background;
+  requested_alpha_enabled_ = new_params.alpha_enabled;
 
-  native_app_window_.reset(delegate_->CreateNativeAppWindow(this, new_params));
+  AppsClient* apps_client = AppsClient::Get();
+  native_app_window_.reset(
+      apps_client->CreateNativeAppWindow(this, new_params));
+
+  helper_.reset(new AppWebContentsHelper(
+      browser_context_, extension_id_, web_contents, app_delegate_.get()));
+
+  popup_manager_.reset(
+      new web_modal::PopupManager(GetWebContentsModalDialogHost()));
+  popup_manager_->RegisterWith(web_contents);
 
   // Prevent the browser process from shutting down while this window exists.
-  AppsClient::Get()->IncrementKeepAliveCount();
+  apps_client->IncrementKeepAliveCount();
   UpdateExtensionAppIcon();
   AppWindowRegistry::Get(browser_context_)->AddAppWindow(this);
 
@@ -320,7 +328,7 @@ void AppWindow::Init(const GURL& url,
   extensions::ExtensionsBrowserClient* client =
       extensions::ExtensionsBrowserClient::Get();
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
+                 extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<content::BrowserContext>(
                      client->GetOriginalContext(browser_context_)));
   // Close when the browser process is exiting.
@@ -328,10 +336,11 @@ void AppWindow::Init(const GURL& url,
                  chrome::NOTIFICATION_APP_TERMINATING,
                  content::NotificationService::AllSources());
   // Update the app menu if an ephemeral app becomes installed.
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
-                 content::Source<content::BrowserContext>(
-                     client->GetOriginalContext(browser_context_)));
+  registrar_.Add(
+      this,
+      extensions::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
+      content::Source<content::BrowserContext>(
+          client->GetOriginalContext(browser_context_)));
 
   app_window_contents_->LoadContents(new_params.creator_process_id);
 
@@ -360,48 +369,14 @@ void AppWindow::RequestMediaAccessPermission(
     content::WebContents* web_contents,
     const content::MediaStreamRequest& request,
     const content::MediaResponseCallback& callback) {
-  const extensions::Extension* extension = GetExtension();
-  if (!extension)
-    return;
-
-  delegate_->RequestMediaAccessPermission(
-      web_contents, request, callback, extension);
+  DCHECK_EQ(AppWindow::web_contents(), web_contents);
+  helper_->RequestMediaAccessPermission(request, callback);
 }
 
 WebContents* AppWindow::OpenURLFromTab(WebContents* source,
                                        const content::OpenURLParams& params) {
-  // Don't allow the current tab to be navigated. It would be nice to map all
-  // anchor tags (even those without target="_blank") to new tabs, but right
-  // now we can't distinguish between those and <meta> refreshes or window.href
-  // navigations, which we don't want to allow.
-  // TOOD(mihaip): Can we check for user gestures instead?
-  WindowOpenDisposition disposition = params.disposition;
-  if (disposition == CURRENT_TAB) {
-    AddMessageToDevToolsConsole(
-        content::CONSOLE_MESSAGE_LEVEL_ERROR,
-        base::StringPrintf(
-            "Can't open same-window link to \"%s\"; try target=\"_blank\".",
-            params.url.spec().c_str()));
-    return NULL;
-  }
-
-  // These dispositions aren't really navigations.
-  if (disposition == SUPPRESS_OPEN || disposition == SAVE_TO_DISK ||
-      disposition == IGNORE_ACTION) {
-    return NULL;
-  }
-
-  WebContents* contents =
-      delegate_->OpenURLFromTab(browser_context_, source, params);
-  if (!contents) {
-    AddMessageToDevToolsConsole(
-        content::CONSOLE_MESSAGE_LEVEL_ERROR,
-        base::StringPrintf(
-            "Can't navigate to \"%s\"; apps do not support navigation.",
-            params.url.spec().c_str()));
-  }
-
-  return contents;
+  DCHECK_EQ(web_contents(), source);
+  return helper_->OpenURLFromTab(params);
 }
 
 void AppWindow::AddNewContents(WebContents* source,
@@ -411,12 +386,12 @@ void AppWindow::AddNewContents(WebContents* source,
                                bool user_gesture,
                                bool* was_blocked) {
   DCHECK(new_contents->GetBrowserContext() == browser_context_);
-  delegate_->AddNewContents(browser_context_,
-                            new_contents,
-                            disposition,
-                            initial_pos,
-                            user_gesture,
-                            was_blocked);
+  app_delegate_->AddNewContents(browser_context_,
+                                new_contents,
+                                disposition,
+                                initial_pos,
+                                user_gesture,
+                                was_blocked);
 }
 
 bool AppWindow::PreHandleKeyboardEvent(
@@ -435,9 +410,8 @@ bool AppWindow::PreHandleKeyboardEvent(
   // ::HandleKeyboardEvent() will only be called if the KeyEvent's default
   // action is not prevented.
   // Thus, we should handle the KeyEvent here only if the permission is not set.
-  if (event.windowsKeyCode == ui::VKEY_ESCAPE &&
-      (fullscreen_types_ != FULLSCREEN_TYPE_NONE) &&
-      ((fullscreen_types_ & FULLSCREEN_TYPE_FORCED) == 0) &&
+  if (event.windowsKeyCode == ui::VKEY_ESCAPE && IsFullscreen() &&
+      !IsForcedFullscreen() &&
       !extension->permissions_data()->HasAPIPermission(
           APIPermission::kOverrideEscFullscreen)) {
     Restore();
@@ -453,9 +427,8 @@ void AppWindow::HandleKeyboardEvent(
   // If the window is currently fullscreen and not forced, ESC should leave
   // fullscreen.  If this code is being called for ESC, that means that the
   // KeyEvent's default behavior was not prevented by the content.
-  if (event.windowsKeyCode == ui::VKEY_ESCAPE &&
-      (fullscreen_types_ != FULLSCREEN_TYPE_NONE) &&
-      ((fullscreen_types_ & FULLSCREEN_TYPE_FORCED) == 0)) {
+  if (event.windowsKeyCode == ui::VKEY_ESCAPE && IsFullscreen() &&
+      !IsForcedFullscreen()) {
     Restore();
     return;
   }
@@ -466,24 +439,13 @@ void AppWindow::HandleKeyboardEvent(
 void AppWindow::RequestToLockMouse(WebContents* web_contents,
                                    bool user_gesture,
                                    bool last_unlocked_by_target) {
-  const extensions::Extension* extension = GetExtension();
-  if (!extension)
-    return;
-
-  bool has_permission = IsExtensionWithPermissionOrSuggestInConsole(
-      APIPermission::kPointerLock,
-      extension,
-      web_contents->GetRenderViewHost());
-
-  web_contents->GotResponseToLockMouseRequest(has_permission);
+  DCHECK_EQ(AppWindow::web_contents(), web_contents);
+  helper_->RequestToLockMouse();
 }
 
 bool AppWindow::PreHandleGestureEvent(WebContents* source,
                                       const blink::WebGestureEvent& event) {
-  // Disable pinch zooming in app windows.
-  return event.type == blink::WebGestureEvent::GesturePinchBegin ||
-         event.type == blink::WebGestureEvent::GesturePinchUpdate ||
-         event.type == blink::WebGestureEvent::GesturePinchEnd;
+  return AppWebContentsHelper::ShouldSuppressGestureEvent(event);
 }
 
 void AppWindow::DidFirstVisuallyNonEmptyPaint() {
@@ -510,8 +472,8 @@ void AppWindow::OnNativeWindowChanged() {
   SaveWindowPosition();
 
 #if defined(OS_WIN)
-  if (native_app_window_ && cached_always_on_top_ &&
-      !IsFullscreen(fullscreen_types_) && !native_app_window_->IsMaximized() &&
+  if (native_app_window_ && cached_always_on_top_ && !IsFullscreen() &&
+      !native_app_window_->IsMaximized() &&
       !native_app_window_->IsMinimized()) {
     UpdateNativeAlwaysOnTop();
   }
@@ -625,17 +587,43 @@ void AppWindow::UpdateAppIcon(const gfx::Image& image) {
   AppWindowRegistry::Get(browser_context_)->AppWindowIconChanged(this);
 }
 
-void AppWindow::Fullscreen() {
+void AppWindow::SetFullscreen(FullscreenType type, bool enable) {
+  DCHECK_NE(FULLSCREEN_TYPE_NONE, type);
+
+  if (enable) {
 #if !defined(OS_MACOSX)
-  // Do not enter fullscreen mode if disallowed by pref.
-  PrefService* prefs =
-      extensions::ExtensionsBrowserClient::Get()->GetPrefServiceForContext(
-          browser_context());
-  if (!prefs->GetBoolean(prefs::kAppFullscreenAllowed))
-    return;
+    // Do not enter fullscreen mode if disallowed by pref.
+    // TODO(bartfab): Add a test once it becomes possible to simulate a user
+    // gesture. http://crbug.com/174178
+    if (type != FULLSCREEN_TYPE_FORCED) {
+      PrefService* prefs =
+          extensions::ExtensionsBrowserClient::Get()->GetPrefServiceForContext(
+              browser_context());
+      if (!prefs->GetBoolean(prefs::kAppFullscreenAllowed))
+        return;
+    }
 #endif
-  fullscreen_types_ |= FULLSCREEN_TYPE_WINDOW_API;
+    fullscreen_types_ |= type;
+  } else {
+    fullscreen_types_ &= ~type;
+  }
   SetNativeWindowFullscreen();
+}
+
+bool AppWindow::IsFullscreen() const {
+  return fullscreen_types_ != FULLSCREEN_TYPE_NONE;
+}
+
+bool AppWindow::IsForcedFullscreen() const {
+  return (fullscreen_types_ & FULLSCREEN_TYPE_FORCED) != 0;
+}
+
+bool AppWindow::IsHtmlApiFullscreen() const {
+  return (fullscreen_types_ & FULLSCREEN_TYPE_HTML_API) != 0;
+}
+
+void AppWindow::Fullscreen() {
+  SetFullscreen(FULLSCREEN_TYPE_WINDOW_API, true);
 }
 
 void AppWindow::Maximize() { GetBaseWindow()->Maximize(); }
@@ -643,7 +631,7 @@ void AppWindow::Maximize() { GetBaseWindow()->Maximize(); }
 void AppWindow::Minimize() { GetBaseWindow()->Minimize(); }
 
 void AppWindow::Restore() {
-  if (IsFullscreen(fullscreen_types_)) {
+  if (IsFullscreen()) {
     fullscreen_types_ = FULLSCREEN_TYPE_NONE;
     SetNativeWindowFullscreen();
   } else {
@@ -652,21 +640,11 @@ void AppWindow::Restore() {
 }
 
 void AppWindow::OSFullscreen() {
-#if !defined(OS_MACOSX)
-  // Do not enter fullscreen mode if disallowed by pref.
-  PrefService* prefs =
-      extensions::ExtensionsBrowserClient::Get()->GetPrefServiceForContext(
-          browser_context());
-  if (!prefs->GetBoolean(prefs::kAppFullscreenAllowed))
-    return;
-#endif
-  fullscreen_types_ |= FULLSCREEN_TYPE_OS;
-  SetNativeWindowFullscreen();
+  SetFullscreen(FULLSCREEN_TYPE_OS, true);
 }
 
 void AppWindow::ForcedFullscreen() {
-  fullscreen_types_ |= FULLSCREEN_TYPE_FORCED;
-  SetNativeWindowFullscreen();
+  SetFullscreen(FULLSCREEN_TYPE_FORCED, true);
 }
 
 void AppWindow::SetContentSizeConstraints(const gfx::Size& min_size,
@@ -732,7 +710,7 @@ void AppWindow::SetAlwaysOnTop(bool always_on_top) {
   // As a security measure, do not allow fullscreen windows or windows that
   // overlap the taskbar to be on top. The property will be applied when the
   // window exits fullscreen and moves away from the taskbar.
-  if (!IsFullscreen(fullscreen_types_) && !IntersectsWithTaskbar())
+  if (!IsFullscreen() && !IntersectsWithTaskbar())
     native_app_window_->SetAlwaysOnTop(always_on_top);
 
   OnNativeWindowChanged();
@@ -754,9 +732,9 @@ void AppWindow::GetSerializedState(base::DictionaryValue* properties) const {
   properties->SetBoolean("maximized", native_app_window_->IsMaximized());
   properties->SetBoolean("alwaysOnTop", IsAlwaysOnTop());
   properties->SetBoolean("hasFrameColor", native_app_window_->HasFrameColor());
-  properties->SetBoolean("alphaEnabled",
-                         requested_transparent_background_ &&
-                             native_app_window_->CanHaveAlphaEnabled());
+  properties->SetBoolean(
+      "alphaEnabled",
+      requested_alpha_enabled_ && native_app_window_->CanHaveAlphaEnabled());
 
   // These properties are undocumented and are to enable testing. Alpha is
   // removed to
@@ -814,7 +792,7 @@ void AppWindow::DidDownloadFavicon(
   // whose height >= the preferred size.
   int largest_index = 0;
   for (size_t i = 1; i < bitmaps.size(); ++i) {
-    if (bitmaps[i].height() < delegate_->PreferredIconSize())
+    if (bitmaps[i].height() < app_delegate_->PreferredIconSize())
       break;
     largest_index = i;
   }
@@ -849,7 +827,7 @@ void AppWindow::UpdateExtensionAppIcon() {
       new extensions::IconImage(browser_context(),
                                 extension,
                                 extensions::IconsInfo::GetIcons(extension),
-                                delegate_->PreferredIconSize(),
+                                app_delegate_->PreferredIconSize(),
                                 default_icon,
                                 this));
 
@@ -890,7 +868,7 @@ bool AppWindow::IntersectsWithTaskbar() const {
 void AppWindow::UpdateNativeAlwaysOnTop() {
   DCHECK(cached_always_on_top_);
   bool is_on_top = native_app_window_->IsAlwaysOnTop();
-  bool fullscreen = IsFullscreen(fullscreen_types_);
+  bool fullscreen = IsFullscreen();
   bool intersects_taskbar = IntersectsWithTaskbar();
 
   if (is_on_top && (fullscreen || intersects_taskbar)) {
@@ -922,8 +900,8 @@ bool AppWindow::ShouldSuppressDialogs() { return true; }
 content::ColorChooser* AppWindow::OpenColorChooser(
     WebContents* web_contents,
     SkColor initial_color,
-    const std::vector<content::ColorSuggestion>& suggestionss) {
-  return delegate_->ShowColorChooser(web_contents, initial_color);
+    const std::vector<content::ColorSuggestion>& suggestions) {
+  return app_delegate_->ShowColorChooser(web_contents, initial_color);
 }
 
 void AppWindow::RunFileChooser(WebContents* tab,
@@ -936,7 +914,7 @@ void AppWindow::RunFileChooser(WebContents* tab,
     return;
   }
 
-  delegate_->RunFileChooser(tab, params);
+  app_delegate_->RunFileChooser(tab, params);
 }
 
 bool AppWindow::IsPopupOrPanel(const WebContents* source) const { return true; }
@@ -946,7 +924,7 @@ void AppWindow::MoveContents(WebContents* source, const gfx::Rect& pos) {
 }
 
 void AppWindow::NavigationStateChanged(const content::WebContents* source,
-                                       unsigned changed_flags) {
+                                       content::InvalidateTypes changed_flags) {
   if (changed_flags & content::INVALIDATE_TYPE_TITLE)
     native_app_window_->UpdateWindowTitle();
   else if (changed_flags & content::INVALIDATE_TYPE_TAB)
@@ -955,18 +933,6 @@ void AppWindow::NavigationStateChanged(const content::WebContents* source,
 
 void AppWindow::ToggleFullscreenModeForTab(content::WebContents* source,
                                            bool enter_fullscreen) {
-#if !defined(OS_MACOSX)
-  // Do not enter fullscreen mode if disallowed by pref.
-  // TODO(bartfab): Add a test once it becomes possible to simulate a user
-  // gesture. http://crbug.com/174178
-  PrefService* prefs =
-      extensions::ExtensionsBrowserClient::Get()->GetPrefServiceForContext(
-          browser_context());
-  if (enter_fullscreen && !prefs->GetBoolean(prefs::kAppFullscreenAllowed)) {
-    return;
-  }
-#endif
-
   const extensions::Extension* extension = GetExtension();
   if (!extension)
     return;
@@ -976,23 +942,19 @@ void AppWindow::ToggleFullscreenModeForTab(content::WebContents* source,
     return;
   }
 
-  if (enter_fullscreen)
-    fullscreen_types_ |= FULLSCREEN_TYPE_HTML_API;
-  else
-    fullscreen_types_ &= ~FULLSCREEN_TYPE_HTML_API;
-  SetNativeWindowFullscreen();
+  SetFullscreen(FULLSCREEN_TYPE_HTML_API, enter_fullscreen);
 }
 
 bool AppWindow::IsFullscreenForTabOrPending(const content::WebContents* source)
     const {
-  return ((fullscreen_types_ & FULLSCREEN_TYPE_HTML_API) != 0);
+  return IsHtmlApiFullscreen();
 }
 
 void AppWindow::Observe(int type,
                         const content::NotificationSource& source,
                         const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
+    case extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
       const extensions::Extension* unloaded_extension =
           content::Details<extensions::UnloadedExtensionInfo>(details)
               ->extension;
@@ -1000,7 +962,7 @@ void AppWindow::Observe(int type,
         native_app_window_->Close();
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED: {
+    case extensions::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED: {
       const extensions::Extension* installed_extension =
           content::Details<const extensions::InstalledExtensionInfo>(details)
               ->extension;
@@ -1019,22 +981,15 @@ void AppWindow::Observe(int type,
 
 void AppWindow::SetWebContentsBlocked(content::WebContents* web_contents,
                                       bool blocked) {
-  delegate_->SetWebContentsBlocked(web_contents, blocked);
+  app_delegate_->SetWebContentsBlocked(web_contents, blocked);
 }
 
 bool AppWindow::IsWebContentsVisible(content::WebContents* web_contents) {
-  return delegate_->IsWebContentsVisible(web_contents);
+  return app_delegate_->IsWebContentsVisible(web_contents);
 }
 
 WebContentsModalDialogHost* AppWindow::GetWebContentsModalDialogHost() {
   return native_app_window_.get();
-}
-
-void AppWindow::AddMessageToDevToolsConsole(ConsoleMessageLevel level,
-                                            const std::string& message) {
-  content::RenderViewHost* rvh = web_contents()->GetRenderViewHost();
-  rvh->Send(new ExtensionMsg_AddMessageToConsole(
-      rvh->GetRoutingID(), level, message));
 }
 
 void AppWindow::SaveWindowPosition() {

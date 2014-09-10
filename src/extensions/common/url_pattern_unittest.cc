@@ -31,6 +31,7 @@ TEST(ExtensionURLPatternTest, ParseInvalid) {
     { "about://", URLPattern::PARSE_ERROR_WRONG_SCHEME_SEPARATOR },
     { "http://", URLPattern::PARSE_ERROR_EMPTY_HOST },
     { "http:///", URLPattern::PARSE_ERROR_EMPTY_HOST },
+    { "http:// /", URLPattern::PARSE_ERROR_EMPTY_HOST },
     { "http://*foo/bar", URLPattern::PARSE_ERROR_INVALID_HOST_WILDCARD },
     { "http://foo.*.bar/baz", URLPattern::PARSE_ERROR_INVALID_HOST_WILDCARD },
     { "http://fo.*.ba:123/baz", URLPattern::PARSE_ERROR_INVALID_HOST_WILDCARD },
@@ -807,6 +808,37 @@ TEST(ExtensionURLPatternTest, Subset) {
   EXPECT_TRUE(StrictlyContains(pattern12, pattern11));
   EXPECT_TRUE(NeitherContains(pattern11, pattern13));
   EXPECT_TRUE(StrictlyContains(pattern12, pattern13));
+}
+
+TEST(ExtensionURLPatternTest, MatchesSingleOrigin) {
+  EXPECT_FALSE(
+      URLPattern(URLPattern::SCHEME_ALL, "http://*/").MatchesSingleOrigin());
+  EXPECT_FALSE(URLPattern(URLPattern::SCHEME_ALL, "https://*.google.com/*")
+                   .MatchesSingleOrigin());
+  EXPECT_TRUE(URLPattern(URLPattern::SCHEME_ALL, "http://google.com/")
+                  .MatchesSingleOrigin());
+  EXPECT_TRUE(URLPattern(URLPattern::SCHEME_ALL, "http://google.com/*")
+                  .MatchesSingleOrigin());
+  EXPECT_TRUE(URLPattern(URLPattern::SCHEME_ALL, "http://www.google.com/")
+                  .MatchesSingleOrigin());
+  EXPECT_FALSE(URLPattern(URLPattern::SCHEME_ALL, "*://www.google.com/")
+                   .MatchesSingleOrigin());
+  EXPECT_FALSE(URLPattern(URLPattern::SCHEME_ALL, "http://*.com/")
+                   .MatchesSingleOrigin());
+  EXPECT_FALSE(URLPattern(URLPattern::SCHEME_ALL, "http://*.google.com/foo/bar")
+                   .MatchesSingleOrigin());
+  EXPECT_TRUE(
+      URLPattern(URLPattern::SCHEME_ALL, "http://www.google.com/foo/bar")
+          .MatchesSingleOrigin());
+  EXPECT_FALSE(URLPattern(URLPattern::SCHEME_HTTPS, "*://*.google.com/foo/bar")
+                   .MatchesSingleOrigin());
+  EXPECT_TRUE(URLPattern(URLPattern::SCHEME_HTTPS, "https://www.google.com/")
+                  .MatchesSingleOrigin());
+  EXPECT_FALSE(URLPattern(URLPattern::SCHEME_HTTP,
+                          "http://*.google.com/foo/bar").MatchesSingleOrigin());
+  EXPECT_TRUE(
+      URLPattern(URLPattern::SCHEME_HTTP, "http://www.google.com/foo/bar")
+          .MatchesSingleOrigin());
 }
 
 }  // namespace

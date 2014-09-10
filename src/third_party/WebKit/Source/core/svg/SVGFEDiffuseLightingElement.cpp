@@ -27,7 +27,7 @@
 #include "platform/graphics/filters/FEDiffuseLighting.h"
 #include "platform/graphics/filters/FilterEffect.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGFEDiffuseLightingElement::SVGFEDiffuseLightingElement(Document& document)
     : SVGFilterPrimitiveStandardAttributes(SVGNames::feDiffuseLightingTag, document)
@@ -90,7 +90,7 @@ bool SVGFEDiffuseLightingElement::setFilterEffectAttribute(FilterEffect* effect,
         RenderObject* renderer = this->renderer();
         ASSERT(renderer);
         ASSERT(renderer->style());
-        return diffuseLighting->setLightingColor(renderer->style()->svgStyle()->lightingColor());
+        return diffuseLighting->setLightingColor(renderer->style()->svgStyle().lightingColor());
     }
     if (attrName == SVGNames::surfaceScaleAttr)
         return diffuseLighting->setSurfaceScale(m_surfaceScale->currentValue()->value());
@@ -101,23 +101,16 @@ bool SVGFEDiffuseLightingElement::setFilterEffectAttribute(FilterEffect* effect,
     const SVGFELightElement* lightElement = SVGFELightElement::findLightElement(*this);
     ASSERT(lightSource);
     ASSERT(lightElement);
+    ASSERT(effect->filter());
 
     if (attrName == SVGNames::azimuthAttr)
         return lightSource->setAzimuth(lightElement->azimuth()->currentValue()->value());
     if (attrName == SVGNames::elevationAttr)
         return lightSource->setElevation(lightElement->elevation()->currentValue()->value());
-    if (attrName == SVGNames::xAttr)
-        return lightSource->setX(lightElement->x()->currentValue()->value());
-    if (attrName == SVGNames::yAttr)
-        return lightSource->setY(lightElement->y()->currentValue()->value());
-    if (attrName == SVGNames::zAttr)
-        return lightSource->setZ(lightElement->z()->currentValue()->value());
-    if (attrName == SVGNames::pointsAtXAttr)
-        return lightSource->setPointsAtX(lightElement->pointsAtX()->currentValue()->value());
-    if (attrName == SVGNames::pointsAtYAttr)
-        return lightSource->setPointsAtY(lightElement->pointsAtY()->currentValue()->value());
-    if (attrName == SVGNames::pointsAtZAttr)
-        return lightSource->setPointsAtZ(lightElement->pointsAtZ()->currentValue()->value());
+    if (attrName == SVGNames::xAttr || attrName == SVGNames::yAttr || attrName == SVGNames::zAttr)
+        return lightSource->setPosition(effect->filter()->resolve3dPoint(lightElement->position()));
+    if (attrName == SVGNames::pointsAtXAttr || attrName == SVGNames::pointsAtYAttr || attrName == SVGNames::pointsAtZAttr)
+        return lightSource->setPointsAt(effect->filter()->resolve3dPoint(lightElement->pointsAt()));
     if (attrName == SVGNames::specularExponentAttr)
         return lightSource->setSpecularExponent(lightElement->specularExponent()->currentValue()->value());
     if (attrName == SVGNames::limitingConeAngleAttr)
@@ -177,7 +170,7 @@ PassRefPtr<FilterEffect> SVGFEDiffuseLightingElement::build(SVGFilterBuilder* fi
         return nullptr;
 
     ASSERT(renderer->style());
-    Color color = renderer->style()->svgStyle()->lightingColor();
+    Color color = renderer->style()->svgStyle().lightingColor();
 
     RefPtr<LightSource> lightSource = lightNode->lightSource(filter);
     RefPtr<FilterEffect> effect = FEDiffuseLighting::create(filter, color, m_surfaceScale->currentValue()->value(), m_diffuseConstant->currentValue()->value(),

@@ -1,13 +1,13 @@
 // Copyright 2004 Google Inc. All Rights Reserved
 
 
-#include <string>
-#include <sstream>
 #include <iostream>
-#include "talk/base/common.h"
-#include "talk/base/gunit.h"
+#include <sstream>
+#include <string>
 #include "talk/xmllite/xmlelement.h"
 #include "talk/xmpp/xmppstanzaparser.h"
+#include "webrtc/base/common.h"
+#include "webrtc/base/gunit.h"
 
 using buzz::QName;
 using buzz::XmlElement;

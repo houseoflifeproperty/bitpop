@@ -275,11 +275,6 @@ void RemoteWindowTreeHostWin::PostNativeEvent(
     const base::NativeEvent& native_event) {
 }
 
-void RemoteWindowTreeHostWin::OnDeviceScaleFactorChanged(
-    float device_scale_factor) {
-  NOTIMPLEMENTED();
-}
-
 ui::EventProcessor* RemoteWindowTreeHostWin::GetEventProcessor() {
   return dispatcher();
 }
@@ -388,13 +383,11 @@ void RemoteWindowTreeHostWin::OnWindowActivated() {
 
 void RemoteWindowTreeHostWin::OnEdgeGesture() {
   ui::GestureEvent event(
-      ui::ET_GESTURE_WIN8_EDGE_SWIPE,
       0,
       0,
       0,
       ui::EventTimeForNow(),
-      ui::GestureEventDetails(ui::ET_GESTURE_WIN8_EDGE_SWIPE, 0, 0),
-      0);
+      ui::GestureEventDetails(ui::ET_GESTURE_WIN8_EDGE_SWIPE, 0, 0));
   SendEventToProcessor(&event);
 }
 
@@ -506,11 +499,15 @@ void RemoteWindowTreeHostWin::DispatchKeyboardMessage(ui::EventType type,
                         message,
                         vkey,
                         repeat_count | scan_code >> 15);
+  } else if (is_character) {
+    ui::KeyEvent event(static_cast<base::char16>(vkey),
+                       ui::KeyboardCodeForWindowsKeyCode(vkey),
+                       flags);
+    SendEventToProcessor(&event);
   } else {
     ui::KeyEvent event(type,
                        ui::KeyboardCodeForWindowsKeyCode(vkey),
-                       flags,
-                       is_character);
+                       flags);
     SendEventToProcessor(&event);
   }
 }

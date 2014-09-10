@@ -31,9 +31,9 @@ class PDFExtensionTest : public ExtensionApiTest {
   }
 
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     ASSERT_TRUE(embedded_test_server()->ShutdownAndWaitUntilComplete());
-    ExtensionApiTest::CleanUpOnMainThread();
+    ExtensionApiTest::TearDownOnMainThread();
   }
 
   void RunTestsInFile(std::string filename, bool requiresPlugin) {
@@ -85,16 +85,7 @@ IN_PROC_BROWSER_TEST_F(PDFExtensionTest, Basic) {
   RunTestsInFile("basic_test.js", false);
 }
 
-// TODO(raymes): This fails with component builds on linux because the plugin
-// plugin crashes due to something related to how the plugin DLL is
-// compiled/linked. crbug.com/386436.
-#if defined(LINUX) && defined(COMPONENT_BUILD)
-#define MAYBE_BasicPlugin DISABLED_BasicPlugin
-#else
-#define MAYBE_BasicPlugin BasicPlugin
-#endif
-
-IN_PROC_BROWSER_TEST_F(PDFExtensionTest, MAYBE_BasicPlugin) {
+IN_PROC_BROWSER_TEST_F(PDFExtensionTest, BasicPlugin) {
   RunTestsInFile("basic_plugin_test.js", true);
 }
 

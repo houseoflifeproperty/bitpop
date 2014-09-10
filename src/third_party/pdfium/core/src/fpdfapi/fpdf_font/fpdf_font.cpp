@@ -78,7 +78,9 @@ void CPDF_FontGlobals::Clear(void* key)
         CFX_StockFontArray* pStockFonts = (CFX_StockFontArray*)value;
         for (int i = 0; i < 14; i ++) {
             if (pStockFonts->m_pStockFonts[i]) {
-                pStockFonts->m_pStockFonts[i]->GetFontDict()->Release();
+                CPDF_Dictionary* pFontDict = pStockFonts->m_pStockFonts[i]->GetFontDict();
+                if (pFontDict)
+                    pFontDict->Release();
                 delete pStockFonts->m_pStockFonts[i];
             }
         }
@@ -97,7 +99,9 @@ void CPDF_FontGlobals::ClearAll()
             CFX_StockFontArray* pStockFonts = (CFX_StockFontArray*)value;
             for (int i = 0; i < 14; i ++) {
                 if (pStockFonts->m_pStockFonts[i]) {
-                    pStockFonts->m_pStockFonts[i]->GetFontDict()->Release();
+                    CPDF_Dictionary* pFontDict = pStockFonts->m_pStockFonts[i]->GetFontDict();
+                    if (pFontDict)
+                        pFontDict->Release();
                     delete pStockFonts->m_pStockFonts[i];
                 }
             }
@@ -991,7 +995,7 @@ FX_BOOL CPDF_SimpleFont::LoadCommon()
     }
     if (m_Flags & PDFFONT_ALLCAP) {
         unsigned char lowercases[] = {'a', 'z', 0xe0, 0xf6, 0xf8, 0xfd};
-        for (int range = 0; range < sizeof lowercases / 2; range ++) {
+        for (size_t range = 0; range < sizeof lowercases / 2; range ++) {
             for (int i = lowercases[range * 2]; i <= lowercases[range * 2 + 1]; i ++) {
                 if (m_GlyphIndex[i] != 0xffff && m_pFontFile != NULL) {
                     continue;
@@ -1464,6 +1468,9 @@ void CPDF_TrueTypeFont::LoadGlyphMap()
             && m_pCharNames == NULL) || (m_Flags & PDFFONT_NONSYMBOLIC)) {
         if (!FXFT_Has_Glyph_Names(m_Font.m_Face) && (!m_Font.m_Face->num_charmaps || !m_Font.m_Face->charmaps)) {
             int nStartChar = m_pFontDict->GetInteger(FX_BSTRC("FirstChar"));
+            if(nStartChar < 0 || nStartChar > 255)
+                return;
+
             int charcode = 0;
             for (; charcode < nStartChar; charcode ++) {
                 m_GlyphIndex[charcode] = 0;
@@ -1695,7 +1702,7 @@ CPDF_Type3Char* CPDF_Type3Font::LoadChar(FX_DWORD charcode, int level)
     if (name == NULL) {
         return NULL;
     }
-    CPDF_Stream* pStream = (CPDF_Stream*)m_pCharProcs->GetElementValue(name);
+    CPDF_Stream* pStream = (CPDF_Stream*)(m_pCharProcs ? m_pCharProcs->GetElementValue(name) : NULL);
     if (pStream == NULL || pStream->GetType() != PDFOBJ_STREAM) {
         return NULL;
     }

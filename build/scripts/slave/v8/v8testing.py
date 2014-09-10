@@ -88,6 +88,12 @@ def main():
   option_parser.add_option("--quickcheck",
                            default=False, action='store_true',
                            help='Quick check mode (skip slow/flaky tests)')
+  option_parser.add_option("--predictable",
+                           default=False, action="store_true",
+                           help="Compare several reruns of each test")
+  option_parser.add_option("--tsan",
+                           help="Regard test expectations for TSAN",
+                           default=False, action="store_true")
 
   options, args = option_parser.parse_args()
   if args:
@@ -111,6 +117,8 @@ def main():
       options.testname = []
     if options.asan:
       cmd.extend(['--asan'])
+    if options.tsan:
+      cmd.extend(['--tsan'])
     if options.buildbot == 'True':
       cmd.extend(['--buildbot'])
     if options.no_presubmit:
@@ -155,7 +163,13 @@ def main():
     if options.quickcheck:
       cmd.extend(['--quickcheck'])
     if options.json_test_results:
+      # Rerun failures to test for flakes when presenting test results.
+      # TODO(machenbach): Both flags should be default as soon as the feature
+      # makes it into all branches.
+      cmd.extend(['--rerun-failures-count=2'])
       cmd.extend(['--json-test-results', options.json_test_results])
+    if options.predictable:
+      cmd.extend(['--predictable'])
 
   if options.shard_count > 1:
     cmd.extend(['--shard-count=%s' % options.shard_count,

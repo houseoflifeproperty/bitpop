@@ -11,7 +11,7 @@ DEPS = [
 
 def GenSteps(api):
   api.path['checkout'] = api.path['slave_build']
-  yield api.rietveld.apply_issue('foo', 'bar', authentication='oauth2')
+  api.rietveld.apply_issue('foo', 'bar', authentication='oauth2')
 
 
 def GenTests(api):

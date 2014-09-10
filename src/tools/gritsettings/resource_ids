@@ -54,6 +54,9 @@
     "includes": [6100],
     "structures": [6150],
   },
+  "athena/resources/athena_resources.grd": {
+    "structures": [6400],
+  },
   "chrome/app/theme/theme_resources.grd": {
     "structures": [6500],
   },
@@ -102,10 +105,7 @@
     "structures": [12000],
     "messages": [12500],
   },
-  "webkit/glue/inspector_strings.grd": {
-    "messages": [17500],
-  },
-  "webkit/glue/webkit_strings.grd": {
+  "content/app/strings/content_strings.grd": {
     "messages": [18500],
   },
   "components/policy/resources/policy_templates.grd": {
@@ -162,6 +162,12 @@
   "ash/ash_strings.grd": {
     "messages": [26000],
   },
+  "ui/chromeos/resources/ui_chromeos_resources.grd": {
+    "structures": [26200],
+  },
+  "ui/chromeos/ui_chromeos_strings.grd": {
+    "messages": [26300],
+  },
   "chrome/common/extensions_api_resources.grd": {
     "includes": [26400],
   },
@@ -174,7 +180,7 @@
   "extensions/extensions_strings.grd": {
     "messages": [27000],
   },
-  "apps/shell/app_shell_resources.grd": {
+  "extensions/shell/app_shell_resources.grd": {
     "includes": [27400],
   },
   "chrome/browser/resources/memory_internals_resources.grd": {
@@ -192,14 +198,14 @@
   "ui/file_manager/file_manager_resources.grd": {
     "includes": [28100],
   },
+  "ui/login/login_resources.grd": {
+    "includes": [28300],
+  },
   "chrome/browser/resources/translate_internals_resources.grd": {
     "includes": [28500],
   },
   "chrome/browser/resources/sync_file_system_internals_resources.grd": {
     "includes": [29000],
-  },
-  "third_party/libaddressinput/chromium/cpp/res/libaddressinput_strings.grd": {
-    "messages": [29050],
   },
   "chrome/app/address_input_strings.grd": {
     "messages": [29100],

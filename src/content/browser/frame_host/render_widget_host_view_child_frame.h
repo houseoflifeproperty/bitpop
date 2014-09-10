@@ -89,7 +89,7 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config config) OVERRIDE;
+      const SkColorType color_type) OVERRIDE;
   virtual void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
@@ -151,8 +151,10 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
       gfx::NativeViewAccessible accessible_parent) OVERRIDE;
   virtual gfx::NativeViewId GetParentForWindowlessPlugin() const OVERRIDE;
 #endif
+  virtual BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
+      BrowserAccessibilityDelegate* delegate) OVERRIDE;
 
-  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+  virtual SkColorType PreferredReadbackFormat() OVERRIDE;
 
  protected:
   friend class RenderWidgetHostView;

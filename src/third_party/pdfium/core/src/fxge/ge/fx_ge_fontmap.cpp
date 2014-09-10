@@ -534,15 +534,6 @@ static CFX_ByteString _FPDF_ReadStringFromFile(FXSYS_FILE* pFile, FX_DWORD size)
     buffer.ReleaseBuffer(size);
     return buffer;
 }
-static CFX_ByteString _FPDF_ReadStringFromStreamFile(IFX_FileStream* pFile, FX_DWORD size)
-{
-    CFX_ByteString buffer;
-    if (!pFile->ReadBlock(buffer.GetBuffer(size), size)) {
-        return CFX_ByteString();
-    }
-    buffer.ReleaseBuffer(size);
-    return buffer;
-}
 CFX_ByteString _FPDF_LoadTableFromTT(FXSYS_FILE* pFile, FX_LPCBYTE pTables, FX_DWORD nTables, FX_DWORD tag)
 {
     for (FX_DWORD i = 0; i < nTables; i ++) {
@@ -859,11 +850,11 @@ typedef struct _FX_FontStyle {
     FX_INT32 len;
 } FX_FontStyle;
 const FX_FontStyle g_FontStyles[] = {
-    "Bold", 4,
-    "Italic", 6,
-    "BoldItalic", 10,
-    "Reg", 3,
-    "Regular", 7,
+  { "Bold", 4 },
+  { "Italic", 6 },
+  { "BoldItalic", 10 },
+  { "Reg", 3 },
+  { "Regular", 7 },
 };
 CFX_ByteString ParseStyle(FX_LPCSTR pStyle, int iLen, int iIndex)
 {
@@ -975,8 +966,6 @@ FXFT_Face CFX_FontMapper::FindSubstFont(const CFX_ByteString& name, FX_BOOL bTru
     FX_BOOL bItalic = FALSE;
     FX_DWORD nStyle = 0;
     FX_BOOL bStyleAvail = FALSE;
-    FX_BOOL bFamilyStyleIsWhole = FALSE;
-    FX_BOOL bNextF = FALSE;
     if (iBaseFont < 12) {
         family = g_Base14FontNames[iBaseFont];
         if ((iBaseFont % 4) == 1 || (iBaseFont % 4) == 2) {
@@ -1535,7 +1524,7 @@ FX_DWORD CFX_FolderFontInfo::GetFontData(void* hFont, FX_DWORD table, FX_LPBYTE 
     }
     if (datasize && size >= datasize && pFile) {
         FXSYS_fseek(pFile, offset, FXSYS_SEEK_SET);
-        size_t readCnt = FXSYS_fread(buffer, datasize, 1, pFile);
+        FXSYS_fread(buffer, datasize, 1, pFile);
     }
     if (pFile) {
         FXSYS_fclose(pFile);

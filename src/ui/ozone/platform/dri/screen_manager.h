@@ -23,29 +23,29 @@ class Size;
 namespace ui {
 
 class DriWrapper;
-class ScanoutSurfaceGenerator;
+class ScanoutBufferGenerator;
 
 // Responsible for keeping track of active displays and configuring them.
-class OZONE_EXPORT ScreenManager {
+class ScreenManager {
  public:
-  ScreenManager(DriWrapper* dri, ScanoutSurfaceGenerator* surface_generator);
+  ScreenManager(DriWrapper* dri, ScanoutBufferGenerator* surface_generator);
   virtual ~ScreenManager();
 
   // Remove a display controller from the list of active controllers. The
   // controller is removed since it was disconnected.
-  void RemoveDisplayController(uint32_t crtc, uint32_t connector);
+  void RemoveDisplayController(uint32_t crtc);
 
   // Configure (and add if not present) a display controller. The display
   // controller is identified by (|crtc|, |connector|) and the controller is
   // modeset using |mode|.
   bool ConfigureDisplayController(uint32_t crtc,
                                   uint32_t connector,
+                                  const gfx::Point& origin,
                                   const drmModeModeInfo& mode);
 
-  // Disable the display controller identified by (|crtc|, |connector|). Note,
-  // the controller may still be connected, so this does not remove the
-  // controller.
-  bool DisableDisplayController(uint32_t crtc, uint32_t connector);
+  // Disable the display controller identified by |crtc|. Note, the controller
+  // may still be connected, so this does not remove the controller.
+  bool DisableDisplayController(uint32_t crtc);
 
   // Returns a reference to the display controller associated with |widget|.
   // This returns a weak reference since the display controller may be destroyed
@@ -62,7 +62,26 @@ class OZONE_EXPORT ScreenManager {
   // Returns an iterator into |controllers_| for the controller identified by
   // (|crtc|, |connector|).
   HardwareDisplayControllerMap::iterator FindDisplayController(
-      uint32_t crtc, uint32_t connector);
+      uint32_t crtc);
+
+  // Returns an iterator into |controllers_| for the controller located at
+  // |origin|.
+  HardwareDisplayControllerMap::iterator FindDisplayControllerByOrigin(
+      const gfx::Point& origin);
+
+  // Perform modesetting in |controller| using |origin| and |mode|.
+  bool ModesetDisplayController(HardwareDisplayController* controller,
+                                const gfx::Point& origin,
+                                const drmModeModeInfo& mode);
+
+  // Tries to set the controller identified by (|crtc|, |connector|) to mirror
+  // those in |mirror|. |original| is an iterator to the HDC where the
+  // controller is currently present.
+  bool HandleMirrorMode(
+      HardwareDisplayControllerMap::iterator original,
+      HardwareDisplayControllerMap::iterator mirror,
+      uint32_t crtc,
+      uint32_t connector);
 
   // On non CrOS builds there is no display configurator to look-up available
   // displays and initialize the HDCs. In such cases this is called internally
@@ -70,7 +89,7 @@ class OZONE_EXPORT ScreenManager {
   virtual void ForceInitializationOfPrimaryDisplay();
 
   DriWrapper* dri_;  // Not owned.
-  ScanoutSurfaceGenerator* surface_generator_;  // Not owned.
+  ScanoutBufferGenerator* buffer_generator_;  // Not owned.
   // Mapping between an accelerated widget and an active display.
   HardwareDisplayControllerMap controllers_;
   gfx::AcceleratedWidget last_added_widget_;

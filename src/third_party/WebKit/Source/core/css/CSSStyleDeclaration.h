@@ -21,12 +21,12 @@
 #ifndef CSSStyleDeclaration_h
 #define CSSStyleDeclaration_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/CSSPropertyNames.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSProperty;
 class CSSRule;
@@ -79,6 +79,6 @@ protected:
     }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSStyleDeclaration_h

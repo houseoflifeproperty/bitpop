@@ -43,49 +43,18 @@
       '<(DEPTH)/third_party/sqlite/sqlite.gyp:sqlite',
       '../config.gyp:config',
       '../core/core.gyp:webcore',
-      'make_modules_generated',
+      'modules_generated.gyp:make_modules_generated',
     ],
     'defines': [
       'BLINK_IMPLEMENTATION=1',
       'INSIDE_BLINK',
     ],
-    'include_dirs': [
-      # FIXME: Remove these once scripts generate qualified
-      # includes correctly: http://crbug.com/380054
-      '<(blink_core_output_dir)',
-      '<(blink_modules_output_dir)',
-    ],
     'sources': [
       '<@(modules_files)',
+      '<@(bindings_modules_v8_files)',
       '<@(bindings_modules_v8_generated_aggregate_files)',
     ],
     'actions': [
-      {
-        # GN version: //third_party/WebKit/Source/modules:modules_fetch_polyfill
-        'action_name': 'FetchPolyfill',
-        'process_outputs_as_sources': 1,
-        'variables': {
-            'resources': [
-                 'serviceworkers/polyfills/fetchPolyfill.js',
-            ],
-        },
-        'inputs': [
-            '../build/scripts/make-file-arrays.py',
-            '<@(resources)',
-        ],
-        'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/blink/FetchPolyfill.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/FetchPolyfill.cpp',
-        ],
-        'action': [
-            'python',
-            '../build/scripts/make-file-arrays.py',
-            '--out-h=<(SHARED_INTERMEDIATE_DIR)/blink/FetchPolyfill.h',
-            '--out-cpp=<(SHARED_INTERMEDIATE_DIR)/blink/FetchPolyfill.cpp',
-            '--namespace=WebCore',
-            '<@(resources)',
-        ],
-      },
       {
         # GN version: //third_party/WebKit/Source/modules:modules_cache_polyfill
         'action_name': 'CachePolyfill',
@@ -100,15 +69,15 @@
             '<@(resources)',
         ],
         'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/blink/CachePolyfill.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/CachePolyfill.cpp',
+            '<(blink_modules_output_dir)/CachePolyfill.h',
+            '<(blink_modules_output_dir)/CachePolyfill.cpp',
         ],
         'action': [
             'python',
             '../build/scripts/make-file-arrays.py',
-            '--out-h=<(SHARED_INTERMEDIATE_DIR)/blink/CachePolyfill.h',
-            '--out-cpp=<(SHARED_INTERMEDIATE_DIR)/blink/CachePolyfill.cpp',
-            '--namespace=WebCore',
+            '--out-h=<(blink_modules_output_dir)/CachePolyfill.h',
+            '--out-cpp=<(blink_modules_output_dir)/CachePolyfill.cpp',
+            '--namespace=blink',
             '<@(resources)',
         ],
       },
@@ -126,15 +95,15 @@
             '<@(resources)',
         ],
         'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/blink/CacheStoragePolyfill.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/CacheStoragePolyfill.cpp',
+            '<(blink_modules_output_dir)/CacheStoragePolyfill.h',
+            '<(blink_modules_output_dir)/CacheStoragePolyfill.cpp',
         ],
         'action': [
             'python',
             '../build/scripts/make-file-arrays.py',
-            '--out-h=<(SHARED_INTERMEDIATE_DIR)/blink/CacheStoragePolyfill.h',
-            '--out-cpp=<(SHARED_INTERMEDIATE_DIR)/blink/CacheStoragePolyfill.cpp',
-            '--namespace=WebCore',
+            '--out-h=<(blink_modules_output_dir)/CacheStoragePolyfill.h',
+            '--out-cpp=<(blink_modules_output_dir)/CacheStoragePolyfill.cpp',
+            '--namespace=blink',
             '<@(resources)',
         ],
       },
@@ -158,25 +127,5 @@
       '<@(modules_testing_files)',
     ],
 
-  },
-  {
-    # FIXME: should be in modules_generated.gyp
-    # GN version: //third_party/WebKit/Source/modules:make_modules_generated
-    'target_name': 'make_modules_generated',
-    'type': 'none',
-    'hard_dependency': 1,
-    'dependencies': [
-      #'generated_testing_idls',
-      '../core/core_generated.gyp:core_event_interfaces',
-      '../bindings/modules/generated.gyp:modules_event_generated',
-      '../config.gyp:config',
-    ],
-    'sources': [
-      # bison rule
-      '../core/css/CSSGrammar.y',
-      '../core/xml/XPathGrammar.y',
-    ],
-    'actions': [
-    ],
   }],
 }

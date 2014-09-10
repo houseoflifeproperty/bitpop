@@ -40,12 +40,12 @@
 #include "platform/LengthFunctions.h"
 #include "platform/geometry/FloatSize.h"
 #include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/GraphicsTypes.h"
 #include "platform/graphics/ImageBuffer.h"
-#include "platform/graphics/WindRule.h"
 #include "wtf/MathExtras.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 static PassOwnPtr<Shape> createInsetShape(const FloatRoundedRect& bounds)
 {
@@ -107,7 +107,7 @@ PassOwnPtr<Shape> Shape::createShape(const BasicShape* basicShape, const LayoutS
     switch (basicShape->type()) {
 
     case BasicShape::BasicShapeCircleType: {
-        const BasicShapeCircle* circle = static_cast<const BasicShapeCircle*>(basicShape);
+        const BasicShapeCircle* circle = toBasicShapeCircle(basicShape);
         FloatPoint center = floatPointForCenterCoordinate(circle->centerX(), circle->centerY(), FloatSize(boxWidth, boxHeight));
         float radius = circle->floatValueForRadiusInBox(FloatSize(boxWidth, boxHeight));
         FloatPoint logicalCenter = physicalPointToLogical(center, logicalBoxSize.height().toFloat(), writingMode);
@@ -117,7 +117,7 @@ PassOwnPtr<Shape> Shape::createShape(const BasicShape* basicShape, const LayoutS
     }
 
     case BasicShape::BasicShapeEllipseType: {
-        const BasicShapeEllipse* ellipse = static_cast<const BasicShapeEllipse*>(basicShape);
+        const BasicShapeEllipse* ellipse = toBasicShapeEllipse(basicShape);
         FloatPoint center = floatPointForCenterCoordinate(ellipse->centerX(), ellipse->centerY(), FloatSize(boxWidth, boxHeight));
         float radiusX = ellipse->floatValueForRadiusInBox(ellipse->radiusX(), center.x(), boxWidth);
         float radiusY = ellipse->floatValueForRadiusInBox(ellipse->radiusY(), center.y(), boxHeight);
@@ -128,7 +128,7 @@ PassOwnPtr<Shape> Shape::createShape(const BasicShape* basicShape, const LayoutS
     }
 
     case BasicShape::BasicShapePolygonType: {
-        const BasicShapePolygon* polygon = static_cast<const BasicShapePolygon*>(basicShape);
+        const BasicShapePolygon* polygon = toBasicShapePolygon(basicShape);
         const Vector<Length>& values = polygon->values();
         size_t valuesSize = values.size();
         ASSERT(!(valuesSize % 2));
@@ -144,7 +144,7 @@ PassOwnPtr<Shape> Shape::createShape(const BasicShape* basicShape, const LayoutS
     }
 
     case BasicShape::BasicShapeInsetType: {
-        const BasicShapeInset& inset = *static_cast<const BasicShapeInset*>(basicShape);
+        const BasicShapeInset& inset = *toBasicShapeInset(basicShape);
         float left = floatValueForLength(inset.left(), boxWidth);
         float top = floatValueForLength(inset.top(), boxHeight);
         float right = floatValueForLength(inset.right(), boxWidth);
@@ -175,10 +175,20 @@ PassOwnPtr<Shape> Shape::createShape(const BasicShape* basicShape, const LayoutS
     return shape.release();
 }
 
+PassOwnPtr<Shape> Shape::createEmptyRasterShape(WritingMode writingMode, float margin)
+{
+    OwnPtr<RasterShapeIntervals> intervals = adoptPtr(new RasterShapeIntervals(0, 0));
+    OwnPtr<RasterShape> rasterShape = adoptPtr(new RasterShape(intervals.release(), IntSize()));
+    rasterShape->m_writingMode = writingMode;
+    rasterShape->m_margin = margin;
+    return rasterShape.release();
+}
+
 PassOwnPtr<Shape> Shape::createRasterShape(Image* image, float threshold, const LayoutRect& imageR, const LayoutRect& marginR, WritingMode writingMode, float margin)
 {
     IntRect imageRect = pixelSnappedIntRect(imageR);
     IntRect marginRect = pixelSnappedIntRect(marginR);
+
     OwnPtr<RasterShapeIntervals> intervals = adoptPtr(new RasterShapeIntervals(marginRect.height(), -marginRect.y()));
     OwnPtr<ImageBuffer> imageBuffer = ImageBuffer::create(imageRect.size());
 
@@ -186,7 +196,7 @@ PassOwnPtr<Shape> Shape::createRasterShape(Image* image, float threshold, const 
         GraphicsContext* graphicsContext = imageBuffer->context();
         graphicsContext->drawImage(image, IntRect(IntPoint(), imageRect.size()));
 
-        RefPtr<Uint8ClampedArray> pixelArray = imageBuffer->getUnmultipliedImageData(IntRect(IntPoint(), imageRect.size()));
+        RefPtr<Uint8ClampedArray> pixelArray = imageBuffer->getImageData(Unmultiplied, IntRect(IntPoint(), imageRect.size()));
         unsigned pixelArrayOffset = 3; // Each pixel is four bytes: RGBA.
         uint8_t alphaPixelThreshold = threshold * 255;
 
@@ -228,4 +238,4 @@ PassOwnPtr<Shape> Shape::createLayoutBoxShape(const RoundedRect& roundedRect, Wr
     return shape.release();
 }
 
-} // namespace WebCore
+} // namespace blink

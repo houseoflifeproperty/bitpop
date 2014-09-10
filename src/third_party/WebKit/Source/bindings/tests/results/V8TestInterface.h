@@ -8,43 +8,51 @@
 #define V8TestInterface_h
 
 #if ENABLE(CONDITION)
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8DOMWrapper.h"
+#include "bindings/core/v8/WrapperTypeInfo.h"
 #include "bindings/tests/idls/TestInterfaceImplementation.h"
 #include "bindings/tests/v8/V8TestInterfaceEmpty.h"
-#include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8DOMWrapper.h"
-#include "bindings/v8/WrapperTypeInfo.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class V8TestInterface {
 public:
+    class PrivateScript {
+    public:
+        static bool shortMethodWithShortArgumentImplementedInPrivateScriptMethod(LocalFrame* frame, TestInterface* holderImpl, int value, int* result);
+        static bool stringAttributeAttributeGetter(LocalFrame* frame, TestInterfaceImplementation* holderImpl, String* result);
+        static bool stringAttributeAttributeSetter(LocalFrame* frame, TestInterfaceImplementation* holderImpl, String cppValue);
+    };
+
     static bool hasInstance(v8::Handle<v8::Value>, v8::Isolate*);
     static v8::Handle<v8::Object> findInstanceInPrototypeChain(v8::Handle<v8::Value>, v8::Isolate*);
     static v8::Handle<v8::FunctionTemplate> domTemplate(v8::Isolate*);
     static TestInterfaceImplementation* toNative(v8::Handle<v8::Object> object)
     {
-        return fromInternalPointer(object->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
+        return fromInternalPointer(blink::toInternalPointer(object));
     }
     static TestInterfaceImplementation* toNativeWithTypeCheck(v8::Isolate*, v8::Handle<v8::Value>);
     static const WrapperTypeInfo wrapperTypeInfo;
-    static void derefObject(void*);
-    static void visitDOMWrapper(void*, const v8::Persistent<v8::Object>&, v8::Isolate*);
+    static void derefObject(ScriptWrappableBase* internalPointer);
+    static void visitDOMWrapper(ScriptWrappableBase* internalPointer, const v8::Persistent<v8::Object>&, v8::Isolate*);
     static ActiveDOMObject* toActiveDOMObject(v8::Handle<v8::Object>);
     static void implementsCustomVoidMethodMethodCustom(const v8::FunctionCallbackInfo<v8::Value>&);
     static void legacyCallCustom(const v8::FunctionCallbackInfo<v8::Value>&);
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + 0;
-    static inline void* toInternalPointer(TestInterfaceImplementation* impl)
+    static inline ScriptWrappableBase* toInternalPointer(TestInterfaceImplementation* impl)
     {
         return V8TestInterfaceEmpty::toInternalPointer(impl);
     }
 
-    static inline TestInterfaceImplementation* fromInternalPointer(void* object)
+    static inline TestInterfaceImplementation* fromInternalPointer(ScriptWrappableBase* internalPointer)
     {
-        return static_cast<TestInterfaceImplementation*>(V8TestInterfaceEmpty::fromInternalPointer(object));
+        return static_cast<TestInterfaceImplementation*>(V8TestInterfaceEmpty::fromInternalPointer(internalPointer));
     }
-    static void installPerContextEnabledProperties(v8::Handle<v8::Object>, TestInterfaceImplementation*, v8::Isolate*);
-    static void installPerContextEnabledMethods(v8::Handle<v8::Object>, v8::Isolate*);
+    static void installConditionallyEnabledProperties(v8::Handle<v8::Object>, v8::Isolate*);
+    static void installConditionallyEnabledMethods(v8::Handle<v8::Object>, v8::Isolate*);
 
 private:
 };

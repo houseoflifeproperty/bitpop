@@ -22,6 +22,7 @@
 #include "base/time/time.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/web_preferences.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"
 #include "content/public/test/layouttest_support.h"
@@ -33,6 +34,7 @@
 #include "content/shell/renderer/shell_render_process_observer.h"
 #include "content/shell/renderer/test_runner/WebTask.h"
 #include "content/shell/renderer/test_runner/WebTestInterfaces.h"
+#include "content/shell/renderer/test_runner/mock_screen_orientation_client.h"
 #include "content/shell/renderer/test_runner/web_test_proxy.h"
 #include "content/shell/renderer/test_runner/web_test_runner.h"
 #include "net/base/filename_util.h"
@@ -62,7 +64,6 @@
 #include "third_party/WebKit/public/web/WebTestingSupport.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/gfx/rect.h"
-#include "webkit/common/webpreferences.h"
 
 using blink::Platform;
 using blink::WebArrayBufferView;
@@ -206,6 +207,10 @@ void WebKitTestRunner::setGamepadProvider(
   SetMockGamepadProvider(provider);
 }
 
+void WebKitTestRunner::setDeviceLightData(const double data) {
+  SetMockDeviceLightData(data);
+}
+
 void WebKitTestRunner::setDeviceMotionData(const WebDeviceMotionData& data) {
   SetMockDeviceMotionData(data);
 }
@@ -217,11 +222,16 @@ void WebKitTestRunner::setDeviceOrientationData(
 
 void WebKitTestRunner::setScreenOrientation(
     const WebScreenOrientationType& orientation) {
-  SetMockScreenOrientation(render_view(), orientation);
+  MockScreenOrientationClient* mock_client =
+      proxy()->GetScreenOrientationClientMock();
+  mock_client->UpdateDeviceOrientation(render_view()->GetWebView()->mainFrame(),
+                                       orientation);
 }
 
 void WebKitTestRunner::resetScreenOrientation() {
-  ResetMockScreenOrientation();
+  MockScreenOrientationClient* mock_client =
+      proxy()->GetScreenOrientationClientMock();
+  mock_client->ResetData();
 }
 
 void WebKitTestRunner::didChangeBatteryStatus(
@@ -400,6 +410,26 @@ void WebKitTestRunner::setDatabaseQuota(int quota) {
   Send(new ShellViewHostMsg_SetDatabaseQuota(routing_id(), quota));
 }
 
+blink::WebNotificationPresenter::Permission
+WebKitTestRunner::checkWebNotificationPermission(const GURL& origin) {
+  int permission = blink::WebNotificationPresenter::PermissionNotAllowed;
+  Send(new ShellViewHostMsg_CheckWebNotificationPermission(
+          routing_id(),
+          origin,
+          &permission));
+  return static_cast<blink::WebNotificationPresenter::Permission>(permission);
+}
+
+void WebKitTestRunner::grantWebNotificationPermission(const GURL& origin,
+                                                      bool permission_granted) {
+  Send(new ShellViewHostMsg_GrantWebNotificationPermission(
+      routing_id(), origin, permission_granted));
+}
+
+void WebKitTestRunner::clearWebNotificationPermissions() {
+  Send(new ShellViewHostMsg_ClearWebNotificationPermissions(routing_id()));
+}
+
 void WebKitTestRunner::setDeviceScaleFactor(float factor) {
   SetDeviceScaleFactor(render_view(), factor);
 }
@@ -451,7 +481,7 @@ std::string WebKitTestRunner::pathToLocalResource(const std::string& resource) {
   // Some layout tests use file://// which we resolve as a UNC path. Normalize
   // them to just file:///.
   std::string result = resource;
-  while (StringToLowerASCII(result).find("file:////") == 0) {
+  while (base::StringToLowerASCII(result).find("file:////") == 0) {
     result = result.substr(0, strlen("file:///")) +
              result.substr(strlen("file:////"));
   }

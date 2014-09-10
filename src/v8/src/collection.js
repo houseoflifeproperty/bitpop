@@ -15,11 +15,31 @@ var $Map = global.Map;
 // -------------------------------------------------------------------
 // Harmony Set
 
-function SetConstructor() {
-  if (%_IsConstructCall()) {
-    %SetInitialize(this);
-  } else {
+function SetConstructor(iterable) {
+  if (!%_IsConstructCall()) {
     throw MakeTypeError('constructor_not_function', ['Set']);
+  }
+
+  var iter, adder;
+
+  if (!IS_NULL_OR_UNDEFINED(iterable)) {
+    iter = GetIterator(iterable);
+    adder = this.add;
+    if (!IS_SPEC_FUNCTION(adder)) {
+      throw MakeTypeError('property_not_function', ['add', this]);
+    }
+  }
+
+  %SetInitialize(this);
+
+  if (IS_UNDEFINED(iter)) return;
+
+  var next, done;
+  while (!(next = iter.next()).done) {
+    if (!IS_SPEC_OBJECT(next)) {
+      throw MakeTypeError('iterator_result_not_an_object', [next]);
+    }
+    %_CallFunction(this, next.value, adder);
   }
 }
 
@@ -80,11 +100,13 @@ function SetForEach(f, receiver) {
   }
 
   var iterator = new SetIterator(this, ITERATOR_KIND_VALUES);
-  var entry;
-  var stepping = %_DebugCallbackSupportsStepping(f);
-  while (!(entry = %SetIteratorNext(iterator)).done) {
+  var key;
+  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
+  var value_array = [UNDEFINED];
+  while (%SetIteratorNext(iterator, value_array)) {
     if (stepping) %DebugPrepareStepInIfStepping(f);
-    %_CallFunction(receiver, entry.value, entry.value, this, f);
+    key = value_array[0];
+    %_CallFunction(receiver, key, key, this, f);
   }
 }
 
@@ -96,7 +118,7 @@ function SetUpSet() {
 
   %SetCode($Set, SetConstructor);
   %FunctionSetPrototype($Set, new $Object());
-  %SetProperty($Set.prototype, "constructor", $Set, DONT_ENUM);
+  %AddNamedProperty($Set.prototype, "constructor", $Set, DONT_ENUM);
 
   %FunctionSetLength(SetForEach, 1);
 
@@ -117,11 +139,35 @@ SetUpSet();
 // -------------------------------------------------------------------
 // Harmony Map
 
-function MapConstructor() {
-  if (%_IsConstructCall()) {
-    %MapInitialize(this);
-  } else {
+function MapConstructor(iterable) {
+  if (!%_IsConstructCall()) {
     throw MakeTypeError('constructor_not_function', ['Map']);
+  }
+
+  var iter, adder;
+
+  if (!IS_NULL_OR_UNDEFINED(iterable)) {
+    iter = GetIterator(iterable);
+    adder = this.set;
+    if (!IS_SPEC_FUNCTION(adder)) {
+      throw MakeTypeError('property_not_function', ['set', this]);
+    }
+  }
+
+  %MapInitialize(this);
+
+  if (IS_UNDEFINED(iter)) return;
+
+  var next, done, nextItem;
+  while (!(next = iter.next()).done) {
+    if (!IS_SPEC_OBJECT(next)) {
+      throw MakeTypeError('iterator_result_not_an_object', [next]);
+    }
+    nextItem = next.value;
+    if (!IS_SPEC_OBJECT(nextItem)) {
+      throw MakeTypeError('iterator_value_not_an_object', [nextItem]);
+    }
+    %_CallFunction(this, nextItem[0], nextItem[1], adder);
   }
 }
 
@@ -191,11 +237,11 @@ function MapForEach(f, receiver) {
   }
 
   var iterator = new MapIterator(this, ITERATOR_KIND_ENTRIES);
-  var entry;
-  var stepping = %_DebugCallbackSupportsStepping(f);
-  while (!(entry = %MapIteratorNext(iterator)).done) {
+  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
+  var value_array = [UNDEFINED, UNDEFINED];
+  while (%MapIteratorNext(iterator, value_array)) {
     if (stepping) %DebugPrepareStepInIfStepping(f);
-    %_CallFunction(receiver, entry.value[1], entry.value[0], this, f);
+    %_CallFunction(receiver, value_array[1], value_array[0], this, f);
   }
 }
 
@@ -207,7 +253,7 @@ function SetUpMap() {
 
   %SetCode($Map, MapConstructor);
   %FunctionSetPrototype($Map, new $Object());
-  %SetProperty($Map.prototype, "constructor", $Map, DONT_ENUM);
+  %AddNamedProperty($Map.prototype, "constructor", $Map, DONT_ENUM);
 
   %FunctionSetLength(MapForEach, 1);
 

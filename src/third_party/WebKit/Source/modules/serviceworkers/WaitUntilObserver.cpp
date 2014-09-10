@@ -5,10 +5,10 @@
 #include "config.h"
 #include "modules/serviceworkers/WaitUntilObserver.h"
 
-#include "bindings/v8/ScriptFunction.h"
-#include "bindings/v8/ScriptPromise.h"
-#include "bindings/v8/ScriptValue.h"
-#include "bindings/v8/V8Binding.h"
+#include "bindings/core/v8/ScriptFunction.h"
+#include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptValue.h"
+#include "bindings/core/v8/V8Binding.h"
 #include "core/dom/ExecutionContext.h"
 #include "platform/NotImplemented.h"
 #include "public/platform/WebServiceWorkerEventResult.h"
@@ -17,7 +17,7 @@
 #include "wtf/RefPtr.h"
 #include <v8.h>
 
-namespace WebCore {
+namespace blink {
 
 class WaitUntilObserver::ThenFunction FINAL : public ScriptFunction {
 public:
@@ -62,7 +62,6 @@ PassRefPtr<WaitUntilObserver> WaitUntilObserver::create(ExecutionContext* contex
 
 WaitUntilObserver::~WaitUntilObserver()
 {
-    ASSERT(!m_pendingActivity);
 }
 
 void WaitUntilObserver::willDispatchEvent()
@@ -108,11 +107,11 @@ void WaitUntilObserver::incrementPendingActivity()
 void WaitUntilObserver::decrementPendingActivity()
 {
     ASSERT(m_pendingActivity > 0);
-    if (--m_pendingActivity || !executionContext())
+    if (!executionContext() || (!m_hasError && --m_pendingActivity))
         return;
 
     ServiceWorkerGlobalScopeClient* client = ServiceWorkerGlobalScopeClient::from(executionContext());
-    blink::WebServiceWorkerEventResult result = m_hasError ? blink::WebServiceWorkerEventResultRejected : blink::WebServiceWorkerEventResultCompleted;
+    WebServiceWorkerEventResult result = m_hasError ? WebServiceWorkerEventResultRejected : WebServiceWorkerEventResultCompleted;
     switch (m_type) {
     case Activate:
         client->didHandleActivateEvent(m_eventID, result);
@@ -124,4 +123,4 @@ void WaitUntilObserver::decrementPendingActivity()
     observeContext(0);
 }
 
-} // namespace WebCore
+} // namespace blink

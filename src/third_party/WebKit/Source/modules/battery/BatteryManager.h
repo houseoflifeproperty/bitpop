@@ -5,19 +5,18 @@
 #ifndef BatteryManager_h
 #define BatteryManager_h
 
-#include "bindings/v8/ScriptPromise.h"
-#include "bindings/v8/ScriptPromiseResolverWithContext.h"
+#include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/ContextLifecycleObserver.h"
-#include "core/dom/Document.h"
-#include "core/frame/DeviceEventControllerBase.h"
+#include "core/frame/PlatformEventController.h"
 #include "modules/EventTargetModules.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class BatteryStatus;
 
-class BatteryManager FINAL : public RefCountedWillBeRefCountedGarbageCollected<BatteryManager>, public ActiveDOMObject, public DeviceEventControllerBase, public EventTargetWithInlineData {
+class BatteryManager FINAL : public RefCountedWillBeRefCountedGarbageCollected<BatteryManager>, public ActiveDOMObject, public PlatformEventController, public EventTargetWithInlineData {
     REFCOUNTED_EVENT_TARGET(BatteryManager);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(BatteryManager);
 public:
@@ -41,7 +40,7 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(dischargingtimechange);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(levelchange);
 
-    // Inherited from DeviceEventControllerBase.
+    // Inherited from PlatformEventController.
     virtual void didUpdateData() OVERRIDE;
     virtual void registerWithDispatcher() OVERRIDE;
     virtual void unregisterWithDispatcher() OVERRIDE;
@@ -52,6 +51,7 @@ public:
     virtual void suspend() OVERRIDE;
     virtual void resume() OVERRIDE;
     virtual void stop() OVERRIDE;
+    virtual bool hasPendingActivity() const OVERRIDE;
 
     virtual void trace(Visitor*) OVERRIDE;
 
@@ -64,7 +64,7 @@ private:
 
     explicit BatteryManager(ExecutionContext*);
 
-    RefPtr<ScriptPromiseResolverWithContext> m_resolver;
+    RefPtr<ScriptPromiseResolver> m_resolver;
     RefPtrWillBeMember<BatteryStatus> m_batteryStatus;
     State m_state;
 };

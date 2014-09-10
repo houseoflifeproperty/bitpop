@@ -32,7 +32,7 @@
 #define InspectorCanvasAgent_h
 
 
-#include "bindings/v8/ScriptState.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "core/InspectorFrontend.h"
 #include "core/InspectorTypeBuilder.h"
 #include "core/inspector/InspectorBaseAgent.h"
@@ -40,7 +40,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalFrame;
 class DocumentLoader;
@@ -54,11 +54,12 @@ typedef String ErrorString;
 
 class InspectorCanvasAgent FINAL : public InspectorBaseAgent<InspectorCanvasAgent>, public InspectorBackendDispatcher::CanvasCommandHandler {
 public:
-    static PassOwnPtr<InspectorCanvasAgent> create(InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager)
+    static PassOwnPtrWillBeRawPtr<InspectorCanvasAgent> create(InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager)
     {
-        return adoptPtr(new InspectorCanvasAgent(pageAgent, injectedScriptManager));
+        return adoptPtrWillBeNoop(new InspectorCanvasAgent(pageAgent, injectedScriptManager));
     }
     virtual ~InspectorCanvasAgent();
+    virtual void trace(Visitor*) OVERRIDE;
 
     virtual void setFrontend(InspectorFrontend*) OVERRIDE;
     virtual void clearFrontend() OVERRIDE;
@@ -96,8 +97,8 @@ private:
     bool checkIsEnabled(ErrorString*) const;
     ScriptValue notifyRenderingContextWasWrapped(const ScriptValue&);
 
-    InspectorPageAgent* m_pageAgent;
-    InjectedScriptManager* m_injectedScriptManager;
+    RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
+    RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
     InspectorFrontend::Canvas* m_frontend;
     bool m_enabled;
     // Contains all frames with canvases, value is true only for frames that have an uninstrumented canvas.
@@ -105,7 +106,7 @@ private:
     FramesWithUninstrumentedCanvases m_framesWithUninstrumentedCanvases;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // !defined(InspectorCanvasAgent_h)

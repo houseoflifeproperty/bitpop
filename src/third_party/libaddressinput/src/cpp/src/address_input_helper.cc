@@ -14,15 +14,17 @@
 
 #include <libaddressinput/address_input_helper.h>
 
+#include <libaddressinput/address_data.h>
+#include <libaddressinput/address_field.h>
+#include <libaddressinput/preload_supplier.h>
+#include <libaddressinput/util/basictypes.h>
+
 #include <cassert>
 #include <cstddef>
 #include <string>
 #include <vector>
 
-#include <libaddressinput/address_data.h>
-#include <libaddressinput/address_field.h>
-#include <libaddressinput/preload_supplier.h>
-#include <libaddressinput/util/basictypes.h>
+#include <re2/re2.h>
 
 #include "language.h"
 #include "lookup_key.h"
@@ -97,7 +99,7 @@ void FillAddressFromMatchedRules(
 
 AddressInputHelper::AddressInputHelper(PreloadSupplier* supplier)
     : supplier_(supplier) {
-  assert(supplier_ !=  NULL);
+  assert(supplier_ != NULL);
 }
 
 AddressInputHelper::~AddressInputHelper() {

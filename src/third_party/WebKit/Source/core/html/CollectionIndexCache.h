@@ -32,9 +32,7 @@
 #ifndef CollectionIndexCache_h
 #define CollectionIndexCache_h
 
-#include "core/dom/Element.h"
-
-namespace WebCore {
+namespace blink {
 
 template <typename Collection, typename NodeType>
 class CollectionIndexCache {
@@ -92,7 +90,7 @@ private:
 
     RawPtrWillBeMember<NodeType> m_currentNode;
     unsigned m_cachedNodeCount;
-    unsigned m_cachedNodeIndex;
+    unsigned m_cachedNodeIndex : 31;
     unsigned m_isLengthCacheValid : 1;
 };
 
@@ -203,6 +201,6 @@ inline NodeType* CollectionIndexCache<Collection, NodeType>::nodeAfterCachedNode
     return currentNode;
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CollectionIndexCache_h

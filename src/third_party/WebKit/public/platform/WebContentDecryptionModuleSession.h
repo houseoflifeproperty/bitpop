@@ -62,6 +62,7 @@ public:
 
     virtual ~WebContentDecryptionModuleSession();
 
+    virtual void setClientInterface(Client*) = 0;
     virtual WebString sessionId() const = 0;
 
     // FIXME: Remove these methods once the new methods are implemented in Chromium.
@@ -69,9 +70,9 @@ public:
     virtual void update(const unsigned char* response, size_t responseLength) = 0;
     virtual void release() = 0;
 
-    virtual void initializeNewSession(const WebString& initDataType, const unsigned char* initData, size_t initDataLength, const WebString& sessionType, const WebContentDecryptionModuleResult&);
-    virtual void update(const unsigned char* response, size_t responseLength, const WebContentDecryptionModuleResult&);
-    virtual void release(const WebContentDecryptionModuleResult&);
+    virtual void initializeNewSession(const WebString& initDataType, const unsigned char* initData, size_t initDataLength, const WebString& sessionType, WebContentDecryptionModuleResult);
+    virtual void update(const unsigned char* response, size_t responseLength, WebContentDecryptionModuleResult);
+    virtual void release(WebContentDecryptionModuleResult);
 };
 
 } // namespace blink

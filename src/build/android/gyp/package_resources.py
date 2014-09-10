@@ -26,6 +26,7 @@ def ParseArgs():
     An options object as from optparse.OptionsParser.parse_args()
   """
   parser = optparse.OptionParser()
+  build_utils.AddDepfileOption(parser)
   parser.add_option('--android-sdk', help='path to the Android SDK folder')
   parser.add_option('--android-sdk-tools',
                     help='path to the Android SDK build tools folder')
@@ -40,6 +41,8 @@ def ParseArgs():
                     help='zip files containing resources to be packaged')
   parser.add_option('--asset-dir',
                     help='directories containing assets to be packaged')
+  parser.add_option('--no-compress', help='disables compression for the '
+                    'given comma separated list of extensions')
 
   parser.add_option('--apk-path',
                     help='Path to output (partial) apk.')
@@ -104,6 +107,10 @@ def main():
                        '-F', options.apk_path,
                        ]
 
+    if options.no_compress:
+      for ext in options.no_compress.split(','):
+        package_command += ['-0', ext]
+
     if os.path.exists(options.asset_dir):
       package_command += ['-A', options.asset_dir]
 
@@ -121,6 +128,11 @@ def main():
 
     build_utils.CheckOutput(
         package_command, print_stdout=False, print_stderr=False)
+
+    if options.depfile:
+      build_utils.WriteDepfile(
+          options.depfile,
+          build_utils.GetPythonDependencies())
 
 
 if __name__ == '__main__':

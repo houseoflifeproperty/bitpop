@@ -157,6 +157,9 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
         window_, context->GetRootWindow(), window_bounds);
   }
 
+  // Start observing property changes.
+  window_->AddObserver(this);
+
   // Wait to set the bounds until we have a parent. That way we can know our
   // true state/bounds (the LayoutManager may enforce a particular
   // state/bounds).
@@ -356,7 +359,7 @@ bool NativeWidgetAura::SetWindowTitle(const base::string16& title) {
     return false;
   if (window_->title() == title)
     return false;
-  window_->set_title(title);
+  window_->SetTitle(title);
   return true;
 }
 
@@ -438,8 +441,10 @@ void NativeWidgetAura::StackBelow(gfx::NativeView native_view) {
 }
 
 void NativeWidgetAura::SetShape(gfx::NativeRegion region) {
-  // No need for this. Just delete and ignore.
-  delete region;
+  if (window_)
+    window_->layer()->SetAlphaShape(make_scoped_ptr(region));
+  else
+    delete region;
 }
 
 void NativeWidgetAura::Close() {
@@ -688,7 +693,7 @@ ui::NativeTheme* NativeWidgetAura::GetNativeTheme() const {
 #endif
 }
 
-void NativeWidgetAura::OnRootViewLayout() const {
+void NativeWidgetAura::OnRootViewLayout() {
 }
 
 bool NativeWidgetAura::IsTranslucentWindowOpacitySupported() const {
@@ -798,6 +803,7 @@ void NativeWidgetAura::OnDeviceScaleFactorChanged(float device_scale_factor) {
 }
 
 void NativeWidgetAura::OnWindowDestroying(aura::Window* window) {
+  window_->RemoveObserver(this);
   delegate_->OnNativeWidgetDestroying();
 
   // If the aura::Window is destroyed, we can no longer show tooltips.
@@ -822,6 +828,16 @@ bool NativeWidgetAura::HasHitTestMask() const {
 void NativeWidgetAura::GetHitTestMask(gfx::Path* mask) const {
   DCHECK(mask);
   delegate_->GetHitTestMask(mask);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// NativeWidgetAura, aura::WindowObserver implementation:
+
+void NativeWidgetAura::OnWindowPropertyChanged(aura::Window* window,
+                                               const void* key,
+                                               intptr_t old) {
+  if (key == aura::client::kShowStateKey)
+    delegate_->OnNativeWidgetWindowShowStateChanged();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1142,11 +1158,6 @@ void NativeWidgetPrivate::ReparentNativeView(gfx::NativeView native_view,
 // static
 bool NativeWidgetPrivate::IsMouseButtonDown() {
   return aura::Env::GetInstance()->IsMouseButtonDown();
-}
-
-// static
-bool NativeWidgetPrivate::IsTouchDown() {
-  return aura::Env::GetInstance()->is_touch_down();
 }
 
 // static

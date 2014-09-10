@@ -7,7 +7,7 @@
 #if V8_TARGET_ARCH_X87
 
 #include "src/codegen.h"
-#include "src/heap.h"
+#include "src/heap/heap.h"
 #include "src/macro-assembler.h"
 
 namespace v8 {
@@ -19,14 +19,14 @@ namespace internal {
 
 void StubRuntimeCallHelper::BeforeCall(MacroAssembler* masm) const {
   masm->EnterFrame(StackFrame::INTERNAL);
-  ASSERT(!masm->has_frame());
+  DCHECK(!masm->has_frame());
   masm->set_has_frame(true);
 }
 
 
 void StubRuntimeCallHelper::AfterCall(MacroAssembler* masm) const {
   masm->LeaveFrame(StackFrame::INTERNAL);
-  ASSERT(masm->has_frame());
+  DCHECK(masm->has_frame());
   masm->set_has_frame(false);
 }
 
@@ -79,7 +79,8 @@ class LabelConverter {
 MemMoveFunction CreateMemMoveFunction() {
   size_t actual_size;
   // Allocate buffer in executable space.
-  byte* buffer = static_cast<byte*>(OS::Allocate(1 * KB, &actual_size, true));
+  byte* buffer =
+      static_cast<byte*>(base::OS::Allocate(1 * KB, &actual_size, true));
   if (buffer == NULL) return NULL;
   MacroAssembler masm(NULL, buffer, static_cast<int>(actual_size));
   LabelConverter conv(buffer);
@@ -180,9 +181,9 @@ MemMoveFunction CreateMemMoveFunction() {
 
   CodeDesc desc;
   masm.GetCode(&desc);
-  ASSERT(!RelocInfo::RequiresRelocation(desc));
-  CPU::FlushICache(buffer, actual_size);
-  OS::ProtectCode(buffer, actual_size);
+  DCHECK(!RelocInfo::RequiresRelocation(desc));
+  CpuFeatures::FlushICache(buffer, actual_size);
+  base::OS::ProtectCode(buffer, actual_size);
   // TODO(jkummerow): It would be nice to register this code creation event
   // with the PROFILE / GDBJIT system.
   return FUNCTION_CAST<MemMoveFunction>(buffer);
@@ -198,40 +199,47 @@ MemMoveFunction CreateMemMoveFunction() {
 
 
 void ElementsTransitionGenerator::GenerateMapChangeElementsTransition(
-    MacroAssembler* masm, AllocationSiteMode mode,
+    MacroAssembler* masm,
+    Register receiver,
+    Register key,
+    Register value,
+    Register target_map,
+    AllocationSiteMode mode,
     Label* allocation_memento_found) {
-  // ----------- S t a t e -------------
-  //  -- eax    : value
-  //  -- ebx    : target map
-  //  -- ecx    : key
-  //  -- edx    : receiver
-  //  -- esp[0] : return address
-  // -----------------------------------
+  Register scratch = edi;
+  DCHECK(!AreAliased(receiver, key, value, target_map, scratch));
+
   if (mode == TRACK_ALLOCATION_SITE) {
-    ASSERT(allocation_memento_found != NULL);
-    __ JumpIfJSArrayHasAllocationMemento(edx, edi, allocation_memento_found);
+    DCHECK(allocation_memento_found != NULL);
+    __ JumpIfJSArrayHasAllocationMemento(
+        receiver, scratch, allocation_memento_found);
   }
 
   // Set transitioned map.
-  __ mov(FieldOperand(edx, HeapObject::kMapOffset), ebx);
-  __ RecordWriteField(edx,
+  __ mov(FieldOperand(receiver, HeapObject::kMapOffset), target_map);
+  __ RecordWriteField(receiver,
                       HeapObject::kMapOffset,
-                      ebx,
-                      edi,
+                      target_map,
+                      scratch,
                       EMIT_REMEMBERED_SET,
                       OMIT_SMI_CHECK);
 }
 
 
 void ElementsTransitionGenerator::GenerateSmiToDouble(
-    MacroAssembler* masm, AllocationSiteMode mode, Label* fail) {
-  // ----------- S t a t e -------------
-  //  -- eax    : value
-  //  -- ebx    : target map
-  //  -- ecx    : key
-  //  -- edx    : receiver
-  //  -- esp[0] : return address
-  // -----------------------------------
+    MacroAssembler* masm,
+    Register receiver,
+    Register key,
+    Register value,
+    Register target_map,
+    AllocationSiteMode mode,
+    Label* fail) {
+  // Return address is on the stack.
+  DCHECK(receiver.is(edx));
+  DCHECK(key.is(ecx));
+  DCHECK(value.is(eax));
+  DCHECK(target_map.is(ebx));
+
   Label loop, entry, convert_hole, gc_required, only_change_map;
 
   if (mode == TRACK_ALLOCATION_SITE) {
@@ -341,14 +349,19 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
 
 
 void ElementsTransitionGenerator::GenerateDoubleToObject(
-    MacroAssembler* masm, AllocationSiteMode mode, Label* fail) {
-  // ----------- S t a t e -------------
-  //  -- eax    : value
-  //  -- ebx    : target map
-  //  -- ecx    : key
-  //  -- edx    : receiver
-  //  -- esp[0] : return address
-  // -----------------------------------
+    MacroAssembler* masm,
+    Register receiver,
+    Register key,
+    Register value,
+    Register target_map,
+    AllocationSiteMode mode,
+    Label* fail) {
+  // Return address is on the stack.
+  DCHECK(receiver.is(edx));
+  DCHECK(key.is(ecx));
+  DCHECK(value.is(eax));
+  DCHECK(target_map.is(ebx));
+
   Label loop, entry, convert_hole, gc_required, only_change_map, success;
 
   if (mode == TRACK_ALLOCATION_SITE) {
@@ -573,7 +586,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
 
 
 CodeAgingHelper::CodeAgingHelper() {
-  ASSERT(young_sequence_.length() == kNoCodeAgeSequenceLength);
+  DCHECK(young_sequence_.length() == kNoCodeAgeSequenceLength);
   CodePatcher patcher(young_sequence_.start(), young_sequence_.length());
   patcher.masm()->push(ebp);
   patcher.masm()->mov(ebp, esp);
@@ -591,7 +604,7 @@ bool CodeAgingHelper::IsOld(byte* candidate) const {
 
 bool Code::IsYoungSequence(Isolate* isolate, byte* sequence) {
   bool result = isolate->code_aging_helper()->IsYoung(sequence);
-  ASSERT(result || isolate->code_aging_helper()->IsOld(sequence));
+  DCHECK(result || isolate->code_aging_helper()->IsOld(sequence));
   return result;
 }
 
@@ -618,7 +631,7 @@ void Code::PatchPlatformCodeAge(Isolate* isolate,
   uint32_t young_length = isolate->code_aging_helper()->young_sequence_length();
   if (age == kNoAgeCodeAge) {
     isolate->code_aging_helper()->CopyYoungSequenceTo(sequence);
-    CPU::FlushICache(sequence, young_length);
+    CpuFeatures::FlushICache(sequence, young_length);
   } else {
     Code* stub = GetCodeAgeStub(isolate, age, parity);
     CodePatcher patcher(sequence, young_length);

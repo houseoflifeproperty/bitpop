@@ -7,11 +7,11 @@
 
 #include "Test.h"
 
+#include "SkPictureRecorder.h"
 #include "SkRecord.h"
 #include "SkRecorder.h"
 #include "SkRecords.h"
-
-#include "SkEmptyShader.h"
+#include "SkShader.h"
 
 #define COUNT(T) + 1
 static const int kRecordTypes = SK_RECORD_TYPES(COUNT);
@@ -57,7 +57,7 @@ DEF_TEST(Recorder_RefLeaking, r) {
 
     SkRect bounds = SkRect::MakeWH(320, 240);
     SkPaint paint;
-    paint.setShader(SkNEW(SkEmptyShader))->unref();
+    paint.setShader(SkShader::CreateEmptyShader())->unref();
 
     REPORTER_ASSERT(r, paint.getShader()->unique());
     {
@@ -67,4 +67,26 @@ DEF_TEST(Recorder_RefLeaking, r) {
         REPORTER_ASSERT(r, !paint.getShader()->unique());
     }
     REPORTER_ASSERT(r, paint.getShader()->unique());
+}
+
+DEF_TEST(Recorder_RefPictures, r) {
+    SkAutoTUnref<SkPicture> pic;
+
+    {
+        SkPictureRecorder pr;
+        SkCanvas* canvas = pr.beginRecording(100, 100);
+        canvas->drawColor(SK_ColorRED);
+        pic.reset(pr.endRecording());
+    }
+    REPORTER_ASSERT(r, pic->unique());
+
+    {
+        SkRecord record;
+        SkRecorder recorder(&record, 100, 100);
+        recorder.drawPicture(pic);
+        // the recorder should now also be an owner
+        REPORTER_ASSERT(r, !pic->unique());
+    }
+    // the recorder destructor should have released us (back to unique)
+    REPORTER_ASSERT(r, pic->unique());
 }

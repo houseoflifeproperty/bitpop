@@ -34,10 +34,6 @@
 #include "../platform/WebCommon.h"
 #include "WebContentSecurityPolicy.h"
 
-namespace WebCore {
-class ScriptExecutionContext;
-}
-
 namespace blink {
 
 class WebString;

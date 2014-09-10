@@ -27,7 +27,7 @@
 #include "wtf/RefCounted.h"
 #include <unicode/uchar.h>
 
-namespace WebCore {
+namespace blink {
 
 struct GlyphData;
 class GlyphPage;
@@ -56,6 +56,10 @@ protected:
     CustomFontData() { }
 };
 
-}
+#define DEFINE_CUSTOM_FONT_DATA_TYPE_CASTS(thisType, predicate) \
+    template<typename T> inline thisType* to##thisType(const RefPtr<T>& customFontData) { return to##thisType(customFontData.get()); } \
+    DEFINE_TYPE_CASTS(thisType, CustomFontData, customFontData, customFontData->predicate, customFontData.predicate)
+
+} // namespace blink
 
 #endif // CustomFontData_h

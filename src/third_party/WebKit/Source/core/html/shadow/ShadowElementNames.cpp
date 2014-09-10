@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/html/shadow/ShadowElementNames.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace ShadowElementNames {
 
@@ -116,6 +116,12 @@ const AtomicString& speechButton()
 const AtomicString& textFieldContainer()
 {
     DEFINE_STATIC_LOCAL(AtomicString, name, ("text-field-container", AtomicString::ConstructFromLiteral));
+    return name;
+}
+
+const AtomicString& optGroupLabel()
+{
+    DEFINE_STATIC_LOCAL(AtomicString, name, ("optgroup-label", AtomicString::ConstructFromLiteral));
     return name;
 }
 

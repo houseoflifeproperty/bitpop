@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var Page = cr.ui.pageManager.Page;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
 
   /**
    * Encapsulated handling of a search bubble.
@@ -114,16 +115,16 @@ cr.define('options', function() {
    * @constructor
    */
   function SearchPage() {
-    OptionsPage.call(this, 'search',
-                     loadTimeData.getString('searchPageTabTitle'),
-                     'searchPage');
+    Page.call(this, 'search',
+              loadTimeData.getString('searchPageTabTitle'),
+              'searchPage');
   }
 
   cr.addSingletonGetter(SearchPage);
 
   SearchPage.prototype = {
-    // Inherit SearchPage from OptionsPage.
-    __proto__: OptionsPage.prototype,
+    // Inherit SearchPage from Page.
+    __proto__: Page.prototype,
 
     /**
      * A boolean to prevent recursion. Used by setSearchText_().
@@ -132,12 +133,9 @@ cr.define('options', function() {
      */
     insideSetSearchText_: false,
 
-    /**
-     * Initialize the page.
-     */
+    /** @override */
     initializePage: function() {
-      // Call base class implementation to start preference initialization.
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       this.searchField = $('search-field');
 
@@ -189,6 +187,10 @@ cr.define('options', function() {
       if (!this.searchActive_ && !active)
         return;
 
+      // Guest users should never have active search.
+      if (loadTimeData.getBoolean('profileIsGuest'))
+        return;
+
       this.searchActive_ = active;
 
       if (active) {
@@ -199,7 +201,7 @@ cr.define('options', function() {
         } else if (!this.searchField.value) {
           // This should only happen if the user goes directly to
           // chrome://settings-frame/search
-          OptionsPage.showDefaultPage();
+          PageManager.showDefaultPage();
           return;
         }
 
@@ -234,7 +236,7 @@ cr.define('options', function() {
 
         if (active) {
           // When search is active, remove the 'hidden' tag.  This tag may have
-          // been added by the OptionsPage.
+          // been added by the PageManager.
           page.pageDiv.hidden = false;
         }
       }
@@ -262,6 +264,10 @@ cr.define('options', function() {
      * @private
      */
     setSearchText_: function(text) {
+      // Guest users should never have search text.
+      if (loadTimeData.getBoolean('profileIsGuest'))
+        return;
+
       // Prevent recursive execution of this method.
       if (this.insideSetSearchText_) return;
       this.insideSetSearchText_ = true;
@@ -279,10 +285,10 @@ cr.define('options', function() {
       // Toggle the search page if necessary.
       if (text) {
         if (!this.searchActive_)
-          OptionsPage.showPageByName(this.name, false);
+          PageManager.showPageByName(this.name, false);
       } else {
         if (this.searchActive_)
-          OptionsPage.showPageByName(OptionsPage.getDefaultPage().name, false);
+          PageManager.showDefaultPage(false);
 
         this.insideSetSearchText_ = false;
         return;
@@ -494,9 +500,9 @@ cr.define('options', function() {
      */
     getSearchablePages_: function() {
       var name, page, pages = [];
-      for (name in OptionsPage.registeredPages) {
+      for (name in PageManager.registeredPages) {
         if (name != this.name) {
-          page = OptionsPage.registeredPages[name];
+          page = PageManager.registeredPages[name];
           if (!page.parentPage)
             pages.push(page);
         }
@@ -512,16 +518,16 @@ cr.define('options', function() {
      */
     getSearchableSubPages_: function() {
       var name, pageInfo, page, pages = [];
-      for (name in OptionsPage.registeredPages) {
-        page = OptionsPage.registeredPages[name];
+      for (name in PageManager.registeredPages) {
+        page = PageManager.registeredPages[name];
         if (page.parentPage &&
             page.associatedSection &&
             !page.associatedSection.hidden) {
           pages.push(page);
         }
       }
-      for (name in OptionsPage.registeredOverlayPages) {
-        page = OptionsPage.registeredOverlayPages[name];
+      for (name in PageManager.registeredOverlayPages) {
+        page = PageManager.registeredOverlayPages[name];
         if (page.associatedSection &&
             !page.associatedSection.hidden &&
             page.pageDiv != undefined) {

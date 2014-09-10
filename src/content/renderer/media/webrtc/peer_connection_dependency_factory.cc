@@ -44,7 +44,7 @@
 #include "third_party/libjingle/source/talk/app/webrtc/mediaconstraintsinterface.h"
 
 #if defined(USE_OPENSSL)
-#include "third_party/libjingle/source/talk/base/ssladapter.h"
+#include "third_party/webrtc/base/ssladapter.h"
 #else
 #include "net/socket/nss_ssl_util.h"
 #endif
@@ -98,6 +98,14 @@ void HarmonizeConstraintsAndEffects(RTCMediaConstraints* constraints,
         }
         DVLOG(1) << "Disabling constraint: "
                  << kConstraintEffectMap[i].constraint;
+      } else if (kConstraintEffectMap[i].effect ==
+                 media::AudioParameters::DUCKING && value && !is_mandatory) {
+        // Special handling of the DUCKING flag that sets the optional
+        // constraint to |false| to match what the device will support.
+        constraints->AddOptional(kConstraintEffectMap[i].constraint,
+            webrtc::MediaConstraintsInterface::kValueFalse, true);
+        // No need to modify |effects| since the ducking flag is already off.
+        DCHECK((*effects & media::AudioParameters::DUCKING) == 0);
       }
     }
   }
@@ -107,8 +115,8 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
  public:
   P2PPortAllocatorFactory(
       P2PSocketDispatcher* socket_dispatcher,
-      talk_base::NetworkManager* network_manager,
-      talk_base::PacketSocketFactory* socket_factory,
+      rtc::NetworkManager* network_manager,
+      rtc::PacketSocketFactory* socket_factory,
       blink::WebFrame* web_frame)
       : socket_dispatcher_(socket_dispatcher),
         network_manager_(network_manager),
@@ -121,9 +129,10 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
       const std::vector<TurnConfiguration>& turn_configurations) OVERRIDE {
     CHECK(web_frame_);
     P2PPortAllocator::Config config;
-    if (stun_servers.size() > 0) {
-      config.stun_server = stun_servers[0].server.hostname();
-      config.stun_server_port = stun_servers[0].server.port();
+    for (size_t i = 0; i < stun_servers.size(); ++i) {
+      config.stun_servers.insert(rtc::SocketAddress(
+          stun_servers[i].server.hostname(),
+          stun_servers[i].server.port()));
     }
     config.legacy_relay = false;
     for (size_t i = 0; i < turn_configurations.size(); ++i) {
@@ -135,12 +144,11 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
       relay_config.transport_type = turn_configurations[i].transport_type;
       relay_config.secure = turn_configurations[i].secure;
       config.relays.push_back(relay_config);
-    }
 
-    // Use first turn server as the stun server.
-    if (turn_configurations.size() > 0) {
-      config.stun_server = config.relays[0].server_address;
-      config.stun_server_port = config.relays[0].port;
+      // Use turn servers as stun servers.
+      config.stun_servers.insert(rtc::SocketAddress(
+          turn_configurations[i].server.hostname(),
+          turn_configurations[i].server.port()));
     }
 
     return new P2PPortAllocator(
@@ -155,8 +163,8 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
   scoped_refptr<P2PSocketDispatcher> socket_dispatcher_;
   // |network_manager_| and |socket_factory_| are a weak references, owned by
   // PeerConnectionDependencyFactory.
-  talk_base::NetworkManager* network_manager_;
-  talk_base::PacketSocketFactory* socket_factory_;
+  rtc::NetworkManager* network_manager_;
+  rtc::PacketSocketFactory* socket_factory_;
   // Raw ptr to the WebFrame that created the P2PPortAllocatorFactory.
   blink::WebFrame* web_frame_;
 };
@@ -301,7 +309,7 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
 
   // Init SSL, which will be needed by PeerConnection.
 #if defined(USE_OPENSSL)
-  if (!talk_base::InitializeSSL()) {
+  if (!rtc::InitializeSSL()) {
     LOG(ERROR) << "Failed on InitializeSSL.";
     NOTREACHED();
     return;
@@ -367,7 +375,7 @@ bool PeerConnectionDependencyFactory::PeerConnectionFactoryCreated() {
 
 scoped_refptr<webrtc::PeerConnectionInterface>
 PeerConnectionDependencyFactory::CreatePeerConnection(
-    const webrtc::PeerConnectionInterface::IceServers& ice_servers,
+    const webrtc::PeerConnectionInterface::RTCConfiguration& config,
     const webrtc::MediaConstraintsInterface* constraints,
     blink::WebFrame* web_frame,
     webrtc::PeerConnectionObserver* observer) {
@@ -377,7 +385,7 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
     return NULL;
 
   scoped_refptr<P2PPortAllocatorFactory> pa_factory =
-        new talk_base::RefCountedObject<P2PPortAllocatorFactory>(
+        new rtc::RefCountedObject<P2PPortAllocatorFactory>(
             p2p_socket_dispatcher_.get(),
             network_manager_,
             socket_factory_.get(),
@@ -387,11 +395,11 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
       new PeerConnectionIdentityService(
           GURL(web_frame->document().url().spec()).GetOrigin());
 
-  return GetPcFactory()->CreatePeerConnection(ice_servers,
-                                            constraints,
-                                            pa_factory.get(),
-                                            identity_service,
-                                            observer).get();
+  return GetPcFactory()->CreatePeerConnection(config,
+                                              constraints,
+                                              pa_factory.get(),
+                                              identity_service,
+                                              observer).get();
 }
 
 scoped_refptr<webrtc::MediaStreamInterface>
@@ -541,7 +549,7 @@ PeerConnectionDependencyFactory::GetWebRtcAudioDevice() {
 }
 
 void PeerConnectionDependencyFactory::InitializeWorkerThread(
-    talk_base::Thread** thread,
+    rtc::Thread** thread,
     base::WaitableEvent* event) {
   jingle_glue::JingleThreadWrapper::EnsureForCurrentMessageLoop();
   jingle_glue::JingleThreadWrapper::current()->set_send_allowed(true);

@@ -5,9 +5,8 @@
 
 """Client tool to trigger tasks or retrieve results from a Swarming server."""
 
-__version__ = '0.4.9'
+__version__ = '0.4.13'
 
-import datetime
 import getpass
 import hashlib
 import json
@@ -28,6 +27,7 @@ from third_party.depot_tools import subcommand
 from utils import file_path
 from third_party.chromium import natsort
 from utils import net
+from utils import on_error
 from utils import threading_utils
 from utils import tools
 from utils import zip_package
@@ -145,7 +145,10 @@ class Manifest(object):
 
 
 class TaskOutputCollector(object):
-  """Fetches task output from isolate server to local disk.
+  """Assembles task execution summary (for --task-summary-json output).
+
+  Optionally fetches task outputs from isolate server to local disk (used when
+  --task-output-dir is passed).
 
   This object is shared among multiple threads running 'retrieve_results'
   function, in particular they call 'process_shard_result' method in parallel.
@@ -155,7 +158,7 @@ class TaskOutputCollector(object):
     """Initializes TaskOutputCollector, ensures |task_output_dir| exists.
 
     Args:
-      task_output_dir: local directory to put fetched files to.
+      task_output_dir: (optional) local directory to put fetched files to.
       task_name: name of the swarming task results belong to.
       shard_count: expected number of task shards.
     """
@@ -167,7 +170,7 @@ class TaskOutputCollector(object):
     self._per_shard_results = {}
     self._storage = None
 
-    if not os.path.isdir(self.task_output_dir):
+    if self.task_output_dir and not os.path.isdir(self.task_output_dir):
       os.makedirs(self.task_output_dir)
 
   def process_shard_result(self, shard_index, result):
@@ -191,23 +194,24 @@ class TaskOutputCollector(object):
       self._per_shard_results[shard_index] = result
 
     # Fetch output files if necessary.
-    isolated_files_location = extract_output_files_location(result['output'])
-    if isolated_files_location:
-      isolate_server, namespace, isolated_hash = isolated_files_location
-      storage = self._get_storage(isolate_server, namespace)
-      if storage:
-        # Output files are supposed to be small and they are not reused across
-        # tasks. So use MemoryCache for them instead of on-disk cache. Make
-        # files writable, so that calling script can delete them.
-        isolateserver.fetch_isolated(
-            isolated_hash,
-            storage,
-            isolateserver.MemoryCache(file_mode_mask=0700),
-            os.path.join(self.task_output_dir, str(shard_index)),
-            False)
+    if self.task_output_dir:
+      isolated_files_location = extract_output_files_location(result['output'])
+      if isolated_files_location:
+        isolate_server, namespace, isolated_hash = isolated_files_location
+        storage = self._get_storage(isolate_server, namespace)
+        if storage:
+          # Output files are supposed to be small and they are not reused across
+          # tasks. So use MemoryCache for them instead of on-disk cache. Make
+          # files writable, so that calling script can delete them.
+          isolateserver.fetch_isolated(
+              isolated_hash,
+              storage,
+              isolateserver.MemoryCache(file_mode_mask=0700),
+              os.path.join(self.task_output_dir, str(shard_index)),
+              False)
 
   def finalize(self):
-    """Writes summary.json, shutdowns underlying Storage."""
+    """Assembles and returns task summary JSON, shutdowns underlying Storage."""
     with self._lock:
       # Write an array of shard results with None for missing shards.
       summary = {
@@ -216,16 +220,20 @@ class TaskOutputCollector(object):
           self._per_shard_results.get(i) for i in xrange(self.shard_count)
         ],
       }
-      tools.write_json(
-          os.path.join(self.task_output_dir, 'summary.json'),
-          summary,
-          False)
+      # Write summary.json to task_output_dir as well.
+      if self.task_output_dir:
+        tools.write_json(
+            os.path.join(self.task_output_dir, 'summary.json'),
+            summary,
+            False)
       if self._storage:
         self._storage.close()
         self._storage = None
+      return summary
 
   def _get_storage(self, isolate_server, namespace):
     """Returns isolateserver.Storage to use to fetch files."""
+    assert self.task_output_dir
     with self._lock:
       if not self._storage:
         self._storage = isolateserver.get_storage(isolate_server, namespace)
@@ -555,8 +563,7 @@ def upload_zip_bundle(isolate_server, bundle):
     bundle: instance of ZipPackage to upload.
 
   Returns:
-    URL to get the file from on success.
-    None on failure.
+    URL to get the file from.
   """
   # Swarming bot would need to be able to grab the file from the storage
   # using raw HTTP GET. Use 'default' namespace so that the raw data returned
@@ -564,17 +571,13 @@ def upload_zip_bundle(isolate_server, bundle):
   # data yet. This namespace have nothing to do with |namespace| passed to
   # run_isolated.py that is used to store files for isolated task.
   logging.info('Zipping up and uploading files...')
-  try:
-    start_time = now()
-    isolate_item = isolateserver.BufferItem(
-        bundle.zip_into_buffer(), high_priority=True)
-    with isolateserver.get_storage(isolate_server, 'default') as storage:
-      uploaded = storage.upload_items([isolate_item])
-      bundle_url = storage.get_fetch_url(isolate_item)
-    elapsed = now() - start_time
-  except (IOError, OSError) as exc:
-    tools.report_error('Failed to upload the zip file: %s' % exc)
-    return None
+  start_time = now()
+  isolate_item = isolateserver.BufferItem(
+      bundle.zip_into_buffer(), high_priority=True)
+  with isolateserver.get_storage(isolate_server, 'default') as storage:
+    uploaded = storage.upload_items([isolate_item])
+    bundle_url = storage.get_fetch_url(isolate_item)
+  elapsed = now() - start_time
   if isolate_item in uploaded:
     logging.info('Upload complete, time elapsed: %f', elapsed)
   else:
@@ -596,17 +599,16 @@ def trigger_by_manifest(swarming, manifest):
   manifest_text = manifest.to_json()
   result = net.url_read(swarming + '/test', data={'request': manifest_text})
   if not result:
-    tools.report_error('Failed to trigger task %s' % manifest.task_name)
-    return None
+    on_error.report('Failed to trigger task %s' % manifest.task_name)
+    return None, None
   try:
     data = json.loads(result)
-  except (ValueError, TypeError) as e:
+  except (ValueError, TypeError):
     msg = '\n'.join((
         'Failed to trigger task %s' % manifest.task_name,
         'Manifest: %s' % manifest_text,
-        'Bad response: %s' % result,
-        str(e)))
-    tools.report_error(msg)
+        'Bad response: %s' % result))
+    on_error.report(msg)
     return None, None
   if not data:
     return None, None
@@ -624,7 +626,8 @@ def trigger_task_shards(
   """Triggers multiple subtasks of a sharded task.
 
   Returns:
-    dict(task_name: task_id). None in case of failure.
+    Dict with task details, returned to caller as part of --dump-json output.
+    None in case of failure.
   """
   # Collects all files that are necessary to bootstrap a task execution
   # on the bot. Usually it includes self contained run_isolated.zip and
@@ -652,8 +655,10 @@ def trigger_task_shards(
     manifests.append(manifest)
 
   # Upload zip bundle file to get its URL.
-  bundle_url = upload_zip_bundle(isolate_server, bundle)
-  if not bundle_url:
+  try:
+    bundle_url = upload_zip_bundle(isolate_server, bundle)
+  except (IOError, OSError):
+    on_error.report('Failed to upload the zip file for task %s' % task_name)
     return None, None
 
   # Attach that file to all manifests.
@@ -663,21 +668,25 @@ def trigger_task_shards(
   # Trigger all the subtasks.
   tasks = {}
   priority_warning = False
-  for manifest in manifests:
+  for index, manifest in enumerate(manifests):
     task_id, priority = trigger_by_manifest(swarming, manifest)
     if not task_id:
       break
     if not priority_warning and priority != manifest.priority:
       priority_warning = True
       print >> sys.stderr, 'Priority was reset to %s' % priority
-    tasks[manifest.task_name] = task_id
+    tasks[manifest.task_name] = {
+      'shard_index': index,
+      'task_id': task_id,
+      'view_url': '%s/user/task/%s' % (swarming, task_id),
+    }
 
   # Some shards weren't triggered. Abort everything.
   if len(tasks) != len(manifests):
     if tasks:
       print >> sys.stderr, 'Not all shards were triggered'
-      for task_id in tasks.itervalues():
-        abort_task(swarming, task_id)
+      for task_dict in tasks.itervalues():
+        abort_task(swarming, task_dict['task_id'])
     return None
 
   return tasks
@@ -692,13 +701,13 @@ def isolated_to_hash(isolate_server, namespace, arg, algo, verbose):
   if arg.endswith('.isolated'):
     file_hash = archive(isolate_server, namespace, arg, algo, verbose)
     if not file_hash:
-      tools.report_error('Archival failure %s' % arg)
+      on_error.report('Archival failure %s' % arg)
       return None, True
     return file_hash, True
   elif isolateserver.is_valid_hash(arg, algo):
     return arg, False
   else:
-    tools.report_error('Invalid hash %s' % arg)
+    on_error.report('Invalid hash %s' % arg)
     return None, False
 
 
@@ -778,7 +787,7 @@ def decorate_shard_output(shard_index, result, shard_exit_code):
 
 def collect(
     url, task_name, shards, timeout, decorate,
-    print_status_updates, task_output_dir):
+    print_status_updates, task_summary_json, task_output_dir):
   """Retrieves results of a Swarming task."""
   # Grab task keys for each shard. Order is important, used to figure out
   # shard index based on the key.
@@ -794,12 +803,9 @@ def collect(
       raise Failure('Expecting only one shard for a task: %s' % shard_task_name)
     task_keys.append(shard_task_keys[0])
 
-  # Collect output files only if explicitly asked with --task-output-dir option.
-  if task_output_dir:
-    output_collector = TaskOutputCollector(
-        task_output_dir, task_name, len(task_keys))
-  else:
-    output_collector = None
+  # Collect summary JSON and output files (if task_output_dir is not None).
+  output_collector = TaskOutputCollector(
+      task_output_dir, task_name, len(task_keys))
 
   seen_shards = set()
   exit_codes = []
@@ -827,8 +833,9 @@ def collect(
                 output['exit_codes']))
         print(''.join('  %s\n' % l for l in output['output'].splitlines()))
   finally:
-    if output_collector:
-      output_collector.finalize()
+    summary = output_collector.finalize()
+    if task_summary_json:
+      tools.write_json(task_summary_json, summary, False)
 
   if len(seen_shards) != len(task_keys):
     missing_shards = [x for x in range(len(task_keys)) if x not in seen_shards]
@@ -913,12 +920,17 @@ def add_collect_options(parser):
       help='Print periodic status updates')
   parser.task_output_group = tools.optparse.OptionGroup(parser, 'Task output')
   parser.task_output_group.add_option(
+      '--task-summary-json',
+      metavar='FILE',
+      help='Dump a summary of task results to this file as json. It contains '
+           'only shards statuses as know to server directly. Any output files '
+           'emitted by the task can be collected by using --task-output-dir')
+  parser.task_output_group.add_option(
       '--task-output-dir',
+      metavar='DIR',
       help='Directory to put task results into. When the task finishes, this '
-           'directory contains <task-output-dir>/summary.json file with '
-           'a summary of task results across all shards, and per-shard '
-           'directory with output files produced by a shard: '
-           '<task-output-dir>/<zero-based-shard-index>/')
+           'directory contains per-shard directory with output files produced '
+           'by shards: <task-output-dir>/<zero-based-shard-index>/.')
   parser.add_option_group(parser.task_output_group)
 
 
@@ -945,6 +957,7 @@ def CMDcollect(parser, args):
   elif len(args) > 1:
     parser.error('Must specify only one task name.')
 
+  auth.ensure_logged_in(options.swarming)
   try:
     return collect(
         options.swarming,
@@ -953,9 +966,10 @@ def CMDcollect(parser, args):
         options.timeout,
         options.decorate,
         options.print_status_updates,
+        options.task_summary_json,
         options.task_output_dir)
-  except Failure as e:
-    tools.report_error(e)
+  except Failure:
+    on_error.report(None)
     return 1
 
 
@@ -975,21 +989,19 @@ def CMDquery(parser, args):
 
   if options.keep_dead and options.dead_only:
     parser.error('Use only one of --keep-dead and --dead-only')
+
+  auth.ensure_logged_in(options.swarming)
   service = net.get_http_service(options.swarming)
+
   data = service.json_request('GET', '/swarming/api/v1/bots')
   if data is None:
     print >> sys.stderr, 'Failed to access %s' % options.swarming
     return 1
-  timeout = datetime.timedelta(seconds=data['machine_death_timeout'])
-  utcnow = datetime.datetime.utcnow()
   for machine in natsort.natsorted(data['machines'], key=lambda x: x['id']):
-    last_seen = datetime.datetime.strptime(
-        machine['last_seen'], '%Y-%m-%d %H:%M:%S')
-    is_dead = utcnow - last_seen > timeout
     if options.dead_only:
-      if not is_dead:
+      if not machine['is_dead']:
         continue
-    elif not options.keep_dead and is_dead:
+    elif not options.keep_dead and machine['is_dead']:
       continue
 
     # If the user requested to filter on dimensions, ensure the bot has all the
@@ -1027,6 +1039,9 @@ def CMDrun(parser, args):
   options, args = parser.parse_args(args)
   process_trigger_options(parser, options, args)
 
+  auth.ensure_logged_in(options.swarming)
+  if file_path.is_url(options.isolate_server):
+    auth.ensure_logged_in(options.isolate_server)
   try:
     tasks, task_name = trigger(
         swarming=options.swarming,
@@ -1043,12 +1058,12 @@ def CMDrun(parser, args):
         profile=options.profile,
         priority=options.priority)
   except Failure as e:
-    tools.report_error(
+    on_error.report(
         'Failed to trigger %s(%s): %s' %
         (options.task_name, args[0], e.args[0]))
     return 1
   if not tasks:
-    tools.report_error('Failed to trigger the task.')
+    on_error.report('Failed to trigger the task.')
     return 1
   if task_name != options.task_name:
     print('Triggered task: %s' % task_name)
@@ -1061,9 +1076,10 @@ def CMDrun(parser, args):
         options.timeout,
         options.decorate,
         options.print_status_updates,
+        options.task_summary_json,
         options.task_output_dir)
-  except Failure as e:
-    tools.report_error(e)
+  except Failure:
+    on_error.report(None)
     return 1
 
 
@@ -1090,6 +1106,9 @@ def CMDtrigger(parser, args):
   options, args = parser.parse_args(args)
   process_trigger_options(parser, options, args)
 
+  auth.ensure_logged_in(options.swarming)
+  if file_path.is_url(options.isolate_server):
+    auth.ensure_logged_in(options.isolate_server)
   try:
     tasks, task_name = trigger(
         swarming=options.swarming,
@@ -1115,8 +1134,8 @@ def CMDtrigger(parser, args):
         }
         tools.write_json(options.dump_json, data, True)
     return int(not tasks)
-  except Failure as e:
-    tools.report_error(e)
+  except Failure:
+    on_error.report(None)
     return 1
 
 
@@ -1144,11 +1163,7 @@ class OptionParserSwarming(tools.OptionParserWithLogging):
 
 def main(args):
   dispatcher = subcommand.CommandDispatcher(__name__)
-  try:
-    return dispatcher.execute(OptionParserSwarming(version=__version__), args)
-  except Exception as e:
-    tools.report_error(e)
-    return 1
+  return dispatcher.execute(OptionParserSwarming(version=__version__), args)
 
 
 if __name__ == '__main__':

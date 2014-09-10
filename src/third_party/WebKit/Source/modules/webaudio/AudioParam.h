@@ -29,7 +29,7 @@
 #ifndef AudioParam_h
 #define AudioParam_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioParamTimeline.h"
 #include "modules/webaudio/AudioSummingJunction.h"
@@ -39,18 +39,23 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioNodeOutput;
 
-class AudioParam FINAL : public RefCountedWillBeGarbageCollectedFinalized<AudioParam>, public ScriptWrappable, public AudioSummingJunction {
+#if ENABLE(OILPAN)
+#define AUDIO_PARAM_BASE_CLASSES public AudioSummingJunction, public ScriptWrappable
+#else
+#define AUDIO_PARAM_BASE_CLASSES public RefCounted<AudioParam>, public ScriptWrappable, public AudioSummingJunction
+#endif
+class AudioParam FINAL : AUDIO_PARAM_BASE_CLASSES {
 public:
     static const double DefaultSmoothingConstant;
     static const double SnapThreshold;
 
-    static PassRefPtrWillBeRawPtr<AudioParam> create(AudioContext* context, const String& name, double defaultValue, double minValue, double maxValue, unsigned units = 0)
+    static PassRefPtrWillBeRawPtr<AudioParam> create(AudioContext* context, double defaultValue)
     {
-        return adoptRefWillBeNoop(new AudioParam(context, name, defaultValue, minValue, maxValue, units));
+        return adoptRefWillBeNoop(new AudioParam(context, defaultValue));
     }
 
     // AudioSummingJunction
@@ -65,12 +70,7 @@ public:
     // Must be called in the audio thread.
     float finalValue();
 
-    String name() const { return m_name; }
-
-    float minValue() const { return static_cast<float>(m_minValue); }
-    float maxValue() const { return static_cast<float>(m_maxValue); }
     float defaultValue() const { return static_cast<float>(m_defaultValue); }
-    unsigned units() const { return m_units; }
 
     // Value smoothing:
 
@@ -99,36 +99,25 @@ public:
     void calculateSampleAccurateValues(float* values, unsigned numberOfValues);
 
     // Connect an audio-rate signal to control this parameter.
-    void connect(AudioNodeOutput*);
-    void disconnect(AudioNodeOutput*);
+    void connect(AudioNodeOutput&);
+    void disconnect(AudioNodeOutput&);
 
-    void trace(Visitor*) { }
-
-protected:
-    AudioParam(AudioContext* context, const String& name, double defaultValue, double minValue, double maxValue, unsigned units = 0)
+private:
+    AudioParam(AudioContext* context, double defaultValue)
         : AudioSummingJunction(context)
-        , m_name(name)
         , m_value(defaultValue)
         , m_defaultValue(defaultValue)
-        , m_minValue(minValue)
-        , m_maxValue(maxValue)
-        , m_units(units)
         , m_smoothedValue(defaultValue)
     {
         ScriptWrappable::init(this);
     }
 
-private:
     // sampleAccurate corresponds to a-rate (audio rate) vs. k-rate in the Web Audio specification.
     void calculateFinalValues(float* values, unsigned numberOfValues, bool sampleAccurate);
     void calculateTimelineValues(float* values, unsigned numberOfValues);
 
-    String m_name;
     double m_value;
     double m_defaultValue;
-    double m_minValue;
-    double m_maxValue;
-    unsigned m_units;
 
     // Smoothing (de-zippering)
     double m_smoothedValue;
@@ -136,6 +125,6 @@ private:
     AudioParamTimeline m_timeline;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioParam_h

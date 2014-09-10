@@ -5,44 +5,54 @@
 #ifndef Response_h
 #define Response_h
 
-#include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ScriptWrappable.h"
-#include "modules/serviceworkers/HeaderMap.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "modules/serviceworkers/FetchBodyStream.h"
+#include "modules/serviceworkers/FetchResponseData.h"
+#include "modules/serviceworkers/Headers.h"
 #include "platform/blob/BlobData.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace blink { class WebServiceWorkerResponse; }
-
-namespace WebCore {
+namespace blink {
 
 class Blob;
-struct ResponseInit;
+class ExceptionState;
+class ResponseInit;
+class WebServiceWorkerResponse;
 
-class Response FINAL : public ScriptWrappable, public RefCounted<Response> {
+class Response FINAL : public RefCountedWillBeGarbageCollected<Response>, public ScriptWrappable {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(Response);
 public:
-    static PassRefPtr<Response> create(Blob* body, const Dictionary& responseInit);
-    ~Response() { };
+    static PassRefPtrWillBeRawPtr<Response> create(Blob*, const Dictionary&, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<Response> create(const String&, const Dictionary&, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<Response> create(Blob*, const ResponseInit&, ExceptionState&);
 
-    unsigned short status() const { return m_status; }
-    void setStatus(unsigned short value) { m_status = value; }
+    static PassRefPtrWillBeRawPtr<Response> create(PassRefPtrWillBeRawPtr<FetchResponseData>);
 
-    String statusText() const { return m_statusText; }
-    void setStatusText(const String& value) { m_statusText = value; }
+    String type() const;
+    String url() const;
+    unsigned short status() const;
+    String statusText() const;
+    PassRefPtrWillBeRawPtr<Headers> headers() const;
 
-    PassRefPtr<HeaderMap> headers() const;
+    PassRefPtrWillBeRawPtr<FetchBodyStream> body(ExecutionContext*);
 
-    void populateWebServiceWorkerResponse(blink::WebServiceWorkerResponse&);
+    void populateWebServiceWorkerResponse(WebServiceWorkerResponse&);
+
+    void trace(Visitor*);
 
 private:
-    Response(PassRefPtr<BlobDataHandle>, const ResponseInit&);
-    unsigned short m_status;
-    String m_statusText;
-    RefPtr<HeaderMap> m_headers;
-    RefPtr<BlobDataHandle> m_blobDataHandle;
+    Response();
+    explicit Response(PassRefPtrWillBeRawPtr<FetchResponseData>);
+
+    RefPtrWillBeMember<FetchResponseData> m_response;
+    RefPtrWillBeMember<Headers> m_headers;
+    RefPtrWillBeMember<FetchBodyStream> m_fetchBodyStream;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Response_h

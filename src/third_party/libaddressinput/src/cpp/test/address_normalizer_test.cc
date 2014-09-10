@@ -21,26 +21,26 @@
 #include <libaddressinput/util/basictypes.h>
 #include <libaddressinput/util/scoped_ptr.h>
 
-#include "fake_downloader.h"
+#include <string>
 
 #include <gtest/gtest.h>
+
+#include "testdata_source.h"
 
 namespace {
 
 using i18n::addressinput::AddressData;
 using i18n::addressinput::AddressNormalizer;
 using i18n::addressinput::BuildCallback;
-using i18n::addressinput::FakeDownloader;
 using i18n::addressinput::NullStorage;
 using i18n::addressinput::PreloadSupplier;
 using i18n::addressinput::scoped_ptr;
+using i18n::addressinput::TestdataSource;
 
 class AddressNormalizerTest : public testing::Test {
  protected:
   AddressNormalizerTest()
-      : supplier_(FakeDownloader::kFakeAggregateDataUrl,
-                  new FakeDownloader,
-                  new NullStorage),
+      : supplier_(new TestdataSource(true), new NullStorage),
         loaded_(BuildCallback(this, &AddressNormalizerTest::OnLoaded)),
         normalizer_(&supplier_) {}
 
@@ -86,11 +86,12 @@ TEST_F(AddressNormalizerTest, GangwonKoreanName) {
   AddressData address;
   address.language_code = "ko-KR";
   address.region_code = "KR";
-  address.administrative_area = "강원";
+  address.administrative_area = "\xEA\xB0\x95\xEC\x9B\x90";  /* "강원" */
   normalizer_.Normalize(&address);
-  EXPECT_EQ("강원도", address.administrative_area);
+  EXPECT_EQ(
+      "\xEA\xB0\x95\xEC\x9B\x90\xEB\x8F\x84",  /* "강원도" */
+      address.administrative_area);
 }
-
 
 TEST_F(AddressNormalizerTest, DontSwitchLatinScriptForUnknownLanguage) {
   supplier_.LoadRules("KR", *loaded_);
@@ -105,9 +106,11 @@ TEST_F(AddressNormalizerTest, DontSwitchLocalScriptForUnknownLanguage) {
   supplier_.LoadRules("KR", *loaded_);
   AddressData address;
   address.region_code = "KR";
-  address.administrative_area = "강원";
+  address.administrative_area = "\xEA\xB0\x95\xEC\x9B\x90";  /* "강원" */
   normalizer_.Normalize(&address);
-  EXPECT_EQ("강원도", address.administrative_area);
+  EXPECT_EQ(
+      "\xEA\xB0\x95\xEC\x9B\x90\xEB\x8F\x84",  /* "강원도" */
+      address.administrative_area);
 }
 
 }  // namespace

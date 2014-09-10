@@ -25,9 +25,13 @@
 #include "ui/wm/core/window_util.h"
 #include "ui/wm/public/activation_client.h"
 
-#if defined(OS_WIN)
-#include "ui/views/win/hwnd_util.h"
-#endif
+namespace {
+
+ExtensionViewViews* GetExtensionView(extensions::ExtensionViewHost* host) {
+  return static_cast<ExtensionViewViews*>(host->view());
+}
+
+}  // namespace
 
 // The minimum/maximum dimensions of the popup.
 // The minimum is just a little larger than the size of the button itself.
@@ -51,8 +55,8 @@ ExtensionPopup::ExtensionPopup(extensions::ExtensionViewHost* host,
   const int margin = views::BubbleBorder::GetCornerRadius() / 2;
   set_margins(gfx::Insets(margin, margin, margin, margin));
   SetLayoutManager(new views::FillLayout());
-  AddChildView(host->view());
-  host->view()->set_container(this);
+  AddChildView(GetExtensionView(host));
+  GetExtensionView(host)->set_container(this);
   // ExtensionPopup closes itself on very specific de-activation conditions.
   set_close_on_deactivate(false);
 
@@ -61,19 +65,22 @@ ExtensionPopup::ExtensionPopup(extensions::ExtensionViewHost* host,
                  content::Source<content::WebContents>(host->host_contents()));
 
   // Listen for the containing view calling window.close();
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE,
+  registrar_.Add(
+      this,
+      extensions::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE,
       content::Source<content::BrowserContext>(host->browser_context()));
   content::DevToolsManager::GetInstance()->AddAgentStateCallback(
       devtools_callback_);
 
-  host_->view()->browser()->tab_strip_model()->AddObserver(this);
+  GetExtensionView(host)->GetBrowser()->tab_strip_model()->AddObserver(this);
 }
 
 ExtensionPopup::~ExtensionPopup() {
   content::DevToolsManager::GetInstance()->RemoveAgentStateCallback(
       devtools_callback_);
 
-  host_->view()->browser()->tab_strip_model()->RemoveObserver(this);
+  GetExtensionView(
+      host_.get())->GetBrowser()->tab_strip_model()->RemoveObserver(this);
 }
 
 void ExtensionPopup::Observe(int type,
@@ -86,7 +93,7 @@ void ExtensionPopup::Observe(int type,
       // Show when the content finishes loading and its width is computed.
       ShowBubble();
       break;
-    case chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE:
+    case extensions::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE:
       // If we aren't the host of the popup, then disregard the notification.
       if (content::Details<extensions::ExtensionHost>(host()) == details)
         GetWidget()->Close();
@@ -100,7 +107,7 @@ void ExtensionPopup::OnDevToolsStateChanged(
     content::DevToolsAgentHost* agent_host,
     bool attached) {
   // First check that the devtools are being opened on this popup.
-  if (host()->render_view_host() != agent_host->GetRenderViewHost())
+  if (host()->host_contents() != agent_host->GetWebContents())
     return;
 
   if (attached) {
@@ -218,7 +225,7 @@ void ExtensionPopup::ShowBubble() {
   host()->host_contents()->Focus();
 
   if (inspect_with_devtools_) {
-    DevToolsWindow::OpenDevToolsWindow(host()->render_view_host(),
-        DevToolsToggleAction::ShowConsole());
+    DevToolsWindow::OpenDevToolsWindow(host()->host_contents(),
+                                       DevToolsToggleAction::ShowConsole());
   }
 }

@@ -19,6 +19,7 @@
 #include "chrome/browser/signin/account_reconcilor_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
+#include "chrome/browser/ui/profile_chooser_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -302,19 +303,7 @@ void ShowUserManagerMaybeWithTutorial(Profile* profile) {
     chrome::ShowUserManager(base::FilePath());
     return;
   }
-  // Show the tutorial if the profile has not shown it before.
-  PrefService* pref_service = profile->GetPrefs();
-  bool tutorial_shown = pref_service->GetBoolean(
-      prefs::kProfileUserManagerTutorialShown);
-  if (!tutorial_shown)
-    pref_service->SetBoolean(prefs::kProfileUserManagerTutorialShown, true);
-
-  if (tutorial_shown) {
-    chrome::ShowUserManager(profile->GetPath());
-  } else {
-    chrome::ShowUserManagerWithTutorial(
-        profiles::USER_MANAGER_TUTORIAL_OVERVIEW);
-  }
+  chrome::ShowUserManagerWithTutorial(profiles::USER_MANAGER_TUTORIAL_OVERVIEW);
 }
 
 void EnableNewProfileManagementPreview(Profile* profile) {
@@ -359,6 +348,37 @@ void DisableNewProfileManagementPreview(Profile* profile) {
       false);
   chrome::AttemptRestart();
   UpdateServicesWithNewProfileManagementFlag(profile, false);
+}
+
+void BubbleViewModeFromAvatarBubbleMode(
+    BrowserWindow::AvatarBubbleMode mode,
+    BubbleViewMode* bubble_view_mode,
+    TutorialMode* tutorial_mode) {
+  *tutorial_mode = TUTORIAL_MODE_NONE;
+  switch (mode) {
+    case BrowserWindow::AVATAR_BUBBLE_MODE_ACCOUNT_MANAGEMENT:
+      *bubble_view_mode = BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT;
+      return;
+    case BrowserWindow::AVATAR_BUBBLE_MODE_SIGNIN:
+      *bubble_view_mode = BUBBLE_VIEW_MODE_GAIA_SIGNIN;
+      return;
+    case BrowserWindow::AVATAR_BUBBLE_MODE_ADD_ACCOUNT:
+      *bubble_view_mode = BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT;
+      return;
+    case BrowserWindow::AVATAR_BUBBLE_MODE_REAUTH:
+      *bubble_view_mode = BUBBLE_VIEW_MODE_GAIA_REAUTH;
+      return;
+    case BrowserWindow::AVATAR_BUBBLE_MODE_CONFIRM_SIGNIN:
+      *bubble_view_mode = BUBBLE_VIEW_MODE_PROFILE_CHOOSER;
+      *tutorial_mode = TUTORIAL_MODE_CONFIRM_SIGNIN;
+      return;
+    case BrowserWindow::AVATAR_BUBBLE_MODE_SHOW_ERROR:
+      *bubble_view_mode = BUBBLE_VIEW_MODE_PROFILE_CHOOSER;
+      *tutorial_mode = TUTORIAL_MODE_SHOW_ERROR;
+      return;
+    default:
+      *bubble_view_mode = profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER;
+  }
 }
 
 }  // namespace profiles

@@ -14,24 +14,26 @@
 # combinations of the real targets.
 #
 
-group("trusted") {
+if (os == "linux") {
+  group("trusted_arm") {
+    deps = [
+      "//native_client/src:trusted_targets(//native_client/build/toolchain/$os:trusted_arm)",
+    ]
+  }
+}
+
+group("trusted_32") {
   deps = [
-    "//native_client/src:trusted_targets(//native_client/build/toolchain/linux:trusted_x86)",
-    "//native_client/src:trusted_targets(//native_client/build/toolchain/linux:trusted_x64)",
+    "//native_client/src:trusted_targets(//native_client/build/toolchain/$os:trusted_x86)",
   ]
 }
 
-#
-# TODO(noelallen) : BUG# 386243
-# Remove the need for a target to prep all toolchains once a Cooked toolchain
-# can depend on the correct prep steps.
-#
-group("prep_toolchains") {
+group("trusted_64") {
   deps = [
-    "//native_client/build/toolchain:prep_x86_newlib",
-    "//native_client/build/toolchain:prep_arm_newlib",
+    "//native_client/src:trusted_targets(//native_client/build/toolchain/$os:trusted_x64)",
   ]
 }
+
 
 #
 # This is the root untrusted target which will build all trusted components
@@ -39,10 +41,19 @@ group("prep_toolchains") {
 group("untrusted") {
   deps = []
   if (use_newlib) {
-    deps += [
-      "//native_client/src/:untrusted_targets(//native_client/build/toolchain/nacl:newlib_x86)",
-      "//native_client/src/:untrusted_targets(//native_client/build/toolchain/nacl:newlib_x64)",
-      "//native_client/src/:untrusted_targets(//native_client/build/toolchain/nacl:newlib_arm)",
-    ]
+    if (use_nacl_x86) {
+      deps += [
+        "//native_client/src/:untrusted_targets(//native_client/build/toolchain/nacl:newlib_x86)"
+      ]
+    }
+    if (use_nacl_x64) {
+      deps += [
+        "//native_client/src/:untrusted_targets(//native_client/build/toolchain/nacl:newlib_x64)",
+      ]
+    }
+    if (use_nacl_arm) {
+      deps += [ "//native_client/src/:untrusted_targets(//native_client/build/toolchain/nacl:newlib_arm)",
+      ]
+    }
   }
 }

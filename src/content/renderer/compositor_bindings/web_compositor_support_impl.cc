@@ -20,12 +20,11 @@
 #include "content/renderer/compositor_bindings/web_nine_patch_layer_impl.h"
 #include "content/renderer/compositor_bindings/web_scroll_offset_animation_curve_impl.h"
 #include "content/renderer/compositor_bindings/web_scrollbar_layer_impl.h"
-#include "content/renderer/compositor_bindings/web_solid_color_layer_impl.h"
 #include "content/renderer/compositor_bindings/web_transform_animation_curve_impl.h"
 #include "content/renderer/compositor_bindings/web_transform_operations_impl.h"
 
-using blink::WebAnimation;
-using blink::WebAnimationCurve;
+using blink::WebCompositorAnimation;
+using blink::WebCompositorAnimationCurve;
 using blink::WebContentLayer;
 using blink::WebContentLayerClient;
 using blink::WebExternalTextureLayer;
@@ -40,10 +39,7 @@ using blink::WebScrollbar;
 using blink::WebScrollbarLayer;
 using blink::WebScrollbarThemeGeometry;
 using blink::WebScrollbarThemePainter;
-#if WEB_SCROLL_OFFSET_ANIMATION_CURVE_IS_DEFINED
 using blink::WebScrollOffsetAnimationCurve;
-#endif
-using blink::WebSolidColorLayer;
 using blink::WebTransformAnimationCurve;
 using blink::WebTransformOperations;
 
@@ -77,10 +73,6 @@ blink::WebNinePatchLayer* WebCompositorSupportImpl::createNinePatchLayer() {
   return new WebNinePatchLayerImpl();
 }
 
-WebSolidColorLayer* WebCompositorSupportImpl::createSolidColorLayer() {
-  return new WebSolidColorLayerImpl();
-}
-
 WebScrollbarLayer* WebCompositorSupportImpl::createScrollbarLayer(
     WebScrollbar* scrollbar,
     WebScrollbarThemePainter painter,
@@ -99,11 +91,11 @@ WebScrollbarLayer* WebCompositorSupportImpl::createSolidColorScrollbarLayer(
                                    is_left_side_vertical_scrollbar);
 }
 
-WebAnimation* WebCompositorSupportImpl::createAnimation(
-    const blink::WebAnimationCurve& curve,
-    blink::WebAnimation::TargetProperty target,
+WebCompositorAnimation* WebCompositorSupportImpl::createAnimation(
+    const blink::WebCompositorAnimationCurve& curve,
+    blink::WebCompositorAnimation::TargetProperty target,
     int animation_id) {
-  return new WebAnimationImpl(curve, target, animation_id, 0);
+  return new WebCompositorAnimationImpl(curve, target, animation_id, 0);
 }
 
 WebFilterAnimationCurve*
@@ -115,14 +107,12 @@ WebFloatAnimationCurve* WebCompositorSupportImpl::createFloatAnimationCurve() {
   return new WebFloatAnimationCurveImpl();
 }
 
-#if WEB_SCROLL_OFFSET_ANIMATION_CURVE_IS_DEFINED
 WebScrollOffsetAnimationCurve*
 WebCompositorSupportImpl::createScrollOffsetAnimationCurve(
     blink::WebFloatPoint target_value,
-    blink::WebAnimationCurve::TimingFunctionType timing_function) {
+    blink::WebCompositorAnimationCurve::TimingFunctionType timing_function) {
   return new WebScrollOffsetAnimationCurveImpl(target_value, timing_function);
 }
-#endif
 
 WebTransformAnimationCurve*
 WebCompositorSupportImpl::createTransformAnimationCurve() {

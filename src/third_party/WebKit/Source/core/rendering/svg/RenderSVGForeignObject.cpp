@@ -24,7 +24,6 @@
 #include "core/rendering/svg/RenderSVGForeignObject.h"
 
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
@@ -32,7 +31,7 @@
 #include "core/svg/SVGForeignObjectElement.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 
-namespace WebCore {
+namespace blink {
 
 RenderSVGForeignObject::RenderSVGForeignObject(SVGForeignObjectElement* node)
     : RenderSVGBlock(node)
@@ -52,8 +51,7 @@ bool RenderSVGForeignObject::isChildAllowed(RenderObject* child, RenderStyle* st
 
 void RenderSVGForeignObject::paint(PaintInfo& paintInfo, const LayoutPoint&)
 {
-    if (paintInfo.context->paintingDisabled()
-        || (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseSelection))
+    if (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseSelection)
         return;
 
     PaintInfo childPaintInfo(paintInfo);
@@ -116,9 +114,7 @@ void RenderSVGForeignObject::computeLogicalHeight(LayoutUnit, LayoutUnit logical
 void RenderSVGForeignObject::layout()
 {
     ASSERT(needsLayout());
-    ASSERT(!view()->layoutStateCachedOffsetsEnabled()); // RenderSVGRoot disables layoutState for the SVG rendering tree.
 
-    LayoutRepainter repainter(*this, SVGRenderSupport::checkForSVGRepaintDuringLayout(this));
     SVGForeignObjectElement* foreign = toSVGForeignObjectElement(node());
 
     bool updateCachedBoundariesInParents = false;
@@ -155,15 +151,12 @@ void RenderSVGForeignObject::layout()
     // Invalidate all resources of this client if our layout changed.
     if (layoutChanged)
         SVGResourcesCache::clientLayoutChanged(this);
-
-    repainter.repaintAfterLayout();
 }
 
-void RenderSVGForeignObject::mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer,
-    LayoutRect& rect, bool fixed) const
+void RenderSVGForeignObject::mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect& rect, ViewportConstrainedPosition, const PaintInvalidationState* paintInvalidationState) const
 {
     FloatRect r(rect);
-    SVGRenderSupport::computeFloatRectForRepaint(this, paintInvalidationContainer, r, fixed);
+    SVGRenderSupport::computeFloatRectForPaintInvalidation(this, paintInvalidationContainer, r, paintInvalidationState);
     rect = enclosingLayoutRect(r);
 }
 
@@ -173,7 +166,11 @@ bool RenderSVGForeignObject::nodeAtFloatPoint(const HitTestRequest& request, Hit
     if (hitTestAction != HitTestForeground)
         return false;
 
-    FloatPoint localPoint = localTransform().inverse().mapPoint(pointInParent);
+    AffineTransform localTransform = this->localTransform();
+    if (!localTransform.isInvertible())
+        return false;
+
+    FloatPoint localPoint = localTransform.inverse().mapPoint(pointInParent);
 
     // Early exit if local point is not contained in clipped viewport area
     if (SVGRenderSupport::isOverflowHidden(this) && !m_viewport.contains(localPoint))

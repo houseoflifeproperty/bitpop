@@ -27,9 +27,9 @@
 
 #include "talk/p2p/base/parsing.h"
 
-#include <algorithm>
 #include <stdlib.h>
-#include "talk/base/stringutils.h"
+#include <algorithm>
+#include "webrtc/base/stringutils.h"
 
 namespace {
 static const char kTrue[] = "true";

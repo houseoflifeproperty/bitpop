@@ -37,7 +37,7 @@
 
 using namespace std;
 
-namespace WebCore {
+namespace blink {
 
 class TimerHeapReference;
 
@@ -191,7 +191,7 @@ TimerBase::TimerBase()
     , m_repeatInterval(0)
     , m_heapIndex(-1)
     , m_cachedThreadGlobalTimerHeap(0)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     , m_thread(currentThread())
 #endif
 {
@@ -348,7 +348,7 @@ void TimerBase::updateHeapIfNeeded(double oldTime)
 {
     if (m_nextFireTime && hasValidHeapPosition())
         return;
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     int oldHeapIndex = m_heapIndex;
 #endif
     if (!oldTime)
@@ -412,5 +412,5 @@ double TimerBase::nextUnalignedFireInterval() const
     return max(m_unalignedNextFireTime - monotonicallyIncreasingTime(), 0.0);
 }
 
-} // namespace WebCore
+} // namespace blink
 

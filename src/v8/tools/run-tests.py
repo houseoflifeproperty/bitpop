@@ -51,7 +51,8 @@ from testrunner.objects import context
 
 
 ARCH_GUESS = utils.DefaultArch()
-DEFAULT_TESTS = ["mjsunit", "fuzz-natives", "cctest", "message", "preparser"]
+DEFAULT_TESTS = ["mjsunit", "fuzz-natives", "base-unittests",
+                 "cctest", "compiler-unittests", "message", "preparser"]
 
 # Map of test name synonyms to lists of test suites. Should be ordered by
 # expected runtimes (suites with slow test cases first). These groups are
@@ -85,9 +86,10 @@ TIMEOUT_SCALEFACTOR = {"debug"   : 4,
 VARIANT_FLAGS = {
     "default": [],
     "stress": ["--stress-opt", "--always-opt"],
+    "turbofan": ["--turbo-filter=*", "--always-opt"],
     "nocrankshaft": ["--nocrankshaft"]}
 
-VARIANTS = ["default", "stress", "nocrankshaft"]
+VARIANTS = ["default", "stress", "turbofan", "nocrankshaft"]
 
 MODE_FLAGS = {
     "debug"   : ["--nohard-abort", "--nodead-code-elimination",
@@ -109,9 +111,11 @@ SUPPORTED_ARCHS = ["android_arm",
                    "x87",
                    "mips",
                    "mipsel",
+                   "mips64el",
                    "nacl_ia32",
                    "nacl_x64",
                    "x64",
+                   "x32",
                    "arm64"]
 # Double the timeout for these:
 SLOW_ARCHS = ["android_arm",
@@ -120,6 +124,7 @@ SLOW_ARCHS = ["android_arm",
               "arm",
               "mips",
               "mipsel",
+              "mips64el",
               "nacl_ia32",
               "nacl_x64",
               "x87",
@@ -196,6 +201,9 @@ def BuildOptions():
                     help="Comma-separated list of testing variants")
   result.add_option("--outdir", help="Base directory with compile output",
                     default="out")
+  result.add_option("--predictable",
+                    help="Compare output of several reruns of each test",
+                    default=False, action="store_true")
   result.add_option("-p", "--progress",
                     help=("The style of progress indicator"
                           " (verbose, dots, color, mono)"),
@@ -206,6 +214,13 @@ def BuildOptions():
                     default=False, action="store_true")
   result.add_option("--json-test-results",
                     help="Path to a file for storing json results.")
+  result.add_option("--rerun-failures-count",
+                    help=("Number of times to rerun each failing test case. "
+                          "Very slow tests will be rerun only once."),
+                    default=0, type="int")
+  result.add_option("--rerun-failures-max",
+                    help="Maximum number of failing test cases to rerun.",
+                    default=100, type="int")
   result.add_option("--shard-count",
                     help="Split testsuites into this number of shards",
                     default=1, type="int")
@@ -226,6 +241,9 @@ def BuildOptions():
                     default=False, action="store_true")
   result.add_option("-t", "--timeout", help="Timeout in seconds",
                     default= -1, type="int")
+  result.add_option("--tsan",
+                    help="Regard test expectations for TSAN",
+                    default=False, action="store_true")
   result.add_option("-v", "--verbose", help="Verbose output",
                     default=False, action="store_true")
   result.add_option("--valgrind", help="Run tests through valgrind",
@@ -288,6 +306,9 @@ def ProcessOptions(options):
   if options.asan:
     options.extra_flags.append("--invoke-weak-callbacks")
 
+  if options.tsan:
+    VARIANTS = ["default"]
+
   if options.j == 0:
     options.j = multiprocessing.cpu_count()
 
@@ -319,6 +340,11 @@ def ProcessOptions(options):
     options.flaky_tests = "skip"
     options.slow_tests = "skip"
     options.pass_fail_tests = "skip"
+  if options.predictable:
+    VARIANTS = ["default"]
+    options.extra_flags.append("--predictable")
+    options.extra_flags.append("--verify_predictable")
+    options.extra_flags.append("--no-inline-new")
 
   if not options.shell_dir:
     if options.shell:
@@ -443,6 +469,11 @@ def Execute(arch, mode, args, options, suites, workspace):
       timeout = TIMEOUT_DEFAULT;
 
   timeout *= TIMEOUT_SCALEFACTOR[mode]
+
+  if options.predictable:
+    # Predictable mode is slower.
+    timeout *= 2
+
   ctx = context.Context(arch, mode, shell_dir,
                         mode_flags, options.verbose,
                         timeout, options.isolates,
@@ -450,7 +481,10 @@ def Execute(arch, mode, args, options, suites, workspace):
                         options.extra_flags,
                         options.no_i18n,
                         options.random_seed,
-                        options.no_sorting)
+                        options.no_sorting,
+                        options.rerun_failures_count,
+                        options.rerun_failures_max,
+                        options.predictable)
 
   # TODO(all): Combine "simulator" and "simulator_run".
   simulator_run = not options.dont_skip_simulator_slow_tests and \
@@ -468,6 +502,7 @@ def Execute(arch, mode, args, options, suites, workspace):
     "simulator_run": simulator_run,
     "simulator": utils.UseSimulator(arch),
     "system": utils.GuessOS(),
+    "tsan": options.tsan,
   }
   all_tests = []
   num_tests = 0

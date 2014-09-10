@@ -30,7 +30,7 @@
 #include "platform/scroll/Scrollbar.h"
 #include "wtf/HashMap.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalFrame;
 class Node;
@@ -63,8 +63,6 @@ private:
     virtual void setParent(Widget*) OVERRIDE;
     virtual void setEnabled(bool) OVERRIDE;
 
-    virtual void paint(GraphicsContext*, const IntRect& damageRect) OVERRIDE;
-
     virtual void setHoveredPart(ScrollbarPart) OVERRIDE;
     virtual void setPressedPart(ScrollbarPart) OVERRIDE;
 
@@ -84,11 +82,11 @@ private:
     RefPtrWillBePersistent<Node> m_owner;
 
     LocalFrame* m_owningFrame;
-    HashMap<unsigned, RenderScrollbarPart*> m_parts;
+    WillBePersistentHeapHashMap<unsigned, RawPtrWillBeMember<RenderScrollbarPart> > m_parts;
 };
 
 DEFINE_TYPE_CASTS(RenderScrollbar, ScrollbarThemeClient, scrollbar, scrollbar->isCustomScrollbar(), scrollbar.isCustomScrollbar());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderScrollbar_h

@@ -37,8 +37,6 @@
 #include "public/platform/WebHTTPHeaderVisitor.h"
 #include "public/platform/WebURL.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 namespace {
@@ -224,18 +222,24 @@ bool WebURLRequest::reportRawHeaders() const
     return m_private->m_resourceRequest->reportRawHeaders();
 }
 
-WebURLRequest::TargetType WebURLRequest::targetType() const
+WebURLRequest::RequestContext WebURLRequest::requestContext() const
 {
-    // FIXME: Temporary special case until downstream chromium.org knows of the new TargetTypes.
-    TargetType targetType = static_cast<TargetType>(m_private->m_resourceRequest->targetType());
-    if (targetType == TargetIsTextTrack || targetType == TargetIsUnspecified)
-        return TargetIsSubresource;
-    return targetType;
+    return m_private->m_resourceRequest->requestContext();
+}
+
+WebURLRequest::FrameType WebURLRequest::frameType() const
+{
+    return m_private->m_resourceRequest->frameType();
 }
 
 WebReferrerPolicy WebURLRequest::referrerPolicy() const
 {
     return static_cast<WebReferrerPolicy>(m_private->m_resourceRequest->referrerPolicy());
+}
+
+void WebURLRequest::addHTTPOriginIfNeeded(const WebString& origin)
+{
+    m_private->m_resourceRequest->addHTTPOriginIfNeeded(origin);
 }
 
 bool WebURLRequest::hasUserGesture() const
@@ -248,10 +252,14 @@ void WebURLRequest::setHasUserGesture(bool hasUserGesture)
     m_private->m_resourceRequest->setHasUserGesture(hasUserGesture);
 }
 
-void WebURLRequest::setTargetType(TargetType targetType)
+void WebURLRequest::setRequestContext(RequestContext requestContext)
 {
-    m_private->m_resourceRequest->setTargetType(
-        static_cast<ResourceRequest::TargetType>(targetType));
+    m_private->m_resourceRequest->setRequestContext(requestContext);
+}
+
+void WebURLRequest::setFrameType(FrameType frameType)
+{
+    m_private->m_resourceRequest->setFrameType(frameType);
 }
 
 int WebURLRequest::requestorID() const

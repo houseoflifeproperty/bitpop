@@ -625,7 +625,12 @@ WebInspector.HeapSnapshotGenericObjectNode.prototype = {
     {
     },
 
-    queryObjectContent: function(callback, objectGroupName)
+    /**
+     * @param {!WebInspector.Target} target
+     * @param {!function(!WebInspector.RemoteObject)} callback
+     * @param {string} objectGroupName
+     */
+    queryObjectContent: function(target, callback, objectGroupName)
     {
         /**
          * @param {?Protocol.Error} error
@@ -634,15 +639,15 @@ WebInspector.HeapSnapshotGenericObjectNode.prototype = {
         function formatResult(error, object)
         {
             if (!error && object.type)
-                callback(WebInspector.runtimeModel.createRemoteObject(object), !!error);
+                callback(target.runtimeModel.createRemoteObject(object));
             else
-                callback(WebInspector.runtimeModel.createRemoteObjectFromPrimitiveValue(WebInspector.UIString("Preview is not available")));
+                callback(target.runtimeModel.createRemoteObjectFromPrimitiveValue(WebInspector.UIString("Preview is not available")));
         }
 
         if (this._type === "string")
-            callback(WebInspector.runtimeModel.createRemoteObjectFromPrimitiveValue(this._name));
+            callback(target.runtimeModel.createRemoteObjectFromPrimitiveValue(this._name));
         else
-            HeapProfilerAgent.getObjectByHeapObjectId(String(this.snapshotNodeId), objectGroupName, formatResult);
+            target.heapProfilerAgent().getObjectByHeapObjectId(String(this.snapshotNodeId), objectGroupName, formatResult);
     },
 
     updateHasChildren: function()
@@ -1408,111 +1413,6 @@ WebInspector.HeapSnapshotDiffNode.prototype = {
 
 /**
  * @constructor
- * @extends {WebInspector.HeapSnapshotGenericObjectNode}
- * @param {!WebInspector.HeapSnapshotSortableDataGrid} dataGrid
- * @param {!WebInspector.HeapSnapshotCommon.Node} node
- */
-WebInspector.HeapSnapshotDominatorObjectNode = function(dataGrid, node)
-{
-    WebInspector.HeapSnapshotGenericObjectNode.call(this, dataGrid, node);
-    this.updateHasChildren();
-};
-
-WebInspector.HeapSnapshotDominatorObjectNode.prototype = {
-    /**
-     * @override
-     * @return {!WebInspector.HeapSnapshotProviderProxy}
-     */
-    createProvider: function()
-    {
-        return this._dataGrid.snapshot.createNodesProviderForDominator(this.snapshotNodeIndex);
-    },
-
-    /**
-     * @param {number} snapshotObjectId
-     * @param {function(?WebInspector.DataGridNode)} callback
-     */
-    retrieveChildBySnapshotObjectId: function(snapshotObjectId, callback)
-    {
-        /**
-         * @this {WebInspector.HeapSnapshotDominatorObjectNode}
-         */
-        function didExpand()
-        {
-            this._provider().nodePosition(snapshotObjectId, didGetNodePosition.bind(this));
-        }
-
-        /**
-         * @this {WebInspector.HeapSnapshotDominatorObjectNode}
-         */
-        function didGetNodePosition(nodePosition)
-        {
-            if (nodePosition === -1) {
-                this.collapse();
-                callback(null);
-            } else
-                this._populateChildren(nodePosition, null, didPopulateChildren.bind(this, nodePosition));
-        }
-
-        /**
-         * @this {WebInspector.HeapSnapshotDominatorObjectNode}
-         */
-        function didPopulateChildren(nodePosition)
-        {
-            var child = this.childForPosition(nodePosition);
-            callback(child);
-        }
-
-        // Make sure hasChildren flag is updated before expanding this node as updateHasChildren response
-        // may not have been received yet.
-        this.hasChildren = true;
-        this.expandWithoutPopulate(didExpand.bind(this));
-    },
-
-    _createChildNode: function(item)
-    {
-        return new WebInspector.HeapSnapshotDominatorObjectNode(this._dataGrid, item);
-    },
-
-    /**
-     * @param {!WebInspector.HeapSnapshotCommon.Node} node
-     * @return {number}
-     */
-    _childHashForEntity: function(node)
-    {
-        return node.id;
-    },
-
-    /**
-     * @param {!WebInspector.HeapSnapshotDominatorObjectNode} childNode
-     * @return {number}
-     */
-    _childHashForNode: function(childNode)
-    {
-        return childNode.snapshotNodeId;
-    },
-
-    /**
-     * @return {!WebInspector.HeapSnapshotCommon.ComparatorConfig}
-     */
-    comparator: function()
-    {
-        var sortAscending = this._dataGrid.isSortOrderAscending();
-        var sortColumnIdentifier = this._dataGrid.sortColumnIdentifier();
-        var sortFields = {
-            object: ["id", sortAscending, "retainedSize", false],
-            shallowSize: ["selfSize", sortAscending, "id", true],
-            retainedSize: ["retainedSize", sortAscending, "id", true]
-        }[sortColumnIdentifier];
-        return WebInspector.HeapSnapshotGridNode.createComparator(sortFields);
-    },
-
-    __proto__: WebInspector.HeapSnapshotGenericObjectNode.prototype
-}
-
-
-/**
- * @constructor
  * @extends {WebInspector.HeapSnapshotGridNode}
  * @param {!WebInspector.AllocationDataGrid} dataGrid
  * @param {!WebInspector.HeapSnapshotCommon.SerializedAllocationNode} data
@@ -1587,17 +1487,10 @@ WebInspector.AllocationGridNode.prototype = {
 
         var cell = WebInspector.HeapSnapshotGridNode.prototype.createCell.call(this, columnIdentifier);
         var allocationNode = this._allocationNode;
+        var target = this._dataGrid.target();
         if (allocationNode.scriptId) {
-            var urlElement;
             var linkifier = this._dataGrid._linkifier;
-            var script = WebInspector.debuggerModel.scriptForId(String(allocationNode.scriptId));
-            if (script) {
-                var rawLocation = WebInspector.debuggerModel.createRawLocation(script, allocationNode.line - 1, allocationNode.column - 1);
-                urlElement = linkifier.linkifyRawLocation(rawLocation, "profile-node-file");
-            } else {
-                var target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget());
-                urlElement = linkifier.linkifyLocation(target, allocationNode.scriptName, allocationNode.line - 1, allocationNode.column - 1, "profile-node-file");
-            }
+            var urlElement = linkifier.linkifyScriptLocation(target, String(allocationNode.scriptId), allocationNode.scriptName, allocationNode.line - 1, allocationNode.column - 1, "profile-node-file");
             urlElement.style.maxWidth = "75%";
             cell.insertBefore(urlElement, cell.firstChild);
         }

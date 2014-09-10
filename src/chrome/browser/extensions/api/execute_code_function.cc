@@ -5,7 +5,6 @@
 #include "chrome/browser/extensions/api/execute_code_function.h"
 
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
-#include "chrome/browser/extensions/script_executor.h"
 #include "chrome/common/extensions/api/i18n/default_locale_handler.h"
 #include "extensions/browser/component_extension_resource_manager.h"
 #include "extensions/browser/extensions_browser_client.h"
@@ -42,11 +41,10 @@ void ExecuteCodeFunction::DidLoadFile(bool success,
   std::string extension_id;
   base::FilePath extension_path;
   std::string extension_default_locale;
-  const Extension* extension = GetExtension();
-  if (extension) {
-    extension_id = extension->id();
-    extension_path = extension->path();
-    extension_default_locale = LocaleInfo::GetDefaultLocale(extension);
+  if (extension()) {
+    extension_id = extension()->id();
+    extension_path = extension()->path();
+    extension_default_locale = LocaleInfo::GetDefaultLocale(extension());
   }
 
   content::BrowserThread::PostTask(
@@ -112,8 +110,7 @@ bool ExecuteCodeFunction::Execute(const std::string& code_string) {
   if (!executor)
     return false;
 
-  const Extension* extension = GetExtension();
-  if (!extension)
+  if (!extension())
     return false;
 
   ScriptExecutor::ScriptType script_type = ScriptExecutor::JAVASCRIPT;
@@ -147,7 +144,7 @@ bool ExecuteCodeFunction::Execute(const std::string& code_string) {
   CHECK_NE(UserScript::UNDEFINED, run_at);
 
   executor->ExecuteScript(
-      extension->id(),
+      extension()->id(),
       script_type,
       code_string,
       frame_scope,
@@ -189,7 +186,7 @@ bool ExecuteCodeFunction::RunAsync() {
 
   if (!details_->file.get())
     return false;
-  resource_ = GetExtension()->GetResource(*details_->file);
+  resource_ = extension()->GetResource(*details_->file);
 
   if (resource_.extension_root().empty() || resource_.relative_path().empty()) {
     error_ = keys::kNoCodeOrFileToExecuteError;
@@ -214,7 +211,6 @@ bool ExecuteCodeFunction::RunAsync() {
 
 void ExecuteCodeFunction::OnExecuteCodeFinished(
     const std::string& error,
-    int32 on_page_id,
     const GURL& on_url,
     const base::ListValue& result) {
   if (!error.empty())

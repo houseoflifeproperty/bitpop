@@ -21,8 +21,11 @@ class GLES2Decoder;
 }
 }
 
+namespace gfx {
+class GLSurface;
+}
+
 namespace mojo {
-namespace services {
 
 class CommandBufferImpl : public InterfaceImpl<CommandBuffer> {
  public:
@@ -30,7 +33,6 @@ class CommandBufferImpl : public InterfaceImpl<CommandBuffer> {
                     const gfx::Size& size);
   virtual ~CommandBufferImpl();
 
-  virtual void OnConnectionError() OVERRIDE;
   virtual void Initialize(CommandBufferSyncClientPtr sync_client,
                           mojo::ScopedSharedBufferHandle shared_state) OVERRIDE;
   virtual void SetGetBuffer(int32_t buffer) OVERRIDE;
@@ -43,15 +45,12 @@ class CommandBufferImpl : public InterfaceImpl<CommandBuffer> {
   virtual void DestroyTransferBuffer(int32_t id) OVERRIDE;
   virtual void Echo(const Callback<void()>& callback) OVERRIDE;
 
-  virtual void RequestAnimationFrames() OVERRIDE;
-  virtual void CancelAnimationFrames() OVERRIDE;
-
  private:
   bool DoInitialize(mojo::ScopedSharedBufferHandle shared_state);
 
-  void OnParseError();
+  void OnResize(gfx::Size size, float scale_factor);
 
-  void DrawAnimationFrame();
+  void OnParseError();
 
   CommandBufferSyncClientPtr sync_client_;
 
@@ -60,13 +59,11 @@ class CommandBufferImpl : public InterfaceImpl<CommandBuffer> {
   scoped_ptr<gpu::CommandBufferService> command_buffer_;
   scoped_ptr<gpu::gles2::GLES2Decoder> decoder_;
   scoped_ptr<gpu::GpuScheduler> scheduler_;
-  scoped_ptr<gpu::GpuControlService> gpu_control_;
-  base::RepeatingTimer<CommandBufferImpl> timer_;
+  scoped_refptr<gfx::GLSurface> surface_;
 
   DISALLOW_COPY_AND_ASSIGN(CommandBufferImpl);
 };
 
-}  // namespace services
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_GLES2_COMMAND_BUFFER_IMPL_H_

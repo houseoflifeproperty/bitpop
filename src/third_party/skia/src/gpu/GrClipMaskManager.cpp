@@ -165,7 +165,7 @@ bool GrClipMaskManager::installClipEffects(const ElementList& elements,
             } else {
                 edgeType = invert ? kInverseFillBW_GrEffectEdgeType : kFillBW_GrEffectEdgeType;
             }
-            SkAutoTUnref<GrEffectRef> effect;
+            SkAutoTUnref<GrEffect> effect;
             switch (iter.get()->getType()) {
                 case SkClipStack::Element::kPath_Type:
                     effect.reset(GrConvexPolyEffect::Create(edgeType, iter.get()->getPath(),
@@ -404,10 +404,9 @@ bool GrClipMaskManager::drawElement(GrTexture* target,
                                                               fGpu,
                                                               element->getRect(),
                                                               SkMatrix::I(),
-                                                              element->getRect(),
-                                                              false);
+                                                              element->getRect());
             } else {
-                fGpu->drawSimpleRect(element->getRect(), NULL);
+                fGpu->drawSimpleRect(element->getRect());
             }
             return true;
         default: {
@@ -481,7 +480,7 @@ void GrClipMaskManager::mergeMask(GrTexture* dstMask,
                                       GrTextureDomain::MakeTexelDomain(srcMask, srcBound),
                                       GrTextureDomain::kDecal_Mode,
                                       GrTextureParams::kNone_FilterMode))->unref();
-    fGpu->drawSimpleRect(SkRect::Make(dstBound), NULL);
+    fGpu->drawSimpleRect(SkRect::Make(dstBound));
 }
 
 // get a texture to act as a temporary buffer for AA clip boolean operations
@@ -812,7 +811,7 @@ bool GrClipMaskManager::createStencilClipMask(int32_t elementsGenID,
                 SET_RANDOM_COLOR
                 if (Element::kRect_Type == element->getType()) {
                     *drawState->stencil() = gDrawToStencil;
-                    fGpu->drawSimpleRect(element->getRect(), NULL);
+                    fGpu->drawSimpleRect(element->getRect());
                 } else {
                     if (!clipPath.isEmpty()) {
                         if (canRenderDirectToStencil) {
@@ -833,7 +832,7 @@ bool GrClipMaskManager::createStencilClipMask(int32_t elementsGenID,
                 if (canDrawDirectToClip) {
                     if (Element::kRect_Type == element->getType()) {
                         SET_RANDOM_COLOR
-                        fGpu->drawSimpleRect(element->getRect(), NULL);
+                        fGpu->drawSimpleRect(element->getRect());
                     } else {
                         SET_RANDOM_COLOR
                         pr->drawPath(clipPath, stroke, fGpu, false);
@@ -842,7 +841,7 @@ bool GrClipMaskManager::createStencilClipMask(int32_t elementsGenID,
                     SET_RANDOM_COLOR
                     // The view matrix is setup to do clip space -> stencil space translation, so
                     // draw rect in clip space.
-                    fGpu->drawSimpleRect(SkRect::Make(clipSpaceIBounds), NULL);
+                    fGpu->drawSimpleRect(SkRect::Make(clipSpaceIBounds));
                 }
             }
         }
@@ -1059,7 +1058,7 @@ GrTexture* GrClipMaskManager::createSoftwareClipMask(int32_t elementsGenID,
     SkMatrix matrix;
     matrix.setTranslate(SkIntToScalar(-clipSpaceIBounds.fLeft),
                         SkIntToScalar(-clipSpaceIBounds.fTop));
-    helper.init(maskSpaceIBounds, &matrix);
+    helper.init(maskSpaceIBounds, &matrix, false);
 
     helper.clear(kAllIn_InitialState == initialState ? 0xFF : 0x00);
 

@@ -35,11 +35,11 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using browser_sync::BookmarkDataTypeController;
-using browser_sync::ChangeProcessorMock;
-using browser_sync::DataTypeController;
-using browser_sync::ModelAssociatorMock;
-using browser_sync::ModelLoadCallbackMock;
-using browser_sync::StartCallbackMock;
+using sync_driver::ChangeProcessorMock;
+using sync_driver::DataTypeController;
+using sync_driver::ModelAssociatorMock;
+using sync_driver::ModelLoadCallbackMock;
+using sync_driver::StartCallbackMock;
 using testing::_;
 using testing::DoAll;
 using testing::InvokeWithoutArgs;
@@ -334,22 +334,4 @@ TEST_F(SyncBookmarkDataTypeControllerTest, Stop) {
   EXPECT_EQ(DataTypeController::RUNNING, bookmark_dtc_->state());
   bookmark_dtc_->Stop();
   EXPECT_EQ(DataTypeController::NOT_RUNNING, bookmark_dtc_->state());
-}
-
-TEST_F(SyncBookmarkDataTypeControllerTest, OnSingleDatatypeUnrecoverableError) {
-  CreateBookmarkModel(LOAD_MODEL);
-  SetStartExpectations();
-  SetAssociateExpectations();
-  EXPECT_CALL(*model_associator_, SyncModelHasUserCreatedNodes(_)).
-      WillRepeatedly(DoAll(SetArgumentPointee<0>(true), Return(true)));
-  EXPECT_CALL(service_, DisableDatatype(_,_,_)).
-      WillOnce(InvokeWithoutArgs(bookmark_dtc_.get(),
-                                 &BookmarkDataTypeController::Stop));
-  SetStopExpectations();
-
-  EXPECT_CALL(start_callback_, Run(DataTypeController::OK, _, _));
-  Start();
-  // This should cause bookmark_dtc_->Stop() to be called.
-  bookmark_dtc_->OnSingleDatatypeUnrecoverableError(FROM_HERE, "Test");
-  base::RunLoop().RunUntilIdle();
 }

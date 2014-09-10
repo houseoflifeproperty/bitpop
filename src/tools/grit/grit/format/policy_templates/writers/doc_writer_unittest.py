@@ -282,7 +282,7 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
         '<root>0x00000010 (Windows), 16 (Linux), 16 (Mac)</root>')
 
   def testStringEnumExample(self):
-    # Test representation of 'int-enum' example values.
+    # Test representation of 'string-enum' example values.
     policy = {
       'name': 'PolicyName',
       'type': 'string-enum',
@@ -292,6 +292,40 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
     self.assertEquals(
         self.doc_root.toxml(),
         '<root>&quot;wacky&quot;</root>')
+
+  def testListExample(self):
+    # Test representation of 'list' example values.
+    policy = {
+      'name': 'PolicyName',
+      'type': 'list',
+      'example_value': ['one', 'two'],
+      'supported_on': [ { 'platforms': ['linux'] } ]
+    }
+    self.writer._AddExample(self.doc_root, policy)
+    self.assertEquals(
+        self.doc_root.toxml(),
+        '<root><dl style="style_dd dl;">'
+        '<dt>Linux:</dt>'
+        '<dd style="style_.monospace;">'
+        '[&quot;one&quot;, &quot;two&quot;]'
+        '</dd></dl></root>')
+
+  def testStringEnumListExample(self):
+    # Test representation of 'string-enum-list' example values.
+    policy = {
+      'name': 'PolicyName',
+      'type': 'string-enum-list',
+      'example_value': ['one', 'two'],
+      'supported_on': [ { 'platforms': ['linux'] } ]
+    }
+    self.writer._AddExample(self.doc_root, policy)
+    self.assertEquals(
+        self.doc_root.toxml(),
+        '<root><dl style="style_dd dl;">'
+        '<dt>Linux:</dt>'
+        '<dd style="style_.monospace;">'
+        '[&quot;one&quot;, &quot;two&quot;]'
+        '</dd></dl></root>')
 
   def testStringExample(self):
     # Test representation of 'string' example values.

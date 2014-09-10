@@ -9,8 +9,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ssl/ssl_error_info.h"
@@ -20,6 +19,8 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/google/core/browser/google_util.h"
+#include "components/omnibox/autocomplete_input.h"
+#include "components/omnibox/autocomplete_match.h"
 #include "content/public/browser/cert_store.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -27,6 +28,7 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/ssl_status.h"
+#include "grit/component_scaled_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/net_util.h"
@@ -121,7 +123,8 @@ base::string16 ToolbarModelImpl::GetFormattedURL(size_t* prefix_end) const {
   // the space.
   return AutocompleteInput::FormattedStringWithEquivalentMeaning(
       url, net::FormatUrl(url, languages, net::kFormatUrlOmitAll,
-                          net::UnescapeRule::NORMAL, NULL, prefix_end, NULL));
+                          net::UnescapeRule::NORMAL, NULL, prefix_end, NULL),
+      ChromeAutocompleteSchemeClassifier(profile));
 }
 
 base::string16 ToolbarModelImpl::GetCorpusNameForMobile() const {

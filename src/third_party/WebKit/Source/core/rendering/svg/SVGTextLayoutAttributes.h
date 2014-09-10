@@ -26,7 +26,7 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderSVGInlineText;
 
@@ -57,6 +57,7 @@ public:
     const SVGCharacterDataMap& characterDataMap() const { return m_characterDataMap; }
 
     Vector<SVGTextMetrics>& textMetricsValues() { return m_textMetricsValues; }
+    const Vector<SVGTextMetrics>& textMetricsValues() const { return m_textMetricsValues; }
 
 private:
     RenderSVGInlineText* m_context;
@@ -73,6 +74,6 @@ inline SVGCharacterData::SVGCharacterData()
 {
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

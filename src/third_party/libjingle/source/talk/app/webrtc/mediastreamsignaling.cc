@@ -30,17 +30,17 @@
 #include <vector>
 
 #include "talk/app/webrtc/audiotrack.h"
-#include "talk/app/webrtc/mediastreamproxy.h"
 #include "talk/app/webrtc/mediaconstraintsinterface.h"
+#include "talk/app/webrtc/mediastreamproxy.h"
 #include "talk/app/webrtc/mediastreamtrackproxy.h"
 #include "talk/app/webrtc/remoteaudiosource.h"
 #include "talk/app/webrtc/remotevideocapturer.h"
 #include "talk/app/webrtc/sctputils.h"
 #include "talk/app/webrtc/videosource.h"
 #include "talk/app/webrtc/videotrack.h"
-#include "talk/base/bytebuffer.h"
-#include "talk/base/stringutils.h"
 #include "talk/media/sctp/sctpdataengine.h"
+#include "webrtc/base/bytebuffer.h"
+#include "webrtc/base/stringutils.h"
 
 static const char kDefaultStreamLabel[] = "default";
 static const char kDefaultAudioTrackLabel[] = "defaulta0";
@@ -48,8 +48,8 @@ static const char kDefaultVideoTrackLabel[] = "defaultv0";
 
 namespace webrtc {
 
-using talk_base::scoped_ptr;
-using talk_base::scoped_refptr;
+using rtc::scoped_ptr;
+using rtc::scoped_refptr;
 
 static bool ParseConstraints(
     const MediaConstraintsInterface* constraints,
@@ -123,16 +123,26 @@ static bool EvaluateNeedForBundle(const cricket::MediaSessionOptions& options) {
       (options.has_audio || options.has_video || options.has_data());
 }
 
+static bool MediaContentDirectionHasSend(cricket::MediaContentDirection dir) {
+  return dir == cricket::MD_SENDONLY || dir == cricket::MD_SENDRECV;
+}
+
+static bool IsValidOfferToReceiveMedia(int value) {
+  typedef PeerConnectionInterface::RTCOfferAnswerOptions Options;
+  return (value >= Options::kUndefined) &&
+      (value <= Options::kMaxOfferToReceiveMedia);
+}
+
 // Factory class for creating remote MediaStreams and MediaStreamTracks.
 class RemoteMediaStreamFactory {
  public:
-  explicit RemoteMediaStreamFactory(talk_base::Thread* signaling_thread,
+  explicit RemoteMediaStreamFactory(rtc::Thread* signaling_thread,
                                     cricket::ChannelManager* channel_manager)
       : signaling_thread_(signaling_thread),
         channel_manager_(channel_manager) {
   }
 
-  talk_base::scoped_refptr<MediaStreamInterface> CreateMediaStream(
+  rtc::scoped_refptr<MediaStreamInterface> CreateMediaStream(
       const std::string& stream_label) {
     return MediaStreamProxy::Create(
         signaling_thread_, MediaStream::Create(stream_label));
@@ -156,7 +166,7 @@ class RemoteMediaStreamFactory {
   template <typename TI, typename T, typename TP, typename S>
   TI* AddTrack(MediaStreamInterface* stream, const std::string& track_id,
                S* source) {
-    talk_base::scoped_refptr<TI> track(
+    rtc::scoped_refptr<TI> track(
         TP::Create(signaling_thread_, T::Create(track_id, source)));
     track->set_state(webrtc::MediaStreamTrackInterface::kLive);
     if (stream->AddTrack(track)) {
@@ -165,12 +175,12 @@ class RemoteMediaStreamFactory {
     return NULL;
   }
 
-  talk_base::Thread* signaling_thread_;
+  rtc::Thread* signaling_thread_;
   cricket::ChannelManager* channel_manager_;
 };
 
 MediaStreamSignaling::MediaStreamSignaling(
-    talk_base::Thread* signaling_thread,
+    rtc::Thread* signaling_thread,
     MediaStreamSignalingObserver* stream_observer,
     cricket::ChannelManager* channel_manager)
     : signaling_thread_(signaling_thread),
@@ -206,8 +216,8 @@ bool MediaStreamSignaling::IsSctpSidAvailable(int sid) const {
 // SSL_CLIENT, the allocated id starts from 0 and takes even numbers; otherwise,
 // the id starts from 1 and takes odd numbers. Returns false if no id can be
 // allocated.
-bool MediaStreamSignaling::AllocateSctpSid(talk_base::SSLRole role, int* sid) {
-  int& last_id = (role == talk_base::SSL_CLIENT) ?
+bool MediaStreamSignaling::AllocateSctpSid(rtc::SSLRole role, int* sid) {
+  int& last_id = (role == rtc::SSL_CLIENT) ?
       last_allocated_sctp_even_sid_ : last_allocated_sctp_odd_sid_;
 
   do {
@@ -246,7 +256,7 @@ bool MediaStreamSignaling::AddDataChannel(DataChannel* data_channel) {
 
 bool MediaStreamSignaling::AddDataChannelFromOpenMessage(
     const cricket::ReceiveDataParams& params,
-    const talk_base::Buffer& payload) {
+    const rtc::Buffer& payload) {
   if (!data_channel_factory_) {
     LOG(LS_WARNING) << "Remote peer requested a DataChannel but DataChannels "
                     << "are not supported.";
@@ -281,9 +291,9 @@ void MediaStreamSignaling::RemoveSctpDataChannel(int sid) {
     if ((*iter)->id() == sid) {
       sctp_data_channels_.erase(iter);
 
-      if (talk_base::IsEven(sid) && sid <= last_allocated_sctp_even_sid_) {
+      if (rtc::IsEven(sid) && sid <= last_allocated_sctp_even_sid_) {
         last_allocated_sctp_even_sid_ = sid - 2;
-      } else if (talk_base::IsOdd(sid) && sid <= last_allocated_sctp_odd_sid_) {
+      } else if (rtc::IsOdd(sid) && sid <= last_allocated_sctp_odd_sid_) {
         last_allocated_sctp_odd_sid_ = sid - 2;
       }
       return;
@@ -359,14 +369,32 @@ void MediaStreamSignaling::RemoveLocalStream(
 }
 
 bool MediaStreamSignaling::GetOptionsForOffer(
-    const MediaConstraintsInterface* constraints,
-    cricket::MediaSessionOptions* options) {
-  UpdateSessionOptions();
-  if (!ParseConstraints(constraints, &options_, false)) {
+    const PeerConnectionInterface::RTCOfferAnswerOptions& rtc_options,
+    cricket::MediaSessionOptions* session_options) {
+  typedef PeerConnectionInterface::RTCOfferAnswerOptions RTCOfferAnswerOptions;
+  if (!IsValidOfferToReceiveMedia(rtc_options.offer_to_receive_audio) ||
+      !IsValidOfferToReceiveMedia(rtc_options.offer_to_receive_video)) {
     return false;
   }
+
+  UpdateSessionOptions();
+
+  // |options.has_audio| and |options.has_video| can only change from false to
+  // true, but never change from true to false. This is to make sure
+  // CreateOffer / CreateAnswer doesn't remove a media content
+  // description that has been created.
+  if (rtc_options.offer_to_receive_audio > 0) {
+    options_.has_audio = true;
+  }
+  if (rtc_options.offer_to_receive_video > 0) {
+    options_.has_video = true;
+  }
+  options_.vad_enabled = rtc_options.voice_activity_detection;
+  options_.transport_options.ice_restart = rtc_options.ice_restart;
+  options_.bundle_enabled = rtc_options.use_rtp_mux;
+
   options_.bundle_enabled = EvaluateNeedForBundle(options_);
-  *options = options_;
+  *session_options = options_;
   return true;
 }
 
@@ -394,7 +422,7 @@ bool MediaStreamSignaling::GetOptionsForAnswer(
 void MediaStreamSignaling::OnRemoteDescriptionChanged(
     const SessionDescriptionInterface* desc) {
   const cricket::SessionDescription* remote_desc = desc->description();
-  talk_base::scoped_refptr<StreamCollection> new_streams(
+  rtc::scoped_refptr<StreamCollection> new_streams(
       StreamCollection::Create());
 
   // Find all audio rtp streams and create corresponding remote AudioTracks
@@ -406,7 +434,8 @@ void MediaStreamSignaling::OnRemoteDescriptionChanged(
             audio_content->description);
     UpdateRemoteStreamsList(desc->streams(), desc->type(), new_streams);
     remote_info_.default_audio_track_needed =
-        desc->direction() == cricket::MD_SENDRECV && desc->streams().empty();
+        MediaContentDirectionHasSend(desc->direction()) &&
+            desc->streams().empty();
   }
 
   // Find all video rtp streams and create corresponding remote VideoTracks
@@ -418,7 +447,8 @@ void MediaStreamSignaling::OnRemoteDescriptionChanged(
             video_content->description);
     UpdateRemoteStreamsList(desc->streams(), desc->type(), new_streams);
     remote_info_.default_video_track_needed =
-        desc->direction() == cricket::MD_SENDRECV && desc->streams().empty();
+        MediaContentDirectionHasSend(desc->direction()) &&
+            desc->streams().empty();
   }
 
   // Update the DataChannels with the information from the remote peer.
@@ -427,7 +457,7 @@ void MediaStreamSignaling::OnRemoteDescriptionChanged(
     const cricket::DataContentDescription* data_desc =
         static_cast<const cricket::DataContentDescription*>(
             data_content->description);
-    if (talk_base::starts_with(
+    if (rtc::starts_with(
             data_desc->protocol().data(), cricket::kMediaProtocolRtpPrefix)) {
       UpdateRemoteRtpDataChannels(data_desc->streams());
     }
@@ -482,7 +512,7 @@ void MediaStreamSignaling::OnLocalDescriptionChanged(
     const cricket::DataContentDescription* data_desc =
         static_cast<const cricket::DataContentDescription*>(
             data_content->description);
-    if (talk_base::starts_with(
+    if (rtc::starts_with(
             data_desc->protocol().data(), cricket::kMediaProtocolRtpPrefix)) {
       UpdateLocalRtpDataChannels(data_desc->streams());
     }
@@ -593,7 +623,7 @@ void MediaStreamSignaling::UpdateRemoteStreamsList(
     const std::string& track_id = it->id;
     uint32 ssrc = it->first_ssrc();
 
-    talk_base::scoped_refptr<MediaStreamInterface> stream =
+    rtc::scoped_refptr<MediaStreamInterface> stream =
         remote_streams_->find(stream_label);
     if (!stream) {
       // This is a new MediaStream. Create a new remote MediaStream.
@@ -637,7 +667,7 @@ void MediaStreamSignaling::OnRemoteTrackRemoved(
   MediaStreamInterface* stream = remote_streams_->find(stream_label);
 
   if (media_type == cricket::MEDIA_TYPE_AUDIO) {
-    talk_base::scoped_refptr<AudioTrackInterface> audio_track =
+    rtc::scoped_refptr<AudioTrackInterface> audio_track =
         stream->FindAudioTrack(track_id);
     if (audio_track) {
       audio_track->set_state(webrtc::MediaStreamTrackInterface::kEnded);
@@ -645,7 +675,7 @@ void MediaStreamSignaling::OnRemoteTrackRemoved(
       stream_observer_->OnRemoveRemoteAudioTrack(stream, audio_track);
     }
   } else if (media_type == cricket::MEDIA_TYPE_VIDEO) {
-    talk_base::scoped_refptr<VideoTrackInterface> video_track =
+    rtc::scoped_refptr<VideoTrackInterface> video_track =
         stream->FindVideoTrack(track_id);
     if (video_track) {
       video_track->set_state(webrtc::MediaStreamTrackInterface::kEnded);
@@ -892,7 +922,7 @@ void MediaStreamSignaling::UpdateRemoteRtpDataChannels(
     // The data channel label is either the mslabel or the SSRC if the mslabel
     // does not exist. Ex a=ssrc:444330170 mslabel:test1.
     std::string label = it->sync_label.empty() ?
-        talk_base::ToString(it->first_ssrc()) : it->sync_label;
+        rtc::ToString(it->first_ssrc()) : it->sync_label;
     RtpDataChannels::iterator data_channel_it =
         rtp_data_channels_.find(label);
     if (data_channel_it == rtp_data_channels_.end()) {
@@ -957,7 +987,7 @@ void MediaStreamSignaling::OnDataTransportCreatedForSctp() {
   }
 }
 
-void MediaStreamSignaling::OnDtlsRoleReadyForSctp(talk_base::SSLRole role) {
+void MediaStreamSignaling::OnDtlsRoleReadyForSctp(rtc::SSLRole role) {
   SctpDataChannels::iterator it = sctp_data_channels_.begin();
   for (; it != sctp_data_channels_.end(); ++it) {
     if ((*it)->id() < 0) {

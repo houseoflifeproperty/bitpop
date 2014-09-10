@@ -23,15 +23,17 @@
 #include "config.h"
 #include "core/html/HTMLImageElement.h"
 
-#include "bindings/v8/ScriptEventListener.h"
+#include "bindings/core/v8/ScriptEventListener.h"
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
 #include "core/MediaTypeNames.h"
 #include "core/css/MediaQueryMatcher.h"
-#include "core/css/MediaValuesCached.h"
+#include "core/css/MediaValuesDynamic.h"
 #include "core/css/parser/SizesAttributeParser.h"
 #include "core/dom/Attribute.h"
+#include "core/dom/NodeTraversal.h"
 #include "core/fetch/ImageResource.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLFormElement.h"
@@ -39,13 +41,40 @@
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/HTMLSrcsetParser.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/rendering/RenderImage.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
+
+class HTMLImageElement::ViewportChangeListener FINAL : public MediaQueryListListener {
+public:
+    static RefPtrWillBeRawPtr<ViewportChangeListener> create(HTMLImageElement* element)
+    {
+        return adoptRefWillBeNoop(new ViewportChangeListener(element));
+    }
+
+    virtual void call() OVERRIDE
+    {
+        if (m_element)
+            m_element->notifyViewportChanged();
+    }
+
+#if !ENABLE(OILPAN)
+    void clearElement() { m_element = nullptr; }
+#endif
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        visitor->trace(m_element);
+        MediaQueryListListener::trace(visitor);
+    }
+private:
+    explicit ViewportChangeListener(HTMLImageElement* element) : m_element(element) { }
+    RawPtrWillBeMember<HTMLImageElement> m_element;
+};
 
 HTMLImageElement::HTMLImageElement(Document& document, HTMLFormElement* form, bool createdByParser)
     : HTMLElement(imgTag, document)
@@ -54,6 +83,8 @@ HTMLImageElement::HTMLImageElement(Document& document, HTMLFormElement* form, bo
     , m_imageDevicePixelRatio(1.0f)
     , m_formWasSetByParser(false)
     , m_elementCreatedByParser(createdByParser)
+    , m_intrinsicSizingViewportDependant(false)
+    , m_effectiveSizeViewportDependant(false)
 {
     ScriptWrappable::init(this);
     if (form && form->inDocument()) {
@@ -81,6 +112,10 @@ PassRefPtrWillBeRawPtr<HTMLImageElement> HTMLImageElement::create(Document& docu
 HTMLImageElement::~HTMLImageElement()
 {
 #if !ENABLE(OILPAN)
+    if (m_listener) {
+        document().mediaQueryMatcher().removeViewportListener(m_listener.get());
+        m_listener->clearElement();
+    }
     if (m_form)
         m_form->disassociate(*this);
 #endif
@@ -89,8 +124,17 @@ HTMLImageElement::~HTMLImageElement()
 void HTMLImageElement::trace(Visitor* visitor)
 {
     visitor->trace(m_imageLoader);
+    visitor->trace(m_listener);
     visitor->trace(m_form);
     HTMLElement::trace(visitor);
+}
+
+void HTMLImageElement::notifyViewportChanged()
+{
+    // Re-selecting the source URL in order to pick a more fitting resource
+    // And update the image's intrinsic dimensions when the viewport changes.
+    // Picking of a better fitting resource is UA dependant, not spec required.
+    selectSourceURL(ImageLoader::UpdateSizeChanged);
 }
 
 PassRefPtrWillBeRawPtr<HTMLImageElement> HTMLImageElement::createForJSConstructor(Document& document, int width, int height)
@@ -146,7 +190,7 @@ HTMLFormElement* HTMLImageElement::formOwner() const
 void HTMLImageElement::formRemovedFromTree(const Node& formRoot)
 {
     ASSERT(m_form);
-    if (highestAncestorOrSelf() != formRoot)
+    if (NodeTraversal::highestAncestorOrSelf(*this) != formRoot)
         resetFormOwner();
 }
 
@@ -181,6 +225,8 @@ void HTMLImageElement::setBestFitURLAndDPRFromImageCandidate(const ImageCandidat
     float candidateDensity = candidate.density();
     if (candidateDensity >= 0)
         m_imageDevicePixelRatio = 1.0 / candidateDensity;
+    if (candidate.resourceWidth() > 0)
+        m_intrinsicSizingViewportDependant = true;
     if (renderer() && renderer()->isImage())
         toRenderImage(renderer())->setImageDevicePixelRatio(m_imageDevicePixelRatio);
 }
@@ -191,14 +237,15 @@ void HTMLImageElement::parseAttribute(const QualifiedName& name, const AtomicStr
         if (renderer() && renderer()->isImage())
             toRenderImage(renderer())->updateAltText();
     } else if (name == srcAttr || name == srcsetAttr || name == sizesAttr) {
-        selectSourceURL(UpdateIgnorePreviousError);
+        selectSourceURL(ImageLoader::UpdateIgnorePreviousError);
     } else if (name == usemapAttr) {
         setIsLink(!value.isNull());
     } else if (name == compositeAttr) {
-        // FIXME: images don't support blend modes in their compositing attribute.
         blink::WebBlendMode blendOp = blink::WebBlendModeNormal;
         if (!parseCompositeAndBlendOperator(value, m_compositeOperator, blendOp))
             m_compositeOperator = CompositeSourceOver;
+        else if (m_compositeOperator != CompositeSourceOver)
+            UseCounter::count(document(), UseCounter::HTMLImageElementComposite);
     } else {
         HTMLElement::parseAttribute(name, value);
     }
@@ -236,6 +283,8 @@ ImageCandidate HTMLImageElement::findBestFitImageFromPictureParent()
             continue;
 
         HTMLSourceElement* source = toHTMLSourceElement(child);
+        if (!source->fastGetAttribute(srcAttr).isNull())
+            UseCounter::countDeprecation(document(), UseCounter::PictureSourceSrc);
         String srcset = source->fastGetAttribute(srcsetAttr);
         if (srcset.isEmpty())
             continue;
@@ -243,14 +292,12 @@ ImageCandidate HTMLImageElement::findBestFitImageFromPictureParent()
         if (!type.isEmpty() && !supportedImageType(type))
             continue;
 
-        String media = source->fastGetAttribute(mediaAttr);
-        if (!media.isEmpty()) {
-            RefPtrWillBeRawPtr<MediaQuerySet> mediaQueries = MediaQuerySet::create(media);
-            if (!document().mediaQueryMatcher().evaluate(mediaQueries.get()))
-                continue;
-        }
+        if (!source->mediaQueryMatches())
+            continue;
 
-        unsigned effectiveSize = SizesAttributeParser::findEffectiveSize(source->fastGetAttribute(sizesAttr), MediaValuesCached::create(document()));
+        SizesAttributeParser parser = SizesAttributeParser(MediaValuesDynamic::create(document()), source->fastGetAttribute(sizesAttr));
+        unsigned effectiveSize = parser.length();
+        m_effectiveSizeViewportDependant = parser.viewportDependant();
         ImageCandidate candidate = bestFitSourceForSrcsetAttribute(document().devicePixelRatio(), effectiveSize, source->fastGetAttribute(srcsetAttr));
         if (candidate.isEmpty())
             continue;
@@ -300,8 +347,10 @@ void HTMLImageElement::attach(const AttachContext& context)
 
 Node::InsertionNotificationRequest HTMLImageElement::insertedInto(ContainerNode* insertionPoint)
 {
-    if (!m_formWasSetByParser || insertionPoint->highestAncestorOrSelf() != m_form->highestAncestorOrSelf())
+    if (!m_formWasSetByParser || NodeTraversal::highestAncestorOrSelf(*insertionPoint) != NodeTraversal::highestAncestorOrSelf(*m_form.get()))
         resetFormOwner();
+    if (m_listener)
+        document().mediaQueryMatcher().addViewportListener(m_listener.get());
 
     bool imageWasModified = false;
     if (RuntimeEnabledFeatures::pictureEnabled()) {
@@ -315,15 +364,17 @@ Node::InsertionNotificationRequest HTMLImageElement::insertedInto(ContainerNode*
     // If we have been inserted from a renderer-less document,
     // our loader may have not fetched the image, so do it now.
     if ((insertionPoint->inDocument() && !imageLoader().image()) || imageWasModified)
-        imageLoader().updateFromElement(m_elementCreatedByParser ? ImageLoader::ForceLoadImmediately : ImageLoader::LoadNormally);
+        imageLoader().updateFromElement(ImageLoader::UpdateNormal, m_elementCreatedByParser ? ImageLoader::ForceLoadImmediately : ImageLoader::LoadNormally);
 
     return HTMLElement::insertedInto(insertionPoint);
 }
 
 void HTMLImageElement::removedFrom(ContainerNode* insertionPoint)
 {
-    if (!m_form || m_form->highestAncestorOrSelf() != highestAncestorOrSelf())
+    if (!m_form || NodeTraversal::highestAncestorOrSelf(*m_form.get()) != NodeTraversal::highestAncestorOrSelf(*this))
         resetFormOwner();
+    if (m_listener)
+        document().mediaQueryMatcher().removeViewportListener(m_listener.get());
     HTMLElement::removedFrom(insertionPoint);
 }
 
@@ -378,7 +429,7 @@ int HTMLImageElement::naturalWidth() const
     if (!imageLoader().image())
         return 0;
 
-    return imageLoader().image()->imageSizeForRenderer(renderer(), 1.0f).width();
+    return imageLoader().image()->imageSizeForRenderer(renderer(), 1.0f, ImageResource::IntrinsicSize).width();
 }
 
 int HTMLImageElement::naturalHeight() const
@@ -386,7 +437,7 @@ int HTMLImageElement::naturalHeight() const
     if (!imageLoader().image())
         return 0;
 
-    return imageLoader().image()->imageSizeForRenderer(renderer(), 1.0f).height();
+    return imageLoader().image()->imageSizeForRenderer(renderer(), 1.0f, ImageResource::IntrinsicSize).height();
 }
 
 const String& HTMLImageElement::currentSrc() const
@@ -420,11 +471,6 @@ const QualifiedName& HTMLImageElement::subResourceAttributeName() const
     return srcAttr;
 }
 
-const AtomicString& HTMLImageElement::alt() const
-{
-    return fastGetAttribute(altAttr);
-}
-
 bool HTMLImageElement::draggable() const
 {
     // Image elements are draggable by default.
@@ -453,6 +499,7 @@ void HTMLImageElement::setWidth(int value)
 
 int HTMLImageElement::x() const
 {
+    document().updateLayoutIgnorePendingStylesheets();
     RenderObject* r = renderer();
     if (!r)
         return 0;
@@ -464,6 +511,7 @@ int HTMLImageElement::x() const
 
 int HTMLImageElement::y() const
 {
+    document().updateLayoutIgnorePendingStylesheets();
     RenderObject* r = renderer();
     if (!r)
         return 0;
@@ -530,7 +578,7 @@ PassRefPtr<Image> HTMLImageElement::getSourceImageForCanvas(SourceImageMode, Sou
         sourceImage->setContainerSize(sourceImage->size());
 
     *status = NormalSourceImageStatus;
-    return sourceImage.release();
+    return sourceImage->imageForDefaultFrame();
 }
 
 bool HTMLImageElement::wouldTaintOrigin(SecurityOrigin* destinationSecurityOrigin) const
@@ -564,7 +612,7 @@ FloatSize HTMLImageElement::defaultDestinationSize() const
     return size;
 }
 
-void HTMLImageElement::selectSourceURL(UpdateFromElementBehavior behavior)
+void HTMLImageElement::selectSourceURL(ImageLoader::UpdateFromElementBehavior behavior)
 {
     bool foundURL = false;
     if (RuntimeEnabledFeatures::pictureEnabled()) {
@@ -577,15 +625,19 @@ void HTMLImageElement::selectSourceURL(UpdateFromElementBehavior behavior)
 
     if (!foundURL) {
         unsigned effectiveSize = 0;
-        if (RuntimeEnabledFeatures::pictureSizesEnabled())
-            effectiveSize = SizesAttributeParser::findEffectiveSize(fastGetAttribute(sizesAttr), MediaValuesCached::create(document()));
+        if (RuntimeEnabledFeatures::pictureSizesEnabled()) {
+            SizesAttributeParser parser = SizesAttributeParser(MediaValuesDynamic::create(document()), fastGetAttribute(sizesAttr));
+            effectiveSize = parser.length();
+            m_effectiveSizeViewportDependant = parser.viewportDependant();
+        }
         ImageCandidate candidate = bestFitSourceForImageAttributes(document().devicePixelRatio(), effectiveSize, fastGetAttribute(srcAttr), fastGetAttribute(srcsetAttr));
         setBestFitURLAndDPRFromImageCandidate(candidate);
     }
-    if (behavior == UpdateIgnorePreviousError)
-        imageLoader().updateFromElementIgnoringPreviousError();
-    else
-        imageLoader().updateFromElement();
+    if (m_intrinsicSizingViewportDependant && m_effectiveSizeViewportDependant && !m_listener.get()) {
+        m_listener = ViewportChangeListener::create(this);
+        document().mediaQueryMatcher().addViewportListener(m_listener.get());
+    }
+    imageLoader().updateFromElement(behavior);
 }
 
 const KURL& HTMLImageElement::sourceURL() const

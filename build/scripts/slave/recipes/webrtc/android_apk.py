@@ -15,7 +15,6 @@ DEPS = [
   'properties',
   'python',
   'step',
-  'step_history',
   'tryserver',
   'webrtc',
 ]
@@ -53,6 +52,9 @@ def GenSteps(api):
   s = api.gclient.c.solutions
   s[0].revision = 'HEAD'
 
+  # Revision to be used for SVN-based checkouts and passing builds between
+  # builders/testers.
+  # For forced builds, revision is empty, in which case we sync HEAD.
   if bot_type == 'tester':
     webrtc_revision = api.properties.get('parent_got_revision')
     assert webrtc_revision, (
@@ -63,48 +65,66 @@ def GenSteps(api):
     # For forced builds, revision is empty, in which case we sync HEAD.
     webrtc_revision = api.properties.get('revision', 'HEAD')
 
+  # This is only used by SVN-based checkouts.
+  # TODO(kjellander): Remove this when these bots are switched to bot_update.
   s[0].custom_vars['webrtc_revision'] = webrtc_revision
+
+  # Since bot_update uses separate Git mirrors for the webrtc and libjingle
+  # repos, they cannot use the revision we get from the poller, since it won't
+  # be present in both if there's a revision that only contains changes in one
+  # of them. For now, work around this by always syncing HEAD for both.
+  api.gclient.c.revisions.update({
+      'src/third_party/webrtc': 'HEAD',
+      'src/third_party/libjingle/source/talk': 'HEAD',
+  })
 
   # TODO(iannucci): Support webrtc.apply_svn_patch with bot_update
   # crbug.com/376122
-  yield api.bot_update.ensure_checkout()
-  bot_update_mode = api.step_history.last_step().json.output['did_run']
+  step_result = api.bot_update.ensure_checkout()
+  bot_update_mode = step_result.json.output['did_run']
   if not bot_update_mode:
-    yield api.gclient.checkout()
+    step_result = api.gclient.checkout()
+
+  api.chromium_android.clean_local_files()
 
   # Whatever step is run right before this line needs to emit got_revision.
-  update_step = api.step_history.last_step()
+  update_step = step_result
   got_revision = update_step.presentation.properties['got_revision']
 
   if not bot_update_mode:
     if does_build and api.tryserver.is_tryserver:
-      yield api.webrtc.apply_svn_patch()
+      api.webrtc.apply_svn_patch()
 
   if does_build:
-    yield api.base_android.envsetup()
+    api.base_android.envsetup()
 
   # WebRTC Android APK testers also have to run the runhooks, since test
   # resources are currently downloaded during this step.
-  yield api.base_android.runhooks()
+  api.base_android.runhooks()
 
-  yield api.chromium.cleanup_temp()
+  api.chromium.cleanup_temp()
   if does_build:
-    yield api.base_android.compile()
+    api.base_android.compile()
 
+  # Can't use webrtc_revision when passing builds between builders and testers
+  # since it will differ between builder and tester syncs if additional
+  # revisions are committed between their runs.
+  archive_rev = got_revision if webrtc_revision == 'HEAD' else webrtc_revision
   if bot_type == 'builder':
-    yield api.webrtc.package_build(
-        api.webrtc.GS_ARCHIVES[bot_config['build_gs_archive']], got_revision)
+    api.webrtc.package_build(
+        api.webrtc.GS_ARCHIVES[bot_config['build_gs_archive']], archive_rev)
 
   if bot_type == 'tester':
-    yield api.webrtc.extract_build(
-        api.webrtc.GS_ARCHIVES[bot_config['build_gs_archive']], got_revision)
+    api.webrtc.extract_build(
+        api.webrtc.GS_ARCHIVES[bot_config['build_gs_archive']], archive_rev)
 
   if does_test:
-    yield api.chromium_android.common_tests_setup_steps()
+    api.chromium_android.common_tests_setup_steps()
+    #TODO(martiniss) convert loop
     for test in api.webrtc.ANDROID_APK_TESTS:
-      yield api.base_android.test_runner(test)
+      api.base_android.test_runner(test)
 
-    yield api.chromium_android.common_tests_final_steps()
+    api.chromium_android.common_tests_final_steps()
 
 
 def _sanitize_nonalpha(text):

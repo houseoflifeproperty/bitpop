@@ -32,11 +32,11 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 #include "wtf/Threading.h"
 #endif
 
-namespace WebCore {
+namespace blink {
 
 // What you should know about Supplementable and Supplement
 // ========================================================
@@ -119,12 +119,13 @@ template<>
 class SupplementTracing<false> {
 public:
     virtual ~SupplementTracing() { }
+    virtual void trace(Visitor*) { }
 };
 
 template<typename T, bool isGarbageCollected = false>
 class SupplementBase : public SupplementTracing<isGarbageCollected> {
 public:
-#if SECURITY_ASSERT_ENABLED
+#if ENABLE(SECURITY_ASSERT)
     virtual bool isRefCountedWrapper() const { return false; }
 #endif
 
@@ -143,24 +144,16 @@ public:
         return host ? host->requireSupplement(key) : 0;
     }
 
-    virtual void trace(Visitor*) { }
     virtual void willBeDestroyed() { }
 
     // FIXME: Oilpan: Remove this callback once PersistentHeapSupplementable is removed again.
     virtual void persistentHostHasBeenDestroyed() { }
 };
 
-template<typename T, bool>
-class SupplementableTracing;
-
-template<typename T>
-class SupplementableTracing<T, true> { };
-
-template<typename T>
-class SupplementableTracing<T, false> { };
-
+// Helper class for implementing Supplementable, HeapSupplementable, and
+// PersistentHeapSupplementable.
 template<typename T, bool isGarbageCollected = false>
-class SupplementableBase : public SupplementableTracing<T, isGarbageCollected> {
+class SupplementableBase {
 public:
     void provideSupplement(const char* key, typename SupplementableTraits<T, isGarbageCollected>::SupplementArgumentType supplement)
     {
@@ -183,12 +176,16 @@ public:
 
     void reattachThread()
     {
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
         m_threadId = currentThread();
 #endif
     }
 
-    virtual void trace(Visitor* visitor) { visitor->trace(m_supplements); }
+    // We have a trace method in the SupplementableBase class to ensure we have
+    // the vtable at the first word of the object. However we don't trace the
+    // m_supplements here, but in the partially specialized template subclasses
+    // since we only want to trace it for garbage collected classes.
+    virtual void trace(Visitor*) { }
 
     void willBeDestroyed()
     {
@@ -202,7 +199,7 @@ protected:
     GC_PLUGIN_IGNORE("")
     typename SupplementableTraits<T, isGarbageCollected>::SupplementMap m_supplements;
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 protected:
     SupplementableBase() : m_threadId(currentThread()) { }
 
@@ -211,15 +208,26 @@ private:
 #endif
 };
 
+// This class is used to make an on-heap class supplementable. Its supplements
+// must be HeapSupplement.
 template<typename T>
 class HeapSupplement : public SupplementBase<T, true> { };
 
 // FIXME: Oilpan: Move GarbageCollectedMixin to SupplementableBase<T, true> once PersistentHeapSupplementable is removed again.
 template<typename T>
-class HeapSupplementable : public SupplementableBase<T, true>, public GarbageCollectedMixin { };
+class GC_PLUGIN_IGNORE("http://crbug.com/395036") HeapSupplementable : public SupplementableBase<T, true>, public GarbageCollectedMixin {
+public:
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        visitor->trace(this->m_supplements);
+        SupplementableBase<T, true>::trace(visitor);
+    }
+};
 
+// This class is used to make an off-heap class supplementable with supplements
+// that are on-heap, aka. HeapSupplements.
 template<typename T>
-class PersistentHeapSupplementable : public SupplementableBase<T, true> {
+class GC_PLUGIN_IGNORE("http://crbug.com/395036") PersistentHeapSupplementable : public SupplementableBase<T, true> {
 public:
     PersistentHeapSupplementable() : m_root(this) { }
     virtual ~PersistentHeapSupplementable()
@@ -228,6 +236,13 @@ public:
         for (SupplementIterator it = this->m_supplements.begin(); it != this->m_supplements.end(); ++it)
             it->value->persistentHostHasBeenDestroyed();
     }
+
+    virtual void trace(Visitor* visitor)
+    {
+        visitor->trace(this->m_supplements);
+        SupplementableBase<T, true>::trace(visitor);
+    }
+
 private:
     class TraceDelegate : PersistentBase<ThreadLocalPersistents<AnyThread>, TraceDelegate> {
     public:
@@ -243,19 +258,32 @@ private:
 template<typename T>
 class Supplement : public SupplementBase<T, false> { };
 
+// This class is used to make an off-heap class supplementable with off-heap
+// supplements (Supplement).
 template<typename T>
-class Supplementable : public SupplementableBase<T, false> { };
+class GC_PLUGIN_IGNORE("http://crbug.com/395036") Supplementable : public SupplementableBase<T, false> {
+public:
+    virtual void trace(Visitor* visitor)
+    {
+        // No tracing of off-heap supplements. We should not have any Supplementable
+        // object on the heap. Either the object is HeapSupplementable or if it is
+        // off heap it should use PersistentHeapSupplementable to trace any on-heap
+        // supplements.
+        COMPILE_ASSERT(!IsGarbageCollectedType<T>::value, GarbageCollectedObjectMustBeHeapSupplementable);
+        SupplementableBase<T, false>::trace(visitor);
+    }
+};
 
 template<typename T>
-struct ThreadingTrait<WebCore::SupplementBase<T, true> > {
+struct ThreadingTrait<SupplementBase<T, true> > {
     static const ThreadAffinity Affinity = ThreadingTrait<T>::Affinity;
 };
 
 template<typename T>
-struct ThreadingTrait<WebCore::SupplementableBase<T, true> > {
+struct ThreadingTrait<SupplementableBase<T, true> > {
     static const ThreadAffinity Affinity = ThreadingTrait<T>::Affinity;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Supplementable_h

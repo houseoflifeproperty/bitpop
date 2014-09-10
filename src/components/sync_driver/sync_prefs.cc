@@ -4,7 +4,6 @@
 
 #include "components/sync_driver/sync_prefs.h"
 
-#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/prefs/pref_member.h"
 #include "base/prefs/pref_service.h"
@@ -423,8 +422,6 @@ void SyncPrefs::RegisterPrefGroups() {
   pref_groups_[syncer::PROXY_TABS].Put(syncer::FAVICON_IMAGES);
   pref_groups_[syncer::PROXY_TABS].Put(syncer::FAVICON_TRACKING);
 
-  pref_groups_[syncer::SUPERVISED_USER_SETTINGS].Put(syncer::SESSIONS);
-
   // TODO(zea): put favicons in the bookmarks group as well once it handles
   // those favicons.
 }
@@ -502,4 +499,4 @@ void SyncPrefs::ClearFirstSyncTime() {
   pref_service_->ClearPref(prefs::kSyncFirstSyncTime);
 }
 
-}  // namespace browser_sync
+}  // namespace sync_driver

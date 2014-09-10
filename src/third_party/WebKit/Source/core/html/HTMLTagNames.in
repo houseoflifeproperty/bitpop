@@ -38,7 +38,7 @@ del interfaceName=HTMLModElement
 details
 dfn interfaceName=HTMLElement
 dir interfaceName=HTMLDirectoryElement
-dialog contextConditional=dialogElement
+dialog
 div
 dl interfaceName=HTMLDListElement
 dt interfaceName=HTMLElement
@@ -82,6 +82,7 @@ map
 mark interfaceName=HTMLElement
 marquee
 menu
+menuitem interfaceName=HTMLMenuItemElement, runtimeEnabled=contextMenu
 meta
 meter interfaceName=HTMLMeterElement
 nav interfaceName=HTMLElement

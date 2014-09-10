@@ -40,15 +40,7 @@
       "--url",
       "https://chromium.googlesource.com/webm/libvpx"
     ],
-    "name": "git setup",
-    "seed_steps": [
-      "git setup",
-      "git fetch",
-      "git checkout",
-      "git clean",
-      "submodule sync",
-      "submodule update"
-    ]
+    "name": "git setup"
   },
   {
     "cmd": [
@@ -109,7 +101,6 @@
     "name": "configure"
   },
   {
-    "can_fail_build": true,
     "cmd": [
       "make",
       "test",

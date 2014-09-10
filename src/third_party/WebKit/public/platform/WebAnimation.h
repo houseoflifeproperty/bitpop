@@ -33,7 +33,9 @@
 #include "wtf/Forward.h"
 #endif
 
-namespace WebCore {
+#define WebCompositorAnimation WebAnimation
+
+namespace blink {
 class CCActiveAnimation;
 }
 
@@ -47,7 +49,8 @@ public:
     enum TargetProperty {
         TargetPropertyTransform = 0,
         TargetPropertyOpacity,
-        TargetPropertyFilter
+        TargetPropertyFilter,
+        TargetPropertyScrollOffset
     };
 
     virtual ~WebAnimation() { }

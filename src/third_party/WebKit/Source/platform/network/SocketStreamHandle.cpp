@@ -41,7 +41,7 @@
 #include "public/platform/WebSocketStreamHandle.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 static const unsigned bufferSize = 100 * 1024 * 1024;
 
@@ -55,7 +55,9 @@ SocketStreamHandleInternal::SocketStreamHandleInternal(SocketStreamHandle* handl
 
 SocketStreamHandleInternal::~SocketStreamHandleInternal()
 {
-    m_handle = 0;
+#if !ENABLE(OILPAN)
+    m_handle = nullptr;
+#endif
 }
 
 void SocketStreamHandleInternal::connect(const KURL& url)
@@ -143,7 +145,7 @@ void SocketStreamHandleInternal::didClose(blink::WebSocketStreamHandle* socketHa
         ASSERT(socketHandle == m_socket.get());
         m_socket.clear();
         SocketStreamHandle* h = m_handle;
-        m_handle = 0;
+        m_handle = nullptr;
         if (h->m_client)
             h->m_client->didCloseSocketStream(h);
     }
@@ -157,6 +159,11 @@ void SocketStreamHandleInternal::didFail(blink::WebSocketStreamHandle* socketHan
         if (m_handle->m_client)
             m_handle->m_client->didFailSocketStream(m_handle, *(PassRefPtr<SocketStreamError>(err)));
     }
+}
+
+void SocketStreamHandleInternal::trace(Visitor* visitor)
+{
+    visitor->trace(m_handle);
 }
 
 // SocketStreamHandle ----------------------------------------------------------
@@ -175,8 +182,9 @@ void SocketStreamHandle::connect(const KURL& url)
 
 SocketStreamHandle::~SocketStreamHandle()
 {
+#if !ENABLE(OILPAN)
     setClient(0);
-    m_internal.clear();
+#endif
 }
 
 SocketStreamHandle::SocketStreamState SocketStreamHandle::state() const
@@ -225,8 +233,6 @@ void SocketStreamHandle::close()
 
 void SocketStreamHandle::disconnect()
 {
-    RefPtr<SocketStreamHandle> protect(this); // closeInternal calls the client, which may make the handle get deallocated immediately.
-
     closeInternal();
     m_state = Closed;
 }
@@ -277,4 +283,10 @@ void SocketStreamHandle::closeInternal()
         m_internal->close();
 }
 
-} // namespace WebCore
+void SocketStreamHandle::trace(Visitor* visitor)
+{
+    visitor->trace(m_client);
+    visitor->trace(m_internal);
+}
+
+} // namespace blink

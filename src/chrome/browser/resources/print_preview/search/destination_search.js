@@ -14,12 +14,11 @@ cr.define('print_preview', function() {
    *     containing the destinations to search through.
    * @param {!print_preview.UserInfo} userInfo Event target that contains
    *     information about the logged in user.
-   * @param {!print_preview.Metrics} metrics Used to record usage statistics.
    * @constructor
-   * @extends {print_preview.Component}
+   * @extends {print_preview.Overlay}
    */
-  function DestinationSearch(destinationStore, userInfo, metrics) {
-    print_preview.Component.call(this);
+  function DestinationSearch(destinationStore, userInfo) {
+    print_preview.Overlay.call(this);
 
     /**
      * Data store containing the destinations to search through.
@@ -37,15 +36,15 @@ cr.define('print_preview', function() {
 
     /**
      * Used to record usage statistics.
-     * @type {!print_preview.Metrics}
+     * @type {!print_preview.DestinationSearchMetricsContext}
      * @private
      */
-    this.metrics_ = metrics;
+    this.metrics_ = new print_preview.DestinationSearchMetricsContext();
 
     /**
      * Whether or not a UMA histogram for the register promo being shown was
      * already recorded.
-     * @type {bool}
+     * @type {boolean}
      * @private
      */
     this.registerPromoShownMetricRecorded_ = false;
@@ -55,7 +54,8 @@ cr.define('print_preview', function() {
      * @type {!print_preview.SearchBox}
      * @private
      */
-    this.searchBox_ = new print_preview.SearchBox();
+    this.searchBox_ = new print_preview.SearchBox(
+        localStrings.getString('searchBoxPlaceholder'));
     this.addChild(this.searchBox_);
 
     /**
@@ -123,76 +123,53 @@ cr.define('print_preview', function() {
   DestinationSearch.MAX_PROMOTED_UNREGISTERED_PRINTERS_ = 2;
 
   DestinationSearch.prototype = {
-    __proto__: print_preview.Component.prototype,
+    __proto__: print_preview.Overlay.prototype,
 
-    /** @return {boolean} Whether the component is visible. */
-    getIsVisible: function() {
-      return !this.getElement().classList.contains('transparent');
-    },
-
-    /** @param {boolean} isVisible Whether the component is visible. */
-    setIsVisible: function(isVisible) {
-      if (this.getIsVisible() == isVisible) {
-        return;
-      }
+    /** @override */
+    onSetVisibleInternal: function(isVisible) {
       if (isVisible) {
-        setIsVisible(this.getElement(), true);
-        setTimeout(function(element) {
-          element.classList.remove('transparent');
-        }.bind(this, this.getElement()), 0);
         this.searchBox_.focus();
-        var promoEl = this.getChildElement('.cloudprint-promo');
-        if (getIsVisible(promoEl)) {
-          this.metrics_.incrementDestinationSearchBucket(
-              print_preview.Metrics.DestinationSearchBucket.
-                  CLOUDPRINT_PROMO_SHOWN);
+        if (getIsVisible(this.getChildElement('.cloudprint-promo'))) {
+          this.metrics_.record(
+              print_preview.Metrics.DestinationSearchBucket.SIGNIN_PROMPT);
         }
-        if (this.userInfo_.initialized) {
+        if (this.userInfo_.initialized)
           this.onUsersChanged_();
-        }
         this.reflowLists_();
+        this.metrics_.record(
+            print_preview.Metrics.DestinationSearchBucket.DESTINATION_SHOWN);
       } else {
-        this.getElement().classList.add('transparent');
         // Collapse all destination lists
         this.localList_.setIsShowAll(false);
         this.cloudList_.setIsShowAll(false);
-        this.searchBox_.setQuery('');
-        this.filterLists_(null);
+        this.resetSearch_();
       }
+    },
+
+    /** @override */
+    onCancelInternal: function() {
+      this.metrics_.record(print_preview.Metrics.DestinationSearchBucket.
+          DESTINATION_CLOSED_UNCHANGED);
     },
 
     /** Shows the Google Cloud Print promotion banner. */
     showCloudPrintPromo: function() {
       setIsVisible(this.getChildElement('.cloudprint-promo'), true);
       if (this.getIsVisible()) {
-        this.metrics_.incrementDestinationSearchBucket(
-            print_preview.Metrics.DestinationSearchBucket.
-                CLOUDPRINT_PROMO_SHOWN);
+        this.metrics_.record(
+            print_preview.Metrics.DestinationSearchBucket.SIGNIN_PROMPT);
       }
       this.reflowLists_();
     },
 
     /** @override */
     enterDocument: function() {
-      print_preview.Component.prototype.enterDocument.call(this);
-
-      this.getElement().addEventListener('webkitTransitionEnd', function f(e) {
-        if (e.target != e.currentTarget || e.propertyName != 'opacity')
-          return;
-        if (e.target.classList.contains('transparent')) {
-          setIsVisible(e.target, false);
-        }
-      });
+      print_preview.Overlay.prototype.enterDocument.call(this);
 
       this.tracker.add(
           this.getChildElement('.account-select'),
           'change',
           this.onAccountChange_.bind(this));
-
-      this.tracker.add(
-          this.getChildElement('.page > .close-button'),
-          'click',
-          this.onCloseClick_.bind(this));
 
       this.tracker.add(
           this.getChildElement('.sign-in'),
@@ -211,6 +188,13 @@ cr.define('print_preview', function() {
           this,
           print_preview.DestinationListItem.EventType.SELECT,
           this.onDestinationSelect_.bind(this));
+      this.tracker.add(
+          this,
+          print_preview.DestinationListItem.EventType.REGISTER_PROMO_CLICKED,
+          function() {
+            this.metrics_.record(print_preview.Metrics.DestinationSearchBucket.
+                REGISTER_PROMO_SELECTED);
+          }.bind(this));
 
       this.tracker.add(
           this.destinationStore_,
@@ -239,13 +223,6 @@ cr.define('print_preview', function() {
           this.onManageCloudDestinationsActivated_.bind(this));
 
       this.tracker.add(
-          this.getElement(), 'click', this.onClick_.bind(this));
-      this.tracker.add(
-          this.getChildElement('.page'),
-          'webkitAnimationEnd',
-          this.onAnimationEnd_.bind(this));
-
-      this.tracker.add(
           this.userInfo_,
           print_preview.UserInfo.EventType.USERS_CHANGED,
           this.onUsersChanged_.bind(this));
@@ -260,7 +237,7 @@ cr.define('print_preview', function() {
 
     /** @override */
     decorateInternal: function() {
-      this.searchBox_.decorate($('search-box'));
+      this.searchBox_.render(this.getChildElement('.search-box-container'));
       this.recentList_.render(this.getChildElement('.recent-list'));
       this.localList_.render(this.getChildElement('.local-list'));
       this.cloudList_.render(this.getChildElement('.cloud-list'));
@@ -336,8 +313,8 @@ cr.define('print_preview', function() {
 
       if (unregisteredCloudDestinations.length != 0 &&
           !this.registerPromoShownMetricRecorded_) {
-        this.metrics_.incrementDestinationSearchBucket(
-          print_preview.Metrics.DestinationSearchBucket.REGISTER_PROMO_SHOWN);
+        this.metrics_.record(
+            print_preview.Metrics.DestinationSearchBucket.REGISTER_PROMO_SHOWN);
         this.registerPromoShownMetricRecorded_ = true;
       }
 
@@ -477,17 +454,6 @@ cr.define('print_preview', function() {
     },
 
     /**
-     * Called when the close button is clicked. Hides the search widget.
-     * @private
-     */
-    onCloseClick_: function() {
-      this.setIsVisible(false);
-      this.resetSearch_();
-      this.metrics_.incrementDestinationSearchBucket(
-          print_preview.Metrics.DestinationSearchBucket.CANCELED);
-    },
-
-    /**
      * Called when a destination is selected. Clears the search and hides the
      * widget.
      * @param {Event} evt Contains the selected destination.
@@ -495,10 +461,9 @@ cr.define('print_preview', function() {
      */
     onDestinationSelect_: function(evt) {
       this.setIsVisible(false);
-      this.resetSearch_();
       this.destinationStore_.selectDestination(evt.destination);
-      this.metrics_.incrementDestinationSearchBucket(
-          print_preview.Metrics.DestinationSearchBucket.DESTINATION_SELECTED);
+      this.metrics_.record(print_preview.Metrics.DestinationSearchBucket.
+          DESTINATION_CLOSED_CHANGED);
     },
 
     /**
@@ -567,7 +532,7 @@ cr.define('print_preview', function() {
      */
     onSignInActivated_: function() {
       cr.dispatchSimpleEvent(this, DestinationSearch.EventType.SIGN_IN);
-      this.metrics_.incrementDestinationSearchBucket(
+      this.metrics_.record(
           print_preview.Metrics.DestinationSearchBucket.SIGNIN_TRIGGERED);
     },
 
@@ -583,7 +548,7 @@ cr.define('print_preview', function() {
       if (account) {
         this.userInfo_.activeUser = account;
         this.destinationStore_.reloadUserCookieBasedDestinations();
-        this.metrics_.incrementDestinationSearchBucket(
+        this.metrics_.record(
             print_preview.Metrics.DestinationSearchBucket.ACCOUNT_CHANGED);
       } else {
         cr.dispatchSimpleEvent(this, DestinationSearch.EventType.ADD_ACCOUNT);
@@ -594,7 +559,7 @@ cr.define('print_preview', function() {
             break;
           }
         }
-        this.metrics_.incrementDestinationSearchBucket(
+        this.metrics_.record(
             print_preview.Metrics.DestinationSearchBucket.ADD_ACCOUNT_SELECTED);
       }
     },
@@ -606,25 +571,6 @@ cr.define('print_preview', function() {
      */
     onCloudprintPromoCloseButtonClick_: function() {
       setIsVisible(this.getChildElement('.cloudprint-promo'), false);
-    },
-
-    /**
-     * Called when the overlay is clicked. Pulses the page.
-     * @param {Event} event Contains the element that was clicked.
-     * @private
-     */
-    onClick_: function(event) {
-      if (event.target == this.getElement()) {
-        this.getChildElement('.page').classList.add('pulse');
-      }
-    },
-
-    /**
-     * Called when an animation ends on the page.
-     * @private
-     */
-    onAnimationEnd_: function() {
-      this.getChildElement('.page').classList.remove('pulse');
     },
 
     /**

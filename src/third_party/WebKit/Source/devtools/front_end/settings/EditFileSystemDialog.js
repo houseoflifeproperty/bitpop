@@ -38,8 +38,7 @@ WebInspector.EditFileSystemDialog = function(fileSystemPath)
     WebInspector.DialogDelegate.call(this);
     this._fileSystemPath = fileSystemPath;
 
-    this.element = document.createElement("div");
-    this.element.className = "edit-file-system-dialog";
+    this.element = document.createElementWithClass("div", "dialog-contents");
 
     var header = this.element.createChild("div", "header");
     var headerText = header.createChild("span");
@@ -57,11 +56,14 @@ WebInspector.EditFileSystemDialog = function(fileSystemPath)
 
     var blockHeader = contents.createChild("div", "block-header");
     blockHeader.textContent = WebInspector.UIString("Mappings");
-    this._fileMappingsSection = contents.createChild("div", "section file-mappings-section");
+    this._fileMappingsSection = contents.createChild("div", "section");
     this._fileMappingsListContainer = this._fileMappingsSection.createChild("div", "settings-list-container");
     var entries = WebInspector.isolatedFileSystemManager.mapping().mappingEntries(this._fileSystemPath);
 
-    this._fileMappingsList = new WebInspector.EditableSettingsList(["url", "path"], this._fileMappingValuesProvider.bind(this), this._fileMappingValidate.bind(this), this._fileMappingEdit.bind(this));
+    var urlColumn = { id: "url", placeholder: WebInspector.UIString("URL prefix") };
+    var pathColumn = { id: "path", placeholder: WebInspector.UIString("Folder path") };
+
+    this._fileMappingsList = new WebInspector.EditableSettingsList([urlColumn, pathColumn], this._fileMappingValuesProvider.bind(this), this._fileMappingValidate.bind(this), this._fileMappingEdit.bind(this));
     this._fileMappingsList.addEventListener(WebInspector.SettingsList.Events.Removed, this._fileMappingRemovedfromList.bind(this));
 
     this._fileMappingsList.element.classList.add("file-mappings-list");
@@ -77,7 +79,7 @@ WebInspector.EditFileSystemDialog = function(fileSystemPath)
     this._excludedFolderListContainer = this._excludedFolderListSection.createChild("div", "settings-list-container");
     var excludedFolderEntries = WebInspector.isolatedFileSystemManager.mapping().excludedFolders(fileSystemPath);
 
-    this._excludedFolderList = new WebInspector.EditableSettingsList(["path"], this._excludedFolderValueProvider.bind(this), this._excludedFolderValidate.bind(this), this._excludedFolderEdit.bind(this));
+    this._excludedFolderList = new WebInspector.EditableSettingsList([pathColumn], this._excludedFolderValueProvider.bind(this), this._excludedFolderValidate.bind(this), this._excludedFolderEdit.bind(this));
     this._excludedFolderList.addEventListener(WebInspector.SettingsList.Events.Removed, this._excludedFolderRemovedfromList.bind(this));
     this._excludedFolderList.element.classList.add("excluded-folders-list");
     this._excludedFolderListContainer.appendChild(this._excludedFolderList.element);
@@ -86,6 +88,7 @@ WebInspector.EditFileSystemDialog = function(fileSystemPath)
         this._addExcludedFolderRow(excludedFolderEntries[i]);
 
     this.element.tabIndex = 0;
+    this._hasMappingChanges = false;
 }
 
 WebInspector.EditFileSystemDialog.show = function(element, fileSystemPath)
@@ -101,11 +104,9 @@ WebInspector.EditFileSystemDialog.prototype = {
      */
     show: function(element)
     {
-        element.appendChild(this.element);
-        this.element.classList.add("dialog-contents");
-        element.classList.add("settings-dialog");
-        element.classList.add("settings-tab");
         this._dialogElement = element;
+        element.appendChild(this.element);
+        element.classList.add("settings-dialog", "settings-tab");
     },
 
     _resize: function()
@@ -137,6 +138,10 @@ WebInspector.EditFileSystemDialog.prototype = {
 
     willHide: function(event)
     {
+        if (!this._hasMappingChanges)
+            return;
+        if (window.confirm(WebInspector.UIString("It is recommended to restart DevTools after making these changes. Would you like to restart it?")))
+            WebInspector.reload();
     },
 
     _fileMappingAdded: function(event)
@@ -229,6 +234,7 @@ WebInspector.EditFileSystemDialog.prototype = {
 
         var entry = this._entries[urlPrefix];
         WebInspector.isolatedFileSystemManager.mapping().removeFileMapping(entry.fileSystemPath, entry.urlPrefix, entry.pathPrefix);
+        this._hasMappingChanges = true;
     },
 
     /**
@@ -241,6 +247,7 @@ WebInspector.EditFileSystemDialog.prototype = {
         var normalizedURLPrefix = this._normalizePrefix(urlPrefix);
         var normalizedPathPrefix = this._normalizePrefix(pathPrefix);
         WebInspector.isolatedFileSystemManager.mapping().addFileMapping(this._fileSystemPath, normalizedURLPrefix, normalizedPathPrefix);
+        this._hasMappingChanges = true;
         this._fileMappingsList.selectItem(normalizedURLPrefix);
         return true;
     },

@@ -21,7 +21,7 @@
 #include "config.h"
 #include "core/html/HTMLSummaryElement.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/dom/NodeRenderingTraversal.h"
@@ -31,7 +31,7 @@
 #include "core/html/shadow/DetailsMarkerControl.h"
 #include "core/rendering/RenderBlockFlow.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 

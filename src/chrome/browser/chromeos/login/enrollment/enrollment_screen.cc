@@ -16,13 +16,14 @@
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
-#include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
+#include "chrome/browser/chromeos/policy/device_cloud_policy_initializer.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/google_service_auth_error.h"
+#include "policy/proto/device_management_backend.pb.h"
 
 namespace chromeos {
 
@@ -127,8 +128,7 @@ void EnrollmentScreen::OnAuthError(const GoogleServiceAuthError& error) {
   UMAFailure(policy::kMetricEnrollmentOtherFailed);
 }
 
-void EnrollmentScreen::OnOAuthTokenAvailable(
-    const std::string& token) {
+void EnrollmentScreen::OnOAuthTokenAvailable(const std::string& token) {
   RegisterForDevicePolicy(token);
 }
 
@@ -182,8 +182,7 @@ void EnrollmentScreen::OnConfirmationClosed() {
   }
 }
 
-void EnrollmentScreen::RegisterForDevicePolicy(
-    const std::string& token) {
+void EnrollmentScreen::RegisterForDevicePolicy(const std::string& token) {
   policy::BrowserPolicyConnectorChromeOS* connector =
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
   if (connector->IsEnterpriseManaged() &&
@@ -196,12 +195,18 @@ void EnrollmentScreen::RegisterForDevicePolicy(
     return;
   }
 
-  policy::DeviceCloudPolicyManagerChromeOS::AllowedDeviceModes device_modes;
+  policy::DeviceCloudPolicyInitializer::AllowedDeviceModes device_modes;
   device_modes[policy::DEVICE_MODE_ENTERPRISE] = true;
   device_modes[policy::DEVICE_MODE_RETAIL_KIOSK] =
       enrollment_mode_ == EnrollmentScreenActor::ENROLLMENT_MODE_MANUAL;
   connector->ScheduleServiceInitialization(0);
-  connector->GetDeviceCloudPolicyManager()->StartEnrollment(
+
+  policy::DeviceCloudPolicyInitializer* dcp_initializer =
+      connector->GetDeviceCloudPolicyInitializer();
+  CHECK(dcp_initializer);
+  dcp_initializer->StartEnrollment(
+      enterprise_management::PolicyData::ENTERPRISE_MANAGED,
+      connector->device_management_service(),
       token, is_auto_enrollment(), device_modes,
       base::Bind(&EnrollmentScreen::ReportEnrollmentStatus,
                  weak_ptr_factory_.GetWeakPtr()));
@@ -213,10 +218,7 @@ void EnrollmentScreen::ShowEnrollmentStatusOnSuccess(
   StartupUtils::MarkOobeCompleted();
 }
 
-void EnrollmentScreen::ReportEnrollmentStatus(
-    policy::EnrollmentStatus status) {
-  bool success = status.status() == policy::EnrollmentStatus::STATUS_SUCCESS;
-  enrollment_failed_once_ |= !success;
+void EnrollmentScreen::ReportEnrollmentStatus(policy::EnrollmentStatus status) {
   if (status.status() == policy::EnrollmentStatus::STATUS_SUCCESS) {
     StartupUtils::MarkDeviceRegistered(
         base::Bind(&EnrollmentScreen::ShowEnrollmentStatusOnSuccess,
@@ -225,6 +227,8 @@ void EnrollmentScreen::ReportEnrollmentStatus(
     UMA(is_auto_enrollment() ? policy::kMetricEnrollmentAutoOK
                              : policy::kMetricEnrollmentOK);
     return;
+  } else {
+    enrollment_failed_once_ = true;
   }
   actor_->ShowEnrollmentStatus(status);
 
@@ -274,10 +278,16 @@ void EnrollmentScreen::ReportEnrollmentStatus(
       UMAFailure(policy::kMetricEnrollmentWrongUserError);
       return;
     case policy::EnrollmentStatus::STATUS_NO_STATE_KEYS:
+      UMAFailure(policy::kMetricEnrollmentNoStateKeys);
+      return;
     case policy::EnrollmentStatus::STATUS_VALIDATION_FAILED:
+      UMAFailure(policy::kMetricEnrollmentPolicyValidationFailed);
+      return;
     case policy::EnrollmentStatus::STATUS_STORE_ERROR:
+      UMAFailure(policy::kMetricEnrollmentCloudPolicyStoreError);
+      return;
     case policy::EnrollmentStatus::STATUS_LOCK_ERROR:
-      UMAFailure(policy::kMetricEnrollmentOtherFailed);
+      UMAFailure(policy::kMetricEnrollmentLockBackendError);
       return;
     case policy::EnrollmentStatus::STATUS_ROBOT_AUTH_FETCH_FAILED:
       UMAFailure(policy::kMetricEnrollmentRobotAuthCodeFetchFailed);
@@ -287,6 +297,11 @@ void EnrollmentScreen::ReportEnrollmentStatus(
       return;
     case policy::EnrollmentStatus::STATUS_ROBOT_REFRESH_STORE_FAILED:
       UMAFailure(policy::kMetricEnrollmentRobotRefreshTokenStoreFailed);
+      return;
+    case policy::EnrollmentStatus::STATUS_STORE_TOKEN_AND_ID_FAILED:
+      // This error should not happen for enterprise enrollment.
+      UMAFailure(policy::kMetricEnrollmentStoreTokenAndIdFailed);
+      NOTREACHED();
       return;
     case policy::EnrollmentStatus::STATUS_SUCCESS:
       NOTREACHED();

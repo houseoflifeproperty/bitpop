@@ -37,8 +37,6 @@
 #include "public/platform/WebURL.h"
 #include "public/platform/WebVector.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 WebRTCICEServer::WebRTCICEServer(const PassRefPtr<RTCIceServer>& iceServer)
@@ -99,6 +97,22 @@ WebRTCICEServer WebRTCConfiguration::server(size_t index) const
 {
     ASSERT(!isNull());
     return WebRTCICEServer(m_private->server(index));
+}
+
+WebRTCIceTransports WebRTCConfiguration::iceTransports() const
+{
+    ASSERT(!isNull());
+    switch (m_private->iceTransports()) {
+    case RTCIceTransportsNone:
+        return WebRTCIceTransportsNone;
+    case RTCIceTransportsRelay:
+        return WebRTCIceTransportsRelay;
+    case RTCIceTransportsAll:
+        return WebRTCIceTransportsAll;
+    default:
+        ASSERT_NOT_REACHED();
+    }
+    return WebRTCIceTransportsAll;
 }
 
 } // namespace blink

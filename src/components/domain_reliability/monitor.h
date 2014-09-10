@@ -8,6 +8,7 @@
 #include <map>
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "components/domain_reliability/beacon.h"
@@ -26,6 +27,7 @@
 namespace base {
 class SingleThreadTaskRunner;
 class ThreadChecker;
+class Value;
 }  // namespace base
 
 namespace net {
@@ -71,14 +73,14 @@ class DOMAIN_RELIABILITY_EXPORT DomainReliabilityMonitor {
   // CLEAR_CONTEXTS, removes all contexts (which can behave as cookies).
   void ClearBrowsingData(DomainReliabilityClearMode mode);
 
+  // Gets a Value containing data that can be formatted into a web page for
+  // debugging purposes.
+  scoped_ptr<base::Value> GetWebUIData() const;
+
   DomainReliabilityContext* AddContextForTesting(
       scoped_ptr<const DomainReliabilityConfig> config);
 
   size_t contexts_size_for_testing() const { return contexts_.size(); }
-  bool was_cleared_for_testing() const { return was_cleared_; }
-  DomainReliabilityClearMode cleared_mode_for_testing() const {
-    return cleared_mode_;
-  }
 
  private:
   friend class DomainReliabilityMonitorTest;
@@ -110,6 +112,8 @@ class DOMAIN_RELIABILITY_EXPORT DomainReliabilityMonitor {
   void ClearContexts();
   void OnRequestLegComplete(const RequestInfo& info);
 
+  DomainReliabilityContext* GetContextForHost(const std::string& host) const;
+
   base::WeakPtr<DomainReliabilityMonitor> MakeWeakPtr();
 
   scoped_ptr<base::ThreadChecker> thread_checker_;
@@ -119,9 +123,6 @@ class DOMAIN_RELIABILITY_EXPORT DomainReliabilityMonitor {
   DomainReliabilityDispatcher dispatcher_;
   scoped_ptr<DomainReliabilityUploader> uploader_;
   ContextMap contexts_;
-
-  bool was_cleared_;
-  DomainReliabilityClearMode cleared_mode_;
 
   base::WeakPtrFactory<DomainReliabilityMonitor> weak_factory_;
 

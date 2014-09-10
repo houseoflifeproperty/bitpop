@@ -25,7 +25,7 @@
 #include "config.h"
 #include "core/html/ImageDocument.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/dom/RawDataDocumentParser.h"
 #include "core/events/EventListener.h"
@@ -46,7 +46,7 @@
 
 using std::min;
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -199,7 +199,7 @@ void ImageDocument::createDocumentStructure()
 
     m_imageElement = HTMLImageElement::create(*this);
     m_imageElement->setAttribute(styleAttr, "-webkit-user-select: none");
-    m_imageElement->setLoadManually(true);
+    m_imageElement->setLoadingImageDocument();
     m_imageElement->setSrc(url().string());
     body->appendChild(m_imageElement.get());
 

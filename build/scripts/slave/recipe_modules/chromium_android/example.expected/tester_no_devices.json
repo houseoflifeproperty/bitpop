@@ -23,7 +23,6 @@
     ]
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -48,7 +47,8 @@
     "name": "bot_update",
     "~followup_annotations": [
       "@@@STEP_LOG_LINE@json.output@{@@@",
-      "@@@STEP_LOG_LINE@json.output@  \"did_run\": false@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"did_run\": false, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_failure\": false@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@"
     ]
@@ -65,7 +65,6 @@
     "name": "gclient setup"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -76,7 +75,6 @@
     "name": "gclient revert"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -110,9 +108,6 @@
       "@@@STEP_LOG_LINE@json.output@    \"src/third_party/webrtc/\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"revision\": 120644@@@",
       "@@@STEP_LOG_LINE@json.output@    }, @@@",
-      "@@@STEP_LOG_LINE@json.output@    \"src/tools/swarm_client/\": {@@@",
-      "@@@STEP_LOG_LINE@json.output@      \"revision\": 200767@@@",
-      "@@@STEP_LOG_LINE@json.output@    }, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"src/tools/swarming_client/\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"revision\": 276089@@@",
       "@@@STEP_LOG_LINE@json.output@    }, @@@",
@@ -127,8 +122,34 @@
       "@@@SET_BUILD_PROPERTY@got_src_revision@170242@@@",
       "@@@SET_BUILD_PROPERTY@got_webrtc_revision@120644@@@",
       "@@@SET_BUILD_PROPERTY@got_swarming_client_revision@276089@@@",
-      "@@@SET_BUILD_PROPERTY@got_v8_revision@43426@@@",
-      "@@@SET_BUILD_PROPERTY@got_swarm_client_revision@200767@@@"
+      "@@@SET_BUILD_PROPERTY@got_v8_revision@43426@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport shutil, sys, os\nshutil.rmtree(sys.argv[1], True)\nshutil.rmtree(sys.argv[2], True)\ntry:\n  os.remove(sys.argv[3])\nexcept OSError:\n  pass\nfor base, _dirs, files in os.walk(sys.argv[4]):\n  for f in files:\n    if f.endswith('.pyc'):\n      os.remove(os.path.join(base, f))\n",
+      "[SLAVE_BUILD]/src/out/Release/debug_info_dumps",
+      "[SLAVE_BUILD]/src/out/Release/test_logs",
+      "[SLAVE_BUILD]/src/out/build_product.zip",
+      "[SLAVE_BUILD]/src"
+    ],
+    "name": "clean local files",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import shutil, sys, os@@@",
+      "@@@STEP_LOG_LINE@python.inline@shutil.rmtree(sys.argv[1], True)@@@",
+      "@@@STEP_LOG_LINE@python.inline@shutil.rmtree(sys.argv[2], True)@@@",
+      "@@@STEP_LOG_LINE@python.inline@try:@@@",
+      "@@@STEP_LOG_LINE@python.inline@  os.remove(sys.argv[3])@@@",
+      "@@@STEP_LOG_LINE@python.inline@except OSError:@@@",
+      "@@@STEP_LOG_LINE@python.inline@  pass@@@",
+      "@@@STEP_LOG_LINE@python.inline@for base, _dirs, files in os.walk(sys.argv[4]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  for f in files:@@@",
+      "@@@STEP_LOG_LINE@python.inline@    if f.endswith('.pyc'):@@@",
+      "@@@STEP_LOG_LINE@python.inline@      os.remove(os.path.join(base, f))@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
     ]
   },
   {
@@ -156,7 +177,6 @@
   },
   {
     "allow_subannotations": false,
-    "can_fail_build": false,
     "cmd": [
       "[SLAVE_BUILD]/src/build/tree_truth.sh",
       "[SLAVE_BUILD]/src",
@@ -188,7 +208,6 @@
     "name": "gsutil download_build_product"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "unzip",
       "-o",
@@ -242,7 +261,6 @@
     ]
   },
   {
-    "can_fail_build": false,
     "cmd": [
       "[BUILD]/scripts/slave/daemonizer.py",
       "--",
@@ -269,19 +287,6 @@
     ]
   },
   {
-    "can_fail_build": false,
-    "cmd": [
-      "python",
-      "-u",
-      "[SLAVE_BUILD]/src/build/android/provision_devices.py",
-      "-t",
-      "Release"
-    ],
-    "name": "provision_devices",
-    "skip": true
-  },
-  {
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -297,7 +302,6 @@
     "name": "Monkey Test"
   },
   {
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -316,12 +320,12 @@
       "--screenshot",
       "--release",
       "--host-driven-root",
-      "[SLAVE_BUILD]/src/chrome/test"
+      "[SLAVE_BUILD]/src/chrome/test",
+      "--official-build"
     ],
     "name": "Instrumentation test SmallTest"
   },
   {
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -336,34 +340,11 @@
       "--tool=asan"
     ],
     "env": {
-      "BUILDTYPE": "Release"
+      "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
     },
     "name": "unittests"
   },
   {
-    "cmd": [
-      "[SLAVE_BUILD]/src/tools/prepare-bisect-perf-regression.py",
-      "-w",
-      "[SLAVE_BUILD]"
-    ],
-    "name": "prepare bisect perf regression",
-    "skip": true
-  },
-  {
-    "cmd": [
-      "[SLAVE_BUILD]/src/tools/run-bisect-perf-regression.py",
-      "-w",
-      "[SLAVE_BUILD]",
-      "--extra_src",
-      "test.py",
-      "--path_to_config",
-      "test.py"
-    ],
-    "name": "run bisect perf regression",
-    "skip": true
-  },
-  {
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -376,9 +357,10 @@
     "name": "logcat_dump"
   },
   {
-    "always_run": true,
     "cmd": [
       "[SLAVE_BUILD]/src/third_party/android_platform/development/scripts/stack",
+      "--arch",
+      "arm",
       "--more-info",
       "[SLAVE_BUILD]/src/out/Release/full_log"
     ],
@@ -388,7 +370,6 @@
     "name": "stack_tool_with_logcat_dump"
   },
   {
-    "always_run": true,
     "cmd": [
       "[SLAVE_BUILD]/src/build/android/tombstones.py",
       "-a",
@@ -401,7 +382,6 @@
     "name": "stack_tool_for_tombstones"
   },
   {
-    "always_run": true,
     "cmd": [
       "[SLAVE_BUILD]/src/build/android/asan_symbolize.py",
       "-l",
@@ -413,12 +393,8 @@
     "name": "stack_tool_for_asan"
   },
   {
-    "always_run": true,
-    "cmd": [
-      "rm",
-      "-rf",
-      "[SLAVE_BUILD]/src/out/build_product.zip"
-    ],
-    "name": "cleanup_build"
+    "name": "$final_result",
+    "reason": "Step('device_status_check') failed with return_code 1",
+    "status_code": 1
   }
 ]

@@ -22,22 +22,16 @@ const base::TimeDelta kResumingTimeSpan = base::TimeDelta::FromSeconds(5);
 }  // namespace
 
 MountedDiskMonitor::MountedDiskMonitor(
-    chromeos::PowerManagerClient* power_manager_client,
-    chromeos::disks::DiskMountManager* disk_mount_manager)
+    chromeos::PowerManagerClient* power_manager_client)
     : power_manager_client_(power_manager_client),
-      disk_mount_manager_(disk_mount_manager),
       is_resuming_(false),
       resuming_time_span_(kResumingTimeSpan),
       weak_factory_(this) {
   DCHECK(power_manager_client_);
-  DCHECK(disk_mount_manager_);
   power_manager_client_->AddObserver(this);
-  disk_mount_manager_->AddObserver(this);
-  disk_mount_manager_->RequestMountInfoRefresh();
 }
 
 MountedDiskMonitor::~MountedDiskMonitor() {
-  disk_mount_manager_->RemoveObserver(this);
   power_manager_client_->RemoveObserver(this);
 }
 
@@ -65,29 +59,28 @@ bool MountedDiskMonitor::DiskIsRemounting(
   return unmounted_while_resuming_.count(disk.fs_uuid()) > 0;
 }
 
-bool MountedDiskMonitor::DeviceIsHardUnplugged(
+bool MountedDiskMonitor::DeviceIsHardUnpluggedButNotReported(
     const std::string& device_path) const {
-  return hard_unplugged_.count(device_path) > 0;
+  const std::map<std::string, HardUnpluggedState>::const_iterator it
+      = hard_unplugged_.find(device_path);
+  return it != hard_unplugged_.end() && it->second == HARD_UNPLUGGED;
 }
 
-void MountedDiskMonitor::ClearHardUnpluggedFlag(
+void MountedDiskMonitor::MarkAsHardUnpluggedReported(
     const std::string& device_path) {
-  std::set<std::string>::iterator it = hard_unplugged_.find(device_path);
-  if (it != hard_unplugged_.end())
-    hard_unplugged_.erase(it);
+  hard_unplugged_[device_path] = HARD_UNPLUGGED_AND_REPORTED;
 }
 
 void MountedDiskMonitor::OnMountEvent(
     chromeos::disks::DiskMountManager::MountEvent event,
     chromeos::MountError error_code,
-    const chromeos::disks::DiskMountManager::MountPointInfo& mount_info) {
+    const chromeos::disks::DiskMountManager::MountPointInfo& mount_info,
+    const DiskMountManager::Disk* disk) {
   if (mount_info.mount_type != chromeos::MOUNT_TYPE_DEVICE)
     return;
 
   switch (event) {
     case DiskMountManager::MOUNTING: {
-      const DiskMountManager::Disk* disk =
-          disk_mount_manager_->FindDiskBySourcePath(mount_info.source_path);
       if (!disk || error_code != chromeos::MOUNT_ERROR_NONE)
         return;
       mounted_disks_[mount_info.source_path] = disk->fs_uuid();
@@ -112,20 +105,25 @@ void MountedDiskMonitor::OnDiskEvent(
     const chromeos::disks::DiskMountManager::Disk* disk) {
   if (event == chromeos::disks::DiskMountManager::DISK_REMOVED) {
     // If the mount path is not empty, the disk is hard unplugged.
-    if (!is_resuming_ && !disk->mount_path().empty())
-      hard_unplugged_.insert(disk->system_path_prefix());
+    if (!is_resuming_ &&
+        !disk->mount_path().empty() &&
+        hard_unplugged_.find(disk->system_path_prefix()) ==
+        hard_unplugged_.end()) {
+      hard_unplugged_.insert(
+          std::make_pair(disk->system_path_prefix(), HARD_UNPLUGGED));
+    }
   }
 }
 
 void MountedDiskMonitor::OnDeviceEvent(
     chromeos::disks::DiskMountManager::DeviceEvent event,
     const std::string& device_path) {
-}
-
-void MountedDiskMonitor::OnFormatEvent(
-    chromeos::disks::DiskMountManager::FormatEvent event,
-    chromeos::FormatError error_code,
-    const std::string& device_path) {
+  if (event == chromeos::disks::DiskMountManager::DEVICE_REMOVED) {
+    const std::map<std::string, HardUnpluggedState>::iterator it
+        = hard_unplugged_.find(device_path);
+    if (it != hard_unplugged_.end())
+      hard_unplugged_.erase(it);
+  }
 }
 
 void MountedDiskMonitor::Reset() {

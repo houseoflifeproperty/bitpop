@@ -10,12 +10,12 @@
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/browser/ui/search_engines/keyword_editor_controller.h"
 #include "chrome/browser/ui/search_engines/template_url_table_model.h"
 #include "chrome/common/url_constants.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_ui.h"
 #include "extensions/browser/extension_registry.h"
@@ -118,7 +118,7 @@ void SearchEngineManagerHandler::OnModelChanged() {
 
   // Find the default engine.
   const TemplateURL* default_engine =
-      list_controller_->url_model()->GetDefaultSearchProvider();
+      list_controller_->GetDefaultSearchProvider();
   int default_index = list_controller_->table_model()->IndexOfTemplateURL(
       default_engine);
 

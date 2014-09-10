@@ -148,6 +148,10 @@ void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
   [event release];
 }
 
+void IncrementTouchIdRefCount(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
+}
+
 void ClearTouchIdIfReleased(const base::NativeEvent& native_event) {
   NOTIMPLEMENTED();
 }
@@ -197,27 +201,6 @@ bool GetFlingData(const base::NativeEvent& native_event,
   return false;
 }
 
-bool GetGestureTimes(const base::NativeEvent& native_event,
-                     double* start_time,
-                     double* end_time) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-void SetNaturalScroll(bool enabled) {
-  NOTIMPLEMENTED();
-}
-
-bool IsNaturalScrollEnabled() {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-bool IsTouchpadEvent(const base::NativeEvent& native_event) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
 KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
   return KeyboardCodeFromNSEvent(native_event);
 }
@@ -228,6 +211,10 @@ const char* CodeFromNative(const base::NativeEvent& native_event) {
 
 uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
   return native_event.keyCode;
+}
+
+bool IsCharFromNative(const base::NativeEvent& native_event) {
+  return false;
 }
 
 }  // namespace ui

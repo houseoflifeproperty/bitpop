@@ -13,6 +13,9 @@
 
 namespace chrome {
 
+static const char kOmaDrmContentMime[]  = "application/vnd.oma.drm.content";
+static const char kOmaDrmMessageMime[]  = "application/vnd.oma.drm.message";
+
 InterceptDownloadResourceThrottle::InterceptDownloadResourceThrottle(
     net::URLRequest* request,
     int render_process_id,
@@ -27,10 +30,6 @@ InterceptDownloadResourceThrottle::InterceptDownloadResourceThrottle(
 InterceptDownloadResourceThrottle::~InterceptDownloadResourceThrottle() {
 }
 
-void InterceptDownloadResourceThrottle::WillStartRequest(bool* defer) {
-  ProcessDownloadRequest();
-}
-
 void InterceptDownloadResourceThrottle::WillProcessResponse(bool* defer) {
   ProcessDownloadRequest();
 }
@@ -40,7 +39,18 @@ const char* InterceptDownloadResourceThrottle::GetNameForLogging() const {
 }
 
 void InterceptDownloadResourceThrottle::ProcessDownloadRequest() {
+  if (request_->url_chain().empty())
+    return;
+
+  GURL url = request_->url_chain().back();
+  if (!url.SchemeIsHTTPOrHTTPS())
+    return;
+
   if (request_->method() != net::HttpRequestHeaders::kGetMethod)
+    return;
+
+  net::HttpRequestHeaders headers;
+  if (!request_->GetFullRequestHeaders(&headers))
     return;
 
   // In general, if the request uses HTTP authorization, either with the origin
@@ -49,12 +59,10 @@ void InterceptDownloadResourceThrottle::ProcessDownloadRequest() {
   // authenticate with the origin.
   if (request_->response_info().did_use_http_auth) {
 #if defined(SPDY_PROXY_AUTH_ORIGIN)
-    net::HttpRequestHeaders headers;
-    request_->GetFullRequestHeaders(&headers);
     if (headers.HasHeader(net::HttpRequestHeaders::kAuthorization) ||
         !(request_->response_info().headers &&
             data_reduction_proxy::HasDataReductionProxyViaHeader(
-                request_->response_info().headers))) {
+                request_->response_info().headers, NULL))) {
       return;
     }
 #else
@@ -62,11 +70,11 @@ void InterceptDownloadResourceThrottle::ProcessDownloadRequest() {
 #endif
   }
 
-  if (request_->url_chain().empty())
-    return;
-
-  GURL url = request_->url_chain().back();
-  if (!url.SchemeIsHTTPOrHTTPS())
+  // For OMA DRM downloads, Android Download Manager doesn't handle them
+  // correctly. Use chromium network stack instead. http://crbug.com/382698.
+  std::string mime;
+  request_->GetMimeType(&mime);
+  if (!mime.compare(kOmaDrmContentMime) || !mime.compare(kOmaDrmMessageMime))
     return;
 
   content::DownloadControllerAndroid::Get()->CreateGETDownload(

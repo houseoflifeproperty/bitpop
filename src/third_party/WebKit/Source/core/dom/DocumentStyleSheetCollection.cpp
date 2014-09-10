@@ -35,7 +35,7 @@
 #include "core/dom/StyleSheetCandidate.h"
 #include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+namespace blink {
 
 DocumentStyleSheetCollection::DocumentStyleSheetCollection(TreeScope& treeScope)
     : TreeScopeStyleSheetCollection(treeScope)
@@ -105,12 +105,9 @@ void DocumentStyleSheetCollection::updateActiveStyleSheets(StyleEngine* engine, 
         // No need to always-clear font cache.
         engine->clearFontCache();
     } else if (StyleResolver* styleResolver = engine->resolver()) {
-        // FIXME: We might have already had styles in child treescope. In this case, we cannot use buildScopedStyleTreeInDocumentOrder.
-        // Need to change "false" to some valid condition.
-        styleResolver->setBuildScopedStyleTreeInDocumentOrder(false);
         if (change.styleResolverUpdateType != Additive) {
             ASSERT(change.styleResolverUpdateType == Reset);
-            resetAllRuleSetsInTreeScope(styleResolver);
+            styleResolver->resetAuthorStyle(treeScope());
             engine->removeFontFaceRules(change.fontFaceRulesToRemove);
             styleResolver->removePendingAuthorStyleSheets(m_activeAuthorStyleSheets);
             styleResolver->lazyAppendAuthorStyleSheets(0, collection.activeAuthorStyleSheets());
@@ -120,8 +117,6 @@ void DocumentStyleSheetCollection::updateActiveStyleSheets(StyleEngine* engine, 
     }
     if (change.requiresFullStyleRecalc)
         document().setNeedsStyleRecalc(SubtreeStyleChange);
-
-    m_scopingNodesForStyleScoped.didRemoveScopingNodes();
 
     collection.swap(*this);
 

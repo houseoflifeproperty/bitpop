@@ -64,9 +64,9 @@ using ::testing::ValuesIn;
 
 # if GTEST_HAS_COMBINE
 using ::testing::Combine;
-using ::std::tr1::get;
-using ::std::tr1::make_tuple;
-using ::std::tr1::tuple;
+using ::testing::get;
+using ::testing::make_tuple;
+using ::testing::tuple;
 # endif  // GTEST_HAS_COMBINE
 
 using ::testing::internal::ParamGenerator;
@@ -863,6 +863,13 @@ TEST_P(ParameterizedDerivedTest, SeesSequence) {
   EXPECT_EQ(17, n_);
   EXPECT_EQ(0, count_++);
   EXPECT_EQ(GetParam(), global_count_++);
+}
+
+class ParameterizedDeathTest : public ::testing::TestWithParam<int> { };
+
+TEST_F(ParameterizedDeathTest, GetParamDiesFromTestF) {
+  EXPECT_DEATH_IF_SUPPORTED(GetParam(),
+                            ".* value-parameterized test .*");
 }
 
 INSTANTIATE_TEST_CASE_P(RangeZeroToFive, ParameterizedDerivedTest, Range(0, 5));

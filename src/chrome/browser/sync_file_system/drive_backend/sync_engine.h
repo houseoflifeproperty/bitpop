@@ -22,7 +22,7 @@
 #include "net/base/network_change_notifier.h"
 
 class ExtensionServiceInterface;
-class ProfileOAuth2TokenService;
+class OAuth2TokenService;
 
 namespace base {
 class SequencedTaskRunner;
@@ -64,6 +64,19 @@ class SyncEngine : public RemoteFileSyncService,
                    public SigninManagerBase::Observer {
  public:
   typedef RemoteFileSyncService::Observer SyncServiceObserver;
+
+  class DriveServiceFactory {
+   public:
+    DriveServiceFactory() {}
+    virtual ~DriveServiceFactory() {}
+    virtual scoped_ptr<drive::DriveServiceInterface> CreateDriveService(
+        OAuth2TokenService* oauth2_token_service,
+        net::URLRequestContextGetter* url_request_context_getter,
+        base::SequencedTaskRunner* blocking_task_runner);
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(DriveServiceFactory);
+  };
 
   static scoped_ptr<SyncEngine> CreateForBrowserContext(
       content::BrowserContext* context,
@@ -112,7 +125,7 @@ class SyncEngine : public RemoteFileSyncService,
                          const ListCallback& callback) OVERRIDE;
   virtual void DumpDatabase(const ListCallback& callback) OVERRIDE;
   virtual void SetSyncEnabled(bool enabled) OVERRIDE;
-  virtual void PromoteDemotedChanges() OVERRIDE;
+  virtual void PromoteDemotedChanges(const base::Closure& callback) OVERRIDE;
 
   // LocalChangeProcessor overrides.
   virtual void ApplyLocalChange(
@@ -148,15 +161,15 @@ class SyncEngine : public RemoteFileSyncService,
 
   SyncEngine(base::SingleThreadTaskRunner* ui_task_runner,
              base::SequencedTaskRunner* worker_task_runner,
-             base::SequencedTaskRunner* file_task_runner,
              base::SequencedTaskRunner* drive_task_runner,
              const base::FilePath& sync_file_system_dir,
              TaskLogger* task_logger,
              drive::DriveNotificationManager* notification_manager,
              ExtensionServiceInterface* extension_service,
              SigninManagerBase* signin_manager,
-             ProfileOAuth2TokenService* token_service,
+             OAuth2TokenService* token_service,
              net::URLRequestContextGetter* request_context,
+             scoped_ptr<DriveServiceFactory> drive_service_factory,
              leveldb::Env* env_override);
 
   // Called by WorkerObserver.
@@ -172,7 +185,6 @@ class SyncEngine : public RemoteFileSyncService,
 
   scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner_;
   scoped_refptr<base::SequencedTaskRunner> worker_task_runner_;
-  scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
   scoped_refptr<base::SequencedTaskRunner> drive_task_runner_;
 
   const base::FilePath sync_file_system_dir_;
@@ -185,9 +197,11 @@ class SyncEngine : public RemoteFileSyncService,
   drive::DriveNotificationManager* notification_manager_;
   ExtensionServiceInterface* extension_service_;
   SigninManagerBase* signin_manager_;
-  ProfileOAuth2TokenService* token_service_;
+  OAuth2TokenService* token_service_;
 
   scoped_refptr<net::URLRequestContextGetter> request_context_;
+
+  scoped_ptr<DriveServiceFactory> drive_service_factory_;
 
   scoped_ptr<drive::DriveServiceInterface> drive_service_;
   scoped_ptr<DriveServiceWrapper> drive_service_wrapper_;
@@ -200,6 +214,8 @@ class SyncEngine : public RemoteFileSyncService,
   scoped_ptr<RemoteChangeProcessorOnWorker> remote_change_processor_on_worker_;
 
   RemoteServiceState service_state_;
+  bool has_refresh_token_;
+  bool network_available_;
   bool sync_enabled_;
 
   // Delete them on worker.

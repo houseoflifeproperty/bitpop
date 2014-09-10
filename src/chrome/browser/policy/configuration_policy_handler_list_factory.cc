@@ -11,7 +11,6 @@
 #include "chrome/browser/net/proxy_policy_handler.h"
 #include "chrome/browser/policy/managed_bookmarks_policy_handler.h"
 #include "chrome/browser/profiles/incognito_mode_policy_handler.h"
-#include "chrome/browser/search_engines/default_search_policy_handler.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
@@ -24,28 +23,25 @@
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_pref_names.h"
 #include "components/policy/core/common/schema.h"
+#include "components/search_engines/default_search_policy_handler.h"
 #include "components/translate/core/common/translate_pref_names.h"
-#include "grit/components_strings.h"
 #include "policy/policy_constants.h"
 
 #if !defined(OS_IOS)
-#include "chrome/browser/extensions/api/messaging/native_messaging_policy_handler.h"
-#include "chrome/browser/extensions/policy_handlers.h"
 #include "chrome/browser/net/disk_cache_dir_policy_handler.h"
 #include "chrome/browser/policy/file_selection_dialogs_policy_handler.h"
 #include "chrome/browser/policy/javascript_policy_handler.h"
+#include "chrome/browser/policy/network_prediction_policy_handler.h"
 #include "chrome/browser/sessions/restore_on_startup_policy_handler.h"
 #include "chrome/browser/sync/sync_policy_handler.h"
-#include "extensions/browser/pref_names.h"
-#include "extensions/common/manifest.h"
 #endif
 
 #if defined(OS_CHROMEOS)
 #include "ash/magnifier/magnifier_constants.h"
-#include "chrome/browser/chromeos/login/users/user.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/configuration_policy_handler_chromeos.h"
 #include "chromeos/dbus/power_policy_controller.h"
+#include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
@@ -54,6 +50,13 @@
 
 #if !defined(OS_MACOSX) && !defined(OS_IOS)
 #include "apps/pref_names.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/api/messaging/native_messaging_policy_handler.h"
+#include "chrome/browser/extensions/policy_handlers.h"
+#include "extensions/browser/pref_names.h"
+#include "extensions/common/manifest.h"
 #endif
 
 namespace policy {
@@ -78,9 +81,6 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kSearchSuggestEnabled,
     prefs::kSearchSuggestEnabled,
     base::Value::TYPE_BOOLEAN },
-  { key::kDnsPrefetchingEnabled,
-    prefs::kNetworkPredictionEnabled,
-    base::Value::TYPE_BOOLEAN },
   { key::kBuiltInDnsClientEnabled,
     prefs::kBuiltInDnsClientEnabled,
     base::Value::TYPE_BOOLEAN },
@@ -97,7 +97,7 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     prefs::kForceSafeSearch,
     base::Value::TYPE_BOOLEAN },
   { key::kPasswordManagerEnabled,
-    password_manager::prefs::kPasswordManagerEnabled,
+    password_manager::prefs::kPasswordManagerSavingEnabled,
     base::Value::TYPE_BOOLEAN },
   { key::kPasswordManagerAllowShowPasswords,
     password_manager::prefs::kPasswordManagerAllowShowPasswords,
@@ -466,6 +466,9 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kTouchVirtualKeyboardEnabled,
     prefs::kTouchVirtualKeyboardEnabled,
     base::Value::TYPE_BOOLEAN },
+  { key::kEasyUnlockAllowed,
+    prefs::kEasyUnlockAllowed,
+    base::Value::TYPE_BOOLEAN },
 #endif  // defined(OS_CHROMEOS)
 
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
@@ -484,10 +487,13 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kNativeMessagingUserLevelHosts,
     extensions::pref_names::kNativeMessagingUserLevelHosts,
     base::Value::TYPE_BOOLEAN },
+  { key::kBrowserGuestModeEnabled,
+    prefs::kBrowserGuestModeEnabled,
+    base::Value::TYPE_BOOLEAN },
 #endif  // !defined(OS_CHROMEOS) && !defined(OS_ANDROID) && !defined(OS_IOS)
 };
 
-#if !defined(OS_IOS)
+#if defined(ENABLE_EXTENSIONS)
 void GetExtensionAllowedTypesMap(
     ScopedVector<StringMappingListPolicyHandler::MappingEntry>* result) {
   // Mapping from extension type names to Manifest::Type.
@@ -510,7 +516,9 @@ void GetExtensionAllowedTypesMap(
       "platform_app", scoped_ptr<base::Value>(new base::FundamentalValue(
           extensions::Manifest::TYPE_PLATFORM_APP))));
 }
+#endif
 
+#if !defined(OS_IOS)
 void GetDeprecatedFeaturesMap(
     ScopedVector<StringMappingListPolicyHandler::MappingEntry>* result) {
   // Maps feature tags as specified in policy to the corresponding switch to
@@ -527,8 +535,9 @@ void GetDeprecatedFeaturesMap(
 
 void PopulatePolicyHandlerParameters(PolicyHandlerParameters* parameters) {
 #if defined(OS_CHROMEOS)
-  if (chromeos::UserManager::IsInitialized()) {
-    const chromeos::User* user = chromeos::UserManager::Get()->GetActiveUser();
+  if (user_manager::UserManager::IsInitialized()) {
+    const user_manager::User* user =
+        user_manager::UserManager::Get()->GetActiveUser();
     if (user)
       parameters->user_id_hash = user->username_hash();
   }
@@ -567,10 +576,20 @@ scoped_ptr<ConfigurationPolicyHandlerList> BuildHandlerList(
   handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
       new JavascriptPolicyHandler()));
   handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
+      new NetworkPredictionPolicyHandler()));
+  handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
       new RestoreOnStartupPolicyHandler()));
   handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
       new browser_sync::SyncPolicyHandler()));
 
+  handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
+      new StringMappingListPolicyHandler(
+          key::kEnableDeprecatedWebPlatformFeatures,
+          prefs::kEnableDeprecatedWebPlatformFeatures,
+          base::Bind(GetDeprecatedFeaturesMap))));
+#endif  // !defined(OS_IOS)
+
+#if defined(ENABLE_EXTENSIONS)
   handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
       new extensions::ExtensionListPolicyHandler(
           key::kExtensionInstallWhitelist,
@@ -592,12 +611,7 @@ scoped_ptr<ConfigurationPolicyHandlerList> BuildHandlerList(
           key::kExtensionAllowedTypes,
           extensions::pref_names::kAllowedTypes,
           base::Bind(GetExtensionAllowedTypesMap))));
-  handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
-      new StringMappingListPolicyHandler(
-          key::kEnableDeprecatedWebPlatformFeatures,
-          prefs::kEnableDeprecatedWebPlatformFeatures,
-          base::Bind(GetDeprecatedFeaturesMap))));
-#endif  // !defined(OS_IOS)
+#endif
 
 #if !defined(OS_CHROMEOS) && !defined(OS_ANDROID) && !defined(OS_IOS)
   handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
@@ -775,6 +789,14 @@ scoped_ptr<ConfigurationPolicyHandlerList> BuildHandlerList(
       new ExternalDataPolicyHandler(key::kUserAvatarImage)));
   handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
       new ExternalDataPolicyHandler(key::kWallpaperImage)));
+  handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
+      new SimpleSchemaValidatingPolicyHandler(
+          key::kSessionLocales,
+          NULL,
+          chrome_schema,
+          SCHEMA_STRICT,
+          SimpleSchemaValidatingPolicyHandler::RECOMMENDED_ALLOWED,
+          SimpleSchemaValidatingPolicyHandler::MANDATORY_PROHIBITED)));
 #endif  // defined(OS_CHROMEOS)
 
   return handlers.Pass();

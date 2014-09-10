@@ -4,7 +4,6 @@
 
 cr.define('options', function() {
   /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
-  /** @const */ var OptionsPage = options.OptionsPage;
   /** @const */ var SettingsDialog = options.SettingsDialog;
 
   /**
@@ -38,9 +37,7 @@ cr.define('options', function() {
       'disabled': false
     },
 
-    /**
-     * Initialize the page.
-     */
+    /** @override */
     initializePage: function() {
       SettingsDialog.prototype.initializePage.call(this);
 

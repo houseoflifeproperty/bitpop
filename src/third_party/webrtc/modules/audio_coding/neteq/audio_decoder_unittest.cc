@@ -54,6 +54,7 @@ class AudioDecoderTest : public ::testing::Test {
     // Create arrays.
     ASSERT_GT(data_length_, 0u) << "The test must set data_length_ > 0";
     input_ = new int16_t[data_length_];
+    // Longest encoded data is produced by PCM16b with 2 bytes per sample.
     encoded_ = new uint8_t[data_length_ * 2];
     decoded_ = new int16_t[data_length_ * channels_];
     // Open input file.
@@ -172,24 +173,18 @@ class AudioDecoderTest : public ::testing::Test {
   // Encodes a payload and decodes it twice with decoder re-init before each
   // decode. Verifies that the decoded result is the same.
   void ReInitTest() {
-    uint8_t* encoded = encoded_;
-    uint8_t* encoded_copy = encoded_ + 2 * frame_size_;
     int16_t* output1 = decoded_;
     int16_t* output2 = decoded_ + frame_size_;
     InitEncoder();
-    size_t enc_len = EncodeFrame(input_, frame_size_, encoded);
+    size_t enc_len = EncodeFrame(input_, frame_size_, encoded_);
     size_t dec_len;
-    // Copy payload since iSAC fix destroys it during decode.
-    // Issue: http://code.google.com/p/webrtc/issues/detail?id=845.
-    // TODO(hlundin): Remove if the iSAC bug gets fixed.
-    memcpy(encoded_copy, encoded, enc_len);
     AudioDecoder::SpeechType speech_type1, speech_type2;
     EXPECT_EQ(0, decoder_->Init());
-    dec_len = decoder_->Decode(encoded, enc_len, output1, &speech_type1);
+    dec_len = decoder_->Decode(encoded_, enc_len, output1, &speech_type1);
     EXPECT_EQ(frame_size_ * channels_, dec_len);
     // Re-init decoder and decode again.
     EXPECT_EQ(0, decoder_->Init());
-    dec_len = decoder_->Decode(encoded_copy, enc_len, output2, &speech_type2);
+    dec_len = decoder_->Decode(encoded_, enc_len, output2, &speech_type2);
     EXPECT_EQ(frame_size_ * channels_, dec_len);
     for (unsigned int n = 0; n < frame_size_; ++n) {
       ASSERT_EQ(output1[n], output2[n]) << "Exit test on first diff; n = " << n;
@@ -607,7 +602,7 @@ class AudioDecoderCeltStereoTest : public AudioDecoderTest {
 class AudioDecoderOpusTest : public AudioDecoderTest {
  protected:
   AudioDecoderOpusTest() : AudioDecoderTest() {
-    frame_size_ = 320;
+    frame_size_ = 480;
     data_length_ = 10 * frame_size_;
     decoder_ = new AudioDecoderOpus(kDecoderOpus);
     assert(decoder_);
@@ -618,75 +613,69 @@ class AudioDecoderOpusTest : public AudioDecoderTest {
     WebRtcOpus_EncoderFree(encoder_);
   }
 
+  virtual void SetUp() OVERRIDE {
+    AudioDecoderTest::SetUp();
+    // Upsample from 32 to 48 kHz.
+    // Because Opus is 48 kHz codec but the input file is 32 kHz, so the data
+    // read in |AudioDecoderTest::SetUp| has to be upsampled.
+    // |AudioDecoderTest::SetUp| has read |data_length_| samples, which is more
+    // than necessary after upsampling, so the end of audio that has been read
+    // is unused and the end of the buffer is overwritten by the resampled data.
+    Resampler rs;
+    rs.Reset(32000, 48000, kResamplerSynchronous);
+    const int before_resamp_len_samples = static_cast<int>(data_length_) * 2
+        / 3;
+    int16_t* before_resamp_input = new int16_t[before_resamp_len_samples];
+    memcpy(before_resamp_input, input_,
+           sizeof(int16_t) * before_resamp_len_samples);
+    int resamp_len_samples;
+    EXPECT_EQ(0, rs.Push(before_resamp_input, before_resamp_len_samples,
+                         input_, static_cast<int>(data_length_),
+                         resamp_len_samples));
+    EXPECT_EQ(static_cast<int>(data_length_), resamp_len_samples);
+    delete[] before_resamp_input;
+  }
+
   virtual void InitEncoder() {}
 
   virtual int EncodeFrame(const int16_t* input, size_t input_len_samples,
-                          uint8_t* output) {
-    // Upsample from 32 to 48 kHz.
-    Resampler rs;
-    rs.Reset(32000, 48000, kResamplerSynchronous);
-    const int max_resamp_len_samples = static_cast<int>(input_len_samples) *
-        3 / 2;
-    int16_t* resamp_input = new int16_t[max_resamp_len_samples];
-    int resamp_len_samples;
-    EXPECT_EQ(0, rs.Push(input, static_cast<int>(input_len_samples),
-                         resamp_input, max_resamp_len_samples,
-                         resamp_len_samples));
-    EXPECT_EQ(max_resamp_len_samples, resamp_len_samples);
-    int enc_len_bytes =
-        WebRtcOpus_Encode(encoder_, resamp_input, resamp_len_samples,
-                          static_cast<int>(data_length_), output);
+                          uint8_t* output) OVERRIDE {
+    int enc_len_bytes = WebRtcOpus_Encode(encoder_, const_cast<int16_t*>(input),
+        static_cast<int16_t>(input_len_samples),
+        static_cast<int16_t>(data_length_), output);
     EXPECT_GT(enc_len_bytes, 0);
-    delete [] resamp_input;
     return enc_len_bytes;
   }
 
   OpusEncInst* encoder_;
 };
 
-class AudioDecoderOpusStereoTest : public AudioDecoderTest {
+class AudioDecoderOpusStereoTest : public AudioDecoderOpusTest {
  protected:
-  AudioDecoderOpusStereoTest() : AudioDecoderTest() {
+  AudioDecoderOpusStereoTest() : AudioDecoderOpusTest() {
     channels_ = 2;
-    frame_size_ = 320;
-    data_length_ = 10 * frame_size_;
+    WebRtcOpus_EncoderFree(encoder_);
+    delete decoder_;
     decoder_ = new AudioDecoderOpus(kDecoderOpus_2ch);
     assert(decoder_);
     WebRtcOpus_EncoderCreate(&encoder_, 2);
   }
 
-  ~AudioDecoderOpusStereoTest() {
-    WebRtcOpus_EncoderFree(encoder_);
-  }
-
-  virtual void InitEncoder() {}
-
   virtual int EncodeFrame(const int16_t* input, size_t input_len_samples,
-                          uint8_t* output) {
+                          uint8_t* output) OVERRIDE {
     // Create stereo by duplicating each sample in |input|.
     const int input_stereo_samples = static_cast<int>(input_len_samples) * 2;
     int16_t* input_stereo = new int16_t[input_stereo_samples];
     for (size_t i = 0; i < input_len_samples; i++)
       input_stereo[i * 2] = input_stereo[i * 2 + 1] = input[i];
-    // Upsample from 32 to 48 kHz.
-    Resampler rs;
-    rs.Reset(32000, 48000, kResamplerSynchronousStereo);
-    const int max_resamp_len_samples = input_stereo_samples * 3 / 2;
-    int16_t* resamp_input = new int16_t[max_resamp_len_samples];
-    int resamp_len_samples;
-    EXPECT_EQ(0, rs.Push(input_stereo, input_stereo_samples, resamp_input,
-                         max_resamp_len_samples, resamp_len_samples));
-    EXPECT_EQ(max_resamp_len_samples, resamp_len_samples);
-    int enc_len_bytes =
-        WebRtcOpus_Encode(encoder_, resamp_input, resamp_len_samples / 2,
-                          static_cast<int16_t>(data_length_), output);
+
+    int enc_len_bytes = WebRtcOpus_Encode(
+        encoder_, input_stereo, static_cast<int16_t>(input_len_samples),
+        static_cast<int16_t>(data_length_), output);
     EXPECT_GT(enc_len_bytes, 0);
-    delete [] resamp_input;
-    delete [] input_stereo;
+    delete[] input_stereo;
     return enc_len_bytes;
   }
-
-  OpusEncInst* encoder_;
 };
 
 TEST_F(AudioDecoderPcmUTest, EncodeDecode) {
@@ -876,11 +865,11 @@ TEST(AudioDecoder, CodecSampleRateHz) {
   EXPECT_EQ(8000, AudioDecoder::CodecSampleRateHz(kDecoderCNGnb));
   EXPECT_EQ(16000, AudioDecoder::CodecSampleRateHz(kDecoderCNGwb));
   EXPECT_EQ(32000, AudioDecoder::CodecSampleRateHz(kDecoderCNGswb32kHz));
+  EXPECT_EQ(48000, AudioDecoder::CodecSampleRateHz(kDecoderOpus));
+  EXPECT_EQ(48000, AudioDecoder::CodecSampleRateHz(kDecoderOpus_2ch));
   // TODO(tlegrand): Change 32000 to 48000 below once ACM has 48 kHz support.
   EXPECT_EQ(32000, AudioDecoder::CodecSampleRateHz(kDecoderCNGswb48kHz));
   EXPECT_EQ(-1, AudioDecoder::CodecSampleRateHz(kDecoderArbitrary));
-  EXPECT_EQ(32000, AudioDecoder::CodecSampleRateHz(kDecoderOpus));
-  EXPECT_EQ(32000, AudioDecoder::CodecSampleRateHz(kDecoderOpus_2ch));
 #ifdef WEBRTC_CODEC_CELT
   EXPECT_EQ(32000, AudioDecoder::CodecSampleRateHz(kDecoderCELT_32));
   EXPECT_EQ(32000, AudioDecoder::CodecSampleRateHz(kDecoderCELT_32_2ch));

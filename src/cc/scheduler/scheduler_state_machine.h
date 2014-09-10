@@ -16,6 +16,10 @@
 #include "cc/scheduler/scheduler_settings.h"
 
 namespace base {
+namespace debug {
+class ConvertableToTraceForamt;
+class TracedValue;
+}
 class Value;
 }
 
@@ -93,7 +97,7 @@ class CC_EXPORT SchedulerStateMachine {
     ACTION_SEND_BEGIN_MAIN_FRAME,
     ACTION_COMMIT,
     ACTION_UPDATE_VISIBLE_TILES,
-    ACTION_ACTIVATE_PENDING_TREE,
+    ACTION_ACTIVATE_SYNC_TREE,
     ACTION_DRAW_AND_SWAP_IF_POSSIBLE,
     ACTION_DRAW_AND_SWAP_FORCED,
     ACTION_DRAW_AND_SWAP_ABORT,
@@ -102,7 +106,8 @@ class CC_EXPORT SchedulerStateMachine {
   };
   static const char* ActionToString(Action action);
 
-  scoped_ptr<base::Value> AsValue() const;
+  scoped_refptr<base::debug::ConvertableToTraceFormat> AsValue() const;
+  void AsValueInto(base::debug::TracedValue* dict) const;
 
   Action NextAction() const;
   void UpdateState(Action action);
@@ -229,6 +234,8 @@ class CC_EXPORT SchedulerStateMachine {
   void SetContinuousPainting(bool continuous_painting) {
     continuous_painting_ = continuous_painting;
   }
+
+  bool CouldSendBeginMainFrame() const;
 
  protected:
   bool BeginFrameNeededToAnimateOrDraw() const;

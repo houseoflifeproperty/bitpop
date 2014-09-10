@@ -34,6 +34,7 @@
 
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/geometry/FloatPoint.h"
+#include "platform/scroll/ProgrammaticScrollAnimator.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -42,11 +43,10 @@
 static const int kPixelsPerLineStep = 40;
 static const float kMinFractionToStepWhenPaging = 0.875f;
 
-namespace WebCore {
+namespace blink {
 
 struct SameSizeAsScrollableArea {
     virtual ~SameSizeAsScrollableArea();
-    unsigned damageBits : 2;
     IntRect scrollbarDamage[2];
     void* pointer;
     unsigned bitfields : 16;
@@ -72,9 +72,7 @@ int ScrollableArea::maxOverlapBetweenPages()
 }
 
 ScrollableArea::ScrollableArea()
-    : m_hasHorizontalBarDamage(false)
-    , m_hasVerticalBarDamage(false)
-    , m_constrainsScrollingToContentEdge(true)
+    : m_constrainsScrollingToContentEdge(true)
     , m_inLiveResize(false)
     , m_verticalScrollElasticity(ScrollElasticityNone)
     , m_horizontalScrollElasticity(ScrollElasticityNone)
@@ -89,10 +87,24 @@ ScrollableArea::~ScrollableArea()
 
 ScrollAnimator* ScrollableArea::scrollAnimator() const
 {
-    if (!m_scrollAnimator)
-        m_scrollAnimator = ScrollAnimator::create(const_cast<ScrollableArea*>(this));
+    if (!m_animators)
+        m_animators = adoptPtr(new ScrollableAreaAnimators);
 
-    return m_scrollAnimator.get();
+    if (!m_animators->scrollAnimator)
+        m_animators->scrollAnimator = ScrollAnimator::create(const_cast<ScrollableArea*>(this));
+
+    return m_animators->scrollAnimator.get();
+}
+
+ProgrammaticScrollAnimator* ScrollableArea::programmaticScrollAnimator() const
+{
+    if (!m_animators)
+        m_animators = adoptPtr(new ScrollableAreaAnimators);
+
+    if (!m_animators->programmaticScrollAnimator)
+        m_animators->programmaticScrollAnimator = ProgrammaticScrollAnimator::create(const_cast<ScrollableArea*>(this));
+
+    return m_animators->programmaticScrollAnimator.get();
 }
 
 void ScrollableArea::setScrollOrigin(const IntPoint& origin)
@@ -120,6 +132,8 @@ bool ScrollableArea::scroll(ScrollDirection direction, ScrollGranularity granula
     if (!userInputScrollable(orientation))
         return false;
 
+    cancelProgrammaticScrollAnimation();
+
     float step = 0;
     switch (granularity) {
     case ScrollByLine:
@@ -145,6 +159,7 @@ bool ScrollableArea::scroll(ScrollDirection direction, ScrollGranularity granula
 
 void ScrollableArea::scrollToOffsetWithoutAnimation(const FloatPoint& offset)
 {
+    cancelProgrammaticScrollAnimation();
     scrollAnimator()->scrollToOffsetWithoutAnimation(offset);
 }
 
@@ -156,6 +171,13 @@ void ScrollableArea::scrollToOffsetWithoutAnimation(ScrollbarOrientation orienta
         scrollToOffsetWithoutAnimation(FloatPoint(scrollAnimator()->currentPosition().x(), offset));
 }
 
+void ScrollableArea::programmaticallyScrollSmoothlyToOffset(const FloatPoint& offset)
+{
+    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->cancelAnimations();
+    programmaticScrollAnimator()->animateToOffset(offset);
+}
+
 void ScrollableArea::notifyScrollPositionChanged(const IntPoint& position)
 {
     scrollPositionChanged(position);
@@ -164,7 +186,7 @@ void ScrollableArea::notifyScrollPositionChanged(const IntPoint& position)
 
 void ScrollableArea::scrollPositionChanged(const IntPoint& position)
 {
-    TRACE_EVENT0("webkit", "ScrollableArea::scrollPositionChanged");
+    TRACE_EVENT0("blink", "ScrollableArea::scrollPositionChanged");
 
     IntPoint oldPosition = scrollPosition();
     // Tell the derived class to scroll its contents.
@@ -217,6 +239,7 @@ bool ScrollableArea::handleWheelEvent(const PlatformWheelEvent& wheelEvent)
     if (wheelEvent.modifiers() & PlatformEvent::CtrlKey)
         return false;
 
+    cancelProgrammaticScrollAnimation();
     return scrollAnimator()->handleWheelEvent(wheelEvent);
 }
 
@@ -392,10 +415,18 @@ bool ScrollableArea::hasLayerForScrollCorner() const
     return layerForScrollCorner();
 }
 
-void ScrollableArea::serviceScrollAnimations()
+void ScrollableArea::serviceScrollAnimations(double monotonicTime)
 {
     if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
         scrollAnimator->serviceScrollAnimations();
+    if (ProgrammaticScrollAnimator* programmaticScrollAnimator = existingProgrammaticScrollAnimator())
+        programmaticScrollAnimator->tickAnimation(monotonicTime);
+}
+
+void ScrollableArea::cancelProgrammaticScrollAnimation()
+{
+    if (ProgrammaticScrollAnimator* programmaticScrollAnimator = existingProgrammaticScrollAnimator())
+        programmaticScrollAnimator->cancelAnimation();
 }
 
 IntRect ScrollableArea::visibleContentRect(IncludeScrollbarsInRect scrollbarInclusion) const
@@ -445,4 +476,4 @@ float ScrollableArea::pixelStep(ScrollbarOrientation) const
     return 1;
 }
 
-} // namespace WebCore
+} // namespace blink

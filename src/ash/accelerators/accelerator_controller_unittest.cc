@@ -25,12 +25,12 @@
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
 #include "ui/events/event.h"
 #include "ui/events/event_processor.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/widget/widget.h"
 
@@ -133,9 +133,8 @@ class DummyImeControlDelegate : public ImeControlDelegate {
   }
   virtual ~DummyImeControlDelegate() {}
 
-  virtual bool HandleNextIme() OVERRIDE {
+  virtual void HandleNextIme() OVERRIDE {
     ++handle_next_ime_count_;
-    return consume_;
   }
   virtual bool HandlePreviousIme(const ui::Accelerator& accelerator) OVERRIDE {
     ++handle_previous_ime_count_;
@@ -520,7 +519,7 @@ TEST_F(AcceleratorControllerTest, AutoRepeat) {
   TestTarget target_b;
   GetController()->Register(accelerator_b, &target_b);
 
-  aura::test::EventGenerator& generator = GetEventGenerator();
+  ui::test::EventGenerator& generator = GetEventGenerator();
   generator.PressKey(ui::VKEY_A, ui::EF_CONTROL_DOWN);
   generator.ReleaseKey(ui::VKEY_A, ui::EF_CONTROL_DOWN);
 
@@ -555,7 +554,7 @@ TEST_F(AcceleratorControllerTest, AutoRepeat) {
 }
 
 TEST_F(AcceleratorControllerTest, Previous) {
-  aura::test::EventGenerator& generator = GetEventGenerator();
+  ui::test::EventGenerator& generator = GetEventGenerator();
   generator.PressKey(ui::VKEY_VOLUME_MUTE, ui::EF_NONE);
   generator.ReleaseKey(ui::VKEY_VOLUME_MUTE, ui::EF_NONE);
 
@@ -589,7 +588,7 @@ TEST_F(AcceleratorControllerTest, DontRepeatToggleFullscreen) {
   widget->Activate();
   widget->GetNativeView()->SetProperty(aura::client::kCanMaximizeKey, true);
 
-  aura::test::EventGenerator& generator = GetEventGenerator();
+  ui::test::EventGenerator& generator = GetEventGenerator();
   wm::WindowState* window_state = wm::GetWindowState(widget->GetNativeView());
 
   // Toggling not suppressed.
@@ -624,37 +623,37 @@ TEST_F(AcceleratorControllerTest, MAYBE_ProcessOnce) {
       Shell::GetPrimaryRootWindow()->GetHost()->event_processor();
 #if defined(OS_WIN)
   MSG msg1 = { NULL, WM_KEYDOWN, ui::VKEY_A, 0 };
-  ui::KeyEvent key_event1(msg1, false);
+  ui::KeyEvent key_event1(msg1);
   key_event1.SetTranslated(true);
   ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&key_event1);
   EXPECT_TRUE(key_event1.handled() || details.dispatcher_destroyed);
 
   MSG msg2 = { NULL, WM_CHAR, L'A', 0 };
-  ui::KeyEvent key_event2(msg2, true);
+  ui::KeyEvent key_event2(msg2);
   key_event2.SetTranslated(true);
   details = dispatcher->OnEventFromSource(&key_event2);
   EXPECT_FALSE(key_event2.handled() || details.dispatcher_destroyed);
 
   MSG msg3 = { NULL, WM_KEYUP, ui::VKEY_A, 0 };
-  ui::KeyEvent key_event3(msg3, false);
+  ui::KeyEvent key_event3(msg3);
   key_event3.SetTranslated(true);
   details = dispatcher->OnEventFromSource(&key_event3);
   EXPECT_FALSE(key_event3.handled() || details.dispatcher_destroyed);
 #elif defined(USE_X11)
   ui::ScopedXI2Event key_event;
   key_event.InitKeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_A, 0);
-  ui::KeyEvent key_event1(key_event, false);
+  ui::KeyEvent key_event1(key_event);
   key_event1.SetTranslated(true);
   ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&key_event1);
   EXPECT_TRUE(key_event1.handled() || details.dispatcher_destroyed);
 
-  ui::KeyEvent key_event2(key_event, true);
+  ui::KeyEvent key_event2('A', ui::VKEY_A, ui::EF_NONE);
   key_event2.SetTranslated(true);
   details = dispatcher->OnEventFromSource(&key_event2);
   EXPECT_FALSE(key_event2.handled() || details.dispatcher_destroyed);
 
   key_event.InitKeyEvent(ui::ET_KEY_RELEASED, ui::VKEY_A, 0);
-  ui::KeyEvent key_event3(key_event, false);
+  ui::KeyEvent key_event3(key_event);
   key_event3.SetTranslated(true);
   details = dispatcher->OnEventFromSource(&key_event3);
   EXPECT_FALSE(key_event3.handled() || details.dispatcher_destroyed);
@@ -959,10 +958,10 @@ TEST_F(AcceleratorControllerTest, ImeGlobalAccelerators) {
         scoped_ptr<ImeControlDelegate>(delegate).Pass());
     EXPECT_EQ(0, delegate->handle_next_ime_count());
     EXPECT_FALSE(GetController()->Process(shift_alt_press));
-    EXPECT_TRUE(GetController()->Process(shift_alt));
+    EXPECT_FALSE(GetController()->Process(shift_alt));
     EXPECT_EQ(1, delegate->handle_next_ime_count());
     EXPECT_FALSE(GetController()->Process(alt_shift_press));
-    EXPECT_TRUE(GetController()->Process(alt_shift));
+    EXPECT_FALSE(GetController()->Process(alt_shift));
     EXPECT_EQ(2, delegate->handle_next_ime_count());
 
     // We should NOT switch IME when e.g. Shift+Alt+X is pressed and X is
@@ -991,7 +990,7 @@ TEST_F(AcceleratorControllerTest, ImeGlobalAccelerators) {
     EXPECT_FALSE(GetController()->Process(shift_alt_press));
     EXPECT_FALSE(GetController()->Process(shift_alt_return_press));
     EXPECT_FALSE(GetController()->Process(shift_alt_return));
-    EXPECT_TRUE(GetController()->Process(shift_alt));
+    EXPECT_FALSE(GetController()->Process(shift_alt));
     EXPECT_EQ(3, delegate->handle_next_ime_count());
 
     const ui::Accelerator shift_alt_space_press(
@@ -1004,7 +1003,7 @@ TEST_F(AcceleratorControllerTest, ImeGlobalAccelerators) {
     EXPECT_FALSE(GetController()->Process(shift_alt_press));
     EXPECT_FALSE(GetController()->Process(shift_alt_space_press));
     EXPECT_FALSE(GetController()->Process(shift_alt_space));
-    EXPECT_TRUE(GetController()->Process(shift_alt));
+    EXPECT_FALSE(GetController()->Process(shift_alt));
     EXPECT_EQ(4, delegate->handle_next_ime_count());
   }
 
@@ -1021,10 +1020,10 @@ TEST_F(AcceleratorControllerTest, ImeGlobalAccelerators) {
         scoped_ptr<ImeControlDelegate>(delegate).Pass());
     EXPECT_EQ(0, delegate->handle_next_ime_count());
     EXPECT_FALSE(GetController()->Process(shift_alt_press));
-    EXPECT_TRUE(GetController()->Process(shift_alt));
+    EXPECT_FALSE(GetController()->Process(shift_alt));
     EXPECT_EQ(1, delegate->handle_next_ime_count());
     EXPECT_FALSE(GetController()->Process(alt_shift_press));
-    EXPECT_TRUE(GetController()->Process(alt_shift));
+    EXPECT_FALSE(GetController()->Process(alt_shift));
     EXPECT_EQ(2, delegate->handle_next_ime_count());
 
     // We should NOT switch IME when e.g. Shift+Alt+X is pressed and X is
@@ -1231,18 +1230,20 @@ TEST_F(AcceleratorControllerTest, DisallowedWithNoWindow) {
   }
 
   // Make sure we don't alert if we do have a window.
-  scoped_ptr<aura::Window> window(
-      CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
-  wm::ActivateWindow(window.get());
+  scoped_ptr<aura::Window> window;
   for (size_t i = 0; i < kActionsNeedingWindowLength; ++i) {
+    window.reset(CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
+    wm::ActivateWindow(window.get());
     delegate->TriggerAccessibilityAlert(A11Y_ALERT_NONE);
     GetController()->PerformAction(kActionsNeedingWindow[i], dummy);
     EXPECT_NE(delegate->GetLastAccessibilityAlert(), A11Y_ALERT_WINDOW_NEEDED);
   }
 
   // Don't alert if we have a minimized window either.
-  GetController()->PerformAction(WINDOW_MINIMIZE, dummy);
   for (size_t i = 0; i < kActionsNeedingWindowLength; ++i) {
+    window.reset(CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
+    wm::ActivateWindow(window.get());
+    GetController()->PerformAction(WINDOW_MINIMIZE, dummy);
     delegate->TriggerAccessibilityAlert(A11Y_ALERT_NONE);
     GetController()->PerformAction(kActionsNeedingWindow[i], dummy);
     EXPECT_NE(delegate->GetLastAccessibilityAlert(), A11Y_ALERT_WINDOW_NEEDED);

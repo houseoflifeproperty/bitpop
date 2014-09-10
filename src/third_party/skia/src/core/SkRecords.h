@@ -9,6 +9,21 @@
 #define SkRecords_DEFINED
 
 #include "SkCanvas.h"
+#include "SkPicture.h"
+
+class SkPictureBox {
+public:
+    SkPictureBox(const SkPicture* obj) : fObj(SkRef(obj)) {}
+    ~SkPictureBox() { fObj->unref(); }
+
+    operator const SkPicture*() const { return fObj; }
+
+private:
+    SkPictureBox(const SkPictureBox&);
+    SkPictureBox& operator=(const SkPictureBox&);
+
+    const SkPicture* fObj;
+};
 
 namespace SkRecords {
 
@@ -29,7 +44,6 @@ namespace SkRecords {
     M(SaveLayer)                                                    \
     M(PushCull)                                                     \
     M(PopCull)                                                      \
-    M(PairedPushCull)         /*From SkRecordAnnotateCullingPairs*/ \
     M(Concat)                                                       \
     M(SetMatrix)                                                    \
     M(ClipPath)                                                     \
@@ -45,6 +59,8 @@ namespace SkRecords {
     M(DrawOval)                                                     \
     M(DrawPaint)                                                    \
     M(DrawPath)                                                     \
+    M(DrawPatch)                                                    \
+    M(DrawPicture)                                                  \
     M(DrawPoints)                                                   \
     M(DrawPosText)                                                  \
     M(DrawPosTextH)                                                 \
@@ -53,8 +69,7 @@ namespace SkRecords {
     M(DrawSprite)                                                   \
     M(DrawText)                                                     \
     M(DrawTextOnPath)                                               \
-    M(DrawVertices)                                                 \
-    M(BoundedDrawPosTextH)    /*From SkRecordBoundDrawPosTextH*/
+    M(DrawVertices)
 
 // Defines SkRecords::Type, an enum of all record types.
 #define ENUM(T) T##_Type,
@@ -182,8 +197,8 @@ private:
 
 RECORD0(NoOp);
 
-RECORD0(Restore);
-RECORD1(Save, SkCanvas::SaveFlags, flags);
+RECORD1(Restore, SkMatrix, matrix);
+RECORD0(Save);
 RECORD3(SaveLayer, Optional<SkRect>, bounds, Optional<SkPaint>, paint, SkCanvas::SaveFlags, flags);
 
 RECORD1(PushCull, SkRect, rect);
@@ -217,6 +232,8 @@ RECORD3(DrawDRRect, SkPaint, paint, SkRRect, outer, SkRRect, inner);
 RECORD2(DrawOval, SkPaint, paint, SkRect, oval);
 RECORD1(DrawPaint, SkPaint, paint);
 RECORD2(DrawPath, SkPaint, paint, SkPath, path);
+//RECORD2(DrawPatch, SkPaint, paint, SkPatch, patch);
+RECORD3(DrawPicture, Optional<SkPaint>, paint, SkPictureBox, picture, Optional<SkMatrix>, matrix);
 RECORD4(DrawPoints, SkPaint, paint, SkCanvas::PointMode, mode, size_t, count, SkPoint*, pts);
 RECORD4(DrawPosText, SkPaint, paint,
                      PODArray<char>, text,
@@ -275,9 +292,23 @@ struct DrawVertices {
     int indexCount;
 };
 
-// Records added by optimizations.
-RECORD2(PairedPushCull, Adopted<PushCull>, base, unsigned, skip);
-RECORD3(BoundedDrawPosTextH, Adopted<DrawPosTextH>, base, SkScalar, minY, SkScalar, maxY);
+struct DrawPatch {
+    static const Type kType = DrawPatch_Type;
+
+    DrawPatch(const SkPaint& paint, SkPoint cubics[12], SkColor colors[4],
+              SkPoint texCoords[4], SkXfermode* xmode)
+    : paint(paint)
+    , cubics(cubics)
+    , colors(colors)
+    , texCoords(texCoords)
+    , xmode(SkSafeRef(xmode)) { }
+
+    SkPaint paint;
+    PODArray<SkPoint> cubics;
+    PODArray<SkColor> colors;
+    PODArray<SkPoint> texCoords;
+    SkAutoTUnref<SkXfermode> xmode;
+};
 
 #undef RECORD0
 #undef RECORD1

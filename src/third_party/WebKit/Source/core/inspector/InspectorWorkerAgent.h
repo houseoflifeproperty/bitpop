@@ -35,7 +35,7 @@
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 
-namespace WebCore {
+namespace blink {
 class InspectorFrontend;
 class InstrumentingAgents;
 class JSONObject;
@@ -46,7 +46,7 @@ typedef String ErrorString;
 
 class InspectorWorkerAgent FINAL : public InspectorBaseAgent<InspectorWorkerAgent>, public InspectorBackendDispatcher::WorkerCommandHandler {
 public:
-    static PassOwnPtr<InspectorWorkerAgent> create();
+    static PassOwnPtrWillBeRawPtr<InspectorWorkerAgent> create();
     virtual ~InspectorWorkerAgent();
 
     virtual void init() OVERRIDE;
@@ -68,6 +68,8 @@ public:
     virtual void sendMessageToWorker(ErrorString*, int workerId, const RefPtr<JSONObject>& message) OVERRIDE;
     virtual void setAutoconnectToWorkers(ErrorString*, bool value) OVERRIDE;
 
+    void setTracingSessionId(const String&);
+
 private:
     InspectorWorkerAgent();
     void createWorkerFrontendChannelsForExistingWorkers();
@@ -81,8 +83,9 @@ private:
     WorkerChannels m_idToChannel;
     typedef HashMap<WorkerGlobalScopeProxy*, String> DedicatedWorkers;
     DedicatedWorkers m_dedicatedWorkers;
+    String m_tracingSessionId;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InspectorWorkerAgent_h)

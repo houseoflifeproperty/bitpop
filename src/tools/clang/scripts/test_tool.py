@@ -45,9 +45,9 @@ def main(argv):
                                   'compile_commands.json')
   source_files = glob.glob(os.path.join(test_directory_for_tool,
                                         '*-original.cc'))
-  actual_files = ['-'.join([source_file.rsplit('-', 2)[0], 'actual.cc'])
+  actual_files = ['-'.join([source_file.rsplit('-', 1)[0], 'actual.cc'])
                   for source_file in source_files]
-  expected_files = ['-'.join([source_file.rsplit('-', 2)[0], 'expected.cc'])
+  expected_files = ['-'.join([source_file.rsplit('-', 1)[0], 'expected.cc'])
                     for source_file in source_files]
   include_paths = []
   include_paths.append(
@@ -87,12 +87,12 @@ def main(argv):
       with open(actual, 'r') as f:
         actual_output = f.readlines()
       if actual_output != expected_output:
-        print '[  FAILED  ] %s' % os.path.relpath(actual)
         failed += 1
         for line in difflib.unified_diff(expected_output, actual_output,
                                          fromfile=os.path.relpath(expected),
                                          tofile=os.path.relpath(actual)):
           sys.stdout.write(line)
+        print '[  FAILED  ] %s' % os.path.relpath(actual)
         # Don't clean up the file on failure, so the results can be referenced
         # more easily.
         continue

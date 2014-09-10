@@ -96,7 +96,7 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
 
   void HoldBlobDataHandle(
       const std::string& uuid,
-      scoped_ptr<webkit_blob::BlobDataHandle>& blob_data_handle);
+      scoped_ptr<webkit_blob::BlobDataHandle> blob_data_handle);
   void DropBlobDataHandle(const std::string& uuid);
 
  private:
@@ -188,6 +188,7 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     void OnCreateTransaction(
         const IndexedDBHostMsg_DatabaseCreateTransaction_Params&);
     void OnClose(int32 ipc_database_id);
+    void OnVersionChangeIgnored(int32 ipc_database_id);
     void OnDestroyed(int32 ipc_database_id);
 
     void OnGet(const IndexedDBHostMsg_DatabaseGet_Params& params);

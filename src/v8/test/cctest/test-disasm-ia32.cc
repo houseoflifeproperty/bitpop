@@ -168,6 +168,11 @@ TEST(DisasmIa320) {
 
   __ nop();
   __ idiv(edx);
+  __ idiv(Operand(edx, ecx, times_1, 1));
+  __ idiv(Operand(esp, 12));
+  __ div(edx);
+  __ div(Operand(edx, ecx, times_1, 1));
+  __ div(Operand(esp, 12));
   __ mul(edx);
   __ neg(edx);
   __ not_(edx);
@@ -175,7 +180,9 @@ TEST(DisasmIa320) {
 
   __ imul(edx, Operand(ebx, ecx, times_4, 10000));
   __ imul(edx, ecx, 12);
+  __ imul(edx, Operand(edx, eax, times_2, 42), 8);
   __ imul(edx, ecx, 1000);
+  __ imul(edx, Operand(ebx, ecx, times_4, 1), 9000);
 
   __ inc(edx);
   __ inc(Operand(ebx, ecx, times_4, 10000));
@@ -197,15 +204,24 @@ TEST(DisasmIa320) {
   __ sar(edx, 1);
   __ sar(edx, 6);
   __ sar_cl(edx);
+  __ sar(Operand(ebx, ecx, times_4, 10000), 1);
+  __ sar(Operand(ebx, ecx, times_4, 10000), 6);
+  __ sar_cl(Operand(ebx, ecx, times_4, 10000));
   __ sbb(edx, Operand(ebx, ecx, times_4, 10000));
   __ shld(edx, Operand(ebx, ecx, times_4, 10000));
   __ shl(edx, 1);
   __ shl(edx, 6);
   __ shl_cl(edx);
+  __ shl(Operand(ebx, ecx, times_4, 10000), 1);
+  __ shl(Operand(ebx, ecx, times_4, 10000), 6);
+  __ shl_cl(Operand(ebx, ecx, times_4, 10000));
   __ shrd(edx, Operand(ebx, ecx, times_4, 10000));
   __ shr(edx, 1);
   __ shr(edx, 7);
   __ shr_cl(edx);
+  __ shr(Operand(ebx, ecx, times_4, 10000), 1);
+  __ shr(Operand(ebx, ecx, times_4, 10000), 6);
+  __ shr_cl(Operand(ebx, ecx, times_4, 10000));
 
 
   // Immediates
@@ -441,6 +457,14 @@ TEST(DisasmIa320) {
     }
   }
 
+  // xchg.
+  {
+    __ xchg(eax, eax);
+    __ xchg(eax, ebx);
+    __ xchg(ebx, ebx);
+    __ xchg(ebx, Operand(esp, 12));
+  }
+
   // Nop instructions
   for (int i = 0; i < 16; i++) {
     __ Nop(i);
@@ -454,7 +478,8 @@ TEST(DisasmIa320) {
       desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
   USE(code);
 #ifdef OBJECT_PRINT
-  code->Print();
+  OFStream os(stdout);
+  code->Print(os);
   byte* begin = code->instruction_start();
   byte* end = begin + code->instruction_size();
   disasm::Disassembler::Disassemble(stdout, begin, end);

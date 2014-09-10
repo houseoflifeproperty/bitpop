@@ -36,13 +36,14 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
-#include "core/fileapi/Stream.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/loader/ThreadableLoader.h"
+#include "core/streams/Stream.h"
 #include "platform/blob/BlobRegistry.h"
 #include "platform/blob/BlobURL.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
+#include "public/platform/WebURLRequest.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -50,7 +51,7 @@
 #include "wtf/text/Base64.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 FileReaderLoader::FileReaderLoader(ReadType readType, FileReaderLoaderClient* client)
     : m_readType(readType)
@@ -98,6 +99,10 @@ void FileReaderLoader::startInternal(ExecutionContext& executionContext, const S
 
     // Construct and load the request.
     ResourceRequest request(m_urlForReading);
+
+    // FIXME: Should this really be 'internal'? Do we know anything about the actual request that generated this fetch?
+    request.setRequestContext(WebURLRequest::RequestContextInternal);
+
     request.setHTTPMethod("GET");
     if (m_hasRange)
         request.setHTTPHeaderField("Range", AtomicString(String::format("bytes=%d-%d", m_rangeStart, m_rangeEnd)));
@@ -401,4 +406,4 @@ void FileReaderLoader::setEncoding(const String& encoding)
         m_encoding = WTF::TextEncoding(encoding);
 }
 
-} // namespace WebCore
+} // namespace blink

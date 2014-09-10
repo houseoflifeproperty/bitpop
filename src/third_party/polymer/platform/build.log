@@ -1,43 +1,39 @@
 BUILD LOG
 ---------
-Build Time: 2014-03-31T15:34:53
+Build Time: 2014-08-07T17:12:14
 
 NODEJS INFORMATION
 ==================
-nodejs: v0.10.26
-grunt: 0.4.4
+nodejs: v0.10.28
 chai: 1.9.1
+grunt: 0.4.4
 grunt-audit: 0.0.3
 grunt-concat-sourcemap: 0.4.1
 grunt-contrib-concat: 0.4.0
-grunt-contrib-uglify: 0.3.3
-grunt-karma: 0.8.2
+grunt-contrib-uglify: 0.5.0
 grunt-contrib-yuidoc: 0.5.2
-karma: 0.12.2
-karma-chrome-launcher: 0.0.2
+grunt-karma: 0.8.3
+karma: 0.12.14
 karma-crbot-reporter: 0.0.4
 karma-firefox-launcher: 0.1.3
+karma-ie-launcher: 0.1.5
+karma-mocha: 0.1.4
 karma-safari-launcher: 0.1.1
 karma-script-launcher: 0.1.0
-karma-ie-launcher: 0.1.3
-karma-mocha: 0.1.3
-mocha: 1.18.2
-Platform: 0.2.2
+mocha: 1.20.1
+Platform: 0.3.5
 
 REPO REVISIONS
 ==============
-CustomElements: 9b997ca97533147f5f17bd666c06e5fa1a13219e
-HTMLImports: 5f44b337ef6508271dd594f1ec086fac2be3cb0c
-NodeBind: b040e791f573b04cf06fdbc7d407712d46f4fca6
-PointerEvents: 86c341c7ef946dc295cb93a2b5ebebde69dbdcb7
-PointerGestures: e5ec43dcef5a20d789c7e4c09dd206cdb6664a27
-ShadowDOM: d7629dd67e2a48b34e5d497c34fdfe54c72c35b9
-TemplateBinding: 9dc4c42334b00716cec2826cb17dda6044c4aeb4
-WeakMap: a0947a9a0f58f5733f464755c3b86de624b00a5d
-observe-js: 5db3ef588f3fdca7d44cdd24e3bf59b6d547b8c0
-platform: 30b5e4614660c3f1339fb6773c23f47535900242
-polymer-expressions: 1749343a75fc3aa84d691f14c4582a6d1a7f39f1
+CustomElements: 7fb280cb30f9fe26ed60c0fdb75a1eebe4c9dab1
+HTMLImports: fe9a92700b7a0bc7a9d582f4767ab23ec195a423
+NodeBind: c47bc1b40d1cf0123b29620820a7111471e83ff3
+ShadowDOM: c4da63735ba6c00a7d6af5c1b118f84bd6a2e114
+TemplateBinding: f11e2e7faa074f54e711f5abb40e278f3005500d
+WeakMap: 6662df5cb7146707238b08e7a65cf70056ae516a
+observe-js: 08b8dfa21bf49d9ac60bc495e77a0bfa57f84cde
+platform-dev: e1453ea29013959ee3e1f893eaf97806629631dc
 
 BUILD HASHES
 ============
-build/platform.js: 2eb50ab8a0c5876401f9aac645aa1a96344da31b
+build/platform.js: d4d1dc11321913bf930bb5109da0b5ed434c0a00

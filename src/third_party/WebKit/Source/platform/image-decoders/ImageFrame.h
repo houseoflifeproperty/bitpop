@@ -33,7 +33,7 @@
 #include "wtf/Assertions.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 // ImageFrame represents the decoded image data.  This buffer is what all
 // decoders write a single frame into.
@@ -128,7 +128,7 @@ public:
         ASSERT(m_requiredPreviousFrameIndexValid);
         return m_requiredPreviousFrameIndex;
     }
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     bool requiredPreviousFrameIndexValid() const { return m_requiredPreviousFrameIndexValid; }
 #endif
     void setHasAlpha(bool alpha);
@@ -147,7 +147,7 @@ public:
     void setRequiredPreviousFrameIndex(size_t previousFrameIndex)
     {
         m_requiredPreviousFrameIndex = previousFrameIndex;
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
         m_requiredPreviousFrameIndexValid = true;
 #endif
     }
@@ -234,11 +234,11 @@ private:
     // This is used by ImageDecoder::clearCacheExceptFrame(), and will never
     // be read for image formats that do not have multiple frames.
     size_t m_requiredPreviousFrameIndex;
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     bool m_requiredPreviousFrameIndexValid;
 #endif
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

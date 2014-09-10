@@ -28,9 +28,9 @@ struct ServiceWorkerProviderContextDeleter;
 class ThreadSafeSender;
 
 // An instance of this class holds document-related information (e.g.
-// .current). Created and destructed on the main thread.
+// .controller). Created and destructed on the main thread.
 // TODO(kinuko): To support navigator.serviceWorker in dedicated workers
-// this needs to be RefCountedThreadSafe and .current info needs to be
+// this needs to be RefCountedThreadSafe and .controller info needs to be
 // handled in a thread-safe manner (e.g. by a lock etc).
 class ServiceWorkerProviderContext
     : public base::RefCounted<ServiceWorkerProviderContext> {
@@ -40,27 +40,41 @@ class ServiceWorkerProviderContext
   // Called from ServiceWorkerDispatcher.
   void OnServiceWorkerStateChanged(int handle_id,
                                    blink::WebServiceWorkerState state);
+  void OnSetInstallingServiceWorker(int provider_id,
+                                    const ServiceWorkerObjectInfo& info);
   void OnSetWaitingServiceWorker(int provider_id,
                                  const ServiceWorkerObjectInfo& info);
-  void OnSetCurrentServiceWorker(int provider_id,
-                                 const ServiceWorkerObjectInfo& info);
+  void OnSetActiveServiceWorker(int provider_id,
+                                const ServiceWorkerObjectInfo& info);
+  void OnSetControllerServiceWorker(int provider_id,
+                                    const ServiceWorkerObjectInfo& info);
 
   int provider_id() const { return provider_id_; }
 
+  ServiceWorkerHandleReference* installing();
   ServiceWorkerHandleReference* waiting();
-  // Gets the context's handle reference for .controller.
-  // TODO(dominicc): Rename this to "controller".
-  ServiceWorkerHandleReference* current();
+  ServiceWorkerHandleReference* active();
+  ServiceWorkerHandleReference* controller();
 
-  // Gets the handle ID of the controller, or
-  // kInvalidServiceWorkerHandleId if the provider is not controlled
-  // by a Service Worker.
-  int current_handle_id() const;
+  // Gets the handle ID of the installing Service Worker, or
+  // kInvalidServiceWorkerHandleId if the provider does not have a
+  // installing Service Worker.
+  int installing_handle_id() const;
 
   // Gets the handle ID of the waiting Service Worker, or
   // kInvalidServiceWorkerHandleId if the provider does not have a
   // waiting Service Worker.
   int waiting_handle_id() const;
+
+  // Gets the handle ID of the active Service Worker, or
+  // kInvalidServiceWorkerHandleId if the provider does not have an active
+  // Service Worker.
+  int active_handle_id() const;
+
+  // Gets the handle ID of the controller Service Worker, or
+  // kInvalidServiceWorkerHandleId if the provider is not controlled
+  // by a Service Worker.
+  int controller_handle_id() const;
 
  private:
   friend class base::RefCounted<ServiceWorkerProviderContext>;
@@ -69,8 +83,10 @@ class ServiceWorkerProviderContext
   const int provider_id_;
   scoped_refptr<base::MessageLoopProxy> main_thread_loop_proxy_;
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
+  scoped_ptr<ServiceWorkerHandleReference> installing_;
   scoped_ptr<ServiceWorkerHandleReference> waiting_;
-  scoped_ptr<ServiceWorkerHandleReference> current_;
+  scoped_ptr<ServiceWorkerHandleReference> active_;
+  scoped_ptr<ServiceWorkerHandleReference> controller_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerProviderContext);
 };

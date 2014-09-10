@@ -519,8 +519,10 @@ void SkDebugCanvas::drawPath(const SkPath& path, const SkPaint& paint) {
     this->addDrawCommand(new SkDrawPathCommand(path, paint));
 }
 
-void SkDebugCanvas::onDrawPicture(const SkPicture* picture) {
-    this->addDrawCommand(new SkDrawPictureCommand(picture));
+void SkDebugCanvas::onDrawPicture(const SkPicture* picture, 
+                                  const SkMatrix* matrix, 
+                                  const SkPaint* paint) {
+    this->addDrawCommand(new SkDrawPictureCommand(picture, matrix, paint));
 }
 
 void SkDebugCanvas::drawPoints(PointMode mode, size_t count,
@@ -590,9 +592,9 @@ void SkDebugCanvas::willRestore() {
     this->INHERITED::willRestore();
 }
 
-void SkDebugCanvas::willSave(SaveFlags flags) {
-    this->addDrawCommand(new SkSaveCommand(flags));
-    this->INHERITED::willSave(flags);
+void SkDebugCanvas::willSave() {
+    this->addDrawCommand(new SkSaveCommand());
+    this->INHERITED::willSave();
 }
 
 SkCanvas::SaveLayerStrategy SkDebugCanvas::willSaveLayer(const SkRect* bounds, const SkPaint* paint,

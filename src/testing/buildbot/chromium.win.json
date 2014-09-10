@@ -21,12 +21,12 @@
       "sbox_validation_tests",
       {"test": "browser_tests", "shard_index": 0, "total_shards": 3},
       "content_browsertests",
-      "installer_util_unittests",
-      "webkit_compositor_bindings_unittests"
+      "installer_util_unittests"
     ]
   },
   "XP Tests (2)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "base_unittests",
       "net_unittests",
       "views_unittests",
@@ -77,12 +77,12 @@
       "sbox_validation_tests",
       {"test": "browser_tests", "shard_index": 0, "total_shards": 3},
       "content_browsertests",
-      "installer_util_unittests",
-      "webkit_compositor_bindings_unittests"
+      "installer_util_unittests"
     ]
   },
   "Vista Tests (2)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "base_unittests",
       "net_unittests",
       "views_unittests",
@@ -108,7 +108,8 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_service_manager_unittests",
+      "mojo_application_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       "mojo_view_manager_unittests",
       "sync_unit_tests",
@@ -130,6 +131,7 @@
       "chromedriver_unittests",
       "courgette_unittests",
       "crypto_unittests",
+      "extensions_unittests",
       "gfx_unittests",
       "gpu_unittests",
       "url_unittests",
@@ -143,12 +145,12 @@
       "sbox_validation_tests",
       {"test": "browser_tests", "shard_index": 0, "total_shards": 3},
       "content_browsertests",
-      "installer_util_unittests",
-      "webkit_compositor_bindings_unittests"
+      "installer_util_unittests"
     ]
   },
   "Win7 Tests (2)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "base_unittests",
       "net_unittests",
       "views_unittests",
@@ -174,7 +176,8 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_service_manager_unittests",
+      "mojo_application_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       "mojo_view_manager_unittests",
       "sync_unit_tests",
@@ -209,12 +212,12 @@
       "sbox_integration_tests",
       {"test": "browser_tests", "shard_index": 0, "total_shards": 3},
       "content_browsertests",
-      "installer_util_unittests",
-      "webkit_compositor_bindings_unittests"
+      "installer_util_unittests"
     ]
   },
   "Win 7 Tests x64 (2)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "base_unittests",
       "chrome_elf_unittests",
       "net_unittests",
@@ -238,7 +241,8 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_service_manager_unittests",
+      "mojo_application_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       "mojo_view_manager_unittests",
       "sync_unit_tests",
@@ -249,6 +253,7 @@
   },
   "Win7 Tests (dbg)(1)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "base_unittests",
       "cacheinvalidation_unittests",
       "cast_unittests",
@@ -278,8 +283,7 @@
       "content_unittests",
       "views_unittests",
       "wm_unittests",
-      "installer_util_unittests",
-      "webkit_compositor_bindings_unittests"
+      "installer_util_unittests"
     ]
   },
   "Win7 Tests (dbg)(2)": {
@@ -306,7 +310,8 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_service_manager_unittests",
+      "mojo_application_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       "mojo_view_manager_unittests",
       {"test": "browser_tests", "shard_index": 2, "total_shards": 5}

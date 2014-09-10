@@ -14,12 +14,13 @@
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 namespace mojo {
-namespace view_manager {
 namespace service {
 
 ContextFactoryImpl::ContextFactoryImpl(
     ScopedMessagePipeHandle command_buffer_handle)
-    : command_buffer_handle_(command_buffer_handle.Pass()) {
+    : command_buffer_handle_(command_buffer_handle.Pass()),
+      did_create_(false) {
+  DCHECK(command_buffer_handle_.is_valid());
 }
 
 ContextFactoryImpl::~ContextFactoryImpl() {
@@ -27,6 +28,9 @@ ContextFactoryImpl::~ContextFactoryImpl() {
 
 scoped_ptr<cc::OutputSurface> ContextFactoryImpl::CreateOutputSurface(
     ui::Compositor* compositor, bool software_fallback) {
+  DCHECK(!did_create_);
+  did_create_ = true;
+  DCHECK(command_buffer_handle_.is_valid());
   return make_scoped_ptr(
       new cc::OutputSurface(
           new ContextProviderMojo(command_buffer_handle_.Pass())));
@@ -71,5 +75,4 @@ base::MessageLoopProxy* ContextFactoryImpl::GetCompositorMessageLoop() {
 }
 
 }  // namespace service
-}  // namespace view_manager
 }  // namespace mojo

@@ -36,6 +36,7 @@
 #include "remoting/base/constants.h"
 #include "remoting/base/logging.h"
 #include "remoting/base/rsa_key_pair.h"
+#include "remoting/base/service_urls.h"
 #include "remoting/base/util.h"
 #include "remoting/host/branding.h"
 #include "remoting/host/chromoting_host.h"
@@ -52,27 +53,28 @@
 #include "remoting/host/host_event_logger.h"
 #include "remoting/host/host_exit_codes.h"
 #include "remoting/host/host_main.h"
+#include "remoting/host/host_status_logger.h"
 #include "remoting/host/host_status_sender.h"
 #include "remoting/host/ipc_constants.h"
 #include "remoting/host/ipc_desktop_environment.h"
 #include "remoting/host/ipc_host_event_logger.h"
 #include "remoting/host/json_host_config.h"
-#include "remoting/host/log_to_server.h"
 #include "remoting/host/logging.h"
 #include "remoting/host/me2me_desktop_environment.h"
 #include "remoting/host/pairing_registry_delegate.h"
 #include "remoting/host/policy_hack/policy_watcher.h"
-#include "remoting/host/service_urls.h"
 #include "remoting/host/session_manager_factory.h"
 #include "remoting/host/signaling_connector.h"
+#include "remoting/host/single_window_desktop_environment.h"
 #include "remoting/host/token_validator_factory_impl.h"
 #include "remoting/host/usage_stats_consent.h"
 #include "remoting/host/username.h"
-#include "remoting/jingle_glue/network_settings.h"
-#include "remoting/jingle_glue/xmpp_signal_strategy.h"
+#include "remoting/host/video_frame_recorder_host_extension.h"
 #include "remoting/protocol/me2me_host_authenticator_factory.h"
+#include "remoting/protocol/network_settings.h"
 #include "remoting/protocol/pairing_registry.h"
 #include "remoting/protocol/token_validator.h"
+#include "remoting/signaling/xmpp_signal_strategy.h"
 
 #if defined(OS_POSIX)
 #include <signal.h>
@@ -99,7 +101,9 @@
 #include "remoting/host/pairing_registry_delegate_win.h"
 #include "remoting/host/win/session_desktop_environment.h"
 #endif  // defined(OS_WIN)
+
 using remoting::protocol::PairingRegistry;
+using remoting::protocol::NetworkSettings;
 
 namespace {
 
@@ -123,9 +127,14 @@ const char kSignalParentSwitchName[] = "signal-parent";
 // Command line switch used to enable VP9 encoding.
 const char kEnableVp9SwitchName[] = "enable-vp9";
 
+// Command line switch used to enable and configure the frame-recorder.
+const char kFrameRecorderBufferKbName[] = "frame-recorder-buffer-kb";
+
 // Value used for --host-config option to indicate that the path must be read
 // from stdin.
 const char kStdinConfigPath[] = "-";
+
+const char kWindowIdSwitchName[] = "window-id";
 
 }  // namespace
 
@@ -287,6 +296,7 @@ class HostProcess
   std::string host_owner_;
   bool use_service_account_;
   bool enable_vp9_;
+  int64_t frame_recorder_buffer_size_;
 
   scoped_ptr<policy_hack::PolicyWatcher> policy_watcher_;
   std::string host_domain_;
@@ -302,13 +312,20 @@ class HostProcess
   ThirdPartyAuthConfig third_party_auth_config_;
   bool enable_gnubby_auth_;
 
+  // Boolean to change flow, where ncessary, if we're
+  // capturing a window instead of the entire desktop.
+  bool enable_window_capture_;
+
+  // Used to specify which window to stream, if enabled.
+  webrtc::WindowId window_id_;
+
   scoped_ptr<OAuthTokenGetter> oauth_token_getter_;
   scoped_ptr<XmppSignalStrategy> signal_strategy_;
   scoped_ptr<SignalingConnector> signaling_connector_;
   scoped_ptr<HeartbeatSender> heartbeat_sender_;
   scoped_ptr<HostStatusSender> host_status_sender_;
   scoped_ptr<HostChangeNotificationListener> host_change_notification_listener_;
-  scoped_ptr<LogToServer> log_to_server_;
+  scoped_ptr<HostStatusLogger> host_status_logger_;
   scoped_ptr<HostEventLogger> host_event_logger_;
 
   scoped_ptr<ChromotingHost> host_;
@@ -332,6 +349,7 @@ HostProcess::HostProcess(scoped_ptr<ChromotingHostContext> context,
       state_(HOST_INITIALIZING),
       use_service_account_(false),
       enable_vp9_(false),
+      frame_recorder_buffer_size_(0),
       host_username_match_required_(false),
       allow_nat_traversal_(true),
       allow_relay_(true),
@@ -340,6 +358,8 @@ HostProcess::HostProcess(scoped_ptr<ChromotingHostContext> context,
       allow_pairing_(true),
       curtain_required_(false),
       enable_gnubby_auth_(false),
+      enable_window_capture_(false),
+      window_id_(0),
 #if defined(REMOTING_MULTI_PROCESS)
       desktop_session_connector_(NULL),
 #endif  // defined(REMOTING_MULTI_PROCESS)
@@ -446,6 +466,26 @@ bool HostProcess::InitWithCommandLine(const base::CommandLine* cmd_line) {
 
   signal_parent_ = cmd_line->HasSwitch(kSignalParentSwitchName);
 
+  enable_window_capture_ = cmd_line->HasSwitch(kWindowIdSwitchName);
+  if (enable_window_capture_) {
+
+#if defined(OS_LINUX) || defined(OS_WIN)
+    LOG(WARNING) << "Window capturing is not fully supported on Linux or "
+                    "Windows.";
+#endif  // defined(OS_LINUX) || defined(OS_WIN)
+
+    // uint32_t is large enough to hold window IDs on all platforms.
+    uint32_t window_id;
+    if (base::StringToUint(
+            cmd_line->GetSwitchValueASCII(kWindowIdSwitchName),
+            &window_id)) {
+      window_id_ = static_cast<webrtc::WindowId>(window_id);
+    } else {
+      LOG(ERROR) << "Window with window id: " << window_id_
+                 << " not found. Shutting down host.";
+      return false;
+    }
+  }
   return true;
 }
 
@@ -676,11 +716,21 @@ void HostProcess::StartOnUiThread() {
           daemon_channel_.get());
   desktop_session_connector_ = desktop_environment_factory;
 #else  // !defined(OS_WIN)
-  DesktopEnvironmentFactory* desktop_environment_factory =
+  DesktopEnvironmentFactory* desktop_environment_factory;
+  if (enable_window_capture_) {
+    desktop_environment_factory =
+      new SingleWindowDesktopEnvironmentFactory(
+          context_->network_task_runner(),
+          context_->input_task_runner(),
+          context_->ui_task_runner(),
+          window_id_);
+  } else {
+    desktop_environment_factory =
       new Me2MeDesktopEnvironmentFactory(
           context_->network_task_runner(),
           context_->input_task_runner(),
           context_->ui_task_runner());
+  }
 #endif  // !defined(OS_WIN)
 
   desktop_environment_factory_.reset(desktop_environment_factory);
@@ -823,6 +873,24 @@ bool HostProcess::ApplyConfig(scoped_ptr<JsonHostConfig> config) {
     enable_vp9_ = true;
   } else {
     config->GetBoolean(kEnableVp9ConfigPath, &enable_vp9_);
+  }
+
+  // Allow the command-line to override the size of the frame recorder buffer.
+  std::string frame_recorder_buffer_kb;
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          kFrameRecorderBufferKbName)) {
+    frame_recorder_buffer_kb =
+        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            kFrameRecorderBufferKbName);
+  } else {
+    config->GetString(kFrameRecorderBufferKbConfigPath,
+                      &frame_recorder_buffer_kb);
+  }
+  if (!frame_recorder_buffer_kb.empty()) {
+    int buffer_kb = 0;
+    if (base::StringToInt(frame_recorder_buffer_kb, &buffer_kb)) {
+      frame_recorder_buffer_size_ = 1024LL * buffer_kb;
+    }
   }
 
   return true;
@@ -1205,6 +1273,13 @@ void HostProcess::StartHost() {
     host_->set_protocol_config(config.Pass());
   }
 
+  if (frame_recorder_buffer_size_ > 0) {
+    scoped_ptr<VideoFrameRecorderHostExtension> frame_recorder_extension(
+        new VideoFrameRecorderHostExtension());
+    frame_recorder_extension->SetMaxContentBytes(frame_recorder_buffer_size_);
+    host_->AddExtension(frame_recorder_extension.PassAs<HostExtension>());
+  }
+
   // TODO(simonmorris): Get the maximum session duration from a policy.
 #if defined(OS_LINUX)
   host_->SetMaximumSessionDuration(base::TimeDelta::FromHours(20));
@@ -1220,11 +1295,11 @@ void HostProcess::StartHost() {
   host_change_notification_listener_.reset(new HostChangeNotificationListener(
       this, host_id_, signal_strategy_.get(), directory_bot_jid_));
 
-  log_to_server_.reset(
-      new LogToServer(host_->AsWeakPtr(), ServerLogEntry::ME2ME,
-                      signal_strategy_.get(), directory_bot_jid_));
+  host_status_logger_.reset(
+      new HostStatusLogger(host_->AsWeakPtr(), ServerLogEntry::ME2ME,
+                           signal_strategy_.get(), directory_bot_jid_));
 
-  // Set up repoting the host status notifications.
+  // Set up reporting the host status notifications.
 #if defined(REMOTING_MULTI_PROCESS)
   host_event_logger_.reset(
       new IpcHostEventLogger(host_->AsWeakPtr(), daemon_channel_.get()));
@@ -1294,7 +1369,7 @@ void HostProcess::ShutdownOnNetworkThread() {
 
   host_.reset();
   host_event_logger_.reset();
-  log_to_server_.reset();
+  host_status_logger_.reset();
   heartbeat_sender_.reset();
   host_status_sender_.reset();
   host_change_notification_listener_.reset();
@@ -1376,9 +1451,3 @@ int HostProcessMain() {
 }
 
 }  // namespace remoting
-
-#if !defined(OS_WIN)
-int main(int argc, char** argv) {
-  return remoting::HostMain(argc, argv);
-}
-#endif  // !defined(OS_WIN)

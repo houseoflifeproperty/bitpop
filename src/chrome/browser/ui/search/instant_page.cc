@@ -15,6 +15,7 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/frame_navigate_params.h"
 
@@ -68,13 +69,11 @@ bool InstantPage::ShouldProcessAboutToNavigateMainFrame() {
 }
 
 void InstantPage::DidCommitProvisionalLoadForFrame(
-    int64 /* frame_id */,
-    const base::string16& frame_unique_name,
-    bool is_main_frame,
+    content::RenderFrameHost* render_frame_host,
     const GURL& url,
-    content::PageTransition /* transition_type */,
-    content::RenderViewHost* /* render_view_host */) {
-  if (is_main_frame && ShouldProcessAboutToNavigateMainFrame())
+    content::PageTransition /* transition_type */) {
+  if (!render_frame_host->GetParent() &&
+      ShouldProcessAboutToNavigateMainFrame())
     delegate_->InstantPageAboutToNavigateMainFrame(contents(), url);
 }
 

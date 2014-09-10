@@ -55,7 +55,7 @@ remoting.onVisibilityChanged = function() {
     remoting.clientSession.pauseVideo(
       ('hidden' in document) ? document.hidden : document.webkitHidden);
   }
-}
+};
 
 /**
  * Disconnect the remoting client.
@@ -77,30 +77,6 @@ remoting.disconnect = function() {
 };
 
 /**
- * Sends a Ctrl-Alt-Del sequence to the remoting client.
- *
- * @return {void} Nothing.
- */
-remoting.sendCtrlAltDel = function() {
-  if (remoting.clientSession) {
-    console.log('Sending Ctrl-Alt-Del.');
-    remoting.clientSession.sendCtrlAltDel();
-  }
-};
-
-/**
- * Sends a Print Screen keypress to the remoting client.
- *
- * @return {void} Nothing.
- */
-remoting.sendPrintScreen = function() {
-  if (remoting.clientSession) {
-    console.log('Sending Print Screen.');
-    remoting.clientSession.sendPrintScreen();
-  }
-};
-
-/**
  * Callback function called when the state of the client plugin changes. The
  * current and previous states are available via the |state| member variable.
  *
@@ -113,6 +89,9 @@ function onClientStateChange_(state) {
       if (remoting.clientSession.getMode() ==
           remoting.ClientSession.Mode.IT2ME) {
         remoting.setMode(remoting.AppMode.CLIENT_SESSION_FINISHED_IT2ME);
+        remoting.hangoutSessionEvents.raiseEvent(
+            remoting.hangoutSessionEvents.sessionStateChanged,
+            remoting.ClientSession.State.CLOSED);
       } else {
         remoting.setMode(remoting.AppMode.CLIENT_SESSION_FINISHED_ME2ME);
       }
@@ -157,6 +136,10 @@ function showConnectError_(errorTag) {
                                     : remoting.connector.getConnectionMode();
   if (mode == remoting.ClientSession.Mode.IT2ME) {
     remoting.setMode(remoting.AppMode.CLIENT_CONNECT_FAILED_IT2ME);
+    remoting.hangoutSessionEvents.raiseEvent(
+        remoting.hangoutSessionEvents.sessionStateChanged,
+        remoting.ClientSession.State.FAILED
+    );
   } else {
     remoting.setMode(remoting.AppMode.CLIENT_CONNECT_FAILED_ME2ME);
   }
@@ -335,14 +318,16 @@ remoting.onConnected = function(clientSession) {
   remoting.clientSession = clientSession;
   remoting.clientSession.addEventListener('stateChanged', onClientStateChange_);
   setConnectionInterruptedButtonsText_();
-  var connectedTo = document.getElementById('connected-to');
-  connectedTo.innerText = remoting.connector.getHostDisplayName();
   document.getElementById('access-code-entry').value = '';
   remoting.setMode(remoting.AppMode.IN_SESSION);
   remoting.toolbar.center();
   remoting.toolbar.preview();
   remoting.clipboard.startSession();
   updateStatistics_();
+  remoting.hangoutSessionEvents.raiseEvent(
+      remoting.hangoutSessionEvents.sessionStateChanged,
+      remoting.ClientSession.State.CONNECTED
+  );
   if (remoting.connector.pairingRequested) {
     /**
      * @param {string} clientId
@@ -362,13 +347,13 @@ remoting.onConnected = function(clientSession) {
     // TODO(jamiewalch): Use a descriptive name for the local computer, for
     // example, its Chrome Sync name.
     var clientName = '';
-    if (navigator.platform.indexOf('Mac') != -1) {
+    if (remoting.platformIsMac()) {
       clientName = 'Mac';
-    } else if (navigator.platform.indexOf('Win32') != -1) {
+    } else if (remoting.platformIsWindows()) {
       clientName = 'Windows';
-    } else if (navigator.userAgent.match(/\bCrOS\b/)) {
+    } else if (remoting.platformIsChromeOS()) {
       clientName = 'ChromeOS';
-    } else if (navigator.platform.indexOf('Linux') != -1) {
+    } else if (remoting.platformIsLinux()) {
       clientName = 'Linux';
     } else {
       console.log('Unrecognized client platform. Using navigator.platform.');
@@ -395,7 +380,7 @@ remoting.onExtensionMessage = function(type, data) {
 remoting.ensureSessionConnector_ = function() {
   if (!remoting.connector) {
     remoting.connector = new remoting.SessionConnector(
-        document.getElementById('client-plugin-container'),
+        document.getElementById('video-container'),
         remoting.onConnected,
         showConnectError_, remoting.onExtensionMessage);
   }

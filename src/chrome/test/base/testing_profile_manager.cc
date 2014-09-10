@@ -34,7 +34,8 @@ class ProfileManager : public ::ProfileManagerWithoutInit {
 TestingProfileManager::TestingProfileManager(TestingBrowserProcess* process)
     : called_set_up_(false),
       browser_process_(process),
-      local_state_(process) {
+      local_state_(process),
+      profile_manager_(NULL) {
 }
 
 TestingProfileManager::~TestingProfileManager() {
@@ -138,6 +139,17 @@ void TestingProfileManager::DeleteTestingProfile(const std::string& name) {
 
   profile_manager_->profiles_info_.erase(profile->GetPath());
 }
+
+void TestingProfileManager::DeleteAllTestingProfiles() {
+  for (TestingProfilesMap::iterator it = testing_profiles_.begin();
+       it != testing_profiles_.end(); ++it) {
+    TestingProfile* profile = it->second;
+    ProfileInfoCache& cache = profile_manager_->GetProfileInfoCache();
+    cache.DeleteProfileFromCache(profile->GetPath());
+  }
+  testing_profiles_.clear();
+}
+
 
 void TestingProfileManager::DeleteGuestProfile() {
   DCHECK(called_set_up_);

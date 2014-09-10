@@ -26,6 +26,8 @@
 
 using base::Time;
 
+namespace bookmarks {
+
 namespace {
 
 // The maximum length of URL or title returned by the Cleanup functions.
@@ -142,8 +144,6 @@ std::string TruncateUrl(const std::string& url) {
 
 }  // namespace
 
-namespace bookmark_utils {
-
 QueryFields::QueryFields() {}
 QueryFields::~QueryFields() {}
 
@@ -179,7 +179,7 @@ void CopyToClipboard(BookmarkModel* model,
       WriteToClipboard(ui::CLIPBOARD_TYPE_COPY_PASTE);
 
   if (remove_nodes) {
-    bookmarks::ScopedGroupBookmarkActions group_cut(model);
+    ScopedGroupBookmarkActions group_cut(model);
     for (size_t i = 0; i < filtered_nodes.size(); ++i) {
       int index = filtered_nodes[i]->parent()->GetIndexOf(filtered_nodes[i]);
       if (index > -1)
@@ -200,7 +200,7 @@ void PasteFromClipboard(BookmarkModel* model,
 
   if (index == -1)
     index = parent->child_count();
-  bookmarks::ScopedGroupBookmarkActions group_paste(model);
+  ScopedGroupBookmarkActions group_paste(model);
   CloneBookmarkNode(model, bookmark_data.elements, parent, index, true);
 }
 
@@ -438,9 +438,9 @@ bool IsBookmarkedByUser(BookmarkModel* model, const GURL& url) {
   return false;
 }
 
-}  // namespace bookmark_utils
-
 const BookmarkNode* GetBookmarkNodeByID(const BookmarkModel* model, int64 id) {
   // TODO(sky): TreeNode needs a method that visits all nodes using a predicate.
   return GetNodeByID(model->root_node(), id);
 }
+
+}  // namespace bookmarks

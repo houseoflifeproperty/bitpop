@@ -31,12 +31,12 @@
 #ifndef SVGMatrixTearOff_h
 #define SVGMatrixTearOff_h
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/transforms/AffineTransform.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGTransformTearOff;
 
@@ -100,6 +100,6 @@ private:
     SVGTransformTearOff* m_contextTransform;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGMatrixTearOff_h_

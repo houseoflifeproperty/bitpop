@@ -207,56 +207,59 @@ const FX_BYTE g_sRGBSamples2[] = {
     241, 241, 242, 242, 243, 243, 244, 244, 245, 245, 246, 246, 246, 247, 247, 248,
     248, 249, 249, 250, 250, 251, 251, 251, 252, 252, 253, 253, 254, 254, 255, 255,
 };
+
+static FX_FLOAT RGB_Conversion(FX_FLOAT colorComponent)
+{
+    if (colorComponent > 1) {
+        colorComponent = 1;
+    }
+    if (colorComponent < 0) {
+        colorComponent = 0;
+    }
+    int scale = (int)(colorComponent * 1023);
+    if (scale < 0) {
+        scale = 0;
+    }
+    if (scale < 192) {
+        colorComponent = (g_sRGBSamples1[scale] / 255.0f);
+    }
+    else {
+        colorComponent = (g_sRGBSamples2[scale / 4 - 48] / 255.0f);
+    }
+    return colorComponent;
+}
+
 static void XYZ_to_sRGB(FX_FLOAT X, FX_FLOAT Y, FX_FLOAT Z, FX_FLOAT& R, FX_FLOAT& G, FX_FLOAT& B)
 {
     FX_FLOAT R1 = 3.2410f * X - 1.5374f * Y - 0.4986f * Z;
     FX_FLOAT G1 = -0.9692f * X + 1.8760f * Y + 0.0416f * Z;
     FX_FLOAT B1 =  0.0556f * X - 0.2040f * Y + 1.0570f * Z;
-    if (R1 > 1) {
-        R1 = 1;
-    }
-    if (R1 < 0) {
-        R1 = 0;
-    }
-    if (G1 > 1) {
-        G1 = 1;
-    }
-    if (G1 < 0) {
-        G1 = 0;
-    }
-    if (B1 > 1) {
-        B1 = 1;
-    }
-    if (B1 < 0) {
-        B1 = 0;
-    }
-    int scale = (int)(R1 * 1023);
-    if (scale < 0) {
-        scale = 0;
-    }
-    if (scale < 192) {
-        R = (g_sRGBSamples1[scale] / 255.0f);
-    } else {
-        R = (g_sRGBSamples2[scale / 4 - 48] / 255.0f);
-    }
-    scale = (int)(G1 * 1023);
-    if (scale < 0) {
-        scale = 0;
-    }
-    if (scale < 192) {
-        G = (g_sRGBSamples1[scale] / 255.0f);
-    } else {
-        G = (g_sRGBSamples2[scale / 4 - 48] / 255.0f);
-    }
-    scale = (int)(B1 * 1023);
-    if (scale < 0) {
-        scale = 0;
-    }
-    if (scale < 192) {
-        B = (g_sRGBSamples1[scale] / 255.0f);
-    } else {
-        B = (g_sRGBSamples2[scale / 4 - 48] / 255.0f);
-    }
+
+    R = RGB_Conversion(R1);
+    G = RGB_Conversion(G1);
+    B = RGB_Conversion(B1);
+}
+
+static void XYZ_to_sRGB_WhitePoint(FX_FLOAT X, FX_FLOAT Y, FX_FLOAT Z, FX_FLOAT& R, FX_FLOAT& G, FX_FLOAT& B, FX_FLOAT Xw, FX_FLOAT Yw, FX_FLOAT Zw)
+{
+    // The following RGB_xyz is based on
+    // sRGB value {Rx,Ry}={0.64, 0.33}, {Gx,Gy}={0.30, 0.60}, {Bx,By}={0.15, 0.06}
+
+    FX_FLOAT Rx = 0.64f, Ry = 0.33f;
+    FX_FLOAT Gx = 0.30f, Gy = 0.60f;
+    FX_FLOAT Bx = 0.15f, By = 0.06f;
+    CFX_Matrix_3by3 RGB_xyz(Rx, Gx, Bx, Ry, Gy, By, 1 - Rx - Ry, 1 - Gx - Gy, 1 - Bx - By);
+    CFX_Vector_3by1 whitePoint(Xw, Yw, Zw);
+    CFX_Vector_3by1 XYZ(X, Y, Z);
+
+    CFX_Vector_3by1 RGB_Sum_XYZ = RGB_xyz.Inverse().TransformVector(whitePoint);
+    CFX_Matrix_3by3 RGB_SUM_XYZ_DIAG(RGB_Sum_XYZ.a, 0, 0, 0, RGB_Sum_XYZ.b, 0, 0, 0, RGB_Sum_XYZ.c);
+    CFX_Matrix_3by3 M = RGB_xyz.Multiply(RGB_SUM_XYZ_DIAG);
+    CFX_Vector_3by1 RGB = M.Inverse().TransformVector(XYZ);
+
+    R = RGB_Conversion(RGB.a);
+    G = RGB_Conversion(RGB.b);
+    B = RGB_Conversion(RGB.c);
 }
 class CPDF_CalGray : public CPDF_ColorSpace
 {
@@ -281,7 +284,7 @@ FX_BOOL CPDF_CalGray::v_Load(CPDF_Document* pDoc, CPDF_Array* pArray)
     CPDF_Array* pParam = pDict->GetArray(FX_BSTRC("WhitePoint"));
     int i;
     for (i = 0; i < 3; i ++) {
-        m_WhitePoint[i] = pParam->GetNumber(i);
+        m_WhitePoint[i] = pParam ? pParam->GetNumber(i) : 0;
     }
     pParam = pDict->GetArray(FX_BSTRC("BlackPoint"));
     for (i = 0; i < 3; i ++) {
@@ -340,7 +343,7 @@ FX_BOOL CPDF_CalRGB::v_Load(CPDF_Document* pDoc, CPDF_Array* pArray)
     CPDF_Array* pParam = pDict->GetArray(FX_BSTRC("WhitePoint"));
     int i;
     for (i = 0; i < 3; i ++) {
-        m_WhitePoint[i] = pParam->GetNumber(i);
+        m_WhitePoint[i] = pParam ? pParam->GetNumber(i) : 0;
     }
     pParam = pDict->GetArray(FX_BSTRC("BlackPoint"));
     for (i = 0; i < 3; i ++) {
@@ -386,7 +389,7 @@ FX_BOOL CPDF_CalRGB::GetRGB(FX_FLOAT* pBuf, FX_FLOAT& R, FX_FLOAT& G, FX_FLOAT& 
         Y = B_;
         Z = C_;
     }
-    XYZ_to_sRGB(X, Y, Z, R, G, B);
+    XYZ_to_sRGB_WhitePoint(X, Y, Z, R, G, B, m_WhitePoint[0], m_WhitePoint[1], m_WhitePoint[2]);
     return TRUE;
 }
 FX_BOOL CPDF_CalRGB::SetRGB(FX_FLOAT* pBuf, FX_FLOAT R, FX_FLOAT G, FX_FLOAT B) const
@@ -438,7 +441,7 @@ FX_BOOL CPDF_LabCS::v_Load(CPDF_Document* pDoc, CPDF_Array* pArray)
     CPDF_Array* pParam = pDict->GetArray(FX_BSTRC("WhitePoint"));
     int i;
     for (i = 0; i < 3; i ++) {
-        m_WhitePoint[i] = pParam->GetNumber(i);
+        m_WhitePoint[i] = pParam ? pParam->GetNumber(i) : 0;
     }
     pParam = pDict->GetArray(FX_BSTRC("BlackPoint"));
     for (i = 0; i < 3; i ++) {
@@ -580,11 +583,12 @@ FX_BOOL CPDF_ICCBasedCS::v_Load(CPDF_Document* pDoc, CPDF_Array* pArray)
     if (pStream == NULL) {
         return FALSE;
     }
-    m_nComponents = pStream->GetDict()->GetInteger(FX_BSTRC("N"));
-    if (m_nComponents < 0 || m_nComponents > (1 << 16)) {
+    CPDF_Dictionary* pDict = pStream->GetDict();
+    m_nComponents = pDict ? pDict->GetInteger(FX_BSTRC("N")) : 0;
+    if (m_nComponents <= 0 || m_nComponents > (1 << 16)) {
         return FALSE;
     }
-    CPDF_Array* pRanges = pStream->GetDict()->GetArray(FX_BSTRC("Range"));
+    CPDF_Array* pRanges = pDict->GetArray(FX_BSTRC("Range"));
     m_pRanges = FX_Alloc(FX_FLOAT, m_nComponents * 2);
     for (int i = 0; i < m_nComponents * 2; i ++) {
         if (pRanges) {
@@ -600,7 +604,7 @@ FX_BOOL CPDF_ICCBasedCS::v_Load(CPDF_Document* pDoc, CPDF_Array* pArray)
         return FALSE;
     }
     if (m_pProfile->m_pTransform == NULL) {
-        CPDF_Object* pAlterCSObj = pStream->GetDict()->GetElementValue(FX_BSTRC("Alternate"));
+        CPDF_Object* pAlterCSObj = pDict ? pDict->GetElementValue(FX_BSTRC("Alternate")) : NULL;
         if (pAlterCSObj) {
             CPDF_ColorSpace* alter_cs = CPDF_ColorSpace::Load(pDoc, pAlterCSObj);
             if (alter_cs) {
@@ -642,6 +646,7 @@ FX_BOOL CPDF_ICCBasedCS::GetRGB(FX_FLOAT* pBuf, FX_FLOAT& R, FX_FLOAT& G, FX_FLO
         return TRUE;
     }
     FX_FLOAT rgb[3];
+    pIccModule->SetComponents(m_nComponents);
     pIccModule->Translate(m_pProfile->m_pTransform, pBuf, rgb);
     R = rgb[0];
     G = rgb[1];
@@ -780,9 +785,6 @@ FX_BOOL CPDF_IndexedCS::v_Load(CPDF_Document* pDoc, CPDF_Array* pArray)
     if (pTableObj == NULL) {
         return FALSE;
     }
-    FX_LPCBYTE pTable = NULL;
-    FX_DWORD size = 0;
-    CPDF_StreamAcc* pStreamAcc = NULL;
     if (pTableObj->GetType() == PDFOBJ_STRING) {
         m_Table = ((CPDF_String*)pTableObj)->GetString();
     } else if (pTableObj->GetType() == PDFOBJ_STREAM) {
@@ -943,7 +945,7 @@ FX_BOOL CPDF_SeparationCS::GetRGB(FX_FLOAT* pBuf, FX_FLOAT& R, FX_FLOAT& G, FX_F
         return TRUE;
     }
     CFX_FixedBufGrow<FX_FLOAT, 16> results(m_pFunc->CountOutputs());
-    int nresults;
+    int nresults = 0;
     m_pFunc->Call(pBuf, 1, results, nresults);
     if (nresults == 0) {
         return FALSE;
@@ -1025,7 +1027,7 @@ FX_BOOL CPDF_DeviceNCS::GetRGB(FX_FLOAT* pBuf, FX_FLOAT& R, FX_FLOAT& G, FX_FLOA
         return FALSE;
     }
     CFX_FixedBufGrow<FX_FLOAT, 16> results(m_pFunc->CountOutputs());
-    int nresults;
+    int nresults = 0;
     m_pFunc->Call(pBuf, m_nComponents, results, nresults);
     if (nresults == 0) {
         return FALSE;
@@ -1078,7 +1080,7 @@ CPDF_ColorSpace* CPDF_ColorSpace::Load(CPDF_Document* pDoc, CPDF_Object* pObj)
         while (pos) {
             CFX_ByteString bsKey;
             CPDF_Object *pValue = pDict->GetNextElement(pos, bsKey);
-            if (pValue->GetType() == PDFOBJ_NAME) {
+            if (pValue && pValue->GetType() == PDFOBJ_NAME) {
                 pRet = _CSFromName(pValue->GetString());
             }
             if (pRet) {
@@ -1161,7 +1163,6 @@ FX_FLOAT* CPDF_ColorSpace::CreateBuf()
 {
     int size = GetBufSize();
     FX_BYTE* pBuf = FX_Alloc(FX_BYTE, size);
-    FXSYS_memset32(pBuf, 0, size);
     return (FX_FLOAT*)pBuf;
 }
 FX_BOOL CPDF_ColorSpace::sRGB() const
@@ -1268,6 +1269,7 @@ void CPDF_Color::ReleaseBuffer()
         PatternValue* pvalue = (PatternValue*)m_pBuffer;
         CPDF_Pattern* pPattern = pvalue->m_pPattern;
         if (pPattern && pPattern->m_pDocument) {
+            pPattern->SaveColor(NULL);
             pPattern->m_pDocument->GetPageData()->ReleasePattern(pPattern->m_pPatternObj);
         }
     }
@@ -1324,10 +1326,14 @@ void CPDF_Color::SetValue(CPDF_Pattern* pPattern, FX_FLOAT* comps, int ncomps)
     PatternValue* pvalue = (PatternValue*)m_pBuffer;
     if (pvalue->m_pPattern && pvalue->m_pPattern->m_pDocument) {
         pDocPageData = pvalue->m_pPattern->m_pDocument->GetPageData();
+        pvalue->m_pPattern->SaveColor(NULL);
         pDocPageData->ReleasePattern(pvalue->m_pPattern->m_pPatternObj);
     }
     pvalue->m_nComps = ncomps;
     pvalue->m_pPattern = pPattern;
+    if (pPattern) {
+        pPattern->SaveColor(this);
+    }
     if (ncomps) {
         FXSYS_memcpy32(pvalue->m_Comps, comps, ncomps * sizeof(FX_FLOAT));
     }
@@ -1360,7 +1366,7 @@ FX_BOOL CPDF_Color::GetRGB(int& R, int& G, int& B) const
     if (m_pCS == NULL || m_pBuffer == NULL) {
         return FALSE;
     }
-    FX_FLOAT r, g, b;
+    FX_FLOAT r=0.0f, g=0.0f, b=0.0f;
     if (!m_pCS->GetRGB(m_pBuffer, r, g, b)) {
         return FALSE;
     }

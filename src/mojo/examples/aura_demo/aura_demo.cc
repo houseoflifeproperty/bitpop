@@ -10,12 +10,12 @@
 #include "mojo/aura/screen_mojo.h"
 #include "mojo/aura/window_tree_host_mojo.h"
 #include "mojo/aura/window_tree_host_mojo_delegate.h"
-#include "mojo/public/cpp/application/application.h"
+#include "mojo/public/cpp/application/application_connection.h"
+#include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/cpp/system/core.h"
-#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
-#include "mojo/services/public/cpp/view_manager/node.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
+#include "mojo/services/public/cpp/view_manager/view_manager_client_factory.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_delegate.h"
 #include "mojo/services/public/interfaces/native_viewport/native_viewport.mojom.h"
 #include "ui/aura/client/default_capture_client.h"
@@ -103,26 +103,25 @@ class DemoWindowTreeClient : public aura::client::WindowTreeClient {
   DISALLOW_COPY_AND_ASSIGN(DemoWindowTreeClient);
 };
 
-class AuraDemo : public Application,
+class AuraDemo : public ApplicationDelegate,
                  public WindowTreeHostMojoDelegate,
-                 public view_manager::ViewManagerDelegate {
+                 public ViewManagerDelegate {
  public:
   AuraDemo()
       : window1_(NULL),
         window2_(NULL),
         window21_(NULL),
-        view_(NULL) {
-    view_manager::ViewManager::Create(this, this);
-  }
+        view_manager_client_factory_(this) {}
   virtual ~AuraDemo() {}
 
  private:
-  // Overridden from view_manager::ViewManagerDelegate:
-  virtual void OnRootAdded(view_manager::ViewManager* view_manager,
-                           view_manager::Node* root) OVERRIDE {
+  // Overridden from ViewManagerDelegate:
+  virtual void OnEmbed(ViewManager* view_manager,
+                       View* root,
+                       ServiceProviderImpl* exported_services,
+                       scoped_ptr<ServiceProvider> imported_services) OVERRIDE {
     // TODO(beng): this function could be called multiple times!
-    view_ = view_manager::View::Create(view_manager);
-    root->SetActiveView(view_);
+    root_ = root;
 
     window_tree_host_.reset(new WindowTreeHostMojo(root, this));
     window_tree_host_->InitHost();
@@ -153,18 +152,28 @@ class AuraDemo : public Application,
 
     window_tree_host_->Show();
   }
+  virtual void OnViewManagerDisconnected(
+      ViewManager* view_manager) OVERRIDE {
+    base::MessageLoop::current()->Quit();
+  }
 
   // WindowTreeHostMojoDelegate:
   virtual void CompositorContentsChanged(const SkBitmap& bitmap) OVERRIDE {
-    view_->SetContents(bitmap);
+    root_->SetContents(bitmap);
   }
 
-  virtual void Initialize() OVERRIDE {
+  virtual void Initialize(ApplicationImpl* app) MOJO_OVERRIDE {
     aura::Env::CreateInstance(true);
     context_factory_.reset(new ContextFactoryMojo);
     aura::Env::GetInstance()->set_context_factory(context_factory_.get());
     screen_.reset(ScreenMojo::Create());
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, screen_.get());
+  }
+
+  virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
+      MOJO_OVERRIDE {
+    connection->AddService(&view_manager_client_factory_);
+    return true;
   }
 
   scoped_ptr<DemoWindowTreeClient> window_tree_client_;
@@ -181,7 +190,9 @@ class AuraDemo : public Application,
   aura::Window* window2_;
   aura::Window* window21_;
 
-  view_manager::View* view_;
+  View* root_;
+
+  ViewManagerClientFactory view_manager_client_factory_;
 
   scoped_ptr<aura::WindowTreeHost> window_tree_host_;
 
@@ -191,7 +202,7 @@ class AuraDemo : public Application,
 }  // namespace examples
 
 // static
-Application* Application::Create() {
+ApplicationDelegate* ApplicationDelegate::Create() {
   return new examples::AuraDemo();
 }
 

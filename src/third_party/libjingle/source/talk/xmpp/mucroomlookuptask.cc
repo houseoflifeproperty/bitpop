@@ -27,9 +27,9 @@
 
 #include "talk/xmpp/mucroomlookuptask.h"
 
-#include "talk/base/logging.h"
-#include "talk/base/scoped_ptr.h"
 #include "talk/xmpp/constants.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/scoped_ptr.h"
 
 
 namespace buzz {

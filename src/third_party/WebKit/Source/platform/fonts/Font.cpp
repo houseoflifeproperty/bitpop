@@ -44,7 +44,7 @@ using namespace WTF;
 using namespace Unicode;
 using namespace std;
 
-namespace WebCore {
+namespace blink {
 
 CodePath Font::s_codePath = AutoPath;
 
@@ -115,10 +115,11 @@ void Font::drawText(GraphicsContext* context, const TextRunPaintInfo& runInfo, c
     if (codePathToUse != ComplexPath && fontDescription().typesettingFeatures() && (runInfo.from || runInfo.to != runInfo.run.length()))
         codePathToUse = ComplexPath;
 
-    if (codePathToUse != ComplexPath)
-        return drawSimpleText(context, runInfo, point);
-
-    return drawComplexText(context, runInfo, point);
+    if (codePathToUse != ComplexPath) {
+        drawSimpleText(context, runInfo, point);
+    } else {
+        drawComplexText(context, runInfo, point);
+    }
 }
 
 void Font::drawEmphasisMarks(GraphicsContext* context, const TextRunPaintInfo& runInfo, const AtomicString& mark, const FloatPoint& point) const
@@ -160,9 +161,8 @@ float Font::width(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFo
             glyphOverflow = 0;
     }
 
-    bool hasKerningOrLigatures = fontDescription().typesettingFeatures() & (Kerning | Ligatures);
     bool hasWordSpacingOrLetterSpacing = fontDescription().wordSpacing() || fontDescription().letterSpacing();
-    bool isCacheable = (codePathToUse == ComplexPath || hasKerningOrLigatures)
+    bool isCacheable = codePathToUse == ComplexPath
         && !hasWordSpacingOrLetterSpacing // Word spacing and letter spacing can change the width of a word.
         && !run.allowTabs(); // If we allow tabs and a tab occurs inside a word, the width of the word varies based on its position on the line.
 
@@ -180,8 +180,8 @@ float Font::width(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFo
     if (codePathToUse == ComplexPath) {
         result = floatWidthForComplexText(run, fallbackFonts, &glyphBounds);
     } else {
-        result = floatWidthForSimpleText(run, fallbackFonts,
-            glyphOverflow || isCacheable ? &glyphBounds : 0);
+        ASSERT(!isCacheable);
+        result = floatWidthForSimpleText(run, fallbackFonts, glyphOverflow ? &glyphBounds : 0);
     }
 
     if (cacheEntry && (!fallbackFonts || fallbackFonts->isEmpty())) {
@@ -253,7 +253,10 @@ CodePath Font::codePath(const TextRun& run) const
     if (m_fontDescription.featureSettings() && m_fontDescription.featureSettings()->size() > 0 && m_fontDescription.letterSpacing() == 0)
         return ComplexPath;
 
-    if (run.length() > 1 && !WidthIterator::supportsTypesettingFeatures(*this))
+    if (m_fontDescription.widthVariant() != RegularWidth)
+        return ComplexPath;
+
+    if (run.length() > 1 && fontDescription().typesettingFeatures())
         return ComplexPath;
 
     if (!run.characterScanForCodePath())
@@ -414,13 +417,10 @@ std::pair<GlyphData, GlyphPage*> Font::glyphDataAndPageForCharacter(UChar32 c, b
 
     unsigned pageNumber = (c / GlyphPage::size);
 
-    GlyphPageTreeNode* node = pageNumber ? m_fontFallbackList->m_pages.get(pageNumber) : m_fontFallbackList->m_pageZero;
+    GlyphPageTreeNode* node = m_fontFallbackList->getPageNode(pageNumber);
     if (!node) {
         node = GlyphPageTreeNode::getRootChild(fontDataAt(0), pageNumber);
-        if (pageNumber)
-            m_fontFallbackList->m_pages.set(pageNumber, node);
-        else
-            m_fontFallbackList->m_pageZero = node;
+        m_fontFallbackList->setPageNode(pageNumber, node);
     }
 
     GlyphPage* page = 0;
@@ -454,10 +454,7 @@ std::pair<GlyphData, GlyphPage*> Font::glyphDataAndPageForCharacter(UChar32 c, b
 
             // Proceed with the fallback list.
             node = node->getChild(fontDataAt(node->level()), pageNumber);
-            if (pageNumber)
-                m_fontFallbackList->m_pages.set(pageNumber, node);
-            else
-                m_fontFallbackList->m_pageZero = node;
+            m_fontFallbackList->setPageNode(pageNumber, node);
         }
     }
     if (variant != NormalVariant) {
@@ -491,10 +488,7 @@ std::pair<GlyphData, GlyphPage*> Font::glyphDataAndPageForCharacter(UChar32 c, b
 
             // Proceed with the fallback list.
             node = node->getChild(fontDataAt(node->level()), pageNumber);
-            if (pageNumber)
-                m_fontFallbackList->m_pages.set(pageNumber, node);
-            else
-                m_fontFallbackList->m_pageZero = node;
+            m_fontFallbackList->setPageNode(pageNumber, node);
         }
     }
 
@@ -632,10 +626,7 @@ float Font::getGlyphsAndAdvancesForSimpleText(const TextRunPaintInfo& runInfo, G
     float initialAdvance;
 
     WidthIterator it(this, runInfo.run, 0, false, forTextEmphasis);
-    // FIXME: Using separate glyph buffers for the prefix and the suffix is incorrect when kerning or
-    // ligatures are enabled.
-    GlyphBuffer localGlyphBuffer;
-    it.advance(runInfo.from, &localGlyphBuffer);
+    it.advance(runInfo.from);
     float beforeWidth = it.m_runWidthSoFar;
     it.advance(runInfo.to, &glyphBuffer);
 
@@ -645,9 +636,8 @@ float Font::getGlyphsAndAdvancesForSimpleText(const TextRunPaintInfo& runInfo, G
     float afterWidth = it.m_runWidthSoFar;
 
     if (runInfo.run.rtl()) {
-        float finalRoundingWidth = it.m_finalRoundingWidth;
-        it.advance(runInfo.run.length(), &localGlyphBuffer);
-        initialAdvance = finalRoundingWidth + it.m_runWidthSoFar - afterWidth;
+        it.advance(runInfo.run.length());
+        initialAdvance = it.m_runWidthSoFar - afterWidth;
         glyphBuffer.reverse();
     } else {
         initialAdvance = beforeWidth;
@@ -768,8 +758,7 @@ void Font::drawEmphasisMarks(GraphicsContext* context, const TextRunPaintInfo& r
 float Font::floatWidthForSimpleText(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFonts, IntRectExtent* glyphBounds) const
 {
     WidthIterator it(this, run, fallbackFonts, glyphBounds);
-    GlyphBuffer glyphBuffer;
-    it.advance(run.length(), (fontDescription().typesettingFeatures() & (Kerning | Ligatures)) ? &glyphBuffer : 0);
+    it.advance(run.length());
 
     if (glyphBounds) {
         glyphBounds->setTop(floorf(-it.minGlyphBoundingBoxY()));
@@ -785,23 +774,20 @@ FloatRect Font::pixelSnappedSelectionRect(float fromX, float toX, float y, float
 {
     // Using roundf() rather than ceilf() for the right edge as a compromise to
     // ensure correct caret positioning.
-    // Use LayoutUnit::epsilon() to ensure that values that cannot be stored as
-    // an integer are floored to n and not n-1 due to floating point imprecision.
-    float pixelAlignedX = floorf(fromX + LayoutUnit::epsilon());
-    return FloatRect(pixelAlignedX, y, roundf(toX) - pixelAlignedX, height);
+    float roundedX = roundf(fromX);
+    return FloatRect(roundedX, y, roundf(toX - roundedX), height);
 }
 
 FloatRect Font::selectionRectForSimpleText(const TextRun& run, const FloatPoint& point, int h, int from, int to, bool accountForGlyphBounds) const
 {
-    GlyphBuffer glyphBuffer;
     WidthIterator it(this, run, 0, accountForGlyphBounds);
-    it.advance(from, &glyphBuffer);
+    it.advance(from);
     float fromX = it.m_runWidthSoFar;
-    it.advance(to, &glyphBuffer);
+    it.advance(to);
     float toX = it.m_runWidthSoFar;
 
     if (run.rtl()) {
-        it.advance(run.length(), &glyphBuffer);
+        it.advance(run.length());
         float totalWidth = it.m_runWidthSoFar;
         float beforeWidth = fromX;
         float afterWidth = toX;
@@ -819,14 +805,13 @@ int Font::offsetForPositionForSimpleText(const TextRun& run, float x, bool inclu
     float delta = x;
 
     WidthIterator it(this, run);
-    GlyphBuffer localGlyphBuffer;
     unsigned offset;
     if (run.rtl()) {
         delta -= floatWidthForSimpleText(run);
         while (1) {
             offset = it.m_currentCharacter;
             float w;
-            if (!it.advanceOneCharacter(w, localGlyphBuffer))
+            if (!it.advanceOneCharacter(w))
                 break;
             delta += w;
             if (includePartialGlyphs) {
@@ -841,7 +826,7 @@ int Font::offsetForPositionForSimpleText(const TextRun& run, float x, bool inclu
         while (1) {
             offset = it.m_currentCharacter;
             float w;
-            if (!it.advanceOneCharacter(w, localGlyphBuffer))
+            if (!it.advanceOneCharacter(w))
                 break;
             delta -= w;
             if (includePartialGlyphs) {
@@ -857,4 +842,4 @@ int Font::offsetForPositionForSimpleText(const TextRun& run, float x, bool inclu
     return offset;
 }
 
-}
+} // namespace blink

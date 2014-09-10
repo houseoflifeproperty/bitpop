@@ -34,10 +34,8 @@ S('win_syzyasan_rel', branch='src', treeStableTimer=60)
 #
 T('win_syzyasan_rel_trigger')
 
-win_syzyasan_archive = master_config.GetArchiveUrl('ChromiumFYI',
-                                               'Win SyzyASAN Builder',
-                                               'Win_SyzyASAN_Builder',
-                                               'win32')
+win_syzyasan_archive = master_config.GetGSUtilUrl(
+    'chromium-build-transfer', 'Win SyzyASAN FYI Builder')
 
 tests_1 = [
     'app_list_unittests',
@@ -57,7 +55,6 @@ tests_1 = [
     'sql_unittests',
     'ui_unittests',
     'views_unittests',
-    'webkit_compositor_bindings_unittests',
 ]
 
 tests_2 = [
@@ -108,6 +105,7 @@ F('win_syzyasan_rel', win().ChromiumASANFactory(
     # This slow down the build but this is necessary due to crbug.com/359183.
     clobber=True,
     slave_type='Builder',
+    build_url=win_syzyasan_archive,
     target='Release',
     options=['--build-tool=ninja', '--', 'chromium_builder_tests'],
     compile_timeout=7200,

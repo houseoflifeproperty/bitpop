@@ -36,7 +36,7 @@
 #include "core/dom/Document.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/loader/CookieJar.h"
-#include "modules/websockets/WebSocket.h"
+#include "modules/websockets/DOMWebSocket.h"
 #include "platform/Cookie.h"
 #include "platform/Crypto.h"
 #include "platform/Logging.h"
@@ -53,7 +53,7 @@
 #include "wtf/text/StringBuilder.h"
 #include "wtf/unicode/CharacterNames.h"
 
-namespace WebCore {
+namespace blink {
 
 String formatHandshakeFailureReason(const String& detail)
 {
@@ -133,7 +133,7 @@ WebSocketHandshake::WebSocketHandshake(const KURL& url, const String& protocol, 
 
 WebSocketHandshake::~WebSocketHandshake()
 {
-    blink::Platform::current()->histogramEnumeration("WebCore.WebSocket.HandshakeResult", m_mode, WebSocketHandshake::ModeMax);
+    Platform::current()->histogramEnumeration("WebCore.WebSocket.HandshakeResult", m_mode, WebSocketHandshake::ModeMax);
 }
 
 const KURL& WebSocketHandshake::url() const
@@ -273,7 +273,7 @@ void WebSocketHandshake::reset()
 
 void WebSocketHandshake::clearDocument()
 {
-    m_document = 0;
+    m_document = nullptr;
 }
 
 int WebSocketHandshake::readServerHandshake(const char* header, size_t len)
@@ -533,7 +533,7 @@ bool WebSocketHandshake::checkResponseHeaders()
             return false;
         }
         Vector<String> result;
-        m_clientProtocol.split(String(WebSocket::subprotocolSeperator()), result);
+        m_clientProtocol.split(String(DOMWebSocket::subprotocolSeperator()), result);
         if (!result.contains(serverWebSocketProtocol)) {
             m_failureReason = formatHandshakeFailureReason("'Sec-WebSocket-Protocol' header value '" + serverWebSocketProtocol + "' in response does not match any of sent values");
             return false;
@@ -545,4 +545,9 @@ bool WebSocketHandshake::checkResponseHeaders()
     return true;
 }
 
-} // namespace WebCore
+void WebSocketHandshake::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
+}
+
+} // namespace blink

@@ -98,6 +98,9 @@ extern double vp8_calc_ssimg
 #ifdef OUTPUT_YUV_SRC
 FILE *yuv_file;
 #endif
+#ifdef OUTPUT_YUV_DENOISED
+FILE *yuv_denoised_file;
+#endif
 
 #if 0
 FILE *framepsnr;
@@ -1256,6 +1259,14 @@ void vp8_alloc_compressor_data(VP8_COMP *cpi)
 
     vpx_free(cpi->tplist);
     CHECK_MEM_ERROR(cpi->tplist, vpx_malloc(sizeof(TOKENLIST) * cm->mb_rows));
+
+#if CONFIG_TEMPORAL_DENOISING
+    if (cpi->oxcf.noise_sensitivity > 0) {
+      vp8_denoiser_free(&cpi->denoiser);
+      vp8_denoiser_allocate(&cpi->denoiser, width, height,
+                            cm->mb_rows, cm->mb_cols);
+    }
+#endif
 }
 
 
@@ -1402,7 +1413,7 @@ static void update_layer_contexts (VP8_COMP *cpi)
         double prev_layer_framerate=0;
 
         assert(oxcf->number_of_layers <= VPX_TS_MAX_LAYERS);
-        for (i=0; i<oxcf->number_of_layers; i++)
+        for (i = 0; i < oxcf->number_of_layers && i < VPX_TS_MAX_LAYERS; ++i)
         {
             LAYER_CONTEXT *lc = &cpi->layer_context[i];
 
@@ -1748,7 +1759,8 @@ void vp8_change_config(VP8_COMP *cpi, VP8_CONFIG *oxcf)
       {
         int width = (cpi->oxcf.Width + 15) & ~15;
         int height = (cpi->oxcf.Height + 15) & ~15;
-        vp8_denoiser_allocate(&cpi->denoiser, width, height);
+        vp8_denoiser_allocate(&cpi->denoiser, width, height,
+                              cpi->common.mb_rows, cpi->common.mb_cols);
       }
     }
 #endif
@@ -1960,6 +1972,9 @@ struct VP8_COMP* vp8_create_compressor(VP8_CONFIG *oxcf)
 
 #ifdef OUTPUT_YUV_SRC
     yuv_file = fopen("bd.yuv", "ab");
+#endif
+#ifdef OUTPUT_YUV_DENOISED
+    yuv_denoised_file = fopen("denoised.yuv", "ab");
 #endif
 
 #if 0
@@ -2410,6 +2425,9 @@ void vp8_remove_compressor(VP8_COMP **ptr)
 #ifdef OUTPUT_YUV_SRC
     fclose(yuv_file);
 #endif
+#ifdef OUTPUT_YUV_DENOISED
+    fclose(yuv_denoised_file);
+#endif
 
 #if 0
 
@@ -2610,10 +2628,9 @@ int vp8_update_entropy(VP8_COMP *cpi, int update)
 }
 
 
-#if OUTPUT_YUV_SRC
-void vp8_write_yuv_frame(const char *name, YV12_BUFFER_CONFIG *s)
+#if defined(OUTPUT_YUV_SRC) || defined(OUTPUT_YUV_DENOISED)
+void vp8_write_yuv_frame(FILE *yuv_file, YV12_BUFFER_CONFIG *s)
 {
-    FILE *yuv_file = fopen(name, "ab");
     unsigned char *src = s->y_buffer;
     int h = s->y_height;
 
@@ -2643,11 +2660,8 @@ void vp8_write_yuv_frame(const char *name, YV12_BUFFER_CONFIG *s)
         src += s->uv_stride;
     }
     while (--h);
-
-    fclose(yuv_file);
 }
 #endif
-
 
 static void scale_and_extend_source(YV12_BUFFER_CONFIG *sd, VP8_COMP *cpi)
 {
@@ -3226,17 +3240,9 @@ static void update_reference_frames(VP8_COMP *cpi)
         if (cm->frame_type == KEY_FRAME)
         {
             int i;
-            vp8_yv12_copy_frame(
-                    cpi->Source,
-                    &cpi->denoiser.yv12_running_avg[LAST_FRAME]);
-
-            vp8_yv12_extend_frame_borders(
-                    &cpi->denoiser.yv12_running_avg[LAST_FRAME]);
-
-            for (i = 2; i < MAX_REF_FRAMES - 1; i++)
-                vp8_yv12_copy_frame(
-                        &cpi->denoiser.yv12_running_avg[LAST_FRAME],
-                        &cpi->denoiser.yv12_running_avg[i]);
+            for (i = LAST_FRAME; i < MAX_REF_FRAMES; ++i)
+              vp8_yv12_copy_frame(cpi->Source,
+                                  &cpi->denoiser.yv12_running_avg[i]);
         }
         else /* For non key frames */
         {
@@ -3895,7 +3901,7 @@ static void encode_frame_to_data_rate
 #endif
 
 #ifdef OUTPUT_YUV_SRC
-    vp8_write_yuv_frame(cpi->Source);
+    vp8_write_yuv_frame(yuv_file, cpi->Source);
 #endif
 
     do
@@ -4434,6 +4440,11 @@ static void encode_frame_to_data_rate
 
     update_reference_frames(cpi);
 
+#ifdef OUTPUT_YUV_DENOISED
+    vp8_write_yuv_frame(yuv_denoised_file,
+                        &cpi->denoiser.yv12_running_avg[INTRA_FRAME]);
+#endif
+
 #if !(CONFIG_REALTIME_ONLY & CONFIG_ONTHEFLY_BITPACKING)
     if (cpi->oxcf.error_resilient_mode)
     {
@@ -4875,6 +4886,7 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags, unsigned l
     if (setjmp(cpi->common.error.jmp))
     {
         cpi->common.error.setjmp = 0;
+        vp8_clear_system_state();
         return VPX_CODEC_CORRUPT_FRAME;
     }
 
@@ -5025,7 +5037,8 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags, unsigned l
 
                 /* Update frame rates for each layer */
                 assert(cpi->oxcf.number_of_layers <= VPX_TS_MAX_LAYERS);
-                for (i=0; i<cpi->oxcf.number_of_layers; i++)
+                for (i = 0; i < cpi->oxcf.number_of_layers &&
+                     i < VPX_TS_MAX_LAYERS; ++i)
                 {
                     LAYER_CONTEXT *lc = &cpi->layer_context[i];
                     lc->framerate = cpi->ref_framerate /

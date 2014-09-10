@@ -31,7 +31,7 @@
 #include "core/svg/SVGFontFaceElement.h"
 #endif
 
-namespace WebCore {
+namespace blink {
 
 SVGTextLayoutEngineSpacing::SVGTextLayoutEngineSpacing(const Font& font, float effectiveZoom)
     : m_font(font)
@@ -57,8 +57,7 @@ float SVGTextLayoutEngineSpacing::calculateSVGKerning(bool isVerticalText, Glyph
     ASSERT(fontData->isSVGFont());
 
     RefPtr<CustomFontData> customFontData = fontData->customFontData();
-    const SVGFontData* svgFontData = static_cast<const SVGFontData*>(customFontData.get());
-    SVGFontFaceElement* svgFontFace = svgFontData->svgFontFaceElement();
+    SVGFontFaceElement* svgFontFace = toSVGFontData(customFontData)->svgFontFaceElement();
     ASSERT(svgFontFace);
 
     SVGFontElement* svgFont = svgFontFace->associatedFontElement();

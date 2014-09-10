@@ -10,26 +10,16 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/keyword_extensions_delegate.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_service.h"
-#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
-#include "extensions/browser/extension_system.h"
+#include "components/omnibox/autocomplete_match.h"
+#include "components/omnibox/autocomplete_provider_listener.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
-
-#if defined(ENABLE_EXTENSIONS)
-#include "chrome/browser/autocomplete/keyword_extensions_delegate_impl.h"
-#endif
 
 namespace {
 
@@ -79,19 +69,11 @@ void ScopedEndExtensionKeywordMode::StayInKeywordMode() {
 
 }  // namespace
 
-KeywordProvider::KeywordProvider(AutocompleteProviderListener* listener,
-                                 Profile* profile)
-    : AutocompleteProvider(listener, profile,
-                           AutocompleteProvider::TYPE_KEYWORD),
-      model_(NULL) {
-#if defined(ENABLE_EXTENSIONS)
-  extensions_delegate_.reset(new KeywordExtensionsDelegateImpl(this));
-#endif
-}
-
-KeywordProvider::KeywordProvider(AutocompleteProviderListener* listener,
-                                 TemplateURLService* model)
-    : AutocompleteProvider(listener, NULL, AutocompleteProvider::TYPE_KEYWORD),
+KeywordProvider::KeywordProvider(
+    AutocompleteProviderListener* listener,
+    TemplateURLService* model)
+    : AutocompleteProvider(AutocompleteProvider::TYPE_KEYWORD),
+      listener_(listener),
       model_(model) {
 }
 
@@ -200,8 +182,7 @@ base::string16 KeywordProvider::GetKeywordForText(
   // Don't provide a keyword for inactive/disabled extension keywords.
   if ((template_url->GetType() == TemplateURL::OMNIBOX_API_EXTENSION) &&
       extensions_delegate_ &&
-      !extensions_delegate_->IsEnabledExtension(
-          profile_, template_url->GetExtensionId()))
+      !extensions_delegate_->IsEnabledExtension(template_url->GetExtensionId()))
     return base::string16();
 
   return keyword;
@@ -267,11 +248,10 @@ void KeywordProvider::Start(const AutocompleteInput& input,
 
     // Prune any extension keywords that are disallowed in incognito mode (if
     // we're incognito), or disabled.
-    if (profile_ &&
-        (template_url->GetType() == TemplateURL::OMNIBOX_API_EXTENSION) &&
+    if (template_url->GetType() == TemplateURL::OMNIBOX_API_EXTENSION &&
         extensions_delegate_ &&
         !extensions_delegate_->IsEnabledExtension(
-            profile_, template_url->GetExtensionId())) {
+            template_url->GetExtensionId())) {
       i = matches.erase(i);
       continue;
     }
@@ -317,7 +297,7 @@ void KeywordProvider::Start(const AutocompleteInput& input,
     matches_.push_back(CreateAutocompleteMatch(
         template_url, input, keyword.length(), remaining_input, true, -1));
 
-    if (profile_ && is_extension_keyword && extensions_delegate_) {
+    if (is_extension_keyword && extensions_delegate_) {
       if (extensions_delegate_->Start(input, minimal_changes, template_url,
                                       remaining_input))
         keyword_mode_toggle.StayInKeywordMode();
@@ -484,11 +464,8 @@ void KeywordProvider::FillInURLAndContents(
 }
 
 TemplateURLService* KeywordProvider::GetTemplateURLService() const {
-  TemplateURLService* service = profile_ ?
-      TemplateURLServiceFactory::GetForProfile(profile_) : model_;
   // Make sure the model is loaded. This is cheap and quickly bails out if
   // the model is already loaded.
-  DCHECK(service);
-  service->Load();
-  return service;
+  model_->Load();
+  return model_;
 }

@@ -39,8 +39,6 @@
 #include "public/platform/WebRTCStatsResponse.h"
 #include "wtf/PassOwnPtr.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 WebRTCStatsRequest::WebRTCStatsRequest(const PassRefPtr<RTCStatsRequest>& request)

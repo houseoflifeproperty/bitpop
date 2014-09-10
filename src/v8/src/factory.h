@@ -110,7 +110,7 @@ class Factory V8_FINAL {
   inline Handle<String> NewStringFromStaticAscii(
       const char (&str)[N],
       PretenureFlag pretenure = NOT_TENURED) {
-    ASSERT(N == StrLength(str) + 1);
+    DCHECK(N == StrLength(str) + 1);
     return NewStringFromOneByte(
         STATIC_ASCII_VECTOR(str), pretenure).ToHandleChecked();
   }
@@ -196,10 +196,6 @@ class Factory V8_FINAL {
   // Create a new cons string object which consists of a pair of strings.
   MUST_USE_RESULT MaybeHandle<String> NewConsString(Handle<String> left,
                                                     Handle<String> right);
-
-  // Create a new sequential string containing the concatenation of the inputs.
-  Handle<String> NewFlatConcatString(Handle<String> first,
-                                     Handle<String> second);
 
   // Create a new string object which holds a proper substring of a string.
   Handle<String> NewProperSubString(Handle<String> str,
@@ -352,8 +348,8 @@ class Factory V8_FINAL {
     return NewNumber(static_cast<double>(value), pretenure);
   }
   Handle<HeapNumber> NewHeapNumber(double value,
+                                   MutableMode mode = IMMUTABLE,
                                    PretenureFlag pretenure = NOT_TENURED);
-
 
   // These objects are used by the api to create env-independent data
   // structures in the heap.
@@ -361,7 +357,7 @@ class Factory V8_FINAL {
     return NewJSObjectFromMap(neander_map());
   }
 
-  Handle<JSObject> NewArgumentsObject(Handle<Object> callee, int length);
+  Handle<JSObject> NewArgumentsObject(Handle<JSFunction> callee, int length);
 
   // JS objects are pretenured when allocated by the bootstrapper and
   // runtime.
@@ -396,10 +392,8 @@ class Factory V8_FINAL {
   // Create a JSArray with a specified length and elements initialized
   // according to the specified mode.
   Handle<JSArray> NewJSArray(
-      ElementsKind elements_kind,
-      int length,
-      int capacity,
-      ArrayStorageAllocationMode mode = INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE,
+      ElementsKind elements_kind, int length, int capacity,
+      ArrayStorageAllocationMode mode = DONT_INITIALIZE_ARRAY_ELEMENTS,
       PretenureFlag pretenure = NOT_TENURED);
 
   Handle<JSArray> NewJSArray(
@@ -551,8 +545,6 @@ class Factory V8_FINAL {
   Handle<Object> NewEvalError(const char* message,
                               Vector< Handle<Object> > args);
 
-  Handle<JSObject> NewIteratorResultObject(Handle<Object> value, bool done);
-
   Handle<String> NumberToString(Handle<Object> number,
                                 bool check_number_string_cache = true);
 
@@ -561,15 +553,15 @@ class Factory V8_FINAL {
   }
 
   enum ApiInstanceType {
-    JavaScriptObject,
-    InnerGlobalObject,
-    OuterGlobalObject
+    JavaScriptObjectType,
+    GlobalObjectType,
+    GlobalProxyType
   };
 
   Handle<JSFunction> CreateApiFunction(
       Handle<FunctionTemplateInfo> data,
       Handle<Object> prototype,
-      ApiInstanceType type = JavaScriptObject);
+      ApiInstanceType type = JavaScriptObjectType);
 
   Handle<JSFunction> InstallMembers(Handle<JSFunction> function);
 
@@ -613,11 +605,8 @@ class Factory V8_FINAL {
 
   // Allocates a new SharedFunctionInfo object.
   Handle<SharedFunctionInfo> NewSharedFunctionInfo(
-      Handle<String> name,
-      int number_of_literals,
-      bool is_generator,
-      Handle<Code> code,
-      Handle<ScopeInfo> scope_info,
+      Handle<String> name, int number_of_literals, bool is_generator,
+      bool is_arrow, Handle<Code> code, Handle<ScopeInfo> scope_info,
       Handle<FixedArray> feedback_vector);
   Handle<SharedFunctionInfo> NewSharedFunctionInfo(Handle<String> name,
                                                    MaybeHandle<Code> code);

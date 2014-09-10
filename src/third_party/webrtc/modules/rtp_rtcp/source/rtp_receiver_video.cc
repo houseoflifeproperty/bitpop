@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "webrtc/modules/rtp_rtcp/interface/rtp_payload_registry.h"
+#include "webrtc/modules/rtp_rtcp/source/rtp_format.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_format_video_generic.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
@@ -113,6 +114,13 @@ int32_t RTPReceiverVideo::ParseVideoCodecSpecific(
       return ReceiveGenericCodec(rtp_header, payload_data, payload_data_length);
     case kRtpVideoVp8:
       return ReceiveVp8Codec(rtp_header, payload_data, payload_data_length);
+    case kRtpVideoH264: {
+      scoped_ptr<RtpDepacketizer> depacketizer(RtpDepacketizer::Create(
+          rtp_header->type.Video.codec, data_callback_));
+      return depacketizer->Parse(rtp_header, payload_data, payload_data_length)
+                 ? 0
+                 : -1;
+    }
     case kRtpVideoNone:
       break;
   }
@@ -127,12 +135,11 @@ int32_t RTPReceiverVideo::BuildRTPheader(
   if (rtp_header->header.markerBit) {
     data_buffer[1] |= kRtpMarkerBitMask;  // MarkerBit is 1
   }
-  ModuleRTPUtility::AssignUWord16ToBuffer(data_buffer + 2,
-                                          rtp_header->header.sequenceNumber);
-  ModuleRTPUtility::AssignUWord32ToBuffer(data_buffer + 4,
-                                          rtp_header->header.timestamp);
-  ModuleRTPUtility::AssignUWord32ToBuffer(data_buffer + 8,
-                                          rtp_header->header.ssrc);
+  RtpUtility::AssignUWord16ToBuffer(data_buffer + 2,
+                                    rtp_header->header.sequenceNumber);
+  RtpUtility::AssignUWord32ToBuffer(data_buffer + 4,
+                                    rtp_header->header.timestamp);
+  RtpUtility::AssignUWord32ToBuffer(data_buffer + 8, rtp_header->header.ssrc);
 
   int32_t rtp_header_length = 12;
 
@@ -144,8 +151,7 @@ int32_t RTPReceiverVideo::BuildRTPheader(
     }
     uint8_t* ptr = &data_buffer[rtp_header_length];
     for (uint32_t i = 0; i < rtp_header->header.numCSRCs; ++i) {
-      ModuleRTPUtility::AssignUWord32ToBuffer(ptr,
-                                              rtp_header->header.arrOfCSRCs[i]);
+      RtpUtility::AssignUWord32ToBuffer(ptr, rtp_header->header.arrOfCSRCs[i]);
       ptr += 4;
     }
     data_buffer[0] = (data_buffer[0] & 0xf0) | rtp_header->header.numCSRCs;
@@ -158,8 +164,8 @@ int32_t RTPReceiverVideo::BuildRTPheader(
 int32_t RTPReceiverVideo::ReceiveVp8Codec(WebRtcRTPHeader* rtp_header,
                                           const uint8_t* payload_data,
                                           uint16_t payload_data_length) {
-  ModuleRTPUtility::RTPPayload parsed_packet;
-  ModuleRTPUtility::RTPPayloadParser rtp_payload_parser(
+  RtpUtility::RTPPayload parsed_packet;
+  RtpUtility::RTPPayloadParser rtp_payload_parser(
       kRtpVideoVp8, payload_data, payload_data_length);
 
   if (!rtp_payload_parser.Parse(parsed_packet))
@@ -168,11 +174,12 @@ int32_t RTPReceiverVideo::ReceiveVp8Codec(WebRtcRTPHeader* rtp_header,
   if (parsed_packet.info.VP8.dataLength == 0)
     return 0;
 
-  rtp_header->frameType = (parsed_packet.frameType == ModuleRTPUtility::kIFrame)
-      ? kVideoFrameKey : kVideoFrameDelta;
+  rtp_header->frameType = (parsed_packet.frameType == RtpUtility::kIFrame)
+                              ? kVideoFrameKey
+                              : kVideoFrameDelta;
 
   RTPVideoHeaderVP8* to_header = &rtp_header->type.Video.codecHeader.VP8;
-  ModuleRTPUtility::RTPPayloadVP8* from_header = &parsed_packet.info.VP8;
+  RtpUtility::RTPPayloadVP8* from_header = &parsed_packet.info.VP8;
 
   rtp_header->type.Video.isFirstPacket =
       from_header->beginningOfPartition && (from_header->partitionID == 0);

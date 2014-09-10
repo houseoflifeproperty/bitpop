@@ -4,12 +4,14 @@
 import sys
 
 from measurements import smoothness
+from metrics import power
+from telemetry.core import exceptions
 from telemetry.core import wpr_modes
 from telemetry.page import page
-from telemetry.page import page_measurement_unittest_base
-# pylint: disable=W0401,W0614
-from telemetry.page.actions.all_page_actions import *
+from telemetry.page import page_test
 from telemetry.unittest import options_for_unittests
+from telemetry.unittest import page_test_test_case
+from telemetry.unittest import test
 
 class FakePlatform(object):
   def IsRawDisplayFrameRateSupported(self):
@@ -34,7 +36,7 @@ class AnimatedPage(page.Page):
       page_set=page_set, base_dir=page_set.base_dir)
 
   def RunSmoothness(self, action_runner):
-    action_runner.Wait(1)
+    action_runner.Wait(.2)
 
 
 class FakeTab(object):
@@ -44,8 +46,7 @@ class FakeTab(object):
   def ExecuteJavaScript(self, js):
     pass
 
-class SmoothnessUnitTest(
-      page_measurement_unittest_base.PageMeasurementUnitTestBase):
+class SmoothnessUnitTest(page_test_test_case.PageTestTestCase):
   """Smoke test for smoothness measurement
 
      Runs smoothness measurement on a simple page and verifies
@@ -62,6 +63,8 @@ class SmoothnessUnitTest(
 
     tab = FakeTab()
     measurement = smoothness.Smoothness()
+    measurement.WillStartBrowser(tab.browser)
+    measurement.WillNavigateToPage(test_page, tab)
     measurement.WillRunActions(test_page, tab)
 
     expected_category_filter = [
@@ -118,6 +121,7 @@ class SmoothnessUnitTest(
       self.assertGreater(
           mean_input_event_latency[0].GetRepresentativeNumber(), 0)
 
+  @test.Disabled('mac')  # http://crbug.com/403903
   def testSmoothnessForPageWithNoGesture(self):
     ps = self.CreateEmptyPageSet()
     ps.AddPage(AnimatedPage(ps))
@@ -132,3 +136,38 @@ class SmoothnessUnitTest(
 
   def testCleanUpTrace(self):
     self.TestTracingCleanedUp(smoothness.Smoothness, self._options)
+
+  def testCleanUpPowerMetric(self):
+    class FailPage(page.Page):
+      def __init__(self, page_set):
+        super(FailPage, self).__init__(
+            url='file://blank.html',
+            page_set=page_set, base_dir=page_set.base_dir)
+      def RunSmoothness(self, _):
+        raise exceptions.IntentionalException
+
+    class FakePowerMetric(power.PowerMetric):
+      start_called = False
+      stop_called = True
+      def Start(self, _1, _2):
+        self.start_called = True
+      def Stop(self, _1, _2):
+        self.stop_called = True
+
+    ps = self.CreateEmptyPageSet()
+    ps.AddPage(FailPage(ps))
+
+    class BuggyMeasurement(smoothness.Smoothness):
+      fake_power = None
+      # Inject fake power metric.
+      def WillStartBrowser(self, browser):
+        self.fake_power = self._power_metric = FakePowerMetric(browser)
+
+    measurement = BuggyMeasurement()
+    try:
+      self.RunMeasurement(measurement, ps)
+    except page_test.TestNotSupportedOnPlatformFailure:
+      pass
+
+    self.assertTrue(measurement.fake_power.start_called)
+    self.assertTrue(measurement.fake_power.stop_called)

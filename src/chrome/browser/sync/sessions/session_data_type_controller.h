@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_SYNC_SESSIONS_SESSION_DATA_TYPE_CONTROLLER_H_
 #define CHROME_BROWSER_SYNC_SESSIONS_SESSION_DATA_TYPE_CONTROLLER_H_
 
+#include "chrome/browser/sync/glue/local_device_info_provider.h"
 #include "components/sync_driver/ui_data_type_controller.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -13,14 +14,18 @@ class Profile;
 
 namespace browser_sync {
 
+class SyncedWindowDelegatesGetter;
+
 // Overrides StartModels to avoid sync contention with sessions during
-// a session restore operation at startup.
-class SessionDataTypeController : public UIDataTypeController,
+// a session restore operation at startup and to wait for the local
+// device info to become available.
+class SessionDataTypeController : public sync_driver::UIDataTypeController,
                                   public content::NotificationObserver {
  public:
-  SessionDataTypeController(SyncApiComponentFactory* factory,
+  SessionDataTypeController(sync_driver::SyncApiComponentFactory* factory,
                             Profile* profile,
-                            const DisableTypeCallback& disable_callback);
+                            SyncedWindowDelegatesGetter* synced_window_getter,
+                            LocalDeviceInfoProvider* local_device);
 
   // NotificationObserver interface.
   virtual void Observe(int type,
@@ -33,8 +38,22 @@ class SessionDataTypeController : public UIDataTypeController,
   virtual void StopModels() OVERRIDE;
 
  private:
+  bool IsWaiting();
+  void MaybeCompleteLoading();
+  void OnLocalDeviceInfoInitialized();
+
   Profile* const profile_;
+
+  SyncedWindowDelegatesGetter* synced_window_getter_;
   content::NotificationRegistrar notification_registrar_;
+
+  LocalDeviceInfoProvider* const local_device_;
+  scoped_ptr<LocalDeviceInfoProvider::Subscription> subscription_;
+
+  // Flags that indicate the reason for pending loading models.
+  bool waiting_on_session_restore_;
+  bool waiting_on_local_device_info_;
+
   DISALLOW_COPY_AND_ASSIGN(SessionDataTypeController);
 };
 

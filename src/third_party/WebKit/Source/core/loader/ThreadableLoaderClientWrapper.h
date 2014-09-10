@@ -37,7 +37,7 @@
 #include "wtf/ThreadSafeRefCounted.h"
 #include "wtf/Threading.h"
 
-namespace WebCore {
+namespace blink {
 
 class ThreadableLoaderClientWrapper : public ThreadSafeRefCounted<ThreadableLoaderClientWrapper> {
 public:
@@ -97,16 +97,19 @@ public:
 
     void didFailAccessControlCheck(const ResourceError& error)
     {
-        m_done = true;
+        // Let the client first handle the failure by possibly issuing
+        // a didFail() with a cancellation error before marking this
+        // wrapper as 'done'.
         if (m_client)
             m_client->didFailAccessControlCheck(error);
+        m_done = true;
     }
 
     void didFailRedirectCheck()
     {
-        m_done = true;
         if (m_client)
             m_client->didFailRedirectCheck();
+        m_done = true;
     }
 
     void didReceiveAuthenticationCancellation(unsigned long identifier, const ResourceResponse& response)
@@ -132,6 +135,6 @@ protected:
     bool m_done;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ThreadableLoaderClientWrapper_h

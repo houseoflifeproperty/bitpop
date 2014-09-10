@@ -7,17 +7,17 @@ import os
 import sys
 
 from telemetry.core import util
-from telemetry.page import page_measurement
-from telemetry.results import block_page_measurement_results
-from telemetry.results import buildbot_page_measurement_results
-from telemetry.results import csv_page_measurement_results
-from telemetry.results import gtest_test_results
-from telemetry.results import html_page_measurement_results
-from telemetry.results import page_measurement_results
-
+from telemetry.results import buildbot_output_formatter
+from telemetry.results import csv_output_formatter
+from telemetry.results import gtest_progress_reporter
+from telemetry.results import html_output_formatter
+from telemetry.results import json_output_formatter
+from telemetry.results import page_test_results
+from telemetry.results import progress_reporter
 
 # Allowed output formats. The default is the first item in the list.
-_OUTPUT_FORMAT_CHOICES = ('html', 'buildbot', 'block', 'csv', 'gtest', 'none')
+_OUTPUT_FORMAT_CHOICES = ('html', 'buildbot', 'block', 'csv', 'gtest',
+    'json', 'none')
 
 
 def AddResultsOptions(parser):
@@ -40,17 +40,24 @@ def AddResultsOptions(parser):
   group.add_option('--results-label',
                     default=None,
                     help='Optional label to use for the results of a run .')
+  group.add_option('--suppress_gtest_report',
+                   default=False,
+                   help='Whether to suppress GTest progress report.')
   parser.add_option_group(group)
 
 
-def PrepareResults(test, options):
-  if not isinstance(test, page_measurement.PageMeasurement):
-    # Sort of hacky. The default for non-Measurements should be "gtest."
-    if options.output_format != 'none':
-      options.output_format = 'gtest'
-
+def CreateResults(metadata, options):
+  """
+  Args:
+    options: Contains the options specified in AddResultsOptions.
+  """
+  # TODO(chrishenry): This logic prevents us from having multiple
+  # OutputFormatters. We should have an output_file per OutputFormatter.
+  # Maybe we should have --output-dir instead of --output-file?
   if options.output_format == 'html' and not options.output_file:
     options.output_file = os.path.join(util.GetBaseDir(), 'results.html')
+  elif options.output_format == 'json' and not options.output_file:
+    options.output_file = os.path.join(util.GetBaseDir(), 'results.json')
 
   if hasattr(options, 'output_file') and options.output_file:
     output_file = os.path.expanduser(options.output_file)
@@ -63,27 +70,47 @@ def PrepareResults(test, options):
   if not hasattr(options, 'output_trace_tag'):
     options.output_trace_tag = ''
 
+  output_formatters = []
+  output_skipped_tests_summary = True
+  reporter = None
   if options.output_format == 'none':
-    return page_measurement_results.PageMeasurementResults(
-        output_stream, trace_tag=options.output_trace_tag)
+    pass
   elif options.output_format == 'csv':
-    return csv_page_measurement_results.CsvPageMeasurementResults(
-      output_stream, test.results_are_the_same_on_every_page)
-  elif options.output_format == 'block':
-    return block_page_measurement_results.BlockPageMeasurementResults(
-      output_stream)
+    output_formatters.append(csv_output_formatter.CsvOutputFormatter(
+        output_stream))
   elif options.output_format == 'buildbot':
-    return buildbot_page_measurement_results.BuildbotPageMeasurementResults(
-        output_stream, trace_tag=options.output_trace_tag)
+    output_formatters.append(buildbot_output_formatter.BuildbotOutputFormatter(
+        output_stream, trace_tag=options.output_trace_tag))
   elif options.output_format == 'gtest':
-    return gtest_test_results.GTestTestResults(output_stream)
+    # TODO(chrishenry): This is here to not change the output of
+    # gtest. Let's try enabling skipped tests summary for gtest test
+    # results too (in a separate patch), and see if we break anything.
+    output_skipped_tests_summary = False
   elif options.output_format == 'html':
-    return html_page_measurement_results.HtmlPageMeasurementResults(
-        output_stream, test.__class__.__name__, options.reset_results,
+    # TODO(chrishenry): We show buildbot output so that users can grep
+    # through the results easily without needing to open the html
+    # file.  Another option for this is to output the results directly
+    # in gtest-style results (via some sort of progress reporter),
+    # as we plan to enable gtest-style output for all output formatters.
+    output_formatters.append(buildbot_output_formatter.BuildbotOutputFormatter(
+        sys.stdout, trace_tag=options.output_trace_tag))
+    output_formatters.append(html_output_formatter.HtmlOutputFormatter(
+        output_stream, metadata, options.reset_results,
         options.upload_results, options.browser_type,
-        options.results_label, trace_tag=options.output_trace_tag)
+        options.results_label, trace_tag=options.output_trace_tag))
+  elif options.output_format == 'json':
+    output_formatters.append(
+        json_output_formatter.JsonOutputFormatter(output_stream, metadata))
   else:
     # Should never be reached. The parser enforces the choices.
     raise Exception('Invalid --output-format "%s". Valid choices are: %s'
                     % (options.output_format,
                        ', '.join(_OUTPUT_FORMAT_CHOICES)))
+
+  if options.suppress_gtest_report:
+    reporter = progress_reporter.ProgressReporter()
+  else:
+    reporter = gtest_progress_reporter.GTestProgressReporter(
+        sys.stdout, output_skipped_tests_summary=output_skipped_tests_summary)
+  return page_test_results.PageTestResults(
+      output_formatters=output_formatters, progress_reporter=reporter)

@@ -27,7 +27,7 @@
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGFEDropShadowElement::SVGFEDropShadowElement(Document& document)
     : SVGFilterPrimitiveStandardAttributes(SVGNames::feDropShadowTag, document)
@@ -118,10 +118,10 @@ PassRefPtr<FilterEffect> SVGFEDropShadowElement::build(SVGFilterBuilder* filterB
         return nullptr;
 
     ASSERT(renderer->style());
-    const SVGRenderStyle* svgStyle = renderer->style()->svgStyle();
+    const SVGRenderStyle& svgStyle = renderer->style()->svgStyle();
 
-    Color color = svgStyle->floodColor();
-    float opacity = svgStyle->floodOpacity();
+    Color color = svgStyle.floodColor();
+    float opacity = svgStyle.floodOpacity();
 
     FilterEffect* input1 = filterBuilder->getEffectById(AtomicString(m_in1->currentValue()->value()));
     if (!input1)

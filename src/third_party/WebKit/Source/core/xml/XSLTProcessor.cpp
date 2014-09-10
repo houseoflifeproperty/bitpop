@@ -33,9 +33,8 @@
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Assertions.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 static inline void transformTextStringToXHTMLDocumentString(String& text)
 {
@@ -165,4 +164,4 @@ void XSLTProcessor::trace(Visitor* visitor)
     visitor->trace(m_stylesheetRootNode);
 }
 
-} // namespace WebCore
+} // namespace blink

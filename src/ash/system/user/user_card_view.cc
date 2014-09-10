@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "ash/session/session_state_delegate.h"
-#include "ash/session/user_info.h"
 #include "ash/shell.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
@@ -20,6 +19,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "components/user_manager/user_info.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -395,9 +395,8 @@ void UserCardView::AddUserContent(user::LoginStatus login_status,
   if (login_status != user::LOGGED_IN_GUEST &&
       (multiprofile_index || !IsMultiAccountSupportedAndUserActive())) {
     base::string16 user_email_string =
-        login_status == user::LOGGED_IN_LOCALLY_MANAGED
-            ? l10n_util::GetStringUTF16(
-                  IDS_ASH_STATUS_TRAY_LOCALLY_MANAGED_LABEL)
+        login_status == user::LOGGED_IN_SUPERVISED
+            ? l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_SUPERVISED_LABEL)
             : base::UTF8ToUTF16(
                   delegate->GetUserInfo(multiprofile_index)->GetEmail());
     if (!user_email_string.empty()) {

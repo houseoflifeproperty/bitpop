@@ -29,8 +29,8 @@
 
 #include "modules/webdatabase/WorkerGlobalScopeWebDatabase.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "modules/webdatabase/Database.h"
@@ -40,7 +40,7 @@
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<Database> WorkerGlobalScopeWebDatabase::openDatabase(WorkerGlobalScope& context, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback> creationCallback, ExceptionState& exceptionState)
 {
@@ -78,4 +78,4 @@ PassRefPtrWillBeRawPtr<DatabaseSync> WorkerGlobalScopeWebDatabase::openDatabaseS
     return database.release();
 }
 
-} // namespace WebCore
+} // namespace blink

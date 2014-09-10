@@ -21,6 +21,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/auth.h"
 #include "net/base/io_buffer.h"
+#include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/dns/host_resolver.h"
@@ -630,7 +631,8 @@ int SocketStream::DoResolveProxy() {
   // Alternate-Protocol header here for ws:// or TLS NPN extension for wss:// .
 
   return context_->proxy_service()->ResolveProxy(
-      proxy_url_, &proxy_info_, io_callback_, &pac_request_, net_log_);
+      proxy_url_, net::LOAD_NORMAL, &proxy_info_, io_callback_, &pac_request_,
+      NULL, net_log_);
 }
 
 int SocketStream::DoResolveProxyComplete(int result) {
@@ -1010,7 +1012,7 @@ int SocketStream::DoSecureProxyConnect() {
   SSLClientSocketContext ssl_context;
   ssl_context.cert_verifier = context_->cert_verifier();
   ssl_context.transport_security_state = context_->transport_security_state();
-  ssl_context.server_bound_cert_service = context_->server_bound_cert_service();
+  ssl_context.channel_id_service = context_->channel_id_service();
   scoped_ptr<StreamSocket> socket(factory_->CreateSSLClientSocket(
       connection_.Pass(),
       proxy_info_.proxy_server().host_port_pair(),
@@ -1066,7 +1068,7 @@ int SocketStream::DoSSLConnect() {
   SSLClientSocketContext ssl_context;
   ssl_context.cert_verifier = context_->cert_verifier();
   ssl_context.transport_security_state = context_->transport_security_state();
-  ssl_context.server_bound_cert_service = context_->server_bound_cert_service();
+  ssl_context.channel_id_service = context_->channel_id_service();
   scoped_ptr<StreamSocket> socket(
       factory_->CreateSSLClientSocket(connection_.Pass(),
                                       HostPortPair::FromURL(url_),

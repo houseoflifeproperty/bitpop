@@ -57,7 +57,6 @@
 #include "core/rendering/style/StyleTransformData.h"
 #include "core/rendering/style/StyleVisualData.h"
 #include "core/rendering/style/StyleWillChangeData.h"
-#include "core/svg/SVGPaint.h"
 #include "platform/Length.h"
 #include "platform/LengthBox.h"
 #include "platform/LengthSize.h"
@@ -93,7 +92,7 @@ template<typename T, typename U> inline bool compareEqual(const T& t, const U& u
     if (!compareEqual(group->variable.color(), value)) \
         group.access()->variable.setColor(value)
 
-namespace WebCore {
+namespace blink {
 
 using std::max;
 
@@ -121,7 +120,6 @@ class RenderStyle: public RefCounted<RenderStyle> {
     friend class ApplyStyleCommand; // Editing has to only reveal unvisited info.
     friend class EditingStyle; // Editing has to only reveal unvisited info.
     friend class CSSComputedStyleDeclaration; // Ignores visited styles, so needs to be able to see unvisited info.
-    friend class PropertyWrapperMaybeInvalidStyleColor; // Used by CSS animations. We can't allow them to animate based off visited colors.
     friend class StyleBuilderFunctions; // Sets color styles
     friend class CachedUAStyle; // Saves Border/Background information for later comparison.
 
@@ -129,7 +127,6 @@ class RenderStyle: public RefCounted<RenderStyle> {
     friend class CSSToStyleMap;
     friend class FilterOperationResolver;
     friend class StyleBuilderConverter;
-    friend class StyleBuilder;
     friend class StyleResolverState;
     friend class StyleResolver;
 protected:
@@ -208,47 +205,46 @@ protected:
     struct NonInheritedFlags {
         bool operator==(const NonInheritedFlags& other) const
         {
-            return _effectiveDisplay == other._effectiveDisplay
-                && _originalDisplay == other._originalDisplay
-                && _overflowX == other._overflowX
-                && _overflowY == other._overflowY
-                && _vertical_align == other._vertical_align
-                && _clear == other._clear
-                && _position == other._position
-                && _floating == other._floating
-                && _table_layout == other._table_layout
-                && _page_break_before == other._page_break_before
-                && _page_break_after == other._page_break_after
-                && _page_break_inside == other._page_break_inside
-                && _styleType == other._styleType
-                && _affectedByFocus == other._affectedByFocus
-                && _affectedByHover == other._affectedByHover
-                && _affectedByActive == other._affectedByActive
-                && _affectedByDrag == other._affectedByDrag
-                && _pseudoBits == other._pseudoBits
-                && _unicodeBidi == other._unicodeBidi
+            return effectiveDisplay == other.effectiveDisplay
+                && originalDisplay == other.originalDisplay
+                && overflowX == other.overflowX
+                && overflowY == other.overflowY
+                && verticalAlign == other.verticalAlign
+                && clear == other.clear
+                && position == other.position
+                && floating == other.floating
+                && tableLayout == other.tableLayout
+                && pageBreakBefore == other.pageBreakBefore
+                && pageBreakAfter == other.pageBreakAfter
+                && pageBreakInside == other.pageBreakInside
+                && styleType == other.styleType
+                && affectedByFocus == other.affectedByFocus
+                && affectedByHover == other.affectedByHover
+                && affectedByActive == other.affectedByActive
+                && affectedByDrag == other.affectedByDrag
+                && pseudoBits == other.pseudoBits
+                && unicodeBidi == other.unicodeBidi
                 && explicitInheritance == other.explicitInheritance
                 && currentColor == other.currentColor
                 && unique == other.unique
                 && emptyState == other.emptyState
                 && firstChildState == other.firstChildState
                 && lastChildState == other.lastChildState
-                && _isLink == other._isLink;
+                && isLink == other.isLink;
         }
 
         bool operator!=(const NonInheritedFlags& other) const { return !(*this == other); }
 
-        unsigned _effectiveDisplay : 5; // EDisplay
-        unsigned _originalDisplay : 5; // EDisplay
-        unsigned _overflowX : 3; // EOverflow
-        unsigned _overflowY : 3; // EOverflow
-        unsigned _vertical_align : 4; // EVerticalAlign
-        unsigned _clear : 2; // EClear
-        unsigned _position : 3; // EPosition
-        unsigned _floating : 2; // EFloat
-        unsigned _table_layout : 1; // ETableLayout
-
-        unsigned _unicodeBidi : 3; // EUnicodeBidi
+        unsigned effectiveDisplay : 5; // EDisplay
+        unsigned originalDisplay : 5; // EDisplay
+        unsigned overflowX : 3; // EOverflow
+        unsigned overflowY : 3; // EOverflow
+        unsigned verticalAlign : 4; // EVerticalAlign
+        unsigned clear : 2; // EClear
+        unsigned position : 3; // EPosition
+        unsigned floating : 2; // EFloat
+        unsigned tableLayout : 1; // ETableLayout
+        unsigned unicodeBidi : 3; // EUnicodeBidi
 
         // This is set if we used viewport units when resolving a length.
         // It is mutable so we can pass around const RenderStyles to resolve lengths.
@@ -256,35 +252,26 @@ protected:
 
         // 32 bits
 
-        unsigned _page_break_before : 2; // EPageBreak
-        unsigned _page_break_after : 2; // EPageBreak
-        unsigned _page_break_inside : 2; // EPageBreak
+        unsigned pageBreakBefore : 2; // EPageBreak
+        unsigned pageBreakAfter : 2; // EPageBreak
+        unsigned pageBreakInside : 2; // EPageBreak
 
-        unsigned _styleType : 6; // PseudoId
-        unsigned _pseudoBits : 8;
+        unsigned styleType : 6; // PseudoId
+        unsigned pseudoBits : 8;
         unsigned explicitInheritance : 1; // Explicitly inherits a non-inherited property
         unsigned currentColor : 1; // At least one color has the value 'currentColor'
         unsigned unique : 1; // Style can not be shared.
+
         unsigned emptyState : 1;
         unsigned firstChildState : 1;
         unsigned lastChildState : 1;
 
-        bool affectedByFocus() const { return _affectedByFocus; }
-        void setAffectedByFocus(bool value) { _affectedByFocus = value; }
-        bool affectedByHover() const { return _affectedByHover; }
-        void setAffectedByHover(bool value) { _affectedByHover = value; }
-        bool affectedByActive() const { return _affectedByActive; }
-        void setAffectedByActive(bool value) { _affectedByActive = value; }
-        bool affectedByDrag() const { return _affectedByDrag; }
-        void setAffectedByDrag(bool value) { _affectedByDrag = value; }
-        bool isLink() const { return _isLink; }
-        void setIsLink(bool value) { _isLink = value; }
-    private:
-        unsigned _affectedByFocus : 1;
-        unsigned _affectedByHover : 1;
-        unsigned _affectedByActive : 1;
-        unsigned _affectedByDrag : 1;
-        unsigned _isLink : 1;
+        unsigned affectedByFocus : 1;
+        unsigned affectedByHover : 1;
+        unsigned affectedByActive : 1;
+        unsigned affectedByDrag : 1;
+
+        unsigned isLink : 1;
         // If you add more style bits here, you will also need to update RenderStyle::copyNonInheritedFrom()
         // 63 bits
     } noninherited_flags;
@@ -313,20 +300,20 @@ protected:
         inherited_flags._insideLink = NotInsideLink;
         inherited_flags.m_writingMode = initialWritingMode();
 
-        noninherited_flags._effectiveDisplay = noninherited_flags._originalDisplay = initialDisplay();
-        noninherited_flags._overflowX = initialOverflowX();
-        noninherited_flags._overflowY = initialOverflowY();
-        noninherited_flags._vertical_align = initialVerticalAlign();
-        noninherited_flags._clear = initialClear();
-        noninherited_flags._position = initialPosition();
-        noninherited_flags._floating = initialFloating();
-        noninherited_flags._table_layout = initialTableLayout();
-        noninherited_flags._unicodeBidi = initialUnicodeBidi();
-        noninherited_flags._page_break_before = initialPageBreak();
-        noninherited_flags._page_break_after = initialPageBreak();
-        noninherited_flags._page_break_inside = initialPageBreak();
-        noninherited_flags._styleType = NOPSEUDO;
-        noninherited_flags._pseudoBits = 0;
+        noninherited_flags.effectiveDisplay = noninherited_flags.originalDisplay = initialDisplay();
+        noninherited_flags.overflowX = initialOverflowX();
+        noninherited_flags.overflowY = initialOverflowY();
+        noninherited_flags.verticalAlign = initialVerticalAlign();
+        noninherited_flags.clear = initialClear();
+        noninherited_flags.position = initialPosition();
+        noninherited_flags.floating = initialFloating();
+        noninherited_flags.tableLayout = initialTableLayout();
+        noninherited_flags.unicodeBidi = initialUnicodeBidi();
+        noninherited_flags.pageBreakBefore = initialPageBreak();
+        noninherited_flags.pageBreakAfter = initialPageBreak();
+        noninherited_flags.pageBreakInside = initialPageBreak();
+        noninherited_flags.styleType = NOPSEUDO;
+        noninherited_flags.pseudoBits = 0;
         noninherited_flags.explicitInheritance = false;
         noninherited_flags.currentColor = false;
         noninherited_flags.unique = false;
@@ -334,11 +321,11 @@ protected:
         noninherited_flags.firstChildState = false;
         noninherited_flags.lastChildState = false;
         noninherited_flags.hasViewportUnits = false;
-        noninherited_flags.setAffectedByFocus(false);
-        noninherited_flags.setAffectedByHover(false);
-        noninherited_flags.setAffectedByActive(false);
-        noninherited_flags.setAffectedByDrag(false);
-        noninherited_flags.setIsLink(false);
+        noninherited_flags.affectedByFocus = false;
+        noninherited_flags.affectedByHover = false;
+        noninherited_flags.affectedByActive = false;
+        noninherited_flags.affectedByDrag = false;
+        noninherited_flags.isLink = false;
     }
 
 private:
@@ -359,8 +346,7 @@ public:
     // Computes how the style change should be propagated down the tree.
     static StyleRecalcChange stylePropagationDiff(const RenderStyle* oldStyle, const RenderStyle* newStyle);
 
-    // Computes how much visual invalidation the style change causes: layout, repaint or recomposite.
-    StyleDifference visualInvalidationDiff(const RenderStyle&, unsigned& changedContextSensitiveProperties) const;
+    StyleDifference visualInvalidationDiff(const RenderStyle&) const;
 
     enum IsAtShadowBoundary {
         AtShadowBoundary,
@@ -370,8 +356,8 @@ public:
     void inheritFrom(const RenderStyle* inheritParent, IsAtShadowBoundary = NotAtShadowBoundary);
     void copyNonInheritedFrom(const RenderStyle*);
 
-    PseudoId styleType() const { return static_cast<PseudoId>(noninherited_flags._styleType); }
-    void setStyleType(PseudoId styleType) { noninherited_flags._styleType = styleType; }
+    PseudoId styleType() const { return static_cast<PseudoId>(noninherited_flags.styleType); }
+    void setStyleType(PseudoId styleType) { noninherited_flags.styleType = styleType; }
 
     RenderStyle* getCachedPseudoStyle(PseudoId) const;
     RenderStyle* addCachedPseudoStyle(PassRefPtr<RenderStyle>);
@@ -382,19 +368,19 @@ public:
     void setHasViewportUnits(bool hasViewportUnits = true) const { noninherited_flags.hasViewportUnits = hasViewportUnits; }
     bool hasViewportUnits() const { return noninherited_flags.hasViewportUnits; }
 
-    bool affectedByFocus() const { return noninherited_flags.affectedByFocus(); }
-    bool affectedByHover() const { return noninherited_flags.affectedByHover(); }
-    bool affectedByActive() const { return noninherited_flags.affectedByActive(); }
-    bool affectedByDrag() const { return noninherited_flags.affectedByDrag(); }
+    bool affectedByFocus() const { return noninherited_flags.affectedByFocus; }
+    bool affectedByHover() const { return noninherited_flags.affectedByHover; }
+    bool affectedByActive() const { return noninherited_flags.affectedByActive; }
+    bool affectedByDrag() const { return noninherited_flags.affectedByDrag; }
 
-    void setAffectedByFocus() { noninherited_flags.setAffectedByFocus(true); }
-    void setAffectedByHover() { noninherited_flags.setAffectedByHover(true); }
-    void setAffectedByActive() { noninherited_flags.setAffectedByActive(true); }
-    void setAffectedByDrag() { noninherited_flags.setAffectedByDrag(true); }
+    void setAffectedByFocus() { noninherited_flags.affectedByFocus = true; }
+    void setAffectedByHover() { noninherited_flags.affectedByHover = true; }
+    void setAffectedByActive() { noninherited_flags.affectedByActive = true; }
+    void setAffectedByDrag() { noninherited_flags.affectedByDrag = true; }
 
     bool operator==(const RenderStyle& other) const;
     bool operator!=(const RenderStyle& other) const { return !(*this == other); }
-    bool isFloating() const { return noninherited_flags._floating != NoFloat; }
+    bool isFloating() const { return noninherited_flags.floating != NoFloat; }
     bool hasMargin() const { return surround->margin.nonZero(); }
     bool hasBorder() const { return surround->border.hasBorder(); }
     bool hasPadding() const { return surround->padding.nonZero(); }
@@ -448,8 +434,8 @@ public:
 
     // attribute getter methods
 
-    EDisplay display() const { return static_cast<EDisplay>(noninherited_flags._effectiveDisplay); }
-    EDisplay originalDisplay() const { return static_cast<EDisplay>(noninherited_flags._originalDisplay); }
+    EDisplay display() const { return static_cast<EDisplay>(noninherited_flags.effectiveDisplay); }
+    EDisplay originalDisplay() const { return static_cast<EDisplay>(noninherited_flags.originalDisplay); }
 
     const Length& left() const { return surround->offset.left(); }
     const Length& right() const { return surround->offset.right(); }
@@ -469,11 +455,11 @@ public:
     bool hasStaticInlinePosition(bool horizontal) const { return horizontal ? hasAutoLeftAndRight() : hasAutoTopAndBottom(); }
     bool hasStaticBlockPosition(bool horizontal) const { return horizontal ? hasAutoTopAndBottom() : hasAutoLeftAndRight(); }
 
-    EPosition position() const { return static_cast<EPosition>(noninherited_flags._position); }
+    EPosition position() const { return static_cast<EPosition>(noninherited_flags.position); }
     bool hasOutOfFlowPosition() const { return position() == AbsolutePosition || position() == FixedPosition; }
-    bool hasInFlowPosition() const { return position() == RelativePosition || position() == StickyPosition; }
-    bool hasViewportConstrainedPosition() const { return position() == FixedPosition || position() == StickyPosition; }
-    EFloat floating() const { return static_cast<EFloat>(noninherited_flags._floating); }
+    bool hasInFlowPosition() const { return position() == RelativePosition; }
+    bool hasViewportConstrainedPosition() const { return position() == FixedPosition; }
+    EFloat floating() const { return static_cast<EFloat>(noninherited_flags.floating); }
 
     const Length& width() const { return m_box->width(); }
     const Length& height() const { return m_box->height(); }
@@ -541,14 +527,14 @@ public:
     EBorderStyle outlineStyle() const { return m_background->outline().style(); }
     OutlineIsAuto outlineStyleIsAuto() const { return static_cast<OutlineIsAuto>(m_background->outline().isAuto()); }
 
-    EOverflow overflowX() const { return static_cast<EOverflow>(noninherited_flags._overflowX); }
-    EOverflow overflowY() const { return static_cast<EOverflow>(noninherited_flags._overflowY); }
+    EOverflow overflowX() const { return static_cast<EOverflow>(noninherited_flags.overflowX); }
+    EOverflow overflowY() const { return static_cast<EOverflow>(noninherited_flags.overflowY); }
     // It's sufficient to just check one direction, since it's illegal to have visible on only one overflow value.
     bool isOverflowVisible() const { ASSERT(overflowX() != OVISIBLE || overflowX() == overflowY()); return overflowX() == OVISIBLE; }
     bool isOverflowPaged() const { return overflowY() == OPAGEDX || overflowY() == OPAGEDY; }
 
     EVisibility visibility() const { return static_cast<EVisibility>(inherited_flags._visibility); }
-    EVerticalAlign verticalAlign() const { return static_cast<EVerticalAlign>(noninherited_flags._vertical_align); }
+    EVerticalAlign verticalAlign() const { return static_cast<EVerticalAlign>(noninherited_flags.verticalAlign); }
     const Length& verticalAlignLength() const { return m_box->verticalAlign(); }
 
     const Length& clipLeft() const { return visual->clip.left(); }
@@ -558,10 +544,10 @@ public:
     const LengthBox& clip() const { return visual->clip; }
     bool hasClip() const { return visual->hasClip; }
 
-    EUnicodeBidi unicodeBidi() const { return static_cast<EUnicodeBidi>(noninherited_flags._unicodeBidi); }
+    EUnicodeBidi unicodeBidi() const { return static_cast<EUnicodeBidi>(noninherited_flags.unicodeBidi); }
 
-    EClear clear() const { return static_cast<EClear>(noninherited_flags._clear); }
-    ETableLayout tableLayout() const { return static_cast<ETableLayout>(noninherited_flags._table_layout); }
+    EClear clear() const { return static_cast<EClear>(noninherited_flags.clear); }
+    ETableLayout tableLayout() const { return static_cast<ETableLayout>(noninherited_flags.tableLayout); }
     bool isFixedTableLayout() const { return tableLayout() == TFIXED && !logicalWidth().isAuto(); }
 
     const Font& font() const;
@@ -571,6 +557,7 @@ public:
     float computedFontSize() const;
     int fontSize() const;
     FontWeight fontWeight() const;
+    FontStretch fontStretch() const;
 
     float textAutosizingMultiplier() const { return inherited->textAutosizingMultiplier; }
 
@@ -665,8 +652,8 @@ public:
     const Length& backgroundYPosition() const { return m_background->background().yPosition(); }
     EFillSizeType backgroundSizeType() const { return m_background->background().sizeType(); }
     const LengthSize& backgroundSizeLength() const { return m_background->background().sizeLength(); }
-    FillLayer* accessBackgroundLayers() { return &(m_background.access()->m_background); }
-    const FillLayer* backgroundLayers() const { return &(m_background->background()); }
+    FillLayer& accessBackgroundLayers() { return m_background.access()->m_background; }
+    const FillLayer& backgroundLayers() const { return m_background->background(); }
 
     StyleImage* maskImage() const { return rareNonInheritedData->m_mask.image(); }
     EFillRepeat maskRepeatX() const { return static_cast<EFillRepeat>(rareNonInheritedData->m_mask.repeatX()); }
@@ -678,8 +665,8 @@ public:
     const Length& maskYPosition() const { return rareNonInheritedData->m_mask.yPosition(); }
     EFillSizeType maskSizeType() const { return rareNonInheritedData->m_mask.sizeType(); }
     const LengthSize& maskSizeLength() const { return rareNonInheritedData->m_mask.sizeLength(); }
-    FillLayer* accessMaskLayers() { return &(rareNonInheritedData.access()->m_mask); }
-    const FillLayer* maskLayers() const { return &(rareNonInheritedData->m_mask); }
+    FillLayer& accessMaskLayers() { return rareNonInheritedData.access()->m_mask; }
+    const FillLayer& maskLayers() const { return rareNonInheritedData->m_mask; }
 
     const NinePieceImage& maskBoxImage() const { return rareNonInheritedData->m_maskBoxImage; }
     StyleImage* maskBoxImageSource() const { return rareNonInheritedData->m_maskBoxImage.image(); }
@@ -725,15 +712,15 @@ public:
     CursorList* cursors() const { return rareInheritedData->cursorData.get(); }
 
     EInsideLink insideLink() const { return static_cast<EInsideLink>(inherited_flags._insideLink); }
-    bool isLink() const { return noninherited_flags.isLink(); }
+    bool isLink() const { return noninherited_flags.isLink; }
 
     short widows() const { return rareInheritedData->widows; }
     short orphans() const { return rareInheritedData->orphans; }
     bool hasAutoWidows() const { return rareInheritedData->m_hasAutoWidows; }
     bool hasAutoOrphans() const { return rareInheritedData->m_hasAutoOrphans; }
-    EPageBreak pageBreakInside() const { return static_cast<EPageBreak>(noninherited_flags._page_break_inside); }
-    EPageBreak pageBreakBefore() const { return static_cast<EPageBreak>(noninherited_flags._page_break_before); }
-    EPageBreak pageBreakAfter() const { return static_cast<EPageBreak>(noninherited_flags._page_break_after); }
+    EPageBreak pageBreakInside() const { return static_cast<EPageBreak>(noninherited_flags.pageBreakInside); }
+    EPageBreak pageBreakBefore() const { return static_cast<EPageBreak>(noninherited_flags.pageBreakBefore); }
+    EPageBreak pageBreakAfter() const { return static_cast<EPageBreak>(noninherited_flags.pageBreakAfter); }
 
     // CSS3 Getter Methods
 
@@ -753,6 +740,7 @@ public:
 
     float textStrokeWidth() const { return rareInheritedData->textStrokeWidth; }
     float opacity() const { return rareNonInheritedData->opacity; }
+    bool hasOpacity() const { return opacity() < 1.0f; }
     ControlPart appearance() const { return static_cast<ControlPart>(rareNonInheritedData->m_appearance); }
     // aspect ratio convenience method
     bool hasAspectRatio() const { return rareNonInheritedData->m_hasAspectRatio; }
@@ -783,6 +771,9 @@ public:
     bool isReverseFlexDirection() const { return flexDirection() == FlowRowReverse || flexDirection() == FlowColumnReverse; }
     EFlexWrap flexWrap() const { return static_cast<EFlexWrap>(rareNonInheritedData->m_flexibleBox->m_flexWrap); }
     EJustifyContent justifyContent() const { return static_cast<EJustifyContent>(rareNonInheritedData->m_justifyContent); }
+    ItemPosition justifyItems() const { return static_cast<ItemPosition>(rareNonInheritedData->m_justifyItems); }
+    OverflowAlignment justifyItemsOverflowAlignment() const { return static_cast<OverflowAlignment>(rareNonInheritedData->m_justifyItemsOverflowAlignment); }
+    ItemPositionType justifyItemsPositionType() const { return static_cast<ItemPositionType>(rareNonInheritedData->m_justifyItemsPositionType); }
     ItemPosition justifySelf() const { return static_cast<ItemPosition>(rareNonInheritedData->m_justifySelf); }
     OverflowAlignment justifySelfOverflowAlignment() const { return static_cast<OverflowAlignment>(rareNonInheritedData->m_justifySelfOverflowAlignment); }
 
@@ -795,7 +786,12 @@ public:
     const NamedGridAreaMap& namedGridArea() const { return rareNonInheritedData->m_grid->m_namedGridArea; }
     size_t namedGridAreaRowCount() const { return rareNonInheritedData->m_grid->m_namedGridAreaRowCount; }
     size_t namedGridAreaColumnCount() const { return rareNonInheritedData->m_grid->m_namedGridAreaColumnCount; }
-    GridAutoFlow gridAutoFlow() const { return rareNonInheritedData->m_grid->m_gridAutoFlow; }
+    GridAutoFlow gridAutoFlow() const { return static_cast<GridAutoFlow>(rareNonInheritedData->m_grid->m_gridAutoFlow); }
+    bool isGridAutoFlowDirectionRow() const { return (rareNonInheritedData->m_grid->m_gridAutoFlow & InternalAutoFlowDirectionRow) == InternalAutoFlowDirectionRow; }
+    bool isGridAutoFlowDirectionColumn() const { return (rareNonInheritedData->m_grid->m_gridAutoFlow & InternalAutoFlowDirectionColumn) == InternalAutoFlowDirectionColumn; }
+    bool isGridAutoFlowAlgorithmSparse() const { return (rareNonInheritedData->m_grid->m_gridAutoFlow & InternalAutoFlowAlgorithmSparse) == InternalAutoFlowAlgorithmSparse; }
+    bool isGridAutoFlowAlgorithmDense() const { return (rareNonInheritedData->m_grid->m_gridAutoFlow & InternalAutoFlowAlgorithmDense) == InternalAutoFlowAlgorithmDense; }
+    bool isGridAutoFlowAlgorithmStack() const { return (rareNonInheritedData->m_grid->m_gridAutoFlow & InternalAutoFlowAlgorithmStack) == InternalAutoFlowAlgorithmStack; }
     const GridTrackSize& gridAutoColumns() const { return rareNonInheritedData->m_grid->m_gridAutoColumns; }
     const GridTrackSize& gridAutoRows() const { return rareNonInheritedData->m_grid->m_gridAutoRows; }
 
@@ -815,6 +811,10 @@ public:
     EBoxDecorationBreak boxDecorationBreak() const { return m_box->boxDecorationBreak(); }
     StyleReflection* boxReflect() const { return rareNonInheritedData->m_boxReflect.get(); }
     bool reflectionDataEquivalent(const RenderStyle* otherStyle) const { return rareNonInheritedData->reflectionDataEquivalent(*otherStyle->rareNonInheritedData); }
+
+    // FIXME: reflections should belong to this helper function but they are currently handled
+    // through their self-painting layers. So the rendering code doesn't account for them.
+    bool hasVisualOverflowingEffect() const { return boxShadow() || hasBorderImageOutsets() || hasOutline(); }
 
     EBoxSizing boxSizing() const { return m_box->boxSizing(); }
     const Length& marqueeIncrement() const { return rareNonInheritedData->m_marquee->increment; }
@@ -860,6 +860,7 @@ public:
     EPageBreak columnBreakBefore() const { return static_cast<EPageBreak>(rareNonInheritedData->m_multiCol->m_breakBefore); }
     EPageBreak columnBreakInside() const { return static_cast<EPageBreak>(rareNonInheritedData->m_multiCol->m_breakInside); }
     EPageBreak columnBreakAfter() const { return static_cast<EPageBreak>(rareNonInheritedData->m_multiCol->m_breakAfter); }
+    bool hasInlineTransform() const { return rareNonInheritedData->m_hasInlineTransform; }
     const TransformOperations& transform() const { return rareNonInheritedData->m_transform->m_operations; }
     const Length& transformOriginX() const { return rareNonInheritedData->m_transform->m_x; }
     const Length& transformOriginY() const { return rareNonInheritedData->m_transform->m_y; }
@@ -935,9 +936,9 @@ public:
     ETextSecurity textSecurity() const { return static_cast<ETextSecurity>(rareInheritedData->textSecurity); }
 
     WritingMode writingMode() const { return static_cast<WritingMode>(inherited_flags.m_writingMode); }
-    bool isHorizontalWritingMode() const { return WebCore::isHorizontalWritingMode(writingMode()); }
-    bool isFlippedLinesWritingMode() const { return WebCore::isFlippedLinesWritingMode(writingMode()); }
-    bool isFlippedBlocksWritingMode() const { return WebCore::isFlippedBlocksWritingMode(writingMode()); }
+    bool isHorizontalWritingMode() const { return blink::isHorizontalWritingMode(writingMode()); }
+    bool isFlippedLinesWritingMode() const { return blink::isFlippedLinesWritingMode(writingMode()); }
+    bool isFlippedBlocksWritingMode() const { return blink::isFlippedBlocksWritingMode(writingMode()); }
 
     EImageRendering imageRendering() const { return static_cast<EImageRendering>(rareInheritedData->m_imageRendering); }
 
@@ -947,8 +948,8 @@ public:
     const FilterOperations& filter() const { return rareNonInheritedData->m_filter->m_operations; }
     bool hasFilter() const { return !rareNonInheritedData->m_filter->m_operations.operations().isEmpty(); }
 
-    blink::WebBlendMode blendMode() const;
-    void setBlendMode(blink::WebBlendMode v);
+    WebBlendMode blendMode() const;
+    void setBlendMode(WebBlendMode v);
     bool hasBlendMode() const;
 
     EIsolation isolation() const;
@@ -970,10 +971,10 @@ public:
 
 // attribute setter methods
 
-    void setDisplay(EDisplay v) { noninherited_flags._effectiveDisplay = v; }
-    void setOriginalDisplay(EDisplay v) { noninherited_flags._originalDisplay = v; }
-    void setPosition(EPosition v) { noninherited_flags._position = v; }
-    void setFloating(EFloat v) { noninherited_flags._floating = v; }
+    void setDisplay(EDisplay v) { noninherited_flags.effectiveDisplay = v; }
+    void setOriginalDisplay(EDisplay v) { noninherited_flags.originalDisplay = v; }
+    void setPosition(EPosition v) { noninherited_flags.position = v; }
+    void setFloating(EFloat v) { noninherited_flags.floating = v; }
 
     void setLeft(const Length& v) { SET_VAR(surround, offset.m_left, v); }
     void setRight(const Length& v) { SET_VAR(surround, offset.m_right, v); }
@@ -1092,10 +1093,10 @@ public:
         return m_background->outline().visuallyEqual(otherStyle->m_background->outline());
     }
 
-    void setOverflowX(EOverflow v) { noninherited_flags._overflowX = v; }
-    void setOverflowY(EOverflow v) { noninherited_flags._overflowY = v; }
+    void setOverflowX(EOverflow v) { noninherited_flags.overflowX = v; }
+    void setOverflowY(EOverflow v) { noninherited_flags.overflowY = v; }
     void setVisibility(EVisibility v) { inherited_flags._visibility = v; }
-    void setVerticalAlign(EVerticalAlign v) { noninherited_flags._vertical_align = v; }
+    void setVerticalAlign(EVerticalAlign v) { noninherited_flags.verticalAlign = v; }
     void setVerticalAlignLength(const Length& length) { setVerticalAlign(LENGTH); SET_VAR(m_box, m_verticalAlign, length); }
 
     void setHasClip(bool b = true) { SET_VAR(visual, hasClip, b); }
@@ -1106,14 +1107,15 @@ public:
     void setClip(const Length& top, const Length& right, const Length& bottom, const Length& left);
     void setClip(const LengthBox& box) { SET_VAR(visual, clip, box); }
 
-    void setUnicodeBidi(EUnicodeBidi b) { noninherited_flags._unicodeBidi = b; }
+    void setUnicodeBidi(EUnicodeBidi b) { noninherited_flags.unicodeBidi = b; }
 
-    void setClear(EClear v) { noninherited_flags._clear = v; }
-    void setTableLayout(ETableLayout v) { noninherited_flags._table_layout = v; }
+    void setClear(EClear v) { noninherited_flags.clear = v; }
+    void setTableLayout(ETableLayout v) { noninherited_flags.tableLayout = v; }
 
     bool setFontDescription(const FontDescription&);
     // Only used for blending font sizes when animating and for text autosizing.
     void setFontSize(float);
+    void setFontStretch(FontStretch);
     void setFontWeight(FontWeight);
 
     void setTextAutosizingMultiplier(float v)
@@ -1150,17 +1152,17 @@ public:
 
     void adjustBackgroundLayers()
     {
-        if (backgroundLayers()->next()) {
-            accessBackgroundLayers()->cullEmptyLayers();
-            accessBackgroundLayers()->fillUnsetProperties();
+        if (backgroundLayers().next()) {
+            accessBackgroundLayers().cullEmptyLayers();
+            accessBackgroundLayers().fillUnsetProperties();
         }
     }
 
     void adjustMaskLayers()
     {
-        if (maskLayers()->next()) {
-            accessMaskLayers()->cullEmptyLayers();
-            accessMaskLayers()->fillUnsetProperties();
+        if (maskLayers().next()) {
+            accessMaskLayers().cullEmptyLayers();
+            accessMaskLayers().fillUnsetProperties();
         }
     }
 
@@ -1222,7 +1224,7 @@ public:
     void clearCursorList();
 
     void setInsideLink(EInsideLink insideLink) { inherited_flags._insideLink = insideLink; }
-    void setIsLink(bool b) { noninherited_flags.setIsLink(b); }
+    void setIsLink(bool b) { noninherited_flags.isLink = b; }
 
     PrintColorAdjust printColorAdjust() const { return static_cast<PrintColorAdjust>(inherited_flags.m_printColorAdjust); }
     void setPrintColorAdjust(PrintColorAdjust value) { inherited_flags.m_printColorAdjust = value; }
@@ -1239,9 +1241,9 @@ public:
     void setOrphans(short o) { SET_VAR(rareInheritedData, m_hasAutoOrphans, false); SET_VAR(rareInheritedData, orphans, o); }
 
     // For valid values of page-break-inside see http://www.w3.org/TR/CSS21/page.html#page-break-props
-    void setPageBreakInside(EPageBreak b) { ASSERT(b == PBAUTO || b == PBAVOID); noninherited_flags._page_break_inside = b; }
-    void setPageBreakBefore(EPageBreak b) { noninherited_flags._page_break_before = b; }
-    void setPageBreakAfter(EPageBreak b) { noninherited_flags._page_break_after = b; }
+    void setPageBreakInside(EPageBreak b) { ASSERT(b == PBAUTO || b == PBAVOID); noninherited_flags.pageBreakInside = b; }
+    void setPageBreakBefore(EPageBreak b) { noninherited_flags.pageBreakBefore = b; }
+    void setPageBreakAfter(EPageBreak b) { noninherited_flags.pageBreakAfter = b; }
 
     // CSS3 Setters
     void setOutlineOffset(int v) { SET_VAR(m_background, m_outline.m_offset, v); }
@@ -1278,6 +1280,9 @@ public:
     void setFlexDirection(EFlexDirection direction) { SET_VAR(rareNonInheritedData.access()->m_flexibleBox, m_flexDirection, direction); }
     void setFlexWrap(EFlexWrap w) { SET_VAR(rareNonInheritedData.access()->m_flexibleBox, m_flexWrap, w); }
     void setJustifyContent(EJustifyContent p) { SET_VAR(rareNonInheritedData, m_justifyContent, p); }
+    void setJustifyItems(ItemPosition justifyItems) { SET_VAR(rareNonInheritedData, m_justifyItems, justifyItems); }
+    void setJustifyItemsOverflowAlignment(OverflowAlignment overflowAlignment) { SET_VAR(rareNonInheritedData, m_justifyItemsOverflowAlignment, overflowAlignment); }
+    void setJustifyItemsPositionType(ItemPositionType positionType) { SET_VAR(rareNonInheritedData, m_justifyItemsPositionType, positionType); }
     void setJustifySelf(ItemPosition justifySelf) { SET_VAR(rareNonInheritedData, m_justifySelf, justifySelf); }
     void setJustifySelfOverflowAlignment(OverflowAlignment overflowAlignment) { SET_VAR(rareNonInheritedData, m_justifySelfOverflowAlignment, overflowAlignment); }
     void setGridAutoColumns(const GridTrackSize& length) { SET_VAR(rareNonInheritedData.access()->m_grid, m_gridAutoColumns, length); }
@@ -1335,6 +1340,7 @@ public:
     void setColumnBreakInside(EPageBreak p) { ASSERT(p == PBAUTO || p == PBAVOID); SET_VAR(rareNonInheritedData.access()->m_multiCol, m_breakInside, p); }
     void setColumnBreakAfter(EPageBreak p) { SET_VAR(rareNonInheritedData.access()->m_multiCol, m_breakAfter, p); }
     void inheritColumnPropertiesFrom(RenderStyle* parent) { rareNonInheritedData.access()->m_multiCol = parent->rareNonInheritedData->m_multiCol; }
+    void setHasInlineTransform(bool b) { SET_VAR(rareNonInheritedData, m_hasInlineTransform, b); }
     void setTransform(const TransformOperations& ops) { SET_VAR(rareNonInheritedData.access()->m_transform, m_operations, ops); }
     void setTransformOriginX(const Length& l) { SET_VAR(rareNonInheritedData.access()->m_transform, m_x, l); }
     void setTransformOriginY(const Length& l) { SET_VAR(rareNonInheritedData.access()->m_transform, m_y, l); }
@@ -1410,41 +1416,39 @@ public:
     bool requiresAcceleratedCompositingForExternalReasons(bool b) { return rareNonInheritedData->m_requiresAcceleratedCompositingForExternalReasons; }
     void setRequiresAcceleratedCompositingForExternalReasons(bool b) { SET_VAR(rareNonInheritedData, m_requiresAcceleratedCompositingForExternalReasons, b); }
 
-    const SVGRenderStyle* svgStyle() const { return m_svgStyle.get(); }
-    SVGRenderStyle* accessSVGStyle() { return m_svgStyle.access(); }
+    const SVGRenderStyle& svgStyle() const { return *m_svgStyle.get(); }
+    SVGRenderStyle& accessSVGStyle() { return *m_svgStyle.access(); }
 
-    const SVGPaint::SVGPaintType& fillPaintType() const { return svgStyle()->fillPaintType(); }
-    Color fillPaintColor() const { return svgStyle()->fillPaintColor(); }
-    void setFillPaintColor(const Color& c) { accessSVGStyle()->setFillPaint(SVGPaint::SVG_PAINTTYPE_RGBCOLOR, c, ""); }
-    float fillOpacity() const { return svgStyle()->fillOpacity(); }
-    void setFillOpacity(float f) { accessSVGStyle()->setFillOpacity(f); }
+    const SVGPaintType& fillPaintType() const { return svgStyle().fillPaintType(); }
+    Color fillPaintColor() const { return svgStyle().fillPaintColor(); }
+    float fillOpacity() const { return svgStyle().fillOpacity(); }
+    void setFillOpacity(float f) { accessSVGStyle().setFillOpacity(f); }
 
-    const SVGPaint::SVGPaintType& strokePaintType() const { return svgStyle()->strokePaintType(); }
-    Color strokePaintColor() const { return svgStyle()->strokePaintColor(); }
-    void setStrokePaintColor(const Color& c) { accessSVGStyle()->setStrokePaint(SVGPaint::SVG_PAINTTYPE_RGBCOLOR, c, ""); }
-    float strokeOpacity() const { return svgStyle()->strokeOpacity(); }
-    void setStrokeOpacity(float f) { accessSVGStyle()->setStrokeOpacity(f); }
-    SVGLength* strokeWidth() const { return svgStyle()->strokeWidth(); }
-    void setStrokeWidth(PassRefPtr<SVGLength> w) { accessSVGStyle()->setStrokeWidth(w); }
-    SVGLengthList* strokeDashArray() const { return svgStyle()->strokeDashArray(); }
-    void setStrokeDashArray(PassRefPtr<SVGLengthList> array) { accessSVGStyle()->setStrokeDashArray(array); }
-    SVGLength* strokeDashOffset() const { return svgStyle()->strokeDashOffset(); }
-    void setStrokeDashOffset(PassRefPtr<SVGLength> d) { accessSVGStyle()->setStrokeDashOffset(d); }
-    float strokeMiterLimit() const { return svgStyle()->strokeMiterLimit(); }
-    void setStrokeMiterLimit(float f) { accessSVGStyle()->setStrokeMiterLimit(f); }
+    const SVGPaintType& strokePaintType() const { return svgStyle().strokePaintType(); }
+    Color strokePaintColor() const { return svgStyle().strokePaintColor(); }
+    float strokeOpacity() const { return svgStyle().strokeOpacity(); }
+    void setStrokeOpacity(float f) { accessSVGStyle().setStrokeOpacity(f); }
+    SVGLength* strokeWidth() const { return svgStyle().strokeWidth(); }
+    void setStrokeWidth(PassRefPtr<SVGLength> w) { accessSVGStyle().setStrokeWidth(w); }
+    SVGLengthList* strokeDashArray() const { return svgStyle().strokeDashArray(); }
+    void setStrokeDashArray(PassRefPtr<SVGLengthList> array) { accessSVGStyle().setStrokeDashArray(array); }
+    SVGLength* strokeDashOffset() const { return svgStyle().strokeDashOffset(); }
+    void setStrokeDashOffset(PassRefPtr<SVGLength> d) { accessSVGStyle().setStrokeDashOffset(d); }
+    float strokeMiterLimit() const { return svgStyle().strokeMiterLimit(); }
+    void setStrokeMiterLimit(float f) { accessSVGStyle().setStrokeMiterLimit(f); }
 
-    float floodOpacity() const { return svgStyle()->floodOpacity(); }
-    void setFloodOpacity(float f) { accessSVGStyle()->setFloodOpacity(f); }
+    float floodOpacity() const { return svgStyle().floodOpacity(); }
+    void setFloodOpacity(float f) { accessSVGStyle().setFloodOpacity(f); }
 
-    float stopOpacity() const { return svgStyle()->stopOpacity(); }
-    void setStopOpacity(float f) { accessSVGStyle()->setStopOpacity(f); }
+    float stopOpacity() const { return svgStyle().stopOpacity(); }
+    void setStopOpacity(float f) { accessSVGStyle().setStopOpacity(f); }
 
-    void setStopColor(const Color& c) { accessSVGStyle()->setStopColor(c); }
-    void setFloodColor(const Color& c) { accessSVGStyle()->setFloodColor(c); }
-    void setLightingColor(const Color& c) { accessSVGStyle()->setLightingColor(c); }
+    void setStopColor(const Color& c) { accessSVGStyle().setStopColor(c); }
+    void setFloodColor(const Color& c) { accessSVGStyle().setFloodColor(c); }
+    void setLightingColor(const Color& c) { accessSVGStyle().setLightingColor(c); }
 
-    SVGLength* baselineShiftValue() const { return svgStyle()->baselineShiftValue(); }
-    void setBaselineShiftValue(PassRefPtr<SVGLength> s) { accessSVGStyle()->setBaselineShiftValue(s); }
+    SVGLength* baselineShiftValue() const { return svgStyle().baselineShiftValue(); }
+    void setBaselineShiftValue(PassRefPtr<SVGLength> s) { accessSVGStyle().setBaselineShiftValue(s); }
 
     void setShapeOutside(PassRefPtr<ShapeValue> value)
     {
@@ -1501,6 +1505,8 @@ public:
     bool isDisplayReplacedType() const { return isDisplayReplacedType(display()); }
     bool isDisplayInlineType() const { return isDisplayInlineType(display()); }
     bool isOriginalDisplayInlineType() const { return isDisplayInlineType(originalDisplay()); }
+    bool isDisplayFlexibleOrGridBox() const { return isDisplayFlexibleBox(display()) || isDisplayGridBox(display()); }
+
 
     bool setWritingMode(WritingMode v)
     {
@@ -1533,6 +1539,8 @@ public:
 
     void setHasCurrentColor() { noninherited_flags.currentColor = true; }
     bool hasCurrentColor() const { return noninherited_flags.currentColor; }
+
+    bool hasBoxDecorations() const { return hasBorder() || hasBorderRadius() || hasOutline() || hasAppearance() || boxShadow() || hasFilter(); }
 
     // Initial values for all the properties
     static EBorderCollapse initialBorderCollapse() { return BSEPARATE; }
@@ -1609,13 +1617,16 @@ public:
     static Length initialFlexBasis() { return Length(Auto); }
     static int initialOrder() { return 0; }
     static EAlignContent initialAlignContent() { return AlignContentStretch; }
-    static ItemPosition initialAlignItems() { return ItemPositionStretch; }
+    static ItemPosition initialAlignItems() { return ItemPositionAuto; }
     static OverflowAlignment initialAlignItemsOverflowAlignment() { return OverflowAlignmentDefault; }
     static ItemPosition initialAlignSelf() { return ItemPositionAuto; }
     static OverflowAlignment initialAlignSelfOverflowAlignment() { return OverflowAlignmentDefault; }
     static EFlexDirection initialFlexDirection() { return FlowRow; }
     static EFlexWrap initialFlexWrap() { return FlexNoWrap; }
     static EJustifyContent initialJustifyContent() { return JustifyFlexStart; }
+    static ItemPosition initialJustifyItems() { return ItemPositionAuto; }
+    static OverflowAlignment initialJustifyItemsOverflowAlignment() { return OverflowAlignmentDefault; }
+    static ItemPositionType initialJustifyItemsPositionType() { return NonLegacyPosition; }
     static ItemPosition initialJustifySelf() { return ItemPositionAuto; }
     static OverflowAlignment initialJustifySelfOverflowAlignment() { return OverflowAlignmentDefault; }
     static int initialMarqueeLoopCount() { return -1; }
@@ -1658,7 +1669,6 @@ public:
     static Length initialPerspectiveOriginX() { return Length(50.0, Percent); }
     static Length initialPerspectiveOriginY() { return Length(50.0, Percent); }
     static Color initialBackgroundColor() { return Color::transparent; }
-    static Color initialTextEmphasisColor() { return TextEmphasisFillFilled; }
     static TextEmphasisFill initialTextEmphasisFill() { return TextEmphasisFillFilled; }
     static TextEmphasisMark initialTextEmphasisMark() { return TextEmphasisMarkNone; }
     static const AtomicString& initialTextEmphasisCustomMark() { return nullAtom; }
@@ -1683,7 +1693,7 @@ public:
     static Vector<GridTrackSize> initialGridTemplateColumns() { return Vector<GridTrackSize>(); }
     static Vector<GridTrackSize> initialGridTemplateRows() { return Vector<GridTrackSize>(); }
 
-    static GridAutoFlow initialGridAutoFlow() { return AutoFlowNone; }
+    static GridAutoFlow initialGridAutoFlow() { return AutoFlowRow; }
 
     static GridTrackSize initialGridAutoColumns() { return GridTrackSize(Length(Auto)); }
     static GridTrackSize initialGridAutoRows() { return GridTrackSize(Length(Auto)); }
@@ -1716,7 +1726,7 @@ public:
     static ETextSecurity initialTextSecurity() { return TSNONE; }
     static Color initialTapHighlightColor();
     static const FilterOperations& initialFilter() { DEFINE_STATIC_LOCAL(FilterOperations, ops, ()); return ops; }
-    static blink::WebBlendMode initialBlendMode() { return blink::WebBlendModeNormal; }
+    static WebBlendMode initialBlendMode() { return WebBlendModeNormal; }
     static EIsolation initialIsolation() { return IsolationAuto; }
 private:
     void setVisitedLinkColor(const Color&);
@@ -1732,7 +1742,7 @@ private:
     void setVisitedLinkTextFillColor(const StyleColor& v) { SET_VAR_WITH_SETTER(rareInheritedData, visitedLinkTextFillColor, setVisitedLinkTextFillColor, v); }
     void setVisitedLinkTextStrokeColor(const StyleColor& v) { SET_VAR_WITH_SETTER(rareInheritedData, visitedLinkTextStrokeColor, setVisitedLinkTextStrokeColor, v); }
 
-    void inheritUnicodeBidiFrom(const RenderStyle* parent) { noninherited_flags._unicodeBidi = parent->noninherited_flags._unicodeBidi; }
+    void inheritUnicodeBidiFrom(const RenderStyle* parent) { noninherited_flags.unicodeBidi = parent->noninherited_flags.unicodeBidi; }
     void getShadowExtent(const ShadowList*, LayoutUnit& top, LayoutUnit& right, LayoutUnit& bottom, LayoutUnit& left) const;
     LayoutBoxExtent getShadowInsetExtent(const ShadowList*) const;
     void getShadowHorizontalExtent(const ShadowList*, LayoutUnit& left, LayoutUnit& right) const;
@@ -1744,6 +1754,16 @@ private:
     void getShadowBlockDirectionExtent(const ShadowList* shadow, LayoutUnit& logicalTop, LayoutUnit& logicalBottom) const
     {
         return isHorizontalWritingMode() ? getShadowVerticalExtent(shadow, logicalTop, logicalBottom) : getShadowHorizontalExtent(shadow, logicalTop, logicalBottom);
+    }
+
+    bool isDisplayFlexibleBox(EDisplay display) const
+    {
+        return display == FLEX || display == INLINE_FLEX;
+    }
+
+    bool isDisplayGridBox(EDisplay display) const
+    {
+        return display == GRID || display == INLINE_GRID;
     }
 
     bool isDisplayReplacedType(EDisplay display) const
@@ -1785,19 +1805,19 @@ private:
 
     Color colorIncludingFallback(int colorProperty, bool visitedLink) const;
 
-    Color stopColor() const { return svgStyle()->stopColor(); }
-    Color floodColor() const { return svgStyle()->floodColor(); }
-    Color lightingColor() const { return svgStyle()->lightingColor(); }
+    Color stopColor() const { return svgStyle().stopColor(); }
+    Color floodColor() const { return svgStyle().floodColor(); }
+    Color lightingColor() const { return svgStyle().lightingColor(); }
 
     void appendContent(PassOwnPtr<ContentData>);
     void addAppliedTextDecoration(const AppliedTextDecoration&);
 
-    bool diffNeedsFullLayoutAndRepaint(const RenderStyle& other) const;
+    bool diffNeedsFullLayoutAndPaintInvalidation(const RenderStyle& other) const;
     bool diffNeedsFullLayout(const RenderStyle& other) const;
-    bool diffNeedsRepaintLayer(const RenderStyle& other) const;
-    bool diffNeedsRepaintObject(const RenderStyle& other) const;
+    bool diffNeedsPaintInvalidationLayer(const RenderStyle& other) const;
+    bool diffNeedsPaintInvalidationObject(const RenderStyle& other) const;
     bool diffNeedsRecompositeLayer(const RenderStyle& other) const;
-    unsigned computeChangedContextSensitiveProperties(const RenderStyle& other, StyleDifference) const;
+    void updatePropertySpecificDifferences(const RenderStyle& other, StyleDifference&) const;
 };
 
 // FIXME: Reduce/remove the dependency on zoom adjusted int values.
@@ -1875,30 +1895,30 @@ inline bool RenderStyle::setTextOrientation(TextOrientation textOrientation)
 
 inline bool RenderStyle::hasAnyPublicPseudoStyles() const
 {
-    return PUBLIC_PSEUDOID_MASK & noninherited_flags._pseudoBits;
+    return PUBLIC_PSEUDOID_MASK & noninherited_flags.pseudoBits;
 }
 
 inline bool RenderStyle::hasPseudoStyle(PseudoId pseudo) const
 {
     ASSERT(pseudo > NOPSEUDO);
     ASSERT(pseudo < FIRST_INTERNAL_PSEUDOID);
-    return (1 << (pseudo - 1)) & noninherited_flags._pseudoBits;
+    return (1 << (pseudo - 1)) & noninherited_flags.pseudoBits;
 }
 
 inline void RenderStyle::setHasPseudoStyle(PseudoId pseudo)
 {
     ASSERT(pseudo > NOPSEUDO);
     ASSERT(pseudo < FIRST_INTERNAL_PSEUDOID);
-    noninherited_flags._pseudoBits |= 1 << (pseudo - 1);
+    noninherited_flags.pseudoBits |= 1 << (pseudo - 1);
 }
 
 inline bool RenderStyle::hasPseudoElementStyle() const
 {
-    return noninherited_flags._pseudoBits & PSEUDO_ELEMENT_MASK;
+    return noninherited_flags.pseudoBits & PSEUDO_ELEMENT_MASK;
 }
 
 float calcBorderRadiiConstraintScaleFor(const FloatRect&, const FloatRoundedRect::Radii&);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderStyle_h

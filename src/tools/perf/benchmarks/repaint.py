@@ -5,10 +5,10 @@
 from benchmarks import silk_flags
 from measurements import repaint
 import page_sets
-from telemetry import test
+from telemetry import benchmark
 
 
-class RepaintKeyMobileSites(test.Test):
+class RepaintKeyMobileSites(benchmark.Benchmark):
   """Measures repaint performance on the key mobile sites.
 
   http://www.chromium.org/developers/design-documents/rendering-benchmarks"""
@@ -16,7 +16,8 @@ class RepaintKeyMobileSites(test.Test):
   page_set = page_sets.KeyMobileSitesPageSet
 
 
-class RepaintGpuRasterizationKeyMobileSites(test.Test):
+@benchmark.Disabled('android')  # crbug.com/399125
+class RepaintGpuRasterizationKeyMobileSites(benchmark.Benchmark):
   """Measures repaint performance on the key mobile sites with forced GPU
   rasterization.
 

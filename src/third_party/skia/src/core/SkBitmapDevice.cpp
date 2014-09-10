@@ -132,20 +132,6 @@ const SkBitmap& SkBitmapDevice::onAccessBitmap() {
     return fBitmap;
 }
 
-bool SkBitmapDevice::canHandleImageFilter(const SkImageFilter*) {
-    return false;
-}
-
-bool SkBitmapDevice::filterImage(const SkImageFilter* filter, const SkBitmap& src,
-                                 const SkImageFilter::Context& ctx, SkBitmap* result,
-                                 SkIPoint* offset) {
-    return false;
-}
-
-bool SkBitmapDevice::allowImageFilter(const SkImageFilter*) {
-    return true;
-}
-
 void* SkBitmapDevice::onAccessPixels(SkImageInfo* info, size_t* rowBytes) {
     if (fBitmap.getPixels()) {
         *info = fBitmap.info();
@@ -379,6 +365,12 @@ const void* SkBitmapDevice::peekPixels(SkImageInfo* info, size_t* rowBytes) {
         return fBitmap.getPixels();
     }
     return NULL;
+}
+
+SkImageFilter::Cache* SkBitmapDevice::getImageFilterCache() {
+    SkImageFilter::Cache* cache = SkImageFilter::Cache::Get();
+    cache->ref();
+    return cache;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

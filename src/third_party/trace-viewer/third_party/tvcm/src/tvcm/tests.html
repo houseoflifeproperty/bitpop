@@ -1,15 +1,20 @@
 <!DOCTYPE html>
 <html>
 <!--
-Copyright (c) 2013 The Chromium Authors. All rights reserved.
+Copyright (c) 2014 The Chromium Authors. All rights reserved.
 Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
 <head>
   <title>TVCM Tests: loading...</title>
-  <script src="/tvcm/__init__.js"></script>
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <script src="/platform.min.js"></script>
+  <script src="/polymer.min.js"></script>
+
+  <link rel="import" href="/tvcm.html">
   <link rel="shortcut icon" href="data:image/x-icon;base64," type="image/x-icon">
+  <link rel="import" href="/tvcm/unittest.html">
+  <link rel="import" href="/tvcm/unittest/interactive_test_runner.html">
   <style>
     html, body {
       box-sizing: border-box;
@@ -26,10 +31,6 @@ found in the LICENSE file.
   </style>
 </head>
 <body>
-  <script>
-    tvcm.require('tvcm.unittest');
-    tvcm.require('tvcm.unittest.interactive_test_runner');
-  </script>
   <script>
     'use strict';
 

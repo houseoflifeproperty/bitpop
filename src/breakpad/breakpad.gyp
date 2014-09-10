@@ -13,6 +13,7 @@
     ['OS!="ios" and OS!="win"', {
       'targets': [
         {
+          # GN version: //breakpad:minidump_stackwalk
           'target_name': 'minidump_stackwalk',
           'type': 'executable',
           'includes': ['breakpad_tools.gypi'],
@@ -96,6 +97,7 @@
           ],
         },
         {
+          # GN version: //breakpad:minidump_dump
           'target_name': 'minidump_dump',
           'type': 'executable',
           'includes': ['breakpad_tools.gypi'],
@@ -129,6 +131,7 @@
       },
       'targets': [
         {
+          # GN version: //breakpad:dump_syms
           'target_name': 'dump_syms',
           'type': 'executable',
           'toolsets': ['host'],
@@ -194,6 +197,7 @@
           },
         },
         {
+          # GN version: //breakpad:symupload
           'target_name': 'symupload',
           'type': 'executable',
           'toolsets': ['host'],
@@ -228,6 +232,7 @@
       },
       'targets': [
         {
+          # GN version: //breakpad:utilities
           'target_name': 'breakpad_utilities',
           'type': 'static_library',
           'sources': [
@@ -250,6 +255,7 @@
           ],
         },
         {
+          # GN version: //breakpad:crash_inspector
           'target_name': 'crash_inspector',
           'type': 'executable',
           'variables': {
@@ -275,6 +281,7 @@
           }
         },
         {
+          # GN version: //breakpad:crash_report_sender
           'target_name': 'crash_report_sender',
           'type': 'executable',
           'mac_bundle': 1,
@@ -311,6 +318,7 @@
           }
         },
         {
+          # GN version: //breakpad
           'target_name': 'breakpad',
           'type': 'static_library',
           'dependencies': [
@@ -351,6 +359,7 @@
       # Tools needed for archiving build symbols.
       'targets': [
         {
+          # GN version: //breakpad:symupload
           'target_name': 'symupload',
           'type': 'executable',
 
@@ -372,6 +381,7 @@
           },
         },
         {
+          # GN version: //breakpad:dump_syms
           'target_name': 'dump_syms',
           'type': 'executable',
           'conditions': [
@@ -435,6 +445,7 @@
           ],
         },
         {
+          # GN version: //breakpad:client
           'target_name': 'breakpad_client',
           'type': 'static_library',
 
@@ -490,10 +501,6 @@
           ],
 
           'conditions': [
-            # Android NDK toolchain doesn't support -mimplicit-it=always
-            ['target_arch=="arm" and OS!="android"', {
-              'cflags': ['-Wa,-mimplicit-it=always'],
-            }],
             ['target_arch=="arm" and chromeos==1', {
               # Avoid running out of registers in
               # linux_syscall_support.h:sys_clone()'s inline assembly.
@@ -534,6 +541,7 @@
         },
         {
           # Breakpad r693 uses some files from src/processor in unit tests.
+          # GN version: //breakpad:processor_support
           'target_name': 'breakpad_processor_support',
           'type': 'static_library',
 
@@ -557,6 +565,7 @@
           ],
         },
         {
+          # GN version: //breakpad:breakpad_unittests
           'target_name': 'breakpad_unittests',
           'type': 'executable',
           'dependencies': [
@@ -567,6 +576,12 @@
             'breakpad_processor_support',
             'linux_dumper_unittest_helper',
           ],
+          'variables': {
+            'clang_warning_flags': [
+              # See http://crbug.com/138571#c18
+              '-Wno-unused-value',
+            ],
+          },
 
           'sources': [
             'linux/breakpad_googletest_includes.h',
@@ -603,12 +618,6 @@
             '.',
           ],
           'conditions': [
-            [ 'clang == 1', {
-              'cflags': [
-                # See http://crbug.com/138571#c18
-                '-Wno-unused-value',
-              ],
-            }],
             ['OS=="android"', {
               'libraries': [
                 '-llog',
@@ -623,6 +632,7 @@
           ],
         },
         {
+          # GN version: //breakpad:linux_dumper_unittest_helper
           'target_name': 'linux_dumper_unittest_helper',
           'type': 'executable',
           'dependencies': [
@@ -645,6 +655,7 @@
           ],
         },
         {
+          # GN version: //breakpad:generate_test_dump
           'target_name': 'generate_test_dump',
           'type': 'executable',
 
@@ -672,6 +683,7 @@
           ],
         },
         {
+          # GN version: //breakpad:minidump-2-core
           'target_name': 'minidump-2-core',
           'type': 'executable',
 
@@ -689,6 +701,7 @@
           ],
         },
         {
+          # GN version: //breakpad:core-2-minidump
           'target_name': 'core-2-minidump',
           'type': 'executable',
 
@@ -710,6 +723,7 @@
     ['OS=="ios"', {
       'targets': [
         {
+          # GN version: //breakpad:client
           'target_name': 'breakpad_client',
           'type': 'static_library',
           'sources': [

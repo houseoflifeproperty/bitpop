@@ -30,7 +30,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 #if !ENABLE(OILPAN)
 template<class T, class S>
@@ -44,7 +44,7 @@ public:
     public:
         explicit Wrapper(PassRefPtr<ThisType> wrapped) : m_wrapped(wrapped) { }
         virtual ~Wrapper() { }
-#if SECURITY_ASSERT_ENABLED
+#if ENABLE(SECURITY_ASSERT)
         virtual bool isRefCountedWrapper() const OVERRIDE { return true; }
 #endif
         ThisType* wrapped() const { return m_wrapped.get(); }
@@ -72,6 +72,6 @@ public:
 };
 #endif
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RefCountedSupplement_h

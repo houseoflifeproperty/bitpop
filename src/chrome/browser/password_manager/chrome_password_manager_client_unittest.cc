@@ -32,6 +32,29 @@ class MockLogReceiver : public password_manager::LogReceiver {
   MOCK_METHOD1(LogSavePasswordProgress, void(const std::string&));
 };
 
+class TestChromePasswordManagerClient : public ChromePasswordManagerClient {
+ public:
+  explicit TestChromePasswordManagerClient(content::WebContents* web_contents)
+      : ChromePasswordManagerClient(web_contents, NULL),
+        is_sync_account_credential_(false) {}
+  virtual ~TestChromePasswordManagerClient() {}
+
+  virtual bool IsSyncAccountCredential(
+      const std::string& username,
+      const std::string& origin) const OVERRIDE {
+    return is_sync_account_credential_;
+  }
+
+  void set_is_sync_account_credential(bool is_sync_account_credential) {
+    is_sync_account_credential_ = is_sync_account_credential;
+  }
+
+ private:
+  bool is_sync_account_credential_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestChromePasswordManagerClient);
+};
+
 }  // namespace
 
 class ChromePasswordManagerClientTest : public ChromeRenderViewHostTestHarness {
@@ -191,4 +214,110 @@ TEST_F(ChromePasswordManagerClientTest, LogToAReceiver) {
 
   service_->UnregisterReceiver(&receiver_);
   EXPECT_FALSE(client->IsLoggingActive());
+}
+
+TEST_F(ChromePasswordManagerClientTest, ShouldFilterAutofillResult_Reauth) {
+  // Make client disallow only reauth requests.
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  command_line->AppendSwitch(
+      password_manager::switches::kDisallowAutofillSyncCredentialForReauth);
+  scoped_ptr<TestChromePasswordManagerClient> client(
+      new TestChromePasswordManagerClient(web_contents()));
+  autofill::PasswordForm form;
+
+  client->set_is_sync_account_credential(false);
+  NavigateAndCommit(
+      GURL("https://accounts.google.com/login?rart=123&continue=blah"));
+  EXPECT_FALSE(client->ShouldFilterAutofillResult(form));
+
+  client->set_is_sync_account_credential(true);
+  NavigateAndCommit(
+      GURL("https://accounts.google.com/login?rart=123&continue=blah"));
+  EXPECT_TRUE(client->ShouldFilterAutofillResult(form));
+
+  // This counts as a reauth url, though a valid URL should have a value for
+  // "rart"
+  NavigateAndCommit(GURL("https://accounts.google.com/addlogin?rart"));
+  EXPECT_TRUE(client->ShouldFilterAutofillResult(form));
+
+  NavigateAndCommit(GURL("https://accounts.google.com/login?param=123"));
+  EXPECT_FALSE(client->ShouldFilterAutofillResult(form));
+
+  NavigateAndCommit(GURL("https://site.com/login?rart=678"));
+  EXPECT_FALSE(client->ShouldFilterAutofillResult(form));
+}
+
+TEST_F(ChromePasswordManagerClientTest, ShouldFilterAutofillResult) {
+  // Normally the client should allow any credentials through, even if they
+  // are the sync credential.
+  scoped_ptr<TestChromePasswordManagerClient> client(
+      new TestChromePasswordManagerClient(web_contents()));
+  autofill::PasswordForm form;
+  client->set_is_sync_account_credential(true);
+  NavigateAndCommit(GURL("https://accounts.google.com/Login"));
+  EXPECT_FALSE(client->ShouldFilterAutofillResult(form));
+
+  // Adding disallow switch should cause sync credential to be filtered.
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  command_line->AppendSwitch(
+      password_manager::switches::kDisallowAutofillSyncCredential);
+  client.reset(new TestChromePasswordManagerClient(web_contents()));
+  client->set_is_sync_account_credential(true);
+  NavigateAndCommit(GURL("https://accounts.google.com/Login"));
+  EXPECT_TRUE(client->ShouldFilterAutofillResult(form));
+}
+
+TEST_F(ChromePasswordManagerClientTest,
+       IsPasswordManagerEnabledForCurrentPage) {
+  ChromePasswordManagerClient* client = GetClient();
+  NavigateAndCommit(
+      GURL("https://accounts.google.com/ServiceLogin?continue="
+           "https://passwords.google.com/settings&rart=123"));
+  EXPECT_FALSE(client->IsPasswordManagerEnabledForCurrentPage());
+
+  // Password site is inaccesible via HTTP, but because of HSTS the following
+  // link should still continue to https://passwords.google.com.
+  NavigateAndCommit(
+      GURL("https://accounts.google.com/ServiceLogin?continue="
+           "http://passwords.google.com/settings&rart=123"));
+  EXPECT_FALSE(client->IsPasswordManagerEnabledForCurrentPage());
+
+  // Specifying default port still passes.
+  NavigateAndCommit(
+      GURL("https://accounts.google.com/ServiceLogin?continue="
+           "https://passwords.google.com:443/settings&rart=123"));
+  EXPECT_FALSE(client->IsPasswordManagerEnabledForCurrentPage());
+
+  // Encoded URL is considered the same.
+  NavigateAndCommit(
+      GURL("https://accounts.google.com/ServiceLogin?continue="
+           "https://passwords.%67oogle.com/settings&rart=123"));
+  EXPECT_FALSE(client->IsPasswordManagerEnabledForCurrentPage());
+
+  // Fully qualified domain name is considered a different hostname by GURL.
+  // Ideally this would not be the case, but this quirk can be avoided by
+  // verification on the server. This test is simply documentation of this
+  // behavior.
+  NavigateAndCommit(
+      GURL("https://accounts.google.com/ServiceLogin?continue="
+           "https://passwords.google.com./settings&rart=123"));
+  EXPECT_TRUE(client->IsPasswordManagerEnabledForCurrentPage());
+
+  // Not a transactional reauth page.
+  NavigateAndCommit(
+      GURL("https://accounts.google.com/ServiceLogin?continue="
+           "https://passwords.google.com/settings"));
+  EXPECT_TRUE(client->IsPasswordManagerEnabledForCurrentPage());
+
+  // Should be enabled for other transactional reauth pages.
+  NavigateAndCommit(
+      GURL("https://accounts.google.com/ServiceLogin?continue="
+           "https://mail.google.com&rart=234"));
+  EXPECT_TRUE(client->IsPasswordManagerEnabledForCurrentPage());
+
+  // Reauth pages are only on accounts.google.com
+  NavigateAndCommit(
+      GURL("https://other.site.com/ServiceLogin?continue="
+           "https://passwords.google.com&rart=234"));
+  EXPECT_TRUE(client->IsPasswordManagerEnabledForCurrentPage());
 }

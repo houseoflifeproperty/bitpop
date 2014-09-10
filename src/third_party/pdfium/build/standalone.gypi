@@ -131,6 +131,14 @@
           }],
         ],  # conditions
       },
+      'Debug_x64': {
+        'inherit_from': ['Debug'],
+        'msvs_configuration_platform': 'x64',
+      },
+      'Release_x64': {
+        'inherit_from': ['Release'],
+        'msvs_configuration_platform': 'x64',
+      },
     },
     'defines!': [
       'DEBUG',
@@ -224,6 +232,7 @@
     ['OS=="win"', {
       'target_defaults': {
         'defines': [
+          'NOMINMAX',
           '_CRT_SECURE_NO_DEPRECATE',
           '_CRT_NONSTDC_NO_DEPRECATE',
         ],

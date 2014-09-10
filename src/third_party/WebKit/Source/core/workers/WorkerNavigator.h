@@ -26,7 +26,7 @@
 #ifndef WorkerNavigator_h
 #define WorkerNavigator_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/frame/NavigatorCPU.h"
 #include "core/frame/NavigatorID.h"
 #include "core/frame/NavigatorOnLine.h"
@@ -36,7 +36,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class WorkerNavigator FINAL : public RefCountedWillBeGarbageCollectedFinalized<WorkerNavigator>, public ScriptWrappable, public NavigatorCPU, public NavigatorID, public NavigatorOnLine, public WillBeHeapSupplementable<WorkerNavigator> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerNavigator);
@@ -57,6 +57,6 @@ private:
     String m_userAgent;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerNavigator_h

@@ -10,6 +10,7 @@
 #include "base/location.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/metrics/field_trial.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/test/test_simple_task_runner.h"
@@ -110,6 +111,7 @@ class GCMDriverTest : public testing::Test {
   scoped_refptr<base::TestSimpleTaskRunner> task_runner_;
   base::MessageLoopForUI message_loop_;
   base::Thread io_thread_;
+  base::FieldTrialList field_trial_list_;
   scoped_ptr<GCMDriver> driver_;
   scoped_ptr<FakeGCMAppHandler> gcm_app_handler_;
 
@@ -127,6 +129,7 @@ class GCMDriverTest : public testing::Test {
 GCMDriverTest::GCMDriverTest()
     : task_runner_(new base::TestSimpleTaskRunner()),
       io_thread_("IOThread"),
+      field_trial_list_(NULL),
       registration_result_(GCMClient::UNKNOWN_ERROR),
       send_result_(GCMClient::UNKNOWN_ERROR),
       unregistration_result_(GCMClient::UNKNOWN_ERROR) {
@@ -226,9 +229,9 @@ void GCMDriverTest::Register(const std::string& app_id,
   base::RunLoop run_loop;
   async_operation_completed_callback_ = run_loop.QuitClosure();
   driver_->Register(app_id,
-                     sender_ids,
-                     base::Bind(&GCMDriverTest::RegisterCompleted,
-                                base::Unretained(this)));
+                    sender_ids,
+                    base::Bind(&GCMDriverTest::RegisterCompleted,
+                               base::Unretained(this)));
   if (wait_to_finish == WAIT)
     run_loop.Run();
 }
@@ -240,10 +243,10 @@ void GCMDriverTest::Send(const std::string& app_id,
   base::RunLoop run_loop;
   async_operation_completed_callback_ = run_loop.QuitClosure();
   driver_->Send(app_id,
-                 receiver_id,
-                 message,
-                 base::Bind(&GCMDriverTest::SendCompleted,
-                            base::Unretained(this)));
+                receiver_id,
+                message,
+                base::Bind(&GCMDriverTest::SendCompleted,
+                           base::Unretained(this)));
   if (wait_to_finish == WAIT)
     run_loop.Run();
 }
@@ -299,6 +302,23 @@ TEST_F(GCMDriverTest, Create) {
   EXPECT_FALSE(gcm_app_handler()->connected());
 
   // GCM will be started only after both sign-in and app handler being added.
+  AddAppHandlers();
+  EXPECT_TRUE(driver()->IsStarted());
+  PumpIOLoop();
+  EXPECT_TRUE(driver()->IsConnected());
+  EXPECT_TRUE(gcm_app_handler()->connected());
+}
+
+TEST_F(GCMDriverTest, CreateByFieldTrial) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("GCM", "Enabled"));
+
+  // Create GCMDriver first. GCM is not started.
+  CreateDriver(FakeGCMClient::NO_DELAY_START);
+  EXPECT_FALSE(driver()->IsStarted());
+  EXPECT_FALSE(driver()->IsConnected());
+  EXPECT_FALSE(gcm_app_handler()->connected());
+
+  // GCM will be started after app handler is added.
   AddAppHandlers();
   EXPECT_TRUE(driver()->IsStarted());
   PumpIOLoop();
@@ -777,13 +797,17 @@ TEST_F(GCMDriverFunctionalTest, RegisterWhenAsyncOperationPending) {
 
 TEST_F(GCMDriverFunctionalTest, Send) {
   GCMClient::OutgoingMessage message;
-  message.id = "1";
+  message.id = "1@ack";
   message.data["key1"] = "value1";
   message.data["key2"] = "value2";
   Send(kTestAppID1, kUserID1, message, GCMDriverTest::WAIT);
 
   EXPECT_EQ(message.id, send_message_id());
   EXPECT_EQ(GCMClient::SUCCESS, send_result());
+
+  gcm_app_handler()->WaitForNotification();
+  EXPECT_EQ(message.id, gcm_app_handler()->acked_message_id());
+  EXPECT_EQ(kTestAppID1, gcm_app_handler()->app_id());
 }
 
 TEST_F(GCMDriverFunctionalTest, SendAfterSignOut) {

@@ -125,8 +125,10 @@ class ExtensionSettingsHandler
       content::BrowserContext* browser_context,
       const Extension* extension,
       UnloadedExtensionInfo::Reason reason) OVERRIDE;
-  virtual void OnExtensionUninstalled(content::BrowserContext* browser_context,
-                                      const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUninstalled(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      extensions::UninstallReason reason) OVERRIDE;
 
   // ExtensionPrefsObserver implementation.
   virtual void OnExtensionDisableReasonsChanged(const std::string& extension_id,
@@ -194,6 +196,9 @@ class ExtensionSettingsHandler
 
   // Callback for the "dismissADTPromo" message.
   void HandleDismissADTPromoMessage(const base::ListValue* args);
+
+  // Callback for the "showPath" message.
+  void HandleShowPath(const base::ListValue* args);
 
   // Utility for calling JavaScript window.alert in the page.
   void ShowAlert(const std::string& message);

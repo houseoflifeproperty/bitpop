@@ -16,6 +16,7 @@
 
 #include <libaddressinput/callback.h>
 #include <libaddressinput/storage.h>
+#include <libaddressinput/util/basictypes.h>
 #include <libaddressinput/util/scoped_ptr.h>
 
 #include <cstddef>
@@ -33,22 +34,23 @@ using i18n::addressinput::Storage;
 // Tests for FakeStorage object.
 class FakeStorageTest : public testing::Test {
  protected:
-  FakeStorageTest() : storage_(), success_(false), key_(), data_() {}
-  virtual ~FakeStorageTest() {}
+  FakeStorageTest()
+      : storage_(),
+        success_(false),
+        key_(),
+        data_(),
+        data_ready_(BuildCallback(this, &FakeStorageTest::OnDataReady)) {}
 
-  Storage::Callback* BuildCallback() {
-    return ::BuildCallback(this, &FakeStorageTest::OnDataReady);
-  }
+  virtual ~FakeStorageTest() {}
 
   FakeStorage storage_;
   bool success_;
   std::string key_;
   std::string data_;
+  const scoped_ptr<const Storage::Callback> data_ready_;
 
  private:
-  void OnDataReady(bool success,
-                   const std::string& key,
-                   std::string* data) {
+  void OnDataReady(bool success, const std::string& key, std::string* data) {
     ASSERT_FALSE(success && data == NULL);
     success_ = success;
     key_ = key;
@@ -57,11 +59,12 @@ class FakeStorageTest : public testing::Test {
       delete data;
     }
   }
+
+  DISALLOW_COPY_AND_ASSIGN(FakeStorageTest);
 };
 
 TEST_F(FakeStorageTest, GetWithoutPutReturnsEmptyData) {
-  scoped_ptr<Storage::Callback> callback(BuildCallback());
-  storage_.Get("key", *callback);
+  storage_.Get("key", *data_ready_);
 
   EXPECT_FALSE(success_);
   EXPECT_EQ("key", key_);
@@ -70,9 +73,7 @@ TEST_F(FakeStorageTest, GetWithoutPutReturnsEmptyData) {
 
 TEST_F(FakeStorageTest, GetReturnsWhatWasPut) {
   storage_.Put("key", new std::string("value"));
-
-  scoped_ptr<Storage::Callback> callback(BuildCallback());
-  storage_.Get("key", *callback);
+  storage_.Get("key", *data_ready_);
 
   EXPECT_TRUE(success_);
   EXPECT_EQ("key", key_);
@@ -82,9 +83,7 @@ TEST_F(FakeStorageTest, GetReturnsWhatWasPut) {
 TEST_F(FakeStorageTest, SecondPutOverwritesData) {
   storage_.Put("key", new std::string("bad-value"));
   storage_.Put("key", new std::string("good-value"));
-
-  scoped_ptr<Storage::Callback> callback(BuildCallback());
-  storage_.Get("key", *callback);
+  storage_.Get("key", *data_ready_);
 
   EXPECT_TRUE(success_);
   EXPECT_EQ("key", key_);

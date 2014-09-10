@@ -5,12 +5,12 @@
 #ifndef InterpolableValue_h
 #define InterpolableValue_h
 
-#include "core/animation/AnimatableValue.h"
+#include "core/animation/animatable/AnimatableValue.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class InterpolableValue : public NoBaseWillBeGarbageCollected<InterpolableValue> {
     DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(InterpolableValue);

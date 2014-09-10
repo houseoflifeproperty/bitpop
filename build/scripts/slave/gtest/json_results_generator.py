@@ -13,7 +13,6 @@ import codecs
 import logging
 import os
 import time
-import urllib2
 
 import simplejson
 from slave.gtest.test_result import TestResult
@@ -25,31 +24,8 @@ JSON_PREFIX = 'ADD_RESULTS('
 JSON_SUFFIX = ');'
 
 
-def has_json_wrapper(string):
-  return string.startswith(JSON_PREFIX) and string.endswith(JSON_SUFFIX)
-
-
-def strip_json_wrapper(json_content):
-  # FIXME: Kill this code once the server returns json instead of jsonp.
-  if has_json_wrapper(json_content):
-    return json_content[len(JSON_PREFIX):-len(JSON_SUFFIX)]
-  return json_content
-
-
-def convert_trie_to_flat_paths(trie, prefix=None):
-  """Converts the directory structure in the given trie to flat paths,
-  prepending a prefix to each."""
-  result = {}
-  for name, data in trie.iteritems():
-    if prefix:
-      name = prefix + '/' + name
-
-    if len(data) and not 'results' in data:
-      result.update(convert_trie_to_flat_paths(data, name))
-    else:
-      result[name] = data
-
-  return result
+def test_did_pass(test_result):
+  return not test_result.failed and test_result.modifier == TestResult.NONE
 
 
 def add_path_to_trie(path, value, trie):
@@ -93,42 +69,27 @@ def generate_test_timings_trie(individual_test_timings):
 class JSONResultsGenerator(object):
   """A JSON results generator for generic tests."""
 
-  MAX_NUMBER_OF_BUILD_RESULTS_TO_LOG = 750
-  # Min time (seconds) that will be added to the JSON.
-  MIN_TIME = 1
+  FAIL_LABEL = 'FAIL'
+  PASS_LABEL = 'PASS'
+  FLAKY_LABEL = ' '.join([FAIL_LABEL, PASS_LABEL])
+  SKIP_LABEL = 'SKIP'
 
-  # Note that in non-chromium tests those chars are used to indicate
-  # test modifiers (FAILS, FLAKY, etc) but not actual test results.
-  PASS_RESULT = 'P'
-  SKIP_RESULT = 'X'
-  FAIL_RESULT = 'F'
-  FLAKY_RESULT = 'L'
-  NO_DATA_RESULT = 'N'
-
-  MODIFIER_TO_CHAR = {
-      TestResult.NONE: PASS_RESULT,
-      TestResult.DISABLED: SKIP_RESULT,
-      TestResult.FAILS: FAIL_RESULT,
-      TestResult.FLAKY: FLAKY_RESULT}
-
-  VERSION = 4
-  VERSION_KEY = 'version'
-  RESULTS = 'results'
-  TIMES = 'times'
-  BUILD_NUMBERS = 'buildNumbers'
-  TIME = 'secondsSinceEpoch'
+  ACTUAL = 'actual'
+  BLINK_REVISION = 'blink_revision'
+  BUILD_NUMBER = 'build_number'
+  BUILDER_NAME = 'builder_name'
+  CHROMIUM_REVISION = 'chromium_revision'
+  EXPECTED = 'expected'
+  FAILURE_SUMMARY = 'num_failures_by_type'
+  SECONDS_SINCE_EPOCH = 'seconds_since_epoch'
+  TEST_TIME = 'time'
   TESTS = 'tests'
-
-  FIXABLE_COUNT = 'fixableCount'
-  FIXABLE = 'fixableCounts'
-  ALL_FIXABLE_COUNT = 'allFixableCount'
+  VERSION = 'version'
+  VERSION_NUMBER = 3
 
   RESULTS_FILENAME = 'results.json'
   TIMES_MS_FILENAME = 'times_ms.json'
-  INCREMENTAL_RESULTS_FILENAME = 'incremental_results.json'
-
-  URL_FOR_TEST_LIST_JSON = \
-    'http://%s/testfile?builder=%s&name=%s&testlistjson=1&testtype=%s&master=%s'
+  FULL_RESULTS_FILENAME = 'full_results.json'
 
   def __init__(self, builder_name, build_name, build_number,
                results_file_base_path, builder_base_url,
@@ -178,10 +139,10 @@ class JSONResultsGenerator(object):
     self._file_writer = file_writer
 
   def generate_json_output(self):
-    json = self.get_json()
+    json = self.get_full_results_json()
     if json:
       file_path = os.path.join(self._results_directory,
-                               self.INCREMENTAL_RESULTS_FILENAME)
+                               self.FULL_RESULTS_FILENAME)
       self._write_json(json, file_path)
 
   def generate_times_ms_file(self):
@@ -189,47 +150,61 @@ class JSONResultsGenerator(object):
     file_path = os.path.join(self._results_directory, self.TIMES_MS_FILENAME)
     self._write_json(times, file_path)
 
-  def get_json(self):
-    """Gets the results for the results.json file."""
-    results_json = {}
+  def get_full_results_json(self):
+    results = {self.VERSION: self.VERSION_NUMBER}
 
-    if not results_json:
-      results_json, error = self._get_archived_json_results()
-      if error:
-        # If there was an error don't write a results.json
-        # file at all as it would lose all the information on the
-        # bot.
-        logging.error('Archive directory is inaccessible. Not '
-                      'modifying or clobbering the results.json '
-                      'file: ' + str(error))
-        return None
+    # Metadata generic to all results.
+    results[self.BUILDER_NAME] = self._builder_name
+    results[self.BUILD_NUMBER] = self._build_number
+    results[self.SECONDS_SINCE_EPOCH] = int(time.time())
+    for name, revision in self._svn_revisions:
+      results[name + '_revision'] = revision
 
-    builder_name = self._builder_name
-    if results_json and builder_name not in results_json:
-      logging.debug('Builder name (%s) is not in the results.json file.'
-                    % builder_name)
+    tests = results.setdefault(self.TESTS, {})
+    for test_name in self._test_results_map.iterkeys():
+      tests[test_name] = self._make_test_data(test_name)
 
-    self._convert_json_to_current_version(results_json)
+    self._insert_failure_map(results)
 
-    if builder_name not in results_json:
-      results_json[builder_name] = (
-          self._create_results_for_builder_json())
+    return results
 
-    results_for_builder = results_json[builder_name]
+  def _insert_failure_map(self, results):
+    # FAIL, PASS, NOTRUN
+    summary = {self.PASS_LABEL: 0, self.FAIL_LABEL: 0, self.SKIP_LABEL: 0}
+    for result in self._test_results_map.itervalues():
+      if test_did_pass(result):
+        summary[self.PASS_LABEL] += 1
+      elif result.modifier == TestResult.DISABLED:
+        summary[self.SKIP_LABEL] += 1
+      elif result.failed:
+        summary[self.FAIL_LABEL] += 1
 
-    self._insert_generic_metadata(results_for_builder)
+    results[self.FAILURE_SUMMARY] = summary
 
-    self._insert_failure_summaries(results_for_builder)
+  def _make_test_data(self, test_name):
+    test_data = {}
+    expected, actual = self._get_expected_and_actual_results(test_name)
+    test_data[self.EXPECTED] = expected
+    test_data[self.ACTUAL] = actual
+    run_time = int(self._test_results_map[test_name].test_run_time)
+    test_data[self.TEST_TIME] = run_time
 
-    # Update the all failing tests with result type and time.
-    tests = results_for_builder[self.TESTS]
-    all_failing_tests = self._get_failed_test_names()
-    all_failing_tests.update(convert_trie_to_flat_paths(tests))
+    return test_data
 
-    for test in all_failing_tests:
-      self._insert_test_time_and_result(test, tests)
+  def _get_expected_and_actual_results(self, test_name):
+    test_result = self._test_results_map[test_name]
+    modifier = test_result.modifier
 
-    return results_json
+    if modifier == TestResult.DISABLED:
+      return (self.SKIP_LABEL, self.SKIP_LABEL)
+
+    actual = self.FAIL_LABEL if test_result.failed else self.PASS_LABEL
+    if modifier == TestResult.NONE:
+      return (self.PASS_LABEL, actual)
+    if modifier == TestResult.FLAKY:
+      return (self.FLAKY_LABEL, actual)
+    if modifier == TestResult.FAILS:
+      return (self.FAIL_LABEL, actual)
 
   def upload_json_files(self, json_files):
     """Uploads the given json_files to the test_results_server (if the
@@ -265,249 +240,3 @@ class JSONResultsGenerator(object):
     else:
       with codecs.open(file_path, 'w', 'utf8') as f:
         f.write(json_string)
-
-  def _get_test_timing(self, test_name):
-    """Returns test timing data (elapsed time) in second
-    for the given test_name."""
-    if test_name in self._test_results_map:
-      # Floor for now to get time in seconds.
-      return int(self._test_results_map[test_name].test_run_time)
-    return 0
-
-  def _get_failed_test_names(self):
-    """Returns a set of failed test names."""
-    return set([r.test_name for r in self._test_results if r.failed])
-
-  def _get_modifier_char(self, test_name):
-    """Returns a single char (e.g. SKIP_RESULT, FAIL_RESULT,
-    PASS_RESULT, NO_DATA_RESULT, etc) that indicates the test modifier
-    for the given test_name.
-    """
-    if test_name not in self._test_results_map:
-      return self.__class__.NO_DATA_RESULT
-
-    test_result = self._test_results_map[test_name]
-    if test_result.modifier in self.MODIFIER_TO_CHAR.keys():
-      return self.MODIFIER_TO_CHAR[test_result.modifier]
-
-    return self.__class__.PASS_RESULT
-
-  def _get_result_char(self, test_name):
-    """Returns a single char (e.g. SKIP_RESULT, FAIL_RESULT,
-    PASS_RESULT, NO_DATA_RESULT, etc) that indicates the test result
-    for the given test_name.
-    """
-    if test_name not in self._test_results_map:
-      return self.__class__.NO_DATA_RESULT
-
-    test_result = self._test_results_map[test_name]
-    if test_result.modifier == TestResult.DISABLED:
-      return self.__class__.SKIP_RESULT
-
-    if test_result.failed:
-      return self.__class__.FAIL_RESULT
-
-    return self.__class__.PASS_RESULT
-
-  def _get_archived_json_results(self):
-    """Download JSON file that only contains test
-    name list from test-results server. This is for generating incremental
-    JSON so the file generated has info for tests that failed before but
-    pass or are skipped from current run.
-
-    Returns (archived_results, error) tuple where error is None if results
-    were successfully read.
-    """
-    results_json = {}
-    old_results = None
-    error = None
-
-    if not self._test_results_server:
-      return {}, None
-
-    results_file_url = (self.URL_FOR_TEST_LIST_JSON % (
-        urllib2.quote(self._test_results_server),
-        urllib2.quote(self._builder_name),
-        self.RESULTS_FILENAME,
-        urllib2.quote(self._test_type),
-        urllib2.quote(self._master_name)))
-
-    try:
-      results_file = urllib2.urlopen(results_file_url)
-      old_results = results_file.read()
-    except urllib2.HTTPError, http_error:
-      # A non-4xx status code means the bot is hosed for some reason
-      # and we can't grab the results.json file off of it.
-      if http_error.code < 400 and http_error.code >= 500:
-        error = http_error
-    except urllib2.URLError, url_error:
-      error = url_error
-
-    if old_results:
-      # Strip the prefix and suffix so we can get the actual JSON object.
-      old_results = strip_json_wrapper(old_results)
-
-      try:
-        results_json = simplejson.loads(old_results)
-      except ValueError:
-        logging.debug('results.json was not valid JSON. Clobbering.')
-        # The JSON file is not valid JSON. Just clobber the results.
-        results_json = {}
-    else:
-      logging.debug('Old JSON results do not exist. Starting fresh.')
-      results_json = {}
-
-    return results_json, error
-
-  def _insert_failure_summaries(self, results_for_builder):
-    """Inserts aggregate pass/failure statistics into the JSON.
-    This method reads self._test_results and generates
-    FIXABLE, FIXABLE_COUNT and ALL_FIXABLE_COUNT entries.
-
-    Args:
-      results_for_builder: Dictionary containing the test results for a
-        single builder.
-    """
-    # Insert the number of tests that failed or skipped.
-    fixable_count = len([r for r in self._test_results if r.fixable()])
-    self._insert_item_into_raw_list(
-        results_for_builder, fixable_count, self.FIXABLE_COUNT)
-
-    # Create a test modifiers (FAILS, FLAKY etc) summary dictionary.
-    entry = {}
-    for test_name in self._test_results_map.iterkeys():
-      result_char = self._get_modifier_char(test_name)
-      entry[result_char] = entry.get(result_char, 0) + 1
-
-    # Insert the pass/skip/failure summary dictionary.
-    self._insert_item_into_raw_list(results_for_builder, entry, self.FIXABLE)
-
-    # Insert the number of all the tests that are supposed to pass.
-    all_test_count = len(self._test_results)
-    self._insert_item_into_raw_list(results_for_builder,
-                                    all_test_count, self.ALL_FIXABLE_COUNT)
-
-  def _insert_item_into_raw_list(self, results_for_builder, item, key):
-    """Inserts the item into the list with the given key in the results for
-    this builder. Creates the list if no such list exists.
-
-    Args:
-      results_for_builder: Dictionary containing the test results for a
-        single builder.
-      item: Number or string to insert into the list.
-      key: Key in results_for_builder for the list to insert into.
-    """
-    if key in results_for_builder:
-      raw_list = results_for_builder[key]
-    else:
-      raw_list = []
-
-    raw_list.insert(0, item)
-    raw_list = raw_list[:self.MAX_NUMBER_OF_BUILD_RESULTS_TO_LOG]
-    results_for_builder[key] = raw_list
-
-  def _insert_item_run_length_encoded(self, item, encoded_results):
-    """Inserts the item into the run-length encoded results.
-
-    Args:
-      item: String or number to insert.
-      encoded_results: run-length encoded results. An array of arrays, e.g.
-        [[3,'A'],[1,'Q']] encodes AAAQ.
-    """
-    if len(encoded_results) and item == encoded_results[0][1]:
-      num_results = encoded_results[0][0]
-      if num_results <= self.MAX_NUMBER_OF_BUILD_RESULTS_TO_LOG:
-        encoded_results[0][0] = num_results + 1
-    else:
-      # Use a list instead of a class for the run-length encoding since
-      # we want the serialized form to be concise.
-      encoded_results.insert(0, [1, item])
-
-  def _insert_generic_metadata(self, results_for_builder):
-    """ Inserts generic metadata (such as version number, current time etc)
-    into the JSON.
-
-    Args:
-      results_for_builder: Dictionary containing the test results for
-        a single builder.
-    """
-    self._insert_item_into_raw_list(results_for_builder, self._build_number,
-                                    self.BUILD_NUMBERS)
-
-    # Include SVN revisions for the given repositories.
-    for (name, revision) in self._svn_revisions:
-      self._insert_item_into_raw_list(results_for_builder, revision,
-                                      name + 'Revision')
-
-    self._insert_item_into_raw_list(results_for_builder,
-                                    int(time.time()),
-                                    self.TIME)
-
-  def _insert_test_time_and_result(self, test_name, tests):
-    """ Insert a test item with its results to the given tests dictionary.
-
-    Args:
-      tests: Dictionary containing test result entries.
-    """
-
-    result = self._get_result_char(test_name)
-    tm = self._get_test_timing(test_name)
-
-    this_test = tests
-    for segment in test_name.split('/'):
-      if segment not in this_test:
-        this_test[segment] = {}
-      this_test = this_test[segment]
-
-    if not len(this_test):
-      self._populate_results_and_times_json(this_test)
-
-    if self.RESULTS in this_test:
-      self._insert_item_run_length_encoded(result, this_test[self.RESULTS])
-    else:
-      this_test[self.RESULTS] = [[1, result]]
-
-    if self.TIMES in this_test:
-      self._insert_item_run_length_encoded(tm, this_test[self.TIMES])
-    else:
-      this_test[self.TIMES] = [[1, tm]]
-
-  def _convert_json_to_current_version(self, results_json):
-    """If the JSON does not match the current version, converts it to the
-    current version and adds in the new version number.
-    """
-    if self.VERSION_KEY in results_json:
-      archive_version = results_json[self.VERSION_KEY]
-      if archive_version == self.VERSION:
-        return
-    else:
-      archive_version = 3
-
-    # version 3->4
-    if archive_version == 3:
-      for results in results_json.itervalues():
-        self._convert_tests_to_trie(results)
-
-    results_json[self.VERSION_KEY] = self.VERSION
-
-  def _convert_tests_to_trie(self, results):
-    if not self.TESTS in results:
-      return
-
-    test_results = results[self.TESTS]
-    test_results_trie = {}
-    for test in test_results.iterkeys():
-      single_test_result = test_results[test]
-      add_path_to_trie(test, single_test_result, test_results_trie)
-
-    results[self.TESTS] = test_results_trie
-
-  def _populate_results_and_times_json(self, results_and_times):
-    results_and_times[self.RESULTS] = []
-    results_and_times[self.TIMES] = []
-    return results_and_times
-
-  def _create_results_for_builder_json(self):
-    results_for_builder = {}
-    results_for_builder[self.TESTS] = {}
-    return results_for_builder

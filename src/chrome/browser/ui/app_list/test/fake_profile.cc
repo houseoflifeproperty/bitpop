@@ -72,6 +72,10 @@ content::PushMessagingService* FakeProfile::GetPushMessagingService() {
   return NULL;
 }
 
+content::SSLHostStateDelegate* FakeProfile::GetSSLHostStateDelegate() {
+  return NULL;
+}
+
 scoped_refptr<base::SequencedTaskRunner>
 FakeProfile::GetIOTaskRunner() {
   return scoped_refptr<base::SequencedTaskRunner>();
@@ -100,10 +104,6 @@ history::TopSites* FakeProfile::GetTopSites() {
 }
 
 history::TopSites* FakeProfile::GetTopSitesWithoutCreating() {
-  return NULL;
-}
-
-ExtensionService* FakeProfile::GetExtensionService() {
   return NULL;
 }
 
@@ -185,11 +185,6 @@ DevToolsNetworkController* FakeProfile::GetDevToolsNetworkController() {
 
 void FakeProfile::ClearNetworkingHistorySince(
     base::Time time,
-    const base::Closure& completion) {
-}
-
-void FakeProfile::ClearDomainReliabilityMonitor(
-    domain_reliability::DomainReliabilityClearMode mode,
     const base::Closure& completion) {
 }
 

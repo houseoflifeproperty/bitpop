@@ -35,14 +35,14 @@
 #include "public/platform/WebDiscardableMemory.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class TestingDiscardableMemory : public blink::WebDiscardableMemory {
+class TestingDiscardableMemory : public WebDiscardableMemory {
 public:
     explicit TestingDiscardableMemory(size_t);
     virtual ~TestingDiscardableMemory();
 
-    // blink::WebDiscardableMemory:
+    // WebDiscardableMemory:
     virtual bool lock() OVERRIDE;
     virtual void* data() OVERRIDE;
     virtual void unlock() OVERRIDE;
@@ -52,7 +52,7 @@ private:
     bool m_isLocked;
 };
 
-class TestingPlatformSupport : public blink::Platform {
+class TestingPlatformSupport : public Platform {
 public:
     struct Config {
         Config() : hasDiscardableMemorySupport(false) { }
@@ -64,16 +64,16 @@ public:
 
     virtual ~TestingPlatformSupport();
 
-    // blink::Platform:
-    virtual blink::WebDiscardableMemory* allocateAndLockDiscardableMemory(size_t bytes) OVERRIDE;
+    // Platform:
+    virtual WebDiscardableMemory* allocateAndLockDiscardableMemory(size_t bytes) OVERRIDE;
     virtual void cryptographicallyRandomValues(unsigned char* buffer, size_t length) OVERRIDE;
     virtual const unsigned char* getTraceCategoryEnabledFlag(const char* categoryName) OVERRIDE;
 
 private:
     const Config m_config;
-    blink::Platform* const m_oldPlatform;
+    Platform* const m_oldPlatform;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TestingPlatformSupport_h

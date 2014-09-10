@@ -27,7 +27,7 @@
 #ifndef WorkerLocation_h
 #define WorkerLocation_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/DOMURLUtilsReadOnly.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
@@ -36,7 +36,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class WorkerLocation FINAL : public RefCountedWillBeGarbageCollectedFinalized<WorkerLocation>, public ScriptWrappable, public DOMURLUtilsReadOnly {
 public:
@@ -63,6 +63,6 @@ private:
     KURL m_url;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerLocation_h

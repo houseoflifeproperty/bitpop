@@ -10,7 +10,7 @@ do
     git pull --rebase
 
     # FIXME: We should probably remove any stale pyc files.
-    ./auto_roll.py blink eseidel@chromium.org /src/chromium/src
+    ./auto_roll.py blink blink-deps-roller@chromium.org /src/chromium/src
 
     echo 'Waiting 5 minutes between checks...'
     sleep 300

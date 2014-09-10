@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <string>
+#include <vector>
 
 #include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
@@ -67,8 +68,7 @@ class WindowTypeShelfItem : public app_list::AppListItem {
 
     const int kIconSize = 128;
     SkBitmap icon;
-    icon.setConfig(SkBitmap::kARGB_8888_Config, kIconSize, kIconSize);
-    icon.allocPixels();
+    icon.allocN32Pixels(kIconSize, kIconSize);
     icon.eraseColor(kColors[static_cast<int>(type) % arraysize(kColors)]);
     return gfx::ImageSkia::CreateFrom1xBitmap(icon);
   }
@@ -317,8 +317,7 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
 
   virtual void Dismiss() OVERRIDE {
     DCHECK(ash::Shell::HasInstance());
-    if (Shell::GetInstance()->GetAppListTargetVisibility())
-      Shell::GetInstance()->ToggleAppList(NULL);
+    Shell::GetInstance()->DismissAppList();
   }
 
   virtual void ViewClosing() OVERRIDE {
@@ -352,6 +351,11 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
 
   virtual views::View* CreateStartPageWebView(const gfx::Size& size) OVERRIDE {
     return NULL;
+  }
+
+  virtual std::vector<views::View*> CreateCustomPageWebViews(
+      const gfx::Size& size) OVERRIDE {
+    return std::vector<views::View*>();
   }
 
   virtual bool IsSpeechRecognitionEnabled() OVERRIDE {

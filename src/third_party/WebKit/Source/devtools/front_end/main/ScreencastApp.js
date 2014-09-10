@@ -29,20 +29,27 @@ WebInspector.ScreencastApp.prototype = {
 
         this._rootSplitView = new WebInspector.SplitView(false, true, "InspectorView.screencastSplitViewState", 300, 300);
         this._rootSplitView.show(rootView.element);
+        this._rootSplitView.hideMain();
 
         WebInspector.inspectorView.show(this._rootSplitView.sidebarElement());
-        var target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget());
-        this._screencastView = new WebInspector.ScreencastView(target);
-        this._screencastView.show(this._rootSplitView.mainElement());
-
-        this._onStatusBarButtonStateChanged(this._currentScreencastState.get());
         rootView.attachToBody();
     },
 
-    presentUI: function()
+    /**
+     * @param {!WebInspector.Target} mainTarget
+     */
+    presentUI: function(mainTarget)
     {
-        WebInspector.App.prototype.presentUI.call(this);
-        this._screencastView.initialize();
+        if (mainTarget.hasCapability(WebInspector.Target.Capabilities.CanScreencast)) {
+            this._screencastView = new WebInspector.ScreencastView(mainTarget);
+            this._screencastView.show(this._rootSplitView.mainElement());
+            this._screencastView.initialize();
+            this._onStatusBarButtonStateChanged(this._currentScreencastState.get());
+        } else {
+            this._onStatusBarButtonStateChanged("disabled");
+            this._toggleScreencastButton.setEnabled(false);
+        }
+        WebInspector.App.prototype.presentUI.call(this, mainTarget);
     },
 
     /**
@@ -71,7 +78,7 @@ WebInspector.ScreencastApp.prototype = {
 
 /**
  * @constructor
- * @implements {WebInspector.StatusBarButton.Provider}
+ * @implements {WebInspector.StatusBarItem.Provider}
  */
 WebInspector.ScreencastApp.StatusBarButtonProvider = function()
 {
@@ -79,9 +86,9 @@ WebInspector.ScreencastApp.StatusBarButtonProvider = function()
 
 WebInspector.ScreencastApp.StatusBarButtonProvider.prototype = {
     /**
-     * @return {?WebInspector.StatusBarButton}
+     * @return {?WebInspector.StatusBarItem}
      */
-    button: function()
+    item: function()
     {
         if (!(WebInspector.app instanceof WebInspector.ScreencastApp))
             return null;

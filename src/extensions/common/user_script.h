@@ -35,7 +35,23 @@ class UserScript {
   // canExecuteScriptEverywhere is true, this will return ALL_SCHEMES.
   static int ValidUserScriptSchemes(bool canExecuteScriptEverywhere = false);
 
+  // TODO(rdevlin.cronin) This and RunLocataion don't really belong here, since
+  // they are used for more than UserScripts (e.g., tabs.executeScript()).
+  // The type of injected script.
+  enum InjectionType {
+    // A content script specified in the extension's manifest.
+    CONTENT_SCRIPT,
+    // A script injected via, e.g. tabs.executeScript().
+    PROGRAMMATIC_SCRIPT
+  };
+  // The last type of injected script; used for enum verification in IPC.
+  // Update this if you add more injected script types!
+  static const InjectionType INJECTION_TYPE_LAST = PROGRAMMATIC_SCRIPT;
+
   // Locations that user scripts can be run inside the document.
+  // The three run locations must strictly follow each other in both load order
+  // (i.e., start *always* comes before end) and numerically, as we use
+  // arithmetic checking (e.g., curr == last + 1). So, no bitmasks here!!
   enum RunLocation {
     UNDEFINED,
     DOCUMENT_START,  // After the documentElement is created, but before
@@ -270,6 +286,9 @@ class UserScript {
   // True if the script should be injected into an incognito tab.
   bool incognito_enabled_;
 };
+
+// For storing UserScripts with unique IDs in sets.
+bool operator<(const UserScript& script1, const UserScript& script2);
 
 typedef std::vector<UserScript> UserScriptList;
 

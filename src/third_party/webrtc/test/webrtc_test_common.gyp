@@ -14,6 +14,8 @@
       'target_name': 'webrtc_test_common',
       'type': 'static_library',
       'sources': [
+        'call_test.cc',
+        'call_test.h',
         'configurable_frame_size_encoder.cc',
         'configurable_frame_size_encoder.h',
         'direct_transport.cc',
@@ -33,6 +35,8 @@
         'mock_transport.h',
         'null_transport.cc',
         'null_transport.h',
+        'rtp_file_reader.cc',
+        'rtp_file_reader.h',
         'rtp_rtcp_observer.h',
         'run_loop.cc',
         'run_loop.h',
@@ -54,10 +58,11 @@
       'dependencies': [
         '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
-        '<(webrtc_root)/modules/modules.gyp:video_capture_module',
         '<(webrtc_root)/modules/modules.gyp:media_file',
+        '<(webrtc_root)/modules/modules.gyp:video_capture_module',
         '<(webrtc_root)/test/test.gyp:frame_generator',
         '<(webrtc_root)/test/test.gyp:test_support',
+        '<(webrtc_root)/webrtc.gyp:webrtc',
       ],
     },
     {
@@ -181,6 +186,7 @@
           ],
           'sources': [
             'fake_network_pipe_unittest.cc',
+            'rtp_file_reader_unittest.cc',
           ],
         },
       ],  #targets

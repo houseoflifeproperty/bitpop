@@ -51,6 +51,10 @@
 #include "ui/gfx/skbitmap_operations.h"
 #include "v8/include/v8-testing.h"
 
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/common/extensions/chrome_extension_messages.h"
+#endif
+
 using blink::WebAXObject;
 using blink::WebCString;
 using blink::WebDataSource;
@@ -96,12 +100,6 @@ static const char kTranslateCaptureText[] = "Translate.CaptureText";
 
 namespace {
 
-GURL StripRef(const GURL& url) {
-  GURL::Replacements replacements;
-  replacements.ClearRef();
-  return url.ReplaceComponents(replacements);
-}
-
 #if defined(OS_ANDROID)
 // Parses the DOM for a <meta> tag with a particular name.
 // |meta_tag_content| is set to the contents of the 'content' attribute.
@@ -127,7 +125,7 @@ bool RetrieveMetaTagContent(const WebFrame* main_frame,
       if (!child.isElementNode())
         continue;
       WebElement elem = child.to<WebElement>();
-      if (elem.hasTagName("meta")) {
+      if (elem.hasHTMLTagName("meta")) {
         if (elem.hasAttribute("name") && elem.hasAttribute("content")) {
           std::string name = elem.getAttribute("name").utf8();
           if (name == meta_tag_name) {
@@ -161,7 +159,6 @@ ChromeRenderViewObserver::ChromeRenderViewObserver(
       chrome_render_process_observer_(chrome_render_process_observer),
       translate_helper_(new TranslateHelper(render_view)),
       phishing_classifier_(NULL),
-      last_indexed_page_id_(-1),
       capture_timer_(false, false) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (!command_line.HasSwitch(switches::kDisableClientSidePhishingDetection))
@@ -174,12 +171,14 @@ ChromeRenderViewObserver::~ChromeRenderViewObserver() {
 bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ChromeRenderViewObserver, message)
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_WebUIJavaScript, OnWebUIJavaScript)
-    IPC_MESSAGE_HANDLER(ChromeViewMsg_SetClientSidePhishingDetection,
-                        OnSetClientSidePhishingDetection)
+#endif
+#if defined(ENABLE_EXTENSIONS)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SetName, OnSetName)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SetVisuallyDeemphasized,
                         OnSetVisuallyDeemphasized)
+#endif
 #if defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_UpdateTopControlsState,
                         OnUpdateTopControlsState)
@@ -188,6 +187,8 @@ bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChromeViewMsg_RetrieveMetaTagContent,
                         OnRetrieveMetaTagContent)
 #endif
+    IPC_MESSAGE_HANDLER(ChromeViewMsg_SetClientSidePhishingDetection,
+                        OnSetClientSidePhishingDetection)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SetWindowFeatures, OnSetWindowFeatures)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -195,10 +196,12 @@ bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
   return handled;
 }
 
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
 void ChromeRenderViewObserver::OnWebUIJavaScript(
     const base::string16& javascript) {
   webui_javascript_.push_back(javascript);
 }
+#endif
 
 #if defined(OS_ANDROID)
 void ChromeRenderViewObserver::OnUpdateTopControlsState(
@@ -294,17 +297,16 @@ void ChromeRenderViewObserver::OnSetClientSidePhishingDetection(
     bool enable_phishing_detection) {
 #if defined(FULL_SAFE_BROWSING) && !defined(OS_CHROMEOS)
   phishing_classifier_ = enable_phishing_detection ?
-      safe_browsing::PhishingClassifierDelegate::Create(
-          render_view(), NULL) :
+      safe_browsing::PhishingClassifierDelegate::Create(render_view(), NULL) :
       NULL;
 #endif
 }
 
+#if defined(ENABLE_EXTENSIONS)
 void ChromeRenderViewObserver::OnSetName(const std::string& name) {
-  if (!render_view()->GetWebView())
-    return;
-
-  render_view()->GetWebView()->mainFrame()->setName(WebString::fromUTF8(name));
+  blink::WebView* web_view = render_view()->GetWebView();
+  if (web_view)
+    web_view->mainFrame()->setName(WebString::fromUTF8(name));
 }
 
 void ChromeRenderViewObserver::OnSetVisuallyDeemphasized(bool deemphasized) {
@@ -321,6 +323,7 @@ void ChromeRenderViewObserver::OnSetVisuallyDeemphasized(bool deemphasized) {
     dimmed_color_overlay_.reset();
   }
 }
+#endif
 
 void ChromeRenderViewObserver::DidStartLoading() {
   if ((render_view()->GetEnabledBindings() & content::BINDINGS_POLICY_WEB_UI) &&
@@ -347,7 +350,6 @@ void ChromeRenderViewObserver::DidStopLoading() {
     return;
 
   CapturePageInfoLater(
-      render_view()->GetPageId(),
       false,  // preliminary_capture
       base::TimeDelta::FromMilliseconds(
           render_view()->GetContentStateImmediately() ?
@@ -361,29 +363,21 @@ void ChromeRenderViewObserver::DidCommitProvisionalLoad(
     return;
 
   CapturePageInfoLater(
-      render_view()->GetPageId(),
       true,  // preliminary_capture
       base::TimeDelta::FromMilliseconds(kDelayForForcedCaptureMs));
 }
 
-void ChromeRenderViewObserver::CapturePageInfoLater(int page_id,
-                                                    bool preliminary_capture,
+void ChromeRenderViewObserver::CapturePageInfoLater(bool preliminary_capture,
                                                     base::TimeDelta delay) {
   capture_timer_.Start(
       FROM_HERE,
       delay,
       base::Bind(&ChromeRenderViewObserver::CapturePageInfo,
                  base::Unretained(this),
-                 page_id,
                  preliminary_capture));
 }
 
-void ChromeRenderViewObserver::CapturePageInfo(int page_id,
-                                               bool preliminary_capture) {
-  // If |page_id| is obsolete, we should stop indexing and capturing a page.
-  if (render_view()->GetPageId() != page_id)
-    return;
-
+void ChromeRenderViewObserver::CapturePageInfo(bool preliminary_capture) {
   if (!render_view()->GetWebView())
     return;
 
@@ -415,40 +409,7 @@ void ChromeRenderViewObserver::CapturePageInfo(int page_id,
   UMA_HISTOGRAM_TIMES(kTranslateCaptureText,
                       base::TimeTicks::Now() - capture_begin_time);
   if (translate_helper_)
-    translate_helper_->PageCaptured(page_id, contents);
-
-  // TODO(shess): Is indexing "Full text search" indexing?  In that
-  // case more of this can go.
-  // Skip indexing if this is not a new load.  Note that the case where
-  // page_id == last_indexed_page_id_ is more complicated, since we need to
-  // reindex if the toplevel URL has changed (such as from a redirect), even
-  // though this may not cause the page id to be incremented.
-  if (page_id < last_indexed_page_id_)
-    return;
-
-  bool same_page_id = last_indexed_page_id_ == page_id;
-  if (!preliminary_capture)
-    last_indexed_page_id_ = page_id;
-
-  // Get the URL for this page.
-  GURL url(main_frame->document().url());
-  if (url.is_empty()) {
-    if (!preliminary_capture)
-      last_indexed_url_ = GURL();
-    return;
-  }
-
-  // If the page id is unchanged, check whether the URL (ignoring fragments)
-  // has changed.  If so, we need to reindex.  Otherwise, assume this is a
-  // reload, in-page navigation, or some other load type where we don't want to
-  // reindex.  Note: subframe navigations after onload increment the page id,
-  // so these will trigger a reindex.
-  GURL stripped_url(StripRef(url));
-  if (same_page_id && stripped_url == last_indexed_url_)
-    return;
-
-  if (!preliminary_capture)
-    last_indexed_url_ = stripped_url;
+    translate_helper_->PageCaptured(contents);
 
   TRACE_EVENT0("renderer", "ChromeRenderViewObserver::CapturePageInfo");
 
@@ -506,7 +467,7 @@ bool ChromeRenderViewObserver::HasRefreshMetaTag(WebFrame* frame) {
     if (!node.isElementNode())
       continue;
     WebElement element = node.to<WebElement>();
-    if (!element.hasTagName(tag_name))
+    if (!element.hasHTMLTagName(tag_name))
       continue;
     WebString value = element.getAttribute(attribute_name);
     if (value.isNull() || !LowerCaseEqualsASCII(value, "refresh"))

@@ -11,9 +11,10 @@
 #include "base/logging.h"
 #include "crypto/openssl_util.h"
 #include "crypto/rsa_private_key.h"
+#include "crypto/scoped_openssl_types.h"
 #include "net/base/net_errors.h"
-#include "net/socket/openssl_ssl_util.h"
 #include "net/socket/ssl_error_params.h"
+#include "net/ssl/openssl_ssl_util.h"
 
 #define GotoState(s) next_handshake_state_ = s
 
@@ -304,7 +305,7 @@ int SSLServerSocketOpenSSL::BufferSend() {
 
   if (!send_buffer_.get()) {
     // Get a fresh send buffer out of the send BIO.
-    size_t max_read = BIO_ctrl_pending(transport_bio_);
+    size_t max_read = BIO_pending(transport_bio_);
     if (!max_read)
       return 0;  // Nothing pending in the OpenSSL write BIO.
     send_buffer_ = new DrainableIOBuffer(new IOBuffer(max_read), max_read);
@@ -598,7 +599,7 @@ int SSLServerSocketOpenSSL::Init() {
 
   crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
 
-  crypto::ScopedOpenSSL<SSL_CTX, SSL_CTX_free> ssl_ctx(
+  crypto::ScopedOpenSSL<SSL_CTX, SSL_CTX_free>::Type ssl_ctx(
       // It support SSLv2, SSLv3, and TLSv1.
       SSL_CTX_new(SSLv23_server_method()));
   ssl_ = SSL_new(ssl_ctx.get());
@@ -630,8 +631,8 @@ int SSLServerSocketOpenSSL::Init() {
   const unsigned char* der_string_array =
       reinterpret_cast<const unsigned char*>(der_string.data());
 
-  crypto::ScopedOpenSSL<X509, X509_free>
-      x509(d2i_X509(NULL, &der_string_array, der_string.length()));
+  crypto::ScopedOpenSSL<X509, X509_free>::Type x509(
+      d2i_X509(NULL, &der_string_array, der_string.length()));
   if (!x509.get())
     return ERR_UNEXPECTED;
 

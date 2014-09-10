@@ -12,7 +12,6 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "grit/signin_internals_resources.h"
-#include "ui/base/resource/resource_bundle.h"
 
 namespace {
 
@@ -68,10 +67,10 @@ bool SignInInternalsUI::OverrideHandleWebUIMessage(
     // empty in incognito mode. Alternatively, we could force about:signin to
     // open in non-incognito mode always (like about:settings for ex.).
     if (about_signin_internals) {
-      const std::string& reply_handler =
-          "chrome.signin.getSigninInfo.handleReply";
       web_ui()->CallJavascriptFunction(
-          reply_handler, *about_signin_internals->GetSigninStatus());
+          "chrome.signin.getSigninInfo.handleReply",
+          *about_signin_internals->GetSigninStatus());
+      about_signin_internals->GetCookieAccountsAsync();
 
       return true;
     }
@@ -81,6 +80,12 @@ bool SignInInternalsUI::OverrideHandleWebUIMessage(
 
 void SignInInternalsUI::OnSigninStateChanged(
     scoped_ptr<base::DictionaryValue> info) {
-  const std::string& event_handler = "chrome.signin.onSigninInfoChanged.fire";
-  web_ui()->CallJavascriptFunction(event_handler, *info);
+  web_ui()->CallJavascriptFunction(
+      "chrome.signin.onSigninInfoChanged.fire", *info);
+}
+
+void SignInInternalsUI::OnCookieAccountsFetched(
+    scoped_ptr<base::DictionaryValue> info) {
+  web_ui()->CallJavascriptFunction(
+      "chrome.signin.onCookieAccountsFetched.fire", *info);
 }

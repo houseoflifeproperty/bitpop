@@ -15,6 +15,8 @@
 #include "content/public/common/referrer.h"
 #include "url/gurl.h"
 
+namespace translate {
+
 ContentTranslateDriver::ContentTranslateDriver(
     content::NavigationController* nav_controller)
     : navigation_controller_(nav_controller),
@@ -48,34 +50,26 @@ void ContentTranslateDriver::OnIsPageTranslatedChanged() {
   }
 }
 
-void ContentTranslateDriver::TranslatePage(const std::string& translate_script,
+void ContentTranslateDriver::TranslatePage(int page_seq_no,
+                                           const std::string& translate_script,
                                            const std::string& source_lang,
                                            const std::string& target_lang) {
-  content::NavigationEntry* entry = navigation_controller_->GetActiveEntry();
-  if (!entry) {
-    NOTREACHED();
-    return;
-  }
-
   content::WebContents* web_contents = navigation_controller_->GetWebContents();
-  web_contents->GetRenderViewHost()->Send(new ChromeViewMsg_TranslatePage(
-      web_contents->GetRenderViewHost()->GetRoutingID(),
-      entry->GetPageID(),
-      translate_script,
-      source_lang,
-      target_lang));
+  web_contents->GetRenderViewHost()->Send(
+      new ChromeViewMsg_TranslatePage(
+          web_contents->GetRenderViewHost()->GetRoutingID(),
+          page_seq_no,
+          translate_script,
+          source_lang,
+          target_lang));
 }
 
-void ContentTranslateDriver::RevertTranslation() {
-  content::NavigationEntry* entry = navigation_controller_->GetActiveEntry();
-  if (!entry) {
-    NOTREACHED();
-    return;
-  }
-
+void ContentTranslateDriver::RevertTranslation(int page_seq_no) {
   content::WebContents* web_contents = navigation_controller_->GetWebContents();
-  web_contents->GetRenderViewHost()->Send(new ChromeViewMsg_RevertTranslation(
-      web_contents->GetRenderViewHost()->GetRoutingID(), entry->GetPageID()));
+  web_contents->GetRenderViewHost()->Send(
+      new ChromeViewMsg_RevertTranslation(
+          web_contents->GetRenderViewHost()->GetRoutingID(),
+          page_seq_no));
 }
 
 bool ContentTranslateDriver::IsOffTheRecord() {
@@ -105,12 +99,6 @@ bool ContentTranslateDriver::HasCurrentPage() {
   return (navigation_controller_->GetActiveEntry() != NULL);
 }
 
-int ContentTranslateDriver::GetCurrentPageID() {
-  DCHECK(HasCurrentPage());
-  content::NavigationEntry* entry = navigation_controller_->GetActiveEntry();
-  return entry->GetPageID();
-}
-
 void ContentTranslateDriver::OpenUrlInNewTab(const GURL& url) {
   content::OpenURLParams params(url,
                                 content::Referrer(),
@@ -119,3 +107,5 @@ void ContentTranslateDriver::OpenUrlInNewTab(const GURL& url) {
                                 false);
   navigation_controller_->GetWebContents()->OpenURL(params);
 }
+
+}  // namespace translate

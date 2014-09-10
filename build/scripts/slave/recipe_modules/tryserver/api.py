@@ -21,7 +21,8 @@ class TryserverApi(recipe_api.RecipeApi):
   @property
   def is_tryserver(self):
     """Returns true iff we can apply_issue or patch."""
-    return self.can_apply_issue or self.is_patch_in_svn or self.is_patch_in_git
+    return (self.can_apply_issue or self.is_patch_in_svn or
+            self.is_patch_in_git or self.is_gerrit_issue)
 
   @property
   def can_apply_issue(self):
@@ -29,6 +30,13 @@ class TryserverApi(recipe_api.RecipeApi):
     return (self.m.properties.get('rietveld')
             and 'issue' in self.m.properties
             and 'patchset' in self.m.properties)
+
+  @property
+  def is_gerrit_issue(self):
+    """Returns true iff the properties exist to match a Gerrit issue."""
+    return ('event.patchSet.ref' in self.m.properties and
+            'event.change.url' in self.m.properties and
+            'event.change.id' in self.m.properties)
 
   @property
   def is_patch_in_svn(self):
@@ -55,9 +63,8 @@ class TryserverApi(recipe_api.RecipeApi):
     if patch_file:
       patch_cmd.extend(['--input', patch_file])
 
-    yield self.m.step('apply patch', patch_cmd,
-                      stdin=patch_content,
-                      abort_on_failure=True)
+    self.m.step('apply patch', patch_cmd,
+                      stdin=patch_content)
 
   def apply_from_svn(self, cwd):
     """Downloads patch from patch_url using svn-export and applies it"""
@@ -65,23 +72,18 @@ class TryserverApi(recipe_api.RecipeApi):
     patch_url = self.patch_url
     root = self.m.properties.get('root') or cwd
 
-    def link_patch(step_result):
-      """Links the patch.diff file on the waterfall."""
-      step_result.presentation.logs['patch.diff'] = (
-          step_result.raw_io.output.split('\n'))
-
     patch_file = self.m.raw_io.output('.diff')
     ext = '.bat' if self.m.platform.is_win else ''
     svn_cmd = ['svn' + ext, 'export', '--force', patch_url, patch_file]
 
-    yield self.m.step('download patch', svn_cmd, followup_fn=link_patch,
-                      step_test_data=self.test_api.patch_content,
-                      abort_on_failure=True)
+    result = self.m.step('download patch', svn_cmd,
+                         step_test_data=self.test_api.patch_content)
+    result.presentation.logs['patch.diff'] = (
+        result.raw_io.output.split('\n'))
 
     if self.m.platform.is_win:
-      patch_content = self.m.raw_io.input(
-        self.m.step_history.last_step().raw_io.output)
-      yield self.m.python.inline(
+      patch_content = self.m.raw_io.input(result.raw_io.output)
+      result = self.m.python.inline(
           'convert line endings (win32)',
           r"""
             import sys
@@ -91,14 +93,13 @@ class TryserverApi(recipe_api.RecipeApi):
           """,
           args=[self.m.raw_io.output()],
           stdin=patch_content,
-          followup_fn=link_patch,
           step_test_data=self.test_api.patch_content_windows,
-          abort_on_failure=True,
       )
+      result.presentation.logs['patch.diff'] = (
+          result.raw_io.output.split('\n'))
 
-    patch_content = self.m.raw_io.input(
-        self.m.step_history.last_step().raw_io.output)
-    yield self._apply_patch_step(patch_content=patch_content, root=root)
+    patch_content = self.m.raw_io.input(result.raw_io.output)
+    self._apply_patch_step(patch_content=patch_content, root=root)
 
   def apply_from_git(self, cwd):
     """Downloads patch from given git repo and ref and applies it"""
@@ -111,19 +112,15 @@ class TryserverApi(recipe_api.RecipeApi):
     git_setup_args = ['--path', patch_dir, '--url', patch_repo_url]
     patch_path = patch_dir.join('patch.diff')
 
-    yield (
-        self.m.python('patch git setup', git_setup_py, git_setup_args,
-                      abort_on_failure=True),
-        self.m.git('fetch', 'origin', patch_ref,
-                   name='patch fetch', cwd=patch_dir, abort_on_failure=True),
-        self.m.git('clean', '-f', '-d', '-x',
-                   name='patch clean', cwd=patch_dir, abort_on_failure=True),
-        self.m.git('checkout', '-f', 'FETCH_HEAD',
-                   name='patch git checkout', cwd=patch_dir,
-                   abort_on_failure=True),
-        self._apply_patch_step(patch_file=patch_path, root=cwd),
-        self.m.step('remove patch', ['rm', '-rf', patch_dir]),
-    )
+    self.m.python('patch git setup', git_setup_py, git_setup_args,),
+    self.m.git('fetch', 'origin', patch_ref,
+                name='patch fetch', cwd=patch_dir),
+    self.m.git('clean', '-f', '-d', '-x',
+                name='patch clean', cwd=patch_dir),
+    self.m.git('checkout', '-f', 'FETCH_HEAD',
+                name='patch git checkout', cwd=patch_dir),
+    self._apply_patch_step(patch_file=patch_path, root=cwd),
+    self.m.step('remove patch', ['rm', '-rf', patch_dir]),
 
   def determine_patch_storage(self):
     """Determines patch_storage automatically based on properties."""
@@ -148,13 +145,13 @@ class TryserverApi(recipe_api.RecipeApi):
     storage = self.determine_patch_storage()
 
     if storage == PATCH_STORAGE_RIETVELD:
-      yield self.m.rietveld.apply_issue(
+      return self.m.rietveld.apply_issue(
           self.m.rietveld.calculate_issue_root(),
           authentication=authentication)
     elif storage == PATCH_STORAGE_SVN:
-      yield self.apply_from_svn(cwd)
+      return self.apply_from_svn(cwd)
     elif storage == PATCH_STORAGE_GIT:
-      yield self.apply_from_git(cwd)
+      return self.apply_from_git(cwd)
     else:
       # Since this method is "maybe", we don't raise an Exception.
       pass

@@ -40,10 +40,22 @@ GIT_BIN = os.path.join(BUILD_DIR, 'scripts', 'tools', 'git-with-timeout')
 # Wrapper around svn that enforces a timeout.
 SVN_BIN = os.path.join(BUILD_DIR, 'scripts', 'tools', 'svn-with-timeout')
 
+# The Google Storage metadata key for the full commit position
+GS_COMMIT_POSITION_KEY = 'Cr-Commit-Position'
+# The Google Storage metadata key for the commit position number
+GS_COMMIT_POSITION_NUMBER_KEY = 'Cr-Commit-Position-Number'
+# The Google Storage metadata key for the Git commit hash
+GS_GIT_COMMIT_KEY = 'Cr-Git-Commit'
+
 # Local errors.
-class MissingArgument(Exception): pass
-class PathNotFound(Exception): pass
-class ExternalError(Exception): pass
+class MissingArgument(Exception):
+  pass
+class PathNotFound(Exception):
+  pass
+class ExternalError(Exception):
+  pass
+class NoIdentifiedRevision(Exception):
+  pass
 
 def IsWindows():
   return sys.platform == 'cygwin' or sys.platform.startswith('win')
@@ -795,14 +807,17 @@ def RunCommand(command, parser_func=None, filter_obj=None, pipes=None,
   [['python', 'b'],['c']]
   """
 
-  def TimedFlush(timeout, fh):
+  def TimedFlush(timeout, fh, kill_event):
+    """Flush fh every timeout seconds until kill_event is true."""
     while True:
       try:
         fh.flush()
       # File handle is closed, exit.
       except ValueError:
-        return
-      time.sleep(timeout)
+        break
+      # Wait for kill signal or timeout.
+      if kill_event.wait(timeout):
+        break
 
   # TODO(all): nsylvain's CommandRunner in buildbot_slave is based on this
   # method.  Update it when changes are introduced here.
@@ -814,49 +829,55 @@ def RunCommand(command, parser_func=None, filter_obj=None, pipes=None,
     # we would flush a minimum of 10 seconds.  However, we only write and
     # flush no more often than 20 seconds to avoid flooding the master with
     # network traffic from unbuffered output.
-    flush_thread = threading.Thread(target=TimedFlush, args=(20, writefh))
+    kill_event = threading.Event()
+    flush_thread = threading.Thread(
+        target=TimedFlush, args=(20, writefh, kill_event))
     flush_thread.daemon = True
     flush_thread.start()
 
-    in_byte = readfh.read(1)
-    in_line = cStringIO.StringIO()
-    while in_byte:
-      # Capture all characters except \r.
-      if in_byte != '\r':
-        in_line.write(in_byte)
+    try:
+      in_byte = readfh.read(1)
+      in_line = cStringIO.StringIO()
+      while in_byte:
+        # Capture all characters except \r.
+        if in_byte != '\r':
+          in_line.write(in_byte)
 
-      # Write and flush on newline.
-      if in_byte == '\n':
-        if log_event:
-          log_event.set()
-        if parser_func:
-          parser_func(in_line.getvalue().strip())
+        # Write and flush on newline.
+        if in_byte == '\n':
+          if log_event:
+            log_event.set()
+          if parser_func:
+            parser_func(in_line.getvalue().strip())
 
-        if filter_obj:
-          filtered_line = filter_obj.FilterLine(in_line.getvalue())
+          if filter_obj:
+            filtered_line = filter_obj.FilterLine(in_line.getvalue())
+            if filtered_line is not None:
+              writefh.write(filtered_line)
+          else:
+            writefh.write(in_line.getvalue())
+          in_line = cStringIO.StringIO()
+        in_byte = readfh.read(1)
+
+      if log_event and in_line.getvalue():
+        log_event.set()
+
+      # Write remaining data and flush on EOF.
+      if parser_func:
+        parser_func(in_line.getvalue().strip())
+
+      if filter_obj:
+        if in_line.getvalue():
+          filtered_line = filter_obj.FilterDone(in_line.getvalue())
           if filtered_line is not None:
             writefh.write(filtered_line)
-        else:
+      else:
+        if in_line.getvalue():
           writefh.write(in_line.getvalue())
-        in_line = cStringIO.StringIO()
-      in_byte = readfh.read(1)
-
-    if log_event and in_line.getvalue():
-      log_event.set()
-
-    # Write remaining data and flush on EOF.
-    if parser_func:
-      parser_func(in_line.getvalue().strip())
-
-    if filter_obj:
-      if in_line.getvalue():
-        filtered_line = filter_obj.FilterDone(in_line.getvalue())
-        if filtered_line is not None:
-          writefh.write(filtered_line)
-    else:
-      if in_line.getvalue():
-        writefh.write(in_line.getvalue())
-    writefh.flush()
+    finally:
+      kill_event.set()
+      flush_thread.join()
+      writefh.flush()
 
   pipes = pipes or []
 
@@ -1227,7 +1248,7 @@ def RunSlavesCfg(slaves_cfg, fail_hard=False):
   return slave_config.get('slaves', [])
 
 
-def convert_json(option, opt, value, parser):
+def convert_json(option, _, value, parser):
   """Provide an OptionParser callback to unmarshal a JSON string."""
   setattr(parser.values, option.dest, json.loads(value))
 
@@ -1278,6 +1299,101 @@ def GetCBuildbotConfigs(chromite_path=None):
     # To get around CQ pylint failures, because CQ doesn't check out chromite.
     # TODO(maruel): Remove this try block when this issue is resolved.
     return {}
+
+
+def GetPrimaryRepository(options):
+  """Returns: (str) the key of the primary repository.
+
+  If no primary repository is configured, 'None' will be returned.
+  """
+  result = options.build_properties.get('primary_repo')
+  if not result:
+    return None
+  # The 'primary_repo' property currently contains a trailing underscore.
+  # However, this isn't an obvious thing given its name, so we'll strip it here
+  # and remove that expectation.
+  return result.strip('_')
+
+
+def GetBuildSortKey(options, repo=None):
+  """Reads a variety of sources to determine the current build revision.
+
+  NOTE: Currently, the return value does not qualify branch name. This can
+  present a problem with git numbering scheme, where numbers are only unique
+  in the context of their respective branches. When this happens, this
+  function will return a branch name as part of the sort key and its callers
+  will need to adapt their naming/querying schemes to accommodate this. Until
+  then, we will return 'None' as the branch name.
+  (e.g., refs/foo/bar@{#12345} => ("refs/foo/bar", 12345)
+
+  Args:
+    options: Command-line options structure
+    repo: (str/None) If not None, the repository to get the build sort key
+        for. Otherwise, the build-wide sort key will be used.
+  Returns: (branch, value) The qualified sortkey value
+    branch: (str/None) The name of the branch, or 'None' if there is no branch
+        context. Currently this always returns 'None'.
+    value: (int) The iteration value within the specified branch
+  Raises: (NoIdentifiedRevision) if no revision could be identified from the
+      supplied options.
+  """
+  if repo:
+    revision_key = 'got_%s_revision' % (repo,)
+  else:
+    revision_key = 'got_revision'
+  revision = options.build_properties.get(revision_key)
+  if revision:
+    return None, int(revision)
+  raise NoIdentifiedRevision("Unable to identify revision for revision key "
+                             "[%s]" % (revision_key,))
+
+
+def GetGitCommit(options, repo=None):
+  """Returns the 'git' commit hash for the specified repository
+
+  This function uses environmental options to identify the 'git' commit hash
+  for the specified repository.
+
+  Args:
+    options: Command-line options structure
+    repo: (str/None) The repository key to use. If None, use the topmost
+        repository identification properties.
+  Raises: (NoIdentifiedRevision) if no git commit could be identified from the
+      supplied options.
+  """
+  if repo:
+    commit_key = 'got_%s_revision_git' % (repo,)
+  else:
+    commit_key = 'got_revision_git'
+  commit = options.build_properties.get(commit_key)
+  if commit:
+    return commit
+  raise NoIdentifiedRevision("Unable to identify commit for commit key [%s]" % (
+                             commit_key,))
+
+
+def GetSortableUploadPathForSortKey(branch, value):
+  """Returns: (str) the canonical sort key path constructed from a sort key.
+
+  Returns a canonical sort key path for a sort key. The result will be one of
+  two forms:
+  - (With Branch): <branch-path>-<value> (e.g., "refs_heads_master-12345")
+  - (Without Branch): <value> (e.g., "12345")
+
+  When a 'branch' is supplied, it is converted to a path-suitable form. This
+  conversion replaces undesirable characters ('/') with underscores.
+
+  See 'GetBuildSortKey' for more information about sort keys.
+
+  Args:
+    branch: (str/None) The sort key branch, or 'None' if there is no associated
+        branch.
+    value: (int) The sort key value.
+  """
+  if branch:
+    branch = branch.replace('/', '_')
+    return '%s-%s' % (branch, value)
+  return str(value)
 
 
 def AddPropertiesOptions(option_parser):
@@ -1436,6 +1552,46 @@ def GetMasterDevParameters(filename='master_cfg_params.json'):
   if os.path.isfile(filename):
     return ReadJsonAsUtf8(filename=filename)
   return {}
+
+
+def FileExclusions():
+  all_platforms = ['.landmines', 'obj', 'gen', '.ninja_deps', '.ninja_log']
+  # Skip files that the testers don't care about. Mostly directories.
+  if IsWindows():
+    # Remove obj or lib dir entries
+    return all_platforms + ['cfinstaller_archive', 'lib', 'installer_archive']
+  if IsMac():
+    return all_platforms + [
+      # We don't need the arm bits v8 builds.
+      'd8_arm', 'v8_shell_arm',
+      # pdfsqueeze is a build helper, no need to copy it to testers.
+      'pdfsqueeze',
+      # We copy the framework into the app bundle, we don't need the second
+      # copy outside the app.
+      # TODO(mark): Since r28431, the copy in the build directory is actually
+      # used by tests.  Putting two copies in the .zip isn't great, so maybe
+      # we can find another workaround.
+      # 'Chromium Framework.framework',
+      # 'Google Chrome Framework.framework',
+      # We copy the Helper into the app bundle, we don't need the second
+      # copy outside the app.
+      'Chromium Helper.app',
+      'Google Chrome Helper.app',
+      'App Shim Socket',
+      '.deps', 'obj.host', 'obj.target', 'lib'
+    ]
+  if IsLinux():
+    return all_platforms + [
+      # intermediate build directories (full of .o, .d, etc.).
+      'appcache', 'glue', 'lib.host', 'obj.host',
+      'obj.target', 'src', '.deps',
+      # scons build cruft
+      '.sconsign.dblite',
+      # build helper, not needed on testers
+      'mksnapshot',
+    ]
+
+  return all_platforms
 
 
 def DatabaseSetup(buildmaster_config, require_dbconfig=False):

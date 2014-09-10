@@ -25,15 +25,13 @@
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEMorphology.h"
 
-namespace WebCore {
+namespace blink {
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<MorphologyOperatorType>();
 
 class SVGFEMorphologyElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
     DECLARE_NODE_FACTORY(SVGFEMorphologyElement);
-
-    void setRadius(float radiusX, float radiusY);
 
     SVGAnimatedNumber* radiusX() { return m_radius->firstNumber(); }
     SVGAnimatedNumber* radiusY() { return m_radius->secondNumber(); }
@@ -54,6 +52,6 @@ private:
     RefPtr<SVGAnimatedEnumeration<MorphologyOperatorType> > m_svgOperator;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

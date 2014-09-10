@@ -18,9 +18,8 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/login/enrollment/auto_enrollment_controller.h"
 #include "chrome/browser/chromeos/login/screens/error_screen_actor.h"
+#include "chrome/browser/chromeos/login/signin_specifics.h"
 #include "chrome/browser/chromeos/login/ui/login_display.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
-#include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/signin/screenlock_bridge.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
@@ -28,6 +27,8 @@
 #include "chrome/browser/ui/webui/chromeos/login/network_state_informer.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chromeos/ime/ime_keyboard.h"
+#include "chromeos/network/portal_detector/network_portal_detector.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_ui.h"
@@ -45,8 +46,8 @@ class AuthenticatedUserEmailRetriever;
 class CaptivePortalWindowProxy;
 class CoreOobeActor;
 class GaiaScreenHandler;
-class LocallyManagedUserCreationScreenHandler;
 class NativeWindowDelegate;
+class SupervisedUserCreationScreenHandler;
 class User;
 class UserContext;
 
@@ -75,7 +76,7 @@ class LoginDisplayWebUIHandler {
   virtual void ClearAndEnablePassword() = 0;
   virtual void ClearUserPodPassword() = 0;
   virtual void OnUserRemoved(const std::string& username) = 0;
-  virtual void OnUserImageChanged(const User& user) = 0;
+  virtual void OnUserImageChanged(const user_manager::User& user) = 0;
   virtual void OnPreferencesChanged() = 0;
   virtual void ResetSigninScreenHandlerDelegate() = 0;
   virtual void ShowError(int login_attempts,
@@ -90,8 +91,13 @@ class LoginDisplayWebUIHandler {
   virtual void ShowSigninScreenForCreds(const std::string& username,
                                         const std::string& password) = 0;
   virtual void LoadUsers(const base::ListValue& users_list,
-                         bool animated,
                          bool show_guest) = 0;
+  virtual void SetPublicSessionDisplayName(const std::string& user_id,
+                                           const std::string& display_name) = 0;
+  virtual void SetPublicSessionLocales(const std::string& user_id,
+                                       scoped_ptr<base::ListValue> locales,
+                                       const std::string& default_locale,
+                                       bool multipleRecommendedLocales) = 0;
 
  protected:
   virtual ~LoginDisplayWebUIHandler() {}
@@ -100,51 +106,41 @@ class LoginDisplayWebUIHandler {
 // An interface for SigninScreenHandler to call WebUILoginDisplay.
 class SigninScreenHandlerDelegate {
  public:
+  // --------------- Password change flow methods.
   // Cancels current password changed flow.
   virtual void CancelPasswordChangedFlow() = 0;
-
-  // Cancels user adding.
-  virtual void CancelUserAdding() = 0;
-
-  // Create a new Google account.
-  virtual void CreateAccount() = 0;
-
-  // Confirms sign up by provided credentials in |user_context|.
-  // Used for new user login via GAIA extension.
-  virtual void CompleteLogin(const UserContext& user_context) = 0;
-
-  // Sign in using username and password specified as a part of |user_context|.
-  // Used for both known and new users.
-  virtual void Login(const UserContext& user_context) = 0;
-
-  // Sign in into a retail mode session.
-  virtual void LoginAsRetailModeUser() = 0;
-
-  // Sign in into guest session.
-  virtual void LoginAsGuest() = 0;
-
-  // Sign in into the public account identified by |username|.
-  virtual void LoginAsPublicAccount(const std::string& username) = 0;
 
   // Decrypt cryptohome using user provided |old_password|
   // and migrate to new password.
   virtual void MigrateUserData(const std::string& old_password) = 0;
 
-  // Load wallpaper for given |username|.
-  virtual void LoadWallpaper(const std::string& username) = 0;
-
-  // Loads the default sign-in wallpaper.
-  virtual void LoadSigninWallpaper() = 0;
-
-  // Notify the delegate when the sign-in UI is finished loading.
-  virtual void OnSigninScreenReady() = 0;
-
-  // Attempts to remove given user.
-  virtual void RemoveUser(const std::string& username) = 0;
-
   // Ignore password change, remove existing cryptohome and
   // force full sync of user data.
   virtual void ResyncUserData() = 0;
+
+  // --------------- Sign in/out methods.
+  // Sign in using username and password specified as a part of |user_context|.
+  // Used for both known and new users.
+  virtual void Login(const UserContext& user_context,
+                     const SigninSpecifics& specifics) = 0;
+
+  // Sign in as guest to create a new Google account.
+  virtual void CreateAccount() = 0;
+
+  // Returns true if sign in is in progress.
+  virtual bool IsSigninInProgress() const = 0;
+
+  // Signs out if the screen is currently locked.
+  virtual void Signout() = 0;
+
+  // --------------- Account creation methods.
+  // Confirms sign up by provided credentials in |user_context|.
+  // Used for new user login via GAIA extension.
+  virtual void CompleteLogin(const UserContext& user_context) = 0;
+
+  // --------------- Shared with login display methods.
+  // Notify the delegate when the sign-in UI is finished loading.
+  virtual void OnSigninScreenReady() = 0;
 
   // Shows Enterprise Enrollment screen.
   virtual void ShowEnterpriseEnrollmentScreen() = 0;
@@ -158,11 +154,28 @@ class SigninScreenHandlerDelegate {
   // Show wrong hwid screen.
   virtual void ShowWrongHWIDScreen() = 0;
 
+  // Sets the displayed email for the next login attempt. If it succeeds,
+  // user's displayed email value will be updated to |email|.
+  virtual void SetDisplayEmail(const std::string& email) = 0;
+
+  // --------------- Rest of the methods.
+  // Cancels user adding.
+  virtual void CancelUserAdding() = 0;
+
+  // Load wallpaper for given |username|.
+  virtual void LoadWallpaper(const std::string& username) = 0;
+
+  // Loads the default sign-in wallpaper.
+  virtual void LoadSigninWallpaper() = 0;
+
+  // Attempts to remove given user.
+  virtual void RemoveUser(const std::string& username) = 0;
+
   // Let the delegate know about the handler it is supposed to be using.
   virtual void SetWebUIHandler(LoginDisplayWebUIHandler* webui_handler) = 0;
 
   // Returns users list to be shown.
-  virtual const UserList& GetUsers() const = 0;
+  virtual const user_manager::UserList& GetUsers() const = 0;
 
   // Whether login as guest is available.
   virtual bool IsShowGuest() const = 0;
@@ -171,22 +184,8 @@ class SigninScreenHandlerDelegate {
   // Public sessions are always shown.
   virtual bool IsShowUsers() const = 0;
 
-  // Returns true if sign in is in progress.
-  virtual bool IsSigninInProgress() const = 0;
-
   // Whether user sign in has completed.
   virtual bool IsUserSigninCompleted() const = 0;
-
-  // Sets the displayed email for the next login attempt. If it succeeds,
-  // user's displayed email value will be updated to |email|.
-  virtual void SetDisplayEmail(const std::string& email) = 0;
-
-  // Signs out if the screen is currently locked.
-  virtual void Signout() = 0;
-
-  // Login to kiosk mode for app with |app_id|.
-  virtual void LoginAsKioskApp(const std::string& app_id,
-                               bool diagnostic_mode) = 0;
 
   // Request to (re)load user list.
   virtual void HandleGetUsers() = 0;
@@ -253,8 +252,8 @@ class SigninScreenHandler
   };
 
   friend class GaiaScreenHandler;
-  friend class LocallyManagedUserCreationScreenHandler;
   friend class ReportDnsCacheClearedOnUIThread;
+  friend class SupervisedUserCreationScreenHandler;
 
   void ShowImpl();
 
@@ -269,7 +268,7 @@ class SigninScreenHandler
                                   ErrorScreenActor::ErrorReason reason);
   void HideOfflineMessage(NetworkStateInformer::State state,
                           ErrorScreenActor::ErrorReason reason);
-  void ReloadGaiaScreen();
+  void ReloadGaia(bool force_reload);
 
   // BaseScreenHandler implementation:
   virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
@@ -283,7 +282,7 @@ class SigninScreenHandler
   virtual void ClearAndEnablePassword() OVERRIDE;
   virtual void ClearUserPodPassword() OVERRIDE;
   virtual void OnUserRemoved(const std::string& username) OVERRIDE;
-  virtual void OnUserImageChanged(const User& user) OVERRIDE;
+  virtual void OnUserImageChanged(const user_manager::User& user) OVERRIDE;
   virtual void OnPreferencesChanged() OVERRIDE;
   virtual void ResetSigninScreenHandlerDelegate() OVERRIDE;
   virtual void ShowError(int login_attempts,
@@ -297,8 +296,15 @@ class SigninScreenHandler
   virtual void ShowSigninScreenForCreds(const std::string& username,
                                         const std::string& password) OVERRIDE;
   virtual void LoadUsers(const base::ListValue& users_list,
-                         bool animated,
                          bool show_guest) OVERRIDE;
+  virtual void SetPublicSessionDisplayName(
+      const std::string& user_id,
+      const std::string& display_name) OVERRIDE;
+  virtual void SetPublicSessionLocales(
+      const std::string& user_id,
+      scoped_ptr<base::ListValue> locales,
+      const std::string& default_locale,
+      bool multipleRecommendedLocales) OVERRIDE;
 
   // content::NotificationObserver implementation:
   virtual void Observe(int type,
@@ -306,14 +312,15 @@ class SigninScreenHandler
                        const content::NotificationDetails& details) OVERRIDE;
 
   // ScreenlockBridge::LockHandler implementation:
-  virtual void ShowBannerMessage(const std::string& message) OVERRIDE;
-  virtual void ShowUserPodCustomIcon(const std::string& username,
-                                     const gfx::Image& icon) OVERRIDE;
+  virtual void ShowBannerMessage(const base::string16& message) OVERRIDE;
+  virtual void ShowUserPodCustomIcon(
+      const std::string& username,
+      const ScreenlockBridge::UserPodCustomIconOptions& icon) OVERRIDE;
   virtual void HideUserPodCustomIcon(const std::string& username) OVERRIDE;
   virtual void EnableInput() OVERRIDE;
   virtual void SetAuthType(const std::string& username,
                            ScreenlockBridge::LockHandler::AuthType auth_type,
-                           const std::string& initial_value) OVERRIDE;
+                           const base::string16& initial_value) OVERRIDE;
   virtual ScreenlockBridge::LockHandler::AuthType GetAuthType(
       const std::string& username) const OVERRIDE;
   virtual void Unlock(const std::string& user_email) OVERRIDE;
@@ -333,7 +340,9 @@ class SigninScreenHandler
   void HandleAttemptUnlock(const std::string& username);
   void HandleLaunchDemoUser();
   void HandleLaunchIncognito();
-  void HandleLaunchPublicAccount(const std::string& username);
+  void HandleLaunchPublicSession(const std::string& user_id,
+                                 const std::string& locale,
+                                 const std::string& input_method);
   void HandleOfflineLogin(const base::ListValue* args);
   void HandleShutdownSystem();
   void HandleLoadWallpaper(const std::string& email);
@@ -359,11 +368,21 @@ class SigninScreenHandler
   void HandleLoginScreenUpdate();
   void HandleShowLoadingTimeoutError();
   void HandleUpdateOfflineLogin(bool offline_login_active);
-  void HandleShowLocallyManagedUserCreationScreen();
+  void HandleShowSupervisedUserCreationScreen();
   void HandleFocusPod(const std::string& user_id);
+  void HandleHardlockPod(const std::string& user_id);
   void HandleLaunchKioskApp(const std::string& app_id, bool diagnostic_mode);
   void HandleRetrieveAuthenticatedUserEmail(double attempt_token);
+  void HandleGetPublicSessionKeyboardLayouts(const std::string& user_id,
+                                             const std::string& locale);
+  void HandleCancelConsumerManagementEnrollment();
 
+  // Sends the list of |keyboard_layouts| available for the |locale| that is
+  // currently selected for the public session identified by |user_id|.
+  void SendPublicSessionKeyboardLayouts(
+      const std::string& user_id,
+      const std::string& locale,
+      scoped_ptr<base::ListValue> keyboard_layouts);
 
   // Returns true iff
   // (i)   log in is restricted to some user list,
@@ -463,11 +482,14 @@ class SigninScreenHandler
   base::Closure kiosk_enable_flow_aborted_callback_for_test_;
 
   // Non-owning ptr.
-  // TODO (ygorshenin@): remove this dependency.
+  // TODO(ygorshenin@): remove this dependency.
   GaiaScreenHandler* gaia_screen_handler_;
 
   // Helper that retrieves the authenticated user's e-mail address.
   scoped_ptr<AuthenticatedUserEmailRetriever> email_retriever_;
+
+  // Whether consumer management enrollment is in progress.
+  bool is_enrolling_consumer_management_;
 
   base::WeakPtrFactory<SigninScreenHandler> weak_factory_;
 

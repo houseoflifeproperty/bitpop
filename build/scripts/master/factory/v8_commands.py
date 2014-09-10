@@ -122,28 +122,6 @@ class V8Commands(commands.FactoryCommands):
     cmd = [self._python, self._v8testing_tool, '--testname', 'presubmit']
     self.AddTestStep(shell.ShellCommand, 'Presubmit', cmd, workdir='build/v8/')
 
-  def AddDeoptFuzzer(self):
-    if self._target_platform == 'win32':
-      self.AddTaskkillStep()
-    cmd = [self._python, './tools/run-deopt-fuzzer.py',
-           '--mode', self._target, '--progress=verbose', '--buildbot']
-    if self._arch:
-      cmd += ['--arch', self._arch]
-    if self._shard_count > 1:
-      cmd += ['--shard_count=%s' % self._shard_count,
-              '--shard_run=%s' % self._shard_run]
-    if self._shell_flags:
-      cmd += ['--shell_flags="'+ self._shell_flags +'"']
-    if self._command_prefix:
-      cmd += ['--command_prefix', self._command_prefix]
-    if self._isolates:
-      cmd += ['--isolates']
-    cmd += self._test_options
-    self.AddTestStep(shell.ShellCommand, 'Deopt Fuzz', cmd,
-                     timeout=3600,
-                     workdir='build/v8/',
-                     env=self._test_env)
-
   def AddLeakTests(self):
     cmd = [self._python, self._v8testing_tool, '--testname', 'leak']
     env = {

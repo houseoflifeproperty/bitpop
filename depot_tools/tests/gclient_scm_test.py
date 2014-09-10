@@ -704,10 +704,10 @@ class SVNWrapperTestCase(BaseTestCase):
            '--ignore-externals'],
           cwd=self.root_dir,
           file_list=[])
-  
+
       gclient_scm.scm.SVN._CaptureInfo([], self.base_path+'/.'
           ).AndReturn({'Revision': 100})
-  
+
       self.mox.ReplayAll()
       scm = self._scm_wrapper(url=self.url, root_dir=self.root_dir,
                               relpath=self.relpath)
@@ -784,6 +784,7 @@ class BaseGitWrapperTestCase(GCBaseTestCase, StdoutCheck, TestCaseUtils,
       self.force = False
       self.reset = False
       self.nohooks = False
+      self.no_history = False
       self.upstream = False
       self.cache_dir = None
       self.merge = False
@@ -1205,7 +1206,7 @@ class ManagedGitWrapperTestCaseMox(BaseTestCase):
 
   def checkstdout(self, expected):
     value = sys.stdout.getvalue()
-    sys.stdout.close() 
+    sys.stdout.close()
     # pylint: disable=E1101
     self.assertEquals(expected, strip_timestamps(value))
 
@@ -1267,16 +1268,18 @@ class ManagedGitWrapperTestCaseMox(BaseTestCase):
         ).MultipleTimes().AndReturn(self.fake_hash_2)
 
     # Ensure that we call git svn fetch if our LKGR is > the git-svn HEAD rev.
+    self.mox.StubOutWithMock(gclient_scm.GitWrapper, '_Fetch', True)
     self.mox.StubOutWithMock(gclient_scm.scm.GIT, 'Capture', True)
     gclient_scm.scm.GIT.Capture(['config', '--get', 'svn-remote.svn.fetch'],
                                 cwd=self.base_path).AndReturn('blah')
-    gclient_scm.scm.GIT.Capture(['fetch'], cwd=self.base_path)
+    # pylint: disable=E1120
     gclient_scm.scm.GIT.Capture(['svn', 'fetch'], cwd=self.base_path)
     error = subprocess2.CalledProcessError(1, 'cmd', '/cwd', 'stdout', 'stderr')
     gclient_scm.scm.GIT.Capture(['config', '--get', 'svn-remote.svn.fetch'],
                                 cwd=self.base_path).AndRaise(error)
+    gclient_scm.GitWrapper._Fetch(options)
     gclient_scm.scm.GIT.Capture(['svn', 'fetch'], cwd=self.base_path)
-    gclient_scm.scm.GIT.Capture(['fetch', 'origin'], cwd=self.base_path)
+    gclient_scm.GitWrapper._Fetch(options)
 
     self.mox.StubOutWithMock(gclient_scm.scm.GIT, 'IsGitSvn', True)
     gclient_scm.scm.GIT.IsGitSvn(cwd=self.base_path).MultipleTimes(

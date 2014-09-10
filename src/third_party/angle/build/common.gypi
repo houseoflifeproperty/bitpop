@@ -71,8 +71,7 @@
                         'AdditionalOptions': ['/MP'],
                         'BufferSecurityCheck': 'true',
                         'DebugInformationFormat': '3',
-                        # TODO(alokp): Disable exceptions before integrating with chromium.
-                        #'ExceptionHandling': '0',
+                        'ExceptionHandling': '0',
                         'EnableFunctionLevelLinking': 'true',
                         'MinimalRebuild': 'false',
                         'RuntimeTypeInfo': 'true',
@@ -195,7 +194,7 @@
             },
             'conditions':
             [
-                [ 'OS == "win" and MSVS_VERSION != "2010e" and MSVS_VERSION != "2012e"',
+                [ 'OS == "win" and MSVS_VERSION != "2010e"',
                 {
                     'Debug_x64':
                     {

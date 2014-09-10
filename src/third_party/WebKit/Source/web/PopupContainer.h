@@ -1,3 +1,4 @@
+
 /*
  * Copyright (c) 2011, Google Inc. All rights reserved.
  *
@@ -36,45 +37,42 @@
 #include "platform/scroll/FramelessScrollView.h"
 #include "web/PopupListBox.h"
 
-namespace WebCore {
+namespace blink {
+
 class ChromeClient;
 class FrameView;
 class PopupMenuClient;
-}
-
-namespace blink {
-
 struct WebPopupMenuInfo;
 
-class PopupContainer FINAL : public WebCore::FramelessScrollView {
+class PopupContainer FINAL : public FramelessScrollView {
 public:
-    static PassRefPtr<PopupContainer> create(WebCore::PopupMenuClient*, bool deviceSupportsTouch);
+    static PassRefPtr<PopupContainer> create(PopupMenuClient*, bool deviceSupportsTouch);
 
     // Whether a key event should be sent to this popup.
     bool isInterestedInEventForKey(int keyCode);
 
     // FramelessScrollView
-    virtual void paint(WebCore::GraphicsContext*, const WebCore::IntRect&) OVERRIDE;
+    virtual void paint(GraphicsContext*, const IntRect&) OVERRIDE;
     virtual void hide() OVERRIDE;
-    virtual bool handleMouseDownEvent(const WebCore::PlatformMouseEvent&) OVERRIDE;
-    virtual bool handleMouseMoveEvent(const WebCore::PlatformMouseEvent&) OVERRIDE;
-    virtual bool handleMouseReleaseEvent(const WebCore::PlatformMouseEvent&) OVERRIDE;
-    virtual bool handleWheelEvent(const WebCore::PlatformWheelEvent&) OVERRIDE;
-    virtual bool handleKeyEvent(const WebCore::PlatformKeyboardEvent&) OVERRIDE;
-    virtual bool handleTouchEvent(const WebCore::PlatformTouchEvent&) OVERRIDE;
-    virtual bool handleGestureEvent(const WebCore::PlatformGestureEvent&) OVERRIDE;
+    virtual bool handleMouseDownEvent(const PlatformMouseEvent&) OVERRIDE;
+    virtual bool handleMouseMoveEvent(const PlatformMouseEvent&) OVERRIDE;
+    virtual bool handleMouseReleaseEvent(const PlatformMouseEvent&) OVERRIDE;
+    virtual bool handleWheelEvent(const PlatformWheelEvent&) OVERRIDE;
+    virtual bool handleKeyEvent(const PlatformKeyboardEvent&) OVERRIDE;
+    virtual bool handleTouchEvent(const PlatformTouchEvent&) OVERRIDE;
+    virtual bool handleGestureEvent(const PlatformGestureEvent&) OVERRIDE;
 
     // PopupContainer methods
 
     // Show the popup
-    void showPopup(WebCore::FrameView*);
+    void showPopup(FrameView*);
 
     // Show the popup in the specified rect for the specified frame.
     // Note: this code was somehow arbitrarily factored-out of the Popup class
     // so WebViewImpl can create a PopupContainer. This method is used for
     // displaying auto complete popup menus on Mac Chromium, and for all
     // popups on other platforms.
-    void showInRect(const WebCore::FloatQuad& controlPosition, const WebCore::IntSize& controlSize, WebCore::FrameView*, int index);
+    void showInRect(const FloatQuad& controlPosition, const IntSize& controlSize, FrameView*, int index);
 
     // Hides the popup.
     void hidePopup();
@@ -91,7 +89,7 @@ public:
     int selectedIndex() const;
 
     // Refresh the popup values from the PopupMenuClient.
-    WebCore::IntRect refresh(const WebCore::IntRect& targetControlRect);
+    IntRect refresh(const IntRect& targetControlRect);
 
     // The menu per-item data.
     const Vector<PopupItem*>& popupData() const;
@@ -103,36 +101,36 @@ public:
     int menuItemFontSize() const;
 
     // The style of the menu being used.
-    WebCore::PopupMenuStyle menuStyle() const;
+    PopupMenuStyle menuStyle() const;
 
     // While hovering popup menu window, we want to show tool tip message.
     String getSelectedItemToolTip();
 
     // This is public for testing.
-    static WebCore::IntRect layoutAndCalculateWidgetRectInternal(WebCore::IntRect widgetRectInScreen, int targetControlHeight, const WebCore::FloatRect& windowRect, const WebCore::FloatRect& screen, bool isRTL, const int rtlOffset, const int verticalOffset, const WebCore::IntSize& transformOffset, PopupContent*, bool& needToResizeView);
+    static IntRect layoutAndCalculateWidgetRectInternal(IntRect widgetRectInScreen, int targetControlHeight, const FloatRect& windowRect, const FloatRect& screen, bool isRTL, const int rtlOffset, const int verticalOffset, const IntSize& transformOffset, PopupContent*, bool& needToResizeView);
 
 private:
     friend class WTF::RefCounted<PopupContainer>;
 
-    PopupContainer(WebCore::PopupMenuClient*, bool deviceSupportsTouch);
+    PopupContainer(PopupMenuClient*, bool deviceSupportsTouch);
     virtual ~PopupContainer();
 
     // Paint the border.
-    void paintBorder(WebCore::GraphicsContext*, const WebCore::IntRect&);
+    void paintBorder(GraphicsContext*, const IntRect&);
 
     // Layout and calculate popup widget size and location and returns it as IntRect.
-    WebCore::IntRect layoutAndCalculateWidgetRect(int targetControlHeight, const WebCore::IntSize& transformOffset, const WebCore::IntPoint& popupInitialCoordinate);
+    IntRect layoutAndCalculateWidgetRect(int targetControlHeight, const IntSize& transformOffset, const IntPoint& popupInitialCoordinate);
 
     void fitToListBox();
 
-    void popupOpened(const WebCore::IntRect& bounds);
+    void popupOpened(const IntRect& bounds);
     void getPopupMenuInfo(WebPopupMenuInfo*);
 
     // Returns the ChromeClient of the page this popup is associated with.
-    WebCore::ChromeClient& chromeClient();
+    ChromeClient& chromeClient();
 
     RefPtr<PopupListBox> m_listBox;
-    RefPtr<WebCore::FrameView> m_frameView;
+    RefPtr<FrameView> m_frameView;
 
     // m_controlPosition contains the transformed position of the
     // <select>/<input> associated with this popup. m_controlSize is the size
@@ -146,13 +144,13 @@ private:
     //       of m_controlPosition (p3)
     //       If the popup is positioned up it will align with the top right of
     //       m_controlPosition (p2)
-    WebCore::FloatQuad m_controlPosition;
-    WebCore::IntSize m_controlSize;
+    FloatQuad m_controlPosition;
+    IntSize m_controlSize;
 
     // Whether the popup is currently open.
     bool m_popupOpen;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

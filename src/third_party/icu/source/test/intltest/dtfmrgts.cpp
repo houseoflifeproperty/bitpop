@@ -1,6 +1,6 @@
 /********************************************************************
  * COPYRIGHT: 
- * Copyright (c) 1997-2010, International Business Machines Corporation and
+ * Copyright (c) 1997-2012, International Business Machines Corporation and
  * others. All Rights Reserved.
  ********************************************************************/
 
@@ -55,6 +55,8 @@ DateFormatRegressionTest::runIndexedTest( int32_t index, UBool exec, const char*
         CASE(24,Test714)
         CASE(25,Test1684)
         CASE(26,Test5554)
+        CASE(27,Test9237)
+        CASE(28,TestParsing)
         default: name = ""; break;
     }
 }
@@ -132,7 +134,7 @@ void DateFormatRegressionTest::Test4052408(void)
     str = fmt->format(dt, str);
     logln(str);
     
-    if(str != "5/3/97 8:55 AM")
+    if(str != "5/3/97, 8:55 AM")
         errln("Fail: Test broken; Want 5/3/97 8:55 AM Got " + str);   
     
     UnicodeString expected[] = {
@@ -362,6 +364,8 @@ void DateFormatRegressionTest::Test4060212(void)
         errln((UnicodeString) "Fail: Got " + cal->get(UCAL_DAY_OF_YEAR, status) +
                             " Want 40");
 
+    // this is an odd usage of "ddd" and it doesn't
+    // work now that date values are range checked per #3579.
     logln("Using yyyy-ddd.hh:mm:ss");
     delete formatter;
     formatter = NULL;
@@ -398,7 +402,7 @@ void DateFormatRegressionTest::Test4061287(void)
     failure(status, "new SimpleDateFormat");
     //try {
     logln(UnicodeString("") + df->parse("35/01/1971", status));  
-    failure(status, "df->parse");
+    failure(status, "df->parse(\"35/01/1971\")");
     //logln(df.parse("35/01/1971").toString());
     //}
     /*catch (ParseException e) {
@@ -554,7 +558,7 @@ void DateFormatRegressionTest::Test4071441(void)
   US locale a string formatted according to mm/dd/yy and parses it
   correctly.
 
-  When given a string mm/dd/yyyy it only parses up to the first
+  When given a string mm/dd/yyyy [sic] it only parses up to the first
   two y's, typically resulting in a date in the year 1919.
   
   Please extend the parsing method(s) to handle strings with
@@ -567,7 +571,7 @@ void DateFormatRegressionTest::Test4073003(void)
 {
     //try {
     UErrorCode ec = U_ZERO_ERROR;
-    SimpleDateFormat fmt("dd/MM/yy", Locale::getUK(), ec);
+    SimpleDateFormat fmt("MM/dd/yy", Locale::getUK(), ec);
     if (U_FAILURE(ec)) {
         dataerrln("FAIL: SimpleDateFormat constructor - %s", u_errorName(ec));
         return;
@@ -716,8 +720,8 @@ void DateFormatRegressionTest::Test4101483(void)
     sdf->format(d, buf, fp);
     //logln(sdf.format(d, buf, fp).toString());
     logln(dateToString(d) + " => " + buf);
-    logln("beginIndex = " + fp.getBeginIndex());
-    logln("endIndex = " + fp.getEndIndex());
+    logln(UnicodeString("beginIndex = ") + fp.getBeginIndex());
+    logln(UnicodeString("endIndex = ") + fp.getEndIndex());
     if (fp.getBeginIndex() == fp.getEndIndex()) 
         errln("Fail: Empty field");
 
@@ -839,7 +843,7 @@ void DateFormatRegressionTest::Test4104136(void)
         logln(" index: %d", pos.getIndex()); 
         logln((UnicodeString) " result: " + d);
         if(pos.getIndex() != finish.getIndex())
-            errln("Fail: Expected pos " + finish.getIndex());
+            errln(UnicodeString("Fail: Expected pos ") + finish.getIndex());
         if (! ((d == 0 && exp == -1) || (d == exp)))
             errln((UnicodeString) "Fail: Expected result " + exp);
     }
@@ -1457,6 +1461,68 @@ void DateFormatRegressionTest::Test5554(void)
     errln("\nError: Newfoundland Z of Jan 14, 2007 gave '" + result + "', expected '" + correct + "'");
   }
   delete sdf;
+}
+
+void DateFormatRegressionTest::Test9237(void)
+{
+    UErrorCode status = U_ZERO_ERROR;
+    UnicodeString pattern("VVVV");
+
+    SimpleDateFormat fmt(pattern, status);  // default locale
+    SimpleDateFormat fmtDE(pattern, Locale("de_DE"), status);
+    if (U_FAILURE(status)) {
+        dataerrln("Error constructing SimpleDateFormat");
+        return;
+    }
+
+    // copy constructor
+    SimpleDateFormat fmtCopyDE(fmtDE);
+    UnicodeString resDE, resCopyDE;
+
+    fmtDE.format(0.0, resDE);
+    fmtCopyDE.format(0.0, resCopyDE);
+
+    if (resDE != resCopyDE) {
+        errln(UnicodeString("Error: different result by the copied instance - org:") + resDE + " copy:" + resCopyDE);
+    }
+
+    // test for assignment operator
+    fmt = fmtDE;
+
+    UnicodeString resAssigned;
+    fmt.format(0.0, resAssigned);
+
+    if (resDE != resAssigned) {
+        errln(UnicodeString("Error: different results by the assigned instance - org:") + resDE + " assigned:" + resAssigned);
+    }
+}
+
+void DateFormatRegressionTest::TestParsing(void) {
+    UErrorCode status = U_ZERO_ERROR;
+    UnicodeString pattern("EEE-WW-MMMM-yyyy");
+    UnicodeString text("mon-02-march-2011");
+    int32_t expectedDay = 7;
+
+    SimpleDateFormat format(pattern, status);
+    if (U_FAILURE(status)) {
+        dataerrln("Unable to create SimpleDateFormat - %s", u_errorName(status));
+        return;
+    }
+
+    Calendar *cal = new GregorianCalendar(status);
+    if (cal == NULL || U_FAILURE(status)) {
+        errln("Unable to create calendar - %s", u_errorName(status));
+        return;
+    }
+
+    ParsePosition pos(0);
+    format.parse(text, *cal, pos);
+
+    if (cal->get(UCAL_DAY_OF_MONTH, status) != expectedDay) {
+        errln("Parsing failed: day of month should be '7' with pattern: \"" + pattern + "\" for text: \"" + text + "\"");
+    }
+
+    delete cal;
 }
 
 #endif /* #if !UCONFIG_NO_FORMATTING */

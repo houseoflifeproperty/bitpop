@@ -5,17 +5,15 @@
 #ifndef GamepadButton_h
 #define GamepadButton_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
-#include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class GamepadButton FINAL : public GarbageCollectedFinalized<GamepadButton>, public ScriptWrappable {
+class GamepadButton FINAL : public GarbageCollected<GamepadButton>, public ScriptWrappable {
 public:
     static GamepadButton* create();
-    ~GamepadButton();
 
     double value() const { return m_value; }
     void setValue(double val) { m_value = val; }
@@ -23,7 +21,7 @@ public:
     bool pressed() const { return m_pressed; }
     void setPressed(bool val) { m_pressed = val; }
 
-    void trace(Visitor*);
+    void trace(Visitor*) { }
 
 private:
     GamepadButton();
@@ -33,6 +31,6 @@ private:
 
 typedef HeapVector<Member<GamepadButton> > GamepadButtonVector;
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // GamepadButton_h

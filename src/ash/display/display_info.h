@@ -24,10 +24,18 @@ struct ASH_EXPORT DisplayMode {
               bool interlaced,
               bool native);
 
+  // Returns the size in DIP which isvisible to the user.
+  gfx::Size GetSizeInDIP() const;
+
+  // Returns true if |other| has same size and scale factors.
+  bool IsEquivalent(const DisplayMode& other) const;
+
   gfx::Size size;      // Physical pixel size of the display.
   float refresh_rate;  // Refresh rate of the display, in Hz.
   bool interlaced;     // True if mode is interlaced.
   bool native;         // True if mode is native mode of the display.
+  float ui_scale;      // The UI scale factor of the mode.
+  float device_scale_factor;  // The device scale factor of the mode.
 };
 
 // DisplayInfo contains metadata for each display. This is used to
@@ -189,6 +197,14 @@ class ASH_EXPORT DisplayInfo {
     available_color_profiles_ = profiles;
   }
 
+  bool is_aspect_preserving_scaling() const {
+    return is_aspect_preserving_scaling_;
+  }
+
+  void set_is_aspect_preserving_scaling(bool value) {
+    is_aspect_preserving_scaling_ = value;
+  }
+
   // Returns a string representation of the DisplayInfo, excluding display
   // modes.
   std::string ToString() const;
@@ -231,6 +247,11 @@ class ASH_EXPORT DisplayInfo {
 
   // True if this comes from native platform (DisplayChangeObserver).
   bool native_;
+
+  // True if the display is configured to preserve the aspect ratio. When the
+  // display is configured in a non-native mode, only parts of the display will
+  // be used such that the aspect ratio is preserved.
+  bool is_aspect_preserving_scaling_;
 
   // The list of modes supported by this display.
   std::vector<DisplayMode> display_modes_;

@@ -13,8 +13,15 @@
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "base/power_monitor/power_observer.h"
 #include "ui/gfx/display.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/dbus/power_manager_client.h"
+#endif  // OS_CHROMEOS
+
+namespace base {
+class TickClock;
+}
 
 namespace ui {
 class EventHandler;
@@ -23,7 +30,7 @@ class EventHandler;
 namespace ash {
 
 class MaximizeModeControllerTest;
-class MaximizeModeEventBlocker;
+class ScopedDisableInternalMouseAndKeyboard;
 class MaximizeModeWindowManager;
 class MaximizeModeWindowManagerTest;
 namespace test {
@@ -33,10 +40,13 @@ class MultiUserWindowManagerChromeOSTest;
 // MaximizeModeController listens to accelerometer events and automatically
 // enters and exits maximize mode when the lid is opened beyond the triggering
 // angle and rotates the display to match the device when in maximize mode.
-class ASH_EXPORT MaximizeModeController : public AccelerometerObserver,
-    public base::PowerObserver,
-    public ShellObserver,
-    public DisplayController::Observer {
+class ASH_EXPORT MaximizeModeController
+    : public AccelerometerObserver,
+#if defined(OS_CHROMEOS)
+      public chromeos::PowerManagerClient::Observer,
+#endif  // OS_CHROMEOS
+      public ShellObserver,
+      public DisplayController::Observer {
  public:
   // Observer that reports changes to the state of MaximizeModeController's
   // rotation lock.
@@ -107,17 +117,25 @@ class ASH_EXPORT MaximizeModeController : public AccelerometerObserver,
   virtual void OnMaximizeModeStarted() OVERRIDE;
   virtual void OnMaximizeModeEnded() OVERRIDE;
 
-  // base::PowerObserver:
-  virtual void OnSuspend() OVERRIDE;
-  virtual void OnResume() OVERRIDE;
-
   // DisplayController::Observer:
   virtual void OnDisplayConfigurationChanged() OVERRIDE;
+
+#if defined(OS_CHROMEOS)
+  // PowerManagerClient::Observer:
+  virtual void LidEventReceived(bool open,
+                                const base::TimeTicks& time) OVERRIDE;
+  virtual void SuspendImminent() OVERRIDE;
+  virtual void SuspendDone(const base::TimeDelta& sleep_duration) OVERRIDE;
+#endif  // OS_CHROMEOS
 
  private:
   friend class MaximizeModeControllerTest;
   friend class MaximizeModeWindowManagerTest;
   friend class test::MultiUserWindowManagerChromeOSTest;
+
+  // Set the TickClock. This is only to be used by tests that need to
+  // artificially and deterministically control the current time.
+  void SetTickClockForTest(scoped_ptr<base::TickClock> tick_clock);
 
   // Detect hinge rotation from |base| and |lid| accelerometers and
   // automatically start / stop maximize mode.
@@ -131,6 +149,9 @@ class ASH_EXPORT MaximizeModeController : public AccelerometerObserver,
   // Sets the display rotation and suppresses display notifications.
   void SetDisplayRotation(DisplayManager* display_manager,
                           gfx::Display::Rotation rotation);
+
+  // Returns true if the lid was recently opened.
+  bool WasLidOpenedRecently() const;
 
   // Enables MaximizeModeWindowManager, and determines the current state of
   // rotation lock.
@@ -146,9 +167,9 @@ class ASH_EXPORT MaximizeModeController : public AccelerometerObserver,
   // The maximized window manager (if enabled).
   scoped_ptr<MaximizeModeWindowManager> maximize_mode_window_manager_;
 
-  // An event targeter controller which traps mouse and keyboard events while
-  // maximize mode is engaged.
-  scoped_ptr<MaximizeModeEventBlocker> event_blocker_;
+  // A helper class which when instantiated will block native events from the
+  // internal keyboard and touchpad.
+  scoped_ptr<ScopedDisableInternalMouseAndKeyboard> event_blocker_;
 
   // An event handler used to detect screenshot actions while in maximize mode.
   scoped_ptr<ui::EventHandler> event_handler_;
@@ -178,6 +199,17 @@ class ASH_EXPORT MaximizeModeController : public AccelerometerObserver,
   base::Time last_touchview_transition_time_;
   base::TimeDelta total_touchview_time_;
   base::TimeDelta total_non_touchview_time_;
+
+  // Tracks the last time we received a lid open event. This is used to suppress
+  // erroneous accelerometer readings as the lid is opened but the accelerometer
+  // reports readings that make the lid to appear near fully open.
+  base::TimeTicks last_lid_open_time_;
+
+  // Source for the current time in base::TimeTicks.
+  scoped_ptr<base::TickClock> tick_clock_;
+
+  // Tracks when the lid is closed. Used to prevent entering maximize mode.
+  bool lid_is_closed_;
 
   DISALLOW_COPY_AND_ASSIGN(MaximizeModeController);
 };

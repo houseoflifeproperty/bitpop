@@ -58,7 +58,7 @@ WebInspector.SidebarSectionTreeElement.prototype = {
 
     onattach: function()
     {
-        this._listItemNode.classList.add("sidebar-tree-section");
+        this.listItemElement.classList.add("sidebar-tree-section");
     },
 
     onreveal: function()
@@ -83,10 +83,8 @@ WebInspector.SidebarTreeElement = function(className, title, subtitle, represent
 {
     TreeElement.call(this, "", representedObject, hasChildren);
 
-    if (hasChildren) {
-        this.disclosureButton = document.createElement("button");
-        this.disclosureButton.className = "disclosure-button";
-    }
+    if (hasChildren)
+        this.disclosureButton = document.createElementWithClass("button", "disclosure-button");
 
     this.iconElement = document.createElementWithClass("div", "icon");
     this.statusElement = document.createElementWithClass("div", "status");
@@ -111,8 +109,8 @@ WebInspector.SidebarTreeElement.prototype = {
     set small(x)
     {
         this._small = x;
-        if (this._listItemNode)
-            this._listItemNode.classList.toggle("small", this._small);
+        if (this.listItemElement)
+            this.listItemElement.classList.toggle("small", this._small);
     },
 
     get mainTitle()
@@ -139,7 +137,7 @@ WebInspector.SidebarTreeElement.prototype = {
 
     set wait(x)
     {
-        this._listItemNode.classList.toggle("wait", x);
+        this.listItemElement.classList.toggle("wait", x);
     },
 
     refreshTitles: function()
@@ -169,26 +167,24 @@ WebInspector.SidebarTreeElement.prototype = {
 
     onattach: function()
     {
-        this._listItemNode.classList.add("sidebar-tree-item");
+        this.listItemElement.classList.add("sidebar-tree-item");
 
         if (this.className)
-            this._listItemNode.classList.add(this.className);
+            this.listItemElement.classList.add(this.className);
 
         if (this.small)
-            this._listItemNode.classList.add("small");
+            this.listItemElement.classList.add("small");
 
         if (this.hasChildren && this.disclosureButton)
-            this._listItemNode.appendChild(this.disclosureButton);
+            this.listItemElement.appendChild(this.disclosureButton);
 
-        this._listItemNode.appendChild(this.iconElement);
-        this._listItemNode.appendChild(this.statusElement);
-        this._listItemNode.appendChild(this.titlesElement);
+        this.listItemElement.appendChildren(this.iconElement, this.statusElement, this.titlesElement);
     },
 
     onreveal: function()
     {
-        if (this._listItemNode)
-            this._listItemNode.scrollIntoViewIfNeeded(false);
+        if (this.listItemElement)
+            this.listItemElement.scrollIntoViewIfNeeded(false);
     },
 
     __proto__: TreeElement.prototype

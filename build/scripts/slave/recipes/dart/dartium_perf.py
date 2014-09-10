@@ -32,7 +32,6 @@ PERF_TESTS = [
   'image_decoding.image_decoding_measurement',
   'kraken',
   'octane',
-  'pica.pica',
   'spaceport',
   'sunspider',
 ]
@@ -69,20 +68,20 @@ def GenSteps(api):
     s.custom_vars.update({
       'dartium_base': 'svn://svn-mirror.golo.chromium.org'})
 
-  yield api.gclient.checkout()
+  api.gclient.checkout()
 
   # gclient api incorrectly sets Path('[CHECKOUT]') to build/src/dartium.deps
   # because Dartium has its DEPS file in dartium.deps, not directly in src.
   api.path['checkout'] = api.path['slave_build'].join('src')
 
-  yield api.chromium.runhooks()
-  yield api.python('fetch_reference_build',
+  api.chromium.runhooks()
+  api.python('fetch_reference_build',
                    api.path['checkout'].join('dart', 'tools', 'bots',
                                      'fetch_reference_build.py'))
 
   download_target = api.chromium.c.build_dir.join(
                         api.chromium.c.build_config_fs)
-  yield api.python('download_archived_build',
+  api.python('download_archived_build',
                    api.path['checkout']
                       .join('dart', 'tools', 'dartium', 'download_multivm.py'),
                    [s.revision, download_target])
@@ -116,7 +115,7 @@ def GenSteps(api):
     factory_properties['test_name'] = test
     factory_properties['step_name'] = test
     fp = "--factory-properties=%s" % json.dumps(factory_properties)
-    yield api.chromium.runtest(
+    api.chromium.runtest(
         api.chromium.m.path['build'].join('scripts', 'slave', 'telemetry.py'),
         [fp], name=test, python_mode=True,
         results_url=dashboard_upload_url,

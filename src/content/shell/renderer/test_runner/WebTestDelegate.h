@@ -11,6 +11,7 @@
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebNotificationPresenter.h"
 
 #define WEBTESTRUNNER_NEW_HISTORY_CAPTURE
 
@@ -29,6 +30,7 @@ struct WebURLError;
 
 namespace content {
 
+class DeviceLightData;
 class RendererGamepadProvider;
 class WebTask;
 class WebTestProxyBase;
@@ -44,7 +46,11 @@ public:
     // Sets gamepad provider to be used for tests.
     virtual void setGamepadProvider(RendererGamepadProvider*) = 0;
 
-    // Set data to return when registering via Platform::setDeviceMotionListener().
+    // Set data to return when registering via
+    // Platform::setDeviceLightListener().
+    virtual void setDeviceLightData(const double) = 0;
+    // Set data to return when registering via
+    // Platform::setDeviceMotionListener().
     virtual void setDeviceMotionData(const blink::WebDeviceMotionData&) = 0;
     // Set data to return when registering via Platform::setDeviceOrientationListener().
     virtual void setDeviceOrientationData(const blink::WebDeviceOrientationData&) = 0;
@@ -112,6 +118,13 @@ public:
     // Controls WebSQL databases.
     virtual void clearAllDatabases() = 0;
     virtual void setDatabaseQuota(int) = 0;
+
+    // Controls Web Notification permissions.
+    virtual blink::WebNotificationPresenter::Permission
+        checkWebNotificationPermission(const GURL& origin) = 0;
+    virtual void grantWebNotificationPermission(const GURL& origin,
+                                                bool permission_granted) = 0;
+    virtual void clearWebNotificationPermissions() = 0;
 
     // Controls the device scale factor of the main WebView for hidpi tests.
     virtual void setDeviceScaleFactor(float) = 0;

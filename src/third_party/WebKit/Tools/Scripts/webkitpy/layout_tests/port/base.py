@@ -63,7 +63,6 @@ from webkitpy.layout_tests.port import driver
 from webkitpy.layout_tests.port import server_process
 from webkitpy.layout_tests.port.factory import PortFactory
 from webkitpy.layout_tests.servers import apache_http
-from webkitpy.layout_tests.servers import lighttpd
 from webkitpy.layout_tests.servers import pywebsocket
 
 _log = logging.getLogger(__name__)
@@ -442,11 +441,7 @@ class Port(object):
         return 'wdiff is not installed; please install it to generate word-by-word diffs.'
 
     def check_httpd(self):
-        if self.uses_apache():
-            httpd_path = self.path_to_apache()
-        else:
-            httpd_path = self.path_to_lighttpd()
-
+        httpd_path = self.path_to_apache()
         try:
             server_name = self._filesystem.basename(httpd_path)
             env = self.setup_environ_for_server(server_name)
@@ -734,7 +729,7 @@ class Port(object):
 
     # When collecting test cases, we include any file with these extensions.
     _supported_file_extensions = set(['.html', '.xml', '.xhtml', '.xht', '.pl',
-                                      '.htm', '.php', '.svg', '.mht'])
+                                      '.htm', '.php', '.svg', '.mht', '.pdf'])
 
     @staticmethod
     # If any changes are made here be sure to update the isUsedInReftest method in old-run-webkit-tests as well.
@@ -1107,11 +1102,9 @@ class Port(object):
         Ports can stub this out if they don't need a web server to be running."""
         assert not self._http_server, 'Already running an http server.'
 
-        if self.uses_apache():
-            server = apache_http.ApacheHTTP(self, self.results_directory(), additional_dirs=additional_dirs, number_of_servers=(number_of_drivers * 4))
-        else:
-            server = lighttpd.Lighttpd(self, self.results_directory())
-
+        server = apache_http.ApacheHTTP(self, self.results_directory(),
+                                        additional_dirs=additional_dirs,
+                                        number_of_servers=(number_of_drivers * 4))
         server.start()
         self._http_server = server
 
@@ -1127,7 +1120,7 @@ class Port(object):
 
     def http_server_supports_ipv6(self):
         # Apache < 2.4 on win32 does not support IPv6, nor does cygwin apache.
-        if self.host.platform.is_cygwin() or self.get_option('use_apache') and self.host.platform.is_win():
+        if self.host.platform.is_cygwin() or self.host.platform.is_win():
             return False
         return True
 
@@ -1379,9 +1372,6 @@ class Port(object):
     def clobber_old_port_specific_results(self):
         pass
 
-    def uses_apache(self):
-        return True
-
     # FIXME: This does not belong on the port object.
     @memoized
     def path_to_apache(self):
@@ -1405,25 +1395,6 @@ class Port(object):
 
         config_file_name = self._apache_config_file_name_for_platform(sys.platform)
         return self._filesystem.join(self.layout_tests_dir(), 'http', 'conf', config_file_name)
-
-    def path_to_lighttpd(self):
-        """Returns the path to the LigHTTPd binary.
-
-        This is needed only by ports that use the http_server.py module."""
-        raise NotImplementedError('Port._path_to_lighttpd')
-
-    def path_to_lighttpd_modules(self):
-        """Returns the path to the LigHTTPd modules directory.
-
-        This is needed only by ports that use the http_server.py module."""
-        raise NotImplementedError('Port._path_to_lighttpd_modules')
-
-    def path_to_lighttpd_php(self):
-        """Returns the path to the LigHTTPd PHP executable.
-
-        This is needed only by ports that use the http_server.py module."""
-        raise NotImplementedError('Port._path_to_lighttpd_php')
-
 
     #
     # PROTECTED ROUTINES
@@ -1496,16 +1467,25 @@ class Port(object):
         """Returns the port's driver implementation."""
         return driver.Driver
 
+    def _output_contains_sanitizer_messages(self, output):
+        if not output:
+            return None
+        if 'AddressSanitizer' in output:
+            return 'AddressSanitizer'
+        if 'MemorySanitizer' in output:
+            return 'MemorySanitizer'
+        return None
+
     def _get_crash_log(self, name, pid, stdout, stderr, newer_than):
-        if stderr and 'AddressSanitizer' in stderr:
-            # Running the AddressSanitizer take a lot of memory, so we need to
+        if self._output_contains_sanitizer_messages(stderr):
+            # Running the symbolizer script can take a lot of memory, so we need to
             # serialize access to it across all the concurrently running drivers.
 
             # FIXME: investigate using LLVM_SYMBOLIZER_PATH here to reduce the overhead.
-            asan_filter_path = self.path_from_chromium_base('tools', 'valgrind', 'asan', 'asan_symbolize.py')
-            if self._filesystem.exists(asan_filter_path):
-                output = self._executive.run_command(['flock', sys.executable, asan_filter_path], input=stderr, decode_output=False)
-                stderr = self._executive.run_command(['c++filt'], input=output, decode_output=False)
+            sanitizer_filter_path = self.path_from_chromium_base('tools', 'valgrind', 'asan', 'asan_symbolize.py')
+            sanitizer_strip_path_prefix = 'Release/../../'
+            if self._filesystem.exists(sanitizer_filter_path):
+                stderr = self._executive.run_command(['flock', sys.executable, sanitizer_filter_path, sanitizer_strip_path_prefix], input=stderr, decode_output=False)
 
         name_str = name or '<unknown process name>'
         pid_str = str(pid or '<unknown>')
@@ -1535,68 +1515,55 @@ class Port(object):
         return [
             VirtualTestSuite('gpu',
                              'fast/canvas',
-                             ['--enable-accelerated-2d-canvas',
-                              '--force-compositing-mode']),
+                             ['--enable-accelerated-2d-canvas']),
             VirtualTestSuite('gpu',
                              'canvas/philip',
-                             ['--enable-accelerated-2d-canvas',
-                              '--force-compositing-mode']),
+                             ['--enable-accelerated-2d-canvas']),
             VirtualTestSuite('threaded',
                              'compositing/visibility',
-                             ['--enable-threaded-compositing',
-                              '--force-compositing-mode']),
+                             ['--enable-threaded-compositing']),
             VirtualTestSuite('threaded',
                              'compositing/webgl',
-                             ['--enable-threaded-compositing',
-                              '--force-compositing-mode']),
-            VirtualTestSuite('gpu',
-                             'fast/hidpi',
-                             ['--force-compositing-mode']),
+                             ['--enable-threaded-compositing']),
             VirtualTestSuite('softwarecompositing',
                              'compositing',
                              ['--disable-gpu',
-                              '--disable-gpu-compositing',
-                              '--force-compositing-mode'],
+                              '--disable-gpu-compositing'],
                              use_legacy_naming=True),
             VirtualTestSuite('deferred',
                              'fast/images',
-                             ['--enable-deferred-image-decoding', '--enable-per-tile-painting', '--force-compositing-mode']),
+                             ['--enable-deferred-image-decoding',
+                              '--enable-per-tile-painting']),
             VirtualTestSuite('deferred',
                              'inspector/timeline',
-                             ['--enable-deferred-image-decoding', '--enable-per-tile-painting', '--force-compositing-mode']),
+                             ['--enable-deferred-image-decoding',
+                              '--enable-per-tile-painting']),
             VirtualTestSuite('gpu/compositedscrolling/overflow',
                              'compositing/overflow',
-                             ['--enable-accelerated-overflow-scroll',
-                              '--force-compositing-mode'],
+                             ['--enable-accelerated-overflow-scroll'],
                              use_legacy_naming=True),
             VirtualTestSuite('gpu/compositedscrolling/scrollbars',
                              'scrollbars',
-                             ['--enable-accelerated-overflow-scroll',
-                              '--force-compositing-mode'],
+                             ['--enable-accelerated-overflow-scroll'],
                              use_legacy_naming=True),
             VirtualTestSuite('threaded',
                              'animations',
-                             ['--enable-threaded-compositing',
-                              '--force-compositing-mode']),
+                             ['--enable-threaded-compositing']),
             VirtualTestSuite('threaded',
                              'transitions',
-                             ['--enable-threaded-compositing',
-                              '--force-compositing-mode']),
+                             ['--enable-threaded-compositing']),
             VirtualTestSuite('stable',
                              'webexposed',
-                             ['--stable-release-mode',
-                              '--force-compositing-mode']),
+                             ['--stable-release-mode']),
             VirtualTestSuite('stable',
                              'animations-unprefixed',
-                             ['--stable-release-mode',
-                              '--force-compositing-mode']),
+                             ['--stable-release-mode']),
             VirtualTestSuite('stable',
                              'media/stable',
-                             ['--stable-release-mode',
-                              '--force-compositing-mode']),
+                             ['--stable-release-mode']),
             VirtualTestSuite('android',
                              'fullscreen',
-                             ['--force-compositing-mode', '--enable-threaded-compositing',
+                             ['--enable-threaded-compositing',
                               '--enable-fixed-position-compositing', '--enable-accelerated-overflow-scroll', '--enable-accelerated-scrollable-frames',
                               '--enable-composited-scrolling-for-frames', '--enable-gesture-tap-highlight', '--enable-pinch',
                               '--enable-overlay-fullscreen-video', '--enable-overlay-scrollbars', '--enable-overscroll-notifications',
@@ -1604,37 +1571,29 @@ class Port(object):
                               '--disable-composited-antialiasing', '--enable-accelerated-fixed-root-background']),
             VirtualTestSuite('implsidepainting',
                              'inspector/timeline',
-                             ['--enable-threaded-compositing', '--enable-impl-side-painting', '--force-compositing-mode']),
-            VirtualTestSuite('serviceworker',
-                             'http/tests/serviceworker',
-                             ['--enable-service-worker',
-                              '--force-compositing-mode']),
-            VirtualTestSuite('targetedstylerecalc',
-                             'fast/css/invalidation',
-                             ['--enable-targeted-style-recalc',
-                              '--force-compositing-mode']),
+                             ['--enable-threaded-compositing', '--enable-impl-side-painting']),
             VirtualTestSuite('stable',
                              'fast/css3-text/css3-text-decoration/stable',
-                             ['--stable-release-mode',
-                              '--force-compositing-mode']),
-            VirtualTestSuite('stable',
-                             'http/tests/websocket',
-                             ['--stable-release-mode',
-                              '--force-compositing-mode']),
+                             ['--stable-release-mode']),
             VirtualTestSuite('stable',
                              'web-animations-api',
-                             ['--stable-release-mode',
-                              '--force-compositing-mode']),
+                             ['--stable-release-mode']),
             VirtualTestSuite('linux-subpixel',
                              'platform/linux/fast/text/subpixel',
-                             ['--enable-webkit-text-subpixel-positioning',
-                              '--force-compositing-mode']),
+                             ['--enable-webkit-text-subpixel-positioning']),
             VirtualTestSuite('antialiasedtext',
                              'fast/text',
                              ['--enable-direct-write',
-                              '--enable-font-antialiasing',
-                              '--force-compositing-mode']),
-
+                              '--enable-font-antialiasing']),
+            VirtualTestSuite('threaded',
+                             'printing',
+                             ['--enable-threaded-compositing']),
+            VirtualTestSuite('regionbasedmulticol',
+                             'fast/multicol',
+                             ['--enable-region-based-columns']),
+            VirtualTestSuite('regionbasedmulticol',
+                             'fast/pagination',
+                             ['--enable-region-based-columns']),
         ]
 
     @memoized

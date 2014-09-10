@@ -27,7 +27,7 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
     class CSSSelectorList;
 
     // This class represents a selector for a StyleRule.
@@ -216,7 +216,9 @@ namespace WebCore {
             PseudoContent,
             PseudoHost,
             PseudoHostContext,
-            PseudoShadow
+            PseudoShadow,
+            PseudoSpatialNavigationFocus,
+            PseudoListBox
         };
 
         enum MarginBoxType {
@@ -236,6 +238,11 @@ namespace WebCore {
             RightTopMarginBox,
             RightMiddleMarginBox,
             RightBottomMarginBox,
+        };
+
+        enum AttributeMatchType {
+            CaseSensitive,
+            CaseInsensitive,
         };
 
         PseudoType pseudoType() const
@@ -261,6 +268,7 @@ namespace WebCore {
         // how you use the returned QualifiedName.
         // http://www.w3.org/TR/css3-selectors/#attrnmsp
         const QualifiedName& attribute() const;
+        AttributeMatchType attributeMatchType() const;
         // Returns the argument of a parameterized selector. For example, nth-child(2) would have an argument of 2.
         const AtomicString& argument() const { return m_hasRareData ? m_data.m_rareData->m_argument : nullAtom; }
         const CSSSelectorList* selectorList() const { return m_hasRareData ? m_data.m_rareData->m_selectorList.get() : 0; }
@@ -271,7 +279,7 @@ namespace WebCore {
 #endif
 
         void setValue(const AtomicString&);
-        void setAttribute(const QualifiedName&);
+        void setAttribute(const QualifiedName&, AttributeMatchType);
         void setArgument(const AtomicString&);
         void setSelectorList(PassOwnPtr<CSSSelectorList>);
         void setMatchUserAgentOnly();
@@ -280,7 +288,6 @@ namespace WebCore {
         bool matchNth(int count) const;
 
         bool matchesPseudoElement() const;
-        bool isUnknownPseudoElement() const;
         bool isCustomPseudoElement() const;
         bool isDirectAdjacentSelector() const { return m_relation == DirectAdjacent; }
         bool isSiblingSelector() const;
@@ -344,10 +351,19 @@ namespace WebCore {
 
             bool parseNth();
             bool matchNth(int count);
+            int nthAValue() const { return m_bits.m_nth.m_a; }
+            void setNthAValue(int nthA) { m_bits.m_nth.m_a = nthA; }
+            int nthBValue() const { return m_bits.m_nth.m_b; }
+            void setNthBValue(int nthB) { m_bits.m_nth.m_b = nthB; }
 
             AtomicString m_value;
-            int m_a; // Used for :nth-*
-            int m_b; // Used for :nth-*
+            union {
+                struct {
+                    int m_a; // Used for :nth-*
+                    int m_b; // Used for :nth-*
+                } m_nth;
+                AttributeMatchType m_attributeMatchType; // used for attribute selector (with value)
+            } m_bits;
             QualifiedName m_attribute; // used for attribute selector
             AtomicString m_argument; // Used for :contains, :lang, :nth-*
             OwnPtr<CSSSelectorList> m_selectorList; // Used for :-webkit-any and :not
@@ -372,16 +388,18 @@ inline const QualifiedName& CSSSelector::attribute() const
     return m_data.m_rareData->m_attribute;
 }
 
+inline CSSSelector::AttributeMatchType CSSSelector::attributeMatchType() const
+{
+    ASSERT(isAttributeSelector());
+    ASSERT(m_hasRareData);
+    return m_data.m_rareData->m_bits.m_attributeMatchType;
+}
+
 inline bool CSSSelector::matchesPseudoElement() const
 {
     if (m_pseudoType == PseudoUnknown)
         extractPseudoType();
     return m_match == PseudoElement;
-}
-
-inline bool CSSSelector::isUnknownPseudoElement() const
-{
-    return m_match == PseudoElement && m_pseudoType == PseudoUnknown;
 }
 
 inline bool CSSSelector::isCustomPseudoElement() const
@@ -522,6 +540,6 @@ inline const AtomicString& CSSSelector::value() const
     return *reinterpret_cast<const AtomicString*>(&m_data.m_value);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSSelector_h

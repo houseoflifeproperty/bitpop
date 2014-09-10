@@ -35,7 +35,7 @@
 #include "core/animation/AnimationPlayer.h"
 #include "core/animation/TimingCalculations.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
@@ -50,7 +50,7 @@ Timing::FillMode resolvedFillMode(Timing::FillMode fillMode, bool isAnimation)
 
 } // namespace
 
-AnimationNode::AnimationNode(const Timing& timing, PassOwnPtr<EventDelegate> eventDelegate)
+AnimationNode::AnimationNode(const Timing& timing, PassOwnPtrWillBeRawPtr<EventDelegate> eventDelegate)
     : m_parent(nullptr)
     , m_startTime(0)
     , m_player(nullptr)
@@ -60,6 +60,7 @@ AnimationNode::AnimationNode(const Timing& timing, PassOwnPtr<EventDelegate> eve
     , m_needsUpdate(true)
     , m_lastUpdateTime(nullValue())
 {
+    ScriptWrappable::init(this);
     m_timing.assertValid();
 }
 
@@ -158,7 +159,7 @@ void AnimationNode::updateInheritedTime(double inheritedTime, TimingUpdateReason
 
     // Test for events even if timing didn't need an update as the player may have gained a start time.
     // FIXME: Refactor so that we can ASSERT(m_player) here, this is currently required to be nullable for testing.
-    if (reason == TimingUpdateForAnimationFrame && (!m_player || m_player->hasStartTime())) {
+    if (reason == TimingUpdateForAnimationFrame && (!m_player || m_player->hasStartTime() || m_player->paused())) {
         if (m_eventDelegate)
             m_eventDelegate->onEventCondition(this);
     }
@@ -190,6 +191,7 @@ void AnimationNode::trace(Visitor* visitor)
 {
     visitor->trace(m_parent);
     visitor->trace(m_player);
+    visitor->trace(m_eventDelegate);
 }
 
-} // namespace WebCore
+} // namespace blink

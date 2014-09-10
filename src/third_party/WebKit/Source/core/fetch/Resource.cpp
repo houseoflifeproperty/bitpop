@@ -48,7 +48,7 @@
 
 using namespace WTF;
 
-namespace WebCore {
+namespace blink {
 
 // These response headers are not copied from a revalidated response to the
 // cached response headers. For compatibility, this list is based on Chromium's
@@ -93,6 +93,7 @@ static inline bool shouldUpdateHeaderAfterRevalidation(const AtomicString& heade
 }
 
 DEFINE_DEBUG_ONLY_GLOBAL(RefCountedLeakCounter, cachedResourceLeakCounter, ("Resource"));
+unsigned Resource::s_instanceCount = 0;
 
 Resource::Resource(const ResourceRequest& request, Type type)
     : m_resourceRequest(request)
@@ -116,13 +117,15 @@ Resource::Resource(const ResourceRequest& request, Type type)
 #ifdef ENABLE_RESOURCE_IS_DELETED_CHECK
     , m_deleted(false)
 #endif
-    , m_resourceToRevalidate(0)
-    , m_proxyResource(0)
+    , m_resourceToRevalidate(nullptr)
+    , m_proxyResource(nullptr)
 {
     ASSERT(m_type == unsigned(type)); // m_type is a bitfield, so this tests careless updates of the enum.
+    ++s_instanceCount;
 #ifndef NDEBUG
     cachedResourceLeakCounter.increment();
 #endif
+    memoryCache()->registerLiveResource(*this);
 
     if (!m_resourceRequest.url().hasFragmentIdentifier())
         return;
@@ -148,6 +151,18 @@ Resource::~Resource()
 #ifndef NDEBUG
     cachedResourceLeakCounter.decrement();
 #endif
+    --s_instanceCount;
+}
+
+void Resource::dispose()
+{
+}
+
+void Resource::trace(Visitor* visitor)
+{
+    visitor->trace(m_loader);
+    visitor->trace(m_resourceToRevalidate);
+    visitor->trace(m_proxyResource);
 }
 
 void Resource::failBeforeStarting()
@@ -200,7 +215,7 @@ void Resource::checkNotify()
 
 void Resource::appendData(const char* data, int length)
 {
-    TRACE_EVENT0("webkit", "Resource::appendData");
+    TRACE_EVENT0("blink", "Resource::appendData");
     ASSERT(!m_resourceToRevalidate);
     ASSERT(!errorOccurred());
     if (m_options.dataBufferingPolicy == DoNotBufferData)
@@ -268,7 +283,7 @@ bool Resource::passesAccessControlCheck(SecurityOrigin* securityOrigin)
 
 bool Resource::passesAccessControlCheck(SecurityOrigin* securityOrigin, String& errorDescription)
 {
-    return WebCore::passesAccessControlCheck(m_response, resourceRequest().allowStoredCredentials() ? AllowStoredCredentials : DoNotAllowStoredCredentials, securityOrigin, errorDescription);
+    return blink::passesAccessControlCheck(m_response, resourceRequest().allowStoredCredentials() ? AllowStoredCredentials : DoNotAllowStoredCredentials, securityOrigin, errorDescription);
 }
 
 static double currentAge(const ResourceResponse& response, double responseTimestamp)
@@ -338,7 +353,7 @@ static bool canUseResponse(ResourceResponse& response, double responseTimestamp)
     return currentAge(response, responseTimestamp) <= freshnessLifetime(response, responseTimestamp);
 }
 
-const ResourceRequest& Resource::lastResourceRequest()
+const ResourceRequest& Resource::lastResourceRequest() const
 {
     if (!m_redirectChain.size())
         return m_resourceRequest;
@@ -408,6 +423,11 @@ void Resource::setCachedMetadata(unsigned dataTypeID, const char* data, size_t s
     m_cachedMetadata = CachedMetadata::create(dataTypeID, data, size);
     const Vector<char>& serializedData = m_cachedMetadata->serialize();
     blink::Platform::current()->cacheMetadata(m_response.url(), m_response.responseTime(), serializedData.data(), serializedData.size());
+}
+
+void Resource::clearCachedMetadata()
+{
+    m_cachedMetadata.clear();
 }
 
 bool Resource::canDelete() const
@@ -551,7 +571,11 @@ bool Resource::deleteIfPossible()
 {
     if (canDelete() && !memoryCache()->contains(this)) {
         InspectorInstrumentation::willDestroyResource(this);
+        dispose();
+        memoryCache()->unregisterLiveResource(*this);
+#if !ENABLE(OILPAN)
         delete this;
+#endif
         return true;
     }
     return false;
@@ -649,11 +673,11 @@ void Resource::clearResourceToRevalidate()
 
     // A resource may start revalidation before this method has been called, so check that this resource is still the proxy resource before clearing it out.
     if (m_resourceToRevalidate->m_proxyResource == this) {
-        m_resourceToRevalidate->m_proxyResource = 0;
+        m_resourceToRevalidate->m_proxyResource = nullptr;
         m_resourceToRevalidate->deleteIfPossible();
     }
     m_handlesToRevalidate.clear();
-    m_resourceToRevalidate = 0;
+    m_resourceToRevalidate = nullptr;
     deleteIfPossible();
 }
 
@@ -663,7 +687,7 @@ void Resource::switchClientsToRevalidatedResource()
     ASSERT(memoryCache()->contains(m_resourceToRevalidate));
     ASSERT(!memoryCache()->contains(this));
 
-    WTF_LOG(ResourceLoading, "Resource %p switchClientsToRevalidatedResource %p", this, m_resourceToRevalidate);
+    WTF_LOG(ResourceLoading, "Resource %p switchClientsToRevalidatedResource %p", this, m_resourceToRevalidate.get());
 
     m_resourceToRevalidate->m_identifier = m_identifier;
 

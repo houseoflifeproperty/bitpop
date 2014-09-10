@@ -11,7 +11,6 @@ DEPS = [
   'platform',
   'properties',
   'step',
-  'step_history',
   'tryserver',
   'v8',
 ]
@@ -25,37 +24,40 @@ def GenSteps(api):
     v8.init_tryserver()
 
   if api.platform.is_win:
-    yield api.chromium.taskkill()
+    api.chromium.taskkill()
+
+  # On the branch builders, the gclient solution changes on every milestone.
+  # If the sync fails, we nuke the build dir.
+  v8.checkout(
+      may_nuke=(api.tryserver.is_tryserver
+                or api.properties.get('mastername') == 'client.v8.branches'),
+      revert=api.tryserver.is_tryserver)
 
   if api.tryserver.is_tryserver:
-    yield v8.tryserver_checkout()
-  else:
-    yield v8.checkout()
-
-  if api.tryserver.is_tryserver:
-    yield api.tryserver.maybe_apply_issue()
-
-  yield v8.runhooks()
-  yield api.chromium.cleanup_temp()
+    api.tryserver.maybe_apply_issue()
 
   if v8.needs_clang:
-    yield v8.update_clang()
+    v8.update_clang()
+  v8.runhooks()
+  api.chromium.cleanup_temp()
+
+  if v8.c.nacl.update_nacl_sdk:
+    v8.update_nacl_sdk()
 
   if v8.should_build:
     if api.tryserver.is_tryserver:
-      yield v8.tryserver_compile(v8.tryserver_lkgr_fallback)
+      v8.tryserver_compile(v8.tryserver_lkgr_fallback)
     else:
-      yield v8.compile()
+      v8.compile()
 
   if v8.should_upload_build:
-    yield v8.upload_build()
+    v8.upload_build()
 
   if v8.should_download_build:
-    yield v8.download_build()
+    v8.download_build()
 
   if v8.should_test:
-    yield v8.runtests()
-    yield v8.runperf(v8.perf_tests, v8.PERF_CONFIGS)
+    v8.runtests()
 
 
 def _sanitize_nonalpha(text):
@@ -99,6 +101,15 @@ def GenTests(api):
     api.step_data('compile (with patch)', retcode=1)
   )
 
+  yield (
+    api.test('branch_sync_failure') +
+    api.properties.tryserver(mastername='client.v8.branches',
+                             buildername='V8 Linux - trunk',
+                             revision='20123') +
+    api.platform('linux', 32) +
+    api.step_data('gclient sync', retcode=1)
+  )
+
   mastername = 'client.v8'
   buildername = 'V8 Linux - isolates'
   bot_config = api.v8.BUILDERS[mastername]['builders'][buildername]
@@ -114,8 +125,22 @@ def GenTests(api):
                                  'parent_buildername')) +
       api.platform(bot_config['testing']['platform'],
                    v8_config_kwargs.get('TARGET_BITS', 64)) +
-      api.v8(test_failures=True, wrong_results=wrong_results)
+      api.v8(test_failures=True, wrong_results=wrong_results) +
+      api.step_data('Check', retcode=1) +
+      api.step_data('Check - flaky', retcode=1)
     )
 
   yield TestFailures(wrong_results=False)
   yield TestFailures(wrong_results=True)
+  yield (
+    api.test('full_%s_%s_flaky_test_failures' % (
+        _sanitize_nonalpha(mastername), _sanitize_nonalpha(buildername))) +
+    api.properties.generic(mastername=mastername,
+                           buildername=buildername,
+                           parent_buildername=bot_config.get(
+                               'parent_buildername')) +
+    api.platform(bot_config['testing']['platform'],
+                 v8_config_kwargs.get('TARGET_BITS', 64)) +
+    api.step_data('Check - flaky', retcode=1)
+  )
+

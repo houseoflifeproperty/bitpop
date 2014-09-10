@@ -26,7 +26,6 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
-#include "content/renderer/pepper/common.h"
 #include "content/renderer/pepper/content_decryptor_delegate.h"
 #include "content/renderer/pepper/event_conversion.h"
 #include "content/renderer/pepper/fullscreen_container.h"
@@ -43,6 +42,7 @@
 #include "content/renderer/pepper/pepper_url_loader_host.h"
 #include "content/renderer/pepper/plugin_module.h"
 #include "content/renderer/pepper/plugin_object.h"
+#include "content/renderer/pepper/ppapi_preferences_builder.h"
 #include "content/renderer/pepper/ppb_buffer_impl.h"
 #include "content/renderer/pepper/ppb_graphics_3d_impl.h"
 #include "content/renderer/pepper/ppb_image_data_impl.h"
@@ -661,6 +661,18 @@ PepperPluginInstanceImpl::~PepperPluginInstanceImpl() {
 // If a method needs to access a member of the instance after the call has
 // returned, then it needs to keep its own reference on the stack.
 
+v8::Local<v8::Context> PepperPluginInstanceImpl::GetContext() {
+  if (!container_)
+    return v8::Handle<v8::Context>();
+  WebLocalFrame* frame = container_->element().document().frame();
+  if (!frame)
+    return v8::Handle<v8::Context>();
+
+  v8::Local<v8::Context> context = frame->mainWorldScriptContext();
+  DCHECK(context->GetIsolate() == isolate_);
+  return context;
+}
+
 void PepperPluginInstanceImpl::Delete() {
   is_deleted_ = true;
 
@@ -756,7 +768,7 @@ void PepperPluginInstanceImpl::ScrollRect(int dx,
     fullscreen_container_->ScrollRect(dx, dy, rect);
   } else {
     if (full_frame_ && !IsViewAccelerated()) {
-      container_->scrollRect(dx, dy, rect);
+      container_->scrollRect(rect);
     } else {
       // Can't do optimized scrolling since there could be other elements on top
       // of us or the view renders via the accelerated compositor which is
@@ -844,10 +856,10 @@ bool PepperPluginInstanceImpl::Initialize(
   UpdateTouchEventRequest();
   container_->setWantsWheelEvents(IsAcceptingWheelEvents());
 
-  SetGPUHistogram(
-      ppapi::Preferences(render_frame_->render_view()->webkit_preferences()),
-      arg_names,
-      arg_values);
+  SetGPUHistogram(ppapi::Preferences(PpapiPreferencesBuilder::Build(
+                      render_frame_->render_view()->webkit_preferences())),
+                  arg_names,
+                  arg_values);
 
   argn_ = arg_names;
   argv_ = arg_values;
@@ -2384,9 +2396,11 @@ PP_Var PepperPluginInstanceImpl::ExecuteScript(PP_Instance instance,
   np_script.UTF8Length = script_string->value().length();
 
   // Get the current frame to pass to the evaluate function.
-  WebLocalFrame* frame = container_->element().document().frame();
-  if (!frame) {
-    try_catch.SetException("No frame to execute script in.");
+  WebLocalFrame* frame = NULL;
+  if (container_)
+    frame = container_->element().document().frame();
+  if (!frame || !frame->windowObject()) {
+    try_catch.SetException("No context in which to execute script.");
     return PP_MakeUndefined();
   }
 
@@ -2848,7 +2862,7 @@ PP_Bool PepperPluginInstanceImpl::DocumentCanRequest(PP_Instance instance,
   if (!gurl.is_valid())
     return PP_FALSE;
 
-  return BoolToPPBool(security_origin.canRequest(gurl));
+  return PP_FromBool(security_origin.canRequest(gurl));
 }
 
 PP_Bool PepperPluginInstanceImpl::DocumentCanAccessDocument(
@@ -2862,7 +2876,7 @@ PP_Bool PepperPluginInstanceImpl::DocumentCanAccessDocument(
   if (!SecurityOriginForInstance(instance, &target_origin))
     return PP_FALSE;
 
-  return BoolToPPBool(our_origin.canAccess(target_origin));
+  return PP_FromBool(our_origin.canAccess(target_origin));
 }
 
 PP_Var PepperPluginInstanceImpl::GetDocumentURL(

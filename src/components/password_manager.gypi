@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //components/password_manager/core/browser
       'target_name': 'password_manager_core_browser',
       'type': 'static_library',
       'dependencies': [
@@ -21,6 +22,7 @@
         '..',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'password_manager/core/browser/browser_save_password_progress_logger.cc',
         'password_manager/core/browser/browser_save_password_progress_logger.h',
         'password_manager/core/browser/log_receiver.h',
@@ -58,6 +60,11 @@
         'password_manager/core/browser/password_store_sync.h',
         'password_manager/core/browser/psl_matching_helper.cc',
         'password_manager/core/browser/psl_matching_helper.h',
+        'password_manager/core/browser/webdata/logins_table.cc',
+        'password_manager/core/browser/webdata/logins_table.h',
+        'password_manager/core/browser/webdata/logins_table_win.cc',
+        'password_manager/core/browser/webdata/password_web_data_service_win.cc',
+        'password_manager/core/browser/webdata/password_web_data_service_win.h',
       ],
       'variables': {
         'conditions': [
@@ -90,6 +97,7 @@
             ],
           },
           'sources': [
+            # Note: sources list duplicated in GN build.
             'password_manager/core/browser/password_syncable_service.cc',
             'password_manager/core/browser/password_syncable_service.h',
           ],
@@ -99,6 +107,7 @@
       'msvs_disabled_warnings': [ 4267, ],
     },
     {
+      # GN version: //components/password_manager/core/browser:test_support
       'target_name': 'password_manager_core_browser_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -111,6 +120,7 @@
         '..',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'password_manager/core/browser/mock_password_store.cc',
         'password_manager/core/browser/mock_password_store.h',
         'password_manager/core/browser/password_form_data.cc',
@@ -124,6 +134,7 @@
       ],
     },
     {
+      # GN version: //components/password_manager/core/common
       'target_name': 'password_manager_core_common',
       'type': 'static_library',
       'dependencies': [
@@ -132,6 +143,7 @@
         '..',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'password_manager/core/common/password_manager_pref_names.cc',
         'password_manager/core/common/password_manager_pref_names.h',
         'password_manager/core/common/password_manager_switches.cc',
@@ -145,6 +157,7 @@
     ['OS != "ios"', {
       'targets': [
         {
+          # GN version: //components/password_manager/content/browser
           'target_name': 'password_manager_content_browser',
           'type': 'static_library',
           'dependencies': [
@@ -163,6 +176,7 @@
             '..',
           ],
           'sources': [
+            # Note: sources list duplicated in GN build.
             'password_manager/content/browser/content_password_manager_driver.cc',
             'password_manager/content/browser/content_password_manager_driver.h',
             'password_manager/content/browser/password_manager_internals_service_factory.cc',

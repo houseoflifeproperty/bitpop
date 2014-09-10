@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/html/parser/HTMLScriptRunner.h"
 
-#include "bindings/v8/ScriptSourceCode.h"
+#include "bindings/core/v8/ScriptSourceCode.h"
 #include "core/dom/Element.h"
 #include "core/events/Event.h"
 #include "core/dom/IgnoreDestructiveWriteCountIncrementer.h"
@@ -39,7 +39,7 @@
 #include "core/html/parser/NestingLevelIncrementer.h"
 #include "platform/NotImplemented.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 

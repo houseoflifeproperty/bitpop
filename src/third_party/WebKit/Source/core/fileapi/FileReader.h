@@ -31,7 +31,6 @@
 #ifndef FileReader_h
 #define FileReader_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
 #include "core/fileapi/FileError.h"
@@ -40,17 +39,16 @@
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
-#include "wtf/ThreadSpecific.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Blob;
 class ExceptionState;
 class ExecutionContext;
 
-class FileReader FINAL : public RefCountedWillBeRefCountedGarbageCollected<FileReader>, public ScriptWrappable, public ActiveDOMObject, public FileReaderLoaderClient, public EventTargetWithInlineData {
-    REFCOUNTED_EVENT_TARGET(FileReader);
+class FileReader FINAL : public RefCountedWillBeGarbageCollectedFinalized<FileReader>, public ActiveDOMObject, public FileReaderLoaderClient, public EventTargetWithInlineData {
+    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCounted<FileReader>);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(FileReader);
 public:
     static PassRefPtrWillBeRawPtr<FileReader> create(ExecutionContext*);
@@ -80,6 +78,7 @@ public:
 
     // ActiveDOMObject
     virtual void stop() OVERRIDE;
+    virtual bool hasPendingActivity() const OVERRIDE;
 
     // EventTarget
     virtual const AtomicString& interfaceName() const OVERRIDE;
@@ -101,16 +100,14 @@ public:
     virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    class ThrottlingController;
+    explicit FileReader(ExecutionContext*);
 
-    FileReader(ExecutionContext*);
+    class ThrottlingController;
 
     void terminate();
     void readInternal(Blob*, FileReaderLoader::ReadType, ExceptionState&);
-    void fireErrorEvent(int httpStatusCode);
     void fireEvent(const AtomicString& type);
 
-    static ThreadSpecific<ThrottlingController>& throttlingController();
     void executePendingRead();
 
     ReadyState m_state;
@@ -133,8 +130,9 @@ private:
     OwnPtr<FileReaderLoader> m_loader;
     RefPtrWillBeMember<FileError> m_error;
     double m_lastProgressNotificationTimeMS;
+    int m_asyncOperationId;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FileReader_h

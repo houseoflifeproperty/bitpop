@@ -91,7 +91,6 @@ static void ensure_file_is_absent(const char *filename) {
  */
 
 bool test_sched_yield() {
-  // test sched_yield
   if (sched_yield()) {
     printf("sched_yield failed\n");
     return false;
@@ -100,7 +99,10 @@ bool test_sched_yield() {
 }
 
 bool test_sysconf() {
-  // test sysconf
+  // TODO(hamaji): Implement _SC_NPROCESSORS_ONLN for newlib based
+  // non-SFI mode. Note that this test works for unsandboxed mode.
+  if (NONSFI_MODE)
+    return true;
   int rv;
   rv = sysconf(_SC_NPROCESSORS_ONLN);
   if (rv == -1) {
@@ -549,6 +551,33 @@ bool test_stat(const char *test_file) {
   ASSERT_MSG(buf.st_mode & S_IRUSR, "stat() failed to report S_IRUSR");
   ASSERT_MSG(buf.st_mode & S_IWUSR, "stat() failed to report S_IWUSR");
 
+  // Test fstat and compare the result with the result of stat.
+  int fd = open(test_file, O_RDONLY);
+  ASSERT_NE(fd, -1);
+  struct stat buf2;
+  int rc = fstat(fd, &buf2);
+  ASSERT_EQ(rc, 0);
+  ASSERT_EQ(buf.st_dev, buf2.st_dev);
+  ASSERT_EQ(buf.st_mode, buf2.st_mode);
+  ASSERT_EQ(buf.st_nlink, buf2.st_nlink);
+  ASSERT_EQ(buf.st_uid, buf2.st_uid);
+  ASSERT_EQ(buf.st_gid, buf2.st_gid);
+  ASSERT_EQ(buf.st_rdev, buf2.st_rdev);
+  ASSERT_EQ(buf.st_size, buf2.st_size);
+  ASSERT_EQ(buf.st_blksize, buf2.st_blksize);
+  ASSERT_EQ(buf.st_blocks, buf2.st_blocks);
+  // Do not check st_atime as it seems to be updated by open or fstat
+  // on Windows.
+  ASSERT_EQ(buf.st_mtime, buf2.st_mtime);
+  ASSERT_EQ(buf.st_ctime, buf2.st_ctime);
+  rc = close(fd);
+  ASSERT_EQ(rc, 0);
+
+  // An invalid fstat call.
+  errno = 0;
+  ASSERT_EQ(fstat(-1, &buf2), -1);
+  ASSERT_EQ(errno, EBADF);
+
   // Test a new read-only file
   // The current unlink() implemenation in the sel_ldr for Windows
   // doesn't support removing read-only files.
@@ -884,8 +913,10 @@ bool test_readdir(const char *test_file) {
 // isatty returns 1 for TTY descriptors and 0 on error (setting errno)
 bool test_isatty(const char *test_file) {
   // TODO(mseaborn): Implement isatty() for unsandboxed mode.
+  // We need to write two if-statements two avoid clang's warning.
   if (NONSFI_MODE)
-    return true;
+    if (TESTS_USE_IRT)
+      return true;
 
   // TODO(sbc): isatty() in glibc is not yet hooked up to the IRT
   // interfaces. Remove this conditional once this gets addressed:

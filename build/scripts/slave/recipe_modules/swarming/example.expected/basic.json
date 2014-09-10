@@ -9,15 +9,7 @@
       "--url",
       "https://chromium.googlesource.com/external/swarming.client.git"
     ],
-    "name": "git setup (swarming_client)",
-    "seed_steps": [
-      "git setup (swarming_client)",
-      "git fetch (swarming_client)",
-      "git checkout (swarming_client)",
-      "git clean (swarming_client)",
-      "submodule sync (swarming_client)",
-      "submodule update (swarming_client)"
-    ]
+    "name": "git setup (swarming_client)"
   },
   {
     "cmd": [
@@ -80,7 +72,7 @@
     "name": "swarming.py --version",
     "stdout": "/path/to/tmp/",
     "~followup_annotations": [
-      "@@@STEP_TEXT@0.4.8@@@"
+      "@@@STEP_TEXT@0.4.10@@@"
     ]
   },
   {
@@ -159,6 +151,8 @@
       "1",
       "--task-name",
       "hello_world/Windows-6.1/hash_for_win/local/0/1337000001500",
+      "--dump-json",
+      "/path/to/tmp/json",
       "--dimension",
       "os",
       "Windows-6.1",
@@ -170,10 +164,19 @@
       "hash_for_win"
     ],
     "name": "[trigger] hello_world on Windows-6.1",
-    "seed_steps": [
-      "[trigger] hello_world on Windows-6.1",
-      "[trigger] hello_world",
-      "[trigger] hello_world on Mac"
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"base_task_name\": \"hello_world/Windows-6.1/hash_for_win/local/0/1337000001500\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"tasks\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"hello_world/Windows-6.1/hash_for_win/local/0/1337000001500\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"shard_index\": 0, @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"task_id\": \"deadbeef0\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"view_url\": \"https://chromium-swarm-dev.appspot.com/user/task/deadbeef0\"@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@STEP_LINK@shard #0@https://chromium-swarm-dev.appspot.com/user/task/deadbeef0@@@"
     ]
   },
   {
@@ -189,9 +192,11 @@
       "--priority",
       "30",
       "--shards",
-      "1",
+      "2",
       "--task-name",
       "hello_world/Linux/hash_for_linux/local/0/1337000003000",
+      "--dump-json",
+      "/path/to/tmp/json",
       "--dimension",
       "os",
       "Linux",
@@ -202,7 +207,27 @@
       "--verbose",
       "hash_for_linux"
     ],
-    "name": "[trigger] hello_world"
+    "name": "[trigger] hello_world",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"base_task_name\": \"hello_world/Linux/hash_for_linux/local/0/1337000003000\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"tasks\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"hello_world/Linux/hash_for_linux/local/0/1337000003000:2:0\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"shard_index\": 0, @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"task_id\": \"deadbeef0\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"view_url\": \"https://chromium-swarm-dev.appspot.com/user/task/deadbeef0\"@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"hello_world/Linux/hash_for_linux/local/0/1337000003000:2:1\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"shard_index\": 1, @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"task_id\": \"deadbeef1\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"view_url\": \"https://chromium-swarm-dev.appspot.com/user/task/deadbeef1\"@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@STEP_LINK@shard #0@https://chromium-swarm-dev.appspot.com/user/task/deadbeef0@@@",
+      "@@@STEP_LINK@shard #1@https://chromium-swarm-dev.appspot.com/user/task/deadbeef1@@@"
+    ]
   },
   {
     "cmd": [
@@ -220,6 +245,8 @@
       "1",
       "--task-name",
       "hello_world/Mac/hash_for_mac/local/0/1337000004500",
+      "--dump-json",
+      "/path/to/tmp/json",
       "--dimension",
       "os",
       "Mac",
@@ -230,7 +257,21 @@
       "--verbose",
       "hash_for_mac"
     ],
-    "name": "[trigger] hello_world on Mac"
+    "name": "[trigger] hello_world on Mac",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"base_task_name\": \"hello_world/Mac/hash_for_mac/local/0/1337000004500\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"tasks\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"hello_world/Mac/hash_for_mac/local/0/1337000004500\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"shard_index\": 0, @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"task_id\": \"deadbeef0\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"view_url\": \"https://chromium-swarm-dev.appspot.com/user/task/deadbeef0\"@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@STEP_LINK@shard #0@https://chromium-swarm-dev.appspot.com/user/task/deadbeef0@@@"
+    ]
   },
   {
     "cmd": [
@@ -240,7 +281,6 @@
     "name": "local step"
   },
   {
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -255,15 +295,9 @@
       "--verbose",
       "hello_world/Windows-6.1/hash_for_win/local/0/1337000001500"
     ],
-    "name": "[swarming] hello_world on Windows-6.1",
-    "seed_steps": [
-      "[swarming] hello_world on Windows-6.1",
-      "[swarming] hello_world",
-      "[swarming] hello_world on Mac"
-    ]
+    "name": "[swarming] hello_world on Windows-6.1"
   },
   {
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -272,7 +306,7 @@
       "--swarming",
       "https://chromium-swarm-dev.appspot.com",
       "--shards",
-      "1",
+      "2",
       "--decorate",
       "--print-status-updates",
       "--verbose",
@@ -281,7 +315,6 @@
     "name": "[swarming] hello_world"
   },
   {
-    "always_run": true,
     "cmd": [
       "python",
       "-u",

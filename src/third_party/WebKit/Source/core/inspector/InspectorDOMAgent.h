@@ -45,7 +45,7 @@
 #include "wtf/Vector.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class CharacterData;
 class DOMEditor;
@@ -86,7 +86,7 @@ struct EventListenerInfo {
 class InspectorDOMAgent FINAL : public InspectorBaseAgent<InspectorDOMAgent>, public InspectorBackendDispatcher::DOMCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorDOMAgent);
 public:
-    struct DOMListener {
+    struct DOMListener : public WillBeGarbageCollectedMixin {
         virtual ~DOMListener()
         {
         }
@@ -95,20 +95,21 @@ public:
         virtual void didModifyDOMAttr(Element*) = 0;
     };
 
-    static PassOwnPtr<InspectorDOMAgent> create(InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
+    static PassOwnPtrWillBeRawPtr<InspectorDOMAgent> create(InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
     {
-        return adoptPtr(new InspectorDOMAgent(pageAgent, injectedScriptManager, overlay));
+        return adoptPtrWillBeNoop(new InspectorDOMAgent(pageAgent, injectedScriptManager, overlay));
     }
 
     static String toErrorString(ExceptionState&);
 
     virtual ~InspectorDOMAgent();
+    virtual void trace(Visitor*) OVERRIDE;
 
     virtual void setFrontend(InspectorFrontend*) OVERRIDE;
     virtual void clearFrontend() OVERRIDE;
     virtual void restore() OVERRIDE;
 
-    Vector<Document*> documents();
+    WillBeHeapVector<RawPtrWillBeMember<Document> > documents();
     void reset();
 
     // Methods called from the frontend for DOM nodes inspection.
@@ -127,7 +128,7 @@ public:
     virtual void setOuterHTML(ErrorString*, int nodeId, const String& outerHTML) OVERRIDE;
     virtual void setNodeValue(ErrorString*, int nodeId, const String& value) OVERRIDE;
     virtual void getEventListenersForNode(ErrorString*, int nodeId, const WTF::String* objectGroup, RefPtr<TypeBuilder::Array<TypeBuilder::DOM::EventListener> >& listenersArray) OVERRIDE;
-    virtual void performSearch(ErrorString*, const String& whitespaceTrimmedQuery, String* searchId, int* resultCount) OVERRIDE;
+    virtual void performSearch(ErrorString*, const String& whitespaceTrimmedQuery, const bool* includeUserAgentShadowDOM, String* searchId, int* resultCount) OVERRIDE;
     virtual void getSearchResults(ErrorString*, const String& searchId, int fromIndex, int toIndex, RefPtr<TypeBuilder::Array<int> >&) OVERRIDE;
     virtual void discardSearchResults(ErrorString*, const String& searchId) OVERRIDE;
     virtual void resolveNode(ErrorString*, int nodeId, const String* objectGroup, RefPtr<TypeBuilder::Runtime::RemoteObject>& result) OVERRIDE;
@@ -142,6 +143,7 @@ public:
     virtual void highlightNode(ErrorString*, const RefPtr<JSONObject>& highlightConfig, const int* nodeId, const String* objectId) OVERRIDE;
     virtual void highlightFrame(ErrorString*, const String& frameId, const RefPtr<JSONObject>* color, const RefPtr<JSONObject>* outlineColor) OVERRIDE;
 
+    virtual void copyTo(ErrorString*, int nodeId, int targetElementId, const int* anchorNodeId, int* newNodeId) OVERRIDE;
     virtual void moveTo(ErrorString*, int nodeId, int targetNodeId, const int* anchorNodeId, int* newNodeId) OVERRIDE;
     virtual void undo(ErrorString*) OVERRIDE;
     virtual void redo(ErrorString*) OVERRIDE;
@@ -154,7 +156,7 @@ public:
 
     static void getEventListeners(EventTarget*, Vector<EventListenerInfo>& listenersArray, bool includeAncestors);
 
-    class Listener {
+    class Listener : public WillBeGarbageCollectedMixin {
     public:
         virtual ~Listener() { }
         virtual void domAgentWasEnabled() = 0;
@@ -195,7 +197,7 @@ public:
     bool handleMousePress();
     bool handleGestureEvent(LocalFrame*, const PlatformGestureEvent&);
     bool handleTouchEvent(LocalFrame*, const PlatformTouchEvent&);
-    void handleMouseMove(LocalFrame*, const PlatformMouseEvent&);
+    bool handleMouseMove(LocalFrame*, const PlatformMouseEvent&);
 
     InspectorHistory* history() { return m_history.get(); }
 
@@ -217,6 +219,9 @@ private:
 
     InspectorDOMAgent(InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
 
+    void innerEnable();
+    void notifyDocumentUpdated();
+
     void setSearchingForNode(ErrorString*, SearchMode, JSONObject* highlightConfig);
     PassOwnPtr<HighlightConfig> highlightConfigFromInspectorObject(ErrorString*, JSONObject* highlightInspectorObject);
 
@@ -226,6 +231,7 @@ private:
     void unbind(Node*, NodeToIdMap*);
 
     Node* assertEditableNode(ErrorString*, int nodeId);
+    Node* assertEditableChildNode(ErrorString*, Element* parentElement, int nodeId);
     Element* assertEditableElement(ErrorString*, int nodeId);
 
     void inspect(Node*);
@@ -234,10 +240,6 @@ private:
     void pushChildNodesToFrontend(int nodeId, int depth = 1);
 
     void invalidateFrameOwnerElement(LocalFrame*);
-
-    bool hasBreakpoint(Node*, int type);
-    void updateSubtreeBreakpoints(Node* root, uint32_t rootMask, bool value);
-    void descriptionForDOMEvent(Node* target, int breakpointType, bool insertion, PassRefPtr<JSONObject> description);
 
     PassRefPtr<TypeBuilder::DOM::Node> buildObjectForNode(Node*, int depth, NodeToIdMap*);
     PassRefPtr<TypeBuilder::Array<String> > buildArrayForElementAttributes(Element*);
@@ -253,32 +255,32 @@ private:
 
     bool pushDocumentUponHandlelessOperation(ErrorString*);
 
-    InspectorPageAgent* m_pageAgent;
-    InjectedScriptManager* m_injectedScriptManager;
+    RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
+    RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
     InspectorOverlay* m_overlay;
     InspectorFrontend::DOM* m_frontend;
-    DOMListener* m_domListener;
-    OwnPtrWillBePersistent<NodeToIdMap> m_documentNodeToIdMap;
+    RawPtrWillBeMember<DOMListener> m_domListener;
+    OwnPtrWillBeMember<NodeToIdMap> m_documentNodeToIdMap;
     // Owns node mappings for dangling nodes.
-    WillBePersistentHeapVector<OwnPtrWillBeMember<NodeToIdMap> > m_danglingNodeToIdMaps;
-    WillBePersistentHeapHashMap<int, RawPtrWillBeMember<Node> > m_idToNode;
-    WillBePersistentHeapHashMap<int, RawPtrWillBeMember<NodeToIdMap> > m_idToNodesMap;
+    WillBeHeapVector<OwnPtrWillBeMember<NodeToIdMap> > m_danglingNodeToIdMaps;
+    WillBeHeapHashMap<int, RawPtrWillBeMember<Node> > m_idToNode;
+    WillBeHeapHashMap<int, RawPtrWillBeMember<NodeToIdMap> > m_idToNodesMap;
     HashSet<int> m_childrenRequested;
     HashMap<int, int> m_cachedChildCount;
     int m_lastNodeId;
-    RefPtrWillBePersistent<Document> m_document;
-    typedef WillBePersistentHeapHashMap<String, WillBeHeapVector<RefPtrWillBeMember<Node> > > SearchResults;
+    RefPtrWillBeMember<Document> m_document;
+    typedef WillBeHeapHashMap<String, WillBeHeapVector<RefPtrWillBeMember<Node> > > SearchResults;
     SearchResults m_searchResults;
-    OwnPtr<RevalidateStyleAttributeTask> m_revalidateStyleAttrTask;
+    OwnPtrWillBeMember<RevalidateStyleAttributeTask> m_revalidateStyleAttrTask;
     SearchMode m_searchingForNode;
     OwnPtr<HighlightConfig> m_inspectModeHighlightConfig;
-    OwnPtrWillBePersistent<InspectorHistory> m_history;
-    OwnPtrWillBePersistent<DOMEditor> m_domEditor;
+    OwnPtrWillBeMember<InspectorHistory> m_history;
+    OwnPtrWillBeMember<DOMEditor> m_domEditor;
     bool m_suppressAttributeModifiedEvent;
-    Listener* m_listener;
+    RawPtrWillBeMember<Listener> m_listener;
 };
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InspectorDOMAgent_h)

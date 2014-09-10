@@ -241,7 +241,8 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
     // compatibility with many sites.  The similar --site-per-process flag only
     // blocks JavaScript access to cross-site cookies (in
     // CanAccessCookiesForOrigin).
-    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+    const base::CommandLine& command_line =
+        *base::CommandLine::ForCurrentProcess();
     if (!command_line.HasSwitch(switches::kEnableStrictSiteIsolation))
       return true;
 
@@ -580,14 +581,14 @@ void ChildProcessSecurityPolicyImpl::RevokeReadRawCookies(int child_id) {
   state->second->RevokeReadRawCookies();
 }
 
-bool ChildProcessSecurityPolicyImpl::CanLoadPage(
-    int child_id,
-    const GURL& url,
-    ResourceType::Type resource_type) {
+bool ChildProcessSecurityPolicyImpl::CanLoadPage(int child_id,
+                                                 const GURL& url,
+                                                 ResourceType resource_type) {
   // If --site-per-process flag is passed, we should enforce
   // stronger security restrictions on page navigation.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess) &&
-      ResourceType::IsFrame(resource_type)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSitePerProcess) &&
+      IsResourceTypeFrame(resource_type)) {
     // TODO(nasko): Do the proper check for site-per-process, once
     // out-of-process iframes is ready to go.
     return true;

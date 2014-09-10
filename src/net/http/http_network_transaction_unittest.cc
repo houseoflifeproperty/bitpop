@@ -433,6 +433,32 @@ class BeforeNetworkStartHandler {
   DISALLOW_COPY_AND_ASSIGN(BeforeNetworkStartHandler);
 };
 
+class BeforeProxyHeadersSentHandler {
+ public:
+  BeforeProxyHeadersSentHandler()
+      : observed_before_proxy_headers_sent_(false) {}
+
+  void OnBeforeProxyHeadersSent(const ProxyInfo& proxy_info,
+                                HttpRequestHeaders* request_headers) {
+    observed_before_proxy_headers_sent_ = true;
+    observed_proxy_server_uri_ = proxy_info.proxy_server().ToURI();
+  }
+
+  bool observed_before_proxy_headers_sent() const {
+    return observed_before_proxy_headers_sent_;
+  }
+
+  std::string observed_proxy_server_uri() const {
+    return observed_proxy_server_uri_;
+  }
+
+ private:
+  bool observed_before_proxy_headers_sent_;
+  std::string observed_proxy_server_uri_;
+
+  DISALLOW_COPY_AND_ASSIGN(BeforeProxyHeadersSentHandler);
+};
+
 // Fill |str| with a long header list that consumes >= |size| bytes.
 void FillLargeHeadersString(std::string* str, int size) {
   const char* row =
@@ -559,7 +585,9 @@ CaptureGroupNameSSLSocketPool::CaptureGroupNameSocketPool(
                           NULL,
                           NULL,
                           NULL,
-                          NULL) {}
+                          false,
+                          NULL) {
+}
 
 //-----------------------------------------------------------------------------
 
@@ -974,6 +1002,10 @@ TEST_P(HttpNetworkTransactionTest, Head) {
   scoped_refptr<HttpNetworkSession> session(CreateSession(&session_deps_));
   scoped_ptr<HttpTransaction> trans(
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session));
+  BeforeProxyHeadersSentHandler proxy_headers_handler;
+  trans->SetBeforeProxyHeadersSentCallback(
+      base::Bind(&BeforeProxyHeadersSentHandler::OnBeforeProxyHeadersSent,
+                 base::Unretained(&proxy_headers_handler)));
 
   MockWrite data_writes1[] = {
     MockWrite("HEAD / HTTP/1.1\r\n"
@@ -1010,6 +1042,7 @@ TEST_P(HttpNetworkTransactionTest, Head) {
   EXPECT_EQ(1234, response->headers->GetContentLength());
   EXPECT_EQ("HTTP/1.1 404 Not Found", response->headers->GetStatusLine());
   EXPECT_TRUE(response->proxy_server.IsEmpty());
+  EXPECT_FALSE(proxy_headers_handler.observed_before_proxy_headers_sent());
 
   std::string server_header;
   void* iter = NULL;
@@ -3485,14 +3518,13 @@ TEST_P(HttpNetworkTransactionTest,
       spdy_util_.ConstructSpdyWindowUpdate(1, wrapped_get_resp1->size()));
 
   // CONNECT to news.google.com:443 via SPDY.
-  SpdySynStreamIR connect2_ir(3);
-  spdy_util_.SetPriority(LOWEST, &connect2_ir);
-  connect2_ir.SetHeader(spdy_util_.GetMethodKey(), "CONNECT");
-  connect2_ir.SetHeader(spdy_util_.GetPathKey(), "news.google.com:443");
-  connect2_ir.SetHeader(spdy_util_.GetHostKey(), "news.google.com");
-  spdy_util_.MaybeAddVersionHeader(&connect2_ir);
+  SpdyHeaderBlock connect2_block;
+  connect2_block[spdy_util_.GetMethodKey()] = "CONNECT";
+  connect2_block[spdy_util_.GetPathKey()] = "news.google.com:443";
+  connect2_block[spdy_util_.GetHostKey()] = "news.google.com";
+  spdy_util_.MaybeAddVersionHeader(&connect2_block);
   scoped_ptr<SpdyFrame> connect2(
-      spdy_util_.CreateFramer(false)->SerializeFrame(connect2_ir));
+      spdy_util_.ConstructSpdySyn(3, connect2_block, LOWEST, false, false));
 
   scoped_ptr<SpdyFrame> conn_resp2(
       spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 3));
@@ -3748,8 +3780,8 @@ TEST_P(HttpNetworkTransactionTest,
   // http://www.google.com/
   scoped_ptr<SpdyHeaderBlock> headers(
       spdy_util_.ConstructGetHeaderBlockForProxy("http://www.google.com/"));
-  scoped_ptr<SpdyFrame> get1(spdy_util_.ConstructSpdyControlFrame(
-      headers.Pass(), false, 1, LOWEST, SYN_STREAM, CONTROL_FLAG_FIN, 0));
+  scoped_ptr<SpdyFrame> get1(
+      spdy_util_.ConstructSpdySyn(1, *headers, LOWEST, false, true));
   scoped_ptr<SpdyFrame> get_resp1(
       spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
   scoped_ptr<SpdyFrame> body1(
@@ -3758,8 +3790,8 @@ TEST_P(HttpNetworkTransactionTest,
   // http://news.google.com/
   scoped_ptr<SpdyHeaderBlock> headers2(
       spdy_util_.ConstructGetHeaderBlockForProxy("http://news.google.com/"));
-  scoped_ptr<SpdyFrame> get2(spdy_util_.ConstructSpdyControlFrame(
-      headers2.Pass(), false, 3, LOWEST, SYN_STREAM, CONTROL_FLAG_FIN, 0));
+  scoped_ptr<SpdyFrame> get2(
+      spdy_util_.ConstructSpdySyn(3, *headers2, LOWEST, false, true));
   scoped_ptr<SpdyFrame> get_resp2(
       spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 3));
   scoped_ptr<SpdyFrame> body2(
@@ -6388,23 +6420,12 @@ TEST_P(HttpNetworkTransactionTest, BasicAuthSpdyProxy) {
 
   // The proxy responds to the connect with a 407, using a persistent
   // connection.
+  const char* const kAuthStatus = "407";
   const char* const kAuthChallenge[] = {
-    spdy_util_.GetStatusKey(), "407 Proxy Authentication Required",
-    spdy_util_.GetVersionKey(), "HTTP/1.1",
     "proxy-authenticate", "Basic realm=\"MyRealm1\"",
   };
-
-  scoped_ptr<SpdyFrame> conn_auth_resp(
-      spdy_util_.ConstructSpdyControlFrame(NULL,
-                                           0,
-                                           false,
-                                           1,
-                                           LOWEST,
-                                           SYN_REPLY,
-                                           CONTROL_FLAG_NONE,
-                                           kAuthChallenge,
-                                           arraysize(kAuthChallenge),
-                                           0));
+  scoped_ptr<SpdyFrame> conn_auth_resp(spdy_util_.ConstructSpdySynReplyError(
+      kAuthStatus, kAuthChallenge, arraysize(kAuthChallenge) / 2, 1));
 
   scoped_ptr<SpdyFrame> conn_resp(
       spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 3));
@@ -7517,7 +7538,7 @@ scoped_refptr<HttpNetworkSession> SetupSessionForGroupNameTests(
       session->http_server_properties();
   http_server_properties->SetAlternateProtocol(
       HostPortPair("host.with.alternate", 80), 443,
-      AlternateProtocolFromNextProto(next_proto));
+      AlternateProtocolFromNextProto(next_proto), 1);
 
   return session;
 }
@@ -8129,7 +8150,7 @@ TEST_P(HttpNetworkTransactionTest, UploadUnreadableFile) {
   std::string temp_file_content("Unreadable file.");
   ASSERT_TRUE(base::WriteFile(temp_file, temp_file_content.c_str(),
                                    temp_file_content.length()));
-  ASSERT_TRUE(file_util::MakeFileUnreadable(temp_file));
+  ASSERT_TRUE(base::MakeFileUnreadable(temp_file));
 
   ScopedVector<UploadElementReader> element_readers;
   element_readers.push_back(
@@ -8429,11 +8450,10 @@ TEST_P(HttpNetworkTransactionTest, HonorAlternateProtocolHeader) {
   EXPECT_EQ("hello world", response_data);
 
   ASSERT_TRUE(http_server_properties.HasAlternateProtocol(http_host_port_pair));
-  const PortAlternateProtocolPair alternate =
+  const AlternateProtocolInfo alternate =
       http_server_properties.GetAlternateProtocol(http_host_port_pair);
-  PortAlternateProtocolPair expected_alternate;
-  expected_alternate.port = 443;
-  expected_alternate.protocol = AlternateProtocolFromNextProto(GetParam());
+  AlternateProtocolInfo expected_alternate(
+      443, AlternateProtocolFromNextProto(GetParam()), 1);
   EXPECT_TRUE(expected_alternate.Equals(alternate));
 }
 
@@ -8469,7 +8489,7 @@ TEST_P(HttpNetworkTransactionTest,
   http_server_properties->SetAlternateProtocol(
       HostPortPair::FromURL(request.url),
       666 /* port is ignored by MockConnect anyway */,
-      AlternateProtocolFromNextProto(GetParam()));
+      AlternateProtocolFromNextProto(GetParam()), 1);
 
   scoped_ptr<HttpTransaction> trans(
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session.get()));
@@ -8490,7 +8510,7 @@ TEST_P(HttpNetworkTransactionTest,
 
   ASSERT_TRUE(http_server_properties->HasAlternateProtocol(
       HostPortPair::FromURL(request.url)));
-  const PortAlternateProtocolPair alternate =
+  const AlternateProtocolInfo alternate =
       http_server_properties->GetAlternateProtocol(
           HostPortPair::FromURL(request.url));
   EXPECT_EQ(ALTERNATE_PROTOCOL_BROKEN, alternate.protocol);
@@ -8531,7 +8551,7 @@ TEST_P(HttpNetworkTransactionTest,
   http_server_properties->SetAlternateProtocol(
       HostPortPair::FromURL(restricted_port_request.url),
       kUnrestrictedAlternatePort,
-      AlternateProtocolFromNextProto(GetParam()));
+      AlternateProtocolFromNextProto(GetParam()), 1);
 
   scoped_ptr<HttpTransaction> trans(
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session.get()));
@@ -8582,7 +8602,7 @@ TEST_P(HttpNetworkTransactionTest,
   http_server_properties->SetAlternateProtocol(
       HostPortPair::FromURL(restricted_port_request.url),
       kUnrestrictedAlternatePort,
-      AlternateProtocolFromNextProto(GetParam()));
+      AlternateProtocolFromNextProto(GetParam()), 1);
 
   scoped_ptr<HttpTransaction> trans(
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session.get()));
@@ -8630,7 +8650,7 @@ TEST_P(HttpNetworkTransactionTest,
   http_server_properties->SetAlternateProtocol(
       HostPortPair::FromURL(restricted_port_request.url),
       kRestrictedAlternatePort,
-      AlternateProtocolFromNextProto(GetParam()));
+      AlternateProtocolFromNextProto(GetParam()), 1);
 
   scoped_ptr<HttpTransaction> trans(
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session.get()));
@@ -8679,7 +8699,7 @@ TEST_P(HttpNetworkTransactionTest,
   http_server_properties->SetAlternateProtocol(
       HostPortPair::FromURL(unrestricted_port_request.url),
       kRestrictedAlternatePort,
-      AlternateProtocolFromNextProto(GetParam()));
+      AlternateProtocolFromNextProto(GetParam()), 1);
 
   scoped_ptr<HttpTransaction> trans(
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session.get()));
@@ -8727,7 +8747,7 @@ TEST_P(HttpNetworkTransactionTest,
   http_server_properties->SetAlternateProtocol(
       HostPortPair::FromURL(unrestricted_port_request.url),
       kUnrestrictedAlternatePort,
-      AlternateProtocolFromNextProto(GetParam()));
+      AlternateProtocolFromNextProto(GetParam()), 1);
 
   scoped_ptr<HttpTransaction> trans(
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session.get()));
@@ -8770,7 +8790,7 @@ TEST_P(HttpNetworkTransactionTest, AlternateProtocolUnsafeBlocked) {
   http_server_properties->SetAlternateProtocol(
       HostPortPair::FromURL(request.url),
       kUnsafePort,
-      AlternateProtocolFromNextProto(GetParam()));
+      AlternateProtocolFromNextProto(GetParam()), 1);
 
   scoped_ptr<HttpTransaction> trans(
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session.get()));
@@ -10340,6 +10360,10 @@ TEST_P(HttpNetworkTransactionTest, ProxyGet) {
 
   scoped_ptr<HttpTransaction> trans(
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session.get()));
+  BeforeProxyHeadersSentHandler proxy_headers_handler;
+  trans->SetBeforeProxyHeadersSentCallback(
+      base::Bind(&BeforeProxyHeadersSentHandler::OnBeforeProxyHeadersSent,
+                 base::Unretained(&proxy_headers_handler)));
 
   int rv = trans->Start(&request, callback1.callback(), log.bound());
   EXPECT_EQ(ERR_IO_PENDING, rv);
@@ -10356,6 +10380,8 @@ TEST_P(HttpNetworkTransactionTest, ProxyGet) {
   EXPECT_TRUE(response->was_fetched_via_proxy);
   EXPECT_TRUE(
       response->proxy_server.Equals(HostPortPair::FromString("myproxy:70")));
+  EXPECT_TRUE(proxy_headers_handler.observed_before_proxy_headers_sent());
+  EXPECT_EQ("myproxy:70", proxy_headers_handler.observed_proxy_server_uri());
   EXPECT_TRUE(HttpVersion(1, 1) == response->headers->GetHttpVersion());
 
   LoadTimingInfo load_timing_info;
@@ -11381,17 +11407,15 @@ TEST_P(HttpNetworkTransactionTest, DoNotUseSpdySessionForHttpOverTunnel) {
       spdy_util_.ConstructWrappedSpdyFrame(req1, 1));
 
   // SPDY GET for HTTP URL (through the proxy, but not the tunnel).
-  SpdySynStreamIR req2_ir(3);
-  spdy_util_.SetPriority(MEDIUM, &req2_ir);
-  req2_ir.set_fin(true);
-  req2_ir.SetHeader(spdy_util_.GetMethodKey(), "GET");
-  req2_ir.SetHeader(spdy_util_.GetPathKey(),
-                    spdy_util_.is_spdy2() ? http_url.c_str() : "/");
-  req2_ir.SetHeader(spdy_util_.GetHostKey(), "www.google.com:443");
-  req2_ir.SetHeader(spdy_util_.GetSchemeKey(), "http");
-  spdy_util_.MaybeAddVersionHeader(&req2_ir);
+  SpdyHeaderBlock req2_block;
+  req2_block[spdy_util_.GetMethodKey()] = "GET";
+  req2_block[spdy_util_.GetPathKey()] =
+      spdy_util_.is_spdy2() ? http_url.c_str() : "/";
+  req2_block[spdy_util_.GetHostKey()] = "www.google.com:443";
+  req2_block[spdy_util_.GetSchemeKey()] = "http";
+  spdy_util_.MaybeAddVersionHeader(&req2_block);
   scoped_ptr<SpdyFrame> req2(
-      spdy_util_.CreateFramer(false)->SerializeFrame(req2_ir));
+      spdy_util_.ConstructSpdySyn(3, req2_block, MEDIUM, false, true));
 
   MockWrite writes1[] = {
     CreateMockWrite(*connect, 0),
@@ -11562,8 +11586,8 @@ TEST_P(HttpNetworkTransactionTest, DoNotUseSpdySessionIfCertDoesNotMatch) {
   // SPDY GET for HTTP URL (through SPDY proxy)
   scoped_ptr<SpdyHeaderBlock> headers(
       spdy_util_.ConstructGetHeaderBlockForProxy("http://www.google.com/"));
-  scoped_ptr<SpdyFrame> req1(spdy_util_.ConstructSpdyControlFrame(
-      headers.Pass(), false, 1, LOWEST, SYN_STREAM, CONTROL_FLAG_FIN, 0));
+  scoped_ptr<SpdyFrame> req1(
+      spdy_util_.ConstructSpdySyn(1, *headers, LOWEST, false, true));
 
   MockWrite writes1[] = {
     CreateMockWrite(*req1, 0),

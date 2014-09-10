@@ -222,10 +222,12 @@ IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(ManyPlugins)) {
   LoadAndWait(GetURL("many_plugins.html"));
 }
 
+#if !defined(OS_MACOSX)  // http://crbug.com/402164
 // Test various calls to GetURL from a plugin.
 IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(GetURL)) {
   LoadAndWait(GetURL("geturl.html"));
 }
+#endif
 
 // Test various calls to GetURL for javascript URLs with
 // non NULL targets from a plugin.
@@ -354,6 +356,7 @@ IN_PROC_BROWSER_TEST_F(PluginTest, PluginSingleRangeRequest) {
   LoadAndWait(GetURL("plugin_single_range_request.html"));
 }
 
+#if !defined(OS_WIN) // http://crbug.com/396373
 // Test checking the privacy mode is on.
 // If this flakes on Linux, use http://crbug.com/104380
 IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(PrivateEnabled)) {
@@ -361,14 +364,15 @@ IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(PrivateEnabled)) {
   url = GURL(url.spec() + "?private");
   LoadAndWaitInWindow(CreateOffTheRecordBrowser(), url);
 }
+#endif
 
-#if defined(OS_WIN) || defined(OS_MACOSX)
+// These used to run on Windows: http://crbug.com/396373
+#if defined(OS_MACOSX)
 // Test a browser hang due to special case of multiple
 // plugin instances indulged in sync calls across renderer.
 IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(MultipleInstancesSyncCalls)) {
   LoadAndWait(GetURL("multiple_instances_sync_calls.html"));
 }
-#endif
 
 IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(GetURLRequestFailWrite)) {
   GURL url(URLRequestMockHTTPJob::GetMockUrl(
@@ -376,9 +380,11 @@ IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(GetURLRequestFailWrite)) {
                        AppendASCII("plugin_url_request_fail_write.html")));
   LoadAndWait(url);
 }
+#endif
 
 #if defined(OS_WIN)
-IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(EnsureScriptingWorksInDestroy)) {
+// Flaky on Windows x86.  http://crbug.com/388245
+IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_EnsureScriptingWorksInDestroy) {
   LoadAndWait(GetURL("ensure_scripting_works_in_destroy.html"));
 }
 
@@ -437,7 +443,7 @@ IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_FlashSecurity) {
 // TODO(port) Port the following tests to platforms that have the required
 // plugins.
 // Flaky: http://crbug.com/55915
-IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(Quicktime)) {
+IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_Quicktime) {
   TestPlugin("quicktime.html");
 }
 
@@ -476,7 +482,8 @@ IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_Java) {
   TestPlugin("Java.html");
 }
 
-IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(Silverlight)) {
+// Flaky: http://crbug.com/55915
+IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_Silverlight) {
   TestPlugin("silverlight.html");
 }
 #endif  // defined(OS_WIN)

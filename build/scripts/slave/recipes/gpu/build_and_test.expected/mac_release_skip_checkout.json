@@ -15,13 +15,11 @@
       "runhooks"
     ],
     "env": {
-      "GYP_DEFINES": "clang=1 component=static_library disable_glibcxx_debug=1 gomadir='[BUILD]/goma' internal_gles2_conform_tests=1 target_arch=ia32 test_isolation_mode=archive test_isolation_outdir=https://isolateserver.appspot.com use_goma=1"
+      "GYP_DEFINES": "archive_gpu_tests=1 blink_asserts_always_on=1 clang=1 component=static_library dcheck_always_on=1 disable_glibcxx_debug=1 gomadir='[BUILD]/goma' internal_gles2_conform_tests=1 target_arch=ia32 test_isolation_mode=archive test_isolation_outdir=https://isolateserver.appspot.com use_goma=1"
     },
     "name": "gclient runhooks"
   },
   {
-    "abort_on_failure": true,
-    "can_fail_build": true,
     "cmd": [
       "python",
       "-u",
@@ -48,7 +46,6 @@
     "name": "compile"
   },
   {
-    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -74,7 +71,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -107,7 +103,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -140,7 +135,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -173,7 +167,6 @@
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -209,13 +202,13 @@
       "--build-revision",
       "10000",
       "--test-machine-name",
-      "TestBuilder"
+      "TestBuilder",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "maps_pixel_test"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -256,13 +249,13 @@
       "--os-type",
       "mac",
       "--test-machine-name",
-      "TestBuilder"
+      "TestBuilder",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "pixel_test"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -294,13 +287,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "webgl_conformance_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -332,13 +325,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "context_lost_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -370,13 +363,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "memory_test"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -408,13 +401,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "screenshot_sync_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -446,13 +439,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "hardware_accelerated_feature_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -484,13 +477,13 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
-      "--use-devtools-active-port"
+      "--use-devtools-active-port",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "gpu_process_launch_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -526,13 +519,13 @@
       "--build-revision",
       "10000",
       "--test-machine-name",
-      "TestBuilder"
+      "TestBuilder",
+      "--extra-browser-args=--enable-logging=stderr"
     ],
     "name": "gpu_rasterization_tests"
   },
   {
     "allow_subannotations": true,
-    "always_run": true,
     "cmd": [
       "python",
       "-u",

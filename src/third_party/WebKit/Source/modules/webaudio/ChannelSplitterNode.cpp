@@ -32,7 +32,7 @@
 #include "modules/webaudio/AudioNodeInput.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<ChannelSplitterNode> ChannelSplitterNode::create(AudioContext* context, float sampleRate, unsigned numberOfOutputs)
 {
@@ -46,11 +46,11 @@ ChannelSplitterNode::ChannelSplitterNode(AudioContext* context, float sampleRate
     : AudioNode(context, sampleRate)
 {
     ScriptWrappable::init(this);
-    addInput(adoptPtr(new AudioNodeInput(this)));
+    addInput();
 
     // Create a fixed number of outputs (able to handle the maximum number of channels fed to an input).
     for (unsigned i = 0; i < numberOfOutputs; ++i)
-        addOutput(adoptPtr(new AudioNodeOutput(this, 1)));
+        addOutput(AudioNodeOutput::create(this, 1));
 
     setNodeType(NodeTypeChannelSplitter);
     initialize();
@@ -79,6 +79,6 @@ void ChannelSplitterNode::process(size_t framesToProcess)
     }
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

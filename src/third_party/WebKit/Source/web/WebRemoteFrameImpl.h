@@ -11,13 +11,11 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
-class FrameOwner;
-class Page;
-class RemoteFrame;
-}
-
 namespace blink {
+
+class FrameHost;
+class FrameOwner;
+class RemoteFrame;
 
 class WebRemoteFrameImpl : public WebRemoteFrame, public RefCounted<WebRemoteFrameImpl> {
 public:
@@ -131,6 +129,7 @@ public:
     virtual float getPrintPageShrink(int page) OVERRIDE;
     virtual void printEnd() OVERRIDE;
     virtual bool isPrintScalingDisabledForPlugin(const WebNode&) OVERRIDE;
+    virtual int getPrintCopiesForPlugin(const WebNode&) OVERRIDE;
     virtual bool hasCustomPageSizeStyle(int pageIndex) OVERRIDE;
     virtual bool isPageBoxVisible(int pageIndex) OVERRIDE;
     virtual void pageSizeAndMarginsInPixels(
@@ -176,18 +175,18 @@ public:
     virtual WebLocalFrame* createLocalChild(const WebString& name, WebFrameClient*) OVERRIDE;
     virtual WebRemoteFrame* createRemoteChild(const WebString& name, WebFrameClient*) OVERRIDE;
 
-    void initializeAsMainFrame(WebCore::Page*);
+    void initializeCoreFrame(FrameHost*, FrameOwner*, const AtomicString& name);
 
-    void setWebCoreFrame(PassRefPtr<WebCore::RemoteFrame>);
-    WebCore::RemoteFrame* frame() const { return m_frame.get(); }
+    void setCoreFrame(PassRefPtr<RemoteFrame>);
+    RemoteFrame* frame() const { return m_frame.get(); }
 
-    static WebRemoteFrameImpl* fromFrame(WebCore::RemoteFrame&);
+    static WebRemoteFrameImpl* fromFrame(RemoteFrame&);
 
 private:
     RemoteFrameClient m_frameClient;
-    RefPtr<WebCore::RemoteFrame> m_frame;
+    RefPtr<RemoteFrame> m_frame;
 
-    HashMap<WebFrame*, OwnPtr<WebCore::FrameOwner> > m_ownersForChildren;
+    HashMap<WebFrame*, OwnPtr<FrameOwner> > m_ownersForChildren;
 };
 
 DEFINE_TYPE_CASTS(WebRemoteFrameImpl, WebFrame, frame, frame->isWebRemoteFrame(), frame.isWebRemoteFrame());

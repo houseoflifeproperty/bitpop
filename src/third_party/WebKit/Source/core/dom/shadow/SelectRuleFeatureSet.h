@@ -34,9 +34,8 @@
 #include "core/css/RuleFeature.h"
 #include "core/dom/Element.h"
 
-namespace WebCore {
+namespace blink {
 
-class Element;
 class SpaceSplitString;
 
 class SelectRuleFeatureSet {

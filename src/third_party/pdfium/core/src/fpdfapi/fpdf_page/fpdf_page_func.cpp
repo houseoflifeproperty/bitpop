@@ -486,7 +486,7 @@ FX_BOOL CPDF_SampledFunc::v_Init(CPDF_Object* pObj)
     int i;
     FX_DWORD nTotalSamples = 1;
     for (i = 0; i < m_nInputs; i ++) {
-        m_pEncodeInfo[i].sizes = pSize->GetInteger(i);
+        m_pEncodeInfo[i].sizes = pSize ? pSize->GetInteger(i) : 0;
         if (!pSize && i == 0) {
             m_pEncodeInfo[i].sizes = pDict->GetInteger(FX_BSTRC("Size"));
         }
@@ -721,7 +721,6 @@ FX_BOOL CPDF_StitchFunc::v_Init(CPDF_Object* pObj)
         return FALSE;
     }
     m_pSubFunctions = FX_Alloc(CPDF_Function*, m_nSubs);
-    FXSYS_memset32(m_pSubFunctions, 0, sizeof(CPDF_Function*)*m_nSubs);
     m_nOutputs = 0;
     int i;
     for (i = 0; i < m_nSubs; i ++) {

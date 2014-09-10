@@ -18,13 +18,10 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/platform_thread.h"
-#include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/google/google_brand.h"
-#include "chrome/browser/memory_details.h"
 #include "chrome/browser/metrics/chrome_stability_metrics_provider.h"
-#include "chrome/browser/metrics/extensions_metrics_provider.h"
 #include "chrome/browser/metrics/gpu_metrics_provider.h"
 #include "chrome/browser/metrics/network_metrics_provider.h"
 #include "chrome/browser/metrics/omnibox_metrics_provider.h"
@@ -50,6 +47,10 @@
 #include "chrome/browser/service_process/service_process_control.h"
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/metrics/extensions_metrics_provider.h"
+#endif
+
 #if defined(ENABLE_PLUGINS)
 #include "chrome/browser/metrics/plugin_metrics_provider.h"
 #endif
@@ -62,6 +63,10 @@
 #include <windows.h>
 #include "base/win/registry.h"
 #include "chrome/browser/metrics/google_update_metrics_provider_win.h"
+#endif
+
+#if !defined(OS_CHROMEOS) && !defined(OS_IOS)
+#include "chrome/browser/metrics/signin_status_metrics_provider.h"
 #endif
 
 namespace {
@@ -92,8 +97,12 @@ metrics::SystemProfileProto::Channel AsProtobufChannel(
 // Will run the provided task after finished.
 class MetricsMemoryDetails : public MemoryDetails {
  public:
-  explicit MetricsMemoryDetails(const base::Closure& callback)
-      : callback_(callback) {}
+  MetricsMemoryDetails(
+      const base::Closure& callback,
+      MemoryGrowthTracker* memory_growth_tracker)
+      : callback_(callback) {
+    SetMemoryGrowthTracker(memory_growth_tracker);
+  }
 
   virtual void OnDetailsAvailable() OVERRIDE {
     base::MessageLoop::current()->PostTask(FROM_HERE, callback_);
@@ -144,7 +153,6 @@ scoped_ptr<ChromeMetricsServiceClient> ChromeMetricsServiceClient::Create(
 
 // static
 void ChromeMetricsServiceClient::RegisterPrefs(PrefRegistrySimple* registry) {
-  registry->RegisterInt64Pref(prefs::kInstallDate, 0);
   registry->RegisterInt64Pref(prefs::kUninstallLastLaunchTimeSec, 0);
   registry->RegisterInt64Pref(prefs::kUninstallLastObservedRunTimeSec, 0);
 
@@ -160,8 +168,9 @@ void ChromeMetricsServiceClient::RegisterPrefs(PrefRegistrySimple* registry) {
 #endif  // defined(ENABLE_PLUGINS)
 }
 
-void ChromeMetricsServiceClient::SetClientID(const std::string& client_id) {
-  crash_keys::SetClientID(client_id);
+void ChromeMetricsServiceClient::SetMetricsClientId(
+    const std::string& client_id) {
+  crash_keys::SetCrashClientIdFromGUID(client_id);
 }
 
 bool ChromeMetricsServiceClient::IsOffTheRecordSessionActive() {
@@ -194,10 +203,6 @@ std::string ChromeMetricsServiceClient::GetVersionString() {
   if (!version_info.IsOfficialBuild())
     version.append("-devel");
   return version;
-}
-
-int64 ChromeMetricsServiceClient::GetInstallDate() {
-  return g_browser_process->local_state()->GetInt64(prefs::kInstallDate);
 }
 
 void ChromeMetricsServiceClient::OnLogUploadComplete() {
@@ -233,12 +238,17 @@ void ChromeMetricsServiceClient::CollectFinalMetrics(
   DCHECK(!waiting_for_collect_final_metrics_step_);
   waiting_for_collect_final_metrics_step_ = true;
 
+#if !defined(OS_CHROMEOS) && !defined(OS_IOS)
+  // Record the signin status histogram value.
+  signin_status_metrics_provider_->RecordSigninStatusHistogram();
+#endif
+
   base::Closure callback =
       base::Bind(&ChromeMetricsServiceClient::OnMemoryDetailCollectionDone,
                  weak_ptr_factory_.GetWeakPtr());
 
   scoped_refptr<MetricsMemoryDetails> details(
-      new MetricsMemoryDetails(callback));
+      new MetricsMemoryDetails(callback, &memory_growth_tracker_));
   details->StartFetch(MemoryDetails::UPDATE_USER_METRICS);
 
   // Collect WebCore cache information to put into a histogram.
@@ -274,9 +284,11 @@ void ChromeMetricsServiceClient::Initialize() {
       metrics_state_manager_, this, g_browser_process->local_state()));
 
   // Register metrics providers.
+#if defined(ENABLE_EXTENSIONS)
   metrics_service_->RegisterMetricsProvider(
       scoped_ptr<metrics::MetricsProvider>(
           new ExtensionsMetricsProvider(metrics_state_manager_)));
+#endif
   metrics_service_->RegisterMetricsProvider(
       scoped_ptr<metrics::MetricsProvider>(new NetworkMetricsProvider));
   metrics_service_->RegisterMetricsProvider(
@@ -315,6 +327,13 @@ void ChromeMetricsServiceClient::Initialize() {
   metrics_service_->RegisterMetricsProvider(
       scoped_ptr<metrics::MetricsProvider>(chromeos_metrics_provider));
 #endif  // defined(OS_CHROMEOS)
+
+#if !defined(OS_CHROMEOS) && !defined(OS_IOS)
+  signin_status_metrics_provider_ =
+      SigninStatusMetricsProvider::CreateInstance();
+  metrics_service_->RegisterMetricsProvider(
+      scoped_ptr<metrics::MetricsProvider>(signin_status_metrics_provider_));
+#endif
 }
 
 void ChromeMetricsServiceClient::OnInitTaskGotHardwareClass() {

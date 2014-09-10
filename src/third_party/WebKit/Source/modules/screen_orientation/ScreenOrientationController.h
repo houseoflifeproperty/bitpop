@@ -5,21 +5,23 @@
 #ifndef ScreenOrientationController_h
 #define ScreenOrientationController_h
 
-#include "core/page/PageLifecycleObserver.h"
+#include "core/frame/PlatformEventController.h"
 #include "platform/Supplementable.h"
+#include "platform/Timer.h"
 #include "public/platform/WebLockOrientationCallback.h"
 #include "public/platform/WebScreenOrientationLockType.h"
 #include "public/platform/WebScreenOrientationType.h"
 
 namespace blink {
-class WebScreenOrientationClient;
-}
-
-namespace WebCore {
 
 class FrameView;
+class ScreenOrientation;
+class WebScreenOrientationClient;
 
-class ScreenOrientationController FINAL : public NoBaseWillBeGarbageCollectedFinalized<ScreenOrientationController>, public WillBeHeapSupplement<LocalFrame>, public PageLifecycleObserver {
+class ScreenOrientationController FINAL
+    : public NoBaseWillBeGarbageCollectedFinalized<ScreenOrientationController>
+    , public WillBeHeapSupplement<LocalFrame>
+    , public PlatformEventController {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ScreenOrientationController);
     WTF_MAKE_NONCOPYABLE(ScreenOrientationController);
 public:
@@ -27,27 +29,43 @@ public:
 
     virtual void persistentHostHasBeenDestroyed() OVERRIDE;
 
-    blink::WebScreenOrientationType orientation() const;
+    void setOrientation(ScreenOrientation*);
+    void notifyOrientationChanged();
 
-    static void provideTo(LocalFrame&, blink::WebScreenOrientationClient*);
-    static ScreenOrientationController& from(LocalFrame&);
+    void lock(WebScreenOrientationLockType, WebLockOrientationCallback*);
+    void unlock();
+
+    const LocalFrame& frame() const;
+
+    static void provideTo(LocalFrame&, WebScreenOrientationClient*);
+    static ScreenOrientationController* from(LocalFrame&);
     static const char* supplementName();
 
-    void lockOrientation(blink::WebScreenOrientationLockType, blink::WebLockOrientationCallback*);
-    void unlockOrientation();
+    virtual void trace(Visitor*);
 
 private:
-    explicit ScreenOrientationController(LocalFrame&, blink::WebScreenOrientationClient*);
-    static blink::WebScreenOrientationType computeOrientation(FrameView*);
+    explicit ScreenOrientationController(LocalFrame&, WebScreenOrientationClient*);
+    static WebScreenOrientationType computeOrientation(FrameView*);
 
-    // Inherited from PageLifecycleObserver.
+    // Inherited from PlatformEventController.
+    virtual void didUpdateData() OVERRIDE;
+    virtual void registerWithDispatcher() OVERRIDE;
+    virtual void unregisterWithDispatcher() OVERRIDE;
+    virtual bool hasLastData() OVERRIDE;
     virtual void pageVisibilityChanged() OVERRIDE;
 
-    blink::WebScreenOrientationType m_overrideOrientation;
-    blink::WebScreenOrientationClient* m_client;
+    void notifyDispatcher();
+
+    void updateOrientation();
+
+    void dispatchEventTimerFired(Timer<ScreenOrientationController>*);
+
+    PersistentWillBeMember<ScreenOrientation> m_orientation;
+    WebScreenOrientationClient* m_client;
     LocalFrame& m_frame;
+    Timer<ScreenOrientationController> m_dispatchEventTimer;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ScreenOrientationController_h

@@ -15,6 +15,7 @@
 #include <libaddressinput/address_validator.h>
 
 #include <libaddressinput/address_data.h>
+#include <libaddressinput/address_field.h>
 #include <libaddressinput/address_problem.h>
 #include <libaddressinput/callback.h>
 #include <libaddressinput/null_storage.h>
@@ -23,28 +24,28 @@
 #include <libaddressinput/util/basictypes.h>
 #include <libaddressinput/util/scoped_ptr.h>
 
+#include <string>
 #include <utility>
 
 #include <gtest/gtest.h>
 
-#include "fake_downloader.h"
+#include "testdata_source.h"
 
 namespace {
 
 using i18n::addressinput::AddressData;
 using i18n::addressinput::AddressValidator;
 using i18n::addressinput::BuildCallback;
-using i18n::addressinput::FakeDownloader;
 using i18n::addressinput::FieldProblemMap;
 using i18n::addressinput::NullStorage;
 using i18n::addressinput::OndemandSupplier;
 using i18n::addressinput::PreloadSupplier;
 using i18n::addressinput::scoped_ptr;
+using i18n::addressinput::TestdataSource;
 
 using i18n::addressinput::COUNTRY;
 using i18n::addressinput::ADMIN_AREA;
 using i18n::addressinput::LOCALITY;
-using i18n::addressinput::DEPENDENT_LOCALITY;
 using i18n::addressinput::POSTAL_CODE;
 using i18n::addressinput::STREET_ADDRESS;
 
@@ -88,9 +89,7 @@ class OndemandValidatorWrapper : public ValidatorWrapper {
 
  private:
   OndemandValidatorWrapper()
-      : supplier_(FakeDownloader::kFakeDataUrl,
-                  new FakeDownloader,
-                  new NullStorage),
+      : supplier_(new TestdataSource(false), new NullStorage),
         validator_(&supplier_) {}
 
   OndemandSupplier supplier_;
@@ -125,15 +124,11 @@ class PreloadValidatorWrapper : public ValidatorWrapper {
 
  private:
   PreloadValidatorWrapper()
-      : supplier_(FakeDownloader::kFakeAggregateDataUrl,
-                  new FakeDownloader,
-                  new NullStorage),
+      : supplier_(new TestdataSource(true), new NullStorage),
         validator_(&supplier_),
         loaded_(BuildCallback(this, &PreloadValidatorWrapper::Loaded)) {}
 
-  void Loaded(bool success, const std::string&, int) {
-    ASSERT_TRUE(success);
-  }
+  void Loaded(bool success, const std::string&, int) { ASSERT_TRUE(success); }
 
   PreloadSupplier supplier_;
   const AddressValidator validator_;

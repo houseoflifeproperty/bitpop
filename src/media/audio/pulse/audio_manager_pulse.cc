@@ -42,8 +42,10 @@ static const int kMaximumOutputBufferSize = 8192;
 // Default input buffer size.
 static const int kDefaultInputBufferSize = 1024;
 
+#if defined(DLOPEN_PULSEAUDIO)
 static const base::FilePath::CharType kPulseLib[] =
     FILE_PATH_LITERAL("libpulse.so.0");
+#endif
 
 // static
 AudioManager* AudioManagerPulse::Create(AudioLogFactory* audio_log_factory) {
@@ -175,7 +177,7 @@ AudioParameters AudioManagerPulse::GetPreferredOutputStreamParameters(
   int buffer_size = kMinimumOutputBufferSize;
   int bits_per_sample = 16;
   int input_channels = 0;
-  int sample_rate;
+  int sample_rate = GetNativeSampleRate();
   if (input_params.IsValid()) {
     bits_per_sample = input_params.bits_per_sample();
     channel_layout = input_params.channel_layout();
@@ -183,9 +185,6 @@ AudioParameters AudioManagerPulse::GetPreferredOutputStreamParameters(
     buffer_size =
         std::min(kMaximumOutputBufferSize,
                  std::max(buffer_size, input_params.frames_per_buffer()));
-    sample_rate = input_params.sample_rate();
-  } else {
-    sample_rate = GetNativeSampleRate();
   }
 
   int user_buffer_size = GetUserBufferSize();

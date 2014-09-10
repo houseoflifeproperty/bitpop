@@ -68,7 +68,8 @@ class BrowserPluginGuest::EmbedderWebContentsObserver
 BrowserPluginGuest::BrowserPluginGuest(
     int instance_id,
     bool has_render_view,
-    WebContentsImpl* web_contents)
+    WebContentsImpl* web_contents,
+    BrowserPluginGuestDelegate* delegate)
     : WebContentsObserver(web_contents),
       embedder_web_contents_(NULL),
       instance_id_(instance_id),
@@ -79,23 +80,25 @@ BrowserPluginGuest::BrowserPluginGuest(
       guest_visible_(false),
       guest_opaque_(true),
       embedder_visible_(true),
-      auto_size_enabled_(false),
       copy_request_id_(0),
       has_render_view_(has_render_view),
-      last_seen_auto_size_enabled_(false),
       is_in_destruction_(false),
       last_text_input_type_(ui::TEXT_INPUT_TYPE_NONE),
       last_input_mode_(ui::TEXT_INPUT_MODE_DEFAULT),
       last_can_compose_inline_(true),
-      delegate_(NULL),
+      delegate_(delegate),
       weak_ptr_factory_(this) {
   DCHECK(web_contents);
+  DCHECK(delegate);
+  RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Create"));
+  web_contents->SetBrowserPluginGuest(this);
+  delegate->RegisterDestructionCallback(
+      base::Bind(&BrowserPluginGuest::WillDestroy, AsWeakPtr()));
 }
 
 void BrowserPluginGuest::WillDestroy() {
   is_in_destruction_ = true;
   embedder_web_contents_ = NULL;
-  delegate_ = NULL;
 }
 
 base::WeakPtr<BrowserPluginGuest> BrowserPluginGuest::AsWeakPtr() {
@@ -110,9 +113,15 @@ bool BrowserPluginGuest::LockMouse(bool allowed) {
 }
 
 void BrowserPluginGuest::Destroy() {
-  if (!delegate_)
-    return;
   delegate_->Destroy();
+}
+
+WebContentsImpl* BrowserPluginGuest::CreateNewGuestWindow(
+    const WebContents::CreateParams& params) {
+  WebContentsImpl* new_contents =
+      static_cast<WebContentsImpl*>(delegate_->CreateNewGuestWindow(params));
+  DCHECK(new_contents);
+  return new_contents;
 }
 
 bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
@@ -140,7 +149,6 @@ bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ReclaimCompositorResources,
                         OnReclaimCompositorResources)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ResizeGuest, OnResizeGuest)
-    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetAutoSize, OnSetAutoSize)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetEditCommandsForNextKeyEvent,
                         OnSetEditCommandsForNextKeyEvent)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetFocus, OnSetFocus)
@@ -163,10 +171,6 @@ void BrowserPluginGuest::Initialize(
   guest_opaque_ = params.opaque;
   guest_window_rect_ = gfx::Rect(params.origin,
                                  params.resize_guest_params.view_size);
-
-  auto_size_enabled_ = params.auto_size_params.enable;
-  max_auto_size_ = params.auto_size_params.max_size;
-  min_auto_size_ = params.auto_size_params.min_size;
 
   // Once a BrowserPluginGuest has an embedder WebContents, it's considered to
   // be attached.
@@ -200,8 +204,7 @@ void BrowserPluginGuest::Initialize(
 
   embedder_web_contents_observer_.reset(new EmbedderWebContentsObserver(this));
 
-  OnSetAutoSize(
-      instance_id_, params.auto_size_params, params.resize_guest_params);
+  OnResizeGuest(instance_id_, params.resize_guest_params);
 
   // Create a swapped out RenderView for the guest in the embedder render
   // process, so that the embedder can access the guest's window object.
@@ -212,7 +215,10 @@ void BrowserPluginGuest::Initialize(
       new BrowserPluginMsg_GuestContentWindowReady(instance_id_,
                                                    guest_routing_id));
 
-  WebPreferences prefs = GetWebContents()->GetWebkitPrefs();
+  // TODO(chrishtr): this code is wrong. The navigate_on_drag_drop field will
+  // be reset again the next time preferences are updated.
+  WebPreferences prefs =
+      GetWebContents()->GetRenderViewHost()->GetWebkitPreferences();
   prefs.navigate_on_drag_drop = false;
   GetWebContents()->GetRenderViewHost()->UpdateWebkitPreferences(prefs);
 
@@ -234,34 +240,10 @@ BrowserPluginGuest::~BrowserPluginGuest() {
 // static
 BrowserPluginGuest* BrowserPluginGuest::Create(
     int instance_id,
-    SiteInstance* guest_site_instance,
     WebContentsImpl* web_contents,
-    scoped_ptr<base::DictionaryValue> extra_params,
-    BrowserPluginGuest* opener) {
-  RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Create"));
-  BrowserPluginGuest* guest = new BrowserPluginGuest(
-      instance_id, web_contents->opener() != NULL, web_contents);
-  web_contents->SetBrowserPluginGuest(guest);
-  WebContents* opener_web_contents = NULL;
-  if (opener) {
-    opener_web_contents = opener->GetWebContents();
-    guest_site_instance = opener_web_contents->GetSiteInstance();
-  }
-  BrowserPluginGuestDelegate* delegate = NULL;
-  GetContentClient()->browser()->GuestWebContentsCreated(
-      instance_id,
-      guest_site_instance,
-      web_contents,
-      opener_web_contents,
-      &delegate,
-      extra_params.Pass());
-  if (delegate) {
-    delegate->RegisterDestructionCallback(
-        base::Bind(&BrowserPluginGuest::WillDestroy,
-                   base::Unretained(guest)));
-    guest->set_delegate(delegate);
-  }
-  return guest;
+    BrowserPluginGuestDelegate* delegate) {
+  return new BrowserPluginGuest(
+      instance_id, web_contents->opener() != NULL, web_contents, delegate);
 }
 
 // static
@@ -305,6 +287,11 @@ BrowserPluginGuest::GetBrowserPluginGuestManager() const {
 gfx::Rect BrowserPluginGuest::ToGuestRect(const gfx::Rect& bounds) {
   gfx::Rect guest_rect(bounds);
   guest_rect.Offset(guest_window_rect_.OffsetFromOrigin());
+  if (embedder_web_contents()->GetBrowserPluginGuest()) {
+     BrowserPluginGuest* embedder_guest =
+        embedder_web_contents()->GetBrowserPluginGuest();
+     guest_rect.Offset(embedder_guest->guest_window_rect_.OffsetFromOrigin());
+  }
   return guest_rect;
 }
 
@@ -324,14 +311,17 @@ WebContentsImpl* BrowserPluginGuest::GetWebContents() const {
 
 gfx::Point BrowserPluginGuest::GetScreenCoordinates(
     const gfx::Point& relative_position) const {
+  if (!attached())
+    return relative_position;
+
   gfx::Point screen_pos(relative_position);
   screen_pos += guest_window_rect_.OffsetFromOrigin();
+  if (embedder_web_contents()->GetBrowserPluginGuest()) {
+     BrowserPluginGuest* embedder_guest =
+        embedder_web_contents()->GetBrowserPluginGuest();
+     screen_pos += embedder_guest->guest_window_rect_.OffsetFromOrigin();
+  }
   return screen_pos;
-}
-
-bool BrowserPluginGuest::InAutoSizeBounds(const gfx::Size& size) const {
-  return size.width() <= max_auto_size_.width() &&
-      size.height() <= max_auto_size_.height();
 }
 
 void BrowserPluginGuest::SendMessageToEmbedder(IPC::Message* msg) {
@@ -372,12 +362,9 @@ void BrowserPluginGuest::SendQueuedMessages() {
 }
 
 void BrowserPluginGuest::DidCommitProvisionalLoadForFrame(
-    int64 frame_id,
-    const base::string16& frame_unique_name,
-    bool is_main_frame,
+    RenderFrameHost* render_frame_host,
     const GURL& url,
-    PageTransition transition_type,
-    RenderViewHost* render_view_host) {
+    PageTransition transition_type) {
   RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.DidNavigate"));
 }
 
@@ -387,10 +374,6 @@ void BrowserPluginGuest::RenderViewReady() {
   // here (see http://crbug.com/158151).
   Send(new InputMsg_SetFocus(routing_id(), focused_));
   UpdateVisibility();
-  if (auto_size_enabled_)
-    rvh->EnableAutoResize(min_auto_size_, max_auto_size_);
-  else
-    rvh->DisableAutoResize(full_size_);
 
   OnSetContentsOpaque(instance_id_, guest_opaque_);
 
@@ -432,7 +415,6 @@ bool BrowserPluginGuest::ShouldForwardToBrowserPluginGuest(
     case BrowserPluginHostMsg_PluginDestroyed::ID:
     case BrowserPluginHostMsg_ReclaimCompositorResources::ID:
     case BrowserPluginHostMsg_ResizeGuest::ID:
-    case BrowserPluginHostMsg_SetAutoSize::ID:
     case BrowserPluginHostMsg_SetEditCommandsForNextKeyEvent::ID:
     case BrowserPluginHostMsg_SetFocus::ID:
     case BrowserPluginHostMsg_SetContentsOpaque::ID:
@@ -448,6 +430,12 @@ bool BrowserPluginGuest::ShouldForwardToBrowserPluginGuest(
 bool BrowserPluginGuest::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(BrowserPluginGuest, message)
+    IPC_MESSAGE_HANDLER(InputHostMsg_ImeCancelComposition,
+                        OnImeCancelComposition)
+#if defined(OS_MACOSX) || defined(USE_AURA)
+    IPC_MESSAGE_HANDLER(InputHostMsg_ImeCompositionRangeChanged,
+                        OnImeCompositionRangeChanged)
+#endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_HasTouchEventHandlers,
                         OnHasTouchEventHandlers)
     IPC_MESSAGE_HANDLER(ViewHostMsg_LockMouse, OnLockMouse)
@@ -462,12 +450,6 @@ bool BrowserPluginGuest::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_TakeFocus, OnTakeFocus)
     IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputStateChanged,
                         OnTextInputStateChanged)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCancelComposition,
-                        OnImeCancelComposition)
-#if defined(OS_MACOSX) || defined(USE_AURA)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCompositionRangeChanged,
-                        OnImeCompositionRangeChanged)
-#endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_UnlockMouse, OnUnlockMouse)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateRect, OnUpdateRect)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -554,19 +536,19 @@ void BrowserPluginGuest::OnImeSetComposition(
     const std::vector<blink::WebCompositionUnderline>& underlines,
     int selection_start,
     int selection_end) {
-  Send(new ViewMsg_ImeSetComposition(routing_id(),
-                                     base::UTF8ToUTF16(text), underlines,
-                                     selection_start, selection_end));
+  Send(new InputMsg_ImeSetComposition(routing_id(),
+                                      base::UTF8ToUTF16(text), underlines,
+                                      selection_start, selection_end));
 }
 
 void BrowserPluginGuest::OnImeConfirmComposition(
     int instance_id,
     const std::string& text,
     bool keep_selection) {
-  Send(new ViewMsg_ImeConfirmComposition(routing_id(),
-                                         base::UTF8ToUTF16(text),
-                                         gfx::Range::InvalidRange(),
-                                         keep_selection));
+  Send(new InputMsg_ImeConfirmComposition(routing_id(),
+                                          base::UTF8ToUTF16(text),
+                                          gfx::Range::InvalidRange(),
+                                          keep_selection));
 }
 
 void BrowserPluginGuest::OnExtendSelectionAndDelete(
@@ -653,9 +635,6 @@ void BrowserPluginGuest::OnLockMouse(bool user_gesture,
     return;
   }
 
-  if (!delegate_)
-    return;
-
   pending_lock_request_ = true;
 
   delegate_->RequestPointerLockPermission(
@@ -695,15 +674,14 @@ void BrowserPluginGuest::OnResizeGuest(
       render_widget_host->NotifyScreenInfoChanged();
     }
   }
-  // When autosize is turned off and as a result there is a layout change, we
-  // send a sizechanged event.
-  if (!auto_size_enabled_ && last_seen_auto_size_enabled_ &&
-      !params.view_size.IsEmpty() && delegate_) {
-    delegate_->SizeChanged(last_seen_view_size_, params.view_size);
-    last_seen_auto_size_enabled_ = false;
+
+  if (last_seen_browser_plugin_size_ != params.view_size) {
+    delegate_->ElementSizeChanged(last_seen_browser_plugin_size_,
+                                  params.view_size);
+    last_seen_browser_plugin_size_ = params.view_size;
   }
+
   // Just resize the WebContents and repaint if needed.
-  full_size_ = params.view_size;
   if (!params.view_size.IsEmpty())
     GetWebContents()->GetView()->SizeContents(params.view_size);
   if (params.repaint)
@@ -726,37 +704,6 @@ void BrowserPluginGuest::OnSetFocus(int instance_id, bool focused) {
     params.can_compose_inline = last_can_compose_inline_;
     rwhv->TextInputStateChanged(params);
   }
-}
-
-void BrowserPluginGuest::OnSetAutoSize(
-    int instance_id,
-    const BrowserPluginHostMsg_AutoSize_Params& auto_size_params,
-    const BrowserPluginHostMsg_ResizeGuest_Params& resize_guest_params) {
-  bool old_auto_size_enabled = auto_size_enabled_;
-  gfx::Size old_max_size = max_auto_size_;
-  gfx::Size old_min_size = min_auto_size_;
-  auto_size_enabled_ = auto_size_params.enable;
-  max_auto_size_ = auto_size_params.max_size;
-  min_auto_size_ = auto_size_params.min_size;
-  if (auto_size_enabled_ && (!old_auto_size_enabled ||
-                             (old_max_size != max_auto_size_) ||
-                             (old_min_size != min_auto_size_))) {
-    RecordAction(
-        base::UserMetricsAction("BrowserPlugin.Guest.EnableAutoResize"));
-    GetWebContents()->GetRenderViewHost()->EnableAutoResize(
-        min_auto_size_, max_auto_size_);
-    // TODO(fsamuel): If we're changing autosize parameters, then we force
-    // the guest to completely repaint itself.
-    // Ideally, we shouldn't need to do this unless |max_auto_size_| has
-    // changed.
-    // However, even in that case, layout may not change and so we may
-    // not get a full frame worth of pixels.
-    Send(new ViewMsg_Repaint(routing_id(), max_auto_size_));
-  } else if (!auto_size_enabled_ && old_auto_size_enabled) {
-    GetWebContents()->GetRenderViewHost()->DisableAutoResize(
-        resize_guest_params.view_size);
-  }
-  OnResizeGuest(instance_id_, resize_guest_params);
 }
 
 void BrowserPluginGuest::OnSetEditCommandsForNextKeyEvent(
@@ -861,15 +808,10 @@ void BrowserPluginGuest::OnUpdateRect(
   relay_params.is_resize_ack = ViewHostMsg_UpdateRect_Flags::is_resize_ack(
       params.flags);
 
-  bool size_changed = last_seen_view_size_ != params.view_size;
-  gfx::Size old_size = last_seen_view_size_;
-  last_seen_view_size_ = params.view_size;
-
-  if ((auto_size_enabled_ || last_seen_auto_size_enabled_) &&
-      size_changed && delegate_) {
-    delegate_->SizeChanged(old_size, last_seen_view_size_);
+  if (last_seen_view_size_ != params.view_size) {
+    delegate_->GuestSizeChanged(last_seen_view_size_, params.view_size);
+    last_seen_view_size_ = params.view_size;
   }
-  last_seen_auto_size_enabled_ = auto_size_enabled_;
 
   SendMessageToEmbedder(
       new BrowserPluginMsg_UpdateRect(instance_id(), relay_params));

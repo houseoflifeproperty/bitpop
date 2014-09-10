@@ -8,6 +8,7 @@
 #include "base/memory/shared_memory.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "base/win/windows_version.h"
 #include "content/child/request_extra_data.h"
 #include "content/child/service_worker/service_worker_network_provider.h"
@@ -48,6 +49,7 @@
 #include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
 #include "third_party/WebKit/public/web/WebHistoryItem.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/WebKit/public/web/WebPerformance.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/web/WebWindowFeatures.h"
@@ -63,6 +65,7 @@
 #include <X11/Xlib.h>
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/keyboard_code_conversion.h"
+#include "ui/events/test/events_test_utils.h"
 #include "ui/events/test/events_test_utils_x11.h"
 #endif
 
@@ -129,6 +132,8 @@ class WebUITestWebUIControllerFactory : public WebUIControllerFactory {
   }
 };
 
+}  // namespace
+
 class RenderViewImplTest : public RenderViewTest {
  public:
   RenderViewImplTest() {
@@ -148,6 +153,10 @@ class RenderViewImplTest : public RenderViewTest {
 
   RenderViewImpl* view() {
     return static_cast<RenderViewImpl*>(view_);
+  }
+
+  int view_page_id() {
+    return view()->page_id_;
   }
 
   RenderFrameImpl* frame() {
@@ -180,7 +189,7 @@ class RenderViewImplTest : public RenderViewTest {
     // WM_CHAR sends a composed Unicode character.
     MSG msg1 = { NULL, WM_KEYDOWN, key_code, 0 };
 #if defined(USE_AURA)
-    ui::KeyEvent evt1(msg1, false);
+    ui::KeyEvent evt1(msg1);
     NativeWebKeyboardEvent keydown_event(&evt1);
 #else
     NativeWebKeyboardEvent keydown_event(msg1);
@@ -189,7 +198,7 @@ class RenderViewImplTest : public RenderViewTest {
 
     MSG msg2 = { NULL, WM_CHAR, (*output)[0], 0 };
 #if defined(USE_AURA)
-    ui::KeyEvent evt2(msg2, true);
+    ui::KeyEvent evt2(msg2);
     NativeWebKeyboardEvent char_event(&evt2);
 #else
     NativeWebKeyboardEvent char_event(msg2);
@@ -198,7 +207,7 @@ class RenderViewImplTest : public RenderViewTest {
 
     MSG msg3 = { NULL, WM_KEYUP, key_code, 0 };
 #if defined(USE_AURA)
-    ui::KeyEvent evt3(msg3, false);
+    ui::KeyEvent evt3(msg3);
     NativeWebKeyboardEvent keyup_event(&evt3);
 #else
     NativeWebKeyboardEvent keyup_event(msg3);
@@ -216,21 +225,25 @@ class RenderViewImplTest : public RenderViewTest {
     xevent.InitKeyEvent(ui::ET_KEY_PRESSED,
                         static_cast<ui::KeyboardCode>(key_code),
                         flags);
-    ui::KeyEvent event1(xevent, false);
+    ui::KeyEvent event1(xevent);
     NativeWebKeyboardEvent keydown_event(&event1);
     SendNativeKeyEvent(keydown_event);
 
+    // X11 doesn't actually have native character events, but give the test
+    // what it wants.
     xevent.InitKeyEvent(ui::ET_KEY_PRESSED,
                         static_cast<ui::KeyboardCode>(key_code),
                         flags);
-    ui::KeyEvent event2(xevent, true);
+    ui::KeyEvent event2(xevent);
+    ui::KeyEventTestApi test_event2(&event2);
+    test_event2.set_is_char(true);
     NativeWebKeyboardEvent char_event(&event2);
     SendNativeKeyEvent(char_event);
 
     xevent.InitKeyEvent(ui::ET_KEY_RELEASED,
                         static_cast<ui::KeyboardCode>(key_code),
                         flags);
-    ui::KeyEvent event3(xevent, false);
+    ui::KeyEvent event3(xevent);
     NativeWebKeyboardEvent keyup_event(&event3);
     SendNativeKeyEvent(keyup_event);
 
@@ -245,25 +258,22 @@ class RenderViewImplTest : public RenderViewTest {
     // then create the actual ui::KeyEvent with the native event.
     ui::KeyEvent keydown_native_event(ui::ET_KEY_PRESSED,
                                    static_cast<ui::KeyboardCode>(key_code),
-                                   flags,
-                                   true);
-    ui::KeyEvent keydown_event(&keydown_native_event, false);
+                                   flags);
+    ui::KeyEvent keydown_event(&keydown_native_event);
     NativeWebKeyboardEvent keydown_web_event(&keydown_event);
     SendNativeKeyEvent(keydown_web_event);
 
-    ui::KeyEvent char_native_event(ui::ET_KEY_PRESSED,
+    ui::KeyEvent char_native_event(static_cast<base::char16>(key_code),
                                    static_cast<ui::KeyboardCode>(key_code),
-                                   flags,
-                                   true);
-    ui::KeyEvent char_event(&char_native_event, true);
+                                   flags);
+    ui::KeyEvent char_event(&char_native_event);
     NativeWebKeyboardEvent char_web_event(&char_event);
     SendNativeKeyEvent(char_web_event);
 
     ui::KeyEvent keyup_native_event(ui::ET_KEY_RELEASED,
                                     static_cast<ui::KeyboardCode>(key_code),
-                                    flags,
-                                    true);
-    ui::KeyEvent keyup_event(&keyup_native_event, false);
+                                    flags);
+    ui::KeyEvent keyup_event(&keyup_native_event);
     NativeWebKeyboardEvent keyup_web_event(&keyup_event);
     SendNativeKeyEvent(keyup_web_event);
 
@@ -280,8 +290,6 @@ class RenderViewImplTest : public RenderViewTest {
  private:
   scoped_ptr<MockKeyboard> mock_keyboard_;
 };
-
-}  // namespace
 
 // Test that we get form state change notifications when input fields change.
 TEST_F(RenderViewImplTest, DISABLED_OnNavStateChanged) {
@@ -314,6 +322,7 @@ TEST_F(RenderViewImplTest, OnNavigationHttpPost) {
   nav_params.transition = PAGE_TRANSITION_TYPED;
   nav_params.page_id = -1;
   nav_params.is_post = true;
+  nav_params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
 
   // Set up post data.
   const unsigned char* raw_data = reinterpret_cast<const unsigned char*>(
@@ -357,36 +366,34 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicy) {
 
   // Navigations to normal HTTP URLs can be handled locally.
   blink::WebURLRequest request(GURL("http://foo.com"));
+  blink::WebFrameClient::NavigationPolicyInfo policy_info(request);
+  policy_info.frame = GetMainFrame();
+  policy_info.extraData = &state;
+  policy_info.navigationType = blink::WebNavigationTypeLinkClicked;
+  policy_info.defaultPolicy = blink::WebNavigationPolicyCurrentTab;
   blink::WebNavigationPolicy policy = frame()->decidePolicyForNavigation(
-          GetMainFrame(),
-          &state,
-          request,
-          blink::WebNavigationTypeLinkClicked,
-          blink::WebNavigationPolicyCurrentTab,
-          false);
+          policy_info);
   EXPECT_EQ(blink::WebNavigationPolicyCurrentTab, policy);
 
   // Verify that form posts to WebUI URLs will be sent to the browser process.
   blink::WebURLRequest form_request(GURL("chrome://foo"));
+  blink::WebFrameClient::NavigationPolicyInfo form_policy_info(form_request);
+  form_policy_info.frame = GetMainFrame();
+  form_policy_info.extraData = &state;
+  form_policy_info.navigationType = blink::WebNavigationTypeFormSubmitted;
+  form_policy_info.defaultPolicy = blink::WebNavigationPolicyCurrentTab;
   form_request.setHTTPMethod("POST");
-  policy = frame()->decidePolicyForNavigation(
-      GetMainFrame(),
-      &state,
-      form_request,
-      blink::WebNavigationTypeFormSubmitted,
-      blink::WebNavigationPolicyCurrentTab,
-      false);
+  policy = frame()->decidePolicyForNavigation(form_policy_info);
   EXPECT_EQ(blink::WebNavigationPolicyIgnore, policy);
 
   // Verify that popup links to WebUI URLs also are sent to browser.
   blink::WebURLRequest popup_request(GURL("chrome://foo"));
-  policy = frame()->decidePolicyForNavigation(
-      GetMainFrame(),
-      &state,
-      popup_request,
-      blink::WebNavigationTypeLinkClicked,
-      blink::WebNavigationPolicyNewForegroundTab,
-      false);
+  blink::WebFrameClient::NavigationPolicyInfo popup_policy_info(popup_request);
+  popup_policy_info.frame = GetMainFrame();
+  popup_policy_info.extraData = &state;
+  popup_policy_info.navigationType = blink::WebNavigationTypeLinkClicked;
+  popup_policy_info.defaultPolicy = blink::WebNavigationPolicyNewForegroundTab;
+  policy = frame()->decidePolicyForNavigation(popup_policy_info);
   EXPECT_EQ(blink::WebNavigationPolicyIgnore, policy);
 }
 
@@ -408,14 +415,16 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicyHandlesAllTopLevel) {
   };
 
   blink::WebURLRequest request(GURL("http://foo.com"));
+  blink::WebFrameClient::NavigationPolicyInfo policy_info(request);
+  policy_info.frame = GetMainFrame();
+  policy_info.extraData = &state;
+  policy_info.defaultPolicy = blink::WebNavigationPolicyCurrentTab;
+
   for (size_t i = 0; i < arraysize(kNavTypes); ++i) {
+    policy_info.navigationType = kNavTypes[i];
+
     blink::WebNavigationPolicy policy = frame()->decidePolicyForNavigation(
-        GetMainFrame(),
-        &state,
-        request,
-        kNavTypes[i],
-        blink::WebNavigationPolicyCurrentTab,
-        false);
+        policy_info);
     EXPECT_EQ(blink::WebNavigationPolicyIgnore, policy);
   }
 }
@@ -429,36 +438,35 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicyForWebUI) {
 
   // Navigations to normal HTTP URLs will be sent to browser process.
   blink::WebURLRequest request(GURL("http://foo.com"));
+  blink::WebFrameClient::NavigationPolicyInfo policy_info(request);
+  policy_info.frame = GetMainFrame();
+  policy_info.extraData = &state;
+  policy_info.navigationType = blink::WebNavigationTypeLinkClicked;
+  policy_info.defaultPolicy = blink::WebNavigationPolicyCurrentTab;
+
   blink::WebNavigationPolicy policy = frame()->decidePolicyForNavigation(
-      GetMainFrame(),
-      &state,
-      request,
-      blink::WebNavigationTypeLinkClicked,
-      blink::WebNavigationPolicyCurrentTab,
-      false);
+      policy_info);
   EXPECT_EQ(blink::WebNavigationPolicyIgnore, policy);
 
   // Navigations to WebUI URLs will also be sent to browser process.
   blink::WebURLRequest webui_request(GURL("chrome://foo"));
-  policy = frame()->decidePolicyForNavigation(
-      GetMainFrame(),
-      &state,
-      webui_request,
-      blink::WebNavigationTypeLinkClicked,
-      blink::WebNavigationPolicyCurrentTab,
-      false);
+  blink::WebFrameClient::NavigationPolicyInfo webui_policy_info(webui_request);
+  webui_policy_info.frame = GetMainFrame();
+  webui_policy_info.extraData = &state;
+  webui_policy_info.navigationType = blink::WebNavigationTypeLinkClicked;
+  webui_policy_info.defaultPolicy = blink::WebNavigationPolicyCurrentTab;
+  policy = frame()->decidePolicyForNavigation(webui_policy_info);
   EXPECT_EQ(blink::WebNavigationPolicyIgnore, policy);
 
   // Verify that form posts to data URLs will be sent to the browser process.
   blink::WebURLRequest data_request(GURL("data:text/html,foo"));
+  blink::WebFrameClient::NavigationPolicyInfo data_policy_info(data_request);
+  data_policy_info.frame = GetMainFrame();
+  data_policy_info.extraData = &state;
+  data_policy_info.navigationType = blink::WebNavigationTypeFormSubmitted;
+  data_policy_info.defaultPolicy = blink::WebNavigationPolicyCurrentTab;
   data_request.setHTTPMethod("POST");
-  policy = frame()->decidePolicyForNavigation(
-      GetMainFrame(),
-      &state,
-      data_request,
-      blink::WebNavigationTypeFormSubmitted,
-      blink::WebNavigationPolicyCurrentTab,
-      false);
+  policy = frame()->decidePolicyForNavigation(data_policy_info);
   EXPECT_EQ(blink::WebNavigationPolicyIgnore, policy);
 
   // Verify that a popup that creates a view first and then navigates to a
@@ -469,14 +477,13 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicyForWebUI) {
       GetMainFrame(), popup_request, blink::WebWindowFeatures(), "foo",
       blink::WebNavigationPolicyNewForegroundTab, false);
   RenderViewImpl* new_view = RenderViewImpl::FromWebView(new_web_view);
+  blink::WebFrameClient::NavigationPolicyInfo popup_policy_info(popup_request);
+  popup_policy_info.frame = new_web_view->mainFrame()->toWebLocalFrame();
+  popup_policy_info.extraData = &state;
+  popup_policy_info.navigationType = blink::WebNavigationTypeLinkClicked;
+  popup_policy_info.defaultPolicy = blink::WebNavigationPolicyNewForegroundTab;
   policy = static_cast<RenderFrameImpl*>(new_view->GetMainRenderFrame())->
-      decidePolicyForNavigation(
-          new_web_view->mainFrame()->toWebLocalFrame(),
-          &state,
-          popup_request,
-          blink::WebNavigationTypeLinkClicked,
-          blink::WebNavigationPolicyNewForegroundTab,
-          false);
+      decidePolicyForNavigation(popup_policy_info);
   EXPECT_EQ(blink::WebNavigationPolicyIgnore, policy);
 
   // Clean up after the new view so we don't leak it.
@@ -488,13 +495,13 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicyForWebUI) {
 // already swapped out.  http://crbug.com/93427.
 TEST_F(RenderViewImplTest, SendSwapOutACK) {
   LoadHTML("<div>Page A</div>");
-  int initial_page_id = view()->GetPageId();
+  int initial_page_id = view_page_id();
 
   // Respond to a swap out request.
   view()->main_render_frame()->OnSwapOut(kProxyRoutingId);
 
   // Ensure the swap out commits synchronously.
-  EXPECT_NE(initial_page_id, view()->GetPageId());
+  EXPECT_NE(initial_page_id, view_page_id());
 
   // Check for a valid OnSwapOutACK.
   const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
@@ -519,6 +526,7 @@ TEST_F(RenderViewImplTest, SendSwapOutACK) {
   nav_params.current_history_list_offset = 0;
   nav_params.pending_history_list_offset = 1;
   nav_params.page_id = -1;
+  nav_params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(nav_params);
   ProcessPendingMessages();
   const IPC::Message* msg3 = render_thread_->sink().GetUniqueMessageMatching(
@@ -556,6 +564,7 @@ TEST_F(RenderViewImplTest, ReloadWhileSwappedOut) {
   params_A.pending_history_list_offset = 0;
   params_A.page_id = 1;
   params_A.page_state = state_A;
+  params_A.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params_A);
   ProcessPendingMessages();
 
@@ -581,6 +590,7 @@ TEST_F(RenderViewImplTest, ReloadWhileSwappedOut) {
   nav_params.pending_history_list_offset = 0;
   nav_params.page_id = 1;
   nav_params.page_state = state_A;
+  nav_params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(nav_params);
   ProcessPendingMessages();
 
@@ -659,6 +669,7 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
   params_C.pending_history_list_offset = 2;
   params_C.page_id = 3;
   params_C.page_state = state_C;
+  params_C.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params_C);
   ProcessPendingMessages();
   render_thread_->sink().ClearMessages();
@@ -676,6 +687,7 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
   params_B.pending_history_list_offset = 1;
   params_B.page_id = 2;
   params_B.page_state = state_B;
+  params_B.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params_B);
 
   // Back to page A (page_id 1) and commit.
@@ -687,6 +699,7 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
   params_B.pending_history_list_offset = 0;
   params.page_id = 1;
   params.page_state = state_A;
+  params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params);
   ProcessPendingMessages();
 
@@ -741,6 +754,7 @@ TEST_F(RenderViewImplTest, StaleNavigationsIgnored) {
   params_A.pending_history_list_offset = 0;
   params_A.page_id = 1;
   params_A.page_state = state_A;
+  params_A.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params_A);
   ProcessPendingMessages();
 
@@ -759,6 +773,7 @@ TEST_F(RenderViewImplTest, StaleNavigationsIgnored) {
   params_B.pending_history_list_offset = 1;
   params_B.page_id = 2;
   params_B.page_state = state_A;  // Doesn't matter, just has to be present.
+  params_B.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params_B);
 
   // State should be unchanged.
@@ -826,6 +841,7 @@ TEST_F(RenderViewImplTest, DontIgnoreBackAfterNavEntryLimit) {
   params_B.pending_history_list_offset = 0;
   params_B.page_id = 2;
   params_B.page_state = state_B;
+  params_B.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params_B);
   ProcessPendingMessages();
 
@@ -1533,6 +1549,7 @@ TEST_F(RenderViewImplTest, DISABLED_DidFailProvisionalLoadWithErrorForError) {
   params.page_id = -1;
   params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
   params.url = GURL("data:text/html,test data");
+  params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params);
 
   // An error occurred.
@@ -1555,6 +1572,7 @@ TEST_F(RenderViewImplTest, DidFailProvisionalLoadWithErrorForCancellation) {
   params.page_id = -1;
   params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
   params.url = GURL("data:text/html,test data");
+  params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params);
 
   // A cancellation occurred.
@@ -1935,6 +1953,7 @@ TEST_F(RenderViewImplTest, ZoomLimit) {
   FrameMsg_Navigate_Params params;
   params.page_id = -1;
   params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
 
   // Verifies navigation to a URL with preset zoom level indeed sets the level.
   // Regression test for http://crbug.com/139559, where the level was not
@@ -2019,6 +2038,7 @@ TEST_F(RenderViewImplTest, NavigateFrame) {
   nav_params.pending_history_list_offset = 1;
   nav_params.page_id = -1;
   nav_params.frame_to_navigate = "frame";
+  nav_params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(nav_params);
   FrameLoadWaiter(
       RenderFrame::FromWebFrame(frame()->GetWebFrame()->firstChild())).Wait();
@@ -2138,6 +2158,7 @@ TEST_F(SuppressErrorPageTest, MAYBE_Suppresses) {
   params.page_id = -1;
   params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
   params.url = GURL("data:text/html,test data");
+  params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params);
 
   // An error occurred.
@@ -2167,6 +2188,7 @@ TEST_F(SuppressErrorPageTest, MAYBE_DoesNotSuppress) {
   params.page_id = -1;
   params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
   params.url = GURL("data:text/html,test data");
+  params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params);
 
   // An error occurred.
@@ -2302,7 +2324,7 @@ TEST_F(RenderViewImplTest, ServiceWorkerNetworkProviderSetup) {
   // See that subresource requests are also tagged with the provider's id.
   EXPECT_EQ(frame(), RenderFrameImpl::FromWebFrame(GetMainFrame()));
   blink::WebURLRequest request(GURL("http://foo.com"));
-  request.setTargetType(blink::WebURLRequest::TargetIsSubresource);
+  request.setRequestContext(blink::WebURLRequest::RequestContextSubresource);
   blink::WebURLResponse redirect_response;
   frame()->willSendRequest(GetMainFrame(), 0, request, redirect_response);
   extra_data = static_cast<RequestExtraData*>(request.extraData());
@@ -2312,30 +2334,30 @@ TEST_F(RenderViewImplTest, ServiceWorkerNetworkProviderSetup) {
 }
 
 TEST_F(RenderViewImplTest, OnSetAccessibilityMode) {
-  ASSERT_EQ(AccessibilityModeOff, view()->accessibility_mode());
-  ASSERT_EQ((RendererAccessibility*) NULL, view()->renderer_accessibility());
+  ASSERT_EQ(AccessibilityModeOff, frame()->accessibility_mode());
+  ASSERT_EQ((RendererAccessibility*) NULL, frame()->renderer_accessibility());
 
-  view()->OnSetAccessibilityMode(AccessibilityModeTreeOnly);
-  ASSERT_EQ(AccessibilityModeTreeOnly, view()->accessibility_mode());
-  ASSERT_NE((RendererAccessibility*) NULL, view()->renderer_accessibility());
+  frame()->OnSetAccessibilityMode(AccessibilityModeTreeOnly);
+  ASSERT_EQ(AccessibilityModeTreeOnly, frame()->accessibility_mode());
+  ASSERT_NE((RendererAccessibility*) NULL, frame()->renderer_accessibility());
   ASSERT_EQ(RendererAccessibilityTypeComplete,
-            view()->renderer_accessibility()->GetType());
+            frame()->renderer_accessibility()->GetType());
 
-  view()->OnSetAccessibilityMode(AccessibilityModeOff);
-  ASSERT_EQ(AccessibilityModeOff, view()->accessibility_mode());
-  ASSERT_EQ((RendererAccessibility*) NULL, view()->renderer_accessibility());
+  frame()->OnSetAccessibilityMode(AccessibilityModeOff);
+  ASSERT_EQ(AccessibilityModeOff, frame()->accessibility_mode());
+  ASSERT_EQ((RendererAccessibility*) NULL, frame()->renderer_accessibility());
 
-  view()->OnSetAccessibilityMode(AccessibilityModeComplete);
-  ASSERT_EQ(AccessibilityModeComplete, view()->accessibility_mode());
-  ASSERT_NE((RendererAccessibility*) NULL, view()->renderer_accessibility());
+  frame()->OnSetAccessibilityMode(AccessibilityModeComplete);
+  ASSERT_EQ(AccessibilityModeComplete, frame()->accessibility_mode());
+  ASSERT_NE((RendererAccessibility*) NULL, frame()->renderer_accessibility());
   ASSERT_EQ(RendererAccessibilityTypeComplete,
-            view()->renderer_accessibility()->GetType());
+            frame()->renderer_accessibility()->GetType());
 
-  view()->OnSetAccessibilityMode(AccessibilityModeEditableTextOnly);
-  ASSERT_EQ(AccessibilityModeEditableTextOnly, view()->accessibility_mode());
-  ASSERT_NE((RendererAccessibility*) NULL, view()->renderer_accessibility());
+  frame()->OnSetAccessibilityMode(AccessibilityModeEditableTextOnly);
+  ASSERT_EQ(AccessibilityModeEditableTextOnly, frame()->accessibility_mode());
+  ASSERT_NE((RendererAccessibility*) NULL, frame()->renderer_accessibility());
   ASSERT_EQ(RendererAccessibilityTypeFocusOnly,
-            view()->renderer_accessibility()->GetType());
+            frame()->renderer_accessibility()->GetType());
 }
 
 TEST_F(RenderViewImplTest, ScreenMetricsEmulation) {
@@ -2366,6 +2388,52 @@ TEST_F(RenderViewImplTest, ScreenMetricsEmulation) {
 
   view()->EnableScreenMetricsEmulation(params);
   // Don't disable here to test that emulation is being shutdown properly.
+}
+
+// Sanity checks for the Navigation Timing API |navigationStart| override. We
+// are asserting only most basic constraints, as TimeTicks (passed as the
+// override) are not comparable with the wall time (returned by the Blink API).
+TEST_F(RenderViewImplTest, NavigationStartOverride) {
+  // Verify that a navigation that claims to have started at the earliest
+  // possible TimeTicks is indeed reported as one that started before
+  // OnNavigate() is called.
+  base::Time before_navigation = base::Time::Now();
+  FrameMsg_Navigate_Params early_nav_params;
+  early_nav_params.url = GURL("data:text/html,<div>Page</div>");
+  early_nav_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  early_nav_params.transition = PAGE_TRANSITION_TYPED;
+  early_nav_params.page_id = -1;
+  early_nav_params.is_post = true;
+  early_nav_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
+
+  frame()->OnNavigate(early_nav_params);
+  ProcessPendingMessages();
+
+  base::Time early_nav_reported_start =
+      base::Time::FromDoubleT(GetMainFrame()->performance().navigationStart());
+  EXPECT_LT(early_nav_reported_start, before_navigation);
+
+  // Verify that a navigation that claims to have started in the future - 42
+  // days from now is *not* reported as one that starts in the future; as we
+  // sanitize the override allowing a maximum of ::Now().
+  FrameMsg_Navigate_Params late_nav_params;
+  late_nav_params.url = GURL("data:text/html,<div>Another page</div>");
+  late_nav_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  late_nav_params.transition = PAGE_TRANSITION_TYPED;
+  late_nav_params.page_id = -1;
+  late_nav_params.is_post = true;
+  late_nav_params.browser_navigation_start =
+      base::TimeTicks::Now() + base::TimeDelta::FromDays(42);
+
+  frame()->OnNavigate(late_nav_params);
+  ProcessPendingMessages();
+  base::Time after_navigation =
+      base::Time::Now() + base::TimeDelta::FromDays(1);
+
+  base::Time late_nav_reported_start =
+      base::Time::FromDoubleT(GetMainFrame()->performance().navigationStart());
+  EXPECT_LE(late_nav_reported_start, after_navigation);
 }
 
 }  // namespace content

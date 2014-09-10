@@ -76,6 +76,9 @@ class FakeSafeBrowsingService : public SafeBrowsingService {
     // Makes sure the auto update is not triggered. The tests will force the
     // update when needed.
     config.disable_auto_update = true;
+#if defined(OS_ANDROID)
+    config.disable_connection_check = true;
+#endif
     config.client_name = "browser_tests";
     return config;
   }
@@ -712,7 +715,14 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, CheckDownloadUrlRedirects) {
   EXPECT_EQ(SB_THREAT_TYPE_BINARY_MALWARE_URL, client->GetThreatType());
 }
 
-IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, CheckDownloadUrlTimedOut) {
+#if defined(OS_WIN)
+// http://crbug.com/396409
+#define MAYBE_CheckDownloadUrlTimedOut DISABLED_CheckDownloadUrlTimedOut
+#else
+#define MAYBE_CheckDownloadUrlTimedOut CheckDownloadUrlTimedOut
+#endif
+IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest,
+                       MAYBE_CheckDownloadUrlTimedOut) {
   GURL badbin_url = test_server()->GetURL(kMalwareFile);
   std::vector<GURL> badbin_urls(1, badbin_url);
 
@@ -970,7 +980,7 @@ class SafeBrowsingDatabaseManagerCookieTest : public InProcessBrowserTest {
     ASSERT_TRUE(sb_service_.get() != NULL);
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     sb_service_ = NULL;
   }
 

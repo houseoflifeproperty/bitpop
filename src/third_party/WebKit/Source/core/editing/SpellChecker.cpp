@@ -46,7 +46,7 @@
 #include "core/rendering/RenderTextControl.h"
 #include "platform/text/TextCheckerClient.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -56,6 +56,17 @@ bool isSelectionInTextField(const VisibleSelection& selection)
 {
     HTMLTextFormControlElement* textControl = enclosingTextFormControl(selection.start());
     return isHTMLInputElement(textControl) && toHTMLInputElement(textControl)->isTextField();
+}
+
+bool isSelectionInTextArea(const VisibleSelection& selection)
+{
+    HTMLTextFormControlElement* textControl = enclosingTextFormControl(selection.start());
+    return isHTMLTextAreaElement(textControl);
+}
+
+bool isSelectionInTextFormControl(const VisibleSelection& selection)
+{
+    return !!enclosingTextFormControl(selection.start());
 }
 
 } // namespace
@@ -190,7 +201,7 @@ void SpellChecker::advanceToNextMisspelling(bool startBeforeSelection)
     }
 
     // topNode defines the whole range we want to operate on
-    Node* topNode = highestEditableRoot(position);
+    ContainerNode* topNode = highestEditableRoot(position);
     // FIXME: lastOffsetForEditing() is wrong here if editingIgnoresContent(highestEditableRoot()) returns true (e.g. a <table>)
     spellingSearchRange->setEnd(topNode, lastOffsetForEditing(topNode), IGNORE_EXCEPTION);
 
@@ -329,6 +340,30 @@ void SpellChecker::markMisspellingsAndBadGrammar(const VisibleSelection &movingS
     markMisspellingsAndBadGrammar(movingSelection, isContinuousSpellCheckingEnabled() && isGrammarCheckingEnabled(), movingSelection);
 }
 
+void SpellChecker::markMisspellingsAfterLineBreak(const VisibleSelection& wordSelection)
+{
+    if (unifiedTextCheckerEnabled()) {
+        TextCheckingTypeMask textCheckingOptions = 0;
+
+        if (isContinuousSpellCheckingEnabled())
+            textCheckingOptions |= TextCheckingTypeSpelling;
+
+        if (isGrammarCheckingEnabled())
+            textCheckingOptions |= TextCheckingTypeGrammar;
+
+        VisibleSelection wholeParagraph(
+            startOfParagraph(wordSelection.visibleStart()),
+            endOfParagraph(wordSelection.visibleEnd()));
+
+        markAllMisspellingsAndBadGrammarInRanges(
+            textCheckingOptions, wordSelection.toNormalizedRange().get(),
+            wholeParagraph.toNormalizedRange().get());
+    } else {
+        RefPtrWillBeRawPtr<Range> misspellingRange = wordSelection.firstRange();
+        markMisspellings(wordSelection, misspellingRange);
+    }
+}
+
 void SpellChecker::markMisspellingsAfterTypingToWord(const VisiblePosition &wordStart, const VisibleSelection& selectionAfterTyping)
 {
     if (unifiedTextCheckerEnabled()) {
@@ -405,7 +440,7 @@ void SpellChecker::markMisspellingsOrBadGrammar(const VisibleSelection& selectio
 
     // If we're not in an editable node, bail.
     Node* editableNode = searchRange->startContainer();
-    if (!editableNode || !editableNode->rendererIsEditable())
+    if (!editableNode || !editableNode->hasEditableStyle())
         return;
 
     if (!isSpellCheckingEnabledFor(editableNode))
@@ -456,7 +491,7 @@ void SpellChecker::markAllMisspellingsAndBadGrammarInRanges(TextCheckingTypeMask
 
     // If we're not in an editable node, bail.
     Node* editableNode = spellingRange->startContainer();
-    if (!editableNode || !editableNode->rendererIsEditable())
+    if (!editableNode || !editableNode->hasEditableStyle())
         return;
 
     if (!isSpellCheckingEnabledFor(editableNode))
@@ -711,6 +746,21 @@ void SpellChecker::didEndEditingOnTextField(Element* e)
     }
 }
 
+void SpellChecker::replaceMisspelledRange(const String& text)
+{
+    RefPtrWillBeRawPtr<Range> caretRange = m_frame.selection().toNormalizedRange();
+    if (!caretRange)
+        return;
+    DocumentMarkerVector markers = m_frame.document()->markers().markersInRange(caretRange.get(), DocumentMarker::MisspellingMarkers());
+    if (markers.size() < 1 || markers[0]->startOffset() >= markers[0]->endOffset())
+        return;
+    RefPtrWillBeRawPtr<Range> markerRange = Range::create(caretRange->ownerDocument(), caretRange->startContainer(), markers[0]->startOffset(), caretRange->endContainer(), markers[0]->endOffset());
+    if (!markerRange)
+        return;
+    m_frame.selection().setSelection(VisibleSelection(markerRange.get()), CharacterGranularity);
+    m_frame.editor().replaceSelectionWithText(text, false, false);
+}
+
 void SpellChecker::respondToChangedSelection(const VisibleSelection& oldSelection, FrameSelection::SetSelectionOptions options)
 {
     bool closeTyping = options & FrameSelection::CloseTyping;
@@ -720,8 +770,14 @@ void SpellChecker::respondToChangedSelection(const VisibleSelection& oldSelectio
         VisibleSelection newAdjacentWords;
         VisibleSelection newSelectedSentence;
         bool caretBrowsing = m_frame.settings() && m_frame.settings()->caretBrowsingEnabled();
-        if (m_frame.selection().selection().isContentEditable() || caretBrowsing) {
-            VisiblePosition newStart(m_frame.selection().selection().visibleStart());
+        const VisibleSelection newSelection = m_frame.selection().selection();
+        if (isSelectionInTextFormControl(newSelection)) {
+            Position newStart = newSelection.start();
+            newAdjacentWords.setWithoutValidation(HTMLTextFormControlElement::startOfWord(newStart), HTMLTextFormControlElement::endOfWord(newStart));
+            if (isContinuousGrammarCheckingEnabled)
+                newSelectedSentence.setWithoutValidation(HTMLTextFormControlElement::startOfSentence(newStart), HTMLTextFormControlElement::endOfSentence(newStart));
+        } else if (newSelection.isContentEditable() || caretBrowsing) {
+            VisiblePosition newStart(newSelection.visibleStart());
             newAdjacentWords = VisibleSelection(startOfWord(newStart, LeftWordIfOnBoundary), endOfWord(newStart, RightWordIfOnBoundary));
             if (isContinuousGrammarCheckingEnabled)
                 newSelectedSentence = VisibleSelection(startOfSentence(newStart), endOfSentence(newStart));
@@ -733,14 +789,19 @@ void SpellChecker::respondToChangedSelection(const VisibleSelection& oldSelectio
         // When typing we check spelling elsewhere, so don't redo it here.
         // If this is a change in selection resulting from a delete operation,
         // oldSelection may no longer be in the document.
+        // FIXME(http://crbug.com/382809): if oldSelection is on a textarea
+        // element, we cause synchronous layout.
         if (shouldCheckSpellingAndGrammar
             && closeTyping
-            && oldSelection.isContentEditable()
-            && oldSelection.start().inDocument()
-            && !isSelectionInTextField(oldSelection)) {
-            spellCheckOldSelection(oldSelection, newAdjacentWords, newSelectedSentence);
+            && !isSelectionInTextField(oldSelection)
+            && (isSelectionInTextArea(oldSelection) || oldSelection.isContentEditable())
+            && oldSelection.start().inDocument()) {
+            spellCheckOldSelection(oldSelection, newAdjacentWords);
         }
 
+        // FIXME(http://crbug.com/382809):
+        // shouldEraseMarkersAfterChangeSelection is true, we cause synchronous
+        // layout.
         if (textChecker().shouldEraseMarkersAfterChangeSelection(TextCheckingTypeSpelling)) {
             if (RefPtrWillBeRawPtr<Range> wordRange = newAdjacentWords.toNormalizedRange())
                 m_frame.document()->markers().removeMarkers(wordRange.get(), DocumentMarker::Spelling);
@@ -758,6 +819,11 @@ void SpellChecker::respondToChangedSelection(const VisibleSelection& oldSelectio
         m_frame.document()->markers().removeMarkers(DocumentMarker::Grammar);
 }
 
+void SpellChecker::removeSpellingMarkers()
+{
+    m_frame.document()->markers().removeMarkers(DocumentMarker::MisspellingMarkers());
+}
+
 void SpellChecker::spellCheckAfterBlur()
 {
     if (!m_frame.selection().selection().isContentEditable())
@@ -769,10 +835,10 @@ void SpellChecker::spellCheckAfterBlur()
     }
 
     VisibleSelection empty;
-    spellCheckOldSelection(m_frame.selection().selection(), empty, empty);
+    spellCheckOldSelection(m_frame.selection().selection(), empty);
 }
 
-void SpellChecker::spellCheckOldSelection(const VisibleSelection& oldSelection, const VisibleSelection& newAdjacentWords, const VisibleSelection& newSelectedSentence)
+void SpellChecker::spellCheckOldSelection(const VisibleSelection& oldSelection, const VisibleSelection& newAdjacentWords)
 {
     VisiblePosition oldStart(oldSelection.visibleStart());
     VisibleSelection oldAdjacentWords = VisibleSelection(startOfWord(oldStart, LeftWordIfOnBoundary), endOfWord(oldStart, RightWordIfOnBoundary));
@@ -795,7 +861,7 @@ static Node* findFirstMarkable(Node* node)
             return node;
         if (node->renderer()->isTextControl())
             node = toRenderTextControl(node->renderer())->textFormControlElement()->visiblePositionForIndex(1).deepEquivalent().deprecatedNode();
-        else if (node->firstChild())
+        else if (node->hasChildren())
             node = node->firstChild();
         else
             node = node->nextSibling();
@@ -812,7 +878,7 @@ bool SpellChecker::selectionStartHasMarkerFor(DocumentMarker::MarkerType markerT
 
     unsigned startOffset = static_cast<unsigned>(from);
     unsigned endOffset = static_cast<unsigned>(from + length);
-    WillBeHeapVector<DocumentMarker*> markers = m_frame.document()->markers().markersFor(node);
+    DocumentMarkerVector markers = m_frame.document()->markers().markersFor(node);
     for (size_t i = 0; i < markers.size(); ++i) {
         DocumentMarker* marker = markers[i];
         if (marker->startOffset() <= startOffset && endOffset <= marker->endOffset() && marker->type() == markerType)
@@ -820,6 +886,11 @@ bool SpellChecker::selectionStartHasMarkerFor(DocumentMarker::MarkerType markerT
     }
 
     return false;
+}
+
+bool SpellChecker::selectionStartHasSpellingMarkerFor(int from, int length) const
+{
+    return selectionStartHasMarkerFor(DocumentMarker::Spelling, from, length);
 }
 
 TextCheckingTypeMask SpellChecker::resolveTextCheckingTypeMask(TextCheckingTypeMask textCheckingOptions)
@@ -838,7 +909,7 @@ TextCheckingTypeMask SpellChecker::resolveTextCheckingTypeMask(TextCheckingTypeM
 
 bool SpellChecker::unifiedTextCheckerEnabled() const
 {
-    return WebCore::unifiedTextCheckerEnabled(&m_frame);
+    return blink::unifiedTextCheckerEnabled(&m_frame);
 }
 
 void SpellChecker::cancelCheck()
@@ -853,4 +924,4 @@ void SpellChecker::requestTextChecking(const Element& element)
 }
 
 
-} // namespace WebCore
+} // namespace blink

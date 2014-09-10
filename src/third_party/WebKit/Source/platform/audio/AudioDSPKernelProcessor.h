@@ -38,7 +38,7 @@
 #include "wtf/ThreadingPrimitives.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBus;
 class AudioDSPKernel;
@@ -52,6 +52,7 @@ class PLATFORM_EXPORT AudioDSPKernelProcessor : public AudioProcessor {
 public:
     // numberOfChannels may be later changed if object is not yet in an "initialized" state
     AudioDSPKernelProcessor(float sampleRate, unsigned numberOfChannels);
+    virtual ~AudioDSPKernelProcessor();
 
     // Subclasses create the appropriate type of processing kernel here.
     // We'll call this to create a kernel for each channel.
@@ -74,6 +75,6 @@ protected:
     bool m_hasJustReset;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioDSPKernelProcessor_h

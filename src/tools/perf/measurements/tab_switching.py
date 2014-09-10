@@ -15,16 +15,20 @@ import time
 from metrics import histogram_util
 from metrics import power
 from telemetry.core import util
-from telemetry.page import page_measurement
+from telemetry.page import page_test
 from telemetry.value import histogram
 
 # TODO: Revisit this test once multitab support is finalized.
 
-class TabSwitching(page_measurement.PageMeasurement):
+class TabSwitching(page_test.PageTest):
+
+  # Amount of time to measure, in seconds.
+  SAMPLE_TIME = 30
+
   def __init__(self):
     super(TabSwitching, self).__init__()
     self._first_page_in_pageset = True
-    self._power_metric = power.PowerMetric()
+    self._power_metric = None
 
   def CustomizeBrowserOptions(self, options):
     options.AppendExtraBrowserArgs([
@@ -32,8 +36,9 @@ class TabSwitching(page_measurement.PageMeasurement):
     ])
     power.PowerMetric.CustomizeBrowserOptions(options)
 
-  def DidStartBrowser(self, browser):
+  def WillStartBrowser(self, browser):
     self._first_page_in_pageset = True
+    self._power_metric = power.PowerMetric(browser, TabSwitching.SAMPLE_TIME)
 
   def TabForPage(self, page, browser):
     if self._first_page_in_pageset:
@@ -48,7 +53,7 @@ class TabSwitching(page_measurement.PageMeasurement):
     # Restart the browser after the last page in the pageset.
     return len(browser.tabs) >= len(page.page_set.pages)
 
-  def MeasurePage(self, page, tab, results):
+  def ValidateAndMeasurePage(self, page, tab, results):
     """On the last tab, cycle through each tab that was opened and then record
     a single histogram for the tab switching metric."""
     if len(tab.browser.tabs) != len(page.page_set.pages):
@@ -57,10 +62,11 @@ class TabSwitching(page_measurement.PageMeasurement):
     # Measure power usage of tabs after quiescence.
     util.WaitFor(tab.HasReachedQuiescence, 60)
 
-    self._power_metric.Start(page, tab)
-    time.sleep(60)
-    self._power_metric.Stop(page, tab)
-    self._power_metric.AddResults(tab, results,)
+    if tab.browser.platform.CanMonitorPower():
+      self._power_metric.Start(page, tab)
+      time.sleep(TabSwitching.SAMPLE_TIME)
+      self._power_metric.Stop(page, tab)
+      self._power_metric.AddResults(tab, results,)
 
     histogram_name = 'MPArch.RWH_TabSwitchPaintDuration'
     histogram_type = histogram_util.BROWSER_HISTOGRAM

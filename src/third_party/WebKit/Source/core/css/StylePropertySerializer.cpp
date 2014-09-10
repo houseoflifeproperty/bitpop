@@ -29,7 +29,7 @@
 #include "wtf/BitArray.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 static bool isInitialOrInherit(const String& value)
 {
@@ -130,6 +130,7 @@ String StylePropertySerializer::asText() const
         case CSSPropertyFontFamily:
         case CSSPropertyLineHeight:
         case CSSPropertyFontSize:
+        case CSSPropertyFontStretch:
         case CSSPropertyFontStyle:
         case CSSPropertyFontVariant:
         case CSSPropertyFontWeight:
@@ -228,7 +229,7 @@ String StylePropertySerializer::asText() const
         } else
             value = property.value()->cssText();
 
-        if (value == "initial" && !CSSProperty::isInheritedProperty(propertyID))
+        if (value == "initial" && !CSSPropertyMetadata::isInheritedProperty(propertyID))
             continue;
 
         result.append(getPropertyText(propertyID, value, property.isImportant(), numDecls++));
@@ -365,6 +366,7 @@ void StylePropertySerializer::appendFontLonghandValueIfExplicit(CSSPropertyID pr
     case CSSPropertyFontStyle:
         break; // No prefix.
     case CSSPropertyFontFamily:
+    case CSSPropertyFontStretch:
     case CSSPropertyFontVariant:
     case CSSPropertyFontWeight:
         prefix = ' ';
@@ -401,6 +403,7 @@ String StylePropertySerializer::fontValue() const
     appendFontLonghandValueIfExplicit(CSSPropertyFontStyle, result, commonValue);
     appendFontLonghandValueIfExplicit(CSSPropertyFontVariant, result, commonValue);
     appendFontLonghandValueIfExplicit(CSSPropertyFontWeight, result, commonValue);
+    appendFontLonghandValueIfExplicit(CSSPropertyFontStretch, result, commonValue);
     if (!result.isEmpty())
         result.append(' ');
     result.append(fontSizeProperty.value()->cssText());
@@ -502,9 +505,9 @@ String StylePropertySerializer::getLayeredShorthandValue(const StylePropertyShor
         for (unsigned j = 0; j < size; j++) {
             RefPtrWillBeRawPtr<CSSValue> value = nullptr;
             if (values[j]) {
-                if (values[j]->isBaseValueList())
-                    value = toCSSValueList(values[j].get())->item(i);
-                else {
+                if (values[j]->isBaseValueList()) {
+                    value = toCSSValueList(values[j].get())->itemWithBoundsCheck(i);
+                } else {
                     value = values[j];
 
                     // Color only belongs in the last layer.
@@ -530,7 +533,7 @@ String StylePropertySerializer::getLayeredShorthandValue(const StylePropertyShor
                     RefPtrWillBeRawPtr<CSSValue> yValue = nullptr;
                     RefPtrWillBeRawPtr<CSSValue> nextValue = values[j + 1];
                     if (nextValue->isValueList())
-                        yValue = toCSSValueList(nextValue.get())->itemWithoutBoundsCheck(i);
+                        yValue = toCSSValueList(nextValue.get())->item(i);
                     else
                         yValue = nextValue;
 

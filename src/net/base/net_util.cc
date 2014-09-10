@@ -5,6 +5,7 @@
 #include "net/base/net_util.h"
 
 #include <errno.h>
+#include <string.h>
 
 #include <algorithm>
 #include <iterator>
@@ -501,6 +502,18 @@ bool IsIPAddressReserved(const IPAddressNumber& host_addr) {
   return false;
 }
 
+SockaddrStorage::SockaddrStorage(const SockaddrStorage& other)
+    : addr_len(other.addr_len),
+      addr(reinterpret_cast<struct sockaddr*>(&addr_storage)) {
+  memcpy(addr, other.addr, addr_len);
+}
+
+void SockaddrStorage::operator=(const SockaddrStorage& other) {
+  addr_len = other.addr_len;
+  // addr is already set to &this->addr_storage by default ctor.
+  memcpy(addr, other.addr, addr_len);
+}
+
 // Extracts the address and port portions of a sockaddr.
 bool GetIPAddressFromSockAddr(const struct sockaddr* sock_addr,
                               socklen_t sock_addr_len,
@@ -784,6 +797,28 @@ int ConvertAddressFamily(AddressFamily address_family) {
   }
   NOTREACHED();
   return AF_UNSPEC;
+}
+
+bool ParseURLHostnameToNumber(const std::string& hostname,
+                              IPAddressNumber* ip_number) {
+  // |hostname| is an already canoncalized hostname, conforming to RFC 3986.
+  // For an IP address, this is defined in Section 3.2.2 of RFC 3986, with
+  // the canonical form for IPv6 addresses defined in Section 4 of RFC 5952.
+  url::Component host_comp(0, hostname.size());
+
+  // If it has a bracket, try parsing it as an IPv6 address.
+  if (hostname[0] == '[') {
+    ip_number->resize(16);  // 128 bits.
+    return url::IPv6AddressToNumber(
+        hostname.data(), host_comp, &(*ip_number)[0]);
+  }
+
+  // Otherwise, try IPv4.
+  ip_number->resize(4);  // 32 bits.
+  int num_components;
+  url::CanonHostInfo::Family family = url::IPv4AddressToNumber(
+      hostname.data(), host_comp, &(*ip_number)[0], &num_components);
+  return family == url::CanonHostInfo::IPV4;
 }
 
 bool ParseIPLiteralToNumber(const std::string& ip_literal,

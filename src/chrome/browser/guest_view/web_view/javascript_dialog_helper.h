@@ -7,6 +7,8 @@
 
 #include "content/public/browser/javascript_dialog_manager.h"
 
+namespace extensions {
+
 class WebViewGuest;
 
 class JavaScriptDialogHelper : public content::JavaScriptDialogManager {
@@ -45,9 +47,11 @@ class JavaScriptDialogHelper : public content::JavaScriptDialogManager {
       const std::string& user_input);
 
   // Pointer to the webview that is being helped.
-  WebViewGuest* const webview_guest_;
+  WebViewGuest* const web_view_guest_;
 
   DISALLOW_COPY_AND_ASSIGN(JavaScriptDialogHelper);
 };
+
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_GUEST_VIEW_WEB_VIEW_JAVASCRIPT_DIALOG_HELPER_H_

@@ -94,15 +94,15 @@ class TabAndroid : public CoreTabHelperDelegate,
 
   virtual void HandlePopupNavigation(chrome::NavigateParams* params);
 
-  virtual void OnReceivedHttpAuthRequest(jobject auth_handler,
-                                         const base::string16& host,
-                                         const base::string16& realm);
-
   // Called to determine if chrome://welcome should contain links to the terms
   // of service and the privacy notice.
   virtual bool ShouldWelcomePageLinkToTermsOfService();
 
   bool HasPrerenderedUrl(GURL gurl);
+
+  void MakeLoadURLParams(
+      chrome::NavigateParams* params,
+      content::NavigationController::LoadURLParams* load_url_params);
 
   // CoreTabHelperDelegate ----------------------------------------------------
 
@@ -147,6 +147,10 @@ class TabAndroid : public CoreTabHelperDelegate,
                                            jstring jurl,
                                            jstring jtitle);
   bool Print(JNIEnv* env, jobject obj);
+  // Called to get favicon of current tab, return null if no favicon is
+  // avaliable for current tab.
+  base::android::ScopedJavaLocalRef<jobject> GetFavicon(JNIEnv* env,
+                                                        jobject obj);
 
   // Register the Tab's native methods through JNI.
   static bool RegisterTabAndroid(JNIEnv* env);

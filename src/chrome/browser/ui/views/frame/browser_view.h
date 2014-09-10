@@ -17,6 +17,7 @@
 #include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/browser_window_testing_views.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model_observer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
@@ -320,9 +321,11 @@ class BrowserView : public BrowserWindow,
   virtual void ShowBookmarkAppBubble(
       const WebApplicationInfo& web_app_info,
       const std::string& extension_id) OVERRIDE;
-  virtual void ShowTranslateBubble(content::WebContents* contents,
-                                   translate::TranslateStep step,
-                                   TranslateErrors::Type error_type) OVERRIDE;
+  virtual void ShowTranslateBubble(
+      content::WebContents* contents,
+      translate::TranslateStep step,
+      translate::TranslateErrors::Type error_type,
+      bool is_user_gesture) OVERRIDE;
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   virtual void ShowOneClickSigninBubble(
       OneClickSigninBubbleType type,

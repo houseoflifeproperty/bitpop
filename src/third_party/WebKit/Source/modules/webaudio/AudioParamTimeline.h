@@ -31,12 +31,11 @@
 
 #include "modules/webaudio/AudioContext.h"
 #include "wtf/Float32Array.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
+#include "wtf/Forward.h"
 #include "wtf/Threading.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioParamTimeline {
 public:
@@ -110,6 +109,6 @@ private:
     Mutex m_eventsLock;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioParamTimeline_h

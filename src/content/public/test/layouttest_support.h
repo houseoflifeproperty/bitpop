@@ -48,6 +48,10 @@ void EnableWebTestProxyCreation(
 // Sets gamepad provider to be used for layout tests.
 void SetMockGamepadProvider(RendererGamepadProvider* provider);
 
+// Sets a double that should be used when registering
+// a listener through WebKitPlatformSupport::setDeviceLightListener().
+void SetMockDeviceLightData(const double data);
+
 // Sets WebDeviceMotionData that should be used when registering
 // a listener through WebKitPlatformSupport::setDeviceMotionListener().
 void SetMockDeviceMotionData(const blink::WebDeviceMotionData& data);
@@ -55,14 +59,6 @@ void SetMockDeviceMotionData(const blink::WebDeviceMotionData& data);
 // Sets WebDeviceOrientationData that should be used when registering
 // a listener through WebKitPlatformSupport::setDeviceOrientationListener().
 void SetMockDeviceOrientationData(const blink::WebDeviceOrientationData& data);
-
-// Sets WebScreenOrientationType that should be used as a mock orientation.
-void SetMockScreenOrientation(
-    RenderView* render_view,
-    const blink::WebScreenOrientationType& orientation);
-
-// Resets the mock screen orientation data.
-void ResetMockScreenOrientation();
 
 // Notifies blink that battery status has changed.
 void MockBatteryStatusChanged(const blink::WebBatteryStatus& status);

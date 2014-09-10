@@ -25,6 +25,8 @@ using ::testing::Invoke;
 class ProfileSyncServiceMock : public ProfileSyncService {
  public:
   explicit ProfileSyncServiceMock(Profile* profile);
+  ProfileSyncServiceMock(
+      scoped_ptr<ProfileSyncComponentsFactory> factory, Profile* profile);
   virtual ~ProfileSyncServiceMock();
 
   // A utility used by sync tests to create a TestingProfile with a Google
@@ -37,9 +39,10 @@ class ProfileSyncServiceMock : public ProfileSyncService {
       content::BrowserContext* profile);
 
   MOCK_METHOD0(DisableForUser, void());
-  MOCK_METHOD3(OnBackendInitialized,
+  MOCK_METHOD4(OnBackendInitialized,
       void(const syncer::WeakHandle<syncer::JsBackend>&,
            const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&,
+           const std::string&,
            bool));
   MOCK_METHOD0(OnSyncCycleCompleted, void());
   MOCK_METHOD0(OnAuthError, void());
@@ -57,9 +60,7 @@ class ProfileSyncServiceMock : public ProfileSyncService {
   MOCK_METHOD2(OnUnrecoverableError,
                void(const tracked_objects::Location& location,
                const std::string& message));
-  MOCK_METHOD3(DisableDatatype, void(syncer::ModelType,
-               const tracked_objects::Location&,
-               std::string message));
+  MOCK_METHOD1(DisableDatatype, void(const syncer::SyncError&));
   MOCK_CONST_METHOD0(GetUserShare, syncer::UserShare*());
   MOCK_METHOD1(DeactivateDataType, void(syncer::ModelType));
   MOCK_METHOD0(UnsuppressAndStart, void());
@@ -100,16 +101,10 @@ class ProfileSyncServiceMock : public ProfileSyncService {
   virtual ScopedVector<browser_sync::DeviceInfo>
       GetAllSignedInDevices() const OVERRIDE;
 
-  virtual scoped_ptr<browser_sync::DeviceInfo> GetLocalDeviceInfo()
-      const OVERRIDE;
-  MOCK_CONST_METHOD0(GetLocalDeviceInfoMock,
-                     browser_sync::DeviceInfo*());
-  MOCK_CONST_METHOD0(GetLocalSyncCacheGUID, std::string());
-
   // DataTypeManagerObserver mocks.
   MOCK_METHOD0(OnConfigureBlocked, void());
   MOCK_METHOD1(OnConfigureDone,
-               void(const browser_sync::DataTypeManager::ConfigureResult&));
+               void(const sync_driver::DataTypeManager::ConfigureResult&));
   MOCK_METHOD0(OnConfigureRetry, void());
   MOCK_METHOD0(OnConfigureStart, void());
 

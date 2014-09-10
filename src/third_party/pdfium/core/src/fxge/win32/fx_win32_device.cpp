@@ -16,7 +16,7 @@
 #include "../agg/include/fx_agg_driver.h"
 #include "../../../include/fxge/fx_freetype.h"
 #include "../../../include/fxcodec/fx_codec.h"
-class CWin32FontInfo : public IFX_SystemFontInfo
+class CWin32FontInfo FX_FINAL : public IFX_SystemFontInfo
 {
 public:
     CWin32FontInfo();
@@ -204,23 +204,16 @@ const _FontNameMap g_JpFontNameMap[] = {
     {"MS Mincho", "Heiseimin-W3"},
     {"MS Gothic", "Jun101-Light"},
 };
-const _FontNameMap g_GbFontNameMap[1];
 extern "C" {
     static int compareString(const void* key, const void* element)
     {
         return FXSYS_stricmp((FX_LPCSTR)key, ((_FontNameMap*)element)->m_pSrcFontName);
     }
 }
-FX_BOOL _GetSubFontName(CFX_ByteString& name, int lang)
+FX_BOOL _GetSubFontName(CFX_ByteString& name)
 {
     int size = sizeof g_JpFontNameMap;
     void* pFontnameMap = (void*)g_JpFontNameMap;
-    if (lang == 1) {
-        size = sizeof g_GbFontNameMap;
-        pFontnameMap = (void*)g_GbFontNameMap;
-    } else if (lang == 2) {
-        size = 0;
-    }
     _FontNameMap* found = (_FontNameMap*)FXSYS_bsearch((FX_LPCSTR)name, pFontnameMap,
                           size / sizeof (_FontNameMap), sizeof (_FontNameMap), compareString);
     if (found == NULL) {
@@ -280,7 +273,7 @@ void CWin32FontInfo::GetJapanesePreference(CFX_ByteString& face, int weight, int
         }
         return;
     }
-    if (_GetSubFontName(face, 0)) {
+    if (_GetSubFontName(face)) {
         return;
     }
     if (!(picth_family & FF_ROMAN) && weight > 400) {
@@ -328,7 +321,9 @@ void* CWin32FontInfo::MapFont(int weight, FX_BOOL bItalic, int charset, int pitc
     for (int i = 0; i < iCount; ++i) {
         if (face == VariantNames[i].m_pFaceName) {
             CFX_WideString wsFace = CFX_WideString::FromLocal(facebuf);
-            CFX_WideString wsName = CFX_WideString::FromUTF16LE((const unsigned short*)VariantNames[i].m_pVariantName);
+            const unsigned short* pName = (const unsigned short*)VariantNames[i].m_pVariantName;
+            FX_STRSIZE len = CFX_WideString::WStringLength(pName);
+            CFX_WideString wsName = CFX_WideString::FromUTF16LE(pName, len);
             if (wsFace == wsName) {
                 return hFont;
             }
@@ -528,7 +523,7 @@ FX_BOOL CGdiDeviceDriver::GDI_StretchDIBits(const CFX_DIBitmap* pBitmap1, int de
         return FALSE;
     }
     CFX_ByteString info = CFX_WindowsDIB::GetBitmapInfo(pBitmap);
-    if (abs(dest_width) * abs(dest_height) < pBitmap1->GetWidth() * pBitmap1->GetHeight() * 4 ||
+    if ((FX_INT64)abs(dest_width) * abs(dest_height) < (FX_INT64)pBitmap1->GetWidth() * pBitmap1->GetHeight() * 4 ||
             (flags & FXDIB_INTERPOL) || (flags & FXDIB_BICUBIC_INTERPOL)) {
         SetStretchBltMode(m_hDC, HALFTONE);
     } else {
@@ -536,7 +531,7 @@ FX_BOOL CGdiDeviceDriver::GDI_StretchDIBits(const CFX_DIBitmap* pBitmap1, int de
     }
     CFX_DIBitmap* pToStrechBitmap = pBitmap;
     bool del = false;
-    if (m_DeviceClass == FXDC_PRINTER && (pBitmap->GetWidth() * pBitmap->GetHeight() > abs(dest_width) * abs(dest_height))) {
+    if (m_DeviceClass == FXDC_PRINTER && ((FX_INT64)pBitmap->GetWidth() * pBitmap->GetHeight() > (FX_INT64)abs(dest_width) * abs(dest_height))) {
         pToStrechBitmap = pBitmap->StretchTo(dest_width, dest_height);
         del = true;
     }

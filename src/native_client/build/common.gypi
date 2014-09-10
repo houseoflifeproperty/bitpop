@@ -35,6 +35,11 @@
       ['OS=="mac"', {
         # On Mac only clang is new enough to build the trusted code.
         'clang%': 1,
+        # The Mac SDK is set for iOS builds and passed through to Mac
+        # sub-builds. This allows the Mac sub-build SDK in an iOS build to be
+        # overridden from the command line the same way it is for a Mac build.
+        'mac_sdk%': '<!(python <(DEPTH)/native_client/build/mac/find_sdk.py 10.6)',
+
       }],
       # Set ARM float abi compilation flag.
       ['OS=="android"', {
@@ -70,9 +75,6 @@
     # arm_neon==0).
     'arm_fpu%': 'vfpv3',
 
-    # Version of the mac sdk to use.
-    'mac_sdk%': '10.6',
-
     'mac_deployment_target%': '10.6',
 
     # NOTE: end adapted from them chrome common.gypi file for arm
@@ -97,8 +99,7 @@
         'buildtype%': 'Dev',
 
         'conditions': [
-          # Compute the architecture that we're building for. Default to the
-          # architecture that we're building on.
+          # Compute the architecture that we're building on.
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
             # This handles the Linux platforms we generally deal with. Anything
             # else gets passed through, which probably won't work very well;
@@ -110,20 +111,22 @@
             #    to mean x86 -> arm cross compile. When actually running on an
             #    arm board, we'll generate ia32 for now, so that the generation
             #    succeeds.
-            'target_arch%':
+            'host_arch%':
                 '<!(echo "<!pymod_do_main(detect_nacl_host_arch)" | sed -e "s/arm.*/ia32/")',
 
           }, {  # OS!="linux"
-            'target_arch%': 'ia32',
+            'host_arch%': 'ia32',
           }],
         ]
       },
       # These come from the above variable scope.
       'nacl_standalone%': '<(nacl_standalone)',
-      'target_arch%': '<(target_arch)',
-      'host_arch%': '<(target_arch)',
+      'host_arch%': '<(host_arch)',
       'branding%': '<(branding)',
       'buildtype%': '<(buildtype)',
+
+      # By default, build for the architecture that we're building on.
+      'target_arch%': '<(host_arch)',
 
       'conditions': [
         # The system root for cross-compiles. Default: none.
@@ -150,6 +153,7 @@
     },
     # These come from the above variable scope.
     'target_arch%': '<(target_arch)',
+    'host_arch%': '<(host_arch)',
     'sysroot%': '<(sysroot)',
     'nacl_standalone%': '<(nacl_standalone)',
     'branding%': '<(branding)',
@@ -406,16 +410,32 @@
                 }
               },],
             ],
-            'asflags': [
-              '<(mbits_flag)',
+            'target_conditions': [
+              ['_toolset=="target"', {
+                'asflags': [ '<(mbits_flag)', ],
+                'cflags': [ '<(mbits_flag)', ],
+                'ldflags': [ '<(mbits_flag)', ],
+              }],
             ],
             'cflags': [
-              '<(mbits_flag)',
               '-fno-exceptions',
               '-Wall',
             ],
-            'ldflags': [
-              '<(mbits_flag)',
+          }],
+          ['host_arch=="ia32" or host_arch=="x64"', {
+            'conditions': [
+              ['host_arch=="x64"', {
+                'variables': { 'host_mbits_flag': '-m64', },
+              }, {
+                'variables': { 'host_mbits_flag': '-m32', }
+              }],
+            ],
+            'target_conditions': [
+              ['_toolset=="host"', {
+                'asflags': [ '<(host_mbits_flag)', ],
+                'cflags': [ '<(host_mbits_flag)', ],
+                'ldflags': [ '<(host_mbits_flag)', ],
+              }],
             ],
           }],
         ],
@@ -677,6 +697,7 @@
           'WIN32_LEAN_AND_MEAN',
           '_SECURE_ATL',
           '__STDC_LIMIT_MACROS=1',
+          '_HAS_EXCEPTIONS=0',
 
           'NACL_LINUX=0',
           'NACL_ANDROID=0',
@@ -684,11 +705,6 @@
           'NACL_WINDOWS=1'
         ],
         'conditions': [
-          ['component=="static_library"', {
-            'defines': [
-              '_HAS_EXCEPTIONS=0',
-            ],
-          }],
           ['MSVS_VERSION=="2008"', {
             'defines': [
               '_HAS_TR1=0',
@@ -708,14 +724,7 @@
             'WarningLevel': '3',
             'WarnAsError': 'true',
             'DebugInformationFormat': '3',
-
-            'conditions': [
-              ['component=="shared_library"', {
-                'ExceptionHandling': '1',  # /EHsc
-              }, {
-                'ExceptionHandling': '0',
-              }],
-            ],
+            'ExceptionHandling': '0',
           },
           'VCLibrarianTool': {
             'AdditionalOptions': ['/ignore:4221'],

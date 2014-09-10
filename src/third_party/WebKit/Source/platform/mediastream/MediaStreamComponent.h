@@ -43,7 +43,7 @@ namespace blink {
 class WebAudioSourceProvider;
 }
 
-namespace WebCore {
+namespace blink {
 
 class MediaStreamDescriptor;
 class MediaStreamSource;
@@ -63,6 +63,7 @@ public:
     String id() const { return m_id; }
     bool enabled() const { return m_enabled; }
     void setEnabled(bool enabled) { m_enabled = enabled; }
+    bool muted() const { return m_muted; }
 
 #if ENABLE(WEB_AUDIO)
     AudioSourceProvider* audioSourceProvider() { return &m_sourceProvider; }
@@ -88,11 +89,11 @@ private:
 
         virtual ~AudioSourceProviderImpl() { }
 
-        // Wraps the given blink::WebAudioSourceProvider to WebCore::AudioSourceProvider.
+        // Wraps the given blink::WebAudioSourceProvider to blink::AudioSourceProvider.
         void wrap(blink::WebAudioSourceProvider*);
 
-        // WebCore::AudioSourceProvider
-        virtual void provideInput(WebCore::AudioBus*, size_t framesToProcess) OVERRIDE;
+        // blink::AudioSourceProvider
+        virtual void provideInput(blink::AudioBus*, size_t framesToProcess) OVERRIDE;
 
     private:
         blink::WebAudioSourceProvider* m_webAudioSourceProvider;
@@ -105,11 +106,12 @@ private:
     RefPtr<MediaStreamSource> m_source;
     String m_id;
     bool m_enabled;
+    bool m_muted;
     OwnPtr<ExtraData> m_extraData;
 };
 
 typedef Vector<RefPtr<MediaStreamComponent> > MediaStreamComponentVector;
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MediaStreamComponent_h

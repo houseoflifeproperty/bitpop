@@ -45,7 +45,6 @@ var NTP_LOGGING_EVENT_TYPE = {
   NTP_MOUSEOVER: 9
 };
 
-
 /**
  * Type of the impression provider for a generic client-provided suggestion.
  * @type {string}
@@ -59,6 +58,12 @@ var CLIENT_PROVIDER_NAME = 'client';
  * @const
  */
 var SERVER_PROVIDER_NAME = 'server';
+
+/**
+ * The origin of this request.
+ * @const {string}
+ */
+var DOMAIN_ORIGIN = '{{ORIGIN}}';
 
 /**
  * Parses query parameters from Location.
@@ -91,18 +96,29 @@ function parseQueryParams(location) {
  * @param {string} href The destination for the link.
  * @param {string} title The title for the link.
  * @param {string|undefined} text The text for the link or none.
+ * @param {string|undefined} direction The text direction.
  * @param {string|undefined} provider A provider name (max 8 alphanumeric
  *     characters) used for logging. Undefined if suggestion is not coming from
  *     the server.
  * @return {HTMLAnchorElement} A new link element.
  */
-function createMostVisitedLink(params, href, title, text, provider) {
+function createMostVisitedLink(params, href, title, text, direction, provider) {
   var styles = getMostVisitedStyles(params, !!text);
   var link = document.createElement('a');
   link.style.color = styles.color;
   link.style.fontSize = styles.fontSize + 'px';
   if (styles.fontFamily)
     link.style.fontFamily = styles.fontFamily;
+  if (styles.textAlign)
+    link.style.textAlign = styles.textAlign;
+  if (styles.textFadePos) {
+    var dir = /^rtl$/i.test(direction) ? 'to left' : 'to right';
+    // The fading length in pixels is passed by the caller.
+    var mask = 'linear-gradient(' + dir + ', rgba(0,0,0,1), rgba(0,0,0,1) ' +
+        styles.textFadePos + 'px, rgba(0,0,0,0))';
+    link.style.textOverflow = 'clip';
+    link.style.webkitMask = mask;
+  }
 
   link.href = href;
   link.title = title;
@@ -121,12 +137,19 @@ function createMostVisitedLink(params, href, title, text, provider) {
   // working (those with schemes different from http and https). Therefore,
   // navigateContentWindow is being used in order to get all schemes working.
   link.addEventListener('click', function handleNavigation(e) {
+    var isServerSuggestion = 'url' in params;
+
+    // Ping are only populated for server-side suggestions, never for MV.
+    if (isServerSuggestion && params.ping) {
+      generatePing(DOMAIN_ORIGIN + params.ping);
+    }
+
     var ntpApiHandle = chrome.embeddedSearch.newTabPage;
     if ('pos' in params && isFinite(params.pos)) {
       ntpApiHandle.logMostVisitedNavigation(parseInt(params.pos, 10),
                                             provider || '');
     }
-    var isServerSuggestion = 'url' in params;
+
     if (!isServerSuggestion) {
       e.preventDefault();
       ntpApiHandle.navigateContentWindow(href, getDispositionFromEvent(e));
@@ -140,9 +163,11 @@ function createMostVisitedLink(params, href, title, text, provider) {
 
 /**
  * Decodes most visited styles from URL parameters.
- * - f: font-family
- * - fs: font-size as a number in pixels.
  * - c: A hexadecimal number interpreted as a hex color code.
+ * - f: font-family.
+ * - fs: font-size as a number in pixels.
+ * - ta: text-align property, as a string.
+ * - tf: specifying a text fade starting position, in pixels.
  * @param {Object.<string, string>} params URL parameters specifying style.
  * @param {boolean} isTitle if the style is for the Most Visited Title.
  * @return {Object} Styles suitable for CSS interpolation.
@@ -165,6 +190,13 @@ function getMostVisitedStyles(params, isTitle) {
     styles.fontFamily = params.f;
   if ('fs' in params && isFinite(parseInt(params.fs, 10)))
     styles.fontSize = parseInt(params.fs, 10);
+  if ('ta' in params && /^[-0-9a-zA-Z ,]+$/.test(params.ta))
+    styles.textAlign = params.ta;
+  if ('tf' in params) {
+    var tf = parseInt(params.tf, 10);
+    if (isFinite(tf))
+      styles.textFadePos = tf;
+  }
   return styles;
 }
 
@@ -175,7 +207,7 @@ function getMostVisitedStyles(params, isTitle) {
  *     data to fill.
  */
 function fillMostVisited(location, fill) {
-  var params = parseQueryParams(document.location);
+  var params = parseQueryParams(location);
   params.rid = parseInt(params.rid, 10);
   if (!isFinite(params.rid) && !params.url)
     return;
@@ -211,4 +243,21 @@ function fillMostVisited(location, fill) {
   if (data.direction)
     document.body.dir = data.direction;
   fill(params, data);
+}
+
+
+/**
+ * Sends a POST request to ping url.
+ * @param {string} url URL to be pinged.
+ */
+function generatePing(url) {
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon(url);
+  } else {
+    // if sendBeacon is not enabled, we fallback for "a ping".
+    var a = document.createElement('a');
+    a.href = '#';
+    a.ping = url;
+    a.click();
+  }
 }

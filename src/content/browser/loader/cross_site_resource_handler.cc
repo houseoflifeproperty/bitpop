@@ -16,6 +16,7 @@
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/loader/resource_request_info_impl.h"
+#include "content/browser/transition_request_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/global_request_id.h"
@@ -84,6 +85,16 @@ void OnCrossSiteResponseHelper(const CrossSiteResponseParams& params) {
   }
 }
 
+void OnDeferredAfterResponseStartedHelper(
+    const GlobalRequestID& global_request_id,
+    int render_frame_id,
+    const TransitionLayerData& transition_data) {
+  RenderFrameHostImpl* rfh =
+      RenderFrameHostImpl::FromID(global_request_id.child_id, render_frame_id);
+  if (rfh)
+    rfh->OnDeferredAfterResponseStarted(global_request_id, transition_data);
+}
+
 bool CheckNavigationPolicyOnUI(GURL url, int process_id, int render_frame_id) {
   RenderFrameHostImpl* rfh =
       RenderFrameHostImpl::FromID(process_id, render_frame_id);
@@ -117,20 +128,44 @@ CrossSiteResourceHandler::~CrossSiteResourceHandler() {
 }
 
 bool CrossSiteResourceHandler::OnRequestRedirected(
-    const GURL& new_url,
+    const net::RedirectInfo& redirect_info,
     ResourceResponse* response,
     bool* defer) {
-  // Top-level requests change their cookie first-party URL on redirects, while
-  // subframes retain the parent's value.
-  if (GetRequestInfo()->GetResourceType() == ResourceType::MAIN_FRAME)
-    request()->set_first_party_for_cookies(new_url);
-
   // We should not have started the transition before being redirected.
   DCHECK(!in_cross_site_transition_);
-  return next_handler_->OnRequestRedirected(new_url, response, defer);
+  return next_handler_->OnRequestRedirected(redirect_info, response, defer);
 }
 
 bool CrossSiteResourceHandler::OnResponseStarted(
+    ResourceResponse* response,
+    bool* defer) {
+  response_ = response;
+  has_started_response_ = true;
+
+  // Store this handler on the ExtraRequestInfo, so that RDH can call our
+  // ResumeResponse method when we are ready to resume.
+  ResourceRequestInfoImpl* info = GetRequestInfo();
+  info->set_cross_site_handler(this);
+
+  TransitionLayerData transition_data;
+  bool is_navigation_transition =
+      TransitionRequestManager::GetInstance()->HasPendingTransitionRequest(
+          info->GetChildID(), info->GetRenderFrameID(), request()->url(),
+          &transition_data);
+
+  if (is_navigation_transition) {
+    if (response_)
+      transition_data.response_headers = response_->head.headers;
+    transition_data.request_url = request()->url();
+
+    return OnNavigationTransitionResponseStarted(response, defer,
+                                                 transition_data);
+  } else {
+    return OnNormalResponseStarted(response, defer);
+  }
+}
+
+bool CrossSiteResourceHandler::OnNormalResponseStarted(
     ResourceResponse* response,
     bool* defer) {
   // At this point, we know that the response is safe to send back to the
@@ -138,7 +173,6 @@ bool CrossSiteResourceHandler::OnResponseStarted(
   // browsing checks.
   // We should not have already started the transition before now.
   DCHECK(!in_cross_site_transition_);
-  has_started_response_ = true;
 
   ResourceRequestInfoImpl* info = GetRequestInfo();
 
@@ -155,15 +189,17 @@ bool CrossSiteResourceHandler::OnResponseStarted(
   // or for WebUI processes for now, since pages like the NTP host multiple
   // cross-site WebUI iframes.
   if (!should_transfer &&
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess) &&
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSitePerProcess) &&
       !ChildProcessSecurityPolicyImpl::GetInstance()->HasWebUIBindings(
           info->GetChildID())) {
     return DeferForNavigationPolicyCheck(info, response, defer);
   }
 
-  bool swap_needed = should_transfer ||
-      CrossSiteRequestManager::GetInstance()->
-          HasPendingCrossSiteRequest(info->GetChildID(), info->GetRouteID());
+  bool swap_needed =
+      should_transfer ||
+      CrossSiteRequestManager::GetInstance()->HasPendingCrossSiteRequest(
+          info->GetChildID(), info->GetRenderFrameID());
 
   // If this is a download, just pass the response through without doing a
   // cross-site check.  The renderer will see it is a download and abort the
@@ -197,6 +233,37 @@ bool CrossSiteResourceHandler::OnResponseStarted(
   return true;
 }
 
+bool CrossSiteResourceHandler::OnNavigationTransitionResponseStarted(
+    ResourceResponse* response,
+    bool* defer,
+    const TransitionLayerData& transition_data) {
+  ResourceRequestInfoImpl* info = GetRequestInfo();
+
+  GlobalRequestID global_id(info->GetChildID(), info->GetRequestID());
+  int render_frame_id = info->GetRenderFrameID();
+  BrowserThread::PostTask(
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(
+          &OnDeferredAfterResponseStartedHelper,
+          global_id,
+          render_frame_id,
+          transition_data));
+
+  *defer = true;
+  OnDidDefer();
+  return true;
+}
+
+void CrossSiteResourceHandler::ResumeResponseDeferredAtStart(int request_id) {
+  bool defer = false;
+  if (!OnNormalResponseStarted(response_, &defer)) {
+    controller()->Cancel();
+  } else if (!defer) {
+    ResumeIfDeferred();
+  }
+}
+
 void CrossSiteResourceHandler::ResumeOrTransfer(bool is_transfer) {
   if (is_transfer) {
     StartCrossSiteTransition(response_, is_transfer);
@@ -222,7 +289,7 @@ void CrossSiteResourceHandler::OnResponseCompleted(
     if (has_started_response_ ||
         status.status() != net::URLRequestStatus::FAILED ||
         !CrossSiteRequestManager::GetInstance()->HasPendingCrossSiteRequest(
-            info->GetChildID(), info->GetRouteID())) {
+            info->GetChildID(), info->GetRenderFrameID())) {
       next_handler_->OnResponseCompleted(status, security_info, defer);
       return;
     }

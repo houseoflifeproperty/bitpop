@@ -29,14 +29,14 @@
 #ifndef Database_h
 #define Database_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/webdatabase/DatabaseBackend.h"
 #include "modules/webdatabase/DatabaseBase.h"
 #include "modules/webdatabase/DatabaseBasicTypes.h"
 #include "modules/webdatabase/DatabaseError.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ChangeVersionData;
 class DatabaseCallback;
@@ -95,6 +95,6 @@ private:
     friend class SQLTransaction;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Database_h

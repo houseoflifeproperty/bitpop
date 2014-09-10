@@ -34,6 +34,7 @@ class RenderAudioSourceProvider;
 
 namespace blink {
 class WebContentDecryptionModule;
+class WebContentDecryptionModuleResult;
 class WebLocalFrame;
 }
 
@@ -152,22 +153,21 @@ class WebMediaPlayerImpl
       const blink::WebString& key_system,
       const blink::WebString& session_id);
 
+  // TODO(jrummell): Remove this method once Blink updated to use the other
+  // two methods.
   virtual void setContentDecryptionModule(
       blink::WebContentDecryptionModule* cdm);
+  virtual void setContentDecryptionModule(
+      blink::WebContentDecryptionModule* cdm,
+      blink::WebContentDecryptionModuleResult result);
+  virtual void setContentDecryptionModuleSync(
+      blink::WebContentDecryptionModule* cdm);
 
-  // Notifies blink that the entire media element region has been invalidated.
-  // This path is slower than notifying the compositor directly as it performs
-  // more work and can trigger layouts. It should only be used in two cases:
-  //   1) Major state changes (e.g., first frame available, run time error
-  //      occured)
-  //   2) Compositing not available
-  void InvalidateOnMainThread();
-
-  void OnPipelineSeek(media::PipelineStatus status);
+  void OnPipelineSeeked(bool time_changed, media::PipelineStatus status);
   void OnPipelineEnded();
   void OnPipelineError(media::PipelineStatus error);
   void OnPipelineMetadata(media::PipelineMetadata metadata);
-  void OnPipelinePrerollCompleted();
+  void OnPipelineBufferingStateChanged(media::BufferingState buffering_state);
   void OnDemuxerOpened();
   void OnKeyAdded(const std::string& session_id);
   void OnKeyError(const std::string& session_id,
@@ -237,6 +237,12 @@ class WebMediaPlayerImpl
   // NULL immediately and reset.
   void SetDecryptorReadyCB(const media::DecryptorReadyCB& decryptor_ready_cb);
 
+  // Called when the ContentDecryptionModule has been attached to the
+  // pipeline/decoders.
+  void ContentDecryptionModuleAttached(
+      blink::WebContentDecryptionModuleResult result,
+      bool success);
+
   // Returns the current video frame from |compositor_|. Blocks until the
   // compositor can return the frame.
   scoped_refptr<media::VideoFrame> GetCurrentFrameFromCompositor();
@@ -246,6 +252,9 @@ class WebMediaPlayerImpl
   // TODO(hclam): get rid of these members and read from the pipeline directly.
   blink::WebMediaPlayer::NetworkState network_state_;
   blink::WebMediaPlayer::ReadyState ready_state_;
+
+  // Preload state for when |data_source_| is created after setPreload().
+  content::Preload preload_;
 
   // Message loops for posting tasks on Chrome's main thread. Also used
   // for DCHECKs so methods calls won't execute in the wrong thread.
@@ -290,15 +299,15 @@ class WebMediaPlayerImpl
   bool pending_seek_;
   double pending_seek_seconds_;
 
+  // Tracks whether to issue time changed notifications during buffering state
+  // changes.
+  bool should_notify_time_changed_;
+
   blink::WebMediaPlayerClient* client_;
 
   base::WeakPtr<WebMediaPlayerDelegate> delegate_;
 
   base::Callback<void(const base::Closure&)> defer_load_cb_;
-
-  // Since accelerated compositing status is only known after the first layout,
-  // we delay reporting it to UMA until that time.
-  bool accelerated_compositing_reported_;
 
   bool incremented_externally_allocated_memory_;
 

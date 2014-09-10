@@ -91,6 +91,7 @@ static_library("pdfium") {
   configs += [ ":pdfium_config", "//build/config/compiler:no_chromium_code" ]
 
   deps = [
+    ":safemath",
     ":fdrm",
     ":formfiller",
     ":fpdfapi",
@@ -116,6 +117,18 @@ static_library("pdfium") {
 
 # Targets below this are only visible within this file.
 visibility = ":*"
+
+component("safemath") {
+  sources = [
+    "third_party/logging.h",
+    "third_party/macros.h",
+    "third_party/template_util.h",
+    "third_party/numerics/safe_conversions.h",
+    "third_party/numerics/safe_conversions_impl.h",
+    "third_party/numerics/safe_math.h",
+    "third_party/numerics/safe_math_impl.h",
+  ]
+}
 
 static_library("fdrm") {
   sources = [
@@ -512,7 +525,6 @@ static_library("fxcrt") {
     "core/src/fxcrt/fx_basic_list.cpp",
     "core/src/fxcrt/fx_basic_maps.cpp",
     "core/src/fxcrt/fx_basic_memmgr.cpp",
-    "core/src/fxcrt/fx_basic_memmgr_mini.cpp",
     "core/src/fxcrt/fx_basic_plex.cpp",
     "core/src/fxcrt/fx_basic_utf.cpp",
     "core/src/fxcrt/fx_basic_util.cpp",
@@ -522,7 +534,6 @@ static_library("fxcrt") {
     "core/src/fxcrt/fx_unicode.cpp",
     "core/src/fxcrt/fx_xml_composer.cpp",
     "core/src/fxcrt/fx_xml_parser.cpp",
-    "core/src/fxcrt/mem_int.h",
     "core/src/fxcrt/plex.h",
     "core/src/fxcrt/xml_int.h",
   ]
@@ -792,6 +803,7 @@ static_library("javascript") {
   }
   configs += [ ":pdfium_config", "//build/config/compiler:no_chromium_code" ]
   include_dirs = [
+    "//v8",
     "//v8/include",
   ]
   deps = [
@@ -812,6 +824,7 @@ static_library("jsapi") {
   }
   configs += [ ":pdfium_config", "//build/config/compiler:no_chromium_code" ]
   include_dirs = [
+    "//v8",
     "//v8/include",
   ]
   deps = [

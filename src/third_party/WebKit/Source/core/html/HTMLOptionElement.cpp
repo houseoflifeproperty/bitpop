@@ -27,21 +27,23 @@
 #include "config.h"
 #include "core/html/HTMLOptionElement.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/ScriptLoader.h"
 #include "core/dom/Text.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLDataListElement.h"
+#include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLSelectElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/rendering/RenderTheme.h"
 #include "wtf/Vector.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -54,15 +56,22 @@ HTMLOptionElement::HTMLOptionElement(Document& document)
     ScriptWrappable::init(this);
 }
 
+HTMLOptionElement::~HTMLOptionElement()
+{
+}
+
 PassRefPtrWillBeRawPtr<HTMLOptionElement> HTMLOptionElement::create(Document& document)
 {
-    return adoptRefWillBeNoop(new HTMLOptionElement(document));
+    RefPtrWillBeRawPtr<HTMLOptionElement> option = adoptRefWillBeNoop(new HTMLOptionElement(document));
+    option->ensureUserAgentShadowRoot();
+    return option.release();
 }
 
 PassRefPtrWillBeRawPtr<HTMLOptionElement> HTMLOptionElement::createForJSConstructor(Document& document, const String& data, const AtomicString& value,
     bool defaultSelected, bool selected, ExceptionState& exceptionState)
 {
     RefPtrWillBeRawPtr<HTMLOptionElement> element = adoptRefWillBeNoop(new HTMLOptionElement(document));
+    element->ensureUserAgentShadowRoot();
     element->appendChild(Text::create(document, data.isNull() ? "" : data), exceptionState);
     if (exceptionState.hadException())
         return nullptr;
@@ -93,12 +102,6 @@ void HTMLOptionElement::detach(const AttachContext& context)
 {
     m_style.clear();
     HTMLElement::detach(context);
-}
-
-bool HTMLOptionElement::rendererIsFocusable() const
-{
-    // Option elements do not have a renderer so we check the renderStyle instead.
-    return renderStyle() && renderStyle()->display() != NONE;
 }
 
 String HTMLOptionElement::text() const
@@ -188,6 +191,8 @@ void HTMLOptionElement::parseAttribute(const QualifiedName& name, const AtomicSt
     } else if (name == selectedAttr) {
         if (bool willBeSelected = !value.isNull())
             setSelected(willBeSelected);
+    } else if (name == labelAttr) {
+        updateLabel();
     } else
         HTMLElement::parseAttribute(name, value);
 }
@@ -245,13 +250,14 @@ void HTMLOptionElement::setSelectedState(bool selected)
         select->invalidateSelectedItems();
 }
 
-void HTMLOptionElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void HTMLOptionElement::childrenChanged(const ChildrenChange& change)
 {
     if (HTMLDataListElement* dataList = ownerDataListElement())
         dataList->optionElementChildrenChanged();
     else if (HTMLSelectElement* select = ownerSelectElement())
         select->optionElementChildrenChanged();
-    HTMLElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    updateLabel();
+    HTMLElement::childrenChanged(change);
 }
 
 HTMLDataListElement* HTMLOptionElement::ownerDataListElement() const
@@ -279,12 +285,9 @@ void HTMLOptionElement::setLabel(const AtomicString& label)
 
 void HTMLOptionElement::updateNonRenderStyle()
 {
-    bool oldDisplayNoneStatus = isDisplayNone();
     m_style = originalStyleForRenderer();
-    if (oldDisplayNoneStatus != isDisplayNone()) {
-        if (HTMLSelectElement* select = ownerSelectElement())
-            select->updateListOnRenderer();
-    }
+    if (HTMLSelectElement* select = ownerSelectElement())
+        select->updateListOnRenderer();
 }
 
 RenderStyle* HTMLOptionElement::nonRendererStyle() const
@@ -347,6 +350,7 @@ void HTMLOptionElement::removedFrom(ContainerNode* insertionPoint)
 {
     if (HTMLSelectElement* select = Traversal<HTMLSelectElement>::firstAncestorOrSelf(*insertionPoint)) {
         select->setRecalcListItems();
+        select->optionRemoved(*this);
     }
     HTMLElement::removedFrom(insertionPoint);
 }
@@ -374,16 +378,41 @@ HTMLFormElement* HTMLOptionElement::form() const
     return 0;
 }
 
-bool HTMLOptionElement::isDisplayNone() const
+void HTMLOptionElement::didAddUserAgentShadowRoot(ShadowRoot& root)
 {
-    ContainerNode* parent = parentNode();
-    // Check for parent optgroup having display NONE
-    if (parent && isHTMLOptGroupElement(*parent)) {
-        if (toHTMLOptGroupElement(*parent).isDisplayNone())
-            return true;
-    }
-    RenderStyle* style = nonRendererStyle();
-    return style && style->display() == NONE;
+    updateLabel();
 }
 
-} // namespace WebCore
+void HTMLOptionElement::updateLabel()
+{
+    if (ShadowRoot* root = userAgentShadowRoot())
+        root->setTextContent(textIndentedToRespectGroupLabel());
+}
+
+bool HTMLOptionElement::spatialNavigationFocused() const
+{
+    HTMLSelectElement* select = ownerSelectElement();
+    if (!select || !select->focused())
+        return false;
+    return select->spatialNavigationFocusedOption() == this;
+}
+
+bool HTMLOptionElement::isDisplayNone() const
+{
+    // If m_style is not set, then the node is still unattached.
+    // We have to wait till it gets attached to read the display property.
+    if (!m_style)
+        return false;
+
+    if (m_style->display() != NONE) {
+        Element* parent = parentElement();
+        ASSERT(parent);
+        if (isHTMLOptGroupElement(*parent)) {
+            RenderStyle* parentStyle = parent->renderStyle() ? parent->renderStyle() : parent->computedStyle();
+            return !parentStyle || parentStyle->display() == NONE;
+        }
+    }
+    return m_style->display() == NONE;
+}
+
+} // namespace blink

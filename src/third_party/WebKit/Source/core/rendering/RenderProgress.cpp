@@ -27,9 +27,7 @@
 #include "wtf/CurrentTime.h"
 #include "wtf/RefPtr.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 RenderProgress::RenderProgress(HTMLElement* element)
     : RenderBlockFlow(element)
@@ -105,4 +103,4 @@ HTMLProgressElement* RenderProgress::progressElement() const
     return toHTMLProgressElement(node()->shadowHost());
 }
 
-} // namespace WebCore
+} // namespace blink

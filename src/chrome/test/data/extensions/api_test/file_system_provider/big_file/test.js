@@ -20,12 +20,6 @@ var openedFiles = {};
  * @type {string}
  * @const
  */
-var FILE_SYSTEM_ID = 'chocolate-id';
-
-/**
- * @type {string}
- * @const
- */
 var TESTING_TEXT = 'We are bytes at the 5th GB of the file!';
 
 /**
@@ -33,17 +27,6 @@ var TESTING_TEXT = 'We are bytes at the 5th GB of the file!';
  * @const
  */
 var TESTING_TEXT_OFFSET = 5 * 1000 * 1000 * 1000;
-
-/**
- * @type {Object}
- * @const
- */
-var TESTING_ROOT = Object.freeze({
-  isDirectory: true,
-  name: '',
-  size: 0,
-  modificationTime: new Date(2014, 4, 28, 10, 39, 15)
-});
 
 /**
  * Metadata for a testing file with 6GB file size.
@@ -58,56 +41,6 @@ var TESTING_6GB_FILE = Object.freeze({
 });
 
 /**
- * Gets volume information for the provided file system.
- *
- * @param {string} fileSystemId Id of the provided file system.
- * @param {function(Object)} callback Callback to be called on result, with the
- *     volume information object in case of success, or null if not found.
- */
-function getVolumeInfo(fileSystemId, callback) {
-  chrome.fileBrowserPrivate.getVolumeMetadataList(function(volumeList) {
-    for (var i = 0; i < volumeList.length; i++) {
-      if (volumeList[i].extensionId == chrome.runtime.id &&
-          volumeList[i].fileSystemId == fileSystemId) {
-        callback(volumeList[i]);
-        return;
-      }
-    }
-    callback(null);
-  });
-}
-
-/**
- * Returns metadata for the requested entry.
- *
- * To successfully acquire a DirectoryEntry, or even a DOMFileSystem, this event
- * must be implemented and return correct values.
- *
- * @param {GetMetadataRequestedOptions} options Options.
- * @param {function(Object)} onSuccess Success callback with metadata passed
- *     an argument.
- * @param {function(string)} onError Error callback with an error code.
- */
-function onGetMetadataRequested(options, onSuccess, onError) {
-  if (options.fileSystemId != FILE_SYSTEM_ID) {
-    onError('INVALID_OPERATION');  // enum ProviderError.
-    return;
-  }
-
-  if (options.entryPath == '/') {
-    onSuccess(TESTING_ROOT);
-    return;
-  }
-
-  if (options.entryPath == '/' + TESTING_6GB_FILE.name) {
-    onSuccess(TESTING_6GB_FILE);
-    return;
-  }
-
-  onError('NOT_FOUND');  // enum ProviderError.
-}
-
-/**
  * Requests opening a file at <code>filePath</code>. Further file operations
  * will be associated with the <code>requestId</code>
  *
@@ -116,12 +49,12 @@ function onGetMetadataRequested(options, onSuccess, onError) {
  * @param {function(string)} onError Error callback.
  */
 function onOpenFileRequested(options, onSuccess, onError) {
-  if (options.fileSystemId != FILE_SYSTEM_ID) {
+  if (options.fileSystemId != test_util.FILE_SYSTEM_ID) {
     onError('INVALID_OPERATION');  // enum ProviderError.
     return;
   }
 
-  if (options.mode != 'READ' || options.create) {
+  if (options.mode != 'READ') {
     onError('ACCESS_DENIED');  // enum ProviderError.
     return;
   }
@@ -143,7 +76,7 @@ function onOpenFileRequested(options, onSuccess, onError) {
  * @param {function(string)} onError Error callback.
  */
 function onCloseFileRequested(options, onSuccess, onError) {
-  if (options.fileSystemId != FILE_SYSTEM_ID ||
+  if (options.fileSystemId != test_util.FILE_SYSTEM_ID ||
       !openedFiles[options.openRequestId]) {
     onError('INVALID_OPERATION');  // enum ProviderError.
     return;
@@ -164,17 +97,16 @@ function onCloseFileRequested(options, onSuccess, onError) {
  */
 function onReadFileRequested(options, onSuccess, onError) {
   var filePath = openedFiles[options.openRequestId];
-  if (options.fileSystemId != FILE_SYSTEM_ID || !filePath) {
+  if (options.fileSystemId != test_util.FILE_SYSTEM_ID || !filePath) {
     onError('INVALID_OPERATION');  // enum ProviderError.
     return;
   }
 
   if (filePath == '/' + TESTING_6GB_FILE.name) {
     if (options.offset < TESTING_TEXT_OFFSET ||
-        options.offset + options.length >
-            TESTING_TEXT_OFFSET + TESTING_TEXT.length) {
+        options.offset >= TESTING_TEXT_OFFSET + TESTING_TEXT.length) {
       console.error('Reading from a wrong location in the file!');
-      onError('INVALID_FAILED');  // enum ProviderError.
+      onError('FAILED');  // enum ProviderError.
       return;
     }
 
@@ -198,32 +130,20 @@ function onReadFileRequested(options, onSuccess, onError) {
  * @param {function()} callback Success callback.
  */
 function setUp(callback) {
-  chrome.fileSystemProvider.mount(
-      {fileSystemId: FILE_SYSTEM_ID, displayName: 'chocolate.zip'},
-      function() {
-        chrome.fileSystemProvider.onGetMetadataRequested.addListener(
-            onGetMetadataRequested);
-        chrome.fileSystemProvider.onOpenFileRequested.addListener(
-            onOpenFileRequested);
-        chrome.fileSystemProvider.onReadFileRequested.addListener(
-            onReadFileRequested);
-        var volumeId =
-            'provided:' + chrome.runtime.id + '-' + FILE_SYSTEM_ID + '-user';
+  chrome.fileSystemProvider.onGetMetadataRequested.addListener(
+      test_util.onGetMetadataRequestedDefault);
 
-        getVolumeInfo(FILE_SYSTEM_ID, function(volumeInfo) {
-          chrome.test.assertTrue(!!volumeInfo);
-          chrome.fileBrowserPrivate.requestFileSystem(
-              volumeInfo.volumeId,
-              function(inFileSystem) {
-                chrome.test.assertTrue(!!inFileSystem);
+  test_util.defaultMetadata['/' + TESTING_6GB_FILE.name] =
+      TESTING_6GB_FILE;
 
-                fileSystem = inFileSystem;
-                callback();
-              });
-        });
-      }, function() {
-        chrome.test.fail();
-      });
+  chrome.fileSystemProvider.onOpenFileRequested.addListener(
+      onOpenFileRequested);
+  chrome.fileSystemProvider.onReadFileRequested.addListener(
+      onReadFileRequested);
+  chrome.fileSystemProvider.onCloseFileRequested.addListener(
+      onCloseFileRequested);
+
+  test_util.mountFileSystem(callback);
 }
 
 /**
@@ -238,7 +158,7 @@ function runTests() {
     // with size greater or equal to 2^53.
     function readBigFileSuccess() {
       var onTestSuccess = chrome.test.callbackPass();
-      fileSystem.root.getFile(
+      test_util.fileSystem.root.getFile(
           TESTING_6GB_FILE.name,
           {create: false},
           function(fileEntry) {

@@ -24,8 +24,7 @@
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
-#include "chrome/browser/chromeos/login/session/session_manager.h"
-#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
@@ -38,6 +37,7 @@
 #include "chromeos/system/statistics_provider.h"
 #include "components/feedback/tracing_manager.h"
 #include "components/pref_registry/pref_registry_syncable.h"
+#include "components/user_manager/user.h"
 #include "third_party/icu/source/i18n/unicode/timezone.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/event_utils.h"
@@ -71,7 +71,7 @@ Preferences::Preferences(input_method::InputMethodManager* input_method_manager)
 
 Preferences::~Preferences() {
   prefs_->RemoveObserver(this);
-  UserManager::Get()->RemoveSessionStateObserver(this);
+  user_manager::UserManager::Get()->RemoveSessionStateObserver(this);
   // If shell instance is destoryed before this preferences instance, there is
   // no need to remove this shell observer.
   if (ash::Shell::HasInstance())
@@ -260,20 +260,18 @@ void Preferences::RegisterProfilePrefs(
       prefs::kLanguageSendFunctionKeys,
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  // We don't sync the following keyboard prefs since they are not user-
-  // configurable.
   registry->RegisterBooleanPref(
       prefs::kLanguageXkbAutoRepeatEnabled,
       true,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterIntegerPref(
       prefs::kLanguageXkbAutoRepeatDelay,
       language_prefs::kXkbAutoRepeatDelayInMs,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterIntegerPref(
       prefs::kLanguageXkbAutoRepeatInterval,
       language_prefs::kXkbAutoRepeatIntervalInMs,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 
   // Mobile plan notifications default to on.
   registry->RegisterBooleanPref(
@@ -351,13 +349,15 @@ void Preferences::InitUserPrefs(PrefServiceSyncable* prefs) {
       prefs::kLanguageXkbAutoRepeatInterval, prefs, callback);
 }
 
-void Preferences::Init(PrefServiceSyncable* prefs, const User* user) {
+void Preferences::Init(PrefServiceSyncable* prefs,
+                       const user_manager::User* user) {
   DCHECK(user);
   user_ = user;
-  user_is_primary_ = UserManager::Get()->GetPrimaryUser() == user_;
+  user_is_primary_ =
+      user_manager::UserManager::Get()->GetPrimaryUser() == user_;
   InitUserPrefs(prefs);
 
-  UserManager::Get()->AddSessionStateObserver(this);
+  user_manager::UserManager::Get()->AddSessionStateObserver(this);
 
   // This causes OnIsSyncingChanged to be called when the value of
   // PrefService::IsSyncing() changes.
@@ -368,13 +368,13 @@ void Preferences::Init(PrefServiceSyncable* prefs, const User* user) {
 
   // If a guest is logged in, initialize the prefs as if this is the first
   // login. For a regular user this is done in
-  // SessionManager::InitProfilePreferences().
+  // UserSessionManager::InitProfilePreferences().
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kGuestSession))
-    SessionManager::SetFirstLoginPrefs(prefs);
+    UserSessionManager::SetFirstLoginPrefs(prefs, std::string(), std::string());
 }
 
 void Preferences::InitUserPrefsForTesting(PrefServiceSyncable* prefs,
-                                          const User* user) {
+                                          const user_manager::User* user) {
   user_ = user;
   InitUserPrefs(prefs);
 }
@@ -391,7 +391,7 @@ void Preferences::ApplyPreferences(ApplyReason reason,
                                    const std::string& pref_name) {
   DCHECK(reason != REASON_PREF_CHANGED || !pref_name.empty());
   const bool user_is_owner =
-      UserManager::Get()->GetOwnerEmail() == user_->email();
+      user_manager::UserManager::Get()->GetOwnerEmail() == user_->email();
   const bool user_is_active = user_->is_active();
 
   system::TouchpadSettings touchpad_settings;
@@ -646,7 +646,7 @@ void Preferences::OnTouchHudProjectionToggled(bool enabled) {
   touch_hud_projection_enabled_.SetValue(enabled);
 }
 
-void Preferences::ActiveUserChanged(const User* active_user) {
+void Preferences::ActiveUserChanged(const user_manager::User* active_user) {
   if (active_user != user_)
     return;
   ApplyPreferences(REASON_ACTIVE_USER_CHANGED, "");

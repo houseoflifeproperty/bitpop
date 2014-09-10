@@ -47,7 +47,7 @@
 #include "core/svg/SVGPathUtilities.h"
 #include "core/svg/SVGPointTearOff.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGPathElement::SVGPathElement(Document& document)
     : SVGGeometryElement(SVGNames::pathTag, document)
@@ -85,97 +85,97 @@ unsigned SVGPathElement::getPathSegAtLength(float length)
 
 PassRefPtr<SVGPathSegClosePath> SVGPathElement::createSVGPathSegClosePath()
 {
-    return SVGPathSegClosePath::create(0, PathSegUndefinedRole);
+    return SVGPathSegClosePath::create(0);
 }
 
 PassRefPtr<SVGPathSegMovetoAbs> SVGPathElement::createSVGPathSegMovetoAbs(float x, float y)
 {
-    return SVGPathSegMovetoAbs::create(0, PathSegUndefinedRole, x, y);
+    return SVGPathSegMovetoAbs::create(0, x, y);
 }
 
 PassRefPtr<SVGPathSegMovetoRel> SVGPathElement::createSVGPathSegMovetoRel(float x, float y)
 {
-    return SVGPathSegMovetoRel::create(0, PathSegUndefinedRole, x, y);
+    return SVGPathSegMovetoRel::create(0, x, y);
 }
 
 PassRefPtr<SVGPathSegLinetoAbs> SVGPathElement::createSVGPathSegLinetoAbs(float x, float y)
 {
-    return SVGPathSegLinetoAbs::create(0, PathSegUndefinedRole, x, y);
+    return SVGPathSegLinetoAbs::create(0, x, y);
 }
 
 PassRefPtr<SVGPathSegLinetoRel> SVGPathElement::createSVGPathSegLinetoRel(float x, float y)
 {
-    return SVGPathSegLinetoRel::create(0, PathSegUndefinedRole, x, y);
+    return SVGPathSegLinetoRel::create(0, x, y);
 }
 
 PassRefPtr<SVGPathSegCurvetoCubicAbs> SVGPathElement::createSVGPathSegCurvetoCubicAbs(float x, float y, float x1, float y1, float x2, float y2)
 {
-    return SVGPathSegCurvetoCubicAbs::create(0, PathSegUndefinedRole, x, y, x1, y1, x2, y2);
+    return SVGPathSegCurvetoCubicAbs::create(0, x, y, x1, y1, x2, y2);
 }
 
 PassRefPtr<SVGPathSegCurvetoCubicRel> SVGPathElement::createSVGPathSegCurvetoCubicRel(float x, float y, float x1, float y1, float x2, float y2)
 {
-    return SVGPathSegCurvetoCubicRel::create(0, PathSegUndefinedRole, x, y, x1, y1, x2, y2);
+    return SVGPathSegCurvetoCubicRel::create(0, x, y, x1, y1, x2, y2);
 }
 
 PassRefPtr<SVGPathSegCurvetoQuadraticAbs> SVGPathElement::createSVGPathSegCurvetoQuadraticAbs(float x, float y, float x1, float y1)
 {
-    return SVGPathSegCurvetoQuadraticAbs::create(0, PathSegUndefinedRole, x, y, x1, y1);
+    return SVGPathSegCurvetoQuadraticAbs::create(0, x, y, x1, y1);
 }
 
 PassRefPtr<SVGPathSegCurvetoQuadraticRel> SVGPathElement::createSVGPathSegCurvetoQuadraticRel(float x, float y, float x1, float y1)
 {
-    return SVGPathSegCurvetoQuadraticRel::create(0, PathSegUndefinedRole, x, y, x1, y1);
+    return SVGPathSegCurvetoQuadraticRel::create(0, x, y, x1, y1);
 }
 
 PassRefPtr<SVGPathSegArcAbs> SVGPathElement::createSVGPathSegArcAbs(float x, float y, float r1, float r2, float angle, bool largeArcFlag, bool sweepFlag)
 {
-    return SVGPathSegArcAbs::create(0, PathSegUndefinedRole, x, y, r1, r2, angle, largeArcFlag, sweepFlag);
+    return SVGPathSegArcAbs::create(0, x, y, r1, r2, angle, largeArcFlag, sweepFlag);
 }
 
 PassRefPtr<SVGPathSegArcRel> SVGPathElement::createSVGPathSegArcRel(float x, float y, float r1, float r2, float angle, bool largeArcFlag, bool sweepFlag)
 {
-    return SVGPathSegArcRel::create(0, PathSegUndefinedRole, x, y, r1, r2, angle, largeArcFlag, sweepFlag);
+    return SVGPathSegArcRel::create(0, x, y, r1, r2, angle, largeArcFlag, sweepFlag);
 }
 
 PassRefPtr<SVGPathSegLinetoHorizontalAbs> SVGPathElement::createSVGPathSegLinetoHorizontalAbs(float x)
 {
-    return SVGPathSegLinetoHorizontalAbs::create(0, PathSegUndefinedRole, x);
+    return SVGPathSegLinetoHorizontalAbs::create(0, x);
 }
 
 PassRefPtr<SVGPathSegLinetoHorizontalRel> SVGPathElement::createSVGPathSegLinetoHorizontalRel(float x)
 {
-    return SVGPathSegLinetoHorizontalRel::create(0, PathSegUndefinedRole, x);
+    return SVGPathSegLinetoHorizontalRel::create(0, x);
 }
 
 PassRefPtr<SVGPathSegLinetoVerticalAbs> SVGPathElement::createSVGPathSegLinetoVerticalAbs(float y)
 {
-    return SVGPathSegLinetoVerticalAbs::create(0, PathSegUndefinedRole, y);
+    return SVGPathSegLinetoVerticalAbs::create(0, y);
 }
 
 PassRefPtr<SVGPathSegLinetoVerticalRel> SVGPathElement::createSVGPathSegLinetoVerticalRel(float y)
 {
-    return SVGPathSegLinetoVerticalRel::create(0, PathSegUndefinedRole, y);
+    return SVGPathSegLinetoVerticalRel::create(0, y);
 }
 
 PassRefPtr<SVGPathSegCurvetoCubicSmoothAbs> SVGPathElement::createSVGPathSegCurvetoCubicSmoothAbs(float x, float y, float x2, float y2)
 {
-    return SVGPathSegCurvetoCubicSmoothAbs::create(0, PathSegUndefinedRole, x, y, x2, y2);
+    return SVGPathSegCurvetoCubicSmoothAbs::create(0, x, y, x2, y2);
 }
 
 PassRefPtr<SVGPathSegCurvetoCubicSmoothRel> SVGPathElement::createSVGPathSegCurvetoCubicSmoothRel(float x, float y, float x2, float y2)
 {
-    return SVGPathSegCurvetoCubicSmoothRel::create(0, PathSegUndefinedRole, x, y, x2, y2);
+    return SVGPathSegCurvetoCubicSmoothRel::create(0, x, y, x2, y2);
 }
 
 PassRefPtr<SVGPathSegCurvetoQuadraticSmoothAbs> SVGPathElement::createSVGPathSegCurvetoQuadraticSmoothAbs(float x, float y)
 {
-    return SVGPathSegCurvetoQuadraticSmoothAbs::create(0, PathSegUndefinedRole, x, y);
+    return SVGPathSegCurvetoQuadraticSmoothAbs::create(0, x, y);
 }
 
 PassRefPtr<SVGPathSegCurvetoQuadraticSmoothRel> SVGPathElement::createSVGPathSegCurvetoQuadraticSmoothRel(float x, float y)
 {
-    return SVGPathSegCurvetoQuadraticSmoothRel::create(0, PathSegUndefinedRole, x, y);
+    return SVGPathSegCurvetoQuadraticSmoothRel::create(0, x, y);
 }
 
 bool SVGPathElement::isSupportedAttribute(const QualifiedName& attrName)
@@ -219,7 +219,7 @@ void SVGPathElement::svgAttributeChanged(const QualifiedName& attrName)
 
     SVGElement::InvalidationGuard invalidationGuard(this);
 
-    RenderSVGPath* renderer = toRenderSVGPath(this->renderer());
+    RenderSVGShape* renderer = toRenderSVGShape(this->renderer());
 
     if (attrName == SVGNames::dAttr) {
         if (renderer)
@@ -236,7 +236,7 @@ void SVGPathElement::invalidateMPathDependencies()
 {
     // <mpath> can only reference <path> but this dependency is not handled in
     // markForLayoutAndParentResourceInvalidation so we update any mpath dependencies manually.
-    if (SVGElementSet* dependencies = document().accessSVGExtensions().setOfElementsReferencingTarget(this)) {
+    if (SVGElementSet* dependencies = setOfIncomingReferences()) {
         SVGElementSet::iterator end = dependencies->end();
         for (SVGElementSet::iterator it = dependencies->begin(); it != end; ++it) {
             if (isSVGMPathElement(**it))
@@ -264,7 +264,7 @@ void SVGPathElement::pathSegListChanged(ListModification listModification)
 
     invalidateSVGAttributes();
 
-    RenderSVGPath* renderer = toRenderSVGPath(this->renderer());
+    RenderSVGShape* renderer = toRenderSVGShape(this->renderer());
     if (!renderer)
         return;
 
@@ -283,7 +283,7 @@ FloatRect SVGPathElement::getBBox()
     if (!renderer())
         return FloatRect();
 
-    RenderSVGPath* renderer = toRenderSVGPath(this->renderer());
+    RenderSVGShape* renderer = toRenderSVGShape(this->renderer());
     return renderer->path().boundingRect();
 }
 

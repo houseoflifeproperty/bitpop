@@ -42,7 +42,7 @@
 #include "platform/TraceEvent.h"
 #include "wtf/MainThread.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -97,7 +97,7 @@ static String initiatorFor(const StringImpl* tagImpl)
 static bool mediaAttributeMatches(const MediaValues& mediaValues, const String& attributeValue)
 {
     RefPtrWillBeRawPtr<MediaQuerySet> mediaQueries = MediaQuerySet::createOffMainThread(attributeValue);
-    MediaQueryEvaluator mediaQueryEvaluator("screen", mediaValues);
+    MediaQueryEvaluator mediaQueryEvaluator(mediaValues);
     return mediaQueryEvaluator.eval(mediaQueries.get());
 }
 
@@ -117,7 +117,7 @@ public:
         if (match(m_tagImpl, imgTag)
             || match(m_tagImpl, sourceTag)) {
             if (RuntimeEnabledFeatures::pictureSizesEnabled())
-                m_sourceSize = SizesAttributeParser::findEffectiveSize(String(), m_mediaValues);
+                m_sourceSize = SizesAttributeParser(m_mediaValues, String()).length();
             return;
         }
         if ( !match(m_tagImpl, inputTag)
@@ -197,7 +197,7 @@ private:
             m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_sourceSize, attributeValue);
             setUrlToLoad(bestFitSourceForImageAttributes(m_mediaValues->devicePixelRatio(), m_sourceSize, m_imgSrcUrl, m_srcsetImageCandidate), AllowURLReplacement);
         } else if (RuntimeEnabledFeatures::pictureSizesEnabled() && match(attributeName, sizesAttr) && !m_sourceSizeSet) {
-            m_sourceSize = SizesAttributeParser::findEffectiveSize(attributeValue, m_mediaValues);
+            m_sourceSize = SizesAttributeParser(m_mediaValues, attributeValue).length();
             m_sourceSizeSet = true;
             if (!m_srcsetImageCandidate.isEmpty()) {
                 m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_sourceSize, m_srcsetAttributeValue);
@@ -239,7 +239,7 @@ private:
             m_srcsetAttributeValue = attributeValue;
             m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_sourceSize, attributeValue);
         } else if (match(attributeName, sizesAttr) && !m_sourceSizeSet) {
-            m_sourceSize = SizesAttributeParser::findEffectiveSize(attributeValue, m_mediaValues);
+            m_sourceSize = SizesAttributeParser(m_mediaValues, attributeValue).length();
             m_sourceSizeSet = true;
             if (!m_srcsetImageCandidate.isEmpty()) {
                 m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_sourceSize, m_srcsetAttributeValue);
@@ -488,7 +488,7 @@ void HTMLPreloadScanner::scan(HTMLResourcePreloader* preloader, const KURL& star
 {
     ASSERT(isMainThread()); // HTMLTokenizer::updateStateFor only works on the main thread.
 
-    TRACE_EVENT1("webkit", "HTMLPreloadScanner::scan", "source_length", m_source.length());
+    TRACE_EVENT1("blink", "HTMLPreloadScanner::scan", "source_length", m_source.length());
 
     // When we start scanning, our best prediction of the baseElementURL is the real one!
     if (!startingBaseElementURL.isEmpty())

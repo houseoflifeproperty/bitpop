@@ -30,7 +30,7 @@
 #include "core/editing/ApplyBlockElementCommand.h"
 #include "core/editing/EditAction.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class Element;
@@ -54,12 +54,12 @@ private:
     FormatBlockCommand(Document&, const QualifiedName& tagName);
 
     virtual void formatSelection(const VisiblePosition& startOfSelection, const VisiblePosition& endOfSelection) OVERRIDE;
-    virtual void formatRange(const Position& start, const Position& end, const Position& endOfSelection, RefPtrWillBeRawPtr<Element>&) OVERRIDE;
+    virtual void formatRange(const Position& start, const Position& end, const Position& endOfSelection, RefPtrWillBeRawPtr<HTMLElement>&) OVERRIDE;
     virtual EditAction editingAction() const OVERRIDE { return EditActionFormatBlock; }
 
     bool m_didApply;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FormatBlockCommand_h

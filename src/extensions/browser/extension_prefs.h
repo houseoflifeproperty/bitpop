@@ -177,13 +177,6 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   ExtensionIdList GetToolbarOrder();
   void SetToolbarOrder(const ExtensionIdList& extension_ids);
 
-  // Gets the set of known disabled extension IDs into |id_set_out|. Returns
-  // false iff the set of known disabled extension IDs hasn't been set yet.
-  bool GetKnownDisabled(ExtensionIdSet* id_set_out);
-
-  // Sets the set of known disabled extension IDs.
-  void SetKnownDisabled(const ExtensionIdSet& extension_ids);
-
   // Called when an extension is installed, so that prefs get created.
   // If |page_ordinal| is invalid then a page will be found for the App.
   // |install_flags| are a bitmask of extension::InstallFlags.
@@ -567,6 +560,11 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   std::string GetInstallParam(const std::string& extension_id) const;
   void SetInstallParam(const std::string& extension_id,
                        const std::string& install_parameter);
+
+  // The total number of times we've disabled an extension due to corrupted
+  // contents.
+  int GetCorruptedDisableCount();
+  void IncrementCorruptedDisableCount();
 
  private:
   friend class ExtensionPrefsBlacklistedExtensions;  // Unit test.

@@ -132,7 +132,7 @@ class ResourceHandlerStub : public ResourceHandler {
     return true;
   }
 
-  virtual bool OnRequestRedirected(const GURL& url,
+  virtual bool OnRequestRedirected(const net::RedirectInfo& redirect_info,
                                    ResourceResponse* response,
                                    bool* defer) OVERRIDE {
     NOTREACHED();
@@ -319,7 +319,7 @@ class ResourceLoaderTest : public testing::Test,
                             resource_context_.GetRequestContext()));
     raw_ptr_to_request_ = request.get();
     ResourceRequestInfo::AllocateForTesting(request.get(),
-                                            ResourceType::MAIN_FRAME,
+                                            RESOURCE_TYPE_MAIN_FRAME,
                                             &resource_context_,
                                             kRenderProcessId,
                                             kRenderViewId,

@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_output.c 264017 2014-04-01 18:38:04Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_output.c 267674 2014-06-20 13:26:49Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -57,8 +57,10 @@ __FBSDID("$FreeBSD: head/sys/netinet/sctp_output.c 264017 2014-04-01 18:38:04Z t
 #if defined(__Userspace_os_Linux)
 #define __FAVOR_BSD    /* (on Ubuntu at least) enables UDP header field names like BSD in RFC 768 */
 #endif
+#if defined INET || defined INET6
 #if !defined(__Userspace_os_Windows)
 #include <netinet/udp.h>
+#endif
 #endif
 #if defined(__APPLE__)
 #include <netinet/in.h>
@@ -2096,6 +2098,22 @@ sctp_add_addresses_to_i_ia(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 				continue;
 			}
 			LIST_FOREACH(sctp_ifap, &sctp_ifnp->ifalist, next_ifa) {
+#if defined(__FreeBSD__)
+#ifdef INET
+				if ((sctp_ifap->address.sa.sa_family == AF_INET) &&
+				    (prison_check_ip4(inp->ip_inp.inp.inp_cred,
+				                      &sctp_ifap->address.sin.sin_addr) != 0)) {
+				    	continue;
+				}
+#endif
+#ifdef INET6
+				if ((sctp_ifap->address.sa.sa_family == AF_INET6) &&
+				    (prison_check_ip6(inp->ip_inp.inp.inp_cred,
+				                      &sctp_ifap->address.sin6.sin6_addr) != 0)) {
+				    	continue;
+				}
+#endif
+#endif
 				if (sctp_is_addr_restricted(stcb, sctp_ifap)) {
 					continue;
 				}
@@ -2130,6 +2148,22 @@ sctp_add_addresses_to_i_ia(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 					continue;
 				}
 				LIST_FOREACH(sctp_ifap, &sctp_ifnp->ifalist, next_ifa) {
+#if defined(__FreeBSD__)
+#ifdef INET
+					if ((sctp_ifap->address.sa.sa_family == AF_INET) &&
+					    (prison_check_ip4(inp->ip_inp.inp.inp_cred,
+					                      &sctp_ifap->address.sin.sin_addr) != 0)) {
+					    	continue;
+					}
+#endif
+#ifdef INET6
+					if ((sctp_ifap->address.sa.sa_family == AF_INET6) &&
+					    (prison_check_ip6(inp->ip_inp.inp.inp_cred,
+					                      &sctp_ifap->address.sin6.sin6_addr) != 0)) {
+					    	continue;
+					}
+#endif
+#endif
 					if (sctp_is_addr_restricted(stcb, sctp_ifap)) {
 						continue;
 					}
@@ -2502,6 +2536,22 @@ sctp_choose_boundspecific_inp(struct sctp_inpcb *inp,
 	if (sctp_ifn) {
 		/* is a preferred one on the interface we route out? */
 		LIST_FOREACH(sctp_ifa, &sctp_ifn->ifalist, next_ifa) {
+#if defined(__FreeBSD__)
+#ifdef INET
+			if ((sctp_ifa->address.sa.sa_family == AF_INET) &&
+			    (prison_check_ip4(inp->ip_inp.inp.inp_cred,
+			                      &sctp_ifa->address.sin.sin_addr) != 0)) {
+				continue;
+			}
+#endif
+#ifdef INET6
+			if ((sctp_ifa->address.sa.sa_family == AF_INET6) &&
+			    (prison_check_ip6(inp->ip_inp.inp.inp_cred,
+			                      &sctp_ifa->address.sin6.sin6_addr) != 0)) {
+				continue;
+			}
+#endif
+#endif
 			if ((sctp_ifa->localifa_flags & SCTP_ADDR_DEFER_USE) &&
 			    (non_asoc_addr_ok == 0))
 				continue;
@@ -2628,6 +2678,22 @@ sctp_choose_boundspecific_stcb(struct sctp_inpcb *inp,
 	if (sctp_ifn) {
 		/* first try for a preferred address on the ep */
 		LIST_FOREACH(sctp_ifa, &sctp_ifn->ifalist, next_ifa) {
+#if defined(__FreeBSD__)
+#ifdef INET
+			if ((sctp_ifa->address.sa.sa_family == AF_INET) &&
+			    (prison_check_ip4(inp->ip_inp.inp.inp_cred,
+			                      &sctp_ifa->address.sin.sin_addr) != 0)) {
+				continue;
+			}
+#endif
+#ifdef INET6
+			if ((sctp_ifa->address.sa.sa_family == AF_INET6) &&
+			    (prison_check_ip6(inp->ip_inp.inp.inp_cred,
+			                      &sctp_ifa->address.sin6.sin6_addr) != 0)) {
+				continue;
+			}
+#endif
+#endif
 			if ((sctp_ifa->localifa_flags & SCTP_ADDR_DEFER_USE) && (non_asoc_addr_ok == 0))
 				continue;
 			if (sctp_is_addr_in_ep(inp, sctp_ifa)) {
@@ -2648,6 +2714,22 @@ sctp_choose_boundspecific_stcb(struct sctp_inpcb *inp,
 		}
 		/* next try for an acceptable address on the ep */
 		LIST_FOREACH(sctp_ifa, &sctp_ifn->ifalist, next_ifa) {
+#if defined(__FreeBSD__)
+#ifdef INET
+			if ((sctp_ifa->address.sa.sa_family == AF_INET) &&
+			    (prison_check_ip4(inp->ip_inp.inp.inp_cred,
+			                      &sctp_ifa->address.sin.sin_addr) != 0)) {
+				continue;
+			}
+#endif
+#ifdef INET6
+			if ((sctp_ifa->address.sa.sa_family == AF_INET6) &&
+			    (prison_check_ip6(inp->ip_inp.inp.inp_cred,
+			                      &sctp_ifa->address.sin6.sin6_addr) != 0)) {
+				continue;
+			}
+#endif
+#endif
 			if ((sctp_ifa->localifa_flags & SCTP_ADDR_DEFER_USE) && (non_asoc_addr_ok == 0))
 				continue;
 			if (sctp_is_addr_in_ep(inp, sctp_ifa)) {
@@ -2753,6 +2835,11 @@ sctp_choose_boundspecific_stcb(struct sctp_inpcb *inp,
 
 static struct sctp_ifa *
 sctp_select_nth_preferred_addr_from_ifn_boundall(struct sctp_ifn *ifn,
+#if defined(__FreeBSD__)
+                                                 struct sctp_inpcb *inp,
+#else
+                                                 struct sctp_inpcb *inp SCTP_UNUSED,
+#endif
 						 struct sctp_tcb *stcb,
 						 int non_asoc_addr_ok,
 						 uint8_t dest_is_loop,
@@ -2779,6 +2866,22 @@ sctp_select_nth_preferred_addr_from_ifn_boundall(struct sctp_ifn *ifn,
 #endif  /* SCTP_EMBEDDED_V6_SCOPE */
 #endif	/* INET6 */
 	LIST_FOREACH(ifa, &ifn->ifalist, next_ifa) {
+#if defined(__FreeBSD__)
+#ifdef INET
+		if ((ifa->address.sa.sa_family == AF_INET) &&
+		    (prison_check_ip4(inp->ip_inp.inp.inp_cred,
+		                      &ifa->address.sin.sin_addr) != 0)) {
+			continue;
+		}
+#endif
+#ifdef INET6
+		if ((ifa->address.sa.sa_family == AF_INET6) &&
+		    (prison_check_ip6(inp->ip_inp.inp.inp_cred,
+		                      &ifa->address.sin6.sin6_addr) != 0)) {
+			continue;
+		}
+#endif
+#endif
 		if ((ifa->localifa_flags & SCTP_ADDR_DEFER_USE) &&
 		    (non_asoc_addr_ok == 0))
 			continue;
@@ -2866,6 +2969,11 @@ sctp_select_nth_preferred_addr_from_ifn_boundall(struct sctp_ifn *ifn,
 
 static int
 sctp_count_num_preferred_boundall(struct sctp_ifn *ifn,
+#if defined(__FreeBSD__)
+                                  struct sctp_inpcb *inp,
+#else
+                                  struct sctp_inpcb *inp SCTP_UNUSED,
+#endif
 				  struct sctp_tcb *stcb,
 				  int non_asoc_addr_ok,
 				  uint8_t dest_is_loop,
@@ -2876,6 +2984,23 @@ sctp_count_num_preferred_boundall(struct sctp_ifn *ifn,
 	int num_eligible_addr = 0;
 
 	LIST_FOREACH(ifa, &ifn->ifalist, next_ifa) {
+#if defined(__FreeBSD__)
+#ifdef INET
+		if ((ifa->address.sa.sa_family == AF_INET) &&
+		    (prison_check_ip4(inp->ip_inp.inp.inp_cred,
+		                      &ifa->address.sin.sin_addr) != 0)) {
+			continue;
+		}
+#endif
+#ifdef INET6
+		if ((ifa->address.sa.sa_family == AF_INET6) &&
+		    (stcb != NULL) &&
+		    (prison_check_ip6(inp->ip_inp.inp.inp_cred,
+		                      &ifa->address.sin6.sin6_addr) != 0)) {
+			continue;
+		}
+#endif
+#endif
 		if ((ifa->localifa_flags & SCTP_ADDR_DEFER_USE) &&
 		    (non_asoc_addr_ok == 0)) {
 			continue;
@@ -2907,7 +3032,8 @@ sctp_count_num_preferred_boundall(struct sctp_ifn *ifn,
 }
 
 static struct sctp_ifa *
-sctp_choose_boundall(struct sctp_tcb *stcb,
+sctp_choose_boundall(struct sctp_inpcb *inp,
+                     struct sctp_tcb *stcb,
 		     struct sctp_nets *net,
 		     sctp_route_t *ro,
 		     uint32_t vrf_id,
@@ -2960,7 +3086,7 @@ sctp_choose_boundall(struct sctp_tcb *stcb,
 		cur_addr_num = net->indx_of_eligible_next_to_use;
 	}
 	num_preferred = sctp_count_num_preferred_boundall(sctp_ifn,
-							  stcb,
+							  inp, stcb,
 							  non_asoc_addr_ok,
 							  dest_is_loop,
 							  dest_is_priv, fam);
@@ -2987,7 +3113,7 @@ sctp_choose_boundall(struct sctp_tcb *stcb,
 	 */
 	SCTPDBG(SCTP_DEBUG_OUTPUT2, "cur_addr_num:%d\n", cur_addr_num);
 
-	sctp_ifa = sctp_select_nth_preferred_addr_from_ifn_boundall(sctp_ifn, stcb, non_asoc_addr_ok, dest_is_loop,
+	sctp_ifa = sctp_select_nth_preferred_addr_from_ifn_boundall(sctp_ifn, inp, stcb, non_asoc_addr_ok, dest_is_loop,
                                                                     dest_is_priv, cur_addr_num, fam, ro);
 
 	/* if sctp_ifa is NULL something changed??, fall to plan b. */
@@ -3018,7 +3144,7 @@ sctp_choose_boundall(struct sctp_tcb *stcb,
 			SCTPDBG(SCTP_DEBUG_OUTPUT2, "already seen\n");
 			continue;
 		}
-		num_preferred = sctp_count_num_preferred_boundall(sctp_ifn, stcb, non_asoc_addr_ok,
+		num_preferred = sctp_count_num_preferred_boundall(sctp_ifn, inp, stcb, non_asoc_addr_ok,
                                                                   dest_is_loop, dest_is_priv, fam);
 		SCTPDBG(SCTP_DEBUG_OUTPUT2,
 			"Found ifn:%p %d preferred source addresses\n",
@@ -3040,7 +3166,7 @@ sctp_choose_boundall(struct sctp_tcb *stcb,
 		if (cur_addr_num >= num_preferred) {
 			cur_addr_num = 0;
 		}
-		sifa = sctp_select_nth_preferred_addr_from_ifn_boundall(sctp_ifn, stcb, non_asoc_addr_ok, dest_is_loop,
+		sifa = sctp_select_nth_preferred_addr_from_ifn_boundall(sctp_ifn, inp, stcb, non_asoc_addr_ok, dest_is_loop,
                                                                         dest_is_priv, cur_addr_num, fam, ro);
 		if (sifa == NULL)
 			continue;
@@ -3068,6 +3194,24 @@ again_with_private_addresses_allowed:
 	}
 	LIST_FOREACH(sctp_ifa, &emit_ifn->ifalist, next_ifa) {
 		SCTPDBG(SCTP_DEBUG_OUTPUT2, "ifa:%p\n", (void *)sctp_ifa);
+#if defined(__FreeBSD__)
+#ifdef INET
+		if ((sctp_ifa->address.sa.sa_family == AF_INET) &&
+		    (prison_check_ip4(inp->ip_inp.inp.inp_cred,
+		                      &sctp_ifa->address.sin.sin_addr) != 0)) {
+			SCTPDBG(SCTP_DEBUG_OUTPUT2,"Jailed\n");
+			continue;
+		}
+#endif
+#ifdef INET6
+		if ((sctp_ifa->address.sa.sa_family == AF_INET6) &&
+		    (prison_check_ip6(inp->ip_inp.inp.inp_cred,
+		                      &sctp_ifa->address.sin6.sin6_addr) != 0)) {
+			SCTPDBG(SCTP_DEBUG_OUTPUT2,"Jailed\n");
+			continue;
+		}
+#endif
+#endif
 		if ((sctp_ifa->localifa_flags & SCTP_ADDR_DEFER_USE) &&
 		    (non_asoc_addr_ok == 0)) {
 			SCTPDBG(SCTP_DEBUG_OUTPUT2,"Defer\n");
@@ -3118,6 +3262,22 @@ again_with_private_addresses_allowed:
 			continue;
 		}
 		LIST_FOREACH(sctp_ifa, &sctp_ifn->ifalist, next_ifa) {
+#if defined(__FreeBSD__)
+#ifdef INET
+			if ((sctp_ifa->address.sa.sa_family == AF_INET) &&
+			    (prison_check_ip4(inp->ip_inp.inp.inp_cred,
+			                      &sctp_ifa->address.sin.sin_addr) != 0)) {
+				continue;
+			}
+#endif
+#ifdef INET6
+			if ((sctp_ifa->address.sa.sa_family == AF_INET6) &&
+			    (prison_check_ip6(inp->ip_inp.inp.inp_cred,
+			                      &sctp_ifa->address.sin6.sin6_addr) != 0)) {
+				continue;
+			}
+#endif
+#endif
 			if ((sctp_ifa->localifa_flags & SCTP_ADDR_DEFER_USE) &&
 			    (non_asoc_addr_ok == 0))
 				continue;
@@ -3168,6 +3328,22 @@ out:
 				LIST_FOREACH(sctp_ifa, &sctp_ifn->ifalist, next_ifa) {
 					struct sctp_ifa *tmp_sifa;
 
+#if defined(__FreeBSD__)
+#ifdef INET
+					if ((sctp_ifa->address.sa.sa_family == AF_INET) &&
+					    (prison_check_ip4(inp->ip_inp.inp.inp_cred,
+					                      &sctp_ifa->address.sin.sin_addr) != 0)) {
+						continue;
+					}
+#endif
+#ifdef INET6
+					if ((sctp_ifa->address.sa.sa_family == AF_INET6) &&
+					    (prison_check_ip6(inp->ip_inp.inp.inp_cred,
+					                      &sctp_ifa->address.sin6.sin6_addr) != 0)) {
+						continue;
+					}
+#endif
+#endif
 					if ((sctp_ifa->localifa_flags & SCTP_ADDR_DEFER_USE) &&
 					    (non_asoc_addr_ok == 0))
 						continue;
@@ -3352,7 +3528,7 @@ sctp_source_address_selection(struct sctp_inpcb *inp,
 		/*
 		 * Bound all case
 		 */
-		answer = sctp_choose_boundall(stcb, net, ro, vrf_id,
+		answer = sctp_choose_boundall(inp, stcb, net, ro, vrf_id,
 					      dest_is_priv, dest_is_loop,
 					      non_asoc_addr_ok, fam);
 		SCTP_IPI_ADDR_RUNLOCK();
@@ -11280,11 +11456,11 @@ sctp_send_resp_msg(struct sockaddr *src, struct sockaddr *dst,
 	struct mbuf *mout;
 	struct sctphdr *shout;
 	struct sctp_chunkhdr *ch;
-	struct udphdr *udp;
-	int len, cause_len, padding_len;
 #if defined(INET) || defined(INET6)
+	struct udphdr *udp;
 	int ret;
 #endif
+	int len, cause_len, padding_len;
 #ifdef INET
 #if defined(__APPLE__) || defined(__Panda__)
 	sctp_route_t ro;
@@ -11336,9 +11512,11 @@ sctp_send_resp_msg(struct sockaddr *src, struct sockaddr *dst,
 	default:
 		break;
 	}
+#if defined INET || defined INET6
 	if (port) {
 		len += sizeof(struct udphdr);
 	}
+#endif
 #if defined(__APPLE__)
 #if defined(APPLE_LEOPARD) || defined(APPLE_SNOWLEOPARD)
 	mout = sctp_get_mbuf_for_msg(len + max_linkhdr, 1, M_NOWAIT, 1, MT_DATA);
@@ -11443,6 +11621,7 @@ sctp_send_resp_msg(struct sockaddr *src, struct sockaddr *dst,
 		shout = mtod(mout, struct sctphdr *);
 		break;
 	}
+#if defined INET || defined INET6
 	if (port) {
 		if (htons(SCTP_BASE_SYSCTL(sctp_udp_tunneling_port)) == 0) {
 			sctp_m_freem(mout);
@@ -11461,6 +11640,7 @@ sctp_send_resp_msg(struct sockaddr *src, struct sockaddr *dst,
 	} else {
 		udp = NULL;
 	}
+#endif
 	shout->src_port = sh->dest_port;
 	shout->dest_port = sh->src_port;
 	shout->checksum = 0;
@@ -12532,8 +12712,8 @@ sctp_copy_resume(struct uio *uio,
 	m = m_uiotombuf(uio, M_WAITOK, max_send_len, 0,
 			(user_marks_eor ? M_EOR : 0));
 	if (m == NULL) {
-		SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOMEM);
-		*error = ENOMEM;
+		SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOBUFS);
+		*error = ENOBUFS;
 	} else {
 		*sndout = m_length(m, NULL);
 		*new_tail = m_last(m);
@@ -12545,8 +12725,8 @@ sctp_copy_resume(struct uio *uio,
 	m = m_uiotombuf(uio, M_WAITOK, max_send_len, 0,
 		(M_PKTHDR | (user_marks_eor ? M_EOR : 0)));
 	if (m == NULL) {
-		SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOMEM);
-		*error = ENOMEM;
+		SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOBUFS);
+		*error = ENOBUFS;
 	} else {
 		*sndout = m_length(m, NULL);
 		*new_tail = m_last(m);
@@ -12558,18 +12738,18 @@ sctp_copy_resume(struct uio *uio,
 
 #if defined(__APPLE__)
 #if defined(APPLE_LEOPARD)
-        left = min(uio->uio_resid, max_send_len);
+	left = min(uio->uio_resid, max_send_len);
 #else
-        left = min(uio_resid(uio), max_send_len);
+	left = min(uio_resid(uio), max_send_len);
 #endif
 #else
-        left = min(uio->uio_resid, max_send_len);
+	left = min(uio->uio_resid, max_send_len);
 #endif
 	/* Always get a header just in case */
 	head = sctp_get_mbuf_for_msg(left, 0, M_WAITOK, 0, MT_DATA);
 	if (head == NULL) {
-		SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOMEM);
-		*error = ENOMEM;
+		SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOBUFS);
+		*error = ENOBUFS;
 		return (NULL);
 	}
 	cancpy = M_TRAILINGSPACE(head);
@@ -12590,8 +12770,8 @@ sctp_copy_resume(struct uio *uio,
 		if (SCTP_BUF_NEXT(m) == NULL) {
 			sctp_m_freem(head);
 			*new_tail = NULL;
-			SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOMEM);
-			*error = ENOMEM;
+			SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOBUFS);
+			*error = ENOBUFS;
 			return (NULL);
 		}
 		m = SCTP_BUF_NEXT(m);
@@ -12619,17 +12799,17 @@ sctp_copy_resume(struct uio *uio,
 
 static int
 sctp_copy_one(struct sctp_stream_queue_pending *sp,
-	      struct uio *uio,
-	      int resv_upfront)
+              struct uio *uio,
+              int resv_upfront)
 {
 	int left;
 #if defined(__Panda__)
 	left = sp->length;
 	sp->data = m_uiotombuf(uio, M_WAITOK, sp->length,
-			       resv_upfront, 0);
+	                       resv_upfront, 0);
 	if (sp->data == NULL) {
-		SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOMEM);
-		return (ENOMEM);
+		SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOBUFS);
+		return (ENOBUFS);
 	}
 
 	sp->tail_mbuf = m_last(sp->data);
@@ -12638,10 +12818,10 @@ sctp_copy_one(struct sctp_stream_queue_pending *sp,
 #elif defined(__FreeBSD__) && __FreeBSD_version > 602000
 	left = sp->length;
 	sp->data = m_uiotombuf(uio, M_WAITOK, sp->length,
-			       resv_upfront, 0);
+	                       resv_upfront, 0);
 	if (sp->data == NULL) {
-		SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOMEM);
-		return (ENOMEM);
+		SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOBUFS);
+		return (ENOBUFS);
 	}
 
 	sp->tail_mbuf = m_last(sp->data);
@@ -12655,8 +12835,8 @@ sctp_copy_one(struct sctp_stream_queue_pending *sp,
 	left = sp->length;
 	head = m = sctp_get_mbuf_for_msg((left + resv_upfront), 0, M_WAITOK, 0, MT_DATA);
 	if (m == NULL) {
-		SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOMEM);
-		return (ENOMEM);
+		SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOBUFS);
+		return (ENOBUFS);
 	}
 	/*-
 	 * Add this one for m in now, that way if the alloc fails we won't
@@ -12683,8 +12863,8 @@ sctp_copy_one(struct sctp_stream_queue_pending *sp,
 				 * the rest
 				 */
 				sctp_m_freem(head);
-				SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOMEM);
-				return (ENOMEM);
+				SCTP_LTRACE_ERR_RET(NULL, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOBUFS);
+				return (ENOBUFS);
 			}
 			m = SCTP_BUF_NEXT(m);
 			cancpy = M_TRAILINGSPACE(m);

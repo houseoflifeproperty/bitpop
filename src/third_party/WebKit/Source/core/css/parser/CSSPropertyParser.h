@@ -30,33 +30,26 @@
 #include "core/css/CSSFilterValue.h"
 #include "core/css/CSSGradientValue.h"
 #include "core/css/CSSGridTemplateAreasValue.h"
-#include "core/css/CSSParserMode.h"
-#include "core/css/CSSParserValues.h"
 #include "core/css/CSSProperty.h"
 #include "core/css/CSSPropertySourceData.h"
 #include "core/css/CSSSelector.h"
+#include "core/css/parser/CSSParserMode.h"
+#include "core/css/parser/CSSParserValues.h"
 #include "platform/graphics/Color.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-// FIXME: Many of these may not be used.
-class CSSArrayFunctionValue;
 class CSSBorderImageSliceValue;
 class CSSPrimitiveValue;
-class CSSSelectorList;
 class CSSValue;
 class CSSValueList;
 class CSSBasicShape;
 class CSSBasicShapeInset;
 class CSSGridLineNamesValue;
-class Document;
-class Element;
 class ImmutableStylePropertySet;
-class StyleKeyframe;
 class StylePropertyShorthand;
-class StyleKeyframe;
 class UseCounter;
 
 // Inputs: PropertyID, isImportant bool, CSSParserValueList.
@@ -138,7 +131,7 @@ private:
     PassRefPtrWillBeRawPtr<CSSValue> parseAnimationProperty();
     PassRefPtrWillBeRawPtr<CSSValue> parseAnimationTimingFunction();
 
-    bool parseWebkitTransformOriginShorthand(RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&);
+    bool parseWebkitTransformOriginShorthand(bool important);
     bool parseCubicBezierTimingFunctionValue(CSSParserValueList*& args, double& result);
     PassRefPtrWillBeRawPtr<CSSValue> parseAnimationProperty(CSSPropertyID);
     PassRefPtrWillBeRawPtr<CSSValueList> parseAnimationPropertyList(CSSPropertyID);
@@ -164,9 +157,11 @@ private:
     bool parseGridTemplateAreasRow(NamedGridAreaMap&, const size_t, size_t&);
     PassRefPtrWillBeRawPtr<CSSValue> parseGridTemplateAreas();
     void parseGridLineNames(CSSParserValueList&, CSSValueList&, CSSGridLineNamesValue* = 0);
+    PassRefPtrWillBeRawPtr<CSSValue> parseGridAutoFlow(CSSParserValueList&);
 
     bool parseClipShape(CSSPropertyID, bool important);
 
+    bool parseLegacyPosition(CSSPropertyID, bool important);
     bool parseItemPositionOverflowPosition(CSSPropertyID, bool important);
 
     PassRefPtrWillBeRawPtr<CSSValue> parseShapeProperty(CSSPropertyID propId);
@@ -187,18 +182,18 @@ private:
 
     bool parseColorParameters(CSSParserValue*, int* colorValues, bool parseAlpha);
     bool parseHSLParameters(CSSParserValue*, double* colorValues, bool parseAlpha);
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseColor(CSSParserValue* = 0);
-    bool parseColorFromValue(CSSParserValue*, RGBA32&);
+    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseColor(CSSParserValue* = 0, bool acceptQuirkyColors = false);
+    bool parseColorFromValue(CSSParserValue*, RGBA32&, bool acceptQuirkyColors = false);
 
     bool parseLineHeight(bool important);
     bool parseFontSize(bool important);
     bool parseFontVariant(bool important);
     bool parseFontWeight(bool important);
+    bool parseFontStretch(bool important);
     bool parseFontFaceSrc();
     bool parseFontFaceUnicodeRange();
 
     bool parseSVGValue(CSSPropertyID propId, bool important);
-    PassRefPtrWillBeRawPtr<CSSValue> parseSVGPaint();
     PassRefPtrWillBeRawPtr<CSSValue> parseSVGStrokeDasharray();
 
     PassRefPtrWillBeRawPtr<CSSValue> parsePaintOrder() const;
@@ -243,7 +238,6 @@ private:
     PassRefPtrWillBeRawPtr<CSSValueList> parseTransformOrigin();
     PassRefPtrWillBeRawPtr<CSSValueList> parseTransform(CSSPropertyID);
     PassRefPtrWillBeRawPtr<CSSValue> parseTransformValue(CSSPropertyID, CSSParserValue*);
-    bool parseWebkitTransformOrigin(CSSPropertyID propId, CSSPropertyID& propId1, CSSPropertyID& propId2, CSSPropertyID& propId3, RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&);
     bool parseWebkitPerspectiveOrigin(CSSPropertyID propId, CSSPropertyID& propId1, CSSPropertyID& propId2,  RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&);
 
     bool parseTextEmphasisStyle(bool important);
@@ -404,6 +398,6 @@ CSSValueID cssValueKeywordID(const CSSParserString&);
 bool isKeywordPropertyID(CSSPropertyID);
 bool isValidKeywordPropertyAndValue(CSSPropertyID, CSSValueID, const CSSParserContext&);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSPropertyParser_h

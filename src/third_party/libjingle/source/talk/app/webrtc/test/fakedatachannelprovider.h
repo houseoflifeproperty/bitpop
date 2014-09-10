@@ -37,7 +37,7 @@ class FakeDataChannelProvider : public webrtc::DataChannelProviderInterface {
   virtual ~FakeDataChannelProvider() {}
 
   virtual bool SendData(const cricket::SendDataParams& params,
-                        const talk_base::Buffer& payload,
+                        const rtc::Buffer& payload,
                         cricket::SendDataResult* result) OVERRIDE {
     ASSERT(ready_to_send_ && transport_available_);
     if (send_blocked_) {
@@ -45,7 +45,7 @@ class FakeDataChannelProvider : public webrtc::DataChannelProviderInterface {
       return false;
     }
 
-    if (transport_error_) {
+    if (transport_error_ || payload.length() == 0) {
       *result = cricket::SDR_ERROR;
       return false;
     }

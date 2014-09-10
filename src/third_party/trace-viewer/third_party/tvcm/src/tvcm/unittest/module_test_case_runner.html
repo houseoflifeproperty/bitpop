@@ -8,15 +8,12 @@ found in the LICENSE file.
 <head>
   <title>tvcm/module_test_case_backend.html</title>
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-  <script src="/tvcm/__init__.js"></script>
-  <style>
-  </style>
-  <script>
-    tvcm.require('tvcm.unittest');
-    tvcm.require('tvcm.unittest.text_test_results');
-    tvcm.require('tvcm.unittest.suite_loader');
-    tvcm.require('tvcm.unittest.test_runner');
-  </script>
+  <script src="/platform.min.js"></script>
+  <script src="/polymer.min.js"></script>
+  <link rel="import" href="/tvcm/unittest.html">
+  <link rel="import" href="/tvcm/unittest/text_test_results.html">
+  <link rel="import" href="/tvcm/unittest/suite_loader.html">
+  <link rel="import" href="/tvcm/unittest/test_runner.html">
 </head>
 <body>
   <h1 id="status">
@@ -58,8 +55,11 @@ found in the LICENSE file.
       var testCaseNameToRun = p.testCaseName;
 
       var runTestResolver;
-      var runTestPromise = new Promise(function(resolver) {
-        runTestResolver = resolver;
+      var runTestPromise = new Promise(function(resolve, reject) {
+        runTestResolver = {
+          resolve: resolve,
+          reject: reject
+        };
       });
 
       var loader = new tvcm.unittest.SuiteLoader([suiteNameToLoad]);
@@ -85,7 +85,7 @@ found in the LICENSE file.
 
       function runTestCaseComplete() {
         if (results.numTestsThatFailed === 0) {
-          runTestResolver.fulfill();
+          runTestResolver.resolve();
           return;
         }
 

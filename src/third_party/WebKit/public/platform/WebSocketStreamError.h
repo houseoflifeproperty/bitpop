@@ -38,10 +38,9 @@
 #include "wtf/PassRefPtr.h"
 #endif
 
-namespace WebCore { class SocketStreamError; }
-
 namespace blink {
 
+class SocketStreamError;
 class WebString;
 
 class BLINK_PLATFORM_EXPORT WebSocketStreamError {
@@ -55,13 +54,13 @@ public:
     void reset();
 
 #if INSIDE_BLINK
-    WebSocketStreamError(WTF::PassRefPtr<WebCore::SocketStreamError>);
-    WebSocketStreamError& operator=(WTF::PassRefPtr<WebCore::SocketStreamError>);
-    operator WTF::PassRefPtr<WebCore::SocketStreamError>() const;
+    WebSocketStreamError(WTF::PassRefPtr<SocketStreamError>);
+    WebSocketStreamError& operator=(WTF::PassRefPtr<SocketStreamError>);
+    operator WTF::PassRefPtr<SocketStreamError>() const;
 #endif
 
 private:
-    WebPrivatePtr<WebCore::SocketStreamError> m_private;
+    WebPrivatePtr<SocketStreamError> m_private;
 };
 
 } // namespace blink

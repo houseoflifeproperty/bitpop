@@ -21,13 +21,11 @@ source_set("ppapi_plugin") {
   deps = [
     "//base",
     "//content:export",
-    "//mojo/public/interfaces/service_provider",
+    "//mojo/public/interfaces/application",
     "//ppapi:ppapi_ipc",
     "//skia",
     "//third_party/icu",
-    #"//third_party/WebKit/public:blink",  TODO(GYP)
-    # TODO(GYP) remove this when blink is enabled:
-    "//third_party/WebKit/public:blink_headers",
+    "//third_party/WebKit/public:blink",
     "//ui/base",
     "//ui/gfx",
     "//ui/gfx/geometry",

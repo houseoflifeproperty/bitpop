@@ -68,6 +68,8 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   // LayerTreeHost.
   void QueueSwapPromise(scoped_ptr<cc::SwapPromise> swap_promise);
   int GetLayerTreeId() const;
+  int GetSourceFrameNumber() const;
+  void SetNeedsCommit();
   void NotifyInputThrottledUntilCommit();
   const cc::Layer* GetRootLayer() const;
   int ScheduleMicroBenchmark(
@@ -115,6 +117,9 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
       const blink::WebLayer* innerViewportScrollLayer,
       const blink::WebLayer* outerViewportScrollLayer) OVERRIDE;
   virtual void clearViewportLayers() OVERRIDE;
+  virtual void registerSelection(const blink::WebSelectionBound& start,
+                                 const blink::WebSelectionBound& end) OVERRIDE;
+  virtual void clearSelection() OVERRIDE;
   virtual void setShowFPSCounter(bool show);
   virtual void setShowPaintRects(bool show);
   virtual void setShowDebugBorders(bool show);

@@ -30,13 +30,12 @@
 #include "config.h"
 #include "modules/serviceworkers/ServiceWorkerContainer.h"
 
-#include "bindings/v8/CallbackPromiseAdapter.h"
-#include "bindings/v8/ScriptPromise.h"
-#include "bindings/v8/ScriptPromiseResolverWithContext.h"
-#include "bindings/v8/ScriptState.h"
-#include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/CallbackPromiseAdapter.h"
+#include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptPromiseResolver.h"
+#include "bindings/core/v8/ScriptState.h"
+#include "bindings/core/v8/SerializedScriptValue.h"
 #include "core/dom/DOMException.h"
-#include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/MessagePort.h"
@@ -45,21 +44,21 @@
 #include "modules/serviceworkers/ServiceWorker.h"
 #include "modules/serviceworkers/ServiceWorkerContainerClient.h"
 #include "modules/serviceworkers/ServiceWorkerError.h"
+#include "modules/serviceworkers/ServiceWorkerRegistration.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "public/platform/WebServiceWorker.h"
 #include "public/platform/WebServiceWorkerProvider.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
-#include <v8.h>
 
 using blink::WebServiceWorker;
 using blink::WebServiceWorkerProvider;
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtr<ServiceWorkerContainer> ServiceWorkerContainer::create(ExecutionContext* executionContext)
+PassRefPtrWillBeRawPtr<ServiceWorkerContainer> ServiceWorkerContainer::create(ExecutionContext* executionContext)
 {
-    return adoptRef(new ServiceWorkerContainer(executionContext));
+    return adoptRefWillBeNoop(new ServiceWorkerContainer(executionContext));
 }
 
 ServiceWorkerContainer::~ServiceWorkerContainer()
@@ -67,19 +66,28 @@ ServiceWorkerContainer::~ServiceWorkerContainer()
     ASSERT(!m_provider);
 }
 
-void ServiceWorkerContainer::detachClient()
+void ServiceWorkerContainer::willBeDetachedFromFrame()
 {
     if (m_provider) {
         m_provider->setClient(0);
-        m_provider = 0;
+        m_provider = nullptr;
     }
+}
+
+void ServiceWorkerContainer::trace(Visitor* visitor)
+{
+    visitor->trace(m_active);
+    visitor->trace(m_controller);
+    visitor->trace(m_installing);
+    visitor->trace(m_waiting);
+    visitor->trace(m_ready);
 }
 
 ScriptPromise ServiceWorkerContainer::registerServiceWorker(ScriptState* scriptState, const String& url, const Dictionary& dictionary)
 {
     RegistrationOptionList options(dictionary);
     ASSERT(RuntimeEnabledFeatures::serviceWorkerEnabled());
-    RefPtr<ScriptPromiseResolverWithContext> resolver = ScriptPromiseResolverWithContext::create(scriptState);
+    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
     if (!m_provider) {
@@ -87,33 +95,46 @@ ScriptPromise ServiceWorkerContainer::registerServiceWorker(ScriptState* scriptS
         return promise;
     }
 
+    // FIXME: This should use the container's execution context, not
+    // the callers.
     ExecutionContext* executionContext = scriptState->executionContext();
     RefPtr<SecurityOrigin> documentOrigin = executionContext->securityOrigin();
+    String errorMessage;
+    if (!documentOrigin->canAccessFeatureRequiringSecureOrigin(errorMessage)) {
+        resolver->reject(DOMException::create(NotSupportedError, errorMessage));
+        return promise;
+    }
+
     KURL patternURL = executionContext->completeURL(options.scope);
     patternURL.removeFragmentIdentifier();
     if (!documentOrigin->canRequest(patternURL)) {
-        resolver->reject(DOMException::create(SecurityError, "Can only register for patterns in the document's origin."));
+        resolver->reject(DOMException::create(SecurityError, "The scope must match the current origin."));
         return promise;
     }
 
     KURL scriptURL = executionContext->completeURL(url);
     scriptURL.removeFragmentIdentifier();
     if (!documentOrigin->canRequest(scriptURL)) {
-        resolver->reject(DOMException::create(SecurityError, "Script must be in document's origin."));
+        resolver->reject(DOMException::create(SecurityError, "The origin of the script must match the current origin."));
         return promise;
     }
 
-    m_provider->registerServiceWorker(patternURL, scriptURL, new CallbackPromiseAdapter<ServiceWorker, ServiceWorkerError>(resolver));
+    m_provider->registerServiceWorker(patternURL, scriptURL, new CallbackPromiseAdapter<ServiceWorkerRegistration, ServiceWorkerError>(resolver));
+
     return promise;
 }
 
 class UndefinedValue {
 public:
-    typedef WebServiceWorker WebType;
-    static V8UndefinedType from(ScriptPromiseResolverWithContext* resolver, WebServiceWorker* worker)
+    typedef WebServiceWorkerRegistration WebType;
+    static V8UndefinedType take(ScriptPromiseResolver* resolver, WebType* registration)
     {
-        ASSERT(!worker); // Anything passed here will be leaked.
+        ASSERT(!registration); // Anything passed here will be leaked.
         return V8UndefinedType();
+    }
+    static void dispose(WebType* registration)
+    {
+        ASSERT(!registration); // Anything passed here will be leaked.
     }
 
 private:
@@ -123,7 +144,7 @@ private:
 ScriptPromise ServiceWorkerContainer::unregisterServiceWorker(ScriptState* scriptState, const String& pattern)
 {
     ASSERT(RuntimeEnabledFeatures::serviceWorkerEnabled());
-    RefPtr<ScriptPromiseResolverWithContext> resolver = ScriptPromiseResolverWithContext::create(scriptState);
+    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
     if (!m_provider) {
@@ -131,11 +152,19 @@ ScriptPromise ServiceWorkerContainer::unregisterServiceWorker(ScriptState* scrip
         return promise;
     }
 
+    // FIXME: This should use the container's execution context, not
+    // the callers.
     RefPtr<SecurityOrigin> documentOrigin = scriptState->executionContext()->securityOrigin();
+    String errorMessage;
+    if (!documentOrigin->canAccessFeatureRequiringSecureOrigin(errorMessage)) {
+        resolver->reject(DOMException::create(NotSupportedError, errorMessage));
+        return promise;
+    }
+
     KURL patternURL = scriptState->executionContext()->completeURL(pattern);
     patternURL.removeFragmentIdentifier();
     if (!pattern.isEmpty() && !documentOrigin->canRequest(patternURL)) {
-        resolver->reject(DOMException::create(SecurityError, "Can only unregister for patterns in the document's origin."));
+        resolver->reject(DOMException::create(SecurityError, "The scope must match the current origin."));
         return promise;
     }
 
@@ -143,38 +172,63 @@ ScriptPromise ServiceWorkerContainer::unregisterServiceWorker(ScriptState* scrip
     return promise;
 }
 
-ScriptPromise ServiceWorkerContainer::ready(ScriptState* scriptState)
+ServiceWorkerContainer::ReadyProperty* ServiceWorkerContainer::createReadyProperty()
 {
-    if (m_controller.get()) {
-        RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
-        ScriptPromise promise = resolver->promise();
-        resolver->resolve(m_controller.get());
-        return promise;
+    return new ReadyProperty(executionContext(), this, ReadyProperty::Ready);
+}
+
+ScriptPromise ServiceWorkerContainer::ready(ScriptState* callerState)
+{
+    if (!executionContext())
+        return ScriptPromise();
+
+    if (!callerState->world().isMainWorld()) {
+        // FIXME: Support .ready from isolated worlds when
+        // ScriptPromiseProperty can vend Promises in isolated worlds.
+        return ScriptPromise::rejectWithDOMException(callerState, DOMException::create(NotSupportedError, "'ready' is only supported in pages."));
     }
-    // FIXME: Elaborate the implementation when the "waiting" property
-    // or replace() is implemented.
-    return ScriptPromise();
+
+    return m_ready->promise(callerState->world());
 }
 
 // If the WebServiceWorker is up for adoption (does not have a
 // WebServiceWorkerProxy owner), rejects the adoption by deleting the
 // WebServiceWorker.
-static void deleteIfNoExistingOwner(blink::WebServiceWorker* serviceWorker)
+static void deleteIfNoExistingOwner(WebServiceWorker* serviceWorker)
 {
     if (serviceWorker && !serviceWorker->proxy())
         delete serviceWorker;
 }
 
-void ServiceWorkerContainer::setActive(blink::WebServiceWorker* serviceWorker)
+void ServiceWorkerContainer::setActive(WebServiceWorker* serviceWorker)
 {
     if (!executionContext()) {
         deleteIfNoExistingOwner(serviceWorker);
         return;
     }
+    RefPtrWillBeRawPtr<ServiceWorker> previousReadyWorker = m_active;
     m_active = ServiceWorker::from(executionContext(), serviceWorker);
+    checkReadyChanged(previousReadyWorker.release());
 }
 
-void ServiceWorkerContainer::setController(blink::WebServiceWorker* serviceWorker)
+void ServiceWorkerContainer::checkReadyChanged(PassRefPtrWillBeRawPtr<ServiceWorker> previousReadyWorker)
+{
+    ServiceWorker* currentReadyWorker = m_active.get();
+
+    if (previousReadyWorker == currentReadyWorker)
+        return;
+
+    if (m_ready->state() != ReadyProperty::Pending) {
+        // Already resolved Promises are now stale because the
+        // ready worker changed
+        m_ready = createReadyProperty();
+    }
+
+    if (currentReadyWorker)
+        m_ready->resolve(currentReadyWorker);
+}
+
+void ServiceWorkerContainer::setController(WebServiceWorker* serviceWorker)
 {
     if (!executionContext()) {
         deleteIfNoExistingOwner(serviceWorker);
@@ -183,7 +237,7 @@ void ServiceWorkerContainer::setController(blink::WebServiceWorker* serviceWorke
     m_controller = ServiceWorker::from(executionContext(), serviceWorker);
 }
 
-void ServiceWorkerContainer::setInstalling(blink::WebServiceWorker* serviceWorker)
+void ServiceWorkerContainer::setInstalling(WebServiceWorker* serviceWorker)
 {
     if (!executionContext()) {
         deleteIfNoExistingOwner(serviceWorker);
@@ -192,7 +246,7 @@ void ServiceWorkerContainer::setInstalling(blink::WebServiceWorker* serviceWorke
     m_installing = ServiceWorker::from(executionContext(), serviceWorker);
 }
 
-void ServiceWorkerContainer::setWaiting(blink::WebServiceWorker* serviceWorker)
+void ServiceWorkerContainer::setWaiting(WebServiceWorker* serviceWorker)
 {
     if (!executionContext()) {
         deleteIfNoExistingOwner(serviceWorker);
@@ -201,12 +255,12 @@ void ServiceWorkerContainer::setWaiting(blink::WebServiceWorker* serviceWorker)
     m_waiting = ServiceWorker::from(executionContext(), serviceWorker);
 }
 
-void ServiceWorkerContainer::dispatchMessageEvent(const blink::WebString& message, const blink::WebMessagePortChannelArray& webChannels)
+void ServiceWorkerContainer::dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray& webChannels)
 {
     if (!executionContext() || !executionContext()->executingWindow())
         return;
 
-    OwnPtr<MessagePortArray> ports = MessagePort::toMessagePortArray(executionContext(), webChannels);
+    OwnPtrWillBeRawPtr<MessagePortArray> ports = MessagePort::toMessagePortArray(executionContext(), webChannels);
     RefPtr<SerializedScriptValue> value = SerializedScriptValue::createFromWire(message);
     executionContext()->executingWindow()->dispatchEvent(MessageEvent::create(ports.release(), value));
 }
@@ -220,6 +274,8 @@ ServiceWorkerContainer::ServiceWorkerContainer(ExecutionContext* executionContex
     if (!executionContext)
         return;
 
+    m_ready = createReadyProperty();
+
     if (ServiceWorkerContainerClient* client = ServiceWorkerContainerClient::from(executionContext)) {
         m_provider = client->provider();
         if (m_provider)
@@ -227,4 +283,4 @@ ServiceWorkerContainer::ServiceWorkerContainer(ExecutionContext* executionContex
     }
 }
 
-} // namespace WebCore
+} // namespace blink

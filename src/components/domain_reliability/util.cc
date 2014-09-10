@@ -7,7 +7,6 @@
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
-#include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "net/base/net_errors.h"
@@ -84,7 +83,7 @@ bool GetDomainReliabilityBeaconStatus(
     std::string* beacon_status_out) {
   if (net_error == net::OK) {
     if (http_response_code >= 400 && http_response_code < 600)
-      *beacon_status_out = base::StringPrintf("http.%d", http_response_code);
+      *beacon_status_out = "http.error";
     else
       *beacon_status_out = "ok";
     return true;
@@ -98,6 +97,30 @@ bool GetDomainReliabilityBeaconStatus(
     }
   }
   return false;
+}
+
+// TODO(ttuttle): Consider using NPN/ALPN instead, if there's a good way to
+//                differentiate HTTP and HTTPS.
+std::string GetDomainReliabilityProtocol(
+    net::HttpResponseInfo::ConnectionInfo connection_info,
+    bool ssl_info_populated) {
+  switch (connection_info) {
+    case net::HttpResponseInfo::CONNECTION_INFO_UNKNOWN:
+      return "";
+    case net::HttpResponseInfo::CONNECTION_INFO_HTTP1:
+      return ssl_info_populated ? "HTTPS" : "HTTP";
+    case net::HttpResponseInfo::CONNECTION_INFO_DEPRECATED_SPDY2:
+    case net::HttpResponseInfo::CONNECTION_INFO_SPDY3:
+    case net::HttpResponseInfo::CONNECTION_INFO_SPDY4:
+      return "SPDY";
+    case net::HttpResponseInfo::CONNECTION_INFO_QUIC1_SPDY3:
+      return "QUIC";
+    case net::HttpResponseInfo::NUM_OF_CONNECTION_INFOS:
+      NOTREACHED();
+      return "";
+  }
+  NOTREACHED();
+  return "";
 }
 
 MockableTime::Timer::~Timer() {}

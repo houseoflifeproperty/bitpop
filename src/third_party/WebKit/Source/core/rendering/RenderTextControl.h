@@ -25,7 +25,7 @@
 #include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/RenderFlexibleBox.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLTextFormControlElement;
 
@@ -80,7 +80,7 @@ private:
 
     virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0) OVERRIDE FINAL;
 
-    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE FINAL;
+    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) const OVERRIDE FINAL;
 
     virtual bool canBeProgramaticallyScrolled() const OVERRIDE FINAL { return true; }
 };
@@ -107,6 +107,6 @@ public:
 };
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderTextControl_h

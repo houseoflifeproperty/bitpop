@@ -12,6 +12,7 @@
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/focus/focus_search.h"
 #include "ui/views/view.h"
+#include "ui/views/view_targeter_delegate.h"
 
 namespace views {
 
@@ -44,6 +45,7 @@ class PreEventDispatchHandler;
 //  TODO(sky): We don't really want to export this class.
 //
 class VIEWS_EXPORT RootView : public View,
+                              public ViewTargeterDelegate,
                               public FocusTraversable,
                               public ui::EventProcessor {
  public:
@@ -110,11 +112,6 @@ class VIEWS_EXPORT RootView : public View,
   virtual void UpdateParentLayer() OVERRIDE;
 
  protected:
-  // TODO(tdanderson): Remove RootView::DispatchGestureEvent() once
-  //                   its targeting and dispatch logic has been moved
-  //                   elsewhere. See crbug.com/348083.
-  virtual void DispatchGestureEvent(ui::GestureEvent* event);
-
   // Overridden from View:
   virtual void ViewHierarchyChanged(
       const ViewHierarchyChangedDetails& details) OVERRIDE;
@@ -130,6 +127,11 @@ class VIEWS_EXPORT RootView : public View,
   friend class ::views::test::WidgetTest;
 
   // Input ---------------------------------------------------------------------
+
+  // TODO(tdanderson): Remove RootView::DispatchGestureEvent() once
+  //                   its targeting and dispatch logic has been moved
+  //                   elsewhere. See crbug.com/348083.
+  void DispatchGestureEvent(ui::GestureEvent* event);
 
   // Update the cursor given a mouse event. This is called by non mouse_move
   // event handlers to honor the cursor desired by views located under the
@@ -186,12 +188,8 @@ class VIEWS_EXPORT RootView : public View,
   int last_mouse_event_y_;
 
   // The view currently handling gesture events. When set, this handler receives
-  // all gesture events, except when there is an event handler for the specific
-  // gesture (e.g. scroll).
+  // all gesture events.
   View* gesture_handler_;
-
-  // The view currently handling scroll gesture events.
-  View* scroll_gesture_handler_;
 
   scoped_ptr<internal::PreEventDispatchHandler> pre_dispatch_handler_;
   scoped_ptr<internal::PostEventDispatchHandler> post_dispatch_handler_;

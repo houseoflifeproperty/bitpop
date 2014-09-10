@@ -75,10 +75,10 @@ class GL_EXPORT NativeViewGLSurfaceEGL : public GLSurfaceEGL {
 
  protected:
   virtual ~NativeViewGLSurfaceEGL();
-  void SetHandle(EGLSurface surface);
+
+  EGLNativeWindowType window_;
 
  private:
-  EGLNativeWindowType window_;
   EGLSurface surface_;
   bool supports_post_sub_buffer_;
   EGLConfig config_;

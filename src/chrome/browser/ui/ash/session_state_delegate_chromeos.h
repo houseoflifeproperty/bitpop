@@ -10,8 +10,8 @@
 #include "base/compiler_specific.h"
 #include "base/observer_list.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/login/login_state.h"
+#include "components/user_manager/user_manager.h"
 
 namespace ash {
 class SessionStateObserver;
@@ -20,7 +20,7 @@ class SessionStateObserver;
 class SessionStateDelegateChromeos
     : public ash::SessionStateDelegate,
       public chromeos::LoginState::Observer,
-      public chromeos::UserManager::UserSessionStateObserver,
+      public user_manager::UserManager::UserSessionStateObserver,
       public chromeos::UserAddingScreen::Observer {
  public:
   SessionStateDelegateChromeos();
@@ -41,13 +41,14 @@ class SessionStateDelegateChromeos
   virtual void UnlockScreen() OVERRIDE;
   virtual bool IsUserSessionBlocked() const OVERRIDE;
   virtual SessionState GetSessionState() const OVERRIDE;
-  virtual const ash::UserInfo* GetUserInfo(
+  virtual const user_manager::UserInfo* GetUserInfo(
       ash::MultiProfileIndex index) const OVERRIDE;
-  virtual const ash::UserInfo* GetUserInfo(
+  virtual const user_manager::UserInfo* GetUserInfo(
       content::BrowserContext* context) const OVERRIDE;
   virtual bool ShouldShowAvatar(aura::Window* window) const OVERRIDE;
   virtual void SwitchActiveUser(const std::string& user_id) OVERRIDE;
   virtual void CycleActiveUser(CycleUser cycle_user) OVERRIDE;
+  virtual bool IsMultiProfileAllowedByPrimaryUserPolicy() const OVERRIDE;
   virtual void AddSessionStateObserver(
       ash::SessionStateObserver* observer) OVERRIDE;
   virtual void RemoveSessionStateObserver(
@@ -56,9 +57,11 @@ class SessionStateDelegateChromeos
   // chromeos::LoginState::Observer overrides.
   virtual void LoggedInStateChanged() OVERRIDE;
 
-  // chromeos::UserManager::UserSessionStateObserver:
-  virtual void ActiveUserChanged(const chromeos::User* active_user) OVERRIDE;
-  virtual void UserAddedToSession(const chromeos::User* added_user) OVERRIDE;
+  // user_manager::UserManager::UserSessionStateObserver:
+  virtual void ActiveUserChanged(
+      const user_manager::User* active_user) OVERRIDE;
+  virtual void UserAddedToSession(
+      const user_manager::User* added_user) OVERRIDE;
 
   // chromeos::UserAddingScreen::Observer:
   virtual void OnUserAddingStarted() OVERRIDE;
