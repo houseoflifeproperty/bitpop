@@ -6,7 +6,6 @@
     '<@(chrome_dll_project)',
     '../chrome.gyp:chrome',
     '../chrome.gyp:chrome_nacl_win64',
-    '../chrome.gyp:default_extensions',
     '../chrome.gyp:setup',
   ],
   'include_dirs': [

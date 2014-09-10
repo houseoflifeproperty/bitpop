@@ -28,7 +28,7 @@ class Browser;
 class BrowserView;
 
 namespace extensions {
-  class ExtensionHost;
+  class ExtensionViewHost;
 }
 
 class FriendsSidebarView : public views::View,
@@ -53,12 +53,12 @@ protected:
 private:
   void Init();
 
-  void InitializeExtensionHost();
+  void InitializeExtensionViewHost();
 
   /* data */
   Browser* browser_;
   BrowserView* parent_;
-  scoped_ptr<extensions::ExtensionHost> extension_host_;
+  scoped_ptr<extensions::ExtensionViewHost> extension_view_host_;
 
   content::NotificationRegistrar registrar_;
 

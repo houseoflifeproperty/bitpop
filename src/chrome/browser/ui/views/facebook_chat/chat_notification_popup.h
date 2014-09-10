@@ -30,6 +30,8 @@ namespace views {
   class ImageButton;
 }
 
+class NotificationContainerView;
+
 using views::BubbleDelegateView;
 using views::BubbleBorder;
 
@@ -37,7 +39,7 @@ class ChatNotificationPopup : public BubbleDelegateView,
                               public views::ButtonListener {
 public:
   static ChatNotificationPopup* Show(views::View* anchor_view,
-      BubbleBorder::ArrowLocation arrow_location);
+      BubbleBorder::Arrow arrow_location);
 
   void PushMessage(const std::string& message);
   std::string PopMessage();
@@ -49,17 +51,23 @@ public:
   // views::ButtonListener protocol
   virtual void ButtonPressed(views::Button* sender, const ui::Event& event) OVERRIDE;
 
+  // views::View overrides
   virtual gfx::Size GetPreferredSize() OVERRIDE;
 
-  views::View* container_view() { return container_view_; }
+  // views::WidgetDelegateView overrides
+  // virtual bool ShouldShowCloseButton() const OVERRIDE;
+  // virtual bool ShouldShowWindowTitle() const OVERRIDE;
+  // virtual base::string16 GetWindowTitle() const OVERRIDE;
+
+  views::View* container_view();
 
 private:
 
   ChatNotificationPopup(views::View* anchor_view,
-                        BubbleBorder::ArrowLocation arrow_location);
+                        BubbleBorder::Arrow arrow_location);
 
   MessageContainer messages_;
-  views::View* container_view_;
+  NotificationContainerView* container_view_;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_FACEBOOK_CHAT_CHAT_NOTIFICATION_POPUP_H_

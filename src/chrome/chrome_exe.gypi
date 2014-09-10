@@ -22,11 +22,11 @@
               'action_name': 'reorder_imports',
               'inputs': [
                 '<(reorder_py_path)',
-                '$(OutDir)\\initialexe\\chrome.exe',
+                '$(OutDir)\\initialexe\\bitpop.exe',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)\\chrome.exe',
-                '<(PRODUCT_DIR)\\chrome.exe.pdb',
+                '<(PRODUCT_DIR)\\bitpop.exe',
+                '<(PRODUCT_DIR)\\bitpop.exe.pdb',
               ],
               'action': [
                 'python',
@@ -45,7 +45,7 @@
       'target_name': 'chrome_initial',
       'type': 'executable',
       # Name the exe chrome.exe, not chrome_initial.exe.
-      'product_name': 'chrome',
+      'product_name': 'bitpop',
       'mac_bundle': 1,
       'variables': {
         'use_system_xdg_utils%': 0,
@@ -343,20 +343,6 @@
                 '<(PRODUCT_DIR)/libplugin_carbon_interpose.dylib',
               ],
             },
-            {
-              'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/Contents/Extensions',
-              'files': [
-                '<(PRODUCT_DIR)/extensions/external_extensions.json',
-                '<(PRODUCT_DIR)/extensions/dropdown_most_visited.crx',
-                '<(PRODUCT_DIR)/extensions/facebook_friends.crx',
-                '<(PRODUCT_DIR)/extensions/facebook_messages.crx',
-                '<(PRODUCT_DIR)/extensions/facebook_notifications.crx',
-                '<(PRODUCT_DIR)/extensions/uncensor_domains.crx',
-                '<(PRODUCT_DIR)/extensions/uncensor_proxy.crx',
-                '<(PRODUCT_DIR)/extensions/share_button.crx',
-                '<(PRODUCT_DIR)/extensions/share_this.crx',
-              ],
-            },
           ],
           'postbuilds': [
             {
@@ -521,7 +507,6 @@
             '../components/components.gyp:breakpad_component',
             '../components/components.gyp:policy',
             '../sandbox/sandbox.gyp:sandbox',
-            'default_extensions',
           ],
           'sources': [
             'app/chrome_breakpad_client.cc',
@@ -534,7 +519,7 @@
           'msvs_settings': {
             'VCLinkerTool': {
               'ImportLibrary': '$(OutDir)\\lib\\chrome_exe.lib',
-              'OutputFile': '$(OutDir)\\initialexe\\chrome.exe',
+              'OutputFile': '$(OutDir)\\initialexe\\bitpop.exe',
               'DelayLoadDLLs': [
                 'dbghelp.dll',
                 'dwmapi.dll',

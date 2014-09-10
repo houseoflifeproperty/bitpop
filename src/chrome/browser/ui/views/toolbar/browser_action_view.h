@@ -169,6 +169,9 @@ class BrowserActionButton : public views::MenuButton,
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseMoved(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseCaptureLost() OVERRIDE;
   virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
@@ -201,6 +204,8 @@ class BrowserActionButton : public views::MenuButton,
 
  private:
   virtual ~BrowserActionButton();
+
+  void set_should_draw_as_pushed(bool flag);
 
   // Register an extension command if the extension has an active one.
   void MaybeRegisterExtensionCommand();
@@ -247,6 +252,12 @@ class BrowserActionButton : public views::MenuButton,
   // The observer that we need to notify when the icon of the button has been
   // updated.
   IconObserver* icon_observer_;
+
+  // Whether this is a customized button serving the facebook extension purposes
+  bool is_custom_extension_;
+
+  // In case is_custom_extension_ is set, this tells how the button is drawn
+  bool should_draw_as_pushed_;
 
   friend class base::DeleteHelper<BrowserActionButton>;
 

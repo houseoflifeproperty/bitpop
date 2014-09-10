@@ -229,14 +229,12 @@ if (!button_)
   urlString += "&jid=";
   urlString += mgr->global_my_uid();
   urlString += "&name=";
-  urlString += bridge_->chat()->username();
   url::RawCanonOutput<1024> out;
   url::EncodeURIComponent(
                   bridge_->chat()->username().c_str(),
                   bridge_->chat()->username().length(),
                   &out);
   urlString += std::string(out.data(), out.length());
-  LOG(INFO) << urlString;
   return GURL(urlString);
 }
 

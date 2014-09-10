@@ -42,9 +42,8 @@ FbButtonBubble* FbButtonBubble::ShowBubble(Browser* browser,
                                            views::View* anchor_view,
 										   views::BubbleDelegateView* other) {
   FbButtonBubble* delegate = new FbButtonBubble(browser, anchor_view, other);
-  delegate->set_arrow_location(views::BubbleBorder::TOP_RIGHT);
+  delegate->set_arrow(views::BubbleBorder::TOP_RIGHT);
   views::BubbleDelegateView::CreateBubble(delegate);
-  delegate->StartFade(true);
   return delegate;
 }
 
@@ -54,11 +53,11 @@ void FbButtonBubble::Init() {
 
   views::Label* title = new views::Label(
       l10n_util::GetStringUTF16(IDS_FBB_BUBBLE_TITLE));
-  title->SetFont(original_font.DeriveFont(2, gfx::Font::BOLD));
+  title->SetFontList(gfx::FontList(original_font.Derive(2, gfx::Font::BOLD)));
 
   views::Label* subtext =
       new views::Label(l10n_util::GetStringUTF16(IDS_FBB_BUBBLE_SUBTEXT));
-  subtext->SetFont(original_font);
+  subtext->SetFontList(gfx::FontList(original_font));
   subtext->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   subtext->SetMultiLine(true);
 
@@ -83,7 +82,7 @@ FbButtonBubble::FbButtonBubble(Browser* browser, views::View* anchor_view,
       browser_(browser),
 	  other_(other) {
   // Compensate for built-in vertical padding in the anchor view's image.
-  set_anchor_insets(
+  set_anchor_view_insets(
       gfx::Insets(kAnchorVerticalInset, 0, kAnchorVerticalInset, 0));
 }
 

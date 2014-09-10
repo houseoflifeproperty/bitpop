@@ -16,7 +16,7 @@
 
 #include "chrome/browser/ui/views/facebook_chat/facebook_bitpop_notification_win.h"
 
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -38,6 +38,7 @@
 #include "base/win/windows_version.h"
 #include "skia/ext/image_operations.h"
 #include "ui/gfx/icon_util.h"
+#include "ui/views/win/hwnd_util.h"
 #endif
 
 namespace {
@@ -77,11 +78,11 @@ void FacebookBitpopNotificationWin::ClearNotification() {
 void FacebookBitpopNotificationWin::NotifyUnreadMessagesWithLastUser(int num_unread,
                                                 const std::string& user_id) {
 
-  Browser* browser = browser::FindTabbedBrowser(profile_, false, chrome::HOST_DESKTOP_TYPE_FIRST);
+  Browser* browser = chrome::FindTabbedBrowser(profile_, false, chrome::HOST_DESKTOP_TYPE_FIRST);
   if (browser == NULL)
     return;
 
-  HWND hwnd = browser->window()->GetNativeWindow();
+  HWND hwnd = views::HWNDForNativeWindow(browser->window()->GetNativeWindow());
 
   FLASHWINFO fwInfo;
   ::ZeroMemory(&fwInfo, sizeof(FLASHWINFO));

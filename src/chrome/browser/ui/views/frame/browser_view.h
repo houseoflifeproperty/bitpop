@@ -673,9 +673,6 @@ class BrowserView : public BrowserWindow,
   // Handled by ContentsLayoutManager.
   views::View* contents_container_;
 
-  // Split view containing the contents container and devtools container.
-  views::SingleSplitView* contents_split_;
-
   // The view that contains facebook friends list with names, photo and status
   scoped_ptr<FriendsSidebarView> fb_friend_list_sidebar_;
 

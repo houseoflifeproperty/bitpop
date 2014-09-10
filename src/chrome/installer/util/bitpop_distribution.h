@@ -20,59 +20,78 @@
 
 #include <string>
 
-#include "base/gtest_prod_util.h"
 #include "chrome/installer/util/browser_distribution.h"
-#include "chrome/installer/util/util_constants.h"
-
-class DictionaryValue;
-class FilePath;
 
 class BitpopDistribution : public BrowserDistribution {
  public:
-  virtual std::wstring GetAppGuid() OVERRIDE;
+  virtual void DoPostUninstallOperations(
+      const Version& version,
+      const base::FilePath& local_data_path,
+      const base::string16& distribution_data) OVERRIDE;
 
-  virtual std::wstring GetBaseAppName() OVERRIDE;
+  virtual base::string16 GetActiveSetupGuid() OVERRIDE;
 
-  virtual std::wstring GetAlternateApplicationName() OVERRIDE;
+  virtual base::string16 GetAppGuid() OVERRIDE;
 
-  virtual std::wstring GetBaseAppId() OVERRIDE;
+  virtual base::string16 GetShortcutName(ShortcutType shortcut_type) OVERRIDE;
 
-  virtual std::wstring GetInstallSubDir() OVERRIDE;
+  virtual base::string16 GetIconFilename() OVERRIDE;
 
-  virtual std::wstring GetPublisherName() OVERRIDE;
+  virtual int GetIconIndex(ShortcutType shortcut_type) OVERRIDE;
 
-  virtual std::wstring GetAppDescription() OVERRIDE;
+  virtual base::string16 GetBaseAppName() OVERRIDE;
+
+  virtual base::string16 GetBaseAppId() OVERRIDE;
+
+  virtual base::string16 GetBrowserProgIdPrefix() OVERRIDE;
+
+  virtual base::string16 GetBrowserProgIdDesc() OVERRIDE;
+
+  virtual base::string16 GetInstallSubDir() OVERRIDE;
+
+  virtual base::string16 GetPublisherName() OVERRIDE;
+
+  virtual base::string16 GetAppDescription() OVERRIDE;
 
   virtual std::string GetSafeBrowsingName() OVERRIDE;
 
-  virtual std::wstring GetStateKey() OVERRIDE;
+  virtual base::string16 GetStateKey() OVERRIDE;
 
-  virtual std::wstring GetStateMediumKey() OVERRIDE;
+  virtual base::string16 GetStateMediumKey() OVERRIDE;
 
-  virtual std::wstring GetStatsServerURL() OVERRIDE;
+  virtual std::string GetNetworkStatsServer() const OVERRIDE;
 
-  //virtual std::string GetNetworkStatsServer() const OVERRIDE;
+  virtual std::string GetHttpPipeliningTestServer() const OVERRIDE;
 
   // This method reads data from the Google Update ClientState key for
   // potential use in the uninstall survey. It must be called before the
   // key returned by GetVersionKey() is deleted.
-  virtual std::wstring GetDistributionData(HKEY root_key) OVERRIDE;
+  virtual base::string16 GetDistributionData(HKEY root_key) OVERRIDE;
 
-  virtual std::wstring GetUninstallLinkName() OVERRIDE;
+  virtual base::string16 GetUninstallLinkName() OVERRIDE;
 
-  virtual std::wstring GetUninstallRegPath() OVERRIDE;
+  virtual base::string16 GetUninstallRegPath() OVERRIDE;
 
-  virtual std::wstring GetVersionKey() OVERRIDE;
+  virtual base::string16 GetVersionKey() OVERRIDE;
+
+  virtual bool GetCommandExecuteImplClsid(
+      base::string16* handler_class_uuid) OVERRIDE;
+
+  virtual bool AppHostIsSupported() OVERRIDE;
 
   virtual void UpdateInstallStatus(
       bool system_install,
       installer::ArchiveType archive_type,
       installer::InstallStatus install_status) OVERRIDE;
 
-  const std::wstring& product_guid() { return product_guid_; }
+  virtual bool ShouldSetExperimentLabels() OVERRIDE;
+
+  virtual bool HasUserExperiments() OVERRIDE;
+
+const base::string16& product_guid() { return product_guid_; }
 
  protected:
-  void set_product_guid(const std::wstring& guid) { product_guid_ = guid; }
+  void set_product_guid(const base::string16& guid) { product_guid_ = guid; }
 
   // Disallow construction from others.
   BitpopDistribution();
@@ -81,7 +100,7 @@ class BitpopDistribution : public BrowserDistribution {
   friend class BrowserDistribution;
 
   // The product ID for Google Update.
-  std::wstring product_guid_;
+  base::string16 product_guid_;
 };
 
 #endif  // CHROME_INSTALLER_UTIL_BITPOP_DISTRIBUTION_H_

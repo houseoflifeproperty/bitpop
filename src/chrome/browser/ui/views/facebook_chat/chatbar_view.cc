@@ -19,18 +19,20 @@
 #include <algorithm>
 
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
-#include "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/facebook_chat/chat_item_view.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
-#include "ui/base/animation/slide_animation.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/theme_provider.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/controls/button/image_button.h"
 
@@ -91,26 +93,26 @@ ChatbarView::ChatbarView(Browser* browser, BrowserView* parent)
 
   close_button_ = new views::ImageButton(this);
   close_button_->SetImage(views::CustomButton::STATE_NORMAL,
-                          rb.GetImageSkiaNamed(IDR_CLOSE_BAR));
+                          rb.GetImageSkiaNamed(IDR_CLOSE_DIALOG));
   close_button_->SetImage(views::CustomButton::STATE_HOVERED,
-                          rb.GetImageSkiaNamed(IDR_CLOSE_BAR_H));
+                          rb.GetImageSkiaNamed(IDR_CLOSE_DIALOG_H));
   close_button_->SetImage(views::CustomButton::STATE_PRESSED,
-                          rb.GetImageSkiaNamed(IDR_CLOSE_BAR_P));
+                          rb.GetImageSkiaNamed(IDR_CLOSE_DIALOG_P));
   close_button_->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
   UpdateButtonColors();
   AddChildView(close_button_);
 
-  bar_animation_.reset(new ui::SlideAnimation(this));
+  bar_animation_.reset(new gfx::SlideAnimation(this));
   bar_animation_->SetSlideDuration(kBarAnimationDurationMs);
 
-  new_item_animation_.reset(new ui::SlideAnimation(this));
+  new_item_animation_.reset(new gfx::SlideAnimation(this));
   new_item_animation_->SetSlideDuration(kAddAnimationDuration);
 
-  remove_item_animation_.reset(new ui::SlideAnimation(this));
+  remove_item_animation_.reset(new gfx::SlideAnimation(this));
   remove_item_animation_->SetSlideDuration(kRemoveAnimationDuration);
 
-  place_first_animation_.reset(new ui::SlideAnimation(this));
+  place_first_animation_.reset(new gfx::SlideAnimation(this));
   place_first_animation_->SetSlideDuration(kPlaceFirstAnimationDuration);
 }
 
@@ -139,7 +141,7 @@ gfx::Size ChatbarView::GetPreferredSize() {
 void ChatbarView::Layout() {
   // Now that we know we have a parent, we can safely set our theme colors.
   set_background(views::Background::CreateSolidBackground(
-      GetThemeProvider()->GetColor(ThemeService::COLOR_TOOLBAR)));
+      GetThemeProvider()->GetColor(ThemeProperties::COLOR_TOOLBAR)));
 
   // Let our base class layout our child views
   views::View::Layout();
@@ -214,7 +216,8 @@ void ChatbarView::OnPaintBorder(gfx::Canvas* canvas) {
 }
 
 void ChatbarView::AddChatItem(FacebookChatItem *chat_item) {
-  if (browser_->fullscreen_controller()->IsFullscreenForTabOrPending()) {
+  if (browser_->fullscreen_controller()->IsFullscreenForTabOrPending(
+        browser_->tab_strip_model()->GetActiveWebContents())) {
     browser_->fullscreen_controller()->SetOpenChatbarOnNextFullscreenEvent();
   } else if (!this->visible())
     Show();
@@ -286,7 +289,7 @@ void ChatbarView::Remove(ChatItemView *item, bool should_animate) {
     RemoveItem(item);
 }
 
-void ChatbarView::AnimationProgressed(const ui::Animation *animation) {
+void ChatbarView::AnimationProgressed(const gfx::Animation *animation) {
   if (animation == bar_animation_.get()) {
     // Force a re-layout of the parent, which will call back into
     // GetPreferredSize, where we will do our animation. In the case where the
@@ -303,7 +306,7 @@ void ChatbarView::AnimationProgressed(const ui::Animation *animation) {
   }
 }
 
-void ChatbarView::AnimationEnded(const ui::Animation *animation) {
+void ChatbarView::AnimationEnded(const gfx::Animation *animation) {
   if (animation == bar_animation_.get()) {
     parent_->SetChatbarVisible(bar_animation_->IsShowing());
     if (!bar_animation_->IsShowing())
@@ -343,9 +346,9 @@ void ChatbarView::UpdateButtonColors() {
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   if (GetThemeProvider()) {
     close_button_->SetBackground(
-        GetThemeProvider()->GetColor(ThemeService::COLOR_TAB_TEXT),
-        rb.GetImageSkiaNamed(IDR_CLOSE_BAR),
-        rb.GetImageSkiaNamed(IDR_CLOSE_BAR_MASK));
+        GetThemeProvider()->GetColor(ThemeProperties::COLOR_TAB_TEXT),
+        rb.GetImageSkiaNamed(IDR_CLOSE_DIALOG),
+        rb.GetImageSkiaNamed(IDR_CLOSE_DIALOG));
   }
 }
 

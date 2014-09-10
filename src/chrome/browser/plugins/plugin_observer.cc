@@ -1304,7 +1304,7 @@ bool PluginObserver::OnMessageReceived(const IPC::Message& message) {
 void PluginObserver::OnBlockedUnauthorizedPlugin(
     const base::string16& name,
     const std::string& identifier) {
-  std::string name_utf8 = UTF16ToUTF8(name);
+  std::string name_utf8 = base::UTF16ToUTF8(name);
   if (name_utf8 == PluginMetadata::kJavaGroupName) {
     content::WebContents* contents = web_contents();
     if (contents) {

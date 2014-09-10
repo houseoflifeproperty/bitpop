@@ -17,6 +17,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+#include "chrome/common/pref_names.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "grit/generated_resources.h"
@@ -105,10 +106,19 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
       delegate_(delegate),
       context_menu_(NULL),
       called_registered_extension_command_(false),
-      icon_observer_(NULL) {
+      icon_observer_(NULL),
+      is_custom_extension_(false),
+      should_draw_as_pushed_(false) {
   SetBorder(views::Border::NullBorder());
   set_alignment(TextButton::ALIGN_CENTER);
   set_context_menu_controller(this);
+
+  if (extension->id() == extension_misc::kFacebookChatExtensionId) {
+    is_custom_extension_ = true;
+
+    PrefService *prefService = browser_->profile()->GetPrefs();
+    set_should_draw_as_pushed(prefService->GetBoolean(prefs::kFacebookShowFriendsList));
+  }
 
   // No UpdateState() here because View hierarchy not setup yet. Our parent
   // should call UpdateState() after creation.
@@ -120,6 +130,8 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_COMMAND_ADDED,
                  notification_source);
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_COMMAND_REMOVED,
+                 notification_source);
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
                  notification_source);
 
   // We also listen for browser theme changes on linux because a switch from or
@@ -210,12 +222,14 @@ void BrowserActionButton::UpdateState() {
 
   SetShowMultipleIconStates(delegate_->NeedToShowMultipleIconStates());
 
-  if (!IsEnabled(tab_id)) {
-    SetState(views::CustomButton::STATE_DISABLED);
-  } else {
-    SetState(menu_visible_ ?
-             views::CustomButton::STATE_PRESSED :
-             views::CustomButton::STATE_NORMAL);
+  if (!is_custom_extension_) {
+    if (!IsEnabled(tab_id)) {
+      SetState(views::CustomButton::STATE_DISABLED);
+    } else {
+      SetState(menu_visible_ ?
+               views::CustomButton::STATE_PRESSED :
+               views::CustomButton::STATE_NORMAL);
+    }
   }
 
   gfx::ImageSkia icon = *icon_factory_.GetIcon(tab_id).ToImageSkia();
@@ -286,6 +300,12 @@ void BrowserActionButton::Observe(int type,
     case chrome::NOTIFICATION_BROWSER_THEME_CHANGED:
       UpdateState();
       break;
+    case content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED:
+      if (is_custom_extension_) {
+        content::Details<bool> detailsBool(details);
+        set_should_draw_as_pushed(*detailsBool.ptr());
+      }
+      break;
     default:
       NOTREACHED();
       break;
@@ -337,13 +357,38 @@ void BrowserActionButton::OnMouseReleased(const ui::MouseEvent& event) {
   } else {
     TextButton::OnMouseReleased(event);
   }
+  if (should_draw_as_pushed_)
+    SetState(views::CustomButton::STATE_PRESSED);
 }
 
 void BrowserActionButton::OnMouseExited(const ui::MouseEvent& event) {
+  if (should_draw_as_pushed_)
+    return;
   if (IsPopup() || context_menu_)
     MenuButton::OnMouseExited(event);
   else
     TextButton::OnMouseExited(event);
+}
+
+void BrowserActionButton::OnMouseEntered(const ui::MouseEvent& event) {
+  if (should_draw_as_pushed_)
+    return;
+  else
+    MenuButton::OnMouseEntered(event);
+}
+
+void BrowserActionButton::OnMouseMoved(const ui::MouseEvent& event) {
+  if (should_draw_as_pushed_)
+    return;
+  else
+    MenuButton::OnMouseMoved(event);
+}
+
+void BrowserActionButton::OnMouseCaptureLost() {
+  if (should_draw_as_pushed_)
+    return;
+  else
+    MenuButton::OnMouseCaptureLost();
 }
 
 bool BrowserActionButton::OnKeyReleased(const ui::KeyEvent& event) {
@@ -426,4 +471,12 @@ void BrowserActionButton::MaybeUnregisterExtensionCommand(bool only_if_active) {
     GetFocusManager()->UnregisterAccelerator(*keybinding_.get(), this);
     keybinding_.reset(NULL);
   }
+}
+
+void BrowserActionButton::set_should_draw_as_pushed(bool flag) {
+  should_draw_as_pushed_ = flag;
+  if (flag)
+    SetState(views::CustomButton::STATE_PRESSED);
+  else
+    SetState(views::CustomButton::STATE_NORMAL);
 }

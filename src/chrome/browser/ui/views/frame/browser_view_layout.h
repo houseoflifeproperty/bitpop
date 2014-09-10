@@ -67,7 +67,12 @@ class BrowserViewLayout : public views::LayoutManager {
   void set_download_shelf(views::View* download_shelf) {
     download_shelf_ = download_shelf;
   }
-
+  void set_friends_sidebar(views::View* friends_sidebar) {
+    friends_sidebar_ = friends_sidebar;
+  }
+  void set_facebook_chatbar(views::View* facebook_chatbar) {
+    facebook_chatbar_ = facebook_chatbar;
+  }
   web_modal::WebContentsModalDialogHost* GetWebContentsModalDialogHost();
 
   // Returns the minimum size of the browser view.
@@ -85,7 +90,6 @@ class BrowserViewLayout : public views::LayoutManager {
   // views::LayoutManager overrides:
   virtual void Layout(views::View* host) OVERRIDE;
   virtual gfx::Size GetPreferredSize(views::View* host) OVERRIDE;
-
  private:
   FRIEND_TEST_ALL_PREFIXES(BrowserViewLayoutTest, BrowserViewLayout);
   FRIEND_TEST_ALL_PREFIXES(BrowserViewLayoutTest, Layout);
@@ -101,11 +105,13 @@ class BrowserViewLayout : public views::LayoutManager {
   int LayoutBookmarkAndInfoBars(int top, int browser_view_y);
   int LayoutBookmarkBar(int top);
   int LayoutInfoBar(int top);
+  int LayoutChatbar(int bottom, int right);
+  int LayoutFriendsSidebar(int top);
 
   // Layout the |contents_container_| view between the coordinates |top| and
   // |bottom|. See browser_view.h for details of the relationship between
   // |contents_container_| and other views.
-  void LayoutContentsContainerView(int top, int bottom);
+  void LayoutContentsContainerView(int top, int bottom, int right);
 
   // Updates |top_container_|'s bounds. The new bounds depend on the size of
   // the bookmark bar and the toolbar.
@@ -122,7 +128,7 @@ class BrowserViewLayout : public views::LayoutManager {
 
   // Layout the Download Shelf, returns the coordinate of the top of the
   // control, for laying out the previous control.
-  int LayoutDownloadShelf(int bottom);
+  int LayoutDownloadShelf(int bottom, int right);
 
   // Returns true if an infobar is showing.
   bool InfobarVisible() const;
@@ -147,6 +153,8 @@ class BrowserViewLayout : public views::LayoutManager {
   views::View* contents_container_;
   ContentsLayoutManager* contents_layout_manager_;
   views::View* download_shelf_;
+  views::View* friends_sidebar_;
+  views::View* facebook_chatbar_;
 
   ImmersiveModeController* immersive_mode_controller_;
 

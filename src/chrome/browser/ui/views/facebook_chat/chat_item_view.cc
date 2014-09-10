@@ -19,24 +19,24 @@
 #include <string>
 
 #include "base/location.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/logging.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/lion_badge_image_source.h"
+#include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/facebook_chat/chatbar_view.h"
 #include "chrome/browser/ui/views/facebook_chat/chat_notification_popup.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/ui/views/infobars/infobar_button_border.h"
 #include "chrome/common/badge_util.h"
 #include "chrome/common/url_constants.h"
-#include "googleurl/src/gurl.h"
-#include "googleurl/src/url_util.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
@@ -45,12 +45,16 @@
 #include "third_party/skia/include/core/SkTypeface.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/label.h"
+#include "ui/views/painter.h"
+#include "url/gurl.h"
+#include "url/url_util.h"
 
 using views::CustomButton;
 using views::Label;
@@ -68,6 +72,40 @@ const int kNotifyIconDimX = 26;
 const int kNotifyIconDimY = 15;
 
 const int kTextRightPadding = 13;
+
+// The sampling time for mouse position changes in ms - which is roughly a frame
+// time.
+const int kFrameTimeInMS = 30;
+}
+
+class MouseOutDetectorHost : public views::MouseWatcherHost {
+ public:
+  explicit MouseOutDetectorHost(views::View* tracked_view);
+  virtual ~MouseOutDetectorHost();
+
+  virtual bool Contains(const gfx::Point& screen_point,
+                        MouseEventType type) OVERRIDE;
+ private:
+  views::View* tracked_view_;
+
+  DISALLOW_COPY_AND_ASSIGN(MouseOutDetectorHost);
+};
+
+MouseOutDetectorHost::MouseOutDetectorHost(views::View* tracked_view)
+  : tracked_view_(tracked_view) {
+}
+
+MouseOutDetectorHost::~MouseOutDetectorHost() {
+}
+
+bool MouseOutDetectorHost::Contains(const gfx::Point& screen_point,
+                                    MouseEventType type) {
+  gfx::Point origin = gfx::Point();
+  views::View::ConvertPointToScreen(tracked_view_, &origin);
+  gfx::Rect rc = gfx::Rect(origin.x(), origin.y(),
+                           tracked_view_->bounds().width(),
+                           tracked_view_->bounds().height());
+  return rc.Contains(screen_point);
 }
 
 class OverOutTextButton : public views::TextButton {
@@ -78,16 +116,13 @@ public:
   }
 
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE {
-    owner_->OnMouseEntered(event);
+    owner_->ShowNotificationPopupIfNeeded();
   }
 
-  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE {
-    owner_->OnMouseExited(event);
-  }
 protected:
   virtual gfx::Rect GetTextBounds() const OVERRIDE {
     DCHECK_EQ(alignment_, ALIGN_LEFT);
-	DCHECK_EQ(icon_placement(), views::TextButton::ICON_ON_LEFT);
+	  DCHECK_EQ(icon_placement(), views::TextButton::ICON_ON_LEFT);
     gfx::Insets insets = GetInsets();
     int content_width = width() - insets.right() - insets.left();
     int extra_width = 0;
@@ -120,17 +155,26 @@ ChatItemView::ChatItemView(FacebookChatItem *model, ChatbarView *chatbar)
 
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
 
-  openChatButton_ = new OverOutTextButton(this, UTF8ToWide(model->username()));
+  openChatButton_ = new OverOutTextButton(this, base::UTF8ToWide(model->username()));
   //openChatButton_->SetNormalHasBorder(true);
   openChatButton_->set_icon_placement(views::TextButton::ICON_ON_LEFT);
-  openChatButton_->set_border(new InfoBarButtonBorder);
+
+  scoped_ptr<views::TextButtonDefaultBorder> menu_button_border(
+      new views::TextButtonDefaultBorder());
+  const int kNormalImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_NORMAL);
+  menu_button_border->set_normal_painter(
+      views::Painter::CreateImageGridPainter(kNormalImageSet));
+  const int kHotImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_HOVER);
+  menu_button_border->set_hot_painter(
+      views::Painter::CreateImageGridPainter(kHotImageSet));
+  const int kPushedImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_PRESSED);
+  menu_button_border->set_pushed_painter(
+      views::Painter::CreateImageGridPainter(kPushedImageSet));
+
+  openChatButton_->SetBorder(menu_button_border.PassAs<views::Border>());
   //openChatButton_->SetNormalHasBorder(true);
   openChatButton_->SetAnimationDuration(0);
-  openChatButton_->SetEnabledColor(SK_ColorBLACK);
-  openChatButton_->SetDisabledColor(SK_ColorBLACK);
-  openChatButton_->SetHighlightColor(SK_ColorBLACK);
-  openChatButton_->SetHoverColor(SK_ColorBLACK);
-  openChatButton_->SetFont(rb.GetFont(ResourceBundle::BaseFont));
+  openChatButton_->SetFontList(gfx::FontList(rb.GetFont(ResourceBundle::BaseFont)));
 
   StatusChanged();  // sets button icon
   AddChildView(openChatButton_);
@@ -138,17 +182,11 @@ ChatItemView::ChatItemView(FacebookChatItem *model, ChatbarView *chatbar)
   // Add the Close Button.
   close_button_ = new views::ImageButton(this);
   close_button_->SetImage(views::CustomButton::STATE_NORMAL,
-                          rb.GetImageSkiaNamed(IDR_TAB_CLOSE));
+                          rb.GetImageSkiaNamed(IDR_CLOSE_1));
   close_button_->SetImage(views::CustomButton::STATE_HOVERED,
-                          rb.GetImageSkiaNamed(IDR_TAB_CLOSE_H));
+                          rb.GetImageSkiaNamed(IDR_CLOSE_1_H));
   close_button_->SetImage(views::CustomButton::STATE_PRESSED,
-                          rb.GetImageSkiaNamed(IDR_TAB_CLOSE_P));
-  //close_button_->SetTooltipText(
-  //    UTF16ToWide(l10n_util::GetStringUTF16(IDS_TOOLTIP_CLOSE_TAB)));
-  //close_button_->SetAccessibleName(
-  //    l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
-  // Disable animation so that the red danger sign shows up immediately
-  // to help avoid mis-clicks.
+                          rb.GetImageSkiaNamed(IDR_CLOSE_1_P));
   close_button_->SetAnimationDuration(0);
   AddChildView(close_button_);
 }
@@ -236,7 +274,7 @@ void ChatItemView::OnChatUpdated(FacebookChatItem *source) {
   }
 }
 
-void ChatItemView::AnimationProgressed(const ui::Animation* animation) {
+void ChatItemView::AnimationProgressed(const gfx::Animation* animation) {
 }
 
 void ChatItemView::StatusChanged() {
@@ -265,13 +303,13 @@ void ChatItemView::OnPaint(gfx::Canvas* canvas) {
   views::View::OnPaint(canvas);
 
   ResourceBundle &rb = ResourceBundle::GetSharedInstance();
-  SkColor bgColor = GetThemeProvider()->GetColor(ThemeService::COLOR_TAB_TEXT);
+  SkColor bgColor = GetThemeProvider()->GetColor(ThemeProperties::COLOR_TAB_TEXT);
 
   if (bgColor != close_button_bg_color_) {
     close_button_bg_color_ = bgColor;
     close_button_->SetBackground(close_button_bg_color_,
-        rb.GetImageSkiaNamed(IDR_TAB_CLOSE),
-        rb.GetImageSkiaNamed(IDR_TAB_CLOSE_MASK));
+        rb.GetImageSkiaNamed(IDR_CLOSE_1),
+        rb.GetImageSkiaNamed(IDR_CLOSE_1_MASK));
   }
 }
 
@@ -290,17 +328,19 @@ void ChatItemView::ActivateChat() {
     std::string urlString(chrome::kFacebookChatExtensionPrefixURL);
     urlString += chrome::kFacebookChatExtensionChatPage;
     urlString += "#?friend_jid=";
-    urlString += model_->jid() + "&jid=" + mgr->global_my_uid();
+    urlString += model_->jid();
+    urlString += "&jid=";
+    urlString += mgr->global_my_uid();
     urlString += "&name=";
-    url_canon::RawCanonOutput<1024> out;
-    url_util::EncodeURIComponent(
+    url::RawCanonOutput<1024> out;
+    url::EncodeURIComponent(
                     model_->username().c_str(),
                     model_->username().length(),
                     &out);
     urlString += std::string(out.data(), out.length());
 
-    chat_popup_ = ExtensionChatPopup::ShowPopup(GURL(urlString), chatbar_->browser(),
-                                  this, BubbleBorder::BOTTOM_CENTER);
+    chat_popup_ = ExtensionPopup::ShowPopup(GURL(urlString), chatbar_->browser(),
+                                  this, BubbleBorder::BOTTOM_CENTER, ExtensionPopup::SHOW);
     chat_popup_->GetWidget()->AddObserver(this);
     openChatButton_->SetEnabled(false);
   }
@@ -348,7 +388,9 @@ void ChatItemView::NotifyUnread() {
       timer = new ChatTimer();
       timers_.push_back(timer);
     }
-    timer->Start(FROM_HERE, base::TimeDelta::FromSeconds(kNotificationMessageDelaySec), this, &ChatItemView::TimerFired);
+    timer->Start(FROM_HERE, 
+                 base::TimeDelta::FromSeconds(kNotificationMessageDelaySec),
+                 this, &ChatItemView::TimerFired);
 
     if (!visible())
       chatbar_->PlaceFirstInOrder(this);
@@ -384,19 +426,25 @@ gfx::Rect ChatItemView::RectForNotificationPopup() {
   return rect;
 }
 
-void ChatItemView::OnMouseEntered(const ui::MouseEvent& event) {
+void ChatItemView::ShowNotificationPopupIfNeeded() {
   if (!notification_popup_ && model_->num_notifications() > 0) {
-
     notification_popup_ = ChatNotificationPopup::Show(this, BubbleBorder::BOTTOM_CENTER);
     notification_popup_->GetWidget()->AddObserver(this);
     notification_popup_->PushMessage(model_->GetMessageAtIndex(model_->num_notifications() - 1));
     isMouseOverNotification_ = true;
+
+    mouse_watcher_.reset(new views::MouseWatcher(
+        new MouseOutDetectorHost(openChatButton_), this));
+    // Set the mouse sampling frequency to roughly a frame time so that the user
+    // cannot see a lag.
+    mouse_watcher_->set_notify_on_exit_time(
+        base::TimeDelta::FromMilliseconds(kFrameTimeInMS));
+    mouse_watcher_->Start();
   }
 }
 
-void ChatItemView::OnMouseExited(const ui::MouseEvent& event) {
+void ChatItemView::CloseNotificationPopupIfNeeded() {
   if (isMouseOverNotification_ && notification_popup_) {
-    //notification_popup_->set_fade_away_on_close(false);
     notification_popup_->GetWidget()->Close();
   }
 }
@@ -423,4 +471,10 @@ void ChatItemView::UpdateNotificationIcon() {
 
     openChatButton_->SetIcon(gfx::ImageSkia(source, source->size()));
   }
+}
+
+void ChatItemView::MouseMovedOutOfHost() {
+  mouse_watcher_->Stop();
+  mouse_watcher_.reset();
+  CloseNotificationPopupIfNeeded();
 }

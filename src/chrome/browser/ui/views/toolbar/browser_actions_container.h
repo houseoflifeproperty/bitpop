@@ -171,6 +171,10 @@ class BrowserActionsContainer
   void AddObserver(BrowserActionsContainerObserver* observer);
   void RemoveObserver(BrowserActionsContainerObserver* observer);
 
+  void ShowFacebookExtensions();
+  void HideFacebookExtensions();
+  void SetFacebookExtensionsVisibility(bool visible);
+  
   // Overridden from views::View:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void Layout() OVERRIDE;

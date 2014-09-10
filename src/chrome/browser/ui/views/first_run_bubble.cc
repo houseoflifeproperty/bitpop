@@ -55,7 +55,6 @@ void FirstRunBubble::Init() {
   views::Label* subtext =
       new views::Label(l10n_util::GetStringUTF16(IDS_FR_BUBBLE_SUBTEXT),
                        original_font_list);
-  subtext->SetFont(original_font);
   subtext->SetMultiLine(true);
   subtext->SetHorizontalAlignment(gfx::ALIGN_LEFT);
 

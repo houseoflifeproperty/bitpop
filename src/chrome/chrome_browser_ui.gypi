@@ -1651,8 +1651,6 @@
         'browser/ui/views/facebook_chat/chat_notification_popup.h',
         'browser/ui/views/facebook_chat/chatbar_view.cc',
         'browser/ui/views/facebook_chat/chatbar_view.h',
-        'browser/ui/views/facebook_chat/extension_chat_popup.cc',
-        'browser/ui/views/facebook_chat/extension_chat_popup.h',
         'browser/ui/views/facebook_chat/facebook_bitpop_notification_win.cc',
         'browser/ui/views/facebook_chat/facebook_bitpop_notification_win.h',
         'browser/ui/views/facebook_chat/friends_sidebar_view.cc',

@@ -157,7 +157,6 @@
       <include name="IDR_CRYPTOTOKEN_BACKGROUND_JS" file="cryptotoken/background.js" type="BINDATA" />
       <!-- BitPop includes -->
       <include name="IDR_BITPOP_HELPER_JS_BACKGROUND_JS" file="bitpop_helper/js/background.js" type="BINDATA" />
-      <include name="IDR_BITPOP_HELPER_JS_CHANGE_BRAND_SCRIPT_JS" file="bitpop_helper/js/change_brand_script.js" type="BINDATA" />
     </includes>
   </release>
 </grit>

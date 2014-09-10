@@ -27,7 +27,9 @@ class BrowserViewLayoutDelegate {
   virtual int GetThemeBackgroundXInset() const = 0;
   virtual bool IsToolbarVisible() const = 0;
   virtual bool IsBookmarkBarVisible() const = 0;
+  virtual bool IsFriendsSidebarVisible() const = 0;
   virtual bool DownloadShelfNeedsLayout() const = 0;
+  virtual bool ChatbarNeedsLayout() const = 0;
   virtual FullscreenExitBubbleViews* GetFullscreenExitBubble() const = 0;
 };
 

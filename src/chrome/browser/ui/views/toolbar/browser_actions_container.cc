@@ -5,12 +5,17 @@
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
 
 #include "base/compiler_specific.h"
+#include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
+#include "base/values.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/extension_view_host.h"
 #include "chrome/browser/extensions/tab_helper.h"
+#include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
@@ -20,10 +25,13 @@
 #include "chrome/browser/ui/views/extensions/browser_action_drag_data.h"
 #include "chrome/browser/ui/views/extensions/extension_keybinding_registry_views.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
+#include "chrome/browser/ui/views/fb_button_bubble.h"
 #include "chrome/browser/ui/views/toolbar/browser_action_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/common/extensions/command.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/browser/runtime_data.h"
@@ -45,6 +53,7 @@
 #include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
 
+using base::MessageLoopForUI;
 using extensions::Extension;
 
 namespace {
@@ -161,6 +170,14 @@ void BrowserActionsContainer::CreateBrowserActionViews() {
   if (!model_)
     return;
 
+  if (model_->toolbar_items().size() != 0 &&
+      (*model_->toolbar_items().begin())->id() != extension_misc::kFacebookChatExtensionId) {
+      MessageLoopForUI::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&BrowserActionsContainer::MoveBrowserAction,
+          base::Unretained(this), (const char *)extension_misc::kFacebookChatExtensionId, 0));
+  }
+
   const extensions::ExtensionList& toolbar_items = model_->toolbar_items();
   for (extensions::ExtensionList::const_iterator i(toolbar_items.begin());
        i != toolbar_items.end(); ++i) {
@@ -170,6 +187,14 @@ void BrowserActionsContainer::CreateBrowserActionViews() {
     BrowserActionView* view = new BrowserActionView(i->get(), browser_, this);
     browser_action_views_.push_back(view);
     AddChildView(view);
+
+    if (!profile_->should_show_additional_extensions() &&
+        ((*i)->id() == extension_misc::kFacebookMessagesExtensionId || (*i)->id() == extension_misc::kFacebookNotificationsExtensionId)) {
+      MessageLoopForUI::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&extensions::ExtensionActionAPI::SetBrowserActionVisibility,
+                     extensions::ExtensionPrefs::Get(profile_), (*i)->id(), false));
+    }
   }
 }
 
@@ -371,6 +396,9 @@ int BrowserActionsContainer::OnPerformDrop(
     }
   }
 
+  if (!profile_->IsOffTheRecord() && (i == 0 || (profile_->should_show_additional_extensions() && (i == 1 || i == 2))))
+    i = profile_->should_show_additional_extensions() ? 3 : 1;
+
   // |i| now points to the item to the right of the drop indicator*, which is
   // correct when dragging an icon to the left. When dragging to the right,
   // however, we want the icon being dragged to get the index of the item to
@@ -437,6 +465,11 @@ int BrowserActionsContainer::GetDragOperationsForView(View* sender,
 bool BrowserActionsContainer::CanStartDragForView(View* sender,
                                                   const gfx::Point& press_pt,
                                                   const gfx::Point& p) {
+  BrowserActionButton *b = static_cast<BrowserActionButton*>(sender);
+  if ((b->extension()->id() == extension_misc::kFacebookChatExtensionId) ||
+      (b->extension()->id() == extension_misc::kFacebookMessagesExtensionId) ||
+      (b->extension()->id() == extension_misc::kFacebookNotificationsExtensionId))
+    return false;
   // We don't allow dragging while we're highlighting.
   return !model_->is_highlighting();
 }
@@ -536,6 +569,14 @@ void BrowserActionsContainer::MoveBrowserAction(const std::string& extension_id,
       extensions::ExtensionSystem::Get(profile_)->extension_service();
   if (service) {
     const Extension* extension = service->GetExtensionById(extension_id, false);
+    if (new_index == 0 &&
+        extension_id != extension_misc::kFacebookChatExtensionId &&
+        !profile_->IsOffTheRecord())
+       new_index = profile_->should_show_additional_extensions() ? 3 : 1;
+    if (((new_index == 1 && extension_id != extension_misc::kFacebookMessagesExtensionId) ||
+         (new_index == 2 && extension_id != extension_misc::kFacebookNotificationsExtensionId)) &&
+        profile_->should_show_additional_extensions() && !profile_->IsOffTheRecord())
+      new_index = 3;
     model_->MoveBrowserAction(extension, new_index);
     SchedulePaint();
   }
@@ -695,6 +736,37 @@ void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
     // Just redraw the (possibly modified) visible icon set.
     OnBrowserActionVisibilityChanged();
   }
+
+  if (!profile_->IsOffTheRecord() &&
+      extension->id() == extension_misc::kFacebookChatExtensionId && index != 0) {
+    MessageLoopForUI::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&BrowserActionsContainer::MoveBrowserAction,
+        base::Unretained(this), (const char *)extension_misc::kFacebookChatExtensionId, 0));
+  }
+
+  if (!profile_->should_show_additional_extensions() &&
+      (extension->id() == extension_misc::kFacebookMessagesExtensionId ||
+       extension->id() == extension_misc::kFacebookNotificationsExtensionId)) {
+
+    extensions::ExtensionActionAPI::SetBrowserActionVisibility(
+          extensions::ExtensionPrefs::Get(profile_), extension->id(), false);
+
+    OnBrowserActionVisibilityChanged();
+  }
+
+  if (extension->id() == extension_misc::kFacebookChatExtensionId) {
+          // Check the preference to determine if the bubble should be shown.
+      PrefService* prefs = g_browser_process->local_state();
+      if (!prefs || prefs->GetInteger(prefs::kShowFirstRunFacebookBubbleOption) !=
+          first_run::FIRST_RUN_BUBBLE_SHOW)
+        return;
+
+      FbButtonBubble::ShowBubble(browser_, GetBrowserActionViewAt(0), NULL);
+
+      prefs->SetInteger(prefs::kShowFirstRunFacebookBubbleOption,
+                         first_run::FIRST_RUN_BUBBLE_DONT_SHOW);
+  }
 }
 
 void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
@@ -743,6 +815,10 @@ void BrowserActionsContainer::BrowserActionMoved(const Extension* extension,
     index = model_->OriginalIndexToIncognito(index);
 
   DCHECK(index >= 0 && index < static_cast<int>(browser_action_views_.size()));
+
+  if (index == 0 && !profile_->IsOffTheRecord() &&
+      extension->id() != extension_misc::kFacebookChatExtensionId)
+    return;
 
   DeleteBrowserActionViews();
   CreateBrowserActionViews();
@@ -888,8 +964,11 @@ void BrowserActionsContainer::SaveDesiredSizeAndAnimate(
 bool BrowserActionsContainer::ShouldDisplayBrowserAction(
     const Extension* extension) {
   // Only display incognito-enabled extensions while in incognito mode.
-  return !profile_->IsOffTheRecord() ||
-      extensions::util::IsIncognitoEnabled(extension->id(), profile_);
+  return (!profile_->IsOffTheRecord() ||
+      (extensions::util::IsIncognitoEnabled(extension->id(), profile_) &&
+       extension->id() != extension_misc::kFacebookChatExtensionId &&
+       extension->id() != extension_misc::kFacebookMessagesExtensionId &&
+       extension->id() != extension_misc::kFacebookNotificationsExtensionId));
 }
 
 bool BrowserActionsContainer::ShowPopup(
@@ -928,4 +1007,46 @@ bool BrowserActionsContainer::ShowPopup(
   if (should_grant)
     popup_button_->SetButtonPushed();
   return true;
+}
+
+void BrowserActionsContainer::ShowFacebookExtensions() {
+  SetFacebookExtensionsVisibility(true);
+}
+
+void BrowserActionsContainer::HideFacebookExtensions() {
+  SetFacebookExtensionsVisibility(false);
+}
+
+void BrowserActionsContainer::SetFacebookExtensionsVisibility(bool visible) {
+  if (profile_->IsOffTheRecord())
+    return;
+
+  profile_->set_should_show_additional_extensions(visible);
+
+  ExtensionService* service = extensions::ExtensionSystem::Get(profile_)->extension_service();
+
+  const Extension* extension = service->GetExtensionById(extension_misc::kFacebookMessagesExtensionId, false);
+  if (extension)
+    MessageLoopForUI::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&extensions::ExtensionActionAPI::SetBrowserActionVisibility,
+                     extensions::ExtensionPrefs::Get(profile_), extension->id(), visible));
+
+  extension = service->GetExtensionById(extension_misc::kFacebookNotificationsExtensionId, false);
+  if (extension)
+    MessageLoopForUI::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&extensions::ExtensionActionAPI::SetBrowserActionVisibility,
+                     extensions::ExtensionPrefs::Get(profile_), extension->id(), visible));
+
+  if (visible) {
+    MessageLoopForUI::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&BrowserActionsContainer::MoveBrowserAction,
+        base::Unretained(this), (const char *)extension_misc::kFacebookMessagesExtensionId, 1));
+    MessageLoopForUI::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&BrowserActionsContainer::MoveBrowserAction,
+        base::Unretained(this), (const char *)extension_misc::kFacebookNotificationsExtensionId, 2));
+  }
 }

@@ -22,7 +22,7 @@
 #include <vector>
 
 #include "chrome/browser/facebook_chat/facebook_chatbar.h"
-#include "ui/base/animation/animation_delegate.h"
+#include "ui/gfx/animation/animation_delegate.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/view.h"
 
@@ -31,7 +31,7 @@ class BrowserView;
 class ChatItemView;
 class FacebookChatItem;
 
-namespace ui {
+namespace gfx {
 class SlideAnimation;
 }
 
@@ -40,7 +40,7 @@ class ImageButton;
 }
 
 class ChatbarView : public views::View,
-                    public ui::AnimationDelegate,
+                    public gfx::AnimationDelegate,
                     public FacebookChatbar,
                     public views::ButtonListener {
 public:
@@ -60,8 +60,8 @@ public:
   virtual void Layout();
 
   // Implementation of ui::AnimationDelegate.
-  virtual void AnimationProgressed(const ui::Animation* animation);
-  virtual void AnimationEnded(const ui::Animation* animation);
+  virtual void AnimationProgressed(const gfx::Animation* animation);
+  virtual void AnimationEnded(const gfx::Animation* animation);
 
   // Implementation of ButtonListener.
   // Invoked when the user clicks the close button. Asks the browser to
@@ -94,12 +94,12 @@ private:
   std::list<ChatItemView*> chat_items_;
 
   // The show/hide animation for the shelf itself.
-  scoped_ptr<ui::SlideAnimation> bar_animation_;
+  scoped_ptr<gfx::SlideAnimation> bar_animation_;
 
   // Items animation
-  scoped_ptr<ui::SlideAnimation> new_item_animation_;
-  scoped_ptr<ui::SlideAnimation> remove_item_animation_;
-  scoped_ptr<ui::SlideAnimation> place_first_animation_;
+  scoped_ptr<gfx::SlideAnimation> new_item_animation_;
+  scoped_ptr<gfx::SlideAnimation> remove_item_animation_;
+  scoped_ptr<gfx::SlideAnimation> place_first_animation_;
   ChatItemView *item_to_add_;
   ChatItemView *item_to_remove_;
   ChatItemView *item_to_place_first_;

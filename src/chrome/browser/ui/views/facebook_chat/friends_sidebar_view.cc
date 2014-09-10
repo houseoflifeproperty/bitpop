@@ -17,18 +17,17 @@
 #include "chrome/browser/ui/views/facebook_chat/friends_sidebar_view.h"
 
 #include "base/logging.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
-#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/extension_view_host.h"
+#include "chrome/browser/extensions/extension_view_host_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/extension.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/layout/fill_layout.h"
 
@@ -46,7 +45,7 @@ FriendsSidebarView::FriendsSidebarView(Browser* browser, BrowserView *parent) :
     parent->AddChildView(this);
     SetLayoutManager(new views::FillLayout());
     set_background(views::Background::CreateSolidBackground(0xe8, 0xe8, 0xe8, 0xff));
-    this->InitializeExtensionHost();
+    this->InitializeExtensionViewHost();
 
     Init();
 }
@@ -67,28 +66,28 @@ void FriendsSidebarView::OnExtensionSizeChanged(ExtensionViewViews* view) {
   // IGNORE
 }
 
-void FriendsSidebarView::InitializeExtensionHost() {
+void FriendsSidebarView::InitializeExtensionViewHost() {
   std::string url = std::string("chrome-extension://") + std::string(extension_misc::kFacebookChatExtensionId) +
         std::string("/roster.html");
-  ExtensionProcessManager* manager =
-      extensions::ExtensionSystem::Get(browser_->profile())->process_manager();
-  extension_host_.reset(manager->CreateViewHost(GURL(url), browser_, chrome::VIEW_TYPE_PANEL));
+   extension_view_host_.reset(
+      extensions::ExtensionViewHostFactory::CreateSidebarHost(
+        GURL(url), browser_));
 
   registrar_.RemoveAll();
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSIONS_READY,
                 content::Source<Profile>(browser_->profile()->GetOriginalProfile()));
 
-  if (extension_host_.get()) {
-    AddChildView(extension_host_->view());
-    extension_host_->view()->SetContainer(this);
+  if (extension_view_host_.get()) {
+    AddChildView(extension_view_host_->view());
+    extension_view_host_->view()->set_container(this);
 
     // Wait to show the popup until the contained host finishes loading.
     registrar_.Add(this, content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
-                   content::Source<WebContents>(extension_host_->host_contents()));
+                   content::Source<WebContents>(extension_view_host_->host_contents()));
 
     // Listen for the containing view calling window.close();
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE,
-                   content::Source<Profile>(extension_host_->profile()));
+                   content::Source<content::BrowserContext>(extension_view_host_->browser_context()));
   }
 }
 
@@ -100,21 +99,21 @@ void FriendsSidebarView::Observe(int type,
       //const Extension* extension = content::Details<const Extension>(details).ptr();
       //if (extension->id() == chrome::kFacebookChatExtensionId) {
         this->RemoveAllChildViews(false);
-        this->InitializeExtensionHost();
+        this->InitializeExtensionViewHost();
       //}
 
       break;
     }
 
     case content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME: {
-      DCHECK(content::Source<WebContents>(extension_host_->host_contents()) == source);
+      DCHECK(content::Source<WebContents>(extension_view_host_->host_contents()) == source);
       //this->AddChildView(extension_host_->view());
       //Layout();
       break;
     }
 
     case chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE: {
-      if (content::Details<extensions::ExtensionHost>(extension_host_.get()) == details) {
+      if (content::Details<extensions::ExtensionHost>(extension_view_host_.get()) == details) {
         this->RemoveAllChildViews(false);
       }
       break;

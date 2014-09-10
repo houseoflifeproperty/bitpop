@@ -412,7 +412,7 @@ void BitpopCoreOptionsHandler::HandleFetchPrefs(const ListValue* args) {
 
     result_value.Set(pref_name.c_str(), FetchPref(pref_name));
   }
-  web_ui()->CallJavascriptFunction(UTF16ToASCII(callback_function),
+  web_ui()->CallJavascriptFunction(base::UTF16ToASCII(callback_function),
                                    result_value);
 }
 
@@ -547,7 +547,7 @@ void BitpopCoreOptionsHandler::HandleClearPref(const ListValue* args) {
 }
 
 void BitpopCoreOptionsHandler::HandleUserMetricsAction(const ListValue* args) {
-  std::string metric = UTF16ToUTF8(ExtractStringValue(args));
+  std::string metric = base::UTF16ToUTF8(ExtractStringValue(args));
   if (!metric.empty())
     content::RecordComputedAction(metric);
 }

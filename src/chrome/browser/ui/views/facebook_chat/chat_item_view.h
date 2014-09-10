@@ -21,25 +21,22 @@
 
 #include <list>
 
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
-#include "chrome/browser/ui/views/facebook_chat/extension_chat_popup.h"
-#include "ui/base/animation/animation_delegate.h"
+#include "ui/gfx/animation/animation_delegate.h"
 #include "ui/views/controls/button/button.h"
+#include "ui/views/mouse_watcher.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
 
 class ChatbarView;
 class ChatNotificationPopup;
+class ExtensionPopup;
 
 namespace gfx {
 class Bitmap;
 class Image;
-}
-
-namespace ui {
-class SlideAnimation;
 }
 
 namespace views {
@@ -47,11 +44,12 @@ class TextButton;
 class ImageButton;
 }
 
-class ChatItemView : public views::ButtonListener,
-                     public views::View,
+class ChatItemView : public views::View,
+                     public views::ButtonListener,
                      public FacebookChatItem::Observer,
                      public views::WidgetObserver,
-                     public ui::AnimationDelegate {
+                     public gfx::AnimationDelegate,
+                     public views::MouseWatcherListener {
 public:
   ChatItemView(FacebookChatItem *model, ChatbarView *chatbar);
   virtual ~ChatItemView();
@@ -62,19 +60,23 @@ public:
   // Overridden from views::View:
   virtual void Layout() OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
 
   // FacebookChatItem::Observer protocol
   virtual void OnChatUpdated(FacebookChatItem *source) OVERRIDE;
 
   // ui::AnimationDelegate implementation.
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
+
+  // Overridden from MouseWatcherListener
+  virtual void MouseMovedOutOfHost() OVERRIDE;
 
   void Close(bool should_animate);
 
   void ActivateChat();
   void NotifyUnread();
+
+  void ShowNotificationPopupIfNeeded();
+  void CloseNotificationPopupIfNeeded();
 
   gfx::Rect RectForChatPopup();
   gfx::Rect RectForNotificationPopup();
@@ -109,7 +111,7 @@ private:
 
   SkColor close_button_bg_color_;
 
-  ExtensionChatPopup *chat_popup_;
+  ExtensionPopup *chat_popup_;
   ChatNotificationPopup* notification_popup_;
 
   typedef base::OneShotTimer<ChatItemView> ChatTimer;
@@ -119,6 +121,8 @@ private:
   bool isMouseOverNotification_;
 
   SkBitmap *notification_icon_;
+
+  scoped_ptr<views::MouseWatcher> mouse_watcher_;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_FACEBOOK_CHAT_CHAT_ITEM_VIEW_H_
