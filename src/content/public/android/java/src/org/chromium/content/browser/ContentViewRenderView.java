@@ -26,7 +26,7 @@ import org.chromium.ui.base.WindowAndroid;
 public class ContentViewRenderView extends FrameLayout {
     // The native side of this object.
     private long mNativeContentViewRenderView;
-    private final SurfaceHolder.Callback mSurfaceCallback;
+    private SurfaceHolder.Callback mSurfaceCallback;
 
     private final SurfaceView mSurfaceView;
     protected ContentViewCore mContentViewCore;
@@ -34,18 +34,37 @@ public class ContentViewRenderView extends FrameLayout {
     private ContentReadbackHandler mContentReadbackHandler;
 
     /**
-     * Constructs a new ContentViewRenderView that should be can to a view hierarchy.
-     * Native code should add/remove the layers to be rendered through the ContentViewLayerRenderer.
+     * Constructs a new ContentViewRenderView.
+     * This should be called and the {@link ContentViewRenderView} should be added to the view
+     * hierarchy before the first draw to avoid a black flash that is seen every time a
+     * {@link SurfaceView} is added.
      * @param context The context used to create this.
      */
-    public ContentViewRenderView(Context context, WindowAndroid rootWindow) {
+    public ContentViewRenderView(Context context) {
         super(context);
-        assert rootWindow != null;
-        mNativeContentViewRenderView = nativeInit(rootWindow.getNativePointer());
-        assert mNativeContentViewRenderView != 0;
 
         mSurfaceView = createSurfaceView(getContext());
         mSurfaceView.setZOrderMediaOverlay(true);
+
+        setSurfaceViewBackgroundColor(Color.WHITE);
+        addView(mSurfaceView,
+                new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT));
+        mSurfaceView.setVisibility(GONE);
+    }
+
+    /**
+     * Initialization that requires native libraries should be done here.
+     * Native code should add/remove the layers to be rendered through the ContentViewLayerRenderer.
+     * @param rootWindow The {@link WindowAndroid} this render view should be linked to.
+     */
+    public void onNativeLibraryLoaded(WindowAndroid rootWindow) {
+        assert !mSurfaceView.getHolder().getSurface().isValid() :
+                "Surface created before native library loaded.";
+        assert rootWindow != null;
+        mNativeContentViewRenderView = nativeInit(rootWindow.getNativePointer());
+        assert mNativeContentViewRenderView != 0;
         mSurfaceCallback = new SurfaceHolder.Callback() {
             @Override
             public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
@@ -73,12 +92,7 @@ public class ContentViewRenderView extends FrameLayout {
             }
         };
         mSurfaceView.getHolder().addCallback(mSurfaceCallback);
-        setSurfaceViewBackgroundColor(Color.WHITE);
-
-        addView(mSurfaceView,
-                new FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.MATCH_PARENT));
+        mSurfaceView.setVisibility(VISIBLE);
 
         mContentReadbackHandler = new ContentReadbackHandler() {
             @Override

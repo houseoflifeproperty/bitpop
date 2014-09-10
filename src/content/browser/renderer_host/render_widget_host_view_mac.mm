@@ -455,8 +455,6 @@ RenderWidgetHostViewMac::RenderWidgetHostViewMac(RenderWidgetHost* widget)
     : render_widget_host_(RenderWidgetHostImpl::From(widget)),
       text_input_type_(ui::TEXT_INPUT_TYPE_NONE),
       can_compose_inline_(true),
-      pending_latency_info_delay_(0),
-      pending_latency_info_delay_weak_ptr_factory_(this),
       backing_store_scale_factor_(1),
       is_loading_(false),
       weak_factory_(this),
@@ -800,6 +798,9 @@ void RenderWidgetHostViewMac::WasShown() {
 
   // Call setNeedsDisplay before pausing for new frames to come in -- if any
   // do, and are drawn, then the needsDisplay bit will be cleared.
+  // Workaround for crbug.com/395827
+  if ([compositing_iosurface_layer_ isAsynchronous])
+    [compositing_iosurface_layer_ setAsynchronous:NO];
   [compositing_iosurface_layer_ setNeedsDisplay];
   PauseForPendingResizeOrRepaintsAndDraw();
 }
@@ -1698,8 +1699,8 @@ void RenderWidgetHostViewMac::AcceleratedSurfacePostSubBuffer(
 }
 
 void RenderWidgetHostViewMac::AcceleratedSurfaceSuspend() {
-  if (compositing_iosurface_)
-    compositing_iosurface_->UnrefIOSurface();
+  if (!render_widget_host_->is_hidden())
+    DestroyCompositedIOSurfaceAndLayer();
 }
 
 void RenderWidgetHostViewMac::AcceleratedSurfaceRelease() {
@@ -2062,72 +2063,18 @@ gfx::Rect RenderWidgetHostViewMac::GetScaledOpenGLPixelRect(
 
 void RenderWidgetHostViewMac::AddPendingLatencyInfo(
     const std::vector<ui::LatencyInfo>& latency_info) {
-  // If a screenshot is being taken when using CoreAnimation, send a few extra
-  // calls to setNeedsDisplay and wait for their resulting display calls,
-  // before reporting that the frame has reached the screen.
-  bool should_defer = false;
-  for (size_t i = 0; i < latency_info.size(); i++) {
-    if (latency_info[i].FindLatency(
-            ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT,
-            render_widget_host_->GetLatencyComponentId(),
-            NULL)) {
-      should_defer = true;
-    }
-  }
-  if (should_defer) {
-    // Multiple pending screenshot requests will work, but if every frame
-    // requests a screenshot, then the delay will never expire. Assert this
-    // here to avoid this.
-    CHECK_EQ(pending_latency_info_delay_, 0u);
-    // Wait a fixed number of frames (calls to CALayer::display) before
-    // claiming that the screenshot has reached the screen. This number
-    // comes from taking the first number where tests didn't fail (six),
-    // and doubling it.
-    const uint32 kScreenshotLatencyDelayInFrames = 12;
-    pending_latency_info_delay_ = kScreenshotLatencyDelayInFrames;
-    TickPendingLatencyInfoDelay();
-  }
-
   for (size_t i = 0; i < latency_info.size(); i++) {
     pending_latency_info_.push_back(latency_info[i]);
   }
 }
 
 void RenderWidgetHostViewMac::SendPendingLatencyInfoToHost() {
-  if (pending_latency_info_delay_) {
-    pending_latency_info_delay_ -= 1;
-    return;
-  }
-  pending_latency_info_delay_weak_ptr_factory_.InvalidateWeakPtrs();
-
   for (size_t i = 0; i < pending_latency_info_.size(); i++) {
     pending_latency_info_[i].AddLatencyNumber(
         ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
     render_widget_host_->FrameSwapped(pending_latency_info_[i]);
   }
   pending_latency_info_.clear();
-}
-
-void RenderWidgetHostViewMac::TickPendingLatencyInfoDelay() {
-  if (compositing_iosurface_layer_) {
-    // Keep calling gotNewFrame in a loop until enough display calls come in.
-    // Each call will be separated by about a vsync.
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&RenderWidgetHostViewMac::TickPendingLatencyInfoDelay,
-                   pending_latency_info_delay_weak_ptr_factory_.GetWeakPtr()));
-    [compositing_iosurface_layer_ gotNewFrame];
-  }
-  if (software_layer_) {
-    // In software mode there is not an explicit setNeedsDisplay/display loop,
-    // so just wait a pretend-vsync at 60 Hz.
-    base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&RenderWidgetHostViewMac::TickPendingLatencyInfoDelay,
-                   pending_latency_info_delay_weak_ptr_factory_.GetWeakPtr()),
-        base::TimeDelta::FromMilliseconds(1000/60));
-    SendPendingLatencyInfoToHost();
-  }
 }
 
 void RenderWidgetHostViewMac::AddPendingSwapAck(
@@ -2173,7 +2120,7 @@ void RenderWidgetHostViewMac::PauseForPendingResizeOrRepaintsAndDraw() {
   // to keep the window and the window's contents in sync.
   [cocoa_view_ displayIfNeeded];
   [software_layer_ displayIfNeeded];
-  [compositing_iosurface_layer_ displayIfNeeded];
+  [compositing_iosurface_layer_ displayIfNeededAndAck];
 }
 
 void RenderWidgetHostViewMac::LayoutLayers() {
@@ -2224,8 +2171,10 @@ void RenderWidgetHostViewMac::LayoutLayers() {
       // displayed. Calling displayIfNeeded will ensure that the right size
       // frame is drawn to the screen.
       // http://crbug.com/350817
-      [compositing_iosurface_layer_ setNeedsDisplay];
-      [compositing_iosurface_layer_ displayIfNeeded];
+      // Workaround for crbug.com/395827
+      if ([compositing_iosurface_layer_ isAsynchronous])
+        [compositing_iosurface_layer_ setAsynchronous:NO];
+      [compositing_iosurface_layer_ setNeedsDisplayAndDisplayAndAck];
     }
   }
 

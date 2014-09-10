@@ -56,6 +56,7 @@ Druk op Shift + Alt om te schakelen.j</translation>
 <translation id="4628814525959230255">Controle over je scherm delen met <ph name="HELPER_NAME"/> via Hangouts.</translation>
 <translation id="7864539943188674973">Bluetooth uitschakelen</translation>
 <translation id="939252827960237676">Kan screenshot niet opslaan</translation>
+<translation id="9080206825613744995">Microfoon wordt gebruikt.</translation>
 <translation id="1969011864782743497"><ph name="DEVICE_NAME"/> (USB)</translation>
 <translation id="3126069444801937830">Opnieuw starten om updates uit te voeren</translation>
 <translation id="2268813581635650749">Alle gebruikers uitloggen</translation>
@@ -153,7 +154,7 @@ Druk op Shift + Alt om te schakelen.</translation>
 <translation id="1882897271359938046">Spiegelen naar <ph name="DISPLAY_NAME"/></translation>
 <translation id="2727977024730340865">Aangesloten op een laag-vermogen-lader. Opladen van de batterij mogelijk niet betrouwbaar.</translation>
 <translation id="3784455785234192852">Vergrendelen</translation>
-<translation id="2805756323405976993">Google Apps</translation>
+<translation id="2805756323405976993">Apps</translation>
 <translation id="1512064327686280138">Activering mislukt</translation>
 <translation id="5097002363526479830">Kan geen verbinding maken met het netwerk '<ph name="NAME"/>': <ph name="DETAILS"/></translation>
 <translation id="1850504506766569011">Wifi is uitgeschakeld.</translation>

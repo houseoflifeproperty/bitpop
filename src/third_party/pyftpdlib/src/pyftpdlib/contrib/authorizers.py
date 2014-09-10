@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# $Id: authorizers.py 977 2012-01-22 23:05:09Z g.rodola $
+# $Id$
 
 #  pyftpdlib is released under the MIT license, reproduced below:
 #  ======================================================================

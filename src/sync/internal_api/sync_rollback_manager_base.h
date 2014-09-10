@@ -35,26 +35,6 @@ class SYNC_EXPORT_PRIVATE SyncRollbackManagerBase :
   virtual ~SyncRollbackManagerBase();
 
   // SyncManager implementation.
-  virtual void Init(
-      const base::FilePath& database_location,
-      const WeakHandle<JsEventHandler>& event_handler,
-      const std::string& sync_server_and_path,
-      int sync_server_port,
-      bool use_ssl,
-      scoped_ptr<HttpPostProviderFactory> post_factory,
-      const std::vector<scoped_refptr<ModelSafeWorker> >& workers,
-      ExtensionsActivity* extensions_activity,
-      SyncManager::ChangeDelegate* change_delegate,
-      const SyncCredentials& credentials,
-      const std::string& invalidator_client_id,
-      const std::string& restored_key_for_bootstrapping,
-      const std::string& restored_keystore_key_for_bootstrapping,
-      InternalComponentsFactory* internal_components_factory,
-      Encryptor* encryptor,
-      scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
-      ReportUnrecoverableErrorFunction
-          report_unrecoverable_error_function,
-      CancelationSignal* cancelation_signal) OVERRIDE;
   virtual ModelTypeSet InitialSyncEndedTypes() OVERRIDE;
   virtual ModelTypeSet GetTypesWithEmptyProgressMarkerToken(
       ModelTypeSet types) OVERRIDE;
@@ -115,6 +95,13 @@ class SYNC_EXPORT_PRIVATE SyncRollbackManagerBase :
  protected:
   ObserverList<SyncManager::Observer>* GetObservers();
 
+  // Initialize sync backup DB.
+  bool InitInternal(
+      const base::FilePath& database_location,
+      InternalComponentsFactory* internal_components_factory,
+      scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
+      ReportUnrecoverableErrorFunction report_unrecoverable_error_function);
+
   virtual void RegisterDirectoryTypeDebugInfoObserver(
       syncer::TypeDebugInfoObserver* observer) OVERRIDE;
   virtual void UnregisterDirectoryTypeDebugInfoObserver(
@@ -122,6 +109,10 @@ class SYNC_EXPORT_PRIVATE SyncRollbackManagerBase :
   virtual bool HasDirectoryTypeDebugInfoObserver(
       syncer::TypeDebugInfoObserver* observer) OVERRIDE;
   virtual void RequestEmitDebugInfo() OVERRIDE;
+
+  bool initialized() const {
+    return initialized_;
+  }
 
  private:
   void NotifyInitializationSuccess();
@@ -143,6 +134,8 @@ class SYNC_EXPORT_PRIVATE SyncRollbackManagerBase :
   base::WeakPtrFactory<SyncRollbackManagerBase> weak_ptr_factory_;
 
   scoped_ptr<SyncEncryptionHandler> dummy_handler_;
+
+  bool initialized_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncRollbackManagerBase);
 };

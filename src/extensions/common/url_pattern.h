@@ -72,11 +72,15 @@ class URLPattern {
     PARSE_ERROR_INVALID_HOST_WILDCARD,
     PARSE_ERROR_EMPTY_PATH,
     PARSE_ERROR_INVALID_PORT,
+    PARSE_ERROR_INVALID_HOST,
     NUM_PARSE_RESULTS
   };
 
   // The <all_urls> string pattern.
   static const char kAllUrlsPattern[];
+
+  // Returns true if the given |scheme| is considered valid for extensions.
+  static bool IsValidSchemeForExtensions(const std::string& scheme);
 
   explicit URLPattern(int valid_schemes);
 

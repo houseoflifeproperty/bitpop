@@ -427,6 +427,7 @@ bool QuicClientSession::GetSSLInfo(SSLInfo* ssl_info) const {
   ssl_info->channel_id_sent = false;
   ssl_info->security_bits = security_bits;
   ssl_info->handshake_type = SSLInfo::HANDSHAKE_FULL;
+  ssl_info->pinning_failure_log = pinning_failure_log_;
   return true;
 }
 
@@ -483,13 +484,20 @@ bool QuicClientSession::CanPool(const std::string& hostname) const {
   // logic will need to be revised.
   DCHECK(connection()->connected());
   SSLInfo ssl_info;
-  bool unused = false;
   if (!GetSSLInfo(&ssl_info) || !ssl_info.cert) {
     // We can always pool with insecure QUIC sessions.
     return true;
   }
+
+  // Disable pooling for secure sessions.
+  // TODO(rch): re-enable this.
+  return false;
+
+#if 0
+  bool unused = false;
   // Only pool secure QUIC sessions if the cert matches the new hostname.
   return ssl_info.cert->VerifyNameMatch(hostname, &unused);
+#endif
 }
 
 QuicDataStream* QuicClientSession::CreateIncomingDataStream(
@@ -647,12 +655,12 @@ void QuicClientSession::OnProofValid(
 
 void QuicClientSession::OnProofVerifyDetailsAvailable(
     const ProofVerifyDetails& verify_details) {
-  const CertVerifyResult* cert_verify_result_other =
-      &(reinterpret_cast<const ProofVerifyDetailsChromium*>(
-          &verify_details))->cert_verify_result;
+  const ProofVerifyDetailsChromium* verify_details_chromium =
+      reinterpret_cast<const ProofVerifyDetailsChromium*>(&verify_details);
   CertVerifyResult* result_copy = new CertVerifyResult;
-  result_copy->CopyFrom(*cert_verify_result_other);
+  result_copy->CopyFrom(verify_details_chromium->cert_verify_result);
   cert_verify_result_.reset(result_copy);
+  pinning_failure_log_ = verify_details_chromium->pinning_failure_log;
 }
 
 void QuicClientSession::StartReading() {

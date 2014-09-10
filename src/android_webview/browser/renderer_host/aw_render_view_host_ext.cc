@@ -74,11 +74,6 @@ void AwRenderViewHostExt::SetTextZoomFactor(float factor) {
   Send(new AwViewMsg_SetTextZoomFactor(web_contents()->GetRoutingID(), factor));
 }
 
-void AwRenderViewHostExt::SetFixedLayoutSize(const gfx::Size& size) {
-  DCHECK(CalledOnValidThread());
-  Send(new AwViewMsg_SetFixedLayoutSize(web_contents()->GetRoutingID(), size));
-}
-
 void AwRenderViewHostExt::ResetScrollAndScaleState() {
   DCHECK(CalledOnValidThread());
   Send(new AwViewMsg_ResetScrollAndScaleState(web_contents()->GetRoutingID()));
@@ -102,10 +97,6 @@ void AwRenderViewHostExt::SetBackgroundColor(SkColor c) {
 
 void AwRenderViewHostExt::SetJsOnlineProperty(bool network_up) {
   Send(new AwViewMsg_SetJsOnlineProperty(network_up));
-}
-
-void AwRenderViewHostExt::SendCheckRenderThreadResponsiveness() {
-  Send(new AwViewMsg_CheckRenderThreadResponsiveness());
 }
 
 void AwRenderViewHostExt::RenderViewCreated(

@@ -69,8 +69,6 @@ class AwRenderViewHostExt : public content::WebContentsObserver,
   // Text Autosizing.
   void SetTextZoomFactor(float factor);
 
-  void SetFixedLayoutSize(const gfx::Size& size);
-
   void ResetScrollAndScaleState();
 
   // Sets the initial page scale. This overrides initial scale set by
@@ -78,8 +76,6 @@ class AwRenderViewHostExt : public content::WebContentsObserver,
   void SetInitialPageScale(double page_scale_factor);
   void SetBackgroundColor(SkColor c);
   void SetJsOnlineProperty(bool network_up);
-
-  void SendCheckRenderThreadResponsiveness();
 
  private:
   // content::WebContentsObserver implementation.

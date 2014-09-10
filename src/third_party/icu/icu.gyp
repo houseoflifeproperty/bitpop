@@ -277,6 +277,15 @@
               }],
             ],
           },
+          'all_dependent_settings': {
+            'msvs_settings': {
+              'VCLinkerTool': {
+                'AdditionalDependencies': [
+                  'advapi32.lib',
+                ],
+              },
+            },
+          },
           'conditions': [
             [ 'use_system_icu==1 and want_separate_host_toolset==1', {
               'toolsets': ['host'],
@@ -368,8 +377,8 @@
             ['OS=="android"', {
               'direct_dependent_settings': {
                 'include_dirs': [
-                  '<(android_src)/external/icu4c/common',
-                  '<(android_src)/external/icu4c/i18n',
+                  '<(android_src)/external/icu/icu4c/source/common',
+                  '<(android_src)/external/icu/icu4c/source/i18n',
                 ],
               },
               'link_settings': {

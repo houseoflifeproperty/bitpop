@@ -3245,6 +3245,8 @@ void RenderViewImpl::OnWasHidden() {
 #if defined(OS_ANDROID) && defined(ENABLE_WEBRTC)
   RenderThreadImpl::current()->video_capture_impl_manager()->
       SuspendDevices(true);
+  if (speech_recognition_dispatcher_)
+    speech_recognition_dispatcher_->AbortAllRecognitions();
 #endif
 
   if (webview())
@@ -3562,7 +3564,7 @@ void RenderViewImpl::SetScreenMetricsEmulationParameters(
     float device_scale_factor,
     const gfx::Point& root_layer_offset,
     float root_layer_scale) {
-  if (webview()) {
+  if (webview() && compositor()) {
     webview()->setCompositorDeviceScaleFactorOverride(device_scale_factor);
     webview()->setRootLayerTransform(
         blink::WebSize(root_layer_offset.x(), root_layer_offset.y()),
@@ -3777,11 +3779,14 @@ void RenderViewImpl::DidHideExternalPopupMenu() {
 }
 #endif
 
-void RenderViewImpl::OnShowContextMenu(const gfx::Point& location) {
-  context_menu_source_type_ = ui::MENU_SOURCE_TOUCH_EDIT_MENU;
-  touch_editing_context_menu_location_ = location;
+void RenderViewImpl::OnShowContextMenu(
+    ui::MenuSourceType source_type, const gfx::Point& location) {
+  context_menu_source_type_ = source_type;
+  has_host_context_menu_location_ = true;
+  host_context_menu_location_ = location;
   if (webview())
     webview()->showContextMenu();
+  has_host_context_menu_location_ = false;
 }
 
 void RenderViewImpl::OnEnableViewSourceMode() {

@@ -6,7 +6,8 @@
 
 <resources>
     <!-- Certificate Viewer Dimensions -->
-    <dimen name="certificate_viewer_padding">20dp</dimen>
+    <dimen name="certificate_viewer_padding_wide">24dp</dimen>
+    <dimen name="certificate_viewer_padding_thin">16dp</dimen>
 
     <!-- Accessibility tab switcher -->
     <dimen name="accessibility_tab_height">65dp</dimen>
@@ -15,8 +16,8 @@
     <dimen name="swipe_commit_distance">120dp</dimen>
 
     <!-- Custom Menu dimensions -->
-    <dimen name="menu_width">260dp</dimen>
-    <dimen name="menu_vertical_offset">0dp</dimen>
+    <dimen name="menu_width">258dp</dimen>
+    <dimen name="menu_negative_software_vertical_offset">0dp</dimen>
     <!-- The amount to fade the edges of the menu to indicate more content is available
          via scrolling. -->
     <dimen name="menu_vertical_fade_distance">15dp</dimen>
@@ -31,7 +32,7 @@
     <!-- Text size of the infobar message. -->
     <dimen name="infobar_text_size">16sp</dimen>
     <!-- Text size of text inside infobar buttons. -->
-    <dimen name="infobar_button_text_size">12sp</dimen>
+    <dimen name="infobar_button_text_size">14sp</dimen>
     <!-- Minimum width of an infobar. -->
     <dimen name="infobar_min_width">220dp</dimen>
     <!-- Margin between items in an infobar. -->

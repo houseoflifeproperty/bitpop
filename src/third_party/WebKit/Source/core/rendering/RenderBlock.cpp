@@ -331,9 +331,6 @@ void RenderBlock::styleDidChange(StyleDifference diff, const RenderStyle* oldSty
 {
     RenderBox::styleDidChange(diff, oldStyle);
 
-    if (isFloatingOrOutOfFlowPositioned() && oldStyle && !oldStyle->isFloating() && !oldStyle->hasOutOfFlowPosition() && parent() && parent()->isRenderBlockFlow())
-        toRenderBlock(parent())->removeAnonymousWrappersIfRequired();
-
     RenderStyle* newStyle = style();
 
     if (!isAnonymousBlock()) {
@@ -1088,25 +1085,6 @@ static bool canMergeContiguousAnonymousBlocks(RenderObject* oldChild, RenderObje
            && prev->isAnonymousColumnSpanBlock() == next->isAnonymousColumnSpanBlock();
 }
 
-void RenderBlock::removeAnonymousWrappersIfRequired()
-{
-    ASSERT(isRenderBlockFlow());
-    Vector<RenderBox*, 16> blocksToRemove;
-    for (RenderBox* child = firstChildBox(); child; child = child->nextSiblingBox()) {
-        // There are still block children in the container, so any anonymous wrappers are still needed.
-        if (!child->isAnonymousBlock() && !child->isFloatingOrOutOfFlowPositioned())
-            return;
-        // We can't remove anonymous wrappers if they contain continuations as this means there are block children present.
-        if (child->isRenderBlock() && toRenderBlock(child)->continuation())
-            return;
-        if (child->isAnonymousBlock())
-            blocksToRemove.append(child);
-    }
-
-    for (size_t i = 0; i < blocksToRemove.size(); i++)
-        collapseAnonymousBlockChild(this, toRenderBlock(blocksToRemove[i]));
-}
-
 void RenderBlock::collapseAnonymousBlockChild(RenderBlock* parent, RenderBlock* child)
 {
     // It's possible that this block's destruction may have been triggered by the
@@ -1219,7 +1197,7 @@ void RenderBlock::removeChild(RenderObject* oldChild)
         // we need to remove ourself and fix the continuation chain.
         if (!beingDestroyed() && isAnonymousBlockContinuation() && !oldChild->isListMarker()) {
             RenderObject* containingBlockIgnoringAnonymous = containingBlock();
-            while (containingBlockIgnoringAnonymous && containingBlockIgnoringAnonymous->isAnonymousBlock())
+            while (containingBlockIgnoringAnonymous && containingBlockIgnoringAnonymous->isAnonymous())
                 containingBlockIgnoringAnonymous = containingBlockIgnoringAnonymous->containingBlock();
             for (RenderObject* curr = this; curr; curr = curr->previousInPreOrder(containingBlockIgnoringAnonymous)) {
                 if (curr->virtualContinuation() != this)
@@ -1510,6 +1488,12 @@ void RenderBlock::addVisualOverflowFromTheme()
     IntRect inflatedRect = pixelSnappedBorderBoxRect();
     RenderTheme::theme().adjustRepaintRect(this, inflatedRect);
     addVisualOverflow(inflatedRect);
+}
+
+bool RenderBlock::createsBlockFormattingContext() const
+{
+    return isInlineBlockOrInlineTable() || isFloatingOrOutOfFlowPositioned() || hasOverflowClip() || isFlexItemIncludingDeprecated()
+        || style()->specifiesColumns() || isRenderFlowThread() || isTableCell() || isTableCaption() || isFieldset() || isWritingModeRoot() || isDocumentElement() || style()->columnSpan();
 }
 
 void RenderBlock::updateBlockChildDirtyBitsBeforeLayout(bool relayoutChildren, RenderBox* child)
@@ -2757,6 +2741,12 @@ void RenderBlock::markLinesDirtyInBlockRange(LayoutUnit logicalTop, LayoutUnit l
         afterLowest->markDirty();
         afterLowest = afterLowest->prevRootBox();
     }
+}
+
+bool RenderBlock::avoidsFloats() const
+{
+    // Floats can't intrude into our box if we have a non-auto column count or width.
+    return RenderBox::avoidsFloats() || !style()->hasAutoColumnCount() || !style()->hasAutoColumnWidth();
 }
 
 bool RenderBlock::isPointInOverflowControl(HitTestResult& result, const LayoutPoint& locationInContainer, const LayoutPoint& accumulatedOffset)

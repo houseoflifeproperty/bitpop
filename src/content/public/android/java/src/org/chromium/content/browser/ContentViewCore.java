@@ -10,6 +10,7 @@ import android.app.SearchManager;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.FeatureInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.database.ContentObserver;
@@ -108,6 +109,15 @@ public class ContentViewCore
 
     // Length of the delay (in ms) before fading in handles after the last page movement.
     private static final int TEXT_HANDLE_FADE_IN_DELAY = 300;
+
+    // These values are obtained from Samsung.
+    // TODO(changwan): refactor SPen related code into a separate class. See
+    // http://crbug.com/398169.
+    private static final int SPEN_ACTION_DOWN = 211;
+    private static final int SPEN_ACTION_UP = 212;
+    private static final int SPEN_ACTION_MOVE = 213;
+    private static final int SPEN_ACTION_CANCEL = 214;
+    private static Boolean sIsSPenSupported;
 
     // If the embedder adds a JavaScript interface object that contains an indirect reference to
     // the ContentViewCore, then storing a strong ref to the interface object on the native
@@ -210,7 +220,7 @@ public class ContentViewCore
      * extractSmartClipData are available.
      */
     public interface SmartClipDataListener {
-        public void onSmartClipDataExtracted(String result);
+        public void onSmartClipDataExtracted(String text, String html, Rect clipRect);
     }
 
     private final Context mContext;
@@ -334,6 +344,10 @@ public class ContentViewCore
     // Offsets for the events that passes through this ContentViewCore.
     private float mCurrentTouchOffsetX;
     private float mCurrentTouchOffsetY;
+
+    // Offsets for smart clip
+    private int mSmartClipOffsetX;
+    private int mSmartClipOffsetY;
 
     /**
      * Constructs a new ContentViewCore. Embedders must call initialize() after constructing
@@ -1093,6 +1107,55 @@ public class ContentViewCore
     // End FrameLayout overrides.
 
     /**
+     * TODO(changwan): refactor SPen related code into a separate class. See
+     * http://crbug.com/398169.
+     * @return Whether SPen is supported on the device.
+     */
+    public static boolean isSPenSupported(Context context) {
+        if (sIsSPenSupported == null)
+            sIsSPenSupported = detectSPenSupport(context);
+        return sIsSPenSupported.booleanValue();
+    }
+
+    private static boolean detectSPenSupport(Context context) {
+        if (!"SAMSUNG".equalsIgnoreCase(Build.MANUFACTURER))
+            return false;
+
+        final FeatureInfo[] infos = context.getPackageManager().getSystemAvailableFeatures();
+        for (FeatureInfo info : infos) {
+            if ("com.sec.feature.spen_usp".equalsIgnoreCase(info.name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Convert SPen event action into normal event action.
+     * TODO(changwan): refactor SPen related code into a separate class. See
+     * http://crbug.com/398169.
+     *
+     * @param eventActionMasked Input event action. It is assumed that it is masked as the values
+                                cannot be ORed.
+     * @return Event action after the conversion
+     */
+    public static int convertSPenEventAction(int eventActionMasked) {
+        // S-Pen support: convert to normal stylus event handling
+        switch (eventActionMasked) {
+            case SPEN_ACTION_DOWN:
+                return MotionEvent.ACTION_DOWN;
+            case SPEN_ACTION_UP:
+                return MotionEvent.ACTION_UP;
+            case SPEN_ACTION_MOVE:
+                return MotionEvent.ACTION_MOVE;
+            case SPEN_ACTION_CANCEL:
+                return MotionEvent.ACTION_CANCEL;
+            default:
+                return eventActionMasked;
+        }
+    }
+
+    /**
      * @see View#onTouchEvent(MotionEvent)
      */
     public boolean onTouchEvent(MotionEvent event) {
@@ -1100,7 +1163,10 @@ public class ContentViewCore
         try {
             cancelRequestToScrollFocusedEditableNodeIntoView();
 
-            final int eventAction = event.getActionMasked();
+            int eventAction = event.getActionMasked();
+
+            if (isSPenSupported(mContext))
+                eventAction = convertSPenEventAction(eventAction);
 
             // Only these actions have any effect on gesture detection.  Other
             // actions have no corresponding WebTouchEvent type and may confuse the
@@ -1132,7 +1198,10 @@ public class ContentViewCore
                     pointerCount > 1 ? event.getY(1) : 0,
                     event.getPointerId(0), pointerCount > 1 ? event.getPointerId(1) : -1,
                     event.getTouchMajor(), pointerCount > 1 ? event.getTouchMajor(1) : 0,
-                    event.getRawX(), event.getRawY());
+                    event.getRawX(), event.getRawY(),
+                    event.getToolType(0),
+                    pointerCount > 1 ? event.getToolType(1) : MotionEvent.TOOL_TYPE_UNKNOWN,
+                    event.getButtonState());
 
             if (offset != null) offset.recycle();
             return consumed;
@@ -2421,6 +2490,12 @@ public class ContentViewCore
 
     @SuppressWarnings("unused")
     @CalledByNative
+    private void showSelectionHandlesAutomatically() {
+        getSelectionHandleController().allowAutomaticShowing();
+    }
+
+    @SuppressWarnings("unused")
+    @CalledByNative
     private void onSelectionBoundsChanged(Rect anchorRectDip, int anchorDir, Rect focusRectDip,
             int focusDir, boolean isAnchorFirst) {
         // All coordinates are in DIP.
@@ -3024,14 +3099,30 @@ public class ContentViewCore
 
     public void extractSmartClipData(int x, int y, int width, int height) {
         if (mNativeContentViewCore != 0) {
+            x += mSmartClipOffsetX;
+            y += mSmartClipOffsetY;
             nativeExtractSmartClipData(mNativeContentViewCore, x, y, width, height);
         }
     }
 
+    /**
+     * Set offsets for smart clip.
+     *
+     * <p>This should be called if there is a viewport change introduced by,
+     * e.g., show and hide of a location bar.
+     *
+     * @param offsetX Offset for X position.
+     * @param offsetY Offset for Y position.
+     */
+    public void setSmartClipOffsets(int offsetX, int offsetY) {
+        mSmartClipOffsetX = offsetX;
+        mSmartClipOffsetY = offsetY;
+    }
+
     @CalledByNative
-    private void onSmartClipDataExtracted(String result) {
+    private void onSmartClipDataExtracted(String text, String html, Rect clipRect) {
         if (mSmartClipDataListener != null ) {
-            mSmartClipDataListener.onSmartClipDataExtracted(result);
+            mSmartClipDataListener.onSmartClipDataExtracted(text, html, clipRect);
         }
     }
 
@@ -3138,7 +3229,8 @@ public class ContentViewCore
             float x0, float y0, float x1, float y1,
             int pointerId0, int pointerId1,
             float touchMajor0, float touchMajor1,
-            float rawX, float rawY);
+            float rawX, float rawY,
+            int androidToolType0, int androidToolType1, int androidButtonState);
 
     private native int nativeSendMouseMoveEvent(
             long nativeContentViewCoreImpl, long timeMs, float x, float y);

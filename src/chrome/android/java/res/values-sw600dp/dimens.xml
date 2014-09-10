@@ -6,7 +6,6 @@
 
 <resources>
     <!-- Menu Dimensions -->
-    <!-- Necessary to align the menu with the bottom of the toolbar (the anchored button does not
-         extend to the bottom of the toolbar). -->
-    <dimen name="menu_vertical_offset">2dp</dimen>
+    <!-- Necessary to align the menu icon with the actual button. -->
+    <dimen name="menu_negative_software_vertical_offset">6dp</dimen>
 </resources>

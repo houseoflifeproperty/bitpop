@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "6.5",
+  "version": "7.2",
   "entries": [
     {
       "id": 1,
@@ -1013,8 +1013,8 @@ LONG_STRING_CONST(
     },
     {
       "id": 77,
-      "cr_bugs": [378691, 373360, 371530],
-      "description": "Testing fences was broken on Mali-400 MP drivers",
+      "cr_bugs": [378691, 373360, 371530, 398964],
+      "description": "Testing fences was broken on Mali ES2 drivers",
       "os": {
         "type": "android",
         "version": {
@@ -1028,7 +1028,12 @@ LONG_STRING_CONST(
       },
       "gl_renderer": {
         "op": "beginwith",
-        "value": "Mali-400 MP"
+        "value": "Mali"
+      },
+      "gl_type": "gles",
+      "gl_version": {
+        "op": "<",
+        "value": "3.0"
       },
       "features": [
         "disable_egl_khr_fence_sync"
@@ -1081,6 +1086,34 @@ LONG_STRING_CONST(
       },
       "features": [
         "disable_async_readpixels"
+      ]
+    },
+    {
+      "id": 86,
+      "description": "Disable use of Direct3D 11 on Matrox video cards",
+      "cr_bugs": [395861],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x102b",
+      "features": [
+        "disable_d3d11"
+      ]
+    },
+    {
+      "id": 87,
+      "description": "Disable use of Direct3D 11 on older AMD drivers",
+      "cr_bugs": [402134],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x1002",
+      "driver_date": {
+        "op": "<",
+        "value": "2011.1"
+      },
+      "features": [
+        "disable_d3d11"
       ]
     }
   ]

@@ -67,21 +67,12 @@ IPC_MESSAGE_ROUTED0(AwViewMsg_ResetScrollAndScaleState)
 IPC_MESSAGE_ROUTED1(AwViewMsg_SetInitialPageScale,
                     double /* page_scale_factor */)
 
-// Makes the blink::WebView use the given size for layout regardless of what
-// the size of the RenderWidget or viewport settings are.
-IPC_MESSAGE_ROUTED1(AwViewMsg_SetFixedLayoutSize,
-                    gfx::Size /* size */)
-
 // Sets the base background color for this view.
 IPC_MESSAGE_ROUTED1(AwViewMsg_SetBackgroundColor,
                     SkColor)
 
 IPC_MESSAGE_CONTROL1(AwViewMsg_SetJsOnlineProperty,
                      bool /* network_up */)
-
-// Sent prior to making a navigation via loadUrl to make sure that
-// render thread isn't stuck in a loop induced by JavaScript code.
-IPC_MESSAGE_CONTROL0(AwViewMsg_CheckRenderThreadResponsiveness)
 
 //-----------------------------------------------------------------------------
 // RenderView messages

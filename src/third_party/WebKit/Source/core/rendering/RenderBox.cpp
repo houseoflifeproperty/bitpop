@@ -4080,16 +4080,7 @@ bool RenderBox::shrinkToAvoidFloats() const
 
 bool RenderBox::avoidsFloats() const
 {
-    // CSS2.1: "The border box of a table, a block-level replaced element, or an element in the normal flow that establishes a new block formatting
-    // context .. must not overlap the margin box of any floats in the same block formatting context."
-    // FIXME: The inclusion of horizontal rule and legend elements here isn't covered by any spec.
-    return isReplaced() || isHR() || isLegend() || isTable() || (!isFloatingOrOutOfFlowPositioned() && createsBlockFormattingContext());
-}
-
-bool RenderBox::createsBlockFormattingContext() const
-{
-    return isInlineBlockOrInlineTable() || isFloatingOrOutOfFlowPositioned() || hasOverflowClip() || isFlexItemIncludingDeprecated()
-        || style()->specifiesColumns() || isRenderFlowThread() || isTableCell() || isTableCaption() || isFieldset() || isWritingModeRoot() || isDocumentElement() || style()->columnSpan();
+    return isReplaced() || hasOverflowClip() || isHR() || isLegend() || isWritingModeRoot() || isFlexItemIncludingDeprecated();
 }
 
 void RenderBox::markForPaginationRelayoutIfNeeded(SubtreeLayoutScope& layoutScope)
@@ -4144,11 +4135,18 @@ void RenderBox::addVisualEffectOverflow()
 
     if (style()->hasOutline()) {
         LayoutUnit outlineSize = style()->outlineSize();
-
-        overflowMinX = min(overflowMinX, borderBox.x() - outlineSize);
-        overflowMaxX = max(overflowMaxX, borderBox.maxX() + outlineSize);
-        overflowMinY = min(overflowMinY, borderBox.y() - outlineSize);
-        overflowMaxY = max(overflowMaxY, borderBox.maxY() + outlineSize);
+        LayoutRect outlineBox;
+        if (style()->outlineStyleIsAuto()) {
+            Vector<IntRect> focusRingRects;
+            addFocusRingRects(focusRingRects, LayoutPoint(), this);
+            outlineBox = unionRect(focusRingRects);
+        } else {
+            outlineBox = borderBox;
+        }
+        overflowMinX = min(overflowMinX, outlineBox.x() - outlineSize);
+        overflowMaxX = max(overflowMaxX, outlineBox.maxX() + outlineSize);
+        overflowMinY = min(overflowMinY, outlineBox.y() - outlineSize);
+        overflowMaxY = max(overflowMaxY, outlineBox.maxY() + outlineSize);
     }
 
     // Add in the final overflow with shadows, outsets and outline combined.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# $Id: test_ftpd.py 976 2012-01-22 22:39:10Z g.rodola $
+# $Id$
 
 #  ======================================================================
 #  Copyright (C) 2007-2012 Giampaolo Rodola' <g.rodola@gmail.com>

@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/webui/chromeos/login/hid_detection_screen_handler.h"
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/metrics/histogram.h"
@@ -15,6 +16,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/chromeos_switches.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -71,13 +73,16 @@ HIDDetectionScreenHandler::HIDDetectionScreenHandler(
       core_oobe_actor_(core_oobe_actor),
       show_on_init_(false),
       mouse_is_pairing_(false),
+      pointing_device_connect_type_(InputDeviceInfo::TYPE_UNKNOWN),
       keyboard_is_pairing_(false),
+      keyboard_device_connect_type_(InputDeviceInfo::TYPE_UNKNOWN),
       switch_on_adapter_when_ready_(false),
       first_time_screen_show_(true),
       weak_ptr_factory_(this) {
 }
 
 HIDDetectionScreenHandler::~HIDDetectionScreenHandler() {
+  adapter_initially_powered_.reset();
   if (adapter_.get())
     adapter_->RemoveObserver(this);
   input_service_proxy_.RemoveObserver(this);
@@ -96,6 +101,10 @@ void HIDDetectionScreenHandler::SetPoweredError() {
   LOG(ERROR) << "Failed to power BT adapter";
 }
 
+void HIDDetectionScreenHandler::SetPoweredOffError() {
+  LOG(ERROR) << "Failed to power off BT adapter";
+}
+
 void HIDDetectionScreenHandler::FindDevicesError() {
   VLOG(1) << "Failed to start Bluetooth discovery.";
 }
@@ -105,7 +114,8 @@ void HIDDetectionScreenHandler::Show() {
     show_on_init_ = true;
     return;
   }
-  core_oobe_actor_->InitDemoModeDetection();
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableDemoMode))
+    core_oobe_actor_->InitDemoModeDetection();
   input_service_proxy_.AddObserver(this);
   first_time_screen_show_ = true;
   GetDevicesFirstTime();
@@ -177,6 +187,20 @@ void HIDDetectionScreenHandler::HandleOnContinue() {
         scenario_type,
         CONTINUE_SCENARIO_TYPE_SIZE);
   }
+  // Switch off BT adapter if it was off before the screen and no BT device
+  // connected.
+  if (adapter_ && adapter_->IsPresent() && adapter_->IsPowered() &&
+      !(pointing_device_connect_type_ == InputDeviceInfo::TYPE_BLUETOOTH ||
+        keyboard_device_connect_type_ == InputDeviceInfo::TYPE_BLUETOOTH) &&
+      adapter_initially_powered_ && !(*adapter_initially_powered_)) {
+    VLOG(1) << "Switching off BT adapter after HID OOBE screen as unused.";
+    adapter_->SetPowered(
+        false,
+        base::Bind(&base::DoNothing),
+        base::Bind(&HIDDetectionScreenHandler::SetPoweredOffError,
+                   weak_ptr_factory_.GetWeakPtr()));
+  }
+
   core_oobe_actor_->StopDemoModeDetection();
   if (delegate_)
     delegate_->OnExit();
@@ -267,6 +291,8 @@ void HIDDetectionScreenHandler::AuthorizePairing(
 void HIDDetectionScreenHandler::AdapterPresentChanged(
     device::BluetoothAdapter* adapter, bool present) {
   if (present && switch_on_adapter_when_ready_) {
+    VLOG(1) << "Switching on BT adapter on HID OOBE screen.";
+    adapter_initially_powered_.reset(new bool(adapter_->IsPowered()));
     adapter_->SetPowered(
         true,
         base::Bind(&HIDDetectionScreenHandler::StartBTDiscoverySession,
@@ -415,6 +441,8 @@ void HIDDetectionScreenHandler::TryInitiateBTDevicesUpdate() {
       // Switch on BT adapter later when it's available.
       switch_on_adapter_when_ready_ = true;
     } else if (!adapter_->IsPowered()) {
+      VLOG(1) << "Switching on BT adapter on HID OOBE screen.";
+      adapter_initially_powered_.reset(new bool(false));
       adapter_->SetPowered(
           true,
           base::Bind(&HIDDetectionScreenHandler::StartBTDiscoverySession,

@@ -87,7 +87,7 @@ HttpNetworkSession::Params::Params()
       enable_quic_port_selection(true),
       enable_quic_pacing(false),
       enable_quic_time_based_loss_detection(false),
-      enable_quic_persist_server_info(false),
+      enable_quic_persist_server_info(true),
       quic_clock(NULL),
       quic_random(NULL),
       quic_max_packet_length(kDefaultMaxPacketSize),
@@ -117,6 +117,7 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
                                net::ClientSocketFactory::GetDefaultFactory(),
                            params.http_server_properties,
                            params.cert_verifier,
+                           params.transport_security_state,
                            params.quic_crypto_client_stream_factory,
                            params.quic_random ? params.quic_random :
                                QuicRandom::GetInstance(),

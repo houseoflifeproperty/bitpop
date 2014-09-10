@@ -127,7 +127,6 @@ class AwContents : public FindHelper::Listener,
   void ClearView(JNIEnv* env, jobject obj);
   void SetExtraHeadersForUrl(JNIEnv* env, jobject obj,
                              jstring url, jstring extra_headers);
-  void SendCheckRenderThreadResponsiveness(JNIEnv* env, jobject obj);
 
   void DrawGL(AwDrawGLInfo* draw_info);
 
@@ -211,10 +210,6 @@ class AwContents : public FindHelper::Listener,
 
   void ScrollTo(JNIEnv* env, jobject obj, jint x, jint y);
   void SetDipScale(JNIEnv* env, jobject obj, jfloat dip_scale);
-  void SetFixedLayoutSize(JNIEnv* env,
-                          jobject obj,
-                          jint width_dip,
-                          jint height_dip);
   void SetSaveFormData(bool enabled);
 
   // Sets the java client
@@ -228,6 +223,7 @@ class AwContents : public FindHelper::Listener,
   void InitAutofillIfNecessary(bool enabled);
 
   void InitializeHardwareDrawIfNeeded();
+  void ReleaseHardwareDrawIfNeeded();
 
   // Geolocation API support
   void ShowGeolocationPrompt(const GURL& origin, base::Callback<void(bool)>);

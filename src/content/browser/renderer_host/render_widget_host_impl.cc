@@ -1072,6 +1072,11 @@ void RenderWidgetHostImpl::SetCursor(const WebCursor& cursor) {
   view_->UpdateCursor(cursor);
 }
 
+void RenderWidgetHostImpl::ShowContextMenuAtPoint(const gfx::Point& point) {
+  Send(new ViewMsg_ShowContextMenu(
+      GetRoutingID(), ui::MENU_SOURCE_MOUSE, point));
+}
+
 void RenderWidgetHostImpl::SendCursorVisibilityState(bool is_visible) {
   Send(new InputMsg_CursorVisibilityChange(GetRoutingID(), is_visible));
 }
@@ -1189,17 +1194,24 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
 
   waiting_for_screen_rects_ack_ = false;
 
-  // Reset to ensure that input routing works with a new renderer.
-  input_router_.reset(new InputRouterImpl(
-      process_, this, this, routing_id_, GetInputRouterConfigForPlatform()));
-
   // Must reset these to ensure that keyboard events work with a new renderer.
   suppress_next_char_events_ = false;
 
   // Reset some fields in preparation for recovering from a crash.
   ResetSizeAndRepaintPendingFlags();
   current_size_.SetSize(0, 0);
-  is_hidden_ = false;
+  // After the renderer crashes, the view is destroyed and so the
+  // RenderWidgetHost cannot track its visibility anymore. We assume such
+  // RenderWidgetHost to be visible for the sake of internal accounting - be
+  // careful about changing this - see http://crbug.com/401859.
+  //
+  // We need to at least make sure that the RenderProcessHost is notified about
+  // the |is_hidden_| change, so that the renderer will have correct visibility
+  // set when respawned.
+  if (is_hidden_) {
+    process_->WidgetRestored();
+    is_hidden_ = false;
+  }
 
   // Reset this to ensure the hung renderer mechanism is working properly.
   in_flight_event_count_ = 0;
@@ -1210,6 +1222,13 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
     view_->RenderProcessGone(status, exit_code);
     view_ = NULL;  // The View should be deleted by RenderProcessGone.
   }
+
+  // Reconstruct the input router to ensure that it has fresh state for a new
+  // renderer. Otherwise it may be stuck waiting for the old renderer to ack an
+  // event. (In particular, the above call to view_->RenderProcessGone will
+  // destroy the aura window, which may dispatch a synthetic mouse move.)
+  input_router_.reset(new InputRouterImpl(
+      process_, this, this, routing_id_, GetInputRouterConfigForPlatform()));
 
   synthetic_gesture_controller_.reset();
 }
@@ -2160,8 +2179,22 @@ void RenderWidgetHostImpl::FrameSwapped(const ui::LatencyInfo& latency_info) {
   if (latency_info.FindLatency(ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT,
                                GetLatencyComponentId(),
                                &window_snapshot_component)) {
-    WindowSnapshotReachedScreen(
-        static_cast<int>(window_snapshot_component.sequence_number));
+    int sequence_number = static_cast<int>(
+        window_snapshot_component.sequence_number);
+#if defined(OS_MACOSX)
+    // On Mac, when using CoreAnmation, there is a delay between when content
+    // is drawn to the screen, and when the snapshot will actually pick up
+    // that content. Insert a manual delay of 1/6th of a second (to simulate
+    // 10 frames at 60 fps) before actually taking the snapshot.
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&RenderWidgetHostImpl::WindowSnapshotReachedScreen,
+                   weak_factory_.GetWeakPtr(),
+                   sequence_number),
+        base::TimeDelta::FromSecondsD(1. / 6));
+#else
+    WindowSnapshotReachedScreen(sequence_number);
+#endif
   }
 
   ui::LatencyInfo::LatencyComponent rwh_component;

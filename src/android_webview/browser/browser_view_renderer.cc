@@ -236,6 +236,7 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
   if (!hardware_enabled_) {
     hardware_enabled_ = compositor_->InitializeHwDraw();
     if (hardware_enabled_) {
+      tile_manager_key_ = GlobalTileManager::GetInstance()->PushBack(this);
       gpu::GLInProcessContext* share_context = compositor_->GetShareContext();
       DCHECK(share_context);
       shared_renderer_state_->SetSharedContext(share_context);
@@ -301,13 +302,19 @@ bool BrowserViewRenderer::OnDrawSoftware(jobject java_canvas) {
     return false;
   }
 
+  // TODO(hush): right now webview size is passed in as the auxiliary bitmap
+  // size, which might hurt performace (only for software draws with auxiliary
+  // bitmap). For better performance, get global visible rect, transform it
+  // from screen space to view space, then intersect with the webview in
+  // viewspace.  Use the resulting rect as the auxiliary
+  // bitmap.
   return BrowserViewRendererJavaHelper::GetInstance()
       ->RenderViaAuxilaryBitmapIfNeeded(
-            java_canvas,
-            last_on_draw_scroll_offset_,
-            gfx::Rect(width_, height_),
-            base::Bind(&BrowserViewRenderer::CompositeSW,
-                       base::Unretained(this)));
+          java_canvas,
+          last_on_draw_scroll_offset_,
+          gfx::Size(width_, height_),
+          base::Bind(&BrowserViewRenderer::CompositeSW,
+                     base::Unretained(this)));
 }
 
 skia::RefPtr<SkPicture> BrowserViewRenderer::CapturePicture(int width,
@@ -398,27 +405,27 @@ void BrowserViewRenderer::OnAttachedToWindow(int width, int height) {
   attached_to_window_ = true;
   width_ = width;
   height_ = height;
-  tile_manager_key_ = GlobalTileManager::GetInstance()->PushBack(this);
 }
 
 void BrowserViewRenderer::OnDetachedFromWindow() {
   TRACE_EVENT0("android_webview", "BrowserViewRenderer::OnDetachedFromWindow");
   attached_to_window_ = false;
-  if (hardware_enabled_) {
-    ReturnUnusedResource(shared_renderer_state_->PassDrawGLInput());
-    ReturnResourceFromParent();
-    DCHECK(shared_renderer_state_->ReturnedResourcesEmpty());
+  DCHECK(!hardware_enabled_);
+}
 
-    compositor_->ReleaseHwDraw();
-    shared_renderer_state_->SetSharedContext(NULL);
-    hardware_enabled_ = false;
-  }
+void BrowserViewRenderer::ReleaseHardware() {
+  DCHECK(hardware_enabled_);
+  ReturnUnusedResource(shared_renderer_state_->PassDrawGLInput());
+  ReturnResourceFromParent();
+  DCHECK(shared_renderer_state_->ReturnedResourcesEmpty());
+
+  compositor_->ReleaseHwDraw();
+  shared_renderer_state_->SetSharedContext(NULL);
+  hardware_enabled_ = false;
+
   SynchronousCompositorMemoryPolicy zero_policy;
   RequestMemoryPolicy(zero_policy);
   GlobalTileManager::GetInstance()->Remove(tile_manager_key_);
-  // The hardware resources are released in the destructor of hardware renderer,
-  // so we don't need to do it here.
-  // See AwContents::ReleaseHardwareDrawOnRenderThread(JNIEnv*, jobject).
 }
 
 bool BrowserViewRenderer::IsVisible() const {

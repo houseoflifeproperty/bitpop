@@ -50,6 +50,7 @@ const char kParseErrorEmptyHost[] = "Host can not be empty.";
 const char kParseErrorInvalidHostWildcard[] = "Invalid host wildcard.";
 const char kParseErrorEmptyPath[] = "Empty path.";
 const char kParseErrorInvalidPort[] = "Invalid port.";
+const char kParseErrorInvalidHost[] = "Invalid host.";
 
 // Message explaining each URLPattern::ParseResult.
 const char* const kParseResultMessages[] = {
@@ -61,6 +62,7 @@ const char* const kParseResultMessages[] = {
   kParseErrorInvalidHostWildcard,
   kParseErrorEmptyPath,
   kParseErrorInvalidPort,
+  kParseErrorInvalidHost,
 };
 
 COMPILE_ASSERT(URLPattern::NUM_PARSE_RESULTS == arraysize(kParseResultMessages),
@@ -108,6 +110,15 @@ std::string StripTrailingWildcard(const std::string& path) {
 }
 
 }  // namespace
+
+// static
+bool URLPattern::IsValidSchemeForExtensions(const std::string& scheme) {
+  for (size_t i = 0; i < arraysize(kValidSchemes); ++i) {
+    if (scheme == kValidSchemes[i])
+      return true;
+  }
+  return false;
+}
 
 URLPattern::URLPattern()
     : valid_schemes_(SCHEME_NONE),
@@ -243,6 +254,10 @@ URLPattern::ParseResult URLPattern::Parse(const std::string& pattern) {
   // think '*' works as a glob in the host.
   if (host_.find('*') != std::string::npos)
     return PARSE_ERROR_INVALID_HOST_WILDCARD;
+
+  // Null characters are not allowed in hosts.
+  if (host_.find('\0') != std::string::npos)
+    return PARSE_ERROR_INVALID_HOST;
 
   return PARSE_SUCCESS;
 }

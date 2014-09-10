@@ -32,6 +32,7 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
 #include "chrome/browser/net/chrome_cookie_notification_details.h"
+#include "chrome/browser/prefs/chrome_pref_service_factory.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
@@ -310,19 +311,19 @@ void ProfileSyncService::Initialize() {
   startup_controller_.Reset(GetRegisteredDataTypes());
   startup_controller_.TryStart();
 
-  backup_rollback_controller_.Start(backup_start_delay_);
 
+  if (browser_sync::BackupRollbackController::IsBackupEnabled()) {
+    backup_rollback_controller_.Start(backup_start_delay_);
+  } else {
 #if defined(ENABLE_PRE_SYNC_BACKUP)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSyncDisableBackup)) {
     profile_->GetIOTaskRunner()->PostDelayedTask(
         FROM_HERE,
         base::Bind(base::IgnoreResult(base::DeleteFile),
                    profile_->GetPath().Append(kSyncBackupDataFolderName),
                    true),
         backup_start_delay_);
-  }
 #endif
+  }
 }
 
 void ProfileSyncService::TrySyncDatatypePrefRecovery() {
@@ -521,11 +522,20 @@ bool ProfileSyncService::ShouldDeleteSyncFolder() {
   if (backend_mode_ == SYNC)
     return !HasSyncSetupCompleted();
 
-  // Start fresh if it's the first time backup after user stopped syncing.
-  // This is needed because backup DB may contain items deleted by user during
-  // sync period and can cause back-from-dead issues.
-  if (backend_mode_ == BACKUP && !sync_prefs_.GetFirstSyncTime().is_null())
-    return true;
+  if (backend_mode_ == BACKUP) {
+    base::Time reset_time = chrome_prefs::GetResetTime(profile_);
+
+    // Start fresh if:
+    // * It's the first time backup after user stopped syncing because backup
+    //   DB may contain items deleted by user during sync period and can cause
+    //   back-from-dead issues if user didn't choose rollback.
+    // * Settings are reset during startup because of tampering to avoid
+    //   restoring settings from backup.
+    if (!sync_prefs_.GetFirstSyncTime().is_null() ||
+        (!reset_time.is_null() && profile_->GetStartTime() <= reset_time)) {
+      return true;
+    }
+  }
 
   return false;
 }
@@ -710,6 +720,8 @@ void ProfileSyncService::OnGetTokenFailure(
   last_get_token_error_ = error;
   switch (error.state()) {
     case GoogleServiceAuthError::CONNECTION_FAILED:
+    case GoogleServiceAuthError::REQUEST_CANCELED:
+    case GoogleServiceAuthError::SERVICE_ERROR:
     case GoogleServiceAuthError::SERVICE_UNAVAILABLE: {
       // Transient error. Retry after some time.
       request_access_token_backoff_.InformOfRequest(false);
@@ -723,7 +735,6 @@ void ProfileSyncService::OnGetTokenFailure(
       NotifyObservers();
       break;
     }
-    case GoogleServiceAuthError::SERVICE_ERROR:
     case GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS: {
       if (!sync_prefs_.SyncHasAuthError()) {
         sync_prefs_.SetSyncAuthError(true);
@@ -734,6 +745,9 @@ void ProfileSyncService::OnGetTokenFailure(
       // Fallthrough.
     }
     default: {
+      if (error.state() != GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS) {
+        LOG(ERROR) << "Unexpected persistent error: " << error.ToString();
+      }
       // Show error to user.
       UpdateAuthErrorState(error);
     }
@@ -2577,4 +2591,11 @@ GURL ProfileSyncService::GetSyncServiceURL(
     }
   }
   return result;
+}
+
+void ProfileSyncService::StartStopBackupForTesting() {
+  if (backend_mode_ == BACKUP)
+    ShutdownImpl(browser_sync::SyncBackendHost::STOP_AND_CLAIM_THREAD);
+  else
+    backup_rollback_controller_.Start(base::TimeDelta());
 }

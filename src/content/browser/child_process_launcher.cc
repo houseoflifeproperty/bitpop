@@ -511,10 +511,10 @@ base::TerminationStatus ChildProcessLauncher::GetChildTerminationStatus(
 
 void ChildProcessLauncher::SetProcessBackgrounded(bool background) {
   BrowserThread::PostTask(
-      BrowserThread::PROCESS_LAUNCHER, FROM_HERE,
-      base::Bind(
-          &ChildProcessLauncher::Context::SetProcessBackgrounded,
-          GetHandle(), background));
+     BrowserThread::PROCESS_LAUNCHER, FROM_HERE,
+     base::Bind(
+         &ChildProcessLauncher::Context::SetProcessBackgrounded,
+         GetHandle(), background));
 }
 
 void ChildProcessLauncher::SetTerminateChildOnShutdown(

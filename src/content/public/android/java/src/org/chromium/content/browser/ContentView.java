@@ -9,6 +9,10 @@ import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Message;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
@@ -25,7 +29,9 @@ import org.chromium.base.TraceEvent;
  * exposes the various {@link View} functionality to it.
  */
 public class ContentView extends FrameLayout
-        implements ContentViewCore.InternalAccessDelegate {
+        implements ContentViewCore.InternalAccessDelegate, SmartClipProvider {
+
+    private static final String TAG = "ContentView";
 
     protected final ContentViewCore mContentViewCore;
 
@@ -245,6 +251,38 @@ public class ContentView extends FrameLayout
     protected void onVisibilityChanged(View changedView, int visibility) {
         super.onVisibilityChanged(changedView, visibility);
         mContentViewCore.onVisibilityChanged(changedView, visibility);
+    }
+
+    // Implements SmartClipProvider
+    @Override
+    public void extractSmartClipData(int x, int y, int width, int height) {
+        mContentViewCore.extractSmartClipData(x, y, width, height);
+    }
+
+    // Implements SmartClipProvider
+    @Override
+    public void setSmartClipResultHandler(final Handler resultHandler) {
+        if (resultHandler == null) {
+            mContentViewCore.setSmartClipDataListener(null);
+            return;
+        }
+        mContentViewCore.setSmartClipDataListener(new ContentViewCore.SmartClipDataListener() {
+            public void onSmartClipDataExtracted(String text, String html, Rect clipRect) {
+                Bundle bundle = new Bundle();
+                bundle.putString("url", mContentViewCore.getWebContents().getVisibleUrl());
+                bundle.putString("title", mContentViewCore.getWebContents().getTitle());
+                bundle.putParcelable("rect", clipRect);
+                bundle.putString("text", text);
+                bundle.putString("html", html);
+                try {
+                    Message msg = Message.obtain(resultHandler, 0);
+                    msg.setData(bundle);
+                    msg.sendToTarget();
+                } catch (Exception e) {
+                    Log.e(TAG, "Error calling handler for smart clip data: ", e);
+                }
+            }
+        });
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////

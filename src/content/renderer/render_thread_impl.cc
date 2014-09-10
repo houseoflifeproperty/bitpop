@@ -172,6 +172,12 @@ const int kIdleCPUUsageThresholdInPercents = 3;
 const int kMinRasterThreads = 1;
 const int kMaxRasterThreads = 64;
 
+// Maximum allocation size allowed for image scaling filters that
+// require pre-scaling. Skia will fallback to a filter that doesn't
+// require pre-scaling if the default filter would require an
+// allocation that exceeds this limit.
+const size_t kImageCacheSingleAllocationByteLimit = 64 * 1024 * 1024;
+
 // Keep the global RenderThreadImpl in a TLS slot so it is impossible to access
 // incorrectly from the wrong thread.
 base::LazyInstance<base::ThreadLocalPointer<RenderThreadImpl> >
@@ -518,8 +524,13 @@ void RenderThreadImpl::Shutdown() {
 
   // Wait for all databases to be closed.
   if (webkit_platform_support_) {
+    // WaitForAllDatabasesToClose might run a nested message loop. To avoid
+    // processing timer events while we're already in the process of shutting
+    // down blink, put a ScopePageLoadDeferrer on the stack.
+    WebView::willEnterModalLoop();
     webkit_platform_support_->web_database_observer_impl()->
         WaitForAllDatabasesToClose();
+    WebView::didExitModalLoop();
   }
 
   // Shutdown in reverse of the initialization order.
@@ -822,6 +833,9 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   if (!command_line.HasSwitch(switches::kEnableDeferredImageDecoding) &&
       !is_impl_side_painting_enabled_)
     SkGraphics::SetImageCacheByteLimit(0u);
+
+  SkGraphics::SetImageCacheSingleAllocationByteLimit(
+      kImageCacheSingleAllocationByteLimit);
 }
 
 void RenderThreadImpl::RegisterSchemes() {
@@ -1129,7 +1143,7 @@ scoped_ptr<base::SharedMemory> RenderThreadImpl::AllocateSharedMemory(
       HostAllocateSharedMemoryBuffer(size));
 }
 
-bool RenderThreadImpl::CreateViewCommandBuffer(
+CreateCommandBufferResult RenderThreadImpl::CreateViewCommandBuffer(
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
       int32 route_id) {
@@ -1138,17 +1152,17 @@ bool RenderThreadImpl::CreateViewCommandBuffer(
                "surface_id",
                surface_id);
 
-  bool succeeded = false;
+  CreateCommandBufferResult result = CREATE_COMMAND_BUFFER_FAILED;
   IPC::Message* message = new GpuHostMsg_CreateViewCommandBuffer(
       surface_id,
       init_params,
       route_id,
-      &succeeded);
+      &result);
 
   // Allow calling this from the compositor thread.
   thread_safe_sender()->Send(message);
 
-  return succeeded;
+  return result;
 }
 
 void RenderThreadImpl::CreateImage(

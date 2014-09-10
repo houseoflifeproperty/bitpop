@@ -114,17 +114,6 @@ HitTestResult& HitTestResult::operator=(const HitTestResult& other)
     return *this;
 }
 
-void HitTestResult::trace(Visitor* visitor)
-{
-    visitor->trace(m_innerNode);
-    visitor->trace(m_innerPossiblyPseudoNode);
-    visitor->trace(m_innerNonSharedNode);
-    visitor->trace(m_innerURLElement);
-#if ENABLE(OILPAN)
-    visitor->trace(m_rectBasedTestResult);
-#endif
-}
-
 RenderObject* HitTestResult::renderer() const
 {
     if (!m_innerNode)
@@ -286,6 +275,16 @@ IntRect HitTestResult::imageRect() const
 
 KURL HitTestResult::absoluteImageURL() const
 {
+    return absoluteImageURLInternal(false);
+}
+
+KURL HitTestResult::absoluteImageURLIncludingCanvasDataURL() const
+{
+    return absoluteImageURLInternal(true);
+}
+
+KURL HitTestResult::absoluteImageURLInternal(bool allowCanvas) const
+{
     if (!m_innerNonSharedNode)
         return KURL();
 
@@ -294,7 +293,7 @@ KURL HitTestResult::absoluteImageURL() const
         return KURL();
 
     AtomicString urlString;
-    if (isHTMLCanvasElement(*m_innerNonSharedNode)
+    if ((allowCanvas && isHTMLCanvasElement(*m_innerNonSharedNode))
         || isHTMLEmbedElement(*m_innerNonSharedNode)
         || isHTMLImageElement(*m_innerNonSharedNode)
         || isHTMLInputElement(*m_innerNonSharedNode)

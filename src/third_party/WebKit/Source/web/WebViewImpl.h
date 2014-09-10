@@ -245,7 +245,11 @@ public:
                                     unsigned inactiveForegroundColor) OVERRIDE;
     virtual void performCustomContextMenuAction(unsigned action) OVERRIDE;
     virtual void showContextMenu() OVERRIDE;
+    // FIXME: This should be removed when the chromium side patch lands
+    // http://codereview.chromium.org/260623004
     virtual WebString getSmartClipData(WebRect) OVERRIDE;
+    virtual void getSmartClipData(WebRect, WebString&, WebRect&) OVERRIDE;
+    virtual void extractSmartClipData(WebRect, WebString&, WebString&, WebRect&) OVERRIDE;
     virtual void hidePopups() OVERRIDE;
     virtual void addPageOverlay(WebPageOverlay*, int /* zOrder */) OVERRIDE;
     virtual void removePageOverlay(WebPageOverlay*) OVERRIDE;
@@ -261,7 +265,6 @@ public:
 
     // WebViewImpl
 
-    WebCore::HitTestResult coreHitTestResultAt(const WebPoint&);
     void suppressInvalidations(bool enable);
     void invalidateRect(const WebCore::IntRect&);
 

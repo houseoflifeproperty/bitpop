@@ -99,6 +99,7 @@
         '../components/components.gyp:visitedlink_renderer',
         '../components/components.gyp:web_contents_delegate_android',
         '../content/content.gyp:content_app_both',
+        '../content/content.gyp:content_browser',
         '../gpu/gpu.gyp:command_buffer_service',
         '../gpu/gpu.gyp:gles2_implementation',
         '../gpu/gpu.gyp:gl_in_process_context',
@@ -106,7 +107,6 @@
         '../printing/printing.gyp:printing',
         '../skia/skia.gyp:skia',
         '../third_party/WebKit/public/blink.gyp:blink',
-        '../v8/tools/gyp/v8.gyp:v8',
         '../ui/gl/gl.gyp:gl',
         '../ui/shell_dialogs/shell_dialogs.gyp:shell_dialogs',
         '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
@@ -226,8 +226,6 @@
         'public/browser/draw_gl.h',
         'renderer/aw_content_renderer_client.cc',
         'renderer/aw_content_renderer_client.h',
-        'renderer/aw_execution_termination_filter.cc',
-        'renderer/aw_execution_termination_filter.h',
         'renderer/aw_key_systems.cc',
         'renderer/aw_key_systems.h',
         'renderer/aw_permission_client.cc',
@@ -268,7 +266,7 @@
           'includes': [ '../build/java.gypi' ],
         },
       ],
-     }, { # android_webview_build==1
+     }, {  # android_webview_build==1
       'targets': [
         {
           'target_name': 'android_webview_jarjar_ui_resources',

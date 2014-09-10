@@ -1368,6 +1368,86 @@ TEST_F(WebFrameTest, WideViewportInitialScaleDoesNotExpandFixedLayoutWidth)
     EXPECT_EQ(0.5f, webViewHelper.webView()->pageScaleFactor());
 }
 
+TEST_F(WebFrameTest, SetForceZeroLayoutHeight)
+{
+    UseMockScrollbarSettings mockScrollbarSettings;
+    registerMockedHttpURLLoad("200-by-300.html");
+
+    FixedLayoutTestWebViewClient client;
+    client.m_screenInfo.deviceScaleFactor = 1;
+    int viewportWidth = 640;
+    int viewportHeight = 480;
+
+    FrameTestHelpers::WebViewHelper webViewHelper;
+
+    webViewHelper.initializeAndLoad(m_baseURL + "200-by-300.html", true, 0, &client, enableViewportSettings);
+    webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
+    webViewHelper.webView()->layout();
+
+    EXPECT_LE(viewportHeight, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutSize().height());
+    webViewHelper.webView()->settings()->setForceZeroLayoutHeight(true);
+    EXPECT_TRUE(webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->needsLayout());
+
+    EXPECT_EQ(0, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutSize().height());
+
+    webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight * 2));
+    EXPECT_FALSE(webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->needsLayout());
+    EXPECT_EQ(0, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutSize().height());
+
+    webViewHelper.webView()->resize(WebSize(viewportWidth * 2, viewportHeight));
+    webViewHelper.webView()->layout();
+    EXPECT_EQ(0, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutSize().height());
+
+    webViewHelper.webView()->settings()->setForceZeroLayoutHeight(false);
+    EXPECT_LE(viewportHeight, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutSize().height());
+}
+
+TEST_F(WebFrameTest, SetForceZeroLayoutHeightWorksAcrossNavigations)
+{
+    UseMockScrollbarSettings mockScrollbarSettings;
+    registerMockedHttpURLLoad("200-by-300.html");
+    registerMockedHttpURLLoad("large-div.html");
+
+    FixedLayoutTestWebViewClient client;
+    client.m_screenInfo.deviceScaleFactor = 1;
+    int viewportWidth = 640;
+    int viewportHeight = 480;
+
+    FrameTestHelpers::WebViewHelper webViewHelper;
+
+    webViewHelper.initializeAndLoad(m_baseURL + "200-by-300.html", true, 0, &client, enableViewportSettings);
+    webViewHelper.webView()->settings()->setForceZeroLayoutHeight(true);
+    webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
+    webViewHelper.webView()->layout();
+
+    FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "large-div.html");
+    webViewHelper.webView()->layout();
+
+    EXPECT_EQ(0, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutSize().height());
+}
+
+TEST_F(WebFrameTest, SetForceZeroLayoutHeightWithWideViewportQuirk)
+{
+    UseMockScrollbarSettings mockScrollbarSettings;
+    registerMockedHttpURLLoad("200-by-300.html");
+
+    FixedLayoutTestWebViewClient client;
+    client.m_screenInfo.deviceScaleFactor = 1;
+    int viewportWidth = 640;
+    int viewportHeight = 480;
+
+    FrameTestHelpers::WebViewHelper webViewHelper;
+
+    webViewHelper.initializeAndLoad(m_baseURL + "200-by-300.html", true, 0, &client, enableViewportSettings);
+    webViewHelper.webView()->settings()->setWideViewportQuirkEnabled(true);
+    webViewHelper.webView()->settings()->setUseWideViewport(true);
+    webViewHelper.webView()->settings()->setForceZeroLayoutHeight(true);
+    webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
+    webViewHelper.webView()->layout();
+
+    EXPECT_EQ(0, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutSize().height());
+}
+
 TEST_F(WebFrameTest, WideViewportAndWideContentWithInitialScale)
 {
     UseMockScrollbarSettings mockScrollbarSettings;
@@ -5508,22 +5588,28 @@ TEST_F(WebFrameTest, ReloadBypassingCache)
     EXPECT_EQ(WebURLRequest::ReloadBypassingCache, frame->dataSource()->request().cachePolicy());
 }
 
+static void nodeImageTestValidation(const WebCore::IntSize& referenceBitmapSize, WebCore::DragImage* dragImage)
+{
+    // Prepare the reference bitmap.
+    SkBitmap bitmap;
+    ASSERT_TRUE(bitmap.allocN32Pixels(referenceBitmapSize.width(), referenceBitmapSize.height()));
+    SkCanvas canvas(bitmap);
+    canvas.drawColor(SK_ColorGREEN);
+
+    EXPECT_EQ(referenceBitmapSize.width(), dragImage->size().width());
+    EXPECT_EQ(referenceBitmapSize.height(), dragImage->size().height());
+    const SkBitmap& dragBitmap = dragImage->bitmap();
+    SkAutoLockPixels lockPixel(dragBitmap);
+    EXPECT_EQ(0, memcmp(bitmap.getPixels(), dragBitmap.getPixels(), bitmap.getSize()));
+}
+
 TEST_F(WebFrameTest, NodeImageTestCSSTransform)
 {
     FrameTestHelpers::WebViewHelper webViewHelper;
     OwnPtr<WebCore::DragImage> dragImage = nodeImageTestSetup(&webViewHelper, std::string("case-css-transform"));
     EXPECT_TRUE(dragImage);
 
-    SkBitmap bitmap;
-    ASSERT_TRUE(bitmap.allocN32Pixels(40, 40));
-    SkCanvas canvas(bitmap);
-    canvas.drawColor(SK_ColorGREEN);
-
-    EXPECT_EQ(40, dragImage->size().width());
-    EXPECT_EQ(40, dragImage->size().height());
-    const SkBitmap& dragBitmap = dragImage->bitmap();
-    SkAutoLockPixels lockPixel(dragBitmap);
-    EXPECT_EQ(0, memcmp(bitmap.getPixels(), dragBitmap.getPixels(), bitmap.getSize()));
+    nodeImageTestValidation(WebCore::IntSize(40, 40), dragImage.get());
 }
 
 TEST_F(WebFrameTest, NodeImageTestCSS3DTransform)
@@ -5532,16 +5618,25 @@ TEST_F(WebFrameTest, NodeImageTestCSS3DTransform)
     OwnPtr<WebCore::DragImage> dragImage = nodeImageTestSetup(&webViewHelper, std::string("case-css-3dtransform"));
     EXPECT_TRUE(dragImage);
 
-    SkBitmap bitmap;
-    ASSERT_TRUE(bitmap.allocN32Pixels(20, 40));
-    SkCanvas canvas(bitmap);
-    canvas.drawColor(SK_ColorGREEN);
+    nodeImageTestValidation(WebCore::IntSize(20, 40), dragImage.get());
+}
 
-    EXPECT_EQ(20, dragImage->size().width());
-    EXPECT_EQ(40, dragImage->size().height());
-    const SkBitmap& dragBitmap = dragImage->bitmap();
-    SkAutoLockPixels lockPixel(dragBitmap);
-    EXPECT_EQ(0, memcmp(bitmap.getPixels(), dragBitmap.getPixels(), bitmap.getSize()));
+TEST_F(WebFrameTest, NodeImageTestInlineBlock)
+{
+    FrameTestHelpers::WebViewHelper webViewHelper;
+    OwnPtr<WebCore::DragImage> dragImage = nodeImageTestSetup(&webViewHelper, std::string("case-inlineblock"));
+    EXPECT_TRUE(dragImage);
+
+    nodeImageTestValidation(WebCore::IntSize(40, 40), dragImage.get());
+}
+
+TEST_F(WebFrameTest, NodeImageTestFloatLeft)
+{
+    FrameTestHelpers::WebViewHelper webViewHelper;
+    OwnPtr<WebCore::DragImage> dragImage = nodeImageTestSetup(&webViewHelper, std::string("case-float-left-overflow-hidden"));
+    EXPECT_TRUE(dragImage);
+
+    nodeImageTestValidation(WebCore::IntSize(40, 40), dragImage.get());
 }
 
 class ThemeColorTestWebFrameClient : public FrameTestHelpers::TestWebFrameClient {

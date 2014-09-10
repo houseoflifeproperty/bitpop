@@ -1,0 +1,710 @@
+#!/bin/bash -p
+
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# This is expected to be invoked by the Pulse build step. It takes care of
+# doing the code signing and building the needed disk images. All needed
+# support files are assumed to live next to this script on disk.
+#
+# usage: generate_dmgs output_dir input_dir codesign_keychain codesign_id \
+#                      omahaproxy_url [live_dmg_dir]
+#
+# Disk images are placed in output_dir. input_dir is the directory containing
+# unzipped packaging data. omahaproxy_url will be consulted to determine the
+# current live versions and URLs where they can be downloaded. live_dmg_dir
+# is no longer used but is accepted on the command line to allow the script
+# that calls this one to continue passing that argument to older versions of
+# this script.
+
+set -eu
+
+# Environment sanitization. Set a known-safe PATH. Clear environment variables
+# that might impact the interpreter's operation. The |bash -p| invocation
+# on the #! line takes the bite out of BASH_ENV, ENV, and SHELLOPTS (among
+# other features), but clearing them here ensures that they won't impact any
+# shell scripts used as utility programs. SHELLOPTS is read-only and can't be
+# unset, only unexported.
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+unset BASH_ENV CDPATH ENV GLOBIGNORE IFS POSIXLY_CORRECT
+export -n SHELLOPTS
+
+ME="$(basename "${0}")"
+readonly ME
+PACKAGING_DIR="$(dirname "${0}")"
+readonly PACKAGING_DIR
+
+readonly PRODUCT_NAME="Google Chrome"
+readonly APP_NAME="${PRODUCT_NAME}.app"
+DMG_PRODUCT_NAME="$(sed -e "s/ //" <<< "${PRODUCT_NAME}")"
+readonly DMG_PRODUCT_NAME
+
+readonly APP_ID_KEY="CFBundleIdentifier"
+readonly APP_VERSION_KEY="CFBundleShortVersionString"
+readonly KS_VERSION_KEY="KSVersion"
+readonly KS_CHANNEL_KEY="KSChannelID"
+readonly KS_BRAND_KEY="KSBrandID"
+readonly KS_ID_KEY="KSProductID"
+readonly BP_VERSION_KEY="BreakpadVersion"
+
+readonly RSYNC_FLAGS=("-Clprt" "--include" "*.so" "--copy-unsafe-links")
+readonly CURL_FLAGS=("--fail" "--location" "--silent" "--show-error")
+
+readonly OMAHAPROXY_PLATFORM="mac"
+readonly MIN_DIFF_VERSION="6.0.434.0"
+
+# CH, BR, and NF are parallel arrays. An element at the same index in any of
+# these arrays corresponds to the element at the same index in the others.
+# CH is used for Keystone channel codes; BR is used for Keystone brand codes;
+# NF is used for name fragments appended to the disk image name.
+declare -a CH BR NF
+
+# Stable channel, generic, with no brand code.
+CH+=("");        BR+=("");      NF+=("")
+
+# Stable channel with brand codes.
+# Pure organic installs.
+CH+=("");        BR+=("GGRO");  NF+=("Stable-PureOrganic")
+
+# google.xx marketing channels (house ads, toast promo, etc.)
+CH+=("");        BR+=("GGRM");  NF+=("Stable-GoogleMarketing")
+
+# Off-network marketing installs (not originating from google.xx marketing.)
+CH+=("");        BR+=("CHFA");  NF+=("Stable-OffNetworkMarketing")
+
+# Distribution deals.
+CH+=("");        BR+=("MACD");  NF+=("Stable-DistributionDeals")
+
+# Beta, Dev, and Canary channels, no brand codes.
+CH+=("beta");    BR+=("");      NF+=("Beta")
+CH+=("dev");     BR+=("");      NF+=("Dev")
+CH+=("canary");  BR+=("");      NF+=("Canary")
+
+readonly CH BR NF
+
+g_temp_dir=
+
+err() {
+  local error="${1}"
+
+  echo "${ME}: ${error}" >& 2
+}
+
+declare -a g_cleanup
+cleanup() {
+  local status=${?}
+
+  trap - EXIT
+  trap '' HUP INT QUIT TERM
+
+  if [[ ${status} -ge 128 ]]; then
+    err "Caught signal $((${status} - 128))"
+  fi
+
+  if [[ "${#g_cleanup[@]}" -gt 0 ]]; then
+    rm -rf "${g_cleanup[@]}"
+  fi
+
+  exit ${status}
+}
+
+# Returns 0 if ${version1} and ${version2} are equal. Returns 1 if ${version1}
+# is less than ${version2}. Returns 2 if ${version1} is greater than
+# ${version2}. Returns 3 if ${version1} or ${version2} don't meet the expected
+# format. A piece-wise comparison is performed.
+readonly VERSION_RE="^([0-9]+)\\.([0-9]+)\\.([0-9]+)\\.([0-9]+)\$"
+version_compare() {
+  local version1="${1}"
+  local version2="${2}"
+
+  if ! [[ "${version1}" =~ ${VERSION_RE} ]]; then
+    return 3
+  fi
+
+  local version1_components=("${BASH_REMATCH[1]}"
+                             "${BASH_REMATCH[2]}"
+                             "${BASH_REMATCH[3]}"
+                             "${BASH_REMATCH[4]}")
+
+  if ! [[ "${version2}" =~ ${VERSION_RE} ]]; then
+    return 3
+  fi
+
+  local version2_components=("${BASH_REMATCH[1]}"
+                             "${BASH_REMATCH[2]}"
+                             "${BASH_REMATCH[3]}"
+                             "${BASH_REMATCH[4]}")
+
+  local i
+  for i in "${!version1_components[@]}"; do
+    local version1_component="${version1_components[${i}]}"
+    local version2_component="${version2_components[${i}]}"
+
+    if [[ ${version1_component} -lt ${version2_component} ]]; then
+      # version1 is less than version2.
+      return 1
+    fi
+    if [[ ${version1_component} -gt ${version2_component} ]]; then
+      # version1 is greater than version2.
+      return 2
+    fi
+  done
+
+  # The version numbers are equal.
+  return 0
+}
+
+is_version_gt() {
+  local version1="${1}"
+  local version2="${2}"
+
+  if version_compare "${version1}" "${version2}"; then
+    # They're equal.
+    return 1
+  elif [[ ${?} -eq 2 ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+is_version_ge() {
+  local version1="${1}"
+  local version2="${2}"
+
+  if version_compare "${version1}" "${version2}"; then
+    # They're equal.
+    return 0
+  elif [[ ${?} -eq 2 ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+# As of Mac OS X 10.8, defaults (and NSUserDefaults and CFPreferences)
+# normally communicates with cfprefsd to read and write plists. Changes to a
+# plist file aren't necessarily reflected immediately via this API family when
+# not made through this API family, because cfprefsd may return cached data
+# from a former on-disk version of a plist file instead of reading the current
+# version from disk. The old behavior can be restored by setting the
+# __CFPREFERENCES_AVOID_DAEMON environment variable, although extreme care
+# should be used because portions of the system that use this API family
+# normally and thus use cfprefsd and its cache will become unsynchronized with
+# the on-disk state.
+#
+# This function is provided to set __CFPREFERENCES_AVOID_DAEMON when calling
+# "defaults" and thus avoid cfprefsd and its on-disk cache, and is intended
+# only to be used to read values from and write values to Info.plist files,
+# which are not preferences. The use of "defaults" for this purpose has always
+# been questionable, but there's no better option to interact with plists from
+# shell scripts. Definitely don't use defaults_disk to read or write
+# preference plists.
+#
+# In avoiding cfprefsd, this function is a "defaults" that always operates on
+# the disk.
+defaults_disk() {
+  __CFPREFERENCES_AVOID_DAEMON=1 defaults "${@}"
+}
+
+build_dmg() {
+  if [[ ${#} -ne 8 ]]; then
+    err "build_dmg: wrong number of arguments"
+    exit 1
+  fi
+
+  local output_dir="${1}"
+  local half_signed_app_path="${2}"
+  local codesign_keychain="${3}"
+  local codesign_id="${4}"
+  local app_version="${5}"
+  local channel_id="${6}"
+  local brand_id="${7}"
+  local name_fragment="${8}"
+
+  # If the name fragment isn't empty, add a dash in front of it.
+  local dash_fragment="${name_fragment}"
+  if [[ -n "${dash_fragment}" ]]; then
+    dash_fragment="-${dash_fragment}"
+  fi
+
+  local dmg_product_name="${DMG_PRODUCT_NAME}"
+  local product_name="${PRODUCT_NAME}"
+
+  # Canary: The disk image should use GoogleChromeCanary as the product name
+  # instead of putting the fragment after the version number.
+  if [[ "${channel_id}" = "canary" ]]; then
+    product_name="${product_name} ${name_fragment}"
+    dmg_product_name="${dmg_product_name}${name_fragment}"
+    dash_fragment=""
+  fi
+
+  local dmg_name="${dmg_product_name}-${app_version}${dash_fragment}.dmg"
+
+  # Even with --verbosity 0, and even when it succeeds, hdiutil (via pkg-dmg)
+  # prints a newline to stderr. That looks pretty weird. Make it evident that
+  # things are progressing by printing a message for each disk image.
+  err "creating ${dmg_name}"
+
+  local variant_dir="${g_temp_dir}/variant"
+  mkdir "${variant_dir}"
+  local variant_app_path="${variant_dir}/${APP_NAME}"
+
+  # Copy the half-signed application to a variant-specific directory.
+  rsync "${RSYNC_FLAGS[@]}" "${half_signed_app_path}/" "${variant_app_path}"
+
+  local app_plist="${variant_app_path}/Contents/Info"
+  local ks_plist="${app_plist}"
+
+  # Apply the channel and brand code changes.
+  if [[ -z "${channel_id}" ]]; then
+    defaults_disk delete "${ks_plist}" "${KS_CHANNEL_KEY}" 2> /dev/null || true
+  else
+    defaults_disk write "${ks_plist}" "${KS_CHANNEL_KEY}" \
+        -string "${channel_id}"
+  fi
+
+  # See build/mac/tweak_info_plist.py and chrome/browser/mac/keystone_glue.mm.
+  local tag_suffixes="$(defaults_disk read "${ks_plist}" | \
+                        sed -En -e 's/.*"KSChannelID-(.*)" = ".*";/-\1/p')"
+  local tag_suffix
+  for tag_suffix in ${tag_suffixes}; do
+    local ks_tag="${channel_id}${tag_suffix}"
+    local ks_tag_key="${KS_CHANNEL_KEY}${tag_suffix}"
+    defaults_disk write "${ks_plist}" "${ks_tag_key}" -string "${ks_tag}"
+  done
+
+  if [[ -z "${brand_id}" ]]; then
+    defaults_disk delete "${ks_plist}" "${KS_BRAND_KEY}" 2> /dev/null || true
+  else
+    defaults_disk write "${ks_plist}" "${KS_BRAND_KEY}" -string "${brand_id}"
+  fi
+
+  # Canary: the outer application bundle needs a distinct bundle ID for the
+  # system's bundle ID to disambiguate from a simultaneously-installed
+  # non-canary, and for Keystone to support side-by-side auto-update. It must
+  # keep the original Breakpad ID as this ID has been white-listed by the
+  # crash server. The CrProductDirName key, normally absent, is set specially
+  # in the canary build to force the default profile to an alternate
+  # directory. The CFBundleSignature key and PkgInfo file are set to contain
+  # the canary's distinct signature. The executable is renamed, and
+  # CFBundleExecutable is changed to point to it.
+  local app_bundle_id_old="$(defaults_disk read "${app_plist}" "${APP_ID_KEY}")"
+  local app_bundle_id_new="${app_bundle_id_old}"
+  if [[ "${channel_id}" = "canary" ]]; then
+    app_bundle_id_new="${app_bundle_id_old}.canary"
+    defaults_disk write "${app_plist}" "${APP_ID_KEY}" "${app_bundle_id_new}"
+    local ks_bundle_id="$(defaults_disk read "${ks_plist}" "${KS_ID_KEY}")"
+    defaults_disk write "${ks_plist}" "${KS_ID_KEY}" "${ks_bundle_id}.canary"
+    defaults_disk write "${app_plist}" CrProductDirName "Google/Chrome Canary"
+    readonly CANARY_SIGNATURE="Pipi"
+    defaults_disk write "${app_plist}" CFBundleSignature "${CANARY_SIGNATURE}"
+    echo -n "APPL${CANARY_SIGNATURE}" > "${variant_app_path}/Contents/PkgInfo"
+
+    mv "${variant_app_path}/Contents/MacOS/Google Chrome" \
+       "${variant_app_path}/Contents/MacOS/Google Chrome Canary"
+    defaults_disk write "${app_plist}" CFBundleExecutable "Google Chrome Canary"
+  fi
+
+  # Info.plist will work perfectly well in any plist format, but traditionally
+  # applications use xml1 for this, so convert it back after whatever defaults
+  # might have done.
+  plutil -convert xml1 "${app_plist}.plist"
+  if [[ "${app_plist}" != "${ks_plist}" ]]; then
+    plutil -convert xml1 "${ks_plist}.plist"
+  fi
+
+  # Canary: use different icons for the application and its documents. Adjust
+  # the bundle ID used for the managed preferences manifest.
+  if [[ "${channel}" = "canary" ]]; then
+    rsync "${RSYNC_FLAGS[@]}" "${PACKAGING_DIR}/app_canary.icns" \
+        "${variant_app_path}/Contents/Resources/app.icns"
+    rsync "${RSYNC_FLAGS[@]}" "${PACKAGING_DIR}/document_canary.icns" \
+        "${variant_app_path}/Contents/Resources/document.icns"
+
+    local manifest_dir_new="\
+${variant_app_path}/Contents/Resources/${app_bundle_id_new}.manifest"
+    mv "${variant_app_path}/Contents/Resources/${app_bundle_id_old}.manifest" \
+       "${manifest_dir_new}"
+    local manifest_plist_tmp="${variant_dir}/manifest"
+    mv "${manifest_dir_new}/Contents/Resources/${app_bundle_id_old}.manifest" \
+       "${manifest_plist_tmp}.plist"
+    defaults_disk write "${manifest_plist_tmp}" pfm_domain \
+        "${app_bundle_id_new}"
+    plutil -convert xml1 "${manifest_plist_tmp}.plist"
+    mv "${manifest_plist_tmp}.plist" \
+       "${manifest_dir_new}/Contents/Resources/${app_bundle_id_new}.manifest"
+  fi
+
+  # Sign the application - it's now fully signed.
+  "${PACKAGING_DIR}/sign_app.sh" "${variant_app_path}" \
+      "${codesign_keychain}" "${codesign_id}"
+
+  local app_name="${APP_NAME}"
+
+  # Canary: the application's name in the disk image should be changed from
+  # Google Chrome.app to Google Chrome Canary.app. The canary also uses a
+  # different .DS_Store file and has a different volume icon.
+  local dsstore_name="chrome_dmg_dsstore"
+  local icon_name="chrome_dmg_icon.icns"
+  if [[ "${channel_id}" = "canary" ]]; then
+    app_name="$(sed -e "s/\\.app\$/ ${name_fragment}.app/" <<< "${app_name}")"
+    dsstore_name="chrome_canary_dmg_dsstore"
+    icon_name="chrome_canary_dmg_icon.icns"
+  fi
+
+  # A locally-created empty directory is more trustworthy than /var/empty.
+  local empty_dir="${g_temp_dir}/empty"
+  mkdir "${empty_dir}"
+
+  local dmg_path="${output_dir}/${dmg_name}"
+
+  # Make the disk image. Don't include ${name_fragment}, ${dash_fragment},
+  # or anything else in --volname because the .DS_Store expects the volume
+  # name to be constant. Don't put a name on the /Applications symbolic link
+  # because the same disk image is used for all languages.
+  "${PACKAGING_DIR}/pkg-dmg" \
+      --verbosity 0 \
+      --tempdir "${g_temp_dir}" \
+      --source "${empty_dir}" \
+      --target "${dmg_path}" \
+      --format UDBZ \
+      --volname "${product_name}" \
+      --icon "${PACKAGING_DIR}/${icon_name}" \
+      --copy "${variant_app_path}/:/${app_name}" \
+      --copy "${PACKAGING_DIR}/keystone_install.sh:/.keystone_install" \
+      --mkdir "/.background" \
+      --copy \
+"${PACKAGING_DIR}/chrome_dmg_background.png:/.background/background.png" \
+      --copy "${PACKAGING_DIR}/${dsstore_name}:/.DS_Store" \
+      --symlink "/Applications:/ "
+
+  rmdir "${empty_dir}"
+  rm -rf "${variant_dir}"
+}
+
+# shell_safe_path ensures that |path| is safe to pass to tools as a
+# command-line argument. If the first character in |path| is "-", "./" is
+# prepended to it. The possibily-modified |path| is output.
+shell_safe_path() {
+  local path="${1}"
+  if [[ "${path:0:1}" = "-" ]]; then
+    echo "./${path}"
+  else
+    echo "${path}"
+  fi
+}
+
+usage() {
+  echo "usage: ${ME}: output_dir input_dir codesign_keychain codesign_id \
+omahaproxy_url" >& 2
+}
+
+main() {
+  local output_dir input_dir codesign_keychain codesign_id omahaproxy_url
+  output_dir="$(shell_safe_path "${1}")"
+  input_dir="$(shell_safe_path "${2}")"
+  codesign_keychain="$(shell_safe_path "${3}")"
+  codesign_id="${4}"
+  omahaproxy_url="${5}"
+
+  trap cleanup EXIT HUP INT QUIT TERM
+
+  err "output_dir=${output_dir}"
+  err "input_dir=${input_dir}"
+  err "codesign_keychain=${codesign_keychain}"
+  err "codesign_id=${codesign_id}"
+  err "omahaproxy_url=${omahaproxy_url}"
+
+  if [[ -z "${input_dir}" ]] ||
+     [[ "${input_dir:0:1}" != "/" ]] ||
+     [[ ! -d "${input_dir}" ]]; then
+    # input_dir needs to be an absolute path because that's what |defaults|
+    # requires.
+    err "input_dir must exist and be an absolute path to a directory"
+    usage
+    exit 1
+  fi
+  if [[ ! -f "${codesign_keychain}" ]]; then
+    err "codesign_keychain must exist and be a file"
+    usage
+    exit 1
+  fi
+
+  local source_app_path="${input_dir}/${APP_NAME}"
+
+  if [[ ! -d "${source_app_path}" ]]; then
+    err "${source_app_path} not found"
+    exit 1
+  fi
+
+  # Make sure ${output_dir} doesn't already exist, or if it does, make sure
+  # it's empty.
+  if [[ ! -d "${output_dir}" ]]; then
+    mkdir "${output_dir}"
+  fi
+  shopt -s nullglob dotglob
+  local output_dir_contents=("${output_dir}"/*)
+  shopt -u nullglob dotglob
+  if [[ ${#output_dir_contents[@]} -ne 0 ]]; then
+    err "output_dir must not exist or be empty"
+    exit 1
+  fi
+
+  # Application sanity checks. Make sure that it smells right and that the
+  # version numbers in the various plists match.
+  local app_plist="${source_app_path}/Contents/Info"
+  local app_version
+  app_version="$(defaults_disk read "${app_plist}" "${APP_VERSION_KEY}")"
+  local versioned_dir="${source_app_path}/Contents/Versions/${app_version}"
+  local framework_path="${versioned_dir}/${PRODUCT_NAME} Framework.framework"
+  local framework_plist="${framework_path}/Resources/Info"
+
+  local ks_plist="${app_plist}"
+  local ks_version
+  if ! ks_version="$(defaults_disk read "${ks_plist}" "${KS_VERSION_KEY}")"; \
+      then
+    err "Keystone version not present"
+    exit 1
+  fi
+  if [[ "${ks_version}" != "${app_version}" ]]; then
+    err "Keystone version does not match application version"
+    exit 1
+  fi
+
+  local bp_plist="${framework_plist}"
+  local bp_version
+  if ! bp_version="$(defaults_disk read "${bp_plist}" "${BP_VERSION_KEY}")"; \
+      then
+    err "Breakpad version not present"
+    exit 1
+  fi
+  if [[ "${bp_version}" != "${app_version}" ]]; then
+    err "Breakpad version does not match application version"
+    exit 1
+  fi
+
+  # Consult omahaproxy to determine the current live versions on each channel.
+  # Get omahaproxy output first in a separate variable, allowing a failure
+  # to be caught directly.
+  #
+  # omahaproxy runs on appengine, which makes it the least reliable part of
+  # the process. Loop around omahaproxy to retry in the event of a failure.
+  # Do this early, so that the script can fail before performing major work
+  # in the event that omahaproxy output can't be collected.
+  local omahaproxy_full_url="\
+${omahaproxy_url}/dl_urls?os=${OMAHAPROXY_PLATFORM}"
+  err "consulting ${omahaproxy_full_url}"
+  local omahaproxy_output
+  local i
+  for i in {1..5}; do
+    if ! omahaproxy_output="$(curl "${CURL_FLAGS[@]}" --max-time 15 \
+                              "${omahaproxy_full_url}")" ||
+       [[ -z "${omahaproxy_output}" ]]; then
+      if [[ ${i} -lt 5 ]]; then
+        err "warning: could not get omahaproxy output, will retry"
+        sleep 15
+      else
+        err "could not get omahaproxy output"
+        exit 1
+      fi
+    else
+      break
+    fi
+  done
+
+  # Loop through the live versions reported by omahaproxy.
+  local platform channel version url
+  local live_versions=()
+  local live_urls=()
+  local line_number=0
+  while IFS="," read -r platform channel version url; do
+    line_number=$((${line_number} + 1))
+    if [[ ${line_number} -eq 1 ]]; then
+      # Skip the first line, it's a header.
+      continue
+    fi
+
+    if [[ "${platform}" != "${OMAHAPROXY_PLATFORM}" ]]; then
+      err "omahaproxy returned data for platform ${platform}"
+      exit 1
+    fi
+
+    # In CH and as used with Keystone, the stable channel is an empty/unset
+    # string. omahaproxy reports it as "stable". Change "stable" to "" for
+    # comparison with the elements of the CH array.
+    if [[ "${channel}" = "stable" ]]; then
+      channel=""
+    fi
+
+    # Loop through the known channels, and save the live version for each
+    # known channel.
+    for i in "${!CH[@]}"; do
+      local channel_i="${CH[${i}]}"
+
+      # Skip anything with a brand code.  Every channel with a brand code
+      # should also appear once without a brand code.
+      if [[ -n "${BR[${i}]}" ]]; then
+        continue
+      fi
+
+      if [[ "${channel_i}" = "${channel}" ]]; then
+        live_versions[${i}]="${version}"
+        live_urls[${i}]="${url}"
+      fi
+    done
+  done <<< "${omahaproxy_output}"
+
+  g_cleanup+=("${output_dir}")
+
+  g_temp_dir="$(mktemp -d -t "${ME}")"
+  g_cleanup+=("${g_temp_dir}")
+
+  # A "half-signed" application has its inner components signed, but the
+  # outermost browser application bundle is unsigned. The outer bundle can't
+  # be signed until Keystone channel and branding values are added in
+  # build_dmg. However, in order to facilitate differential updates, the inner
+  # components need to be byte-for-byte identical regardless of the Keystone
+  # values. The Keystone values are not placed in any inner component, and the
+  # inner components are signed just once, here, in order to guarantee
+  # that they'll be identical for each Keystone channel and branding setting.
+  # A signature includes a signing timestamp, so there can be only one signing
+  # operation of the inner components even if there are no other changes.
+
+  local half_signed_dir="${g_temp_dir}/half_signed"
+  mkdir "${half_signed_dir}"
+  local half_signed_app_path="${half_signed_dir}/${APP_NAME}"
+
+  rsync "${RSYNC_FLAGS[@]}" "${source_app_path}/" "${half_signed_app_path}"
+
+  err "half-signing application"
+  "${PACKAGING_DIR}/sign_versioned_dir.sh" "${half_signed_app_path}" \
+      "${codesign_keychain}" "${codesign_id}"
+
+  if [[ ${#CH[@]} -ne ${#BR[@]} ]] ||
+     [[ ${#CH[@]} -ne ${#NF[@]} ]]; then
+    err "there must be the same number of channels, brands, and name fragments"
+    exit 1
+  fi
+
+  # Loop through, setting the channels and brand codes, signing everything,
+  # and building disk images.
+  for i in "${!CH[@]}"; do
+    local channel="${CH[${i}]}"
+    local brand="${BR[${i}]}"
+    local name_fragment="${NF[${i}]}"
+
+    build_dmg "${output_dir}" "${half_signed_app_path}" \
+              "${codesign_keychain}" "${codesign_id}" \
+              "${app_version}" "${channel}" "${brand}" "${name_fragment}"
+  done
+
+  # Loop through everything with a live version. Note that bash arrays are
+  # sparse, and ${!live_versions[@]} will only return indices that were set in
+  # the ${live_versions} array.
+  for i in "${!live_versions[@]}"; do
+    local live_version="${live_versions[${i}]}"
+    local live_url="${live_urls[${i}]}"
+    local channel="${CH[${i}]}"
+    local name_fragment="${NF[${i}]}"
+
+    # If the name fragment isn't empty, add a dash in front of it.
+    local dash_fragment="${name_fragment}"
+    if [[ -n "${dash_fragment}" ]]; then
+      dash_fragment="-${dash_fragment}"
+    fi
+
+    local product_name="${PRODUCT_NAME}"
+    local dmg_product_name="${DMG_PRODUCT_NAME}"
+
+    # Canary: The disk image should use GoogleChromeCanary as the product name
+    # instead of putting the fragment after the version number.
+    if [[ "${channel}" = "canary" ]]; then
+      product_name="${product_name} ${name_fragment}"
+      dmg_product_name="${dmg_product_name}${name_fragment}"
+      dash_fragment=""
+    fi
+
+    local print_channel="${channel}"
+    if [[ -z "${print_channel}" ]]; then
+      print_channel="stable"
+    fi
+
+    if ! is_version_ge "${live_version}" "${MIN_DIFF_VERSION}"; then
+      # The live version is too old to be updated with a differential
+      # updater. Skip it.
+      err "skipping ${print_channel} differential updater, \
+live ${live_version} < minimum ${MIN_DIFF_VERSION}"
+      continue
+    fi
+
+    if ! is_version_gt "${app_version}" "${live_version}"; then
+      # The live version is newer than the app version; a differential updater
+      # would actually be a downgrader. Skip it.
+      err "skipping ${print_channel} differential updater, \
+new ${app_version} <= live ${live_version}"
+      continue
+    fi
+
+    local live_major=$(cut -d. -f1 <<< "${live_version}")
+    local app_major=$(cut -d. -f1 <<< "${app_version}")
+    if [[ ${app_major} -gt $((${live_major} + 1)) ]]; then
+      err "skipping ${print_channel} differential updater, \
+new ${app_version} is more than one major version ahead of live ${live_version}"
+      continue
+    fi
+
+    err "downloading ${live_url}"
+    local live_dmg="${g_temp_dir}/\
+${dmg_product_name}-${live_version}${dash_fragment}.dmg"
+    for i in {1..5}; do
+      if ! curl "${CURL_FLAGS[@]}" --max-time 120 "${live_url}" \
+               -o "${live_dmg}" ||
+         ! [[ -f "${live_dmg}" ]]; then
+        if [[ ${i} -lt 5 ]]; then
+          err "warning: could not get live image, will retry"
+          sleep 15
+        else
+          err "live_dmg file ${live_dmg} not found"
+          exit 1
+        fi
+      else
+        break
+      fi
+    done
+
+    local new_dmg="${output_dir}/\
+${dmg_product_name}-${app_version}${dash_fragment}.dmg"
+    if ! [[ -f "${new_dmg}" ]]; then
+      err "new_dmg file ${new_dmg} not found"
+      exit 1
+    fi
+
+    local patch_dmg_name=\
+"${dmg_product_name}-${live_version}-${app_version}${dash_fragment}-Update.dmg"
+    local patch_dmg="${output_dir}/${patch_dmg_name}"
+
+    err "creating ${patch_dmg_name}"
+    "${PACKAGING_DIR}/dmgdiffer.sh" \
+        "${product_name}" "${live_dmg}" "${new_dmg}" "${patch_dmg}"
+  done
+
+  rm -rf "${g_temp_dir}"
+  unset g_cleanup[${#g_cleanup[@]}]  # g_temp_dir
+
+  unset g_cleanup[${#g_cleanup[@]}]  # out_dir
+  trap - EXIT
+}
+
+# Use -lt instead of -eq to tolerate this script's caller providing more
+# arguments. This script's caller may be upgraded to provide more arguments
+# to future versions of this script, but if this version runs, it should be
+# able to operate with only the arguments it needs.
+if [[ ${#} -lt 5 ]]; then
+  usage
+  exit 1
+fi
+
+main "${@}"
+exit ${?}

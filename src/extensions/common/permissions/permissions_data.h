@@ -68,6 +68,18 @@ class PermissionsData {
   // whitelist of extensions that can script all pages.
   static bool CanExecuteScriptEverywhere(const Extension* extension);
 
+  // Returns true if we should skip the permisisons warning for the extension
+  // with the given |extension_id|.
+  static bool ShouldSkipPermissionWarnings(const std::string& extension_id);
+
+  // Returns true if the given |url| is restricted for the given |extension|,
+  // as is commonly the case for chrome:// urls.
+  // NOTE: You probably want to use CanAccessPage().
+  static bool IsRestrictedUrl(const GURL& document_url,
+                              const GURL& top_frame_url,
+                              const Extension* extension,
+                              std::string* error);
+
   // Sets the runtime permissions of the given |extension| to |permissions|.
   void SetActivePermissions(const PermissionSet* active) const;
 

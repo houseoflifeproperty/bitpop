@@ -418,15 +418,14 @@ public class AwContents {
         }
 
         @Override
-        public void setFixedLayoutSize(int widthDip, int heightDip) {
-            if (mNativeAwContents == 0) return;
-            nativeSetFixedLayoutSize(mNativeAwContents, widthDip, heightDip);
-        }
-
-        @Override
         public boolean isLayoutParamsHeightWrapContent() {
             return mContainerView.getLayoutParams() != null &&
                     mContainerView.getLayoutParams().height == ViewGroup.LayoutParams.WRAP_CONTENT;
+        }
+
+        @Override
+        public void setForceZeroLayoutHeight(boolean forceZeroHeight) {
+            getSettings().setForceZeroLayoutHeight(forceZeroHeight);
         }
     }
 
@@ -571,7 +570,8 @@ public class AwContents {
         mDIPScale = DeviceDisplayInfo.create(mContext).getDIPScale();
         mLayoutSizer.setDelegate(new AwLayoutSizerDelegate());
         mLayoutSizer.setDIPScale(mDIPScale);
-        mWebContentsDelegate = new AwWebContentsDelegateAdapter(contentsClient, mContainerView);
+        mWebContentsDelegate = new AwWebContentsDelegateAdapter(
+                contentsClient, mContainerView, mContext);
         mContentsClientBridge = new AwContentsClientBridge(contentsClient,
                 mBrowserContext.getKeyStore(), AwContentsStatics.getClientCertLookupTable());
         mZoomControls = new AwZoomControls(this);
@@ -1023,8 +1023,6 @@ public class AwContents {
      * @param params Parameters for this load.
      */
     public void loadUrl(LoadUrlParams params) {
-        if (mNativeAwContents == 0) return;
-
         if (params.getLoadUrlType() == LoadUrlParams.LOAD_TYPE_DATA &&
                 !params.isBaseUrlDataScheme()) {
             // This allows data URLs with a non-data base URL access to file:///android_asset/ and
@@ -1063,11 +1061,12 @@ public class AwContents {
             }
         }
 
-        nativeSetExtraHeadersForUrl(
-                mNativeAwContents, params.getUrl(), params.getExtraHttpRequestHeadersString());
+        if (mNativeAwContents != 0) {
+            nativeSetExtraHeadersForUrl(
+                    mNativeAwContents, params.getUrl(), params.getExtraHttpRequestHeadersString());
+        }
         params.setExtraHeaders(new HashMap<String, String>());
 
-        nativeSendCheckRenderThreadResponsiveness(mNativeAwContents);
         mContentViewCore.loadUrl(params);
 
         // The behavior of WebViewClassic uses the populateVisitedLinks callback in WebKit.
@@ -1600,7 +1599,7 @@ public class AwContents {
         if (!canZoomIn()) {
             return false;
         }
-        return mContentViewCore.pinchByDelta(1.25f);
+        return zoomBy(1.25f);
     }
 
     /**
@@ -1612,7 +1611,19 @@ public class AwContents {
         if (!canZoomOut()) {
             return false;
         }
-        return mContentViewCore.pinchByDelta(0.8f);
+        return zoomBy(0.8f);
+    }
+
+    /**
+     * @see android.webkit.WebView#zoomBy()
+     */
+    // This method uses the term 'zoom' for legacy reasons, but relates
+    // to what chrome calls the 'page scale factor'.
+    public boolean zoomBy(float delta) {
+        if (delta < 0.01f || delta > 100.0f) {
+            throw new IllegalStateException("zoom delta value outside [0.01, 100] range.");
+        }
+        return mContentViewCore.pinchByDelta(delta);
     }
 
     /**
@@ -2076,9 +2087,6 @@ public class AwContents {
         if (mPageScaleFactor != pageScaleFactor) {
             float oldPageScaleFactor = mPageScaleFactor;
             mPageScaleFactor = pageScaleFactor;
-            // NOTE: if this ever needs to become synchronous then we need to make sure the scroll
-            // bounds are correctly updated before calling the method, otherwise embedder code that
-            // attempts to scroll on scale change might cause weird results.
             mContentsClient.getCallbackHelper().postOnScaleChangedScaled(
                     (float)(oldPageScaleFactor * mDIPScale),
                     (float)(mPageScaleFactor * mDIPScale));
@@ -2148,10 +2156,19 @@ public class AwContents {
         private int mLayerType = View.LAYER_TYPE_NONE;
         private ComponentCallbacks2 mComponentCallbacks;
 
+        // Only valid within software onDraw().
+        private final Rect mClipBoundsTemporary = new Rect();
+
         @Override
         public void onDraw(Canvas canvas) {
             if (mNativeAwContents == 0) {
                 canvas.drawColor(getEffectiveBackgroundColor());
+                return;
+            }
+
+            // For hardware draws, the clip at onDraw time could be different
+            // from the clip during DrawGL.
+            if (!canvas.isHardwareAccelerated() && !canvas.getClipBounds(mClipBoundsTemporary)) {
                 return;
             }
 
@@ -2420,8 +2437,6 @@ public class AwContents {
     private native void nativeOnAttachedToWindow(long nativeAwContents, int w, int h);
     private static native void nativeOnDetachedFromWindow(long nativeAwContents);
     private native void nativeSetDipScale(long nativeAwContents, float dipScale);
-    private native void nativeSetFixedLayoutSize(long nativeAwContents,
-            int widthDip, int heightDip);
 
     // Returns null if save state fails.
     private native byte[] nativeGetOpaqueState(long nativeAwContents);
@@ -2439,7 +2454,6 @@ public class AwContents {
     private native void nativeClearView(long nativeAwContents);
     private native void nativeSetExtraHeadersForUrl(long nativeAwContents,
             String url, String extraHeaders);
-    private native void nativeSendCheckRenderThreadResponsiveness(long nativeAwContents);
 
     private native void nativeInvokeGeolocationCallback(
             long nativeAwContents, boolean value, String requestingFrame);
