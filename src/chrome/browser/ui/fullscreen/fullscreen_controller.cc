@@ -348,32 +348,15 @@ void FullscreenController::WindowFullscreenStateChanged() {
   }
   if (exiting_fullscreen) {
     window_->GetDownloadShelf()->Unhide();
-    
-    if (friends_sidebar_temporarily_hidden_ &&
-        !window_->IsFriendsSidebarVisible()) {
-      window_->SetFriendsSidebarVisible(true);
-      friends_sidebar_temporarily_hidden_ = false;
-    }
-
-    if (chatbar_temporarily_hidden_ && !window_->IsChatbarVisible()) {
-      window_->GetChatbar()->Show();
-      chatbar_temporarily_hidden_ = false;
-    }
+    ShowFacebookBarsIfNeeded();
   } else {
     window_->GetDownloadShelf()->Hide();
 
     if (window_->GetStatusBubble())
       window_->GetStatusBubble()->Hide();
 
-    if (window_->IsFriendsSidebarVisible()) {
-        window_->SetFriendsSidebarVisible(false);
-        friends_sidebar_temporarily_hidden_ = true;
-    }
-
-    if (window_->IsChatbarVisible()) {
-      window_->GetChatbar()->Hide();
-      chatbar_temporarily_hidden_ = true;
-    }
+    if (IsFullscreenCausedByTab())
+      HideFacebookBarsIfNeeded();
   }
 }
 
@@ -712,6 +695,11 @@ void FullscreenController::UpdateFullscreenExitBubbleContent() {
     UnlockMouse();
 
   window_->UpdateFullscreenExitBubbleContent(url, bubble_type);
+
+  if (tab_fullscreen_accepted_)
+    HideFacebookBarsIfNeeded();
+  else
+    ShowFacebookBarsIfNeeded();
 }
 
 ContentSetting
@@ -804,4 +792,29 @@ void FullscreenController::UnlockMouse() {
   }
   if (mouse_lock_view)
     mouse_lock_view->UnlockMouse();
+}
+
+void FullscreenController::ShowFacebookBarsIfNeeded() {
+  if (friends_sidebar_temporarily_hidden_ &&
+      !window_->IsFriendsSidebarVisible()) {
+    window_->SetFriendsSidebarVisible(true);
+    friends_sidebar_temporarily_hidden_ = false;
+  }
+
+  if (chatbar_temporarily_hidden_ && !window_->IsChatbarVisible()) {
+    window_->GetChatbar()->Show();
+    chatbar_temporarily_hidden_ = false;
+  }
+}
+
+void FullscreenController::HideFacebookBarsIfNeeded() {
+  if (window_->IsFriendsSidebarVisible()) {
+    window_->SetFriendsSidebarVisible(false);
+    friends_sidebar_temporarily_hidden_ = true;
+  }
+
+  if (window_->IsChatbarVisible()) {
+    window_->GetChatbar()->Hide();
+    chatbar_temporarily_hidden_ = true;
+  }
 }

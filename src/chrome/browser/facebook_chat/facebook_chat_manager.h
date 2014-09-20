@@ -1,4 +1,4 @@
-// BitPop browser with features like Facebook chat and uncensored browsing. 
+// BitPop browser with features like Facebook chat and uncensored browsing.
 // Copyright (C) 2014 BitPop AS
 //
 // This program is free software: you can redistribute it and/or modify
@@ -24,12 +24,14 @@
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
 #include "base/observer_list.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
 #include "components/keyed_service/core/keyed_service.h"
 
 class Browser;
 class Profile;
+
 
 class FacebookChatManager : public KeyedService {
   public:
@@ -48,6 +50,9 @@ class FacebookChatManager : public KeyedService {
 
     void ChangeItemStatus(const std::string &jid,
         const std::string &status);
+    void DisplayChatNotificationBalloonIfNeeded(
+        const base::string16& title,
+        const base::string16& contents);
 
     class Observer {
       public:
@@ -95,6 +100,8 @@ class FacebookChatManager : public KeyedService {
     bool shutdown_needed_;
 
     ObserverList<Observer> observers_;
+
+    static int id_count_;
 
     DISALLOW_COPY_AND_ASSIGN(FacebookChatManager);
 };

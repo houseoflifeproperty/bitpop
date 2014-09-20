@@ -1,4 +1,4 @@
-// BitPop browser with features like Facebook chat and uncensored browsing. 
+// BitPop browser with features like Facebook chat and uncensored browsing.
 // Copyright (C) 2014 BitPop AS
 //
 // This program is free software: you can redistribute it and/or modify
@@ -41,6 +41,8 @@ FacebookChatManagerServiceFactory::~FacebookChatManagerServiceFactory() {
 
 KeyedService* FacebookChatManagerServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
-  return new FacebookChatManager();
+  FacebookChatManager* fbcm = new FacebookChatManager();
+  fbcm->Init(static_cast<Profile*>(profile));
+  return fbcm;
 }
 

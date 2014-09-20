@@ -1,4 +1,4 @@
-// BitPop browser with features like Facebook chat and uncensored browsing. 
+// BitPop browser with features like Facebook chat and uncensored browsing.
 // Copyright (C) 2014 BitPop AS
 //
 // This program is free software: you can redistribute it and/or modify
@@ -180,11 +180,11 @@ namespace {
                                NSMinY(bounds) - kChatWindowAnchorPointYOffset);
 
   NSPoint res = [button_ convertPoint:anchor toView:nil];
-  
+
   gfx::Size screenSize = gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().GetSizeInPixel();
   int clampToX = screenSize.width() - 140; // OOOOO! MAGIC NUMBER!
   res.x = std::min(res.x, (float)clampToX);
-  
+
   LOG(INFO) << "popupPointForChatWindow: (" << res.x << ", " << res.y << ")";
 
   return res;
@@ -205,7 +205,7 @@ if (!button_)
     NSPoint anchor = NSMakePoint(NSMinX(bounds) +
                                    kNotificationWindowAnchorPointXOffset,
                                  NSMinY(bounds) - kChatWindowAnchorPointYOffset);
-    res = [[mainView superview] convertPoint:anchor toView:nil];    
+    res = [[mainView superview] convertPoint:anchor toView:nil];
   } else {
     // Anchor point just above the center of the bottom.
     const NSRect bounds = [button_ bounds];
@@ -273,7 +273,8 @@ if (!button_)
                        imageForNotificationBadgeWithNumber:number];
     [button_ setImage:img];
 
-    if (!notificationController_.get()) {
+    if (!notificationController_.get() &&
+        ![chatbarController_ fullscreenAndCausedByTab]) {
       notificationController_.reset([[FacebookNotificationController alloc]
           initWithParentWindow:[chatbarController_ bridge]->
                                  browser()->window()->GetNativeWindow()
@@ -330,7 +331,7 @@ if (!button_)
       [notificationController_ close];
 
     [self chatItem]->ClearUnreadMessages();
-    LOG(INFO) << "delayActivation: " << (int)[self delayActivation]; 
+    LOG(INFO) << "delayActivation: " << (int)[self delayActivation];
     if (![self delayActivation])
       [self openChatWindow];
   }
@@ -367,10 +368,7 @@ if (!button_)
 
     if ([self delayActivation])
       [self setDelayActivation:NO];
-
-    LOG(INFO) << "Active";
-  } else 
-    LOG(INFO) << "Non-active";
+  }
 
   int numNotifications = [self chatItem]->num_notifications();
   if (numNotifications > 0)

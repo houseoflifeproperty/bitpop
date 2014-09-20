@@ -1,4 +1,4 @@
-// BitPop browser with features like Facebook chat and uncensored browsing. 
+// BitPop browser with features like Facebook chat and uncensored browsing.
 // Copyright (C) 2014 BitPop AS
 //
 // This program is free software: you can redistribute it and/or modify
@@ -16,12 +16,12 @@
 
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 
+#include "base/logging.h"
+#include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "chrome/browser/facebook_chat/facebook_chatbar.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/profiles/profile.h"
-#include "base/stl_util.h"
 
 FacebookChatManager::FacebookChatManager() :
     profile_(NULL),

@@ -145,6 +145,9 @@ class FullscreenController : public content::NotificationObserver {
   // Called by Browser::LostMouseLock.
   void LostMouseLock();
 
+  // accessors
+  bool tab_fullscreen_accepted() const { return tab_fullscreen_accepted_; }
+
   // content::NotificationObserver:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
@@ -215,6 +218,9 @@ class FullscreenController : public content::NotificationObserver {
   bool IsFullscreenForCapturedTab(const content::WebContents* web_contents)
       const;
   void UnlockMouse();
+
+  void ShowFacebookBarsIfNeeded();
+  void HideFacebookBarsIfNeeded();
 
   Browser* const browser_;
   BrowserWindow* const window_;

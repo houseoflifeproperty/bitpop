@@ -15,6 +15,9 @@ var g_rescheduleDisableChatCounter = 0;
 
 var port;
 
+var enableChat = true;
+var enableJewels = true;
+
 // Attempt to reconnect
 var reconnectToExtension = function () {
     // Reset port
@@ -63,6 +66,13 @@ function init( )
         injectRmJavasctipt();
         console.log("Script injection done");
     }
+
+    $('#MercuryJewelThreadList').on('click', 'a.messagesContent',
+        function (ev) {
+            if (!enableChat) {
+                window.location.href = $(this).attr('href');
+            }
+        });
 }
 
 /**
@@ -93,8 +103,8 @@ function handleBackgroundPageResponse(responseData)
     if('action' in responseData) {
         if(responseData['action'] == 'shouldEnableFbJewelsAndChat') {
             handled = true;
-            var enableChat = true;
-            var enableJewels = true;
+            enableChat = true;
+            enableJewels = true;
             try {
                 if(responseData.response) {
                     if(responseData.response['enableChat'] === false) {

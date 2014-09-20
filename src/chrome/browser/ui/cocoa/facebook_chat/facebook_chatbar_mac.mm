@@ -1,4 +1,4 @@
-// BitPop browser with features like Facebook chat and uncensored browsing. 
+// BitPop browser with features like Facebook chat and uncensored browsing.
 // Copyright (C) 2014 BitPop AS
 //
 // This program is free software: you can redistribute it and/or modify
@@ -29,8 +29,17 @@ FacebookChatbarMac::FacebookChatbarMac(Browser *browser,
 
 void FacebookChatbarMac::AddChatItem(FacebookChatItem *chat_item) {
   [controller_ addChatItem: chat_item];
-  if (!browser_ || !browser_->fullscreen_controller()->IsFullscreenForTabOrPending(
-                      browser_->tab_strip_model()->GetActiveWebContents()))
+
+  bool fullscreen_caused_by_tab = false;
+  if (browser_) {
+    FullscreenController* fs_controller = browser_->fullscreen_controller();
+    fullscreen_caused_by_tab =
+      fs_controller->IsFullscreenForTabOrPending(
+          browser_->tab_strip_model()->GetActiveWebContents()) &&
+      fs_controller->tab_fullscreen_accepted();
+  }
+
+  if (!fullscreen_caused_by_tab)
     Show();
 }
 
