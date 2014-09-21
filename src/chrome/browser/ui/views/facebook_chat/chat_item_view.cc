@@ -1,4 +1,4 @@
-// BitPop browser with features like Facebook chat and uncensored browsing. 
+// BitPop browser with features like Facebook chat and uncensored browsing.
 // Copyright (C) 2014 BitPop AS
 //
 // This program is free software: you can redistribute it and/or modify
@@ -371,14 +371,17 @@ void ChatItemView::OnWidgetClosing(views::Widget* bubble) {
 void ChatItemView::NotifyUnread() {
   if (model_->num_notifications() > 0) {
     if (!notification_popup_) {
-      notification_popup_ = ChatNotificationPopup::Show(this, BubbleBorder::BOTTOM_CENTER);
+      notification_popup_ =
+          ChatNotificationPopup::Show(this, BubbleBorder::BOTTOM_CENTER);
       notification_popup_->GetWidget()->AddObserver(this);
     }
 
-    notification_popup_->PushMessage(model_->GetMessageAtIndex(model_->num_notifications() - 1));
+    notification_popup_->PushMessage(
+        model_->GetMessageAtIndex(model_->num_notifications() - 1));
 
     ChatTimer *timer = NULL;
-    for (TimerList::iterator it = timers_.begin(); it != timers_.end(); it++) {
+    TimerList::iterator it = timers_.begin()
+    for (; it != timers_.end(); it++) {
       if (!(*it)->IsRunning()) {
         timer = *it;
         break;
@@ -388,7 +391,7 @@ void ChatItemView::NotifyUnread() {
       timer = new ChatTimer();
       timers_.push_back(timer);
     }
-    timer->Start(FROM_HERE, 
+    timer->Start(FROM_HERE,
                  base::TimeDelta::FromSeconds(kNotificationMessageDelaySec),
                  this, &ChatItemView::TimerFired);
 
@@ -428,9 +431,11 @@ gfx::Rect ChatItemView::RectForNotificationPopup() {
 
 void ChatItemView::ShowNotificationPopupIfNeeded() {
   if (!notification_popup_ && model_->num_notifications() > 0) {
-    notification_popup_ = ChatNotificationPopup::Show(this, BubbleBorder::BOTTOM_CENTER);
+    notification_popup_ =
+        ChatNotificationPopup::Show(this, BubbleBorder::BOTTOM_CENTER);
     notification_popup_->GetWidget()->AddObserver(this);
-    notification_popup_->PushMessage(model_->GetMessageAtIndex(model_->num_notifications() - 1));
+    notification_popup_->PushMessage(
+        model_->GetMessageAtIndex(model_->num_notifications() - 1));
     isMouseOverNotification_ = true;
 
     mouse_watcher_.reset(new views::MouseWatcher(
