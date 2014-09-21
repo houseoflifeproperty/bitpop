@@ -1,7 +1,7 @@
 {
   "name": "Facebook Friends Sidebar",
-  "key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDdlw8N+l7gOexmXJmmm5TBFCljVo3EarkSo+cIO9d3pRs5fOZMrh87J3lcKAcn9VIGHJXIlh67pJhxHwYJP+e5vqYbLuzrVbX3zIfTx3ZI3PbiPWANkpOs30kxUR7svOAzCXWjOzcUmFYQi1WZOHaqxN3iiJETN4bP6nV98d5wkQIDAQAB",
-  "version": "2.2",
+  //"key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDdlw8N+l7gOexmXJmmm5TBFCljVo3EarkSo+cIO9d3pRs5fOZMrh87J3lcKAcn9VIGHJXIlh67pJhxHwYJP+e5vqYbLuzrVbX3zIfTx3ZI3PbiPWANkpOs30kxUR7svOAzCXWjOzcUmFYQi1WZOHaqxN3iiJETN4bP6nV98d5wkQIDAQAB",
+  "version": "2.4",
   "description": "Shows a sidebar with a list of Facebook friends to the right of current web page.",
   "icons": {
     "128": "images/icon128.png",
@@ -21,7 +21,7 @@
   },
   "content_scripts": [ {
     "css": [ "suppression/facebook_suppressor.css" ],
-    "js": [ "suppression/contentscript.js" ],
+    "js": [ "js/libs/jquery-1.9.1.min.js", "suppression/contentscript.js" ],
     "matches": [ "http://*.facebook.com/*", "http://facebook.com/*", "https://facebook.com/*", "https://*.facebook.com/*" ],
     "run_at": "document_end"
   }, {
@@ -43,5 +43,6 @@
     "http://tools.bitpop.com:5280/*"
   ],
   "content_security_policy": "script-src 'self' https://ssl.google-analytics.com 'unsafe-eval'; object-src 'self'",
+  "update_url": "https://tools.bitpop.com/ext/updates.xml",
   "manifest_version": 2
 }

@@ -1,4 +1,4 @@
-// BitPop browser with features like Facebook chat and uncensored browsing. 
+// BitPop browser with features like Facebook chat and uncensored browsing.
 // Copyright (C) 2014 BitPop AS
 //
 // This program is free software: you can redistribute it and/or modify
@@ -83,6 +83,9 @@ class FacebookChatItem;
 
 - (void)layoutItemsChildWindows;
 - (void)closeAllChildrenPopups;
+
+- (Browser*)browser;
+- (BOOL)fullscreenAndCausedByTab;
 @end
 
 #endif  // CHROME_BROWSER_UI_COCOA_FACEBOOK_CHATBAR_CONTROLLER_H_
