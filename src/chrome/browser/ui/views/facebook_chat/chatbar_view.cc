@@ -1,4 +1,4 @@
-// BitPop browser with features like Facebook chat and uncensored browsing. 
+// BitPop browser with features like Facebook chat and uncensored browsing.
 // Copyright (C) 2014 BitPop AS
 //
 // This program is free software: you can redistribute it and/or modify
@@ -86,7 +86,7 @@ ChatbarView::ChatbarView(Browser* browser, BrowserView* parent)
     item_to_place_first_(NULL) {
   set_id(VIEW_ID_FACEBOOK_CHATBAR);
   SetVisible(false);
-  
+
   parent->AddChildView(this);
 
   ResourceBundle &rb = ui::ResourceBundle::GetSharedInstance();
@@ -216,8 +216,16 @@ void ChatbarView::OnPaintBorder(gfx::Canvas* canvas) {
 }
 
 void ChatbarView::AddChatItem(FacebookChatItem *chat_item) {
-  if (browser_->fullscreen_controller()->IsFullscreenForTabOrPending(
-        browser_->tab_strip_model()->GetActiveWebContents())) {
+  bool fullscreen_caused_by_tab = false;
+  if (browser_) {
+    FullscreenController* fs_controller = browser_->fullscreen_controller();
+    fullscreen_caused_by_tab =
+      fs_controller->IsFullscreenForTabOrPending(
+          browser_->tab_strip_model()->GetActiveWebContents()) &&
+      fs_controller->tab_fullscreen_accepted();
+  }
+
+  if (fullscreen_caused_by_tab) {
     browser_->fullscreen_controller()->SetOpenChatbarOnNextFullscreenEvent();
   } else if (!this->visible())
     Show();
@@ -228,7 +236,8 @@ void ChatbarView::AddChatItem(FacebookChatItem *chat_item) {
       if (chat_item->needs_activation()) {
         if (!(*it)->visible())
           PlaceFirstInOrder(*it);
-        (*it)->ActivateChat();
+        if (!fullscreen_caused_by_tab)
+          (*it)->ActivateChat();
       }
       return;
     }
@@ -244,9 +253,9 @@ void ChatbarView::AddChatItem(FacebookChatItem *chat_item) {
 
   Layout();
 
-  if (chat_item->needs_activation())
+  if (chat_item->needs_activation() && !fullscreen_caused_by_tab)
     item->ActivateChat();
-  else if (chat_item->num_notifications() > 0)
+  else if (chat_item->num_notifications() > 0 && !fullscreen_caused_by_tab)
     item->NotifyUnread();
 }
 

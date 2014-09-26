@@ -30,7 +30,9 @@
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "chrome/browser/ui/lion_badge_image_source.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/facebook_chat/chatbar_view.h"
 #include "chrome/browser/ui/views/facebook_chat/chat_notification_popup.h"
@@ -155,7 +157,9 @@ ChatItemView::ChatItemView(FacebookChatItem *model, ChatbarView *chatbar)
 
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
 
-  openChatButton_ = new OverOutTextButton(this, base::UTF8ToWide(model->username()));
+  openChatButton_ =
+      new OverOutTextButton(
+          this, base::UTF8ToWide(model->username()));
   //openChatButton_->SetNormalHasBorder(true);
   openChatButton_->set_icon_placement(views::TextButton::ICON_ON_LEFT);
 
@@ -174,7 +178,7 @@ ChatItemView::ChatItemView(FacebookChatItem *model, ChatbarView *chatbar)
   openChatButton_->SetBorder(menu_button_border.PassAs<views::Border>());
   //openChatButton_->SetNormalHasBorder(true);
   openChatButton_->SetAnimationDuration(0);
-  openChatButton_->SetFontList(gfx::FontList(rb.GetFont(ResourceBundle::BaseFont)));
+  openChatButton_->SetFontList(rb.GetFontList(ResourceBundle::BaseFont));
 
   StatusChanged();  // sets button icon
   AddChildView(openChatButton_);
@@ -199,9 +203,6 @@ ChatItemView::~ChatItemView() {
   if (openChatButton_)
     delete openChatButton_;
   if (chat_popup_) {
-    //chat_popup_->GetWidget()->RemoveObserver(this);
-    //chat_popup_->GetWidget()->Close();
-    //delete chat_popup_;
     chat_popup_->GetWidget()->Close();
   }
   if (notification_popup_) {
@@ -220,7 +221,9 @@ ChatItemView::~ChatItemView() {
   }
 }
 
-void ChatItemView::ButtonPressed(views::Button* sender, const ui::Event& event) {
+void ChatItemView::ButtonPressed(
+    views::Button* sender,
+    const ui::Event& event) {
   if (sender == close_button_) {
     Close(true);
   } else if (sender == openChatButton_) {
@@ -239,14 +242,15 @@ void ChatItemView::Layout() {
   openChatButton_->SetBoundsRect(bounds);
 
   gfx::Size closeButtonSize = close_button_->GetPreferredSize();
-  close_button_->SetBounds(bounds.width() - closeButtonSize.width() - kCloseButtonPadding,
-                            bounds.height() / 2 - closeButtonSize.height() / 2,
-                            closeButtonSize.width(),
-                            closeButtonSize.height());
+  close_button_->SetBounds(
+      bounds.width() - closeButtonSize.width() - kCloseButtonPadding,
+      bounds.height() / 2 - closeButtonSize.height() / 2,
+      closeButtonSize.width(), closeButtonSize.height());
 
   if (notification_popup_) {
     // For the call to SizeToContents() to be made
-    notification_popup_->SetAlignment(views::BubbleBorder::ALIGN_ARROW_TO_MID_ANCHOR);
+    notification_popup_->SetAlignment(
+        views::BubbleBorder::ALIGN_ARROW_TO_MID_ANCHOR);
   }
 
   if (chat_popup_) {
@@ -265,9 +269,20 @@ void ChatItemView::OnChatUpdated(FacebookChatItem *source) {
   case FacebookChatItem::REMOVING:
     Close(false);
     break;
-  case FacebookChatItem::NUM_NOTIFICATIONS_CHANGED:
-    NotifyUnread();
+  case FacebookChatItem::NUM_NOTIFICATIONS_CHANGED: {
+    bool fullscreen_caused_by_tab = false;
+    if (chatbar_->browser()) {
+      FullscreenController* fs_controller =
+          chatbar_->browser()->fullscreen_controller();
+      fullscreen_caused_by_tab =
+        fs_controller->IsFullscreenForTabOrPending(
+            chatbar_->browser()->tab_strip_model()->GetActiveWebContents()) &&
+        fs_controller->tab_fullscreen_accepted();
+    }
+    if (!fullscreen_caused_by_tab)
+      NotifyUnread();
     break;
+  }
   case FacebookChatItem::STATUS_CHANGED:
     StatusChanged();
     break;
@@ -281,16 +296,19 @@ void ChatItemView::StatusChanged() {
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   if (model_->num_notifications() == 0) {
     if (model_->status() == FacebookChatItem::AVAILABLE)
-      openChatButton_->SetIcon(*rb.GetImageSkiaNamed(IDR_FACEBOOK_ONLINE_ICON_14));
+      openChatButton_->SetIcon(
+          *rb.GetImageSkiaNamed(IDR_FACEBOOK_ONLINE_ICON_14));
     else if (model_->status() == FacebookChatItem::IDLE)
-      openChatButton_->SetIcon(*rb.GetImageSkiaNamed(IDR_FACEBOOK_IDLE_ICON_14));
+      openChatButton_->SetIcon(
+          *rb.GetImageSkiaNamed(IDR_FACEBOOK_IDLE_ICON_14));
     else
       openChatButton_->SetIcon(gfx::ImageSkia::ImageSkia());
   } else if (model_->status() != FacebookChatItem::COMPOSING)
     UpdateNotificationIcon();
 
   if (model_->status() == FacebookChatItem::COMPOSING)
-    openChatButton_->SetIcon(*rb.GetImageSkiaNamed(IDR_FACEBOOK_COMPOSING_ICON_14));
+    openChatButton_->SetIcon(
+        *rb.GetImageSkiaNamed(IDR_FACEBOOK_COMPOSING_ICON_14));
 }
 
 void ChatItemView::Close(bool should_animate) {
@@ -303,7 +321,8 @@ void ChatItemView::OnPaint(gfx::Canvas* canvas) {
   views::View::OnPaint(canvas);
 
   ResourceBundle &rb = ResourceBundle::GetSharedInstance();
-  SkColor bgColor = GetThemeProvider()->GetColor(ThemeProperties::COLOR_TAB_TEXT);
+  SkColor bgColor = GetThemeProvider()->GetColor(
+      ThemeProperties::COLOR_TAB_TEXT);
 
   if (bgColor != close_button_bg_color_) {
     close_button_bg_color_ = bgColor;
@@ -321,7 +340,9 @@ void ChatItemView::ActivateChat() {
   StatusChanged();  // restore status icon
   SchedulePaint();
 
-  FacebookChatManager* mgr = FacebookChatManagerServiceFactory::GetForProfile(chatbar_->browser()->profile());
+  FacebookChatManager* mgr =
+      FacebookChatManagerServiceFactory::GetForProfile(
+          chatbar_->browser()->profile());
 
   if (mgr) {
     // open popup
@@ -339,8 +360,10 @@ void ChatItemView::ActivateChat() {
                     &out);
     urlString += std::string(out.data(), out.length());
 
-    chat_popup_ = ExtensionPopup::ShowPopup(GURL(urlString), chatbar_->browser(),
-                                  this, BubbleBorder::BOTTOM_CENTER, ExtensionPopup::SHOW);
+    chat_popup_ = ExtensionPopup::ShowPopup(
+        GURL(urlString),
+        chatbar_->browser(),
+        this, BubbleBorder::BOTTOM_CENTER, ExtensionPopup::SHOW);
     chat_popup_->GetWidget()->AddObserver(this);
     openChatButton_->SetEnabled(false);
   }
@@ -361,7 +384,8 @@ void ChatItemView::OnWidgetClosing(views::Widget* bubble) {
     bubble->RemoveObserver(this);
     notification_popup_ = NULL;
 
-    for (TimerList::iterator it = timers_.begin(); it != timers_.end(); it++) {
+    TimerList::iterator it = timers_.begin();
+    for (; it != timers_.end(); it++) {
       if (*it && (*it)->IsRunning())
         (*it)->Stop();
     }
@@ -380,7 +404,7 @@ void ChatItemView::NotifyUnread() {
         model_->GetMessageAtIndex(model_->num_notifications() - 1));
 
     ChatTimer *timer = NULL;
-    TimerList::iterator it = timers_.begin()
+    TimerList::iterator it = timers_.begin();
     for (; it != timers_.end(); it++) {
       if (!(*it)->IsRunning()) {
         timer = *it;
