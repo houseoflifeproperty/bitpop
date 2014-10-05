@@ -77,6 +77,7 @@ DesktopNotifications = {
   time_chat_was_read_indexed_by_friend_uid: {},
   time_popup_opened_indexed_by_friend_uid: {},
   just_connected: false,
+  external_message_id_counter: 0,
 
   //FIXME: should be merged with popup.js constant
   MAX_NOTIFICATIONS_TO_SHOW: 5,
@@ -248,10 +249,10 @@ DesktopNotifications = {
           if (first_unseen_thread_index === -1)
             first_unseen_thread_index = i;
         }
-        if (self.just_connected) {
-          localStorage.setCacheItem('xx_' + th_id, (new Date()).getTime(),
-            { 'days': 21 });
-        }
+        // if (self.just_connected) {
+        //   localStorage.setCacheItem('xx_' + th_id, (new Date()).getTime(),
+        //     { 'days': 21 });
+        // }
       }
 
       serverInfo.summary.unseen_count = local_unseen_count;
@@ -337,7 +338,10 @@ DesktopNotifications = {
       var msg = (rs && rs[0]) ? rs[0] : null;
       messages[th_id] = msg;
 
-      if (!self.just_connected) {
+      // TODO: recently removed for purposes of receiving chat messages
+      // in chat boxes after e.g. returning the machine from sleeping state
+      // Check how that works.
+      //if (!self.just_connected) {
         var d = localStorage.getCacheItem('xx_' + th_id) || "0";
         var date = new Date(+d);
         var counter = Math.min(rs.length, threads.data[i].unseen);
@@ -359,16 +363,18 @@ DesktopNotifications = {
             // Send message to friends extension to add message to chats
             chrome.extension.sendMessage("engefnlnhcgeegefndkhijjfdfbpbeah",
               {
+                "external_message_id": external_message_id_counter,
                 "type": "newInboxMessage",
                 "from": msgList[j].author_id,
                 "body": msgList[j].body,
                 "created_time": msgList[j].created_time
               });
+            ++external_message_id_counter;
             self.time_chat_was_read_indexed_by_friend_uid[
               ''+msgList[j].author_id] = new Date();
           }
         }
-      }
+      //} // See TODO above
     }
 
     if (threads.summary.unseen_count !== self._num_unseen_inbox) {

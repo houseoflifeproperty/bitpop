@@ -1,7 +1,6 @@
 {
   "name": "Facebook Friends Sidebar",
-  //"key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDdlw8N+l7gOexmXJmmm5TBFCljVo3EarkSo+cIO9d3pRs5fOZMrh87J3lcKAcn9VIGHJXIlh67pJhxHwYJP+e5vqYbLuzrVbX3zIfTx3ZI3PbiPWANkpOs30kxUR7svOAzCXWjOzcUmFYQi1WZOHaqxN3iiJETN4bP6nV98d5wkQIDAQAB",
-  "version": "2.4",
+  "version": "2.5",
   "description": "Shows a sidebar with a list of Facebook friends to the right of current web page.",
   "icons": {
     "128": "images/icon128.png",
@@ -15,7 +14,6 @@
   "browser_action": {
     "default_icon": {                    // optional
       "19": "images/facebook_icon.png"//,           // optional
-      //"38": "images/icon38.png"            // optional
     },
     "default_title": "Show/Hide Facebook Sidebar"      // optional; shown in tooltip
   },

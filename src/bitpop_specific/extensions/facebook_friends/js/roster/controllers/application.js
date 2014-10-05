@@ -67,7 +67,7 @@ Chat.Controllers.Application = Ember.Object.extend({
   processExtensionMessageExternal: function (request, sender, sendResponse) {
     if (request.type == 'newInboxMessage') {
       var message = {
-        id: "service",
+        id: "service" + request.external_message_id,
         body: request.body,
         from: '-' + request.from + '@chat.facebook.com',
         createdAt: new Date(request.timestamp * 1000)
@@ -104,11 +104,11 @@ Chat.Controllers.Application = Ember.Object.extend({
     this.set('chatIsIdle', false);
     setTimeout(
       _.bind(function () {
-        $.unblockUI({ fadeOut: 200 }); 
-        this.set('chatAvailable', true); 
+        $.unblockUI({ fadeOut: 200 });
+        this.set('chatAvailable', true);
 
         _.bind(function () {
-          if (this.get('chatAvailable')) 
+          if (this.get('chatAvailable'))
             chrome.extension.sendMessage({
               kind: 'fqlQuery',
               query: 'SELECT uid, online_presence FROM user WHERE uid IN (SELECT uid2 FROM friend WHERE uid1=me())'
@@ -301,7 +301,7 @@ Chat.Controllers.Application = Ember.Object.extend({
 
   onChatBlockChanged: function () {
     if (this.get('chatBlocked') || this.get('chatIsIdle')) {
-      $('.box-wrap').block({ 
+      $('.box-wrap').block({
         message:
               this.get('chatIsIdle') ? (
                 'Chat is idle.'
@@ -339,11 +339,16 @@ Chat.Controllers.Application = Ember.Object.extend({
     var uid = Strophe.getNodeFromJid(message.from).substr(1);
     var user = Chat.Controllers.roster.findProperty('uid', uid);
     if (user && message.body) {
-      // Do not post incoming message event if there's a view with that chat opened
-      var views = chrome.extension.getViews();
-      for (var i = 0; i < views.length; ++i) {
-        if (views[i].location.hash.length && views[i].location.hash.indexOf(user.get('jid')) !== -1)
-          return;
+      // The following condition needed to distinguish from messages passed
+      // by facebook_messages.crx extension. This extension sets the field
+      // being checked here.
+      if (!(message.id.indexOf('service') == 0)) {
+        // Do not post incoming message event if there's a view with that chat opened
+        var views = chrome.extension.getViews();
+        for (var i = 0; i < views.length; ++i) {
+          if (views[i].location.hash.length && views[i].location.hash.indexOf(user.get('jid')) !== -1)
+            return;
+        }
       }
       chrome.bitpopFacebookChat.newIncomingMessage(
                                message.id,

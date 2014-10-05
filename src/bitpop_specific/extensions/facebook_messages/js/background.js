@@ -73,7 +73,7 @@ chrome.extension.onMessageExternal.addListener(function (request, sender, sendRe
     dn.just_connected = true;
     if (request.type == 'chatIsIdle')
       dn.stop();
-  } else if (request.type == 'chatIsAvailable') {
+  } else if (request.type == 'chatIsAvailable') {s
     dn.start(current.refreshTime);
   }
 });

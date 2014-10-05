@@ -31,7 +31,7 @@ Chat.Controllers.Application = Ember.Object.extend({
   init: function() {
     if (window.location.hash.length < 3)
       return;
-    
+
     var params = $.parseParams(window.location.hash.substring(2));
     this.set('page_params', params);
     this.set('user_self', Chat.Models.User.create({
@@ -46,7 +46,7 @@ Chat.Controllers.Application = Ember.Object.extend({
       'https://graph.facebook.com/'
       + this.facebook_uid(this.get('user_friend.jid'))
       + '/picture');
-    
+
     this.set('chat_tab', Chat.Models.ChatTab.create({
       'user': this.get('user_self'),
       'friend': this.get('user_friend')
@@ -71,9 +71,9 @@ Chat.Controllers.Application = Ember.Object.extend({
     });
     // Send message to messages extension
     chrome.extension.sendMessage('dhcejgafhmkdfanoalflifpjimaaijda',
-      { 
+      {
         type: 'popupOpened',
-        friend_uid: Strophe.getNodeFromJid(params.friend_jid).substr(1) 
+        friend_uid: Strophe.getNodeFromJid(params.friend_jid).substr(1)
       }
     );
     this.sendRequestForChatMessages();
@@ -130,7 +130,7 @@ Chat.Controllers.Application = Ember.Object.extend({
     this._updateFromLocalStorage();
     Ember.run.scheduleOnce('afterRender', this, this.scrollChatToBottomWithAmount);
   },
-  
+
   scrollChatToBottom: function (animate) {
     if ($('.antiscroll-wrap').data('antiscroll'))
       $('.antiscroll-wrap').data('antiscroll').refresh();
@@ -147,10 +147,6 @@ Chat.Controllers.Application = Ember.Object.extend({
     Ember.View.views['msg-collection'].scrollFlyoutView(this.get('amtScroll'));
     this.set('shouldScrollOnViewInsertion', true);
   },
-
-  // scrollChatToBottomOnNextEventLoopIteration: function () {
-  //   setTimeout(_.bind(this.scrollChatToBottom, this), 0);
-  // },
 
   processExtensionMessage: function(request, sender, sendResponse) {
     switch (request.kind) {
@@ -175,7 +171,7 @@ Chat.Controllers.Application = Ember.Object.extend({
                 latest_message.get('isInbox') !== true) {
               return false;
             }
-          this._onMessage({ 
+          this._onMessage({
             from: '-' + request.from + '@chat.facebook.com',
             to: this.get('user_self.jid'),
             body: request.body,
@@ -203,45 +199,10 @@ Chat.Controllers.Application = Ember.Object.extend({
   _onNamesInit: function(user_name, friend_name) {
     this.set('user_self.name', user_name);
     this.set('user_friend.name', friend_name);
-    // this.set('user_self', Chat.Models.User.create({
-    //   'jid': this.get('page_params').jid,
-    //   'name': user_name
-    // }));
-    // this.set('user_friend', Chat.Models.User.create({
-    //   'jid': this.get('page_params').friend_jid,
-    //   'name': friend_name
-    // }));
-    // this.set('friendPhotoLink',
-    //   'https://graph.facebook.com/'
-    //   + this.facebook_uid(this.get('user_friend.jid'))
-    //   + '/picture');
-    // this.set('chat_tab', Chat.Models.ChatTab.create({
-    //   'user': this.get('user_self'),
-    //   'friend': this.get('user_friend')
-    // }));
-    // this.set('shouldScrollOnViewInsertion', false);
-    // this._updateFromLocalStorage();
-    // this.scrollChatToBottomOnNextEventLoopIteration();
-    // this.set('initialText', Chat.Controllers.localStorage.textfieldValue(
-    //   this.get('user_friend.jid'),
-    //   this.get('user_self.jid')
-    // ));
-
-    // chrome.extension.sendMessage(
-    //   {
-    //     "kind": "fqlQuery",
-    //     "query": "SELECT thread_id, recipients FROM thread WHERE folder_id=0;"
-    //   },
-    //   _.bind(function (response) {
-    //     if (!response.error) {
-    //       this._onThreadInfoReceived(response);
-    //     }
-    //   }, this)
-    // );
   },
 
   isMessageForThisChat: function (message) {
-    return (message.to == this.get('user_self.jid') && 
+    return (message.to == this.get('user_self.jid') &&
       message.from == Strophe.getBareJidFromJid(this.get('user_friend.jid')));
   },
 
