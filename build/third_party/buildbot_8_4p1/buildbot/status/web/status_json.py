@@ -25,6 +25,7 @@ from twisted.internet import defer
 from twisted.python import log as twlog
 from twisted.web import html, resource, server
 
+from buildbot.changes import changes
 from buildbot.status.web.base import HtmlResource
 from buildbot.util import json
 
@@ -580,7 +581,7 @@ class ChangesJsonResource(JsonResource):
 
     def __init__(self, status, changes):
         JsonResource.__init__(self, status)
-        for c in changes:
+        for c in changes or []:
             # c.number can be None or clash another change if the change was
             # generated inside buildbot or if using multiple pollers.
             if c.number is not None and str(c.number) not in self.children:
@@ -589,11 +590,30 @@ class ChangesJsonResource(JsonResource):
                 # Temporary hack since it creates information exposure.
                 self.putChild(str(id(c)), ChangeJsonResource(status, c))
 
+    def getChild(self, path, request):
+        # Dynamic childs.
+        if isinstance(path, int) or _IS_INT.match(path):
+            change = self.status.master.getChange(int(path))
+            number = str(change.number)
+            child = ChangeJsonResource(self.status, change)
+            self.putChild(number, child)
+            return child
+        return JsonResource.getChild(self, path, request)
+
+    @defer.deferredGenerator
     def asDict(self, request):
         """Don't throw an exception when there is no child."""
-        if not self.children:
-            return {}
-        return JsonResource.asDict(self, request)
+        max = int(RequestArg(request, 'max', 100))
+        d = self.status.master.db.changes.getRecentChanges(max)
+        def reify(chdicts):
+            return defer.gatherResults(
+                [changes.Change.fromChdict(self.status.master, chdict)
+                 for chdict in chdicts])
+        d.addCallback(reify)
+        wfd = defer.waitForDeferred(d)
+        yield wfd
+        chobjs = wfd.getResult()
+        yield dict([(change.number, change.asDict()) for change in chobjs])
 
 
 class ChangeSourcesJsonResource(JsonResource):
@@ -741,6 +761,7 @@ For help on any sub directory, use url /child/help
         JsonResource.__init__(self, status)
         self.level = 1
         self.putChild('builders', BuildersJsonResource(status))
+        self.putChild('changes', ChangesJsonResource(status, None))
         self.putChild('change_sources', ChangeSourcesJsonResource(status))
         self.putChild('project', ProjectJsonResource(status))
         self.putChild('slaves', SlavesJsonResource(status))

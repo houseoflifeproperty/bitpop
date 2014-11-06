@@ -12,7 +12,11 @@ class Test(object):
   def __init__(self):
     super(Test, self).__init__()
     self._test_runs = {}
-    self._test_spec = {}
+
+  @property
+  def abort_on_failure(self):
+    """If True, abort build when test fails."""
+    return False
 
   @property
   def name(self):  # pragma: no cover
@@ -45,14 +49,16 @@ class Test(object):
     """Return list of failures (list of strings)."""
     raise NotImplementedError()
 
+  @property
+  def uses_swarming(self):
+    """Returns true if the test uses swarming."""
+    return False
+
   def _step_name(self, suffix):
     """Helper to uniformly combine tests's name with a suffix."""
     if not suffix:
       return self.name
     return '%s (%s)' % (self.name, suffix)
-
-  def set_test_spec(self, test_spec):
-    self._test_spec = test_spec
 
 
 class ArchiveBuildStep(Test):
@@ -81,9 +87,9 @@ class CheckdepsTest(Test):  # pylint: disable=W0232
 
   def run(self, api, suffix):
     try:
-      self._test_runs[suffix] = api.chromium.checkdeps(suffix)
-    except api.step.StepFailure as f:
-      self._test_runs[suffix] = f.result
+      api.chromium.checkdeps(suffix)
+    finally:
+      self._test_runs[suffix] = api.step.active_result
 
     return self._test_runs[suffix]
 
@@ -108,12 +114,9 @@ class CheckpermsTest(Test):  # pylint: disable=W0232
 
   def run(self, api, suffix):
     try:
-      self._test_runs[suffix] = api.chromium.checkperms(suffix)
-    except api.step.StepFailure as f:
-      if not suffix:
-        raise
-      else:
-        self._test_runs[suffix] = f.result
+      api.chromium.checkperms(suffix)
+    finally:
+      self._test_runs[suffix] = api.step.active_result
 
     return self._test_runs[suffix]
 
@@ -136,12 +139,9 @@ class ChecklicensesTest(Test):  # pylint: disable=W0232
 
   def run(self, api, suffix):
     try:
-      self._test_runs[suffix] = api.chromium.checklicenses(suffix)
-    except api.step.StepFailure as f:
-      if not suffix:
-        raise
-      else:
-        self._test_runs[suffix] = f.result
+      api.chromium.checklicenses(suffix)
+    finally:
+      self._test_runs[suffix] = api.step.active_result
 
     return self._test_runs[suffix]
 
@@ -167,8 +167,13 @@ class Deps2GitTest(Test):  # pylint: disable=W0232
     return []
 
   def run(self, api, suffix):
-    self._test_runs[suffix] = api.chromium.deps2git(suffix)
+    try:
+      api.chromium.deps2git(suffix)
+    finally:
+      self._test_runs[suffix] = api.step.active_result
+
     api.chromium.deps2submodules()
+
     return self._test_runs[suffix]
 
   def has_valid_results(self, api, suffix):
@@ -178,9 +183,10 @@ class Deps2GitTest(Test):  # pylint: disable=W0232
     return self._test_runs[suffix].json.output
 
 
-class GTestTest(Test):
-  def __init__(self, name, args=None, compile_targets=None, flakiness_dash=False):
-    super(GTestTest, self).__init__()
+class LocalGTestTest(Test):
+  def __init__(self, name, args=None, compile_targets=None,
+               flakiness_dash=False):
+    super(LocalGTestTest, self).__init__()
     self._name = name
     self._args = args or []
     self.flakiness_dash = flakiness_dash
@@ -216,7 +222,7 @@ class GTestTest(Test):
     kwargs = {}
 
     try:
-      step_result = api.chromium.runtest(
+      api.chromium.runtest(
           self.name, args,
           annotate='gtest',
           xvfb=True,
@@ -226,11 +232,10 @@ class GTestTest(Test):
           step_test_data=lambda: api.json.test_api.canned_gtest_output(True),
           test_launcher_summary_output=api.json.gtest_results(add_json_log=False),
           **kwargs)
+    finally:
+      step_result = api.step.active_result
+      self._test_runs[suffix] = step_result
 
-    except api.step.StepFailure as f:
-      step_result = f.result
-
-    if suffix:
       r = step_result.json.gtest_results
       p = step_result.presentation
 
@@ -238,7 +243,6 @@ class GTestTest(Test):
         p.step_text += api.test_utils.format_step_text([
             ['failures:', r.failures]
         ])
-    self._test_runs[suffix] = step_result
     return step_result
 
   def has_valid_results(self, api, suffix):
@@ -252,48 +256,37 @@ class GTestTest(Test):
     return self._test_runs[suffix].json.gtest_results.failures
 
 
-class DynamicGTestTests(Test):
-  def __init__(self, buildername, flakiness_dash=True):
-    super(DynamicGTestTests, self).__init__()
-    self.buildername = buildername
-    self.flakiness_dash = flakiness_dash
-
-  @staticmethod
-  def _canonicalize_test(test):
+def generate_gtest(api, mastername, buildername, test_spec,
+                   enable_swarming=False):
+  def canonicalize_test(test):
     if isinstance(test, basestring):
-      return {'test': test, 'shard_index': 0, 'total_shards': 1}
-    return test
+      canonical_test = {'test': test}
+    else:
+      canonical_test = test.copy()
 
-  def _get_test_spec(self, api):
-    return self._test_spec.get(self.buildername, {})
+    canonical_test.setdefault('shard_index', 0)
+    canonical_test.setdefault('total_shards', 1)
+    return canonical_test
 
-  def _get_tests(self, api):
-    return [self._canonicalize_test(t) for t in
-            self._get_test_spec(api).get('gtest_tests', [])]
+  def get_tests(api):
+    return [canonicalize_test(t) for t in
+            test_spec.get(buildername, {}).get('gtest_tests', [])]
 
-  def run(self, api, suffix):
-    exception = None
-    for test in self._get_tests(api):
-      args = []
-      if test['shard_index'] != 0 or test['total_shards'] != 1:
-        args.extend(['--test-launcher-shard-index=%d' % test['shard_index'],
-                     '--test-launcher-total-shards=%d' % test['total_shards']])
-      try:
-        api.chromium.runtest(
-            test['test'], test_type=test['test'], args=args, annotate='gtest',
-            xvfb=True, flakiness_dash=self.flakiness_dash)
-      except api.step.StepFailure as f:
-        exception = f
-    # TODO(iannucci): This raises only the last exception. The return
-    # type of the other run methods makes not much sense for DynamicGTestTests.
-    if exception:
-      raise exception
-
-  def compile_targets(self, api):
-    explicit_targets = self._get_test_spec(api).get('compile_targets', [])
-    test_targets = [t['test'] for t in self._get_tests(api)]
-    # Remove duplicates.
-    return sorted(set(explicit_targets + test_targets))
+  for test in get_tests(api):
+    args = test.get('args', [])
+    if test['shard_index'] != 0 or test['total_shards'] != 1:
+      args.extend(['--test-launcher-shard-index=%d' % test['shard_index'],
+                   '--test-launcher-total-shards=%d' % test['total_shards']])
+    use_swarming = False
+    swarming_shards = 1
+    if enable_swarming:
+      swarming_spec = test.get('swarming', {})
+      if swarming_spec.get('can_use_on_swarming_builders'):
+        use_swarming = True
+        swarming_shards = swarming_spec.get('shards', 1)
+    yield GTestTest(str(test['test']), args=args, flakiness_dash=True,
+                    enable_swarming=use_swarming,
+                    swarming_shards=swarming_shards)
 
 
 class DynamicPerfTests(Test):
@@ -308,18 +301,22 @@ class DynamicPerfTests(Test):
     tests = api.chromium.list_perf_tests(self.browser, self.num_shards)
     tests = dict((k, v) for k, v in tests.json.output['steps'].iteritems()
         if v['device_affinity'] == self.shard_index)
-    for test_name, test in tests.iteritems():
+    for test_name, test in sorted(tests.iteritems()):
       test_name = str(test_name)
       annotate = api.chromium.get_annotate_by_test_name(test_name)
+      cmd = test['cmd'].split()
       try:
         api.chromium.runtest(
-            test['cmd'],
+            cmd[1] if len(cmd) > 1 else cmd[0],
+            args=cmd[2:],
             name=test_name,
             annotate=annotate,
             python_mode=True,
             results_url='https://chromeperf.appspot.com',
-            perf_dashboard_id=test_name,
-            perf_id=self.perf_id)
+            perf_dashboard_id=test.get('perf_dashboard_id', test_name),
+            perf_id=self.perf_id,
+            test_type=test.get('perf_dashboard_id', test_name),
+            xvfb=True)
       except api.step.StepFailure as f:
         exception = f
     if exception:
@@ -408,12 +405,14 @@ class SwarmingGTestTest(Test):
     step_results = api.swarming.collect_each([self._tasks[suffix]])
 
     # TODO(martiniss) make this loop better. It's kinda hacky.
+    failed_results = []
     try:
       while True:
         try:
           step_result = next(step_results)
         except api.step.StepFailure as f:
-          step_result = f.result
+          step_result = api.step.active_result
+          failed_results.append(step_result)
 
         r = step_result.json.gtest_results
         p = step_result.presentation
@@ -428,6 +427,10 @@ class SwarmingGTestTest(Test):
         self._results[suffix] = r
     except StopIteration:
       pass
+    finally:
+      if failed_results:
+        raise api.step.StepFailure(
+            'Swarming failed due to %d result failures' % len(failed_results))
 
   def has_valid_results(self, api, suffix):
     # Test wasn't triggered or wasn't collected.
@@ -443,6 +446,51 @@ class SwarmingGTestTest(Test):
   def failures(self, api, suffix):
     assert self.has_valid_results(api, suffix)
     return self._results[suffix].failures
+
+  @property
+  def uses_swarming(self):
+    return True
+
+
+class GTestTest(Test):
+  def __init__(self, name, args=None, compile_targets=None,
+               flakiness_dash=False, enable_swarming=False, swarming_shards=1):
+    super(GTestTest, self).__init__()
+    self._name = name
+    self._args = args
+    if enable_swarming:
+      self._test = SwarmingGTestTest(name, args, swarming_shards)
+    else:
+      self._test = LocalGTestTest(name, args, compile_targets, flakiness_dash)
+
+  def force_swarming(self, swarming_shards=1):
+    self._test = SwarmingGTestTest(self._name, self._args, swarming_shards)
+
+  @property
+  def name(self):
+    return self._test.name
+
+  def compile_targets(self, api):
+    return self._test.compile_targets(api)
+
+  def pre_run(self, api, suffix):
+    return self._test.pre_run(api, suffix)
+
+  def run(self, api, suffix):
+    return self._test.run(api, suffix)
+
+  def post_run(self, api, suffix):
+    return self._test.post_run(api, suffix)
+
+  def has_valid_results(self, api, suffix):
+    return self._test.has_valid_results(api, suffix)
+
+  def failures(self, api, suffix):
+    return self._test.failures(api, suffix)
+
+  @property
+  def uses_swarming(self):
+    return self._test.uses_swarming
 
 
 class PythonBasedTest(Test):
@@ -499,15 +547,37 @@ class MojoPythonTests(PythonBasedTest):  # pylint: disable=W0232
                       **kwargs)
 
 
+class MojoPythonBindingsTests(PythonBasedTest):  # pylint: disable=W0232
+  name = 'mojo_python_bindings_tests'
+
+  def run_step(self, api, suffix, cmd_args, **kwargs):
+    component = api.chromium.c.gyp_env.GYP_DEFINES.get('component', None)
+    # Python modules are not build for the component build.
+    if component == 'shared_library':
+      return None
+    args = cmd_args
+    args.extend(['--build-dir', api.chromium.output_dir])
+    return api.python(
+        self._step_name(suffix),
+        api.path['checkout'].join('mojo', 'tools',
+                                  'run_mojo_python_bindings_tests.py'),
+        args,
+        **kwargs)
+
+  @staticmethod
+  def compile_targets(api):
+    return ['mojo_python', 'mojo_public_test_interfaces']
+
+
 class PrintPreviewTests(PythonBasedTest):  # pylint: disable=W032
   name = 'print_preview_tests'
 
   def run_step(self, api, suffix, cmd_args, **kwargs):
     platform_arg = '.'.join(['browser_test',
         api.platform.normalize_platform_name(api.platform.name)])
-    args = list(cmd_args)
+    args = cmd_args
     path = api.path['checkout'].join(
-        'webkit', 'tools', 'layout_tests', 'run_webkit_tests.py')
+        'third_party', 'WebKit', 'Tools', 'Scripts', 'run-webkit-tests')
     args.extend(['--platform', platform_arg])
 
     # This is similar to how api.chromium.run_telemetry_test() sets the
@@ -540,7 +610,7 @@ class TelemetryUnitTests(PythonBasedTest):  # pylint: disable=W0232
 
   @staticmethod
   def compile_targets(_):
-      return ['chrome']
+    return ['chrome']
 
   def run_step(self, api, suffix, cmd_args, **kwargs):
     return api.chromium.run_telemetry_unittests(suffix, cmd_args, **kwargs)
@@ -571,7 +641,8 @@ class NaclIntegrationTest(Test):  # pylint: disable=W0232
         '--json_build_results_output_file', api.json.output(),
     ]
 
-    self._test_runs[suffix] = api.python(
+    try:
+      api.python(
         self._step_name(suffix),
         api.path['checkout'].join('chrome',
                           'test',
@@ -579,6 +650,8 @@ class NaclIntegrationTest(Test):  # pylint: disable=W0232
                           'buildbot_nacl_integration.py'),
         args,
         step_test_data=lambda: api.m.json.test_api.output([]))
+    finally:
+      self._test_runs[suffix] = api.step.active_result
 
   def has_valid_results(self, api, suffix):
     return self._test_runs[suffix].json.output is not None
@@ -733,6 +806,34 @@ class MiniInstallerTest(PythonBasedTest):  # pylint: disable=W0232
       **kwargs)
 
 
+class GenerateTelemetryProfileStep(Test):
+  name = 'generate_telemetry_profiles'
+
+  def __init__(self, target, profile_type_to_create):
+    super(GenerateTelemetryProfileStep, self).__init__()
+    self._target = target
+    self._profile_type_to_create = profile_type_to_create
+
+  def run(self, api, suffix):
+    args = ['--run-python-script',
+            '--target', self._target,
+            api.path['build'].join('scripts', 'slave',
+                                   'generate_profile_shim.py'),
+            '--target=' + self._target,
+            '--profile-type-to-generate=' + self._profile_type_to_create]
+    api.python('generate_telemetry_profiles',
+               api.path['build'].join('scripts', 'slave','runtest.py'),
+               args)
+
+  @property
+  def abort_on_failure(self):
+    """If True, abort build when test fails."""
+    return True
+
+  @staticmethod
+  def compile_targets(_):
+    return []
+
 IOS_TESTS = [
   GTestTest('base_unittests'),
   GTestTest('components_unittests'),
@@ -742,6 +843,7 @@ IOS_TESTS = [
   GTestTest('content_unittests'),
   GTestTest('net_unittests'),
   GTestTest('ui_unittests'),
+  GTestTest('ui_ios_unittests'),
   GTestTest('sync_unit_tests'),
   GTestTest('sql_unittests'),
 ]

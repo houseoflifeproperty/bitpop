@@ -54,72 +54,36 @@ def GenSteps(api):
 
   bot_type = bot_config.get('bot_type', 'builder_tester')
 
-  # The chromium.webrtc.fyi master is used as an early warning system to catch
-  # WebRTC specific errors before they get rolled into Chromium's DEPS.
-  # Therefore this waterfall needs to build src/third_party/webrtc with WebRTC
-  # ToT and use the Chromium HEAD. The revision poller is passing a WebRTC
-  # revision for these recipes.
-  if mastername == 'chromium.webrtc.fyi':
-    s = api.gclient.c.solutions
-    s[0].revision = 'HEAD'
-
-    # Revision to be used for SVN-based checkouts and passing builds between
-    # builders/testers.
-    # For forced builds, revision is empty, in which case we sync HEAD.
-    webrtc_revision = api.properties.get('revision', 'HEAD')
-    if webrtc_revision is None:
-      webrtc_revision = 'HEAD'
-
-    if bot_type == 'tester':
-      webrtc_revision = api.properties.get('parent_got_revision')
-      assert webrtc_revision, (
-         'Testers cannot be forced without providing revision information. '
-         'Please select a previous build and click [Rebuild] or force a build '
-         'for a Builder instead (will trigger new runs for the testers).')
-
-    # Since bot_update uses separate Git mirrors for the webrtc and libjingle
-    # repos, they cannot use the revision we get from the poller, since it won't
-    # be present in both if there's a revision that only contains changes in one
-    # of them. For now, work around this by always syncing HEAD for both.
-    api.gclient.c.revisions.update({
-        'src/third_party/webrtc': 'HEAD',
-        'src/third_party/libjingle/source/talk': 'HEAD',
-    })
-
   # Bot Update re-uses the gclient configs.
   step_result = api.bot_update.ensure_checkout(force=True)
   got_revision = step_result.presentation.properties['got_revision']
 
-  api.chromium_android.clean_local_files()
-
   if not bot_config.get('disable_runhooks'):
     api.chromium.runhooks()
 
-  api.chromium.cleanup_temp()
   if bot_type in ('builder', 'builder_tester'):
     run_gn = api.chromium.c.project_generator.tool == 'gn'
     if run_gn:
-      api.chromium.run_gn()
+      api.chromium.run_gn(use_goma=True)
 
     compile_targets = recipe_config.get('compile_targets', [])
     api.chromium.compile(targets=compile_targets)
     if mastername == 'chromium.webrtc.fyi' and not run_gn:
       api.webrtc.sizes(got_revision)
 
+  archive_revision = api.properties.get('parent_got_revision', got_revision)
   if bot_type == 'builder' and bot_config.get('build_gs_archive'):
     api.webrtc.package_build(
-        api.webrtc.GS_ARCHIVES[bot_config['build_gs_archive']], got_revision)
+        api.webrtc.GS_ARCHIVES[bot_config['build_gs_archive']],
+        archive_revision)
 
   if bot_type == 'tester':
-    # Ensure old build directory is not used is by removing it.
-    api.path.rmtree(
-        'build directory',
-        api.chromium.c.build_dir.join(api.chromium.c.build_config_fs))
-
     api.webrtc.extract_build(
-        api.webrtc.GS_ARCHIVES[bot_config['build_gs_archive']], got_revision)
+        api.webrtc.GS_ARCHIVES[bot_config['build_gs_archive']],
+        archive_revision)
 
   if bot_type in ('builder_tester', 'tester'):
+    api.webrtc.cleanup()
     if api.chromium.c.TARGET_PLATFORM == 'android':
       api.chromium_android.common_tests_setup_steps()
       api.chromium_android.run_test_suite(
@@ -137,10 +101,15 @@ def _sanitize_nonalpha(text):
 
 
 def GenTests(api):
-  def generate_builder(mastername, buildername, bot_config, revision=None,
-                       parent_got_revision=None, suffix=None):
+  builders = api.webrtc.BUILDERS
+
+  def generate_builder(mastername, buildername, revision=None,
+                       failing_test=None, parent_got_revision=None,
+                       suffix=None):
     suffix = suffix or ''
+    bot_config = builders[mastername]['builders'][buildername]
     bot_type = bot_config.get('bot_type', 'builder_tester')
+
     if bot_type in ('builder', 'builder_tester'):
       assert bot_config.get('parent_buildername') is None, (
           'Unexpected parent_buildername for builder %r on master %r.' %
@@ -160,31 +129,35 @@ def GenTests(api):
     if bot_type == 'tester':
       parent_rev = parent_got_revision or revision
       test += api.properties(parent_got_revision=parent_rev)
+
+    if failing_test:
+      test += api.step_data(failing_test, retcode=1)
+
     return test
 
   for mastername in ('chromium.webrtc', 'chromium.webrtc.fyi'):
-    master_config = api.webrtc.BUILDERS[mastername]
-    for buildername, bot_config in master_config['builders'].iteritems():
+    master_config = builders[mastername]
+    for buildername in master_config['builders'].keys():
       revision = '12345' if mastername == 'chromium.webrtc.fyi' else '321321'
-      yield generate_builder(mastername, buildername, bot_config, revision)
+      yield generate_builder(mastername, buildername, revision)
 
-  # Forced build (not specifying any revision).
+  # Forced build (not specifying any revision) and failing tests.
   mastername = 'chromium.webrtc'
-  buildername = 'Linux Builder'
-  bot_config = api.webrtc.BUILDERS[mastername]['builders'][buildername]
-  yield generate_builder(mastername, buildername, bot_config, revision=None,
+  yield generate_builder(mastername, 'Linux Builder', revision=None,
                          suffix='_forced')
+
+  buildername = 'Linux Tester'
+  yield generate_builder(mastername, buildername, revision=None,
+                         suffix='_forced_invalid')
+  yield generate_builder(mastername, buildername, revision='321321',
+                         failing_test='browser_tests', suffix='_failing_test')
 
   # Periodic scheduler triggered builds also don't contain revision.
   mastername = 'chromium.webrtc.fyi'
-  buildername = 'Win Builder'
-  bot_config = api.webrtc.BUILDERS[mastername]['builders'][buildername]
-  yield generate_builder(mastername, buildername, bot_config, revision=None,
+  yield generate_builder(mastername, 'Win Builder', revision=None,
                          suffix='_periodic_triggered')
 
   # Testers gets got_revision value from builder passed as parent_got_revision.
-  buildername = 'Win7 Tester'
-  bot_config = api.webrtc.BUILDERS[mastername]['builders'][buildername]
-  yield generate_builder(mastername, buildername, bot_config, revision=None,
+  yield generate_builder(mastername, 'Win7 Tester', revision=None,
                          parent_got_revision='12345',
                          suffix='_periodic_triggered')

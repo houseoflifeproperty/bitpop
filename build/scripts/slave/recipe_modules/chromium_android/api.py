@@ -87,6 +87,7 @@ class AndroidApi(recipe_api.RecipeApi):
       str(self.m.path['build'].join(
           'scripts', 'slave', 'android', 'archive_build.py')),
       archive_args,
+      infra_step=True,
       **kwargs
     )
 
@@ -143,6 +144,7 @@ class AndroidApi(recipe_api.RecipeApi):
         """,
         args=[debug_info_dumps, test_logs, build_product,
               self.m.path['checkout']],
+        infra_step=True,
     )
 
   def run_tree_truth(self):
@@ -159,8 +161,8 @@ class AndroidApi(recipe_api.RecipeApi):
                 allow_subannotations=False)
 
   def runhooks(self, extra_env={}):
-    self.m.chromium.runhooks(env=dict(self.get_env().items() +
-                                             extra_env.items()))
+    self.m.chromium.runhooks(
+        env=dict(self.get_env().items() + extra_env.items()))
 
   def apply_svn_patch(self):
     # TODO(sivachandra): We should probably pull this into its own module
@@ -202,6 +204,7 @@ class AndroidApi(recipe_api.RecipeApi):
             self.m.raw_io.test_api.stream_output('3000\n')
         ),
         cwd=self.m.path['checkout'],
+        infra_step=True,
         **kwargs)
 
   def check_webview_licenses(self):
@@ -213,7 +216,7 @@ class AndroidApi(recipe_api.RecipeApi):
         args=['scan'],
         cwd=self.m.path['checkout'])
 
-  def upload_build(self, bucket, path, fail=False):
+  def upload_build(self, bucket, path):
     archive_name = 'build_product.zip'
 
     zipfile = self.m.path['checkout'].join('out', archive_name)
@@ -225,13 +228,11 @@ class AndroidApi(recipe_api.RecipeApi):
       cwd=self.m.path['checkout']
     )
 
-    if not fail:
-      self.m.gsutil.upload(
-          name='upload_build_product',
-          source=zipfile,
-          bucket=bucket,
-          dest=path
-      )
+    self.m.gsutil.upload(
+        name='upload_build_product',
+        source=zipfile,
+        bucket=bucket,
+        dest=path)
 
   def download_build(self, bucket, path):
     zipfile = self.m.path['checkout'].join('out', 'build_product.zip')
@@ -245,6 +246,7 @@ class AndroidApi(recipe_api.RecipeApi):
       'unzip_build_product',
       ['unzip', '-o', zipfile],
       cwd=self.m.path['checkout'],
+      infra_step=True,
     )
 
   def spawn_logcat_monitor(self):
@@ -253,7 +255,8 @@ class AndroidApi(recipe_api.RecipeApi):
         [self.m.path['build'].join('scripts', 'slave', 'daemonizer.py'),
          '--', self.c.cr_build_android.join('adb_logcat_monitor.py'),
          self.m.chromium.c.build_dir.join('logcat')],
-        env=self.get_env())
+        env=self.get_env(),
+        infra_step=True)
 
   def detect_and_setup_devices(self, restart_usb=False, skip_wipe=False,
                                disable_location=False):
@@ -267,14 +270,14 @@ class AndroidApi(recipe_api.RecipeApi):
       args = ['--restart-usb']
 
     try:
-      step_result = self.m.step(
+      self.m.step(
           'device_status_check',
           [self.m.path['checkout'].join('build', 'android', 'buildbot',
                                 'bb_device_status_check.py')] + args,
           env=self.get_env(),
+          infra_step=True,
           **kwargs)
-    except self.m.step.StepFailure as f:
-      step_result = f.result
+    except self.m.step.InfraFailure as f:
       params = {
         'summary': ('Device Offline on %s %s' %
           (self.m.properties['mastername'], self.m.properties['slavename'])),
@@ -284,12 +287,9 @@ class AndroidApi(recipe_api.RecipeApi):
       }
       link = ('https://code.google.com/p/chromium/issues/entry?%s' %
         urllib.urlencode(params))
-      step_result.presentation.links.update({
+      f.result.presentation.links.update({
         'report a bug': link
       })
-      # Purple this step if no online device is found.
-      if f.retcode == 1:
-        step_result.presentation.status = 'EXCEPTION'
       raise
 
   def provision_devices(self, skip_wipe=False, disable_location=False,
@@ -305,6 +305,7 @@ class AndroidApi(recipe_api.RecipeApi):
           'build', 'android', 'provision_devices.py'),
       args=args,
       env=self.get_env(),
+      infra_step=True,
       **kwargs)
 
   def adb_install_apk(self, apk, apk_package):
@@ -318,6 +319,7 @@ class AndroidApi(recipe_api.RecipeApi):
     if self.m.chromium.c.BUILD_CONFIG == 'Release':
       install_cmd.append('--release')
     return self.m.step('install ' + apk, install_cmd,
+                       infra_step=True,
                        env=self.get_env())
 
   def monkey_test(self, **kwargs):
@@ -371,7 +373,7 @@ class AndroidApi(recipe_api.RecipeApi):
         [self.m.path['checkout'].join('build', 'android', 'test_runner.py'),
          'perf', '--steps', config, '--output-json-list', self.m.json.output()],
         step_test_data=lambda: self.m.json.test_api.output([
-            'perf_test.foo', 'page_cycler.foo', 'endure.foo']),
+            'perf_test.foo', 'page_cycler.foo']),
         env=self.get_env()
     )
     perf_tests = result.json.output
@@ -399,13 +401,17 @@ class AndroidApi(recipe_api.RecipeApi):
     if failures:
       raise self.m.step.StepFailure('sharded perf tests failed %s' % failures)
 
+  @recipe_api.composite_step
   def run_instrumentation_suite(self, test_apk, test_data=None,
                                 flakiness_dashboard=None,
                                 annotation=None, except_annotation=None,
                                 screenshot=False, verbose=False,
                                 apk_package=None, host_driven_root=None,
-                                official_build=False,
+                                official_build=False, install_apk=None,
                                 **kwargs):
+    if install_apk:
+      self.adb_install_apk(install_apk['apk'], install_apk['package'])
+
     args = ['--test-apk', test_apk]
     if test_data:
       args.extend(['--test_data', test_data])
@@ -435,6 +441,7 @@ class AndroidApi(recipe_api.RecipeApi):
         args=['instrumentation'] + args,
         **kwargs)
 
+  @recipe_api.composite_step
   def logcat_dump(self, gs_bucket=None):
     if gs_bucket:
       log_path = self.m.chromium.output_dir.join('full_log')
@@ -443,7 +450,8 @@ class AndroidApi(recipe_api.RecipeApi):
           self.m.path['checkout'].join('build', 'android',
                                        'adb_logcat_printer.py'),
           [ '--output-path', log_path,
-            self.m.path['checkout'].join('out', 'logcat') ])
+            self.m.path['checkout'].join('out', 'logcat') ],
+          infra_step=True)
       self.m.gsutil.upload(
           log_path,
           gs_bucket,
@@ -459,6 +467,7 @@ class AndroidApi(recipe_api.RecipeApi):
            self.m.path['checkout'].join('build', 'android',
                                         'adb_logcat_printer.py'),
            self.m.path['checkout'].join('out', 'logcat')],
+          infra_step=True,
           )
 
   def stack_tool_steps(self):
@@ -472,18 +481,21 @@ class AndroidApi(recipe_api.RecipeApi):
         'stack_tool_with_logcat_dump',
         [self.m.path['checkout'].join('third_party', 'android_platform',
                               'development', 'scripts', 'stack'),
-         '--arch', target_arch, '--more-info', log_file], env=self.get_env())
+         '--arch', target_arch, '--more-info', log_file], env=self.get_env(),
+        infra_step=True)
     self.m.step(
         'stack_tool_for_tombstones',
         [self.m.path['checkout'].join('build', 'android', 'tombstones.py'),
-         '-a', '-s', '-w'], env=self.get_env())
+         '-a', '-s', '-w'], env=self.get_env(),
+        infra_step=True)
     if self.c.asan_symbolize:
       self.m.step(
           'stack_tool_for_asan',
           [self.m.path['checkout'].join('build',
                                         'android',
                                         'asan_symbolize.py'),
-           '-l', log_file], env=self.get_env())
+           '-l', log_file], env=self.get_env(),
+          infra_step=True)
 
   def test_report(self):
     self.m.python.inline(
@@ -549,6 +561,20 @@ class AndroidApi(recipe_api.RecipeApi):
         env=self.get_env(),
         **kwargs)
 
+  def run_java_unit_test_suite(self, suite, verbose=True, **kwargs):
+    args = []
+    if verbose:
+      args.append('--verbose')
+    if self.c.BUILD_CONFIG == 'Release':
+      args.append('--release')
+
+    self.m.python(
+      str(suite),
+      self.m.path['checkout'].join('build', 'android', 'test_runner.py'),
+      ['junit', '-s', suite] + args,
+      env=self.get_env(),
+      **kwargs)
+
   def coverage_report(self, **kwargs):
     assert self.c.coverage, (
         'Trying to generate coverage report but coverage is not enabled')
@@ -564,6 +590,7 @@ class AndroidApi(recipe_api.RecipeApi):
               '--cleanup',
               '--output', self.coverage_dir.join('coverage_html',
                                                  'index.html')],
+        infra_step=True,
         **kwargs)
 
     self.m.gsutil.upload(

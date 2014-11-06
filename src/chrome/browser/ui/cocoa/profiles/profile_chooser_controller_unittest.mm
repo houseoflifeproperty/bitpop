@@ -13,6 +13,8 @@
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
+#include "chrome/browser/signin/account_tracker_service_factory.h"
+#include "chrome/browser/signin/fake_account_tracker_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
@@ -38,10 +40,16 @@ class ProfileChooserControllerTest : public CocoaProfileTest {
     CocoaProfileTest::SetUp();
     ASSERT_TRUE(browser()->profile());
 
+    AccountTrackerServiceFactory::GetInstance()->SetTestingFactory(
+        browser()->profile(), FakeAccountTrackerService::Build);
+
     TestingProfile::TestingFactories factories;
     factories.push_back(
         std::make_pair(ProfileOAuth2TokenServiceFactory::GetInstance(),
                        BuildFakeProfileOAuth2TokenService));
+    factories.push_back(
+        std::make_pair(AccountTrackerServiceFactory::GetInstance(),
+                       FakeAccountTrackerService::Build));
     testing_profile_manager()->
         CreateTestingProfile("test1", scoped_ptr<PrefServiceSyncable>(),
                              base::ASCIIToUTF16("Test 1"), 0, std::string(),
@@ -344,6 +352,11 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
   ProfileInfoCache* cache = testing_profile_manager()->profile_info_cache();
   cache->SetUserNameOfProfileAtIndex(0, base::ASCIIToUTF16(kEmail));
 
+  // Mark that we are using the profile name on purpose, so that we don't
+  // fallback to testing the algorithm that chooses which default name
+  // should be used.
+  cache->SetProfileIsUsingDefaultNameAtIndex(0, false);
+
   // Set up the signin manager and the OAuth2Tokens.
   Profile* profile = browser()->profile();
   SigninManagerFactory::GetForProfile(profile)->
@@ -450,70 +463,4 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
       [linksSubviews objectAtIndex:0]);
   EXPECT_EQ(@selector(hideAccountManagement:), [link action]);
   EXPECT_EQ(controller(), [link target]);
-}
-
-TEST_F(ProfileChooserControllerTest, SignedInProfileLockDisabled) {
-  switches::EnableNewProfileManagementForTesting(
-      CommandLine::ForCurrentProcess());
-  // Sign in the first profile.
-  ProfileInfoCache* cache = testing_profile_manager()->profile_info_cache();
-  cache->SetUserNameOfProfileAtIndex(0, base::ASCIIToUTF16(kEmail));
-  cache->SetLocalAuthCredentialsOfProfileAtIndex(0, std::string());
-
-  StartProfileChooserController();
-  NSArray* subviews = [[[controller() window] contentView] subviews];
-  ASSERT_EQ(2U, [subviews count]);
-  subviews = [[subviews objectAtIndex:0] subviews];
-
-  // Three profiles means we should have one active card, one separator, one
-  // option buttons view and a lock view. We also have an update promo for the
-  // new avatar menu.
-  // TODO(noms): Enforcing 5U fails on the waterfall debug bots, but it's not
-  // reproducible anywhere else.
-  ASSERT_GE([subviews count], 4U);
-
-  // There will be three buttons and two separators in the option buttons view.
-  NSArray* buttonSubviews = [[subviews objectAtIndex:0] subviews];
-  ASSERT_EQ(5U, [buttonSubviews count]);
-
-  // There should be a lock button.
-  NSButton* lockButton =
-      base::mac::ObjCCast<NSButton>([buttonSubviews objectAtIndex:0]);
-  ASSERT_TRUE(lockButton);
-  EXPECT_EQ(@selector(lockProfile:), [lockButton action]);
-  EXPECT_EQ(controller(), [lockButton target]);
-  EXPECT_FALSE([lockButton isEnabled]);
-}
-
-TEST_F(ProfileChooserControllerTest, SignedInProfileLockEnabled) {
-  switches::EnableNewProfileManagementForTesting(
-      CommandLine::ForCurrentProcess());
-  // Sign in the first profile.
-  ProfileInfoCache* cache = testing_profile_manager()->profile_info_cache();
-  cache->SetUserNameOfProfileAtIndex(0, base::ASCIIToUTF16(kEmail));
-  cache->SetLocalAuthCredentialsOfProfileAtIndex(0, "YourHashHere");
-
-  StartProfileChooserController();
-  NSArray* subviews = [[[controller() window] contentView] subviews];
-  ASSERT_EQ(2U, [subviews count]);
-  subviews = [[subviews objectAtIndex:0] subviews];
-
-  // Three profiles means we should have one active card, one separator, one
-  // option buttons view and a lock view. We also have an update promo for the
-  // new avatar menu.
-  // TODO(noms): Enforcing 5U fails on the waterfall debug bots, but it's not
-  // reproducible anywhere else.
-  ASSERT_GE([subviews count], 4U);
-
-  // There will be three buttons and two separators in the option buttons view.
-  NSArray* buttonSubviews = [[subviews objectAtIndex:0] subviews];
-  ASSERT_EQ(5U, [buttonSubviews count]);
-
-  // There should be a lock button.
-  NSButton* lockButton =
-      base::mac::ObjCCast<NSButton>([buttonSubviews objectAtIndex:0]);
-  ASSERT_TRUE(lockButton);
-  EXPECT_EQ(@selector(lockProfile:), [lockButton action]);
-  EXPECT_EQ(controller(), [lockButton target]);
-  EXPECT_TRUE([lockButton isEnabled]);
 }

@@ -37,7 +37,7 @@
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/default_channel_id_store.h"
 #include "net/url_request/url_request_job_factory_impl.h"
-#include "webkit/browser/database/database_tracker.h"
+#include "storage/browser/database/database_tracker.h"
 
 using content::BrowserThread;
 
@@ -51,19 +51,7 @@ OffTheRecordProfileIOData::Handle::Handle(Profile* profile)
 
 OffTheRecordProfileIOData::Handle::~Handle() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  ChromeURLRequestContextGetterMap::iterator iter =
-      app_request_context_getter_map_.begin();
-  for (; iter != app_request_context_getter_map_.end(); ++iter)
-    iter->second->Invalidate();
-
-  if (extensions_request_context_getter_)
-    extensions_request_context_getter_->Invalidate();
-
-  if (main_request_context_getter_)
-    main_request_context_getter_->Invalidate();
-
-  io_data_->ShutdownOnUIThread();
+  io_data_->ShutdownOnUIThread(GetAllContextGetters().Pass());
 }
 
 content::ResourceContext*
@@ -175,14 +163,32 @@ void OffTheRecordProfileIOData::Handle::LazyInitialize() const {
   io_data_->safe_browsing_enabled()->MoveToThread(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
 #endif
-#if defined(SPDY_PROXY_AUTH_ORIGIN)
+  // TODO(kundaji): Remove data_reduction_proxy_enabled pref for incognito.
+  // Bug http://crbug/412873.
   io_data_->data_reduction_proxy_enabled()->Init(
       data_reduction_proxy::prefs::kDataReductionProxyEnabled,
       profile_->GetPrefs());
   io_data_->data_reduction_proxy_enabled()->MoveToThread(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
-#endif
   io_data_->InitializeOnUIThread(profile_);
+}
+
+scoped_ptr<ProfileIOData::ChromeURLRequestContextGetterVector>
+OffTheRecordProfileIOData::Handle::GetAllContextGetters() {
+  scoped_ptr<ChromeURLRequestContextGetterVector> context_getters(
+      new ChromeURLRequestContextGetterVector());
+  ChromeURLRequestContextGetterMap::iterator iter =
+      app_request_context_getter_map_.begin();
+  for (; iter != app_request_context_getter_map_.end(); ++iter)
+    context_getters->push_back(iter->second);
+
+  if (extensions_request_context_getter_.get())
+    context_getters->push_back(extensions_request_context_getter_);
+
+  if (main_request_context_getter_.get())
+    context_getters->push_back(main_request_context_getter_);
+
+  return context_getters.Pass();
 }
 
 OffTheRecordProfileIOData::OffTheRecordProfileIOData(
@@ -270,15 +276,9 @@ void OffTheRecordProfileIOData::InitializeInternal(
 
   // Setup the SDCHManager for this profile.
   sdch_manager_.reset(new net::SdchManager);
-  sdch_manager_->set_sdch_fetcher(
-      new net::SdchDictionaryFetcher(
-          sdch_manager_.get(),
-          // SdchDictionaryFetcher takes a reference to the Getter, and
-          // hence implicitly takes ownership.
-          new net::TrivialURLRequestContextGetter(
-              main_context,
-              content::BrowserThread::GetMessageLoopProxyForThread(
-                  content::BrowserThread::IO))));
+  sdch_manager_->set_sdch_fetcher(scoped_ptr<net::SdchFetcher>(
+      new net::SdchDictionaryFetcher(sdch_manager_.get(),
+                                     main_context)).Pass());
   main_context->set_sdch_manager(sdch_manager_.get());
 
 #if defined(ENABLE_EXTENSIONS)

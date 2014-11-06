@@ -340,13 +340,7 @@ class BASE_EXPORT Time {
   // treat it as static across all windows versions.
   static const int kMinLowResolutionThresholdMs = 16;
 
-  // Enable or disable Windows high resolution timer. If the high resolution
-  // timer is not enabled, calls to ActivateHighResolutionTimer will fail.
-  // When disabling the high resolution timer, this function will not cause
-  // the high resolution timer to be deactivated, but will prevent future
-  // activations.
-  // Must be called from the main thread.
-  // For more details see comments in time_win.cc.
+  // Enable or disable Windows high resolution timer.
   static void EnableHighResolutionTimer(bool enable);
 
   // Activates or deactivates the high resolution timer based on the |activate|
@@ -493,16 +487,6 @@ class BASE_EXPORT Time {
   // platform-dependent epoch.
   static const int64 kTimeTToMicrosecondsOffset;
 
-#if defined(OS_WIN)
-  // Indicates whether fast timers are usable right now.  For instance,
-  // when using battery power, we might elect to prevent high speed timers
-  // which would draw more power.
-  static bool high_resolution_timer_enabled_;
-  // Count of activations on the high resolution timer.  Only use in tests
-  // which are single threaded.
-  static int high_resolution_timer_activated_;
-#endif
-
   // Time in microseconds in UTC.
   int64 us_;
 };
@@ -638,14 +622,6 @@ class BASE_EXPORT TimeTicks {
   // Returns true if the high resolution clock is working on this system.
   // This is only for testing.
   static bool IsHighResClockWorking();
-
-  // Enable high resolution time for TimeTicks::Now(). This function will
-  // test for the availability of a working implementation of
-  // QueryPerformanceCounter(). If one is not available, this function does
-  // nothing and the resolution of Now() remains 1ms. Otherwise, all future
-  // calls to TimeTicks::Now() will have the higher resolution provided by QPC.
-  // Returns true if high resolution time was successfully enabled.
-  static bool SetNowIsHighResNowIfSupported();
 
   // Returns a time value that is NOT rollover protected.
   static TimeTicks UnprotectedNow();

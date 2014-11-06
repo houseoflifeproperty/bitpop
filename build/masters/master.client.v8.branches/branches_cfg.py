@@ -9,5 +9,5 @@
 # Note that stable and beta might not always correspond to what is used in
 # Chromium, but here we simple use it to mean the last 2 branches.
 
-stable_branch = '3.26'
-beta_branch = '3.27'
+stable_branch = '3.27'
+beta_branch = '3.28'

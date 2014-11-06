@@ -9,6 +9,7 @@ DEPS = [
   'platform',
   'properties',
   'python',
+  'raw_io',
   'step',
   'test_utils',
   'tryserver',

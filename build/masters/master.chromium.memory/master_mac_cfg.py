@@ -20,7 +20,7 @@ defaults['category'] = '2mac asan'
 #
 # Main asan release scheduler for src/
 #
-S('mac_asan_rel', branch='src', treeStableTimer=60)
+S('mac_asan_rel', branch='master', treeStableTimer=60)
 
 #
 # Triggerable scheduler for the rel asan builder

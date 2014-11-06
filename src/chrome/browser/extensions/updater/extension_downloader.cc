@@ -22,15 +22,14 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/updater/extension_cache.h"
 #include "chrome/browser/extensions/updater/request_queue_impl.h"
-#include "chrome/browser/extensions/updater/safe_manifest_parser.h"
-#include "chrome/browser/metrics/chrome_metrics_service_accessor.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/browser/updater/safe_manifest_parser.h"
+#include "extensions/common/extension_urls.h"
 #include "google_apis/gaia/identity_provider.h"
 #include "net/base/backoff_entry.h"
 #include "net/base/load_flags.h"
@@ -180,16 +179,17 @@ ExtensionDownloader::ExtensionDownloader(
     : OAuth2TokenService::Consumer(kTokenServiceConsumerId),
       delegate_(delegate),
       request_context_(request_context),
-      weak_ptr_factory_(this),
       manifests_queue_(&kDefaultBackoffPolicy,
                        base::Bind(&ExtensionDownloader::CreateManifestFetcher,
                                   base::Unretained(this))),
       extensions_queue_(&kDefaultBackoffPolicy,
                         base::Bind(&ExtensionDownloader::CreateExtensionFetcher,
                                    base::Unretained(this))),
-      extension_cache_(NULL) {
+      extension_cache_(NULL),
+      enable_extra_update_metrics_(false),
+      weak_ptr_factory_(this) {
   DCHECK(delegate_);
-  DCHECK(request_context_);
+  DCHECK(request_context_.get());
 }
 
 ExtensionDownloader::~ExtensionDownloader() {}
@@ -210,10 +210,17 @@ bool ExtensionDownloader::AddExtension(const Extension& extension,
   if (!ManifestURL::UpdatesFromGallery(&extension))
     update_url_data = delegate_->GetUpdateUrlData(extension.id());
 
-  return AddExtensionData(extension.id(), *extension.version(),
+  std::string install_source;
+  bool force_update = delegate_->ShouldForceUpdate(extension.id(),
+                                                   &install_source);
+  return AddExtensionData(extension.id(),
+                          *extension.version(),
                           extension.GetType(),
                           ManifestURL::GetUpdateURL(&extension),
-                          update_url_data, request_id);
+                          update_url_data,
+                          request_id,
+                          force_update,
+                          install_source);
 }
 
 bool ExtensionDownloader::AddPendingExtension(const std::string& id,
@@ -230,7 +237,9 @@ bool ExtensionDownloader::AddPendingExtension(const std::string& id,
                           Manifest::TYPE_UNKNOWN,
                           update_url,
                           std::string(),
-                          request_id);
+                          request_id,
+                          false,
+                          std::string());
 }
 
 void ExtensionDownloader::StartAllPending(ExtensionCache* cache) {
@@ -265,15 +274,15 @@ void ExtensionDownloader::StartBlacklistUpdate(
   // Note: it is very important that we use the https version of the update
   // url here to avoid DNS hijacking of the blacklist, which is not validated
   // by a public key signature like .crx files are.
-  scoped_ptr<ManifestFetchData> blacklist_fetch(
-      new ManifestFetchData(extension_urls::GetWebstoreUpdateUrl(),
-                            request_id));
+  scoped_ptr<ManifestFetchData> blacklist_fetch(CreateManifestFetchData(
+      extension_urls::GetWebstoreUpdateUrl(), request_id));
   DCHECK(blacklist_fetch->base_url().SchemeIsSecure());
   blacklist_fetch->AddExtension(kBlacklistAppID,
                                 version,
                                 &ping_data,
                                 std::string(),
-                                kDefaultInstallSource);
+                                kDefaultInstallSource,
+                                false);
   StartUpdateCheck(blacklist_fetch.Pass());
 }
 
@@ -282,12 +291,15 @@ void ExtensionDownloader::SetWebstoreIdentityProvider(
   identity_provider_.swap(identity_provider);
 }
 
-bool ExtensionDownloader::AddExtensionData(const std::string& id,
-                                           const Version& version,
-                                           Manifest::Type extension_type,
-                                           const GURL& extension_update_url,
-                                           const std::string& update_url_data,
-                                           int request_id) {
+bool ExtensionDownloader::AddExtensionData(
+    const std::string& id,
+    const Version& version,
+    Manifest::Type extension_type,
+    const GURL& extension_update_url,
+    const std::string& update_url_data,
+    int request_id,
+    bool force_update,
+    const std::string& install_source_override) {
   GURL update_url(extension_update_url);
   // Skip extensions with non-empty invalid update URLs.
   if (!update_url.is_empty() && !update_url.is_valid()) {
@@ -340,10 +352,10 @@ bool ExtensionDownloader::AddExtensionData(const std::string& id,
 
   std::vector<GURL> update_urls;
   update_urls.push_back(update_url);
-  // If UMA is enabled, also add to ManifestFetchData for the
+  // If metrics are enabled, also add to ManifestFetchData for the
   // webstore update URL.
   if (!extension_urls::IsWebstoreUpdateUrl(update_url) &&
-      ChromeMetricsServiceAccessor::IsMetricsReportingEnabled()) {
+      enable_extra_update_metrics_) {
     update_urls.push_back(extension_urls::GetWebstoreUpdateUrl());
   }
 
@@ -353,6 +365,9 @@ bool ExtensionDownloader::AddExtensionData(const std::string& id,
 
     std::string install_source = i == 0 ?
         kDefaultInstallSource : kNotFromWebstoreInstallSource;
+    if (!install_source_override.empty()) {
+      install_source = install_source_override;
+    }
 
     ManifestFetchData::PingData ping_data;
     ManifestFetchData::PingData* optional_ping_data = NULL;
@@ -369,7 +384,8 @@ bool ExtensionDownloader::AddExtensionData(const std::string& id,
       ManifestFetchData* existing_fetch = existing_iter->second.back().get();
       if (existing_fetch->AddExtension(id, version.GetString(),
                                        optional_ping_data, update_url_data,
-                                       install_source)) {
+                                       install_source,
+                                       force_update)) {
         added = true;
       }
     }
@@ -377,13 +393,14 @@ bool ExtensionDownloader::AddExtensionData(const std::string& id,
       // Otherwise add a new element to the list, if the list doesn't exist or
       // if its last element is already full.
       linked_ptr<ManifestFetchData> fetch(
-          new ManifestFetchData(update_urls[i], request_id));
+          CreateManifestFetchData(update_urls[i], request_id));
       fetches_preparing_[std::make_pair(request_id, update_urls[i])].
           push_back(fetch);
       added = fetch->AddExtension(id, version.GetString(),
                                   optional_ping_data,
                                   update_url_data,
-                                  install_source);
+                                  install_source,
+                                  force_update);
       DCHECK(added);
     }
   }
@@ -455,7 +472,7 @@ void ExtensionDownloader::CreateManifestFetcher() {
   manifest_fetcher_.reset(net::URLFetcher::Create(
       kManifestFetcherId, manifests_queue_.active_request()->full_url(),
       net::URLFetcher::GET, this));
-  manifest_fetcher_->SetRequestContext(request_context_);
+  manifest_fetcher_->SetRequestContext(request_context_.get());
   manifest_fetcher_->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
                                   net::LOAD_DO_NOT_SAVE_COOKIES |
                                   net::LOAD_DISABLE_CACHE);
@@ -639,12 +656,14 @@ void ExtensionDownloader::DetermineUpdates(
 
       VLOG(2) << id << " is at '" << version << "'";
 
-      Version existing_version(version);
-      Version update_version(update->version);
-
-      if (!update_version.IsValid() ||
-          update_version.CompareTo(existing_version) <= 0) {
-        continue;
+      // We should skip the version check if update was forced.
+      if (!fetch_data.DidForceUpdate(id)) {
+        Version existing_version(version);
+        Version update_version(update->version);
+        if (!update_version.IsValid() ||
+            update_version.CompareTo(existing_version) <= 0) {
+          continue;
+        }
       }
     }
 
@@ -725,7 +744,7 @@ void ExtensionDownloader::CreateExtensionFetcher() {
   const ExtensionFetch* fetch = extensions_queue_.active_request();
   extension_fetcher_.reset(net::URLFetcher::Create(
       kExtensionFetcherId, fetch->url, net::URLFetcher::GET, this));
-  extension_fetcher_->SetRequestContext(request_context_);
+  extension_fetcher_->SetRequestContext(request_context_.get());
   extension_fetcher_->SetAutomaticallyRetryOnNetworkChanges(3);
 
   int load_flags = net::LOAD_DISABLE_CACHE;
@@ -926,6 +945,21 @@ void ExtensionDownloader::OnGetTokenFailure(
   // If we fail to get an access token, kick the pending fetch and let it fall
   // back on cookies.
   extension_fetcher_->Start();
+}
+
+ManifestFetchData* ExtensionDownloader::CreateManifestFetchData(
+    const GURL& update_url,
+    int request_id) {
+  ManifestFetchData::PingMode ping_mode = ManifestFetchData::NO_PING;
+  if (update_url.DomainIs(ping_enabled_domain_.c_str())) {
+    if (enable_extra_update_metrics_) {
+      ping_mode = ManifestFetchData::PING_WITH_METRICS;
+    } else {
+      ping_mode = ManifestFetchData::PING;
+    }
+  }
+  return new ManifestFetchData(
+      update_url, request_id, brand_code_, manifest_query_params_, ping_mode);
 }
 
 }  // namespace extensions

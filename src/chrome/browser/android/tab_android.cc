@@ -306,6 +306,17 @@ void TabAndroid::SwapTabContents(content::WebContents* old_contents,
       did_finish_load);
 }
 
+void TabAndroid::OnWebContentsInstantSupportDisabled(
+    const content::WebContents* contents) {
+  DCHECK(contents);
+  if (web_contents() != contents)
+    return;
+
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_Tab_onWebContentsInstantSupportDisabled(env,
+                                               weak_java_tab_.get(env).obj());
+}
+
 void TabAndroid::Observe(int type,
                          const content::NotificationSource& source,
                          const content::NotificationDetails& details) {
@@ -371,6 +382,7 @@ void TabAndroid::InitWebContents(JNIEnv* env,
   WindowAndroidHelper::FromWebContents(web_contents())->
       SetWindowAndroid(content_view_core->GetWindowAndroid());
   CoreTabHelper::FromWebContents(web_contents())->set_delegate(this);
+  SearchTabHelper::FromWebContents(web_contents())->set_delegate(this);
   web_contents_delegate_.reset(
       new chrome::android::ChromeWebContentsDelegateAndroid(
           env, jweb_contents_delegate));
@@ -428,14 +440,6 @@ void TabAndroid::DestroyWebContents(JNIEnv* env,
   }
 }
 
-base::android::ScopedJavaLocalRef<jobject> TabAndroid::GetWebContents(
-    JNIEnv* env,
-    jobject obj) {
-  if (!web_contents_.get())
-    return base::android::ScopedJavaLocalRef<jobject>();
-  return web_contents_->GetJavaWebContents();
-}
-
 base::android::ScopedJavaLocalRef<jobject> TabAndroid::GetProfileAndroid(
     JNIEnv* env,
     jobject obj) {
@@ -458,8 +462,7 @@ TabAndroid::TabLoadStatus TabAndroid::LoadUrl(JNIEnv* env,
                                               jstring j_referrer_url,
                                               jint referrer_policy,
                                               jboolean is_renderer_initiated) {
-  content::ContentViewCore* content_view = GetContentViewCore();
-  if (!content_view)
+  if (!web_contents())
     return PAGE_LOAD_FAILED;
 
   GURL gurl(base::android::ConvertJavaStringToUTF8(env, url));
@@ -508,7 +511,7 @@ TabAndroid::TabLoadStatus TabAndroid::LoadUrl(JNIEnv* env,
     // GoogleURLTracker uses the navigation pending notification to trigger the
     // infobar.
     if (google_util::IsGoogleSearchUrl(fixed_url) &&
-        (page_transition & content::PAGE_TRANSITION_GENERATED)) {
+        (page_transition & ui::PAGE_TRANSITION_GENERATED)) {
       GoogleURLTracker* tracker =
           GoogleURLTrackerFactory::GetForProfile(GetProfile());
       if (tracker)
@@ -536,7 +539,7 @@ TabAndroid::TabLoadStatus TabAndroid::LoadUrl(JNIEnv* env,
           base::RefCountedBytes::TakeVector(&post_data);
     }
     load_params.transition_type =
-        content::PageTransitionFromInt(page_transition);
+        ui::PageTransitionFromInt(page_transition);
     if (j_referrer_url) {
       load_params.referrer = content::Referrer(
           GURL(base::android::ConvertJavaStringToUTF8(env, j_referrer_url)),
@@ -552,7 +555,7 @@ TabAndroid::TabLoadStatus TabAndroid::LoadUrl(JNIEnv* env,
       return DEFAULT_PAGE_LOAD;
     }
     load_params.is_renderer_initiated = is_renderer_initiated;
-    content_view->LoadUrl(load_params);
+    web_contents()->GetController().LoadURLWithParams(load_params);
   }
   return DEFAULT_PAGE_LOAD;
 }
@@ -603,8 +606,8 @@ ScopedJavaLocalRef<jobject> TabAndroid::GetFavicon(JNIEnv* env, jobject obj) {
 
   if (!favicon_tab_helper)
     return bitmap;
-  if (!favicon_tab_helper->FaviconIsValid())
-    return bitmap;
+
+  // If the favicon isn't valid, it will return a default bitmap.
 
   SkBitmap favicon =
       favicon_tab_helper->GetFavicon()
@@ -633,6 +636,11 @@ ScopedJavaLocalRef<jobject> TabAndroid::GetFavicon(JNIEnv* env, jobject obj) {
     bitmap = gfx::ConvertToJavaBitmap(&favicon);
   }
   return bitmap;
+}
+
+jboolean TabAndroid::IsFaviconValid(JNIEnv* env, jobject jobj) {
+  return web_contents() &&
+      FaviconTabHelper::FromWebContents(web_contents())->FaviconIsValid();
 }
 
 prerender::PrerenderManager* TabAndroid::GetPrerenderManager() const {

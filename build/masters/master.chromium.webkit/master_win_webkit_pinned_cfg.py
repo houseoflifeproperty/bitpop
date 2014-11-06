@@ -60,7 +60,7 @@ F('f_webkit_rel_tests', win().ChromiumFactory(
     tests=chromium_factory.blink_tests,
     factory_properties={
       'additional_expectations': [
-        ['webkit', 'tools', 'layout_tests', 'test_expectations.txt' ],
+        ['content', 'test', 'test_expectations.txt' ],
       ],
       'archive_webkit_results': ActiveMaster.is_production_host,
       'generate_gtest_json': True,

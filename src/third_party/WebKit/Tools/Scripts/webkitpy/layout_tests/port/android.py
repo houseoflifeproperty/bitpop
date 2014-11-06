@@ -171,7 +171,7 @@ class ContentShellDriverDetails():
         return 'libcontent_shell_content_view.so'
 
     def additional_resources(self):
-        return ['content_resources.pak', 'shell_resources.pak']
+        return ['content_resources.pak', 'content_shell.pak', 'shell_resources.pak']
 
     def command_line_file(self):
         return '/data/local/tmp/content-shell-command-line'
@@ -257,7 +257,9 @@ class AndroidCommands(object):
         result = self._executive.run_command(self.adb_command() + command, error_handler=error_handler, debug_logging=self._debug_logging)
 
         # We limit the length to avoid outputting too verbose commands, such as "adb logcat".
-        self._log_debug('Run adb result: ' + result[:80])
+        # Also make sure that the output is ascii-encoded to avoid confusing other parts of
+        # the system.
+        self._log_debug('Run adb result: ' + result[:80].encode('ascii', errors='replace'))
         return result
 
     def get_serial(self):

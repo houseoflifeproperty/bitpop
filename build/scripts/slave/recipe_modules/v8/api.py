@@ -32,7 +32,7 @@ TEST_CONFIGS = {
   },
   'optimize_for_size': {
     'name': 'OptimizeForSize',
-    'tests': 'cctest mjsunit webkit',
+    'tests': 'optimize_for_size',
     'add_flaky_step': True,
     'test_args': ['--no-variants', '--shell_flags="--optimize-for-size"'],
   },
@@ -45,10 +45,14 @@ TEST_CONFIGS = {
     'name': 'Test262',
     'tests': 'test262',
   },
+  'unittests': {
+    'name': 'Unittests',
+    'tests': ('unittests'),
+    'test_args': ['--no-variants'],
+  },
   'v8testing': {
     'name': 'Check',
-    'tests': ('mjsunit fuzz-natives cctest message preparser base-unittests '
-              'compiler-unittests'),
+    'tests': ('default'),
     'add_flaky_step': True,
   },
   'webkit': {
@@ -156,6 +160,7 @@ class V8Api(recipe_api.RecipeApi):
 
   # Map of GS archive names to urls.
   GS_ARCHIVES = {
+    'android_arm_rel_archive': 'gs://chromium-v8/v8-android-arm-rel',
     'arm_rel_archive': 'gs://chromium-v8/v8-arm-rel',
     'arm_dbg_archive': 'gs://chromium-v8/v8-arm-dbg',
     'linux_rel_archive': 'gs://chromium-v8/v8-linux-rel',
@@ -164,6 +169,7 @@ class V8Api(recipe_api.RecipeApi):
     'linux_nosnap_dbg_archive': 'gs://chromium-v8/v8-linux-nosnap-dbg',
     'linux64_rel_archive': 'gs://chromium-v8/v8-linux64-rel',
     'linux64_dbg_archive': 'gs://chromium-v8/v8-linux64-dbg',
+    'mips_sim_rel_archive': 'gs://chromium-v8/v8-mips-sim-rel',
     'win32_rel_archive': 'gs://chromium-v8/v8-win32-rel',
     'win32_dbg_archive': 'gs://chromium-v8/v8-win32-dbg',
   }
@@ -208,7 +214,6 @@ class V8Api(recipe_api.RecipeApi):
 
   def init_tryserver(self):
     self.m.chromium.apply_config('trybot_flavor')
-    self.m.chromium.apply_config('optimized_debug')
     self.apply_config('trybot_flavor')
 
   def _gclient_checkout(self, may_nuke=False, revert=False):
@@ -225,9 +230,9 @@ class V8Api(recipe_api.RecipeApi):
     return update_step
 
   def checkout(self, may_nuke=False, revert=False):
-    # Set revision for bot_update including branch information. Needs to be
+    # Set revision for bot_update. Needs to be
     # reset afterwards as gclient doesn't understand this info.
-    self.m.gclient.c.solutions[0].revision = ('bleeding_edge:%s' %
+    self.m.gclient.c.solutions[0].revision = (
         self.m.properties.get('revision', 'HEAD'))
     update_step = self.m.bot_update.ensure_checkout(no_shallow=True)
 
@@ -249,8 +254,8 @@ class V8Api(recipe_api.RecipeApi):
     if self.c.gyp_env.LINK:
       env['LINK'] = self.c.gyp_env.LINK
     # TODO(machenbach): Make this the default on windows.
-    if self.c.gyp_env.GYP_MSVS_VERSION:
-      env['GYP_MSVS_VERSION'] = self.c.gyp_env.GYP_MSVS_VERSION
+    if self.m.chromium.c.gyp_env.GYP_MSVS_VERSION:
+      env['GYP_MSVS_VERSION'] = self.m.chromium.c.gyp_env.GYP_MSVS_VERSION
     self.m.chromium.runhooks(env=env, **kwargs)
 
   @property
@@ -315,11 +320,14 @@ class V8Api(recipe_api.RecipeApi):
 
   def compile(self, **kwargs):
     env={}
+    if self.m.chromium.c.TARGET_PLATFORM == 'android':
+      env['ANDROID_NDK_ROOT'] = str(self.m.path['checkout'].join(
+          'third_party', 'android_tools', 'ndk'))
     if self.c.nacl.NACL_SDK_ROOT:
       env['NACL_SDK_ROOT'] = self.c.nacl.NACL_SDK_ROOT
     args = []
-    if self.c.nacl.compile_extra_args:
-      args.extend(self.c.nacl.compile_extra_args)
+    if self.c.compile_py.compile_extra_args:
+      args.extend(self.c.compile_py.compile_extra_args)
     self.m.chromium.compile(args, env=env, **kwargs)
 
   def tryserver_compile(self, fallback_fn, **kwargs):
@@ -427,8 +435,12 @@ class V8Api(recipe_api.RecipeApi):
       ['valgrind', '--leak-check=full', '--show-reachable=yes',
        '--num-callers=20', relative_d8_path, '-e', '"print(1+2)"'],
       cwd=self.m.path['checkout'],
+      stderr=self.m.raw_io.output(),
+      step_test_data=lambda: self.m.raw_io.test_api.stream_output(
+          'tons of leaks', stream='stderr')
     )
-    if not 'no leaks are possible' in (step_result.stdout or ''):
+    step_result.presentation.logs['stderr'] = step_result.stderr.splitlines()
+    if not 'no leaks are possible' in (step_result.stderr):
       step_result.presentation.status = self.m.step.FAILURE
       raise self.m.step.StepFailure('Failed leak check')
 
@@ -656,7 +668,7 @@ class V8Api(recipe_api.RecipeApi):
 
     results_mapping = collections.defaultdict(dict)
     def run_single_perf_test(test, name, json_file):
-      """Call the v8 benchmark suite runner.
+      """Call the v8 perf test runner.
 
       Performance results are saved in the json test results file as a dict with
       'errors' for accumulated errors and 'traces' for the measurements.
@@ -674,7 +686,7 @@ class V8Api(recipe_api.RecipeApi):
       try:
         self.m.python(
           name,
-          self.m.path['checkout'].join('tools', 'run_benchmarks.py'),
+          self.m.path['checkout'].join('tools', 'run_perf.py'),
           full_args,
           cwd=self.m.path['checkout'],
           step_test_data=step_test_data,

@@ -22,6 +22,7 @@ class NativeClientCommands(commands.FactoryCommands):
   def AddTrigger(self, trigger_who):
     self._factory.addStep(commands.CreateTriggerStep(
         trigger_name=trigger_who,
+        trigger_drop_properties=['parent_cr_revision'],
         trigger_set_properties={
             'triggered_by_buildername': WithProperties(
                 '%(buildername:-None)s'),

@@ -28,6 +28,7 @@
 
 """Unit testing base class for Port implementations."""
 
+import collections
 import errno
 import logging
 import os
@@ -39,6 +40,7 @@ import unittest
 from webkitpy.common.system.executive_mock import MockExecutive, MockExecutive2
 from webkitpy.common.system.filesystem_mock import MockFileSystem
 from webkitpy.common.system.outputcapture import OutputCapture
+from webkitpy.common.system.systemhost import SystemHost
 from webkitpy.common.system.systemhost_mock import MockSystemHost
 from webkitpy.layout_tests.models import test_run_results
 from webkitpy.layout_tests.port.base import Port, TestConfiguration
@@ -87,6 +89,7 @@ class PortTestCase(unittest.TestCase):
     os_version = None
     port_maker = TestWebKitPort
     port_name = None
+    full_port_name = None
 
     def make_port(self, host=None, port_name=None, options=None, os_name=None, os_version=None, **kwargs):
         host = host or MockSystemHost(os_name=(os_name or self.os_name), os_version=(os_version or self.os_version))
@@ -322,8 +325,6 @@ class PortTestCase(unittest.TestCase):
         port = self.make_port()
 
         generic_path = port.path_to_generic_test_expectations_file()
-        chromium_overrides_path = port.path_from_chromium_base(
-            'webkit', 'tools', 'layout_tests', 'test_expectations.txt')
         never_fix_tests_path = port._filesystem.join(port.layout_tests_dir(), 'NeverFixTests')
         stale_tests_path = port._filesystem.join(port.layout_tests_dir(), 'StaleTestExpectations')
         slow_tests_path = port._filesystem.join(port.layout_tests_dir(), 'SlowTests')
@@ -333,27 +334,23 @@ class PortTestCase(unittest.TestCase):
 
         port._filesystem.write_text_file(skia_overrides_path, 'dummy text')
 
-        w3c_overrides_path = port.path_from_chromium_base(
-            'webkit', 'tools', 'layout_tests', 'test_expectations_w3c.txt')
-        port._filesystem.write_text_file(w3c_overrides_path, 'dummy text')
-
         port._options.builder_name = 'DUMMY_BUILDER_NAME'
         self.assertEqual(port.expectations_files(),
-                         [generic_path, skia_overrides_path, w3c_overrides_path,
+                         [generic_path, skia_overrides_path,
                           never_fix_tests_path, stale_tests_path, slow_tests_path,
-                          flaky_tests_path, chromium_overrides_path])
+                          flaky_tests_path])
 
         port._options.builder_name = 'builder (deps)'
         self.assertEqual(port.expectations_files(),
-                         [generic_path, skia_overrides_path, w3c_overrides_path,
+                         [generic_path, skia_overrides_path,
                           never_fix_tests_path, stale_tests_path, slow_tests_path,
-                          flaky_tests_path, chromium_overrides_path])
+                          flaky_tests_path])
 
         # A builder which does NOT observe the Chromium test_expectations,
         # but still observes the Skia test_expectations...
         port._options.builder_name = 'builder'
         self.assertEqual(port.expectations_files(),
-                         [generic_path, skia_overrides_path, w3c_overrides_path,
+                         [generic_path, skia_overrides_path,
                           never_fix_tests_path, stale_tests_path, slow_tests_path,
                           flaky_tests_path])
 
@@ -469,3 +466,10 @@ class PortTestCase(unittest.TestCase):
     def test_additional_platform_directory(self):
         port = self.make_port(options=MockOptions(additional_platform_directory=['/tmp/foo']))
         self.assertEqual(port.baseline_search_path()[0], '/tmp/foo')
+
+    def test_virtual_test_suites(self):
+        # We test that we can load the real LayoutTests/VirtualTestSuites file properly, so we
+        # use a real SystemHost(). We don't care what virtual_test_suites() returns as long
+        # as it is iterable.
+        port = self.make_port(host=SystemHost(), port_name=self.full_port_name)
+        self.assertTrue(isinstance(port.virtual_test_suites(), collections.Iterable))

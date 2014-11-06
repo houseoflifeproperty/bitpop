@@ -155,3 +155,27 @@ class TryserverApi(recipe_api.RecipeApi):
     else:
       # Since this method is "maybe", we don't raise an Exception.
       pass
+
+  def set_transient_failure_tryjob_result(self):
+    """Mark the tryjob result as a transient failure.
+
+    This means the system was unable to determine for sure whether the patch
+    was good or bad.
+
+    For strictly infra failures please use infra_step instead.
+
+    This unknown result helper is intended to be used in cases where
+    the cause is independent from infra, and also independent from the
+    patch author (or at least we are not certain about the latter).
+    """
+    # Transient failure tryjob result should only be used on the tryserver,
+    # since it's not obvious what it would mean on the main waterfall.
+    assert self.is_tryserver
+
+    step_result = self.m.step.active_result
+    step_result.presentation.properties['failure_type'] = 'TRANSIENT_FAILURE'
+
+  def maybe_set_transient_failure_tryjob_result(self):
+    """Set transient failure result if we're tryserver."""
+    if self.is_tryserver:
+      self.set_transient_failure_tryjob_result()

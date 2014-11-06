@@ -30,10 +30,10 @@
 
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFormElement.h"
+#include "core/html/forms/ColorChooser.h"
+#include "core/html/forms/DateTimeChooser.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/storage/StorageNamespace.h"
-#include "platform/ColorChooser.h"
-#include "platform/DateTimeChooser.h"
 #include "platform/FileChooser.h"
 #include "public/platform/WebApplicationCacheHost.h"
 #include "public/platform/WebServiceWorkerProvider.h"
@@ -76,9 +76,9 @@ public:
     virtual void disconnectClient() OVERRIDE { }
 };
 
-PassRefPtr<PopupMenu> EmptyChromeClient::createPopupMenu(LocalFrame&, PopupMenuClient*) const
+PassRefPtrWillBeRawPtr<PopupMenu> EmptyChromeClient::createPopupMenu(LocalFrame&, PopupMenuClient*) const
 {
-    return adoptRef(new EmptyPopupMenu());
+    return adoptRefWillBeNoop(new EmptyPopupMenu());
 }
 
 PassOwnPtr<ColorChooser> EmptyChromeClient::createColorChooser(LocalFrame*, ColorChooserClient*, const Color&)
@@ -86,9 +86,9 @@ PassOwnPtr<ColorChooser> EmptyChromeClient::createColorChooser(LocalFrame*, Colo
     return nullptr;
 }
 
-PassRefPtrWillBeRawPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
+PassRefPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
 {
-    return nullptr;
+    return PassRefPtr<DateTimeChooser>();
 }
 
 void EmptyChromeClient::openTextDataListChooser(HTMLInputElement&)
@@ -122,7 +122,7 @@ PassRefPtr<DocumentLoader> EmptyFrameLoaderClient::createDocumentLoader(LocalFra
     return DocumentLoader::create(frame, request, substituteData);
 }
 
-PassRefPtr<LocalFrame> EmptyFrameLoaderClient::createFrame(const KURL&, const AtomicString&, const Referrer&, HTMLFrameOwnerElement*)
+PassRefPtrWillBeRawPtr<LocalFrame> EmptyFrameLoaderClient::createFrame(const KURL&, const AtomicString&, const Referrer&, HTMLFrameOwnerElement*)
 {
     return nullptr;
 }
@@ -137,7 +137,7 @@ PassRefPtr<Widget> EmptyFrameLoaderClient::createJavaAppletWidget(HTMLAppletElem
     return nullptr;
 }
 
-void EmptyTextCheckerClient::requestCheckingOfString(PassRefPtr<TextCheckingRequest>)
+void EmptyTextCheckerClient::requestCheckingOfString(PassRefPtrWillBeRawPtr<TextCheckingRequest>)
 {
 }
 

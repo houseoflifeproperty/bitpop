@@ -17,7 +17,7 @@
       "--output_json",
       "/path/to/tmp/json",
       "--revision",
-      "v8@bleeding_edge:20123",
+      "v8@20123",
       "--no_shallow"
     ],
     "name": "bot_update",
@@ -101,7 +101,32 @@
       "--arch",
       "nacl_ia32",
       "--testname",
-      "mjsunit fuzz-natives cctest message preparser base-unittests compiler-unittests",
+      "unittests",
+      "--no-variants",
+      "--noi18n",
+      "--command_prefix=tools/nacl-run.py",
+      "--no-presubmit",
+      "--buildbot=False",
+      "--json-test-results",
+      "/path/to/tmp/json"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8",
+    "env": {
+      "NACL_SDK_ROOT": "[SLAVE_BUILD]/nacl_sdk/pepper_current"
+    },
+    "name": "Unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/v8/v8testing.py",
+      "--target",
+      "release",
+      "--arch",
+      "nacl_ia32",
+      "--testname",
+      "default",
       "--noi18n",
       "--command_prefix=tools/nacl-run.py",
       "--no-presubmit",
@@ -127,7 +152,7 @@
       "--arch",
       "nacl_ia32",
       "--testname",
-      "mjsunit fuzz-natives cctest message preparser base-unittests compiler-unittests",
+      "default",
       "--noi18n",
       "--command_prefix=tools/nacl-run.py",
       "--no-presubmit",

@@ -33,6 +33,8 @@ from common import chromium_utils
 from slave import builder_utils
 from slave import runbuild_utils
 
+REVISION_RE = re.compile(r'[0-9a-f]{5,40}|[1-9][0-9]{0,8}')
+
 
 def get_args():
   """Process command-line arguments."""
@@ -209,29 +211,23 @@ def args_ok(inoptions, pos_args):
   inoptions.revision = None
   if inoptions.build_properties and not inoptions.svn_rev:
     if inoptions.build_properties.get('revision'):
-      try:
-        inoptions.revision = int(inoptions.build_properties['revision'])
-      except ValueError:
-        inoptions.revision = None
+      inoptions.revision = inoptions.build_properties['revision']
 
     # got_revision will supersede revision if present.
     if inoptions.build_properties.get('got_revision'):
-      try:
-        inoptions.revision = int(inoptions.build_properties['got_revision'])
-      except ValueError:
-        inoptions.revision = None
+      inoptions.revision = inoptions.build_properties['got_revision']
 
     if not inoptions.revision:
       print >>sys.stderr, ('Error: build properties did not specify '
                            'valid revision.')
       return False
 
-    if inoptions.revision < 1:
-      print >>sys.stderr, 'Error: revision must be a non-negative integer.'
+    if not REVISION_RE.match(inoptions.revision):
+      print >>sys.stderr, 'Error: revision must be hash-like or revision-like.'
       return False
 
-    print >>sys.stderr, 'using revision: %d' % inoptions.revision
-    inoptions.build_properties['revision'] = '%d' % inoptions.revision
+    print >>sys.stderr, 'using revision: %s' % inoptions.revision
+    inoptions.build_properties['revision'] = '%s' % inoptions.revision
   else:
     if inoptions.svn_rev:
       try:
@@ -308,7 +304,7 @@ def execute_builder(my_builder, mastername, options):
 
   buildsetup = options.build_properties
   if 'revision' not in buildsetup:
-    buildsetup['revision'] = '%d' % options.revision
+    buildsetup['revision'] = '%s' % options.revision
   if 'branch' not in buildsetup:
     buildsetup['branch'] = 'src'
 

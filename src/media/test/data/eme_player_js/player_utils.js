@@ -57,15 +57,22 @@ PlayerUtils.registerEMEEventListeners = function(player) {
                   message.contentType + ', initData: ' +
                   Utils.getHexString(message.initData));
     try {
-      var session = message.target.mediaKeys.createSession(
-          message.contentType, message.initData);
-      if (PROMISES_SUPPORTED) {
+      if (message.target.mediaKeys.createSession.length == 0) {
+        // FIXME(jrummell): Remove this test (and else branch) once blink
+        // uses the new API.
+        var session = message.target.mediaKeys.createSession();
+        addMediaKeySessionListeners(session);
+        session.generateRequest(message.contentType, message.initData)
+          .catch(function(error) {
+            Utils.failTest(error, KEY_ERROR);
+          });
+      } else {
+        var session = message.target.mediaKeys.createSession(
+            message.contentType, message.initData);
         session.then(addMediaKeySessionListeners)
-            .catch (function(error) {
+            .catch(function(error) {
               Utils.failTest(error, KEY_ERROR);
             });
-      } else {
-        addMediaKeySessionListeners(session);
       }
     } catch (e) {
       Utils.failTest(e);
@@ -74,15 +81,11 @@ PlayerUtils.registerEMEEventListeners = function(player) {
   this.registerDefaultEventListeners(player);
   try {
     Utils.timeLog('Setting video media keys: ' + player.testConfig.keySystem);
-    if (PROMISES_SUPPORTED) {
-      MediaKeys.create(player.testConfig.keySystem).then(function(mediaKeys) {
-        player.video.setMediaKeys(mediaKeys);
-      }).catch(function(error) {
-        Utils.failTest(error, NOTSUPPORTEDERROR);
-      });
-    } else {
-      player.video.setMediaKeys(new MediaKeys(player.testConfig.keySystem));
-    }
+    MediaKeys.create(player.testConfig.keySystem).then(function(mediaKeys) {
+      player.video.setMediaKeys(mediaKeys);
+    }).catch(function(error) {
+      Utils.failTest(error, NOTSUPPORTEDERROR);
+    });
   } catch (e) {
     Utils.failTest(e);
   }

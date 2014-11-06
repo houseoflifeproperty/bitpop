@@ -15,6 +15,7 @@ from twisted.python import log
 from twisted.web.client import getPage
 
 from buildbot.changes import base
+from master.factory.dart import semantic_version
 
 VALUE_NOT_SET = -1
 
@@ -38,6 +39,12 @@ class PubPoller(base.PollingChangeSource):
                           project=self.project,
                           revision=version)
 
+  # pub.dartlang.org is returning the versions in non sorted order
+  # We sort them using the same semantic version class that pub uses
+  @staticmethod
+  def find_new_version(versions):
+    return str(max([semantic_version.SemanticVersion(v) for v in versions]))
+
   @defer.inlineCallbacks
   def poll(self):
     log.msg('Polling all packages on pub')
@@ -53,7 +60,7 @@ class PubPoller(base.PollingChangeSource):
         elif self.num_versions[package] != count:
           log.msg('Package %s has new version' % package)
           self.num_versions[package] = count
-          version = package_info['versions'][-1]
+          version = self.find_new_version(package_info['versions'])
           self.make_change(package, version)
       except Exception :
         log.msg('Could not get version for package %s: %s' %
@@ -74,6 +81,8 @@ class PubPoller(base.PollingChangeSource):
         package_info = json.loads(info)
         count = len(package_info['versions'])
         log.msg('Initial count for %s is %s' % (package, count))
+        log.msg('Initial version: %s' %
+                self.find_new_version(package_info['versions']))
         self.num_versions[package] = count
       except Exception :
         log.msg('Could not set initial value for package %s %s' %

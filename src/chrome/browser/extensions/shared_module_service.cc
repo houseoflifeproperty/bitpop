@@ -10,11 +10,11 @@
 #include "base/version.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_urls.h"
 
 namespace extensions {
 
@@ -60,9 +60,6 @@ SharedModuleService::ImportStatus SharedModuleService::CheckImports(
         return IMPORT_STATUS_UNRECOVERABLE;
       }
     } else if (!SharedModuleInfo::IsSharedModule(imported_module)) {
-      return IMPORT_STATUS_UNRECOVERABLE;
-    } else if (!SharedModuleInfo::IsExportAllowedByWhitelist(imported_module,
-                                                             extension->id())) {
       return IMPORT_STATUS_UNRECOVERABLE;
     } else if (version_required.IsValid() &&
                imported_module->version()->CompareTo(version_required) < 0) {

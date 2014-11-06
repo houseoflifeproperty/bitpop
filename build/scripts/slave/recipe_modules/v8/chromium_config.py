@@ -35,6 +35,12 @@ def v8(c):
 
 
 @CONFIG_CTX(includes=['v8'])
+def android_arm(c):
+  if c.BUILD_CONFIG == 'Release':
+    c.build_config_fs = 'android_arm.release'
+
+
+@CONFIG_CTX(includes=['v8'])
 def arm_hard_float(c):
   c.compile_py.pass_arch_flag = True
   c.compile_py.cross_tool = '/usr/bin/arm-linux-gnueabihf'

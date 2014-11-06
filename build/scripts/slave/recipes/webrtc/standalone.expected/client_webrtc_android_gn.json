@@ -17,9 +17,9 @@
       "[DEPOT_TOOLS]/gclient.py",
       "sync",
       "--nohooks",
-      "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--delete_unversioned_trees",
       "--revision",
       "src@12345",
       "--output-json",
@@ -61,7 +61,7 @@
       "--root=[SLAVE_BUILD]/src",
       "gen",
       "//out/Release",
-      "--args=is_debug=false os=\"android\" cpu_arch=\"arm\" build_with_chromium=false"
+      "--args=is_debug=false os=\"android\" cpu_arch=\"arm\" use_goma=true goma_dir=\"[BUILD]/goma\" build_with_chromium=false"
     ],
     "name": "gn"
   },

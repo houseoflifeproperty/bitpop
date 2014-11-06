@@ -17,9 +17,9 @@
       "[DEPOT_TOOLS]/gclient.py",
       "sync",
       "--nohooks",
-      "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--delete_unversioned_trees",
       "--output-json",
       "/path/to/tmp/json"
     ],
@@ -68,41 +68,121 @@
     "cmd": [
       "python",
       "-u",
-      "\nimport os, sys\nfrom common import chromium_utils\n\nif os.path.exists(sys.argv[1]):\n  chromium_utils.RemoveDirectory(sys.argv[1])\n",
-      "[SLAVE_BUILD]/gm/actual"
+      "[BUILD]/scripts/slave/recipe_modules/adb/resources/list_devices.py",
+      "['[BUILD_INTERNAL]/scripts/slave/android/adb', 'devices']",
+      "/path/to/tmp/json"
     ],
-    "name": "rmtree [SLAVE_BUILD]/gm/actual",
+    "name": "List adb devices",
     "~followup_annotations": [
-      "@@@STEP_LOG_LINE@python.inline@@@@",
-      "@@@STEP_LOG_LINE@python.inline@import os, sys@@@",
-      "@@@STEP_LOG_LINE@python.inline@from common import chromium_utils@@@",
-      "@@@STEP_LOG_LINE@python.inline@@@@",
-      "@@@STEP_LOG_LINE@python.inline@if os.path.exists(sys.argv[1]):@@@",
-      "@@@STEP_LOG_LINE@python.inline@  chromium_utils.RemoveDirectory(sys.argv[1])@@@",
-      "@@@STEP_LOG_END@python.inline@@@"
+      "@@@STEP_LOG_LINE@json.output@[@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"014E1F310401C009\"@@@",
+      "@@@STEP_LOG_LINE@json.output@]@@@",
+      "@@@STEP_LOG_END@json.output@@@"
     ]
   },
   {
     "cmd": [
-      "python",
-      "-u",
-      "\nimport sys, os\npath = sys.argv[1]\nmode = int(sys.argv[2])\nif not os.path.isdir(path):\n  if os.path.exists(path):\n    print \"%s exists but is not a dir\" % path\n    sys.exit(1)\n  os.makedirs(path, mode)\n",
-      "[SLAVE_BUILD]/gm/actual",
-      "511"
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "echo",
+      "$EXTERNAL_STORAGE"
     ],
-    "name": "makedirs [SLAVE_BUILD]/gm/actual",
-    "~followup_annotations": [
-      "@@@STEP_LOG_LINE@python.inline@@@@",
-      "@@@STEP_LOG_LINE@python.inline@import sys, os@@@",
-      "@@@STEP_LOG_LINE@python.inline@path = sys.argv[1]@@@",
-      "@@@STEP_LOG_LINE@python.inline@mode = int(sys.argv[2])@@@",
-      "@@@STEP_LOG_LINE@python.inline@if not os.path.isdir(path):@@@",
-      "@@@STEP_LOG_LINE@python.inline@  if os.path.exists(path):@@@",
-      "@@@STEP_LOG_LINE@python.inline@    print \"%s exists but is not a dir\" % path@@@",
-      "@@@STEP_LOG_LINE@python.inline@    sys.exit(1)@@@",
-      "@@@STEP_LOG_LINE@python.inline@  os.makedirs(path, mode)@@@",
-      "@@@STEP_LOG_END@python.inline@@@"
-    ]
+    "name": "get EXTERNAL_STORAGE dir",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "root"
+    ],
+    "name": "adb root"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "remount"
+    ],
+    "name": "adb remount"
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/skia/platform_tools/android/bin/android_kill_skia",
+      "-s",
+      "014E1F310401C009"
+    ],
+    "name": "kill skia"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "stop"
+    ],
+    "name": "stop shell"
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/skia/platform_tools/android/bin/adb_push_if_needed",
+      "-s",
+      "014E1F310401C009",
+      "[SLAVE_BUILD]/skia/resources",
+      "/storage/emulated/legacy/skiabot/skia_resources"
+    ],
+    "env": {
+      "ANDROID_SDK_ROOT": "/home/chrome-bot/android-sdk-linux"
+    },
+    "name": "push [SLAVE_BUILD]/skia/resources"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "rm",
+      "-r",
+      "/storage/emulated/legacy/skiabot/skia_gm_actual"
+    ],
+    "name": "rmdir /storage/emulated/legacy/skiabot/skia_gm_actual"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "if",
+      "[",
+      "-e",
+      "/storage/emulated/legacy/skiabot/skia_gm_actual",
+      "];",
+      "then",
+      "echo",
+      "FILE_EXISTS;",
+      "fi"
+    ],
+    "name": "exists /storage/emulated/legacy/skiabot/skia_gm_actual",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "mkdir",
+      "-p",
+      "/storage/emulated/legacy/skiabot/skia_gm_actual"
+    ],
+    "name": "mkdir /storage/emulated/legacy/skiabot/skia_gm_actual"
   },
   {
     "cmd": [
@@ -146,28 +226,194 @@
   },
   {
     "cmd": [
-      "[SLAVE_BUILD]/skia/out/Release/gm",
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "rm",
+      "-r",
+      "/storage/emulated/legacy/skiabot/skia_gm_expected"
+    ],
+    "name": "rmdir /storage/emulated/legacy/skiabot/skia_gm_expected"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "if",
+      "[",
+      "-e",
+      "/storage/emulated/legacy/skiabot/skia_gm_expected",
+      "];",
+      "then",
+      "echo",
+      "FILE_EXISTS;",
+      "fi"
+    ],
+    "name": "exists /storage/emulated/legacy/skiabot/skia_gm_expected",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "mkdir",
+      "-p",
+      "/storage/emulated/legacy/skiabot/skia_gm_expected"
+    ],
+    "name": "mkdir /storage/emulated/legacy/skiabot/skia_gm_expected"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "push",
+      "[SLAVE_BUILD]/skia/expectations/gm/ignored-tests.txt",
+      "/storage/emulated/legacy/skiabot/skia_gm_expected/ignored-tests.txt"
+    ],
+    "name": "push [SLAVE_BUILD]/skia/expectations/gm/ignored-tests.txt"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "rm",
+      "-r",
+      "/storage/emulated/legacy/skiabot/skia_gm_expected/Test-Android-Nexus10-MaliT604-Arm7-Release"
+    ],
+    "name": "rmdir /storage/emulated/legacy/skiabot/skia_gm_expected/Test-Android-Nexus10-MaliT604-Arm7-Release"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "if",
+      "[",
+      "-e",
+      "/storage/emulated/legacy/skiabot/skia_gm_expected/Test-Android-Nexus10-MaliT604-Arm7-Release",
+      "];",
+      "then",
+      "echo",
+      "FILE_EXISTS;",
+      "fi"
+    ],
+    "name": "exists /storage/emulated/legacy/skiabot/skia_gm_expected/Test-Android-Nexus10-MaliT604-Arm7-Release",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "mkdir",
+      "-p",
+      "/storage/emulated/legacy/skiabot/skia_gm_expected/Test-Android-Nexus10-MaliT604-Arm7-Release"
+    ],
+    "name": "mkdir /storage/emulated/legacy/skiabot/skia_gm_expected/Test-Android-Nexus10-MaliT604-Arm7-Release"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "push",
+      "[SLAVE_BUILD]/skia/expectations/gm/Test-Android-Nexus10-MaliT604-Arm7-Release/expected-results.json",
+      "/storage/emulated/legacy/skiabot/skia_gm_expected/Test-Android-Nexus10-MaliT604-Arm7-Release/expected-results.json"
+    ],
+    "name": "push [SLAVE_BUILD]/skia/expectations/gm/Test-Android-Nexus10-MaliT604-Arm7-Release/expected-results.json"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "if",
+      "[",
+      "-e",
+      "/storage/emulated/legacy/skiabot/skia_gm_expected/Test-Android-Nexus10-MaliT604-Arm7-Release/expected-results.json",
+      "];",
+      "then",
+      "echo",
+      "FILE_EXISTS;",
+      "fi"
+    ],
+    "name": "exists /storage/emulated/legacy/skiabot/skia_gm_expected/Test-Android-Nexus10-MaliT604-Arm7-Release/expected-results.json",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "if",
+      "[",
+      "-e",
+      "/storage/emulated/legacy/skiabot/skia_gm_expected/ignored-tests.txt",
+      "];",
+      "then",
+      "echo",
+      "FILE_EXISTS;",
+      "fi"
+    ],
+    "name": "exists /storage/emulated/legacy/skiabot/skia_gm_expected/ignored-tests.txt",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/skia/platform_tools/android/bin/android_run_skia",
+      "-d",
+      "nexus_10",
+      "-s",
+      "014E1F310401C009",
+      "--release",
+      "gm",
       "--verbose",
       "--writeChecksumBasedFilenames",
       "--mismatchPath",
-      "[SLAVE_BUILD]/gm/actual/Test-Android-Nexus10-MaliT604-Arm7-Release",
+      "/storage/emulated/legacy/skiabot/skia_gm_actual/Test-Android-Nexus10-MaliT604-Arm7-Release",
       "--missingExpectationsPath",
-      "[SLAVE_BUILD]/gm/actual/Test-Android-Nexus10-MaliT604-Arm7-Release",
+      "/storage/emulated/legacy/skiabot/skia_gm_actual/Test-Android-Nexus10-MaliT604-Arm7-Release",
       "--writeJsonSummaryPath",
-      "[SLAVE_BUILD]/gm/actual/Test-Android-Nexus10-MaliT604-Arm7-Release/actual-results.json",
+      "/storage/emulated/legacy/skiabot/skia_gm_actual/Test-Android-Nexus10-MaliT604-Arm7-Release/actual-results.json",
       "--ignoreErrorTypes",
       "IntentionallySkipped",
       "MissingExpectations",
       "ExpectationsMismatch",
       "--resourcePath",
-      "[SLAVE_BUILD]/skia/resources",
-      "--ignoreFailuresFile",
-      "[SLAVE_BUILD]/skia/expectations/gm/ignored-tests.txt",
+      "/storage/emulated/legacy/skiabot/skia_resources",
       "--config",
       "defaults",
       "msaa4"
     ],
+    "env": {
+      "ANDROID_SDK_ROOT": "/home/chrome-bot/android-sdk-linux"
+    },
     "name": "gm"
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/skia/platform_tools/android/bin/adb_pull_if_needed",
+      "-s",
+      "014E1F310401C009",
+      "/storage/emulated/legacy/skiabot/skia_gm_actual/Test-Android-Nexus10-MaliT604-Arm7-Release",
+      "[SLAVE_BUILD]/gm/actual/Test-Android-Nexus10-MaliT604-Arm7-Release"
+    ],
+    "env": {
+      "ANDROID_SDK_ROOT": "/home/chrome-bot/android-sdk-linux"
+    },
+    "name": "pull /storage/emulated/legacy/skiabot/skia_gm_actual/Test-Android-Nexus10-MaliT604-Arm7-Release"
   },
   {
     "cmd": [
@@ -184,9 +430,543 @@
       "-u",
       "[BUILD]/scripts/slave/recipe_modules/skia/resources/upload_gm_results.py",
       "[SLAVE_BUILD]/gm/actual/Test-Android-Nexus10-MaliT604-Arm7-Release",
-      "Test-Android-Nexus10-MaliT604-Arm7-Release"
+      "Test-Android-Nexus10-MaliT604-Arm7-Release",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil"
     ],
     "cwd": "[SLAVE_BUILD]/skia",
     "name": "Upload GM Results"
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/skia/platform_tools/android/bin/android_run_skia",
+      "-d",
+      "nexus_10",
+      "-s",
+      "014E1F310401C009",
+      "--release",
+      "dm",
+      "--verbose",
+      "--resourcePath",
+      "/storage/emulated/legacy/skiabot/skia_resources",
+      "--skps",
+      "/storage/emulated/legacy/skiabot/skia_skp/skps",
+      "--writePath",
+      "/storage/emulated/legacy/skiabot/skia_dm",
+      "--nameByHash",
+      "--match",
+      "--nocpu"
+    ],
+    "env": {
+      "ANDROID_SDK_ROOT": "/home/chrome-bot/android-sdk-linux"
+    },
+    "name": "dm"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "[SLAVE_BUILD]/skia/SKP_VERSION",
+      "/path/to/tmp/"
+    ],
+    "name": "read [SLAVE_BUILD]/skia/SKP_VERSION"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "[SLAVE_BUILD]/playback/skps/SKP_VERSION",
+      "/path/to/tmp/"
+    ],
+    "name": "read [SLAVE_BUILD]/playback/skps/SKP_VERSION"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os, sys\nfrom common import chromium_utils\n\nif os.path.exists(sys.argv[1]):\n  chromium_utils.RemoveDirectory(sys.argv[1])\n",
+      "[SLAVE_BUILD]/playback/skps"
+    ],
+    "name": "rmtree [SLAVE_BUILD]/playback/skps",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os, sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@from common import chromium_utils@@@",
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@if os.path.exists(sys.argv[1]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  chromium_utils.RemoveDirectory(sys.argv[1])@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport sys, os\npath = sys.argv[1]\nmode = int(sys.argv[2])\nif not os.path.isdir(path):\n  if os.path.exists(path):\n    print \"%s exists but is not a dir\" % path\n    sys.exit(1)\n  os.makedirs(path, mode)\n",
+      "[SLAVE_BUILD]/playback/skps",
+      "511"
+    ],
+    "name": "makedirs [SLAVE_BUILD]/playback/skps",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys, os@@@",
+      "@@@STEP_LOG_LINE@python.inline@path = sys.argv[1]@@@",
+      "@@@STEP_LOG_LINE@python.inline@mode = int(sys.argv[2])@@@",
+      "@@@STEP_LOG_LINE@python.inline@if not os.path.isdir(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  if os.path.exists(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@    print \"%s exists but is not a dir\" % path@@@",
+      "@@@STEP_LOG_LINE@python.inline@    sys.exit(1)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  os.makedirs(path, mode)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "--",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "cp",
+      "-R",
+      "gs://chromium-skia-gm/playback_42/skps",
+      "[SLAVE_BUILD]/playback"
+    ],
+    "name": "gsutil download skps"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "42",
+      "[SLAVE_BUILD]/playback/skps/SKP_VERSION"
+    ],
+    "name": "write [SLAVE_BUILD]/playback/skps/SKP_VERSION"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "rm",
+      "-r",
+      "/storage/emulated/legacy/skiabot/skia_skp/skps"
+    ],
+    "name": "rmdir /storage/emulated/legacy/skiabot/skia_skp/skps"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "if",
+      "[",
+      "-e",
+      "/storage/emulated/legacy/skiabot/skia_skp/skps",
+      "];",
+      "then",
+      "echo",
+      "FILE_EXISTS;",
+      "fi"
+    ],
+    "name": "exists /storage/emulated/legacy/skiabot/skia_skp/skps",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "mkdir",
+      "-p",
+      "/storage/emulated/legacy/skiabot/skia_skp/skps"
+    ],
+    "name": "mkdir /storage/emulated/legacy/skiabot/skia_skp/skps"
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/skia/platform_tools/android/bin/adb_push_if_needed",
+      "-s",
+      "014E1F310401C009",
+      "[SLAVE_BUILD]/playback/skps",
+      "/storage/emulated/legacy/skiabot/skia_skp/skps"
+    ],
+    "env": {
+      "ANDROID_SDK_ROOT": "/home/chrome-bot/android-sdk-linux"
+    },
+    "name": "push [SLAVE_BUILD]/playback/skps"
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/skia/platform_tools/android/bin/android_run_skia",
+      "-d",
+      "nexus_10",
+      "-s",
+      "014E1F310401C009",
+      "--release",
+      "render_pdfs",
+      "--inputPaths",
+      "/storage/emulated/legacy/skiabot/skia_skp/skps"
+    ],
+    "env": {
+      "ANDROID_SDK_ROOT": "/home/chrome-bot/android-sdk-linux"
+    },
+    "name": "render_pdfs"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os, sys\nfrom common import chromium_utils\n\nif os.path.exists(sys.argv[1]):\n  chromium_utils.RemoveDirectory(sys.argv[1])\n",
+      "[SLAVE_BUILD]/skimage_in"
+    ],
+    "name": "rmtree [SLAVE_BUILD]/skimage_in",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os, sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@from common import chromium_utils@@@",
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@if os.path.exists(sys.argv[1]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  chromium_utils.RemoveDirectory(sys.argv[1])@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport sys, os\npath = sys.argv[1]\nmode = int(sys.argv[2])\nif not os.path.isdir(path):\n  if os.path.exists(path):\n    print \"%s exists but is not a dir\" % path\n    sys.exit(1)\n  os.makedirs(path, mode)\n",
+      "[SLAVE_BUILD]/skimage_in",
+      "511"
+    ],
+    "name": "makedirs [SLAVE_BUILD]/skimage_in",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys, os@@@",
+      "@@@STEP_LOG_LINE@python.inline@path = sys.argv[1]@@@",
+      "@@@STEP_LOG_LINE@python.inline@mode = int(sys.argv[2])@@@",
+      "@@@STEP_LOG_LINE@python.inline@if not os.path.isdir(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  if os.path.exists(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@    print \"%s exists but is not a dir\" % path@@@",
+      "@@@STEP_LOG_LINE@python.inline@    sys.exit(1)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  os.makedirs(path, mode)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "--",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "cp",
+      "-R",
+      "gs://chromium-skia-gm/skimage/input/*",
+      "[SLAVE_BUILD]/skimage_in"
+    ],
+    "name": "gsutil download skimage files"
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/skia/platform_tools/android/bin/adb_push_if_needed",
+      "-s",
+      "014E1F310401C009",
+      "[SLAVE_BUILD]/skimage_in",
+      "/storage/emulated/legacy/skiabot/skia_skimage_in"
+    ],
+    "env": {
+      "ANDROID_SDK_ROOT": "/home/chrome-bot/android-sdk-linux"
+    },
+    "name": "push [SLAVE_BUILD]/skimage_in"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os, sys\nfrom common import chromium_utils\n\nif os.path.exists(sys.argv[1]):\n  chromium_utils.RemoveDirectory(sys.argv[1])\n",
+      "[SLAVE_BUILD]/skimage_out"
+    ],
+    "name": "rmtree [SLAVE_BUILD]/skimage_out",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os, sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@from common import chromium_utils@@@",
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@if os.path.exists(sys.argv[1]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  chromium_utils.RemoveDirectory(sys.argv[1])@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport sys, os\npath = sys.argv[1]\nmode = int(sys.argv[2])\nif not os.path.isdir(path):\n  if os.path.exists(path):\n    print \"%s exists but is not a dir\" % path\n    sys.exit(1)\n  os.makedirs(path, mode)\n",
+      "[SLAVE_BUILD]/skimage_out",
+      "511"
+    ],
+    "name": "makedirs [SLAVE_BUILD]/skimage_out",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys, os@@@",
+      "@@@STEP_LOG_LINE@python.inline@path = sys.argv[1]@@@",
+      "@@@STEP_LOG_LINE@python.inline@mode = int(sys.argv[2])@@@",
+      "@@@STEP_LOG_LINE@python.inline@if not os.path.isdir(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  if os.path.exists(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@    print \"%s exists but is not a dir\" % path@@@",
+      "@@@STEP_LOG_LINE@python.inline@    sys.exit(1)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  os.makedirs(path, mode)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "rm",
+      "-r",
+      "/storage/emulated/legacy/skiabot/skia_skimage_out/images"
+    ],
+    "name": "rmdir /storage/emulated/legacy/skiabot/skia_skimage_out/images"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "if",
+      "[",
+      "-e",
+      "/storage/emulated/legacy/skiabot/skia_skimage_out/images",
+      "];",
+      "then",
+      "echo",
+      "FILE_EXISTS;",
+      "fi"
+    ],
+    "name": "exists /storage/emulated/legacy/skiabot/skia_skimage_out/images",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "mkdir",
+      "-p",
+      "/storage/emulated/legacy/skiabot/skia_skimage_out/images"
+    ],
+    "name": "mkdir /storage/emulated/legacy/skiabot/skia_skimage_out/images"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "rm",
+      "-r",
+      "/storage/emulated/legacy/skiabot/skia_skimage_out/Test-Android-Nexus10-MaliT604-Arm7-Release"
+    ],
+    "name": "rmdir /storage/emulated/legacy/skiabot/skia_skimage_out/Test-Android-Nexus10-MaliT604-Arm7-Release"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "if",
+      "[",
+      "-e",
+      "/storage/emulated/legacy/skiabot/skia_skimage_out/Test-Android-Nexus10-MaliT604-Arm7-Release",
+      "];",
+      "then",
+      "echo",
+      "FILE_EXISTS;",
+      "fi"
+    ],
+    "name": "exists /storage/emulated/legacy/skiabot/skia_skimage_out/Test-Android-Nexus10-MaliT604-Arm7-Release",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "mkdir",
+      "-p",
+      "/storage/emulated/legacy/skiabot/skia_skimage_out/Test-Android-Nexus10-MaliT604-Arm7-Release"
+    ],
+    "name": "mkdir /storage/emulated/legacy/skiabot/skia_skimage_out/Test-Android-Nexus10-MaliT604-Arm7-Release"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "rm",
+      "-r",
+      "/storage/emulated/legacy/skiabot/skia_skimage_expected/Test-Android-Nexus10-MaliT604-Arm7-Release"
+    ],
+    "name": "rmdir /storage/emulated/legacy/skiabot/skia_skimage_expected/Test-Android-Nexus10-MaliT604-Arm7-Release"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "if",
+      "[",
+      "-e",
+      "/storage/emulated/legacy/skiabot/skia_skimage_expected/Test-Android-Nexus10-MaliT604-Arm7-Release",
+      "];",
+      "then",
+      "echo",
+      "FILE_EXISTS;",
+      "fi"
+    ],
+    "name": "exists /storage/emulated/legacy/skiabot/skia_skimage_expected/Test-Android-Nexus10-MaliT604-Arm7-Release",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "shell",
+      "mkdir",
+      "-p",
+      "/storage/emulated/legacy/skiabot/skia_skimage_expected/Test-Android-Nexus10-MaliT604-Arm7-Release"
+    ],
+    "name": "mkdir /storage/emulated/legacy/skiabot/skia_skimage_expected/Test-Android-Nexus10-MaliT604-Arm7-Release"
+  },
+  {
+    "cmd": [
+      "[BUILD_INTERNAL]/scripts/slave/android/adb",
+      "-s",
+      "014E1F310401C009",
+      "push",
+      "[SLAVE_BUILD]/skia/expectations/skimage/Test-Android-Nexus10-MaliT604-Arm7-Release/expected-results.json",
+      "/storage/emulated/legacy/skiabot/skia_skimage_expected/Test-Android-Nexus10-MaliT604-Arm7-Release/expected-results.json"
+    ],
+    "name": "push [SLAVE_BUILD]/skia/expectations/skimage/Test-Android-Nexus10-MaliT604-Arm7-Release/expected-results.json"
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/skia/platform_tools/android/bin/android_run_skia",
+      "-d",
+      "nexus_10",
+      "-s",
+      "014E1F310401C009",
+      "--release",
+      "skimage",
+      "-r",
+      "/storage/emulated/legacy/skiabot/skia_skimage_in",
+      "--noreencode",
+      "--writeChecksumBasedFilenames",
+      "--config",
+      "8888",
+      "--mismatchPath",
+      "/storage/emulated/legacy/skiabot/skia_skimage_out/images",
+      "--createExpectationsPath",
+      "/storage/emulated/legacy/skiabot/skia_skimage_out/Test-Android-Nexus10-MaliT604-Arm7-Release/actual-results.json",
+      "--readExpectationsPath",
+      "/storage/emulated/legacy/skiabot/skia_skimage_expected/Test-Android-Nexus10-MaliT604-Arm7-Release/expected-results.json"
+    ],
+    "env": {
+      "ANDROID_SDK_ROOT": "/home/chrome-bot/android-sdk-linux"
+    },
+    "name": "skimage"
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/skia/platform_tools/android/bin/adb_pull_if_needed",
+      "-s",
+      "014E1F310401C009",
+      "/storage/emulated/legacy/skiabot/skia_skimage_out",
+      "[SLAVE_BUILD]/skimage_out"
+    ],
+    "env": {
+      "ANDROID_SDK_ROOT": "/home/chrome-bot/android-sdk-linux"
+    },
+    "name": "pull /storage/emulated/legacy/skiabot/skia_skimage_out"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "--",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "cp",
+      "-R",
+      "[SLAVE_BUILD]/skimage_out/images",
+      "gs://chromium-skia-gm/skimage/output"
+    ],
+    "name": "gsutil upload skimage actual images",
+    "~followup_annotations": [
+      "@@@STEP_LINK@gsutil.upload@https://storage.cloud.google.com/chromium-skia-gm/skimage/output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "--",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "cp",
+      "[SLAVE_BUILD]/skimage_out/Test-Android-Nexus10-MaliT604-Arm7-Release/actual-results.json",
+      "gs://chromium-skia-gm/skimage/actuals/Test-Android-Nexus10-MaliT604-Arm7-Release/actual-results.json"
+    ],
+    "name": "gsutil upload skimage actual summary",
+    "~followup_annotations": [
+      "@@@STEP_LINK@gsutil.upload@https://storage.cloud.google.com/chromium-skia-gm/skimage/actuals/Test-Android-Nexus10-MaliT604-Arm7-Release/actual-results.json@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os\nimport sys\nif not os.path.isfile(sys.argv[1]):\n  print 'Missing expectations file %s.' % sys.argv[1]\n  print ('In order to blindly use the actual results as '\n         'the expectations, run the following commands:')\n  print ('$ gsutil cp -R '\n         'gs://chromium-skia-gm/skimage/actuals/%s '\n         'expectations/skimage/%s') % (sys.argv[2],\n                                       sys.argv[2])\n  print ('$ mv expectations/skimage/%s/actual-results.json '\n         'expectations/skimage/%s/%s') % (\n             sys.argv[2], sys.argv[2], sys.argv[3])\n  print ''\n  print 'Then check in using git.'\n  sys.exit(1)\n",
+      "[SLAVE_BUILD]/skia/expectations/skimage/Test-Android-Nexus10-MaliT604-Arm7-Release/expected-results.json",
+      "Test-Android-Nexus10-MaliT604-Arm7-Release",
+      "expected-results.json"
+    ],
+    "name": "assert skimage expectations",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@if not os.path.isfile(sys.argv[1]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  print 'Missing expectations file %s.' % sys.argv[1]@@@",
+      "@@@STEP_LOG_LINE@python.inline@  print ('In order to blindly use the actual results as '@@@",
+      "@@@STEP_LOG_LINE@python.inline@         'the expectations, run the following commands:')@@@",
+      "@@@STEP_LOG_LINE@python.inline@  print ('$ gsutil cp -R '@@@",
+      "@@@STEP_LOG_LINE@python.inline@         'gs://chromium-skia-gm/skimage/actuals/%s '@@@",
+      "@@@STEP_LOG_LINE@python.inline@         'expectations/skimage/%s') % (sys.argv[2],@@@",
+      "@@@STEP_LOG_LINE@python.inline@                                       sys.argv[2])@@@",
+      "@@@STEP_LOG_LINE@python.inline@  print ('$ mv expectations/skimage/%s/actual-results.json '@@@",
+      "@@@STEP_LOG_LINE@python.inline@         'expectations/skimage/%s/%s') % (@@@",
+      "@@@STEP_LOG_LINE@python.inline@             sys.argv[2], sys.argv[2], sys.argv[3])@@@",
+      "@@@STEP_LOG_LINE@python.inline@  print ''@@@",
+      "@@@STEP_LOG_LINE@python.inline@  print 'Then check in using git.'@@@",
+      "@@@STEP_LOG_LINE@python.inline@  sys.exit(1)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
   }
 ]

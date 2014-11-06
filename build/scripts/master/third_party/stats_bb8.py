@@ -33,6 +33,8 @@ class StatsBuilderStatusResource(HtmlResource):
 
       for step in build.getSteps():
         stepName = step.getName().translate(None, '- /[]{}():.,\'"%')
+        if stepName == "steps":
+          continue
         stepTime = stepTimes.setdefault(stepName, [])
         failCount = failingSteps.setdefault(stepName, 0)
         (result, output) = step.getResults()

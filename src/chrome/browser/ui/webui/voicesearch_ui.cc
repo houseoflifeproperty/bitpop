@@ -24,6 +24,9 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
+#include "chrome/grit/google_chrome_strings.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_ui.h"
@@ -34,9 +37,6 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "grit/browser_resources.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/google_chrome_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "v8/include/v8.h"
 
@@ -245,7 +245,7 @@ class VoiceSearchDomHandler : public WebUIMessageHandler {
     std::string audio_logging_enabled = "No";
     HotwordService* hotword_service =
         HotwordServiceFactory::GetForProfile(profile_);
-    if (hotword_service->IsOptedIntoAudioLogging())
+    if (hotword_service && hotword_service->IsOptedIntoAudioLogging())
       audio_logging_enabled = "Yes";
     AddPair(list, ASCIIToUTF16("Hotword Audio Logging Enabled"),
             ASCIIToUTF16(audio_logging_enabled));

@@ -36,6 +36,7 @@ import clang_format
 import fix_encoding
 import gclient_utils
 import git_common
+import owners
 import owners_finder
 import presubmit_support
 import rietveld
@@ -73,6 +74,7 @@ def GetNoGitPagerEnv():
   # 'cat' is a magical git string that disables pagers on all platforms.
   env['GIT_PAGER'] = 'cat'
   return env
+
 
 def RunCommand(args, error_ok=False, error_message=None, **kwargs):
   try:
@@ -280,6 +282,7 @@ class Settings(object):
     self.is_gerrit = None
     self.git_editor = None
     self.project = None
+    self.pending_ref_prefix = None
 
   def LazyUpdateIfNeeded(self):
     """Updates the settings from a codereview.settings file, if available."""
@@ -325,9 +328,13 @@ class Settings(object):
   def GetIsGitSvn(self):
     """Return true if this repo looks like it's using git-svn."""
     if self.is_git_svn is None:
-      # If you have any "svn-remote.*" config keys, we think you're using svn.
-      self.is_git_svn = RunGitWithCode(
-          ['config', '--local', '--get-regexp', r'^svn-remote\.'])[0] == 0
+      if self.GetPendingRefPrefix():
+        # If PENDING_REF_PREFIX is set then it's a pure git repo no matter what.
+        self.is_git_svn = False
+      else:
+        # If you have any "svn-remote.*" config keys, we think you're using svn.
+        self.is_git_svn = RunGitWithCode(
+            ['config', '--local', '--get-regexp', r'^svn-remote\.'])[0] == 0
     return self.is_git_svn
 
   def GetSVNBranch(self):
@@ -445,6 +452,12 @@ class Settings(object):
     if not self.project:
       self.project = self._GetRietveldConfig('project', error_ok=True)
     return self.project
+
+  def GetPendingRefPrefix(self):
+    if not self.pending_ref_prefix:
+      self.pending_ref_prefix = self._GetRietveldConfig(
+          'pending-ref-prefix', error_ok=True)
+    return self.pending_ref_prefix
 
   def _GetRietveldConfig(self, param, **kwargs):
     return self._GetConfig('rietveld.' + param, **kwargs)
@@ -569,7 +582,10 @@ or verify this branch is set up to track another (via the --track argument to
     if self.upstream_branch is None:
       remote, upstream_branch = self.FetchUpstreamTuple(self.GetBranch())
       if remote is not '.':
-        upstream_branch = upstream_branch.replace('heads', 'remotes/' + remote)
+        upstream_branch = upstream_branch.replace('refs/heads/',
+                                                  'refs/remotes/%s/' % remote)
+        upstream_branch = upstream_branch.replace('refs/branch-heads/',
+                                                  'refs/remotes/branch-heads/')
       self.upstream_branch = upstream_branch
     return self.upstream_branch
 
@@ -603,6 +619,8 @@ or verify this branch is set up to track another (via the --track argument to
         branch = 'HEAD'
       if branch.startswith('refs/remotes'):
         self._remote = (remote, branch)
+      elif branch.startswith('refs/branch-heads/'):
+        self._remote = (remote, branch.replace('refs/', 'refs/remotes/'))
       else:
         self._remote = (remote, 'refs/remotes/%s/%s' % (remote, branch))
     return self._remote
@@ -821,6 +839,53 @@ or verify this branch is set up to track another (via the --track argument to
         author,
         upstream=upstream_branch)
 
+  def GetStatus(self):
+    """Apply a rough heuristic to give a simple summary of an issue's review
+    or CQ status, assuming adherence to a common workflow.
+
+    Returns None if no issue for this branch, or one of the following keywords:
+      * 'error'   - error from review tool (including deleted issues)
+      * 'unsent'  - not sent for review
+      * 'waiting' - waiting for review
+      * 'reply'   - waiting for owner to reply to review
+      * 'lgtm'    - LGTM from at least one approved reviewer
+      * 'commit'  - in the commit queue
+      * 'closed'  - closed
+    """
+    if not self.GetIssue():
+      return None
+
+    try:
+      props = self.GetIssueProperties()
+    except urllib2.HTTPError:
+      return 'error'
+
+    if props.get('closed'):
+      # Issue is closed.
+      return 'closed'
+    if props.get('commit'):
+      # Issue is in the commit queue.
+      return 'commit'
+
+    try:
+      reviewers = self.GetApprovingReviewers()
+    except urllib2.HTTPError:
+      return 'error'
+
+    if reviewers:
+      # Was LGTM'ed.
+      return 'lgtm'
+
+    messages = props.get('messages') or []
+
+    if not messages:
+      # No message was sent.
+      return 'unsent'
+    if messages[-1]['sender'] != props.get('owner_email'):
+      # Non-LGTM reply from non-owner
+      return 'reply'
+    return 'waiting'
+
   def RunHook(self, committing, may_prompt, verbose, change):
     """Calls sys.exit() if the hook fails; returns a HookResults otherwise."""
 
@@ -942,10 +1007,10 @@ class ChangeDescription(object):
       lines.pop(-1)
     self._description_lines = lines
 
-  def update_reviewers(self, reviewers):
+  def update_reviewers(self, reviewers, add_owners_tbr=False, change=None):
     """Rewrites the R=/TBR= line(s) as a single line each."""
     assert isinstance(reviewers, list), reviewers
-    if not reviewers:
+    if not reviewers and not add_owners_tbr:
       return
     reviewers = reviewers[:]
 
@@ -970,6 +1035,14 @@ class ChangeDescription(object):
     for name in r_names:
       if name not in reviewers:
         reviewers.append(name)
+    if add_owners_tbr:
+      owners_db = owners.Database(change.RepositoryRoot(),
+        fopen=file, os_path=os.path, glob=glob.glob)
+      all_reviewers = set(tbr_names + reviewers)
+      missing_files = owners_db.files_not_covered_by(change.LocalPaths(),
+                                                     all_reviewers)
+      tbr_names.extend(owners_db.reviewers_for(missing_files,
+                                               change.author_email))
     new_r_line = 'R=' + ', '.join(reviewers) if reviewers else None
     new_tbr_line = 'TBR=' + ', '.join(tbr_names) if tbr_names else None
 
@@ -1085,6 +1158,7 @@ def LoadCodereviewSettingsFromFile(fileobj):
   SetProperty('cpplint-regex', 'LINT_REGEX', unset_error_ok=True)
   SetProperty('cpplint-ignore-regex', 'LINT_IGNORE_REGEX', unset_error_ok=True)
   SetProperty('project', 'PROJECT', unset_error_ok=True)
+  SetProperty('pending-ref-prefix', 'PENDING_REF_PREFIX', unset_error_ok=True)
 
   if 'GERRIT_HOST' in keyvals:
     RunGit(['config', 'gerrit.host', keyvals['GERRIT_HOST']])
@@ -1191,6 +1265,19 @@ def CMDbaseurl(parser, args):
                   error_ok=False).strip()
 
 
+def color_for_status(status):
+  """Maps a Changelist status to color, for CMDstatus and other tools."""
+  return {
+    'unsent': Fore.RED,
+    'waiting': Fore.BLUE,
+    'reply': Fore.YELLOW,
+    'lgtm': Fore.GREEN,
+    'commit': Fore.MAGENTA,
+    'closed': Fore.CYAN,
+    'error': Fore.WHITE,
+  }.get(status, Fore.WHITE)
+
+
 def CMDstatus(parser, args):
   """Show status of changelists.
 
@@ -1250,36 +1337,13 @@ def CMDstatus(parser, args):
       """Fetches information for an issue and returns (branch, issue, color)."""
       c = Changelist(branchref=b)
       i = c.GetIssueURL()
-      props = {}
-      r = None
-      if i:
-        try:
-          props = c.GetIssueProperties()
-          r = c.GetApprovingReviewers() if i else None
-        except urllib2.HTTPError:
-          # The issue probably doesn't exist anymore.
-          i += ' (broken)'
+      status = c.GetStatus()
+      color = color_for_status(status)
 
-      msgs = props.get('messages') or []
+      if i and (not status or status == 'error'):
+        # The issue probably doesn't exist anymore.
+        i += ' (broken)'
 
-      if not i:
-        color = Fore.WHITE
-      elif props.get('closed'):
-        # Issue is closed.
-        color = Fore.CYAN
-      elif props.get('commit'):
-        # Issue is in the commit queue.
-        color = Fore.MAGENTA
-      elif r:
-        # Was LGTM'ed.
-        color = Fore.GREEN
-      elif not msgs:
-        # No message was sent.
-        color = Fore.RED
-      elif msgs[-1]['sender'] != props.get('owner_email'):
-        color = Fore.YELLOW
-      else:
-        color = Fore.BLUE
       output.put((b, i, color))
 
     # Process one branch synchronously to work through authentication, then
@@ -1507,7 +1571,7 @@ def AddChangeIdToCommitMessage(options, args):
     print >> sys.stderr, 'ERROR: Gerrit commit-msg hook not available.'
 
 
-def GerritUpload(options, args, cl):
+def GerritUpload(options, args, cl, change):
   """upload the current branch to gerrit."""
   # We assume the remote called "origin" is the one we want.
   # It is probably not worthwhile to support different workflows.
@@ -1533,8 +1597,8 @@ def GerritUpload(options, args, cl):
           'commit.')
     ask_for_data('About to upload; enter to confirm.')
 
-  if options.reviewers:
-    change_desc.update_reviewers(options.reviewers)
+  if options.reviewers or options.tbr_owners:
+    change_desc.update_reviewers(options.reviewers, options.tbr_owners, change)
 
   receive_options = []
   cc = cl.GetCCList().split(',')
@@ -1582,24 +1646,10 @@ def RietveldUpload(options, args, cl, change):
       upload_args.extend(['--title', options.title])
     message = options.title or options.message or CreateDescriptionFromLog(args)
     change_desc = ChangeDescription(message)
-    if options.reviewers:
-      change_desc.update_reviewers(options.reviewers)
-    if options.auto_bots:
-      masters = presubmit_support.DoGetTryMasters(
-          change,
-          change.LocalPaths(),
-          settings.GetRoot(),
-          None,
-          None,
-          options.verbose,
-          sys.stdout)
-
-      if masters:
-        change_description = change_desc.description + '\nCQ_TRYBOTS='
-        lst = []
-        for master, mapping in masters.iteritems():
-          lst.append(master + ':' + ','.join(mapping.keys()))
-        change_desc.set_description(change_description + ';'.join(lst))
+    if options.reviewers or options.tbr_owners:
+      change_desc.update_reviewers(options.reviewers,
+                                   options.tbr_owners,
+                                   change)
     if not options.force:
       change_desc.prompt()
 
@@ -1733,8 +1783,8 @@ def CMDupload(parser, args):
                          'use for CL.  Default: master')
   parser.add_option('--email', default=None,
                     help='email address to use to connect to Rietveld')
-  parser.add_option('--auto-bots', default=False, action='store_true',
-                    help='Autogenerate which trybots to use for this CL')
+  parser.add_option('--tbr-owners', dest='tbr_owners', action='store_true',
+                    help='add a set of OWNERS to TBR')
 
   add_git_similarity(parser)
   (options, args) = parser.parse_args(args)
@@ -1765,10 +1815,12 @@ def CMDupload(parser, args):
     cl.SetWatchers(watchlist.GetWatchersForPaths(files))
 
   if not options.bypass_hooks:
-    if options.reviewers:
+    if options.reviewers or options.tbr_owners:
       # Set the reviewer list now so that presubmit checks can access it.
       change_description = ChangeDescription(change.FullDescriptionText())
-      change_description.update_reviewers(options.reviewers)
+      change_description.update_reviewers(options.reviewers,
+                                          options.tbr_owners,
+                                          change)
       change.SetDescriptionText(change_description.description)
     hook_results = cl.RunHook(committing=False,
                               may_prompt=not options.force,
@@ -1793,7 +1845,7 @@ def CMDupload(parser, args):
 
   print_stats(options.similarity, options.find_copies, args)
   if settings.GetIsGerrit():
-    return GerritUpload(options, args, cl)
+    return GerritUpload(options, args, cl, change)
   ret = RietveldUpload(options, args, cl, change)
   if not ret:
     git_set_branch_value('last-upload-hash',
@@ -1847,7 +1899,7 @@ def SendUpstream(parser, args, cmd):
     print '  Current parent: %r' % upstream_branch
     return 1
 
-  if not args or cmd == 'push':
+  if not args or cmd == 'land':
     # Default to merging against our best guess of the upstream branch.
     args = [cl.GetUpstreamBranch()]
 
@@ -1873,8 +1925,10 @@ def SendUpstream(parser, args, cmd):
     return 1
 
   # This is the revision `svn dcommit` will commit on top of.
-  svn_head = RunGit(['log', '--grep=^git-svn-id:', '-1',
-                     '--pretty=format:%H'])
+  svn_head = None
+  if cmd == 'dcommit' or base_has_submodules:
+    svn_head = RunGit(['log', '--grep=^git-svn-id:', '-1',
+                       '--pretty=format:%H'])
 
   if cmd == 'dcommit':
     # If the base_head is a submodule merge commit, the first parent of the
@@ -1891,7 +1945,7 @@ def SendUpstream(parser, args, cmd):
              'before attempting to %s.' % (base_branch, cmd))
       return 1
 
-  base_branch = RunGit(['merge-base', base_branch, 'HEAD']).strip()
+  merge_base = RunGit(['merge-base', base_branch, 'HEAD']).strip()
   if not options.bypass_hooks:
     author = None
     if options.contributor:
@@ -1900,20 +1954,20 @@ def SendUpstream(parser, args, cmd):
         committing=True,
         may_prompt=not options.force,
         verbose=options.verbose,
-        change=cl.GetChange(base_branch, author))
+        change=cl.GetChange(merge_base, author))
     if not hook_results.should_continue():
       return 1
 
-    if cmd == 'dcommit':
-      # Check the tree status if the tree status URL is set.
-      status = GetTreeStatus()
-      if 'closed' == status:
-        print('The tree is closed.  Please wait for it to reopen. Use '
-              '"git cl dcommit --bypass-hooks" to commit on a closed tree.')
-        return 1
-      elif 'unknown' == status:
-        print('Unable to determine tree status.  Please verify manually and '
-              'use "git cl dcommit --bypass-hooks" to commit on a closed tree.')
+    # Check the tree status if the tree status URL is set.
+    status = GetTreeStatus()
+    if 'closed' == status:
+      print('The tree is closed.  Please wait for it to reopen. Use '
+            '"git cl %s --bypass-hooks" to commit on a closed tree.' % cmd)
+      return 1
+    elif 'unknown' == status:
+      print('Unable to determine tree status.  Please verify manually and '
+            'use "git cl %s --bypass-hooks" to commit on a closed tree.' % cmd)
+      return 1
   else:
     breakpad.SendStack(
         'GitClHooksBypassedCommit',
@@ -1927,7 +1981,7 @@ def SendUpstream(parser, args, cmd):
 
   if not change_desc.description:
     if not cl.GetIssue() and options.bypass_hooks:
-      change_desc = ChangeDescription(CreateDescriptionFromLog([base_branch]))
+      change_desc = ChangeDescription(CreateDescriptionFromLog([merge_base]))
     else:
       print 'No description set.'
       print 'Visit %s/edit to set it.' % (cl.GetIssueURL())
@@ -1949,7 +2003,7 @@ def SendUpstream(parser, args, cmd):
   print('Description:')
   print(commit_desc.description)
 
-  branches = [base_branch, cl.GetBranchRef()]
+  branches = [merge_base, cl.GetBranchRef()]
   if not options.force:
     print_stats(options.similarity, options.find_copies, branches)
 
@@ -1978,9 +2032,12 @@ def SendUpstream(parser, args, cmd):
   # We wrap in a try...finally block so if anything goes wrong,
   # we clean up the branches.
   retcode = -1
+  pushed_to_pending = False
+  pending_ref = None
+  revision = None
   try:
     RunGit(['checkout', '-q', '-b', MERGE_BRANCH])
-    RunGit(['reset', '--soft', base_branch])
+    RunGit(['reset', '--soft', merge_base])
     if options.contributor:
       RunGit(
           [
@@ -1994,17 +2051,33 @@ def SendUpstream(parser, args, cmd):
       RunGit(['branch', CHERRY_PICK_BRANCH, svn_head])
       RunGit(['checkout', CHERRY_PICK_BRANCH])
       RunGit(['cherry-pick', cherry_pick_commit])
-    if cmd == 'push':
-      # push the merge branch.
+    if cmd == 'land':
       remote, branch = cl.FetchUpstreamTuple(cl.GetBranch())
-      retcode, output = RunGitWithCode(
-          ['push', '--porcelain', remote, 'HEAD:%s' % branch])
-      logging.debug(output)
+      pending_prefix = settings.GetPendingRefPrefix()
+      if not pending_prefix or branch.startswith(pending_prefix):
+        # If not using refs/pending/heads/* at all, or target ref is already set
+        # to pending, then push to the target ref directly.
+        retcode, output = RunGitWithCode(
+            ['push', '--porcelain', remote, 'HEAD:%s' % branch])
+        pushed_to_pending = pending_prefix and branch.startswith(pending_prefix)
+      else:
+        # Cherry-pick the change on top of pending ref and then push it.
+        assert branch.startswith('refs/'), branch
+        assert pending_prefix[-1] == '/', pending_prefix
+        pending_ref = pending_prefix + branch[len('refs/'):]
+        retcode, output = PushToGitPending(remote, pending_ref, branch)
+        pushed_to_pending = (retcode == 0)
+      if retcode == 0:
+        revision = RunGit(['rev-parse', 'HEAD']).strip()
     else:
       # dcommit the merge branch.
-      retcode, output = RunGitWithCode(['svn', 'dcommit',
-                                        '-C%s' % options.similarity,
-                                        '--no-rebase', '--rmdir'])
+      _, output = RunGitWithCode(['svn', 'dcommit',
+                                  '-C%s' % options.similarity,
+                                  '--no-rebase', '--rmdir'])
+      if 'Committed r' in output:
+        revision = re.match(
+          '.*?\nCommitted r(\\d+)', output, re.DOTALL).group(1)
+    logging.debug(output)
   finally:
     # And then swap back to the original branch and clean up.
     RunGit(['checkout', '-q', cl.GetBranch()])
@@ -2012,31 +2085,37 @@ def SendUpstream(parser, args, cmd):
     if base_has_submodules:
       RunGit(['branch', '-D', CHERRY_PICK_BRANCH])
 
+  if not revision:
+    print 'Failed to push. If this persists, please file a bug.'
+    return 1
+
+  killed = False
+  if pushed_to_pending:
+    try:
+      revision = WaitForRealCommit(remote, revision, base_branch, branch)
+      # We set pushed_to_pending to False, since it made it all the way to the
+      # real ref.
+      pushed_to_pending = False
+    except KeyboardInterrupt:
+      killed = True
+
   if cl.GetIssue():
-    if cmd == 'dcommit' and 'Committed r' in output:
-      revision = re.match('.*?\nCommitted r(\\d+)', output, re.DOTALL).group(1)
-    elif cmd == 'push' and retcode == 0:
-      match = (re.match(r'.*?([a-f0-9]{7,})\.\.([a-f0-9]{7,})$', l)
-               for l in output.splitlines(False))
-      match = filter(None, match)
-      if len(match) != 1:
-        DieWithError("Couldn't parse ouput to extract the committed hash:\n%s" %
-            output)
-      revision = match[0].group(2)
-    else:
-      return 1
+    to_pending = ' to pending queue' if pushed_to_pending else ''
     viewvc_url = settings.GetViewVCUrl()
-    if viewvc_url and revision:
-      change_desc.append_footer('Committed: ' + viewvc_url + revision)
-    elif revision:
-      change_desc.append_footer('Committed: ' + revision)
+    if not to_pending:
+      if viewvc_url and revision:
+        change_desc.append_footer(
+            'Committed: %s%s' % (viewvc_url, revision))
+      elif revision:
+        change_desc.append_footer('Committed: %s' % (revision,))
     print ('Closing issue '
            '(you may be prompted for your codereview password)...')
     cl.UpdateDescription(change_desc.description)
     cl.CloseIssue()
     props = cl.GetIssueProperties()
     patch_num = len(props['patchsets'])
-    comment = "Committed patchset #%d manually as %s" % (patch_num, revision)
+    comment = "Committed patchset #%d (id:%d)%s manually as %s" % (
+        patch_num, props['patchsets'][-1], to_pending, revision)
     if options.bypass_hooks:
       comment += ' (tree was closed).' if GetTreeStatus() == 'closed' else '.'
     else:
@@ -2044,12 +2123,110 @@ def SendUpstream(parser, args, cmd):
     cl.RpcServer().add_comment(cl.GetIssue(), comment)
     cl.SetIssue(None)
 
-  if retcode == 0:
-    hook = POSTUPSTREAM_HOOK_PATTERN % cmd
-    if os.path.isfile(hook):
-      RunCommand([hook, base_branch], error_ok=True)
+  if pushed_to_pending:
+    _, branch = cl.FetchUpstreamTuple(cl.GetBranch())
+    print 'The commit is in the pending queue (%s).' % pending_ref
+    print (
+        'It will show up on %s in ~1 min, once it gets a Cr-Commit-Position '
+        'footer.' % branch)
 
-  return 0
+  hook = POSTUPSTREAM_HOOK_PATTERN % cmd
+  if os.path.isfile(hook):
+    RunCommand([hook, merge_base], error_ok=True)
+
+  return 1 if killed else 0
+
+
+def WaitForRealCommit(remote, pushed_commit, local_base_ref, real_ref):
+  print
+  print 'Waiting for commit to be landed on %s...' % real_ref
+  print '(If you are impatient, you may Ctrl-C once without harm)'
+  target_tree = RunGit(['rev-parse', '%s:' % pushed_commit]).strip()
+  current_rev = RunGit(['rev-parse', local_base_ref]).strip()
+
+  loop = 0
+  while True:
+    sys.stdout.write('fetching (%d)...        \r' % loop)
+    sys.stdout.flush()
+    loop += 1
+
+    RunGit(['retry', 'fetch', remote, real_ref], stderr=subprocess2.VOID)
+    to_rev = RunGit(['rev-parse', 'FETCH_HEAD']).strip()
+    commits = RunGit(['rev-list', '%s..%s' % (current_rev, to_rev)])
+    for commit in commits.splitlines():
+      if RunGit(['rev-parse', '%s:' % commit]).strip() == target_tree:
+        print 'Found commit on %s' % real_ref
+        return commit
+
+    current_rev = to_rev
+
+
+def PushToGitPending(remote, pending_ref, upstream_ref):
+  """Fetches pending_ref, cherry-picks current HEAD on top of it, pushes.
+
+  Returns:
+    (retcode of last operation, output log of last operation).
+  """
+  assert pending_ref.startswith('refs/'), pending_ref
+  local_pending_ref = 'refs/git-cl/' + pending_ref[len('refs/'):]
+  cherry = RunGit(['rev-parse', 'HEAD']).strip()
+  code = 0
+  out = ''
+  max_attempts = 3
+  attempts_left = max_attempts
+  while attempts_left:
+    if attempts_left != max_attempts:
+      print 'Retrying, %d attempts left...' % (attempts_left - 1,)
+    attempts_left -= 1
+
+    # Fetch. Retry fetch errors.
+    print 'Fetching pending ref %s...' % pending_ref
+    code, out = RunGitWithCode(
+        ['retry', 'fetch', remote, '+%s:%s' % (pending_ref, local_pending_ref)])
+    if code:
+      print 'Fetch failed with exit code %d.' % code
+      if out.strip():
+        print out.strip()
+      continue
+
+    # Try to cherry pick. Abort on merge conflicts.
+    print 'Cherry-picking commit on top of pending ref...'
+    RunGitWithCode(['checkout', local_pending_ref], suppress_stderr=True)
+    code, out = RunGitWithCode(['cherry-pick', cherry])
+    if code:
+      print (
+          'Your patch doesn\'t apply cleanly to ref \'%s\', '
+          'the following files have merge conflicts:' % pending_ref)
+      print RunGit(['diff', '--name-status', '--diff-filter=U']).strip()
+      print 'Please rebase your patch and try again.'
+      RunGitWithCode(['cherry-pick', '--abort'])
+      return code, out
+
+    # Applied cleanly, try to push now. Retry on error (flake or non-ff push).
+    print 'Pushing commit to %s... It can take a while.' % pending_ref
+    code, out = RunGitWithCode(
+        ['retry', 'push', '--porcelain', remote, 'HEAD:%s' % pending_ref])
+    if code == 0:
+      # Success.
+      print 'Commit pushed to pending ref successfully!'
+      return code, out
+
+    print 'Push failed with exit code %d.' % code
+    if out.strip():
+      print out.strip()
+    if IsFatalPushFailure(out):
+      print (
+          'Fatal push error. Make sure your .netrc credentials and git '
+          'user.email are correct and you have push access to the repo.')
+      return code, out
+
+  print 'All attempts to push to pending ref failed.'
+  return code, out
+
+
+def IsFatalPushFailure(push_stdout):
+  """True if retrying push won't help."""
+  return '(prohibited by Gerrit)' in push_stdout
 
 
 @subcommand.usage('[upstream branch to apply against]')
@@ -2075,7 +2252,7 @@ def CMDland(parser, args):
     print('This appears to be an SVN repository.')
     print('Are you sure you didn\'t mean \'git cl dcommit\'?')
     ask_for_data('[Press enter to push or ctrl-C to quit]')
-  return SendUpstream(parser, args, 'push')
+  return SendUpstream(parser, args, 'land')
 
 
 @subcommand.usage('<patch url or issue id>')
@@ -2303,6 +2480,9 @@ def CMDtry(parser, args):
     parser.error('Need to upload first')
 
   props = cl.GetIssueProperties()
+  if props.get('closed'):
+    parser.error('Cannot send tryjobs for a closed CL')
+
   if props.get('private'):
     parser.error('Cannot use trybots with private issue')
 
@@ -2611,7 +2791,7 @@ def CMDformat(parser, args):
       sys.stdout.write(stdout)
   else:
     env = os.environ.copy()
-    env['PATH'] = os.path.dirname(clang_format_tool)
+    env['PATH'] = str(os.path.dirname(clang_format_tool))
     # diff_output is a patch to send to clang-format-diff.py
     try:
       script = clang_format.FindClangFormatScriptInChromiumTree(
@@ -2629,6 +2809,30 @@ def CMDformat(parser, args):
     if opts.dry_run and len(stdout) > 0:
       return 2
 
+  return 0
+
+
+def CMDlol(parser, args):
+  # This command is intentionally undocumented.
+  print('\n'.join((
+      '             / /',
+      '          (\\/_//`)',
+      '           /   \'/',
+      '          0  0   \\',
+      '         /        \\',
+      '        /    __/   \\',
+      '       /,  _/ \\     \\_',
+      '       `-./ )  |     ~^~^~^~^~^~^~^~\\~.',
+      '           (   /                     \\_}',
+      '              |               /      |',
+      '              ;     |         \\      /',
+      '               \\/ ,/           \\    |',
+      '               / /~~|~|~~~~~~|~|\\   |',
+      '              / /   | |      | | `\\ \\',
+      '             / /    | |      | |   \\ \\',
+      '            / (     | |      | |    \\ \\',
+      '     jgs   /,_)    /__)     /__)   /,_/',
+      '     \'\'\'\'\'"""""\'\'\'""""""\'\'\'""""""\'\'"""""\'\'\'\'\'')))
   return 0
 
 

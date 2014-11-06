@@ -5,6 +5,7 @@
 #include "components/password_manager/core/browser/password_form_manager.h"
 
 #include <algorithm>
+#include <set>
 
 #include "base/metrics/histogram.h"
 #include "base/metrics/user_metrics.h"
@@ -95,7 +96,7 @@ PasswordFormManager::~PasswordFormManager() {
 int PasswordFormManager::GetActionsTaken() {
   return user_action_ + kUserActionMax * (manager_action_ +
          kManagerActionMax * submit_result_);
-};
+}
 
 // TODO(timsteele): use a hash of some sort in the future?
 PasswordFormManager::MatchResultMask PasswordFormManager::DoesManage(
@@ -226,9 +227,8 @@ bool PasswordFormManager::HasValidPasswordForm() {
   // do not contain username_element and password_element values.
   if (observed_form_.scheme != PasswordForm::SCHEME_HTML)
     return true;
-  return !observed_form_.username_element.empty() &&
-         (!observed_form_.password_element.empty() ||
-          !observed_form_.new_password_element.empty());
+  return !observed_form_.password_element.empty() ||
+         !observed_form_.new_password_element.empty();
 }
 
 void PasswordFormManager::ProvisionallySave(
@@ -441,7 +441,13 @@ void PasswordFormManager::OnRequestDone(
 
   client_->AutofillResultsComputed();
 
+  // TODO(gcasto): Change this to check that best_matches_ is empty. This should
+  // be equivalent for the moment, but it's less clear and may not be
+  // equivalent in the future.
   if (best_score <= 0) {
+    // If no saved forms can be used, then it isn't blacklisted and generation
+    // should be allowed.
+    driver_->AllowPasswordGenerationForForm(observed_form_);
     return;
   }
 
@@ -539,6 +545,13 @@ void PasswordFormManager::SaveAsNewLogin(bool reset_preferred_login) {
     NOTREACHED();
     return;
   }
+
+  // Upload credentials the first time they are saved. This data is used
+  // by password generation to help determine account creation sites.
+  // Blacklisted credentials will never be used, so don't upload a vote for
+  // them.
+  if (!pending_credentials_.blacklisted_by_user)
+    UploadPasswordForm(pending_credentials_.form_data, autofill::PASSWORD);
 
   pending_credentials_.date_created = Time::Now();
   SanitizePossibleUsernames(&pending_credentials_);
@@ -700,17 +713,25 @@ void PasswordFormManager::CheckForAccountCreationForm(
     if (!pending.form_data.fields.empty() &&
         pending_structure.FormSignature() !=
             observed_structure.FormSignature()) {
-      autofill::AutofillManager* autofill_manager =
-          driver_->GetAutofillManager();
-      if (autofill_manager) {
-        // Note that this doesn't guarantee that the upload succeeded, only that
-        // |pending.form_data| is considered uploadable.
-        bool success =
-            autofill_manager->UploadPasswordGenerationForm(pending.form_data);
-        UMA_HISTOGRAM_BOOLEAN("PasswordGeneration.UploadStarted", success);
-      }
+      UploadPasswordForm(pending.form_data,
+                         autofill::ACCOUNT_CREATION_PASSWORD);
     }
   }
+}
+
+void PasswordFormManager::UploadPasswordForm(
+    const autofill::FormData& form_data,
+    const autofill::ServerFieldType& password_type) {
+  autofill::AutofillManager* autofill_manager =
+      driver_->GetAutofillManager();
+  if (!autofill_manager)
+    return;
+
+  // Note that this doesn't guarantee that the upload succeeded, only that
+  // |form_data| is considered uploadable.
+  bool success =
+      autofill_manager->UploadPasswordForm(form_data, password_type);
+  UMA_HISTOGRAM_BOOLEAN("PasswordGeneration.UploadStarted", success);
 }
 
 int PasswordFormManager::ScoreResult(const PasswordForm& candidate) const {

@@ -7,6 +7,7 @@ GPU_ISOLATES = [
   'content_gl_tests',
   'gl_tests',
   'gles2_conform_test',
+  'gpu_unittests',
   'tab_capture_end2end_tests',
   'telemetry_gpu_test'
 ]

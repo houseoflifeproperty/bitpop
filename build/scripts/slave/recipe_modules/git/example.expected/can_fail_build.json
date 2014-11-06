@@ -90,12 +90,12 @@
     "name": "git status can_fail_build",
     "~followup_annotations": [
       "step returned non-zero exit code: 1",
-      "@@@STEP_FAILURE@@@"
+      "@@@STEP_EXCEPTION@@@"
     ]
   },
   {
     "name": "$final_result",
-    "reason": "Step('git status can_fail_build') failed with return_code 1",
+    "reason": "Infra Failure: Step('git status can_fail_build') returned 1",
     "status_code": 1
   }
 ]

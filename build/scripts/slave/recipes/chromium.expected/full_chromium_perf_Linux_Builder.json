@@ -74,21 +74,6 @@
     "cmd": [
       "python",
       "-u",
-      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
-      "[SLAVE_BUILD]/src/testing/buildbot/chromium.perf.json",
-      "/path/to/tmp/json"
-    ],
-    "name": "read test spec",
-    "~followup_annotations": [
-      "@@@STEP_TEXT@path: [SLAVE_BUILD]/src/testing/buildbot/chromium.perf.json@@@",
-      "@@@STEP_LOG_LINE@json.output@{}@@@",
-      "@@@STEP_LOG_END@json.output@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "python",
-      "-u",
       "[BUILD]/scripts/slave/cleanup_temp.py"
     ],
     "name": "cleanup_temp"
@@ -110,7 +95,6 @@
       "official",
       "--goma-dir",
       "[BUILD]/goma",
-      "--clobber",
       "--",
       "chromium_builder_perf"
     ],
@@ -139,7 +123,7 @@
       "--target",
       "Release",
       "--build-url",
-      "gs://chrome-perf/chromium.perf/Linux Builder",
+      "gs://chrome-perf/Linux Builder",
       "--build_revision",
       "170242",
       "--factory-properties",

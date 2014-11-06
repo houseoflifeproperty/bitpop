@@ -17,7 +17,7 @@
       "--output_json",
       "/path/to/tmp/json",
       "--revision",
-      "v8@bleeding_edge:20123",
+      "v8@20123",
       "--no_shallow"
     ],
     "name": "bot_update",
@@ -107,7 +107,10 @@
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Simple Leak Check",
+    "stderr": "/path/to/tmp/",
     "~followup_annotations": [
+      "@@@STEP_LOG_LINE@stderr@tons of leaks@@@",
+      "@@@STEP_LOG_END@stderr@@@",
       "@@@STEP_FAILURE@@@"
     ]
   },

@@ -9,10 +9,45 @@ import base_flavor
 """Default flavor utils class, used for desktop builders."""
 
 
+class SKPDirs(object):
+  """Wraps up important directories for SKP-related testing."""
+
+  def __init__(self, root_dir, builder_name, path_sep):
+    self._root_dir = root_dir
+    self._builder_name = builder_name
+    self._path_sep = path_sep
+
+  @property
+  def root_dir(self):
+    return self._root_dir
+
+  @property
+  def actual_images_dir(self):
+    return self._path_sep.join((self.root_dir, 'actualImages',
+                                self._builder_name))
+
+  @property
+  def actual_summaries_dir(self):
+    return self._path_sep.join((self.root_dir, 'actualSummaries',
+                                self._builder_name))
+
+  @property
+  def expected_summaries_dir(self):
+    return self._path_sep.join((self.root_dir, 'expectedSummaries',
+                                self._builder_name))
+
+  def skp_dir(self, skp_version=None):
+    root_dir = self.root_dir
+    if skp_version:
+      root_dir += '_%s' % skp_version
+    return self._path_sep.join((root_dir, 'skps'))
+
+
 class DeviceDirs(object):
   def __init__(self,
                gm_actual_dir,
                gm_expected_dir,
+               dm_dir,
                perf_data_dir,
                resource_dir,
                skimage_expected_dir,
@@ -23,6 +58,7 @@ class DeviceDirs(object):
                tmp_dir):
     self._gm_actual_dir = gm_actual_dir
     self._gm_expected_dir = gm_expected_dir
+    self._dm_dir = dm_dir
     self._perf_data_dir = perf_data_dir
     self._playback_actual_images_dir = skp_dirs.actual_images_dir
     self._playback_actual_summaries_dir = skp_dirs.actual_summaries_dir
@@ -44,6 +80,11 @@ class DeviceDirs(object):
   def gm_expected_dir(self):
     """Holds expectations JSON summary read by the 'gm' tool."""
     return self._gm_expected_dir
+
+  @property
+  def dm_dir(self):
+    """Where DM writes."""
+    return self._dm_dir
 
   @property
   def perf_data_dir(self):
@@ -162,7 +203,7 @@ class DefaultFlavorUtils(base_flavor.BaseFlavorUtils):
     """Like os.path.exists(), but for paths on a connected device."""
     return self._skia_api.m.path.exists(path)
 
-  def copy_directory_to_device(self, host_dir, device_dir):
+  def copy_directory_contents_to_device(self, host_dir, device_dir):
     """Like shutil.copytree(), but for copying to a connected device."""
     # For "normal" builders who don't have an attached device, we expect
     # host_dir and device_dir to be the same.
@@ -172,7 +213,7 @@ class DefaultFlavorUtils(base_flavor.BaseFlavorUtils):
                        'host_path and device_path are the same (%s vs %s).' % (
                        str(host_path), str(device_path)))
 
-  def copy_directory_to_host(self, device_dir, host_dir):
+  def copy_directory_contents_to_host(self, device_dir, host_dir):
     """Like shutil.copytree(), but for copying from a connected device."""
     # For "normal" builders who don't have an attached device, we expect
     # host_dir and device_dir to be the same.
@@ -217,6 +258,7 @@ class DefaultFlavorUtils(base_flavor.BaseFlavorUtils):
     return DeviceDirs(
         gm_actual_dir=join('gm', 'actual'),
         gm_expected_dir=join('skia', 'expectations', 'gm'),
+        dm_dir=join('dm'),
         perf_data_dir=self._skia_api.perf_data_dir,
         resource_dir=self._skia_api.resource_dir,
         skimage_expected_dir=join('skia', 'expectations', 'skimage'),

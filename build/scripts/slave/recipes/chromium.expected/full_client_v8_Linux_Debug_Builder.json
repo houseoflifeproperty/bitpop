@@ -19,7 +19,7 @@
       "--revision",
       "src@origin/lkcr",
       "--revision",
-      "src/v8@bleeding_edge:22135"
+      "src/v8@22135"
     ],
     "name": "bot_update",
     "~followup_annotations": [

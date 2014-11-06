@@ -142,6 +142,7 @@ def extract_revisions(output):
       parts = command.split(' ')
       directory = directory.rstrip(os.path.sep) + os.path.sep
       if parts[0] in SCM_RE:
+        current_scm = parts[0]
         for part in parts:
           # This code assumes absolute paths, which are easy to find in the
           # argument list.
@@ -149,7 +150,6 @@ def extract_revisions(output):
             reldir = part[len(directory):]
             if reldir:
               current_project = PROJECTS_LOOKING_FOR.get(reldir)
-              current_scm = parts[0]
               break
 
   return revisions_found

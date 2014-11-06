@@ -12,7 +12,7 @@ m_annotator = annotator_factory.AnnotatorFactory()
 def Update(_config, active_master, c):
   c['schedulers'].extend([
       SingleBranchScheduler(name='linux_src',
-                            branch='src',
+                            branch='master',
                             treeStableTimer=60,
                             builderNames=[
           'Linux Builder',
@@ -23,7 +23,6 @@ def Update(_config, active_master, c):
       ]),
       Triggerable(name='linux_rel_trigger', builderNames=[
           'Linux Tests',
-          'Linux Sync',
       ]),
       Triggerable(name='linux_dbg_32_trigger', builderNames=[
           'Linux Tests (dbg)(1)(32)',
@@ -40,7 +39,6 @@ def Update(_config, active_master, c):
       'triggers': ['linux_rel_trigger'],
     },
     {'name': 'Linux Tests'},
-    {'name': 'Linux Sync'},
     {'name': 'Linux Builder (dbg)(32)', 'triggers': ['linux_dbg_32_trigger']},
     {'name': 'Linux Tests (dbg)(1)(32)'},
     {'name': 'Linux Tests (dbg)(2)(32)'},

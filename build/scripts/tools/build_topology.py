@@ -10,7 +10,7 @@
   that capability.
 
   Example usage: `scripts/tools/runit.py python scripts/tools/build_topology.py
-                      masters/master.tryserver.chromium`
+                      masters/master.tryserver.chromium.linux`
 """
 
 import collections

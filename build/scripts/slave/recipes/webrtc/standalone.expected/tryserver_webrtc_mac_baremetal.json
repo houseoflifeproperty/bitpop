@@ -27,9 +27,9 @@
       "[DEPOT_TOOLS]/gclient.py",
       "sync",
       "--nohooks",
-      "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--delete_unversioned_trees",
       "--revision",
       "src@12345",
       "--output-json",
@@ -53,33 +53,23 @@
   },
   {
     "cmd": [
-      "svn",
-      "export",
-      "--force",
-      "try_job_svn_patch",
-      "/path/to/tmp/diff"
-    ],
-    "name": "download patch",
-    "~followup_annotations": [
-      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 1)@@@",
-      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 2)@@@",
-      "@@@STEP_LOG_LINE@patch.diff@@@@",
-      "@@@STEP_LOG_END@patch.diff@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "patch",
-      "--dir",
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/apply_issue.py",
+      "-r",
       "[SLAVE_BUILD]/src",
-      "--force",
-      "--forward",
-      "--remove-empty-files",
-      "--strip",
-      "0"
+      "-i",
+      "666666",
+      "-p",
+      "1",
+      "-s",
+      "https://fake.rietveld.url",
+      "--no-auth"
     ],
-    "name": "apply patch",
-    "stdin": "fake patch.diff content (line 1)\nfake patch.diff content (line 2)\n"
+    "name": "apply_issue",
+    "~followup_annotations": [
+      "@@@STEP_LINK@Applied issue 666666@https://fake.rietveld.url/666666@@@"
+    ]
   },
   {
     "cmd": [
@@ -89,7 +79,7 @@
       "runhooks"
     ],
     "env": {
-      "GYP_DEFINES": "clang=1 component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]/goma' target_arch=ia32 use_goma=1"
+      "GYP_DEFINES": "clang=1 component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]/goma' mac_sdk=10.9 target_arch=ia32 use_goma=1"
     },
     "name": "gclient runhooks"
   },
@@ -114,6 +104,14 @@
     "name": "compile"
   },
   {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/cleanup_temp.py"
+    ],
+    "name": "cleanup_temp"
+  },
+  {
     "allow_subannotations": true,
     "cmd": [
       "python",
@@ -122,9 +120,9 @@
       "--target",
       "Release",
       "--factory-properties",
-      "{\"buildername\": \"mac_baremetal\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "{\"BUILD_CONFIG\": \"Release\", \"buildername\": \"mac_baremetal\", \"issue\": 666666, \"mastername\": \"tryserver.webrtc\", \"patchset\": 1, \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"rietveld\": \"https://fake.rietveld.url\", \"slavename\": \"slavename\"}",
       "--build-properties",
-      "{\"buildername\": \"mac_baremetal\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "{\"BUILD_CONFIG\": \"Release\", \"buildername\": \"mac_baremetal\", \"issue\": 666666, \"mastername\": \"tryserver.webrtc\", \"patchset\": 1, \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"rietveld\": \"https://fake.rietveld.url\", \"slavename\": \"slavename\"}",
       "--annotate=gtest",
       "--test-type=audio_device_tests",
       "--builder-name=mac_baremetal",
@@ -150,9 +148,9 @@
       "--target",
       "Release",
       "--factory-properties",
-      "{\"buildername\": \"mac_baremetal\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "{\"BUILD_CONFIG\": \"Release\", \"buildername\": \"mac_baremetal\", \"issue\": 666666, \"mastername\": \"tryserver.webrtc\", \"patchset\": 1, \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"rietveld\": \"https://fake.rietveld.url\", \"slavename\": \"slavename\"}",
       "--build-properties",
-      "{\"buildername\": \"mac_baremetal\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "{\"BUILD_CONFIG\": \"Release\", \"buildername\": \"mac_baremetal\", \"issue\": 666666, \"mastername\": \"tryserver.webrtc\", \"patchset\": 1, \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"rietveld\": \"https://fake.rietveld.url\", \"slavename\": \"slavename\"}",
       "--annotate=gtest",
       "--test-type=vie_auto_test",
       "--builder-name=mac_baremetal",
@@ -172,9 +170,9 @@
       "--target",
       "Release",
       "--factory-properties",
-      "{\"buildername\": \"mac_baremetal\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "{\"BUILD_CONFIG\": \"Release\", \"buildername\": \"mac_baremetal\", \"issue\": 666666, \"mastername\": \"tryserver.webrtc\", \"patchset\": 1, \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"rietveld\": \"https://fake.rietveld.url\", \"slavename\": \"slavename\"}",
       "--build-properties",
-      "{\"buildername\": \"mac_baremetal\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "{\"BUILD_CONFIG\": \"Release\", \"buildername\": \"mac_baremetal\", \"issue\": 666666, \"mastername\": \"tryserver.webrtc\", \"patchset\": 1, \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"rietveld\": \"https://fake.rietveld.url\", \"slavename\": \"slavename\"}",
       "--annotate=gtest",
       "--test-type=voe_auto_test",
       "--builder-name=mac_baremetal",
@@ -201,9 +199,9 @@
       "--target",
       "Release",
       "--factory-properties",
-      "{\"buildername\": \"mac_baremetal\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "{\"BUILD_CONFIG\": \"Release\", \"buildername\": \"mac_baremetal\", \"issue\": 666666, \"mastername\": \"tryserver.webrtc\", \"patchset\": 1, \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"rietveld\": \"https://fake.rietveld.url\", \"slavename\": \"slavename\"}",
       "--build-properties",
-      "{\"buildername\": \"mac_baremetal\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "{\"BUILD_CONFIG\": \"Release\", \"buildername\": \"mac_baremetal\", \"issue\": 666666, \"mastername\": \"tryserver.webrtc\", \"patchset\": 1, \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"rietveld\": \"https://fake.rietveld.url\", \"slavename\": \"slavename\"}",
       "--annotate=gtest",
       "--test-type=video_capture_tests",
       "--builder-name=mac_baremetal",
@@ -221,9 +219,9 @@
       "--target",
       "Release",
       "--factory-properties",
-      "{\"buildername\": \"mac_baremetal\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "{\"BUILD_CONFIG\": \"Release\", \"buildername\": \"mac_baremetal\", \"issue\": 666666, \"mastername\": \"tryserver.webrtc\", \"patchset\": 1, \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"rietveld\": \"https://fake.rietveld.url\", \"slavename\": \"slavename\"}",
       "--build-properties",
-      "{\"buildername\": \"mac_baremetal\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "{\"BUILD_CONFIG\": \"Release\", \"buildername\": \"mac_baremetal\", \"issue\": 666666, \"mastername\": \"tryserver.webrtc\", \"patchset\": 1, \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"rietveld\": \"https://fake.rietveld.url\", \"slavename\": \"slavename\"}",
       "--annotate=gtest",
       "--test-type=webrtc_perf_tests",
       "--builder-name=mac_baremetal",

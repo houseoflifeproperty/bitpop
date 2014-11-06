@@ -35,6 +35,12 @@ class MEDIA_EXPORT CdmPromise {
     NUM_RESULT_CODES
   };
 
+  enum ResolveParameterType {
+    VOID_TYPE,
+    STRING_TYPE,
+    KEY_IDS_VECTOR_TYPE
+  };
+
   typedef base::Callback<void(MediaKeys::Exception exception_code,
                               uint32 system_code,
                               const std::string& error_message)>
@@ -50,21 +56,32 @@ class MEDIA_EXPORT CdmPromise {
                       uint32 system_code,
                       const std::string& error_message);
 
+  ResolveParameterType GetResolveParameterType() const {
+    return parameter_type_;
+  }
+
  protected:
-  CdmPromise();
-  CdmPromise(PromiseRejectedCB reject_cb);
+  explicit CdmPromise(ResolveParameterType parameter_type);
+  CdmPromise(ResolveParameterType parameter_type, PromiseRejectedCB reject_cb);
 
   // If constructed with a |uma_name| (which must be the name of a
   // CdmPromiseResult UMA), CdmPromise will report the promise result (success
   // or rejection code).
-  CdmPromise(PromiseRejectedCB reject_cb, const std::string& uma_name);
+  CdmPromise(ResolveParameterType parameter_type,
+             PromiseRejectedCB reject_cb,
+             const std::string& uma_name);
 
+  // Called by all resolve()/reject() methods to report the UMA result if
+  // applicable, and update |is_pending_|.
+  void ReportResultToUMA(ResultCodeForUMA result);
+
+  const ResolveParameterType parameter_type_;
   PromiseRejectedCB reject_cb_;
 
   // Keep track of whether the promise hasn't been resolved or rejected yet.
   bool is_pending_;
 
-  // UMA to report result to.
+  // UMA name to report result to.
   std::string uma_name_;
 
   DISALLOW_COPY_AND_ASSIGN(CdmPromise);
@@ -78,13 +95,10 @@ class MEDIA_EXPORT CdmPromiseTemplate : public CdmPromise {
   CdmPromiseTemplate(base::Callback<void(const T&)> resolve_cb,
                      PromiseRejectedCB rejected_cb,
                      const std::string& uma_name);
-  virtual ~CdmPromiseTemplate();
   virtual void resolve(const T& result);
 
  protected:
   // Allow subclasses to completely override the implementation.
-  // TODO(jrummell): Remove when derived class SessionLoadedPromise
-  // (in ppapi_decryptor.cc) is no longer needed.
   CdmPromiseTemplate();
 
  private:
@@ -102,7 +116,6 @@ class MEDIA_EXPORT CdmPromiseTemplate<void> : public CdmPromise {
   CdmPromiseTemplate(base::Callback<void(void)> resolve_cb,
                      PromiseRejectedCB rejected_cb,
                      const std::string& uma_name);
-  virtual ~CdmPromiseTemplate();
   virtual void resolve();
 
  protected:

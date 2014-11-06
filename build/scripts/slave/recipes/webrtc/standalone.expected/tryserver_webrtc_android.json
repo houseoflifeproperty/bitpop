@@ -27,9 +27,9 @@
       "[DEPOT_TOOLS]/gclient.py",
       "sync",
       "--nohooks",
-      "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--delete_unversioned_trees",
       "--revision",
       "src@12345",
       "--output-json",
@@ -53,33 +53,23 @@
   },
   {
     "cmd": [
-      "svn",
-      "export",
-      "--force",
-      "try_job_svn_patch",
-      "/path/to/tmp/diff"
-    ],
-    "name": "download patch",
-    "~followup_annotations": [
-      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 1)@@@",
-      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 2)@@@",
-      "@@@STEP_LOG_LINE@patch.diff@@@@",
-      "@@@STEP_LOG_END@patch.diff@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "patch",
-      "--dir",
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/apply_issue.py",
+      "-r",
       "[SLAVE_BUILD]/src",
-      "--force",
-      "--forward",
-      "--remove-empty-files",
-      "--strip",
-      "0"
+      "-i",
+      "666666",
+      "-p",
+      "1",
+      "-s",
+      "https://fake.rietveld.url",
+      "--no-auth"
     ],
-    "name": "apply patch",
-    "stdin": "fake patch.diff content (line 1)\nfake patch.diff content (line 2)\n"
+    "name": "apply_issue",
+    "~followup_annotations": [
+      "@@@STEP_LINK@Applied issue 666666@https://fake.rietveld.url/666666@@@"
+    ]
   },
   {
     "cmd": [
@@ -112,5 +102,318 @@
       "--"
     ],
     "name": "compile"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport shutil, sys, os\nshutil.rmtree(sys.argv[1], True)\nshutil.rmtree(sys.argv[2], True)\ntry:\n  os.remove(sys.argv[3])\nexcept OSError:\n  pass\nfor base, _dirs, files in os.walk(sys.argv[4]):\n  for f in files:\n    if f.endswith('.pyc'):\n      os.remove(os.path.join(base, f))\n",
+      "[SLAVE_BUILD]/src/out/Debug/debug_info_dumps",
+      "[SLAVE_BUILD]/src/out/Debug/test_logs",
+      "[SLAVE_BUILD]/src/out/build_product.zip",
+      "[SLAVE_BUILD]/src"
+    ],
+    "name": "clean local files",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import shutil, sys, os@@@",
+      "@@@STEP_LOG_LINE@python.inline@shutil.rmtree(sys.argv[1], True)@@@",
+      "@@@STEP_LOG_LINE@python.inline@shutil.rmtree(sys.argv[2], True)@@@",
+      "@@@STEP_LOG_LINE@python.inline@try:@@@",
+      "@@@STEP_LOG_LINE@python.inline@  os.remove(sys.argv[3])@@@",
+      "@@@STEP_LOG_LINE@python.inline@except OSError:@@@",
+      "@@@STEP_LOG_LINE@python.inline@  pass@@@",
+      "@@@STEP_LOG_LINE@python.inline@for base, _dirs, files in os.walk(sys.argv[4]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  for f in files:@@@",
+      "@@@STEP_LOG_LINE@python.inline@    if f.endswith('.pyc'):@@@",
+      "@@@STEP_LOG_LINE@python.inline@      os.remove(os.path.join(base, f))@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "[BUILD]/scripts/slave/daemonizer.py",
+      "--",
+      "[SLAVE_BUILD]/src/build/android/adb_logcat_monitor.py",
+      "[SLAVE_BUILD]/src/out/logcat"
+    ],
+    "env": {
+      "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
+    },
+    "name": "spawn_logcat_monitor"
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/src/build/android/buildbot/bb_device_status_check.py"
+    ],
+    "env": {
+      "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
+    },
+    "name": "device_status_check"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/provision_devices.py",
+      "-t",
+      "Debug"
+    ],
+    "env": {
+      "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
+    },
+    "name": "provision_devices"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
+      "audio_decoder_unittests",
+      "--verbose",
+      "--isolate-file-path",
+      "webrtc/modules/audio_coding/neteq/audio_decoder_unittests.isolate"
+    ],
+    "env": {
+      "CHECKOUT_SOURCE_ROOT": "[SLAVE_BUILD]/src"
+    },
+    "name": "audio_decoder_unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
+      "common_audio_unittests",
+      "--verbose",
+      "--isolate-file-path",
+      "webrtc/common_audio/common_audio_unittests.isolate"
+    ],
+    "env": {
+      "CHECKOUT_SOURCE_ROOT": "[SLAVE_BUILD]/src"
+    },
+    "name": "common_audio_unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
+      "common_video_unittests",
+      "--verbose",
+      "--isolate-file-path",
+      "webrtc/common_video/common_video_unittests.isolate"
+    ],
+    "env": {
+      "CHECKOUT_SOURCE_ROOT": "[SLAVE_BUILD]/src"
+    },
+    "name": "common_video_unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
+      "modules_tests",
+      "--verbose",
+      "--isolate-file-path",
+      "webrtc/modules/modules_tests.isolate"
+    ],
+    "env": {
+      "CHECKOUT_SOURCE_ROOT": "[SLAVE_BUILD]/src"
+    },
+    "name": "modules_tests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
+      "modules_unittests",
+      "--verbose",
+      "--isolate-file-path",
+      "webrtc/modules/modules_unittests.isolate"
+    ],
+    "env": {
+      "CHECKOUT_SOURCE_ROOT": "[SLAVE_BUILD]/src"
+    },
+    "name": "modules_unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
+      "system_wrappers_unittests",
+      "--verbose",
+      "--isolate-file-path",
+      "webrtc/system_wrappers/source/system_wrappers_unittests.isolate"
+    ],
+    "env": {
+      "CHECKOUT_SOURCE_ROOT": "[SLAVE_BUILD]/src"
+    },
+    "name": "system_wrappers_unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
+      "test_support_unittests",
+      "--verbose",
+      "--isolate-file-path",
+      "webrtc/test/test_support_unittests.isolate"
+    ],
+    "env": {
+      "CHECKOUT_SOURCE_ROOT": "[SLAVE_BUILD]/src"
+    },
+    "name": "test_support_unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
+      "tools_unittests",
+      "--verbose",
+      "--isolate-file-path",
+      "webrtc/tools/tools_unittests.isolate"
+    ],
+    "env": {
+      "CHECKOUT_SOURCE_ROOT": "[SLAVE_BUILD]/src"
+    },
+    "name": "tools_unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
+      "video_capture_tests",
+      "--verbose",
+      "--isolate-file-path",
+      "webrtc/modules/video_capture/video_capture_tests.isolate"
+    ],
+    "env": {
+      "CHECKOUT_SOURCE_ROOT": "[SLAVE_BUILD]/src"
+    },
+    "name": "video_capture_tests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
+      "video_engine_core_unittests",
+      "--verbose",
+      "--isolate-file-path",
+      "webrtc/video_engine/video_engine_core_unittests.isolate"
+    ],
+    "env": {
+      "CHECKOUT_SOURCE_ROOT": "[SLAVE_BUILD]/src"
+    },
+    "name": "video_engine_core_unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
+      "video_engine_tests",
+      "--verbose",
+      "--isolate-file-path",
+      "webrtc/video_engine_tests.isolate"
+    ],
+    "env": {
+      "CHECKOUT_SOURCE_ROOT": "[SLAVE_BUILD]/src"
+    },
+    "name": "video_engine_tests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
+      "voice_engine_unittests",
+      "--verbose",
+      "--isolate-file-path",
+      "webrtc/voice_engine/voice_engine_unittests.isolate"
+    ],
+    "env": {
+      "CHECKOUT_SOURCE_ROOT": "[SLAVE_BUILD]/src"
+    },
+    "name": "voice_engine_unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
+      "webrtc_perf_tests",
+      "--verbose",
+      "--isolate-file-path",
+      "webrtc/webrtc_perf_tests.isolate"
+    ],
+    "env": {
+      "CHECKOUT_SOURCE_ROOT": "[SLAVE_BUILD]/src"
+    },
+    "name": "webrtc_perf_tests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/tee.py",
+      "[SLAVE_BUILD]/src/out/Debug/full_log",
+      "--",
+      "[SLAVE_BUILD]/src/build/android/adb_logcat_printer.py",
+      "[SLAVE_BUILD]/src/out/logcat"
+    ],
+    "name": "logcat_dump"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport glob, os, sys\nfor report in glob.glob(sys.argv[1]):\n  with open(report, 'r') as f:\n    for l in f.readlines():\n      print l\n  os.remove(report)\n",
+      "[SLAVE_BUILD]/src/out/Debug/test_logs/*.log"
+    ],
+    "name": "test_report",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import glob, os, sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@for report in glob.glob(sys.argv[1]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  with open(report, 'r') as f:@@@",
+      "@@@STEP_LOG_LINE@python.inline@    for l in f.readlines():@@@",
+      "@@@STEP_LOG_LINE@python.inline@      print l@@@",
+      "@@@STEP_LOG_LINE@python.inline@  os.remove(report)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
   }
 ]

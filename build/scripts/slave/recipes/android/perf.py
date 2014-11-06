@@ -17,62 +17,58 @@ DEPS = [
 REPO_URL = 'https://chromium.googlesource.com/chromium/src.git'
 
 BUILDERS = {
-  'android_nexus5_oilpan_perf': {
-    'perf_id': 'android-nexus5-oilpan',
-    'bucket': 'chromium-android',
-    'path': lambda api: (
-      '%s/build_product_%s.zip' % (
-            api.properties['parent_buildername'],
-            api.properties['parent_revision'])),
-    'num_device_shards': 1,
-  },
-  'Android Nexus4 Perf': {
-    'perf_id': 'android-nexus4',
-    'bucket': 'chrome-perf',
-    'path': lambda api: ('android_perf_rel/full-build-linux_%s.zip'
-                               % api.properties['parent_revision']),
-    'num_device_shards': 2,
-  },
-  'Android Nexus5 Perf': {
-    'perf_id': 'android-nexus5',
-    'bucket': 'chrome-perf',
-    'path': lambda api: ('android_perf_rel/full-build-linux_%s.zip'
-                               % api.properties['parent_revision']),
-    'num_device_shards': 8,
-  },
-  'Android Nexus7v2 Perf': {
-    'perf_id': 'android-nexus7v2',
-    'bucket': 'chrome-perf',
-    'path': lambda api: ('android_perf_rel/full-build-linux_%s.zip'
-                               % api.properties['parent_revision']),
-    'num_device_shards': 1,
-  },
-  'Android Nexus10 Perf': {
-    'perf_id': 'android-nexus10',
-    'bucket': 'chrome-perf',
-    'path': lambda api: ('android_perf_rel/full-build-linux_%s.zip'
-                               % api.properties['parent_revision']),
-    'num_device_shards': 1,
-  },
-  'Android GN Perf': {
-    'perf_id': 'android-gn',
-    'bucket': 'chrome-perf',
-    'path': lambda api: ('android_perf_rel/full-build-linux_%s.zip'
-                               % api.properties['parent_revision']),
-    'num_device_shards': 1,
-  },
-  'Android MotoE Perf': {
-    'perf_id': 'android-motoe',
-    'bucket': 'chrome-perf',
-    'path': lambda api: ('android_perf_rel/full-build-linux_%s.zip'
-                               % api.properties['parent_revision']),
-    'num_device_shards': 1,
+  'chromium.perf': {
+    'android_nexus5_oilpan_perf': {
+      'perf_id': 'android-nexus5-oilpan',
+      'bucket': 'chromium-android',
+      'path': lambda api: (
+          '%s/build_product_%s.zip' % (
+              api.properties['parent_buildername'],
+              api.properties['parent_revision'])),
+      'num_device_shards': 1,
+    },
+    'Android Nexus4 Perf': {
+      'perf_id': 'android-nexus4',
+      'bucket': 'chrome-perf',
+      'path': lambda api: ('android_perf_rel/full-build-linux_%s.zip' %
+                           api.properties['parent_revision']),
+      'num_device_shards': 2,
+    },
+    'Android Nexus5 Perf': {
+      'perf_id': 'android-nexus5',
+      'bucket': 'chrome-perf',
+      'path': lambda api: ('android_perf_rel/full-build-linux_%s.zip' %
+                           api.properties['parent_revision']),
+      'num_device_shards': 8,
+    },
+    'Android Nexus7v2 Perf': {
+      'perf_id': 'android-nexus7v2',
+      'bucket': 'chrome-perf',
+      'path': lambda api: ('android_perf_rel/full-build-linux_%s.zip' %
+                           api.properties['parent_revision']),
+      'num_device_shards': 8,
+    },
+    'Android Nexus10 Perf': {
+      'perf_id': 'android-nexus10',
+      'bucket': 'chrome-perf',
+      'path': lambda api: ('android_perf_rel/full-build-linux_%s.zip' %
+                           api.properties['parent_revision']),
+      'num_device_shards': 8,
+    },
+    'Android MotoE Perf': {
+      'perf_id': 'android-motoe',
+      'bucket': 'chrome-perf',
+      'path': lambda api: ('android_perf_rel/full-build-linux_%s.zip' %
+                           api.properties['parent_revision']),
+      'num_device_shards': 8,
+    },
   },
 }
 
 def GenSteps(api):
+  mastername = api.properties['mastername']
   buildername = api.properties['buildername']
-  builder = BUILDERS[buildername]
+  builder = BUILDERS[mastername][buildername]
   api.chromium_android.configure_from_properties('base_config',
                                                  REPO_NAME='src',
                                                  REPO_URL=REPO_URL,
@@ -116,28 +112,32 @@ def _sanitize_nonalpha(text):
   return ''.join(c if c.isalnum() else '_' for c in text)
 
 def GenTests(api):
-  for buildername in BUILDERS:
-    yield (
-        api.test('test_%s' % _sanitize_nonalpha(buildername)) +
-        api.properties.generic(
-            repo_name='src',
-            repo_url=REPO_URL,
-            buildername=buildername,
-            parent_buildername='parent_buildername',
-            parent_buildnumber='1729',
-            parent_revision='deadbeef',
-            revision='deadbeef',
-            slavename='slavename',
-            target='Release') +
-        api.override_step_data('List adb devices', api.json.output([
-          "014E1F310401C009", "014E1F310401C010"
+  for mastername, builders in BUILDERS.iteritems():
+    for buildername in builders:
+      yield (
+          api.test('full_%s_%s' % (_sanitize_nonalpha(mastername),
+                                   _sanitize_nonalpha(buildername))) +
+          api.properties.generic(
+              repo_name='src',
+              repo_url=REPO_URL,
+              mastername=mastername,
+              buildername=buildername,
+              parent_buildername='parent_buildername',
+              parent_buildnumber='1729',
+              parent_revision='deadbeef',
+              revision='deadbeef',
+              slavename='slavename',
+              target='Release') +
+          api.override_step_data('List adb devices', api.json.output([
+            "014E1F310401C009", "014E1F310401C010"
           ]))
-    )
+      )
   yield (api.test('device_status_check') +
       api.properties.generic(
           repo_name='src',
               repo_url=REPO_URL,
-              buildername='Android GN Perf',
+              mastername='chromium.perf',
+              buildername='Android Nexus5 Perf',
               parent_buildername='parent_buildername',
               parent_buildnumber='1729',
               parent_revision='deadbeef',
@@ -149,7 +149,8 @@ def GenTests(api):
       api.properties.generic(
           repo_name='src',
               repo_url=REPO_URL,
-              buildername='Android GN Perf',
+              mastername='chromium.perf',
+              buildername='Android Nexus5 Perf',
               parent_buildername='parent_buildername',
               parent_buildnumber='1729',
               parent_revision='deadbeef',

@@ -163,4 +163,4 @@ def GenTests(api):
 
   yield (api.test('perf_tests_failure') +
       properties_for('perf_runner') +
-      api.step_data('endure.foo', retcode=1))
+      api.step_data('perf_test.foo', retcode=1))

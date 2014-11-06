@@ -77,6 +77,8 @@ SPEC = {
       'testing': {
         'platform': 'linux',
       },
+      'enable_swarming': True,
+      'use_isolate': True,
     },
     'Linux ChromiumOS Tests (1)': {
       'recipe_config': 'chromium_chromeos',
@@ -85,13 +87,14 @@ SPEC = {
         'TARGET_BITS': 64,
       },
       'bot_type': 'tester',
-      'tests': [
-        steps.DynamicGTestTests('Linux ChromiumOS Tests (1)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Linux ChromiumOS Builder',
       'testing': {
         'platform': 'linux',
       },
+      'enable_swarming': True,
     },
     'Linux ChromiumOS Tests (2)': {
       'recipe_config': 'chromium_chromeos',
@@ -100,13 +103,14 @@ SPEC = {
         'TARGET_BITS': 64,
       },
       'bot_type': 'tester',
-      'tests': [
-        steps.DynamicGTestTests('Linux ChromiumOS Tests (2)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Linux ChromiumOS Builder',
       'testing': {
         'platform': 'linux',
       },
+      'enable_swarming': True,
     },
 
     'Linux ChromiumOS (Clang dbg)': {
@@ -156,13 +160,10 @@ SPEC = {
     },
 
     'Linux ChromiumOS Ozone Builder': {
-      'recipe_config': 'chromium_chromeos',
+      'recipe_config': 'chromium_chromeos_ozone',
       'chromium_config_kwargs': {
         'BUILD_CONFIG': 'Release',
         'TARGET_BITS': 64,
-      },
-      'GYP_DEFINES': {
-        'use_ozone': 1,
       },
       'bot_type': 'builder',
       'compile_targets': [
@@ -173,14 +174,14 @@ SPEC = {
       },
     },
     'Linux ChromiumOS Ozone Tests (1)': {
-      'recipe_config': 'chromium_chromeos',
+      'recipe_config': 'chromium_chromeos_ozone',
       'chromium_config_kwargs': {
         'BUILD_CONFIG': 'Release',
         'TARGET_BITS': 64,
       },
       'bot_type': 'tester',
-      'tests': [
-        steps.DynamicGTestTests('Linux ChromiumOS Ozone Tests (1)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Linux ChromiumOS Ozone Builder',
       'testing': {
@@ -188,14 +189,14 @@ SPEC = {
       },
     },
     'Linux ChromiumOS Ozone Tests (2)': {
-      'recipe_config': 'chromium_chromeos',
+      'recipe_config': 'chromium_chromeos_ozone',
       'chromium_config_kwargs': {
         'BUILD_CONFIG': 'Release',
         'TARGET_BITS': 64,
       },
       'bot_type': 'tester',
-      'tests': [
-        steps.DynamicGTestTests('Linux ChromiumOS Ozone Tests (2)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Linux ChromiumOS Ozone Builder',
       'testing': {
@@ -216,6 +217,8 @@ SPEC = {
       'testing': {
         'platform': 'linux',
       },
+      'enable_swarming': True,
+      'use_isolate': True,
     },
     'Linux ChromiumOS Tests (dbg)(1)': {
       'recipe_config': 'chromium_chromeos',
@@ -224,13 +227,14 @@ SPEC = {
         'TARGET_BITS': 64,
       },
       'bot_type': 'tester',
-      'tests': [
-        steps.DynamicGTestTests('Linux ChromiumOS Tests (dbg)(1)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Linux ChromiumOS Builder (dbg)',
       'testing': {
         'platform': 'linux',
       },
+      'enable_swarming': True,
     },
     'Linux ChromiumOS Tests (dbg)(2)': {
       'recipe_config': 'chromium_chromeos',
@@ -239,13 +243,14 @@ SPEC = {
         'TARGET_BITS': 64,
       },
       'bot_type': 'tester',
-      'tests': [
-        steps.DynamicGTestTests('Linux ChromiumOS Tests (dbg)(2)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Linux ChromiumOS Builder (dbg)',
       'testing': {
         'platform': 'linux',
       },
+      'enable_swarming': True,
     },
     'Linux ChromiumOS Tests (dbg)(3)': {
       'recipe_config': 'chromium_chromeos',
@@ -254,10 +259,30 @@ SPEC = {
         'TARGET_BITS': 64,
       },
       'bot_type': 'tester',
-      'tests': [
-        steps.DynamicGTestTests('Linux ChromiumOS Tests (dbg)(3)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Linux ChromiumOS Builder (dbg)',
+      'testing': {
+        'platform': 'linux',
+      },
+      'enable_swarming': True,
+    },
+
+    # Simple Chrome test builder for coverage
+    'Coverage ChromiumOS Simple Chrome x86-generic': {
+      'recipe_config': 'chromium_chromeos',
+      'chromium_config_kwargs': {
+        'BUILD_CONFIG': 'Release',
+        'TARGET_BITS': 64,
+        'TARGET_PLATFORM': 'chromeos',
+        'TARGET_CROS_BOARD': 'x86-generic',
+      },
+      'bot_type': 'builder',
+      'disable_tests': True,
+      'compile_targets': [
+        'chrome',
+      ],
       'testing': {
         'platform': 'linux',
       },

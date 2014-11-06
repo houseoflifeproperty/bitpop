@@ -153,7 +153,6 @@ void WebViewPlugin::updateGeometry(const WebRect& frame_rect,
   if (static_cast<gfx::Rect>(frame_rect) != rect_) {
     rect_ = frame_rect;
     WebSize newSize(frame_rect.width, frame_rect.height);
-    web_view_->setFixedLayoutSize(newSize);
     web_view_->resize(newSize);
   }
 }
@@ -233,6 +232,11 @@ void WebViewPlugin::didInvalidateRect(const WebRect& rect) {
 
 void WebViewPlugin::didChangeCursor(const WebCursorInfo& cursor) {
   current_cursor_ = cursor;
+}
+
+void WebViewPlugin::scheduleAnimation() {
+  if (container_)
+    container_->invalidate();
 }
 
 void WebViewPlugin::didClearWindowObject(WebLocalFrame* frame) {

@@ -21,7 +21,7 @@
       "--revision",
       "src/third_party/WebKit@HEAD",
       "--revision",
-      "src/v8@bleeding_edge:20123",
+      "src/v8@20123",
       "--force"
     ],
     "name": "bot_update",

@@ -64,7 +64,6 @@ DOMSelection::DOMSelection(const TreeScope* treeScope)
     : DOMWindowProperty(treeScope->rootNode().document().frame())
     , m_treeScope(treeScope)
 {
-    ScriptWrappable::init(this);
 }
 
 void DOMSelection::clearTreeScope()
@@ -197,9 +196,13 @@ int DOMSelection::rangeCount() const
 
 void DOMSelection::collapse(Node* node, int offset, ExceptionState& exceptionState)
 {
-    ASSERT(node);
     if (!m_frame)
         return;
+
+    if (!node) {
+        m_frame->selection().clear();
+        return;
+    }
 
     if (offset < 0) {
         exceptionState.throwDOMException(IndexSizeError, String::number(offset) + " is not a valid offset.");
@@ -216,11 +219,6 @@ void DOMSelection::collapse(Node* node, int offset, ExceptionState& exceptionSta
     if (exceptionState.hadException())
         return;
     m_frame->selection().setSelectedRange(range.get(), DOWNSTREAM, m_frame->selection().isDirectional() ? FrameSelection::Directional : FrameSelection::NonDirectional);
-}
-
-void DOMSelection::collapse(Node* node, ExceptionState& exceptionState)
-{
-    collapse(node, 0, exceptionState);
 }
 
 void DOMSelection::collapseToEnd(ExceptionState& exceptionState)
@@ -356,13 +354,6 @@ void DOMSelection::extend(Node* node, int offset, ExceptionState& exceptionState
 
     // FIXME: Eliminate legacy editing positions
     m_frame->selection().setExtent(VisiblePosition(createLegacyEditingPosition(node, offset), DOWNSTREAM));
-}
-
-void DOMSelection::extend(Node* node, ExceptionState& exceptionState)
-{
-    // This default value implementation differs from the spec, which says |offset| is not optional.
-    // FIXME: Specify this default value in Selection.idl.
-    extend(node, 0, exceptionState);
 }
 
 PassRefPtrWillBeRawPtr<Range> DOMSelection::getRangeAt(int index, ExceptionState& exceptionState)
@@ -514,7 +505,10 @@ String DOMSelection::toString()
     if (!m_frame)
         return String();
 
-    return plainText(m_frame->selection().selection().toNormalizedRange().get());
+    Position start, end;
+    if (m_frame->selection().selection().toNormalizedPositions(start, end))
+        return plainText(start, end);
+    return emptyString();
 }
 
 Node* DOMSelection::shadowAdjustedNode(const Position& position) const
@@ -564,6 +558,12 @@ void DOMSelection::addConsoleError(const String& message)
 {
     if (m_treeScope)
         m_treeScope->document().addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, message));
+}
+
+void DOMSelection::trace(Visitor* visitor)
+{
+    visitor->trace(m_treeScope);
+    DOMWindowProperty::trace(visitor);
 }
 
 } // namespace blink

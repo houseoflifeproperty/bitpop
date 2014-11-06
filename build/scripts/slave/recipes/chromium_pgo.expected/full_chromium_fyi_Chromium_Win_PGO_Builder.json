@@ -99,10 +99,10 @@
       "python",
       "-u",
       "\nimport sys\nfrom common import chromium_utils\n\nchromium_utils.RemoveFilesWildcards(sys.argv[1], root=sys.argv[2])\n",
-      "*.pgc",
+      "*.pg[cd]",
       "[SLAVE_BUILD]\\src\\out\\Release"
     ],
-    "name": "rmwildcard *.pgc in [SLAVE_BUILD]\\src\\out\\Release",
+    "name": "rmwildcard *.pg[cd] in [SLAVE_BUILD]\\src\\out\\Release",
     "~followup_annotations": [
       "@@@STEP_LOG_LINE@python.inline@@@@",
       "@@@STEP_LOG_LINE@python.inline@import sys@@@",

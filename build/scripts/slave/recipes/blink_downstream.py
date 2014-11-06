@@ -51,7 +51,7 @@ def V8Builder(config, bits, platform):
       'BUILD_CONFIG': config,
       'TARGET_BITS': bits,
     },
-    'component': {'path': 'src/v8', 'revision': 'bleeding_edge:%s'},
+    'component': {'path': 'src/v8', 'revision': '%s'},
     'testing': {'platform': platform},
   }
 

@@ -225,8 +225,6 @@ const wchar_t kChromeLauncherExe[] = L"chrome_launcher.exe";
 const wchar_t kChromeMetroDll[] = L"metro_driver.dll";
 const wchar_t kChromeNewExe[] = L"new_chrome.exe";
 const wchar_t kChromeOldExe[] = L"old_chrome.exe";
-const wchar_t kCmdInstallApp[] = L"install-application";
-const wchar_t kCmdInstallExtension[] = L"install-extension";
 const wchar_t kCmdOnOsUpgrade[] = L"on-os-upgrade";
 const wchar_t kCmdQueryEULAAcceptance[] = L"query-eula-acceptance";
 const wchar_t kCmdQuickEnableApplicationHost[] =
@@ -263,6 +261,7 @@ const wchar_t kChromeChannelCanary[] = L"canary";
 const wchar_t kChromeChannelDev[] = L"dev";
 const wchar_t kChromeChannelBeta[] = L"beta";
 const wchar_t kChromeChannelStable[] = L"";
+const wchar_t kChromeChannelStableExplicit[] = L"stable";
 
 const size_t kMaxAppModelIdLength = 64U;
 

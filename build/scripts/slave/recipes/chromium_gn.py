@@ -25,10 +25,25 @@ BUILDERS = {
         },
         'gclient_apply_config': ['android', 'blink'],
       },
+      'Android GN (dbg)': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Debug',
+          'TARGET_PLATFORM': 'android',
+          'TARGET_ARCH': 'arm',
+        },
+        'gclient_apply_config': ['android', 'blink'],
+      },
       'Linux GN': {
         'chromium_config_kwargs': {
           'BUILD_CONFIG': 'Release',
         },
+        'gclient_apply_config': ['blink'],
+      },
+      'Linux GN (dbg)': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Debug',
+        },
+        'chromium_apply_config': ['gn_component_build'],
         'gclient_apply_config': ['blink'],
       },
     },
@@ -73,11 +88,14 @@ BUILDERS = {
         'chromium_config_kwargs': {
           'BUILD_CONFIG': 'Release',
         },
+        'should_run_gn_gyp_compare': True,
       },
       'Linux GN (dbg)': {
         'chromium_config_kwargs': {
           'BUILD_CONFIG': 'Debug',
         },
+        'chromium_apply_config': ['gn_component_build'],
+        'should_run_gn_gyp_compare': True,
       },
     },
   },
@@ -108,6 +126,7 @@ BUILDERS = {
         'chromium_config_kwargs': {
           'BUILD_CONFIG': 'Debug',
         },
+        'chromium_apply_config': ['gn_component_build'],
       },
     },
   },
@@ -122,7 +141,7 @@ BUILDERS = {
           'chromium_lkcr',
           'show_v8_revision',
         ],
-        'set_component_rev': {'name': 'src/v8', 'rev_str': 'bleeding_edge:%s'},
+        'set_component_rev': {'name': 'src/v8', 'rev_str': '%s'},
       },
     },
   },
@@ -153,6 +172,9 @@ def GenSteps(api):
 
   api.chromium.set_config('chromium',
                           **bot_config.get('chromium_config_kwargs', {}))
+  for c in bot_config.get('chromium_apply_config', []):
+    api.chromium.apply_config(c)
+
   api.chromium.apply_config('gn')
 
   # Note that we have to call gclient.set_config() and apply_config() *after*
@@ -187,6 +209,9 @@ def GenSteps(api):
     api.chromium.c.compile_py.goma_dir = None
 
   api.chromium.compile(targets=['all'])
+
+  if bot_config.get('should_run_gn_gyp_compare', False):
+    api.chromium.run_gn_compare()
 
   # TODO(dpranke): crbug.com/353854. Run gn_unittests and other tests
   # when they are also being run as part of the try jobs.

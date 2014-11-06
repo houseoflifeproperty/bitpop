@@ -22,6 +22,7 @@
 #include "net/quic/quic_crypto_client_stream_factory.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_stream_factory.h"
+#include "net/quic/quic_utils.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_pool_manager_impl.h"
 #include "net/socket/next_proto.h"
@@ -49,6 +50,7 @@ net::ClientSocketPoolManager* CreateSocketPoolManager(
       params.proxy_service,
       params.ssl_config_service,
       params.enable_ssl_connect_job_waiting,
+      params.proxy_delegate,
       pool_type);
 }
 
@@ -73,6 +75,7 @@ HttpNetworkSession::Params::Params()
       ignore_certificate_errors(false),
       testing_fixed_http_port(0),
       testing_fixed_https_port(0),
+      enable_tcp_fast_open_for_ssl(false),
       force_spdy_single_domain(false),
       enable_spdy_compression(true),
       enable_spdy_ping_based_connection_checking(true),
@@ -89,12 +92,15 @@ HttpNetworkSession::Params::Params()
       enable_quic(false),
       enable_quic_port_selection(true),
       enable_quic_time_based_loss_detection(false),
+      quic_always_require_handshake_confirmation(false),
+      quic_disable_connection_pooling(false),
       quic_clock(NULL),
       quic_random(NULL),
       quic_max_packet_length(kDefaultMaxPacketSize),
       enable_user_alternate_protocol_ports(false),
-      quic_crypto_client_stream_factory(NULL) {
-  quic_supported_versions.push_back(QUIC_VERSION_21);
+      quic_crypto_client_stream_factory(NULL),
+      proxy_delegate(NULL) {
+  quic_supported_versions.push_back(QUIC_VERSION_23);
 }
 
 HttpNetworkSession::Params::~Params() {}
@@ -112,25 +118,26 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
           CreateSocketPoolManager(NORMAL_SOCKET_POOL, params)),
       websocket_socket_pool_manager_(
           CreateSocketPoolManager(WEBSOCKET_SOCKET_POOL, params)),
-      quic_stream_factory_(params.host_resolver,
-                           params.client_socket_factory ?
-                               params.client_socket_factory :
-                               net::ClientSocketFactory::GetDefaultFactory(),
-                           params.http_server_properties,
-                           params.cert_verifier,
-                           params.channel_id_service,
-                           params.transport_security_state,
-                           params.quic_crypto_client_stream_factory,
-                           params.quic_random ? params.quic_random :
-                               QuicRandom::GetInstance(),
-                           params.quic_clock ? params. quic_clock :
-                               new QuicClock(),
-                           params.quic_max_packet_length,
-                           params.quic_user_agent_id,
-                           params.quic_supported_versions,
-                           params.enable_quic_port_selection,
-                           params.enable_quic_time_based_loss_detection,
-                           params.quic_connection_options),
+      quic_stream_factory_(
+          params.host_resolver,
+          params.client_socket_factory
+              ? params.client_socket_factory
+              : net::ClientSocketFactory::GetDefaultFactory(),
+          params.http_server_properties,
+          params.cert_verifier,
+          params.channel_id_service,
+          params.transport_security_state,
+          params.quic_crypto_client_stream_factory,
+          params.quic_random ? params.quic_random : QuicRandom::GetInstance(),
+          params.quic_clock ? params.quic_clock : new QuicClock(),
+          params.quic_max_packet_length,
+          params.quic_user_agent_id,
+          params.quic_supported_versions,
+          params.enable_quic_port_selection,
+          params.enable_quic_time_based_loss_detection,
+          params.quic_always_require_handshake_confirmation,
+          params.quic_disable_connection_pooling,
+          params.quic_connection_options),
       spdy_session_pool_(params.host_resolver,
                          params.ssl_config_service,
                          params.http_server_properties,
@@ -145,8 +152,7 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
                          params.time_func,
                          params.trusted_spdy_proxy),
       http_stream_factory_(new HttpStreamFactoryImpl(this, false)),
-      http_stream_factory_for_websocket_(
-          new HttpStreamFactoryImpl(this, true)),
+      http_stream_factory_for_websocket_(new HttpStreamFactoryImpl(this, true)),
       params_(params) {
   DCHECK(proxy_service_);
   DCHECK(ssl_config_service_.get());
@@ -251,12 +257,19 @@ base::Value* HttpNetworkSession::QuicInfoToValue() const {
   dict->SetBoolean("quic_enabled", params_.enable_quic);
   dict->SetBoolean("enable_quic_port_selection",
                    params_.enable_quic_port_selection);
-  dict->SetBoolean("enable_quic_pacing",
-                   ContainsQuicTag(params_.quic_connection_options, kPACE));
+  base::ListValue* connection_options = new base::ListValue;
+  for (QuicTagVector::const_iterator it =
+           params_.quic_connection_options.begin();
+       it != params_.quic_connection_options.end(); ++it) {
+    connection_options->AppendString("'" + QuicUtils::TagToString(*it) + "'");
+  }
+  dict->Set("connection_options", connection_options);
   dict->SetBoolean("enable_quic_time_based_loss_detection",
                    params_.enable_quic_time_based_loss_detection);
   dict->SetString("origin_to_force_quic_on",
                   params_.origin_to_force_quic_on.ToString());
+  dict->SetDouble("alternate_protocol_probability_threshold",
+                  params_.alternate_protocol_probability_threshold);
   return dict;
 }
 

@@ -24,6 +24,10 @@ namespace extensions {
 class ExperienceSamplingEvent;
 }
 
+namespace ui {
+class ResourceBundle;
+}
+
 namespace views {
 class GridLayout;
 class ImageButton;
@@ -85,6 +89,16 @@ class ExtensionInstallDialogView : public views::DialogDelegateView,
 
   // Experimental: Toggles inline permission explanations with an animation.
   void ToggleInlineExplanations();
+
+  // Initializes the dialog view, adding in permissions if they exist.
+  void InitView();
+
+  // Adds permissions of |perm_type| to the dialog view if they exist.
+  bool AddPermissions(views::GridLayout* layout,
+                      ui::ResourceBundle& rb,
+                      int column_set_id,
+                      int left_column_width,
+                      ExtensionInstallPrompt::PermissionsType perm_type);
 
   // Creates a layout consisting of dialog header, extension name and icon.
   views::GridLayout* CreateLayout(
@@ -148,6 +162,10 @@ class ExtensionInstallDialogView : public views::DialogDelegateView,
 
   // ExperienceSampling: Track this UI event.
   scoped_ptr<extensions::ExperienceSamplingEvent> sampling_event_;
+
+  // Set to true once the user's selection has been received and the
+  // |delegate_| has been notified.
+  bool handled_result_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionInstallDialogView);
 };

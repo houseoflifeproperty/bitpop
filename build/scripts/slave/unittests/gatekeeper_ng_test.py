@@ -1523,6 +1523,40 @@ class GatekeeperTest(unittest.TestCase):
     self.assertEquals(build_db.aux['triggered_revisions'],
                       {'revision': 72454})
 
+  def testOlderCommitPositionIgnored(self):
+    """Test that an old commit position is ignored."""
+    sys.argv.extend([m.url for m in self.masters])
+    sys.argv.extend(['--no-email-app', '--set-status',
+                     '--password-file', self.status_secret_file,
+                     '--track-revisions',
+                     '--revision-properties', 'got_revision_cp'])
+
+    self.masters[0].builders[0].builds[0].properties = [
+        ['got_revision_cp', 'refs/heads/master@{#72453}', 'GatekeeperTest'],
+        ['revision', 'a cool git sha', 'GatekeeperTest'],
+        ['got_webkit_revision', 100, 'GatekeeperTest'],
+    ]
+
+    self.masters[0].builders[0].builds[0].steps[1].results = [2, None]
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[0].name,
+                                {'closing_steps': ['step1']})
+
+    build_db = build_scan_db.gen_db(masters={
+        self.masters[0].url: {
+            'mybuilder': {
+                0: build_scan_db.gen_build(finished=True)
+            }
+        }
+    })
+    build_db.aux['triggered_revisions'] = {'got_revision_cp': 72454}
+
+    urls = self.call_gatekeeper(build_db=build_db)
+    self.assertNotIn(self.set_status_url, urls)
+    build_db = build_scan_db.get_build_db(self.build_db_file)
+    self.assertEquals(build_db.aux['triggered_revisions'],
+                      {'got_revision_cp': 72454})
+
   def testNewerRevisionAccepted(self):
     """Test that a newer revision is accepted."""
     sys.argv.extend([m.url for m in self.masters])
@@ -1549,6 +1583,41 @@ class GatekeeperTest(unittest.TestCase):
     build_db = build_scan_db.get_build_db(self.build_db_file)
     self.assertEquals(build_db.aux['triggered_revisions'],
                       {'revision': 72453})
+
+  def testNewerCommitPositionAccepted(self):
+    """Test that a newer revision is accepted."""
+    sys.argv.extend([m.url for m in self.masters])
+    sys.argv.extend(['--no-email-app', '--set-status',
+                     '--password-file', self.status_secret_file,
+                     '--track-revisions',
+                     '--revision-properties', 'got_revision_cp'])
+
+    self.masters[0].builders[0].builds[0].properties = [
+        ['got_revision_cp', 'refs/heads/master@{#72453}', 'GatekeeperTest'],
+        ['revision', 'a cool git sha', 'GatekeeperTest'],
+        ['got_webkit_revision', 100, 'GatekeeperTest'],
+    ]
+
+    self.masters[0].builders[0].builds[0].steps[1].results = [2, None]
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[0].name,
+                                {'closing_steps': ['step1']})
+
+    build_db = build_scan_db.gen_db(masters={
+        self.masters[0].url: {
+            'mybuilder': {
+                0: build_scan_db.gen_build(finished=True)
+            }
+        }
+    })
+    build_db.aux['triggered_revisions'] = {'got_revision_cp': 72452}
+
+    urls = self.call_gatekeeper(build_db=build_db)
+    self.assertIn(self.set_status_url, urls)
+    build_db = build_scan_db.get_build_db(self.build_db_file)
+    self.assertEquals(build_db.aux['triggered_revisions'],
+                      {'got_revision_cp': 72453})
+
 
   def testRevisionChangeClears(self):
     """Test that changing the revision forces a reset in the build_db."""
@@ -2662,6 +2731,10 @@ class GatekeeperTest(unittest.TestCase):
     sys.argv.extend(['--verify'])
     self.call_gatekeeper(
         json=os.path.join(SCRIPT_DIR, os.pardir, 'gatekeeper.json'))
+
+  def testCheckedInTreeConfigIsValid(self): # pylint: disable=R0201
+    tree_config = os.path.join(SCRIPT_DIR, os.pardir, 'gatekeeper_trees.json')
+    gatekeeper_ng_config.load_gatekeeper_tree_config(tree_config)
 
 
 if __name__ == '__main__':

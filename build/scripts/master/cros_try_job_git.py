@@ -4,6 +4,7 @@
 
 import json
 import os
+import re
 import shutil
 
 from StringIO import StringIO
@@ -27,28 +28,8 @@ from twisted.python import log
 from master.try_job_base import BadJobfile
 
 
-def validate_job(parsed_job):
-  # A list of field description tuples of the format:
-  # (name, type, required).
-  fields = [('name', basestring, True),
-            ('user', basestring, True),
-            ('email', list, True),
-            ('bot', list, True),
-            ('extra_args', list, False),
-            ('version', int, True),
-            ('slaves_request', list, False)]
-
-  error_msgs = []
-  for name, f_type, required in fields:
-    val = parsed_job.get(name)
-    if val is None:
-      if required:
-        error_msgs.append('Option %s missing!' % name)
-    elif not isinstance(val, f_type):
-      error_msgs.append('Option %s of wrong type!' % name)
-
-  if error_msgs:
-    raise BadJobfile('\n'.join(error_msgs))
+class InvalidEtcBuild(BadJobfile):
+  pass
 
 
 def get_file_contents(poller, branch, file_path):
@@ -62,14 +43,15 @@ def get_file_contents(poller, branch, file_path):
 
 def translate_v1_to_v2(parsed_job):
   """Translate tryjob desc from V1 to V2."""
-  parsed_job['extra_args'].append('--remote-trybot')
+  parsed_job.setdefault('extra_args', []).append('--remote-trybot')
   parsed_job['version'] = 2
 
 
 def translate_v2_to_v3(parsed_job):
   """Translate tryjob desc from V2 to V3."""
   # V3 --remote-patches format is not backwards compatible.
-  if any(a.startswith('--remote-patches') for a in parsed_job['extra_args']):
+  if any(a.startswith('--remote-patches')
+         for a in parsed_job.get('extra_args', ())):
     raise BadJobfile('Cannot translate --remote-patches from tryjob v.2 to '
                      'v.3.  Please run repo sync.')
 
@@ -89,6 +71,11 @@ class CrOSTryJobGit(TryBase):
       2 : translate_v2_to_v3,
   }
 
+  # Valid 'etc' builder targets. Specifically, this ensures:
+  # - The build name doesn't begin with a flag ('--')
+  # - The build name doesn't contain spaces (to spill into extra args).
+  ETC_TARGET_RE = re.compile(r'^[a-zA-Z][\w-]+\w$')
+
   @classmethod
   def updateJobDesc(cls, parsed_job):
     """Ensure job description is in the format we expect."""
@@ -101,7 +88,8 @@ class CrOSTryJobGit(TryBase):
                              % str(translation_func))
 
   def __init__(self, name, pollers, smtp_host, from_addr, reply_to,
-               email_footer, properties=None):
+               email_footer, cbuildbot_configs, etc_builder=None,
+               properties=None):
     """Initialize the class.
 
     Arguments:
@@ -111,6 +99,10 @@ class CrOSTryJobGit(TryBase):
       from_addr: The email address to display as being sent from.
       reply_to: The email address to put in the 'Reply-To' email header field.
       email_footer: The footer to append to any emails sent out.
+      cbuildbot_configs: (list) A list of supported 'cbuildbot' configs. Any
+          'bot' request outside of this list will go to an 'etc' builder, if
+          available.
+      etc_builder: If not None, the name of the 'etc' builder.
       properties: See TryBase.__init__()
     """
     TryBase.__init__(self, name, [], properties or {})
@@ -119,6 +111,8 @@ class CrOSTryJobGit(TryBase):
     self.from_addr = from_addr
     self.reply_to = reply_to
     self.email_footer = email_footer
+    self.cbuildbot_configs = set(cbuildbot_configs)
+    self.etc_builder = etc_builder
 
   def startService(self):
     TryBase.startService(self)
@@ -135,29 +129,85 @@ class CrOSTryJobGit(TryBase):
     d.addErrback(log.err)
     return d
 
-  def get_props(self, bot, options):
+  @staticmethod
+  def load_job(data):
+    try:
+      return json.loads(data)
+    except ValueError as e:
+      raise BadJobfile("Failed to parse job JSON: %s" % (e.message,))
+
+  @classmethod
+  def validate_etc_build(cls, name):
+    """Tests whether a specified 'etc' build name is allower to be executed."""
+    if not name:
+      raise InvalidEtcBuild("Empty build name")
+
+    # It must match our target expression.
+    if not cls.ETC_TARGET_RE.match(name):
+      raise InvalidEtcBuild("Does not match valid name pattern")
+
+  def validate_job(self, parsed_job):
+    # A list of field description tuples of the format:
+    # (name, type, required).
+    fields = [('name', basestring, True),
+              ('user', basestring, True),
+              ('email', list, True),
+              ('bot', list, True),
+              ('extra_args', list, False),
+              ('version', int, True),
+              ('slaves_request', list, False),
+    ]
+
+    error_msgs = []
+    for name, f_type, required in fields:
+      val = parsed_job.get(name)
+      if val is None:
+        if required:
+          error_msgs.append('Option %s missing!' % name)
+      elif not isinstance(val, f_type):
+        error_msgs.append('Option %s of wrong type!' % name)
+
+    # If we're an 'etc' job, we must have bots defined to execute.
+    for bot in parsed_job['bot']:
+      if bot in self.cbuildbot_configs:
+        continue
+      if self.etc_builder:
+        # Assert that this is a valid 'etc' build.
+        try:
+          self.validate_etc_build(bot)
+        except InvalidEtcBuild as e:
+          error_msgs.append("Invalid 'etc' build name (%s): %s" % (
+              bot, e.message))
+      else:
+        error_msgs.append("Unknown bot config '%s' with no 'etc' builder" % (
+            bot,))
+
+    if error_msgs:
+      raise BadJobfile('\n'.join(error_msgs))
+
+  def get_props(self, config, options):
     """Overriding base class method."""
     props = Properties()
     props.setProperty('extra_args', options.get('extra_args', []),
                       self._PROPERTY_SOURCE)
     props.setProperty('slaves_request', options.get('slaves_request', []),
                       self._PROPERTY_SOURCE)
-    props.setProperty('chromeos_config', bot, self._PROPERTY_SOURCE)
+    props.setProperty('chromeos_config', config, self._PROPERTY_SOURCE)
     return props
 
   def create_buildset(self, ssid, parsed_job):
     """Overriding base class method."""
-    log.msg('Creating try job(s) %s' % ssid)
-    result = None
+    dlist = []
+    buildset_name = '%s:%s' % (parsed_job['user'], parsed_job['name'])
     for bot in parsed_job['bot']:
-      buildset_name = '%s:%s' % (parsed_job['user'], parsed_job['name'])
-      result = self.addBuildsetForSourceStamp(ssid=ssid,
-          reason=buildset_name,
-          external_idstring=buildset_name,
-          builderNames=[bot],
-          properties=self.get_props(bot, parsed_job))
-
-    return result
+      builder_name = bot if bot in self.cbuildbot_configs else self.etc_builder
+      log.msg("Creating '%s' try job(s) %s for %s" % (builder_name, ssid, bot))
+      dlist.append(self.addBuildsetForSourceStamp(ssid=ssid,
+              reason=buildset_name,
+              external_idstring=buildset_name,
+              builderNames=[builder_name],
+              properties=self.get_props(bot, parsed_job)))
+    return defer.DeferredList(dlist)
 
   def send_validation_fail_email(self, name, emails, error):
     """Notify the user via email about the tryjob error."""
@@ -206,13 +256,20 @@ see<br>this message please contact chromeos-build@google.com.<br>
     wfd = defer.waitForDeferred(
         get_file_contents(poller, change.branch, change.files[0]))
     yield wfd
-    parsed = json.loads(wfd.getResult())
+
+    parsed = None
     try:
-      validate_job(parsed)
+      parsed = self.load_job(wfd.getResult())
+      self.validate_job(parsed)
       self.updateJobDesc(parsed)
     except BadJobfile as e:
       self.send_validation_fail_email(parsed.setdefault('name', ''),
                                       parsed['email'], str(e))
+      raise
+    except Exception as e:
+      print 'EXCEPTION:', e
+      import traceback
+      traceback.print_exc()
       raise
 
     # The sourcestamp/buildsets created will be merge-able.

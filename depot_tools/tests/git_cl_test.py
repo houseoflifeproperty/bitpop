@@ -10,7 +10,6 @@ import StringIO
 import stat
 import sys
 import unittest
-import re
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -19,7 +18,6 @@ from testing_support.auto_stub import TestCase
 import git_cl
 import git_common
 import subprocess2
-import presubmit_support
 
 class PresubmitMock(object):
   def __init__(self, *args, **kwargs):
@@ -206,6 +204,7 @@ class TestGitCl(TestCase):
         ((['git', 'config', 'core.editor'],), ''),
     ] + cc_call + private_call + [
         ((['git', 'config', 'branch.master.base-url'],), ''),
+        ((['git', 'config', 'rietveld.pending-ref-prefix'],), ''),
         ((['git',
            'config', '--local', '--get-regexp', '^svn-remote\\.'],),
          (('', None), 0)),
@@ -252,14 +251,16 @@ class TestGitCl(TestCase):
   @classmethod
   def _dcommit_calls_1(cls):
     return [
+      ((['git', 'config', 'rietveld.autoupdate'],),
+       ''),
+      ((['git', 'config', 'rietveld.pending-ref-prefix'],),
+       ''),
       ((['git',
          'config', '--local', '--get-regexp', '^svn-remote\\.'],),
        ((('svn-remote.svn.url svn://svn.chromium.org/chrome\n'
           'svn-remote.svn.fetch trunk/src:refs/remotes/origin/master'),
          None),
         0)),
-      ((['git', 'config', 'rietveld.autoupdate'],),
-       ''),
       ((['git',
          'config', 'rietveld.server'],), 'codereview.example.com'),
       ((['git', 'symbolic-ref', 'HEAD'],), 'refs/heads/working'),
@@ -689,6 +690,8 @@ class TestGitCl(TestCase):
            'rietveld.cpplint-ignore-regex'],), ''),
         ((['git', 'config', '--unset-all',
            'rietveld.project'],), ''),
+        ((['git', 'config', '--unset-all',
+           'rietveld.pending-ref-prefix'],), ''),
         ((['git', 'config', 'gerrit.host',
            'gerrit.chromium.org'],), ''),
         # DownloadHooks(False)
@@ -749,120 +752,6 @@ class TestGitCl(TestCase):
       obj.update_reviewers(reviewers)
       actual.append(obj.description)
     self.assertEqual(expected, actual)
-
-  def test_trybots_from_PRESUBMIT(self):
-    TEST_MASTER = 'testMaster'
-    TEST_BUILDER = 'testBuilder'
-    MASTERS = {TEST_MASTER:{TEST_BUILDER:['a']}}
-    self.mock(presubmit_support, 'DoGetTryMasters',
-              lambda *args: MASTERS)
-
-    change_mock = ChangeMock()
-    changelist_mock = ChangelistMock(change_mock)
-    self.mock(git_cl, 'is_dirty_git_tree', lambda x: False)
-    self.mock(git_cl, 'print_stats', lambda *arg: True)
-    self.mock(git_cl, 'Changelist',  lambda *args: changelist_mock)
-    self.mock(git_cl, 'CreateDescriptionFromLog', lambda arg: 'Commit message')
-    self.mock(git_cl.ChangeDescription, 'prompt', lambda self: None)
-
-    self.calls = [
-        ((['git', 'config', 'rietveld.autoupdate',],),
-         ''),
-        ((['git', 'config', 'gerrit.host',],),
-         ''),
-        ((['git', 'rev-parse', '--show-cdup',],),
-         ''),
-        ((['git', 'config', 'rietveld.private',],),
-         ''),
-        ((['git', 'config', '--local', '--get-regexp', '^svn-remote\\.'],),
-         ''),
-        ((['git', 'config', 'rietveld.project',],),
-         ''),
-        ((['git', 'rev-parse', 'HEAD',],),
-         ''),
-        ]
-
-    stored_description = []
-    def check_upload(args):
-      i = 0
-      for arg in args:
-        if arg == '--message':
-          break
-        i += 1
-
-      self.assertTrue(i < len(args))
-      stored_description.append(args[i+1])
-      return 1, 2
-    self.mock(git_cl.upload, 'RealMain', check_upload)
-
-    git_cl.main(['upload', '--bypass-hooks', '--auto-bots'])
-    found = re.search("CQ_TRYBOTS=(.*?)$", stored_description[0])
-    self.assertTrue(found)
-    self.assertEqual(found.group(1), '%s:%s' % (TEST_MASTER, TEST_BUILDER))
-
-
-class ChangelistMock(object):
-  # Disable "Method could be a function"
-  # pylint: disable=R0201
-
-  def __init__(self, change_mock):
-    self.change_mock = change_mock
-
-  def GetChange(self, *args):
-    return self.change_mock
-
-  def GetIssue(self):
-    return None
-
-  def GetBranch(self):
-    return []
-
-  def GetCommonAncestorWithUpstream(self):
-    return []
-
-  def GetCCList(self):
-    return []
-
-  def GetGitBaseUrlFromConfig(self):
-    return ''
-
-  def GetRemoteUrl(self):
-    return ''
-
-  def GetRietveldServer(self):
-    return None
-
-  def SetWatchers(self, *args):
-    pass
-
-  def SetIssue(self, issue):
-    pass
-
-  def SetPatchset(self, issue):
-    pass
-
-
-class ChangeMock(object):
-  # Disable "Method could be a function"
-  # pylint: disable=R0201
-
-  def __init__(self):
-    self.stored_description = None
-
-  def SetDescriptionText(self, desc):
-    self.stored_description = desc
-
-  def FullDescriptionText(self):
-    return 'HIHI TEST DESCRIPTION'
-
-  def RepositoryRoot(self):
-    return []
-
-  def AffectedFiles(self):
-    return []
-
-  def LocalPaths(self):
-    return None
 
 if __name__ == '__main__':
   git_cl.logging.basicConfig(

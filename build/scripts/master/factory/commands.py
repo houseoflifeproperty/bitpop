@@ -37,7 +37,7 @@ DEFAULT_TESTS = 'defaulttests'
 
 def CreateTriggerStep(trigger_name, trigger_set_properties=None,
                       trigger_copy_properties=None, do_step_if=True,
-                      waitForFinish=False):
+                      waitForFinish=False, trigger_drop_properties=None):
   """Returns a Trigger Step, with all the default values copied over.
 
   Args:
@@ -87,6 +87,11 @@ def CreateTriggerStep(trigger_name, trigger_set_properties=None,
   }
 
   set_properties.update(trigger_set_properties)
+
+  if trigger_drop_properties:
+    for key in trigger_drop_properties:
+      if key in set_properties:
+        del set_properties[key]
 
   return trigger.Trigger(
       schedulerNames=[trigger_name],
@@ -991,11 +996,7 @@ class FactoryCommands(object):
             in gclient_specs):
           lkgr = 'lkcr'
 
-        bleeding_edge = ''
-        if 'bleeding_edge@$$V8_REV$$' in gclient_specs:
-          bleeding_edge = 'bleeding_edge:'
-
-        return 'src@origin/%s,src/v8@%s%s' % (lkgr, bleeding_edge, v8_revision)
+        return 'src@origin/%s,src/v8@%s' % (lkgr, v8_revision)
 
       # This is where the rev factory starts.  It uses blink_config and
       # gclient_specs to determine what mode we're running in, and sets the

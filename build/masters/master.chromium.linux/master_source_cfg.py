@@ -2,13 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import os.path
-
-from common import chromium_utils
-from master import chromium_svn_poller
+from master import gitiles_poller
 
 
 def Update(config, active_master, c):
-  poller = chromium_svn_poller.ChromiumSvnPoller()
+  master_poller = gitiles_poller.GitilesPoller(
+      'https://chromium.googlesource.com/chromium/src')
 
-  c['change_source'].append(poller)
+  c['change_source'].append(master_poller)

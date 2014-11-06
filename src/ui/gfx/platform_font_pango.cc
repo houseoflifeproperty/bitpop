@@ -4,7 +4,6 @@
 
 #include "ui/gfx/platform_font_pango.h"
 
-#include <fontconfig/fontconfig.h>
 #include <pango/pango.h>
 
 #include <algorithm>
@@ -128,16 +127,6 @@ PlatformFontPango::PlatformFontPango(const std::string& font_name,
   query.style = gfx::Font::NORMAL;
   InitFromDetails(skia::RefPtr<SkTypeface>(), font_name, font_size_pixels,
                   query.style, gfx::GetFontRenderParams(query, NULL));
-}
-
-double PlatformFontPango::underline_position() const {
-  const_cast<PlatformFontPango*>(this)->InitPangoMetrics();
-  return underline_position_pixels_;
-}
-
-double PlatformFontPango::underline_thickness() const {
-  const_cast<PlatformFontPango*>(this)->InitPangoMetrics();
-  return underline_thickness_pixels_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -283,8 +272,6 @@ void PlatformFontPango::InitFromDetails(
 
   pango_metrics_inited_ = false;
   average_width_pixels_ = 0.0f;
-  underline_position_pixels_ = 0.0f;
-  underline_thickness_pixels_ = 0.0f;
 }
 
 void PlatformFontPango::InitFromPlatformFont(const PlatformFontPango* other) {
@@ -298,8 +285,6 @@ void PlatformFontPango::InitFromPlatformFont(const PlatformFontPango* other) {
   cap_height_pixels_ = other->cap_height_pixels_;
   pango_metrics_inited_ = other->pango_metrics_inited_;
   average_width_pixels_ = other->average_width_pixels_;
-  underline_position_pixels_ = other->underline_position_pixels_;
-  underline_thickness_pixels_ = other->underline_thickness_pixels_;
 }
 
 void PlatformFontPango::PaintSetup(SkPaint* paint) const {
@@ -317,19 +302,6 @@ void PlatformFontPango::InitPangoMetrics() {
     pango_metrics_inited_ = true;
     ScopedPangoFontDescription pango_desc(GetNativeFont());
     PangoFontMetrics* pango_metrics = GetPangoFontMetrics(pango_desc.get());
-
-    underline_position_pixels_ =
-        pango_font_metrics_get_underline_position(pango_metrics) /
-        PANGO_SCALE;
-
-    // TODO(davemoore): Come up with a better solution.
-    // This is a hack, but without doing this the underlines
-    // we get end up fuzzy. So we align to the midpoint of a pixel.
-    underline_position_pixels_ /= 2;
-
-    underline_thickness_pixels_ =
-        pango_font_metrics_get_underline_thickness(pango_metrics) /
-        PANGO_SCALE;
 
     // First get the Pango-based width (converting from Pango units to pixels).
     const double pango_width_pixels =

@@ -249,25 +249,6 @@ class SVNPoller(base.PollingChangeSource, util.ComparableMixin):
                     new_logentries.append(el)
                 new_logentries.reverse() # return oldest first
 
-        # If the newest commit's author is chrome-bot, skip this commit.  This
-        # is a guard to ensure that we don't poll on our mirror while it could
-        # be mid-sync.  In that case, the author data could be wrong and would
-        # look like it was a commit by chrome-bot@google.com.  A downside: the
-        # chrome-bot account may have a legitimate commit.  This should not
-        # happen generally, so we're okay waiting to see it until there's a
-        # later commit with a non-chrome-bot author.
-        debug_change = []
-        for logentry in new_logentries:
-          rev = int(logentry.getAttribute("revision"))
-          author = self._get_text(logentry, "author")
-          debug_change.append([rev, author])
-        log.msg('svnPoller: debug_change: %r' % debug_change)
-        if len(new_logentries) > 0:
-          newest_rev_author = self._get_text(new_logentries[-1], "author")
-          if newest_rev_author == 'chrome-bot@google.com':
-            new_logentries.pop(-1)
-            new_last_change = int(logentries[1].getAttribute("revision"))
-
         self.last_change = new_last_change
         log.msg('svnPoller: _process_changes %s .. %s' %
                 (old_last_change, new_last_change))

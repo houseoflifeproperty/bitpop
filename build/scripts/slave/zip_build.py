@@ -141,28 +141,29 @@ def FileRegexBlacklist(options):
   return '$NO_FILTER^'
 
 
-def MojomJSFiles(build_dir):
-  """Lists all mojom JavaScript files that need to be included in the archive.
+def _MojomFiles(build_dir, suffixes):
+  """Lists all mojom files that need to be included in the archive.
 
   Args:
     build_dir: The build directory.
 
   Returns:
-    A list of mojom JavaScript file paths which are relative to the build
+    A list of mojom file paths which are relative to the build
     directory.
   """
   walk_dirs = [
     'gen/mojo',
     'gen/content/test/data',
   ]
-  mojom_js_files = []
+  mojom_files = []
   for walk_dir in walk_dirs:
     walk_dir = os.path.join(build_dir, walk_dir)
     for path, _, files in os.walk(walk_dir):
       rel_path = os.path.relpath(path, build_dir)
-      for mojom_js_file in fnmatch.filter(files, '*.mojom.js'):
-        mojom_js_files.append(os.path.join(rel_path, mojom_js_file))
-  return mojom_js_files
+      for suffix in suffixes or []:
+        for mojom_file in fnmatch.filter(files, '*%s' % suffix):
+          mojom_files.append(os.path.join(rel_path, mojom_file))
+  return mojom_files
 
 
 def WriteRevisionFile(dirname, build_revision):
@@ -309,7 +310,8 @@ class PathMatcher(object):
 
 
 def Archive(options):
-  build_dir = build_directory.GetBuildOutputDirectory(options.src_dir)
+  build_dir = build_directory.GetBuildOutputDirectory(
+      options.src_dir, options.cros_board)
   build_dir = os.path.abspath(os.path.join(build_dir, options.target))
 
   staging_dir = slave_utils.GetStagingDir(options.src_dir)
@@ -371,9 +373,9 @@ def Archive(options):
 
   # TODO(yzshen): Once we have swarming support ready, we could use it to
   # archive run time dependencies of tests and remove this step.
-  mojom_js_files = MojomJSFiles(build_dir)
-  print 'Include mojom JavaScript files: %s' % mojom_js_files
-  zip_file_list.extend(mojom_js_files)
+  mojom_files = _MojomFiles(build_dir, ['.mojom.js', '_mojom.py'])
+  print 'Include mojom files: %s' % mojom_files
+  zip_file_list.extend(mojom_files)
 
   zip_file = MakeUnversionedArchive(build_dir, staging_dir, zip_file_list,
                                     unversioned_base_name, options.path_filter)
@@ -439,6 +441,10 @@ def main(argv):
   option_parser.add_option('--build-url', default='',
                            help=('Optional URL to which to upload build '
                                  '(overrides build_url factory property)'))
+  option_parser.add_option('--cros-board',
+                           help=('If building for Chrom[e|ium]OS via the '
+                                 'simple chrome workflow, the name of the '
+                                 'target CROS board.'))
   chromium_utils.AddPropertiesOptions(option_parser)
 
   options, args = option_parser.parse_args(argv)
@@ -465,7 +471,8 @@ def main(argv):
 
   if options.path_filter:
     options.path_filter = PATH_FILTERS[options.path_filter](
-        build_directory.GetBuildOutputDirectory(), options.target)
+        build_directory.GetBuildOutputDirectory(cros_board=options.cros_board),
+        options.target)
 
   return Archive(options)
 

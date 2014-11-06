@@ -1205,9 +1205,13 @@ class AnnotationObserver(buildstep.LogLineObserver):
       if self.honor_zero_return_code:
         self.annotate_status = builder.SUCCESS
     else:
-      self.annotate_status = builder.FAILURE
+      # Only change annotate status if it'd otherwise indicate success.
+      # This helps propagate purple (exception) step status to to-level
+      # purple build status as opposed to red.
+      if self.annotate_status in (builder.SUCCESS, builder.WARNINGS):
+        self.annotate_status = builder.FAILURE
       if not self.cursorIsPreamble():
-        self.finishCursor(builder.FAILURE,
+        self.finishCursor(self.annotate_status,
                           reason='return code was %d.' % return_code)
     self.cleanupSteps(exclude_async_pending=succeeded)
 

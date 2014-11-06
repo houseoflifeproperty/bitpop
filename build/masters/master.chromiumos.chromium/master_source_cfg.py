@@ -2,17 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from common import chromium_utils
-
-from master import chromium_svn_poller
+from master import gitiles_poller
 from master import master_config
 
-defaults = {}
 
-helper = master_config.Helper(defaults)
-helper.Scheduler('chromium_src', branch='src', treeStableTimer=60)
+helper = master_config.Helper({})
+helper.Scheduler('chromium_src', branch='master', treeStableTimer=60)
 
 def Update(config, _active_master, c):
-  poller = chromium_svn_poller.ChromiumSvnPoller()
-  c['change_source'].append(poller)
+  master_poller = gitiles_poller.GitilesPoller(
+      'https://chromium.googlesource.com/chromium/src')
+  c['change_source'].append(master_poller)
   return helper.Update(c)

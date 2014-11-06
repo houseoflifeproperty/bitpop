@@ -11,7 +11,7 @@ from compiled_file_system import CompiledFileSystem, SingleFile, Unicode
 from extensions_paths import API_PATHS, JSON_TEMPLATES
 from features_bundle import FeaturesBundle
 from file_system import FileNotFoundError
-from schema_util import ProcessSchema
+from schema_processor import SchemaProcessor
 from third_party.json_schema_compiler.memoize import memoize
 from third_party.json_schema_compiler.model import UnixName
 
@@ -59,7 +59,7 @@ def _GetAPISchemaFilename(api_name, file_system, version):
   single _EXTENSION_API file which all APIs share in older versions of Chrome,
   in which case it is unknown whether the API actually exists there.
   '''
-  if version == 'trunk' or version > _ORIGINAL_FEATURES_MIN_VERSION:
+  if version == 'master' or version > _ORIGINAL_FEATURES_MIN_VERSION:
     # API schema filenames switch format to unix_hacker_style.
     api_name = UnixName(api_name)
 
@@ -117,7 +117,8 @@ class AvailabilityFinder(object):
                file_system_iterator,
                host_file_system,
                object_store_creator,
-               platform):
+               platform,
+               schema_processor_factory):
     self._branch_utility = branch_utility
     self._compiled_fs_factory = compiled_fs_factory
     self._file_system_iterator = file_system_iterator
@@ -130,6 +131,10 @@ class AvailabilityFinder(object):
     self._node_level_object_store = create_object_store('node_level')
     self._json_fs = compiled_fs_factory.ForJson(self._host_file_system)
     self._platform = platform
+    # When processing the API schemas, we retain inlined types in the schema
+    # so that there are not missing nodes in the APISchemaGraphs when trying
+    # to lookup availability.
+    self._schema_processor = schema_processor_factory.Create(True)
 
   def _GetPredeterminedAvailability(self, api_name):
     '''Checks a configuration file for hardcoded (i.e. predetermined)
@@ -150,11 +155,8 @@ class AvailabilityFinder(object):
     '''Creates a CompiledFileSystem for parsing raw JSON or IDL API schema
     data and formatting it so that it can be used to create APISchemaGraphs.
     '''
-    # When processing the API schemas, we retain inlined types in the schema
-    # so that there are not missing nodes in the APISchemaGraphs when trying
-    # to lookup availability.
     def process_schema(path, data):
-      return ProcessSchema(path, data, retain_inlined_types=True)
+      return self._schema_processor.Process(path, data)
     return self._compiled_fs_factory.Create(file_system,
                                             SingleFile(Unicode(process_schema)),
                                             CompiledFileSystem,
@@ -366,8 +368,8 @@ class AvailabilityFinder(object):
         self._branch_utility.GetChannelInfo('dev'),
         check_api_availability)
     if channel_info is None:
-      # The API wasn't available on 'dev', so it must be a 'trunk'-only API.
-      channel_info = self._branch_utility.GetChannelInfo('trunk')
+      # The API wasn't available on 'dev', so it must be a 'master'-only API.
+      channel_info = self._branch_utility.GetChannelInfo('master')
 
     # If the API is not stable, check when it will be scheduled to be stable.
     if channel_info.channel == 'stable':
@@ -394,8 +396,8 @@ class AvailabilityFinder(object):
 
     availability_graph = APISchemaGraph()
     host_fs = self._host_file_system
-    trunk_stat = assert_not_none(host_fs.Stat(_GetAPISchemaFilename(
-        api_name, host_fs, 'trunk')))
+    master_stat = assert_not_none(host_fs.Stat(_GetAPISchemaFilename(
+        api_name, host_fs, 'master')))
 
     # Weird object thing here because nonlocal is Python 3.
     previous = type('previous', (object,), {'stat': None, 'graph': None})
@@ -444,8 +446,8 @@ class AvailabilityFinder(object):
       previous.graph = version_graph
 
       # Continue looping until there are no longer differences between this
-      # version and trunk.
-      return version_stat != trunk_stat
+      # version and master.
+      return version_stat != master_stat
 
     self._file_system_iterator.Ascending(
         self.GetAPIAvailability(api_name).channel_info,

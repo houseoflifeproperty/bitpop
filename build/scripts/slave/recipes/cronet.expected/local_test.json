@@ -69,9 +69,9 @@
       "[DEPOT_TOOLS]/gclient.py",
       "sync",
       "--nohooks",
-      "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--delete_unversioned_trees",
       "--revision",
       "src@4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00",
       "--output-json",
@@ -165,6 +165,7 @@
       "goma",
       "--goma-dir",
       "[BUILD]/goma",
+      "--clobber",
       "--",
       "cronet_package",
       "cronet_sample_test_apk"

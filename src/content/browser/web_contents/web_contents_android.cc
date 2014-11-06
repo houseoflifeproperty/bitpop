@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "content/browser/android/interstitial_page_delegate_android.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
+#include "content/browser/media/android/browser_media_player_manager.h"
 #include "content/browser/media/media_web_contents_observer.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -177,18 +178,25 @@ void WebContentsAndroid::BeginExitTransition(JNIEnv* env,
 
 void WebContentsAndroid::OnHide(JNIEnv* env, jobject obj) {
   web_contents_->WasHidden();
-  PauseVideo();
 }
 
 void WebContentsAndroid::OnShow(JNIEnv* env, jobject obj) {
   web_contents_->WasShown();
 }
 
-void WebContentsAndroid::PauseVideo() {
+void WebContentsAndroid::ReleaseMediaPlayers(JNIEnv* env, jobject jobj) {
+#if defined(ENABLE_BROWSER_CDMS)
   RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
       web_contents_->GetRenderViewHost());
-  if (rvhi)
-    rvhi->media_web_contents_observer()->PauseVideo();
+  if (!rvhi || !rvhi->GetMainFrame())
+    return;
+
+  BrowserMediaPlayerManager* manager =
+      rvhi->media_web_contents_observer()->GetMediaPlayerManager(
+          rvhi->GetMainFrame());
+  if (manager)
+    manager->ReleaseAllMediaPlayers();
+#endif // defined(ENABLE_BROWSER_CDMS)
 }
 
 void WebContentsAndroid::AddStyleSheetByURL(
@@ -327,12 +335,11 @@ void WebContentsAndroid::DidStartNavigationTransitionForFrame(int64 frame_id) {
 void WebContentsAndroid::EvaluateJavaScript(JNIEnv* env,
                                             jobject obj,
                                             jstring script,
-                                            jobject callback,
-                                            jboolean start_renderer) {
+                                            jobject callback) {
   RenderViewHost* rvh = web_contents_->GetRenderViewHost();
   DCHECK(rvh);
 
-  if (start_renderer && !rvh->IsRenderViewLive()) {
+  if (!rvh->IsRenderViewLive()) {
     if (!static_cast<WebContentsImpl*>(web_contents_)->
         CreateRenderViewForInitialEmptyDocument()) {
       LOG(ERROR) << "Failed to create RenderView in EvaluateJavaScript";

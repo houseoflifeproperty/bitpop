@@ -1,5 +1,5 @@
 {
-  "x-version": 12,
+  "x-version": 13,
   "google-talk": {
     "mime_types": [
     ],
@@ -177,24 +177,25 @@
     ],
     "versions": [
       {
-        "version": "10.1.8",
+        "version": "10.1.11",
         "status": "requires_authorization",
-        "reference": "https://www.adobe.com/support/security/bulletins/apsb13-22.html"
+        "reference": "https://helpx.adobe.com/security/products/reader/apsb14-19.html"
       },
       {
         "version": "11",
         "status": "out_of_date"
       },
       {
-        "version": "11.0.5",
+        "version": "11.0.8",
         "status": "requires_authorization",
-        "reference": "https://www.adobe.com/support/security/bulletins/apsb13-25.html"
+        "reference": "https://helpx.adobe.com/security/products/reader/apsb14-19.html"
       }
     ],
     "lang": "en-US",
     "name": "Adobe Reader",
     "help_url": "https://support.google.com/chrome/?p=plugin_pdf",
-    "url": "http://www.adobe.com/support/downloads/detail.jsp?ftpID=5674",
+    "url": "https://get.adobe.com/reader/",
+    "displayurl": true,
     "group_name_matcher": "*Adobe Acrobat*"
   },
   "apple-quicktime": {
@@ -263,16 +264,6 @@
   },
   "windows-media-player": {
     "mime_types": [
-      "application/asx",
-      "application/x-mplayer2",
-      "application/x-ms-wmp",
-      "audio/x-ms-wax",
-      "audio/x-ms-wma",
-      "video/x-ms-asf",
-      "video/x-ms-asf-plugin",
-      "video/x-ms-wm",
-      "video/x-ms-wmv",
-      "video/x-ms-wvx"
     ],
     "lang": "en-US",
     "name": "Windows Media Player",

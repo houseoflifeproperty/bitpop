@@ -25,7 +25,8 @@
       "--output_json",
       "/path/to/tmp/json",
       "--revision",
-      "src@204787"
+      "src@204787",
+      "--force"
     ],
     "name": "bot_update",
     "~followup_annotations": [
@@ -74,7 +75,7 @@
       "runhooks"
     ],
     "env": {
-      "GYP_DEFINES": "archive_gpu_tests=1 blink_asserts_always_on=1 component=static_library dcheck_always_on=1 disable_glibcxx_debug=1 gomadir='[BUILD]/goma' internal_gles2_conform_tests=1 target_arch=x64 test_isolation_mode=archive test_isolation_outdir=https://isolateserver.appspot.com use_goma=1"
+      "GYP_DEFINES": "archive_gpu_tests=1 blink_logging_always_on=1 component=static_library dcheck_always_on=1 disable_glibcxx_debug=1 gomadir='[BUILD]/goma' internal_gles2_conform_tests=1 target_arch=x64 test_isolation_mode=archive test_isolation_outdir=https://isolateserver.appspot.com use_goma=1"
     },
     "name": "gclient runhooks"
   },
@@ -99,6 +100,7 @@
       "content_gl_tests_run",
       "gl_tests_run",
       "gles2_conform_test_run",
+      "gpu_unittests_run",
       "tab_capture_end2end_tests_run",
       "telemetry_gpu_test_run"
     ],
@@ -121,11 +123,12 @@
       "@@@STEP_LOG_LINE@json.output@  \"content_gl_tests\": \"[dummy hash for content_gl_tests]\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"gl_tests\": \"[dummy hash for gl_tests]\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"gles2_conform_test\": \"[dummy hash for gles2_conform_test]\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"gpu_unittests\": \"[dummy hash for gpu_unittests]\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"tab_capture_end2end_tests\": \"[dummy hash for tab_capture_end2end_tests]\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"telemetry_gpu_test\": \"[dummy hash for telemetry_gpu_test]\"@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@",
-      "@@@SET_BUILD_PROPERTY@swarm_hashes@{\"content_gl_tests\": \"[dummy hash for content_gl_tests]\", \"tab_capture_end2end_tests\": \"[dummy hash for tab_capture_end2end_tests]\", \"gles2_conform_test\": \"[dummy hash for gles2_conform_test]\", \"gl_tests\": \"[dummy hash for gl_tests]\", \"angle_unittests\": \"[dummy hash for angle_unittests]\", \"telemetry_gpu_test\": \"[dummy hash for telemetry_gpu_test]\"}@@@"
+      "@@@SET_BUILD_PROPERTY@swarm_hashes@{\"angle_unittests\": \"[dummy hash for angle_unittests]\", \"content_gl_tests\": \"[dummy hash for content_gl_tests]\", \"gl_tests\": \"[dummy hash for gl_tests]\", \"gles2_conform_test\": \"[dummy hash for gles2_conform_test]\", \"gpu_unittests\": \"[dummy hash for gpu_unittests]\", \"tab_capture_end2end_tests\": \"[dummy hash for tab_capture_end2end_tests]\", \"telemetry_gpu_test\": \"[dummy hash for telemetry_gpu_test]\"}@@@"
     ]
   },
   {
@@ -403,7 +406,7 @@
       "--browser=release",
       "-v",
       "--use-devtools-active-port",
-      "--extra-browser-args=--enable-logging=stderr"
+      "--extra-browser-args=--enable-logging=stderr --blink-platform-log-channels=Timers,Media,ScriptedAnimationController --vmodule=thread_proxy=2,render_widget_compositor=2"
     ],
     "env": {
       "CHROME_DEVEL_SANDBOX": "/opt/chromium/chrome_sandbox"
@@ -697,5 +700,37 @@
       "--"
     ],
     "name": "tab_capture_end2end_tests"
+  },
+  {
+    "allow_subannotations": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Release",
+      "--no-xvfb",
+      "--factory-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"TestBranch\", \"build_config\": \"Release\", \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"mastername\": \"chromium.gpu.fyi\", \"project\": \"\", \"recipe\": \"gpu/build_and_test\", \"repository\": \"svn://svn-mirror.golo.chromium.org/chrome/trunk\", \"revision\": \"204787\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--build-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"TestBranch\", \"build_config\": \"Release\", \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"mastername\": \"chromium.gpu.fyi\", \"project\": \"\", \"recipe\": \"gpu/build_and_test\", \"repository\": \"svn://svn-mirror.golo.chromium.org/chrome/trunk\", \"revision\": \"204787\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--annotate=gtest",
+      "--test-type=gpu_unittests",
+      "--generate-json-file",
+      "--results-directory=[SLAVE_BUILD]/gtest-results/gpu_unittests",
+      "--builder-name=TestBuilder",
+      "--slave-name=TestSlavename",
+      "--build-number=571",
+      "--run-python-script",
+      "--revision=170242",
+      "--webkit-revision=124383",
+      "[SLAVE_BUILD]/src/tools/swarming_client/run_isolated.py",
+      "-H",
+      "[dummy hash for gpu_unittests]",
+      "-I",
+      "https://isolateserver.appspot.com",
+      "--"
+    ],
+    "name": "gpu_unittests"
   }
 ]

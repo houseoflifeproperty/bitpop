@@ -160,6 +160,8 @@
       "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"Win7 Tests (1)\", \"buildnumber\": 571, \"mastername\": \"chromium.win\", \"parent_buildername\": \"Win Builder\", \"recipe\": \"chromium\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
       "--annotate=gtest",
       "--test-type=aura_unittests",
+      "--test-launcher-summary-output",
+      "/path/to/tmp/json",
       "--generate-json-file",
       "-o",
       "gtest-results/aura_unittests.exe",
@@ -184,6 +186,8 @@
       "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"Win7 Tests (1)\", \"buildnumber\": 571, \"mastername\": \"chromium.win\", \"parent_buildername\": \"Win Builder\", \"recipe\": \"chromium\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
       "--annotate=gtest",
       "--test-type=browser_tests",
+      "--test-launcher-summary-output",
+      "/path/to/tmp/json",
       "--generate-json-file",
       "-o",
       "gtest-results/browser_tests.exe",
@@ -195,6 +199,23 @@
       "--test-launcher-total-shards=2"
     ],
     "name": "browser_tests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]\\src\\chrome\\test\\mini_installer\\test_installer.py",
+      "--build-dir",
+      "[SLAVE_BUILD]\\src\\out",
+      "--target",
+      "Release",
+      "--force-clean",
+      "--config",
+      "[SLAVE_BUILD]\\src\\chrome\\test\\mini_installer\\config\\config.config",
+      "--write-full-results-to",
+      "/path/to/tmp/json"
+    ],
+    "name": "test_installer"
   },
   {
     "cmd": [

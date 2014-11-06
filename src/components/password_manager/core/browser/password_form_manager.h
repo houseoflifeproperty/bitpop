@@ -11,6 +11,7 @@
 #include "build/build_config.h"
 
 #include "base/stl_util.h"
+#include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/common/password_form.h"
 #include "components/password_manager/core/browser/password_manager_driver.h"
 #include "components/password_manager/core/browser/password_store.h"
@@ -99,8 +100,8 @@ class PasswordFormManager : public PasswordStoreConsumer {
   // form.
   bool IsPendingCredentialsPublicSuffixMatch();
 
-  // Checks if the form is a valid password form. Forms which lack either
-  // login or password field are not considered valid.
+  // Checks if the form is a valid password form. Forms which lack password
+  // field are not considered valid.
   bool HasValidPasswordForm();
 
   // These functions are used to determine if this form has had it's password
@@ -262,6 +263,11 @@ class PasswordFormManager : public PasswordStoreConsumer {
   // Remove possible_usernames that may contains sensitive information and
   // duplicates.
   void SanitizePossibleUsernames(autofill::PasswordForm* form);
+
+  // Helper function to delegate uploading to the AutofillManager.
+  virtual void UploadPasswordForm(
+      const autofill::FormData& form_data,
+      const autofill::ServerFieldType& password_type);
 
   // Set of PasswordForms from the DB that best match the form
   // being managed by this. Use a map instead of vector, because we most

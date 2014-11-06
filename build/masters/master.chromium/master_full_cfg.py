@@ -28,7 +28,7 @@ def linux_android(): return chromium_factory.ChromiumFactory(
 defaults['category'] = '1clobber'
 
 # Global scheduler
-S('chromium', branch='src', treeStableTimer=60)
+S('chromium', branch='master', treeStableTimer=60)
 
 ################################################################################
 ## Windows

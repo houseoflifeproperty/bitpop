@@ -16,6 +16,8 @@
 #include "net/url_request/url_request.h"
 
 namespace net {
+class HttpResponseHeaders;
+class ProxyConfig;
 class ProxyServer;
 }
 
@@ -33,10 +35,18 @@ class DataReductionProxyUsageStats
       const net::ProxyServer& proxy_server,
       DataReductionProxyBypassType bypass_type);
 
+  // For the given response |headers| that are expected to include the data
+  // reduction proxy via header, records response code UMA if the data reduction
+  // proxy via header is not present.
+  static void DetectAndRecordMissingViaHeaderResponseCode(
+      bool is_primary,
+      const net::HttpResponseHeaders* headers);
+
   // MessageLoopProxy instance is owned by io_thread. |params| outlives
   // this class instance.
-  DataReductionProxyUsageStats(DataReductionProxyParams* params,
-                               base::MessageLoopProxy* ui_thread_proxy);
+  DataReductionProxyUsageStats(
+      DataReductionProxyParams* params,
+      const scoped_refptr<base::MessageLoopProxy>& ui_thread_proxy);
   virtual ~DataReductionProxyUsageStats();
 
   // Sets the callback to be called on the UI thread when the unavailability
@@ -55,36 +65,57 @@ class DataReductionProxyUsageStats
   // cause the current bypass.
   void SetBypassType(DataReductionProxyBypassType type);
 
-  // Given the |content_length| and associated |request|, records the
-  // number of bypassed bytes for that |request| into UMAs based on bypass type.
-  // |data_reduction_proxy_enabled| tells us the state of the
-  // kDataReductionProxyEnabled preference.
-  void RecordBypassedBytesHistograms(
-      net::URLRequest& request,
-      const BooleanPrefMember& data_reduction_proxy_enabled);
+  // Records all the data reduction proxy bytes-related histograms for the
+  // completed URLRequest |request|.
+  void RecordBytesHistograms(
+      net::URLRequest* request,
+      const BooleanPrefMember& data_reduction_proxy_enabled,
+      const net::ProxyConfig& data_reduction_proxy_config);
 
-  void RecordBypassEventHistograms(const net::ProxyServer& bypassed_proxy,
-                                   int net_error,
-                                   bool did_fallback) const;
+  // Called by |ChromeNetworkDelegate| when a proxy is put into the bad proxy
+  // list. Used to track when the data reduction proxy falls back.
+  void OnProxyFallback(const net::ProxyServer& bypassed_proxy,
+                       int net_error);
 
  private:
+  friend class DataReductionProxyUsageStatsTest;
+  FRIEND_TEST_ALL_PREFIXES(DataReductionProxyUsageStatsTest,
+                           RecordMissingViaHeaderBytes);
+
   enum BypassedBytesType {
     NOT_BYPASSED = 0,         /* Not bypassed. */
     SSL,                      /* Bypass due to SSL. */
     LOCAL_BYPASS_RULES,       /* Bypass due to client-side bypass rules. */
+    MANAGED_PROXY_CONFIG,     /* Bypass due to managed config. */
     AUDIO_VIDEO,              /* Audio/Video bypass. */
     TRIGGERING_REQUEST,       /* Triggering request bypass. */
     NETWORK_ERROR,            /* Network error. */
     BYPASSED_BYTES_TYPE_MAX   /* This must always be last.*/
   };
 
+  // Given |data_reduction_proxy_enabled|, a |request|, and the
+  // |data_reduction_proxy_config| records the number of bypassed bytes for that
+  // |request| into UMAs based on bypass type. |data_reduction_proxy_enabled|
+  // tells us the state of the kDataReductionProxyEnabled preference.
+  void RecordBypassedBytesHistograms(
+      net::URLRequest* request,
+      const BooleanPrefMember& data_reduction_proxy_enabled,
+      const net::ProxyConfig& data_reduction_proxy_config);
+
+  // Records UMA of the number of response bytes of responses that are expected
+  // to have the data reduction proxy via header, but where the data reduction
+  // proxy via header is not present.
+  void RecordMissingViaHeaderBytes(net::URLRequest* request);
+
   // NetworkChangeNotifier::NetworkChangeObserver:
   virtual void OnNetworkChanged(
       net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
 
-  // Counts requests that went through the data reduction proxy and counts
-  // requests that were eligible to go through the proxy.
-  void IncrementRequestCounts(bool actual);
+  // Called when request counts change. Resets counts if they exceed thresholds,
+  // and calls MaybeNotifyUnavailability otherwise.
+  void OnRequestCountChanged();
+
+  // Clears request counts unconditionally.
   void ClearRequestCounts();
 
   // Checks if the availability status of the data reduction proxy has changed,
@@ -92,7 +123,7 @@ class DataReductionProxyUsageStats
   // data reduction proxy is considered unavailable if and only if no requests
   // went through the proxy but some eligible requests were service by other
   // routes.
-  void MaybeNotifyUnavailability();
+  void NotifyUnavailabilityIfChanged();
   void NotifyUnavailabilityOnUIThread(bool unavailable);
 
   DataReductionProxyParams* data_reduction_proxy_params_;
@@ -101,7 +132,7 @@ class DataReductionProxyUsageStats
   DataReductionProxyBypassType last_bypass_type_;
   // True if the last request triggered the current bypass.
   bool triggering_request_;
-  base::MessageLoopProxy* ui_thread_proxy_;
+  const scoped_refptr<base::MessageLoopProxy> ui_thread_proxy_;
 
   // The following 2 fields are used to determine if data reduction proxy is
   // unreachable. We keep a count of requests which should go through
@@ -109,14 +140,12 @@ class DataReductionProxyUsageStats
   // unreachable if no successful requests are made through it despite a
   // non-zero number of requests being eligible.
 
-  // Count of requests which will be tried to be sent through data reduction
-  // proxy. The count is only based on the config and not the bad proxy list.
-  // Explicit bypasses are not part of this count. This is the desired behavior
-  // since otherwise both counts would be identical.
-  unsigned long eligible_num_requests_through_proxy_;
+  // Count of successful requests through the data reduction proxy.
+  unsigned long successful_requests_through_proxy_count_;
 
-  // Count of successful requests through data reduction proxy.
-  unsigned long actual_num_requests_through_proxy_;
+  // Count of network errors encountered when connecting to a data reduction
+  // proxy.
+  unsigned long proxy_net_errors_count_;
 
   // Whether or not the data reduction proxy is unavailable.
   bool unavailable_;

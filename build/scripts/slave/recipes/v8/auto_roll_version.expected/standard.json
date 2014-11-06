@@ -1,0 +1,96 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/cleanup_temp.py"
+    ],
+    "name": "cleanup_temp"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/bot_update.py",
+      "--master",
+      "client.v8",
+      "--builder",
+      "TestBuilder",
+      "--slave",
+      "TestSlavename",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]",
+      "--revision_mapping_file",
+      "{\"v8\": \"got_revision\"}",
+      "--output_json",
+      "/path/to/tmp/json",
+      "--revision",
+      "v8@HEAD",
+      "--force",
+      "--no_shallow"
+    ],
+    "name": "bot_update",
+    "~followup_annotations": [
+      "@@@STEP_TEXT@Some step text@@@",
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"did_run\": true, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_failure\": false, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_root\": \"v8\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"properties\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_revision\": 50110, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_revision_git\": \"f2cbea7e89a45f46819777bb78a1f5bd0241f64c\"@@@",
+      "@@@STEP_LOG_LINE@json.output@  }, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"root\": \"v8\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"step_text\": \"Some step text\"@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@50110@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision_git@\"f2cbea7e89a45f46819777bb78a1f5bd0241f64c\"@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "--",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "cp",
+      "gs://chromium-v8-auto-roll/bootstrap/v8.svn.zip",
+      "[SLAVE_BUILD]"
+    ],
+    "name": "gsutil bootstrapping checkout"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/zip/resources/unzip.py"
+    ],
+    "name": "unzipping",
+    "stdin": "{\"output\": \"[SLAVE_BUILD]/v8.svn\", \"use_python_zip\": false, \"zip_file\": \"[SLAVE_BUILD]/v8.svn.zip\"}"
+  },
+  {
+    "cmd": [
+      "svn",
+      "update"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8.svn",
+    "name": "svn update"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/v8/tools/push-to-trunk/bump_up_version.py",
+      "--author",
+      "v8-autoroll@chromium.org",
+      "--svn",
+      "[SLAVE_BUILD]/v8.svn",
+      "--svn-config",
+      "[SLAVE_BUILD]/svn_config"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8",
+    "name": "increment version"
+  }
+]

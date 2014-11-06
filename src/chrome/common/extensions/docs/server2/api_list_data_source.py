@@ -53,7 +53,7 @@ class APIListDataSource(DataSource):
 
     def make_dict_for_platform(platform):
       platform_dict = {
-        'chrome': {'stable': [], 'beta': [], 'dev': [], 'trunk': []},
+        'chrome': {'stable': [], 'beta': [], 'dev': [], 'master': []},
       }
       private_apis = []
       experimental_apis = []
@@ -119,5 +119,5 @@ class APIListDataSource(DataSource):
   def get(self, key):
     return self._GetCachedAPIData().Get().get(key)
 
-  def Cron(self):
+  def Refresh(self, path):
     return self._GetCachedAPIData()

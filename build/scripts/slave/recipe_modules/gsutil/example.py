@@ -34,6 +34,10 @@ def GenSteps(api):
   new_local_file = api.path['slave_build'].join('erang')
   api.gsutil.download(bucket, new_cloud_file, new_local_file)
 
+  private_key_file = 'path/to/key'
+  signed_url = api.gsutil.signurl(private_key_file, bucket, cloud_file,
+                                  name='signed url')
+
 
 def GenTests(api):
   yield api.test('basic')

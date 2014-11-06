@@ -132,7 +132,8 @@ class StatusResourceBuilder(HtmlResource, BuildLineMixin):
 
         cxt['authz'] = self.getAuthz(req)
         cxt['builder_url'] = path_to_builder(req, b)
-
+        cxt['mastername'] = (
+            req.site.buildbot_service.master.properties['mastername'])
         template = req.site.buildbot_service.templates.get_template("builder.html")
         yield template.render(**cxt)
 

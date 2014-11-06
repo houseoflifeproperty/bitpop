@@ -11,7 +11,7 @@ TODO(stip): Move the perf dashboard code from runtest.py to here.
 
 import re
 
-from slave import process_log_utils
+from slave import performance_log_processor
 from slave import slave_utils
 
 
@@ -46,9 +46,9 @@ def getText(result, observer, name):
 
   failed_test_count = len(observer.FailedTests())
   if failed_test_count == 0:
-    if result == process_log_utils.SUCCESS:
+    if result == performance_log_processor.SUCCESS:
       return basic_info
-    elif result == process_log_utils.WARNINGS:
+    elif result == performance_log_processor.WARNINGS:
       return basic_info + ['warnings']
 
   if observer.RunningTests():
@@ -73,7 +73,7 @@ def getText(result, observer, name):
   return basic_info + failure_text
 
 
-def annotate(test_name, result, results_tracker, full_name=False,
+def annotate(test_name, result, log_processor, full_name=False,
              perf_dashboard_id=None):
   """Given a test result and tracker, update the waterfall with test results."""
 
@@ -82,51 +82,51 @@ def annotate(test_name, result, results_tracker, full_name=False,
   # with no output (exit code can have some clues, especially on Windows).
   print 'exit code (as seen by runtest.py): %d' % result
 
-  get_text_result = process_log_utils.SUCCESS
+  get_text_result = performance_log_processor.SUCCESS
 
-  for failure in sorted(results_tracker.FailedTests()):
+  for failure in sorted(log_processor.FailedTests()):
     if full_name:
       testabbr = re.sub(r'[^\w\.\-]', '_', failure)
     else:
       testabbr = re.sub(r'[^\w\.\-]', '_', failure.split('.')[-1])
     slave_utils.WriteLogLines(testabbr,
-                              results_tracker.FailureDescription(failure))
-  for suppression_hash in sorted(results_tracker.SuppressionHashes()):
+                              log_processor.FailureDescription(failure))
+  for suppression_hash in sorted(log_processor.SuppressionHashes()):
     slave_utils.WriteLogLines(suppression_hash,
-                              results_tracker.Suppression(suppression_hash))
+                              log_processor.Suppression(suppression_hash))
 
-  if results_tracker.ParsingErrors():
+  if log_processor.ParsingErrors():
     # Generate a log file containing the list of errors.
     slave_utils.WriteLogLines('log parsing error(s)',
-                              results_tracker.ParsingErrors())
+                              log_processor.ParsingErrors())
 
-    results_tracker.ClearParsingErrors()
+    log_processor.ClearParsingErrors()
 
-  if hasattr(results_tracker, 'evaluateCommand'):
-    parser_result = results_tracker.evaluateCommand('command')
+  if hasattr(log_processor, 'evaluateCommand'):
+    parser_result = log_processor.evaluateCommand('command')
     if parser_result > result:
       result = parser_result
 
-  if result == process_log_utils.SUCCESS:
-    if (len(results_tracker.ParsingErrors()) or
-        len(results_tracker.FailedTests()) or
-        len(results_tracker.SuppressionHashes())):
+  if result == performance_log_processor.SUCCESS:
+    if (len(log_processor.ParsingErrors()) or
+        len(log_processor.FailedTests()) or
+        len(log_processor.SuppressionHashes())):
       print '@@@STEP_WARNINGS@@@'
-      get_text_result = process_log_utils.WARNINGS
+      get_text_result = performance_log_processor.WARNINGS
   elif result == slave_utils.WARNING_EXIT_CODE:
     print '@@@STEP_WARNINGS@@@'
-    get_text_result = process_log_utils.WARNINGS
+    get_text_result = performance_log_processor.WARNINGS
   else:
     print '@@@STEP_FAILURE@@@'
-    get_text_result = process_log_utils.FAILURE
+    get_text_result = performance_log_processor.FAILURE
 
-  for desc in getText(get_text_result, results_tracker, test_name):
+  for desc in getText(get_text_result, log_processor, test_name):
     print '@@@STEP_TEXT@%s@@@' % desc
 
-  if hasattr(results_tracker, 'PerformanceLogs'):
+  if hasattr(log_processor, 'PerformanceLogs'):
     if not perf_dashboard_id:
       raise Exception('runtest.py error: perf step specified but'
                       'no test_id in factory_properties!')
-    for logname, log in results_tracker.PerformanceLogs().iteritems():
+    for logname, log in log_processor.PerformanceLogs().iteritems():
       lines = [str(l).rstrip() for l in log]
       slave_utils.WriteLogLines(logname, lines, perf=perf_dashboard_id)

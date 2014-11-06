@@ -200,21 +200,21 @@ function testNewWindowNameTakesPrecedence() {
                     webViewName, guestName, partitionName, expectedName);
 }
 
-function testWebViewNameTakesPrecedence() {
+function testNewWindowWebViewNameTakesPrecedence() {
   var webViewName = 'foo';
   var guestName = '';
   var partitionName = 'persist:foobar';
   var expectedName = webViewName;
-  testNewWindowName('testWebViewNameTakesPrecedence',
+  testNewWindowName('testNewWindowWebViewNameTakesPrecedence',
                     webViewName, guestName, partitionName, expectedName);
 }
 
-function testNoName() {
+function testNewWindowNoName() {
   var webViewName = '';
   var guestName = '';
   var partitionName = '';
   var expectedName = '';
-  testNewWindowName('testNoName',
+  testNewWindowName('testNewWindowNoName',
                     webViewName, guestName, partitionName, expectedName);
 }
 
@@ -235,6 +235,34 @@ function testNewWindowRedirect() {
                     webViewName, guestName, partitionName, expectedName);
 }
 
+// Tests that we fail gracefully if we try to attach() a <webview> on a
+// newwindow event after the opener has been destroyed.
+function testNewWindowAttachAfterOpenerDestroyed() {
+  var testName = 'testNewWindowAttachAfterOpenerDestroyed';
+  var webview = embedder.setUpGuest_('foobar');
+
+  var onNewWindow = function(e) {
+    embedder.assertCorrectEvent_(e, '');
+
+    // Remove the opener.
+    webview.parentNode.removeChild(webview);
+    // Pass in a timeout so we ensure the newwindow disposal codepath
+    // works properly.
+    window.setTimeout(function() {
+      // At this point the opener <webview> is gone.
+      // Trying to discard() will fail silently.
+      e.window.attach(document.createElement('webview'));
+      window.setTimeout(function() { embedder.test.succeed(); }, 0);
+    }, 0);
+
+    e.preventDefault();
+  };
+  webview.addEventListener('newwindow', onNewWindow);
+
+  // Load a new window with the given name.
+  embedder.setUpNewWindowRequest_(webview, 'guest.html', '', testName);
+}
+
 function testNewWindowClose() {
   var testName = 'testNewWindowClose';
   var webview = embedder.setUpGuest_('foobar');
@@ -251,6 +279,69 @@ function testNewWindowClose() {
     } catch (e) {
       embedder.test.fail();
     }
+  };
+  webview.addEventListener('newwindow', onNewWindow);
+
+  // Load a new window with the given name.
+  embedder.setUpNewWindowRequest_(webview, 'guest.html', '', testName);
+}
+
+// Checks that calling event.window.attach() with a <webview> that is not
+// in the DOM works properly.
+// This tests the deferred attachment code path in web_view.js.
+function testNewWindowDeferredAttachment() {
+  var testName = 'testNewWindowDeferredAttachment';
+  var webview = embedder.setUpGuest_('foobar');
+
+  var onNewWindow = function(e) {
+    chrome.test.log('Embedder notified on newwindow');
+    embedder.assertCorrectEvent_(e, '');
+
+    var newwebview = document.createElement('webview');
+
+    newwebview.addEventListener('loadstop', function() {
+      chrome.test.log('Guest in newwindow got loadstop.');
+      embedder.test.succeed();
+    });
+
+    try {
+      e.window.attach(newwebview);
+    } catch (e) {
+      embedder.test.fail();
+    }
+
+    // Append the <webview> in DOM later.
+    window.setTimeout(function() {
+      document.querySelector('#webview-tag-container').appendChild(newwebview);
+    }, 0);
+  };
+  webview.addEventListener('newwindow', onNewWindow);
+
+  // Load a new window with the given name.
+  embedder.setUpNewWindowRequest_(webview, 'guest.html', '', testName);
+}
+
+// Tests that we fail gracefully if we try to discard() a <webview> on a
+// newwindow event after the opener has been destroyed.
+function testNewWindowDiscardAfterOpenerDestroyed() {
+  var testName = 'testNewWindowDiscardAfterOpenerDestroyed';
+  var webview = embedder.setUpGuest_('foobar');
+
+  var onNewWindow = function(e) {
+    embedder.assertCorrectEvent_(e, '');
+
+    // Remove the opener.
+    webview.parentNode.removeChild(webview);
+    // Pass in a timeout so we ensure the newwindow disposal codepath
+    // works properly.
+    window.setTimeout(function() {
+      // At this point the opener <webview> is gone.
+      // Trying to discard() will fail silently.
+      e.window.discard();
+      window.setTimeout(function() { embedder.test.succeed(); }, 0);
+    }, 0);
+
+    e.preventDefault();
   };
   webview.addEventListener('newwindow', onNewWindow);
 
@@ -296,6 +387,30 @@ function testNewWindowOpenInNewTab() {
     embedder.test.succeed();
   });
   webview.src = embedder.guestWithLinkURL;
+}
+
+// Tests that if opener <webview> is gone with unattached guest, we
+// don't see any error.
+// This test also makes sure we destroy the unattached guests properly.
+function testNewWindowOpenerDestroyedWhileUnattached() {
+  var testName = 'testNewWindowOpenerDestroyedBeforeAttach';
+  var webview = embedder.setUpGuest_('foobar');
+
+  var onNewWindow = function(e) {
+    embedder.assertCorrectEvent_(e, '');
+
+    // Remove the opener.
+    webview.parentNode.removeChild(webview);
+    // Pass in a timeout so we ensure the newwindow disposal codepath
+    // works properly.
+    window.setTimeout(function() { embedder.test.succeed(); }, 0);
+
+    e.preventDefault();
+  };
+  webview.addEventListener('newwindow', onNewWindow);
+
+  // Load a new window with the given name.
+  embedder.setUpNewWindowRequest_(webview, 'guest.html', '', testName);
 }
 
 function testNewWindowWebRequest() {
@@ -456,17 +571,25 @@ function testNewWindowWebRequestRemoveElement() {
 }
 
 embedder.test.testList = {
-  'testNewWindowNameTakesPrecedence': testNewWindowNameTakesPrecedence,
-  'testWebViewNameTakesPrecedence': testWebViewNameTakesPrecedence,
-  'testNoName': testNoName,
-  'testNewWindowRedirect':  testNewWindowRedirect,
+  'testNewWindowAttachAfterOpenerDestroyed':
+      testNewWindowAttachAfterOpenerDestroyed,
   'testNewWindowClose': testNewWindowClose,
-  'testNewWindowExecuteScript': testNewWindowExecuteScript,
-  'testNewWindowOpenInNewTab': testNewWindowOpenInNewTab,
   'testNewWindowDeclarativeWebRequest': testNewWindowDeclarativeWebRequest,
+  'testNewWindowDeferredAttachment': testNewWindowDeferredAttachment,
+  'testNewWindowDiscardAfterOpenerDestroyed':
+      testNewWindowDiscardAfterOpenerDestroyed,
+  'testNewWindowExecuteScript': testNewWindowExecuteScript,
+  'testNewWindowNameTakesPrecedence': testNewWindowNameTakesPrecedence,
+  'testNewWindowNoName': testNewWindowNoName,
+  'testNewWindowOpenInNewTab': testNewWindowOpenInNewTab,
+  'testNewWindowOpenerDestroyedWhileUnattached':
+      testNewWindowOpenerDestroyedWhileUnattached,
+  'testNewWindowRedirect':  testNewWindowRedirect,
   'testNewWindowWebRequest': testNewWindowWebRequest,
   'testNewWindowWebRequestCloseWindow': testNewWindowWebRequestCloseWindow,
-  'testNewWindowWebRequestRemoveElement': testNewWindowWebRequestRemoveElement
+  'testNewWindowWebRequestRemoveElement': testNewWindowWebRequestRemoveElement,
+  'testNewWindowWebViewNameTakesPrecedence':
+      testNewWindowWebViewNameTakesPrecedence
 };
 
 onload = function() {

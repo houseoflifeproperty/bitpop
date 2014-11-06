@@ -46,8 +46,8 @@ class DesktopMediaPickerViewsTest : public testing::Test {
 
     picker_views_.reset(new DesktopMediaPickerViews());
     picker_views_->Show(NULL,
-                        NULL,
                         parent_widget_->GetNativeWindow(),
+                        NULL,
                         app_name,
                         app_name,
                         media_list.PassAs<DesktopMediaList>(),
@@ -126,13 +126,9 @@ TEST_F(DesktopMediaPickerViewsTest, DoneCallbackCalledOnDoubleTap) {
                   content::DesktopMediaID::TYPE_WINDOW, kFakeId)));
 
   media_list_->AddSource(kFakeId);
-
-  ui::GestureEvent double_tap(
-      10,
-      10,
-      0,
-      base::TimeDelta(),
-      ui::GestureEventDetails(ui::ET_GESTURE_TAP, 2, 0));
+  ui::GestureEventDetails details(ui::ET_GESTURE_TAP);
+  details.set_tap_count(2);
+  ui::GestureEvent double_tap(10, 10, 0, base::TimeDelta(), details);
 
   GetPickerDialogView()->GetMediaSourceViewForTesting(0)->OnGestureEvent(
       &double_tap);

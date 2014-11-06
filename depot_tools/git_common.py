@@ -52,13 +52,13 @@ FREEZE_MATCHER = re.compile(r'%s.(%s)' % (FREEZE, '|'.join(FREEZE_SECTIONS)))
 # It was last imported from '7add3ac29564d98ac35ce426bc295e743e7c0c02'.
 GIT_TRANSIENT_ERRORS = (
     # crbug.com/285832
-    r'! \[remote rejected\].*\(error in hook\)',
+    r'!.*\[remote rejected\].*\(error in hook\)',
 
     # crbug.com/289932
-    r'! \[remote rejected\].*\(failed to lock\)',
+    r'!.*\[remote rejected\].*\(failed to lock\)',
 
     # crbug.com/307156
-    r'! \[remote rejected\].*\(error in Gerrit backend\)',
+    r'!.*\[remote rejected\].*\(error in Gerrit backend\)',
 
     # crbug.com/285832
     r'remote error: Internal Server Error',
@@ -91,6 +91,9 @@ GIT_TRANSIENT_ERRORS = (
 GIT_TRANSIENT_ERRORS_RE = re.compile('|'.join(GIT_TRANSIENT_ERRORS),
                                      re.IGNORECASE)
 
+# First version where the for-each-ref command's format string supported the
+# upstream:track token.
+MIN_UPSTREAM_TRACK_GIT_VERSION = (1, 9)
 
 class BadCommitRefException(Exception):
   def __init__(self, refs):
@@ -436,8 +439,11 @@ def hash_multi(*reflike):
   return run('rev-parse', *reflike).splitlines()
 
 
-def hash_one(reflike):
-  return run('rev-parse', reflike)
+def hash_one(reflike, short=False):
+  args = ['rev-parse', reflike]
+  if short:
+    args.insert(1, '--short')
+  return run(*args)
 
 
 def in_rebase():
@@ -716,3 +722,47 @@ def upstream(branch):
                branch+'@{upstream}')
   except subprocess2.CalledProcessError:
     return None
+
+def get_git_version():
+  """Returns a tuple that contains the numeric components of the current git
+  version."""
+  version_string = run('--version')
+  version_match = re.search(r'(\d+.)+(\d+)', version_string)
+  version = version_match.group() if version_match else ''
+
+  return tuple(int(x) for x in version.split('.'))
+
+
+def get_branches_info(include_tracking_status):
+  format_string = (
+      '--format=%(refname:short):%(objectname:short):%(upstream:short):')
+
+  # This is not covered by the depot_tools CQ which only has git version 1.8.
+  if (include_tracking_status and
+      get_git_version() >= MIN_UPSTREAM_TRACK_GIT_VERSION):  # pragma: no cover
+    format_string += '%(upstream:track)'
+
+  info_map = {}
+  data = run('for-each-ref', format_string, 'refs/heads')
+  BranchesInfo = collections.namedtuple(
+      'BranchesInfo', 'hash upstream ahead behind')
+  for line in data.splitlines():
+    (branch, branch_hash, upstream_branch, tracking_status) = line.split(':')
+
+    ahead_match = re.search(r'ahead (\d+)', tracking_status)
+    ahead = int(ahead_match.group(1)) if ahead_match else None
+
+    behind_match = re.search(r'behind (\d+)', tracking_status)
+    behind = int(behind_match.group(1)) if behind_match else None
+
+    info_map[branch] = BranchesInfo(
+        hash=branch_hash, upstream=upstream_branch, ahead=ahead, behind=behind)
+
+  # Set None for upstreams which are not branches (e.g empty upstream, remotes
+  # and deleted upstream branches).
+  missing_upstreams = {}
+  for info in info_map.values():
+    if info.upstream not in info_map and info.upstream not in missing_upstreams:
+      missing_upstreams[info.upstream] = None
+
+  return dict(info_map.items() + missing_upstreams.items())

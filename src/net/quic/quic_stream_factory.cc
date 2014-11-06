@@ -71,6 +71,9 @@ const int32 kServerSecureInitialCongestionWindow = 32;
 // Be conservative, and just use double a typical TCP  ICWND for HTTP.
 const int32 kServerInecureInitialCongestionWindow = 20;
 
+const char kDummyHostname[] = "quic.global.props";
+const uint16 kDummyPort = 0;
+
 void HistogramCreateSessionFailure(enum CreateSessionFailure error) {
   UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.CreationError", error,
                             CREATION_ERROR_MAX);
@@ -96,6 +99,26 @@ QuicConfig InitializeQuicConfig(bool enable_time_based_loss_detection,
       QuicTime::Delta::FromSeconds(kIdleConnectionTimeoutSeconds));
   config.SetConnectionOptionsToSend(connection_options);
   return config;
+}
+
+class DefaultPacketWriterFactory : public QuicConnection::PacketWriterFactory {
+ public:
+  explicit DefaultPacketWriterFactory(DatagramClientSocket* socket)
+      : socket_(socket) {}
+  virtual ~DefaultPacketWriterFactory() {}
+
+  virtual QuicPacketWriter* Create(QuicConnection* connection) const OVERRIDE;
+
+ private:
+  DatagramClientSocket* socket_;
+};
+
+QuicPacketWriter* DefaultPacketWriterFactory::Create(
+    QuicConnection* connection) const {
+  scoped_ptr<QuicDefaultPacketWriter> writer(
+      new QuicDefaultPacketWriter(socket_));
+  writer->SetConnection(connection);
+  return writer.release();
 }
 
 }  // namespace
@@ -191,6 +214,7 @@ class QuicStreamFactory::Job {
   CompletionCallback callback_;
   AddressList address_list_;
   base::TimeTicks disk_cache_load_start_time_;
+  base::TimeTicks dns_resolution_start_time_;
   base::WeakPtrFactory<Job> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(Job);
 };
@@ -295,6 +319,7 @@ int QuicStreamFactory::Job::DoResolveHost() {
   }
 
   io_state_ = STATE_RESOLVE_HOST_COMPLETE;
+  dns_resolution_start_time_ = base::TimeTicks::Now();
   return host_resolver_.Resolve(
       HostResolver::RequestInfo(server_id_.host_port_pair()),
       DEFAULT_PRIORITY,
@@ -305,6 +330,8 @@ int QuicStreamFactory::Job::DoResolveHost() {
 }
 
 int QuicStreamFactory::Job::DoResolveHostComplete(int rv) {
+  UMA_HISTOGRAM_TIMES("Net.QuicSession.HostResolutionTime",
+                      base::TimeTicks::Now() - dns_resolution_start_time_);
   if (rv != OK)
     return rv;
 
@@ -354,6 +381,10 @@ int QuicStreamFactory::Job::DoConnect() {
     DCHECK(rv != ERR_IO_PENDING);
     DCHECK(!session_);
     return rv;
+  }
+
+  if (!session_->connection()->connected()) {
+    return ERR_CONNECTION_CLOSED;
   }
 
   session_->StartReading();
@@ -461,6 +492,8 @@ QuicStreamFactory::QuicStreamFactory(
     const QuicVersionVector& supported_versions,
     bool enable_port_selection,
     bool enable_time_based_loss_detection,
+    bool always_require_handshake_confirmation,
+    bool disable_connection_pooling,
     const QuicTagVector& connection_options)
     : require_confirmation_(true),
       host_resolver_(host_resolver),
@@ -476,7 +509,11 @@ QuicStreamFactory::QuicStreamFactory(
                                    connection_options)),
       supported_versions_(supported_versions),
       enable_port_selection_(enable_port_selection),
+      always_require_handshake_confirmation_(
+          always_require_handshake_confirmation),
+      disable_connection_pooling_(disable_connection_pooling),
       port_seed_(random_generator_->RandUint64()),
+      check_persisted_supports_quic_(true),
       weak_factory_(this) {
   DCHECK(transport_security_state_);
   crypto_config_.SetDefaults();
@@ -501,6 +538,17 @@ QuicStreamFactory::~QuicStreamFactory() {
     all_sessions_.erase(all_sessions_.begin());
   }
   STLDeleteValues(&active_jobs_);
+}
+
+void QuicStreamFactory::set_require_confirmation(bool require_confirmation) {
+  require_confirmation_ = require_confirmation;
+  if (http_server_properties_ && (!(local_address_ == IPEndPoint()))) {
+    // TODO(rtenneti): Delete host_port_pair and persist data in globals.
+    HostPortPair host_port_pair(kDummyHostname, kDummyPort);
+    http_server_properties_->SetSupportsQuic(
+        host_port_pair, !require_confirmation,
+        local_address_.ToStringWithoutPort());
+  }
 }
 
 int QuicStreamFactory::Create(const HostPortPair& host_port_pair,
@@ -557,6 +605,9 @@ bool QuicStreamFactory::OnResolution(
     const QuicServerId& server_id,
     const AddressList& address_list) {
   DCHECK(!HasActiveSession(server_id));
+  if (disable_connection_pooling_) {
+    return false;
+  }
   for (size_t i = 0; i < address_list.size(); ++i) {
     const IPEndPoint& address = address_list[i];
     const IpAliasKey ip_alias_key(address, server_id.is_https());
@@ -579,7 +630,8 @@ bool QuicStreamFactory::OnResolution(
 
 void QuicStreamFactory::OnJobComplete(Job* job, int rv) {
   if (rv == OK) {
-    require_confirmation_ = false;
+    if (!always_require_handshake_confirmation_)
+      set_require_confirmation(false);
 
     // Create all the streams, but do not notify them yet.
     for (RequestSet::iterator it = job_requests_map_[job].begin();
@@ -735,7 +787,7 @@ void QuicStreamFactory::ClearCachedStatesInCryptoConfig() {
 
 void QuicStreamFactory::OnIPAddressChanged() {
   CloseAllSessions(ERR_NETWORK_CHANGED);
-  require_confirmation_ = true;
+  set_require_confirmation(true);
 }
 
 void QuicStreamFactory::OnCertAdded(const X509Certificate* cert) {
@@ -820,8 +872,19 @@ int QuicStreamFactory::CreateSession(
     return rv;
   }
 
-  scoped_ptr<QuicDefaultPacketWriter> writer(
-      new QuicDefaultPacketWriter(socket.get()));
+  socket->GetLocalAddress(&local_address_);
+  if (check_persisted_supports_quic_ && http_server_properties_) {
+    check_persisted_supports_quic_ = false;
+    // TODO(rtenneti): Delete host_port_pair and persist data in globals.
+    HostPortPair host_port_pair(kDummyHostname, kDummyPort);
+    SupportsQuic supports_quic(true, local_address_.ToStringWithoutPort());
+    if (http_server_properties_->GetSupportsQuic(
+            host_port_pair).Equals(supports_quic)) {
+      require_confirmation_ = false;
+    }
+  }
+
+  DefaultPacketWriterFactory packet_writer_factory(socket.get());
 
   if (!helper_.get()) {
     helper_.reset(new QuicConnectionHelper(
@@ -832,11 +895,10 @@ int QuicStreamFactory::CreateSession(
   QuicConnection* connection = new QuicConnection(connection_id,
                                                   addr,
                                                   helper_.get(),
-                                                  writer.get(),
-                                                  false  /* owns_writer */,
+                                                  packet_writer_factory,
+                                                  true  /* owns_writer */,
                                                   false  /* is_server */,
                                                   supported_versions_);
-  writer->SetConnection(connection);
   connection->set_max_packet_length(max_packet_length_);
 
   InitializeCachedStateInCryptoConfig(server_id, server_info);
@@ -858,13 +920,23 @@ int QuicStreamFactory::CreateSession(
   }
 
   *session = new QuicClientSession(
-      connection, socket.Pass(), writer.Pass(), this,
-      quic_crypto_client_stream_factory_, transport_security_state_,
-      server_info.Pass(), server_id, config, &crypto_config_,
+      connection, socket.Pass(), this, transport_security_state_,
+      server_info.Pass(), config,
       base::MessageLoop::current()->message_loop_proxy().get(),
       net_log.net_log());
-  (*session)->InitializeSession();
   all_sessions_[*session] = server_id;  // owning pointer
+  (*session)->InitializeSession(server_id,  &crypto_config_,
+                                quic_crypto_client_stream_factory_);
+  bool closed_during_initialize =
+      !ContainsKey(all_sessions_, *session) ||
+      !(*session)->connection()->connected();
+  UMA_HISTOGRAM_BOOLEAN("Net.QuicSession.ClosedDuringInitializeSession",
+                        closed_during_initialize);
+  if (closed_during_initialize) {
+    DLOG(DFATAL) << "Session closed during initialize";
+    *session = NULL;
+    return ERR_CONNECTION_CLOSED;
+  }
   return OK;
 }
 

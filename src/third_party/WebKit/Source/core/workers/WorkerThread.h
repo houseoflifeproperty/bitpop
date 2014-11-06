@@ -31,10 +31,8 @@
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "platform/SharedTimer.h"
-#include "platform/heap/glue/MessageLoopInterruptor.h"
-#include "platform/heap/glue/PendingGCRunner.h"
+#include "platform/WebThreadSupportingGC.h"
 #include "platform/weborigin/SecurityOrigin.h"
-#include "public/platform/WebThread.h"
 #include "wtf/Forward.h"
 #include "wtf/MessageQueue.h"
 #include "wtf/OwnPtr.h"
@@ -71,6 +69,9 @@ namespace blink {
         // (This is signalled on the main thread, so it's assumed to be waited on the worker context thread)
         blink::WebWaitableEvent* shutdownEvent() { return m_shutdownEvent.get(); }
 
+        blink::WebWaitableEvent* terminationEvent() { return m_terminationEvent.get(); }
+        static void terminateAndWaitForAllWorkers();
+
         bool isCurrentThread() const;
         WorkerLoaderProxy& workerLoaderProxy() const { return m_workerLoaderProxy; }
         WorkerReportingProxy& workerReportingProxy() const { return m_workerReportingProxy; }
@@ -92,6 +93,8 @@ namespace blink {
         // Number of active worker threads.
         static unsigned workerThreadCount();
 
+        PlatformThreadId platformThreadId() const;
+
         void interruptAndDispatchInspectorCommands();
         void setWorkerInspectorController(WorkerInspectorController*);
 
@@ -107,6 +110,9 @@ namespace blink {
         friend class WorkerSharedTimer;
         friend class WorkerThreadShutdownFinishTask;
 
+        void stopInShutdownSequence();
+        void stopInternal();
+
         void initialize();
         void cleanup();
         void idleHandler();
@@ -115,9 +121,7 @@ namespace blink {
         bool m_terminated;
         OwnPtr<WorkerSharedTimer> m_sharedTimer;
         MessageQueue<WorkerThreadTask> m_debuggerMessageQueue;
-        OwnPtr<PendingGCRunner> m_pendingGCRunner;
         OwnPtr<WebThread::TaskObserver> m_microtaskRunner;
-        OwnPtr<MessageLoopInterruptor> m_messageLoopInterruptor;
 
         WorkerLoaderProxy& m_workerLoaderProxy;
         WorkerReportingProxy& m_workerReportingProxy;
@@ -132,12 +136,15 @@ namespace blink {
         // Used to signal thread shutdown.
         OwnPtr<blink::WebWaitableEvent> m_shutdownEvent;
 
+        // Used to signal thread termination.
+        OwnPtr<blink::WebWaitableEvent> m_terminationEvent;
+
         // FIXME: This has to be last because of crbug.com/401397 - the
         // WorkerThread might get deleted before it had a chance to properly
         // shut down. By deleting the WebThread first, we can guarantee that
         // no pending tasks on the thread might want to access any of the other
         // members during the WorkerThread's destruction.
-        OwnPtr<blink::WebThread> m_thread;
+        OwnPtr<WebThreadSupportingGC> m_thread;
     };
 
 } // namespace blink

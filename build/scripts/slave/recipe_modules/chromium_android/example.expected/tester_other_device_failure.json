@@ -81,9 +81,9 @@
       "[DEPOT_TOOLS]/gclient.py",
       "sync",
       "--nohooks",
-      "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--delete_unversioned_trees",
       "--revision",
       "src/repo@4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00",
       "--output-json",
@@ -283,7 +283,7 @@
     "~followup_annotations": [
       "step returned non-zero exit code: 2",
       "@@@STEP_LINK@report a bug@https://code.google.com/p/chromium/issues/entry?comment=Buildbot%3A+tester%0A%28Please+do+not+change+any+labels%29&labels=Restrict-View-Google%2COS-Android%2CInfra%2CInfra-Labs&summary=Device+Offline+on+chromium.testing.master+tehslave@@@",
-      "@@@STEP_FAILURE@@@"
+      "@@@STEP_EXCEPTION@@@"
     ]
   },
   {
@@ -394,7 +394,7 @@
   },
   {
     "name": "$final_result",
-    "reason": "Step('device_status_check') failed with return_code 2",
+    "reason": "Infra Failure: Step('device_status_check') returned 2",
     "status_code": 2
   }
 ]

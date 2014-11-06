@@ -12,18 +12,17 @@ class CronetApi(recipe_api.RecipeApi):
     self._repo_path = None
 
 
-  def init_and_sync(self, recipe_config, kwargs, custom, gyp_defs):
+  def init_and_sync(self, recipe_config, kwargs, gyp_defs):
     default_kwargs = {
       'REPO_URL': self.m.properties.get('repository') or '',
       'INTERNAL': False,
-      'REPO_NAME': self.m.properties.get('branch') or '',
+      'REPO_NAME': self.m.properties.get('project') or '',
       'BUILD_CONFIG': 'Debug'
     }
     droid = self.m.chromium_android
     droid.configure_from_properties(
         recipe_config,
         **dict(default_kwargs.items() + kwargs.items()))
-    droid.c.set_val(custom)
     self.m.chromium.apply_config('cronet_builder')
     self.m.chromium.c.gyp_env.GYP_DEFINES.update(gyp_defs)
     droid.init_and_sync()

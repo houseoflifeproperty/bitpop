@@ -19,7 +19,6 @@ import socket
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import urllib2
 import urlparse
@@ -32,9 +31,6 @@ BUF_SIZE = 256
 
 # Set this to true on flag day.
 FLAG_DAY = False
-
-# Should we upload the status of this step?
-UPLOAD_TELEMETRY = True
 
 # Define a bunch of directory paths.
 # Relative to the current working directory.
@@ -68,9 +64,51 @@ BUILDSPEC_COMMIT_RE = (
     re.compile(r'Auto-converted (\d+\.\d+\.\d+\.\d+) buildspec to git'),
 )
 
+# Regular expression that matches a single commit footer line.
+COMMIT_FOOTER_ENTRY_RE = re.compile(r'([^:]+):\s+(.+)')
+
+# Footer metadata key for commit position.
+COMMIT_POSITION_FOOTER_KEY = 'Cr-Commit-Position'
 # Regular expression to parse a commit position
-COMMIT_POSITION_RE = re.compile(r'^Cr-Commit-Position:\s*((.+)@\{#(\d+)\})$',
-                                re.M)
+COMMIT_POSITION_RE = re.compile(r'(.+)@\{#(\d+)\}')
+
+# Used by 'ResolveSvnRevisionFromGitiles'
+GIT_SVN_PROJECT_MAP = {
+  'webkit': {
+    'svn_url': 'svn://svn.chromium.org/blink',
+    'branch_map': [
+      (r'trunk', r'refs/heads/master'),
+      (r'branches/([^/]+)', r'refs/branch-heads/\1'),
+    ],
+  },
+  'v8': {
+    'svn_url': 'https://v8.googlecode.com/svn',
+    'branch_map': [
+      (r'trunk', r'refs/heads/candidates'),
+      (r'branches/bleeding_edge', r'refs/heads/master'),
+      (r'branches/([^/]+)', r'refs/branch-heads/\1'),
+    ],
+  },
+  'nacl': {
+    'svn_url': 'svn://svn.chromium.org/native_client',
+    'branch_map': [
+      (r'trunk/src/native_client', r'refs/heads/master'),
+    ],
+  },
+  'webrtc': {
+    'svn_url': 'http://webrtc.googlecode.com/svn',
+    'branch_map': [
+      (r'trunk/src', r'refs/heads/master'),
+    ],
+  },
+}
+
+# Key for the 'git-svn' ID metadata commit footer entry.
+GIT_SVN_ID_FOOTER_KEY = 'git-svn-id'
+# e.g., git-svn-id: https://v8.googlecode.com/svn/trunk@23117
+#     ce2b1a6d-e550-0410-aec6-3dcde31c8c00
+GIT_SVN_ID_RE = re.compile(r'((?:\w+)://[^@]+)@(\d+)\s+(?:[a-zA-Z0-9\-]+)')
+
 
 # This is the git mirror of the buildspecs repository. We could rely on the svn
 # checkout, now that the git buildspecs are checked in alongside the svn
@@ -144,7 +182,7 @@ This step does nothing. You actually want to look at the "update" step.
 
 GCLIENT_TEMPLATE = """solutions = %(solutions)s
 
-cache_dir = %(cache_dir)s
+cache_dir = r%(cache_dir)s
 %(target_os)s
 %(target_os_only)s
 """
@@ -170,7 +208,7 @@ RECOGNIZED_PATHS = {
     '/chrome/trunk/deps/third_party/webrtc/webrtc.DEPS':
         CHROMIUM_GIT_HOST + '/chromium/deps/webrtc/webrtc.DEPS.git',
     '/svn/branches/bleeding_edge':
-        CHROMIUM_GIT_HOST + '/external/v8.git',
+        CHROMIUM_GIT_HOST + '/v8/v8.git',
     '/chrome/trunk/src/tools/cros.DEPS':
         CHROMIUM_GIT_HOST + '/chromium/src/tools/cros.DEPS.git',
 }
@@ -181,7 +219,6 @@ ENABLED_MASTERS = [
     'chromium.chrome',
     'chromium.chromedriver',
     'chromium.chromiumos',
-    'chromium.endure',
     'chromium',
     'chromium.fyi',
     'chromium.git',
@@ -205,6 +242,7 @@ ENABLED_MASTERS = [
     'client.v8',
     'client.webrtc',
     'tryserver.blink',
+    'tryserver.chromium.gpu',
     'tryserver.chromium.linux',
     'tryserver.chromium.mac',
     'tryserver.chromium.perf',
@@ -214,73 +252,29 @@ ENABLED_MASTERS = [
 ENABLED_MASTERS += internal_data.get('ENABLED_MASTERS', [])
 
 ENABLED_BUILDERS = {
-    'tryserver.chromium.gpu': [
-        'linux_gpu',
-        'mac_gpu',
-        'win_gpu',
-    ],
     'client.v8.branches': [
         # Note, bot_update can't be activated on other builders of
         # client.v8.branches, as they're all pure svn based (non-chromium).
-        'Chromium ASAN (symbolized) - trunk',
-        'Chromium ASAN - trunk - debug',
-        'Chromium Win SyzyASAN - trunk',
+        'Chromium ASAN (symbolized)',
+        'Chromium ASAN - debug',
+        'Chromium ASAN arm64 (symbolized)',
+        'Chromium ASAN arm64 - debug',
+        'Chromium Win SyzyASAN',
+    ],
+    'tryserver.webrtc': [
+        'android_apk',
+        'android_apk_rel',
     ],
 }
 ENABLED_BUILDERS.update(internal_data.get('ENABLED_BUILDERS', {}))
 
-ENABLED_SLAVES = {
-    # Tryserver bots need to be enabled on a bot basis to make sure checkouts
-    # on the same bot do not conflict.
-    # TODO(iannucci): Not all of these slaves are on the same master... c+p'd
-    #   for expediency.
-    # TODO(iannucci): Are these even needed?
-    'tryserver.chromium.linux':
-        ['slave%d-c4' % i for i in range(250, 400)] +
-        ['slave%d-c4' % i for i in range(102, 121)] +
-        ['vm%d-m4' % i for i in [468, 469, 497, 502, 503]] +
-        ['vm%d-m4' % i for i in range(800, 810)] +
-        ['vm%d-m4' % i for i in range(666, 671)] +
-        ['build%d-a4' % i for i in range(100, 140)],
-    'tryserver.chromium.mac':
-        ['slave%d-c4' % i for i in range(250, 400)] +
-        ['slave%d-c4' % i for i in range(102, 121)] +
-        ['vm%d-m4' % i for i in [468, 469, 497, 502, 503]] +
-        ['vm%d-m4' % i for i in range(800, 810)] +
-        ['vm%d-m4' % i for i in range(666, 671)] +
-        ['build%d-a4' % i for i in range(100, 140)],
-    'tryserver.chromium.win':
-        ['slave%d-c4' % i for i in range(250, 400)] +
-        ['slave%d-c4' % i for i in range(102, 121)] +
-        ['vm%d-m4' % i for i in [468, 469, 497, 502, 503]] +
-        ['vm%d-m4' % i for i in range(800, 810)] +
-        ['vm%d-m4' % i for i in range(666, 671)] +
-        ['build%d-a4' % i for i in range(100, 140)],
-}
+ENABLED_SLAVES = {}
 ENABLED_SLAVES.update(internal_data.get('ENABLED_SLAVES', {}))
 
 # Disabled filters get run AFTER enabled filters, so for example if a builder
 # config is enabled, but a bot on that builder is disabled, that bot will
 # be disabled.
-DISABLED_BUILDERS = {
-    'tryserver.blink': [
-        # These don't exist, but are just here to satisfy recipes.
-        'linux_blink_no_bot_update',
-        'win_blink_no_bot_update',
-    ],
-    'tryserver.chromium.linux': [
-        # These don't exist, but are just here to satisfy recipes.
-        'linux_no_bot_update',
-    ],
-    'tryserver.chromium.win': [
-        # These don't exist, but are just here to satisfy recipes.
-        'win_no_bot_update',
-        'win_blink',
-        'win_blink_compile',
-        'win_blink_compile_rel',
-        'win_drmemory',
-    ],
-}
+DISABLED_BUILDERS = {}
 DISABLED_BUILDERS.update(internal_data.get('DISABLED_BUILDERS', {}))
 
 DISABLED_SLAVES = {}
@@ -318,10 +312,6 @@ if sys.platform.startswith('win'):
   PATCH_TOOL = path.join(BUILD_INTERNAL_DIR, 'tools', 'patch.EXE')
 else:
   PATCH_TOOL = '/usr/bin/patch'
-
-# For uploading some telemetry data.
-GS_BUCKET = 'chrome-bot-update'
-GSUTIL_BIN = path.join(DEPOT_TOOLS_DIR, 'third_party', 'gsutil', 'gsutil')
 
 # If there is less than 100GB of disk space on the system, then we do
 # a shallow checkout.
@@ -494,7 +484,6 @@ def maybe_ignore_revision(master, builder, revision):
   return revision
 
 
-
 def solutions_printer(solutions):
   """Prints gclient solution to stdout."""
   print 'Gclient Solutions'
@@ -534,7 +523,6 @@ def solutions_to_git(input_solutions):
 
   returns: (git solution, svn root of first solution) tuple.
   """
-  warnings = []
   assert input_solutions
   solutions = copy.deepcopy(input_solutions)
   first_solution = True
@@ -559,8 +547,7 @@ def solutions_to_git(input_solutions):
     elif parsed_url.scheme == 'https' and 'googlesource' in parsed_url.netloc:
       pass
     else:
-      warnings.append('path %r not recognized' % parsed_path)
-      print 'Warning: %s' % (warnings[-1],)
+      print 'Warning: %s' % ('path %r not recognized' % parsed_path,)
 
     # Point .DEPS.git is the git version of the DEPS file.
     if not FLAG_DAY and not buildspec:
@@ -587,7 +574,7 @@ def solutions_to_git(input_solutions):
       print 'Removing safesync url %s from %s' % (solution['safesync_url'],
                                                   parsed_path)
       del solution['safesync_url']
-  return solutions, root, buildspec, warnings
+  return solutions, root, buildspec
 
 
 def remove(target):
@@ -630,15 +617,15 @@ def gclient_configure(solutions, target_os, target_os_only):
     f.write(get_gclient_spec(solutions, target_os, target_os_only))
 
 
-def gclient_sync(buildspec, shallow):
+def gclient_sync(with_branch_heads, shallow):
   # We just need to allocate a filename.
   fd, gclient_output_file = tempfile.mkstemp(suffix='.json')
   os.close(fd)
   gclient_bin = 'gclient.bat' if sys.platform.startswith('win') else 'gclient'
   cmd = [gclient_bin, 'sync', '--verbose', '--reset', '--force',
          '--ignore_locks', '--output-json', gclient_output_file ,
-         '--nohooks', '--noprehooks']
-  if buildspec:
+         '--nohooks', '--noprehooks', '--delete_unversioned_trees']
+  if with_branch_heads:
     cmd += ['--with_branch_heads']
   if shallow:
     cmd += ['--shallow']
@@ -661,13 +648,46 @@ def gclient_runhooks(gyp_envs):
   call(gclient_bin, 'runhooks', env=env)
 
 
+def get_commit_message_footer_map(message):
+  """Returns: (dict) A dictionary of commit message footer entries.
+  """
+  footers = {}
+
+  # Extract the lines in the footer block.
+  lines = []
+  for line in message.strip().splitlines():
+    line = line.strip()
+    if len(line) == 0:
+      del(lines[:])
+      continue
+    lines.append(line)
+
+  # Parse the footer
+  for line in lines:
+    m = COMMIT_FOOTER_ENTRY_RE.match(line)
+    if not m:
+      # If any single line isn't valid, the entire footer is invalid.
+      footers.clear()
+      return footers
+    footers[m.group(1)] = m.group(2).strip()
+  return footers
+
+
+def get_commit_message_footer(message, key):
+  """Returns: (str/None) The footer value for 'key', or None if none was found.
+  """
+  return get_commit_message_footer_map(message).get(key)
+
+
 def get_svn_rev(git_hash, dir_name):
-  pattern = r'^\s*git-svn-id: [^ ]*@(\d+) '
   log = git('log', '-1', git_hash, cwd=dir_name)
-  match = re.search(pattern, log, re.M)
-  if not match:
+  git_svn_id = get_commit_message_footer(log, GIT_SVN_ID_FOOTER_KEY)
+  if not git_svn_id:
     return None
-  return int(match.group(1))
+  m = GIT_SVN_ID_RE.match(git_svn_id)
+  if not m:
+    return None
+  return int(m.group(2))
 
 
 def get_git_hash(revision, branch, sln_dir):
@@ -675,7 +695,7 @@ def get_git_hash(revision, branch, sln_dir):
 
   Note that git will search backwards from origin/master.
   """
-  match = "^git-svn-id: [^ ]*@%s " % revision
+  match = "^%s: [^ ]*@%s " % (GIT_SVN_ID_FOOTER_KEY, revision)
   cmd = ['log', '-E', '--grep', match, '--format=%H', '--max-count=1',
          'origin/%s' % branch]
   result = git(*cmd, cwd=sln_dir).strip()
@@ -826,7 +846,7 @@ def emit_log_lines(name, lines):
 
 
 def emit_properties(properties):
-  for property_name, property_value in properties.iteritems():
+  for property_name, property_value in sorted(properties.items()):
     print '@@@SET_BUILD_PROPERTY@%s@"%s"@@@' % (property_name, property_value)
 
 
@@ -883,7 +903,7 @@ def force_revision(folder_name, revision):
   else:
     git('checkout', '--force', 'origin/%s' % branch, cwd=folder_name)
 
-def git_checkout(solutions, revisions, shallow):
+def git_checkout(solutions, revisions, shallow, with_branch_heads):
   build_dir = os.getcwd()
   # Before we do anything, break all git_cache locks.
   if path.isdir(CACHE_DIR):
@@ -909,6 +929,8 @@ def git_checkout(solutions, revisions, shallow):
       s = ['--shallow'] if shallow else []
       populate_cmd = (['cache', 'populate', '--ignore_locks', '-v',
                        '--cache-dir', CACHE_DIR] + s + [url])
+      if with_branch_heads:
+        populate_cmd.extend(['--ref', '+refs/branch-heads/*'])
       git(*populate_cmd)
       mirror_dir = git(
           'cache', 'exists', '--quiet', '--cache-dir', CACHE_DIR, url).strip()
@@ -919,7 +941,11 @@ def git_checkout(solutions, revisions, shallow):
         if not path.isdir(sln_dir):
           git(*clone_cmd)
         else:
+          git('remote', 'set-url', 'origin', mirror_dir, cwd=sln_dir)
           git('fetch', 'origin', cwd=sln_dir)
+        if with_branch_heads:
+          git('fetch', 'origin', '+refs/branch-heads/*:refs/branch-heads/*',
+              cwd=sln_dir)
 
         revision = get_target_revision(name, url, revisions) or 'HEAD'
         force_revision(sln_dir, revision)
@@ -1090,15 +1116,68 @@ def emit_flag(flag_file):
     f.write('Success!')
 
 
+def get_commit_position_for_git_svn(url, revision):
+  """Generates a commit position string for a 'git-svn' URL/revision.
+
+  If the 'git-svn' URL maps to a known project, we will construct a commit
+  position branch value by applying substitution on the SVN URL.
+  """
+  # Identify the base URL so we can strip off trunk/branch name
+  project_config = branch = None
+  for _, project_config in GIT_SVN_PROJECT_MAP.iteritems():
+    if url.startswith(project_config['svn_url']):
+      branch = url[len(project_config['svn_url']):]
+      break
+
+  if branch:
+    # Strip any leading slashes
+    branch = branch.lstrip('/')
+
+    # Try and map the branch
+    for pattern, repl in project_config.get('branch_map', ()):
+      nbranch, subn = re.subn(pattern, repl, branch, count=1)
+      if subn:
+        print 'INFO: Mapped SVN branch to Git branch [%s] => [%s]' % (
+            branch, nbranch)
+        branch = nbranch
+        break
+  else:
+    # Use generic 'svn' branch
+    print 'INFO: Could not resolve project for SVN URL %r' % (url,)
+    branch = 'svn'
+  return '%s@{#%s}' % (branch, revision)
+
+
 def get_commit_position(git_path, revision='HEAD'):
   """Dumps the 'git' log for a specific revision and parses out the commit
   position.
+
+  If a commit position metadata key is found, its value will be returned.
+
+  Otherwise, we will search for a 'git-svn' metadata entry. If one is found,
+  we will compose a commit position from it, using its SVN revision value as
+  the revision.
+
+  If the 'git-svn' URL maps to a known project, we will construct a commit
+  position branch value by truncating the URL, mapping 'trunk' to
+  "refs/heads/master". Otherwise, we will return the generic branch, 'svn'.
   """
   git_log = git('log', '--format=%B', '-n1', revision, cwd=git_path)
-  m = COMMIT_POSITION_RE.search(git_log)
-  if not m:
-    return None
-  return m.group(1)
+  footer_map = get_commit_message_footer_map(git_log)
+
+  # Search for commit position metadata
+  value = footer_map.get(COMMIT_POSITION_FOOTER_KEY)
+  if value:
+    return value
+
+  # Compose a commit position from 'git-svn' metadata
+  value = footer_map.get(GIT_SVN_ID_FOOTER_KEY)
+  if value:
+    m = GIT_SVN_ID_RE.match(value)
+    if not m:
+      raise ValueError("Invalid 'git-svn' value: [%s]" % (value,))
+    return get_commit_position_for_git_svn(m.group(1), m.group(2))
+  return None
 
 
 def parse_got_revision(gclient_output, got_revision_mapping, use_svn_revs):
@@ -1170,26 +1249,32 @@ def ensure_deps_revisions(deps_url_mapping, solutions, revisions):
 
 def ensure_checkout(solutions, revisions, first_sln, target_os, target_os_only,
                     patch_root, issue, patchset, patch_url, rietveld_server,
-                    revision_mapping, buildspec, gyp_env, shallow):
+                    revision_mapping, buildspec, gyp_env, shallow, runhooks,
+                    with_branch_heads):
   # Get a checkout of each solution, without DEPS or hooks.
   # Calling git directly because there is no way to run Gclient without
   # invoking DEPS.
   print 'Fetching Git checkout'
-  git_ref = git_checkout(solutions, revisions, shallow)
+  git_ref = git_checkout(solutions, revisions, shallow, with_branch_heads)
 
   patches = None
   if patch_url:
     patches = get_svn_patch(patch_url)
 
+  already_patched = []
+  patch_root = patch_root or ''
   for solution in solutions:
-    # At first, only patch top-level DEPS.
-    if patch_root == solution['name']:
+    if (patch_root == solution['name'] or
+        solution['name'].startswith(patch_root + '/')):
+      relative_root = solution['name'][len(patch_root) + 1:]
+      target = '/'.join([relative_root, 'DEPS']).lstrip('/')
       if patches:
-        apply_svn_patch(patch_root, patches, whitelist=['DEPS'])
+        apply_svn_patch(patch_root, patches, whitelist=[target])
+        already_patched.append(target)
       elif issue:
         apply_rietveld_issue(issue, patchset, patch_root, rietveld_server,
-                            revision_mapping, git_ref, whitelist=['DEPS'])
-      break
+                            revision_mapping, git_ref, whitelist=[target])
+        already_patched.append(target)
 
   if buildspec:
     buildspecs2git(first_sln, buildspec)
@@ -1202,7 +1287,7 @@ def ensure_checkout(solutions, revisions, first_sln, target_os, target_os_only,
   gclient_configure(solutions, target_os, target_os_only)
 
   # Let gclient do the DEPS syncing.
-  gclient_output = gclient_sync(buildspec, shallow)
+  gclient_output = gclient_sync(buildspec or with_branch_heads, shallow)
 
   # Now that gclient_sync has finished, we should revert any .DEPS.git so that
   # presubmit doesn't complain about it being modified.
@@ -1210,7 +1295,7 @@ def ensure_checkout(solutions, revisions, first_sln, target_os, target_os_only,
       git('ls-files', '.DEPS.git', cwd=first_sln).strip()):
     git('checkout', 'HEAD', '--', '.DEPS.git', cwd=first_sln)
 
-  if buildspec:
+  if buildspec and runhooks:
     # Run gclient runhooks if we're on an official builder.
     # TODO(hinoka): Remove this when the official builders run their own
     #               runhooks step.
@@ -1222,10 +1307,10 @@ def ensure_checkout(solutions, revisions, first_sln, target_os, target_os_only,
                         dir_names, revisions)
   # Apply the rest of the patch here (sans DEPS)
   if patches:
-    apply_svn_patch(patch_root, patches, blacklist=['DEPS'])
+    apply_svn_patch(patch_root, patches, blacklist=already_patched)
   elif issue:
     apply_rietveld_issue(issue, patchset, patch_root, rietveld_server,
-                         revision_mapping, git_ref, blacklist=['DEPS'])
+                         revision_mapping, git_ref, blacklist=already_patched)
 
   # Reset the deps_file point in the solutions so that hooks get run properly.
   for sln in solutions:
@@ -1233,123 +1318,6 @@ def ensure_checkout(solutions, revisions, first_sln, target_os, target_os_only,
   gclient_configure(solutions, target_os, target_os_only)
 
   return gclient_output
-
-
-class UploadTelemetryThread(threading.Thread):
-  def __init__(self, prefix, master, builder, slave, kwargs):
-    super(UploadTelemetryThread, self).__init__()
-    self.master = master
-    self.builder = builder
-    self.slave = slave
-    self.prefix = prefix
-    self.kwargs = kwargs or {}
-
-  def url(self, name=None):
-    return 'gs://%s/%s/%s/%s/%s.json' % (
-        GS_BUCKET, self.master, self.builder, self.slave, name or self.prefix)
-
-  @staticmethod
-  def _gsutil(*args, **kwargs):
-    fail_gs_codes = kwargs.pop('fail_gs_codes', ())
-    fail_gs_msgs = kwargs.pop('fail_gs_msgs', ())
-    def gs_ok_fn(code, out):
-      if not code:
-        return OK
-      if not fail_gs_msgs and not fail_gs_codes:
-        return RETRY
-
-      lines = out.splitlines()
-      if fail_gs_codes:
-        status = re.match('GSResponseError.*status=(\d+)', lines[-1])
-        if status and int(status.group(1)) in fail_gs_codes:
-          return FAIL
-
-      if fail_gs_msgs:
-        if any(m in lines[0] for m in fail_gs_msgs):
-          return FAIL
-
-      return RETRY
-    kwargs.setdefault('result_fn', gs_ok_fn)
-
-    return call(sys.executable, '-u', GSUTIL_BIN, *args, **kwargs)
-
-  def run(self):
-    if not UPLOAD_TELEMETRY:
-      return
-
-    if self.prefix == 'start':
-      try:
-        self._gsutil('rm', self.url('start_old'), self.url('end_old'),
-                     fail_gs_codes={404})
-      except Exception as e:
-        print 'INFO: Could not rm start_old, end_old. %r' % e
-
-      try:
-        self._gsutil('mv', self.url('start'), self.url('start_old'),
-                     fail_gs_msgs={'InvalidUriError'})
-      except Exception as e:
-        print 'INFO: Could not move start -> start_old. %r' % e
-
-      try:
-        self._gsutil('mv', self.url('end'), self.url('end_old'),
-                     fail_gs_msgs={'InvalidUriError'})
-      except Exception as e:
-        print 'INFO: Could not move end -> end_old. %r' % e
-
-    # Disk space Code duplicated here to get it out of the critical path
-    # when bot_update is not activated.
-    data = {
-        'prefix': self.prefix,
-        'master': self.master,
-        'builder': self.builder,
-        'slave': self.slave,
-    }
-    data.update(self.kwargs)
-    if 'conversion_warnings' not in data:
-      data['conversion_warnings'] = []
-    try:
-      total_disk_space, free_disk_space = get_total_disk_space()
-      total_disk_space_gb = int(total_disk_space / (1024 * 1024 * 1024))
-      used_disk_space_gb = int((total_disk_space - free_disk_space)
-                              / (1024 * 1024 * 1024))
-      percent_used = int(used_disk_space_gb * 100 / total_disk_space_gb)
-      data['disk'] = {
-          'total': total_disk_space_gb,
-          'used': used_disk_space_gb,
-          'percent': percent_used,
-          'status': 'OK',
-          'small': total_disk_space < SHALLOW_CLONE_THRESHOLD,
-      }
-      if total_disk_space < SHALLOW_CLONE_THRESHOLD:
-        data['conversion_warnings'].append(
-            'Small disk: %s GB' % total_disk_space_gb)
-
-      git_version_string = git('--version').strip()
-      git_version_m = re.search(r'git version (\d+\.\d+).*',
-                                git_version_string)
-      if git_version_m:
-        git_version = float(git_version_m.group(1))
-        if git_version < 1.9:
-          data['conversion_warnings'].append(
-              'Git version %0.1f < 1.9' % git_version)
-
-    except Exception as e:
-      data['disk'] = {
-          'status': 'EXCEPTION',
-          'message': str(e),
-      }
-
-    try:
-      self._gsutil('cp', '-', self.url(), stdin_data=json.dumps(data))
-    except Exception:
-      print 'Telemetry upload failed.'
-
-
-def upload_telemetry(prefix, master, builder, slave, **kwargs):
-  thr = UploadTelemetryThread(prefix, master, builder, slave, kwargs)
-  thr.daemon = True
-  thr.start()
-  return thr
 
 
 def parse_revisions(revisions, root):
@@ -1423,8 +1391,6 @@ def parse_args():
   parse.add_option('--revision_mapping_file',
                    help=('Same as revision_mapping, except its a path to a json'
                          ' file containing that format.'))
-  parse.add_option('--revision-mapping', # Backwards compatability.
-                   help='DEPRECATED, use "revision_mapping" instead')
   parse.add_option('--revision', action='append', default=[],
                    help='Revision to check out. Can be an SVN revision number, '
                         'git hash, or any form of git ref.  Can prepend '
@@ -1457,6 +1423,10 @@ def parse_args():
   parse.add_option('--no_shallow', action='store_true',
                    help='Bypass disk detection and never shallow clone. '
                         'Does not override the --shallow flag')
+  parse.add_option('--no_runhooks', action='store_true',
+                   help='Do not run hooks on official builder.')
+  parse.add_option('--with_branch_heads', action='store_true',
+                    help='Always pass --with_branch_heads to gclient.')
 
 
   options, args = parse.parse_args()
@@ -1557,9 +1527,11 @@ def checkout(options, git_slns, specs, buildspec, master,
           # For official builders.
           buildspec=buildspec,
           gyp_env=options.gyp_env,
+          runhooks=not options.no_runhooks,
 
           # Finally, extra configurations such as shallowness of the clone.
-          shallow=options.shallow)
+          shallow=options.shallow,
+          with_branch_heads=options.with_branch_heads)
       gclient_output = ensure_checkout(**checkout_parameters)
     except GclientSyncFailed:
       print 'We failed gclient sync, lets delete the checkout and retry.'
@@ -1591,6 +1563,13 @@ def checkout(options, git_slns, specs, buildspec, master,
   got_revisions = parse_got_revision(gclient_output, revision_mapping,
                                      use_svn_rev)
 
+  if not got_revisions and options.revision:
+    # If we have no revision_mapping, then just pass through the first revision
+    # as the got_revision.
+    got_revisions = {
+        'got_revision': options.revision[0],
+    }
+
   if options.output_json:
     # Tell recipes information such as root, got_revision, etc.
     emit_json(options.output_json,
@@ -1602,8 +1581,6 @@ def checkout(options, git_slns, specs, buildspec, master,
   else:
     # If we're not on recipes, tell annotator about our got_revisions.
     emit_properties(got_revisions)
-
-  return gclient_output, got_revisions
 
 
 def print_help_text(force, output_json, active, master, builder, slave):
@@ -1646,72 +1623,31 @@ def main():
   specs = {}
   exec(options.specs, specs)
   svn_solutions = specs.get('solutions', [])
-  git_slns, svn_root, buildspec, warnings = solutions_to_git(svn_solutions)
+  git_slns, svn_root, buildspec = solutions_to_git(svn_solutions)
   solutions_printer(git_slns)
-
-  # Lets send some telemetry data about bot_update here. This returns a thread
-  # object so we can join on it later.
-  telemetry_info = {
-      'active': active,
-      'builder': builder,
-      'conversion_warnings': warnings,
-      'git_solutions': git_slns,
-      'master': master,
-      'patch_root': options.patch_root,
-      'run_id': uuid.uuid4().hex,
-      'slave': slave,
-      'solutions': specs.get('solutions', []),
-      'specs': options.specs,
-  }
-  all_threads = [
-      upload_telemetry(prefix='start', unix_time=time.time(), **telemetry_info)
-  ]
 
   try:
     # Dun dun dun, the main part of bot_update.
     revisions, step_text = prepare(options, git_slns, active)
-    gclient_output, got_revisions = checkout(
-        options, git_slns, specs, buildspec, master, svn_root, revisions,
-        step_text)
+    checkout(options, git_slns, specs, buildspec, master, svn_root, revisions,
+             step_text)
 
   except Inactive:
     # Not active, should count as passing.
-    telemetry_info.update({
-        'passed': True,
-        'patch_failure': False,
-    })
-  except PatchFailed as e:
-    # Patch failure - as far as telemetry is concerned, bot_update passed.
-    telemetry_info.update({
-        'passed': True,
-        'patch_failure': True,
-    })
+    pass
+  except PatchFailed:
     emit_flag(options.flag_file)
-    raise
-  except Exception as e:
+    # Return a specific non-zero exit code for patch failure (because it is
+    # a failure), but make it different than other failures to distinguish
+    # between infra failures (independent from patch author), and patch
+    # failures (that patch author can fix).
+    return 88
+  except Exception:
     # Unexpected failure.
-    telemetry_info.update({
-        'message': str(e),
-        'passed': False,
-        'patch_failure': False,
-    })
     emit_flag(options.flag_file)
     raise
   else:
-    telemetry_info.update({
-        'gclient_output': gclient_output,
-        'got_revisions': got_revisions,
-        'passed': True,
-        'patch_failure': False,
-    })
     emit_flag(options.flag_file)
-  finally:
-    thr = upload_telemetry(prefix='end', unix_time=time.time(),
-                           **telemetry_info)
-    all_threads.append(thr)
-    # Sort of wait for all telemetry threads to finish.
-    for thr in all_threads:
-      thr.join(5)
 
 
 if __name__ == '__main__':

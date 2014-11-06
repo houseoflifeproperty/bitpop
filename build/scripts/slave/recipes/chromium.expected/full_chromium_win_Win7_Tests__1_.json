@@ -137,6 +137,23 @@
     "cmd": [
       "python",
       "-u",
+      "[SLAVE_BUILD]\\src\\chrome\\test\\mini_installer\\test_installer.py",
+      "--build-dir",
+      "[SLAVE_BUILD]\\src\\out",
+      "--target",
+      "Release",
+      "--force-clean",
+      "--config",
+      "[SLAVE_BUILD]\\src\\chrome\\test\\mini_installer\\config\\config.config",
+      "--write-full-results-to",
+      "/path/to/tmp/json"
+    ],
+    "name": "test_installer"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
       "[BUILD]\\scripts\\slave\\process_dumps.py",
       "--target",
       "Release"

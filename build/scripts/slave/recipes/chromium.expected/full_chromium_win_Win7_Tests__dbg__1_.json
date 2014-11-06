@@ -122,25 +122,5 @@
       "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"Win7 Tests (dbg)(1)\", \"buildnumber\": 571, \"mastername\": \"chromium.win\", \"parent_build_archive_url\": \"gs://test-domain/test-archive.zip\", \"parent_buildername\": \"Win Builder (dbg)\", \"parent_got_revision\": \"1111111\", \"recipe\": \"chromium\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}"
     ],
     "name": "extract build"
-  },
-  {
-    "cmd": [
-      "python",
-      "-u",
-      "[BUILD]\\scripts\\slave\\chromium\\run_crash_handler.py",
-      "--target",
-      "Debug"
-    ],
-    "name": "start_crash_service"
-  },
-  {
-    "cmd": [
-      "python",
-      "-u",
-      "[BUILD]\\scripts\\slave\\process_dumps.py",
-      "--target",
-      "Debug"
-    ],
-    "name": "process_dumps"
   }
 ]

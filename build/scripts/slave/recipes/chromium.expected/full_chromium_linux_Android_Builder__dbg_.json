@@ -188,6 +188,24 @@
     "name": "findbugs_tests"
   },
   {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/archive_dependencies.py",
+      "--src-dir",
+      "[SLAVE_BUILD]/src",
+      "--target",
+      "Debug",
+      "--master",
+      "chromium.linux",
+      "--builder",
+      "Android Builder (dbg)",
+      "--build",
+      "571"
+    ],
+    "name": "archive dependencies"
+  },
+  {
     "allow_subannotations": true,
     "cmd": [
       "python",

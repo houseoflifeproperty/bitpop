@@ -15,7 +15,7 @@ class ArchiveApi(recipe_api.RecipeApi):
 
   def zip_and_upload_build(
       self, step_name, target, build_url=None, src_dir=None,
-      build_revision=None, **kwargs):
+      build_revision=None, cros_board=None, **kwargs):
     """Returns a step invoking zip_build.py to zip up a Chromium build.
        If build_url is specified, also uploads the build."""
     args = ['--target', target]
@@ -25,6 +25,8 @@ class ArchiveApi(recipe_api.RecipeApi):
       args.extend(['--build_revision', build_revision])
     elif src_dir:
       args.extend(['--src-dir', src_dir])
+    if cros_board:
+      args.extend(['--cros-board', cros_board])
     args.extend(self.m.json.property_args())
     kwargs['allow_subannotations'] = True
     self.m.python(
@@ -88,10 +90,9 @@ class ArchiveApi(recipe_api.RecipeApi):
     The builder_name, or parent_buildername, is always automatically
     inserted into the URL."""
 
-    result = ('gs://' +
-              gs_bucket_name + '/')
+    result = ('gs://' + gs_bucket_name)
     if extra_url_components:
-      result += extra_url_components
+      result += ('/' + extra_url_components)
     if is_download:
       result += ('/' + self.m.properties['parent_buildername'] + '/' +
                  'full-build-' + self._legacy_platform_name() +
@@ -121,3 +122,21 @@ class ArchiveApi(recipe_api.RecipeApi):
     The builder_name, or parent_buildername, is always automatically
     inserted into the URL."""
     return self._legacy_url(True, gs_bucket_name, extra_url_components)
+
+  def archive_dependencies(
+      self, step_name, target, master, builder, build, **kwargs):
+    """Returns a step invoking archive_dependencies.py to zip up and upload
+       build dependency information for the build."""
+    try:
+      script = self.m.path['build'].join('scripts',
+                                         'slave',
+                                         'archive_dependencies.py')
+      args = []
+      args.extend(['--src-dir', self.m.path['checkout']])
+      args.extend(['--target', target])
+      args.extend(['--master', master])
+      args.extend(['--builder', builder])
+      args.extend(['--build', build])
+      self.m.python(step_name, script, args, **kwargs)
+    except self.m.step.StepFailure:
+      pass

@@ -115,6 +115,12 @@ def _SendResultsFromCache(cache_file_name, url):
 
     # If the dashboard returned an error, we will re-try next time.
     if error:
+      if 'HTTPError: 400 for JSON' in error:
+        # This is a special case.  If the remote app rejects the json, its
+        # probably malformed and we don't want to retry it.
+        print 'Discarding JSON error: %s' % error
+        break
+
       if index != len(cache_lines) - 1:
         # The very last item in the cache_lines list is the new results line.
         # If this line is not the new results line, then this results line
@@ -279,6 +285,10 @@ def _RevisionNumberColumns(data, master):
     for key in ['webkit_rev', 'webrtc_rev', 'v8_rev']:
       if key in data and data[key] != 'undefined':
         revision_supplemental_columns['r_' + key] = data[key]
+
+  # If possible, also send the git hash.
+  if 'git_revision' in data and data['git_revision'] != 'undefined':
+    revision_supplemental_columns['r_chromium'] = data['git_revision']
 
   return revision, revision_supplemental_columns
 

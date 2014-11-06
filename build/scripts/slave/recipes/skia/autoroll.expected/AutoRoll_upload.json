@@ -1,0 +1,114 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "config",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_deps': {'src/third_party/skia': 'https://skia.googlesource.com/skia.git'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'https://chromium.googlesource.com/chromium/src.git'}]"
+    ],
+    "name": "gclient setup"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "sync",
+      "--nohooks",
+      "--force",
+      "--verbose",
+      "--delete_unversioned_trees",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "gclient sync",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 170242@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/third_party/skia/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 143121@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@143121@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "git",
+      "config",
+      "--local",
+      "user.name",
+      "Skia DEPS Roller"
+    ],
+    "cwd": "[SLAVE_BUILD]/src",
+    "name": "git config user.name"
+  },
+  {
+    "cmd": [
+      "git",
+      "config",
+      "--local",
+      "user.email",
+      "skia-deps-roller@chromium.org"
+    ],
+    "cwd": "[SLAVE_BUILD]/src",
+    "name": "git config user.email"
+  },
+  {
+    "cmd": [
+      "python",
+      "[BUILD]/scripts/tools/blink_roller/auto_roll.py",
+      "skia",
+      "skia-deps-roller@chromium.org",
+      "[SLAVE_BUILD]/src"
+    ],
+    "cwd": "[SLAVE_BUILD]/src",
+    "name": "do auto_roll",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "\n<html>\n<head>\n<meta http-equiv=\"Pragma\" content=\"no-cache\">\n<meta http-equiv=\"Expires\" content=\"-1\">\n<meta http-equiv=\"refresh\" content=\"0; url=https://codereview.chromium.org/1234/\" />\n</head>\n</html>\n",
+      "depsroll.html"
+    ],
+    "name": "write depsroll.html"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "--",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "cp",
+      "-a",
+      "public-read",
+      "arb_status.html",
+      "gs://chromium-skia-gm/arb_status.html"
+    ],
+    "name": "gsutil upload",
+    "~followup_annotations": [
+      "@@@STEP_LINK@gsutil.upload@https://storage.cloud.google.com/chromium-skia-gm/arb_status.html@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "In progress - https://codereview.chromium.org/1234/",
+      "arb_status.html"
+    ],
+    "name": "write arb_status.html"
+  }
+]

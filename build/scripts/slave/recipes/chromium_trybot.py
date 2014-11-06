@@ -7,6 +7,7 @@ import re
 DEPS = [
   'bot_update',
   'chromium',
+  'chromium_tests',
   'filter',
   'gclient',
   'isolate',
@@ -67,11 +68,38 @@ BUILDERS = {
           'platform': 'linux',
         },
       },
-      'linux_browser_asan': {
+      'linux_chromium_rel_ng': {
+        'based_on_main_waterfall': {
+          'mastername': 'chromium.linux',
+          'buildername': 'Linux Builder',
+          'testers': ['Linux Tests'],
+        },
+        'testing': {
+          'platform': 'linux',
+        },
+      },
+      'linux_chromium_browser_asan_rel': {
+        'add_telemetry_tests': False,
         'chromium_config_kwargs': {
           'BUILD_CONFIG': 'Release',
           'TARGET_BITS': 64,
         },
+        'enable_swarming': True,
+        'exclude_compile_all': True,
+        'chromium_config': 'chromium_asan',
+        'compile_only': False,
+        'testing': {
+          'platform': 'linux',
+          'test_spec_file': 'chromium_memory_trybot.json',
+        },
+      },
+      'linux_chromium_asan_rel': {
+        'add_telemetry_tests': False,
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Release',
+          'TARGET_BITS': 64,
+        },
+        'enable_swarming': True,
         'exclude_compile_all': True,
         'chromium_config': 'chromium_asan',
         'compile_only': False,
@@ -137,6 +165,7 @@ BUILDERS = {
         },
       },
       'linux_chromium_chromeos_dbg': {
+        'add_telemetry_tests': False,
         'chromium_config_kwargs': {
           'BUILD_CONFIG': 'Debug',
           'TARGET_BITS': 64,
@@ -148,6 +177,7 @@ BUILDERS = {
         },
       },
       'linux_chromium_chromeos_rel': {
+        'add_telemetry_tests': False,
         'chromium_config_kwargs': {
           'BUILD_CONFIG': 'Release',
           'TARGET_BITS': 64,
@@ -159,6 +189,7 @@ BUILDERS = {
         },
       },
       'linux_chromium_chromeos_clang_dbg': {
+        'add_telemetry_tests': False,
         'chromium_config_kwargs': {
           'BUILD_CONFIG': 'Debug',
           'TARGET_BITS': 64,
@@ -170,6 +201,7 @@ BUILDERS = {
         },
       },
       'linux_chromium_chromeos_clang_rel': {
+        'add_telemetry_tests': False,
         'chromium_config_kwargs': {
           'BUILD_CONFIG': 'Release',
           'TARGET_BITS': 64,
@@ -181,28 +213,24 @@ BUILDERS = {
         },
       },
       'linux_chromium_chromeos_ozone_rel': {
+        'add_telemetry_tests': False,
         'chromium_config_kwargs': {
           'BUILD_CONFIG': 'Release',
           'TARGET_BITS': 64,
         },
-        'GYP_DEFINES': {
-          'use_ozone': '1',
-        },
-        'chromium_config': 'chromium_chromeos',
+        'chromium_config': 'chromium_chromeos_ozone',
         'compile_only': False,
         'testing': {
           'platform': 'linux',
         },
       },
       'linux_chromium_chromeos_ozone_dbg': {
+        'add_telemetry_tests': False,
         'chromium_config_kwargs': {
           'BUILD_CONFIG': 'Debug',
           'TARGET_BITS': 64,
         },
-        'chromium_config': 'chromium_chromeos',
-        'GYP_DEFINES': {
-          'use_ozone': '1',
-        },
+        'chromium_config': 'chromium_chromeos_ozone',
         'compile_only': False,
         'testing': {
           'platform': 'linux',
@@ -252,6 +280,17 @@ BUILDERS = {
           'platform': 'linux',
         },
       },
+      'linux_chromium_compile_dbg_32': {
+         'chromium_config_kwargs': {
+           'BUILD_CONFIG': 'Debug',
+           'TARGET_BITS': 32,
+         },
+         'chromium_config': 'chromium',
+         'compile_only': True,
+         'testing': {
+           'platform': 'linux',
+         },
+       },
     },
   },
   'tryserver.chromium.mac': {
@@ -296,6 +335,34 @@ BUILDERS = {
         },
         'chromium_config': 'chromium',
         'compile_only': True,
+        'testing': {
+          'platform': 'mac',
+        },
+      },
+      'mac_chromium_openssl_dbg': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Debug',
+          'TARGET_BITS': 32,
+        },
+        'GYP_DEFINES': {
+          'use_openssl': '1',
+        },
+        'chromium_config': 'chromium',
+        'compile_only': False,
+        'testing': {
+          'platform': 'mac',
+        },
+      },
+      'mac_chromium_openssl_rel': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Release',
+          'TARGET_BITS': 32,
+        },
+        'GYP_DEFINES': {
+          'use_openssl': '1',
+        },
+        'chromium_config': 'chromium',
+        'compile_only': False,
         'testing': {
           'platform': 'mac',
         },
@@ -371,6 +438,7 @@ BUILDERS = {
         },
       },
       'win8_chromium_dbg': {
+        'add_telemetry_tests': False,
         'chromium_config_kwargs': {
           'BUILD_CONFIG': 'Debug',
           'TARGET_BITS': 32,
@@ -383,6 +451,7 @@ BUILDERS = {
         },
       },
       'win8_chromium_rel': {
+        'add_telemetry_tests': False,
         'chromium_config_kwargs': {
           'BUILD_CONFIG': 'Release',
           'TARGET_BITS': 32,
@@ -421,6 +490,16 @@ def add_swarming_builder(original, swarming, server):
   BUILDERS[server]['builders'][swarming] = conf
 
 
+def does_regex_match(name, regexs):
+  """Returns true if |name| matches one of the regular expressions in
+  |regexs|."""
+  for regex in regexs:
+    match = re.match(regex, name)
+    if match and match.end() == len(name):
+      return True
+  return False
+
+
 def should_filter_builder(name, regexs, root):
   """Returns true if the builder |name| should be filtered. |regexs| is a list
   of the regular expressions specifying the builders that should *not* be
@@ -430,17 +509,28 @@ def should_filter_builder(name, regexs, root):
   # many try jobs for them.
   if root != 'src':
     return False
-  for regex in regexs:
-    match = re.match(regex, name)
-    if match and match.end() == len(name):
-      return False
-  return True
+  return not does_regex_match(name, regexs)
 
 
-def get_test_names(gtest_tests, swarming_tests):
-  """Returns the names of each of the tests in |gtest_tests| and
-  |swarming_tests|. These are lists of GTestTest and SwarmingGTestTest."""
-  return [test.name for test in gtest_tests + swarming_tests]
+def should_filter_tests(name, regexs):
+  """Returns true if the builder |name| should filter the sets of tests.
+  |regexs| is a list of the regular expressions specifying the builders that
+  should *not* be filtered. If |name| completely matches one of the regular
+  expressions than false is returned, otherwise true."""
+  return not does_regex_match(name, regexs)
+
+
+def should_filter_compile(name, regexs):
+  """Returns true if the builder |name| should filter the sets of compile
+  targets. |regexs| is a list of the regular expressions specifying the
+  builders that should *not* be filtered. If |name| completely matches one of
+  the regular expressions than false is returned, otherwise true."""
+  return not does_regex_match(name, regexs)
+
+
+def get_test_names(tests):
+  """Returns the names of each of the tests in |tests|."""
+  return [test.name for test in tests]
 
 
 def filter_tests(possible_tests, needed_tests):
@@ -453,17 +543,26 @@ def filter_tests(possible_tests, needed_tests):
   return result
 
 
-def get_analyze_config(api, file_name):
-  """ Returns the dictionary used to configure certain aspects of the analyze
-  step."""
-  config_path = api.path.join('testing', 'buildbot', file_name)
-  step_result = api.json.read(
-    'read analyze test spec',
-    api.path['checkout'].join(config_path),
-    step_test_data=lambda: api.json.test_api.output({'exclusions': []})
-    )
-  step_result.presentation.step_text = 'path: %r' % config_path
-  return step_result.json.output
+def tests_in_compile_targets(compile_targets, tests):
+  """Returns the tests in |tests| that have at least one of their compile
+  targets in |compile_targets|."""
+  # The target all builds everything.
+  if 'all' in compile_targets:
+    return tests
+  return [test for test in tests if set(compile_targets) &
+          set(test.compile_targets(None))]
+
+
+def all_compile_targets(tests):
+  """Returns the compile_targets for all the Tests in |tests|."""
+  return sorted(set(x
+                    for test in tests
+                    for x in test.compile_targets(None)))
+
+
+def find_test_named(test_name, tests):
+  """Returns a list with all tests whose name matches |test_name|."""
+  return [test for test in tests if test.name == test_name]
 
 
 add_swarming_builder('linux_chromium_rel', 'linux_chromium_rel_swarming',
@@ -493,14 +592,32 @@ def build_to_priority(build_properties):
 
 
 def GenSteps(api):
+  def swarming_shards_from_test_spec(test_spec, test_name):
+    if isinstance(test_spec, dict):
+      gtest_tests_spec = test_spec.get('gtest_tests', [])
+    else:
+      # TODO(phajdan.jr): Convert test step data and remove this.
+      gtest_tests_spec = test_spec
+
+    for test in gtest_tests_spec:
+      if not isinstance(test, dict):
+        continue
+
+      if test['test'] == test_name:
+        swarming_spec = test.get('swarming', {})
+        if not swarming_spec.get('can_use_on_swarming_builders'):
+          continue
+        return (True, swarming_spec.get('shards', 1))
+
+    return (False, -1)
+
   def parse_test_spec(test_spec, enable_swarming, should_use_test):
     """Returns a list of tests to run and additional targets to compile.
 
     Uses 'should_use_test' callback to figure out what tests should be skipped.
 
-    Returns triple (compile_targets, gtest_tests, swarming_tests) where
+    Returns tuple (compile_targets, gtest_tests) where
       gtest_tests is a list of GTestTest
-      swarming_tests is a list of SwarmingGTestTest.
     """
     compile_targets = []
     gtest_tests_spec = []
@@ -508,13 +625,10 @@ def GenSteps(api):
       compile_targets = test_spec.get('compile_targets', [])
       gtest_tests_spec = test_spec.get('gtest_tests', [])
     else:
-      # TODO(nodir): Remove this after
-      # https://codereview.chromium.org/297303012/#ps50001
-      # lands.
+      # TODO(phajdan.jr): Convert test step data and remove this.
       gtest_tests_spec = test_spec
 
     gtest_tests = []
-    swarming_tests = []
     for test in gtest_tests_spec:
       test_name = None
       test_dict = None
@@ -540,29 +654,81 @@ def GenSteps(api):
       use_swarming = False
       swarming_shards = 1
       if enable_swarming:
-        swarming_spec = test_dict.get('swarming') or {}
-        if not isinstance(swarming_spec, dict):  # pragma: no cover
-          raise ValueError('\'swarming\' entry in test spec should be a dict')
-        if swarming_spec.get('can_use_on_swarming_builders'):
-          use_swarming = should_use_test(swarming_spec)
-        swarming_shards = swarming_spec.get('shards', 1)
+        use_swarming, swarming_shards = swarming_shards_from_test_spec(
+            test_spec, test_name)
 
       test_args = test_dict.get('args')
       if isinstance(test_args, basestring):
         test_args = [test_args]
 
       if use_swarming:
-        swarming_tests.append(
-            api.chromium.steps.SwarmingGTestTest(
-                test_name, test_args, swarming_shards))
+        test = api.chromium.steps.GTestTest(
+            test_name, test_args, enable_swarming=True,
+            swarming_shards=swarming_shards)
+        assert test.uses_swarming
       else:
-        gtest_tests.append(api.chromium.steps.GTestTest(test_name, test_args))
+        test = api.chromium.steps.GTestTest(test_name, test_args)
+        assert not test.uses_swarming
 
-    return compile_targets, gtest_tests, swarming_tests
+      gtest_tests.append(test)
+
+    return compile_targets, gtest_tests
 
   def get_bot_config(mastername, buildername):
     master_dict = BUILDERS.get(mastername, {})
     return master_dict.get('builders', {}).get(buildername)
+
+  def deapply_patch(bot_update_step):
+    if api.platform.is_win:
+      api.chromium.taskkill()
+    bot_update_json = bot_update_step.json.output
+    api.gclient.c.revisions['src'] = str(
+        bot_update_json['properties']['got_revision'])
+    api.bot_update.ensure_checkout(force=True,
+                                   patch=False,
+                                   update_presentation=False)
+    try:
+      api.chromium.runhooks(name='runhooks (without patch)')
+    except api.step.StepFailure:
+      api.tryserver.set_transient_failure_tryjob_result()
+      raise
+
+  def get_test_spec(mastername, buildername, name='read test spec',
+                    step_test_data=None):
+    bot_config = get_bot_config(mastername, buildername)
+
+    test_spec_file = bot_config['testing'].get('test_spec_file',
+                                               'chromium_trybot.json')
+    test_spec_path = api.path.join('testing', 'buildbot', test_spec_file)
+    if not step_test_data:
+      step_test_data = lambda: api.json.test_api.output([
+        'base_unittests',
+        {
+          'test': 'mojo_common_unittests',
+          'platforms': ['linux', 'mac'],
+        },
+        {
+          'test': 'sandbox_linux_unittests',
+          'platforms': ['linux'],
+          'chromium_configs': [
+            'chromium_chromeos',
+            'chromium_chromeos_clang',
+            'chromium_chromeos_ozone',
+          ],
+          'args': ['--test-launcher-print-test-stdio=always'],
+        },
+        {
+          'test': 'browser_tests',
+          'exclude_builders': ['tryserver.chromium.win:win_chromium_x64_rel'],
+        },
+      ])
+    step_result = api.json.read(
+        name,
+        api.path['checkout'].join(test_spec_path),
+        step_test_data=step_test_data
+    )
+    step_result.presentation.step_text = 'path: %s' % test_spec_path
+    return step_result.json.output
 
   def compile_and_return_tests(mastername, buildername):
     bot_config = get_bot_config(mastername, buildername)
@@ -578,41 +744,15 @@ def GenSteps(api):
     # Settings GYP_DEFINES explicitly because chromium config constructor does
     # not support that.
     api.chromium.c.gyp_env.GYP_DEFINES.update(bot_config.get('GYP_DEFINES', {}))
+    if bot_config['compile_only']:
+      api.chromium.c.gyp_env.GYP_DEFINES['fastbuild'] = 2
     api.chromium.apply_config('trybot_flavor')
     api.gclient.set_config('chromium')
     api.step.auto_resolve_conflicts = True
 
     bot_update_step = api.bot_update.ensure_checkout(force=True)
 
-    test_spec_file = bot_config['testing'].get('test_spec_file',
-                                               'chromium_trybot.json')
-    test_spec_path = api.path.join('testing', 'buildbot', test_spec_file)
-    step_result = api.json.read(
-        'read test spec',
-        api.path['checkout'].join(test_spec_path),
-        step_test_data=lambda: api.json.test_api.output([
-          'base_unittests',
-          {
-            'test': 'mojo_common_unittests',
-            'platforms': ['linux', 'mac'],
-          },
-          {
-            'test': 'sandbox_linux_unittests',
-            'platforms': ['linux'],
-            'chromium_configs': [
-              'chromium_chromeos',
-              'chromium_chromeos_clang'
-            ],
-            'args': ['--test-launcher-print-test-stdio=always'],
-          },
-          {
-            'test': 'browser_tests',
-            'exclude_builders': ['tryserver.chromium.win:win_chromium_x64_rel'],
-          },
-        ]),
-    )
-    step_result.presentation.step_text = 'path: %s' % test_spec_path
-    test_spec = step_result.json.output
+    test_spec = get_test_spec(mastername, buildername)
 
     def should_use_test(test):
       """Given a test dict from test spec returns True or False."""
@@ -628,44 +768,59 @@ def GenSteps(api):
       return True
 
     # Parse test spec file into list of Test instances.
-    compile_targets, gtest_tests, swarming_tests = parse_test_spec(
+    compile_targets, gtest_tests = parse_test_spec(
         test_spec,
         bot_config.get('enable_swarming'),
         should_use_test)
+    compile_targets.extend(bot_config.get('compile_targets', []))
+    # TODO(phajdan.jr): Also compile 'all' on win, http://crbug.com/368831 .
+    # Disabled for now because it takes too long and/or fails on Windows.
+    if not api.platform.is_win and not bot_config.get('exclude_compile_all'):
+      compile_targets = ['all'] + compile_targets
 
     runhooks_env = bot_config.get('runhooks_env', {})
+
+    # Tests that are only run if their compile_targets are going to be built.
+    conditional_tests = [api.chromium.steps.NaclIntegrationTest()]
+    if bot_config.get('add_telemetry_tests', True):
+      conditional_tests += [api.chromium.steps.TelemetryUnitTests(),
+                            api.chromium.steps.TelemetryPerfUnitTests()]
 
     # See if the patch needs to compile on the current platform.
     if isinstance(test_spec, dict) and should_filter_builder(
         buildername, test_spec.get('non_filter_builders', []),
         api.properties.get('root')):
-      analyze_config = get_analyze_config(
-          api, bot_config['testing'].get('analyze_config_file',
-                                         'trybot_analyze_config.json'))
+      analyze_config_file = bot_config['testing'].get('analyze_config_file',
+                                         'trybot_analyze_config.json')
       api.filter.does_patch_require_compile(
-          exclusions=analyze_config.get('exclusions', []),
-          exes=get_test_names(gtest_tests, swarming_tests),
+          exes=get_test_names(gtest_tests) +
+               all_compile_targets(conditional_tests),
+          compile_targets=compile_targets,
+          additional_name='chromium',
+          config_file_name=analyze_config_file,
           env=runhooks_env)
       if not api.filter.result:
-        return [], swarming_tests, bot_update_step
-      # Patch needs compile. Filter the list of test targets.
-      if buildername in test_spec.get('filter_tests_builders', []):
+        return [], bot_update_step
+      # Patch needs compile. Filter the list of test and compile targets.
+      if should_filter_tests(buildername,
+                             test_spec.get('non_filter_tests_builders', [])):
         gtest_tests = filter_tests(gtest_tests, api.filter.matching_exes)
-        swarming_tests = filter_tests(swarming_tests, api.filter.matching_exes)
-
-    # Swarming uses Isolate to transfer files to swarming bots.
-    # set_isolate_environment modifies GYP_DEFINES to enable test isolation.
-    if bot_config.get('use_isolate') or swarming_tests:
-      api.isolate.set_isolate_environment(api.chromium.c)
-
-    # If going to use swarming_client (pinned in src/DEPS), ensure it is
-    # compatible with what recipes expect.
-    if swarming_tests:
-      api.swarming.check_client_version()
-      # Decide the task priority.
-      api.swarming.task_priority = build_to_priority(api.properties)
-
-    api.chromium.runhooks(env=runhooks_env)
+      if should_filter_compile(buildername,
+                               test_spec.get('non_filter_compile_builders',
+                                             [])):
+        if 'all' in compile_targets:
+          compile_targets = api.filter.compile_targets
+        else:
+          compile_targets = list(set(compile_targets) &
+                                 set(api.filter.compile_targets))
+        # Always add |matching_exes|. They will be covered by |compile_targets|,
+        # but adding |matching_exes| makes determing if conditional tests are
+        # necessary easier. For example, if we didn't do this we could end up
+        # with chrome_run as a compile_target and not chrome (since chrome_run
+        # depends upon chrome). This results in not picking up
+        # NaclIntegrationTest as it depends upon chrome not chrome_run.
+        compile_targets = list(set(api.filter.matching_exes +
+                                   api.filter.compile_targets))
 
     tests = []
     # TODO(phajdan.jr): Re-enable checkdeps on Windows when it works with git.
@@ -678,75 +833,152 @@ def GenSteps(api):
       ])
     tests.append(api.chromium.steps.Deps2GitTest())
 
-    if (bot_config['chromium_config'] not in ['chromium_chromeos',
-                                             'chromium_chromeos_clang']
-        and not buildername.startswith('win8')):
-      tests.append(api.chromium.steps.TelemetryUnitTests())
-      tests.append(api.chromium.steps.TelemetryPerfUnitTests())
-
+    conditional_tests = tests_in_compile_targets(compile_targets,
+                                                 conditional_tests)
+    tests.extend(find_test_named(api.chromium.steps.TelemetryUnitTests.name,
+                                 conditional_tests))
+    tests.extend(find_test_named(api.chromium.steps.TelemetryPerfUnitTests.name,
+                                 conditional_tests))
     tests.extend(gtest_tests)
-    tests.extend(swarming_tests)
-    tests.append(api.chromium.steps.NaclIntegrationTest())
+    tests.extend(find_test_named(api.chromium.steps.NaclIntegrationTest.name,
+                                 conditional_tests))
+    # MojoPythonTests don't require anything to be compiled.
     tests.append(api.chromium.steps.MojoPythonTests())
 
-    # test_installer only works on 32-bit builds; http://crbug.com/399643
-    # Disabled due to retry issues (http://crbug.com/402081.
-    #if api.platform.is_win and api.chromium.c.TARGET_BITS == 32:
-    #  tests.append(api.chromium.steps.MiniInstallerTest())
+    if api.platform.is_win:
+      tests.append(api.chromium.steps.MiniInstallerTest())
 
-    compile_targets.extend(bot_config.get('compile_targets', []))
+    has_swarming_tests = any(t.uses_swarming for t in tests)
+
+    # Swarming uses Isolate to transfer files to swarming bots.
+    # set_isolate_environment modifies GYP_DEFINES to enable test isolation.
+    if bot_config.get('use_isolate') or has_swarming_tests:
+      api.isolate.set_isolate_environment(api.chromium.c)
+
+    # If going to use swarming_client (pinned in src/DEPS), ensure it is
+    # compatible with what recipes expect.
+    if has_swarming_tests:
+      api.swarming.check_client_version()
+      # Decide the task priority.
+      api.swarming.task_priority = build_to_priority(api.properties)
+
+    try:
+      api.chromium.runhooks(name='runhooks (with patch)', env=runhooks_env)
+    except api.step.StepFailure:
+      # As part of deapplying patch we call runhooks without the patch.
+      deapply_patch(bot_update_step)
+      raise
+
     compile_targets.extend(api.itertools.chain(
         *[t.compile_targets(api) for t in tests]))
-    # TODO(phajdan.jr): Also compile 'all' on win, http://crbug.com/368831 .
-    # Disabled for now because it takes too long and/or fails on Windows.
-    if not api.platform.is_win and not bot_config.get('exclude_compile_all'):
-      compile_targets = ['all'] + compile_targets
-    api.chromium.compile(compile_targets, name='compile (with patch)')
+    # Remove duplicate targets.
+    compile_targets = sorted(set(compile_targets))
+    try:
+      api.chromium.compile(compile_targets, name='compile (with patch)')
+    except api.step.StepFailure:
+      deapply_patch(bot_update_step)
+      try:
+        api.chromium.compile(
+            compile_targets, name='compile (without patch)')
+
+        # TODO(phajdan.jr): Set failed tryjob result after recognizing infra
+        # compile failures. We've seen cases of compile with patch failing
+        # with build steps getting killed, compile without patch succeeding,
+        # and compile with patch succeeding on another attempt with same patch.
+      except api.step.StepFailure:
+        api.tryserver.set_transient_failure_tryjob_result()
+        raise
+      raise
 
     # Collect *.isolated hashes for all isolated targets, used when triggering
     # tests on swarming.
-    if bot_config.get('use_isolate') or swarming_tests:
+    if bot_config.get('use_isolate') or has_swarming_tests:
       api.isolate.find_isolated_tests(api.chromium.output_dir)
 
     if bot_config['compile_only']:
       tests = []
-      swarming_tests = []
 
-    return tests, swarming_tests, bot_update_step
+    return tests, bot_update_step
 
   mastername = api.properties.get('mastername')
   buildername = api.properties.get('buildername')
-  tests, swarming_tests, bot_update_step = compile_and_return_tests(
-      mastername, buildername)
+  bot_config = get_bot_config(mastername, buildername)
+
+  main_waterfall_config = bot_config.get('based_on_main_waterfall')
+  if main_waterfall_config:
+    bot_update_step, master_dict, test_spec = \
+        api.chromium_tests.sync_and_configure_build(
+            main_waterfall_config['mastername'],
+            main_waterfall_config['buildername'],
+            override_bot_type='builder_tester',
+            enable_swarming=True)
+
+    tests = api.chromium_tests.tests_for_builder(
+        main_waterfall_config['mastername'],
+        main_waterfall_config['buildername'],
+        bot_update_step,
+        master_dict,
+        override_bot_type='builder_tester')
+    for tester in main_waterfall_config['testers']:
+      tests.extend(api.chromium_tests.tests_for_builder(
+          main_waterfall_config['mastername'],
+          tester,
+          bot_update_step,
+          master_dict,
+          override_bot_type='builder_tester'))
+
+    trybot_test_spec = get_test_spec(
+        mastername,
+        buildername,
+        name='read trybot test spec',
+        step_test_data=lambda: api.json.test_api.output([
+            {
+              'test': 'base_unittests',
+              'swarming': {
+                'can_use_on_swarming_builders': True,
+                'shards': 5,
+              },
+            },
+        ]))
+    for test in tests:
+      use_swarming, swarming_shards = swarming_shards_from_test_spec(
+          trybot_test_spec, test.name)
+      if use_swarming:
+        test.force_swarming(swarming_shards)
+
+    api.chromium_tests.compile(
+        main_waterfall_config['mastername'],
+        main_waterfall_config['buildername'],
+        bot_update_step,
+        master_dict,
+        test_spec,
+        override_bot_type='builder_tester',
+        override_tests=tests)
+  else:
+    # TODO(phajdan.jr): Remove the legacy trybot-specific codepath.
+    tests, bot_update_step = compile_and_return_tests(
+        mastername, buildername)
 
   def deapply_patch_fn(failing_tests):
-    if api.platform.is_win:
-      api.chromium.taskkill()
-    bot_update_json = bot_update_step.json.output
-    api.gclient.c.revisions['src'] = str(
-        bot_update_json['properties']['got_revision'])
-    api.bot_update.ensure_checkout(force=True,
-                                   patch=False,
-                                   update_presentation=False)
-    try:
-      api.chromium.runhooks()
-    finally:
-      compile_targets = list(api.itertools.chain(
-          *[t.compile_targets(api) for t in failing_tests]))
-      if compile_targets:
-        try:
-          api.chromium.compile(
-                  compile_targets, name='compile (without patch)')
-        except api.step.StepFailure:
-          api.chromium.compile(compile_targets,
-                               name='compile (without patch, clobber)',
-                               force_clobber=True)
-        # Search for *.isolated only if enabled in bot config or if some
-        # swarming test is being recompiled.
-        bot_config = get_bot_config(mastername, buildername)
-        failing_swarming_tests = set(failing_tests) & set(swarming_tests)
-        if bot_config.get('use_isolate') or failing_swarming_tests:
-          api.isolate.find_isolated_tests(api.chromium.output_dir)
+    deapply_patch(bot_update_step)
+    compile_targets = list(api.itertools.chain(
+        *[t.compile_targets(api) for t in failing_tests]))
+    if compile_targets:
+      # Remove duplicate targets.
+      compile_targets = sorted(set(compile_targets))
+      try:
+        api.chromium.compile(
+            compile_targets, name='compile (without patch)')
+      except api.step.StepFailure:
+        api.tryserver.set_transient_failure_tryjob_result()
+        raise
+      # Search for *.isolated only if enabled in bot config or if some
+      # swarming test is being recompiled.
+      bot_config = get_bot_config(mastername, buildername)
+      has_failing_swarming_tests = [
+          t for t in failing_tests if t.uses_swarming]
+      if bot_config.get('use_isolate') or has_failing_swarming_tests:
+        api.isolate.find_isolated_tests(api.chromium.output_dir)
 
   return api.test_utils.determine_new_failures(api, tests, deapply_patch_fn)
 
@@ -792,6 +1024,21 @@ def GenTests(api):
         props(mastername=mastername, buildername=buildername)
       )
 
+  yield (
+    api.test('force_swarming') +
+    api.platform('linux', 64) +
+    api.properties.generic(mastername='tryserver.chromium.linux',
+                           buildername='linux_chromium_rel_ng') +
+    api.override_step_data('read test spec', api.json.output({
+        'Linux Tests': {
+          'gtest_tests': [
+            'base_unittests',
+          ],
+        },
+      })
+    )
+  )
+
   # It is important that even when steps related to deapplying the patch
   # fail, we either print the summary for all retried steps or do no
   # retries at all.
@@ -803,7 +1050,7 @@ def GenTests(api):
                            canned_test(passing=False)) +
     api.override_step_data('base_unittests (without patch)',
                            canned_test(passing=False)) +
-    api.step_data('gclient runhooks (2)', retcode=1)
+    api.step_data('gclient runhooks (without patch)', retcode=1)
   )
 
   yield (
@@ -816,14 +1063,23 @@ def GenTests(api):
                            api.json.output(None))
   )
 
-  for step in ('bot_update', 'gclient runhooks'):
+  for step in ('bot_update', 'gclient runhooks (with patch)'):
     yield (
-      api.test(step.replace(' ', '_') + '_failure') +
+      api.test(_sanitize_nonalpha(step) + '_failure') +
       props(buildername='win_no_bot_update',
             mastername='tryserver.chromium.win') +
       api.platform.name('win') +
       api.step_data(step, retcode=1)
     )
+
+  yield (
+    api.test('runhooks_failure') +
+    props(buildername='win_chromium_rel',
+          mastername='tryserver.chromium.win') +
+    api.platform.name('win') +
+    api.step_data('gclient runhooks (with patch)', retcode=1) +
+    api.step_data('gclient runhooks (without patch)', retcode=1)
+  )
 
   yield (
     api.test('compile_failure') +
@@ -834,10 +1090,12 @@ def GenTests(api):
   )
 
   yield (
-    api.test('compile_first_failure_linux') +
-    props() +
-    api.platform.name('linux') +
-    api.step_data('compile (with patch)', retcode=1)
+    api.test('compile_failure_without_patch') +
+    props(buildername='win_chromium_rel',
+          mastername='tryserver.chromium.win') +
+    api.platform.name('win') +
+    api.step_data('compile (with patch)', retcode=1) +
+    api.step_data('compile (without patch)', retcode=1)
   )
 
   yield (
@@ -905,6 +1163,7 @@ def GenTests(api):
     api.test('checklicenses_failure') +
     props() +
     api.platform.name('linux') +
+    api.override_step_data('checklicenses', retcode=1) +
     api.override_step_data(
         'checklicenses (with patch)',
         api.json.output([
@@ -1066,9 +1325,14 @@ def GenTests(api):
     props(buildername='linux_chromium_rel') +
     api.platform.name('linux') +
     api.override_step_data('read test spec', api.json.output({})) +
-    api.override_step_data('read analyze test spec', api.json.output({
-        'exclusions': ['f.*'],
-      })
+    api.override_step_data('read filter exclusion spec', api.json.output({
+        'base': {
+          'exclusions': ['f.*'],
+        },
+        'chromium': {
+          'exclusions': [],
+        },
+     })
     )
   )
 
@@ -1079,20 +1343,24 @@ def GenTests(api):
     props(buildername='linux_chromium_rel') +
     api.platform.name('linux') +
     api.override_step_data('read test spec', api.json.output({
+        'non_filter_compile_builders': ['linux_chromium_rel'],
       })
     ) +
     api.override_step_data(
       'analyze',
-      api.json.output({'status': 'Found dependency', 'targets': []}))
+      api.json.output({'status': 'Found dependency', 'targets': [],
+                       'build_targets': []}))
   )
 
-  # Tests analyze module by way of not specifying non_filter_builders and
+  # Tests analyze module by way of specifying non_filter_builders and
   # analyze result returning true along with a smaller set of tests.
   yield (
     api.test('compile_because_of_analyze_with_filtered_tests_no_builder') +
     props(buildername='linux_chromium_rel') +
     api.platform.name('linux') +
     api.override_step_data('read test spec', api.json.output({
+        'non_filter_tests_builders': ['linux_chromium_rel'],
+        'non_filter_compile_builders': ['linux_chromium_rel'],
         'gtest_tests': [
           {
             'test': 'base_unittests',
@@ -1110,7 +1378,8 @@ def GenTests(api):
     api.override_step_data(
       'analyze',
       api.json.output({'status': 'Found dependency',
-                       'targets': ['browser_tests', 'base_unittests']}))
+                       'targets': ['browser_tests', 'base_unittests'],
+                       'build_targets': ['browser_tests', 'base_unittests']}))
   )
 
   # Tests analyze module by way of not specifying non_filter_builders and
@@ -1121,7 +1390,7 @@ def GenTests(api):
     props(buildername='linux_chromium_rel') +
     api.platform.name('linux') +
     api.override_step_data('read test spec', api.json.output({
-        'filter_tests_builders': 'linux_chromium_rel',
+        'non_filter_compile_builders': ['linux_chromium_rel'],
         'gtest_tests': [
           {
             'test': 'base_unittests',
@@ -1139,5 +1408,62 @@ def GenTests(api):
     api.override_step_data(
       'analyze',
       api.json.output({'status': 'Found dependency',
-                       'targets': ['browser_tests', 'base_unittests']}))
+                       'targets': ['browser_tests', 'base_unittests'],
+                       'build_targets': ['browser_tests', 'base_unittests']}))
   )
+
+  # Tests compile_target portion of analyze module.
+  yield (
+    api.test('compile_because_of_analyze_with_filtered_compile_targets') +
+    props(buildername='linux_chromium_rel') +
+    api.platform.name('linux') +
+    api.override_step_data('read test spec', api.json.output({
+        'gtest_tests': [
+          {
+            'test': 'base_unittests',
+            'swarming': {'can_use_on_swarming_builders': True},
+          },
+          {
+            'test': 'browser_tests',
+          },
+          {
+            'test': 'unittests',
+          },
+        ],
+      })
+    ) +
+    api.override_step_data(
+      'analyze',
+      api.json.output({'status': 'Found dependency',
+                       'targets': ['browser_tests', 'base_unittests'],
+                       'build_targets': ['chrome', 'browser_tests',
+                                         'base_unittests']}))
+  )
+
+  # Tests compile_targets portion of analyze with a bot that doesn't include the
+  # 'all' target.
+  yield (
+    api.test(
+      'compile_because_of_analyze_with_filtered_compile_targets_exclude_all') +
+    props(buildername='linux_chromium_browser_asan_rel') +
+    api.platform.name('linux') +
+    api.override_step_data('read test spec', api.json.output({
+        'compile_targets': ['base_unittests'],
+        'gtest_tests': [
+          {
+            'test': 'browser_tests',
+            'args': '--gtest-filter: *NaCl*',
+          }, {
+            'test': 'base_tests',
+            'args': ['--gtest-filter: *NaCl*'],
+          },
+        ],
+      })
+    ) +
+    api.override_step_data(
+      'analyze',
+      api.json.output({'status': 'Found dependency',
+                       'targets': ['browser_tests', 'base_unittests'],
+                       'build_targets': ['base_unittests']}))
+  )
+

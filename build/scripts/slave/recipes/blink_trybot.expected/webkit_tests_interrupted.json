@@ -255,22 +255,26 @@
     "name": "archive_webkit_tests_results",
     "~followup_annotations": [
       "@@@STEP_LINK@layout_test_results@https://storage.googleapis.com/chromium-layout-test-archives/linux_blink_rel/571/layout-test-results/results.html@@@",
-      "@@@STEP_LINK@(zip)@https://storage.googleapis.com/chromium-layout-test-archives/linux_blink_rel/571/layout-test-results.zip@@@"
+      "@@@STEP_LINK@(zip)@https://storage.googleapis.com/chromium-layout-test-archives/linux_blink_rel/571/layout-test-results.zip@@@",
+      "@@@SET_BUILD_PROPERTY@failure_type@\"TRANSIENT_FAILURE\"@@@"
     ]
   },
   {
     "cmd": [
       "python",
       "-u",
-      "\nimport sys\nprint 'TEST RESULTS WERE INVALID'\nsys.exit(1)\n"
+      "import sys; sys.exit(1)"
     ],
     "name": "webkit_tests",
     "~followup_annotations": [
-      "@@@STEP_LOG_LINE@python.inline@@@@",
-      "@@@STEP_LOG_LINE@python.inline@import sys@@@",
-      "@@@STEP_LOG_LINE@python.inline@print 'TEST RESULTS WERE INVALID'@@@",
-      "@@@STEP_LOG_LINE@python.inline@sys.exit(1)@@@",
-      "@@@STEP_LOG_END@python.inline@@@"
+      "step returned non-zero exit code: 1",
+      "@@@STEP_TEXT@TEST RESULTS WERE INVALID@@@",
+      "@@@STEP_FAILURE@@@"
     ]
+  },
+  {
+    "name": "$final_result",
+    "reason": "Step('webkit_tests') failed with return_code 1",
+    "status_code": 1
   }
 ]

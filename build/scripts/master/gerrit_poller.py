@@ -13,6 +13,7 @@ from twisted.python import log
 from twisted.internet import defer
 
 from common.gerrit_agent import GerritAgent
+from common.gerrit.time import ParseGerritTime
 
 class GerritPoller(base.PollingChangeSource):
   """A poller which queries a gerrit server for new changes and patchsets."""
@@ -74,14 +75,6 @@ class GerritPoller(base.PollingChangeSource):
     if not isinstance(self.agent, GerritAgent):
       self.agent = GerritAgent(self.agent)
 
-  @staticmethod
-  def _parse_timestamp(tm):
-    tm = tm[:tm.index('.')+7]
-    try:
-      return datetime.datetime.strptime(tm, '%Y-%m-%d %H:%M:%S.%f')
-    except ValueError:
-      return datetime.datetime.strptime(tm, '%Y-%m-%d %H:%M:%S')
-
   def startService(self):
     if not self.dry_run:
       self.initLastTimeStamp()
@@ -124,7 +117,7 @@ class GerritPoller(base.PollingChangeSource):
       if len(j) == 0:
         self.last_timestamp = datetime.datetime.now()
       else:
-        self.last_timestamp = self._parse_timestamp(j[0]['updated'])
+        self.last_timestamp = ParseGerritTime(j[0]['updated'])
     d.addCallback(_get_timestamp)
     return d
 
@@ -146,7 +139,7 @@ class GerritPoller(base.PollingChangeSource):
       if not j or 'messages' not in j:
         return
       for m in reversed(j['messages']):
-        if self._parse_timestamp(m['date']) <= since:
+        if ParseGerritTime(m['date']) <= since:
           break
         if self._is_interesting_message(m):
           return j, m
@@ -164,7 +157,7 @@ class GerritPoller(base.PollingChangeSource):
     return '%s/%s' % (self.agent.base_url,
                       change['project'])
 
-  def addBuildbotChange(self, change, revision=None):
+  def addBuildbotChange(self, change, revision=None, additional_chdict=None):
     """Adds a buildbot change into the database.
 
     Args:
@@ -199,11 +192,18 @@ class GerritPoller(base.PollingChangeSource):
         'comments': commit['subject'],
         'files': revision_details.get('files', {'UNKNOWN': None}).keys(),
         'category': self.change_category,
-        'when_timestamp': self._parse_timestamp(commit['committer']['date']),
+        'when_timestamp': ParseGerritTime(commit['committer']['date']),
         'revlink': self.getChangeUrl(change),
         'repository': self.getRepositoryUrl(change),
         'properties': properties,
     }
+
+    # Factor in external 'chdict' overrides.
+    if additional_chdict is not None:
+      properties.update(additional_chdict.pop('properties', {}))
+      chdict.update(additional_chdict)
+    chdict['properties'] = properties
+
     d = self.master.addChange(**chdict)
     d.addErrback(log.err, 'GerritPoller: Could not add buildbot change for '
                  'gerrit change %s.' % revision_details['_number'])
@@ -232,7 +232,7 @@ class GerritPoller(base.PollingChangeSource):
     need_more = bool(j)
     for change in j:
       skip += 1
-      tm = self._parse_timestamp(change['updated'])
+      tm = ParseGerritTime(change['updated'])
       if tm <= since:
         need_more = False
         break
@@ -257,7 +257,7 @@ class GerritPoller(base.PollingChangeSource):
     d = self.getChanges()
     def _update_last_timestamp(j):
       if j:
-        self.last_timestamp = self._parse_timestamp(j[0]['updated'])
+        self.last_timestamp = ParseGerritTime(j[0]['updated'])
       return j
     d.addCallback(_update_last_timestamp)
     d.addCallback(self.processChanges, since=since)

@@ -15,9 +15,6 @@ BUILDERS = {
     'kwargs': {
       'BUILD_CONFIG': 'Debug',
     },
-    'custom': {
-      'deps_file': 'DEPS'
-    },
     'gyp_defs': {
       'use_goma': 0,
     }
@@ -29,11 +26,10 @@ def GenSteps(api):
   builder_config = BUILDERS.get(buildername, {})
   recipe_config = builder_config['recipe_config']
   kwargs = builder_config.get('kwargs', {})
-  custom = builder_config.get('custom', {})
   gyp_defs = builder_config.get('gyp_defs', {})
 
   cronet = api.cronet
-  cronet.init_and_sync(recipe_config, kwargs, custom, gyp_defs)
+  cronet.init_and_sync(recipe_config, kwargs, gyp_defs)
   cronet.build()
   cronet.upload_package(kwargs['BUILD_CONFIG'])
   cronet.run_tests()
@@ -43,8 +39,9 @@ def GenTests(api):
   props = api.properties.generic(
     buildername=bot_id,
     revision='4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00',
-    repository='svn://svn.chromium.org/chrome/trunk/src',
-    branch='src',
+    repository='https://chromium.googlesource.com/chromium/src',
+    branch='master',
+    project='src',
   )
   yield api.test(bot_id) + props
 

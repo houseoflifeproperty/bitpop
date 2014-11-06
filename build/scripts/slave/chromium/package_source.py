@@ -158,7 +158,7 @@ def main():
   find_command = ['find', 'src/', 'tools/', '/usr/include/', '-type', 'f',
                   # The only files under src/out we want to package up
                   # are index files....
-                  '(', '-regex', '^src/out/.*index$', '-o',
+                  '(', '-regex', '^src/out/.*\.index$', '-o',
                       '(',
                          # ... and generated sources...
                          '-regex', '^src/out/.*/gen/.*', '-a',
@@ -178,6 +178,7 @@ def main():
                   '!', '-regex', '^src/native_client/toolchain/.*', '-a',
                   '!', '-regex', '^src/native_client/.*/testdata/.*', '-a',
                   '!', '-regex', '^src/third_party/llvm-build/.*', '-a',
+                  '!', '-regex', '^src/.*/\.cvsignore', '-a',
                   '!', '-regex', '^src/chrome/tools/test/reference_build/.*',
                   '-a',
                   '!', '-regex', '^tools/perf/data/.*']

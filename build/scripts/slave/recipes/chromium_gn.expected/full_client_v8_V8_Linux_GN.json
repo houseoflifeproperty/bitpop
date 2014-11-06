@@ -19,7 +19,7 @@
       "--revision",
       "src@origin/lkcr",
       "--revision",
-      "src/v8@bleeding_edge:HEAD",
+      "src/v8@HEAD",
       "--force"
     ],
     "name": "bot_update",

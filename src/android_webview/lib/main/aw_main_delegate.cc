@@ -79,6 +79,12 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   // File system API not supported (requires some new API; internal bug 6930981)
   cl->AppendSwitch(switches::kDisableFileSystem);
 
+  // For fullscreen video we create a new container view to host the
+  // WebContents, ie. the FullscreenView. As a result we cannot reuse the
+  // embedded video blocker attached to the old container view, so we create a
+  // new blocker instead attached to the ContentVideoView.
+  cl->AppendSwitch(switches::kEnableContentVideoViewPowerSaveBlocker);
+
 #if defined(VIDEO_HOLE)
   // Support EME/L1 with hole-punching.
   cl->AppendSwitch(switches::kMediaDrmEnableNonCompositing);
@@ -112,7 +118,7 @@ int AwMainDelegate::RunProcess(
 
     browser_runner_.reset(content::BrowserMainRunner::Create());
     int exit_code = browser_runner_->Initialize(main_function_params);
-    DCHECK(exit_code < 0);
+    DCHECK_LT(exit_code, 0);
 
     g_allow_wait_in_ui_thread.Get().reset(
         new ScopedAllowWaitForLegacyWebViewApi);

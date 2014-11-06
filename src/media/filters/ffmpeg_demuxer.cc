@@ -305,6 +305,12 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
       start_time = base::TimeDelta();
     }
 
+    // Don't rebase timestamps for positive start times, the HTML Media Spec
+    // details this in section "4.8.10.6 Offsets into the media resource." We
+    // will still need to rebase timestamps before seeking with FFmpeg though.
+    if (start_time > base::TimeDelta())
+      start_time = base::TimeDelta();
+
     buffer->set_timestamp(stream_timestamp - start_time);
 
     // If enabled, mark audio packets with negative timestamps for post-decode
@@ -555,10 +561,14 @@ FFmpegDemuxer::FFmpegDemuxer(
 
 FFmpegDemuxer::~FFmpegDemuxer() {}
 
-void FFmpegDemuxer::Stop(const base::Closure& callback) {
+void FFmpegDemuxer::Stop() {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  url_protocol_->Abort();
+
+  // The order of Stop() and Abort() is important here.  If Abort() is called
+  // first, control may pass into FFmpeg where it can destruct buffers that are
+  // in the process of being fulfilled by the DataSource.
   data_source_->Stop();
+  url_protocol_->Abort();
 
   // This will block until all tasks complete. Note that after this returns it's
   // possible for reply tasks (e.g., OnReadFrameDone()) to be queued on this
@@ -573,7 +583,6 @@ void FFmpegDemuxer::Stop(const base::Closure& callback) {
   }
 
   data_source_ = NULL;
-  task_runner_->PostTask(FROM_HERE, callback);
 }
 
 void FFmpegDemuxer::Seek(base::TimeDelta time, const PipelineStatusCB& cb) {
@@ -585,7 +594,15 @@ void FFmpegDemuxer::Seek(base::TimeDelta time, const PipelineStatusCB& cb) {
   // we know we're going to drop it on the floor.
 
   // FFmpeg requires seeks to be adjusted according to the lowest starting time.
-  const base::TimeDelta seek_time = time + start_time_;
+  // Since EnqueuePacket() rebased negative timestamps by the start time, we
+  // must correct the shift here.
+  //
+  // Additionally, to workaround limitations in how we expose seekable ranges to
+  // Blink (http://crbug.com/137275), we also want to clamp seeks before the
+  // start time to the start time.
+  const base::TimeDelta seek_time =
+      start_time_ < base::TimeDelta() ? time + start_time_
+                                      : time < start_time_ ? start_time_ : time;
 
   // Choose the seeking stream based on whether it contains the seek time, if no
   // match can be found prefer the preferred stream.
@@ -649,6 +666,10 @@ void FFmpegDemuxer::Initialize(DemuxerHost* host,
                  status_cb));
 }
 
+base::Time FFmpegDemuxer::GetTimelineOffset() const {
+  return timeline_offset_;
+}
+
 DemuxerStream* FFmpegDemuxer::GetStream(DemuxerStream::Type type) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   return GetFFmpegStream(type);
@@ -665,8 +686,8 @@ FFmpegDemuxerStream* FFmpegDemuxer::GetFFmpegStream(
   return NULL;
 }
 
-base::Time FFmpegDemuxer::GetTimelineOffset() const {
-  return timeline_offset_;
+base::TimeDelta FFmpegDemuxer::GetStartTime() const {
+  return std::max(start_time_, base::TimeDelta());
 }
 
 Demuxer::Liveness FFmpegDemuxer::GetLiveness() const {
@@ -942,7 +963,7 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
 
   // Since we're shifting the externally visible start time to zero, we need to
   // adjust the timeline offset to compensate.
-  if (!timeline_offset_.is_null())
+  if (!timeline_offset_.is_null() && start_time_ < base::TimeDelta())
     timeline_offset_ += start_time_;
 
   if (max_duration == kInfiniteDuration() && !timeline_offset_.is_null()) {

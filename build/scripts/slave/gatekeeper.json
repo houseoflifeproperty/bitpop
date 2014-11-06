@@ -6,13 +6,7 @@
     "https://build.chromium.org/p/chromium": [
       {
         "categories": [
-          "chromium_archive_build",
-          "chromium_checkdeps",
-          "chromium_checkdeps2git",
-          "chromium_compile",
-          "chromium_sizes",
-          "chromium_tree_closer",
-          "gclient"
+          "chromium_tree_closer"
         ],
 
         "builders": {
@@ -29,8 +23,7 @@
     "https://build.chromium.org/p/chromium.chrome": [
       {
         "categories": [
-          "chromium_tree_closer",
-          "chromium_recipes"
+          "chromium_tree_closer"
         ],
         "builders": {
           "*": {}
@@ -40,8 +33,7 @@
     "https://build.chromium.org/p/chromium.chromiumos": [
       {
         "categories": [
-          "chromium_tree_closer",
-          "chromium_recipes"
+          "chromium_tree_closer"
         ],
         "builders": {
           "*": {}
@@ -73,7 +65,6 @@
         "tree_notify": ["chrome-gpu-build-failures@google.com"],
         "sheriff_classes": ["sheriff", "sheriff_gpu"],
         "categories": [
-          "chromium_gpu_tests",
           "chromium_tree_closer"
         ],
         "builders": {
@@ -116,8 +107,7 @@
     "https://build.chromium.org/p/chromium.linux": [
       {
         "categories": [
-          "chromium_tree_closer",
-          "chromium_recipes"
+          "chromium_tree_closer"
         ],
         "builders": {
           "Android Builder (dbg)": {
@@ -172,8 +162,7 @@
             "categories": [
               "chromium_archive_build",
               "chromium_compile",
-              "chromium_windows",
-              "gclient"
+              "chromium_windows"
             ]
           }
         }
@@ -182,8 +171,7 @@
     "https://build.chromium.org/p/chromium.mac": [
       {
         "categories": [
-          "chromium_tree_closer",
-          "chromium_recipes"
+          "chromium_tree_closer"
         ],
         "builders": {
           "iOS Device": {
@@ -204,46 +192,10 @@
     "https://build.chromium.org/p/chromium.memory": [
       {
         "categories": [
-          "chromium_tree_closer",
-          "gclient"
+          "chromium_tree_closer"
         ],
         "builders": {
-          "Linux Chromium OS ASan LSan Builder": {
-            "categories": [
-              "chromium_compile"
-            ]
-          },
-          "Linux ASan LSan Builder": {
-            "categories": [
-              "chromium_compile"
-            ]
-          },
-          "Mac ASan Builder": {
-            "categories": [
-              "chromium_compile"
-            ]
-          },
-          "Mac ASan 64 Tests (1)": {
-            "closing_optional": [],
-            "comment": ["closing_optional due to crbug.com/394232"]
-          },
-          "Mac ASan 64 Tests (2)": {
-            "closing_optional": [],
-            "comment": ["closing_optional due to crbug.com/394232"]
-          },
-          "Mac ASan Tests (1)": {
-            "closing_optional": [],
-            "comment": ["closing_optional due to crbug.com/394232"]
-          },
-          "Mac ASan Tests (2)": {
-            "closing_optional": [],
-            "comment": ["closing_optional due to crbug.com/394232"]
-          },
-          "*": {
-            "categories": [
-              "chromium_asan_tests"
-            ]
-          }
+          "*": {}
         }
       }
     ],
@@ -261,8 +213,7 @@
         "subject_template": "%(project_name)s %(builder_name)s %(result)s",
 
         "categories": [
-          "chromium_perf_steps",
-          "gclient"
+          "chromium_perf_steps"
         ],
 
         "builders": {
@@ -302,27 +253,8 @@
 
         "builders": {
           "*": {
-            "comment": ["We should close on test failures, but we don't",
-                        "currently."],
             "categories": [
-              "chromium_compile"
-            ],
-
-            "closing_optional": [
-              "compile",
-              "runhooks",
-              "update"
-            ]
-          },
-
-          "WebKit XP": {
-            "categories": [
-              "chromium_compile"
-            ],
-
-            "closing_optional": [
-              "compile",
-              "update"
+              "chromium_tree_closer"
             ]
           }
         }
@@ -331,8 +263,7 @@
     "https://build.chromium.org/p/chromium.win": [
       {
         "categories": [
-          "chromium_tree_closer",
-          "chromium_recipes"
+          "chromium_tree_closer"
         ],
         "builders": {
           "*": {}
@@ -360,21 +291,6 @@
   },
 
   "categories": {
-    "gclient": {
-      "closing_optional": [
-        "runhooks"
-      ],
-      "forgiving_optional": [
-        "update"
-      ]
-    },
-
-    "chromium_sizes": {
-      "closing_optional": [
-        "sizes"
-      ]
-    },
-
     "chromium_crash_handler": {
       "forgiving_optional": [
         "start_crash_handler"
@@ -382,6 +298,13 @@
     },
 
     "chromium_tree_closer":{
+      "closing_optional": [
+        "bot_update",
+        "compile",
+        "gclient runhooks",
+        "runhooks",
+        "update"
+      ],
       "sheriff_classes": ["sheriff"],
       "status_template": "Tree is closed (Automatic: \"%(unsatisfied)s\" on %(build_url)s \"%(builder_name)s\" from %(revision)s: %(blamelist)s)"
     },
@@ -390,18 +313,6 @@
       "forgiving_optional": [
         "svnkill",
         "taskkill"
-      ]
-    },
-
-    "chromium_checkdeps": {
-      "closing_optional": [
-        "check_deps"
-      ]
-    },
-
-    "chromium_checkdeps2git": {
-      "closing_optional": [
-        "check_deps2git"
       ]
     },
 
@@ -422,73 +333,11 @@
         "*"
       ]
     },
-    "chromium_recipes": {
-      "closing_optional": [
-        "*"
-      ],
-      "excluded_steps": [
-        "steps"
-      ]
-    },
     "chromium_android": {
-      "closing_optional": [
-        "*"
-      ],
       "excluded_steps": [
         "slave_steps"
       ],
       "sheriff_classes": ["sheriff_android"]
-    },
-    "chromium_asan_tests": {
-      "closing_optional": [
-        "base_unittests",
-        "browser_tests",
-        "cacheinvalidation_unittests",
-        "cc_unittests",
-        "content_browsertests",
-        "content_unittests",
-        "courgette_unittests",
-        "crypto_unittests",
-        "device_unittests",
-        "gcm_unit_tests",
-        "gpu_unittests",
-        "installer_util_unittests",
-        "ipc_tests",
-        "jingle_unittests",
-        "media_unittests",
-        "nacl_integration",
-        "net_unittests",
-        "ppapi_unittests",
-        "printing_unittests",
-        "remoting_unittests",
-        "sandbox_linux_unittests",
-        "sql_unittests",
-        "sync_unit_tests",
-        "ui_unittests",
-        "unit_tests",
-        "url_unittests"
-      ]
-    },
-    "chromium_gpu_tests": {
-      "closing_optional": [
-        "angle_unittests",
-        "compile",
-        "content_gl_tests",
-        "context_lost_tests",
-        "find isolated tests",
-        "gclient runhooks",
-        "gl_tests",
-        "gles2_conform_test",
-        "gpu_process_launch_tests",
-        "gpu_rasterization_tests",
-        "hardware_accelerated_feature_tests",
-        "maps_pixel_test",
-        "memory_test",
-        "pixel_test",
-        "screenshot_sync_tests",
-        "tab_capture_end2end_tests",
-        "webgl_conformance_tests"
-      ]
     }
   }
 }

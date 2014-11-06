@@ -185,8 +185,8 @@ class RedirectorTest(unittest.TestCase):
         'https://developer.chrome.com/',
         self._redirector.Redirect('https://code.google.com', ''))
 
-  def testCron(self):
-    self._redirector.Cron().Get()
+  def testRefresh(self):
+    self._redirector.Refresh().Get()
 
     expected_paths = set([
       'redirects.json',
@@ -202,7 +202,7 @@ class RedirectorTest(unittest.TestCase):
           # the cron run. Returns strings parsed as JSON.
           # TODO(jshumway): Make a non hack version of this check.
           self._redirector._cache._file_object_store.Get(
-              path).Get()._cache_data)
+              path).Get().cache_data)
 
   def testDirectoryRedirection(self):
     # Simple redirect.

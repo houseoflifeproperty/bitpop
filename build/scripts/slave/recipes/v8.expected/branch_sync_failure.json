@@ -23,7 +23,7 @@
       "--output_json",
       "/path/to/tmp/json",
       "--revision",
-      "v8@bleeding_edge:20123",
+      "v8@20123",
       "--no_shallow"
     ],
     "name": "bot_update",
@@ -63,9 +63,9 @@
       "[DEPOT_TOOLS]/gclient.py",
       "sync",
       "--nohooks",
-      "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--delete_unversioned_trees",
       "--revision",
       "v8@20123",
       "--output-json",
@@ -82,7 +82,7 @@
       "@@@STEP_LOG_LINE@json.output@  }@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@",
-      "@@@STEP_FAILURE@@@",
+      "@@@STEP_EXCEPTION@@@",
       "@@@SET_BUILD_PROPERTY@got_revision@50110@@@"
     ]
   },
@@ -135,9 +135,9 @@
       "[DEPOT_TOOLS]/gclient.py",
       "sync",
       "--nohooks",
-      "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--delete_unversioned_trees",
       "--revision",
       "v8@20123",
       "--output-json",
@@ -232,8 +232,25 @@
       "--arch",
       "ia32",
       "--testname",
-      "mjsunit fuzz-natives cctest message preparser base-unittests compiler-unittests",
-      "--quickcheck"
+      "unittests",
+      "--no-variants",
+      "--flaky-tests=skip"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8",
+    "name": "Unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/v8/v8testing.py",
+      "--target",
+      "Release",
+      "--arch",
+      "ia32",
+      "--testname",
+      "default",
+      "--flaky-tests=skip"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Check"
@@ -249,7 +266,7 @@
       "ia32",
       "--testname",
       "webkit",
-      "--quickcheck"
+      "--flaky-tests=skip"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Webkit"
@@ -266,7 +283,7 @@
       "--testname",
       "test262",
       "--no-variants",
-      "--quickcheck"
+      "--flaky-tests=skip"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Test262 - no variants"
@@ -282,7 +299,7 @@
       "ia32",
       "--testname",
       "mozilla",
-      "--quickcheck"
+      "--flaky-tests=skip"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Mozilla"

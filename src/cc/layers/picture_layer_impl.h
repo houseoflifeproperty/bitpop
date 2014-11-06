@@ -5,6 +5,7 @@
 #ifndef CC_LAYERS_PICTURE_LAYER_IMPL_H_
 #define CC_LAYERS_PICTURE_LAYER_IMPL_H_
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -49,6 +50,8 @@ class CC_EXPORT PictureLayerImpl
 
    private:
     enum IteratorType { LOW_RES, HIGH_RES, NUM_ITERATORS };
+
+    void AdvanceToNextStage();
 
     PictureLayerImpl* layer_;
 
@@ -106,8 +109,8 @@ class CC_EXPORT PictureLayerImpl
   virtual void AppendQuads(RenderPass* render_pass,
                            const OcclusionTracker<LayerImpl>& occlusion_tracker,
                            AppendQuadsData* append_quads_data) OVERRIDE;
-  virtual void UpdateTiles(
-      const OcclusionTracker<LayerImpl>* occlusion_tracker) OVERRIDE;
+  virtual void UpdateTiles(const Occlusion& occlusion_in_content_space,
+                           bool resourceless_software_draw) OVERRIDE;
   virtual void NotifyTileStateChanged(const Tile* tile) OVERRIDE;
   virtual void DidBecomeActive() OVERRIDE;
   virtual void DidBeginTracing() OVERRIDE;
@@ -124,6 +127,8 @@ class CC_EXPORT PictureLayerImpl
   virtual const Region* GetInvalidation() OVERRIDE;
   virtual const PictureLayerTiling* GetTwinTiling(
       const PictureLayerTiling* tiling) const OVERRIDE;
+  virtual PictureLayerTiling* GetRecycledTwinTiling(
+      const PictureLayerTiling* tiling) OVERRIDE;
   virtual size_t GetMaxTilesForInterestArea() const OVERRIDE;
   virtual float GetSkewportTargetTimeInSeconds() const OVERRIDE;
   virtual int GetSkewportExtrapolationLimitInContentPixels() const OVERRIDE;
@@ -132,8 +137,7 @@ class CC_EXPORT PictureLayerImpl
   // PushPropertiesTo active tree => pending tree.
   void SyncTiling(const PictureLayerTiling* tiling);
 
-  // Mask-related functions
-  void SetIsMask(bool is_mask);
+  // Mask-related functions.
   virtual ResourceProvider::ResourceId ContentsResourceId() const OVERRIDE;
 
   virtual size_t GPUMemoryUsageInBytes() const OVERRIDE;
@@ -156,8 +160,7 @@ class CC_EXPORT PictureLayerImpl
   void RemoveAllTilings();
   void SyncFromActiveLayer(const PictureLayerImpl* other);
   void AddTilingsForRasterScale();
-  void UpdateTilePriorities(
-      const OcclusionTracker<LayerImpl>* occlusion_tracker);
+  void UpdateTilePriorities(const Occlusion& occlusion_in_content_space);
   virtual bool ShouldAdjustRasterScale() const;
   virtual void RecalculateRasterScales();
   void CleanUpTilingsOnActiveLayer(
@@ -169,10 +172,11 @@ class CC_EXPORT PictureLayerImpl
   bool MarkVisibleTilesAsRequired(
       PictureLayerTiling* tiling,
       const PictureLayerTiling* optional_twin_tiling,
-      float contents_scale,
       const gfx::Rect& rect,
       const Region& missing_region) const;
   gfx::Rect GetViewportForTilePriorityInContentSpace() const;
+  PictureLayerImpl* GetRecycledTwinLayer();
+  void UpdatePile(scoped_refptr<PicturePileImpl> pile);
 
   void DoPostCommitInitializationIfNeeded() {
     if (needs_post_commit_initialization_)
@@ -184,8 +188,12 @@ class CC_EXPORT PictureLayerImpl
   bool CanHaveTilingWithScale(float contents_scale) const;
   void SanityCheckTilingState() const;
 
+  bool ShouldAdjustRasterScaleDuringScaleAnimations() const;
+
   virtual void GetDebugBorderProperties(
       SkColor* color, float* width) const OVERRIDE;
+  virtual void GetAllTilesForTracing(
+      std::set<const Tile*>* tiles) const OVERRIDE;
   virtual void AsValueInto(base::debug::TracedValue* dict) const OVERRIDE;
 
   virtual void UpdateIdealScales();
@@ -196,8 +204,6 @@ class CC_EXPORT PictureLayerImpl
   scoped_ptr<PictureLayerTilingSet> tilings_;
   scoped_refptr<PicturePileImpl> pile_;
   Region invalidation_;
-
-  bool is_mask_;
 
   float ideal_page_scale_;
   float ideal_device_scale_;

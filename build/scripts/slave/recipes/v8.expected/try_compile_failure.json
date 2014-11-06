@@ -31,7 +31,7 @@
       "--output_json",
       "/path/to/tmp/json",
       "--revision",
-      "v8@bleeding_edge:None",
+      "v8@HEAD",
       "--no_shallow"
     ],
     "name": "bot_update",
@@ -71,9 +71,9 @@
       "[DEPOT_TOOLS]\\gclient.py",
       "sync",
       "--nohooks",
-      "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--delete_unversioned_trees",
       "--output-json",
       "/path/to/tmp/json"
     ],
@@ -174,7 +174,7 @@
       "--output_json",
       "/path/to/tmp/json",
       "--revision",
-      "v8@bleeding_edge:None",
+      "v8@HEAD",
       "--no_shallow"
     ],
     "name": "bot_update (2)",
@@ -214,9 +214,9 @@
       "[DEPOT_TOOLS]\\gclient.py",
       "sync",
       "--nohooks",
-      "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--delete_unversioned_trees",
       "--output-json",
       "/path/to/tmp/json"
     ],
@@ -292,8 +292,27 @@
       "--arch",
       "ia32",
       "--testname",
-      "mjsunit fuzz-natives cctest message preparser base-unittests compiler-unittests",
-      "--quickcheck",
+      "unittests",
+      "--no-variants",
+      "--flaky-tests=skip",
+      "--json-test-results",
+      "/path/to/tmp/json"
+    ],
+    "cwd": "[SLAVE_BUILD]\\v8",
+    "name": "Unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\v8\\v8testing.py",
+      "--target",
+      "Release",
+      "--arch",
+      "ia32",
+      "--testname",
+      "default",
+      "--flaky-tests=skip",
       "--json-test-results",
       "/path/to/tmp/json"
     ],

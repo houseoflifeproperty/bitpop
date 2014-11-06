@@ -18,9 +18,6 @@ BUILDERS = {
       'REPO_URL': 'https://chromium.googlesource.com/chromium/src.git',
       'REPO_NAME': 'src',
     },
-    'custom': {
-      'deps_file': '.DEPS.git'
-    },
     'gyp_defs': {
       'use_goma': 0,
     }
@@ -32,9 +29,6 @@ BUILDERS = {
     'kwargs': {
       'BUILD_CONFIG': 'Debug',
     },
-    'custom': {
-      'deps_file': 'DEPS'
-    },
   },
   'Android Cronet Builder': {
     'recipe_config': 'main_builder',
@@ -42,9 +36,7 @@ BUILDERS = {
     'upload_package': True,
     'kwargs': {
       'BUILD_CONFIG': 'Release',
-    },
-    'custom': {
-      'deps_file': 'DEPS'
+      'REPO_NAME': 'src',
     },
   },
   'Android Cronet ARMv6 Builder': {
@@ -53,9 +45,6 @@ BUILDERS = {
     'upload_package': True,
     'kwargs': {
       'BUILD_CONFIG': 'Release',
-    },
-    'custom': {
-      'deps_file': 'DEPS'
     },
     'gyp_defs': {
       'arm_version': 6
@@ -68,9 +57,6 @@ BUILDERS = {
     'kwargs': {
       'BUILD_CONFIG': 'Release',
     },
-    'custom': {
-      'deps_file': 'DEPS'
-    },
   },
   'Android Cronet MIPS Builder': {
     'recipe_config': 'mipsel_builder',
@@ -78,9 +64,6 @@ BUILDERS = {
     'upload_package': True,
     'kwargs': {
       'BUILD_CONFIG': 'Release',
-    },
-    'custom': {
-      'deps_file': 'DEPS'
     },
   },
 }
@@ -90,11 +73,10 @@ def GenSteps(api):
   builder_config = BUILDERS.get(buildername, {})
   recipe_config = builder_config['recipe_config']
   kwargs = builder_config.get('kwargs', {})
-  custom = builder_config.get('custom', {})
   gyp_defs = builder_config.get('gyp_defs', {})
 
   cronet = api.cronet
-  cronet.init_and_sync(recipe_config, kwargs, custom, gyp_defs)
+  cronet.init_and_sync(recipe_config, kwargs, gyp_defs)
   cronet.build()
 
   if builder_config['upload_package']:
@@ -115,7 +97,8 @@ def GenTests(api):
     props = api.properties.generic(
       buildername=bot_id,
       revision='4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00',
-      repository='svn://svn-mirror.golo.chromium.org/chrome/trunk/src',
-      branch='src',
+      repository='https://chromium.googlesource.com/chromium/src',
+      branch='master',
+      project='src',
     )
     yield api.test(_sanitize_nonalpha(bot_id)) + props

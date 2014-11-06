@@ -8,7 +8,6 @@
 #include <map>
 #include <string>
 
-#include "apps/ui/web_contents_sizer.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -20,6 +19,8 @@
 #include "chrome/browser/ui/tab_contents/core_tab_helper_delegate.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_order_controller.h"
+#include "chrome/browser/ui/tabs/tab_utils.h"
+#include "chrome/browser/ui/web_contents_sizer.h"
 #include "chrome/common/url_constants.h"
 #include "components/web_modal/popup_manager.h"
 #include "content/public/browser/render_process_host.h"
@@ -36,12 +37,12 @@ namespace {
 // forgotten. This is generally any navigation that isn't a link click (i.e.
 // any navigation that can be considered to be the start of a new task distinct
 // from what had previously occurred in that tab).
-bool ShouldForgetOpenersForTransition(content::PageTransition transition) {
-  return transition == content::PAGE_TRANSITION_TYPED ||
-      transition == content::PAGE_TRANSITION_AUTO_BOOKMARK ||
-      transition == content::PAGE_TRANSITION_GENERATED ||
-      transition == content::PAGE_TRANSITION_KEYWORD ||
-      transition == content::PAGE_TRANSITION_AUTO_TOPLEVEL;
+bool ShouldForgetOpenersForTransition(ui::PageTransition transition) {
+  return transition == ui::PAGE_TRANSITION_TYPED ||
+      transition == ui::PAGE_TRANSITION_AUTO_BOOKMARK ||
+      transition == ui::PAGE_TRANSITION_GENERATED ||
+      transition == ui::PAGE_TRANSITION_KEYWORD ||
+      transition == ui::PAGE_TRANSITION_AUTO_TOPLEVEL;
 }
 
 // CloseTracker is used when closing a set of WebContents. It listens for
@@ -67,9 +68,6 @@ class CloseTracker {
         : WebContentsObserver(web_contents),
           parent_(parent) {
     }
-
-    // Expose web_contents() publicly.
-    using content::WebContentsObserver::web_contents;
 
    private:
     // WebContentsObserver:
@@ -608,7 +606,7 @@ int TabStripModel::GetIndexOfLastWebContentsOpenedBy(const WebContents* opener,
 }
 
 void TabStripModel::TabNavigating(WebContents* contents,
-                                  content::PageTransition transition) {
+                                  ui::PageTransition transition) {
   if (ShouldForgetOpenersForTransition(transition)) {
     // Don't forget the openers if this tab is a New Tab page opened at the
     // end of the TabStrip (e.g. by pressing Ctrl+T). Give the user one
@@ -786,14 +784,14 @@ void TabStripModel::SetSelectionFromModel(
 
 void TabStripModel::AddWebContents(WebContents* contents,
                                    int index,
-                                   content::PageTransition transition,
+                                   ui::PageTransition transition,
                                    int add_types) {
   // If the newly-opened tab is part of the same task as the parent tab, we want
   // to inherit the parent's "group" attribute, so that if this tab is then
   // closed we'll jump back to the parent tab.
   bool inherit_group = (add_types & ADD_INHERIT_GROUP) == ADD_INHERIT_GROUP;
 
-  if (transition == content::PAGE_TRANSITION_LINK &&
+  if (transition == ui::PAGE_TRANSITION_LINK &&
       (add_types & ADD_FORCE_INDEX) == 0) {
     // We assume tabs opened via link clicks are part of the same task as their
     // parent.  Note that when |force_index| is true (e.g. when the user
@@ -810,7 +808,7 @@ void TabStripModel::AddWebContents(WebContents* contents,
       index = count();
   }
 
-  if (transition == content::PAGE_TRANSITION_TYPED && index == count()) {
+  if (transition == ui::PAGE_TRANSITION_TYPED && index == count()) {
     // Also, any tab opened at the end of the TabStrip with a "TYPED"
     // transition inherit group as well. This covers the cases where the user
     // creates a New Tab (e.g. Ctrl+T, or clicks the New Tab button), or types
@@ -824,7 +822,7 @@ void TabStripModel::AddWebContents(WebContents* contents,
   // Reset the index, just in case insert ended up moving it on us.
   index = GetIndexOfWebContents(contents);
 
-  if (inherit_group && transition == content::PAGE_TRANSITION_TYPED)
+  if (inherit_group && transition == ui::PAGE_TRANSITION_TYPED)
     contents_data_[index]->set_reset_group_on_select(true);
 
   // TODO(sky): figure out why this is here and not in InsertWebContentsAt. When
@@ -839,8 +837,7 @@ void TabStripModel::AddWebContents(WebContents* contents,
   // new background tab.
   if (WebContents* old_contents = GetActiveWebContents()) {
     if ((add_types & ADD_ACTIVE) == 0) {
-      apps::ResizeWebContents(contents,
-                              old_contents->GetContainerBounds().size());
+      ResizeWebContents(contents, old_contents->GetContainerBounds().size());
     }
   }
 }
@@ -921,6 +918,15 @@ bool TabStripModel::IsContextMenuCommandEnabled(
           return true;
       }
       return false;
+    }
+
+    case CommandToggleTabAudioMuted: {
+      std::vector<int> indices = GetIndicesForCommand(context_index);
+      for (size_t i = 0; i < indices.size(); ++i) {
+        if (!chrome::CanToggleAudioMute(GetWebContentsAt(indices[i])))
+          return false;
+      }
+      return true;
     }
 
     case CommandBookmarkAllTabs:
@@ -1026,6 +1032,20 @@ void TabStripModel::ExecuteContextMenuCommand(
           if (!IsAppTab(indices[i - 1]))
             SetTabPinned(indices[i - 1], false);
         }
+      }
+      break;
+    }
+
+    case CommandToggleTabAudioMuted: {
+      const std::vector<int>& indices = GetIndicesForCommand(context_index);
+      const bool mute = !chrome::AreAllTabsMuted(*this, indices);
+      if (mute)
+        content::RecordAction(UserMetricsAction("TabContextMenu_MuteTabs"));
+      else
+        content::RecordAction(UserMetricsAction("TabContextMenu_UnmuteTabs"));
+      for (std::vector<int>::const_iterator i = indices.begin();
+           i != indices.end(); ++i) {
+        chrome::SetTabAudioMuted(GetWebContentsAt(*i), mute);
       }
       break;
     }

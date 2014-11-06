@@ -32,7 +32,9 @@ for name in ('Linux ASan LSan Tests (1)',
       'TARGET_BITS': 64,
     },
     'bot_type': 'tester',
-    'tests': [steps.DynamicGTestTests(name)],
+    'test_generators': [
+      steps.generate_gtest,
+    ],
     'parent_buildername': 'Linux ASan LSan Builder',
     'testing': {'platform': 'linux'},
   }

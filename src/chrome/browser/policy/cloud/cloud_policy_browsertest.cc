@@ -4,8 +4,8 @@
 
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
@@ -142,6 +142,11 @@ void GetExpectedDefaultPolicy(PolicyMap* policy_map) {
                   POLICY_SCOPE_USER,
                   new base::StringValue("primary-only"),
                   NULL);
+  policy_map->Set(key::kEasyUnlockAllowed,
+                  POLICY_LEVEL_MANDATORY,
+                  POLICY_SCOPE_USER,
+                  new base::FundamentalValue(false),
+                  NULL);
 #endif
 }
 
@@ -177,6 +182,11 @@ void GetExpectedTestPolicy(PolicyMap* expected, const char* homepage) {
                 POLICY_LEVEL_MANDATORY,
                 POLICY_SCOPE_USER,
                 new base::StringValue("primary-only"),
+                NULL);
+  expected->Set(key::kEasyUnlockAllowed,
+                POLICY_LEVEL_MANDATORY,
+                POLICY_SCOPE_USER,
+                new base::FundamentalValue(false),
                 NULL);
 #endif
 }

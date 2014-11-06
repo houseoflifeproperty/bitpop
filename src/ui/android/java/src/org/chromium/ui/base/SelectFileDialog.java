@@ -8,6 +8,7 @@ import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.AsyncTask;
@@ -15,6 +16,7 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.text.TextUtils;
+import android.util.Log;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.ContentUriUtils;
@@ -22,6 +24,7 @@ import org.chromium.base.JNINamespace;
 import org.chromium.ui.R;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -31,7 +34,8 @@ import java.util.List;
  * a set of accepted file types. The path of the selected file is passed to the native dialog.
  */
 @JNINamespace("ui")
-class SelectFileDialog implements WindowAndroid.IntentCallback{
+class SelectFileDialog implements WindowAndroid.IntentCallback {
+    private static final String TAG = "SelectFileDialog";
     private static final String IMAGE_TYPE = "image/";
     private static final String VIDEO_TYPE = "video/";
     private static final String AUDIO_TYPE = "audio/";
@@ -40,6 +44,8 @@ class SelectFileDialog implements WindowAndroid.IntentCallback{
     private static final String ALL_AUDIO_TYPES = AUDIO_TYPE + "*";
     private static final String ANY_TYPES = "*/*";
     private static final String CAPTURE_IMAGE_DIRECTORY = "browser-photos";
+    // Keep this variable in sync with the value defined in file_paths.xml.
+    private static final String IMAGE_FILE_PATH = "images";
 
     private final long mNativeSelectFileDialog;
     private List<String> mFileTypes;
@@ -66,8 +72,31 @@ class SelectFileDialog implements WindowAndroid.IntentCallback{
 
         Intent chooser = new Intent(Intent.ACTION_CHOOSER);
         Intent camera = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-        mCameraOutputUri = Uri.fromFile(getFileForImageCapture());
+        Context context = window.getApplicationContext();
+        camera.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+                mCameraOutputUri = ContentUriUtils.getContentUriFromFile(
+                        context, getFileForImageCapture(context));
+            } else {
+                mCameraOutputUri = Uri.fromFile(getFileForImageCapture(context));
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Cannot retrieve content uri from file", e);
+        }
+
+        if (mCameraOutputUri == null) {
+            onFileNotSelected();
+            return;
+        }
+
         camera.putExtra(MediaStore.EXTRA_OUTPUT, mCameraOutputUri);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            camera.setClipData(
+                    ClipData.newUri(context.getContentResolver(),
+                    IMAGE_FILE_PATH, mCameraOutputUri));
+        }
         Intent camcorder = new Intent(MediaStore.ACTION_VIDEO_CAPTURE);
         Intent soundRecorder = new Intent(
                 MediaStore.Audio.Media.RECORD_SOUND_ACTION);
@@ -125,18 +154,31 @@ class SelectFileDialog implements WindowAndroid.IntentCallback{
     }
 
     /**
-     * Get a file for the image capture in the CAPTURE_IMAGE_DIRECTORY directory.
+     * Get a file for the image capture operation. For devices with JB MR2 or
+     * latter android versions, the file is put under IMAGE_FILE_PATH directory.
+     * For ICS devices, the file is put under CAPTURE_IMAGE_DIRECTORY.
+     *
+     * @param context The application context.
+     * @return file path for the captured image to be stored.
      */
-    private File getFileForImageCapture() {
-        File externalDataDir = Environment.getExternalStoragePublicDirectory(
-                Environment.DIRECTORY_DCIM);
-        File cameraDataDir = new File(externalDataDir.getAbsolutePath() +
-                File.separator + CAPTURE_IMAGE_DIRECTORY);
-        if (!cameraDataDir.exists() && !cameraDataDir.mkdirs()) {
-            cameraDataDir = externalDataDir;
+    private File getFileForImageCapture(Context context) throws IOException {
+        File path;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            path = new File(context.getFilesDir(), IMAGE_FILE_PATH);
+            if (!path.exists() && !path.mkdir()) {
+                throw new IOException("Folder cannot be created.");
+            }
+        } else {
+            File externalDataDir = Environment.getExternalStoragePublicDirectory(
+                    Environment.DIRECTORY_DCIM);
+            path = new File(externalDataDir.getAbsolutePath() +
+                    File.separator + CAPTURE_IMAGE_DIRECTORY);
+            if (!path.exists() && !path.mkdirs()) {
+                path = externalDataDir;
+            }
         }
-        File photoFile = new File(cameraDataDir.getAbsolutePath() +
-                File.separator + System.currentTimeMillis() + ".jpg");
+        File photoFile = File.createTempFile(
+                String.valueOf(System.currentTimeMillis()), ".jpg", path);
         return photoFile;
     }
 
@@ -160,8 +202,13 @@ class SelectFileDialog implements WindowAndroid.IntentCallback{
         if (results == null) {
             // If we have a successful return but no data, then assume this is the camera returning
             // the photo that we requested.
-            nativeOnFileSelected(mNativeSelectFileDialog, mCameraOutputUri.getPath(), "");
-
+            // If the uri is a file, we need to convert it to the absolute path or otherwise
+            // android cannot handle it correctly on some earlier versions.
+            // http://crbug.com/423338.
+            String path = ContentResolver.SCHEME_FILE.equals(mCameraOutputUri.getScheme()) ?
+                    mCameraOutputUri.getPath() : mCameraOutputUri.toString();
+            nativeOnFileSelected(mNativeSelectFileDialog, path,
+                    mCameraOutputUri.getLastPathSegment());
             // Broadcast to the media scanner that there's a new photo on the device so it will
             // show up right away in the gallery (rather than waiting until the next time the media
             // scanner runs).
@@ -277,16 +324,32 @@ class SelectFileDialog implements WindowAndroid.IntentCallback{
         protected String[] doInBackground(Uri...uris) {
             mFilePaths = new String[uris.length];
             String[] displayNames = new String[uris.length];
-            for (int i = 0; i < uris.length; i++) {
-                mFilePaths[i] = uris[i].toString();
-                displayNames[i] = ContentUriUtils.getDisplayName(
-                        uris[i], mContentResolver, MediaStore.MediaColumns.DISPLAY_NAME);
+            try {
+                for (int i = 0; i < uris.length; i++) {
+                    mFilePaths[i] = uris[i].toString();
+                    displayNames[i] = ContentUriUtils.getDisplayName(
+                            uris[i], mContentResolver, MediaStore.MediaColumns.DISPLAY_NAME);
+                }
+            }  catch (SecurityException e) {
+                // Some third party apps will present themselves as being able
+                // to handle the ACTION_GET_CONTENT intent but then declare themselves
+                // as exported=false (or more often omit the exported keyword in
+                // the manifest which defaults to false after JB).
+                // In those cases trying to access the contents raises a security exception
+                // which we should not crash on. See crbug.com/382367 for details.
+                Log.w(TAG, "Unable to extract results from the content provider");
+                return null;
             }
+
             return displayNames;
         }
 
         @Override
         protected void onPostExecute(String[] result) {
+            if (result == null) {
+                onFileNotSelected();
+                return;
+            }
             if (mIsMultiple) {
                 nativeOnMultipleFilesSelected(mNativeSelectFileDialog, mFilePaths, result);
             } else {

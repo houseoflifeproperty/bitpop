@@ -84,8 +84,7 @@ NSSCertDatabase::NSSCertDatabase(crypto::ScopedPK11Slot public_slot,
       private_slot_(private_slot.Pass()),
       observer_list_(new ObserverListThreadSafe<Observer>),
       weak_factory_(this) {
-  DCHECK(public_slot_);
-  DCHECK(private_slot_);
+  CHECK(public_slot_);
 
   // This also makes sure that NSS has been initialized.
   CertDatabase* cert_db = CertDatabase::GetInstance();
@@ -141,6 +140,8 @@ crypto::ScopedPK11Slot NSSCertDatabase::GetPublicSlot() const {
 }
 
 crypto::ScopedPK11Slot NSSCertDatabase::GetPrivateSlot() const {
+  if (!private_slot_)
+    return crypto::ScopedPK11Slot();
   return crypto::ScopedPK11Slot(PK11_ReferenceSlot(private_slot_.get()));
 }
 
@@ -422,7 +423,7 @@ void NSSCertDatabase::ListCertsImpl(crypto::ScopedPK11Slot slot,
 }
 
 scoped_refptr<base::TaskRunner> NSSCertDatabase::GetSlowTaskRunner() const {
-  if (slow_task_runner_for_test_)
+  if (slow_task_runner_for_test_.get())
     return slow_task_runner_for_test_;
   return base::WorkerPool::GetTaskRunner(true /*task is slow*/);
 }
@@ -432,7 +433,7 @@ void NSSCertDatabase::NotifyCertRemovalAndCallBack(
     const DeleteCertCallback& callback,
     bool success) {
   if (success)
-    NotifyObserversOfCertRemoved(cert);
+    NotifyObserversOfCertRemoved(cert.get());
   callback.Run(success);
 }
 

@@ -15,8 +15,8 @@
 #include "components/renderer_context_menu/render_view_context_menu_observer.h"
 #include "components/renderer_context_menu/render_view_context_menu_proxy.h"
 #include "content/public/common/context_menu_params.h"
-#include "content/public/common/page_transition_types.h"
 #include "ui/base/models/simple_menu_model.h"
+#include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 
 namespace content {
@@ -158,13 +158,16 @@ class RenderViewContextMenuBase : public ui::SimpleMenuModel::Delegate,
   // Opens the specified URL string in a new tab.
   void OpenURL(const GURL& url, const GURL& referrer,
                WindowOpenDisposition disposition,
-               content::PageTransition transition);
+               ui::PageTransition transition);
 
   content::ContextMenuParams params_;
   content::WebContents* source_web_contents_;
   content::BrowserContext* browser_context_;
 
   ui::SimpleMenuModel menu_model_;
+
+  // Renderer's frame id.
+  int render_frame_id_;
 
   // Our observers.
   mutable ObserverList<RenderViewContextMenuObserver> observers_;
@@ -180,7 +183,6 @@ class RenderViewContextMenuBase : public ui::SimpleMenuModel::Delegate,
 
   // The RenderFrameHost's IDs.
   int render_process_id_;
-  int render_frame_id_;
 
   scoped_ptr<ToolkitDelegate> toolkit_delegate_;
 

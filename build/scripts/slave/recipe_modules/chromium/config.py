@@ -17,9 +17,9 @@ TARGET_PLATFORMS = HOST_PLATFORMS + ('ios', 'android', 'chromeos')
 HOST_TARGET_BITS = (32, 64)
 HOST_ARCHS = ('intel',)
 TARGET_ARCHS = HOST_ARCHS + ('arm', 'mipsel')
+TARGET_CROS_BOARDS = (None, 'x86-generic')
 BUILD_CONFIGS = ('Release', 'Debug')
-MEMORY_TOOLS = ('memcheck', 'tsan', 'tsan_rv', 'drmemory_full',
-                'drmemory_light')
+MEMORY_TOOLS = ('memcheck', 'drmemory_full', 'drmemory_light')
 PROJECT_GENERATORS = ('gyp', 'gn')
 
 def check(val, potentials):
@@ -29,7 +29,7 @@ def check(val, potentials):
 # Schema for config items in this module.
 def BaseConfig(HOST_PLATFORM, HOST_ARCH, HOST_BITS,
                TARGET_PLATFORM, TARGET_ARCH, TARGET_BITS,
-               BUILD_CONFIG, **_kwargs):
+               BUILD_CONFIG, TARGET_CROS_BOARD, **_kwargs):
   equal_fn = lambda tup: ('%s=%s' % (tup[0], pipes.quote(str(tup[1]))))
   return ConfigGroup(
     compile_py = ConfigGroup(
@@ -42,6 +42,7 @@ def BaseConfig(HOST_PLATFORM, HOST_ARCH, HOST_BITS,
       clobber = Single(bool, empty_val=False, required=False, hidden=False),
       pass_arch_flag = Single(bool, empty_val=False, required=False),
       xcode_sdk = Single(basestring, required=False),
+      xcode_project = Single(Path, required=False),
     ),
     gyp_env = ConfigGroup(
       GYP_CROSSCOMPILE = Single(int, jsonish_fn=str, required=False),
@@ -50,12 +51,14 @@ def BaseConfig(HOST_PLATFORM, HOST_ARCH, HOST_BITS,
       GYP_GENERATORS = Set(basestring, ','.join),
       GYP_GENERATOR_FLAGS = Dict(equal_fn, ' '.join, (basestring,int)),
       GYP_USE_SEPARATE_MSPDBSRV = Single(int, jsonish_fn=str, required=False),
+      GYP_MSVS_VERSION = Single(basestring, required=False),
     ),
     project_generator = ConfigGroup(
       tool = Single(basestring, empty_val='gyp'),
       args = Set(basestring),
     ),
     build_dir = Single(Path),
+    cros_sdk_args = List(basestring),
     runtests = ConfigGroup(
       memory_tool = Single(basestring, required=False),
       memory_tests_runner = Single(Path),
@@ -76,6 +79,9 @@ def BaseConfig(HOST_PLATFORM, HOST_ARCH, HOST_BITS,
     TARGET_PLATFORM = Static(check(TARGET_PLATFORM, TARGET_PLATFORMS)),
     TARGET_ARCH = Static(check(TARGET_ARCH, TARGET_ARCHS)),
     TARGET_BITS = Static(check(TARGET_BITS, HOST_TARGET_BITS)),
+    TARGET_CROS_BOARD = Static(TARGET_CROS_BOARD),
+
+    gn_args = List(basestring),
   )
 
 TEST_FORMAT = (
@@ -95,6 +101,7 @@ VAR_TEST_MAP = {
   'TARGET_PLATFORM': TARGET_PLATFORMS,
   'TARGET_ARCH':     TARGET_ARCHS,
   'TARGET_BITS':     HOST_TARGET_BITS,
+  'TARGET_CROS_BOARD': TARGET_CROS_BOARDS,
 
   'BUILD_CONFIG':    BUILD_CONFIGS,
 }
@@ -131,6 +138,10 @@ def BASE(c):
   if c.TARGET_PLATFORM not in potential_platforms:
     raise BadConf('Can not compile "%s" on "%s"' %
                   (c.TARGET_PLATFORM, c.HOST_PLATFORM))
+
+  if c.TARGET_CROS_BOARD:
+    if not c.TARGET_PLATFORM == 'chromeos':
+      raise BadConf("Cannot specify CROS board for non-'chromeos' platform")
 
   if c.HOST_PLATFORM != c.TARGET_PLATFORM:
     c.gyp_env.GYP_CROSSCOMPILE = 1
@@ -183,7 +194,11 @@ def ninja(c):
     c.gyp_env.GYP_GENERATORS.add('ninja')
 
   c.compile_py.build_tool = 'ninja'
-  c.build_dir = Path('[CHECKOUT]', 'out')
+
+  out_path = 'out'
+  if c.TARGET_CROS_BOARD:
+    out_path += '_%s' % (c.TARGET_CROS_BOARD,)
+  c.build_dir = Path('[CHECKOUT]', out_path)
 
 @config_ctx(group='builder')
 def msvs(c):
@@ -193,11 +208,23 @@ def msvs(c):
   c.compile_py.build_tool = 'msvs'
   c.build_dir = Path('[CHECKOUT]', 'build')
 
+@config_ctx()
+def msvs2010(c):
+  c.gyp_env.GYP_MSVS_VERSION = '2010'
+
+@config_ctx()
+def msvs2012(c):
+  c.gyp_env.GYP_MSVS_VERSION = '2012'
+
+@config_ctx()
+def msvs2013(c):
+  c.gyp_env.GYP_MSVS_VERSION = '2013'
+
 @config_ctx(group='builder')
-def xcodebuild(c):
+def xcode(c):
   if c.HOST_PLATFORM != 'mac':
     raise BadConf('can not use xcodebuild on "%s"' % c.HOST_PLATFORM)
-  c.gyp_env.GYP_GENERATORS.add('xcodebuild')
+  c.gyp_env.GYP_GENERATORS.add('xcode')
 
 def _clang_common(c):
   c.compile_py.compiler = 'clang'
@@ -277,6 +304,10 @@ def chromeos(c):
   proprietary_codecs(c)
 
 @config_ctx()
+def ozone(c):
+  c.gyp_env.GYP_DEFINES['use_ozone'] = 1
+
+@config_ctx()
 def oilpan(c):
   c.gyp_env.GYP_DEFINES['enable_oilpan'] = 1
 
@@ -306,16 +337,6 @@ def no_lsan(c):
 def memcheck(c):
   _memory_tool(c, 'memcheck')
   c.gyp_env.GYP_DEFINES['build_for_tool'] = 'memcheck'
-
-@config_ctx(group='memory_tool')
-def tsan(c):
-  _memory_tool(c, 'tsan')
-  c.gyp_env.GYP_DEFINES['build_for_tool'] = 'tsan'
-
-@config_ctx(group='memory_tool')
-def tsan_race_verifier(c):
-  _memory_tool(c, 'tsan_rv')
-  c.gyp_env.GYP_DEFINES['build_for_tool'] = 'tsan'
 
 @config_ctx(deps=['compiler'], group='memory_tool')
 def tsan2(c):
@@ -359,6 +380,10 @@ def trybot_flavor(c):
   fastbuild(c, optional=True)
   dcheck(c, optional=True)
 
+@config_ctx()
+def gn_component_build(c):
+  c.gn_args.append('is_component_build=true')
+
 #### 'Full' configurations
 @config_ctx(includes=['ninja', 'default_compiler'])
 def chromium_no_goma(c):
@@ -395,9 +420,24 @@ def chromium_chromeos_asan(c):
 def chromium_chromeos_clang(c):
   c.compile_py.default_targets = ['All', 'chromium_builder_tests']
 
+@config_ctx(includes=['chromium_chromeos', 'ozone'])
+def chromium_chromeos_ozone(c):
+  c.compile_py.default_targets = ['All', 'chromium_builder_tests']
+
 @config_ctx(includes=['ninja', 'clang', 'goma'])
 def chromium_clang(c):
   c.compile_py.default_targets = ['All', 'chromium_builder_tests']
+
+@config_ctx(includes=['xcode', 'static_library'])
+def chromium_xcode(c):
+  c.compile_py.build_tool = 'xcode'
+  c.compile_py.default_targets = ['All']
+  c.compile_py.xcode_project = Path('[CHECKOUT]', 'build', 'all.xcodeproj')
+
+@config_ctx()
+def chrome_internal(c):
+  # For internal Chrome builds, add this flag to our 'cros' wrapper.
+  c.cros_sdk_args.append('--internal')
 
 @config_ctx(includes=['static_library'])
 def ios(c):
@@ -451,8 +491,8 @@ def blink_clang(c):
   c.compile_py.default_targets = ['blink_tests']
 
 @config_ctx()
-def blink_asserts_on(c, invert=False):
-  c.gyp_env.GYP_DEFINES['blink_asserts_always_on'] = int(not invert)
+def blink_logging_on(c, invert=False):
+  c.gyp_env.GYP_DEFINES['blink_logging_always_on'] = int(not invert)
 
 @config_ctx(includes=['ninja', 'static_library', 'default_compiler', 'goma'])
 def android(c):
@@ -492,3 +532,12 @@ def chrome_pgo_optimize(c):
 @config_ctx()
 def v8_optimize_medium(c):
   c.gyp_env.GYP_DEFINES['v8_optimized_debug'] = 1
+
+@config_ctx()
+def chromium_perf(c):
+  c.compile_py.clobber = False
+  if c.HOST_PLATFORM == 'win':
+    c.compile_py.compiler = None
+    c.compile_py.goma_dir = None
+    c.gyp_env.GYP_DEFINES['use_goma'] = 0
+

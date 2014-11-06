@@ -12,7 +12,7 @@ m_annotator = annotator_factory.AnnotatorFactory()
 def Update(config, active_master, c):
   c['schedulers'].extend([
       SingleBranchScheduler(name='win_src',
-                            branch='src',
+                            branch='master',
                             treeStableTimer=60,
                             builderNames=[
           'Win Builder',
@@ -30,7 +30,6 @@ def Update(config, active_master, c):
           'Win7 Tests (1)',
           'Win7 Tests (2)',
           'Win7 Tests (3)',
-          'Win7 Sync',
           'NaCl Tests (x86-32)',
           'NaCl Tests (x86-64)',
       ]),
@@ -38,7 +37,6 @@ def Update(config, active_master, c):
           'Win 7 Tests x64 (1)',
           'Win 7 Tests x64 (2)',
           'Win 7 Tests x64 (3)',
-          'Win7 Sync x64',
       ]),
       Triggerable(name='win_dbg_trigger', builderNames=[
           'Win7 Tests (dbg)(1)',
@@ -65,7 +63,6 @@ def Update(config, active_master, c):
     {'name': 'Win7 Tests (1)'},
     {'name': 'Win7 Tests (2)'},
     {'name': 'Win7 Tests (3)'},
-    {'name': 'Win7 Sync'},
     {
       'name': 'Win x64 Builder',
       'triggers': ['win_x64_rel_trigger'],
@@ -73,7 +70,6 @@ def Update(config, active_master, c):
     {'name': 'Win 7 Tests x64 (1)'},
     {'name': 'Win 7 Tests x64 (2)'},
     {'name': 'Win 7 Tests x64 (3)'},
-    {'name': 'Win7 Sync x64'},
     {'name': 'NaCl Tests (x86-32)'},
     {'name': 'NaCl Tests (x86-64)'},
     {'name': 'Win x64 Builder (dbg)'},

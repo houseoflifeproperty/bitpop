@@ -21,7 +21,7 @@
       "--revision",
       "src/third_party/WebKit@HEAD",
       "--revision",
-      "src/v8@bleeding_edge:20123",
+      "src/v8@20123",
       "--force"
     ],
     "name": "bot_update",
@@ -177,15 +177,18 @@
     "cmd": [
       "python",
       "-u",
-      "\nimport sys\nprint 'TEST RESULTS WERE INVALID'\nsys.exit(1)\n"
+      "import sys; sys.exit(1)"
     ],
     "name": "webkit_tests",
     "~followup_annotations": [
-      "@@@STEP_LOG_LINE@python.inline@@@@",
-      "@@@STEP_LOG_LINE@python.inline@import sys@@@",
-      "@@@STEP_LOG_LINE@python.inline@print 'TEST RESULTS WERE INVALID'@@@",
-      "@@@STEP_LOG_LINE@python.inline@sys.exit(1)@@@",
-      "@@@STEP_LOG_END@python.inline@@@"
+      "step returned non-zero exit code: 1",
+      "@@@STEP_TEXT@TEST RESULTS WERE INVALID@@@",
+      "@@@STEP_FAILURE@@@"
     ]
+  },
+  {
+    "name": "$final_result",
+    "reason": "Step('webkit_tests') failed with return_code 1",
+    "status_code": 1
   }
 ]

@@ -72,6 +72,12 @@ def clang_release_builder(c):
   c.storage_bucket = 'chrome-test-builds/android'
   c.upload_dest_prefix = 'asan-android-release-'
 
+@config_ctx(config_vars={'BUILD_CONFIG': 'Release'})
+def clang_release_builder_l(c):
+  c.asan_symbolize = True
+  c.storage_bucket = 'chrome-test-builds/android'
+  c.upload_dest_prefix = 'asan-android-release-l-'
+
 @config_ctx()
 def component_builder(c):
   pass
@@ -100,15 +106,11 @@ def dartium_builder(c):
   c.managed = True
 
 @config_ctx()
-def arm_k_builder(c):
-  pass
-
-@config_ctx()
 def arm_l_builder(c):
   pass
 
 @config_ctx()
-def arm_k_builder_rel(c):
+def arm_l_builder_rel(c):
   pass
 
 @config_ctx()

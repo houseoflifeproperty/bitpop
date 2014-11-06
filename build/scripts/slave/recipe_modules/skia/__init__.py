@@ -3,7 +3,11 @@
 # found in the LICENSE file.
 
 DEPS = [
+  'adb',
+  'file',
   'gclient',
+  'git',
+  'gsutil',
   'path',
   'platform',
   'properties',

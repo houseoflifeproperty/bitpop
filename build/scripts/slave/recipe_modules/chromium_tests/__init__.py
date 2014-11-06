@@ -9,4 +9,5 @@ DEPS = [
   'path',
   'platform',
   'properties',
+  'swarming',
 ]

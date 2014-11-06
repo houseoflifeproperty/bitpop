@@ -15,6 +15,8 @@ from mock_file_system import MockFileSystem
 from object_store_creator import ObjectStoreCreator
 from test_file_system import TestFileSystem
 from test_util import ReadFile
+from future import Future
+from schema_processor import SchemaProcessorFactoryForTest
 
 
 _TEST_DATA = {
@@ -37,8 +39,6 @@ _TEST_DATA = {
     '_manifest_features.json': '{}',
     '_permission_features.json': '{}',
     'alarms.idl': ReadFile(CHROME_API, 'alarms.idl'),
-    'declarative_web_request.json': ReadFile(
-        CHROME_API, 'declarative_web_request.json'),
     'input_ime.json': ReadFile(CHROME_API, 'input_ime.json'),
     'page_action.json': ReadFile(CHROME_API, 'page_action.json'),
   },
@@ -67,7 +67,8 @@ class APIModelsTest(unittest.TestCase):
                                  compiled_fs_factory,
                                  self._mock_file_system,
                                  object_store_creator,
-                                 'extensions')
+                                 'extensions',
+                                 SchemaProcessorFactoryForTest())
 
   def testGetNames(self):
     # Both 'app' and 'app.runtime' appear here because 'app.runtime' has
@@ -92,13 +93,6 @@ class APIModelsTest(unittest.TestCase):
     self.assertEqual('alarms', get_model_name('alarms'))
     self.assertEqual('alarms', get_model_name('alarms.idl'))
     self.assertEqual('alarms', get_model_name(CHROME_API + 'alarms.idl'))
-    self.assertEqual('declarativeWebRequest',
-                     get_model_name('declarativeWebRequest'))
-    self.assertEqual('declarativeWebRequest',
-                     get_model_name('declarative_web_request.json'))
-    self.assertEqual('declarativeWebRequest',
-                     get_model_name(CHROME_API +
-                                    'declarative_web_request.json'))
     self.assertEqual('input.ime', get_model_name('input.ime'))
     self.assertEqual('input.ime', get_model_name('input_ime.json'))
     self.assertEqual('input.ime',
@@ -109,6 +103,14 @@ class APIModelsTest(unittest.TestCase):
                                                   'page_action.json'))
 
   def testGetNonexistentModel(self):
+    self.assertRaises(FileNotFoundError,
+                      self._api_models.GetModel('declarativeWebRequest').Get)
+    self.assertRaises(FileNotFoundError,
+                      self._api_models.GetModel(
+                          'declarative_web_request.json').Get)
+    self.assertRaises(FileNotFoundError,
+                      self._api_models.GetModel(
+                          CHROME_API + 'declarative_web_request.json').Get)
     self.assertRaises(FileNotFoundError,
                       self._api_models.GetModel('notfound').Get)
     self.assertRaises(FileNotFoundError,

@@ -6,6 +6,7 @@ DEPS = [
   'chromium',
   'chromium_android',
   'chromium_tests',
+  'isolate',
   'json',
   'path',
   'platform',
@@ -13,6 +14,7 @@ DEPS = [
   'python',
   'test_utils',
   'step',
+  'swarming',
 ]
 
 
@@ -20,18 +22,40 @@ def GenSteps(api):
   mastername = api.properties.get('mastername')
   buildername = api.properties.get('buildername')
 
-  tests = api.chromium_tests.compile_and_return_tests(mastername, buildername)
+  update_step, master_dict, test_spec = \
+      api.chromium_tests.sync_and_configure_build(mastername, buildername)
+  api.chromium_tests.compile(mastername, buildername, update_step, master_dict,
+                             test_spec)
+  tests = api.chromium_tests.tests_for_builder(
+      mastername, buildername, update_step, master_dict)
+
   if not tests:
     return
+
+  api.swarming.task_priority = 25  # Per http://crbug.com/401096.
 
   def test_runner():
     failed_tests = []
     #TODO(martiniss) convert loop
     for t in tests:
       try:
+        t.pre_run(api, '')
+      except api.step.StepFailure:  # pragma: no cover
+        failed_tests.append(t)
+    for t in tests:
+      try:
         t.run(api, '')
       except api.step.StepFailure:
         failed_tests.append(t)
+        if t.abort_on_failure:
+          raise
+    for t in tests:
+      try:
+        t.post_run(api, '')
+      except api.step.StepFailure:  # pragma: no cover
+        failed_tests.append(t)
+        if t.abort_on_failure:
+          raise
     # TODO(iannucci): Make this include the list of test names.
     if failed_tests:
       raise api.step.StepFailure('Build failed due to %d test failures'
@@ -82,6 +106,36 @@ def GenTests(api):
     api.properties.generic(mastername='chromium.linux',
                            buildername='Linux Tests',
                            parent_buildername='Linux Builder') +
+    api.platform('linux', 64) +
+    api.override_step_data('read test spec', api.json.output({
+      'Linux Tests': {
+        'gtest_tests': [
+          'base_unittests',
+          {'test': 'browser_tests', 'shard_index': 0, 'total_shards': 2},
+        ],
+      },
+    }))
+  )
+
+  yield (
+    api.test('dynamic_swarmed_gtest') +
+    api.properties.generic(mastername='chromium.linux',
+                           buildername='Linux Builder') +
+    api.platform('linux', 64) +
+    api.override_step_data('read test spec', api.json.output({
+      'Linux Tests': {
+        'gtest_tests': [
+          {'test': 'browser_tests',
+           'swarming': {'can_use_on_swarming_builders': True } },
+        ],
+      },
+    }))
+  )
+
+  yield (
+    api.test('dynamic_gtest_on_builder') +
+    api.properties.generic(mastername='chromium.linux',
+                           buildername='Linux Builder') +
     api.platform('linux', 64) +
     api.override_step_data('read test spec', api.json.output({
       'Linux Tests': {
@@ -171,7 +225,7 @@ def GenTests(api):
 
   yield (
     api.test('msan') +
-    api.properties.generic(mastername='chromium.fyi',
+    api.properties.generic(mastername='chromium.memory.fyi',
                            buildername='Linux MSan Tests',
                            parent_buildername='Chromium Linux MSan Builder') +
     api.platform('linux', 64) +
@@ -200,25 +254,6 @@ def GenTests(api):
     }))
   )
 
-  yield (
-    api.test('buildspec_compile_targets') +
-    api.properties.generic(mastername='chromium.linux',
-                           buildername='Linux Builder (dbg)',
-                           buildnumber=1) +
-    api.platform('linux', 64) +
-    api.override_step_data('read test spec', api.json.output({
-      "Linux Tests (dbg)(1)": {
-        "gtest_tests": [
-          'target_from_dbg_1'
-        ]
-      },
-      "Linux Tests (dbg)(2)": {
-        "gtest_tests": [
-          'target_from_dbg_2'
-        ]
-      }}))
-  )
-
   # FIXME(iannucci): Make this test work.
   #yield (
   #  api.test('one_failure_keeps_going') +
@@ -244,4 +279,45 @@ def GenTests(api):
       },
     })) +
     api.step_data('base_unittests', retcode=1)
+  )
+
+  yield (
+    api.test('ios_gfx_unittests_failure') +
+    api.properties.generic(mastername='chromium.mac',
+                           buildername='iOS Simulator (dbg)') +
+    api.platform('mac', 32) +
+    api.override_step_data(
+        'gfx_unittests', api.json.canned_gtest_output(True), retcode=1)
+  )
+
+  yield (
+    api.test('archive_dependencies_failure') +
+    api.properties.generic(mastername='chromium.linux',
+                           buildername='Linux Builder',
+                           buildnumber=0) +
+    api.platform('linux', 64) +
+    api.override_step_data(
+        'archive dependencies', api.json.canned_gtest_output(True), retcode=1)
+  )
+
+  yield (
+    api.test('generate_telemetry_profile_failure') +
+    api.properties.generic(mastername='chromium.perf',
+                           buildername='Linux Perf (1)',
+                           parent_buildername='Linux Builder',
+                           buildnumber=0) +
+    api.platform('linux', 64) +
+    api.override_step_data(
+        'generate_telemetry_profiles', retcode=1)
+  )
+
+  yield (
+    api.test('perf_test_profile_failure') +
+    api.properties.generic(mastername='chromium.perf',
+                           buildername='Linux Perf (1)',
+                           parent_buildername='Linux Builder',
+                           buildnumber=0) +
+    api.platform('linux', 64) +
+    api.override_step_data(
+        'blink_perf.all.release', retcode=1)
   )

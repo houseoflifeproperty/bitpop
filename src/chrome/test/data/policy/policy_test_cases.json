@@ -326,10 +326,7 @@
     "test_policy": { "MetricsReportingEnabled": false },
     "pref_mappings": [
       { "pref": "user_experience_metrics.reporting_enabled",
-        "local_state": true,
-        "indicator_tests": [
-          { "policy": { "MetricsReportingEnabled": false } }
-        ]
+        "local_state": true
       }
     ]
   },
@@ -1467,6 +1464,19 @@
     ]
   },
 
+  "ImportAutofillFormData": {
+    "os": ["win", "mac", "linux"],
+    "can_be_recommended": true,
+    "test_policy": { "ImportAutofillFormData": false },
+    "pref_mappings": [
+      { "pref": "import_autofill_form_data",
+        "indicator_tests": [
+          { "policy": { "ImportAutofillFormData": false } }
+        ]
+      }
+    ]
+  },
+
   "MaxConnectionsPerProxy": {
     "os": ["win", "linux", "mac", "chromeos"],
     "test_policy": { "MaxConnectionsPerProxy": 16 },
@@ -1659,6 +1669,28 @@
         "local_state": true
       }
     ]
+  },
+
+  "BrowserAddPersonEnabled": {
+    "os": ["win", "linux", "mac"],
+    "test_policy": { "BrowserAddPersonEnabled": true },
+    "pref_mappings": [
+      { "pref": "profile.add_person_enabled",
+        "local_state": true
+      }
+    ]
+  },
+
+  "SSLVersionMin": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "test_policy": { "SSLVersionMin": "tls1.2" },
+    "pref_mappings": []
+  },
+
+  "SSLVersionFallbackMin": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "test_policy": { "SSLVersionFallbackMin": "tls1.2" },
+    "pref_mappings": []
   },
 
   "----- Chrome OS policies ------------------------------------------------": {},

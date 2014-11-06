@@ -454,6 +454,71 @@
       },
     },
     {
+      # This target contains files compiled for AVX. The code calling the
+      # functions in this target has to check if the current CPU supports AVX.
+      'target_name': 'nss_static_avx',
+      'suppress_wildcard': 1,
+      'conditions': [
+        ['OS!="win" or target_arch!="ia32"', {
+          'type': 'none',
+        }, {
+          'type': 'static_library',
+          'sources': [
+            'nss/lib/freebl/intel-gcm-wrap.c',
+            'nss/lib/freebl/intel-gcm-x86-masm.asm',
+            'nss/lib/freebl/intel-gcm.h',
+          ],
+          'defines': [
+            'INTEL_GCM',
+            'NSS_X86_OR_X64',
+            'NSS_X86',
+            'MP_API_COMPATIBLE',
+            'MP_ASSEMBLY_DIV_2DX1D',
+            'MP_ASSEMBLY_MULTIPLY',
+            'MP_ASSEMBLY_SQUARE',
+            'MP_ASSEMBLY_DIV_2DX1D',
+            'MP_USE_UINT_DIGIT',
+            'MP_NO_MP_WORD',
+            'MP_USE_UINT_DIGIT',
+            'NSS_DISABLE_DBM',
+            'NSS_STATIC',
+            'NSS_USE_STATIC_LIBS',
+            'NSS_X86',
+            'NSS_X86_OR_X64',
+            'RIJNDAEL_INCLUDE_TABLES',
+            'SHLIB_PREFIX=\"\"',
+            'SHLIB_SUFFIX=\"dll\"',
+            'SHLIB_VERSION=\"3\"',
+            'SOFTOKEN_LIB_NAME=\"softokn3.dll\"',
+            'SOFTOKEN_SHLIB_VERSION=\"3\"',
+            'USE_HW_AES',
+            'USE_UTIL_DIRECTLY',
+            'WIN32',
+            'WIN95',
+            'XP_PC',
+            '_WINDOWS',
+            '_X86_',
+          ],
+          'include_dirs': [
+            'nspr/pr/include',
+            'nspr/lib/ds',
+            'nspr/lib/libc/include',
+            'nss/lib/freebl/ecl',
+            'nss/lib/util',
+          ],
+          'msvs_disabled_warnings': [4018],
+          'msvs_settings': {
+            'MASM': {
+              'UseSafeExceptionHandlers': 'true',
+            },
+            'VCCLCompilerTool': {
+              'EnableEnhancedInstructionSet': '3',  # Enable AVX.
+            },
+          },
+        }],
+      ],
+    },
+    {
       'target_name': 'nss_static',
       'type': 'static_library',
       # This target is an implementation detail - the public dependencies
@@ -540,7 +605,6 @@
         'nss/lib/freebl/blapi.h',
         'nss/lib/freebl/blapii.h',
         'nss/lib/freebl/blapit.h',
-        'nss/lib/freebl/build_config_mac.h',
         'nss/lib/freebl/camellia.c',
         'nss/lib/freebl/camellia.h',
         'nss/lib/freebl/chacha20/chacha20.c',
@@ -582,13 +646,8 @@
         'nss/lib/freebl/ecl/ec_naf.c',
         'nss/lib/freebl/gcm.c',
         'nss/lib/freebl/gcm.h',
-        'nss/lib/freebl/intel-aes-x64-masm.asm',
         'nss/lib/freebl/intel-aes-x86-masm.asm',
         'nss/lib/freebl/intel-aes.h',
-        'nss/lib/freebl/intel-gcm-wrap.c',
-        'nss/lib/freebl/intel-gcm-x64-masm.asm',
-        'nss/lib/freebl/intel-gcm-x86-masm.asm',
-        'nss/lib/freebl/intel-gcm.h',
         'nss/lib/freebl/hmacct.c',
         'nss/lib/freebl/hmacct.h',
         'nss/lib/freebl/jpake.c',
@@ -613,6 +672,7 @@
         'nss/lib/freebl/mpi/mp_gf2m.c',
         'nss/lib/freebl/mpi/mp_gf2m.h',
         'nss/lib/freebl/mpi/primes.c',
+        'nss/lib/freebl/nss_build_config_mac.h',
         'nss/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c',
         'nss/lib/freebl/poly1305/poly1305.c',
         'nss/lib/freebl/poly1305/poly1305.h',
@@ -936,6 +996,8 @@
         'nss/lib/util/pkcs11p.h',
         'nss/lib/util/pkcs11t.h',
         'nss/lib/util/pkcs11u.h',
+        'nss/lib/util/pkcs1sig.c',
+        'nss/lib/util/pkcs1sig.h',
         'nss/lib/util/portreg.c',
         'nss/lib/util/portreg.h',
         'nss/lib/util/quickder.c',
@@ -984,6 +1046,7 @@
       ],
       'dependencies': [
         'nspr',
+        'nss_static_avx',
         '../sqlite/sqlite.gyp:sqlite',
       ],
       'export_dependent_settings': [
@@ -1110,8 +1173,6 @@
         }],
         ['target_arch=="ia32"', {
           'sources!': [
-            'nss/lib/freebl/intel-aes-x64-masm.asm',
-            'nss/lib/freebl/intel-gcm-x64-masm.asm',
             'nss/lib/freebl/mpi/mpi_amd64.c',
           ],
         }],
@@ -1140,7 +1201,7 @@
             'nss/lib/freebl/mpi/mpi_amd64.c',
           ],
           'variables': {
-            'forced_include_file': '<(DEPTH)/third_party/nss/nss/lib/freebl/build_config_mac.h',
+            'forced_include_file': 'nss_build_config_mac.h',
           },
           'xcode_settings': {
             'conditions': [
@@ -1205,11 +1266,7 @@
                 'WIN64',
               ],
               'sources!': [
-                'nss/lib/freebl/intel-aes-x64-masm.asm',
                 'nss/lib/freebl/intel-aes-x86-masm.asm',
-                'nss/lib/freebl/intel-gcm-wrap.c',
-                'nss/lib/freebl/intel-gcm-x64-masm.asm',
-                'nss/lib/freebl/intel-gcm-x86-masm.asm',
                 'nss/lib/freebl/mpi/mpi_amd64.c',
                 'nss/lib/freebl/mpi/mpi_x86_asm.c',
               ],
@@ -1217,11 +1274,7 @@
           ],
         }, { # else: OS!="win"
           'sources!': [
-            'nss/lib/freebl/intel-aes-x64-masm.asm',
             'nss/lib/freebl/intel-aes-x86-masm.asm',
-            'nss/lib/freebl/intel-gcm-wrap.c',
-            'nss/lib/freebl/intel-gcm-x64-masm.asm',
-            'nss/lib/freebl/intel-gcm-x86-masm.asm',
             # mpi_x86_asm.c contains MSVC inline assembly code.
             'nss/lib/freebl/mpi/mpi_x86_asm.c',
           ],

@@ -6,11 +6,9 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/sys_info.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
@@ -24,12 +22,10 @@
 #include "chrome/browser/ui/webui/chromeos/login/l10n_util.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/pref_names.h"
-#include "chromeos/chromeos_switches.h"
+#include "chrome/grit/generated_resources.h"
 #include "chromeos/ime/extension_ime_util.h"
 #include "chromeos/network/network_handler.h"
 #include "chromeos/network/network_state_handler.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/layout/fill_layout.h"
@@ -51,7 +47,6 @@ const char kJsApiNetworkOnTimezoneChanged[] = "networkOnTimezoneChanged";
 // "selected" only if loaded_locale is a backup for "requested_locale".
 std::string CalculateSelectedLanguage(const std::string& requested_locale,
                                       const std::string& loaded_locale) {
-
   std::string resolved_locale;
   if (!l10n_util::CheckAndResolveLocale(requested_locale, &resolved_locale))
     return loaded_locale;
@@ -129,17 +124,6 @@ void NetworkScreenHandler::Show() {
                                 true,
                                 chromeos::network_handler::ErrorCallback());
   ShowScreen(OobeUI::kScreenOobeNetwork, NULL);
-
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableDemoMode))
-    return;
-  if (base::SysInfo::IsRunningOnChromeOS()) {
-    std::string track;
-    // We're running on an actual device; if we cannot find our release track
-    // value or if the track contains "testimage", don't start demo mode.
-    if (!base::SysInfo::GetLsbReleaseValue("CHROMEOS_RELEASE_TRACK", &track) ||
-        track.find("testimage") != std::string::npos)
-      return;
-  }
   core_oobe_actor_->InitDemoModeDetection();
 }
 
@@ -193,13 +177,16 @@ void NetworkScreenHandler::GetAdditionalParameters(
   const std::string selected_language = selected_language_code_.empty() ?
       application_locale : selected_language_code_;
   const std::string selected_input_method =
-      input_method::InputMethodManager::Get()->GetCurrentInputMethod().id();
+      input_method::InputMethodManager::Get()
+          ->GetActiveIMEState()
+          ->GetCurrentInputMethod()
+          .id();
 
   dict->Set("languageList",
             GetUILanguageList(NULL, selected_language).release());
   dict->Set("inputMethodsList",
-            GetLoginKeyboardLayouts(application_locale,
-                                    selected_input_method).release());
+            GetAndActivateLoginKeyboardLayouts(
+                application_locale, selected_input_method).release());
   dict->Set("timezoneList", GetTimezoneList());
 }
 
@@ -241,10 +228,10 @@ void NetworkScreenHandler::HandleOnExit() {
 
 struct NetworkScreenHandlerOnLanguageChangedCallbackData {
   explicit NetworkScreenHandlerOnLanguageChangedCallbackData(
-      base::WeakPtr<NetworkScreenHandler>& handler)
-      : handler_(handler) {}
+      const base::WeakPtr<NetworkScreenHandler>& handler)
+      : handler(handler) {}
 
-  base::WeakPtr<NetworkScreenHandler> handler_;
+  base::WeakPtr<NetworkScreenHandler> handler;
 
   // Block UI while resource bundle is being reloaded.
   chromeos::InputEventsBlocker input_events_blocker;
@@ -256,10 +243,10 @@ void NetworkScreenHandler::OnLanguageChangedCallback(
     const std::string& requested_locale,
     const std::string& loaded_locale,
     const bool success) {
-  if (!context or !context->handler_)
+  if (!context || !context->handler)
     return;
 
-  NetworkScreenHandler* const self = context->handler_.get();
+  NetworkScreenHandler* const self = context->handler.get();
 
   if (success) {
     if (requested_locale == loaded_locale) {
@@ -303,7 +290,9 @@ void NetworkScreenHandler::HandleOnLanguageChanged(const std::string& locale) {
 }
 
 void NetworkScreenHandler::HandleOnInputMethodChanged(const std::string& id) {
-  input_method::InputMethodManager::Get()->ChangeInputMethod(id);
+  input_method::InputMethodManager::Get()
+      ->GetActiveIMEState()
+      ->ChangeInputMethod(id, false /* show_message */);
 }
 
 void NetworkScreenHandler::HandleOnTimezoneChanged(
@@ -324,7 +313,8 @@ void NetworkScreenHandler::OnSystemTimezoneChanged() {
 
 void NetworkScreenHandler::InputMethodChanged(
     input_method::InputMethodManager* manager, bool show_message) {
-  CallJS("setInputMethod", manager->GetCurrentInputMethod().id());
+  CallJS("setInputMethod",
+         manager->GetActiveIMEState()->GetCurrentInputMethod().id());
 }
 
 void NetworkScreenHandler::ReloadLocalizedContent() {

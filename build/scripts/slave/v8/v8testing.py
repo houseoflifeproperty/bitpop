@@ -133,6 +133,8 @@ def main():
       cmd.extend(['--download-data'])
     if 'test262' in options.testname:
       cmd.extend(['--download-data'])
+    if 'test262-es6' in options.testname:
+      cmd.extend(['--download-data'])
     if 'mozilla' in options.testname:
       # Mozilla tests requires a number of tests to timeout, set it a bit lower.
       if options.arch in ('arm', 'mipsel'):

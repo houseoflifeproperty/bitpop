@@ -12,7 +12,7 @@ m_annotator = annotator_factory.AnnotatorFactory()
 def Update(config, active_master, c):
   c['schedulers'].extend([
       SingleBranchScheduler(name='mac_src',
-                            branch='src',
+                            branch='master',
                             treeStableTimer=60,
                             builderNames=[
           'Mac Builder',
@@ -21,21 +21,14 @@ def Update(config, active_master, c):
       Triggerable(name='mac_rel_trigger', builderNames=[
           'Mac10.6 Tests (1)',
           'Mac10.6 Tests (2)',
-          'Mac10.6 Tests (3)',
           'Mac10.7 Tests (1)',
           'Mac10.7 Tests (2)',
-          'Mac10.7 Tests (3)',
-          'Mac10.6 Sync',
       ]),
       Triggerable(name='mac_dbg_trigger', builderNames=[
           'Mac 10.6 Tests (dbg)(1)',
           'Mac 10.6 Tests (dbg)(2)',
-          'Mac 10.6 Tests (dbg)(3)',
-          'Mac 10.6 Tests (dbg)(4)',
           'Mac 10.7 Tests (dbg)(1)',
           'Mac 10.7 Tests (dbg)(2)',
-          'Mac 10.7 Tests (dbg)(3)',
-          'Mac 10.7 Tests (dbg)(4)',
       ]),
   ])
   specs = [
@@ -45,23 +38,16 @@ def Update(config, active_master, c):
     },
     {'name': 'Mac10.6 Tests (1)'},
     {'name': 'Mac10.6 Tests (2)'},
-    {'name': 'Mac10.6 Tests (3)'},
     {'name': 'Mac10.7 Tests (1)'},
     {'name': 'Mac10.7 Tests (2)'},
-    {'name': 'Mac10.7 Tests (3)'},
-    {'name': 'Mac10.6 Sync'},
     {
       'name': 'Mac Builder (dbg)',
       'triggers': ['mac_dbg_trigger'],
     },
     {'name': 'Mac 10.6 Tests (dbg)(1)'},
     {'name': 'Mac 10.6 Tests (dbg)(2)'},
-    {'name': 'Mac 10.6 Tests (dbg)(3)'},
-    {'name': 'Mac 10.6 Tests (dbg)(4)'},
     {'name': 'Mac 10.7 Tests (dbg)(1)'},
     {'name': 'Mac 10.7 Tests (dbg)(2)'},
-    {'name': 'Mac 10.7 Tests (dbg)(3)'},
-    {'name': 'Mac 10.7 Tests (dbg)(4)'},
   ]
 
   c['builders'].extend([

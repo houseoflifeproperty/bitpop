@@ -25,6 +25,7 @@ import sys
 
 from common import chromium_utils
 from common.chromium_utils import GS_COMMIT_POSITION_NUMBER_KEY, \
+                                  GS_COMMIT_POSITION_KEY, \
                                   GS_GIT_COMMIT_KEY
 from slave import build_directory
 from slave import slave_utils
@@ -56,42 +57,42 @@ def ShouldPackageFile(filename, target):
   return True
 
 
-def GetBuildSortKey(options, primary_repo):
-  """Returns: (str) the build sort key for the specified repository.
+def GetBuildSortKey(options, primary_project):
+  """Returns: (str) the build sort key for the specified project.
 
-  Attempts to identify the build sort key for a given repository. If
-  'primary_repo' is None or if there is no sort key for the specified
-  primary repository, the checkout-wide sort key will be used.
+  Attempts to identify the build sort key for a given project. If
+  'primary_project' is None or if there is no sort key for the specified
+  primary project, the checkout-wide sort key will be used.
 
   Raises:
     chromium_utils.NoIdentifiedRevision: if the checkout-wide sort key could not
         be resolved.
   """
-  if primary_repo:
+  if primary_project:
     try:
-      return chromium_utils.GetBuildSortKey(options, primary_repo)[1]
+      return chromium_utils.GetBuildSortKey(options, project=primary_project)
     except chromium_utils.NoIdentifiedRevision:
       pass
-  return chromium_utils.GetBuildSortKey(options, None)[1]
+  return chromium_utils.GetBuildSortKey(options)
 
 
-def GetGitCommit(options, primary_repo):
-  """Returns: (str/None) the git commit hash for a given repository.
+def GetGitCommit(options, primary_project):
+  """Returns: (str/None) the git commit hash for a given project.
 
-  Attempts to identify the git commit hash for a given repository. If
-  'primary_repo' is None, or if there is no git commit hash for the specified
-  primary repository, the checkout-wide commit hash will be used.
+  Attempts to identify the git commit hash for a given project. If
+  'primary_project' is None, or if there is no git commit hash for the specified
+  primary project, the checkout-wide commit hash will be used.
 
   If none of the candidate configurations are present, 'None' will be returned.
   """
-  repos = []
-  if primary_repo:
-    repos += [primary_repo]
-  repos += [None]
+  projects = []
+  if primary_project:
+    projects += [primary_project]
+  projects += [None]
 
-  for repo in repos:
+  for project in projects:
     try:
-      return chromium_utils.GetGitCommit(options, repo)
+      return chromium_utils.GetGitCommit(options, project=project)
     except chromium_utils.NoIdentifiedRevision:
       pass
   return None
@@ -104,13 +105,12 @@ def archive(options, args):
   build_dir = os.path.join(build_dir, options.target)
 
   revision_dir = options.factory_properties.get('revision_dir')
-  primary_repo = chromium_utils.GetPrimaryRepository(options)
+  primary_project = chromium_utils.GetPrimaryProject(options)
 
-  # Get the sort key for the primary repository. If no primary repository is
-  # specified, or no sort key is identified for the primary repository,
-  # fall back on the default checkout sort key.
-  build_sortkey_value = GetBuildSortKey(options, primary_repo)
-  build_git_commit = GetGitCommit(options, primary_repo)
+  build_sortkey_branch, build_sortkey_value = GetBuildSortKey(
+      options,
+      primary_project)
+  build_git_commit = GetGitCommit(options, primary_project)
 
   staging_dir = slave_utils.GetStagingDir(src_dir)
   chromium_utils.MakeParentDirectoriesWorldReadable(staging_dir)
@@ -134,11 +134,13 @@ def archive(options, args):
     component = '-%s-component' % revision_dir
 
   prefix = options.factory_properties.get('cf_archive_name', 'cf_archive')
-  zip_file_name = '%s-%s-%s%s-%d' % (prefix,
+  sortkey_path = chromium_utils.GetSortableUploadPathForSortKey(
+      build_sortkey_branch, build_sortkey_value)
+  zip_file_name = '%s-%s-%s%s-%s' % (prefix,
                                    chromium_utils.PlatformName(),
                                    options.target.lower(),
                                    component,
-                                   build_sortkey_value)
+                                   sortkey_path)
 
   (zip_dir, zip_file) = chromium_utils.MakeZip(staging_dir,
                                                zip_file_name,
@@ -160,7 +162,9 @@ def archive(options, args):
   gs_metadata = {
       GS_COMMIT_POSITION_NUMBER_KEY: build_sortkey_value,
   }
-
+  if build_sortkey_branch:
+    gs_metadata[GS_COMMIT_POSITION_KEY] = chromium_utils.BuildCommitPosition(
+        build_sortkey_branch, build_sortkey_value)
   if build_git_commit:
     gs_metadata[GS_GIT_COMMIT_KEY] = build_git_commit
 

@@ -30,6 +30,7 @@ class RepoApi(recipe_api.RecipeApi):
 
   def init(self, url, *args, **kwargs):
     """Perform a 'repo init' step with the given manifest url."""
+    kwargs.setdefault('infra_step', True)
     return self.m.step('repo init',
                        [self.repo_path, 'init', '-u', url] + list(args),
                        **kwargs)
@@ -37,6 +38,7 @@ class RepoApi(recipe_api.RecipeApi):
   def sync(self, *args, **kwargs):
     """Sync an already-init'd repo."""
     # NOTE: This does not set self.m.path['checkout']
+    kwargs.setdefault('infra_step', True)
     return self.m.step('repo sync',
                        [self.repo_path, 'sync'] + list(args),
                        **kwargs)

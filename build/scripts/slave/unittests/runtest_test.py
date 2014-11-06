@@ -13,6 +13,39 @@ import mock
 from slave import runtest
 
 
+# Note: The git-svn id / cr pos is intentionally modified.
+# Also commit messages modified to be < 80 char.
+CHROMIUM_LOG = """
+Update GPU rasterization device whitelist
+
+This replaces the whitelisting of all Qualcomm GPUs on
+Android 4.4 with whitelisting all Android 4.4 devices
+with GL ES version >= 3.0.
+
+BUG=405646
+
+Review URL: https://codereview.chromium.org/468103003
+
+Cr-Commit-Position: refs/heads/master@{#291141}
+git-svn-id: svn://svn.chromium.org/chrome/trunk/src@291140 0039d316-1c4b-4281
+"""
+
+BLINK_LOG = """
+[Sheriff-o-matic] Remove race condition on the commit list.
+
+By always modifying the same list of commits, we ensure that data binding
+
+As well, renamed "revisionLog" to "commitLog" everywhere, to better reflect
+
+BUG=405327
+NOTRY=true
+
+Review URL: https://codereview.chromium.org/485253004
+
+git-svn-id: svn://svn.chromium.org/blink/trunk@180728 bbb929c8-8fbe-4397-9dbb-9
+"""
+
+
 class FakeLogProcessor(object):
   """A fake log processor to use in the test below."""
 
@@ -60,6 +93,25 @@ class GetDataFromLogProcessorTest(unittest.TestCase):
         'graph-summary.dat': ['this string is not valid json']
     })
     self.assertEqual({}, runtest._GetDataFromLogProcessor(log_processor))
+
+
+class GetGitRevisionTest(unittest.TestCase):
+  """Tests related to getting revisions from a directory."""
+  def test_GitSvnCase(self):
+    # pylint: disable=W0212
+    self.assertEqual(runtest._GetGitCommitPositionFromLog(CHROMIUM_LOG),
+                     '291141')
+    # pylint: disable=W0212
+    self.assertEqual(runtest._GetGitCommitPositionFromLog(BLINK_LOG),
+                     '180728')
+
+  def test_GetCommitPosFromBuildPropTest(self):
+    """Tests related to getting a commit position from build properties."""
+    # pylint: disable=W0212
+    self.assertEqual(runtest._GetCommitPos(
+        {'got_revision_cp': 'refs/heads/master@{#12345}'}), 12345)
+    # pylint: disable=W0212
+    self.assertIsNone(runtest._GetCommitPos({'got_revision': 12345}))
 
 
 class SendResultsToDashboardTest(unittest.TestCase):

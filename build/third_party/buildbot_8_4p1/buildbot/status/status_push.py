@@ -36,6 +36,7 @@ from buildbot.status.persistent_queue import DiskQueue, IndexedQueue, \
 from buildbot.status.web.status_json import FilterOut
 from twisted.internet import defer, reactor
 from twisted.python import log
+from twisted.python.logfile import LogFile
 from twisted.web import client
 
 
@@ -50,7 +51,7 @@ class StatusPush(StatusReceiverMultiService):
     """
 
     def __init__(self, serverPushCb, queue=None, path=None, filter=True,
-                 bufferDelay=1, retryDelay=5, blackList=None):
+                 bufferDelay=1, retryDelay=5, blackList=None, filterFunc=None):
         """
         @serverPushCb: callback to be used. It receives 'self' as parameter. It
         should call self.queueNextServerPush() when it's done to queue the next
@@ -66,6 +67,7 @@ class StatusPush(StatusReceiverMultiService):
         @retryDelay: amount of time between retries when no items were pushed on
         last serverPushCb call.
         @blackList: events that shouldn't be sent.
+        @filterFunc: optional function applied to items added to packet payload
         """
         StatusReceiverMultiService.__init__(self)
 
@@ -89,6 +91,7 @@ class StatusPush(StatusReceiverMultiService):
             return serverPushCb(self)
         self.serverPushCb = hookPushCb
         self.blackList = blackList
+        self.filterFunc = filterFunc
 
         # Other defaults.
         # IDelayedCall object that represents the next queued push.
@@ -108,6 +111,9 @@ class StatusPush(StatusReceiverMultiService):
         if self.queue.nbItems():
             # Last shutdown was not clean, don't wait to send events.
             self.queueNextServerPush()
+
+        self.verboseLog = LogFile.fromFullPath(
+            'status_push.log', rotateLength=10*1024*1024, maxRotatedFiles=14)
 
     def startService(self):
         """Starting up."""
@@ -230,6 +236,8 @@ class StatusPush(StatusReceiverMultiService):
                 obj = obj.asDict()
             if self.filter:
                 obj = FilterOut(obj)
+            if self.filterFunc:
+                obj = self.filterFunc(obj)
             packet['payload'][obj_name] = obj
         self.queue.pushItem(packet)
         if self.task is None or not self.task.active():
@@ -390,6 +398,10 @@ class HttpStatusPush(StatusPush):
                 # This packet is just too large. Drop this packet.
                 log.msg("ERROR: packet %s was dropped, too large: %d > %d" %
                         (items[0]['id'], len(data), self.maxHttpRequestSize))
+                self.verboseLog.write(
+                    "ERROR: packet %s was dropped, too large: %d > %d; %s" %
+                        (items[0]['id'], len(data), self.maxHttpRequestSize,
+                         json.dumps(items, indent=2, sort_keys=True)))
                 chunkSize = self.chunkSize
             else:
                 # Try with half the packets.
@@ -405,6 +417,9 @@ class HttpStatusPush(StatusPush):
         def Success(result):
             """Queue up next push."""
             log.msg('Sent %d events to %s' % (len(items), self.serverUrl))
+            self.verboseLog.write('Sent %d events to %s; %s' % (
+                len(items), self.serverUrl,
+                json.dumps(items, indent=2, sort_keys=True)))
             self.lastPushWasSuccessful = True
             return self.queueNextServerPush()
 
@@ -413,6 +428,9 @@ class HttpStatusPush(StatusPush):
             # Server is now down.
             log.msg('Failed to push %d events to %s: %s' %
                     (len(items), self.serverUrl, str(result)))
+            self.verboseLog.write('Failed to push %d events to %s: %s; %s' %
+                    (len(items), self.serverUrl, str(result),
+                    json.dumps(items, indent=2, sort_keys=True)))
             self.queue.insertBackChunk(items)
             if self.stopped:
                 # Bad timing, was being called on shutdown and the server died

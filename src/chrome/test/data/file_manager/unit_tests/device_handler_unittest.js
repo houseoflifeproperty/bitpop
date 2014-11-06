@@ -25,7 +25,8 @@ function setUp() {
   // Set up string assets.
   loadTimeData.data = {
     REMOVABLE_DEVICE_DETECTION_TITLE: 'Device detected',
-    REMOVABLE_DEVICE_SCANNING_MESSAGE: 'Scanning...',
+    REMOVABLE_DEVICE_NAVIGATION_MESSAGE: 'DEVICE_NAVIGATION',
+    REMOVABLE_DEVICE_NAVIGATION_BUTTON_LABEL: '',
     DEVICE_UNKNOWN_MESSAGE: 'DEVICE_UNKNOWN: $1',
     DEVICE_UNSUPPORTED_MESSAGE: 'DEVICE_UNSUPPORTED: $1',
     DEVICE_HARD_UNPLUGGED_TITLE: 'DEVICE_HARD_UNPLUGGED_TITLE',
@@ -42,7 +43,7 @@ function setUp() {
 
   // Make dummy APIs.
   chrome = {
-    fileBrowserPrivate: {
+    fileManagerPrivate: {
       onDeviceChanged: {
         addListener: function(listener) {
           this.dispatch = listener;
@@ -56,7 +57,6 @@ function setUp() {
     },
     notifications: {
       create: function(id, params, callback) {
-        assertFalse(!!this.items[id]);
         this.items[id] = params;
         callback();
       },
@@ -66,6 +66,9 @@ function setUp() {
         addListener: function(listener) {
           this.dispatch = listener;
         }
+      },
+      getAll: function(callback) {
+        callback([]);
       }
     },
     runtime: {
@@ -76,106 +79,105 @@ function setUp() {
     }
   };
 
-  // Reset timeout callbacks.
-  timeoutCallbacks = [];
-
   // Make a device handler.
   handler = new DeviceHandler();
 }
 
-/**
- * Overrided setTimoeut funciton.
- */
-window.setTimeout = function(func) {
-  timeoutCallbacks.push(func);
-};
-
-/**
- * Call all pending timeout functions.
- */
-function callTimeoutCallbacks() {
-  while (timeoutCallbacks.length) {
-    timeoutCallbacks.shift()();
-  }
-}
-
-function registerTypicalDevice() {
-  chrome.fileBrowserPrivate.onDeviceChanged.dispatch({
-    type: 'added',
-    devicePath: '/device/path'
-  });
-  assertFalse('device:/device/path' in chrome.notifications.items);
-  callTimeoutCallbacks();
-  assertEquals('Scanning...',
-               chrome.notifications.items['device:/device/path'].message);
-}
-
 function testGoodDevice() {
-  registerTypicalDevice();
-  chrome.fileBrowserPrivate.onMountCompleted.dispatch({
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
     status: 'success',
     volumeMetadata: {
       isParentDevice: true,
       deviceType: 'usb',
       devicePath: '/device/path',
       deviceLabel: 'label'
-    }
+    },
+    shouldNotify: true
+  });
+  assertEquals(1, Object.keys(chrome.notifications.items).length);
+  assertEquals(
+      'DEVICE_NAVIGATION',
+      chrome.notifications.items['deviceNavigation:/device/path'].message);
+}
+
+function testGoodDeviceNotNavigated() {
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
+    status: 'success',
+    volumeMetadata: {
+      isParentDevice: true,
+      deviceType: 'usb',
+      devicePath: '/device/path',
+      deviceLabel: 'label'
+    },
+    shouldNotify: false
   });
   assertEquals(0, Object.keys(chrome.notifications.items).length);
 }
 
 function testGoodDeviceWithBadParent() {
-  registerTypicalDevice();
-
-  chrome.fileBrowserPrivate.onMountCompleted.dispatch({
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
     status: 'error_internal',
     volumeMetadata: {
       isParentDevice: true,
       deviceType: 'usb',
       devicePath: '/device/path',
       deviceLabel: 'label'
-    }
+    },
+    shouldNotify: true
   });
   assertFalse(!!chrome.notifications.items['device:/device/path']);
   assertEquals(
       'DEVICE_UNKNOWN: label',
       chrome.notifications.items['deviceFail:/device/path'].message);
 
-  chrome.fileBrowserPrivate.onMountCompleted.dispatch({
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
     status: 'success',
     volumeMetadata: {
       isParentDevice: false,
       deviceType: 'usb',
       devicePath: '/device/path',
       deviceLabel: 'label'
-    }
+    },
+    shouldNotify: true
   });
-  assertEquals(0, Object.keys(chrome.notifications.items).length);
+  assertEquals(1, Object.keys(chrome.notifications.items).length);
+  assertEquals(
+      'DEVICE_NAVIGATION',
+      chrome.notifications.items['deviceNavigation:/device/path'].message);
 
-  chrome.fileBrowserPrivate.onMountCompleted.dispatch({
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
     status: 'success',
     volumeMetadata: {
       isParentDevice: false,
       deviceType: 'usb',
       devicePath: '/device/path',
       deviceLabel: 'label'
-    }
+    },
+    shouldNotify: true
   });
   // Should do nothing this time.
-  assertEquals(0, Object.keys(chrome.notifications.items).length);
+  assertEquals(1, Object.keys(chrome.notifications.items).length);
+  assertEquals(
+      'DEVICE_NAVIGATION',
+      chrome.notifications.items['deviceNavigation:/device/path'].message);
 }
 
 function testUnsupportedDevice() {
-  registerTypicalDevice();
-
-  chrome.fileBrowserPrivate.onMountCompleted.dispatch({
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
     status: 'error_unsupported_filesystem',
     volumeMetadata: {
       isParentDevice: false,
       deviceType: 'usb',
       devicePath: '/device/path',
       deviceLabel: 'label'
-    }
+    },
+    shouldNotify: true
   });
   assertFalse(!!chrome.notifications.items['device:/device/path']);
   assertEquals(
@@ -184,29 +186,31 @@ function testUnsupportedDevice() {
 }
 
 function testUnsupportedWithUnknownParent() {
-  registerTypicalDevice();
-
-  chrome.fileBrowserPrivate.onMountCompleted.dispatch({
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
     status: 'error_internal',
     volumeMetadata: {
       isParentDevice: true,
       deviceType: 'usb',
       devicePath: '/device/path',
       deviceLabel: 'label'
-    }
+    },
+    shouldNotify: true
   });
   assertEquals(
       'DEVICE_UNKNOWN: label',
       chrome.notifications.items['deviceFail:/device/path'].message);
 
-  chrome.fileBrowserPrivate.onMountCompleted.dispatch({
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
     status: 'error_unsupported_filesystem',
     volumeMetadata: {
       isParentDevice: false,
       deviceType: 'usb',
       devicePath: '/device/path',
       deviceLabel: 'label'
-    }
+    },
+    shouldNotify: true
   });
   assertEquals(1, Object.keys(chrome.notifications.items).length);
   assertEquals(
@@ -215,45 +219,50 @@ function testUnsupportedWithUnknownParent() {
 }
 
 function testMountPartialSuccess() {
-  registerTypicalDevice();
-
-  chrome.fileBrowserPrivate.onMountCompleted.dispatch({
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
     status: 'success',
     volumeMetadata: {
       isParentDevice: false,
       deviceType: 'usb',
       devicePath: '/device/path',
       deviceLabel: 'label'
-    }
+    },
+    shouldNotify: true
   });
-  assertEquals(0, Object.keys(chrome.notifications.items).length);
+  assertEquals(1, Object.keys(chrome.notifications.items).length);
+  assertEquals(
+      'DEVICE_NAVIGATION',
+      chrome.notifications.items['deviceNavigation:/device/path'].message);
 
-  chrome.fileBrowserPrivate.onMountCompleted.dispatch({
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
     status: 'error_unsupported_filesystem',
     volumeMetadata: {
       isParentDevice: false,
       deviceType: 'usb',
       devicePath: '/device/path',
       deviceLabel: 'label'
-    }
+    },
+    shouldNotify: true
   });
-  assertEquals(1, Object.keys(chrome.notifications.items).length);
+  assertEquals(2, Object.keys(chrome.notifications.items).length);
   assertEquals(
       'MULTIPART_DEVICE_UNSUPPORTED: label',
       chrome.notifications.items['deviceFail:/device/path'].message);
 }
 
 function testUnknown() {
-  registerTypicalDevice();
-
-  chrome.fileBrowserPrivate.onMountCompleted.dispatch({
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
     status: 'error_unknown',
     volumeMetadata: {
       isParentDevice: false,
       deviceType: 'usb',
       devicePath: '/device/path',
       deviceLabel: 'label'
-    }
+    },
+    shouldNotify: true
   });
   assertEquals(1, Object.keys(chrome.notifications.items).length);
   assertEquals(
@@ -262,9 +271,8 @@ function testUnknown() {
 }
 
 function testNonASCIILabel() {
-  registerTypicalDevice();
-
-  chrome.fileBrowserPrivate.onMountCompleted.dispatch({
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
     status: 'error_internal',
     volumeMetadata: {
       isParentDevice: false,
@@ -272,7 +280,8 @@ function testNonASCIILabel() {
       devicePath: '/device/path',
       // "RA (U+30E9) BE (U+30D9) RU (U+30EB)" in Katakana letters.
       deviceLabel: '\u30E9\u30D9\u30EB'
-    }
+    },
+    shouldNotify: true
   });
   assertEquals(1, Object.keys(chrome.notifications.items).length);
   assertEquals(
@@ -281,17 +290,17 @@ function testNonASCIILabel() {
 }
 
 function testMulitpleFail() {
-  registerTypicalDevice();
-
   // The first parent error.
-  chrome.fileBrowserPrivate.onMountCompleted.dispatch({
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
     status: 'error_internal',
     volumeMetadata: {
       isParentDevice: true,
       deviceType: 'usb',
       devicePath: '/device/path',
       deviceLabel: 'label'
-    }
+    },
+    shouldNotify: true
   });
   assertEquals(1, Object.keys(chrome.notifications.items).length);
   assertEquals(
@@ -299,14 +308,16 @@ function testMulitpleFail() {
       chrome.notifications.items['deviceFail:/device/path'].message);
 
   // The first child error that replaces the parent error.
-  chrome.fileBrowserPrivate.onMountCompleted.dispatch({
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
     status: 'error_internal',
     volumeMetadata: {
       isParentDevice: false,
       deviceType: 'usb',
       devicePath: '/device/path',
       deviceLabel: 'label'
-    }
+    },
+    shouldNotify: true
   });
   assertEquals(1, Object.keys(chrome.notifications.items).length);
   assertEquals(
@@ -314,14 +325,16 @@ function testMulitpleFail() {
       chrome.notifications.items['deviceFail:/device/path'].message);
 
   // The second child error that turns to a multi-partition error.
-  chrome.fileBrowserPrivate.onMountCompleted.dispatch({
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
     status: 'error_internal',
     volumeMetadata: {
       isParentDevice: false,
       deviceType: 'usb',
       devicePath: '/device/path',
       deviceLabel: 'label'
-    }
+    },
+    shouldNotify: true
   });
   assertEquals(1, Object.keys(chrome.notifications.items).length);
   assertEquals(
@@ -330,14 +343,16 @@ function testMulitpleFail() {
 
   // The third child error that should be ignored because the error message does
   // not changed.
-  chrome.fileBrowserPrivate.onMountCompleted.dispatch({
+  chrome.fileManagerPrivate.onMountCompleted.dispatch({
+    eventType: 'mount',
     status: 'error_internal',
     volumeMetadata: {
       isParentDevice: false,
       deviceType: 'usb',
       devicePath: '/device/path',
       deviceLabel: 'label'
-    }
+    },
+    shouldNotify: true
   });
   assertEquals(1, Object.keys(chrome.notifications.items).length);
   assertEquals(
@@ -345,25 +360,8 @@ function testMulitpleFail() {
       chrome.notifications.items['deviceFail:/device/path'].message);
 }
 
-function testScanCanceled() {
-  registerTypicalDevice();
-
-  chrome.fileBrowserPrivate.onDeviceChanged.dispatch({
-    type: 'scan_canceled',
-    devicePath: '/device/path'
-  });
-  assertEquals(0, Object.keys(chrome.notifications.items).length);
-
-  // Nothing happened.
-  chrome.fileBrowserPrivate.onDeviceChanged.dispatch({
-    type: 'removed',
-    devicePath: '/device/path'
-  });
-  assertEquals(0, Object.keys(chrome.notifications.items).length);
-}
-
 function testDisabledDevice() {
-  chrome.fileBrowserPrivate.onDeviceChanged.dispatch({
+  chrome.fileManagerPrivate.onDeviceChanged.dispatch({
     type: 'disabled',
     devicePath: '/device/path'
   });
@@ -371,7 +369,7 @@ function testDisabledDevice() {
   assertEquals('EXTERNAL_STORAGE_DISABLED',
                chrome.notifications.items['deviceFail:/device/path'].message);
 
-  chrome.fileBrowserPrivate.onDeviceChanged.dispatch({
+  chrome.fileManagerPrivate.onDeviceChanged.dispatch({
     type: 'removed',
     devicePath: '/device/path'
   });
@@ -379,7 +377,7 @@ function testDisabledDevice() {
 }
 
 function testFormatSucceeded() {
-  chrome.fileBrowserPrivate.onDeviceChanged.dispatch({
+  chrome.fileManagerPrivate.onDeviceChanged.dispatch({
     type: 'format_start',
     devicePath: '/device/path'
   });
@@ -387,7 +385,7 @@ function testFormatSucceeded() {
   assertEquals('FORMATTING_OF_DEVICE_PENDING',
                chrome.notifications.items['formatStart:/device/path'].message);
 
-  chrome.fileBrowserPrivate.onDeviceChanged.dispatch({
+  chrome.fileManagerPrivate.onDeviceChanged.dispatch({
     type: 'format_success',
     devicePath: '/device/path'
   });
@@ -398,7 +396,7 @@ function testFormatSucceeded() {
 }
 
 function testFormatFailed() {
-  chrome.fileBrowserPrivate.onDeviceChanged.dispatch({
+  chrome.fileManagerPrivate.onDeviceChanged.dispatch({
     type: 'format_start',
     devicePath: '/device/path'
   });
@@ -406,7 +404,7 @@ function testFormatFailed() {
   assertEquals('FORMATTING_OF_DEVICE_PENDING',
                chrome.notifications.items['formatStart:/device/path'].message);
 
-  chrome.fileBrowserPrivate.onDeviceChanged.dispatch({
+  chrome.fileManagerPrivate.onDeviceChanged.dispatch({
     type: 'format_fail',
     devicePath: '/device/path'
   });
@@ -416,7 +414,7 @@ function testFormatFailed() {
 }
 
 function testDeviceHardUnplugged() {
-  chrome.fileBrowserPrivate.onDeviceChanged.dispatch({
+  chrome.fileManagerPrivate.onDeviceChanged.dispatch({
     type: 'hard_unplugged',
     devicePath: '/device/path'
   });

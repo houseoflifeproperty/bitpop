@@ -15,7 +15,7 @@ F = helper.Factory
 defaults['category'] = '4chromeos asan'
 
 _ASAN_SCHEDULER_NAME = 'chromium_src_asan'
-helper.Scheduler(_ASAN_SCHEDULER_NAME, branch='src', treeStableTimer=60)
+helper.Scheduler(_ASAN_SCHEDULER_NAME, branch='master', treeStableTimer=60)
 
 def Builder(dname, sname, flavor, root, board):
   fname = '%s-%s' % (sname, flavor)

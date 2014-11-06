@@ -34,7 +34,7 @@
       "--slave",
       "TestSlavename",
       "--spec",
-      "cache_dir = None\nsolutions = [{'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src'}]\ntarget_os = ['android']",
+      "cache_dir = None\nsolutions = [{'deps_file': '.DEPS.git', 'managed': True, 'name': 'src', 'url': 'https://chromium.googlesource.com/chromium/src'}]\ntarget_os = ['android']",
       "--revision_mapping_file",
       "{}",
       "--output_json",
@@ -58,7 +58,7 @@
       "[DEPOT_TOOLS]/gclient.py",
       "config",
       "--spec",
-      "cache_dir = None\nsolutions = [{'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src'}]\ntarget_os = ['android']"
+      "cache_dir = None\nsolutions = [{'deps_file': '.DEPS.git', 'managed': True, 'name': 'src', 'url': 'https://chromium.googlesource.com/chromium/src'}]\ntarget_os = ['android']"
     ],
     "name": "gclient setup"
   },
@@ -69,9 +69,9 @@
       "[DEPOT_TOOLS]/gclient.py",
       "sync",
       "--nohooks",
-      "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--delete_unversioned_trees",
       "--revision",
       "src@4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00",
       "--output-json",
@@ -161,6 +161,7 @@
       "[SLAVE_BUILD]/src",
       "--build-tool",
       "ninja",
+      "--clobber",
       "--",
       "cronet_package",
       "cronet_sample_test_apk"

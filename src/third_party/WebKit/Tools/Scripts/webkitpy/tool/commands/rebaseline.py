@@ -242,12 +242,16 @@ class OptimizeBaselines(AbstractRebaseliningCommand):
             ] + self.platform_options)
 
     def _optimize_baseline(self, optimizer, test_name):
+        files_to_delete = []
+        files_to_add = []
         for suffix in self._baseline_suffix_list:
             baseline_name = _baseline_name(self._tool.filesystem, test_name, suffix)
-            succeeded, files_to_delete, files_to_add = optimizer.optimize(baseline_name)
+            succeeded, more_files_to_delete, more_files_to_add = optimizer.optimize(baseline_name)
             if not succeeded:
                 print "Heuristics failed to optimize %s" % baseline_name
-            return files_to_delete, files_to_add
+            files_to_delete.extend(more_files_to_delete)
+            files_to_add.extend(more_files_to_add)
+        return files_to_delete, files_to_add
 
     def execute(self, options, args, tool):
         self._baseline_suffix_list = options.suffixes.split(',')
@@ -255,11 +259,10 @@ class OptimizeBaselines(AbstractRebaseliningCommand):
         if not port_names:
             print "No port names match '%s'" % options.platform
             return
-
-        optimizer = BaselineOptimizer(tool, port_names, skip_scm_commands=options.no_modify_scm)
         port = tool.port_factory.get(port_names[0])
-        for test_name in port.tests(args):
-            _log.info("Optimizing %s" % test_name)
+        optimizer = BaselineOptimizer(tool, port, port_names, skip_scm_commands=options.no_modify_scm)
+        tests = port.tests(args)
+        for test_name in tests:
             files_to_delete, files_to_add = self._optimize_baseline(optimizer, test_name)
             for path in files_to_delete:
                 self._delete_from_scm_later(path)
@@ -303,9 +306,8 @@ class AnalyzeBaselines(AbstractRebaseliningCommand):
         if not port_names:
             print "No port names match '%s'" % options.platform
             return
-
-        self._baseline_optimizer = self._optimizer_class(tool, port_names, skip_scm_commands=False)
         self._port = tool.port_factory.get(port_names[0])
+        self._baseline_optimizer = self._optimizer_class(tool, self._port, port_names, skip_scm_commands=False)
         for test_name in self._port.tests(args):
             self._analyze_baseline(options, test_name)
 

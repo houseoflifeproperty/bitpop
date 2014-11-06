@@ -15,8 +15,8 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/services/gcm/push_messaging_infobar_delegate.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "chrome/common/content_settings.h"
 #include "chrome/common/pref_names.h"
+#include "components/content_settings/core/common/content_settings.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
@@ -369,9 +369,15 @@ void PermissionQueueController::UpdateContentSetting(
 
   ContentSetting content_setting =
       allowed ? CONTENT_SETTING_ALLOW : CONTENT_SETTING_BLOCK;
+
+  ContentSettingsPattern embedder_pattern =
+      (type_ == CONTENT_SETTINGS_TYPE_NOTIFICATIONS) ?
+      ContentSettingsPattern::Wildcard() :
+      ContentSettingsPattern::FromURLNoWildcard(embedder.GetOrigin());
+
   profile_->GetHostContentSettingsMap()->SetContentSetting(
       ContentSettingsPattern::FromURLNoWildcard(requesting_frame.GetOrigin()),
-      ContentSettingsPattern::FromURLNoWildcard(embedder.GetOrigin()),
+      embedder_pattern,
       type_,
       std::string(),
       content_setting);

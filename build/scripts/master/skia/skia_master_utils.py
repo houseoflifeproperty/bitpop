@@ -8,6 +8,7 @@
 
 from buildbot.scheduler import Scheduler
 from buildbot.scheduler import Triggerable
+from buildbot.schedulers import timed
 from common import chromium_utils
 from common.skia import builder_name_schema
 from master import master_utils
@@ -16,6 +17,8 @@ from master.builders_pools import BuildersPools
 from master.factory import annotator_factory
 from master.gitiles_poller import GitilesPoller
 from master.skia import status_json
+from master.skia import skia_notifier
+from master.status_push import TryServerHttpStatusPush
 from master.try_job_rietveld import TryJobRietveld
 
 import collections
@@ -25,10 +28,17 @@ import config
 DEFAULT_AUTO_REBOOT = False
 DEFAULT_DO_TRYBOT = True
 DEFAULT_RECIPE = 'skia/skia'
-POLLING_SCHEDULER_NAME = 'skia'
+PERCOMMIT_SCHEDULER_NAME = 'skia_percommit'
+PERIODIC_15MINS_SCHEDULER_NAME = 'skia_periodic_15mins'
 POLLING_BRANCH = 'master'
 TRY_SCHEDULER_NAME = 'try_job_rietveld_skia'
 TRY_SCHEDULER_PROJECT = 'skia'
+
+SCHEDULERS = [
+  PERCOMMIT_SCHEDULER_NAME,
+  TRY_SCHEDULER_NAME,
+  PERIODIC_15MINS_SCHEDULER_NAME,
+]
 
 
 def SetupBuildersAndSchedulers(c, builders, slaves, ActiveMaster):
@@ -36,9 +46,8 @@ def SetupBuildersAndSchedulers(c, builders, slaves, ActiveMaster):
   # List of dicts for every builder.
   builder_dicts = []
 
-  # Builder names by scheduler type.
-  polling_builders = []
-  trybots = []
+  # Builder names by scheduler.
+  builders_by_scheduler = {s: [] for s in SCHEDULERS}
   # Maps a triggering builder to its triggered builders.
   triggered_builders = collections.defaultdict(list)
 
@@ -70,13 +79,15 @@ def SetupBuildersAndSchedulers(c, builders, slaves, ActiveMaster):
 
     parent_builder = builder.get('triggered_by')
     if parent_builder is not None:
+      assert builder.get('scheduler') is None
       if is_trybot:
         parent_builder = builder_name_schema.TrybotName(parent_builder)
       triggered_builders[parent_builder].append(builder_name)
     elif is_trybot:
-      trybots.append(builder_name)
+      builders_by_scheduler[TRY_SCHEDULER_NAME].append(builder_name)
     else:
-      polling_builders.append(builder_name)
+      scheduler = builder.get('scheduler', PERCOMMIT_SCHEDULER_NAME)
+      builders_by_scheduler[scheduler].append(builder_name)
 
   # Create builders and trybots.
   for builder in builders:
@@ -85,7 +96,9 @@ def SetupBuildersAndSchedulers(c, builders, slaves, ActiveMaster):
       process_builder(builder, is_trybot=True)
 
   # Verify that all parent builders exist.
-  all_nontriggered_builders = set(polling_builders).union(set(trybots))
+  all_nontriggered_builders = set(
+      builders_by_scheduler[PERCOMMIT_SCHEDULER_NAME]
+  ).union(set(builders_by_scheduler[TRY_SCHEDULER_NAME]))
   trigger_parents = set(triggered_builders.keys())
   nonexistent_parents = trigger_parents - all_nontriggered_builders
   if nonexistent_parents:
@@ -97,18 +110,31 @@ def SetupBuildersAndSchedulers(c, builders, slaves, ActiveMaster):
     """Given a parent builder name, return a triggerable scheduler name."""
     return 'triggers_%s' % parent_builder
 
-  s = Scheduler(name=POLLING_SCHEDULER_NAME,
+  c['schedulers'] = []
+
+  s = Scheduler(name=PERCOMMIT_SCHEDULER_NAME,
                 branch=POLLING_BRANCH,
                 treeStableTimer=60,
-                builderNames=polling_builders)
-  c['schedulers'] = [s]
+                builderNames=builders_by_scheduler[PERCOMMIT_SCHEDULER_NAME])
+  c['schedulers'].append(s)
+
+  s = timed.Nightly(
+      name=PERIODIC_15MINS_SCHEDULER_NAME,
+      branch=POLLING_BRANCH,
+      builderNames=builders_by_scheduler[PERIODIC_15MINS_SCHEDULER_NAME],
+      minute=[i*15 for i in xrange(60/15)],
+      hour='*',
+      dayOfMonth='*',
+      month='*',
+      dayOfWeek='*')
+  c['schedulers'].append(s)
 
   for parent, builders_to_trigger in triggered_builders.iteritems():
     c['schedulers'].append(Triggerable(name=trigger_name(parent),
                                        builderNames=builders_to_trigger))
 
   pools = BuildersPools(TRY_SCHEDULER_NAME)
-  pools[TRY_SCHEDULER_NAME].extend(trybots)
+  pools[TRY_SCHEDULER_NAME].extend(builders_by_scheduler[TRY_SCHEDULER_NAME])
   c['schedulers'].append(TryJobRietveld(
         name=TRY_SCHEDULER_NAME,
         code_review_sites={TRY_SCHEDULER_PROJECT:
@@ -176,8 +202,9 @@ def SetupMaster(ActiveMaster):
 
   # Adds common status and tools to this master.
   master_utils.AutoSetupMaster(c, ActiveMaster,
-      public_html='../master.chromium/public_html',
-      templates=['../master.chromium/templates'],
+      public_html='../../../build/masters/master.client.skia/public_html',
+      templates=['../../../build/masters/master.client.skia/templates',
+                 '../../../build/masters/master.chromium/templates'],
       tagComparator=poller.comparator,
       enable_http_status_push=ActiveMaster.is_production_host,
       order_console_by_time=True,
@@ -186,6 +213,26 @@ def SetupMaster(ActiveMaster):
 
   with status_json.JsonStatusHelper() as json_helper:
     json_helper.putChild('trybots', status_json.TryBuildersJsonResource)
+
+  if ActiveMaster.is_production_host:
+    # Build result emails.
+    c['status'].append(skia_notifier.SkiaMailNotifier(
+        fromaddr=ActiveMaster.from_address,
+        mode='change',
+        relayhost=config.Master.smtp,
+        lookup=master_utils.UsersAreEmails()))
+
+    # Try job result emails.
+    c['status'].append(skia_notifier.SkiaTryMailNotifier(
+        fromaddr=ActiveMaster.from_address,
+        subject="try %(result)s for %(reason)s @ r%(revision)s",
+        mode='all',
+        relayhost=config.Master.smtp,
+        lookup=master_utils.UsersAreEmails()))
+
+    # Rietveld status push.
+    c['status'].append(
+        TryServerHttpStatusPush(serverUrl=ActiveMaster.code_review_site))
 
   return c
 

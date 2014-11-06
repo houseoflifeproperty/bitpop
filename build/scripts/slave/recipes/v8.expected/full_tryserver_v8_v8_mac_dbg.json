@@ -1,0 +1,200 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/bot_update.py",
+      "--master",
+      "tryserver.v8",
+      "--builder",
+      "v8_mac_dbg",
+      "--slave",
+      "TestSlavename",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_deps': {'v8/tools/clang/scripts': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src/tools/clang/scripts'}, 'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]",
+      "--revision_mapping_file",
+      "{\"v8\": \"got_revision\"}",
+      "--patch_url",
+      "svn://svn-mirror.golo.chromium.org/patch",
+      "--output_json",
+      "/path/to/tmp/json",
+      "--revision",
+      "v8@12345",
+      "--no_shallow"
+    ],
+    "name": "bot_update",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"did_run\": false, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_failure\": false@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "config",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_deps': {'v8/tools/clang/scripts': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src/tools/clang/scripts'}, 'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
+    ],
+    "name": "gclient setup"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/gclient_safe_revert.py",
+      ".",
+      "[DEPOT_TOOLS]/gclient"
+    ],
+    "name": "gclient revert"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "sync",
+      "--nohooks",
+      "--force",
+      "--verbose",
+      "--delete_unversioned_trees",
+      "--revision",
+      "v8@12345",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "gclient sync",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"v8/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 50110@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@50110@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "svn",
+      "export",
+      "--force",
+      "svn://svn-mirror.golo.chromium.org/patch",
+      "/path/to/tmp/diff"
+    ],
+    "name": "download patch",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 1)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 2)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@@@@",
+      "@@@STEP_LOG_END@patch.diff@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "patch",
+      "--dir",
+      "[SLAVE_BUILD]/v8",
+      "--force",
+      "--forward",
+      "--remove-empty-files",
+      "--strip",
+      "0"
+    ],
+    "name": "apply patch",
+    "stdin": "fake patch.diff content (line 1)\nfake patch.diff content (line 2)\n"
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/v8/tools/clang/scripts/update.sh"
+    ],
+    "env": {
+      "LLVM_URL": "svn://svn-mirror.golo.chromium.org/llvm-project"
+    },
+    "name": "update clang"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "runhooks"
+    ],
+    "env": {
+      "CC": "[SLAVE_BUILD]/v8/third_party/llvm-build/Release+Asserts/bin/clang",
+      "CXX": "[SLAVE_BUILD]/v8/third_party/llvm-build/Release+Asserts/bin/clang++",
+      "CXX_host": "[SLAVE_BUILD]/v8/third_party/llvm-build/Release+Asserts/bin/clang++",
+      "GYP_DEFINES": "clang=1 dcheck_always_on=1 fastbuild=1 target_arch=ia32 v8_optimized_debug=1 v8_target_arch=ia32",
+      "LINK": "[SLAVE_BUILD]/v8/third_party/llvm-build/Release+Asserts/bin/clang++"
+    },
+    "name": "gclient runhooks"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/cleanup_temp.py"
+    ],
+    "name": "cleanup_temp"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/compile.py",
+      "--target",
+      "Debug",
+      "--src-dir",
+      "[SLAVE_BUILD]/v8",
+      "--build-tool",
+      "xcode",
+      "--compiler",
+      "clang",
+      "--"
+    ],
+    "name": "compile (with patch)"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/v8/v8testing.py",
+      "--target",
+      "Debug",
+      "--arch",
+      "ia32",
+      "--testname",
+      "unittests",
+      "--no-variants",
+      "--flaky-tests=skip",
+      "--json-test-results",
+      "/path/to/tmp/json"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8",
+    "name": "Unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/v8/v8testing.py",
+      "--target",
+      "Debug",
+      "--arch",
+      "ia32",
+      "--testname",
+      "default",
+      "--flaky-tests=skip",
+      "--json-test-results",
+      "/path/to/tmp/json"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8",
+    "name": "Check"
+  }
+]

@@ -72,8 +72,6 @@ inline SVGSVGElement::SVGSVGElement(Document& doc)
     , m_timeContainer(SMILTimeContainer::create(*this))
     , m_translation(SVGPoint::create())
 {
-    ScriptWrappable::init(this);
-
     m_width->setDefaultValueAsString("100%");
     m_height->setDefaultValueAsString("100%");
 
@@ -630,12 +628,6 @@ FloatRect SVGSVGElement::currentViewBoxRect() const
 
 FloatSize SVGSVGElement::currentViewportSize() const
 {
-    if (hasIntrinsicWidth() && hasIntrinsicHeight()) {
-        Length intrinsicWidth = this->intrinsicWidth();
-        Length intrinsicHeight = this->intrinsicHeight();
-        return FloatSize(floatValueForLength(intrinsicWidth, 0), floatValueForLength(intrinsicHeight, 0));
-    }
-
     if (!renderer())
         return FloatSize();
 
@@ -787,4 +779,4 @@ void SVGSVGElement::trace(Visitor* visitor)
     SVGGraphicsElement::trace(visitor);
 }
 
-}
+} // namespace blink

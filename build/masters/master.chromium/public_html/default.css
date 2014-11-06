@@ -1,8 +1,7 @@
-/*
- * Copyright (c) 2012 The Chromium Authors. All rights reserved.
+/* Copyright (c) 2013 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
- * */
+ */
 
 body {
   margin-bottom:50px;
@@ -65,6 +64,8 @@ table td {
 .LastBuild, .Activity, .Builder, .BuildStep {
   width: 155px;
   max-width: 155px;
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 
 /* Chromium Specific styles */
@@ -481,6 +482,11 @@ div.column {
     float: left;
 }
 
+/* block above the columns */
+.BuildHeader {
+    display: block;
+}
+
 /* grid styles */
 
 table.Grid {
@@ -566,27 +572,39 @@ span.stderr {
 span.header {
   color: blue;
 }
+
 span.ansi30 {
   color: black;
 }
+
 span.ansi31 {
   color: red;
 }
+
 span.ansi32 {
   color: green;
 }
+
 span.ansi33 {
   color: orange;
 }
+
 span.ansi34 {
-  color: yellow;
+  color: blue;
 }
+
 span.ansi35 {
   color: purple;
 }
+
 span.ansi36 {
-  color: blue;
+  color: cyan;
 }
+
 span.ansi37 {
   color: white;
+}
+
+span.ansi90 {
+  color: darkgray;
 }

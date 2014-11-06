@@ -18,7 +18,9 @@ def GenSteps(api):
   soln.url = 'svn://svn.chromium.org/chrome/trunk/src'
   api.gclient.c = src_cfg
   force = True if api.properties.get('force') else False
-  api.bot_update.ensure_checkout(force=force)
+  with_branch_heads = api.properties.get('with_branch_heads', False)
+  api.bot_update.ensure_checkout(force=force,
+                                 with_branch_heads=with_branch_heads)
 
 
 def GenTests(api):
@@ -26,6 +28,12 @@ def GenTests(api):
       mastername='chromium.linux',
       buildername='Linux Builder',
       slavename='totallyaslave-m1',
+  )
+  yield api.test('basic_with_branch_heads') + api.properties(
+      mastername='chromium.linux',
+      buildername='Linux Builder',
+      slavename='totallyaslave-m1',
+      with_branch_heads=True,
   )
   yield api.test('tryjob') + api.properties(
       mastername='tryserver.chromium.linux',
@@ -51,7 +59,7 @@ def GenTests(api):
       patchset=654321,
       patch_url='http://src.chromium.org/foo/bar',
       fail_patch=True,
-  ) + api.step_data('bot_update', retcode=1)
+  ) + api.step_data('bot_update', retcode=88)
   yield api.test('forced') + api.properties(
       mastername='experimental',
       buildername='Experimental Builder',

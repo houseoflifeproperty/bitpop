@@ -78,6 +78,7 @@
 
 __version__ = '0.7'
 
+import ast
 import copy
 import json
 import logging
@@ -102,6 +103,57 @@ from third_party.repo.progress import Progress
 import subcommand
 import subprocess2
 from third_party import colorama
+
+CHROMIUM_SRC_URL = 'https://chromium.googlesource.com/chromium/src.git'
+
+
+def ast_dict_index(dnode, key):
+  """Search an ast.Dict for the argument key, and return its index."""
+  idx = [i for i in range(len(dnode.keys)) if (
+      type(dnode.keys[i]) is ast.Str and dnode.keys[i].s == key)]
+  if not idx:
+    return -1
+  elif len(idx) > 1:
+    raise gclient_utils.Error('Multiple dict entries with same key in AST')
+  return idx[-1]
+
+def ast2str(node, indent=0):
+  """Return a pretty-printed rendition of an ast.Node."""
+  t = type(node)
+  if t is ast.Module:
+    return '\n'.join([ast2str(x, indent) for x in node.body])
+  elif t is ast.Assign:
+    return (('  ' * indent) +
+            ' = '.join([ast2str(x) for x in node.targets] +
+                       [ast2str(node.value, indent)]) + '\n')
+  elif t is ast.Name:
+    return node.id
+  elif t is ast.List:
+    if not node.elts:
+      return '[]'
+    elif len(node.elts) == 1:
+      return '[' + ast2str(node.elts[0], indent) + ']'
+    return ('[\n' + ('  ' * (indent + 1)) +
+            (',\n' + ('  ' * (indent + 1))).join(
+                [ast2str(x, indent + 1) for x in node.elts]) +
+            '\n' + ('  ' * indent) + ']')
+  elif t is ast.Dict:
+    if not node.keys:
+      return '{}'
+    elif len(node.keys) == 1:
+      return '{%s: %s}' % (ast2str(node.keys[0]),
+                           ast2str(node.values[0], indent + 1))
+    return ('{\n' + ('  ' * (indent + 1)) +
+            (',\n' + ('  ' * (indent + 1))).join(
+                ['%s: %s' % (ast2str(node.keys[i]),
+                             ast2str(node.values[i], indent + 1))
+                 for i in range(len(node.keys))]) +
+            '\n' + ('  ' * indent) + '}')
+  elif t is ast.Str:
+    return "'%s'" % node.s
+  else:
+    raise gclient_utils.Error("Unexpected AST node at line %d, column %d: %s"
+                              % (node.lineno, node.col_offset, t))
 
 
 class GClientKeywords(object):
@@ -290,6 +342,11 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
     # A cache of the files affected by the current operation, necessary for
     # hooks.
     self._file_list = []
+    # List of host names from which dependencies are allowed.
+    # Default is an empty set, meaning unspecified in DEPS file, and hence all
+    # hosts will be allowed. Non-empty set means whitelist of hosts.
+    # allowed_hosts var is scoped to its DEPS file, and so it isn't recursive.
+    self._allowed_hosts = frozenset()
     # If it is not set to True, the dependency wasn't processed for its child
     # dependency, i.e. its DEPS wasn't read.
     self._deps_parsed = False
@@ -635,6 +692,18 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
           rel_deps.add(os.path.normpath(os.path.join(self.name, d)))
         self.recursedeps = rel_deps
 
+    if 'allowed_hosts' in local_scope:
+      try:
+        self._allowed_hosts = frozenset(local_scope.get('allowed_hosts'))
+      except TypeError:  # raised if non-iterable
+        pass
+      if not self._allowed_hosts:
+        logging.warning("allowed_hosts is specified but empty %s",
+                        self._allowed_hosts)
+        raise gclient_utils.Error(
+            'ParseDepsFile(%s): allowed_hosts must be absent '
+            'or a non-empty iterable' % self.name)
+
     # Convert the deps into real Dependency.
     deps_to_add = []
     for name, url in deps.iteritems():
@@ -703,6 +772,21 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
             if options.verbose:
               print('Using parent\'s revision date %s since we are in a '
                     'different repository.' % options.revision)
+
+  def findDepsFromNotAllowedHosts(self):
+    """Returns a list of depenecies from not allowed hosts.
+
+    If allowed_hosts is not set, allows all hosts and returns empty list.
+    """
+    if not self._allowed_hosts:
+      return []
+    bad_deps = []
+    for dep in self._dependencies:
+      if isinstance(dep.url, basestring):
+        parsed_url = urlparse.urlparse(dep.url)
+        if parsed_url.netloc and parsed_url.netloc not in self._allowed_hosts:
+          bad_deps.append(dep)
+    return bad_deps
 
   # Arguments number differs from overridden method
   # pylint: disable=W0221
@@ -1001,6 +1085,11 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
 
   @property
   @gclient_utils.lockedmethod
+  def allowed_hosts(self):
+    return self._allowed_hosts
+
+  @property
+  @gclient_utils.lockedmethod
   def file_list(self):
     return tuple(self._file_list)
 
@@ -1025,7 +1114,8 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
     out = []
     for i in ('name', 'url', 'parsed_url', 'safesync_url', 'custom_deps',
               'custom_vars', 'deps_hooks', 'file_list', 'should_process',
-              'processed', 'hooks_ran', 'deps_parsed', 'requirements'):
+              'processed', 'hooks_ran', 'deps_parsed', 'requirements',
+              'allowed_hosts'):
       # First try the native property if it exists.
       if hasattr(self, '_' + i):
         value = getattr(self, '_' + i, False)
@@ -1166,6 +1256,10 @@ want to set 'managed': False in .gclient.
     if cache_dir:
       cache_dir = os.path.join(self.root_dir, cache_dir)
       cache_dir = os.path.abspath(cache_dir)
+      # If running on a bot, force break any stale git cache locks.
+      if os.path.exists(cache_dir) and os.environ.get('CHROME_HEADLESS'):
+        subprocess2.check_call(['git', 'cache', 'unlock', '--cache-dir',
+                                cache_dir, '--force', '--all'])
     gclient_scm.GitWrapper.cache_dir = cache_dir
     git_cache.Mirror.SetCachePath(cache_dir)
 
@@ -1196,6 +1290,82 @@ want to set 'managed': False in .gclient.
                                          self._options.config_filename),
                             self.config_content)
 
+  def MigrateConfigToGit(self, path, options):
+    svn_url_re = re.compile('^(https?://src\.chromium\.org/svn|'
+                            'svn://svn\.chromium\.org/chrome)/'
+                            '(trunk|branches/[^/]+)/src')
+    old_git_re = re.compile('^(https?://git\.chromium\.org|'
+                            'ssh://([a-zA-Z_][a-zA-Z0-9_-]*@)?'
+                            'gerrit\.chromium\.org(:2941[89])?)/'
+                            'chromium/src\.git')
+    # Scan existing .gclient file for obsolete settings.  It would be simpler
+    # to traverse self.dependencies, but working with the AST allows the code to
+    # dump an updated .gclient file that preserves the ordering of the original.
+    a = ast.parse(self.config_content, options.config_filename, 'exec')
+    modified = False
+    solutions = [elem for elem in a.body if 'solutions' in
+                 [target.id for target in elem.targets]]
+    if not solutions:
+      return self
+    solutions = solutions[-1]
+    for solution in solutions.value.elts:
+      # Check for obsolete URL's
+      url_idx = ast_dict_index(solution, 'url')
+      if url_idx == -1:
+        continue
+      url_val = solution.values[url_idx]
+      if type(url_val) is not ast.Str:
+        continue
+      if (svn_url_re.match(url_val.s.strip())):
+        raise gclient_utils.Error(
+"""
+The chromium code repository has migrated completely to git.
+Your SVN-based checkout is now obsolete; you need to create a brand-new
+git checkout by following these instructions:
+
+http://www.chromium.org/developers/how-tos/get-the-code
+""")
+      if (old_git_re.match(url_val.s.strip())):
+        url_val.s = CHROMIUM_SRC_URL
+        modified = True
+
+      # Ensure deps_file is set to .DEPS.git.  We enforce this here to smooth
+      # over switching between pre-git-migration and post-git-migration
+      # revisions.
+      #   - For pre-migration revisions, .DEPS.git must be explicitly set.
+      #   - For post-migration revisions, .DEPS.git is not present, so gclient
+      #     will correctly fall back to DEPS.
+      if url_val.s == CHROMIUM_SRC_URL:
+        deps_file_idx = ast_dict_index(solution, 'deps_file')
+        if deps_file_idx != -1:
+          continue
+        solution.keys.append(ast.Str('deps_file'))
+        solution.values.append(ast.Str('.DEPS.git'))
+        modified = True
+
+    if not modified:
+      return self
+
+    print(
+"""
+WARNING: gclient detected an obsolete setting in your %s file.  The file has
+been automagically updated.  The previous version is available at %s.old.
+""" % (options.config_filename, options.config_filename))
+
+    # Replace existing .gclient with the updated version.
+    # Return a new GClient instance based on the new content.
+    new_content = ast2str(a)
+    dot_gclient_fn = os.path.join(path, options.config_filename)
+    try:
+      os.rename(dot_gclient_fn, dot_gclient_fn + '.old')
+    except OSError:
+      pass
+    with open(dot_gclient_fn, 'w') as fh:
+      fh.write(new_content)
+    client = GClient(path, options)
+    client.SetConfig(new_content)
+    return client
+
   @staticmethod
   def LoadCurrentConfig(options):
     """Searches for and loads a .gclient file relative to the current working
@@ -1210,6 +1380,7 @@ want to set 'managed': False in .gclient.
       client = GClient(path, options)
       client.SetConfig(gclient_utils.FileRead(
           os.path.join(path, options.config_filename)))
+      client = client.MigrateConfigToGit(path, options)
 
     if (options.revisions and
         len(client.dependencies) > 1 and
@@ -1324,12 +1495,11 @@ want to set 'managed': False in .gclient.
     if not self.dependencies:
       raise gclient_utils.Error('No solution specified')
 
-    self._CheckConfig()
-
     revision_overrides = {}
     # It's unnecessary to check for revision overrides for 'recurse'.
     # Save a few seconds by not calling _EnforceRevisions() in that case.
     if command not in ('diff', 'recurse', 'runhooks', 'status'):
+      self._CheckConfig()
       revision_overrides = self._EnforceRevisions()
     pm = None
     # Disable progress for non-tty stdout.
@@ -1647,8 +1817,6 @@ def CMDconfig(parser, args):
                          'to have the main solution untouched by gclient '
                          '(gclient will check out unmanaged dependencies but '
                          'will never sync them)')
-  parser.add_option('--git-deps', action='store_true',
-                    help='sets the deps file to ".DEPS.git" instead of "DEPS"')
   parser.add_option('--cache-dir',
                     help='(git only) Cache all git repos into this dir and do '
                          'shared clones from the cache, instead of cloning '
@@ -1674,8 +1842,6 @@ def CMDconfig(parser, args):
       # specify an alternate relpath for the given URL.
       name = options.name
     deps_file = options.deps_file
-    if options.git_deps:
-      deps_file = '.DEPS.git'
     safesync_url = ''
     if len(args) > 1:
       safesync_url = args[1]
@@ -1778,6 +1944,8 @@ def CMDsync(parser, args):
                     help='Clone git "branch_heads" refspecs in addition to '
                          'the default refspecs. This adds about 1/2GB to a '
                          'full checkout. (git only)')
+  parser.add_option('--with_tags', action='store_true',
+                    help='Clone git tags in addition to the default refspecs.')
   parser.add_option('-t', '--transitive', action='store_true',
                     help='When a revision is specified (in the DEPS file or '
                           'with the command-line flag), transitively update '
@@ -1955,6 +2123,27 @@ def CMDhookinfo(parser, args):
   print '; '.join(' '.join(hook) for hook in client.GetHooks(options))
   return 0
 
+
+def CMDverify(parser, args):
+  """Verifies the DEPS file deps are only from allowed_hosts."""
+  (options, args) = parser.parse_args(args)
+  client = GClient.LoadCurrentConfig(options)
+  if not client:
+    raise gclient_utils.Error('client not configured; see \'gclient config\'')
+  client.RunOnDeps(None, [])
+  # Look at each first-level dependency of this gclient only.
+  for dep in client.dependencies:
+    bad_deps = dep.findDepsFromNotAllowedHosts()
+    if not bad_deps:
+      continue
+    print "There are deps from not allowed hosts in file %s" % dep.deps_file
+    for bad_dep in bad_deps:
+      print "\t%s at %s" % (bad_dep.name, bad_dep.url)
+    print "allowed_hosts:", ', '.join(dep.allowed_hosts)
+    sys.stdout.flush()
+    raise gclient_utils.Error(
+        'dependencies from disallowed hosts; check your DEPS file.')
+  return 0
 
 class OptionParser(optparse.OptionParser):
   gclientfile_default = os.environ.get('GCLIENT_FILE', '.gclient')

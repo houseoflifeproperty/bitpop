@@ -65,6 +65,8 @@ def get_args():
 
   parser.add_option('--csv', action='store_true', default=False,
                     help='Print output in comma-separated values format.')
+  parser.add_option('--full-host-names', action='store_true', default=False,
+                    help='Refrain from truncating the master host names')
 
   opts, _ = parser.parse_args()
 
@@ -242,6 +244,13 @@ def find_port(masters, output, opts):
   output(lines, opts.verbose)
 
 
+def format_host_name(host):
+  for suffix in ('.chromium.org', '.corp.google.com'):
+    if host.endswith(suffix):
+      return host[:-len(suffix)]
+  return host
+
+
 def extract_masters(masters):
   """Extracts the data we want from a collection of possibly-masters."""
   good_masters = []
@@ -250,10 +259,6 @@ def extract_masters(masters):
       # Not actually a master
       continue
     host = getattr(master, 'master_host', '')
-    for suffix in ('.chromium.org', '.corp.google.com'):
-      if host.endswith(suffix):
-        host = host[:-len(suffix)]
-        break
     good_masters.append({
         'name': master_name,
         'host': host,
@@ -296,6 +301,10 @@ def real_main(include_internal=False):
   sorted_masters = config_masters + msc_masters
   for key in reversed(sort_keys):
     sorted_masters.sort(key = lambda m: m[key])
+
+  if not opts.full_host_names:
+    for master in sorted_masters:
+      master['host'] = format_host_name(master['host'])
 
   if opts.csv:
     printer = csv_print

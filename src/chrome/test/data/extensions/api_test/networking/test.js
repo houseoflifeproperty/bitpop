@@ -204,6 +204,16 @@ var availableTests = [
                     }
                   },
                   {
+                    "Connectable": true,
+                    "ConnectionState": "Connected",
+                    "GUID": "stub_wimax_guid",
+                    "Name": "wimax",
+                    "Type": "WiMAX",
+                    "WiMAX": {
+                      "SignalStrength": 40
+                    }
+                  },
+                  {
                     "ConnectionState": "Connected",
                     "GUID": "stub_vpn1_guid",
                     "Name": "vpn1",
@@ -255,6 +265,7 @@ var availableTests = [
     // Connected or Connecting networks should be listed first, sorted by type.
     var expected = ["stub_ethernet_guid",
                     "stub_wifi1_guid",
+                    "stub_wimax_guid",
                     "stub_vpn1_guid",
                     "stub_wifi2_guid"];
     var done = chrome.test.callbackAdded();
@@ -294,15 +305,16 @@ var availableTests = [
       "stub_cellular1_guid",
       callbackPass(function(result) {
         assertEq({ "Cellular": {
-                     "ActivationState": "not-activated",
+                     "ActivationState": "NotActivated",
                      "AllowRoaming": false,
+                     "AutoConnect": true,
                      "Carrier": "Cellular1_Carrier",
                      "HomeProvider": {
                        "country": "us",
                        "name": "Cellular1_Provider"
                      },
                      "NetworkTechnology": "GSM",
-                     "RoamingState": "home"
+                     "RoamingState": "Home"
                    },
                    "ConnectionState": "NotConnected",
                    "GUID": "stub_cellular1_guid",
@@ -316,20 +328,15 @@ var availableTests = [
       "stub_wifi2",
       callbackPass(function(result) {
         assertEq({
-                   "Connectable": {
-                     "Active": true,
-                     "Effective": "Unmanaged"
-                   },
-                   "ConnectionState": {
-                     "Active": "NotConnected",
-                     "Effective": "Unmanaged"
-                   },
+                   "Connectable": true,
+                   "ConnectionState": "NotConnected",
                    "GUID": "stub_wifi2",
                    "Name": {
                      "Active": "wifi2_PSK",
                      "Effective": "UserPolicy",
                      "UserPolicy": "My WiFi Network"
                    },
+                   "Source": "UserPolicy",
                    "Type": {
                      "Active": "WiFi",
                      "Effective": "UserPolicy",
@@ -340,14 +347,8 @@ var availableTests = [
                        "Active": false,
                        "UserEditable": true
                      },
-                     "Frequency" : {
-                       "Active": 5000,
-                       "Effective": "Unmanaged"
-                     },
-                     "FrequencyList" : {
-                       "Active": [2400, 5000],
-                       "Effective": "Unmanaged"
-                     },
+                     "Frequency" : 5000,
+                     "FrequencyList" : [2400, 5000],
                      "Passphrase": {
                        "Effective": "UserSetting",
                        "UserEditable": true,
@@ -363,10 +364,7 @@ var availableTests = [
                        "Effective": "UserPolicy",
                        "UserPolicy": "WPA-PSK"
                      },
-                     "SignalStrength": {
-                       "Active": 80,
-                       "Effective": "Unmanaged"
-                     }
+                     "SignalStrength": 80,
                    }
                  }, result);
       }));
@@ -438,6 +436,7 @@ var availableTests = [
     // networks should be listed first, sorted by type.
     var expected = ["stub_ethernet_guid",
                     "stub_wifi2_guid",
+                    "stub_wimax_guid",
                     "stub_vpn1_guid",
                     "stub_wifi1_guid"];
     var done = chrome.test.callbackAdded();

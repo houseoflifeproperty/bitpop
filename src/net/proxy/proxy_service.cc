@@ -1211,11 +1211,7 @@ int ProxyService::ReconsiderProxyAfterError(const GURL& url,
 
   // We don't have new proxy settings to try, try to fallback to the next proxy
   // in the list.
-  bool did_fallback = result->Fallback(net_log);
-
-  if (network_delegate) {
-      network_delegate->NotifyProxyFallback(bad_proxy, net_error, did_fallback);
-  }
+  bool did_fallback = result->Fallback(net_error, net_log);
 
   // Return synchronous failure if there is nothing left to fall-back to.
   // TODO(eroman): This is a yucky API, clean it up.
@@ -1227,9 +1223,11 @@ bool ProxyService::MarkProxiesAsBadUntil(
     base::TimeDelta retry_delay,
     const ProxyServer& another_bad_proxy,
     const BoundNetLog& net_log) {
-  result.proxy_list_.UpdateRetryInfoOnFallback(&proxy_retry_info_, retry_delay,
+  result.proxy_list_.UpdateRetryInfoOnFallback(&proxy_retry_info_,
+                                               retry_delay,
                                                false,
                                                another_bad_proxy,
+                                               OK,
                                                net_log);
   if (another_bad_proxy.is_valid())
     return result.proxy_list_.size() > 2;
@@ -1237,7 +1235,8 @@ bool ProxyService::MarkProxiesAsBadUntil(
     return result.proxy_list_.size() > 1;
 }
 
-void ProxyService::ReportSuccess(const ProxyInfo& result) {
+void ProxyService::ReportSuccess(const ProxyInfo& result,
+                                 NetworkDelegate* network_delegate) {
   DCHECK(CalledOnValidThread());
 
   const ProxyRetryInfoMap& new_retry_info = result.proxy_retry_info();
@@ -1247,8 +1246,16 @@ void ProxyService::ReportSuccess(const ProxyInfo& result) {
   for (ProxyRetryInfoMap::const_iterator iter = new_retry_info.begin();
        iter != new_retry_info.end(); ++iter) {
     ProxyRetryInfoMap::iterator existing = proxy_retry_info_.find(iter->first);
-    if (existing == proxy_retry_info_.end())
+    if (existing == proxy_retry_info_.end()) {
       proxy_retry_info_[iter->first] = iter->second;
+      if (network_delegate) {
+        const ProxyServer& bad_proxy =
+            ProxyServer::FromURI(iter->first, ProxyServer::SCHEME_HTTP);
+        const ProxyRetryInfo& proxy_retry_info = iter->second;
+        network_delegate->NotifyProxyFallback(bad_proxy,
+                                              proxy_retry_info.net_error);
+      }
+    }
     else if (existing->second.bad_until < iter->second.bad_until)
       existing->second.bad_until = iter->second.bad_until;
   }
@@ -1392,14 +1399,14 @@ void ProxyService::ForceReloadProxyConfig() {
 
 // static
 ProxyConfigService* ProxyService::CreateSystemProxyConfigService(
-    base::SingleThreadTaskRunner* io_thread_task_runner,
-    base::MessageLoop* file_loop) {
+    const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& file_task_runner) {
 #if defined(OS_WIN)
   return new ProxyConfigServiceWin();
 #elif defined(OS_IOS)
   return new ProxyConfigServiceIOS();
 #elif defined(OS_MACOSX)
-  return new ProxyConfigServiceMac(io_thread_task_runner);
+  return new ProxyConfigServiceMac(io_task_runner);
 #elif defined(OS_CHROMEOS)
   LOG(ERROR) << "ProxyConfigService for ChromeOS should be created in "
              << "profile_io_data.cc::CreateProxyConfigService and this should "
@@ -1415,23 +1422,17 @@ ProxyConfigService* ProxyService::CreateSystemProxyConfigService(
   scoped_refptr<base::SingleThreadTaskRunner> glib_thread_task_runner =
       base::ThreadTaskRunnerHandle::Get();
 
-  // The file loop should be a MessageLoopForIO on Linux.
-  DCHECK_EQ(base::MessageLoop::TYPE_IO, file_loop->type());
-
-  // Synchronously fetch the current proxy config (since we are
-  // running on glib_default_loop). Additionally register for
-  // notifications (delivered in either |glib_default_loop| or
-  // |file_loop|) to keep us updated when the proxy config changes.
+  // Synchronously fetch the current proxy config (since we are running on
+  // glib_default_loop). Additionally register for notifications (delivered in
+  // either |glib_default_loop| or |file_task_runner|) to keep us updated when
+  // the proxy config changes.
   linux_config_service->SetupAndFetchInitialConfig(
-      glib_thread_task_runner.get(),
-      io_thread_task_runner,
-      static_cast<base::MessageLoopForIO*>(file_loop));
+      glib_thread_task_runner, io_task_runner, file_task_runner);
 
   return linux_config_service;
 #elif defined(OS_ANDROID)
   return new ProxyConfigServiceAndroid(
-      io_thread_task_runner,
-      base::MessageLoop::current()->message_loop_proxy());
+      io_task_runner, base::MessageLoop::current()->message_loop_proxy());
 #else
   LOG(WARNING) << "Failed to choose a system proxy settings fetcher "
                   "for this platform.";

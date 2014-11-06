@@ -23,7 +23,6 @@ namespace {
 const char kProbeURLWithOKResponse[] = "http://ok.org/";
 const char kProbeURLWithBadResponse[] = "http://bad.org/";
 const char kProbeURLWithNoResponse[] = "http://no.org/";
-const char kWarmupURLWithNoContentResponse[] = "http://warm.org/";
 
 }  // namespace
 
@@ -75,7 +74,8 @@ TEST_F(DataReductionProxySettingsTest, TestSetProxyConfigs) {
       DataReductionProxyParams::kFallbackAllowed |
       DataReductionProxyParams::kPromoAllowed,
       TestDataReductionProxyParams::HAS_EVERYTHING &
-      ~TestDataReductionProxyParams::HAS_DEV_ORIGIN);
+      ~TestDataReductionProxyParams::HAS_DEV_ORIGIN &
+      ~TestDataReductionProxyParams::HAS_DEV_FALLBACK_ORIGIN);
   CommandLine::ForCurrentProcess()->AppendSwitchASCII(
       switches::kDataReductionProxyAlt, drp_params.DefaultAltOrigin());
   CommandLine::ForCurrentProcess()->AppendSwitchASCII(
@@ -239,7 +239,6 @@ TEST_F(DataReductionProxySettingsTest, TestMaybeActivateDataReductionProxy) {
   // Request succeeded but with bad response, expect proxy to be restricted.
   CheckProbe(true,
              kProbeURLWithBadResponse,
-             kWarmupURLWithNoContentResponse,
              "Bad",
              true,
              true,
@@ -248,7 +247,6 @@ TEST_F(DataReductionProxySettingsTest, TestMaybeActivateDataReductionProxy) {
   // Request succeeded with valid response, expect proxy to be unrestricted.
   CheckProbe(true,
              kProbeURLWithOKResponse,
-             kWarmupURLWithNoContentResponse,
              "OK",
              true,
              true,
@@ -257,7 +255,6 @@ TEST_F(DataReductionProxySettingsTest, TestMaybeActivateDataReductionProxy) {
   // Request failed, expect proxy to be enabled but restricted.
   CheckProbe(true,
              kProbeURLWithNoResponse,
-             kWarmupURLWithNoContentResponse,
              "",
              false,
              true,
@@ -267,7 +264,6 @@ TEST_F(DataReductionProxySettingsTest, TestMaybeActivateDataReductionProxy) {
   // state.
   CheckProbe(false,
              kProbeURLWithOKResponse,
-             kWarmupURLWithNoContentResponse,
              "OK",
              true,
              false,
@@ -291,28 +287,24 @@ TEST_F(DataReductionProxySettingsTest, TestOnIPAddressChanged) {
   // IP address change triggers a probe that succeeds. Proxy remains
   // unrestricted.
   CheckProbeOnIPChange(kProbeURLWithOKResponse,
-                       kWarmupURLWithNoContentResponse,
                        "OK",
                        true,
                        false,
                        false);
   // IP address change triggers a probe that fails. Proxy is restricted.
   CheckProbeOnIPChange(kProbeURLWithBadResponse,
-                       kWarmupURLWithNoContentResponse,
                        "Bad",
                        true,
                        true,
                        false);
   // IP address change triggers a probe that fails. Proxy remains restricted.
   CheckProbeOnIPChange(kProbeURLWithBadResponse,
-                       kWarmupURLWithNoContentResponse,
                        "Bad",
                        true,
                        true,
                        false);
   // IP address change triggers a probe that succeeds. Proxy is unrestricted.
   CheckProbeOnIPChange(kProbeURLWithOKResponse,
-                       kWarmupURLWithNoContentResponse,
                        "OK",
                        true,
                        false,
@@ -320,30 +312,31 @@ TEST_F(DataReductionProxySettingsTest, TestOnIPAddressChanged) {
   // Simulate a VPN connection. The proxy should be disabled.
   MockSettings* settings = static_cast<MockSettings*>(settings_.get());
   settings->network_interfaces_.reset(new net::NetworkInterfaceList());
-  settings->network_interfaces_->push_back(
-      net::NetworkInterface("tun0",  /* network interface name */
-                            "tun0",  /* network interface friendly name */
-                            0,  /* interface index */
-                            net::NetworkChangeNotifier::CONNECTION_WIFI,
-                            net::IPAddressNumber(), /* IP address */
-                            0  /* network prefix */
-                            ));
+  settings->network_interfaces_->push_back(net::NetworkInterface(
+      "tun0", /* network interface name */
+      "tun0", /* network interface friendly name */
+      0,      /* interface index */
+      net::NetworkChangeNotifier::CONNECTION_WIFI,
+      net::IPAddressNumber(),        /* IP address */
+      0,                             /* network prefix */
+      net::IP_ADDRESS_ATTRIBUTE_NONE /* ip address attribute */
+      ));
   settings_->OnIPAddressChanged();
   base::MessageLoop::current()->RunUntilIdle();
   CheckProxyConfigs(false, false, false);
 
   // Check that the proxy is re-enabled if a non-VPN connection is later used.
   settings->network_interfaces_.reset(new net::NetworkInterfaceList());
-  settings->network_interfaces_->push_back(
-      net::NetworkInterface("eth0",  /* network interface name */
-                            "eth0",  /* network interface friendly name */
-                            0,  /* interface index */
-                            net::NetworkChangeNotifier::CONNECTION_WIFI,
-                            net::IPAddressNumber(),
-                            0  /* network prefix */
-                            ));
+  settings->network_interfaces_->push_back(net::NetworkInterface(
+      "eth0", /* network interface name */
+      "eth0", /* network interface friendly name */
+      0,      /* interface index */
+      net::NetworkChangeNotifier::CONNECTION_WIFI,
+      net::IPAddressNumber(),
+      0,                             /* network prefix */
+      net::IP_ADDRESS_ATTRIBUTE_NONE /* ip address attribute */
+      ));
   CheckProbeOnIPChange(kProbeURLWithOKResponse,
-                       kWarmupURLWithNoContentResponse,
                        "OK",
                        true,
                        false,
@@ -421,7 +414,6 @@ TEST_F(DataReductionProxySettingsTest, CheckInitMetricsWhenNotAllowed) {
   scoped_refptr<net::TestURLRequestContextGetter> request_context =
       new net::TestURLRequestContextGetter(base::MessageLoopProxy::current());
   settings_->InitDataReductionProxySettings(
-      &pref_service_,
       &pref_service_,
       request_context.get());
   settings_->SetOnDataReductionEnabledCallback(

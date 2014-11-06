@@ -52,6 +52,7 @@ def BaseConfig(USE_MIRROR=True, GIT_MODE=False, CACHE_DIR=None, **_kwargs):
     # solutions[0].revision. Otherwise, it will be applied to
     # solutions[0].custom_vars['custom_var_name']
     parent_got_revision_mapping = Dict(hidden=True),
+    delete_unversioned_trees = Single(bool, empty_val=True, required=False),
 
     GIT_MODE = Static(bool(GIT_MODE)),
     USE_MIRROR = Static(bool(USE_MIRROR)),
@@ -231,7 +232,7 @@ def v8_bleeding_edge_git(c):
   # TODO(machenbach): If bot_update is activated for all v8-chromium bots
   # and there's no gclient fallback, then the following line can be removed.
   c.solutions[0].custom_vars['v8_branch'] = 'branches/bleeding_edge'
-  c.revisions['src/v8'] = 'bleeding_edge:HEAD'
+  c.revisions['src/v8'] = 'HEAD'
 
 @config_ctx(includes=['blink', 'v8_bleeding_edge_git'])
 def v8_blink_flavor(c):
@@ -350,8 +351,16 @@ def pdfium(c):
   soln.name = 'pdfium'
   soln.url = 'https://pdfium.googlesource.com/pdfium.git'
 
-@config_ctx()
+@config_ctx(config_vars={'GIT_MODE': True})
 def infra(c):
   soln = c.solutions.add()
   soln.name = 'infra'
   soln.url = 'https://chromium.googlesource.com/infra/infra.git'
+  c.got_revision_mapping['infra'] = 'got_revision'
+
+@config_ctx(config_vars={'GIT_MODE': True})
+def infra_internal(c):
+  soln = c.solutions.add()
+  soln.name = 'infra_internal'
+  soln.url = 'https://chrome-internal.googlesource.com/infra/infra_internal.git'
+  c.got_revision_mapping['infra_internal'] = 'got_revision'

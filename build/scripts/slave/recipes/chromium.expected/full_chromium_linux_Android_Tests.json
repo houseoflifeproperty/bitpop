@@ -212,6 +212,8 @@
       "instrumentation",
       "--test-apk",
       "MojoTest",
+      "--test_data",
+      "bindings:mojo/public/interfaces/bindings/tests/data",
       "--flakiness-dashboard-server",
       "test-results.appspot.com",
       "--verbose",

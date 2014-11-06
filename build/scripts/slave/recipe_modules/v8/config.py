@@ -16,16 +16,17 @@ def BaseConfig(**_kwargs):
   assert shard_run <= shard_count
 
   return ConfigGroup(
+    compile_py = ConfigGroup(
+      compile_extra_args = List(basestring),
+    ),
     gyp_env = ConfigGroup(
       CC = Single(basestring, required=False),
       CXX = Single(basestring, required=False),
       CXX_host = Single(basestring, required=False),
       LINK = Single(basestring, required=False),
-      GYP_MSVS_VERSION = Single(basestring, required=False),
     ),
     nacl = ConfigGroup(
       update_nacl_sdk = Single(basestring, required=False),
-      compile_extra_args = List(basestring),
       NACL_SDK_ROOT = Single(basestring, required=False),
     ),
     # Test configuration that is the equal for all tests of a builder. It
@@ -52,6 +53,13 @@ config_ctx = config_item_context(BaseConfig, {}, 'v8')
 @config_ctx()
 def v8(c):
   pass
+
+
+@config_ctx()
+def android_arm(c):
+  # Make is executed in the out dir. Android points to the toplevel Makefile in
+  # the v8 dir.
+  c.compile_py.compile_extra_args.extend(['-C', '..' , 'android_arm.release'])
 
 
 @config_ctx()
@@ -89,11 +97,6 @@ def isolates(c):
 
 
 @config_ctx()
-def msvs2013(c):
-  c.gyp_env.GYP_MSVS_VERSION = '2013'
-  
-
-@config_ctx()
 def nacl(c):
   c.testing.test_args.add('--command_prefix=%s'
                           % path.join('tools', 'nacl-run.py'))
@@ -117,14 +120,14 @@ def nacl_canary(c):
 def nacl_ia32(c):
   # Make is executed in the out dir. NaCl points to the toplevel Makefile in
   # the v8 dir.
-  c.nacl.compile_extra_args.extend(['-C', '..' , 'nacl_ia32.release'])
+  c.compile_py.compile_extra_args.extend(['-C', '..' , 'nacl_ia32.release'])
 
 
 @config_ctx(includes=['nacl'])
 def nacl_x64(c):
   # Make is executed in the out dir. NaCl points to the toplevel Makefile in
   # the v8 dir.
-  c.nacl.compile_extra_args.extend(['-C', '..' , 'nacl_x64.release'])
+  c.compile_py.compile_extra_args.extend(['-C', '..' , 'nacl_x64.release'])
 
 
 @config_ctx()
@@ -170,4 +173,4 @@ def predictable(c):
 @config_ctx()
 def trybot_flavor(c):
   c.testing.add_flaky_step = False
-  c.testing.test_args.add('--quickcheck')
+  c.testing.test_args.add('--flaky-tests=skip')

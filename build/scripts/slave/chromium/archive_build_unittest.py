@@ -54,9 +54,11 @@ class MockOptions(object):
     self.extra_archive_paths = extra_archive_paths
     self.build_name = build_name
     self.build_number = build_number
-    self.default_chromium_revision = default_chromium_revision
-    self.default_webkit_revision = default_webkit_revision
-    self.default_v8_revision = default_v8_revision
+    self.build_properties = {
+        'got_revision': default_chromium_revision,
+        'got_revision_webkit': default_webkit_revision,
+        'got_revision_v8': default_v8_revision,
+    }
     self.factory_properties = {}
 
 

@@ -23,7 +23,6 @@
     ],
     "name": "bot_update",
     "~followup_annotations": [
-      "step returned non-zero exit code: 1",
       "@@@STEP_TEXT@Some step text@@@",
       "@@@STEP_LOG_LINE@json.output@{@@@",
       "@@@STEP_LOG_LINE@json.output@  \"did_run\": true, @@@",
@@ -48,11 +47,12 @@
     "cmd": [
       "python",
       "-u",
-      "import sys\nprint 'Check the bot_update step for details.'\nsys.exit(1)\n"
+      "import sys; sys.exit(1)"
     ],
     "name": "Patch failure",
     "~followup_annotations": [
       "step returned non-zero exit code: 1",
+      "@@@STEP_TEXT@Check the bot_update step for details@@@",
       "@@@STEP_FAILURE@@@"
     ]
   },

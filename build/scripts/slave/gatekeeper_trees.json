@@ -6,7 +6,7 @@
         ],
         "open-tree": true,
         "password-file": ".blink_status_password",
-        "revision-properties": "got_revision,got_webkit_revision",
+        "revision-properties": "got_revision_cp,got_webkit_revision_cp",
         "set-status": true,
         "status-url": "https://blink-status.appspot.com",
         "track-revisions": true
@@ -25,6 +25,7 @@
         ],
         "open-tree": true,
         "password-file": ".status_password",
+        "revision-properties": "got_revision_cp",
         "set-status": true,
         "status-url": "https://chromium-status.appspot.com",
         "track-revisions": true

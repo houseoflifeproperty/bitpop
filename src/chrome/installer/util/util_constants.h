@@ -214,8 +214,6 @@ extern const wchar_t kChromeLauncherExe[];
 extern const wchar_t kChromeMetroDll[];
 extern const wchar_t kChromeNewExe[];
 extern const wchar_t kChromeOldExe[];
-extern const wchar_t kCmdInstallApp[];
-extern const wchar_t kCmdInstallExtension[];
 extern const wchar_t kCmdOnOsUpgrade[];
 extern const wchar_t kCmdQueryEULAAcceptance[];
 extern const wchar_t kCmdQuickEnableApplicationHost[];
@@ -256,6 +254,7 @@ extern const wchar_t kChromeChannelCanary[];
 extern const wchar_t kChromeChannelDev[];
 extern const wchar_t kChromeChannelBeta[];
 extern const wchar_t kChromeChannelStable[];
+extern const wchar_t kChromeChannelStableExplicit[];
 
 extern const size_t kMaxAppModelIdLength;
 

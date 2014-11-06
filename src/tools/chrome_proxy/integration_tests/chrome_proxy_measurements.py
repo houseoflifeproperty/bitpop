@@ -112,6 +112,16 @@ class ChromeProxyBypass(ChromeProxyValidation):
     self._metrics.AddResultsForBypass(tab, results)
 
 
+class ChromeProxyBlockOnce(ChromeProxyValidation):
+  """Correctness measurement for block-once responses."""
+
+  def __init__(self):
+    super(ChromeProxyBlockOnce, self).__init__(restart_after_each_page=True)
+
+  def AddResults(self, tab, results):
+    self._metrics.AddResultsForBlockOnce(tab, results)
+
+
 class ChromeProxySafebrowsing(ChromeProxyValidation):
   """Correctness measurement for safebrowsing."""
 
@@ -183,7 +193,6 @@ class ChromeProxyHTTPFallbackProbeURL(ChromeProxyValidation):
     self._metrics.AddResultsForHTTPFallback(tab, results)
 
 
-# Depends on the fix of http://crbug.com/330342.
 class ChromeProxyHTTPFallbackViaHeader(ChromeProxyValidation):
   """Correctness measurement for proxy fallback.
 
@@ -210,8 +219,28 @@ class ChromeProxyHTTPFallbackViaHeader(ChromeProxyValidation):
         _TEST_SERVER + ":80",
         self._metrics.effective_proxies['fallback'],
         self._metrics.effective_proxies['direct']]
-    bad_proxies = [_TEST_SERVER + ":80"]
+    bad_proxies = [_TEST_SERVER + ":80", metrics.PROXY_SETTING_HTTP]
     self._metrics.AddResultsForHTTPFallback(tab, results, proxies, bad_proxies)
+
+
+class ChromeProxyClientVersion(ChromeProxyValidation):
+  """Correctness measurement for version directives in Chrome-Proxy header.
+
+  The test verifies that the version information provided in the Chrome-Proxy
+  request header overrides any version, if specified, that is provided in the
+  user agent string.
+  """
+
+  def __init__(self):
+    super(ChromeProxyClientVersion, self).__init__()
+
+  def CustomizeBrowserOptions(self, options):
+    super(ChromeProxyClientVersion,
+          self).CustomizeBrowserOptions(options)
+    options.AppendExtraBrowserArgs('--user-agent="Chrome/32.0.1700.99"')
+
+  def AddResults(self, tab, results):
+    self._metrics.AddResultsForClientVersion(tab, results)
 
 
 class ChromeProxySmoke(ChromeProxyValidation):

@@ -43,6 +43,11 @@ public interface WebContents {
     public void onShow();
 
     /**
+     * Stops all media players for this WebContents.
+     */
+    public void releaseMediaPlayers();
+
+    /**
      * Get the Background color from underlying RenderWidgetHost for this WebContent.
      */
     public int getBackgroundColor();
@@ -155,9 +160,7 @@ public interface WebContents {
      *                 result will be json encoded and passed as the parameter, and the call
      *                 will be made on the main thread.
      *                 If no result is required, pass null.
-     * @param startRenderer Tells whether to start Renderer or not for initial empty document
      */
-    public void evaluateJavaScript(String script, JavaScriptCallback callback,
-            boolean startRenderer);
+    public void evaluateJavaScript(String script, JavaScriptCallback callback);
 
 }

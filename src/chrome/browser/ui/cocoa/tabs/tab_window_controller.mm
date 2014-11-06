@@ -5,6 +5,7 @@
 #import "chrome/browser/ui/cocoa/tabs/tab_window_controller.h"
 
 #include "base/logging.h"
+#import "chrome/browser/ui/cocoa/browser_window_layout.h"
 #import "chrome/browser/ui/cocoa/fast_resize_view.h"
 #import "chrome/browser/ui/cocoa/framed_browser_window.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
@@ -51,6 +52,7 @@
   base::scoped_nsobject<FramedBrowserWindow> window(
       [[FramedBrowserWindow alloc] initWithContentRect:contentRect
                                            hasTabStrip:hasTabStrip]);
+  [self moveContentViewToBack:[window contentView]];
   [window setReleasedWhenClosed:YES];
   [window setAutorecalculatesKeyViewLoop:YES];
 
@@ -63,12 +65,12 @@
                                          NSViewHeightSizable];
     [[[self window] contentView] addSubview:tabContentArea_];
 
-    tabStripView_.reset([[TabStripView alloc] initWithFrame:
-        NSMakeRect(0, 0, 750, 37)]);
+    tabStripView_.reset([[TabStripView alloc]
+        initWithFrame:NSMakeRect(0, 0, 750, chrome::kTabStripHeight)]);
     [tabStripView_ setAutoresizingMask:NSViewWidthSizable |
                                        NSViewMinYMargin];
     if (hasTabStrip)
-      [self addTabStripToWindow];
+      [self insertTabStripView:tabStripView_ intoWindow:[self window]];
   }
   return self;
 }
@@ -79,16 +81,6 @@
 
 - (FastResizeView*)tabContentArea {
   return tabContentArea_;
-}
-
-// Add the top tab strop to the window, above the content box and add it to the
-// view hierarchy as a sibling of the content view so it can overlap with the
-// window frame.
-- (void)addTabStripToWindow {
-  // The frame doesn't matter. This class relies on subclasses to do tab strip
-  // layout.
-  NSView* contentParent = [[self window] cr_windowView];
-  [contentParent addSubview:tabStripView_];
 }
 
 - (void)removeOverlay {
@@ -154,7 +146,8 @@
     // content view and therefore it should always be added after the content
     // view is set.
     [window setContentView:originalContentView_];
-    [[window cr_windowView] addSubview:[self tabStripView]];
+    [self moveContentViewToBack:originalContentView_];
+    [self insertTabStripView:[self tabStripView] intoWindow:window];
     [[window cr_windowView] updateTrackingAreas];
 
     [focusBeforeOverlay_ restoreFocusInWindow:window];
@@ -290,6 +283,25 @@
 // during a drag.
 - (void)deferPerformClose {
   closeDeferred_ = YES;
+}
+
+- (void)moveContentViewToBack:(NSView*)cv {
+  base::scoped_nsobject<NSView> contentView([cv retain]);
+  NSView* superview = [contentView superview];
+  [contentView removeFromSuperview];
+  [superview addSubview:contentView positioned:NSWindowBelow relativeTo:nil];
+}
+
+- (void)insertTabStripView:(NSView*)tabStripView intoWindow:(NSWindow*)window {
+  NSView* contentParent = [window cr_windowView];
+  if (contentParent == [[window contentView] superview]) {
+    // Add the tab strip directly above the content view, if they are siblings.
+    [contentParent addSubview:tabStripView
+                   positioned:NSWindowAbove
+                   relativeTo:[window contentView]];
+  } else {
+    [contentParent addSubview:tabStripView];
+  }
 }
 
 // Called when the size of the window content area has changed. Override to

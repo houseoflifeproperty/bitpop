@@ -123,20 +123,26 @@ function createMostVisitedLink(params, href, title, text, direction, provider) {
   link.href = href;
   link.title = title;
   link.target = '_top';
-  // Exclude links from the tab order.  The tabIndex is added to the thumbnail
-  // parent container instead.
-  link.tabIndex = '-1';
+  // Include links in the tab order.  The tabIndex is necessary for
+  // accessibility.
+  link.tabIndex = '0';
   if (text)
     link.textContent = text;
   link.addEventListener('mouseover', function() {
     var ntpApiHandle = chrome.embeddedSearch.newTabPage;
     ntpApiHandle.logEvent(NTP_LOGGING_EVENT_TYPE.NTP_MOUSEOVER);
   });
+  link.addEventListener('focus', function() {
+    window.parent.postMessage('linkFocused', DOMAIN_ORIGIN);
+  });
+  link.addEventListener('blur', function() {
+    window.parent.postMessage('linkBlurred', DOMAIN_ORIGIN);
+  });
 
   // Webkit's security policy prevents some Most Visited thumbnails from
   // working (those with schemes different from http and https). Therefore,
   // navigateContentWindow is being used in order to get all schemes working.
-  link.addEventListener('click', function handleNavigation(e) {
+  var navigateFunction = function handleNavigation(e) {
     var isServerSuggestion = 'url' in params;
 
     // Ping are only populated for server-side suggestions, never for MV.
@@ -155,9 +161,53 @@ function createMostVisitedLink(params, href, title, text, direction, provider) {
       ntpApiHandle.navigateContentWindow(href, getDispositionFromEvent(e));
     }
     // Else follow <a> normally, so transition type would be LINK.
+  };
+
+  link.addEventListener('click', navigateFunction);
+  link.addEventListener('keydown', function(event) {
+    if (event.keyCode == 46 /* DELETE */ ||
+        event.keyCode == 8 /* BACKSPACE */) {
+      event.preventDefault();
+      window.parent.postMessage('tileBlacklisted,' + params.pos, DOMAIN_ORIGIN);
+    } else if (event.keyCode == 13 /* ENTER */ ||
+               event.keyCode == 32 /* SPACE */) {
+      navigateFunction(event);
+    }
   });
 
   return link;
+}
+
+
+/**
+ * Returns the color to display string with, depending on whether title is
+ * displayed, the current theme, and URL parameters.
+ * @param {Object.<string, string>} params URL parameters specifying style.
+ * @param {boolean} isTitle if the style is for the Most Visited Title.
+ * @return {string} The color to use, in "rgba(#,#,#,#)" format.
+ */
+function getTextColor(params, isTitle) {
+  // 'RRGGBBAA' color format overrides everything.
+  if ('c' in params && params.c.match(/^[0-9A-Fa-f]{8}$/)) {
+    // Extract the 4 pairs of hex digits, map to number, then form rgba().
+    var t = params.c.match(/(..)(..)(..)(..)/).slice(1).map(function(s) {
+      return parseInt(s, 16);
+    });
+    return 'rgba(' + t[0] + ',' + t[1] + ',' + t[2] + ',' + t[3] / 255 + ')';
+  }
+
+  // For backward compatibility with server-side NTP, look at themes directly
+  // and use param.c for non-title or as fallback.
+  var apiHandle = chrome.embeddedSearch.newTabPage;
+  var themeInfo = apiHandle.themeBackgroundInfo;
+  var c = '#777';
+  if (isTitle && themeInfo && !themeInfo.usingDefaultTheme) {
+    // Read from theme directly
+    c = convertArrayToRGBAColor(themeInfo.textColorRgba) || c;
+  } else if ('c' in params) {
+    c = convertToHexColor(parseInt(params.c, 16)) || c;
+  }
+  return c;
 }
 
 
@@ -174,18 +224,10 @@ function createMostVisitedLink(params, href, title, text, direction, provider) {
  */
 function getMostVisitedStyles(params, isTitle) {
   var styles = {
-    color: '#777',
+    color: getTextColor(params, isTitle),  // Handles 'c' in params.
     fontFamily: '',
     fontSize: 11
   };
-  var apiHandle = chrome.embeddedSearch.newTabPage;
-  var themeInfo = apiHandle.themeBackgroundInfo;
-  if (isTitle && themeInfo && !themeInfo.usingDefaultTheme) {
-    styles.color = convertArrayToRGBAColor(themeInfo.textColorRgba) ||
-        styles.color;
-  } else if ('c' in params) {
-    styles.color = convertToHexColor(parseInt(params.c, 16)) || styles.color;
-  }
   if ('f' in params && /^[-0-9a-zA-Z ,]+$/.test(params.f))
     styles.fontFamily = params.f;
   if ('fs' in params && isFinite(parseInt(params.fs, 10)))

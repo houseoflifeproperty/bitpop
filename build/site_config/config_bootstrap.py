@@ -26,7 +26,7 @@ class Master(config_private.Master):
 
   webkit_trunk_url = (config_private.Master.webkit_root_url + '/trunk')
 
-  trunk_url_src = trunk_url + '/src'
+  trunk_url_src = config_private.Master.git_server_url + '/chromium/src.git'
   trunk_url_tools = trunk_url + '/tools'
   nacl_url = config_private.Master.nacl_trunk_url + '/src/native_client'
   nacl_sdk_root_url = 'https://nativeclient-sdk.googlecode.com/svn'

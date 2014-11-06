@@ -247,6 +247,38 @@ def load_gatekeeper_config(filename):
   return gatekeeper_config
 
 
+def load_gatekeeper_tree_config(filename):
+  """Loads and verifies tree config json, returned loaded config json."""
+  with open(filename) as f:
+    trees_config = json.load(f)
+
+  tree_config_keys = ['masters',
+                      'build-db',
+                      'open-tree',
+                      'password-file',
+                      'revision-properties',
+                      'set-status',
+                      'status-url',
+                      'track-revisions']
+
+  for tree_name, tree_config in trees_config.iteritems():
+    allowed_keys(tree_config, *tree_config_keys)
+    assert isinstance(tree_name, basestring)
+
+    masters = tree_config.get('masters', [])
+    assert isinstance(masters, list)
+    assert all(isinstance(master, basestring) for master in masters)
+
+    assert isinstance(tree_config.get('build-db', ''), basestring)
+    assert isinstance(tree_config.get('open-tree', True), bool)
+    assert isinstance(tree_config.get('password-file', ''), basestring)
+    assert isinstance(tree_config.get('revision-properties', ''), basestring)
+    assert isinstance(tree_config.get('set-status', True), bool)
+    assert isinstance(tree_config.get('status-url', ''), basestring)
+    assert isinstance(tree_config.get('track-revisions', True), bool)
+
+  return trees_config
+
 def gatekeeper_section_hash(gatekeeper_section):
   st = cStringIO.StringIO()
   flatten_to_json(gatekeeper_section, st)

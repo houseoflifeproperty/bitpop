@@ -7,6 +7,7 @@
 import os
 
 from buildbot.steps import shell
+from buildbot.interfaces import IRenderable
 from buildbot.process.properties import Property, WithProperties
 
 from master import chromium_step
@@ -24,7 +25,8 @@ class ChromiteFactory(object):
 
   Attributes:
       script: the name of the chromite command to run (bin/<foo>)
-      params: string of parameters to pass to the main command.
+      params: space-delimited string of parameters to pass to the cbuildbot
+          command, or IRenderable.
       b_params:  An array of StepParameters to pass to the main command.
       timeout: Timeout in seconds for the main command. Default 9000 seconds.
       branch: git branch of the chromite repo to pull.
@@ -150,7 +152,8 @@ class ChromiteFactory(object):
 
     Args:
       script:  Name of the script to run from chromite/bin.
-      params:  A string containing extra parameters for the script.
+      params: space-delimited string of parameters to pass to the cbuildbot
+          command, or IRenderable.
       b_params:  An array of StepParameters.
       legacy:  Use a different directory for some legacy invocations.
     """
@@ -158,8 +161,14 @@ class ChromiteFactory(object):
     cmd = ['%s/%s/%s' % (self.chromite_dir, script_subdir, script)]
     if b_params:
       cmd.extend(b_params)
-    if params:
+    if not params:
+      pass
+    elif isinstance(params, basestring):
       cmd.extend(params.split())
+    elif IRenderable.providedBy(params):
+      cmd += [params]
+    else:
+      raise TypeError("Unsupported 'params' type: %s" % (type(params),))
 
     self.f_cbuild.addStep(chromium_step.AnnotatedCommand,
                           command=cmd,
@@ -179,7 +188,8 @@ class CbuildbotFactory(ChromiteFactory):
   Create a build factory that runs the cbuildbot script.
 
   Attributes:
-      params: string of parameters to pass to the cbuildbot command.
+      params: space-delimited string of parameters to pass to the cbuildbot
+          command, or IRenderable.
       script: name of the cbuildbot command.  Default cbuildbot.
       buildroot: buildroot to set. Default /b/cbuild.
       dry_run: Don't push anything as we're running a test run.
@@ -187,6 +197,7 @@ class CbuildbotFactory(ChromiteFactory):
       chrome_root: The place to put or use the chrome source.
       pass_revision: to pass the chrome revision desired into the build.
       legacy_chromite: If set, ask chromite to use an older cbuildbot directory.
+      clobber: If True, force a clobber.
       *: anything else is passed to the base Chromite class.
   """
 
@@ -199,6 +210,7 @@ class CbuildbotFactory(ChromiteFactory):
                chrome_root=None,
                pass_revision=None,
                legacy_chromite=False,
+               clobber=False,
                **kwargs):
     super(CbuildbotFactory, self).__init__(None, None,
         use_chromeos_factory=not pass_revision, **kwargs)
@@ -210,6 +222,7 @@ class CbuildbotFactory(ChromiteFactory):
     self.legacy_chromite = legacy_chromite
     self.buildroot = buildroot
     self.dry_run = dry_run
+    self.clobber = clobber
 
     if params:
       self.add_cbuildbot_step(params)
@@ -247,13 +260,17 @@ class CbuildbotFactory(ChromiteFactory):
     if self.pass_revision:
       cmd.append(WithProperties('--chrome_version=%(revision)s'))
 
-    cmd.append(
-        ConditionalProperty(
-            'clobber',
-            '--clobber',
-            [], # Will be flattened to nothing.
-        )
-    )
+    # Clobber if forced or if the 'clobber' property is set.
+    if self.clobber:
+      cmd.append('--clobber')
+    else:
+      cmd.append(
+          ConditionalProperty(
+              'clobber',
+              '--clobber',
+              [], # Will be flattened to nothing.
+          )
+      )
 
     return cmd
 

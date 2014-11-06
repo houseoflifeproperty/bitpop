@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/views/apps/shaped_app_window_targeter.h"
 #include "chrome/browser/ui/views/extensions/extension_keybinding_registry_views.h"
 #include "chrome/browser/ui/views/frame/taskbar_decorator.h"
+#include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
 #include "extensions/common/extension.h"
@@ -51,7 +52,7 @@
 #include "ui/aura/window_observer.h"
 #endif
 
-using apps::AppWindow;
+using extensions::AppWindow;
 
 namespace {
 
@@ -124,7 +125,7 @@ class NativeAppWindowStateDelegate : public ash::wm::WindowStateDelegate,
                                      public aura::WindowObserver {
  public:
   NativeAppWindowStateDelegate(AppWindow* app_window,
-                               apps::NativeAppWindow* native_app_window)
+                               extensions::NativeAppWindow* native_app_window)
       : app_window_(app_window),
         window_state_(
             ash::wm::GetWindowState(native_app_window->GetNativeWindow())) {
@@ -215,6 +216,8 @@ void ChromeNativeAppWindowViews::InitializeDefaultWindow(
   if (create_params.alpha_enabled)
     init_params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   init_params.keep_on_top = create_params.always_on_top;
+  init_params.visible_on_all_workspaces =
+      create_params.visible_on_all_workspaces;
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   // Set up a custom WM_CLASS for app windows. This allows task switchers in
@@ -235,7 +238,7 @@ void ChromeNativeAppWindowViews::InitializeDefaultWindow(
   SetContentSizeConstraints(create_params.GetContentMinimumSize(frame_insets),
                             create_params.GetContentMaximumSize(frame_insets));
   if (!window_bounds.IsEmpty()) {
-    typedef apps::AppWindow::BoundsSpecification BoundsSpecification;
+    typedef AppWindow::BoundsSpecification BoundsSpecification;
     bool position_specified =
         window_bounds.x() != BoundsSpecification::kUnspecifiedPosition &&
         window_bounds.y() != BoundsSpecification::kUnspecifiedPosition;
@@ -270,6 +273,11 @@ void ChromeNativeAppWindowViews::InitializeDefaultWindow(
          accelerator_table.size() ==
              arraysize(kAppWindowAcceleratorMap) +
                  arraysize(kAppWindowKioskAppModeAcceleratorMap));
+
+  // Ensure there is a ZoomController in kiosk mode, otherwise the processing
+  // of the accelerators will cause a crash.
+  DCHECK(!is_kiosk_app_mode ||
+         ZoomController::FromWebContents(web_view()->GetWebContents()));
 
   for (std::map<ui::Accelerator, int>::const_iterator iter =
            accelerator_table.begin();
@@ -314,24 +322,6 @@ void ChromeNativeAppWindowViews::InitializePanelWindow(
 #endif
   widget()->Init(params);
   widget()->set_focus_on_creation(create_params.focused);
-
-#if defined(USE_ASH)
-  if (create_params.state == ui::SHOW_STATE_DETACHED) {
-    gfx::Rect window_bounds(initial_window_bounds.x(),
-                            initial_window_bounds.y(),
-                            preferred_size_.width(),
-                            preferred_size_.height());
-    aura::Window* native_window = GetNativeWindow();
-    ash::wm::GetWindowState(native_window)->set_panel_attached(false);
-    aura::client::ParentWindowWithContext(native_window,
-                                          native_window->GetRootWindow(),
-                                          native_window->GetBoundsInScreen());
-    widget()->SetBounds(window_bounds);
-  }
-#else
-  // TODO(stevenjb): NativeAppWindow panels need to be implemented for other
-  // platforms.
-#endif
 }
 
 views::NonClientFrameView*
@@ -426,7 +416,6 @@ ui::WindowShowState ChromeNativeAppWindowViews::GetRestoredState() const {
     case ui::SHOW_STATE_NORMAL:
     case ui::SHOW_STATE_MAXIMIZED:
     case ui::SHOW_STATE_FULLSCREEN:
-    case ui::SHOW_STATE_DETACHED:
       return restore_state;
 
     case ui::SHOW_STATE_DEFAULT:
@@ -600,7 +589,8 @@ void ChromeNativeAppWindowViews::SetFullscreen(int fullscreen_types) {
   is_fullscreen_ = (fullscreen_types != AppWindow::FULLSCREEN_TYPE_NONE);
   widget()->SetFullscreen(is_fullscreen_);
 
-#if defined(USE_ASH)
+  // TODO(oshima): Remove USE_ATHENA once athena has its own NativeAppWindow.
+#if defined(USE_ASH) && !defined(USE_ATHENA)
   if (immersive_fullscreen_controller_.get()) {
     // |immersive_fullscreen_controller_| should only be set if immersive
     // fullscreen is the fullscreen type used by the OS.
@@ -625,17 +615,6 @@ void ChromeNativeAppWindowViews::SetFullscreen(int fullscreen_types) {
 
 bool ChromeNativeAppWindowViews::IsFullscreenOrPending() const {
   return is_fullscreen_;
-}
-
-bool ChromeNativeAppWindowViews::IsDetached() const {
-  if (!app_window()->window_type_is_panel())
-    return false;
-#if defined(USE_ASH)
-  return !ash::wm::GetWindowState(widget()->GetNativeWindow())
-              ->panel_attached();
-#else
-  return false;
-#endif
 }
 
 void ChromeNativeAppWindowViews::UpdateBadgeIcon() {
@@ -670,6 +649,7 @@ void ChromeNativeAppWindowViews::UpdateShape(scoped_ptr<SkRegion> region) {
     if (had_shape)
       native_window->SetEventTargeter(scoped_ptr<ui::EventTargeter>());
   }
+  widget()->OnSizeConstraintsChanged();
 }
 
 bool ChromeNativeAppWindowViews::HasFrameColor() const {

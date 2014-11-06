@@ -9,11 +9,13 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/stringize_macros.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/time/time.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
@@ -60,6 +62,26 @@ RenderingHelperParams::RenderingHelperParams() {}
 
 RenderingHelperParams::~RenderingHelperParams() {}
 
+VideoFrameTexture::VideoFrameTexture(uint32 texture_target,
+                                     uint32 texture_id,
+                                     const base::Closure& no_longer_needed_cb)
+    : texture_target_(texture_target),
+      texture_id_(texture_id),
+      no_longer_needed_cb_(no_longer_needed_cb) {
+  DCHECK(!no_longer_needed_cb_.is_null());
+}
+
+VideoFrameTexture::~VideoFrameTexture() {
+  base::ResetAndReturn(&no_longer_needed_cb_).Run();
+}
+
+RenderingHelper::RenderedVideo::RenderedVideo()
+    : last_frame_rendered(false), is_flushing(false), frames_to_drop(0) {
+}
+
+RenderingHelper::RenderedVideo::~RenderedVideo() {
+}
+
 // static
 bool RenderingHelper::InitializeOneOff() {
   base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
@@ -78,19 +100,22 @@ RenderingHelper::RenderingHelper() {
 }
 
 RenderingHelper::~RenderingHelper() {
-  CHECK_EQ(clients_.size(), 0U) << "Must call UnInitialize before dtor.";
+  CHECK_EQ(videos_.size(), 0U) << "Must call UnInitialize before dtor.";
   Clear();
 }
 
 void RenderingHelper::Initialize(const RenderingHelperParams& params,
                                  base::WaitableEvent* done) {
-  // Use cients_.size() != 0 as a proxy for the class having already been
+  // Use videos_.size() != 0 as a proxy for the class having already been
   // Initialize()'d, and UnInitialize() before continuing.
-  if (clients_.size()) {
+  if (videos_.size()) {
     base::WaitableEvent done(false, false);
     UnInitialize(&done);
     done.Wait();
   }
+
+  render_task_.Reset(
+      base::Bind(&RenderingHelper::RenderContent, base::Unretained(this)));
 
   frame_duration_ = params.rendering_fps > 0
                         ? base::TimeDelta::FromSeconds(1) / params.rendering_fps
@@ -150,15 +175,15 @@ void RenderingHelper::Initialize(const RenderingHelperParams& params,
 
   gl_surface_ = gfx::GLSurface::CreateViewGLSurface(window_);
   gl_context_ = gfx::GLContext::CreateGLContext(
-      NULL, gl_surface_, gfx::PreferIntegratedGpu);
-  gl_context_->MakeCurrent(gl_surface_);
+      NULL, gl_surface_.get(), gfx::PreferIntegratedGpu);
+  gl_context_->MakeCurrent(gl_surface_.get());
 
-  clients_ = params.clients;
-  CHECK_GT(clients_.size(), 0U);
-  LayoutRenderingAreas();
+  CHECK_GT(params.window_sizes.size(), 0U);
+  videos_.resize(params.window_sizes.size());
+  LayoutRenderingAreas(params.window_sizes);
 
   if (render_as_thumbnails_) {
-    CHECK_EQ(clients_.size(), 1U);
+    CHECK_EQ(videos_.size(), 1U);
 
     GLint max_texture_size;
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size);
@@ -277,26 +302,20 @@ void RenderingHelper::Initialize(const RenderingHelperParams& params,
   glEnableVertexAttribArray(tc_location);
   glVertexAttribPointer(tc_location, 2, GL_FLOAT, GL_FALSE, 0, kTextureCoords);
 
-  if (frame_duration_ != base::TimeDelta()) {
-    render_timer_.reset(new base::RepeatingTimer<RenderingHelper>());
-    render_timer_->Start(
-        FROM_HERE, frame_duration_, this, &RenderingHelper::RenderContent);
-  }
   done->Signal();
 }
 
 void RenderingHelper::UnInitialize(base::WaitableEvent* done) {
   CHECK_EQ(base::MessageLoop::current(), message_loop_);
 
-  // Deletion will also stop the timer.
-  render_timer_.reset();
+  render_task_.Cancel();
 
   if (render_as_thumbnails_) {
     glDeleteTextures(1, &thumbnails_texture_id_);
     glDeleteFramebuffersEXT(1, &thumbnails_fbo_id_);
   }
 
-  gl_context_->ReleaseCurrent(gl_surface_);
+  gl_context_->ReleaseCurrent(gl_surface_.get());
   gl_context_ = NULL;
   gl_surface_ = NULL;
 
@@ -370,6 +389,37 @@ void RenderingHelper::RenderThumbnail(uint32 texture_target,
   ++frame_count_;
 }
 
+void RenderingHelper::QueueVideoFrame(
+    size_t window_id,
+    scoped_refptr<VideoFrameTexture> video_frame) {
+  CHECK_EQ(base::MessageLoop::current(), message_loop_);
+  RenderedVideo* video = &videos_[window_id];
+  DCHECK(!video->is_flushing);
+
+  // Start the rendering task when getting the first frame.
+  if (scheduled_render_time_.is_null() &&
+      (frame_duration_ != base::TimeDelta())) {
+    scheduled_render_time_ = base::TimeTicks::Now();
+    message_loop_->PostTask(FROM_HERE, render_task_.callback());
+  }
+
+  if (video->frames_to_drop > 0) {
+    --video->frames_to_drop;
+    return;
+  }
+
+  // Pop the last frame if it has been rendered.
+  if (video->last_frame_rendered) {
+    // When last_frame_rendered is true, we should have only one pending frame.
+    // Since we are going to have a new frame, we can release the pending one.
+    DCHECK(video->pending_frames.size() == 1);
+    video->pending_frames.pop();
+    video->last_frame_rendered = false;
+  }
+
+  video->pending_frames.push(video_frame);
+}
+
 void RenderingHelper::RenderTexture(uint32 texture_target, uint32 texture_id) {
   // The ExternalOES sampler is bound to GL_TEXTURE1 and the Texture2D sampler
   // is bound to GL_TEXTURE0.
@@ -385,6 +435,7 @@ void RenderingHelper::RenderTexture(uint32 texture_target, uint32 texture_id) {
 }
 
 void RenderingHelper::DeleteTexture(uint32 texture_id) {
+  CHECK_EQ(base::MessageLoop::current(), message_loop_);
   glDeleteTextures(1, &texture_id);
   CHECK_EQ(static_cast<int>(glGetError()), GL_NO_ERROR);
 }
@@ -398,7 +449,7 @@ void* RenderingHelper::GetGLDisplay() {
 }
 
 void RenderingHelper::Clear() {
-  clients_.clear();
+  videos_.clear();
   message_loop_ = NULL;
   gl_context_ = NULL;
   gl_surface_ = NULL;
@@ -457,20 +508,48 @@ void RenderingHelper::GetThumbnailsAsRGB(std::vector<unsigned char>* rgb,
   done->Signal();
 }
 
+void RenderingHelper::Flush(size_t window_id) {
+  videos_[window_id].is_flushing = true;
+}
+
 void RenderingHelper::RenderContent() {
   CHECK_EQ(base::MessageLoop::current(), message_loop_);
+
+  scheduled_render_time_ += frame_duration_;
+  base::TimeDelta delay = scheduled_render_time_ - base::TimeTicks::Now();
+  message_loop_->PostDelayedTask(
+      FROM_HERE, render_task_.callback(), std::max(delay, base::TimeDelta()));
+
   glUniform1i(glGetUniformLocation(program_, "tex_flip"), 1);
+
+  // Frames that will be returned to the client (via the no_longer_needed_cb)
+  // after this vector falls out of scope at the end of this method. We need
+  // to keep references to them until after SwapBuffers() call below.
+  std::vector<scoped_refptr<VideoFrameTexture> > frames_to_be_returned;
 
   if (render_as_thumbnails_) {
     // In render_as_thumbnails_ mode, we render the FBO content on the
     // screen instead of the decoded textures.
-    GLSetViewPort(render_areas_[0]);
+    GLSetViewPort(videos_[0].render_area);
     RenderTexture(GL_TEXTURE_2D, thumbnails_texture_id_);
   } else {
-    for (size_t i = 0; i < clients_.size(); ++i) {
-      if (clients_[i]) {
-        GLSetViewPort(render_areas_[i]);
-        clients_[i]->RenderContent(this);
+    for (size_t i = 0; i < videos_.size(); ++i) {
+      RenderedVideo* video = &videos_[i];
+      if (video->pending_frames.empty())
+        continue;
+      scoped_refptr<VideoFrameTexture> frame = video->pending_frames.front();
+      GLSetViewPort(video->render_area);
+      RenderTexture(frame->texture_target(), frame->texture_id());
+
+      if (video->last_frame_rendered)
+        ++video->frames_to_drop;
+
+      if (video->pending_frames.size() > 1 || video->is_flushing) {
+        frames_to_be_returned.push_back(video->pending_frames.front());
+        video->pending_frames.pop();
+        video->last_frame_rendered = false;
+      } else {
+        video->last_frame_rendered = true;
       }
     }
   }
@@ -492,11 +571,12 @@ static void ScaleAndCalculateOffsets(std::vector<int>* lengths,
   }
 }
 
-void RenderingHelper::LayoutRenderingAreas() {
+void RenderingHelper::LayoutRenderingAreas(
+    const std::vector<gfx::Size>& window_sizes) {
   // Find the number of colums and rows.
-  // The smallest n * n or n * (n + 1) > number of clients.
-  size_t cols = sqrt(clients_.size() - 1) + 1;
-  size_t rows = (clients_.size() + cols - 1) / cols;
+  // The smallest n * n or n * (n + 1) > number of windows.
+  size_t cols = sqrt(videos_.size() - 1) + 1;
+  size_t rows = (videos_.size() + cols - 1) / cols;
 
   // Find the widths and heights of the grid.
   std::vector<int> widths(cols);
@@ -504,31 +584,30 @@ void RenderingHelper::LayoutRenderingAreas() {
   std::vector<int> offset_x(cols);
   std::vector<int> offset_y(rows);
 
-  for (size_t i = 0; i < clients_.size(); ++i) {
-    const gfx::Size& window_size = clients_[i]->GetWindowSize();
-    widths[i % cols] = std::max(widths[i % cols], window_size.width());
-    heights[i / cols] = std::max(heights[i / cols], window_size.height());
+  for (size_t i = 0; i < window_sizes.size(); ++i) {
+    const gfx::Size& size = window_sizes[i];
+    widths[i % cols] = std::max(widths[i % cols], size.width());
+    heights[i / cols] = std::max(heights[i / cols], size.height());
   }
 
   ScaleAndCalculateOffsets(&widths, &offset_x, screen_size_.width());
   ScaleAndCalculateOffsets(&heights, &offset_y, screen_size_.height());
 
   // Put each render_area_ in the center of each cell.
-  render_areas_.clear();
-  for (size_t i = 0; i < clients_.size(); ++i) {
-    const gfx::Size& window_size = clients_[i]->GetWindowSize();
+  for (size_t i = 0; i < window_sizes.size(); ++i) {
+    const gfx::Size& size = window_sizes[i];
     float scale =
-        std::min(static_cast<float>(widths[i % cols]) / window_size.width(),
-                 static_cast<float>(heights[i / cols]) / window_size.height());
+        std::min(static_cast<float>(widths[i % cols]) / size.width(),
+                 static_cast<float>(heights[i / cols]) / size.height());
 
     // Don't scale up the texture.
     scale = std::min(1.0f, scale);
 
-    size_t w = scale * window_size.width();
-    size_t h = scale * window_size.height();
+    size_t w = scale * size.width();
+    size_t h = scale * size.height();
     size_t x = offset_x[i % cols] + (widths[i % cols] - w) / 2;
     size_t y = offset_y[i / cols] + (heights[i / cols] - h) / 2;
-    render_areas_.push_back(gfx::Rect(x, y, w, h));
+    videos_[i].render_area = gfx::Rect(x, y, w, h);
   }
 }
 }  // namespace content

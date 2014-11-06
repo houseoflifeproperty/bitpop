@@ -6,6 +6,7 @@
 import argparse
 import bz2
 import datetime
+import gzip
 import inspect
 import logging
 import logging.handlers
@@ -205,8 +206,8 @@ class GCStorage(object):
     if returncode != 0:
       # The object can be missing when the builder name hasn't been used yet.
       if not 'No such object' in stderr:
-        logger.error("Unable to list bucket content.")
-        raise GSutilError("Unable to list bucket content. gsutil stderr: %s",
+        logger.error('Unable to list bucket content.')
+        raise GSutilError('Unable to list bucket content. gsutil stderr: %s',
                           stderr)
     else:
       for line in stdout.splitlines():
@@ -232,6 +233,9 @@ class GCStorage(object):
     if source.endswith('.bz2'):
       logger.debug('Uncompressing bz2 file...')
       openfunc = lambda: bz2.BZ2File(source, 'rb')
+    elif source.endswith('.gz'):
+      logger.debug('Uncompressing gz file...')
+      openfunc = lambda: gzip.GzipFile(source, 'rb')
     else:
       # TODO(pgervais) could use a symbolic link instead.
       # But beware of race conditions.
@@ -454,7 +458,13 @@ class Waterfall(object):
                      % (builder_name, build_number))
     return r.text, r.json()
 
-  def get_log_filenames(self, build_properties):
+  def get_log_filenames(self, build_properties, basedir):
+    """Compute log file names.
+
+    build_properties (dict): build properties as returned by buildbot.
+        Second return value of get_build_properties().
+    basedir (string): builder directory containing the log files.
+    """
     build_number = build_properties['number']
 
     step_logs = [(s['name'], loginfo[0])
@@ -466,12 +476,11 @@ class Waterfall(object):
       # From buildbot, in  status/build.py:generateLogfileName
       basename = '%d-log-%s-%s' % (build_number, step_name, log_name)
       basename = re.sub(r'[^\w\.\-]', '_', basename)
-      filename = os.path.join(self._master_path,
-                              build_properties['builderName'], basename)
+      filename = os.path.join(self._master_path, basedir, basename)
       ref = (build_properties['builderName'],
              build_number, re.sub(r'/', '_', step_name) + '.' + log_name)
 
-      for ext in ('', '.bz2'):
+      for ext in ('', '.gz', '.bz2'):
         filename_ext = filename + ext
         if os.path.isfile(filename_ext):
           log_filenames.append((ref, filename_ext))
@@ -618,7 +627,7 @@ def main():
       logger.info('Starting processing build %s/%d',
                   builder_name, build_number)
       bp_str, bp = w.get_build_properties(builder_name, build_number)
-      log_filenames = w.get_log_filenames(bp)
+      log_filenames = w.get_log_filenames(bp, builders[builder_name]['basedir'])
 
       # Beginning of critical section
       storage.mark_upload_started(builder_name, build_number)

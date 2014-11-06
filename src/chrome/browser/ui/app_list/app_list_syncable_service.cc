@@ -15,11 +15,12 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/uninstall_reason.h"
-#include "grit/generated_resources.h"
+#include "extensions/common/constants.h"
 #include "sync/api/sync_change_processor.h"
 #include "sync/api/sync_data.h"
 #include "sync/api/sync_merge_result.h"
@@ -107,7 +108,7 @@ bool AppIsDefault(ExtensionService* service, const std::string& id) {
 
 bool IsUnRemovableDefaultApp(const std::string& id) {
   if (id == extension_misc::kChromeAppId ||
-      id == extension_misc::kWebStoreAppId)
+      id == extensions::kWebStoreAppId)
     return true;
 #if defined(OS_CHROMEOS)
   if (id == file_manager::kFileManagerAppId || id == genius_app::kGeniusAppId)
@@ -215,6 +216,7 @@ AppListSyncableService::AppListSyncableService(
     : profile_(profile),
       extension_system_(extension_system),
       model_(new AppListModel),
+      initial_sync_data_processed_(false),
       first_app_list_sync_(true) {
   if (!extension_system) {
     LOG(ERROR) << "AppListSyncableService created with no ExtensionSystem";
@@ -269,6 +271,10 @@ void AppListSyncableService::BuildModel() {
 
   if (app_list::switches::IsDriveAppsInAppListEnabled())
     drive_app_provider_.reset(new DriveAppProvider(profile_));
+}
+
+void AppListSyncableService::ResetDriveAppProviderForTest() {
+  drive_app_provider_.reset();
 }
 
 void AppListSyncableService::Shutdown() {
@@ -567,11 +573,13 @@ syncer::SyncMergeResult AppListSyncableService::MergeDataAndStartSyncing(
     }
     unsynced_items.erase(item_id);
   }
-
   result.set_num_items_after_association(sync_items_.size());
   result.set_num_items_added(new_items);
   result.set_num_items_deleted(0);
   result.set_num_items_modified(updated_items);
+
+  // Initial sync data has been processed, it is safe now to add new sync items.
+  initial_sync_data_processed_ = true;
 
   // Send unsynced items. Does not affect |result|.
   syncer::SyncChangeList change_list;
@@ -784,6 +792,16 @@ void AppListSyncableService::SendSyncChange(
              << sync_item->ToString();
     return;
   }
+  if (!initial_sync_data_processed_ &&
+      sync_change_type == SyncChange::ACTION_ADD) {
+    // This can occur if an initial item is created before its folder item.
+    // A sync item should already exist for the folder, so we do not want to
+    // send an ADD event, since that would trigger a CHECK in the sync code.
+    DCHECK(sync_item->item_type == sync_pb::AppListSpecifics::TYPE_FOLDER);
+    DVLOG(2) << this << " - SendSyncChange: ADD before initial data processed: "
+             << sync_item->ToString();
+    return;
+  }
   if (sync_change_type == SyncChange::ACTION_ADD)
     VLOG(2) << this << " -> SYNC ADD: " << sync_item->ToString();
   else
@@ -881,7 +899,7 @@ syncer::StringOrdinal AppListSyncableService::GetOemFolderPos() {
   size_t oem_index = 0;
   for (; oem_index < item_list->item_count() - 1; ++oem_index) {
     AppListItem* cur_item = item_list->item_at(oem_index);
-    if (cur_item->id() == extension_misc::kWebStoreAppId)
+    if (cur_item->id() == extensions::kWebStoreAppId)
       break;
   }
   syncer::StringOrdinal oem_ordinal;

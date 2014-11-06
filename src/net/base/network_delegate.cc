@@ -33,10 +33,9 @@ void NetworkDelegate::NotifyResolveProxy(
 
 void NetworkDelegate::NotifyProxyFallback(
     const ProxyServer& bad_proxy,
-    int net_error,
-    bool did_fallback) {
+    int net_error) {
   DCHECK(CalledOnValidThread());
-  OnProxyFallback(bad_proxy, net_error, did_fallback);
+  OnProxyFallback(bad_proxy, net_error);
 }
 
 int NetworkDelegate::NotifyBeforeSendHeaders(
@@ -167,6 +166,15 @@ bool NetworkDelegate::CanEnablePrivacyMode(
   return OnCanEnablePrivacyMode(url, first_party_for_cookies);
 }
 
+bool NetworkDelegate::CancelURLRequestWithPolicyViolatingReferrerHeader(
+    const URLRequest& request,
+    const GURL& target_url,
+    const GURL& referrer_url) const {
+  DCHECK(CalledOnValidThread());
+  return OnCancelURLRequestWithPolicyViolatingReferrerHeader(
+      request, target_url, referrer_url);
+}
+
 int NetworkDelegate::OnBeforeURLRequest(URLRequest* request,
                                         const CompletionCallback& callback,
                                         GURL* new_url) {
@@ -181,8 +189,7 @@ void NetworkDelegate::OnResolveProxy(
 }
 
 void NetworkDelegate::OnProxyFallback(const ProxyServer& bad_proxy,
-                                      int net_error,
-                                      bool did_fallback) {
+                                      int net_error) {
 }
 
 int NetworkDelegate::OnBeforeSendHeaders(URLRequest* request,
@@ -269,6 +276,13 @@ int NetworkDelegate::OnBeforeSocketStreamConnect(
     SocketStream* socket,
     const CompletionCallback& callback) {
   return OK;
+}
+
+bool NetworkDelegate::OnCancelURLRequestWithPolicyViolatingReferrerHeader(
+    const URLRequest& request,
+    const GURL& target_url,
+    const GURL& referrer_url) const {
+  return false;
 }
 
 }  // namespace net

@@ -51,7 +51,7 @@ HTMLMediaElement* toParentMediaElement(Node* node)
         return 0;
     Node* mediaNode = node->shadowHost();
     if (!mediaNode)
-        mediaNode = node;
+        return 0;
     if (!isHTMLMediaElement(mediaNode))
         return 0;
 
@@ -96,7 +96,7 @@ void MediaControlElement::setDisplayType(MediaControlElementType displayType)
 
     m_displayType = displayType;
     if (RenderObject* object = m_element->renderer())
-        object->paintInvalidationForWholeRenderer();
+        object->setShouldDoFullPaintInvalidation(true);
 }
 
 void MediaControlElement::trace(Visitor* visitor)

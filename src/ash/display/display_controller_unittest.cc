@@ -238,7 +238,7 @@ class StartupHelper : public test::TestShellDelegate,
     displays_initialized_ = true;
   }
 
-  const bool displays_initialized() const {
+  bool displays_initialized() const {
     return displays_initialized_;
   }
 
@@ -655,7 +655,8 @@ TEST_F(DisplayControllerTest, BoundsUpdated) {
 
   // No change
   UpdateDisplay("400x500*2,300x300");
-  EXPECT_EQ(0, observer.CountAndReset());
+  // We still call into Pre/PostDisplayConfigurationChange().
+  EXPECT_EQ(1, observer.CountAndReset());
   EXPECT_EQ(0, observer.GetFocusChangedCountAndReset());
   EXPECT_EQ(0, observer.GetActivationChangedCountAndReset());
 

@@ -5,12 +5,14 @@
 """Twisted implementation of an interface to the Gerrit REST API and
 associated JSON objects."""
 
+
 import json
 import urlparse
 
+from common.gerrit.base import GERRIT_JSON_HEADER
 from common.twisted_util.agent import Agent
 from common.twisted_util.agent_util import ToRelativeURL, RelativeURLJoin
-from common.twisted_util.response import JsonResponse
+from common.twisted_util.response import JsonResponse, StringResponse
 from common.twisted_util.body_producers import JsonBodyProducer
 from common.twisted_util.authorizer import NETRCAuthorizer
 from twisted.python import log
@@ -26,17 +28,15 @@ class GerritJsonResponse(JsonResponse):
   happen on the remainder of the body.
   """
 
-  GERRIT_JSON_HEADER = ")]}'"
-
   def _processBody(self, body):
-    if not body.startswith(self.GERRIT_JSON_HEADER):
+    if not body.startswith(GERRIT_JSON_HEADER):
       raise ValueError("Mal-formed JSON response does not begin with Gerrit "
                        "JSON header: (%r != %r)" % (
-                           body[:len(self.GERRIT_JSON_HEADER)],
-                           self.GERRIT_JSON_HEADER))
+                           body[:len(GERRIT_JSON_HEADER)],
+                           GERRIT_JSON_HEADER))
     return JsonResponse._processBody(
         self,
-        body[len(self.GERRIT_JSON_HEADER):]
+        body[len(GERRIT_JSON_HEADER):]
     )
 
 
@@ -106,6 +106,7 @@ class GerritAgent(Agent):
     """
     if body is not None:
       kwargs.setdefault('body_producer', JsonBodyProducer(body))
+    kwargs.setdefault('error_protocol', StringResponse.Get)
     default_json = (protocol is None)
     if default_json:
       protocol = GerritJsonResponse.Get

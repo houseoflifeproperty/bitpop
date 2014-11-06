@@ -235,6 +235,32 @@ def log_section(url, builder, buildnum, section_hash=None):
   logging.debug('----')
 
 
+COMMIT_POSITION_REGEX = re.compile(r'(.*)@{#(\d+)}')
+
+
+def parse_commit_position(prop):
+  """Determine if the revision is a SVN revision or a git commit position.
+
+  If the revision is a git commit position, return just the numeric part.
+  """
+  if not isinstance(prop, basestring):
+    return prop
+
+  match = COMMIT_POSITION_REGEX.match(prop)
+  if not match:
+    return prop
+  else:
+    return int(match.group(2))
+
+
+def convert_revisions_to_positions(property_dict):
+  """Given a dictionary of revisions, return a dict of parsed revisions."""
+  result = {}
+  for k, v in property_dict.iteritems():
+    result[k] = parse_commit_position(v)
+  return result
+
+
 def reject_old_revisions(failed_builds, build_db):
   """Ignore builds which triggered on revisions older than the current.
 
@@ -279,8 +305,8 @@ def reject_old_revisions(failed_builds, build_db):
       # get_build_properties will return a dict with all the keys given to it.
       # Since we're giving it triggered_revisions.keys(), revisions is
       # guaranteed to have the same keys as triggered_revisions.
-      revisions = get_build_properties(
-          build['build'], triggered_revisions.keys())
+      revisions = convert_revisions_to_positions(get_build_properties(
+          build['build'], triggered_revisions.keys()))
 
       logging.debug('previous revision information: %s',
                     str(triggered_revisions))
@@ -520,8 +546,15 @@ def close_tree_if_necessary(failed_builds, username, password, status_url_root,
       'unsatisfied': ','.join(closing_builds[0]['unsatisfied']),
   }
 
-  template_vars.update(get_build_properties(closing_builds[0]['build'],
-                                            revision_properties))
+  # First populate un-transformed revision and got_revision.
+  revision_props = get_build_properties(closing_builds[0]['build'],
+    ['revision', 'got_revision'])
+
+  # Second add in transformed specified revision_properties.
+  revision_props.update(convert_revisions_to_positions(
+      get_build_properties(closing_builds[0]['build'], revision_properties)))
+
+  template_vars.update(revision_props)
 
   # Close on first failure seen.
   tree_status = closing_builds[0]['status_template'] % template_vars

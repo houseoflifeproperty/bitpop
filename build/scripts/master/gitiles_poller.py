@@ -26,13 +26,8 @@ from common.gerrit_agent import GerritAgent
 
 
 LOG_TEMPLATE = '%s/+log/%s?format=JSON&n=%d'
-REFS_TEMPLATE = '%s/+refs/heads?format=JSON'
+REFS_TEMPLATE = '%s/+refs?format=JSON'
 REVISION_DETAIL_TEMPLATE = '%s/+/%s?format=JSON'
-
-
-def _always_unlock(result, lock):
-  lock.release()
-  return result
 
 
 def time_to_datetime(tm):
@@ -57,6 +52,23 @@ def time_to_datetime(tm):
   return dt
 
 
+class Revision(object):
+  """Commit wrapper that can be compared to other commits through a comparator.
+
+  (See GitilesRevisionComparator.comparableRevision)
+  """
+  def __init__(self, comparator, commit):
+    self.comparator = comparator
+    self.commit = commit
+
+  def __cmp__(self, other):
+    assert self.comparator.initialized, "The comparator must be initialized"
+    return self.comparator.tagcmp(self.commit, other.commit)
+
+  def __repr__(self):
+    return self.commit
+
+
 class GitilesRevisionComparator(RevisionComparator):
   """Tracks the commit order of tags in a git repository."""
 
@@ -64,6 +76,31 @@ class GitilesRevisionComparator(RevisionComparator):
     super(GitilesRevisionComparator, self).__init__()
     self.sha1_lookup = {}
     self.initialized = False
+    self.initLock = defer.DeferredLock()
+
+  @defer.inlineCallbacks
+  def initialize(self, db):
+    yield self.initLock.acquire()
+    if self.initialized:
+      self.initLock.release()
+      return
+    def db_thread_main(conn):
+      changes_tbl = db.model.changes
+      q = changes_tbl.select(order_by=[sa.asc(changes_tbl.c.changeid)])
+      rp = conn.execute(q)
+      for row in rp:
+        self.addRevision(row.revision)
+    try:
+      yield db.pool.do(db_thread_main)
+      log.msg(
+          'GitilesRevisionComparator: Finished initializing revision history')
+      self.initialized = True
+    finally:
+      self.initLock.release()
+
+  def comparableRevision(self, commit):
+    assert self.initialized, "The comparator must be initialized"
+    return Revision(self, commit)
 
   def addRevision(self, revision):
     if revision in self.sha1_lookup:
@@ -91,9 +128,9 @@ class GitilesPoller(PollingChangeSource):
   re_pattern_type = type(re.compile(''))
 
   def __init__(
-      self, repo_url, branches=None, pollInterval=10*60, category=None,
+      self, repo_url, branches=None, pollInterval=30, category=None,
       project=None, revlinktmpl=None, agent=None, svn_mode=False,
-      svn_branch=None, change_filter=None):
+      svn_branch=None, change_filter=None, comparator=None):
     """Args:
 
     repo_url: URL of the gitiles service to be polled.
@@ -107,6 +144,12 @@ class GitilesPoller(PollingChangeSource):
     agent: A GerritAgent object used to make requests to the gitiles service.
     svn_mode: When polling a mirror of an svn repository, create changes using
         the svn revision number.
+    svn_branch: When svn_mode=True, this is used to determine the svn branch
+        name for each change.  It can be either a static string, or a function
+        that takes (gitiles_commit_json, git_branch) as arguments and returns
+        a static string.
+    comparator: A GitilesRevisionComparator object, or None.  This is used to
+        share a single comparator between multiple pollers.
     """
     u = urlparse(repo_url)
     self.repo_url = repo_url
@@ -116,7 +159,13 @@ class GitilesPoller(PollingChangeSource):
       branches = ['master']
     elif isinstance(branches, basestring):
       branches = [branches]
-    self.branches = branches
+    self.branches = []
+    for b in branches:
+      if not isinstance(b, self.re_pattern_type):
+        b = b.lstrip('/')
+        if not b.startswith('refs/'):
+          b = 'refs/heads/' + b
+      self.branches.append(b)
     self.branch_heads = {}
     self.pollInterval = pollInterval
     self.category = category
@@ -125,30 +174,23 @@ class GitilesPoller(PollingChangeSource):
       if project.endswith('.git'):
         project = project[:-4]
     self.project = project
-    self.revlinktmpl = revlinktmpl
+    self.revlinktmpl = revlinktmpl or '%s/+/%%s' % repo_url
     self.svn_mode = svn_mode
-    self.svn_branch = svn_branch or project
+    self.svn_branch = svn_branch
+    if svn_mode and not svn_branch:
+      self.svn_branch = project
     if agent is None:
       agent = GerritAgent('%s://%s' % (u.scheme, u.netloc), read_only=True)
     self.agent = agent
     self.dry_run = os.environ.get('POLLER_DRY_RUN')
     self.change_filter = change_filter
-    self.comparator = GitilesRevisionComparator()
+    self.comparator = comparator or GitilesRevisionComparator()
 
   @defer.inlineCallbacks
   def startService(self):
     # Initialize revision comparator with revisions from all changes
     # known to buildbot.
-    def db_thread_main(conn):
-      changes_tbl = self.master.db.model.changes
-      q = changes_tbl.select(order_by=[sa.asc(changes_tbl.c.changeid)])
-      rp = conn.execute(q)
-      for row in rp:
-        self.comparator.addRevision(row.revision)
-    yield self.master.db.pool.do(db_thread_main)
-
-    # It's now safe to produce the console view.
-    self.comparator.initialized = True
+    yield self.comparator.initialize(self.master.db)
 
     # Get the head commit for each branch being polled.
     branches = yield self._get_branches()
@@ -157,7 +199,6 @@ class GitilesPoller(PollingChangeSource):
           branch, branch_head))
       self.branch_heads[branch] = branch_head
 
-    log.msg('GitilesPoller: Finished initializing revision history')
     PollingChangeSource.startService(self)
 
   @defer.inlineCallbacks
@@ -171,7 +212,9 @@ class GitilesPoller(PollingChangeSource):
     for ref, ref_head in refs_json.iteritems():
       for branch in self.branches:
         if (ref == branch or
-            (isinstance(branch, self.re_pattern_type) and branch.match(ref))):
+            (isinstance(branch, self.re_pattern_type) and
+             (branch.match(ref) or
+              (ref.startswith('refs/heads/') and branch.match(ref[11:]))))):
           result[ref] = ref_head['value']
           break
     deleted_branches = []
@@ -189,6 +232,11 @@ class GitilesPoller(PollingChangeSource):
       return
     if self.change_filter and not self.change_filter(commit_json, branch):
       return
+    commit_branch = branch.rpartition('/')[2]
+    if callable(self.svn_branch):
+      commit_branch = self.svn_branch(commit_json, branch)
+    elif self.svn_branch:
+      commit_branch = self.svn_branch
     commit_author = commit_json['author']['email']
     commit_tm = time_to_datetime(commit_json['committer']['time'])
     commit_files = []
@@ -206,7 +254,6 @@ class GitilesPoller(PollingChangeSource):
         if m:
           repo_url = m.group(1)
           revision = m.group(2)
-          branch = self.svn_branch
           break
       if revision is None:
         log.err(
@@ -223,7 +270,7 @@ class GitilesPoller(PollingChangeSource):
         files=commit_files,
         comments=commit_msg,
         when_timestamp=commit_tm,
-        branch=branch,
+        branch=commit_branch,
         category=self.category,
         project=self.project,
         properties=properties,

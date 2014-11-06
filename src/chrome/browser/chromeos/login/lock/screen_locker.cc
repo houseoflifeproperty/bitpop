@@ -28,11 +28,13 @@
 #include "chrome/browser/chromeos/login/auth/login_performer.h"
 #include "chrome/browser/chromeos/login/lock/webui_screen_locker.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/login/supervised/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
 #include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/signin/easy_unlock_service.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/webui/chromeos/login/screenlock_icon_provider.h"
 #include "chrome/browser/ui/webui/chromeos/login/screenlock_icon_source.h"
@@ -146,14 +148,22 @@ ScreenLocker::ScreenLocker(const user_manager::UserList& users)
   manager->Initialize(SOUND_UNLOCK,
                       bundle.GetRawDataResource(IDR_SOUND_UNLOCK_WAV));
 
+#if !defined(USE_ATHENA)
+  // crbug.com/408733
   ash::Shell::GetInstance()->
       lock_state_controller()->SetLockScreenDisplayedCallback(
           base::Bind(base::IgnoreResult(&ash::PlaySystemSoundIfSpokenFeedback),
                      static_cast<media::SoundsManager::SoundKey>(
                          chromeos::SOUND_LOCK)));
+#endif
 }
 
 void ScreenLocker::Init() {
+  input_method::InputMethodManager* imm =
+      input_method::InputMethodManager::Get();
+  saved_ime_state_ = imm->GetActiveIMEState();
+  imm->SetState(saved_ime_state_->Clone());
+
   authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
   extended_authenticator_ = new ExtendedAuthenticator(this);
   delegate_.reset(new WebUIScreenLocker(this));
@@ -205,9 +215,12 @@ void ScreenLocker::OnAuthSuccess(const UserContext& user_context) {
   const user_manager::User* user =
       user_manager::UserManager::Get()->FindUser(user_context.GetUserID());
   if (user) {
-    if (!user->is_active())
+    if (!user->is_active()) {
+      saved_ime_state_ = NULL;
       user_manager::UserManager::Get()->SwitchActiveUser(
           user_context.GetUserID());
+    }
+    UserSessionManager::GetInstance()->UpdateEasyUnlockKeys(user_context);
   } else {
     NOTREACHED() << "Logged in user not found.";
   }
@@ -366,6 +379,11 @@ void ScreenLocker::HandleLockScreenRequest() {
 
 // static
 void ScreenLocker::Show() {
+#if defined(USE_ATHENA)
+  // crbug.com/413926
+  return;
+#endif
+
   content::RecordAction(UserMetricsAction("ScreenLocker_Show"));
   DCHECK(base::MessageLoopForUI::IsCurrent());
 
@@ -405,6 +423,11 @@ void ScreenLocker::Show() {
 
 // static
 void ScreenLocker::Hide() {
+#if defined(USE_ATHENA)
+  // crbug.com/413926
+  return;
+#endif
+
   DCHECK(base::MessageLoopForUI::IsCurrent());
   // For a guest/demo user, screen_locker_ would have never been initialized.
   if (user_manager::UserManager::Get()->IsLoggedInAsGuest() ||
@@ -458,6 +481,10 @@ ScreenLocker::~ScreenLocker() {
   VLOG(1) << "Calling session manager's HandleLockScreenDismissed D-Bus method";
   DBusThreadManager::Get()->GetSessionManagerClient()->
       NotifyLockScreenDismissed();
+
+  if (saved_ime_state_.get()) {
+    input_method::InputMethodManager::Get()->SetState(saved_ime_state_);
+  }
 }
 
 void ScreenLocker::SetAuthenticator(Authenticator* authenticator) {
@@ -474,6 +501,10 @@ void ScreenLocker::ScreenLockReady() {
   VLOG(1) << "Moving desktop background to locked container";
   ash::Shell::GetInstance()->
       desktop_background_controller()->MoveDesktopToLockedContainer();
+
+  input_method::InputMethodManager::Get()
+      ->GetActiveIMEState()
+      ->EnableLockScreenLayouts();
 
   bool state = true;
   VLOG(1) << "Emitting SCREEN_LOCK_STATE_CHANGED with state=" << state;

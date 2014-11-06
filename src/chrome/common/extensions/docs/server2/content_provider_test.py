@@ -14,7 +14,7 @@ from file_system import FileNotFoundError
 from object_store_creator import ObjectStoreCreator
 from path_canonicalizer import PathCanonicalizer
 from test_file_system import TestFileSystem
-from third_party.handlebar import Handlebar
+from third_party.motemplate import Motemplate
 
 _REDIRECTS_JSON = json.dumps({
   'oldfile.html': 'storage.html',
@@ -99,7 +99,7 @@ class ContentProviderUnittest(unittest.TestCase):
 
   def _assertTemplateContent(self, content, path, version):
     content_and_type = self._content_provider.GetContentAndType(path).Get()
-    self.assertEqual(Handlebar, type(content_and_type.content))
+    self.assertEqual(Motemplate, type(content_and_type.content))
     content_and_type.content = content_and_type.content.source
     self._assertContent(content, 'text/html', content_and_type)
     self.assertEqual(version, self._content_provider.GetVersion(path).Get())
@@ -203,9 +203,9 @@ class ContentProviderUnittest(unittest.TestCase):
         FileNotFoundError,
         self._content_provider.GetContentAndType('dir6').Get)
 
-  def testCron(self):
+  def testRefresh(self):
     # Not entirely sure what to test here, but get some code coverage.
-    self._content_provider.Cron().Get()
+    self._content_provider.Refresh().Get()
 
 
 if __name__ == '__main__':

@@ -24,11 +24,8 @@ def linux_android():
 
 defaults['category'] = '5android'
 
-android_dbg_archive = master_config.GetArchiveUrl(
-    'ChromiumLinux',
-    'Android Builder (dbg)',
-    'Android_Builder__dbg_',
-    'linux')
+android_dbg_archive = master_config.GetGSUtilUrl(
+    'chromium-android', 'android_main_dbg')
 
 android_rel_archive = master_config.GetGSUtilUrl(
     'chromium-android', 'android_main_rel')
@@ -36,7 +33,7 @@ android_rel_archive = master_config.GetGSUtilUrl(
 #
 # Main release scheduler for src/
 #
-S('android', branch='src', treeStableTimer=60)
+S('android', branch='master', treeStableTimer=60)
 
 #
 # Triggerable scheduler for the builder
@@ -47,6 +44,11 @@ T('android_trigger_rel')
 #
 # Android Builder
 #
+B('Android Arm64 Builder (dbg)', 'f_android_arm64_dbg', 'android', 'android',
+  auto_reboot=False, notify_on_missing=True)
+F('f_android_arm64_dbg',
+  m_annotator.BaseFactory('android/builder'))
+
 B('Android Builder (dbg)', 'f_android_dbg', 'android', 'android',
   auto_reboot=False, notify_on_missing=True)
 F('f_android_dbg', linux_android().ChromiumAnnotationFactory(
@@ -54,6 +56,7 @@ F('f_android_dbg', linux_android().ChromiumAnnotationFactory(
     annotation_script='src/build/android/buildbot/bb_run_bot.py',
     factory_properties={
       'android_bot_id': 'main-builder-dbg',
+      'build_url': android_dbg_archive,
       'trigger': 'android_trigger_dbg',
     }))
 
@@ -113,7 +116,7 @@ def Update(_config_arg, _active_master, c):
 
   c['schedulers'].extend([
       SingleBranchScheduler(name='android_gn',
-                            branch='src',
+                            branch='master',
                             treeStableTimer=60,
                             builderNames=['Android GN']),
   ])

@@ -37,8 +37,10 @@ class GSUtilApi(recipe_api.RecipeApi):
       cmd_prefix = ['--', gsutil_path]
       gsutil_path = self.resource('gsutil_wrapper.py')
 
-    return self.m.python(full_name, gsutil_path, cmd_prefix + cmd, **kwargs)
+    return self.m.python(full_name, gsutil_path, cmd_prefix + cmd,
+                         infra_step=True, **kwargs)
 
+  @recipe_api.composite_step
   def upload(self, source, bucket, dest, args=None, link_name='gsutil.upload',
              metadata=None, **kwargs):
     args = [] if args is None else args[:]
@@ -53,6 +55,7 @@ class GSUtilApi(recipe_api.RecipeApi):
       result.presentation.links[link_name] = (
         'https://storage.cloud.google.com/%s/%s' % (bucket, dest)
       )
+    return result
 
   def download(self, bucket, source, dest, args=None, **kwargs):
     args = [] if args is None else args[:]
@@ -83,6 +86,14 @@ class GSUtilApi(recipe_api.RecipeApi):
       result.presentation.links[link_name] = (
         'https://storage.cloud.google.com/%s/%s' % (dest_bucket, dest)
       )
+
+  def signurl(self, private_key_file, bucket, dest, args=None,
+              **kwargs):
+    args = args or []
+    full_source = 'gs://%s/%s' % (bucket, dest)
+    cmd = ['signurl'] + args + [private_key_file, full_source]
+    name = kwargs.pop('name', 'signurl')
+    return self(cmd, name, **kwargs)
 
   def _generate_metadata_args(self, metadata):
     result = []

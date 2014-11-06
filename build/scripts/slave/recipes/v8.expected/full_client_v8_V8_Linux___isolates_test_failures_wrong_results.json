@@ -17,7 +17,7 @@
       "--output_json",
       "/path/to/tmp/json",
       "--revision",
-      "v8@bleeding_edge:HEAD",
+      "v8@HEAD",
       "--no_shallow"
     ],
     "name": "bot_update",
@@ -105,7 +105,41 @@
       "--arch",
       "ia32",
       "--testname",
-      "mjsunit fuzz-natives cctest message preparser base-unittests compiler-unittests",
+      "unittests",
+      "--no-variants",
+      "--isolates=on",
+      "--json-test-results",
+      "/path/to/tmp/json"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8",
+    "name": "Unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport sys\nprint 'Unexpected results set present.'\nsys.exit(1)\n"
+    ],
+    "name": "Unittests (2)",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@print 'Unexpected results set present.'@@@",
+      "@@@STEP_LOG_LINE@python.inline@sys.exit(1)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/v8/v8testing.py",
+      "--target",
+      "Release",
+      "--arch",
+      "ia32",
+      "--testname",
+      "default",
       "--isolates=on",
       "--flaky-tests",
       "skip",
@@ -144,7 +178,7 @@
       "--arch",
       "ia32",
       "--testname",
-      "mjsunit fuzz-natives cctest message preparser base-unittests compiler-unittests",
+      "default",
       "--isolates=on",
       "--flaky-tests",
       "run",
@@ -175,7 +209,7 @@
   },
   {
     "name": "$final_result",
-    "reason": "2 out of 2 aggregated steps failed. Failures: Step('Check') failed with return_code 1, Step('Check - flaky') failed with return_code 1",
+    "reason": "2 out of 3 aggregated steps failed. Failures: Step('Check') failed with return_code 1, Step('Check - flaky') failed with return_code 1",
     "status_code": 1
   }
 ]

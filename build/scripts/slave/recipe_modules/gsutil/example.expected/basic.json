@@ -61,5 +61,18 @@
       "[SLAVE_BUILD]/erang"
     ],
     "name": "gsutil download"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "--",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "signurl",
+      "path/to/key",
+      "gs://chromium-recipe-test/some/random/path/to/boom"
+    ],
+    "name": "gsutil signed url"
   }
 ]

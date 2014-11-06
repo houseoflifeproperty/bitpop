@@ -55,11 +55,20 @@ void SetPangoUnderlineMetrics(PangoFontDescription *desc,
   // Pango returns the position "above the baseline". Change its sign to convert
   // it to a vertical offset from the baseline.
   int position = -pango_font_metrics_get_underline_position(metrics);
-  pango_quantize_line_geometry(&thickness, &position);
+
   // Note: pango_quantize_line_geometry() guarantees pixel boundaries, so
   //       PANGO_PIXELS() is safe to use.
-  renderer->SetUnderlineMetrics(PANGO_PIXELS(thickness),
-                                PANGO_PIXELS(position));
+  pango_quantize_line_geometry(&thickness, &position);
+  int thickness_pixels = PANGO_PIXELS(thickness);
+  int position_pixels = PANGO_PIXELS(position);
+
+  // Ugly hack: make sure that underlines don't get clipped. See
+  // http://crbug.com/393117.
+  int descent_pixels = PANGO_PIXELS(pango_font_metrics_get_descent(metrics));
+  position_pixels = std::min(position_pixels,
+                             descent_pixels - thickness_pixels);
+
+  renderer->SetUnderlineMetrics(thickness_pixels, position_pixels);
 }
 
 }  // namespace
@@ -401,9 +410,12 @@ void RenderTextPango::DrawVisualText(Canvas* canvas) {
 
   internal::StyleIterator style(colors(), styles());
   for (GSList* it = current_line_->runs; it; it = it->next) {
+    // Skip painting runs outside the display area.
+    if (SkScalarTruncToInt(x) >= display_rect().right())
+      break;
+
     PangoLayoutRun* run = reinterpret_cast<PangoLayoutRun*>(it->data);
     int glyph_count = run->glyphs->num_glyphs;
-    // TODO(msw): Skip painting runs outside the display rect area, like Win.
     if (glyph_count == 0)
       continue;
 
@@ -437,9 +449,13 @@ void RenderTextPango::DrawVisualText(Canvas* canvas) {
       x += pango_units_to_double(glyph.geometry.width);
 
       ++glyph_index;
+      // If this is the last glyph of the range or the last glyph inside the
+      // display area (which would cause early termination of the loop), paint
+      // the range.
       const size_t glyph_text_index = (glyph_index == glyph_count) ?
           style_range.end() : GetGlyphTextIndex(run, glyph_index);
-      if (!IndexInRange(style_range, glyph_text_index)) {
+      if (!IndexInRange(style_range, glyph_text_index) ||
+          SkScalarTruncToInt(x) >= display_rect().right()) {
         // TODO(asvitkine): For cases like "fi", where "fi" is a single glyph
         //                  but can span multiple styles, Pango splits the
         //                  styles evenly over the glyph. We can do this too by
@@ -461,7 +477,10 @@ void RenderTextPango::DrawVisualText(Canvas* canvas) {
         style_start_glyph_index = glyph_index;
         style_start_x = x;
       }
-    } while (glyph_index < glyph_count);
+      // Terminates loop when the end of the range has been reached or the next
+      // glyph falls outside the display area.
+    } while (glyph_index < glyph_count &&
+             SkScalarTruncToInt(x) < display_rect().right());
   }
 
   renderer.EndDiagonalStrike();

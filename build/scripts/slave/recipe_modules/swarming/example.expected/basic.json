@@ -170,13 +170,13 @@
       "@@@STEP_LOG_LINE@json.output@  \"tasks\": {@@@",
       "@@@STEP_LOG_LINE@json.output@    \"hello_world/Windows-6.1/hash_for_win/local/0/1337000001500\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"shard_index\": 0, @@@",
-      "@@@STEP_LOG_LINE@json.output@      \"task_id\": \"deadbeef0\", @@@",
-      "@@@STEP_LOG_LINE@json.output@      \"view_url\": \"https://chromium-swarm-dev.appspot.com/user/task/deadbeef0\"@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"task_id\": \"010000\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"view_url\": \"https://chromium-swarm-dev.appspot.com/user/task/010000\"@@@",
       "@@@STEP_LOG_LINE@json.output@    }@@@",
       "@@@STEP_LOG_LINE@json.output@  }@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@",
-      "@@@STEP_LINK@shard #0@https://chromium-swarm-dev.appspot.com/user/task/deadbeef0@@@"
+      "@@@STEP_LINK@shard #0@https://chromium-swarm-dev.appspot.com/user/task/010000@@@"
     ]
   },
   {
@@ -214,19 +214,19 @@
       "@@@STEP_LOG_LINE@json.output@  \"tasks\": {@@@",
       "@@@STEP_LOG_LINE@json.output@    \"hello_world/Linux/hash_for_linux/local/0/1337000003000:2:0\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"shard_index\": 0, @@@",
-      "@@@STEP_LOG_LINE@json.output@      \"task_id\": \"deadbeef0\", @@@",
-      "@@@STEP_LOG_LINE@json.output@      \"view_url\": \"https://chromium-swarm-dev.appspot.com/user/task/deadbeef0\"@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"task_id\": \"010000\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"view_url\": \"https://chromium-swarm-dev.appspot.com/user/task/010000\"@@@",
       "@@@STEP_LOG_LINE@json.output@    }, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"hello_world/Linux/hash_for_linux/local/0/1337000003000:2:1\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"shard_index\": 1, @@@",
-      "@@@STEP_LOG_LINE@json.output@      \"task_id\": \"deadbeef1\", @@@",
-      "@@@STEP_LOG_LINE@json.output@      \"view_url\": \"https://chromium-swarm-dev.appspot.com/user/task/deadbeef1\"@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"task_id\": \"010100\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"view_url\": \"https://chromium-swarm-dev.appspot.com/user/task/010100\"@@@",
       "@@@STEP_LOG_LINE@json.output@    }@@@",
       "@@@STEP_LOG_LINE@json.output@  }@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@",
-      "@@@STEP_LINK@shard #0@https://chromium-swarm-dev.appspot.com/user/task/deadbeef0@@@",
-      "@@@STEP_LINK@shard #1@https://chromium-swarm-dev.appspot.com/user/task/deadbeef1@@@"
+      "@@@STEP_LINK@shard #0@https://chromium-swarm-dev.appspot.com/user/task/010000@@@",
+      "@@@STEP_LINK@shard #1@https://chromium-swarm-dev.appspot.com/user/task/010100@@@"
     ]
   },
   {
@@ -264,13 +264,13 @@
       "@@@STEP_LOG_LINE@json.output@  \"tasks\": {@@@",
       "@@@STEP_LOG_LINE@json.output@    \"hello_world/Mac/hash_for_mac/local/0/1337000004500\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"shard_index\": 0, @@@",
-      "@@@STEP_LOG_LINE@json.output@      \"task_id\": \"deadbeef0\", @@@",
-      "@@@STEP_LOG_LINE@json.output@      \"view_url\": \"https://chromium-swarm-dev.appspot.com/user/task/deadbeef0\"@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"task_id\": \"010000\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"view_url\": \"https://chromium-swarm-dev.appspot.com/user/task/010000\"@@@",
       "@@@STEP_LOG_LINE@json.output@    }@@@",
       "@@@STEP_LOG_LINE@json.output@  }@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@",
-      "@@@STEP_LINK@shard #0@https://chromium-swarm-dev.appspot.com/user/task/deadbeef0@@@"
+      "@@@STEP_LINK@shard #0@https://chromium-swarm-dev.appspot.com/user/task/010000@@@"
     ]
   },
   {
@@ -293,9 +293,27 @@
       "--decorate",
       "--print-status-updates",
       "--verbose",
-      "hello_world/Windows-6.1/hash_for_win/local/0/1337000001500"
+      "hello_world/Windows-6.1/hash_for_win/local/0/1337000001500",
+      "--task-summary-json",
+      "/path/to/tmp/json"
     ],
-    "name": "[swarming] hello_world on Windows-6.1"
+    "name": "[swarming] hello_world on Windows-6.1",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"shards\": [@@@",
+      "@@@STEP_LOG_LINE@json.output@    {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"isolated_out\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@        \"view_url\": \"blah\"@@@",
+      "@@@STEP_LOG_LINE@json.output@      }, @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"machine_id\": \"fakemachine\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"machine_tag\": \"fakemachinetag\"@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  ], @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"task_name\": \"hello_world/Windows-6.1/hash_for_win/local/0/1337000001500\"@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@STEP_LINK@shard #0 isolated out@blah@@@"
+    ]
   },
   {
     "cmd": [
@@ -310,9 +328,35 @@
       "--decorate",
       "--print-status-updates",
       "--verbose",
-      "hello_world/Linux/hash_for_linux/local/0/1337000003000"
+      "hello_world/Linux/hash_for_linux/local/0/1337000003000",
+      "--task-summary-json",
+      "/path/to/tmp/json"
     ],
-    "name": "[swarming] hello_world"
+    "name": "[swarming] hello_world",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"shards\": [@@@",
+      "@@@STEP_LOG_LINE@json.output@    {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"isolated_out\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@        \"view_url\": \"blah\"@@@",
+      "@@@STEP_LOG_LINE@json.output@      }, @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"machine_id\": \"fakemachine\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"machine_tag\": \"fakemachinetag\"@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"isolated_out\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@        \"view_url\": \"blah\"@@@",
+      "@@@STEP_LOG_LINE@json.output@      }, @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"machine_id\": \"fakemachine\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"machine_tag\": \"fakemachinetag\"@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  ], @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"task_name\": \"hello_world/Linux/hash_for_linux/local/0/1337000003000\"@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@STEP_LINK@shard #0 isolated out@blah@@@",
+      "@@@STEP_LINK@shard #1 isolated out@blah@@@"
+    ]
   },
   {
     "cmd": [
@@ -327,9 +371,27 @@
       "--decorate",
       "--print-status-updates",
       "--verbose",
-      "hello_world/Mac/hash_for_mac/local/0/1337000004500"
+      "hello_world/Mac/hash_for_mac/local/0/1337000004500",
+      "--task-summary-json",
+      "/path/to/tmp/json"
     ],
-    "name": "[swarming] hello_world on Mac"
+    "name": "[swarming] hello_world on Mac",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"shards\": [@@@",
+      "@@@STEP_LOG_LINE@json.output@    {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"isolated_out\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@        \"view_url\": \"blah\"@@@",
+      "@@@STEP_LOG_LINE@json.output@      }, @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"machine_id\": \"fakemachine\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"machine_tag\": \"fakemachinetag\"@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  ], @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"task_name\": \"hello_world/Mac/hash_for_mac/local/0/1337000004500\"@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@STEP_LINK@shard #0 isolated out@blah@@@"
+    ]
   },
   {
     "cmd": [

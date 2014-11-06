@@ -277,7 +277,7 @@ WebInspector.DataGrid.prototype = {
     _startEditingColumnOfDataGridNode: function(node, cellIndex)
     {
         this._editing = true;
-        /** @type {!WebInspector.DataGridNode} */
+        /** @type {?WebInspector.DataGridNode} */
         this._editingNode = node;
         this._editingNode.select();
 
@@ -691,19 +691,6 @@ WebInspector.DataGrid.prototype = {
     get scrollContainer()
     {
         return this._scrollContainer;
-    },
-
-    /**
-     * @return {boolean}
-     */
-    isScrolledToLastRow: function()
-    {
-        return this._scrollContainer.isScrolledToBottom();
-    },
-
-    scrollToLastRow: function()
-    {
-        this._scrollContainer.scrollTop = this._scrollContainer.scrollHeight - this._scrollContainer.offsetHeight;
     },
 
     _positionResizers: function()
@@ -1478,7 +1465,6 @@ WebInspector.DataGridNode.prototype = {
 
     /**
      * @param {number} myIndex
-     * @protected
      */
     recalculateSiblings: function(myIndex)
     {

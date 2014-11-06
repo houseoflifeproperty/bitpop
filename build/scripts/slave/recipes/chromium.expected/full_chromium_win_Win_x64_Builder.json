@@ -74,7 +74,7 @@
       "runhooks"
     ],
     "env": {
-      "GYP_DEFINES": "chromium_win_pch=0 component=shared_library fastbuild=1 gomadir='[BUILD]\\goma' target_arch=x64 use_goma=1"
+      "GYP_DEFINES": "chromium_win_pch=0 component=static_library fastbuild=1 gomadir='[BUILD]\\goma' target_arch=x64 use_goma=1"
     },
     "name": "gclient runhooks"
   },
@@ -118,8 +118,7 @@
       "[BUILD]\\goma",
       "--",
       "all",
-      "chrome",
-      "sync_integration_tests"
+      "chrome"
     ],
     "name": "compile"
   },

@@ -21,7 +21,7 @@ defaults['category'] = '3chromeos asan'
 #
 # Main asan release scheduler for src/
 #
-S('chromeos_asan_rel', branch='src', treeStableTimer=60)
+S('chromeos_asan_rel', branch='master', treeStableTimer=60)
 
 #
 # Triggerable scheduler for the rel asan builder
@@ -157,10 +157,19 @@ asan_tests_2 = [
 ]
 
 asan_tests_3 = [
+  'accessibility_unittests',
+  'app_list_unittests',
   'athena_unittests',
   'browser_tests',
+  'cast_unittests',
   'components_unittests',
+  'device_unittests',
   'display_unittests',
+  'gfx_unittests',
+  'google_apis_unittests',
+  'message_center_unittests',
+  'nacl_loader_unittests',
+  'sandbox_linux_unittests',
   'unit',
 ]
 

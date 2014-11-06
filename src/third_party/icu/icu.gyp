@@ -232,6 +232,19 @@
                     '-fno-builtin-sin',
                 ],
             }],
+            [ 'OS == "win" and clang==1', {
+              # Note: General clang warnings should go in the
+              # clang_warning_flags block above.
+              'msvs_settings': {
+                'VCCLCompilerTool': {
+                  'AdditionalOptions': [
+                    # See http://bugs.icu-project.org/trac/ticket/11122
+                    '-Wno-inline-new-delete',
+                    '-Wno-implicit-exception-spec-mismatch',
+                  ],
+                },
+              },
+            }],
             ['OS == "android" and use_system_stlport == 1', {
               'target_conditions': [
                 ['_toolset == "target"', {
@@ -240,11 +253,6 @@
                   'include_dirs': [
                     '<(android_src)/abi/cpp/include',
                   ],
-                  'link_settings': {
-                    'libraries': [
-                      '-lgabi++',
-                    ],
-                  },
                 }],
               ],
             }],
@@ -326,10 +334,23 @@
             [ 'use_system_icu==0 and want_separate_host_toolset==0', {
               'toolsets': ['target'],
             }],
-            [ 'OS == "win"', {
+            [ 'OS == "win" and icu_use_data_file_flag==0', {
               'sources': [
                 'source/stubdata/stubdata.c',
               ],
+            }],
+            [ 'OS == "win" and clang==1', {
+              # Note: General clang warnings should go in the
+              # clang_warning_flags block above.
+              'msvs_settings': {
+                'VCCLCompilerTool': {
+                  'AdditionalOptions': [
+                    # See http://bugs.icu-project.org/trac/ticket/11122
+                    '-Wno-inline-new-delete',
+                    '-Wno-implicit-exception-spec-mismatch',
+                  ],
+                },
+              },
             }],
             ['OS == "android" and use_system_stlport == 1', {
               'target_conditions': [
@@ -339,11 +360,6 @@
                   'include_dirs': [
                     '<(android_src)/abi/cpp/include',
                   ],
-                  'link_settings': {
-                    'libraries': [
-                      '-lgabi++',
-                    ],
-                  },
                 }],
               ],
             }],

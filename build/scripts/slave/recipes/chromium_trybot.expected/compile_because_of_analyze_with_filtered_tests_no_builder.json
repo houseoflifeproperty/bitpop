@@ -90,6 +90,12 @@
       "@@@STEP_LOG_LINE@json.output@    {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"test\": \"unittests\"@@@",
       "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  ], @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"non_filter_compile_builders\": [@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"linux_chromium_rel\"@@@",
+      "@@@STEP_LOG_LINE@json.output@  ], @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"non_filter_tests_builders\": [@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"linux_chromium_rel\"@@@",
       "@@@STEP_LOG_LINE@json.output@  ]@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@"
@@ -103,11 +109,16 @@
       "[SLAVE_BUILD]/src/testing/buildbot/trybot_analyze_config.json",
       "/path/to/tmp/json"
     ],
-    "name": "read analyze test spec",
+    "name": "read filter exclusion spec",
     "~followup_annotations": [
       "@@@STEP_TEXT@path: 'testing/buildbot/trybot_analyze_config.json'@@@",
       "@@@STEP_LOG_LINE@json.output@{@@@",
-      "@@@STEP_LOG_LINE@json.output@  \"exclusions\": []@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"base\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"exclusions\": []@@@",
+      "@@@STEP_LOG_LINE@json.output@  }, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"chromium\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"exclusions\": []@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@"
     ]
@@ -129,7 +140,7 @@
       "-u",
       "[SLAVE_BUILD]/src/build/gyp_chromium",
       "--analyzer",
-      "{\"files\": [\"foo.cc\"], \"targets\": [\"base_unittests\", \"browser_tests\", \"unittests\"]}",
+      "{\"files\": [\"foo.cc\"], \"targets\": [\"base_unittests\", \"browser_tests\", \"unittests\", \"chrome\"]}",
       "/path/to/tmp/json"
     ],
     "env": {
@@ -138,6 +149,10 @@
     "name": "analyze",
     "~followup_annotations": [
       "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"build_targets\": [@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"browser_tests\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"base_unittests\"@@@",
+      "@@@STEP_LOG_LINE@json.output@  ], @@@",
       "@@@STEP_LOG_LINE@json.output@  \"status\": \"Found dependency\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"targets\": [@@@",
       "@@@STEP_LOG_LINE@json.output@    \"browser_tests\", @@@",
@@ -157,7 +172,7 @@
     "env": {
       "GYP_DEFINES": "component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]/goma' target_arch=x64 use_goma=1"
     },
-    "name": "gclient runhooks"
+    "name": "gclient runhooks (with patch)"
   },
   {
     "cmd": [
@@ -176,12 +191,10 @@
       "[BUILD]/goma",
       "--",
       "all",
-      "chrome",
-      "chrome",
       "base_unittests",
       "browser_tests",
-      "unittests",
-      "chrome"
+      "chrome",
+      "unittests"
     ],
     "name": "compile (with patch)"
   },

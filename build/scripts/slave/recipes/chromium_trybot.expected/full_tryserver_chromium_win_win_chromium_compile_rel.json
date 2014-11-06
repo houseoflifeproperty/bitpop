@@ -91,7 +91,8 @@
       "@@@STEP_LOG_LINE@json.output@    ], @@@",
       "@@@STEP_LOG_LINE@json.output@    \"chromium_configs\": [@@@",
       "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos\", @@@",
-      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_clang\"@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_clang\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_ozone\"@@@",
       "@@@STEP_LOG_LINE@json.output@    ], @@@",
       "@@@STEP_LOG_LINE@json.output@    \"platforms\": [@@@",
       "@@@STEP_LOG_LINE@json.output@      \"linux\"@@@",
@@ -116,9 +117,9 @@
       "runhooks"
     ],
     "env": {
-      "GYP_DEFINES": "chromium_win_pch=0 component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]\\goma' target_arch=ia32 use_goma=1"
+      "GYP_DEFINES": "chromium_win_pch=0 component=static_library dcheck_always_on=1 fastbuild=2 gomadir='[BUILD]\\goma' target_arch=ia32 use_goma=1"
     },
-    "name": "gclient runhooks"
+    "name": "gclient runhooks (with patch)"
   },
   {
     "cmd": [
@@ -136,11 +137,9 @@
       "--goma-dir",
       "[BUILD]\\goma",
       "--",
-      "chrome",
-      "chrome",
       "base_unittests",
       "browser_tests",
-      "chrome"
+      "mini_installer"
     ],
     "name": "compile (with patch)"
   }

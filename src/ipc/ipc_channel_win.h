@@ -13,6 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/win/scoped_handle.h"
 #include "ipc/ipc_channel_reader.h"
 
 namespace base {
@@ -36,7 +37,6 @@ class ChannelWin : public Channel,
   virtual bool Send(Message* message) OVERRIDE;
   virtual base::ProcessId GetPeerPID() const OVERRIDE;
   virtual base::ProcessId GetSelfPID() const OVERRIDE;
-  virtual ChannelHandle TakePipeHandle() OVERRIDE;
 
   static bool IsNamedServerInitialized(const std::string& channel_id);
 
@@ -74,7 +74,7 @@ class ChannelWin : public Channel,
   State input_state_;
   State output_state_;
 
-  HANDLE pipe_;
+  base::win::ScopedHandle pipe_;
 
   base::ProcessId peer_pid_;
 
@@ -98,7 +98,16 @@ class ChannelWin : public Channel,
   bool writing_;
 
   // Tracks the lifetime of this object, for debugging purposes.
-  int32 debug_flags_;
+  uint32 debug_flags_;
+
+  // OS result for the current write. TODO(rvargas): remove this.
+  uint32 write_error_;
+
+  // OS result for a previous failed write. TODO(rvargas): remove this.
+  uint32 last_write_error_;
+
+  // Size of the current write. TODO(rvargas): remove this.
+  uint32 write_size_;
 
   // This is a unique per-channel value used to authenticate the client end of
   // a connection. If the value is non-zero, the client passes it in the hello
@@ -106,10 +115,8 @@ class ChannelWin : public Channel,
   // compatability with existing clients that don't validate the channel.)
   int32 client_secret_;
 
-
-  base::WeakPtrFactory<ChannelWin> weak_factory_;
-
   scoped_ptr<base::ThreadChecker> thread_check_;
+  base::WeakPtrFactory<ChannelWin> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ChannelWin);
 };

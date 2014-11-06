@@ -54,12 +54,28 @@ class TryServerHttpStatusPush(status_push.HttpStatusPush):
       with open(CR_PASSWORD_FILE, 'rb') as f:
         pwd = f.readline().strip()
 
+    def filterFunc(data):
+      if isinstance(data, (list, tuple)):
+        return map(filterFunc, data)
+
+      if isinstance(data, dict):
+        result = {}
+        for key, value in data.items():
+          # Skip entries that can arbitrarily grow and gum up things.
+          if key in ('logs', 'steps'):
+            continue
+          result[key] = filterFunc(value)
+        return result
+
+      return data
+
     extra_post_params = { 'password': pwd }
     status_push.HttpStatusPush.__init__(
         self,
         *args,
         serverUrl=serverUrl,
         blackList=blackList,
+        filterFunc=filterFunc,
         extra_post_params=extra_post_params,
         **kwargs)
 

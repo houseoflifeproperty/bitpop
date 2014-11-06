@@ -12,7 +12,7 @@ class ChromiumOSTryServer(Master.ChromiumOSBase):
   slave_port = 8149
   master_port_alt = 8249
   try_job_port = 8349
-  buildbot_url = 'http://chromegw/p/tryserver.chromiumos/'
+  buildbot_url = 'https://uberchromegw.corp.google.com/p/tryserver.chromiumos/'
   repo_url_ext = 'https://chromium.googlesource.com/chromiumos/tryjobs.git'
   repo_url_int = 'https://chrome-internal.googlesource.com/chromeos/tryjobs.git'
   from_address = 'cros.tryserver@chromium.org'

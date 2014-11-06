@@ -88,6 +88,33 @@ class BaseTestCase(GCBaseTestCase, SuperMoxTestBase):
     gclient_scm.GitWrapper.BinaryExists = self._original_GitBinaryExists
 
 
+class BasicTests(SuperMoxTestBase):
+  def setUp(self):
+    SuperMoxTestBase.setUp(self)
+
+  def testGetFirstRemoteUrl(self):
+    REMOTE_STRINGS = [('remote.origin.url E:\\foo\\bar', 'E:\\foo\\bar'),
+                      ('remote.origin.url /b/foo/bar', '/b/foo/bar'),
+                      ('remote.origin.url https://foo/bar', 'https://foo/bar'),
+                      ('remote.origin.url E:\\Fo Bar\\bax', 'E:\\Fo Bar\\bax'),
+                      ('remote.origin.url git://what/"do', 'git://what/"do')]
+    FAKE_PATH = '/fake/path'
+    self.mox.StubOutWithMock(gclient_scm.scm.GIT, 'Capture')
+    for question, _ in REMOTE_STRINGS:
+      gclient_scm.scm.GIT.Capture(
+          ['config', '--local', '--get-regexp', r'remote.*.url'],
+          cwd=FAKE_PATH).AndReturn(question)
+
+    self.mox.ReplayAll()
+
+    for _, answer in REMOTE_STRINGS:
+      self.assertEquals(gclient_scm.SCMWrapper._get_first_remote_url(FAKE_PATH),
+                        answer)
+
+  def tearDown(self):
+    SuperMoxTestBase.tearDown(self)
+
+
 class SVNWrapperTestCase(BaseTestCase):
   class OptionsObject(object):
     def __init__(self, verbose=False, revision=None, force=False):
@@ -1011,7 +1038,7 @@ class ManagedGitWrapperTestCase(BaseGitWrapperTestCase):
     scm.status(options, self.args, file_list)
     self.assertEquals(file_list, [file_path])
     self.checkstdout(
-        ('running \'git diff --name-status '
+        ('\n________ running \'git diff --name-status '
          '069c602044c5388d2d15c3f875b057c852003458\' in \'%s\'\nM\ta\n') %
             join(self.root_dir, '.'))
 
@@ -1031,7 +1058,7 @@ class ManagedGitWrapperTestCase(BaseGitWrapperTestCase):
     expected_file_list = [join(self.base_path, x) for x in ['a', 'b']]
     self.assertEquals(sorted(file_list), expected_file_list)
     self.checkstdout(
-        ('running \'git diff --name-status '
+        ('\n________ running \'git diff --name-status '
          '069c602044c5388d2d15c3f875b057c852003458\' in \'%s\'\nM\ta\nM\tb\n') %
             join(self.root_dir, '.'))
 
@@ -1502,7 +1529,7 @@ class UnmanagedGitWrapperTestCase(BaseGitWrapperTestCase):
 
     rmtree(origin_root_dir)
 
-  def testUpdateCloneOnDetachedBranch(self):
+  def testUpdateCloneOnFetchedRemoteBranch(self):
     if not self.enabled:
       return
     options = self.Options()
@@ -1534,7 +1561,7 @@ class UnmanagedGitWrapperTestCase(BaseGitWrapperTestCase):
 
     rmtree(origin_root_dir)
 
-  def testUpdateCloneOnBranchHead(self):
+  def testUpdateCloneOnTrueRemoteBranch(self):
     if not self.enabled:
       return
     options = self.Options()
@@ -1559,9 +1586,17 @@ class UnmanagedGitWrapperTestCase(BaseGitWrapperTestCase):
     self.assertEquals(file_list, expected_file_list)
     self.assertEquals(scm.revinfo(options, (), None),
                       '9a51244740b25fa2ded5252ca00a3178d3f665a9')
-    self.assertEquals(self.getCurrentBranch(), 'feature')
-    self.checkNotInStdout(
-      'Checked out refs/heads/feature to a detached HEAD')
+    # @refs/heads/feature is AKA @refs/remotes/origin/feature in the clone, so
+    # should be treated as such by gclient.
+    # TODO(mmoss): Though really, we should only allow DEPS to specify branches
+    # as they are known in the upstream repo, since the mapping into the local
+    # repo can be modified by users (or we might even want to change the gclient
+    # defaults at some point). But that will take more work to stop using
+    # refs/remotes/ everywhere that we do (and to stop assuming a DEPS ref will
+    # always resolve locally, like when passing them to show-ref or rev-list).
+    self.assertEquals(self.getCurrentBranch(), None)
+    self.checkInStdout(
+      'Checked out refs/remotes/origin/feature to a detached HEAD')
 
     rmtree(origin_root_dir)
 

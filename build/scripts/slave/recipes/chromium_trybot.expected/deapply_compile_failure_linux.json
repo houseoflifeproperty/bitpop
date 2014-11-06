@@ -91,7 +91,8 @@
       "@@@STEP_LOG_LINE@json.output@    ], @@@",
       "@@@STEP_LOG_LINE@json.output@    \"chromium_configs\": [@@@",
       "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos\", @@@",
-      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_clang\"@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_clang\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_ozone\"@@@",
       "@@@STEP_LOG_LINE@json.output@    ], @@@",
       "@@@STEP_LOG_LINE@json.output@    \"platforms\": [@@@",
       "@@@STEP_LOG_LINE@json.output@      \"linux\"@@@",
@@ -118,7 +119,7 @@
     "env": {
       "GYP_DEFINES": "component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]/goma' target_arch=x64 use_goma=1"
     },
-    "name": "gclient runhooks"
+    "name": "gclient runhooks (with patch)"
   },
   {
     "cmd": [
@@ -137,12 +138,10 @@
       "[BUILD]/goma",
       "--",
       "all",
-      "chrome",
-      "chrome",
       "base_unittests",
-      "mojo_common_unittests",
       "browser_tests",
-      "chrome"
+      "chrome",
+      "mojo_common_unittests"
     ],
     "name": "compile (with patch)"
   },
@@ -438,7 +437,7 @@
     "env": {
       "GYP_DEFINES": "component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]/goma' target_arch=x64 use_goma=1"
     },
-    "name": "gclient runhooks (2)"
+    "name": "gclient runhooks (without patch)"
   },
   {
     "cmd": [
@@ -461,29 +460,9 @@
     "name": "compile (without patch)",
     "~followup_annotations": [
       "step returned non-zero exit code: 1",
-      "@@@STEP_FAILURE@@@"
+      "@@@STEP_FAILURE@@@",
+      "@@@SET_BUILD_PROPERTY@failure_type@\"TRANSIENT_FAILURE\"@@@"
     ]
-  },
-  {
-    "cmd": [
-      "python",
-      "-u",
-      "[BUILD]/scripts/slave/compile.py",
-      "--target",
-      "Release",
-      "--src-dir",
-      "[SLAVE_BUILD]/src",
-      "--build-tool",
-      "ninja",
-      "--compiler",
-      "goma",
-      "--goma-dir",
-      "[BUILD]/goma",
-      "--clobber",
-      "--",
-      "base_unittests"
-    ],
-    "name": "compile (without patch, clobber)"
   },
   {
     "allow_subannotations": true,
@@ -541,5 +520,10 @@
       "@@@STEP_LOG_END@python.inline@@@",
       "@@@STEP_FAILURE@@@"
     ]
+  },
+  {
+    "name": "$final_result",
+    "reason": "Step('compile (without patch)') failed with return_code 1",
+    "status_code": 1
   }
 ]

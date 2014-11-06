@@ -39,10 +39,6 @@ class WebContentsViewDelegateImpl : public content::WebContentsViewDelegate {
     return false;
   }
 
-  virtual void TakeFocus(bool reverse) OVERRIDE {}
-  virtual void StoreFocus() OVERRIDE {}
-  virtual void RestoreFocus() OVERRIDE {}
-
   virtual void ShowContextMenu(
       content::RenderFrameHost* render_frame_host,
       const content::ContextMenuParams& params) OVERRIDE {
@@ -53,6 +49,17 @@ class WebContentsViewDelegateImpl : public content::WebContentsViewDelegate {
   virtual void SizeChanged(const gfx::Size& size) OVERRIDE {
     // TODO(oshima|sadrul): Implement this when sad_tab is componentized.
     // See c/b/ui/views/tab_contents/chrome_web_contents_view_delegate_views.cc
+  }
+
+  virtual void ShowDisambiguationPopup(
+      const gfx::Rect& target_rect,
+      const SkBitmap& zoomed_bitmap,
+      const gfx::NativeView content,
+      const base::Callback<void(ui::GestureEvent*)>& gesture_cb,
+      const base::Callback<void(ui::MouseEvent*)>& mouse_cb) OVERRIDE {
+  }
+
+  virtual void HideDisambiguationPopup() OVERRIDE {
   }
 
   scoped_ptr<RenderViewContextMenuImpl> BuildMenu(
@@ -144,16 +151,3 @@ content::WebContentsViewDelegate* CreateWebContentsViewDelegate(
 }
 
 }  // namespace athena
-
-namespace web_modal {
-
-SingleWebContentsDialogManager*
-WebContentsModalDialogManager::CreateNativeWebModalManager(
-    NativeWebContentsModalDialog dialog,
-    SingleWebContentsDialogManagerDelegate* native_delegate) {
-  // TODO(oshima): Investigate if we need to implement this.
-  NOTREACHED();
-  return NULL;
-}
-
-}  // namespace web_modal

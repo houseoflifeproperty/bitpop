@@ -32,6 +32,11 @@
     <uses-permission android:name="org.chromium.chrome.shell.permission.C2D_MESSAGE" />
     <uses-permission android:name="com.google.android.c2dm.permission.RECEIVE" />
 
+    <permission android:name="org.chromium.chrome.shell.permission.DEBUG"
+                android:label="Debug web pages in Chrome Shell"
+                android:permissionGroup="android.permission-group.DEVELOPMENT_TOOLS"
+                android:protectionLevel="signature" />
+
     <application android:name="org.chromium.chrome.shell.ChromeShellApplication"
             android:icon="@mipmap/app_icon"
             android:label="Chrome Shell">
@@ -216,6 +221,15 @@
         <provider android:name="org.chromium.chrome.browser.ChromeBrowserProvider"
                   android:authorities="org.chromium.chrome.shell"
                   android:exported="true" />
+
+        <!-- Provider for FileProvider. -->
+        <provider android:name="android.support.v4.content.FileProvider"
+            android:authorities="org.chromium.chrome.shell.FileProvider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- Sync adapter for browser sync. -->
         <service android:exported="false"

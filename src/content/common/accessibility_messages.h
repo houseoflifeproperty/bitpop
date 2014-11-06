@@ -17,6 +17,14 @@
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/accessibility/ax_tree_update.h"
 
+// Singly-included section for custom types.
+#ifndef CONTENT_COMMON_ACCESSIBILITY_MESSAGES_H_
+#define CONTENT_COMMON_ACCESSIBILITY_MESSAGES_H_
+
+typedef std::map<int32, int> FrameIDMap;
+
+#endif  // CONTENT_COMMON_ACCESSIBILITY_MESSAGES_H_
+
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 
@@ -54,6 +62,15 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_BEGIN(AccessibilityHostMsg_EventParams)
   // The tree update.
   IPC_STRUCT_MEMBER(ui::AXTreeUpdate, update)
+
+  // Mapping from node id to routing id of its child frame - either the
+  // routing id of a RenderFrame or a RenderFrameProxy for an out-of-process
+  // iframe.
+  IPC_STRUCT_MEMBER(FrameIDMap, node_to_frame_routing_id_map)
+
+  // Mapping from node id to the browser plugin instance id of a child
+  // browser plugin.
+  IPC_STRUCT_MEMBER(FrameIDMap, node_to_browser_plugin_instance_id_map)
 
   // Type of event.
   IPC_STRUCT_MEMBER(ui::AXEvent, event_type)

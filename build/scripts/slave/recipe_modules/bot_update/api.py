@@ -57,6 +57,7 @@ class BotUpdateApi(recipe_api.RecipeApi):
     assert isinstance(cmd, (list, tuple))
     bot_update_path = self.m.path['build'].join(
         'scripts', 'slave', 'bot_update.py')
+    kwargs.setdefault('infra_step', True)
     return self.m.python(name, bot_update_path, cmd, **kwargs)
 
   @property
@@ -66,6 +67,7 @@ class BotUpdateApi(recipe_api.RecipeApi):
   def ensure_checkout(self, gclient_config=None, suffix=None,
                       patch=True, update_presentation=True,
                       force=False, patch_root=None, no_shallow=False,
+                      with_branch_heads=False,
                       **kwargs):
     # We can re-use the gclient spec from the gclient module, since all the
     # data bot_update needs is already configured into the gclient spec.
@@ -145,6 +147,8 @@ class BotUpdateApi(recipe_api.RecipeApi):
       cmd.append('--force')
     if no_shallow:
       cmd.append('--no_shallow')
+    if with_branch_heads:
+      cmd.append('--with_branch_heads')
 
     # Inject Json output for testing.
     git_mode = self.m.properties.get('mastername') in GIT_MASTERS
@@ -162,7 +166,8 @@ class BotUpdateApi(recipe_api.RecipeApi):
 
     # Ah hah! Now that everything is in place, lets run bot_update!
     try:
-      self(name, cmd, step_test_data=step_test_data, **kwargs)
+      # 88 is the 'patch failure' return code.
+      self(name, cmd, step_test_data=step_test_data, ok_ret=(0, 88), **kwargs)
     finally:
       step_result = self.m.step.active_result
 
@@ -180,26 +185,17 @@ class BotUpdateApi(recipe_api.RecipeApi):
       if 'log_lines' in step_result.json.output:
         for log_name, log_lines in step_result.json.output['log_lines']:
           step_result.presentation.logs[log_name] = log_lines.splitlines()
-      # Abort the build on failure, if its not a patch failure.
-      if step_result.presentation.status == self.m.step.FAILURE:
-        if step_result.json.output.get('patch_failure'):
-          step_result.presentation.status = self.m.step.SUCCESS
-        else:
-          raise self.m.step.StepFailure('Bot Update failed, aborting.')
 
       # Set the "checkout" path for the main solution.
       # This is used by the Chromium module to figure out where to look for
       # the checkout.
       # If there is a patch failure, emit another step that said things failed.
       if step_result.json.output.get('patch_failure'):
-        self.m.python.inline(
-            'Patch failure',
-            """\
-            import sys
-            print 'Check the bot_update step for details.'
-            sys.exit(1)
-            """,
-            step_test_data=self.test_api.patch_error_data)
+        # TODO(phajdan.jr): Differentiate between failure to download the patch
+        # and failure to apply it. The first is an infra failure, the latter
+        # a definite patch failure.
+        self.m.python.failing_step(
+            'Patch failure', 'Check the bot_update step for details')
 
       # bot_update actually just sets root to be the folder name of the
       # first solution.

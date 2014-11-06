@@ -80,13 +80,8 @@ class TestUtilsApi(recipe_api.RecipeApi):
 
     for t in tests:
       if not t.has_valid_results(caller_api, 'with patch'):
-        self.m.python.inline(
-          t.name,
-          r"""
-          import sys
-          print 'TEST RESULTS WERE INVALID'
-          sys.exit(1)
-          """)
+        self.m.tryserver.maybe_set_transient_failure_tryjob_result()
+        self.m.python.failing_step(t.name, 'TEST RESULTS WERE INVALID')
       elif t.failures(caller_api, 'with patch'):
         failing_tests.append(t)
     if not failing_tests:
@@ -94,6 +89,9 @@ class TestUtilsApi(recipe_api.RecipeApi):
 
     try:
       return deapply_patch_fn(failing_tests)
+    except self.m.step.StepFailure:
+      self.m.tryserver.set_transient_failure_tryjob_result()
+      raise
     finally:
       run('without patch', failing_tests)
       for t in failing_tests:
@@ -101,55 +99,50 @@ class TestUtilsApi(recipe_api.RecipeApi):
 
   def _summarize_retried_test(self, caller_api, test):
     if not test.has_valid_results(caller_api, 'without patch'):
-      self.m.python.inline(
-        test.name,
-        r"""
-        import sys
-        print 'TEST RESULTS WERE INVALID'
-        sys.exit(1)
-        """)
-      return
+      self.m.tryserver.maybe_set_transient_failure_tryjob_result()
+      self.m.python.failing_step(test.name, 'TEST RESULTS WERE INVALID')
 
     ignored_failures = set(test.failures(caller_api, 'without patch'))
     new_failures = set(test.failures(caller_api, 'with patch')) - ignored_failures
 
-    step_result = self.m.python.inline(
-      test.name,
-      r"""
-      import sys, json
-      failures = json.load(open(sys.argv[1], 'rb'))
+    try:
+      self.m.python.inline(
+        test.name,
+        r"""
+        import sys, json
+        failures = json.load(open(sys.argv[1], 'rb'))
 
-      success = True
+        success = True
 
-      if failures['new']:
-        success = False
-        print 'New failures:'
-        for f in failures['new']:
-          print f
+        if failures['new']:
+          success = False
+          print 'New failures:'
+          for f in failures['new']:
+            print f
 
-      if failures['ignored']:
-        print 'Ignored failures:'
-        for f in failures['ignored']:
-          print f
+        if failures['ignored']:
+          print 'Ignored failures:'
+          for f in failures['ignored']:
+            print f
 
-      sys.exit(0 if success else 1)
-      """,
-      args=[
-        self.m.json.input({
-          'new': list(new_failures),
-          'ignored': list(ignored_failures),
-        })
-      ],
-    )
+        sys.exit(0 if success else 1)
+        """,
+        args=[
+          self.m.json.input({
+            'new': list(new_failures),
+            'ignored': list(ignored_failures),
+          })
+        ],
+      )
+    finally:
+      p = self.m.step.active_result.presentation
 
-    p = step_result.presentation
+      p.step_text += self.format_step_text([
+          ['failures:', new_failures],
+          ['ignored:', ignored_failures]
+      ])
 
-    p.step_text += self.format_step_text([
-        ['failures:', new_failures],
-        ['ignored:', ignored_failures]
-    ])
-
-    if new_failures:
-      p.status = self.m.step.FAILURE
-    elif ignored_failures:
-      p.status = self.m.step.WARNING
+      if new_failures:
+        p.status = self.m.step.FAILURE
+      elif ignored_failures:
+        p.status = self.m.step.WARNING

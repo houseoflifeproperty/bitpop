@@ -62,7 +62,7 @@ def _FormatValue(value):
 
 class JSCView(object):
   '''Uses a Model from the JSON Schema Compiler and generates a dict that
-  a Handlebar template can use for a data source.
+  a Motemplate template can use for a data source.
   '''
 
   def __init__(self,
@@ -116,6 +116,7 @@ class JSCView(object):
       as_dict['deprecated'] = self._jsc_model.deprecated
 
     as_dict['byName'] = _GetByNameDict(as_dict)
+
     return as_dict
 
   def _IsExperimental(self):
@@ -388,6 +389,9 @@ class JSCView(object):
     '''Returns an object suitable for use in templates to display availability
     information.
     '''
+    # TODO(rockot): Temporary hack. Remove this very soon.
+    if status == 'master':
+      status = 'trunk'
     return {
       'partial': self._template_cache.GetFromFile(
           '%sintro_tables/%s_message.html' % (PRIVATE_TEMPLATES, status)).Get(),
@@ -550,7 +554,7 @@ class JSCView(object):
         if ext_type not in node.get('extension_types', (ext_type,)):
           continue
         # If there is a 'partial' argument and it hasn't already been
-        # converted to a Handlebar object, transform it to a template.
+        # converted to a Motemplate object, transform it to a template.
         if 'partial' in node:
           # Note: it's enough to copy() not deepcopy() because only a single
           # top-level key is being modified.

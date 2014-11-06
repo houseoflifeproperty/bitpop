@@ -9,6 +9,7 @@ body {
 
 a {
   height: 100%;
+  position: relative;
   width: 100%;
 }
 
@@ -27,7 +28,15 @@ div {
   width: 90%;
 }
 
-img {
+span.blocker {
+  display: inline-block;
   height: 100%;
+  position: absolute;
+  width: 100%;
+}
+
+img {
+  height: auto;
+  min-height: 100%;
   width: 100%;
 }

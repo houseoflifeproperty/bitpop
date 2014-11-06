@@ -1248,41 +1248,6 @@ Index: third_party/buildbot_8_4p1/buildbot/status/web/console.py
 -
 
 
-Fix chrome-bot mis-syncs.
-
-Index: buildbot/changes/svnpoller.py
-===================================================================
---- buildbot/changes/svnpoller.py
-+++ buildbot/changes/svnpoller.py
-@@ -249,6 +249,25 @@ class SVNPoller(base.PollingChangeSource, util.ComparableMixin):
-                     new_logentries.append(el)
-                 new_logentries.reverse() # return oldest first
-
-+        # If the newest commit's author is chrome-bot, skip this commit.  This
-+        # is a guard to ensure that we don't poll on our mirror while it could
-+        # be mid-sync.  In that case, the author data could be wrong and would
-+        # look like it was a commit by chrome-bot@google.com.  A downside: the
-+        # chrome-bot account may have a legitimate commit.  This should not
-+        # happen generally, so we're okay waiting to see it until there's a
-+        # later commit with a non-chrome-bot author.
-+        debug_change = []
-+        for logentry in new_logentries:
-+          rev = int(logentry.getAttribute("revision"))
-+          author = self._get_text(logentry, "author")
-+          debug_change.append([rev, author])
-+        log.msg('svnPoller: debug_change: %r' % debug_change)
-+        if len(new_logentries) > 0:
-+          newest_rev_author = self._get_text(new_logentries[-1], "author")
-+          if newest_rev_author == 'chrome-bot@google.com':
-+            new_logentries.pop(-1)
-+            new_last_change = int(logentries[1].getAttribute("revision"))
-+
-         self.last_change = new_last_change
-         log.msg('svnPoller: _process_changes %s .. %s' %
-                 (old_last_change, new_last_change))
-
-
-
 Add diagnostic info for an error seen frequently in the wild.
 
 Index: buildbot/db/buildsets.py
@@ -4157,3 +4122,459 @@ index fd4bd11..60383f4 100644
  
              # We want to display this builder.
              category = builder.category or "default"
+diff --git a/third_party/buildbot_8_4p1/buildbot/status/web/builder.py b/third_party/buildbot_8_4p1/buildbot/status/web/builder.py
+index 4a4f19d..92c9544 100644
+--- a/third_party/buildbot_8_4p1/buildbot/status/web/builder.py
++++ b/third_party/buildbot_8_4p1/buildbot/status/web/builder.py
+@@ -132,7 +132,8 @@ class StatusResourceBuilder(HtmlResource, BuildLineMixin):
+ 
+         cxt['authz'] = self.getAuthz(req)
+         cxt['builder_url'] = path_to_builder(req, b)
+-
++        cxt['mastername'] = (
++            req.site.buildbot_service.master.properties['mastername'])
+         template = req.site.buildbot_service.templates.get_template("builder.html")
+         yield template.render(**cxt)
+ 
+diff --git a/third_party/buildbot_8_4p1/buildbot/status/web/console.py b/third_party/buildbot_8_4p1/buildbot/status/web/console.py
+index 60383f4..2d48aca 100644
+--- a/third_party/buildbot_8_4p1/buildbot/status/web/console.py
++++ b/third_party/buildbot_8_4p1/buildbot/status/web/console.py
+@@ -77,14 +77,15 @@ class ANYBRANCH: pass # a flag value, used below
+ 
+ class CachedStatusBox(object):
+     """Basic data class to remember the information for a box on the console."""
+-    def __init__(self, color, pageTitle, details, url, tag, builderName):
++    def __init__(self, color, pageTitle, details, url, tag, builderName,
++                 buildNumber=None):
+         self.color = color
+         self.pageTitle = pageTitle
+         self.details = details
+         self.url = url
+         self.tag = tag
+         self.builderName = builderName
+-
++        self.buildNumber = buildNumber
+ 
+ class CacheStatus(object):
+     """Basic cache of CachedStatusBox based on builder names and revisions.
+@@ -105,9 +106,11 @@ class CacheStatus(object):
+                                        self.allBoxes[builder][revision].color)
+         return data
+ 
+-    def insert(self, builderName, revision, color, pageTitle, details, url, tag):
++    def insert(self, builderName, revision, color, pageTitle, details, url,
++               tag, buildNumber=None):
+         """Insert a new build into the cache."""
+-        box = CachedStatusBox(color, pageTitle, details, url, tag, builderName)
++        box = CachedStatusBox(color, pageTitle, details, url, tag, builderName,
++                              buildNumber)
+         if not self.allBoxes.get(builderName):
+             self.allBoxes[builderName] = {}
+ 
+@@ -285,7 +288,7 @@ class ConsoleStatusResource(HtmlResource):
+         details = {}
+         if not build.getLogs():
+             return details
+-        
++
+         for step in build.getSteps():
+             (result, reason) = step.getResults()
+             if result == builder.FAILURE:
+@@ -294,7 +297,7 @@ class ConsoleStatusResource(HtmlResource):
+                 # Remove html tags from the error text.
+                 stripHtml = re.compile(r'<.*?>')
+                 strippedDetails = stripHtml.sub('', ' '.join(step.getText()))
+-                
++
+                 details['buildername'] = builderName
+                 details['status'] = strippedDetails
+                 details['reason'] = reason
+@@ -304,7 +307,7 @@ class ConsoleStatusResource(HtmlResource):
+                     for log in step.getLogs():
+                         logname = log.getName()
+                         logurl = request.childLink(
+-                          "../builders/%s/builds/%s/steps/%s/logs/%s" % 
++                          "../builders/%s/builds/%s/steps/%s/logs/%s" %
+                             (urllib.quote(builderName, safe=''),
+                              build.getNumber(),
+                              urllib.quote(name, safe=''),
+@@ -371,7 +374,7 @@ class ConsoleStatusResource(HtmlResource):
+     def getChangeForBuild(self, build, revision):
+         if not build or not build.getChanges(): # Forced build
+             return DevBuild(revision, build, None)
+-        
++
+         for change in build.getChanges():
+             if change.revision == revision:
+                 return change
+@@ -380,7 +383,7 @@ class ConsoleStatusResource(HtmlResource):
+         changes = list(build.getChanges())
+         changes.sort(key=self.comparator.getSortingKey())
+         return changes[-1]
+-    
++
+     def getAllBuildsForRevision(self, status, request, lastRevision, numBuilds,
+                                 categories, builders, debugInfo):
+         """Returns a dictionary of builds we need to inspect to be able to
+@@ -451,9 +454,9 @@ class ConsoleStatusResource(HtmlResource):
+ 
+         categories = builderList.keys()
+         categories.sort()
+-        
++
+         cs = []
+-        
++
+         for category in categories:
+             c = {}
+ 
+@@ -526,14 +529,14 @@ class ConsoleStatusResource(HtmlResource):
+         # Sort the categories.
+         categories = builderList.keys()
+         categories.sort()
+-        
++
+         builds = {}
+-  
++
+         # Display the boxes by category group.
+         for category in categories:
+-  
++
+             builds[category] = []
+-            
++
+             # Display the boxes for each builder in this category.
+             for builder in builderList[category]:
+                 introducedIn = None
+@@ -549,6 +552,7 @@ class ConsoleStatusResource(HtmlResource):
+                     b["color"] = cached_value.color
+                     b["tag"] = cached_value.tag
+                     b["builderName"] = cached_value.builderName
++                    b["buildNumber"] = cached_value.buildNumber
+ 
+                     builds[category].append(b)
+ 
+@@ -564,7 +568,7 @@ class ConsoleStatusResource(HtmlResource):
+                         break
+                     else:
+                         introducedIn = build
+-                        
++
+                 # Get the results of the first build with the revision, and the
+                 # first build that does not include the revision.
+                 results = None
+@@ -584,11 +588,13 @@ class ConsoleStatusResource(HtmlResource):
+                 pageTitle = builder
+                 tag = ""
+                 current_details = {}
++                buildNumber = None
+                 if introducedIn:
+                     current_details = introducedIn.details or ""
+                     url = "./buildstatus?builder=%s&number=%s" % (
+                         urllib.quote(builder, safe=''),
+                         introducedIn.number)
++                    buildNumber = introducedIn.number
+                     pageTitle += " "
+                     pageTitle += urllib.quote(' '.join(introducedIn.text), ' \n\\/:')
+ 
+@@ -600,17 +606,17 @@ class ConsoleStatusResource(HtmlResource):
+ 
+                 if isRunning:
+                     pageTitle += ' ETA: %ds' % (introducedIn.eta or 0)
+-                    
++
+                 resultsClass = getResultsClass(results, previousResults, isRunning,
+                                                inProgressResults)
+ 
+-                b = {}                
++                b = {}
+                 b["url"] = url
+                 b["pageTitle"] = pageTitle
+                 b["color"] = resultsClass
+                 b["tag"] = tag
+                 b["builderName"] = builder
+-
++                b["buildNumber"] = buildNumber
+                 builds[category].append(b)
+ 
+                 # If the box is red, we add the explaination in the details
+@@ -624,7 +630,8 @@ class ConsoleStatusResource(HtmlResource):
+                                         "notstarted"):
+                   debugInfo["added_blocks"] += 1
+                   self.cache.insert(builder, revision.revision, resultsClass,
+-                                    pageTitle, current_details, url, tag)
++                                    pageTitle, current_details, url, tag,
++                                    buildNumber)
+ 
+         return (builds, details)
+ 
+@@ -685,10 +692,10 @@ class ConsoleStatusResource(HtmlResource):
+         # For each revision we show one line
+         for revision in revisions:
+             r = {}
+-            
++
+             # Fill the dictionary with this new information
+             r['id'] = revision.revision
+-            r['link'] = revision.revlink 
++            r['link'] = revision.revlink
+             r['who'] = revision.who
+             r['date'] = revision.date
+             r['comments'] = revision.comments
+@@ -735,7 +742,7 @@ class ConsoleStatusResource(HtmlResource):
+         if not reload_time:
+             reload_time = 60
+ 
+-        # Append the tag to refresh the page. 
++        # Append the tag to refresh the page.
+         if reload_time is not None and reload_time != 0:
+             cxt['refresh'] = reload_time
+ 
+@@ -810,6 +817,8 @@ class ConsoleStatusResource(HtmlResource):
+ 
+             templates = request.site.buildbot_service.templates
+             template = templates.get_template("console.html")
++            cxt['mastername'] = (
++                request.site.buildbot_service.master.properties['mastername'])
+             data = template.render(cxt)
+ 
+             # Clean up the cache.
+@@ -825,9 +834,9 @@ class RevisionComparator(object):
+     VCS use a plain counter for revisions (like SVN)
+     while others use different concepts (see Git).
+     """
+-    
++
+     # TODO (avivby): Should this be a zope interface?
+-    
++
+     def isRevisionEarlier(self, first_change, second_change):
+         """Used for comparing 2 changes"""
+         raise NotImplementedError
+@@ -838,7 +847,7 @@ class RevisionComparator(object):
+ 
+     def getSortingKey(self):
+         raise NotImplementedError
+-    
++
+ class TimeRevisionComparator(RevisionComparator):
+     def isRevisionEarlier(self, first, second):
+         return first.when < second.when
+diff --git a/third_party/buildbot_8_4p1/buildbot/status/web/waterfall.py b/third_party/buildbot_8_4p1/buildbot/status/web/waterfall.py
+index 923fe0d..3262d1c 100644
+--- a/third_party/buildbot_8_4p1/buildbot/status/web/waterfall.py
++++ b/third_party/buildbot_8_4p1/buildbot/status/web/waterfall.py
+@@ -172,7 +172,7 @@ class StepBox(components.Adapter):
+             text = []
+         text = text[:]
+         logs = self.original.getLogs()
+-        
++
+         cxt = dict(text=text, logs=[], urls=[])
+ 
+         for num in range(len(logs)):
+@@ -188,9 +188,12 @@ class StepBox(components.Adapter):
+ 
+         template = req.site.buildbot_service.templates.get_template("box_macros.html")
+         text = template.module.step_box(**cxt)
+-        
++
+         class_ = "BuildStep " + build_get_class(self.original)
+-        return Box(text, class_=class_)
++        return Box(text, class_=class_,
++                   buildNumber=self.original.build_number,
++                   builder=self.original.builder.getName(),
++                   stepName=self.original.getName())
+ components.registerAdapter(StepBox, buildstep.BuildStepStatus, IBox)
+ 
+ 
+@@ -202,7 +205,7 @@ class EventBox(components.Adapter):
+         class_ = "Event"
+         return Box(text, class_=class_)
+ components.registerAdapter(EventBox, builder.Event, IBox)
+-        
++
+ 
+ class Spacer:
+     implements(interfaces.IStatusEvent)
+@@ -301,7 +304,7 @@ class WaterfallHelp(HtmlResource):
+             times.insert(0, (current_reload_time, current_reload_time) )
+ 
+         cxt['times'] = times
+-        cxt['current_reload_time'] = current_reload_time   
++        cxt['current_reload_time'] = current_reload_time
+ 
+         template = request.site.buildbot_service.templates.get_template("waterfallhelp.html")
+         return template.render(**cxt)
+@@ -459,10 +462,10 @@ class WaterfallStatusResource(HtmlResource):
+         failuresOnly = request.args.get("failures_only", ["false"])[0]
+         if failuresOnly.lower() == "true":
+             builders = [b for b in builders if not self.isSuccess(b)]
+-        
++
+         (changeNames, builderNames, timestamps, eventGrid, sourceEvents) = \
+                       self.buildGrid(request, builders, changes)
+-            
++
+         # start the table: top-header material
+         locale_enc = locale.getdefaultlocale()[1]
+         if locale_enc is not None:
+@@ -471,19 +474,20 @@ class WaterfallStatusResource(HtmlResource):
+             locale_tz = unicode(time.tzname[time.localtime()[-1]])
+         ctx['tz'] = locale_tz
+         ctx['changes_url'] = request.childLink("../changes")
+-        
++
+         bn = ctx['builders'] = []
+-                
++
+         for name in builderNames:
+             builder = status.getBuilder(name)
+             top_box = ITopBox(builder).getBox(request)
+             current_box = ICurrentBox(builder).getBox(status, brcounts)
+             bn.append({'name': name,
+-                       'url': request.childLink("../builders/%s" % urllib.quote(name, safe='')), 
+-                       'top': top_box.text, 
++                       'category': builder.category,
++                       'url': request.childLink("../builders/%s" % urllib.quote(name, safe='')),
++                       'top': top_box.text,
+                        'top_class': top_box.class_,
+                        'status': current_box.text,
+-                       'status_class': current_box.class_,                       
++                       'status_class': current_box.class_,
+                         })
+ 
+         ctx.update(self.phase2(request, changeNames + builderNames, timestamps, eventGrid,
+@@ -528,9 +532,11 @@ class WaterfallStatusResource(HtmlResource):
+             ctx['no_reload_page'] = with_args(request, remove_args=["reload"])
+ 
+         template = request.site.buildbot_service.templates.get_template("waterfall.html")
++        ctx['mastername'] = (
++            request.site.buildbot_service.master.properties['mastername'])
+         data = template.render(**ctx)
+         return data
+-    
++
+     def buildGrid(self, request, builders, changes):
+         debug = False
+         # TODO: see if we can use a cached copy
+@@ -677,21 +683,21 @@ class WaterfallStatusResource(HtmlResource):
+ 
+             if len(timestamps) > maxPageLen:
+                 break
+-            
+-            
++
++
+             # now loop
+-            
++
+         # loop is finished. now we have eventGrid[] and timestamps[]
+         if debugGather: log.msg("finished loop")
+         assert(len(timestamps) == len(eventGrid))
+         return (changeNames, builderNames, timestamps, eventGrid, sourceEvents)
+-    
++
+     def phase2(self, request, sourceNames, timestamps, eventGrid,
+                sourceEvents):
+ 
+         if not timestamps:
+             return dict(grid=[], gridlen=0)
+-        
++
+         # first pass: figure out the height of the chunks, populate grid
+         grid = []
+         for i in range(1+len(sourceNames)):
+diff --git a/third_party/buildbot_8_4p1/buildbot/status/status_push.py b/third_party/buildbot_8_4p1/buildbot/status/status_push.py
+index ca83fdb..af764f1 100644
+--- a/third_party/buildbot_8_4p1/buildbot/status/status_push.py
++++ b/third_party/buildbot_8_4p1/buildbot/status/status_push.py
+@@ -36,6 +36,7 @@ from buildbot.status.persistent_queue import DiskQueue, IndexedQueue, \
+ from buildbot.status.web.status_json import FilterOut
+ from twisted.internet import defer, reactor
+ from twisted.python import log
++from twisted.python.logfile import LogFile
+ from twisted.web import client
+ 
+ 
+@@ -109,6 +110,9 @@ class StatusPush(StatusReceiverMultiService):
+             # Last shutdown was not clean, don't wait to send events.
+             self.queueNextServerPush()
+ 
++        self.verboseLog = LogFile.fromFullPath(
++            'status_push.log', rotateLength=10*1024*1024, maxRotatedFiles=14)
++
+     def startService(self):
+         """Starting up."""
+         StatusReceiverMultiService.startService(self)
+@@ -390,6 +394,10 @@ class HttpStatusPush(StatusPush):
+                 # This packet is just too large. Drop this packet.
+                 log.msg("ERROR: packet %s was dropped, too large: %d > %d" %
+                         (items[0]['id'], len(data), self.maxHttpRequestSize))
++                self.verboseLog.write(
++                    "ERROR: packet %s was dropped, too large: %d > %d; %s" %
++                        (items[0]['id'], len(data), self.maxHttpRequestSize,
++                         json.dumps(items, indent=2, sort_keys=True)))
+                 chunkSize = self.chunkSize
+             else:
+                 # Try with half the packets.
+@@ -405,6 +413,9 @@ class HttpStatusPush(StatusPush):
+         def Success(result):
+             """Queue up next push."""
+             log.msg('Sent %d events to %s' % (len(items), self.serverUrl))
++            self.verboseLog.write('Sent %d events to %s; %s' % (
++                len(items), self.serverUrl,
++                json.dumps(items, indent=2, sort_keys=True)))
+             self.lastPushWasSuccessful = True
+             return self.queueNextServerPush()
+ 
+@@ -413,6 +424,9 @@ class HttpStatusPush(StatusPush):
+             # Server is now down.
+             log.msg('Failed to push %d events to %s: %s' %
+                     (len(items), self.serverUrl, str(result)))
++            self.verboseLog.write('Failed to push %d events to %s: %s; %s' %
++                    (len(items), self.serverUrl, str(result),
++                    json.dumps(items, indent=2, sort_keys=True)))
+             self.queue.insertBackChunk(items)
+             if self.stopped:
+                 # Bad timing, was being called on shutdown and the server died
+diff --git a/third_party/buildbot_8_4p1/buildbot/status/status_push.py b/third_party/buildbot_8_4p1/buildbot/status/status_push.py
+index af764f1..e8319e0 100644
+--- a/third_party/buildbot_8_4p1/buildbot/status/status_push.py
++++ b/third_party/buildbot_8_4p1/buildbot/status/status_push.py
+@@ -51,7 +51,7 @@ class StatusPush(StatusReceiverMultiService):
+     """
+ 
+     def __init__(self, serverPushCb, queue=None, path=None, filter=True,
+-                 bufferDelay=1, retryDelay=5, blackList=None):
++                 bufferDelay=1, retryDelay=5, blackList=None, filterFunc=None):
+         """
+         @serverPushCb: callback to be used. It receives 'self' as parameter. It
+         should call self.queueNextServerPush() when it's done to queue the next
+@@ -67,6 +67,7 @@ class StatusPush(StatusReceiverMultiService):
+         @retryDelay: amount of time between retries when no items were pushed on
+         last serverPushCb call.
+         @blackList: events that shouldn't be sent.
++        @filterFunc: optional function applied to items added to packet payload
+         """
+         StatusReceiverMultiService.__init__(self)
+ 
+@@ -90,6 +91,7 @@ class StatusPush(StatusReceiverMultiService):
+             return serverPushCb(self)
+         self.serverPushCb = hookPushCb
+         self.blackList = blackList
++        self.filterFunc = filterFunc
+ 
+         # Other defaults.
+         # IDelayedCall object that represents the next queued push.
+@@ -234,6 +236,8 @@ class StatusPush(StatusReceiverMultiService):
+                 obj = obj.asDict()
+             if self.filter:
+                 obj = FilterOut(obj)
++            if self.filterFunc:
++                obj = self.filterFunc(obj)
+             packet['payload'][obj_name] = obj
+         self.queue.pushItem(packet)
+         if self.task is None or not self.task.active():

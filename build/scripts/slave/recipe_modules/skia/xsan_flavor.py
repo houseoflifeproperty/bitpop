@@ -29,9 +29,13 @@ class XSanFlavorUtils(default_flavor.DefaultFlavorUtils):
   def step(self, name, cmd, **kwargs):
     """Wrapper for the Step API; runs a step as appropriate for this flavor."""
     env = {}
-    env['ASAN_OPTIONS'] = 'detect_leaks=0'
+    lsan_suppressions = self._skia_api.m.path['checkout'].join('tools',
+                                                               'lsan.supp')
     tsan_suppressions = self._skia_api.m.path['checkout'].join('tools',
                                                                'tsan.supp')
+    env['ASAN_OPTIONS'] = 'detect_leaks=1'
+    env['LSAN_OPTIONS'] = \
+            'print_suppressions=1 suppressions=%s' % lsan_suppressions
     env['TSAN_OPTIONS'] = 'suppressions=%s' % tsan_suppressions
     path_to_app = self._skia_api.m.path['checkout'].join(
         'out', self._skia_api.c.configuration, cmd[0])

@@ -26,6 +26,7 @@ from contextlib import contextmanager
 import filecmp
 import fnmatch
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -43,7 +44,7 @@ import bindings.scripts.compute_interfaces_info_individual
 from bindings.scripts.compute_interfaces_info_individual import compute_info_individual, info_individual
 import bindings.scripts.compute_interfaces_info_overall
 from bindings.scripts.compute_interfaces_info_overall import compute_interfaces_info_overall, interfaces_info
-from bindings.scripts.idl_compiler import IdlCompilerV8
+from bindings.scripts.idl_compiler import IdlCompilerDictionaryImpl, IdlCompilerV8
 
 
 PASS_MESSAGE = 'All tests PASS!'
@@ -64,12 +65,19 @@ DEPENDENCY_IDL_FILES = frozenset([
     'TestImplements3.idl',
     'TestPartialInterface.idl',
     'TestPartialInterface2.idl',
+    'TestPartialInterface3.idl',
 ])
 
+COMPONENT_DIRECTORY = frozenset(['core', 'modules'])
 
 test_input_directory = os.path.join(source_path, 'bindings', 'tests', 'idls')
 reference_directory = os.path.join(source_path, 'bindings', 'tests', 'results')
 
+PLY_LEX_YACC_FILES = frozenset([
+    'lextab.py',  # PLY lex
+    'lextab.pyc',
+    'parsetab.pickle',  # PLY yacc
+])
 
 @contextmanager
 def TemporaryDirectory():
@@ -115,13 +123,30 @@ def generate_interface_dependencies():
     # for each new component) and doesn't test the code generator any better
     # than using a single component.
     for idl_filename in idl_paths_recursive(source_path):
-        compute_info_individual(idl_filename, 'tests')
+        compute_info_individual(idl_filename)
     info_individuals = [info_individual()]
+    # TestDictionary.{h,cpp} are placed under Source/bindings/tests/idls/core.
+    # However, IdlCompiler generates TestDictionary.{h,cpp} by using relative_dir.
+    # So the files will be generated under output_dir/core/bindings/tests/idls/core.
+    # To avoid this issue, we need to clear relative_dir here.
+    for info in info_individuals:
+        for value in info['interfaces_info'].itervalues():
+            value['relative_dir'] = ''
     compute_interfaces_info_overall(info_individuals)
 
 
 def bindings_tests(output_directory, verbose):
     executive = Executive()
+
+    def list_files(directory):
+        files = []
+        for component in os.listdir(directory):
+            if component not in COMPONENT_DIRECTORY:
+                continue
+            directory_with_component = os.path.join(directory, component)
+            for filename in os.listdir(directory_with_component):
+                files.append(os.path.join(directory_with_component, filename))
+        return files
 
     def diff(filename1, filename2):
         # Python's difflib module is too slow, especially on long output, so
@@ -135,14 +160,17 @@ def bindings_tests(output_directory, verbose):
         # non-zero exit if files differ.
         return executive.run_command(cmd, error_handler=lambda x: None)
 
+    def is_cache_file(filename):
+        if filename in PLY_LEX_YACC_FILES:
+            return True
+        if filename.endswith('.cache'):  # Jinja
+            return True
+        return False
+
     def delete_cache_files():
         # FIXME: Instead of deleting cache files, don't generate them.
-        cache_files = [os.path.join(output_directory, output_file)
-                       for output_file in os.listdir(output_directory)
-                       if (output_file in ('lextab.py',  # PLY lex
-                                           'lextab.pyc',
-                                           'parsetab.pickle') or  # PLY yacc
-                           output_file.endswith('.cache'))]  # Jinja
+        cache_files = [path for path in list_files(output_directory)
+                       if is_cache_file(os.path.basename(path))]
         for cache_file in cache_files:
             os.remove(cache_file)
 
@@ -167,19 +195,25 @@ def bindings_tests(output_directory, verbose):
             print 'PASS: %s' % reference_basename
         return True
 
-    def identical_output_files():
-        file_pairs = [(os.path.join(reference_directory, output_file),
-                       os.path.join(output_directory, output_file))
-                      for output_file in os.listdir(output_directory)]
+    def identical_output_files(output_files):
+        reference_files = [os.path.join(reference_directory,
+                                        os.path.relpath(path, output_directory))
+                           for path in output_files]
         return all([identical_file(reference_filename, output_filename)
-                    for (reference_filename, output_filename) in file_pairs])
+                    for (reference_filename, output_filename) in zip(reference_files, output_files)])
 
-    def no_excess_files():
-        generated_files = set(os.listdir(output_directory))
-        generated_files.add('.svn')  # Subversion working copy directory
-        excess_files = [output_file
-                        for output_file in os.listdir(reference_directory)
-                        if output_file not in generated_files]
+    def no_excess_files(output_files):
+        generated_files = set([os.path.relpath(path, output_directory)
+                               for path in output_files])
+        # Add subversion working copy directories in core and modules.
+        for component in COMPONENT_DIRECTORY:
+            generated_files.add(os.path.join(component, '.svn'))
+
+        excess_files = []
+        for path in list_files(reference_directory):
+            relpath = os.path.relpath(path, reference_directory)
+            if relpath not in generated_files:
+                excess_files.append(relpath)
         if excess_files:
             print ('Excess reference files! '
                   '(probably cruft from renaming or deleting):\n' +
@@ -189,28 +223,43 @@ def bindings_tests(output_directory, verbose):
 
     try:
         generate_interface_dependencies()
-        idl_compiler = IdlCompilerV8(output_directory,
-                                     interfaces_info=interfaces_info,
-                                     only_if_changed=True)
+        for component in COMPONENT_DIRECTORY:
+            output_dir = os.path.join(output_directory, component)
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
 
-        idl_basenames = [filename
-                         for filename in os.listdir(test_input_directory)
-                         if (filename.endswith('.idl') and
-                             # Dependencies aren't built
-                             # (they are used by the dependent)
-                             filename not in DEPENDENCY_IDL_FILES)]
-        for idl_basename in idl_basenames:
-            idl_path = os.path.realpath(
-                os.path.join(test_input_directory, idl_basename))
-            idl_compiler.compile_file(idl_path)
-            if verbose:
-                print 'Compiled: %s' % filename
+            idl_compiler = IdlCompilerV8(output_dir,
+                                         interfaces_info=interfaces_info,
+                                         only_if_changed=True)
+            dictionary_impl_compiler = IdlCompilerDictionaryImpl(
+                output_dir, interfaces_info=interfaces_info,
+                only_if_changed=True)
+
+            idl_filenames = []
+            input_directory = os.path.join(test_input_directory, component)
+            for filename in os.listdir(input_directory):
+                if (filename.endswith('.idl') and
+                    # Dependencies aren't built
+                    # (they are used by the dependent)
+                    filename not in DEPENDENCY_IDL_FILES):
+                    idl_filenames.append(
+                        os.path.realpath(
+                            os.path.join(input_directory, filename)))
+            for idl_path in idl_filenames:
+                idl_basename = os.path.basename(idl_path)
+                idl_compiler.compile_file(idl_path)
+                definition_name, _ = os.path.splitext(idl_basename)
+                if (definition_name in interfaces_info and interfaces_info[definition_name]['is_dictionary']):
+                    dictionary_impl_compiler.compile_file(idl_path)
+                if verbose:
+                    print 'Compiled: %s' % idl_path
     finally:
         delete_cache_files()
 
     # Detect all changes
-    passed = identical_output_files()
-    passed &= no_excess_files()
+    output_files = list_files(output_directory)
+    passed = identical_output_files(output_files)
+    passed &= no_excess_files(output_files)
 
     if passed:
         if verbose:

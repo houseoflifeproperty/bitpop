@@ -13,15 +13,14 @@ def Update(c):
       SingleBranchScheduler(name='webrtc_linux_scheduler',
                             branch='trunk',
                             treeStableTimer=0,
-                            builderNames=[
-          'Linux TsanRV',
-          'Linux LSan (and ASan)',
-      ]),
+                            builderNames=['Linux64 Debug (parallel)']),
   ])
 
   specs = [
-    {'name': 'Linux TsanRV', 'slavebuilddir': 'linux_tsanrv'},
-    {'name': 'Linux LSan (and ASan)', 'slavebuilddir': 'linux_lsan_asan'},
+    {
+      'name': 'Linux64 Debug (parallel)',
+      'slavebuilddir': 'linux',
+    }
   ]
 
   c['builders'].extend([

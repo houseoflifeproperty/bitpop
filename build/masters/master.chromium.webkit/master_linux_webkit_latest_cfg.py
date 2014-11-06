@@ -73,11 +73,8 @@ F('f_webkit_linux_oilpan_rel', linux().ChromiumFactory(
         'blink_config': 'blink',
     }))
 
-asan_gyp = ('asan=1 use_allocator=none '
-            'release_extra_cflags="-g -O1 -fno-inline-functions -fno-inline"')
-
 B('WebKit Linux ASAN', 'f_webkit_linux_rel_asan', scheduler='global_scheduler',
-    auto_reboot=False)
+    auto_reboot=True)
 F('f_webkit_linux_rel_asan', linux().ChromiumFactory(
     tests=['webkit'],
     options=[
@@ -94,7 +91,7 @@ F('f_webkit_linux_rel_asan', linux().ChromiumFactory(
         'asan': True,
         'blink_config': 'blink',
         'gclient_env': {
-          'GYP_DEFINES': asan_gyp,
+          'GYP_DEFINES': 'asan=1',
           'GYP_GENERATORS': 'ninja',
         },
         'generate_gtest_json': True,
@@ -105,7 +102,7 @@ F('f_webkit_linux_rel_asan', linux().ChromiumFactory(
     }))
 
 B('WebKit Linux Oilpan ASAN', 'f_webkit_linux_oilpan_rel_asan',
-    scheduler='global_scheduler', auto_reboot=False, category='oilpan')
+    scheduler='global_scheduler', auto_reboot=True, category='oilpan')
 F('f_webkit_linux_oilpan_rel_asan', linux().ChromiumFactory(
     tests=['webkit'],
     options=[
@@ -122,7 +119,7 @@ F('f_webkit_linux_oilpan_rel_asan', linux().ChromiumFactory(
         'asan': True,
         'blink_config': 'blink',
         'gclient_env': {
-          'GYP_DEFINES': asan_gyp + ' enable_oilpan=1',
+          'GYP_DEFINES': 'asan=1 enable_oilpan=1',
           'GYP_GENERATORS': 'ninja',
         },
         'generate_gtest_json': True,

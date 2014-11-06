@@ -41,7 +41,9 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
+#include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/plugins/PluginView.h"
+#include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/RenderEmbeddedObject.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderWidget.h"
@@ -66,6 +68,7 @@ HTMLPlugInElement::HTMLPlugInElement(const QualifiedName& tagName, Document& doc
     // the same codepath in this class.
     , m_needsWidgetUpdate(!createdByParser)
     , m_shouldPreferPlugInsForImages(preferPlugInsForImagesOption == ShouldPreferPlugInsForImages)
+    , m_usePlaceholderContent(false)
 {
     setHasCustomStyleCallbacks();
 }
@@ -236,13 +239,16 @@ RenderObject* HTMLPlugInElement::createRenderer(RenderStyle* style)
         return image;
     }
 
+    if (usePlaceholderContent())
+        return new RenderBlockFlow(this);
+
     return new RenderEmbeddedObject(this);
 }
 
 void HTMLPlugInElement::willRecalcStyle(StyleRecalcChange)
 {
     // FIXME: Why is this necessary? Manual re-attach is almost always wrong.
-    if (!useFallbackContent() && needsWidgetUpdate() && renderer() && !isImageType())
+    if (!useFallbackContent() && !usePlaceholderContent() && needsWidgetUpdate() && renderer() && !isImageType())
         reattach();
 }
 
@@ -479,7 +485,7 @@ bool HTMLPlugInElement::loadPlugin(const KURL& url, const String& mimeType, cons
 
     RefPtr<Widget> widget = m_persistedPluginWidget;
     if (!widget) {
-        bool loadManually = document().isPluginDocument() && !document().containsPlugins() && toPluginDocument(document()).shouldLoadPluginManually();
+        bool loadManually = document().isPluginDocument() && !document().containsPlugins();
         FrameLoaderClient::DetachedPluginPolicy policy = requireRenderer ? FrameLoaderClient::FailOnDetachedPlugin : FrameLoaderClient::AllowDetachedPlugin;
         widget = frame->loader().client()->createPlugin(this, url, paramNames, paramValues, mimeType, loadManually, policy);
     }
@@ -498,6 +504,11 @@ bool HTMLPlugInElement::loadPlugin(const KURL& url, const String& mimeType, cons
     }
     document().setContainsPlugins();
     scheduleSVGFilterLayerUpdateHack();
+    // Make sure any input event handlers introduced by the plugin are taken into account.
+    if (Page* page = document().frame()->page()) {
+        if (ScrollingCoordinator* scrollingCoordinator = page->scrollingCoordinator())
+            scrollingCoordinator->notifyLayoutUpdated();
+    }
     return true;
 }
 
@@ -577,6 +588,14 @@ bool HTMLPlugInElement::hasFallbackContent() const
 bool HTMLPlugInElement::useFallbackContent() const
 {
     return hasAuthorShadowRoot();
+}
+
+void HTMLPlugInElement::setUsePlaceholderContent(bool use)
+{
+    if (use != m_usePlaceholderContent) {
+        m_usePlaceholderContent = use;
+        lazyReattachIfAttached();
+    }
 }
 
 }

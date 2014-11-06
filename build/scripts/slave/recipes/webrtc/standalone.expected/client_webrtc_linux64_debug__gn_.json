@@ -17,9 +17,9 @@
       "[DEPOT_TOOLS]/gclient.py",
       "sync",
       "--nohooks",
-      "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--delete_unversioned_trees",
       "--revision",
       "src@12345",
       "--output-json",
@@ -61,7 +61,7 @@
       "--root=[SLAVE_BUILD]/src",
       "gen",
       "//out/Debug",
-      "--args=is_debug=true build_with_chromium=false"
+      "--args=is_debug=true use_goma=true goma_dir=\"[BUILD]/goma\" build_with_chromium=false"
     ],
     "name": "gn"
   },

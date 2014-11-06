@@ -33,10 +33,11 @@ class ProfileMetrics {
 
   // Enum for counting the ways users were added.
   enum ProfileAdd {
-    ADD_NEW_USER_ICON = 0,    // User adds new user from icon menu
-    ADD_NEW_USER_MENU,        // User adds new user from menu bar
-    ADD_NEW_USER_DIALOG,      // User adds new user from create-profile dialog
-    ADD_NEW_USER_MANAGER,     // User adds new user from User Manager
+    ADD_NEW_USER_ICON = 0,      // User adds new user from icon menu
+    ADD_NEW_USER_MENU,          // User adds new user from menu bar
+    ADD_NEW_USER_DIALOG,        // User adds new user from create-profile dialog
+    ADD_NEW_USER_MANAGER,       // User adds new user from User Manager
+    ADD_NEW_USER_LAST_DELETED,  // Auto-created after deleting last user
     NUM_PROFILE_ADD_METRICS
   };
 
@@ -91,10 +92,11 @@ class ProfileMetrics {
   };
 
   enum ProfileAuth {
-    AUTH_UNNECESSARY,         // Profile was not locked
-    AUTH_LOCAL,               // Profile was authenticated locally
-    AUTH_ONLINE,              // Profile was authenticated on-line
-    AUTH_FAILED,              // Profile failed authentication
+    AUTH_UNNECESSARY,     // Profile was not locked
+    AUTH_LOCAL,           // Profile was authenticated locally
+    AUTH_ONLINE,          // Profile was authenticated on-line
+    AUTH_FAILED,          // Profile failed authentication
+    AUTH_FAILED_OFFLINE,  // Profile failed authentication and was offline
     NUM_PROFILE_AUTH_METRICS
   };
 

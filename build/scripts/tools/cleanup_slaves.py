@@ -31,7 +31,7 @@ def main():
   Then it queries all the builders and all the slaves to determine the current
   configuration and process accordingly.
   """
-  c = parse_master('master.tryserver.chromium')
+  c = parse_master('master.tryserver.chromium.linux')
   print 'Parsing done.'
 
   # Create a mapping of slavebuilddir with each slaves connected to it.

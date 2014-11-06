@@ -45,7 +45,6 @@ inline ProcessingInstruction::ProcessingInstruction(Document& document, const St
     , m_isCSS(false)
     , m_isXSL(false)
 {
-    ScriptWrappable::init(this);
 }
 
 PassRefPtrWillBeRawPtr<ProcessingInstruction> ProcessingInstruction::create(Document& document, const String& target, const String& data)
@@ -219,6 +218,7 @@ void ProcessingInstruction::setXSLStyleSheet(const String& href, const KURL& bas
 
     ASSERT(m_isXSL);
     m_sheet = XSLStyleSheet::create(this, href, baseURL);
+    RefPtrWillBeRawPtr<Document> protect(&document());
     parseStyleSheet(sheet);
 }
 

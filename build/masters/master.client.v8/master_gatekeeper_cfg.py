@@ -16,6 +16,7 @@ categories_steps = {
     'Presubmit',
     'Static-Initializers',
     'Check',
+    'Unittests',
     'OptimizeForSize',
     'Webkit',
     'Benchmarks',
@@ -26,9 +27,9 @@ categories_steps = {
 }
 
 exclusions = {
-  'V8 Linux - mips - sim': ['compile'],
+  'V8 Linux - mips - sim - builder': [],
+  'V8 Linux - mips - sim': [],
   'V8 Linux - x87 - nosnap - debug': [],
-  'V8 Linux - git': [],
 }
 
 forgiving_steps = ['update_scripts', 'update', 'svnkill', 'taskkill',

@@ -35,6 +35,7 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/DocumentLoader.h"
+#include "platform/Logging.h"
 
 namespace blink {
 
@@ -57,6 +58,8 @@ ScriptedAnimationController::~ScriptedAnimationController()
 void ScriptedAnimationController::trace(Visitor* visitor)
 {
 #if ENABLE(OILPAN)
+    visitor->trace(m_callbacks);
+    visitor->trace(m_callbacksToInvoke);
     visitor->trace(m_document);
     visitor->trace(m_eventQueue);
     visitor->trace(m_mediaQueryListListeners);
@@ -78,7 +81,13 @@ void ScriptedAnimationController::resume()
     scheduleAnimationIfNeeded();
 }
 
-ScriptedAnimationController::CallbackId ScriptedAnimationController::registerCallback(PassOwnPtr<RequestAnimationFrameCallback> callback)
+void ScriptedAnimationController::dispatchEventsAndCallbacksForPrinting()
+{
+    dispatchEvents();
+    callMediaQueryListListeners();
+}
+
+ScriptedAnimationController::CallbackId ScriptedAnimationController::registerCallback(RequestAnimationFrameCallback* callback)
 {
     ScriptedAnimationController::CallbackId id = ++m_nextCallbackId;
     callback->m_cancelled = false;
@@ -178,7 +187,7 @@ void ScriptedAnimationController::callMediaQueryListListeners()
 
     for (MediaQueryListListeners::const_iterator it = listeners.begin(), end = listeners.end();
         it != end; ++it) {
-        (*it)->call();
+        (*it)->notifyMediaQueryChanged();
     }
 }
 

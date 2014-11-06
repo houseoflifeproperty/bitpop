@@ -155,30 +155,33 @@ class Manager(object):
     def _rename_results_folder(self):
         try:
             timestamp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime(self._filesystem.mtime(self._filesystem.join(self._results_directory, "results.html"))))
-        except OSError, e:
+        except (IOError, OSError), e:
             # It might be possible that results.html was not generated in previous run, because the test
             # run was interrupted even before testing started. In those cases, don't archive the folder.
             # Simply override the current folder contents with new results.
             import errno
-            if e.errno == errno.EEXIST:
+            if e.errno == errno.EEXIST or e.errno == errno.ENOENT:
                 _log.warning("No results.html file found in previous run, skipping it.")
             return None
         archived_name = ''.join((self._filesystem.basename(self._results_directory), "_", timestamp))
         archived_path = self._filesystem.join(self._filesystem.dirname(self._results_directory), archived_name)
         self._filesystem.move(self._results_directory, archived_path)
 
-    def _clobber_old_archived_results(self):
+    def _delete_dirs(self, dir_list):
+        for dir in dir_list:
+            self._filesystem.rmtree(dir)
+
+    def _limit_archived_results_count(self):
         results_directory_path = self._filesystem.dirname(self._results_directory)
         file_list = self._filesystem.listdir(results_directory_path)
         results_directories = []
         for dir in file_list:
             file_path = self._filesystem.join(results_directory_path, dir)
-            if self._filesystem.isdir(file_path):
+            if self._filesystem.isdir(file_path) and self._results_directory in file_path:
                 results_directories.append(file_path)
         results_directories.sort(key=lambda x: self._filesystem.mtime(x))
-        self._printer.write_update("Clobbering old archived results in %s" % results_directory_path)
-        for dir in results_directories[:-self.ARCHIVED_RESULTS_LIMIT]:
-            self._filesystem.rmtree(dir)
+        self._printer.write_update("Clobbering excess archived results in %s" % results_directory_path)
+        self._delete_dirs(results_directories[:-self.ARCHIVED_RESULTS_LIMIT])
 
     def _set_up_run(self, test_names):
         self._printer.write_update("Checking build ...")
@@ -202,14 +205,12 @@ class Manager(object):
                 self._port.stop_helper()
                 return exit_code
 
-        if self._options.enable_versioned_results and self._filesystem.exists(self._results_directory):
-            if self._options.clobber_old_results:
-                _log.warning("Flag --enable_versioned_results overrides --clobber-old-results.")
-            self._clobber_old_archived_results()
+        if self._options.clobber_old_results:
+            self._clobber_old_results()
+        elif self._filesystem.exists(self._results_directory):
+            self._limit_archived_results_count()
             # Rename the existing results folder for archiving.
             self._rename_results_folder()
-        elif self._options.clobber_old_results:
-            self._clobber_old_results()
 
         # Create the output directory if it doesn't already exist.
         self._port.host.filesystem.maybe_make_directory(self._results_directory)
@@ -312,6 +313,9 @@ class Manager(object):
                 if self._options.show_results and (exit_code or (self._options.full_results_html and initial_results.total_failures)):
                     self._port.show_results_html_file(results_path)
                 self._printer.print_results(time.time() - start_time, initial_results, summarized_failing_results)
+
+        self._check_for_stale_w3c_dir()
+
         return test_run_results.RunDetails(exit_code, summarized_full_results, summarized_failing_results, initial_results, retry_results, enabled_pixel_tests_in_retry)
 
     def _run_tests(self, tests_to_run, tests_to_skip, repeat_each, iterations, num_workers, retrying):
@@ -354,6 +358,14 @@ class Manager(object):
         _log.debug("Cleaning up port")
         self._port.clean_up_test_run()
 
+    def _check_for_stale_w3c_dir(self):
+        # TODO(dpranke): Remove this check after 1/1/2015 and let people deal with the warnings.
+        # Remove the check in port/base.py as well.
+        fs = self._port.host.filesystem
+        layout_tests_dir = self._port.layout_tests_dir()
+        if fs.isdir(fs.join(layout_tests_dir, 'w3c')):
+            _log.warning('WARNING: You still have the old LayoutTests/w3c directory in your checkout. You should delete it!')
+
     def _force_pixel_tests_if_needed(self):
         if self._options.pixel_tests:
             return False
@@ -380,6 +392,8 @@ class Manager(object):
             for failure in result.failures:
                 if not isinstance(failure, test_failures.FailureCrash):
                     continue
+                if failure.has_log:
+                    continue
                 crashed_processes.append([test, failure.process_name, failure.pid])
 
         sample_files = self._port.look_for_new_samples(crashed_processes, start_time)
@@ -395,16 +409,17 @@ class Manager(object):
                 writer.write_crash_log(crash_log)
 
     def _clobber_old_results(self):
-        # Just clobber the actual test results directories since the other
-        # files in the results directory are explicitly used for cross-run
-        # tracking.
-        self._printer.write_update("Clobbering old results in %s" %
-                                   self._results_directory)
-        layout_tests_dir = self._port.layout_tests_dir()
-        possible_dirs = self._port.test_dirs()
-        for dirname in possible_dirs:
-            if self._filesystem.isdir(self._filesystem.join(layout_tests_dir, dirname)):
-                self._filesystem.rmtree(self._filesystem.join(self._results_directory, dirname))
+        dir_above_results_path = self._filesystem.dirname(self._results_directory)
+        self._printer.write_update("Clobbering old results in %s" % dir_above_results_path)
+        if not self._filesystem.exists(dir_above_results_path):
+            return
+        file_list = self._filesystem.listdir(dir_above_results_path)
+        results_directories = []
+        for dir in file_list:
+            file_path = self._filesystem.join(dir_above_results_path, dir)
+            if self._filesystem.isdir(file_path) and self._results_directory in file_path:
+                results_directories.append(file_path)
+        self._delete_dirs(results_directories)
 
         # Port specific clean-up.
         self._port.clobber_old_port_specific_results()

@@ -91,7 +91,8 @@
       "@@@STEP_LOG_LINE@json.output@    ], @@@",
       "@@@STEP_LOG_LINE@json.output@    \"chromium_configs\": [@@@",
       "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos\", @@@",
-      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_clang\"@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_clang\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_ozone\"@@@",
       "@@@STEP_LOG_LINE@json.output@    ], @@@",
       "@@@STEP_LOG_LINE@json.output@    \"platforms\": [@@@",
       "@@@STEP_LOG_LINE@json.output@      \"linux\"@@@",
@@ -118,7 +119,7 @@
     "env": {
       "GYP_DEFINES": "clang=1 component=shared_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]/goma' target_arch=ia32 use_goma=1"
     },
-    "name": "gclient runhooks"
+    "name": "gclient runhooks (with patch)"
   },
   {
     "cmd": [
@@ -137,12 +138,10 @@
       "[BUILD]/goma",
       "--",
       "all",
-      "chrome",
-      "chrome",
       "base_unittests",
-      "mojo_common_unittests",
       "browser_tests",
-      "chrome"
+      "chrome",
+      "mojo_common_unittests"
     ],
     "name": "compile (with patch)"
   },

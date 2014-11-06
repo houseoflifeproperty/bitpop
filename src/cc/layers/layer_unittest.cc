@@ -51,9 +51,8 @@ class MockLayerTreeHost : public LayerTreeHost {
 
 class MockLayerPainter : public LayerPainter {
  public:
-  virtual void Paint(SkCanvas* canvas,
-                     const gfx::Rect& content_rect,
-                     gfx::RectF* opaque) OVERRIDE {}
+  virtual void Paint(SkCanvas* canvas, const gfx::Rect& content_rect) OVERRIDE {
+  }
 };
 
 class LayerTest : public testing::Test {
@@ -167,7 +166,7 @@ TEST_F(LayerTest, AddAndRemoveChild) {
   EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, parent->AddChild(child));
 
   ASSERT_EQ(1U, parent->children().size());
-  EXPECT_EQ(child.get(), parent->children()[0]);
+  EXPECT_EQ(child.get(), parent->children()[0].get());
   EXPECT_EQ(parent.get(), child->parent());
   EXPECT_EQ(parent.get(), child->RootLayer());
 
@@ -336,6 +335,64 @@ TEST_F(LayerTest, ReplaceChildWithNewChildThatHasOtherParent) {
   EXPECT_FALSE(child2_->parent());
 }
 
+TEST_F(LayerTest, DeleteRemovedScrollParent) {
+  scoped_refptr<Layer> parent = Layer::Create();
+  scoped_refptr<Layer> child1 = Layer::Create();
+  scoped_refptr<Layer> child2 = Layer::Create();
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, layer_tree_host_->SetRootLayer(parent));
+
+  ASSERT_EQ(0U, parent->children().size());
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, parent->InsertChild(child1, 0));
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, parent->InsertChild(child2, 1));
+
+  ASSERT_EQ(2U, parent->children().size());
+  EXPECT_EQ(child1, parent->children()[0]);
+  EXPECT_EQ(child2, parent->children()[1]);
+
+  EXPECT_SET_NEEDS_COMMIT(2, child1->SetScrollParent(child2.get()));
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, child2->RemoveFromParent());
+
+  child1->reset_needs_push_properties_for_testing();
+
+  EXPECT_SET_NEEDS_COMMIT(1, child2 = NULL);
+
+  EXPECT_TRUE(child1->needs_push_properties());
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, layer_tree_host_->SetRootLayer(NULL));
+}
+
+TEST_F(LayerTest, DeleteRemovedScrollChild) {
+  scoped_refptr<Layer> parent = Layer::Create();
+  scoped_refptr<Layer> child1 = Layer::Create();
+  scoped_refptr<Layer> child2 = Layer::Create();
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, layer_tree_host_->SetRootLayer(parent));
+
+  ASSERT_EQ(0U, parent->children().size());
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, parent->InsertChild(child1, 0));
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, parent->InsertChild(child2, 1));
+
+  ASSERT_EQ(2U, parent->children().size());
+  EXPECT_EQ(child1, parent->children()[0]);
+  EXPECT_EQ(child2, parent->children()[1]);
+
+  EXPECT_SET_NEEDS_COMMIT(2, child1->SetScrollParent(child2.get()));
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, child1->RemoveFromParent());
+
+  child2->reset_needs_push_properties_for_testing();
+
+  EXPECT_SET_NEEDS_COMMIT(1, child1 = NULL);
+
+  EXPECT_TRUE(child2->needs_push_properties());
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, layer_tree_host_->SetRootLayer(NULL));
+}
+
 TEST_F(LayerTest, ReplaceChildWithSameChild) {
   CreateSimpleTestTree();
 
@@ -392,23 +449,23 @@ TEST_F(LayerTest, SetChildren) {
 
 TEST_F(LayerTest, HasAncestor) {
   scoped_refptr<Layer> parent = Layer::Create();
-  EXPECT_FALSE(parent->HasAncestor(parent));
+  EXPECT_FALSE(parent->HasAncestor(parent.get()));
 
   scoped_refptr<Layer> child = Layer::Create();
   parent->AddChild(child);
 
-  EXPECT_FALSE(child->HasAncestor(child));
-  EXPECT_TRUE(child->HasAncestor(parent));
-  EXPECT_FALSE(parent->HasAncestor(child));
+  EXPECT_FALSE(child->HasAncestor(child.get()));
+  EXPECT_TRUE(child->HasAncestor(parent.get()));
+  EXPECT_FALSE(parent->HasAncestor(child.get()));
 
   scoped_refptr<Layer> child_child = Layer::Create();
   child->AddChild(child_child);
 
-  EXPECT_FALSE(child_child->HasAncestor(child_child));
-  EXPECT_TRUE(child_child->HasAncestor(parent));
-  EXPECT_TRUE(child_child->HasAncestor(child));
-  EXPECT_FALSE(parent->HasAncestor(child));
-  EXPECT_FALSE(parent->HasAncestor(child_child));
+  EXPECT_FALSE(child_child->HasAncestor(child_child.get()));
+  EXPECT_TRUE(child_child->HasAncestor(parent.get()));
+  EXPECT_TRUE(child_child->HasAncestor(child.get()));
+  EXPECT_FALSE(parent->HasAncestor(child.get()));
+  EXPECT_FALSE(parent->HasAncestor(child_child.get()));
 }
 
 TEST_F(LayerTest, GetRootLayerAfterTreeManipulations) {
@@ -782,24 +839,24 @@ TEST_F(LayerTest, MaskAndReplicaHasParent) {
   child->SetReplicaLayer(replica.get());
   replica->SetMaskLayer(replica_mask.get());
 
-  EXPECT_EQ(parent, child->parent());
-  EXPECT_EQ(child, mask->parent());
-  EXPECT_EQ(child, replica->parent());
-  EXPECT_EQ(replica, replica_mask->parent());
+  EXPECT_EQ(parent.get(), child->parent());
+  EXPECT_EQ(child.get(), mask->parent());
+  EXPECT_EQ(child.get(), replica->parent());
+  EXPECT_EQ(replica.get(), replica_mask->parent());
 
   replica->SetMaskLayer(replica_mask_replacement.get());
   EXPECT_EQ(NULL, replica_mask->parent());
-  EXPECT_EQ(replica, replica_mask_replacement->parent());
+  EXPECT_EQ(replica.get(), replica_mask_replacement->parent());
 
   child->SetMaskLayer(mask_replacement.get());
   EXPECT_EQ(NULL, mask->parent());
-  EXPECT_EQ(child, mask_replacement->parent());
+  EXPECT_EQ(child.get(), mask_replacement->parent());
 
   child->SetReplicaLayer(replica_replacement.get());
   EXPECT_EQ(NULL, replica->parent());
-  EXPECT_EQ(child, replica_replacement->parent());
+  EXPECT_EQ(child.get(), replica_replacement->parent());
 
-  EXPECT_EQ(replica, replica->mask_layer()->parent());
+  EXPECT_EQ(replica.get(), replica->mask_layer()->parent());
 }
 
 TEST_F(LayerTest, CheckTranformIsInvertible) {
@@ -856,7 +913,7 @@ TEST_F(LayerTest, TranformIsInvertibleAnimation) {
   gfx::Transform identity_transform;
 
   layer->SetTransform(identity_transform);
-  static_cast<LayerAnimationValueObserver*>(layer)
+  static_cast<LayerAnimationValueObserver*>(layer.get())
       ->OnTransformAnimated(singular_transform);
   layer->PushPropertiesTo(impl_layer.get());
   EXPECT_FALSE(layer->transform_is_invertible());

@@ -15,22 +15,20 @@ def Update(c):
                             branch='trunk',
                             treeStableTimer=30,
                             builderNames=[
-          'Android',
-          'Android (dbg)',
+          'Android Builder',
+          'Android Builder (dbg)',
           'Android Clang (dbg)',
           'Android ARM64 (dbg)',
           'Android GN',
           'Android GN (dbg)',
-          'Android Chromium-APK Builder',
-          'Android Chromium-APK Builder (dbg)',
       ]),
       Triggerable(name='android_trigger_dbg', builderNames=[
-          'Android Chromium-APK Tests (KK Nexus5)(dbg)',
-          'Android Chromium-APK Tests (JB Nexus7.2)(dbg)',
+          'Android Tests (KK Nexus5)(dbg)',
+          'Android Tests (JB Nexus7.2)(dbg)',
       ]),
       Triggerable(name='android_trigger_rel', builderNames=[
-          'Android Chromium-APK Tests (KK Nexus5)',
-          'Android Chromium-APK Tests (JB Nexus7.2)',
+          'Android Tests (KK Nexus5)',
+          'Android Tests (JB Nexus7.2)',
       ]),
   ])
 
@@ -38,57 +36,42 @@ def Update(c):
   # of the builders are pooled over multiple slave machines.
   specs = [
     {
-      'name': 'Android',
-      'recipe': 'webrtc/standalone',
-      'slavebuilddir': 'android',
+      'name': 'Android Builder',
+      'triggers': ['android_trigger_rel'],
     },
     {
-      'name': 'Android (dbg)',
-      'recipe': 'webrtc/standalone',
-      'slavebuilddir': 'android',
+      'name': 'Android Builder (dbg)',
+      'triggers': ['android_trigger_dbg'],
     },
     {
       'name': 'Android Clang (dbg)',
-      'recipe': 'webrtc/standalone',
       'slavebuilddir': 'android_clang',
     },
     {
       'name': 'Android ARM64 (dbg)',
-      'recipe': 'webrtc/standalone',
       'slavebuilddir': 'android_arm64',
     },
     {
       'name': 'Android GN',
-      'recipe': 'webrtc/standalone',
       'slavebuilddir': 'android_gn',
     },
     {
       'name': 'Android GN (dbg)',
-      'recipe': 'webrtc/standalone',
       'slavebuilddir': 'android_gn',
     },
-    {
-      'name': 'Android Chromium-APK Builder',
-      'triggers': ['android_trigger_rel'],
-    },
-    {
-      'name': 'Android Chromium-APK Builder (dbg)',
-      'triggers': ['android_trigger_dbg'],
-    },
-    {'name': 'Android Chromium-APK Tests (KK Nexus5)(dbg)'},
-    {'name': 'Android Chromium-APK Tests (JB Nexus7.2)(dbg)'},
-    {'name': 'Android Chromium-APK Tests (KK Nexus5)'},
-    {'name': 'Android Chromium-APK Tests (JB Nexus7.2)'},
+    {'name': 'Android Tests (KK Nexus5)(dbg)'},
+    {'name': 'Android Tests (JB Nexus7.2)(dbg)'},
+    {'name': 'Android Tests (KK Nexus5)'},
+    {'name': 'Android Tests (JB Nexus7.2)'},
   ]
 
   c['builders'].extend([
       {
         'name': spec['name'],
-        'factory': m_annotator.BaseFactory(
-            spec.get('recipe', 'webrtc/android_apk'),
-            triggers=spec.get('triggers')),
+        'factory': m_annotator.BaseFactory('webrtc/standalone',
+                                           triggers=spec.get('triggers')),
         'notify_on_missing': True,
         'category': 'android',
-        'slavebuilddir': spec.get('slavebuilddir', 'android_apk'),
+        'slavebuilddir': spec.get('slavebuilddir', 'android'),
       } for spec in specs
   ])

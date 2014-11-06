@@ -17,7 +17,7 @@
       "--output_json",
       "/path/to/tmp/json",
       "--revision",
-      "v8@bleeding_edge:20123",
+      "v8@20123",
       "--no_shallow"
     ],
     "name": "bot_update",

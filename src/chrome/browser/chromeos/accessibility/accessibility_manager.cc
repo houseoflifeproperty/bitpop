@@ -43,7 +43,6 @@
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/browser_resources.h"
-#include "chrome/grit/generated_resources.h"
 #include "chromeos/audio/chromeos_sounds.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/login/login_state.h"
@@ -342,12 +341,12 @@ AccessibilityManager::AccessibilityManager()
       autoclick_delay_ms_(ash::AutoclickController::kDefaultAutoclickDelayMs),
       virtual_keyboard_enabled_(false),
       spoken_feedback_notification_(ash::A11Y_NOTIFICATION_NONE),
-      weak_ptr_factory_(this),
       should_speak_chrome_vox_announcements_on_user_screen_(true),
       system_sounds_enabled_(false),
       braille_display_connected_(false),
       scoped_braille_observer_(this),
-      braille_ime_current_(false) {
+      braille_ime_current_(false),
+      weak_ptr_factory_(this) {
   notification_registrar_.Add(this,
                               chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
                               content::NotificationService::AllSources());
@@ -455,6 +454,8 @@ void AccessibilityManager::UpdateLargeCursorFromPref() {
       ash::A11Y_NOTIFICATION_NONE);
 
   NotifyAccessibilityStatusChanged(details);
+#if !defined(USE_ATHENA)
+  // crbug.com/408733 (and for all USE_ATHENA in this file)
 
 #if defined(USE_ASH)
   // Large cursor is implemented only in ash.
@@ -466,6 +467,8 @@ void AccessibilityManager::UpdateLargeCursorFromPref() {
   ash::Shell::GetInstance()->SetCursorCompositingEnabled(
       ShouldEnableCursorCompositing());
 #endif
+
+#endif // !USE_ATHENA
 }
 
 bool AccessibilityManager::IsIncognitoAllowed() {
@@ -500,8 +503,7 @@ void AccessibilityManager::UpdateStickyKeysFromPref() {
     return;
 
   sticky_keys_enabled_ = enabled;
-#if defined(USE_ASH)
-  // Sticky keys is implemented only in ash.
+#if defined(USE_ASH) && !defined(USE_ATHENA)
   ash::Shell::GetInstance()->sticky_keys_controller()->Enable(enabled);
 #endif
 }
@@ -511,10 +513,11 @@ void AccessibilityManager::EnableSpokenFeedback(
     ash::AccessibilityNotificationVisibility notify) {
   if (!profile_)
     return;
-
+#if !defined(USE_ATHENA)
   ash::Shell::GetInstance()->metrics()->RecordUserMetricsAction(
       enabled ? ash::UMA_STATUS_AREA_ENABLE_SPOKEN_FEEDBACK
               : ash::UMA_STATUS_AREA_DISABLE_SPOKEN_FEEDBACK);
+#endif
 
   spoken_feedback_notification_ = notify;
 
@@ -674,6 +677,8 @@ void AccessibilityManager::UpdateHighContrastFromPref() {
 
   NotifyAccessibilityStatusChanged(details);
 
+#if !defined(USE_ATHENA)
+
 #if defined(USE_ASH)
   ash::Shell::GetInstance()->high_contrast_controller()->SetEnabled(enabled);
 #endif
@@ -681,6 +686,8 @@ void AccessibilityManager::UpdateHighContrastFromPref() {
 #if defined(OS_CHROMEOS)
   ash::Shell::GetInstance()->SetCursorCompositingEnabled(
       ShouldEnableCursorCompositing());
+#endif
+
 #endif
 }
 
@@ -728,7 +735,7 @@ void AccessibilityManager::UpdateAutoclickFromPref() {
     return;
   autoclick_enabled_ = enabled;
 
-#if defined(USE_ASH)
+#if defined(USE_ASH) && !defined(USE_ATHENA)
   ash::Shell::GetInstance()->autoclick_controller()->SetEnabled(enabled);
 #endif
 }
@@ -754,7 +761,7 @@ void AccessibilityManager::UpdateAutoclickDelayFromPref() {
     return;
   autoclick_delay_ms_ = autoclick_delay_ms;
 
-#if defined(USE_ASH)
+#if defined(USE_ASH) && !defined(USE_ATHENA)
   ash::Shell::GetInstance()->autoclick_controller()->SetAutoclickDelay(
       autoclick_delay_ms_);
 #endif
@@ -792,7 +799,7 @@ void AccessibilityManager::UpdateVirtualKeyboardFromPref() {
 
   NotifyAccessibilityStatusChanged(details);
 
-#if defined(USE_ASH)
+#if defined(USE_ASH) && !defined(USE_ATHENA)
   keyboard::SetAccessibilityKeyboardEnabled(enabled);
   // Note that there are two versions of the on-screen keyboard. A full layout
   // is provided for accessibility, which includes sticky modifier keys to
@@ -860,14 +867,15 @@ void AccessibilityManager::UpdateBrailleImeState() {
 void AccessibilityManager::InputMethodChanged(
     input_method::InputMethodManager* manager,
     bool show_message) {
-#if defined(USE_ASH)
+#if defined(USE_ASH) && !defined(USE_ATHENA)
   // Sticky keys is implemented only in ash.
+  // TODO(dpolukhin): support Athena, crbug.com/408733.
   ash::Shell::GetInstance()->sticky_keys_controller()->SetModifiersEnabled(
       manager->IsISOLevel5ShiftUsedByCurrentInputMethod(),
       manager->IsAltGrUsedByCurrentInputMethod());
 #endif
   const chromeos::input_method::InputMethodDescriptor descriptor =
-      manager->GetCurrentInputMethod();
+      manager->GetActiveIMEState()->GetCurrentInputMethod();
   braille_ime_current_ =
       (descriptor.id() == extension_misc::kBrailleImeEngineId);
 }
@@ -966,8 +974,10 @@ base::TimeDelta AccessibilityManager::PlayShutdownSound() {
   if (!system_sounds_enabled_)
     return base::TimeDelta();
   system_sounds_enabled_ = false;
+#if !defined(USE_ATHENA)
   if (!ash::PlaySystemSoundIfSpokenFeedback(SOUND_SHUTDOWN))
     return base::TimeDelta();
+#endif
   return media::SoundsManager::Get()->GetDuration(SOUND_SHUTDOWN);
 }
 
@@ -1095,8 +1105,10 @@ void AccessibilityManager::OnBrailleKeyEvent(const KeyEvent& event) {
   if ((event.command ==
        extensions::api::braille_display_private::KEY_COMMAND_DOTS) &&
       !braille_ime_current_) {
-    input_method::InputMethodManager::Get()->ChangeInputMethod(
-        extension_misc::kBrailleImeEngineId);
+    input_method::InputMethodManager::Get()
+        ->GetActiveIMEState()
+        ->ChangeInputMethod(extension_misc::kBrailleImeEngineId,
+                            false /* show_message */);
   }
 }
 

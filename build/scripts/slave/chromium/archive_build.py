@@ -29,6 +29,7 @@ import sys
 
 from common import archive_utils
 from common.chromium_utils import GS_COMMIT_POSITION_NUMBER_KEY, \
+                                  GS_COMMIT_POSITION_KEY, \
                                   GS_GIT_COMMIT_KEY
 from common import chromium_utils
 from slave import build_directory
@@ -102,31 +103,20 @@ class StagerBase(object):
 
     self._version_file = os.path.join(self._chrome_dir, 'VERSION')
 
-    self._git_commit = chromium_utils.GetGitCommit(options)
+    self._chromium_revision = chromium_utils.GetBuildSortKey(options)[1]
 
-    self._chromium_revision = self._getRevision(
-        options,
-        'default_chromium_revision',
-        None, # (Use 'default' repository).
-    )
+    self._webkit_revision = chromium_utils.GetBuildSortKey(options,
+                                                           project='webkit')[1]
 
-    self._webkit_revision = self._getRevision(
-        options,
-        'default_webkit_revision',
-        'webkit',
-    )
-
-    self._v8_revision = self._getRevision(
-        options,
-        'default_v8_revision',
-        'v8',
-    )
+    self._v8_revision = chromium_utils.GetBuildSortKey(options, project='v8')[1]
 
     self.last_change_file = os.path.join(self._staging_dir, 'LAST_CHANGE')
     # The REVISIONS file will record the revisions information of the main
     # components Chromium/WebKit/V8.
     self.revisions_path = os.path.join(self._staging_dir, 'REVISIONS')
     self._build_revision = build_revision
+    self._build_path_component = str(self._build_revision)
+
     # Will be initialized in GetLastBuildRevision.
     self.last_chromium_revision = None
     self.last_webkit_revision = None
@@ -139,22 +129,6 @@ class StagerBase(object):
     self._dual_upload = options.factory_properties.get('dual_upload', False)
     self._archive_files = None
 
-  @staticmethod
-  def _getRevision(options, option_key, repo):
-    # Use the command-line default, if specified
-    option_value = getattr(options, option_key, None)
-    if option_value:
-      return option_value
-
-    # Use the sort key. We don't use the 'branch' aspect since the archive
-    # itself designates the branch. If this is ever not the case, we need to
-    # factor that in and systematically update archive name generation across
-    # all consuming tools.
-    return chromium_utils.GetBuildSortKey(
-        options,
-        repo=repo,
-    )[1]
-
   def CopyFileToGS(self, filename, gs_base, gs_subdir, mimetype=None,
                    gs_acl=None):
     # normalize the subdir to remove duplicated slashes. This break newer
@@ -165,11 +139,23 @@ class StagerBase(object):
       gs_subdir = gs_subdir.replace('//', '/')
       gs_subdir = gs_subdir.strip('/')
 
-    # Construct metadata from our revision information
+    # Construct metadata from our revision information, as available.
     gs_metadata = {
         GS_COMMIT_POSITION_NUMBER_KEY: self._chromium_revision,
-        GS_GIT_COMMIT_KEY: self._git_commit,
     }
+
+    # Add the commit position, if available
+    try:
+      gs_metadata[GS_COMMIT_POSITION_KEY] = chromium_utils.BuildCommitPosition(
+          *chromium_utils.GetCommitPosition(self.options))
+    except chromium_utils.NoIdentifiedRevision:
+      pass
+
+    # Add the git commit hash, if available
+    try:
+      gs_metadata[GS_GIT_COMMIT_KEY] = chromium_utils.GetGitCommit(self.options)
+    except chromium_utils.NoIdentifiedRevision:
+      pass
 
     status = slave_utils.GSUtilCopyFile(filename,
                                         gs_base,
@@ -518,13 +504,13 @@ class StagerBase(object):
     # revision information.
     self.GenerateRevisionFile()
 
-    www_dir = os.path.join(self._www_dir_base, str(self._build_revision))
+    www_dir = os.path.join(self._www_dir_base, self._build_path_component)
     gs_bucket = self.options.factory_properties.get('gs_bucket', None)
     gs_acl = self.options.factory_properties.get('gs_acl', None)
     gs_base = None
     if gs_bucket:
       gs_base = '/'.join([gs_bucket, self._build_name,
-                          str(self._build_revision)])
+                          self._build_path_component])
     self._UploadBuild(www_dir, self.revisions_path, archive_files, gs_base,
                       gs_acl)
 
@@ -600,6 +586,9 @@ class StagerByChromiumRevision(StagerBase):
 
     StagerBase.__init__(self, options, None)
     self._build_revision = self._chromium_revision
+    self._build_path_component = chromium_utils.GetSortableUploadPathForSortKey(
+        *chromium_utils.GetBuildSortKey(options))
+
 
 
 class StagerByBuildNumber(StagerBase):
@@ -636,18 +625,6 @@ def main():
                            help='The build number of the builder running '
                                 'this script. we use it as the name of build '
                                 'archive directory')
-  option_parser.add_option('--default-chromium-revision', type='int',
-                           help='The default chromium revision so far is only '
-                                'used by archive_build unittest to set valid '
-                                'chromium revision in test')
-  option_parser.add_option('--default-webkit-revision', type='int',
-                           help='The default webkit revision so far is only '
-                                'used by archive_build unittest to set valid '
-                                'webkit revision in test')
-  option_parser.add_option('--default-v8-revision', type='int',
-                           help='The default v8 revision so far is only '
-                                'used by archive_build unittest to set valid '
-                                'v8 revision in test')
   option_parser.add_option('--dry-run', action='store_true',
                            help='Avoid making changes, for testing')
   option_parser.add_option('--ignore', default=[], action='append',

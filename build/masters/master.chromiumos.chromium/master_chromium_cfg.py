@@ -18,7 +18,7 @@ defaults['category'] = '2chromium'
 # TODO(petermayo): Make this use chrome CROS Manifest too.
 
 _CHROMIUM_SCHEDULER_NAME = 'chromium_cros'
-S(name=_CHROMIUM_SCHEDULER_NAME, branch='src', treeStableTimer=60)
+S(name=_CHROMIUM_SCHEDULER_NAME, branch='master', treeStableTimer=60)
 
 def Builder(dname, sname, flavor, root, board):
   fname = '%s-%s' % (sname, flavor)

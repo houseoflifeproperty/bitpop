@@ -88,6 +88,7 @@ class ResultsDashboardFormatTest(unittest.TestCase):
                     'bar_ref': ['98.5', '5.0'],
                 },
                 'rev': '12345',
+                'git_revision': '46790669f8a2ecd7249ab92418260316b1c60dbf',
                 'webkit_rev': '6789',
                 'v8_rev': 'undefined',
                 'units': 'KB',
@@ -98,6 +99,7 @@ class ResultsDashboardFormatTest(unittest.TestCase):
                 },
                 'important': ['y'],
                 'rev': '23456',
+                'git_revision': '46790669f8a2ecd7249ab92418260316b1c60dbf',
                 'v8_rev': '2345',
                 'units': 'count',
             },
@@ -123,6 +125,7 @@ class ResultsDashboardFormatTest(unittest.TestCase):
             'supplemental_columns': {
                 'r_webkit_rev': '6789',
                 'r_bar': '89abcdef',
+                'r_chromium': '46790669f8a2ecd7249ab92418260316b1c60dbf',
                 'a_stdio_uri': 'http://mylogs.com/Builder/10',
                 # Note that v8 rev is not included since it was 'undefined'.
             },
@@ -141,6 +144,7 @@ class ResultsDashboardFormatTest(unittest.TestCase):
             'supplemental_columns': {
                 'r_webkit_rev': '6789',
                 'r_bar': '89abcdef',
+                'r_chromium': '46790669f8a2ecd7249ab92418260316b1c60dbf',
                 'a_stdio_uri': 'http://mylogs.com/Builder/10',
             },
         },
@@ -159,46 +163,10 @@ class ResultsDashboardFormatTest(unittest.TestCase):
             'supplemental_columns': {
                 'r_v8_rev': '2345',
                 'r_bar': '89abcdef',
+                'r_chromium': '46790669f8a2ecd7249ab92418260316b1c60dbf',
                 'a_stdio_uri': 'http://mylogs.com/Builder/10',
             },
         },
-    ]
-    self.assertEqual(expected_points, actual_points)
-
-  def test_MakeListOfPoints_MultiValueRow(self):
-    """A test for the special case of sending time series."""
-    # The master name is gotten when making the list of points,
-    # so it must be stubbed out here.
-    self.mox.StubOutWithMock(slave_utils, 'GetActiveMaster')
-    slave_utils.GetActiveMaster().AndReturn('ChromiumEndure')
-    self.mox.ReplayAll()
-
-    actual_points = results_dashboard.MakeListOfPoints(
-        {
-            'gmail_test': {
-                'traces': {
-                    'dom_nodes': [[10, 123], [20.5, 234]],
-                },
-                'units': 'count',
-                'units_x': 'seconds',
-                'rev': '12345',
-            }
-        },
-        'linux', 'endure', 'chromium.endure', 'Builder', 10, {})
-    expected_points = [
-        {
-            'master': 'ChromiumEndure',
-            'bot': 'linux',
-            'test': 'endure/gmail_test/dom_nodes',
-            'revision': 12345,
-            'data': [[10, 123], [20.5, 234]],
-            'units': 'count',
-            'units_x': 'seconds',
-            'masterid': 'chromium.endure',
-            'buildername': 'Builder',
-            'buildnumber': 10,
-            'supplemental_columns': {},
-        }
     ]
     self.assertEqual(expected_points, actual_points)
 

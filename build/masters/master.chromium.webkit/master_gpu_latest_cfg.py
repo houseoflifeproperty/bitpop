@@ -75,6 +75,21 @@ gpu_slave_info = [
     'triggered_by': 'GPU Mac Builder (dbg)',
   },
   {
+    'builder': 'GPU Mac 10.9 (Intel)',
+    'factory_id': 'f_gpu_mac_10_9_rel',
+    'recipe': 'gpu/download_and_test',
+    'build_config': 'Release',
+    'perf_id': 'gpu-webkit-mac',
+    'triggered_by': 'GPU Mac Builder',
+  },
+  {
+    'builder': 'GPU Mac 10.9 (Intel) (dbg)',
+    'factory_id': 'f_gpu_mac_10_9_dbg',
+    'recipe': 'gpu/download_and_test',
+    'build_config': 'Debug',
+    'triggered_by': 'GPU Mac Builder (dbg)',
+  },
+  {
     'builder': 'GPU Linux Builder',
     'factory_id': 'f_gpu_linux_builder_rel',
     'recipe': 'gpu/build_and_upload',

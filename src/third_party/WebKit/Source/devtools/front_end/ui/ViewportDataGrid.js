@@ -31,6 +31,13 @@ WebInspector.ViewportDataGrid = function(columnsArray, editCallback, deleteCallb
     /** @type {?Node} */
     this._hiddenWheelTarget = null;
 
+    /** @type {boolean} */
+    this._stickToBottom = false;
+    /** @type {boolean} */
+    this._atBottom = true;
+    /** @type {number} */
+    this._lastScrollTop = 0;
+
     this.setRootNode(new WebInspector.ViewportDataGridNode());
 }
 
@@ -40,7 +47,18 @@ WebInspector.ViewportDataGrid.prototype = {
      */
     onResize: function()
     {
+        if (this._stickToBottom && this._atBottom)
+            this._scrollContainer.scrollTop = this._scrollContainer.scrollHeight - this._scrollContainer.clientHeight;
         this.scheduleUpdate();
+        WebInspector.DataGrid.prototype.onResize.call(this);
+    },
+
+    /**
+     * @param {boolean} stick
+     */
+    setStickToBottom: function(stick)
+    {
+        this._stickToBottom = stick;
     },
 
     /**
@@ -56,7 +74,9 @@ WebInspector.ViewportDataGrid.prototype = {
      */
     _onScroll: function(event)
     {
-        this.scheduleUpdate();
+        this._atBottom = this._scrollContainer.isScrolledToBottom();
+        if (this._lastScrollTop !== this._scrollContainer.scrollTop)
+            this.scheduleUpdate();
     },
 
     /**
@@ -81,11 +101,11 @@ WebInspector.ViewportDataGrid.prototype = {
     },
 
     /**
-     * @param {number} scrollHeight
+     * @param {number} clientHeight
      * @param {number} scrollTop
      * @return {{topPadding: number, bottomPadding: number, visibleNodes: !Array.<!WebInspector.ViewportDataGridNode>, offset: number}}
      */
-    _calculateVisibleNodes: function(scrollHeight, scrollTop)
+    _calculateVisibleNodes: function(clientHeight, scrollTop)
     {
         var nodes = this._rootNode.children;
         if (this._inline)
@@ -100,7 +120,7 @@ WebInspector.ViewportDataGrid.prototype = {
         var start = i;
         var topPadding = y;
 
-        for (; i < size && y < scrollTop + scrollHeight; ++i)
+        for (; i < size && y < scrollTop + clientHeight; ++i)
             y += nodes[i].nodeSelfHeight();
         var end = i;
 
@@ -111,11 +131,32 @@ WebInspector.ViewportDataGrid.prototype = {
         return {topPadding: topPadding, bottomPadding: bottomPadding, visibleNodes: nodes.slice(start, end), offset: start};
     },
 
+    /**
+     * @return {number}
+     */
+    _contentHeight: function()
+    {
+        var nodes = this._rootNode.children;
+        var result = 0;
+        for (var i = 0, size = nodes.length; i < size; ++i)
+            result += nodes[i].nodeSelfHeight();
+        return result;
+    },
+
     _update: function()
     {
         this._updateScheduled = false;
 
-        var viewportState = this._calculateVisibleNodes(this._scrollContainer.offsetHeight, this._scrollContainer.scrollTop);
+        var clientHeight = this._scrollContainer.clientHeight;
+        var scrollTop = this._scrollContainer.scrollTop;
+        var currentScrollTop = scrollTop;
+        var maxScrollTop = Math.max(0, this._contentHeight() - clientHeight);
+        if (this._stickToBottom && this._atBottom)
+            scrollTop = maxScrollTop;
+        scrollTop = Math.min(maxScrollTop, scrollTop);
+        this._atBottom = scrollTop === maxScrollTop;
+
+        var viewportState = this._calculateVisibleNodes(clientHeight, scrollTop);
         var visibleNodes = viewportState.visibleNodes;
         var visibleNodesSet = Set.fromArray(visibleNodes);
 
@@ -142,13 +183,18 @@ WebInspector.ViewportDataGrid.prototype = {
         var tBody = this.dataTableBody;
         var offset = viewportState.offset;
         for (var i = 0; i < visibleNodes.length; ++i) {
-            var element = visibleNodes[i].element();
+            var node = visibleNodes[i];
+            var element = node.element();
+            node.willAttach();
             element.classList.toggle("odd", (offset + i) % 2 === 0);
             tBody.insertBefore(element, previousElement.nextSibling);
             previousElement = element;
         }
 
         this.setVerticalPadding(viewportState.topPadding, viewportState.bottomPadding);
+        this._lastScrollTop = scrollTop;
+        if (scrollTop !== currentScrollTop)
+            this._scrollContainer.scrollTop = scrollTop;
         this._visibleNodes = visibleNodes;
     },
 
@@ -261,11 +307,25 @@ WebInspector.ViewportDataGridNode.prototype = {
     },
 
     /**
+     * @protected
+     */
+    willAttach: function() { },
+
+    /**
+     * @protected
+     * @return {boolean}
+     */
+    attached: function()
+    {
+        return !!(this._element && this._element.parentElement);
+    },
+
+    /**
      * @override
      */
     refresh: function()
     {
-        if (this._element && this._element.parentElement) {
+        if (this.attached()) {
             this._stale = true;
             this.dataGrid.scheduleUpdate();
         } else {

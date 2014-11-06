@@ -40,6 +40,7 @@ namespace blink {
 
 BaseChooserOnlyDateAndTimeInputType::~BaseChooserOnlyDateAndTimeInputType()
 {
+    closeDateTimeChooser();
 }
 
 void BaseChooserOnlyDateAndTimeInputType::handleDOMActivateEvent(Event*)
@@ -96,6 +97,11 @@ void BaseChooserOnlyDateAndTimeInputType::closePopupView()
     closeDateTimeChooser();
 }
 
+Element& BaseChooserOnlyDateAndTimeInputType::ownerElement() const
+{
+    return element();
+}
+
 void BaseChooserOnlyDateAndTimeInputType::didChooseValue(const String& value)
 {
     element().setValue(value, DispatchInputAndChangeEvent);
@@ -140,13 +146,6 @@ void BaseChooserOnlyDateAndTimeInputType::accessKeyAction(bool sendMouseEvents)
 {
     BaseDateAndTimeInputType::accessKeyAction(sendMouseEvents);
     BaseClickableWithKeyInputType::accessKeyAction(element(), sendMouseEvents);
-}
-
-void BaseChooserOnlyDateAndTimeInputType::trace(Visitor* visitor)
-{
-    visitor->trace(m_dateTimeChooser);
-    BaseDateAndTimeInputType::trace(visitor);
-    DateTimeChooserClient::trace(visitor);
 }
 
 }

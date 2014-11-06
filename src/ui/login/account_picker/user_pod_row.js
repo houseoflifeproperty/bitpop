@@ -183,22 +183,21 @@ cr.define('login', function() {
     return node;
   });
 
+  /**
+   * The supported user pod custom icons.
+   * {@code id} properties should be in sync with values set by C++ side.
+   * {@code class} properties are CSS classes used to set the icons' background.
+   * @const {Array.<{id: !string, class: !string}>}
+   */
+  UserPodCustomIcon.ICONS = [
+    {id: 'locked', class: 'custom-icon-locked'},
+    {id: 'unlocked', class: 'custom-icon-unlocked'},
+    {id: 'hardlocked', class: 'custom-icon-hardlocked'},
+    {id: 'spinner', class: 'custom-icon-spinner'}
+  ];
+
   UserPodCustomIcon.prototype = {
     __proto__: HTMLDivElement.prototype,
-
-    /**
-     * The icon height.
-     * @type {number}
-     * @private
-     */
-    height_: 0,
-
-    /**
-     * The icon width.
-     * @type {number}
-     * @private
-     */
-    width_: 0,
 
     /**
      * Tooltip to be shown when the user hovers over the icon. The icon
@@ -236,29 +235,6 @@ cr.define('login', function() {
     showTooltipTimeout_: null,
 
     /**
-     * If animation is set, the current horizontal background offset for the
-     * icon resource.
-     * @type {number}
-     * @private
-     */
-    lastAnimationOffset_: 0,
-
-    /**
-     * The reference to interval for progressing the animation.
-     * @type {?number}
-     * @private
-     */
-    animationInterval_: null,
-
-    /**
-     * The width of the resource that contains representations for different
-     * animation stages.
-     * @type {number}
-     * @private
-     */
-    animationResourceSize_: 0,
-
-    /**
      * When {@code fadeOut} is called, the element gets hidden using fadeout
      * animation. This is reference to the listener for transition end added to
      * the icon element while it's fading out.
@@ -280,9 +256,9 @@ cr.define('login', function() {
       this.iconElement.addEventListener('mouseover',
                                         this.showTooltipSoon_.bind(this));
       this.iconElement.addEventListener('mouseout',
-                                         this.hideTooltip_.bind(this, false));
+                                        this.hideTooltip_.bind(this, false));
       this.iconElement.addEventListener('mousedown',
-                                         this.hideTooltip_.bind(this, false));
+                                        this.handleMouseDown_.bind(this));
       this.iconElement.addEventListener('click',
                                         this.handleClick_.bind(this));
       this.iconElement.addEventListener('keydown',
@@ -304,27 +280,23 @@ cr.define('login', function() {
     },
 
     /**
-     * Set the icon's background image as image set with different
-     * representations for available screen scale factors.
-     * @param {!{scale1x: string, scale2x: string}} icon The icon
-     *     representations.
+     * Updates the icon element class list to properly represent the provided
+     * icon.
+     * @param {!string} id The id of the icon that should be shown. Should be
+     *    one of the ids listed in {@code UserPodCustomIcon.ICONS}.
      */
-    setIconAsImageSet: function(icon) {
-      this.iconElement.style.backgroundImage =
-          '-webkit-image-set(' +
-              'url(' + icon.scale1x + ') 1x,' +
-              'url(' + icon.scale2x + ') 2x)';
+    setIcon: function(id) {
+      UserPodCustomIcon.ICONS.forEach(function(icon) {
+        this.iconElement.classList.toggle(icon.class, id == icon.id);
+      }, this);
     },
 
     /**
-     * Sets the icon background image to a chrome://theme URL.
-     * @param {!string} iconUrl The icon's background image URL.
+     * Sets the ARIA label for the icon.
+     * @param {!string} ariaLabel
      */
-    setIconAsResourceUrl: function(iconUrl) {
-      this.iconElement.style.backgroundImage =
-          '-webkit-image-set(' +
-              'url(' + iconUrl + '@1x) 1x,' +
-              'url(' + iconUrl + '@2x) 2x)';
+    setAriaLabel: function(ariaLabel) {
+      this.iconElement.setAttribute('aria-label', ariaLabel);
     },
 
     /**
@@ -345,39 +317,10 @@ cr.define('login', function() {
 
       this.hideTooltip_(true);
       this.iconElement.classList.add('faded');
-      this.hideTransitionListener_ = this.hide_.bind(this);
+      this.hideTransitionListener_ = this.hide.bind(this);
       this.iconElement.addEventListener('webkitTransitionEnd',
                                         this.hideTransitionListener_);
       ensureTransitionEndEvent(this.iconElement, 200);
-    },
-
-    /**
-     * Sets the icon size element size.
-     * @param {!{width: number, height: number}} size The icon size.
-     */
-    setSize: function(size) {
-      this.height_ = size.height < CUSTOM_ICON_CONTAINER_SIZE ?
-          size.height : CUSTOM_ICON_COTAINER_SIZE;
-      this.iconElement.style.height = this.height_ + 'px';
-
-      this.width_ = size.width < CUSTOM_ICON_CONTAINER_SIZE ?
-          size.width : CUSTOM_ICON_COTAINER_SIZE;
-      this.iconElement.style.width = this.width_ + 'px';
-      this.style.width = this.width_ + 'px';
-    },
-
-    /**
-     * Sets the icon opacity.
-     * @param {number} opacity The icon opacity in [0-100] scale.
-     */
-    setOpacity: function(opacity) {
-      if (opacity > 100) {
-        this.style.opacity = 1;
-      } else if (opacity < 0) {
-        this.style.opacity = 0;
-      } else {
-        this.style.opacity = opacity / 100;
-      }
     },
 
     /**
@@ -389,6 +332,8 @@ cr.define('login', function() {
      *    parameters.
      */
     setTooltip: function(tooltip) {
+      this.iconElement.classList.toggle('icon-with-tooltip', !!tooltip.text);
+
       if (this.tooltip_ == tooltip.text && !tooltip.autoshow)
         return;
       this.tooltip_ = tooltip.text;
@@ -415,32 +360,6 @@ cr.define('login', function() {
       }
 
       this.hideTooltip_(true);
-
-      if (this.tooltip_)
-        this.iconElement.setAttribute('aria-lablel', this.tooltip_);
-    },
-
-    /**
-     * Sets the icon animation parameter and starts the animation.
-     * The animation is set using the resource containing all animation frames
-     * concatenated horizontally. The animator offsets the background image in
-     * regural intervals.
-     * @param {?{resourceWidth: number, frameLengthMs: number}} animation
-     *     |resourceWidth|: Total width for the resource containing the
-     *                      animation frames.
-     *     |frameLengthMs|: Time interval for which a single animation frame is
-     *                      shown.
-     */
-    setAnimation: function(animation) {
-      if (this.animationInterval_)
-        clearInterval(this.animationInterval_);
-      this.iconElement.style.backgroundPosition = 'center';
-      if (!animation)
-        return;
-      this.lastAnimationOffset_ = 0;
-      this.animationResourceSize_ = animation.resourceWidth;
-      this.animationInterval_ = setInterval(this.progressAnimation_.bind(this),
-                                            animation.frameLengthMs);
     },
 
     /**
@@ -451,6 +370,8 @@ cr.define('login', function() {
      *     be null to make the icon  non interactive.
      */
     setInteractive: function(callback) {
+      this.iconElement.classList.toggle('interactive-custom-icon', !!callback);
+
       // Update tabIndex property if needed.
       if (!!this.actionHandler_ != !!callback) {
         if (callback) {
@@ -466,13 +387,11 @@ cr.define('login', function() {
     },
 
     /**
-     * Hides the icon. Makes sure the tooltip is hidden and animation reset.
-     * @private
+     * Hides the icon and cleans its state.
      */
-    hide_: function() {
+    hide: function() {
       this.hideTooltip_(true);
       this.hidden = true;
-      this.setAnimation(null);
       this.setInteractive(null);
       this.resetHideTransitionState_();
     },
@@ -489,6 +408,18 @@ cr.define('login', function() {
         this.hideTransitionListener_ = null;
       }
       this.iconElement.classList.toggle('faded', false);
+    },
+
+    /**
+     * Handles mouse down event in the icon element.
+     * @param {Event} e The mouse down event.
+     * @private
+     */
+    handleMouseDown_: function(e) {
+      this.hideTooltip_(false);
+      // Stop the event propagation so in the case the click ends up on the
+      // user pod (outside the custom icon) auth is not attempted.
+      stopEventPropagation(e);
     },
 
     /**
@@ -570,7 +501,6 @@ cr.define('login', function() {
         return;
       $('bubble').hideForElement(this);
       this.tooltipAutoshown_ = false;
-      this.iconElement.removeAttribute('aria-label');
     },
 
     /**
@@ -583,19 +513,6 @@ cr.define('login', function() {
         this.showTooltipTimeout_ = null;
       }
     },
-
-    /**
-     * Horizontally offsets the animated icon's background for a single icon
-     * size width.
-     * @private
-     */
-    progressAnimation_: function() {
-      this.lastAnimationOffset_ += this.width_;
-      if (this.lastAnimationOffset_ >= this.animationResourceSize_)
-        this.lastAnimationOffset_ = 0;
-      this.iconElement.style.backgroundPosition =
-          '-' + this.lastAnimationOffset_ + 'px center';
-    }
   };
 
   /**
@@ -608,6 +525,15 @@ cr.define('login', function() {
   UserPod.prototype = {
     __proto__: HTMLDivElement.prototype,
 
+    /**
+     * Whether click on the pod can issue a user click auth attempt. The
+     * attempt can be issued iff the pod was focused when the click
+     * started (i.e. on mouse down event).
+     * @type {boolean}
+     * @private
+     */
+    userClickAuthAllowed_: false,
+
     /** @override */
     decorate: function() {
       this.tabIndex = UserPodTabOrder.POD_INPUT;
@@ -615,6 +541,7 @@ cr.define('login', function() {
 
       this.addEventListener('keydown', this.handlePodKeyDown_.bind(this));
       this.addEventListener('click', this.handleClickOnPod_.bind(this));
+      this.addEventListener('mousedown', this.handlePodMouseDown_.bind(this));
 
       this.signinButtonElement.addEventListener('click',
           this.activate.bind(this));
@@ -658,6 +585,8 @@ cr.define('login', function() {
       var initialAuthType = this.user.initialAuthType ||
           AUTH_TYPE.OFFLINE_PASSWORD;
       this.setAuthType(initialAuthType, null);
+
+      this.userClickAuthAllowed_ = false;
     },
 
     /**
@@ -995,7 +924,7 @@ cr.define('login', function() {
       } else if (this.isAuthTypeOnlineSignIn) {
         return this.signinButtonElement;
       } else if (this.isAuthTypeUserClick) {
-        return this;
+        return this.passwordLabelElement;
       }
     },
 
@@ -1024,6 +953,19 @@ cr.define('login', function() {
         this.userTypeBubbleElement.classList.remove('bubble-shown');
 
         this.actionBoxAreaElement.classList.add('active');
+
+        // If the user pod is on either edge of the screen, then the menu
+        // could be displayed partially ofscreen.
+        this.actionBoxMenu.classList.remove('left-edge-offset');
+        this.actionBoxMenu.classList.remove('right-edge-offset');
+
+        var offsetLeft =
+            cr.ui.login.DisplayManager.getOffset(this.actionBoxMenu).left;
+        var menuWidth = this.actionBoxMenu.offsetWidth;
+        if (offsetLeft < 0)
+          this.actionBoxMenu.classList.add('left-edge-offset');
+        else if (offsetLeft + menuWidth > window.innerWidth)
+          this.actionBoxMenu.classList.add('right-edge-offset');
       } else {
         this.actionBoxAreaElement.classList.remove('active');
         this.actionBoxAreaElement.classList.remove('menu-moved-up');
@@ -1379,6 +1321,16 @@ cr.define('login', function() {
     },
 
     /**
+     * Handles mouse down event. It sets whether the user click auth will be
+     * allowed on the next mouse click event. The auth is allowed iff the pod
+     * was focused on the mouse down event starting the click.
+     * @param {Event} e The mouse down event.
+     */
+    handlePodMouseDown_: function(e) {
+      this.userClickAuthAllowed_ = this.parentNode.isFocused(this);
+    },
+
+    /**
      * Handles click event on a user pod.
      * @param {Event} e Click event.
      */
@@ -1389,7 +1341,9 @@ cr.define('login', function() {
       if (!this.isActionBoxMenuActive) {
         if (this.isAuthTypeOnlineSignIn) {
           this.showSigninUI();
-        } else if (this.isAuthTypeUserClick) {
+        } else if (this.isAuthTypeUserClick && this.userClickAuthAllowed_) {
+          // Note that this.userClickAuthAllowed_ is set in mouse down event
+          // handler.
           this.parentNode.setActivatedPod(this);
         }
 
@@ -2005,6 +1959,10 @@ cr.define('login', function() {
     // Array of users that are shown (public/supervised/regular).
     users_: [],
 
+    // If we're disabling single pod autofocus for Touch View.
+    touchViewSinglePodExperimentOn_: true,
+
+
     /** @override */
     decorate: function() {
       // Event listeners that are installed for the time period during which
@@ -2034,14 +1992,17 @@ cr.define('login', function() {
 
     /**
      * Return true if user pod row has only single user pod in it, which should
-     * always be focused.
+     * always be focused except desktop and touch view modes.
      * @type {boolean}
      */
     get alwaysFocusSinglePod() {
       var isDesktopUserManager = Oobe.getInstance().displayType ==
           DISPLAY_TYPE.DESKTOP_USER_MANAGER;
 
-      return isDesktopUserManager ? false : this.children.length == 1;
+      return (isDesktopUserManager ||
+              (this.touchViewSinglePodExperimentOn_ &&
+               this.touchViewEnabled_)) ?
+          false : this.children.length == 1;
     },
 
     /**
@@ -2287,12 +2248,9 @@ cr.define('login', function() {
     /**
      * Shows a custom icon on a user pod besides the input field.
      * @param {string} username Username of pod to add button
-     * @param {!{resourceUrl: (string | undefined),
-     *           data: ({scale1x: string, scale2x: string} | undefined),
-     *           size: ({width: number, height: number} | undefined),
-     *           animation: ({resourceWidth: number, frameLength: number} |
-     *                       undefined),
-     *           opacity: (number | undefined),
+     * @param {!{id: !string,
+     *           hardlockOnClick: boolean,
+     *           ariaLabel: string | undefined,
      *           tooltip: ({text: string, autoshow: boolean} | undefined)}} icon
      *     The icon parameters.
      */
@@ -2304,24 +2262,26 @@ cr.define('login', function() {
         return;
       }
 
-      if (icon.resourceUrl) {
-        pod.customIconElement.setIconAsResourceUrl(icon.resourceUrl);
-      } else if (icon.data) {
-        pod.customIconElement.setIconAsImageSet(icon.data);
-      } else {
+      if (!icon.id)
         return;
-      }
 
-      pod.customIconElement.setSize(icon.size || {width: 0, height: 0});
-      pod.customIconElement.setAnimation(icon.animation || null);
-      pod.customIconElement.setOpacity(icon.opacity || 100);
+      pod.customIconElement.setIcon(icon.id);
+
       if (icon.hardlockOnClick) {
         pod.customIconElement.setInteractive(
             this.hardlockUserPod_.bind(this, username));
       } else {
         pod.customIconElement.setInteractive(null);
       }
+
+      var ariaLabel = icon.ariaLabel || (icon.tooltip && icon.tooltip.text);
+      if (ariaLabel)
+        pod.customIconElement.setAriaLabel(ariaLabel);
+      else
+        console.warn('No ARIA label for user pod custom icon.');
+
       pod.customIconElement.show();
+
       // This has to be called after |show| in case the tooltip should be shown
       // immediatelly.
       pod.customIconElement.setTooltip(
@@ -2351,7 +2311,8 @@ cr.define('login', function() {
         return;
       }
 
-      pod.customIconElement.fadeOut();
+      // TODO(tengs): Allow option for a fading transition.
+      pod.customIconElement.hide();
     },
 
     /**
@@ -2369,6 +2330,14 @@ cr.define('login', function() {
         return;
       }
       pod.setAuthType(authType, value);
+    },
+
+    /**
+     * Sets the state of touch view mode.
+     * @param {boolean} isTouchViewEnabled true if the mode is on.
+     */
+    setTouchViewState: function(isTouchViewEnabled) {
+      this.touchViewEnabled_ = isTouchViewEnabled;
     },
 
     /**

@@ -417,8 +417,14 @@ void View::SetVisible(bool visible) {
     UpdateLayerVisibility();
 
     // If we are newly visible, schedule paint.
-    if (visible_)
+    if (visible_) {
       SchedulePaint();
+    } else {
+      // We're never painted when hidden, so no need to be in the BoundsTree.
+      BoundsTree* bounds_tree = GetBoundsTreeFromPaintRoot();
+      if (bounds_tree)
+        RemoveRootBounds(bounds_tree);
+    }
   }
 }
 
@@ -1318,7 +1324,7 @@ void View::PreferredSizeChanged() {
     parent_->ChildPreferredSizeChanged(this);
 }
 
-bool View::NeedsNotificationWhenVisibleBoundsChange() const {
+bool View::GetNeedsNotificationWhenVisibleBoundsChange() const {
   return false;
 }
 
@@ -1463,6 +1469,10 @@ void View::OnPaintLayer(gfx::Canvas* canvas) {
   if (!layer() || !layer()->fills_bounds_opaquely())
     canvas->DrawColor(SK_ColorBLACK, SkXfermode::kClear_Mode);
   PaintCommon(canvas, CullSet());
+}
+
+void View::OnDelegatedFrameDamage(
+    const gfx::Rect& damage_rect_in_dip) {
 }
 
 void View::OnDeviceScaleFactorChanged(float device_scale_factor) {
@@ -1923,7 +1933,7 @@ void View::BoundsChanged(const gfx::Rect& previous_bounds) {
     Layout();
   }
 
-  if (NeedsNotificationWhenVisibleBoundsChange())
+  if (GetNeedsNotificationWhenVisibleBoundsChange())
     OnVisibleBoundsChanged();
 
   // Notify interested Views that visible bounds within the root view may have
@@ -1938,7 +1948,7 @@ void View::BoundsChanged(const gfx::Rect& previous_bounds) {
 
 // static
 void View::RegisterChildrenForVisibleBoundsNotification(View* view) {
-  if (view->NeedsNotificationWhenVisibleBoundsChange())
+  if (view->GetNeedsNotificationWhenVisibleBoundsChange())
     view->RegisterForVisibleBoundsNotification();
   for (int i = 0; i < view->child_count(); ++i)
     RegisterChildrenForVisibleBoundsNotification(view->child_at(i));
@@ -1946,7 +1956,7 @@ void View::RegisterChildrenForVisibleBoundsNotification(View* view) {
 
 // static
 void View::UnregisterChildrenForVisibleBoundsNotification(View* view) {
-  if (view->NeedsNotificationWhenVisibleBoundsChange())
+  if (view->GetNeedsNotificationWhenVisibleBoundsChange())
     view->UnregisterForVisibleBoundsNotification();
   for (int i = 0; i < view->child_count(); ++i)
     UnregisterChildrenForVisibleBoundsNotification(view->child_at(i));
@@ -2007,6 +2017,14 @@ void View::SetRootBoundsDirty(bool origin_changed) {
 }
 
 void View::UpdateRootBounds(BoundsTree* tree, const gfx::Vector2d& offset) {
+  // If we're not visible no need to update BoundsTree. When we are made visible
+  // the BoundsTree will be updated appropriately.
+  if (!visible_)
+    return;
+
+  if (!root_bounds_dirty_ && children_.empty())
+    return;
+
   // No need to recompute bounds if we haven't flagged ours as dirty.
   TRACE_EVENT1("views", "View::UpdateRootBounds", "class", GetClassName());
 

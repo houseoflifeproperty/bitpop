@@ -56,6 +56,9 @@
 #    code. This allows a test APK to inject a Linker.TestRunner instance at
 #    runtime. Should only be used by the chromium_linker_test_apk target!!
 #  never_lint - Set to 1 to not run lint on this target.
+#  java_in_dir_suffix - To override the /src suffix on java_in_dir.
+#  app_manifest_version_name - set the apps 'human readable' version number.
+#  app_manifest_version_code - set the apps version number.
 {
   'variables': {
     'tested_apk_obfuscated_jar_path%': '/',
@@ -99,6 +102,7 @@
     'lint_result': '<(intermediate_dir)/lint_result.xml',
     'lint_config': '<(intermediate_dir)/lint_config.xml',
     'never_lint%': 0,
+    'java_in_dir_suffix%': '/src',
     'instr_stamp': '<(intermediate_dir)/instr.stamp',
     'jar_stamp': '<(intermediate_dir)/jar.stamp',
     'obfuscate_stamp': '<(intermediate_dir)/obfuscate.stamp',
@@ -169,6 +173,8 @@
     'unsigned_standalone_apk_path': '<(unsigned_standalone_apk_path)',
     'libchromium_android_linker': 'libchromium_android_linker.>(android_product_extension)',
     'extra_native_libs': [],
+    'native_lib_placeholder_stamp': '<(apk_package_native_libs_dir)/<(android_app_abi)/native_lib_placeholder.stamp',
+    'native_lib_placeholders': [],
   },
   # Pass the jar path to the apk's "fake" jar target.  This would be better as
   # direct_dependent_settings, but a variable set by a direct_dependent_settings
@@ -198,7 +204,7 @@
         # We generate R.java in package R_package (in addition to the package
         # listed in the AndroidManifest.xml, which is unavoidable).
         'additional_res_packages': ['<(R_package)'],
-        'additional_R_text_files': ['<(PRODUCT_DIR)/<(package_name)/R.txt'],
+        'additional_R_text_files': ['<(intermediate_dir)/R.txt'],
       },
     }],
     ['native_lib_target != "" and component == "shared_library"', {
@@ -257,26 +263,6 @@
           'includes': ['../build/android/write_ordered_libraries.gypi'],
         },
         {
-          'action_name': 'native_libraries_template_data_<(_target_name)',
-          'message': 'Creating native_libraries_list.h for <(_target_name)',
-          'inputs': [
-            '<(DEPTH)/build/android/gyp/util/build_utils.py',
-            '<(DEPTH)/build/android/gyp/create_native_libraries_header.py',
-            '<(ordered_libraries_file)',
-          ],
-          'outputs': [
-            '<(native_libraries_template_data_file)',
-            '<(native_libraries_template_version_file)',
-          ],
-          'action': [
-            'python', '<(DEPTH)/build/android/gyp/create_native_libraries_header.py',
-            '--ordered-libraries=<(ordered_libraries_file)',
-            '--version-name=<(native_lib_version_name)',
-            '--native-library-list=<(native_libraries_template_data_file)',
-            '--version-output=<(native_libraries_template_version_file)',
-          ],
-        },
-        {
           'action_name': 'native_libraries_<(_target_name)',
           'variables': {
             'conditions': [
@@ -324,8 +310,7 @@
           'inputs': [
             '<(DEPTH)/build/android/gyp/util/build_utils.py',
             '<(DEPTH)/build/android/gyp/gcc_preprocess.py',
-            '<(native_libraries_template_data_file)',
-            '<(native_libraries_template_version_file)',
+            '<(ordered_libraries_file)',
             '<(native_libraries_template)',
           ],
           'outputs': [
@@ -333,10 +318,12 @@
           ],
           'action': [
             'python', '<(DEPTH)/build/android/gyp/gcc_preprocess.py',
-            '--include-path=<(native_libraries_template_data_dir)',
+            '--include-path=',
             '--output=<(native_libraries_java_file)',
             '--template=<(native_libraries_template)',
             '--stamp=<(native_libraries_java_stamp)',
+            '--defines', 'NATIVE_LIBRARIES_LIST=@FileArg(<(ordered_libraries_file):java_libraries_list)',
+            '--defines', 'NATIVE_LIBRARIES_VERSION_NUMBER="<(native_lib_version_name)"',
             '<@(gcc_preprocess_defines)',
           ],
         },
@@ -399,15 +386,35 @@
           },
           'includes': ['../build/android/strip_native_libraries.gypi'],
         },
+        {
+          'action_name': 'Create native lib placeholder files for previous releases',
+          'variables': {
+            'placeholders': ['<@(native_lib_placeholders)'],
+            'conditions': [
+              ['gyp_managed_install == 1', {
+                # This "library" just needs to be put in the .apk. It is not loaded
+                # at runtime.
+                'placeholders': ['libfix.crbug.384638.so'],
+              }]
+            ],
+          },
+          'inputs': [
+            '<(DEPTH)/build/android/gyp/create_placeholder_files.py',
+          ],
+          'outputs': [
+            '<(native_lib_placeholder_stamp)',
+          ],
+          'action': [
+            'python', '<(DEPTH)/build/android/gyp/create_placeholder_files.py',
+            '--dest-lib-dir=<(apk_package_native_libs_dir)/<(android_app_abi)/',
+            '--stamp=<(native_lib_placeholder_stamp)',
+            '<@(placeholders)',
+          ],
+        },
       ],
       'conditions': [
         ['gyp_managed_install == 1', {
           'variables': {
-            # This "library" just needs to be put in the .apk. It is not loaded
-            # at runtime.
-            'placeholder_native_library_path':
-              '<(apk_package_native_libs_dir)/<(android_app_abi)/libfix.crbug.384638.so',
-            'package_input_paths': [ '<(placeholder_native_library_path)' ],
             'libraries_top_dir': '<(intermediate_dir)/lib.stripped',
             'libraries_source_dir': '<(libraries_top_dir)/lib/<(android_app_abi)',
             'device_library_dir': '<(device_intermediate_dir)/lib.stripped',
@@ -419,19 +426,6 @@
           'actions': [
             {
               'includes': ['../build/android/push_libraries.gypi'],
-            },
-            {
-              'action_name': 'create placeholder lib',
-              'inputs': [
-                '<(DEPTH)/build/android/gyp/touch.py',
-              ],
-              'outputs': [
-                '<(placeholder_native_library_path)',
-              ],
-              'action' : [
-                'python', '<(DEPTH)/build/android/gyp/touch.py',
-                '<@(_outputs)',
-              ],
             },
             {
               'action_name': 'create device library symlinks',
@@ -449,7 +443,7 @@
               'action': [
                 'python', '<(DEPTH)/build/android/gyp/create_device_library_links.py',
                 '--build-device-configuration=<(build_device_config_path)',
-                '--libraries-json=<(ordered_libraries_file)',
+                '--libraries=@FileArg(<(ordered_libraries_file):libraries)',
                 '--script-host-path=<(symlink_script_host_path)',
                 '--script-device-path=<(symlink_script_device_path)',
                 '--target-dir=<(device_library_dir)',
@@ -624,7 +618,7 @@
         # Java files instead of using find. (As is, this will be broken if two
         # targets use the same java_in_dir and both use java_apk.gypi or
         # both use java.gypi.)
-        'java_sources': ['>!@(find >(java_in_dir)/src >(additional_src_dirs) -name "*.java"  # apk)'],
+        'java_sources': ['>!@(find >(java_in_dir)>(java_in_dir_suffix) >(additional_src_dirs) -name "*.java"  # apk)'],
 
       },
       'inputs': [
@@ -676,7 +670,7 @@
     {
       'variables': {
         'src_dirs': [
-          '<(java_in_dir)/src',
+          '<(java_in_dir)<(java_in_dir_suffix)',
           '>@(additional_src_dirs)',
         ],
         'lint_jar_path': '<(jar_path)',
@@ -881,6 +875,11 @@
       ],
       'outputs': [
         '<(unsigned_apk_path)',
+      ],
+      'conditions': [
+        ['native_lib_target != ""', {
+          'inputs': ['<(native_lib_placeholder_stamp)'],
+        }],
       ],
       'action': [
         'python', '<(DEPTH)/build/android/gyp/ant.py',

@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from master import gitiles_poller
 from master import master_config
 from master.factory import annotator_factory
 from master.factory import chromium_factory
@@ -15,7 +16,7 @@ defaults = {}
 helper = master_config.Helper(defaults)
 B = helper.Builder
 F = helper.Factory
-S = helper.URLScheduler
+S = helper.Scheduler
 
 def win(): return chromium_factory.ChromiumFactory('src/build', 'win32')
 def win_out(): return chromium_factory.ChromiumFactory('src/out', 'win32')
@@ -29,7 +30,7 @@ m_annotator = annotator_factory.AnnotatorFactory()
 defaults['category'] = '1lkgr'
 
 # Global scheduler
-S(name='chromium_lkgr', url=ActiveMaster.poll_url, include_revision=True)
+S(name='chromium_lkgr', branch='lkgr')
 
 ################################################################################
 ## Windows
@@ -341,4 +342,8 @@ F('android', linux_android().ChromiumAnnotationFactory(
 
 
 def Update(_config, active_master, c):
+  lkgr_poller = gitiles_poller.GitilesPoller(
+      'https://chromium.googlesource.com/chromium/src',
+      branches=['lkgr'])
+  c['change_source'].append(lkgr_poller)
   return helper.Update(c)

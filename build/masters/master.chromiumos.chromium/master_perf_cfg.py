@@ -15,7 +15,7 @@ F = helper.Factory
 defaults['category'] = '5chromiumos perf'
 
 _PERF_SCHEDULER_NAME = 'chromium_src_perf'
-helper.Scheduler(_PERF_SCHEDULER_NAME, branch='src', treeStableTimer=60)
+helper.Scheduler(_PERF_SCHEDULER_NAME, branch='master', treeStableTimer=60)
 
 def Builder(sname, flavor, root, board):
   fname = '%s-%s' % (sname, flavor)

@@ -6,7 +6,7 @@ import posixpath
 from urlparse import urlsplit
 
 from file_system import FileNotFoundError
-from future import Future
+from future import All
 from path_util import Segment, Join, SplitParent
 
 class Redirector(object):
@@ -102,12 +102,11 @@ class Redirector(object):
 
     return 'https://developer.chrome.com/' + posixpath.join(*path)
 
-  def Cron(self):
+  def Refresh(self):
     ''' Load files during a cron run.
     '''
     futures = []
     for root, dirs, files in self._file_system.Walk(''):
       if 'redirects.json' in files:
-        futures.append(
-            self._cache.GetFromFile(posixpath.join(root, 'redirects.json')))
-    return Future(callback=lambda: [f.Get() for f in futures])
+        futures.append(self._cache.GetFromFile(Join(root, 'redirects.json')))
+    return All(futures)

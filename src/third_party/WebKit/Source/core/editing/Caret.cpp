@@ -14,7 +14,7 @@
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL APPLE COMPUTER, INC. OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+* CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
  * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
  * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
@@ -33,6 +33,7 @@
 #include "core/frame/Settings.h"
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 #include "platform/graphics/GraphicsContext.h"
 
@@ -61,6 +62,10 @@ bool DragCaretController::isContentRichlyEditable() const
 
 void DragCaretController::setCaretPosition(const VisiblePosition& position)
 {
+    // for querying RenderLayer::compositingState()
+    // This code is probably correct, since it doesn't occur in a stack that involves updating compositing state.
+    DisableCompositingQueryAsserts disabler;
+
     if (Node* node = m_position.deepEquivalent().deprecatedNode())
         invalidateCaretRect(node);
     m_position = position;
@@ -134,6 +139,29 @@ RenderBlock* CaretBase::caretRenderer(Node* node)
     return paintedByBlock ? toRenderBlock(renderer) : renderer->containingBlock();
 }
 
+static void mapCaretRectToCaretPainter(RenderObject* caretRenderer, RenderBlock* caretPainter, LayoutRect& caretRect)
+{
+    // FIXME: This shouldn't be called on un-rooted subtrees.
+    // FIXME: This should probably just use mapLocalToContainer.
+    // Compute an offset between the caretRenderer and the caretPainter.
+
+    ASSERT(caretRenderer->isDescendantOf(caretPainter));
+
+    bool unrooted = false;
+    while (caretRenderer != caretPainter) {
+        RenderObject* containerObject = caretRenderer->container();
+        if (!containerObject) {
+            unrooted = true;
+            break;
+        }
+        caretRect.move(caretRenderer->offsetFromContainer(containerObject, caretRect.location()));
+        caretRenderer = containerObject;
+    }
+
+    if (unrooted)
+        caretRect = LayoutRect();
+}
+
 bool CaretBase::updateCaretRect(Document* document, const PositionWithAffinity& caretPosition)
 {
     m_caretLocalRect = LayoutRect();
@@ -147,26 +175,13 @@ bool CaretBase::updateCaretRect(Document* document, const PositionWithAffinity& 
 
     // First compute a rect local to the renderer at the selection start.
     RenderObject* renderer;
-    LayoutRect localRect = localCaretRectOfPosition(caretPosition, renderer);
+    m_caretLocalRect = localCaretRectOfPosition(caretPosition, renderer);
 
     // Get the renderer that will be responsible for painting the caret
     // (which is either the renderer we just found, or one of its containers).
     RenderBlock* caretPainter = caretRenderer(caretPosition.position().deprecatedNode());
 
-    // Compute an offset between the renderer and the caretPainter.
-    bool unrooted = false;
-    while (renderer != caretPainter) {
-        RenderObject* containerObject = renderer->container();
-        if (!containerObject) {
-            unrooted = true;
-            break;
-        }
-        localRect.move(renderer->offsetFromContainer(containerObject, localRect.location()));
-        renderer = containerObject;
-    }
-
-    if (!unrooted)
-        m_caretLocalRect = localRect;
+    mapCaretRectToCaretPainter(renderer, caretPainter, m_caretLocalRect);
 
     return true;
 }
@@ -202,6 +217,9 @@ void CaretBase::invalidateLocalCaretRect(Node* node, const LayoutRect& rect)
     // https://bugs.webkit.org/show_bug.cgi?id=108283
     LayoutRect inflatedRect = rect;
     inflatedRect.inflate(1);
+
+    // FIXME: We should use mapLocalToContainer() since we know we're not un-rooted.
+    mapCaretRectToCaretPainter(node->renderer(), caretPainter, inflatedRect);
 
     caretPainter->invalidatePaintRectangle(inflatedRect);
 }

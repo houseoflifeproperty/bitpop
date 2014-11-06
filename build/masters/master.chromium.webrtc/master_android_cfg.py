@@ -12,7 +12,7 @@ m_annotator = annotator_factory.AnnotatorFactory()
 def Update(c):
   c['schedulers'].extend([
       SingleBranchScheduler(name='android_webrtc_scheduler',
-                            branch='src',
+                            branch='master',
                             treeStableTimer=60,
                             builderNames=['Android Builder (dbg)']),
       Triggerable(name='android_trigger_dbg', builderNames=[

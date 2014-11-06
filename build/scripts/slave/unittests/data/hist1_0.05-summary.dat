@@ -1,1 +1,1 @@
-{"traces": {"hist1_trace": ["1.5", "0.0"]}, "rev": "12345", "webkit_rev": "67890", "webrtc_rev": "undefined", "v8_rev": "undefined", "ver": "undefined", "chan": "undefined", "units": "someunits"}
+{"traces": {"hist1_trace": ["1.5", "0.0"]}, "rev": "12345", "webkit_rev": "67890", "webrtc_rev": "undefined", "v8_rev": "undefined", "ver": "undefined", "chan": "undefined", "git_revision": "undefined", "units": "someunits"}

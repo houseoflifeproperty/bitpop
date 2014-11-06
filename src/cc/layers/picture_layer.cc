@@ -21,7 +21,6 @@ PictureLayer::PictureLayer(ContentLayerClient* client)
     : client_(client),
       pile_(make_scoped_refptr(new PicturePile())),
       instrumentation_object_tracker_(id()),
-      is_mask_(false),
       update_source_frame_number_(-1),
       can_use_lcd_text_last_frame_(can_use_lcd_text()) {
 }
@@ -50,13 +49,11 @@ void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
     DCHECK_EQ(layer_impl->bounds().ToString(), pile_->tiling_size().ToString());
   }
 
-  layer_impl->SetIsMask(is_mask_);
-
   // Unlike other properties, invalidation must always be set on layer_impl.
   // See PictureLayerImpl::PushPropertiesTo for more details.
   layer_impl->invalidation_.Clear();
   layer_impl->invalidation_.Swap(&pile_invalidation_);
-  layer_impl->pile_ = PicturePileImpl::CreateFromOther(pile_.get());
+  layer_impl->UpdatePile(PicturePileImpl::CreateFromOther(pile_.get()));
 }
 
 void PictureLayer::SetLayerTreeHost(LayerTreeHost* host) {
@@ -149,7 +146,7 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
 }
 
 void PictureLayer::SetIsMask(bool is_mask) {
-  is_mask_ = is_mask;
+  pile_->set_is_mask(is_mask);
 }
 
 Picture::RecordingMode PictureLayer::RecordingMode() const {
@@ -185,13 +182,11 @@ skia::RefPtr<SkPicture> PictureLayer::GetPicture() const {
 
   int width = bounds().width();
   int height = bounds().height();
-  gfx::RectF opaque;
 
   SkPictureRecorder recorder;
   SkCanvas* canvas = recorder.beginRecording(width, height, NULL, 0);
   client_->PaintContents(canvas,
                          gfx::Rect(width, height),
-                         &opaque,
                          ContentLayerClient::GRAPHICS_CONTEXT_ENABLED);
   skia::RefPtr<SkPicture> picture = skia::AdoptRef(recorder.endRecording());
   return picture;

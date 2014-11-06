@@ -16,10 +16,9 @@
 #include "chrome/browser/plugins/plugin_metadata.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_content_client.h"
-#include "chrome/common/content_settings.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
+#include "components/content_settings/core/common/content_settings.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/plugin_service_filter.h"
@@ -28,11 +27,15 @@
 #include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
 
 #if defined(ENABLE_EXTENSIONS)
-#include "chrome/browser/guest_view/web_view/web_view_renderer_state.h"
+#include "extensions/browser/guest_view/web_view/web_view_renderer_state.h"
 #endif
 
 #if defined(OS_WIN)
 #include "base/win/metro.h"
+#endif
+
+#if !defined(DISABLE_NACL)
+#include "components/nacl/common/nacl_constants.h"
 #endif
 
 using content::PluginService;
@@ -47,9 +50,11 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
     return false;
   }
 
+#if !defined(DISABLE_NACL)
   // Treat Native Client invocations like JavaScript.
-  if (plugin.name == base::ASCIIToUTF16(ChromeContentClient::kNaClPluginName))
+  if (plugin.name == base::ASCIIToUTF16(nacl::kNaClPluginName))
     return true;
+#endif
 
 #if defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
   // Treat CDM invocations like JavaScript.
@@ -395,21 +400,29 @@ void PluginInfoMessageFilter::Context::GetPluginContentSetting(
   content_settings::SettingInfo info;
   bool uses_plugin_specific_setting = false;
   if (ShouldUseJavaScriptSettingForPlugin(plugin)) {
-    value.reset(
-        host_content_settings_map_->GetWebsiteSetting(
-            policy_url, policy_url, CONTENT_SETTINGS_TYPE_JAVASCRIPT,
-            std::string(), &info));
+    value = host_content_settings_map_->GetWebsiteSetting(
+        policy_url,
+        policy_url,
+        CONTENT_SETTINGS_TYPE_JAVASCRIPT,
+        std::string(),
+        &info);
   } else {
     content_settings::SettingInfo specific_info;
-    scoped_ptr<base::Value> specific_setting(
+    scoped_ptr<base::Value> specific_setting =
         host_content_settings_map_->GetWebsiteSetting(
-            policy_url, plugin_url, CONTENT_SETTINGS_TYPE_PLUGINS, resource,
-            &specific_info));
+            policy_url,
+            plugin_url,
+            CONTENT_SETTINGS_TYPE_PLUGINS,
+            resource,
+            &specific_info);
     content_settings::SettingInfo general_info;
-    scoped_ptr<base::Value> general_setting(
+    scoped_ptr<base::Value> general_setting =
         host_content_settings_map_->GetWebsiteSetting(
-            policy_url, plugin_url, CONTENT_SETTINGS_TYPE_PLUGINS,
-            std::string(), &general_info));
+            policy_url,
+            plugin_url,
+            CONTENT_SETTINGS_TYPE_PLUGINS,
+            std::string(),
+            &general_info);
 
     // If there is a plugin-specific setting, we use it, unless the general
     // setting was set by policy, in which case it takes precedence.

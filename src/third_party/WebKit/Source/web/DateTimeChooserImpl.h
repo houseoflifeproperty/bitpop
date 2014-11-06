@@ -32,8 +32,8 @@
 #define DateTimeChooserImpl_h
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+#include "core/html/forms/DateTimeChooser.h"
 #include "core/page/PagePopupClient.h"
-#include "platform/DateTimeChooser.h"
 
 namespace blink {
 
@@ -43,12 +43,12 @@ class PagePopup;
 
 class DateTimeChooserImpl FINAL : public DateTimeChooser, public PagePopupClient {
 public:
-    static PassRefPtrWillBeRawPtr<DateTimeChooserImpl> create(ChromeClientImpl*, DateTimeChooserClient*, const DateTimeChooserParameters&);
+    static PassRefPtr<DateTimeChooserImpl> create(ChromeClientImpl*, DateTimeChooserClient*, const DateTimeChooserParameters&);
     virtual ~DateTimeChooserImpl();
-    virtual void trace(Visitor*) OVERRIDE;
 
     // DateTimeChooser functions:
     virtual void endChooser() OVERRIDE;
+    virtual AXObject* rootAXObject() OVERRIDE;
 
 private:
     DateTimeChooserImpl(ChromeClientImpl*, DateTimeChooserClient*, const DateTimeChooserParameters&);
@@ -59,10 +59,11 @@ private:
     virtual void setValueAndClosePopup(int, const String&) OVERRIDE;
     virtual void setValue(const String&) OVERRIDE;
     virtual void closePopup() OVERRIDE;
+    virtual Element& ownerElement() OVERRIDE;
     virtual void didClosePopup() OVERRIDE;
 
     ChromeClientImpl* m_chromeClient;
-    RawPtrWillBeMember<DateTimeChooserClient> m_client;
+    DateTimeChooserClient* m_client;
     PagePopup* m_popup;
     DateTimeChooserParameters m_parameters;
     OwnPtr<Locale> m_locale;

@@ -133,7 +133,7 @@ class AOSPApi(recipe_api.RecipeApi):
 
   def compile_step(self, build_tool, step_name='compile', targets=None,
                    use_goma=True, src_dir=None, target_out_dir=None,
-                   envsetup=None, defines=None, env=None):
+                   envsetup=None, defines=None, env=None, force_clobber=False):
     src_dir = src_dir or self.c.build_path
     target_out_dir = target_out_dir or self.c.slave_android_out_path
     envsetup = envsetup or self.with_lunch_command
@@ -149,6 +149,10 @@ class AOSPApi(recipe_api.RecipeApi):
     if use_goma and self.m.path.exists(self.m.path['build'].join('goma')):
       compiler_option = ['--compiler', 'goma',
                          '--goma-dir', self.m.path['build'].join('goma')]
+
+    if 'clobber' in self.m.properties or force_clobber:
+      compiler_option.append('--clobber')
+
     self.m.step(step_name,
                       envsetup +
                       compile_script +

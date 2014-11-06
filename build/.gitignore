@@ -29,6 +29,7 @@ twistd.pid
 !/masters/*/public_html/
 /masters/*/.*
 /masters/*/actions.log
+/masters/*/actions_parser.timestamp
 /scripts/command_wrapper
 /scripts/common/.bot_password
 /scripts/gsd_generate_index

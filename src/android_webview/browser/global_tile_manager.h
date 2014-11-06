@@ -10,6 +10,7 @@
 #include "base/lazy_instance.h"
 #include "base/sequence_checker.h"
 #include "base/synchronization/lock.h"
+#include "content/public/browser/android/synchronous_compositor.h"
 
 namespace android_webview {
 
@@ -31,12 +32,13 @@ class GlobalTileManager {
 
   void SetTileLimit(size_t num_tiles_limit);
 
-  // Requests the |num_of_tiles| from the available global pool. Calls
+  // Requests the |new_num_of_tiles| from the available global pool. Calls
   // GlobalTileManagerClient.SetNumTiles after the manager determines how many
   // tiles are available for the client. If the number of tiles left is not
   // enough to satisfy the request, the manager will evict tiles allocated to
   // other clients.
-  void RequestTiles(size_t new_num_of_tiles, Key key);
+  void RequestTiles(content::SynchronousCompositorMemoryPolicy new_policy,
+                    Key key);
 
   Key PushBack(GlobalTileManagerClient* client);
 

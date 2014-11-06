@@ -91,7 +91,8 @@
       "@@@STEP_LOG_LINE@json.output@    ], @@@",
       "@@@STEP_LOG_LINE@json.output@    \"chromium_configs\": [@@@",
       "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos\", @@@",
-      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_clang\"@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_clang\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_ozone\"@@@",
       "@@@STEP_LOG_LINE@json.output@    ], @@@",
       "@@@STEP_LOG_LINE@json.output@    \"platforms\": [@@@",
       "@@@STEP_LOG_LINE@json.output@      \"linux\"@@@",
@@ -118,7 +119,7 @@
     "env": {
       "GYP_DEFINES": "chromium_win_pch=0 component=shared_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]\\goma' target_arch=ia32 use_goma=1"
     },
-    "name": "gclient runhooks"
+    "name": "gclient runhooks (with patch)"
   },
   {
     "cmd": [
@@ -138,7 +139,7 @@
       "--",
       "base_unittests",
       "browser_tests",
-      "chrome"
+      "mini_installer"
     ],
     "name": "compile (with patch)"
   },
@@ -221,26 +222,27 @@
     "cmd": [
       "python",
       "-u",
-      "[SLAVE_BUILD]\\src\\chrome\\test\\nacl_test_injection\\buildbot_nacl_integration.py",
-      "--mode",
-      "Debug",
-      "--json_build_results_output_file",
-      "/path/to/tmp/json"
-    ],
-    "name": "nacl_integration (with patch)",
-    "~followup_annotations": [
-      "@@@STEP_LOG_LINE@json.output@[]@@@",
-      "@@@STEP_LOG_END@json.output@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "python",
-      "-u",
       "[SLAVE_BUILD]\\src\\mojo\\tools\\run_mojo_python_tests.py",
       "--write-full-results-to",
       "/path/to/tmp/json"
     ],
     "name": "mojo_python_tests (with patch)"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]\\src\\chrome\\test\\mini_installer\\test_installer.py",
+      "--build-dir",
+      "[SLAVE_BUILD]\\src\\out",
+      "--target",
+      "Debug",
+      "--force-clean",
+      "--config",
+      "[SLAVE_BUILD]\\src\\chrome\\test\\mini_installer\\config\\config.config",
+      "--write-full-results-to",
+      "/path/to/tmp/json"
+    ],
+    "name": "test_installer (with patch)"
   }
 ]

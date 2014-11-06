@@ -123,7 +123,8 @@
       "--goma-dir",
       "[BUILD]\\goma",
       "--",
-      "chromium_builder_tests"
+      "chromium_builder_tests",
+      "mini_installer"
     ],
     "name": "compile"
   },

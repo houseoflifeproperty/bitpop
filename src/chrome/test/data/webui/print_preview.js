@@ -393,10 +393,22 @@ TEST_F('PrintPreviewWebUITest', 'SourceIsHTMLCapabilities', function() {
   capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
-  checkElementDisplayed(
-      $('other-options-settings').querySelector('.fit-to-page-container'),
-      false);
-  checkSectionVisible($('media-size-settings'), true);
+  var moreSettingsDiv = $('more-settings');
+  var mediaSizeDiv = $('media-size-settings');
+  var otherOptionsDiv = $('other-options-settings');
+  var fitToPageEl = otherOptionsDiv.querySelector('.fit-to-page-container');
+
+  // Check that options are collapsed (section is visible, because duplex is
+  // available).
+  checkSectionVisible(otherOptionsDiv, true);
+  checkElementDisplayed(fitToPageEl, false);
+  checkSectionVisible(mediaSizeDiv, false);
+  // Expand it.
+  checkSectionVisible(moreSettingsDiv, true);
+  moreSettingsDiv.click();
+
+  checkElementDisplayed(fitToPageEl, false);
+  checkSectionVisible(mediaSizeDiv, true);
 });
 
 // When the source is "PDF", depending on the selected destination printer, we
@@ -419,12 +431,13 @@ TEST_F('PrintPreviewWebUITest', 'SourceIsPDFCapabilities', function() {
   capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
+  var otherOptionsDiv = $('other-options-settings');
+
+  checkSectionVisible(otherOptionsDiv, true);
   checkElementDisplayed(
-      $('other-options-settings').querySelector('.fit-to-page-container'),
-      true);
+      otherOptionsDiv.querySelector('.fit-to-page-container'), true);
   expectTrue(
-      $('other-options-settings').querySelector('.fit-to-page-checkbox').
-          checked);
+      otherOptionsDiv.querySelector('.fit-to-page-checkbox').checked);
   checkSectionVisible($('media-size-settings'), true);
 });
 
@@ -452,12 +465,14 @@ TEST_F('PrintPreviewWebUITest', 'PrintScalingDisabledForPlugin', function() {
   cr.dispatchSimpleEvent(
       this.nativeLayer_, print_preview.NativeLayer.EventType.DISABLE_SCALING);
 
+  var otherOptionsDiv = $('other-options-settings');
+
+  checkSectionVisible(otherOptionsDiv, true);
+
   checkElementDisplayed(
-      $('other-options-settings').querySelector('.fit-to-page-container'),
-      true);
+      otherOptionsDiv.querySelector('.fit-to-page-container'), true);
   expectFalse(
-      $('other-options-settings').querySelector('.fit-to-page-checkbox').
-          checked);
+      otherOptionsDiv.querySelector('.fit-to-page-checkbox').checked);
 });
 
 // Make sure that custom margins controls are properly set up.
@@ -507,18 +522,27 @@ TEST_F('PrintPreviewWebUITest', 'PageLayoutHasNoMarginsHideHeaderFooter',
   capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
-  checkElementDisplayed(
-      $('other-options-settings').querySelector('.header-footer-container'),
-      true);
+  var moreSettingsDiv = $('more-settings');
+  var otherOptionsDiv = $('other-options-settings');
+  var headerFooterEl =
+      otherOptionsDiv.querySelector('.header-footer-container');
+
+  // Check that options are collapsed (section is visible, because duplex is
+  // available).
+  checkSectionVisible(otherOptionsDiv, true);
+  checkElementDisplayed(headerFooterEl, false);
+  // Expand it.
+  checkSectionVisible(moreSettingsDiv, true);
+  moreSettingsDiv.click();
+
+  checkElementDisplayed(headerFooterEl, true);
 
   printPreview.printTicketStore_.marginsType.updateValue(
       print_preview.ticket_items.MarginsType.Value.CUSTOM);
   printPreview.printTicketStore_.customMargins.updateValue(
       new print_preview.Margins(0, 0, 0, 0));
 
-  checkElementDisplayed(
-      $('other-options-settings').querySelector('.header-footer-container'),
-      false);
+  checkElementDisplayed(headerFooterEl, false);
 });
 
 // Page layout has half-inch margins. Show header and footer option.
@@ -539,18 +563,27 @@ TEST_F('PrintPreviewWebUITest', 'PageLayoutHasMarginsShowHeaderFooter',
   capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
-  checkElementDisplayed(
-      $('other-options-settings').querySelector('.header-footer-container'),
-      true);
+  var moreSettingsDiv = $('more-settings');
+  var otherOptionsDiv = $('other-options-settings');
+  var headerFooterEl =
+      otherOptionsDiv.querySelector('.header-footer-container');
+
+  // Check that options are collapsed (section is visible, because duplex is
+  // available).
+  checkSectionVisible(otherOptionsDiv, true);
+  checkElementDisplayed(headerFooterEl, false);
+  // Expand it.
+  checkSectionVisible(moreSettingsDiv, true);
+  moreSettingsDiv.click();
+
+  checkElementDisplayed(headerFooterEl, true);
 
   printPreview.printTicketStore_.marginsType.updateValue(
       print_preview.ticket_items.MarginsType.Value.CUSTOM);
   printPreview.printTicketStore_.customMargins.updateValue(
       new print_preview.Margins(36, 36, 36, 36));
 
-  checkElementDisplayed(
-      $('other-options-settings').querySelector('.header-footer-container'),
-      true);
+  checkElementDisplayed(headerFooterEl, true);
 });
 
 // Page layout has zero top and bottom margins. Hide header and footer option.
@@ -572,18 +605,27 @@ TEST_F('PrintPreviewWebUITest',
   capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
-  checkElementDisplayed(
-      $('other-options-settings').querySelector('.header-footer-container'),
-      true);
+  var moreSettingsDiv = $('more-settings');
+  var otherOptionsDiv = $('other-options-settings');
+  var headerFooterEl =
+      otherOptionsDiv.querySelector('.header-footer-container');
+
+  // Check that options are collapsed (section is visible, because duplex is
+  // available).
+  checkSectionVisible(otherOptionsDiv, true);
+  checkElementDisplayed(headerFooterEl, false);
+  // Expand it.
+  checkSectionVisible(moreSettingsDiv, true);
+  moreSettingsDiv.click();
+
+  checkElementDisplayed(headerFooterEl, true);
 
   printPreview.printTicketStore_.marginsType.updateValue(
       print_preview.ticket_items.MarginsType.Value.CUSTOM);
   printPreview.printTicketStore_.customMargins.updateValue(
       new print_preview.Margins(0, 36, 0, 36));
 
-  checkElementDisplayed(
-      $('other-options-settings').querySelector('.header-footer-container'),
-      false);
+  checkElementDisplayed(headerFooterEl, false);
 });
 
 // Page layout has zero top and half-inch bottom margin. Show header and footer
@@ -606,18 +648,27 @@ TEST_F('PrintPreviewWebUITest',
   capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
-  checkElementDisplayed(
-      $('other-options-settings').querySelector('.header-footer-container'),
-      true);
+  var moreSettingsDiv = $('more-settings');
+  var otherOptionsDiv = $('other-options-settings');
+  var headerFooterEl =
+      otherOptionsDiv.querySelector('.header-footer-container');
+
+  // Check that options are collapsed (section is visible, because duplex is
+  // available).
+  checkSectionVisible(otherOptionsDiv, true);
+  checkElementDisplayed(headerFooterEl, false);
+  // Expand it.
+  checkSectionVisible(moreSettingsDiv, true);
+  moreSettingsDiv.click();
+
+  checkElementDisplayed(headerFooterEl, true);
 
   printPreview.printTicketStore_.marginsType.updateValue(
       print_preview.ticket_items.MarginsType.Value.CUSTOM);
   printPreview.printTicketStore_.customMargins.updateValue(
       new print_preview.Margins(0, 36, 36, 36));
 
-  checkElementDisplayed(
-      $('other-options-settings').querySelector('.header-footer-container'),
-      true);
+  checkElementDisplayed(headerFooterEl, true);
 });
 
 // Test that the color settings, one option, standard monochrome.
@@ -708,8 +759,9 @@ TEST_F('PrintPreviewWebUITest', 'TestColorSettingsBothStandardDefaultColor',
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
   checkSectionVisible($('color-settings'), true);
-  expectTrue($('color-settings').querySelector('.color-option').checked);
-  expectFalse($('color-settings').querySelector('.bw-option').checked);
+  expectEquals(
+      'color',
+      $('color-settings').querySelector('.color-settings-select').value);
 });
 
 // Test that the color settings, two options, both standard, defaults to
@@ -730,8 +782,8 @@ TEST_F('PrintPreviewWebUITest',
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
   checkSectionVisible($('color-settings'), true);
-  expectFalse($('color-settings').querySelector('.color-option').checked);
-  expectTrue($('color-settings').querySelector('.bw-option').checked);
+  expectEquals(
+      'bw', $('color-settings').querySelector('.color-settings-select').value);
 });
 
 // Test that the color settings, two options, both custom, defaults to color.
@@ -751,8 +803,9 @@ TEST_F('PrintPreviewWebUITest',
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
   checkSectionVisible($('color-settings'), true);
-  expectTrue($('color-settings').querySelector('.color-option').checked);
-  expectFalse($('color-settings').querySelector('.bw-option').checked);
+  expectEquals(
+      'color',
+      $('color-settings').querySelector('.color-settings-select').value);
 });
 
 // Test to verify that duplex settings are set according to the printer
@@ -795,6 +848,7 @@ TEST_F('PrintPreviewWebUITest', 'TestDuplexSettingsFalse', function() {
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
+  var moreSettingsDiv = $('more-settings');
   var otherOptionsDiv = $('other-options-settings');
   var duplexDiv = otherOptionsDiv.querySelector('.duplex-container');
 
@@ -804,6 +858,12 @@ TEST_F('PrintPreviewWebUITest', 'TestDuplexSettingsFalse', function() {
   delete capsSetEvent.settingsInfo.capabilities.printer.duplex;
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
+  // Check that it is collapsed.
+  checkSectionVisible(otherOptionsDiv, false);
+  // Expand it.
+  checkSectionVisible(moreSettingsDiv, true);
+  moreSettingsDiv.click();
+  // Now it should be visible.
   checkSectionVisible(otherOptionsDiv, true);
   expectTrue(duplexDiv.hidden);
 });

@@ -22,6 +22,8 @@ class TestingPrefServiceSimple;
 
 namespace data_reduction_proxy {
 
+class DataReductionProxyStatisticsPrefs;
+
 class TestDataReductionProxyConfig : public DataReductionProxyConfigurator {
  public:
   TestDataReductionProxyConfig();
@@ -63,13 +65,14 @@ class MockDataReductionProxySettings : public C {
           DataReductionProxyParams::kFallbackAllowed |
           DataReductionProxyParams::kPromoAllowed,
           TestDataReductionProxyParams::HAS_EVERYTHING &
-          ~TestDataReductionProxyParams::HAS_DEV_ORIGIN)) {}
+          ~TestDataReductionProxyParams::HAS_DEV_ORIGIN &
+          ~TestDataReductionProxyParams::HAS_DEV_FALLBACK_ORIGIN)) {}
   MockDataReductionProxySettings<C>(int flags)
       : C(new TestDataReductionProxyParams(flags,
           TestDataReductionProxyParams::HAS_EVERYTHING &
-          ~TestDataReductionProxyParams::HAS_DEV_ORIGIN)) {}
+          ~TestDataReductionProxyParams::HAS_DEV_ORIGIN &
+          ~TestDataReductionProxyParams::HAS_DEV_FALLBACK_ORIGIN)) {}
   MOCK_METHOD0(GetURLFetcherForAvailabilityCheck, net::URLFetcher*());
-  MOCK_METHOD0(GetURLFetcherForWarmup, net::URLFetcher*());
   MOCK_METHOD0(GetOriginalProfilePrefs, PrefService*());
   MOCK_METHOD0(GetLocalStatePrefs, PrefService*());
   MOCK_METHOD3(LogProxyState, void(
@@ -126,13 +129,11 @@ class DataReductionProxySettingsTestBase : public testing::Test {
 
   template <class C> void SetProbeResult(
       const std::string& test_url,
-      const std::string& warmup_test_url,
       const std::string& response,
       ProbeURLFetchResult state,
       bool success,
       int expected_calls);
   virtual void SetProbeResult(const std::string& test_url,
-                              const std::string& warmup_test_url,
                               const std::string& response,
                               ProbeURLFetchResult result,
                               bool success,
@@ -143,14 +144,12 @@ class DataReductionProxySettingsTestBase : public testing::Test {
                          bool expected_fallback_restricted);
   void CheckProbe(bool initially_enabled,
                   const std::string& probe_url,
-                  const std::string& warmup_url,
                   const std::string& response,
                   bool request_success,
                   bool expected_enabled,
                   bool expected_restricted,
                   bool expected_fallback_restricted);
   void CheckProbeOnIPChange(const std::string& probe_url,
-                            const std::string& warmup_url,
                             const std::string& response,
                             bool request_success,
                             bool expected_enabled,
@@ -167,6 +166,7 @@ class DataReductionProxySettingsTestBase : public testing::Test {
   scoped_ptr<TestDataReductionProxyParams> expected_params_;
   base::Time last_update_time_;
   bool proxy_enabled_;
+  scoped_ptr<DataReductionProxyStatisticsPrefs> statistics_prefs_;
 };
 
 // Test implementations should be subclasses of an instantiation of this
@@ -187,14 +187,12 @@ class ConcreteDataReductionProxySettingsTest
   }
 
   virtual void SetProbeResult(const std::string& test_url,
-                              const std::string& warmup_test_url,
                               const std::string& response,
                               ProbeURLFetchResult result,
                               bool success,
                               int expected_calls) OVERRIDE {
     return DataReductionProxySettingsTestBase::SetProbeResult<C>(
         test_url,
-        warmup_test_url,
         response,
         result,
         success,

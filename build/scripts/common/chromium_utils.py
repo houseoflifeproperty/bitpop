@@ -13,6 +13,7 @@ import glob
 import math
 import multiprocessing
 import os
+import re
 import shutil
 import socket
 import stat
@@ -46,6 +47,12 @@ GS_COMMIT_POSITION_KEY = 'Cr-Commit-Position'
 GS_COMMIT_POSITION_NUMBER_KEY = 'Cr-Commit-Position-Number'
 # The Google Storage metadata key for the Git commit hash
 GS_GIT_COMMIT_KEY = 'Cr-Git-Commit'
+
+# Regular expression to identify a Git hash
+GIT_COMMIT_HASH_RE = re.compile(r'[a-zA-Z0-9]{40}')
+#
+# Regular expression to parse a commit position
+COMMIT_POSITION_RE = re.compile(r'([^@]+)@{#(\d+)}')
 
 # Local errors.
 class MissingArgument(Exception):
@@ -96,6 +103,16 @@ def PlatformName():
 # Name of the file (inside the packaged build) containing revision number
 # of that build. Also used for determining the latest packaged build.
 FULL_BUILD_REVISION_FILENAME = 'FULL_BUILD_REVISION'
+
+def IsGitCommit(value):
+  """Returns: If a value is a Git commit hash.
+
+  This only works on full Git commit hashes. A value qualifies as a Git commit
+  hash if it only contains hexadecimal numbers and is forty characters long.
+  """
+  if value is None:
+    return False
+  return (GIT_COMMIT_HASH_RE.match(str(value)) is not None)
 
 
 # GetParentClass allows a class instance to find its parent class using Python's
@@ -163,7 +180,7 @@ def HistogramPercentiles(histogram, percentiles):
   return output
 
 def GeomMeanAndStdDevFromHistogram(histogram):
-  if not 'buckets' in histogram or not 'count' in histogram:
+  if not 'buckets' in histogram:
     return 0.0, 0.0
   count = 0
   sum_of_logs = 0
@@ -359,6 +376,16 @@ def MaybeMakeDirectory(*path):
       raise
 
 
+def RemovePath(*path):
+  """Removes the file or directory at 'path', if it exists."""
+  file_path = os.path.join(*path)
+  if os.path.exists(file_path):
+    if os.path.isdir(file_path):
+      RemoveDirectory(file_path)
+    else:
+      RemoveFile(file_path)
+
+
 def RemoveFile(*path):
   """Removes the file located at 'path', if it exists."""
   file_path = os.path.join(*path)
@@ -399,6 +426,25 @@ def RemoveFilesWildcards(file_wildcard, root=os.curdir):
     except OSError, e:
       if e.errno != errno.ENOENT:
         raise
+
+
+def RemoveGlobbedPaths(path_wildcard, root=os.curdir):
+  """Removes all paths matching 'path_wildcard' beneath root.
+
+  Returns the list of paths removed.
+
+  An exception is thrown if root doesn't exist."""
+  if not os.path.exists(root):
+    raise OSError(2, 'No such file or directory', root)
+
+  full_path_wildcard = os.path.join(path_wildcard, root)
+  paths = glob.glob(full_path_wildcard)
+  for path in paths:
+    # When glob returns directories they end in "/."
+    if path.endswith(os.sep + '.'):
+      path = path[:-2]
+    RemovePath(path)
+  return paths
 
 
 def RemoveDirectory(*path):
@@ -1301,21 +1347,27 @@ def GetCBuildbotConfigs(chromite_path=None):
     return {}
 
 
-def GetPrimaryRepository(options):
-  """Returns: (str) the key of the primary repository.
-
-  If no primary repository is configured, 'None' will be returned.
+def GetPrimaryProject(options):
+  """Returns: (str) the key of the primary project, or 'None' if none exists.
   """
+  # The preferred way is to reference the 'primary_project' parameter.
+  result = options.build_properties.get('primary_project')
+  if result:
+    return result
+
+  # TODO(dnj): The 'primary_repo' parameter is used by some scripts to indictate
+  #     the primary project name. This is not consistently used and will be
+  #     deprecated in favor of 'primary_project' once that is rolled out.
   result = options.build_properties.get('primary_repo')
   if not result:
-    return None
-  # The 'primary_repo' property currently contains a trailing underscore.
-  # However, this isn't an obvious thing given its name, so we'll strip it here
-  # and remove that expectation.
-  return result.strip('_')
+    # The 'primary_repo' property currently contains a trailing underscore.
+    # However, this isn't an obvious thing given its name, so we'll strip it
+    # here and remove that expectation.
+    return result.strip('_')
+  return None
 
 
-def GetBuildSortKey(options, repo=None):
+def GetBuildSortKey(options, project=None):
   """Reads a variety of sources to determine the current build revision.
 
   NOTE: Currently, the return value does not qualify branch name. This can
@@ -1328,7 +1380,7 @@ def GetBuildSortKey(options, repo=None):
 
   Args:
     options: Command-line options structure
-    repo: (str/None) If not None, the repository to get the build sort key
+    project: (str/None) If not None, the project to get the build sort key
         for. Otherwise, the build-wide sort key will be used.
   Returns: (branch, value) The qualified sortkey value
     branch: (str/None) The name of the branch, or 'None' if there is no branch
@@ -1337,18 +1389,26 @@ def GetBuildSortKey(options, repo=None):
   Raises: (NoIdentifiedRevision) if no revision could be identified from the
       supplied options.
   """
-  if repo:
-    revision_key = 'got_%s_revision' % (repo,)
+  # Is there a commit position for this build key?
+  try:
+    return GetCommitPosition(options, project=project)
+  except NoIdentifiedRevision:
+    pass
+
+  # Nope; derive the sort key from the 'got_[*_]revision' build properties. Note
+  # that this could be a Git commit (post flag day).
+  if project:
+    revision_key = 'got_%s_revision' % (project,)
   else:
     revision_key = 'got_revision'
   revision = options.build_properties.get(revision_key)
-  if revision:
+  if revision and not IsGitCommit(revision):
     return None, int(revision)
   raise NoIdentifiedRevision("Unable to identify revision for revision key "
                              "[%s]" % (revision_key,))
 
 
-def GetGitCommit(options, repo=None):
+def GetGitCommit(options, project=None):
   """Returns the 'git' commit hash for the specified repository
 
   This function uses environmental options to identify the 'git' commit hash
@@ -1356,32 +1416,46 @@ def GetGitCommit(options, repo=None):
 
   Args:
     options: Command-line options structure
-    repo: (str/None) The repository key to use. If None, use the topmost
+    project: (str/None) The project key to use. If None, use the topmost
         repository identification properties.
   Raises: (NoIdentifiedRevision) if no git commit could be identified from the
       supplied options.
   """
-  if repo:
-    commit_key = 'got_%s_revision_git' % (repo,)
+  if project:
+    git_commit_key = 'got_%s_revision_git' % (project,)
   else:
-    commit_key = 'got_revision_git'
-  commit = options.build_properties.get(commit_key)
+    git_commit_key = 'got_revision_git'
+  commit = options.build_properties.get(git_commit_key)
   if commit:
     return commit
-  raise NoIdentifiedRevision("Unable to identify commit for commit key [%s]" % (
-                             commit_key,))
+
+  # Is 'got_[_*]revision' itself is the Git commit?
+  if project:
+    commit_key = 'got_%s_revision' % (project,)
+  else:
+    commit_key = 'got_revision'
+  commit = options.build_properties.get(commit_key)
+  if commit and IsGitCommit(commit):
+    return commit
+  raise NoIdentifiedRevision("Unable to identify commit for commit key: %s" % (
+                           (git_commit_key, commit_key),))
 
 
-def GetSortableUploadPathForSortKey(branch, value):
+def GetSortableUploadPathForSortKey(branch, value, delimiter=None):
   """Returns: (str) the canonical sort key path constructed from a sort key.
 
   Returns a canonical sort key path for a sort key. The result will be one of
-  two forms:
-  - (With Branch): <branch-path>-<value> (e.g., "refs_heads_master-12345")
-  - (Without Branch): <value> (e.g., "12345")
+  the following forms:
+  - (Without Branch or With Branch=='refs/heads/master'): <value> (e.g., 12345)
+  - (With non-Master Branch): <branch-path>-<value> (e.g.,
+        "refs_my-branch-12345")
 
   When a 'branch' is supplied, it is converted to a path-suitable form. This
   conversion replaces undesirable characters ('/') with underscores.
+
+  Note that when parsing the upload path, 'rsplit' should be used to isolate the
+  commit position value, as the branch path may have instances of the delimiter
+  in it.
 
   See 'GetBuildSortKey' for more information about sort keys.
 
@@ -1389,11 +1463,72 @@ def GetSortableUploadPathForSortKey(branch, value):
     branch: (str/None) The sort key branch, or 'None' if there is no associated
         branch.
     value: (int) The sort key value.
+    delimiter: (str) The delimiter to insert in between <branch-path> and
+        <value> when constructing the branch-inclusive form. If omitted
+        (default), a hyphen ('-') will be used.
   """
-  if branch:
+  if branch and branch != 'refs/heads/master':
+    delimiter = delimiter or '-'
     branch = branch.replace('/', '_')
-    return '%s-%s' % (branch, value)
+    return '%s%s%s' % (branch, delimiter, value)
   return str(value)
+
+
+def ParseCommitPosition(value):
+  """Returns: The (branch, value) parsed from a commit position string.
+
+  Args:
+    value: (str) The value to parse.
+  Raises:
+    ValueError: If a commit position could not be parsed from 'value'.
+  """
+  match = COMMIT_POSITION_RE.match(value)
+  if not match:
+    raise ValueError("Failed to parse commit position from '%s'" % (value,))
+  return match.group(1), int(match.group(2))
+
+
+def BuildCommitPosition(branch, value):
+  """Returns: A constructed commit position.
+
+  An example commit position for branch 'refs/heads/master' value '12345' is:
+  refs/heads/master@{#12345}
+
+  This value can be parsed via 'ParseCommitPosition'.
+
+  Args:
+    branch: (str) The name of the commit position branch
+    value: (int): The commit position number.
+  """
+  return '%s@{#%s}' % (branch, value)
+
+
+def GetCommitPosition(options, project=None):
+  """Returns: (branch, value) The parsed commit position from build options.
+
+  Returns the parsed commit position from the build options. This is identified
+  by examining the 'got_revision_cp' (or 'got_REPO_revision_cp', if 'project' is
+  specified) keys.
+
+  Args:
+    options: Command-line options structure
+    project: (str/None) If not None, the project to get the build sort key
+        for. Otherwise, the build-wide sort key will be used.
+  Returns: (branch, value) The qualified commit position value
+  Raises:
+    NoIdentifiedRevision: if no revision could be identified from the
+        supplied options.
+    ValueError: If the supplied commit position failed to parse successfully.
+  """
+  if project:
+    key = 'got_%s_revision_cp' % (project,)
+  else:
+    key = 'got_revision_cp'
+  cp = options.build_properties.get(key)
+  if not cp:
+    raise NoIdentifiedRevision("Unable to identify the commit position; the "
+                               "build property is missing: %s" % (key,))
+  return ParseCommitPosition(cp)
 
 
 def AddPropertiesOptions(option_parser):

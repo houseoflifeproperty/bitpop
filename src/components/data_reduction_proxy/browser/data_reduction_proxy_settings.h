@@ -16,6 +16,7 @@
 #include "base/threading/thread_checker.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_configurator.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_statistics_prefs.h"
 #include "net/base/net_util.h"
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_fetcher_delegate.h"
@@ -103,7 +104,6 @@ class DataReductionProxySettings
   // |DataReductionProxySettings| instance.
   void InitDataReductionProxySettings(
       PrefService* prefs,
-      PrefService* local_state_prefs,
       net::URLRequestContextGetter* url_request_context_getter);
 
   // Initializes the data reduction proxy with profile and local state prefs,
@@ -113,9 +113,13 @@ class DataReductionProxySettings
   // TODO(marq): Remove when iOS supports the new interface above.
   void InitDataReductionProxySettings(
       PrefService* prefs,
-      PrefService* local_state_prefs,
       net::URLRequestContextGetter* url_request_context_getter,
       DataReductionProxyConfigurator* configurator);
+
+  // Sets the |statistics_prefs_| to be used for data reduction proxy pref reads
+  // and writes.
+  void SetDataReductionProxyStatisticsPrefs(
+      DataReductionProxyStatisticsPrefs* statistics_prefs);
 
   // Sets the |on_data_reduction_proxy_enabled_| callback and runs to register
   // the DataReductionProxyEnabled synthetic field trial.
@@ -184,13 +188,8 @@ class DataReductionProxySettings
   // Virtual for testing.
   virtual net::URLFetcher* GetURLFetcherForAvailabilityCheck();
 
-  // Returns a fetcher to warm up the connection to the data reduction proxy.
-  // Virtual for testing.
-  virtual net::URLFetcher* GetURLFetcherForWarmup();
-
   // Virtualized for unit test support.
   virtual PrefService* GetOriginalProfilePrefs();
-  virtual PrefService* GetLocalStatePrefs();
 
   // Sets the proxy configs, enabling or disabling the proxy according to
   // the value of |enabled| and |alternative_enabled|. Use the alternative
@@ -284,9 +283,6 @@ class DataReductionProxySettings
   // failure.
   void ProbeWhetherDataReductionProxyIsAvailable();
 
-  // Warms the connection to the data reduction proxy.
-  void WarmProxyConnection();
-
   // Disables use of the data reduction proxy on VPNs. Returns true if the
   // data reduction proxy has been disabled.
   bool DisableIfVPN();
@@ -301,13 +297,12 @@ class DataReductionProxySettings
   bool unreachable_;
 
   scoped_ptr<net::URLFetcher> fetcher_;
-  scoped_ptr<net::URLFetcher> warmup_fetcher_;
 
   BooleanPrefMember spdy_proxy_auth_enabled_;
   BooleanPrefMember data_reduction_proxy_alternative_enabled_;
 
   PrefService* prefs_;
-  PrefService* local_state_prefs_;
+  DataReductionProxyStatisticsPrefs* statistics_prefs_;
 
   net::URLRequestContextGetter* url_request_context_getter_;
 

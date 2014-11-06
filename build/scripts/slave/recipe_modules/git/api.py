@@ -20,7 +20,8 @@ class GitApi(recipe_api.RecipeApi):
       git_cmd = self.m.path['depot_tools'].join('git.bat')
     can_fail_build = kwargs.pop('can_fail_build', True)
     try:
-      return self.m.step(name, [git_cmd] + list(args), **kwargs)
+      return self.m.step(name, [git_cmd] + list(args), infra_step=True,
+                         **kwargs)
     except self.m.step.StepFailure as f:
       if can_fail_build:
         raise
@@ -142,3 +143,13 @@ class GitApi(recipe_api.RecipeApi):
         name='submodule update%s' % step_suffix,
         cwd=dir_path,
         can_fail_build=can_fail_build)
+
+  def get_timestamp(self, commit='HEAD', test_data=None, **kwargs):
+    """Find and return the timestamp of the given commit."""
+    step_test_data = None
+    if test_data is not None:
+      step_test_data = lambda: self.m.raw_io.test_api.stream_output(test_data)
+    return self('show', commit, '--format=%at', '-s',
+                stdout=self.m.raw_io.output(),
+                step_test_data=step_test_data).stdout.rstrip()
+

@@ -17,7 +17,7 @@
       "--output_json",
       "/path/to/tmp/json",
       "--revision",
-      "v8@bleeding_edge:HEAD",
+      "v8@HEAD",
       "--no_shallow"
     ],
     "name": "bot_update",
@@ -105,7 +105,26 @@
       "--arch",
       "ia32",
       "--testname",
-      "mjsunit fuzz-natives cctest message preparser base-unittests compiler-unittests",
+      "unittests",
+      "--no-variants",
+      "--isolates=on",
+      "--json-test-results",
+      "/path/to/tmp/json"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8",
+    "name": "Unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/v8/v8testing.py",
+      "--target",
+      "Release",
+      "--arch",
+      "ia32",
+      "--testname",
+      "default",
       "--isolates=on",
       "--flaky-tests",
       "skip",
@@ -125,7 +144,7 @@
       "--arch",
       "ia32",
       "--testname",
-      "mjsunit fuzz-natives cctest message preparser base-unittests compiler-unittests",
+      "default",
       "--isolates=on",
       "--flaky-tests",
       "run",
@@ -141,7 +160,7 @@
   },
   {
     "name": "$final_result",
-    "reason": "1 out of 2 aggregated steps failed. Failures: Step('Check - flaky') failed with return_code 1",
+    "reason": "1 out of 3 aggregated steps failed. Failures: Step('Check - flaky') failed with return_code 1",
     "status_code": 1
   }
 ]

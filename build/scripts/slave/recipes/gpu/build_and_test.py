@@ -104,16 +104,6 @@ def GenTests(api):
     api.platform.name('mac')
   )
 
-  # Bail when apply_issue fails
-  yield (
-    api.test('bail_on_bad_patch') +
-    api.properties.tryserver(
-        build_config='Release',
-        root='src/third_party/WebKit') +
-    api.platform.name('mac') +
-    api.step_data('apply_issue', retcode=1)
-  )
-
   # Test one configuration on the FYI waterfall.
   yield (
     api.test('win_release_fyi') +

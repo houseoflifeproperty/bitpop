@@ -47,7 +47,6 @@ class Page;
 class PopupMenu;
 class PopupMenuClient;
 class PopupOpeningObserver;
-class SearchPopupMenu;
 
 struct DateTimeChooserParameters;
 struct ViewportDescription;
@@ -64,7 +63,6 @@ public:
     // HostWindow methods.
     virtual void invalidateContentsAndRootView(const IntRect&) OVERRIDE;
     virtual void invalidateContentsForSlowScroll(const IntRect&) OVERRIDE;
-    virtual void scroll() OVERRIDE;
     virtual IntRect rootViewToScreen(const IntRect&) const OVERRIDE;
     virtual blink::WebScreenInfo screenInfo() const OVERRIDE;
 
@@ -118,7 +116,7 @@ public:
     void print(LocalFrame*);
 
     PassOwnPtr<ColorChooser> createColorChooser(LocalFrame*, ColorChooserClient*, const Color& initialColor);
-    PassRefPtrWillBeRawPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&);
+    PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&);
     void openTextDataListChooser(HTMLInputElement&);
 
     void runOpenPanel(LocalFrame*, PassRefPtr<FileChooser>);
@@ -127,7 +125,7 @@ public:
     void dispatchViewportPropertiesDidChange(const ViewportDescription&) const;
 
     bool hasOpenedPopup() const;
-    PassRefPtr<PopupMenu> createPopupMenu(LocalFrame&, PopupMenuClient*) const;
+    PassRefPtrWillBeRawPtr<PopupMenu> createPopupMenu(LocalFrame&, PopupMenuClient*) const;
 
     void registerPopupOpeningObserver(PopupOpeningObserver*);
     void unregisterPopupOpeningObserver(PopupOpeningObserver*);

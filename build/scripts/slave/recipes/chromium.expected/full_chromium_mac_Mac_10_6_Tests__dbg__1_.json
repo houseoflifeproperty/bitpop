@@ -142,5 +142,87 @@
       "@@@STEP_LOG_LINE@json.output@[]@@@",
       "@@@STEP_LOG_END@json.output@@@"
     ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/mojo/tools/run_mojo_python_tests.py",
+      "--write-full-results-to",
+      "/path/to/tmp/json"
+    ],
+    "name": "mojo_python_tests"
+  },
+  {
+    "allow_subannotations": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Debug",
+      "--factory-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"Mac 10.6 Tests (dbg)(1)\", \"buildnumber\": 571, \"mastername\": \"chromium.mac\", \"parent_build_archive_url\": \"gs://test-domain/test-archive.zip\", \"parent_buildername\": \"Mac Builder (dbg)\", \"parent_got_revision\": \"1111111\", \"recipe\": \"chromium\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--build-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"Mac 10.6 Tests (dbg)(1)\", \"buildnumber\": 571, \"mastername\": \"chromium.mac\", \"parent_build_archive_url\": \"gs://test-domain/test-archive.zip\", \"parent_buildername\": \"Mac Builder (dbg)\", \"parent_got_revision\": \"1111111\", \"recipe\": \"chromium\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--annotate=gtest",
+      "--test-type=telemetry_unittests",
+      "--builder-name=Mac 10.6 Tests (dbg)(1)",
+      "--slave-name=TestSlavename",
+      "--build-number=571",
+      "--run-python-script",
+      "[SLAVE_BUILD]/src/tools/telemetry/run_tests",
+      "--browser=debug",
+      "--retry-limit=3",
+      "--builder-name=Mac 10.6 Tests (dbg)(1)",
+      "--master-name=chromium.mac",
+      "--test-results-server=test-results.appspot.com",
+      "--test-type=telemetry_unittests",
+      "--metadata",
+      "chromium_revision=170242",
+      "--metadata",
+      "blink_revision=124383",
+      "--metadata",
+      "build_number=571",
+      "--write-full-results-to",
+      "/path/to/tmp/json"
+    ],
+    "name": "telemetry_unittests"
+  },
+  {
+    "allow_subannotations": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Debug",
+      "--factory-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"Mac 10.6 Tests (dbg)(1)\", \"buildnumber\": 571, \"mastername\": \"chromium.mac\", \"parent_build_archive_url\": \"gs://test-domain/test-archive.zip\", \"parent_buildername\": \"Mac Builder (dbg)\", \"parent_got_revision\": \"1111111\", \"recipe\": \"chromium\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--build-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"Mac 10.6 Tests (dbg)(1)\", \"buildnumber\": 571, \"mastername\": \"chromium.mac\", \"parent_build_archive_url\": \"gs://test-domain/test-archive.zip\", \"parent_buildername\": \"Mac Builder (dbg)\", \"parent_got_revision\": \"1111111\", \"recipe\": \"chromium\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--annotate=gtest",
+      "--test-type=telemetry_perf_unittests",
+      "--builder-name=Mac 10.6 Tests (dbg)(1)",
+      "--slave-name=TestSlavename",
+      "--build-number=571",
+      "--run-python-script",
+      "[SLAVE_BUILD]/src/tools/perf/run_tests",
+      "--browser=debug",
+      "--retry-limit=3",
+      "--builder-name=Mac 10.6 Tests (dbg)(1)",
+      "--master-name=chromium.mac",
+      "--test-results-server=test-results.appspot.com",
+      "--test-type=telemetry_perf_unittests",
+      "--metadata",
+      "chromium_revision=170242",
+      "--metadata",
+      "blink_revision=124383",
+      "--metadata",
+      "build_number=571",
+      "--write-full-results-to",
+      "/path/to/tmp/json"
+    ],
+    "name": "telemetry_perf_unittests"
   }
 ]

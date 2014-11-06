@@ -49,7 +49,7 @@ class PermissionsDataSource(DataSource):
     self._object_store = server_instance.object_store_creator.Create(
         PermissionsDataSource)
     self._template_cache = server_instance.compiled_fs_factory.ForTemplates(
-        server_instance.host_file_system_provider.GetTrunk())
+        server_instance.host_file_system_provider.GetMaster())
 
   def _CreatePermissionsDataForPlatform(self, platform):
     features_bundle = self._platform_bundle.GetFeaturesBundle(platform)
@@ -90,8 +90,8 @@ class PermissionsDataSource(DataSource):
       self._object_store.Set('permissions_data', data)
     return data
 
-  def Cron(self):
-    return self._CreatePermissionsData()
-
   def get(self, key):
     return self._GetCachedPermissionsData().get(key)
+
+  def Refresh(self, path):
+    return self._CreatePermissionsData()

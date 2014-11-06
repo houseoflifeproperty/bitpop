@@ -62,8 +62,7 @@ def GenSteps(api):
   api.chromium.compile()
 
   # Remove the profile files from the previous builds.
-  api.path.rmwildcard('*.pgc',
-                            str(api.chromium.output_dir))
+  api.path.rmwildcard('*.pg[cd]', str(api.chromium.output_dir))
 
   # Second step: profiling of the instrumented build.
   for benchmark in _BENCHMARKS_TO_RUN:
@@ -74,6 +73,7 @@ def GenSteps(api):
   api.chromium.set_config('chrome_pgo_optimize', BUILD_CONFIG='Release')
   api.chromium.runhooks()
   api.chromium.compile()
+
 
 def GenTests(api):
   mastername = 'chromium.fyi'

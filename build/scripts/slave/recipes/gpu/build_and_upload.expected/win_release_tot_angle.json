@@ -25,7 +25,8 @@
       "--output_json",
       "/path/to/tmp/json",
       "--revision",
-      "src@204787"
+      "src@204787",
+      "--force"
     ],
     "name": "bot_update",
     "~followup_annotations": [
@@ -74,7 +75,7 @@
       "runhooks"
     ],
     "env": {
-      "GYP_DEFINES": "archive_gpu_tests=1 blink_asserts_always_on=1 chromium_win_pch=0 component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]\\goma' internal_gles2_conform_tests=1 target_arch=ia32 test_isolation_mode=archive test_isolation_outdir=https://isolateserver.appspot.com use_goma=1"
+      "GYP_DEFINES": "archive_gpu_tests=1 blink_logging_always_on=1 chromium_win_pch=0 component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]\\goma' internal_gles2_conform_tests=1 target_arch=ia32 test_isolation_mode=archive test_isolation_outdir=https://isolateserver.appspot.com use_goma=1"
     },
     "name": "gclient runhooks"
   },
@@ -99,6 +100,7 @@
       "content_gl_tests_run",
       "gl_tests_run",
       "gles2_conform_test_run",
+      "gpu_unittests_run",
       "tab_capture_end2end_tests_run",
       "telemetry_gpu_test_run"
     ],
@@ -121,11 +123,12 @@
       "@@@STEP_LOG_LINE@json.output@  \"content_gl_tests\": \"[dummy hash for content_gl_tests]\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"gl_tests\": \"[dummy hash for gl_tests]\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"gles2_conform_test\": \"[dummy hash for gles2_conform_test]\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"gpu_unittests\": \"[dummy hash for gpu_unittests]\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"tab_capture_end2end_tests\": \"[dummy hash for tab_capture_end2end_tests]\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"telemetry_gpu_test\": \"[dummy hash for telemetry_gpu_test]\"@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@",
-      "@@@SET_BUILD_PROPERTY@swarm_hashes@{\"content_gl_tests\": \"[dummy hash for content_gl_tests]\", \"tab_capture_end2end_tests\": \"[dummy hash for tab_capture_end2end_tests]\", \"gles2_conform_test\": \"[dummy hash for gles2_conform_test]\", \"gl_tests\": \"[dummy hash for gl_tests]\", \"angle_unittests\": \"[dummy hash for angle_unittests]\", \"telemetry_gpu_test\": \"[dummy hash for telemetry_gpu_test]\"}@@@"
+      "@@@SET_BUILD_PROPERTY@swarm_hashes@{\"angle_unittests\": \"[dummy hash for angle_unittests]\", \"content_gl_tests\": \"[dummy hash for content_gl_tests]\", \"gl_tests\": \"[dummy hash for gl_tests]\", \"gles2_conform_test\": \"[dummy hash for gles2_conform_test]\", \"gpu_unittests\": \"[dummy hash for gpu_unittests]\", \"tab_capture_end2end_tests\": \"[dummy hash for tab_capture_end2end_tests]\", \"telemetry_gpu_test\": \"[dummy hash for telemetry_gpu_test]\"}@@@"
     ]
   }
 ]

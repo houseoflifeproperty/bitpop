@@ -31,8 +31,8 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
-      'tests': [
-        steps.DynamicGTestTests('XP Tests (1)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Win Builder',
       'testing': {
@@ -47,8 +47,10 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
+      'test_generators': [
+        steps.generate_gtest,
+      ],
       'tests': [
-        steps.DynamicGTestTests('XP Tests (2)'),
         steps.MojoPythonTests(),
         steps.TelemetryUnitTests(),
         steps.TelemetryPerfUnitTests(),
@@ -66,8 +68,8 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
-      'tests': [
-        steps.DynamicGTestTests('XP Tests (3)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Win Builder',
       'testing': {
@@ -82,8 +84,8 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
-      'tests': [
-        steps.DynamicGTestTests('Vista Tests (1)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Win Builder',
       'testing': {
@@ -98,8 +100,10 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
+      'test_generators': [
+        steps.generate_gtest,
+      ],
       'tests': [
-        steps.DynamicGTestTests('Vista Tests (2)'),
         steps.MojoPythonTests(),
         steps.TelemetryUnitTests(),
         steps.TelemetryPerfUnitTests(),
@@ -117,8 +121,8 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
-      'tests': [
-        steps.DynamicGTestTests('Vista Tests (3)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Win Builder',
       'testing': {
@@ -133,8 +137,11 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
+      'test_generators': [
+        steps.generate_gtest,
+      ],
       'tests': [
-        steps.DynamicGTestTests('Win7 Tests (1)'),
+        steps.MiniInstallerTest(),
       ],
       'parent_buildername': 'Win Builder',
       'testing': {
@@ -149,8 +156,10 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
+      'test_generators': [
+        steps.generate_gtest,
+      ],
       'tests': [
-        steps.DynamicGTestTests('Win7 Tests (2)'),
         steps.MojoPythonTests(),
         steps.TelemetryUnitTests(),
         steps.TelemetryPerfUnitTests(),
@@ -168,36 +177,16 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
-      'tests': [
-        steps.DynamicGTestTests('Win7 Tests (3)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Win Builder',
       'testing': {
         'platform': 'win',
       },
     },
-    'Win7 Sync': {
-      'recipe_config': 'chromium',
-      'chromium_config_kwargs': {
-        'BUILD_CONFIG': 'Release',
-        'TARGET_BITS': 32,
-      },
-      'bot_type': 'tester',
-      'disable_runhooks': True,
-      'tests': [
-        steps.GTestTest('sync_integration_tests', args=[
-            '--ui-test-action-max-timeout=120000'
-        ]),
-      ],
-      'parent_buildername': 'Win Builder',
-      'testing': {
-        'platform': 'win',
-      },
-    },
-
     'Win x64 Builder': {
       'recipe_config': 'chromium',
-      'chromium_apply_config': ['shared_library'],
       'chromium_config_kwargs': {
         'BUILD_CONFIG': 'Release',
         'TARGET_BITS': 64,
@@ -218,8 +207,8 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
-      'tests': [
-        steps.DynamicGTestTests('Win 7 Tests x64 (1)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Win x64 Builder',
       'testing': {
@@ -234,8 +223,8 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
-      'tests': [
-        steps.DynamicGTestTests('Win 7 Tests x64 (2)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Win x64 Builder',
       'testing': {
@@ -250,8 +239,10 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
+      'test_generators': [
+        steps.generate_gtest,
+      ],
       'tests': [
-        steps.DynamicGTestTests('Win 7 Tests x64 (3)'),
         steps.MojoPythonTests(),
         steps.TelemetryUnitTests(),
       ],
@@ -260,25 +251,6 @@ SPEC = {
         'platform': 'win',
       },
     },
-    'Win7 Sync x64': {
-      'recipe_config': 'chromium',
-      'chromium_config_kwargs': {
-        'BUILD_CONFIG': 'Release',
-        'TARGET_BITS': 64,
-      },
-      'bot_type': 'tester',
-      'disable_runhooks': True,
-      'tests': [
-        steps.GTestTest('sync_integration_tests', args=[
-            '--ui-test-action-max-timeout=120000'
-        ]),
-      ],
-      'parent_buildername': 'Win x64 Builder',
-      'testing': {
-        'platform': 'win',
-      },
-    },
-
     'NaCl Tests (x86-32)': {
       'recipe_config': 'chromium',
       'chromium_config_kwargs': {
@@ -314,7 +286,6 @@ SPEC = {
 
     'Win x64 Builder (dbg)': {
       'recipe_config': 'chromium',
-      'chromium_apply_config': ['shared_library'],
       'chromium_config_kwargs': {
         'BUILD_CONFIG': 'Debug',
         'TARGET_BITS': 64,
@@ -350,8 +321,8 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
-      'tests': [
-        steps.DynamicGTestTests('Win7 Tests (dbg)(1)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Win Builder (dbg)',
       'testing': {
@@ -366,8 +337,10 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
+      'test_generators': [
+        steps.generate_gtest,
+      ],
       'tests': [
-        steps.DynamicGTestTests('Win7 Tests (dbg)(2)'),
         steps.TelemetryUnitTests(),
         steps.TelemetryPerfUnitTests(),
       ],
@@ -384,8 +357,8 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
-      'tests': [
-        steps.DynamicGTestTests('Win7 Tests (dbg)(3)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Win Builder (dbg)',
       'testing': {
@@ -400,8 +373,8 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
-      'tests': [
-        steps.DynamicGTestTests('Win7 Tests (dbg)(4)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Win Builder (dbg)',
       'testing': {
@@ -416,8 +389,8 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
-      'tests': [
-        steps.DynamicGTestTests('Win7 Tests (dbg)(5)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Win Builder (dbg)',
       'testing': {
@@ -432,8 +405,8 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
-      'tests': [
-        steps.DynamicGTestTests('Win7 Tests (dbg)(6)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Win Builder (dbg)',
       'testing': {
@@ -448,8 +421,8 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
-      'tests': [
-        steps.DynamicGTestTests('Interactive Tests (dbg)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Win Builder (dbg)',
       'testing': {
@@ -464,8 +437,8 @@ SPEC = {
       },
       'bot_type': 'tester',
       'disable_runhooks': True,
-      'tests': [
-        steps.DynamicGTestTests('Win8 Aura'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Win Builder (dbg)',
       'testing': {

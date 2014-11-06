@@ -17,17 +17,17 @@
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
 #include "components/search_engines/template_url_service.h"
 #include "grit/browser_resources.h"
-#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "grit/ui_resources.h"
 #include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/webui/jstemplate_builder.h"
 #include "ui/base/webui/web_ui_util.h"
+#include "ui/resources/grit/ui_resources.h"
 #include "url/gurl.h"
 
 namespace {
@@ -59,9 +59,11 @@ const struct Resource{
   { "images/close_2_hover.png", IDR_CLOSE_2_H, "image/png" },
   { "images/close_2_active.png", IDR_CLOSE_2_P, "image/png" },
   { "images/close_2_white.png", IDR_CLOSE_2_MASK, "image/png" },
+  { "images/close_3_mask.png", IDR_CLOSE_3_MASK, "image/png" },
   { "images/google_logo.png", IDR_LOCAL_NTP_IMAGES_LOGO_PNG, "image/png" },
   { "images/white_google_logo.png",
     IDR_LOCAL_NTP_IMAGES_WHITE_LOGO_PNG, "image/png" },
+  { "images/ntp_default_favicon.png", IDR_NTP_DEFAULT_FAVICON, "image/png" },
 };
 
 // Strips any query parameters from the specified path.

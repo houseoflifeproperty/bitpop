@@ -7,6 +7,7 @@ from slave.recipe_config import Dict, Set, Single, Static
 from slave.recipe_config_types import Path
 
 from common.skia import builder_name_schema
+from . import slaves_cfg
 
 
 CONFIG_DEBUG = 'Debug'
@@ -14,10 +15,12 @@ CONFIG_RELEASE = 'Release'
 VALID_CONFIGS = (CONFIG_DEBUG, CONFIG_RELEASE)
 
 
-def BaseConfig(BUILDER_NAME, **_kwargs):
+def BaseConfig(BUILDER_NAME, MASTER_NAME, SLAVE_NAME, **_kwargs):
   equal_fn = lambda tup: ('%s=%s' % tup)
   return ConfigGroup(
     BUILDER_NAME = Static(str(BUILDER_NAME)),
+    MASTER_NAME = Static(str(MASTER_NAME)),
+    SLAVE_NAME = Static(str(SLAVE_NAME)),
     build_targets = Single(list),
     builder_cfg = Single(dict),
     configuration = Single(str),
@@ -26,7 +29,9 @@ def BaseConfig(BUILDER_NAME, **_kwargs):
     gyp_env = ConfigGroup(
       GYP_DEFINES = Dict(equal_fn, ' '.join, (basestring,int,Path)),
     ),
+    is_trybot = Single(bool),
     role = Single(str),
+    slave_cfg = Single(dict)
   )
 
 
@@ -35,6 +40,7 @@ VAR_TEST_MAP = {
                    u'Build-Ubuntu13.10-GCC4.8-NaCl-Debug',
                    u'Build-Ubuntu13.10-GCC4.8-x86_64-Debug',
                    u'Build-Win-VS2013-x86-Debug-Exceptions',
+                   u'Housekeeper-PerCommit',
                    u'Test-Mac10.8-MacMini4.1-GeForce320M-x86_64-Release',
                    u'Test-Ubuntu12-ShuttleA-GTX550Ti-x86_64-Debug-ZeroGPUCache',
                    u'Test-Ubuntu12-ShuttleA-GTX550Ti-x86_64-Release-Valgrind',
@@ -43,7 +49,9 @@ VAR_TEST_MAP = {
                    u'Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes',
                    u'Test-Win7-ShuttleA-HD2000-x86-Debug-GDI',
                    u'Test-Win7-ShuttleA-HD2000-x86-Release-ANGLE',
-                   u'Test-Win8-ShuttleA-GTX660-x86-Release')
+                   u'Test-Win8-ShuttleA-GTX660-x86-Release'),
+  'MASTER_NAME': (u'client.skia',),
+  'SLAVE_NAME': (u'skiabot-linux-tester-004',),
 }
 
 
@@ -53,6 +61,8 @@ def gyp_defs_from_builder_dict(builder_dict):
   # skia_arch_width.
   if builder_dict['role'] == builder_name_schema.BUILDER_ROLE_BUILD:
     arch = builder_dict['target_arch']
+  elif builder_dict['role'] == builder_name_schema.BUILDER_ROLE_HOUSEKEEPER:
+    arch = None
   else:
     arch = builder_dict['arch']
   skia_arch_width = {
@@ -138,6 +148,8 @@ def build_targets_from_builder_dict(builder_dict):
   elif (builder_dict['role'] == builder_name_schema.BUILDER_ROLE_TEST and
         builder_dict.get('extra_config') == 'TSAN'):
     return ['dm']
+  elif builder_dict['role'] == builder_name_schema.BUILDER_ROLE_HOUSEKEEPER:
+    return ['tools', 'gm', 'dm']
   else:
     return ['most']
 
@@ -155,6 +167,9 @@ def skia(c):
   c.do_test_steps = c.role == builder_name_schema.BUILDER_ROLE_TEST
   c.do_perf_steps = (c.role == builder_name_schema.BUILDER_ROLE_PERF or
                      (c.role == builder_name_schema.BUILDER_ROLE_TEST and
-                      c.configuration == CONFIG_DEBUG))
+                      c.configuration == CONFIG_DEBUG) or
+                     'Valgrind' in c.BUILDER_NAME)
   c.gyp_env.GYP_DEFINES.update(gyp_defs_from_builder_dict(c.builder_cfg))
+  c.slave_cfg = slaves_cfg.get(c.MASTER_NAME)[c.SLAVE_NAME]
+  c.is_trybot = builder_name_schema.IsTrybot(c.BUILDER_NAME)
 

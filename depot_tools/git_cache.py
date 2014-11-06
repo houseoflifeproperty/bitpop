@@ -12,8 +12,8 @@ import optparse
 import os
 import re
 import tempfile
+import threading
 import time
-import shutil
 import subprocess
 import sys
 import urlparse
@@ -144,6 +144,7 @@ class Mirror(object):
   gsutil_exe = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     'third_party', 'gsutil', 'gsutil')
+  cachepath_lock = threading.Lock()
 
   def __init__(self, url, refs=None, print_func=None):
     self.url = url
@@ -198,20 +199,23 @@ class Mirror(object):
 
   @classmethod
   def SetCachePath(cls, cachepath):
-    setattr(cls, 'cachepath', cachepath)
+    with cls.cachepath_lock:
+      setattr(cls, 'cachepath', cachepath)
 
   @classmethod
   def GetCachePath(cls):
-    if not hasattr(cls, 'cachepath'):
-      try:
-        cachepath = subprocess.check_output(
-            [cls.git_exe, 'config', '--global', 'cache.cachepath']).strip()
-      except subprocess.CalledProcessError:
-        cachepath = None
-      if not cachepath:
-        raise RuntimeError('No global cache.cachepath git configuration found.')
-      setattr(cls, 'cachepath', cachepath)
-    return getattr(cls, 'cachepath')
+    with cls.cachepath_lock:
+      if not hasattr(cls, 'cachepath'):
+        try:
+          cachepath = subprocess.check_output(
+              [cls.git_exe, 'config', '--global', 'cache.cachepath']).strip()
+        except subprocess.CalledProcessError:
+          cachepath = None
+        if not cachepath:
+          raise RuntimeError(
+              'No global cache.cachepath git configuration found.')
+        setattr(cls, 'cachepath', cachepath)
+      return getattr(cls, 'cachepath')
 
   def RunGit(self, cmd, **kwargs):
     """Run git in a subprocess."""
@@ -243,14 +247,18 @@ class Mirror(object):
 
     self.RunGit(['config', 'remote.origin.url', self.url], cwd=cwd)
     self.RunGit(['config', '--replace-all', 'remote.origin.fetch',
-                 '+refs/heads/*:refs/heads/*'], cwd=cwd)
+                 '+refs/heads/*:refs/heads/*', r'\+refs/heads/\*:.*'], cwd=cwd)
     for ref in self.refs:
       ref = ref.lstrip('+').rstrip('/')
       if ref.startswith('refs/'):
         refspec = '+%s:%s' % (ref, ref)
+        regex = r'\+%s:.*' % ref.replace('*', r'\*')
       else:
         refspec = '+refs/%s/*:refs/%s/*' % (ref, ref)
-      self.RunGit(['config', '--add', 'remote.origin.fetch', refspec], cwd=cwd)
+        regex = r'\+refs/heads/%s:.*' % ref.replace('*', r'\*')
+      self.RunGit(
+          ['config', '--replace-all', 'remote.origin.fetch', refspec, regex],
+          cwd=cwd)
 
   def bootstrap_repo(self, directory):
     """Bootstrap the repo from Google Stroage if possible.
@@ -335,14 +343,7 @@ class Mirror(object):
       bootstrapped = not depth and bootstrap and self.bootstrap_repo(tempdir)
       if bootstrapped:
         # Bootstrap succeeded; delete previous cache, if any.
-        try:
-          # Try to move folder to tempdir if possible.
-          defunct_dir = tempfile.mkdtemp()
-          shutil.move(self.mirror_path, defunct_dir)
-          self.print('Moved defunct directory for repository %s from %s to %s'
-                     % (self.url, self.mirror_path, defunct_dir))
-        except Exception:
-          gclient_utils.rmtree(self.mirror_path)
+        gclient_utils.rmtree(self.mirror_path)
       elif not os.path.exists(config_file):
         # Bootstrap failed, no previous cache; start with a bare git dir.
         self.RunGit(['init', '--bare'], cwd=tempdir)
@@ -407,6 +408,8 @@ class Mirror(object):
     finally:
       if tempdir:
         try:
+          if os.path.exists(self.mirror_path):
+            gclient_utils.rmtree(self.mirror_path)
           os.rename(tempdir, self.mirror_path)
         except OSError as e:
           # This is somehow racy on Windows.
@@ -421,7 +424,8 @@ class Mirror(object):
     # The files are named <git number>.zip
     gen_number = subprocess.check_output(
         [self.git_exe, 'number', 'master'], cwd=self.mirror_path).strip()
-    self.RunGit(['gc'])  # Run Garbage Collect to compress packfile.
+    # Run Garbage Collect to compress packfile.
+    self.RunGit(['gc', '--prune=all'])
     # Creating a temp file and then deleting it ensures we can use this name.
     _, tmp_zipfile = tempfile.mkstemp(suffix='.zip')
     os.remove(tmp_zipfile)

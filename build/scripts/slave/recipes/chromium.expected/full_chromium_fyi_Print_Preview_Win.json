@@ -162,7 +162,7 @@
       "--slave-name=TestSlavename",
       "--build-number=571",
       "--run-python-script",
-      "[SLAVE_BUILD]\\src\\webkit\\tools\\layout_tests\\run_webkit_tests.py",
+      "[SLAVE_BUILD]\\src\\third_party\\WebKit\\Tools\\Scripts\\run-webkit-tests",
       "--write-full-results-to",
       "/path/to/tmp/json",
       "--platform",

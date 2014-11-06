@@ -207,19 +207,10 @@ def check_linux_binary(target_dir, binary_name, options):
   # about how compiler and linker implement global static initializers.
   si_count = 0
   result, stdout = run_process(result, ['readelf', '-SW', binary_file])
-  # TODO(phajdan.jr): Remove .ctors logic after migrating to Precise
-  # (http://crbug.com/170262). More recent toolchains use .init_array
-  # instead.
-  has_ctors, ctors_size = get_elf_section_size(stdout, 'ctors')
-  if has_ctors:
-    # The first entry is always 0 and the last is -1 as guards.
-    # So subtract 2 from the count.
-    si_count = (ctors_size / word_size) - 2
-  if si_count <= 0:
-    has_init_array, init_array_size = get_elf_section_size(stdout, 'init_array')
-    if has_init_array:
-      si_count = init_array_size / word_size
-    si_count = max(si_count, 0)
+  has_init_array, init_array_size = get_elf_section_size(stdout, 'init_array')
+  if has_init_array:
+    si_count = init_array_size / word_size
+  si_count = max(si_count, 0)
   sizes.append((binary_name + '-si', 'initializers', '', si_count, 'files'))
 
   # For Release builds only, use dump-static-initializers.py to print the list

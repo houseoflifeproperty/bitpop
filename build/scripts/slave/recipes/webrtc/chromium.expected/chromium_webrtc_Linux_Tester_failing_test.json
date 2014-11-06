@@ -1,0 +1,220 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/bot_update.py",
+      "--master",
+      "chromium.webrtc",
+      "--builder",
+      "Linux Tester",
+      "--slave",
+      "TestSlavename",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_vars': {'googlecode_url': 'svn://svn-mirror.golo.chromium.org/%s', 'nacl_trunk': 'svn://svn-mirror.golo.chromium.org/native_client/trunk', 'sourceforge_url': 'svn://svn-mirror.golo.chromium.org/%(repo)s', 'webkit_trunk': 'svn://svn-mirror.golo.chromium.org/blink/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src'}, {'deps_file': 'DEPS', 'managed': True, 'name': 'webrtc.DEPS', 'url': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/deps/third_party/webrtc/webrtc.DEPS'}]",
+      "--revision_mapping_file",
+      "{\"src\": \"got_revision\", \"src/native_client\": \"got_nacl_revision\", \"src/third_party/WebKit\": \"got_webkit_revision\", \"src/third_party/libjingle/source/talk\": \"got_libjingle_revision\", \"src/third_party/libvpx/source\": \"got_libvpx_revision\", \"src/third_party/webrtc\": \"got_webrtc_revision\", \"src/tools/swarming_client\": \"got_swarming_client_revision\", \"src/v8\": \"got_v8_revision\"}",
+      "--output_json",
+      "/path/to/tmp/json",
+      "--revision",
+      "src@321321",
+      "--force"
+    ],
+    "name": "bot_update",
+    "~followup_annotations": [
+      "@@@STEP_TEXT@Some step text@@@",
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"did_run\": true, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_failure\": false, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"patch_root\": \"src\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"properties\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_libjingle_revision\": 134440, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_libjingle_revision_git\": \"8e938c8836c7ed23d7fbcddf1dcc2abcb13667d7\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_libvpx_revision\": 11245, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_libvpx_revision_git\": \"9240a98dab275a8a92a3631502866a58dceb2a49\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_nacl_revision\": 274981, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_nacl_revision_git\": \"d998e125e8253980d76e269b7982aeeefc1b9b50\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_revision\": 170242, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_revision_git\": \"f27fede2220bcd326aee3e86ddfd4ebd0fe58cb9\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_swarming_client_revision\": 276089, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_swarming_client_revision_git\": \"a0ee5d99f1d4b38ddaa4c759c837980b63b99566\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_v8_revision\": 43426, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_v8_revision_git\": \"801ada225ddc271c132c3a35f03975671d43e399\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_webkit_revision\": 124383, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_webkit_revision_git\": \"5e2293dffc3cd07d37fbedea3b500f0eb650614d\", @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_webrtc_revision\": 120644, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"got_webrtc_revision_git\": \"0f90628433546e61d9268596da93418c623137f4\"@@@",
+      "@@@STEP_LOG_LINE@json.output@  }, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"root\": \"src\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"step_text\": \"Some step text\"@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_nacl_revision@274981@@@",
+      "@@@SET_BUILD_PROPERTY@got_webkit_revision@124383@@@",
+      "@@@SET_BUILD_PROPERTY@got_libvpx_revision@11245@@@",
+      "@@@SET_BUILD_PROPERTY@got_webrtc_revision@120644@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@170242@@@",
+      "@@@SET_BUILD_PROPERTY@got_swarming_client_revision@276089@@@",
+      "@@@SET_BUILD_PROPERTY@got_libjingle_revision@134440@@@",
+      "@@@SET_BUILD_PROPERTY@got_v8_revision@43426@@@",
+      "@@@SET_BUILD_PROPERTY@got_nacl_revision_git@\"d998e125e8253980d76e269b7982aeeefc1b9b50\"@@@",
+      "@@@SET_BUILD_PROPERTY@got_webkit_revision_git@\"5e2293dffc3cd07d37fbedea3b500f0eb650614d\"@@@",
+      "@@@SET_BUILD_PROPERTY@got_libjingle_revision_git@\"8e938c8836c7ed23d7fbcddf1dcc2abcb13667d7\"@@@",
+      "@@@SET_BUILD_PROPERTY@got_v8_revision_git@\"801ada225ddc271c132c3a35f03975671d43e399\"@@@",
+      "@@@SET_BUILD_PROPERTY@got_webrtc_revision_git@\"0f90628433546e61d9268596da93418c623137f4\"@@@",
+      "@@@SET_BUILD_PROPERTY@got_libvpx_revision_git@\"9240a98dab275a8a92a3631502866a58dceb2a49\"@@@",
+      "@@@SET_BUILD_PROPERTY@got_swarming_client_revision_git@\"a0ee5d99f1d4b38ddaa4c759c837980b63b99566\"@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision_git@\"f27fede2220bcd326aee3e86ddfd4ebd0fe58cb9\"@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "runhooks"
+    ],
+    "env": {
+      "GYP_DEFINES": "component=static_library gomadir='[BUILD]/goma' target_arch=x64 use_goma=1"
+    },
+    "name": "gclient runhooks"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os, sys\nfrom common import chromium_utils\n\nif os.path.exists(sys.argv[1]):\n  chromium_utils.RemoveDirectory(sys.argv[1])\n",
+      "[SLAVE_BUILD]/src/out/Release"
+    ],
+    "name": "rmtree build directory",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os, sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@from common import chromium_utils@@@",
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@if os.path.exists(sys.argv[1]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  chromium_utils.RemoveDirectory(sys.argv[1])@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/extract_build.py",
+      "--target",
+      "Release",
+      "--build-url",
+      "gs://chromium-webrtc/Linux Builder",
+      "--build_revision",
+      "321321",
+      "--factory-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"Linux Tester\", \"buildnumber\": 571, \"mastername\": \"chromium.webrtc\", \"parent_buildername\": \"Linux Builder\", \"parent_got_revision\": \"321321\", \"recipe\": \"webrtc/chromium\", \"revision\": \"321321\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--build-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"Linux Tester\", \"buildnumber\": 571, \"mastername\": \"chromium.webrtc\", \"parent_buildername\": \"Linux Builder\", \"parent_got_revision\": \"321321\", \"recipe\": \"webrtc/chromium\", \"revision\": \"321321\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}"
+    ],
+    "name": "extract build"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/cleanup_temp.py"
+    ],
+    "name": "cleanup_temp"
+  },
+  {
+    "allow_subannotations": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Release",
+      "--xvfb",
+      "--factory-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"Linux Tester\", \"buildnumber\": 571, \"mastername\": \"chromium.webrtc\", \"parent_buildername\": \"Linux Builder\", \"parent_got_revision\": \"321321\", \"recipe\": \"webrtc/chromium\", \"revision\": \"321321\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--build-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"Linux Tester\", \"buildnumber\": 571, \"mastername\": \"chromium.webrtc\", \"parent_buildername\": \"Linux Builder\", \"parent_got_revision\": \"321321\", \"recipe\": \"webrtc/chromium\", \"revision\": \"321321\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--annotate=graphing",
+      "--results-url=https://chromeperf.appspot.com",
+      "--perf-dashboard-id=content_browsertests",
+      "--perf-id=chromium-webrtc-rel-linux",
+      "--test-type=content_browsertests",
+      "--builder-name=Linux Tester",
+      "--slave-name=TestSlavename",
+      "--build-number=571",
+      "--revision=170242",
+      "content_browsertests",
+      "--gtest_filter=WebRtc*",
+      "--run-manual",
+      "--test-launcher-print-test-stdio=always",
+      "--test-launcher-bot-mode"
+    ],
+    "name": "content_browsertests"
+  },
+  {
+    "allow_subannotations": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Release",
+      "--xvfb",
+      "--factory-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"Linux Tester\", \"buildnumber\": 571, \"mastername\": \"chromium.webrtc\", \"parent_buildername\": \"Linux Builder\", \"parent_got_revision\": \"321321\", \"recipe\": \"webrtc/chromium\", \"revision\": \"321321\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--build-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"Linux Tester\", \"buildnumber\": 571, \"mastername\": \"chromium.webrtc\", \"parent_buildername\": \"Linux Builder\", \"parent_got_revision\": \"321321\", \"recipe\": \"webrtc/chromium\", \"revision\": \"321321\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--annotate=graphing",
+      "--results-url=https://chromeperf.appspot.com",
+      "--perf-dashboard-id=browser_tests",
+      "--perf-id=chromium-webrtc-rel-linux",
+      "--test-type=browser_tests",
+      "--builder-name=Linux Tester",
+      "--slave-name=TestSlavename",
+      "--build-number=571",
+      "--revision=170242",
+      "browser_tests",
+      "--gtest_filter=WebRtc*:TabCapture*",
+      "--run-manual",
+      "--ui-test-action-max-timeout=300000",
+      "--test-launcher-jobs=1",
+      "--test-launcher-bot-mode",
+      "--test-launcher-print-test-stdio=always"
+    ],
+    "name": "browser_tests",
+    "~followup_annotations": [
+      "step returned non-zero exit code: 1",
+      "@@@STEP_FAILURE@@@"
+    ]
+  },
+  {
+    "allow_subannotations": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Release",
+      "--xvfb",
+      "--factory-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"Linux Tester\", \"buildnumber\": 571, \"mastername\": \"chromium.webrtc\", \"parent_buildername\": \"Linux Builder\", \"parent_got_revision\": \"321321\", \"recipe\": \"webrtc/chromium\", \"revision\": \"321321\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--build-properties",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"Linux Tester\", \"buildnumber\": 571, \"mastername\": \"chromium.webrtc\", \"parent_buildername\": \"Linux Builder\", \"parent_got_revision\": \"321321\", \"recipe\": \"webrtc/chromium\", \"revision\": \"321321\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--annotate=gtest",
+      "--test-type=content_unittests",
+      "--builder-name=Linux Tester",
+      "--slave-name=TestSlavename",
+      "--build-number=571",
+      "content_unittests",
+      "--gtest_filter=WebRtc*:WebRTC*:RTC*:MediaStream*"
+    ],
+    "name": "content_unittests"
+  },
+  {
+    "name": "$final_result",
+    "reason": "1 out of 3 aggregated steps failed. Failures: Step('browser_tests') failed with return_code 1",
+    "status_code": 1
+  }
+]

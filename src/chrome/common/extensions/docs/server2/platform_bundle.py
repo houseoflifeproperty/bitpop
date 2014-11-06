@@ -12,6 +12,8 @@ from future import All
 from platform_util import GetPlatforms, PlatformToExtensionType
 from reference_resolver import ReferenceResolver
 from samples_model import SamplesModel
+from future import Future
+from schema_processor import SchemaProcessorFactory
 
 
 class _PlatformData(object):
@@ -30,13 +32,13 @@ class PlatformBundle(object):
   def __init__(self,
                branch_utility,
                compiled_fs_factory,
-               host_fs_at_trunk,
+               host_fs_at_master,
                host_file_system_iterator,
                object_store_creator,
                base_path):
     self._branch_utility = branch_utility
     self._compiled_fs_factory = compiled_fs_factory
-    self._host_fs_at_trunk = host_fs_at_trunk
+    self._host_fs_at_master = host_fs_at_master
     self._host_file_system_iterator = host_file_system_iterator
     self._object_store_creator = object_store_creator
     self._base_path = base_path
@@ -50,7 +52,7 @@ class PlatformBundle(object):
         extension_samples_fs = EmptyDirFileSystem()
         app_samples_fs = EmptyDirFileSystem()
       else:
-        extension_samples_fs = self._host_fs_at_trunk
+        extension_samples_fs = self._host_fs_at_master
         # TODO(kalman): Re-enable the apps samples, see http://crbug.com/344097.
         app_samples_fs = EmptyDirFileSystem()
         #app_samples_fs = github_file_system_provider.Create(
@@ -67,7 +69,7 @@ class PlatformBundle(object):
   def GetFeaturesBundle(self, platform):
     if self._platform_data[platform].features_bundle is None:
       self._platform_data[platform].features_bundle = FeaturesBundle(
-          self._host_fs_at_trunk,
+          self._host_fs_at_master,
           self._compiled_fs_factory,
           self._object_store_creator,
           platform)
@@ -80,9 +82,15 @@ class PlatformBundle(object):
       self._platform_data[platform].api_models = APIModels(
           self.GetFeaturesBundle(platform),
           self._compiled_fs_factory,
-          self._host_fs_at_trunk,
+          self._host_fs_at_master,
           self._object_store_creator,
-          platform)
+          platform,
+          SchemaProcessorFactory(
+              Future(callback=lambda: self.GetReferenceResolver(platform)),
+              Future(callback=lambda: self.GetAPIModels(platform)),
+              Future(callback=lambda: self.GetFeaturesBundle(platform)),
+              self._compiled_fs_factory,
+              self._host_fs_at_master))
     return self._platform_data[platform].api_models
 
   def GetReferenceResolver(self, platform):
@@ -99,22 +107,30 @@ class PlatformBundle(object):
           self._branch_utility,
           self._compiled_fs_factory,
           self._host_file_system_iterator,
-          self._host_fs_at_trunk,
+          self._host_fs_at_master,
           self._object_store_creator,
-          platform)
+          platform,
+          SchemaProcessorFactory(
+              Future(callback=lambda: self.GetReferenceResolver(platform)),
+              Future(callback=lambda: self.GetAPIModels(platform)),
+              Future(callback=lambda: self.GetFeaturesBundle(platform)),
+              self._compiled_fs_factory,
+              self._host_fs_at_master))
     return self._platform_data[platform].availability_finder
 
   def GetAPICategorizer(self, platform):
     if self._platform_data[platform].api_categorizer is None:
       self._platform_data[platform].api_categorizer = APICategorizer(
-          self._host_fs_at_trunk,
+          self._host_fs_at_master,
           self._compiled_fs_factory,
           platform)
     return self._platform_data[platform].api_categorizer
 
-  def Cron(self):
-    return All(self.GetAPIModels(platform).Cron()
-               for platform in self._platform_data)
+  def GetRefreshPaths(self):
+    return [platform for platform in self._platform_data.keys()]
+
+  def Refresh(self, platform):
+    return self.GetAPIModels(platform).Refresh()
 
   def GetIdentity(self):
-    return self._host_fs_at_trunk.GetIdentity()
+    return self._host_fs_at_master.GetIdentity()

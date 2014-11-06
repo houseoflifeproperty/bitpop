@@ -27,7 +27,7 @@ from master import master_utils
 
 import config
 
-v8_stable_branch = '3.26'
+v8_stable_branch = '3.27'
 android_tools_rev = '@b12d410c0ee23385da78e6c9f353d28fd992e0bd'
 android_resources_rev = '@3855'
 
@@ -277,9 +277,13 @@ class DartFactory(gclient_factory.GClientFactory):
   def DartAnnotatedFactory(self, python_script,
                            target='Release', tests=None,
                            timeout=1200, factory_properties=None,
-                           env=None, triggers=(), secondAnnotatedRun=False):
+                           env=None, triggers=(), secondAnnotatedRun=False,
+                           no_gclient_revision=False):
     factory_properties = factory_properties or {}
     AddGeneralGClientProperties(factory_properties)
+    if no_gclient_revision:
+      factory_properties['no_gclient_revision'] = True
+
     tests = tests or []
     # Create the spec for the solutions
     gclient_spec = self.BuildGClientSpec(tests)
@@ -322,7 +326,7 @@ class DartUtils(object):
 
   win_rel_factory_properties = {
     'gclient_env': {
-      'GYP_DEFINES': 'fastbuild=1 disable_nacl=1 disable_pnacl=1',
+      'GYP_DEFINES': 'fastbuild=1',
     },
     'gclient_transitive': True,
     'no_gclient_branch': True,
@@ -330,7 +334,7 @@ class DartUtils(object):
   }
   win_rel_factory_properties_ninja = {
     'gclient_env': {
-      'GYP_DEFINES': 'fastbuild=1 disable_nacl=1 disable_pnacl=1',
+      'GYP_DEFINES': 'fastbuild=1',
       'GYP_GENERATORS': 'ninja',
     },
     'gclient_transitive': True,
@@ -346,17 +350,13 @@ class DartUtils(object):
       # will unwind the stack and call destructors when doing a longjmp().
       # The DartVM uses it's own mechanism for calling the destructors (see
       # vm/longjump.cc). (i.e. with /EHsc the destructors will be called twice)
-      'GYP_DEFINES': 'fastbuild=1 component=static_library '
-                     'disable_nacl=1 disable_pnacl=1',
+      'GYP_DEFINES': 'fastbuild=1 component=static_library',
     },
     'gclient_transitive': True,
     'no_gclient_branch': True,
     'annotated_script': 'dart_buildbot_run.py',
   }
   mac_factory_properties = {
-    'gclient_env': {
-        'GYP_DEFINES': 'disable_nacl=1 disable_pnacl=1',
-    },
     'gclient_transitive': True,
     'no_gclient_branch': True,
     'annotated_script': 'dart_buildbot_run.py',
@@ -364,7 +364,6 @@ class DartUtils(object):
   linux_factory_properties = {
     'gclient_env': {
         'GYP_GENERATORS' : 'ninja',
-        'GYP_DEFINES': 'disable_nacl=1 disable_pnacl=1',
     },
     'gclient_transitive': True,
     'no_gclient_branch': True,
@@ -373,7 +372,7 @@ class DartUtils(object):
   linux32_factory_properties = {
     'gclient_env': {
         'GYP_GENERATORS' : 'ninja',
-        'GYP_DEFINES': 'target_arch=ia32 disable_nacl=1 disable_pnacl=1',
+        'GYP_DEFINES': 'target_arch=ia32',
     },
     'gclient_transitive': True,
     'no_gclient_branch': True,
@@ -522,12 +521,13 @@ class DartUtils(object):
     return gitpoller.GitPoller(repourl=repo,
                                pollinterval=10,
                                project=project,
+                               workdir='/tmp/git_workdir_%s' % project,
                                revlinktmpl=revlink)
 
 
   @staticmethod
   def get_dartlang_git_repo(name):
-    return 'https://github.com/dart-lang/%s' % name
+    return 'https://github.com/dart-lang/%s.git' % name
 
   @staticmethod
   def get_dartlang_git_poller(name):
@@ -589,8 +589,9 @@ class DartUtils(object):
         )
       elif v['name'].startswith('packages'):
         v['factory_builder'] = base.DartAnnotatedFactory(
-            python_script='client/tools/buildbot_annotated_steps.py',
+            python_script='third_party/package-bots/annotated_steps.py',
             env=env,
+            no_gclient_revision=True, # Ignore passed in github revision
         )
       else:
         v['factory_builder'] = base.DartAnnotatedFactory(
@@ -602,8 +603,10 @@ class DartUtils(object):
 
     def setup_package_factory_base(v):
       extra_deps = v.get('deps', [])
-      return DartFactory(channel=CHANNELS_BY_NAME['dev'],
-                         custom_deps_list=extra_deps)
+      target_platform = 'win32' if v.get('os', '') == 'windows' else 'posix'
+      return DartFactory(channel=CHANNELS_BY_NAME['be'],
+                         custom_deps_list=extra_deps,
+                         target_platform=target_platform)
 
 
     def setup_v8_factory(v):

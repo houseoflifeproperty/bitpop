@@ -15,12 +15,12 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "chromeos/audio/chromeos_sounds.h"
 #include "components/user_manager/user_manager.h"
 #include "components/user_manager/user_type.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "grit/browser_resources.h"
-#include "grit/generated_resources.h"
 #include "net/base/data_url.h"
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -386,10 +386,6 @@ void SupervisedUserCreationScreenHandler::HandleAuthenticateManager(
     const std::string& manager_password) {
   const std::string manager_username =
       gaia::SanitizeEmail(raw_manager_username);
-
-  UserFlow* flow = new SupervisedUserCreationFlow(manager_username);
-  ChromeUserManager::Get()->SetUserFlow(manager_username, flow);
-
   delegate_->AuthenticateManager(manager_username, manager_password);
 }
 
@@ -426,11 +422,16 @@ void SupervisedUserCreationScreenHandler::HandlePhotoTaken
 }
 
 void SupervisedUserCreationScreenHandler::HandleTakePhoto() {
+#if !defined(USE_ATHENA)
+  // crbug.com/408733
   ash::PlaySystemSoundIfSpokenFeedback(SOUND_CAMERA_SNAP);
+#endif
 }
 
 void SupervisedUserCreationScreenHandler::HandleDiscardPhoto() {
+#if !defined(USE_ATHENA)
   ash::PlaySystemSoundIfSpokenFeedback(SOUND_OBJECT_DELETE);
+#endif
 }
 
 void SupervisedUserCreationScreenHandler::HandleSelectImage(

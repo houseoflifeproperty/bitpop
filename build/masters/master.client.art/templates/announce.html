@@ -1,0 +1,111 @@
+{% extends "layout.html" %}
+
+{% block header -%}
+{{ super() }}
+<hr/>
+<script>
+  function autoLink(className) {
+    var comments = document.querySelectorAll(className);
+    for(var i = 0; i < comments.length; i++) {
+      comments[i].innerHTML = comments[i].innerHTML.replace(/http:\/\/[^ \t\n<]*/g, '<a href="$&">$&</a>');
+    }
+  }
+
+  window.onload = function() {
+    autoLink('.DevComment');
+  }
+</script>
+
+<div class="Announcement">
+
+<center style="padding: 0 7px">
+  <table width="100%" valign="top" bgcolor="#efefef" style="-webkit-border-bottom-left-radius: 24px; -webkit-border-bottom-right-radius: 24px; -moz-border-bottom-right-radius: 24px; -moz-border-bottom-right-radius: 24px;   box-shadow: 2px 2px 6px rgba(0,0,0,0.6); -moz-box-shadow: 2px 2px 6px rgba(0,0,0,0.6); -webkit-box-shadow: 2px 2px 6px rgba(0,0,0,0.6);">
+    <tr>
+      <td width="23%">
+        <table valign="top" width="100%">
+          <tr>
+            <td style="text-align: right;">
+              <b>Status controls:</b>
+            </td>
+          </tr>
+          <tr>
+            <td style="text-align: right;">
+              <b>Controls:</b>
+            </td>
+            <td>
+              <a href="one_line_per_build">manage all</a>
+            </td>
+          </tr>
+          <tr>
+            <td style="text-align: right;">
+               <b>Navigate:</b>
+            </td>
+            <td colspan="2">
+              <a href="http://dev.chromium.org/developers/testing/chromium-build-infrastructure/tour-of-the-chromium-buildbot">about</a> |
+              <a href="./waterfall/help">customize</a> |
+              <a href="./waterfall">waterfall</a> |
+              <a href="./waterfall?show_events=true&failures_only=true">failures</a> |
+              <a href="./console">console</a> |
+            </td>
+          </tr>
+        </table>
+      </td>
+      <td width="1" bgcolor="#CCCCCC">
+      </td>
+      <td width="2%">
+      </td>
+      <td width="72%">
+        <table width="100%">
+          <script language="javascript">
+            var raw_flavors = [
+              ["host-x86", [
+                "host-x86",
+              ]],
+              ["host-x86_64", [
+                "host-x86_64",
+              ]],
+              ["hammerhead", [
+                "hammerhead",
+              ]],
+            ];
+            var flavors = [];
+            for(var i in raw_flavors) {
+              var row = Array();
+              for(var j in raw_flavors[i][1]) {
+                row.push("builder=" + raw_flavors[i][1][j]);
+              }
+              flavors.push([raw_flavors[i][0], row.join("&")]);
+            }
+
+            var bar = "./horizontal_one_box_per_builder"
+            var waterfall = "./waterfall"
+
+            function GetUrl(type, content) {
+              return type + "?" + content + "&reload=30";
+            }
+
+            function DisplayBar(content, name) {
+              document.write("<tr><td><a href='" + GetUrl(waterfall, content) + "'>" + name + "</a></td><td width='99%'><iframe width='100%' height='20' frameborder='0' scrolling='no' src='" + GetUrl(bar, content) + "'></iframe></td></tr>\n");
+            }
+
+            for(var i in flavors) {
+              DisplayBar(flavors[i][1], flavors[i][0]);
+            }
+          </script>
+        </table>
+        </td></tr></table>
+      </td>
+      <td width="3%">
+      </td>
+    </tr>
+  </table>
+</center>
+
+</div>
+{% endblock header %}
+
+{% block footer %}
+
+{{ super() }}
+{# <p>Debug info: {{ debuginfo }}</p> #}
+{% endblock %}

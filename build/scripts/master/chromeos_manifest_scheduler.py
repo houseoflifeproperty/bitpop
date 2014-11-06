@@ -2,12 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import os
 import re
 
 from buildbot.changes.filter import ChangeFilter
+from buildbot.changes.gitpoller import GitPoller
 from buildbot.process.properties import Properties
 from buildbot.schedulers.basic import SingleBranchScheduler, AnyBranchScheduler
-from twisted.internet import defer
+from twisted.internet import defer, utils
 from twisted.python import log
 
 
@@ -42,8 +44,7 @@ class _AddBuildIdMixin(object):
 
   @classmethod
   def _getMasterBuildId(cls, change):
-    comments = change.get('comments', '')
-    for line in comments.splitlines():
+    for line in change.get('comments', '').splitlines():
       match = cls.BUILD_ID_RE.match(line)
       if match:
         return cls._cleanMasterBuildId(match.group(1))
@@ -100,3 +101,21 @@ class ChromeOSManifestAnyBranchScheduler(AnyBranchScheduler, _AddBuildIdMixin):
         *args,
         **kwargs)
     defer.returnValue(rv)
+
+
+class CommentRespectingGitPoller(GitPoller):
+  """A subclass of the BuildBot GitPoller that doesn't wreck comment newlines.
+  """
+
+  # Overrides 'buildbot.changes.gitpoller._get_commit_comments'
+  def _get_commit_comments(self, rev):
+    args = ['log', rev, '--no-walk', r'--format=%B%n']
+    d = utils.getProcessOutput(self.gitbin, args, path=self.workdir,
+        env=os.environ, errortoo=False )
+    def process(git_output):
+      stripped_output = git_output.strip().decode(self.encoding)
+      if len(stripped_output) == 0:
+        raise EnvironmentError('could not get commit comment for rev')
+      return stripped_output
+    d.addCallback(process)
+    return d

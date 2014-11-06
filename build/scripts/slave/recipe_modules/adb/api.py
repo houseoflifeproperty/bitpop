@@ -9,6 +9,13 @@ class AdbApi(recipe_api.RecipeApi):
     super(AdbApi, self).__init__(**kwargs)
     self._devices = None
 
+  def __call__(self, cmd, serial=None, **kwargs):
+    """Run an ADB command."""
+    cmd_prefix = [self._adb_path()]
+    if serial:
+      cmd_prefix.extend(['-s', serial])
+    return self.m.step(cmd=cmd_prefix + cmd, **kwargs)
+
   def _adb_path(self):
     return str(self.m.path['build_internal'].join('scripts', 'slave',
                                                   'android', 'adb'))

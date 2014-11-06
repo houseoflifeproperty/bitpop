@@ -91,7 +91,8 @@
       "@@@STEP_LOG_LINE@json.output@    ], @@@",
       "@@@STEP_LOG_LINE@json.output@    \"chromium_configs\": [@@@",
       "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos\", @@@",
-      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_clang\"@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_clang\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"chromium_chromeos_ozone\"@@@",
       "@@@STEP_LOG_LINE@json.output@    ], @@@",
       "@@@STEP_LOG_LINE@json.output@    \"platforms\": [@@@",
       "@@@STEP_LOG_LINE@json.output@      \"linux\"@@@",
@@ -118,7 +119,7 @@
     "env": {
       "GYP_DEFINES": "chromium_win_pch=0 component=shared_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]\\goma' target_arch=ia32 use_goma=1"
     },
-    "name": "gclient runhooks"
+    "name": "gclient runhooks (with patch)"
   },
   {
     "cmd": [
@@ -136,11 +137,9 @@
       "--goma-dir",
       "[BUILD]\\goma",
       "--",
-      "chrome",
-      "chrome",
       "base_unittests",
       "browser_tests",
-      "chrome"
+      "mini_installer"
     ],
     "name": "compile (with patch)"
   },
@@ -172,58 +171,6 @@
       "[SLAVE_BUILD]\\src\\.DEPS.git"
     ],
     "name": "deps2submodules"
-  },
-  {
-    "allow_subannotations": true,
-    "cmd": [
-      "python",
-      "-u",
-      "[BUILD]\\scripts\\slave\\runtest.py",
-      "--target",
-      "Debug",
-      "--factory-properties",
-      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"\", \"build_config\": \"Release\", \"buildername\": \"win_chromium_dbg\", \"buildnumber\": 571, \"issue\": 12853011, \"mastername\": \"tryserver.chromium.win\", \"patchset\": 1, \"project\": \"chrome\", \"recipe\": \"chromium_trybot\", \"repository\": \"\", \"requester\": \"commit-bot@chromium.org\", \"revision\": null, \"rietveld\": \"https://codereview.chromium.org\", \"root\": \"src\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
-      "--build-properties",
-      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"\", \"build_config\": \"Release\", \"buildername\": \"win_chromium_dbg\", \"buildnumber\": 571, \"issue\": 12853011, \"mastername\": \"tryserver.chromium.win\", \"patchset\": 1, \"project\": \"chrome\", \"recipe\": \"chromium_trybot\", \"repository\": \"\", \"requester\": \"commit-bot@chromium.org\", \"revision\": null, \"rietveld\": \"https://codereview.chromium.org\", \"root\": \"src\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
-      "--annotate=gtest",
-      "--test-type=telemetry_unittests",
-      "--builder-name=win_chromium_dbg",
-      "--slave-name=TestSlavename",
-      "--build-number=571",
-      "--run-python-script",
-      "[SLAVE_BUILD]\\src\\tools\\telemetry\\run_tests",
-      "--browser=debug",
-      "--retry-limit=3",
-      "--write-full-results-to",
-      "/path/to/tmp/json"
-    ],
-    "name": "telemetry_unittests (with patch)"
-  },
-  {
-    "allow_subannotations": true,
-    "cmd": [
-      "python",
-      "-u",
-      "[BUILD]\\scripts\\slave\\runtest.py",
-      "--target",
-      "Debug",
-      "--factory-properties",
-      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"\", \"build_config\": \"Release\", \"buildername\": \"win_chromium_dbg\", \"buildnumber\": 571, \"issue\": 12853011, \"mastername\": \"tryserver.chromium.win\", \"patchset\": 1, \"project\": \"chrome\", \"recipe\": \"chromium_trybot\", \"repository\": \"\", \"requester\": \"commit-bot@chromium.org\", \"revision\": null, \"rietveld\": \"https://codereview.chromium.org\", \"root\": \"src\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
-      "--build-properties",
-      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"\", \"build_config\": \"Release\", \"buildername\": \"win_chromium_dbg\", \"buildnumber\": 571, \"issue\": 12853011, \"mastername\": \"tryserver.chromium.win\", \"patchset\": 1, \"project\": \"chrome\", \"recipe\": \"chromium_trybot\", \"repository\": \"\", \"requester\": \"commit-bot@chromium.org\", \"revision\": null, \"rietveld\": \"https://codereview.chromium.org\", \"root\": \"src\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
-      "--annotate=gtest",
-      "--test-type=telemetry_perf_unittests",
-      "--builder-name=win_chromium_dbg",
-      "--slave-name=TestSlavename",
-      "--build-number=571",
-      "--run-python-script",
-      "[SLAVE_BUILD]\\src\\tools\\perf\\run_tests",
-      "--browser=debug",
-      "--retry-limit=3",
-      "--write-full-results-to",
-      "/path/to/tmp/json"
-    ],
-    "name": "telemetry_perf_unittests (with patch)"
   },
   {
     "allow_subannotations": true,
@@ -275,26 +222,27 @@
     "cmd": [
       "python",
       "-u",
-      "[SLAVE_BUILD]\\src\\chrome\\test\\nacl_test_injection\\buildbot_nacl_integration.py",
-      "--mode",
-      "Debug",
-      "--json_build_results_output_file",
-      "/path/to/tmp/json"
-    ],
-    "name": "nacl_integration (with patch)",
-    "~followup_annotations": [
-      "@@@STEP_LOG_LINE@json.output@[]@@@",
-      "@@@STEP_LOG_END@json.output@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "python",
-      "-u",
       "[SLAVE_BUILD]\\src\\mojo\\tools\\run_mojo_python_tests.py",
       "--write-full-results-to",
       "/path/to/tmp/json"
     ],
     "name": "mojo_python_tests (with patch)"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]\\src\\chrome\\test\\mini_installer\\test_installer.py",
+      "--build-dir",
+      "[SLAVE_BUILD]\\src\\out",
+      "--target",
+      "Debug",
+      "--force-clean",
+      "--config",
+      "[SLAVE_BUILD]\\src\\chrome\\test\\mini_installer\\config\\config.config",
+      "--write-full-results-to",
+      "/path/to/tmp/json"
+    ],
+    "name": "test_installer (with patch)"
   }
 ]

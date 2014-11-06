@@ -53,7 +53,6 @@ HTMLOptionElement::HTMLOptionElement(Document& document)
     , m_isSelected(false)
 {
     setHasCustomStyleCallbacks();
-    ScriptWrappable::init(this);
 }
 
 HTMLOptionElement::~HTMLOptionElement()
@@ -184,7 +183,8 @@ void HTMLOptionElement::parseAttribute(const QualifiedName& name, const AtomicSt
         bool oldDisabled = m_disabled;
         m_disabled = !value.isNull();
         if (oldDisabled != m_disabled) {
-            didAffectSelector(AffectedSelectorDisabled | AffectedSelectorEnabled);
+            pseudoStateChanged(CSSSelector::PseudoDisabled);
+            pseudoStateChanged(CSSSelector::PseudoEnabled);
             if (renderer() && renderer()->style()->hasAppearance())
                 RenderTheme::theme().stateChanged(renderer(), EnabledControlState);
         }
@@ -244,7 +244,7 @@ void HTMLOptionElement::setSelectedState(bool selected)
         return;
 
     m_isSelected = selected;
-    didAffectSelector(AffectedSelectorChecked);
+    pseudoStateChanged(CSSSelector::PseudoChecked);
 
     if (HTMLSelectElement* select = ownerSelectElement())
         select->invalidateSelectedItems();
@@ -309,7 +309,7 @@ void HTMLOptionElement::didRecalcStyle(StyleRecalcChange change)
     // FIXME: We ask our owner select to repaint regardless of which property changed.
     if (HTMLSelectElement* select = ownerSelectElement()) {
         if (RenderObject* renderer = select->renderer())
-            renderer->paintInvalidationForWholeRenderer();
+            renderer->setShouldDoFullPaintInvalidation(true);
     }
 }
 
@@ -336,11 +336,13 @@ Node::InsertionNotificationRequest HTMLOptionElement::insertedInto(ContainerNode
         select->setRecalcListItems();
         // Do not call selected() since calling updateListItemSelectedStates()
         // at this time won't do the right thing. (Why, exactly?)
-        // FIXME: Might be better to call this unconditionally, always passing m_isSelected,
-        // rather than only calling it if we are selected.
-        if (m_isSelected)
+        if (m_isSelected) {
+            // FIXME: Might be better to call this unconditionally, always
+            // passing m_isSelected, rather than only calling it if we are
+            // selected.
             select->optionSelectionStateChanged(this, true);
-        select->scrollToSelection();
+            select->scrollToSelection();
+        }
     }
 
     return HTMLElement::insertedInto(insertionPoint);

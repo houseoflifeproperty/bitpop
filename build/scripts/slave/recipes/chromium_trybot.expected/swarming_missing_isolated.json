@@ -121,7 +121,7 @@
     "env": {
       "GYP_DEFINES": "component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]/goma' target_arch=x64 test_isolation_mode=archive test_isolation_outdir=https://isolateserver.appspot.com use_goma=1"
     },
-    "name": "gclient runhooks"
+    "name": "gclient runhooks (with patch)"
   },
   {
     "cmd": [
@@ -140,8 +140,6 @@
       "[BUILD]/goma",
       "--",
       "all",
-      "chrome",
-      "chrome",
       "base_unittests_run",
       "browser_tests_run",
       "chrome"
@@ -199,13 +197,13 @@
       "@@@STEP_LOG_LINE@json.output@  \"tasks\": {@@@",
       "@@@STEP_LOG_LINE@json.output@    \"base_unittests (with patch)/Linux/[dummy hash for base_unittests]/linux_chromium_rel_swarming/571\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"shard_index\": 0, @@@",
-      "@@@STEP_LOG_LINE@json.output@      \"task_id\": \"deadbeef0\", @@@",
-      "@@@STEP_LOG_LINE@json.output@      \"view_url\": \"https://chromium-swarm.appspot.com/user/task/deadbeef0\"@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"task_id\": \"010000\", @@@",
+      "@@@STEP_LOG_LINE@json.output@      \"view_url\": \"https://chromium-swarm.appspot.com/user/task/010000\"@@@",
       "@@@STEP_LOG_LINE@json.output@    }@@@",
       "@@@STEP_LOG_LINE@json.output@  }@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@",
-      "@@@STEP_LINK@shard #0@https://chromium-swarm.appspot.com/user/task/deadbeef0@@@"
+      "@@@STEP_LINK@shard #0@https://chromium-swarm.appspot.com/user/task/010000@@@"
     ]
   },
   {
@@ -416,22 +414,26 @@
       "@@@STEP_LOG_LINE@python.inline@import sys@@@",
       "@@@STEP_LOG_LINE@python.inline@print '%s wasn\\'t triggered' % sys.argv[1]@@@",
       "@@@STEP_LOG_LINE@python.inline@sys.exit(1)@@@",
-      "@@@STEP_LOG_END@python.inline@@@"
+      "@@@STEP_LOG_END@python.inline@@@",
+      "@@@SET_BUILD_PROPERTY@failure_type@\"TRANSIENT_FAILURE\"@@@"
     ]
   },
   {
     "cmd": [
       "python",
       "-u",
-      "\nimport sys\nprint 'TEST RESULTS WERE INVALID'\nsys.exit(1)\n"
+      "import sys; sys.exit(1)"
     ],
     "name": "browser_tests",
     "~followup_annotations": [
-      "@@@STEP_LOG_LINE@python.inline@@@@",
-      "@@@STEP_LOG_LINE@python.inline@import sys@@@",
-      "@@@STEP_LOG_LINE@python.inline@print 'TEST RESULTS WERE INVALID'@@@",
-      "@@@STEP_LOG_LINE@python.inline@sys.exit(1)@@@",
-      "@@@STEP_LOG_END@python.inline@@@"
+      "step returned non-zero exit code: 1",
+      "@@@STEP_TEXT@TEST RESULTS WERE INVALID@@@",
+      "@@@STEP_FAILURE@@@"
     ]
+  },
+  {
+    "name": "$final_result",
+    "reason": "Step('browser_tests') failed with return_code 1",
+    "status_code": 1
   }
 ]

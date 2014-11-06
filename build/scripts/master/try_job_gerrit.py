@@ -146,12 +146,12 @@ class TryJobGerritStatus(StatusReceiverMultiService):
 
     Args:
       gerrit_host: a URL of the Gerrit instance.
-      review_factory: a function (builder_name, build, result) => review,
+      review_factory: a function (self, builder_name, build, result) => review,
         where review is a dict described in Gerrit docs:
         https://gerrit-review.googlesource.com/Documentation/rest-api-changes.html#review-input
     """
     StatusReceiverMultiService.__init__(self)
-    self.review_factory = review_factory or self.createReview
+    self.review_factory = review_factory or TryJobGerritStatus.createReview
     self.agent = GerritAgent(gerrit_host)
     self.status = None
 
@@ -181,9 +181,9 @@ class TryJobGerritStatus(StatusReceiverMultiService):
                  props.getProperty('parent_event.change.id'))
     revision = props.getProperty('revision')
     if change_id and revision:
-      review = self.review_factory(builder_name, build, result)
+      review = self.review_factory(self, builder_name, build, result)
       if review:
-        log.msg('Sending a revew for change %s: %s' % (change_id, review))
+        log.msg('Sending a review for change %s: %s' % (change_id, review))
         path = '/changes/%s/revisions/%s/review' % (change_id, revision)
         return self.agent.request('POST', path, body=review)
 

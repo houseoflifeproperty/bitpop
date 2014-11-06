@@ -11,7 +11,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/i18n/file_util_icu.h"
 #include "base/i18n/rtl.h"
 #include "base/i18n/string_compare.h"
@@ -311,6 +311,11 @@ std::string GetCanonicalLocale(const std::string& locale) {
   return base::i18n::GetCanonicalLocale(locale.c_str());
 }
 
+std::string GetLanguage(const std::string& locale) {
+  const std::string::size_type hyphen_pos = locale.find('-');
+  return std::string(locale, 0, hyphen_pos);
+}
+
 bool CheckAndResolveLocale(const std::string& locale,
                            std::string* resolved_locale) {
 #if defined(OS_MACOSX)
@@ -334,10 +339,9 @@ bool CheckAndResolveLocale(const std::string& locale,
   // does not support but available on Windows. We fall
   // back to en-US in GetApplicationLocale so that it's a not critical,
   // but we can do better.
-  std::string::size_type hyphen_pos = locale.find('-');
-  std::string lang(locale, 0, hyphen_pos);
-  if (hyphen_pos != std::string::npos && hyphen_pos > 0) {
-    std::string region(locale, hyphen_pos + 1);
+  const std::string lang(GetLanguage(locale));
+  if (lang.size() < locale.size()) {
+    std::string region(locale, lang.size() + 1);
     std::string tmp_locale(lang);
     // Map es-RR other than es-ES to es-419 (Chrome's Latin American
     // Spanish locale).
@@ -397,7 +401,7 @@ bool CheckAndResolveLocale(const std::string& locale,
 #endif
 }
 
-std::string GetApplicationLocale(const std::string& pref_locale) {
+std::string GetApplicationLocaleInternal(const std::string& pref_locale) {
 #if defined(OS_MACOSX)
 
   // Use any override (Cocoa for the browser), otherwise use the preference
@@ -411,12 +415,6 @@ std::string GetApplicationLocale(const std::string& pref_locale) {
   if (app_locale.empty())
     app_locale = "en-US";
 
-  // Windows/Linux call SetICUDefaultLocale after determining the actual locale
-  // with CheckAndResolveLocal to make ICU APIs work in that locale.
-  // Mac doesn't use a locale directory tree of resources (it uses Mac style
-  // resources), so mirror the Windows/Linux behavior of calling
-  // SetICUDefaultLocale.
-  base::i18n::SetICUDefaultLocale(app_locale);
   return app_locale;
 
 #else
@@ -478,7 +476,6 @@ std::string GetApplicationLocale(const std::string& pref_locale) {
   std::vector<std::string>::const_iterator i = candidates.begin();
   for (; i != candidates.end(); ++i) {
     if (CheckAndResolveLocale(*i, &resolved_locale)) {
-      base::i18n::SetICUDefaultLocale(resolved_locale);
       return resolved_locale;
     }
   }
@@ -486,13 +483,24 @@ std::string GetApplicationLocale(const std::string& pref_locale) {
   // Fallback on en-US.
   const std::string fallback_locale("en-US");
   if (IsLocaleAvailable(fallback_locale)) {
-    base::i18n::SetICUDefaultLocale(fallback_locale);
     return fallback_locale;
   }
 
   return std::string();
 
 #endif
+}
+
+std::string GetApplicationLocale(const std::string& pref_locale,
+                                 bool set_icu_locale) {
+  const std::string locale = GetApplicationLocaleInternal(pref_locale);
+  if (set_icu_locale && !locale.empty())
+    base::i18n::SetICUDefaultLocale(locale);
+  return locale;
+}
+
+std::string GetApplicationLocale(const std::string& pref_locale) {
+  return GetApplicationLocale(pref_locale, true /* set_icu_locale */);
 }
 
 bool IsLocaleNameTranslated(const char* locale,
@@ -816,18 +824,6 @@ base::string16 GetStringFUTF16Int(int message_id, int64 a) {
   return GetStringFUTF16(message_id, base::UTF8ToUTF16(base::Int64ToString(a)));
 }
 
-// Specialization of operator() method for base::string16 version.
-template <>
-bool StringComparator<base::string16>::operator()(const base::string16& lhs,
-                                                  const base::string16& rhs) {
-  // If we can not get collator instance for specified locale, just do simple
-  // string compare.
-  if (!collator_)
-    return lhs < rhs;
-  return base::i18n::CompareString16WithCollator(collator_, lhs, rhs) ==
-      UCOL_LESS;
-};
-
 base::string16 GetPluralStringFUTF16(const std::vector<int>& message_ids,
                                int number) {
   scoped_ptr<icu::PluralFormat> format = BuildPluralFormat(message_ids);
@@ -875,6 +871,14 @@ int GetLocalizedContentsWidthInPixels(int pixel_resource_id) {
   base::StringToInt(l10n_util::GetStringUTF8(pixel_resource_id), &width);
   DCHECK_GT(width, 0);
   return width;
+}
+
+const char* const* GetAcceptLanguageListForTesting() {
+  return kAcceptLanguageList;
+}
+
+size_t GetAcceptLanguageListSizeForTesting() {
+  return arraysize(kAcceptLanguageList);
 }
 
 }  // namespace l10n_util

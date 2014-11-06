@@ -119,7 +119,7 @@
       "--",
       "chrome",
       "chromium_builder_tests",
-      "sync_integration_tests"
+      "mini_installer"
     ],
     "name": "compile"
   },

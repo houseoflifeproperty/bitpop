@@ -25,7 +25,7 @@ from master.builders_pools import BuildersPools
 
 
 TEST_BASE_URL = ('https://codereview.chromium.org/get_pending_try_patchsets?'
-                 'limit=1000&offset=1&master=tryserver.chromium')
+                 'limit=1000&offset=1&master=tryserver.chromium.linux')
 
 
 # Create timestamps both with microseconds=0 and !=0.

@@ -51,24 +51,23 @@ def GenTests(api):
     api.platform.name('win')
   )
 
-  # Test one configuration where 'gclient revert' fails.
   yield (
-    api.test('win_release_gclient_revert_failure') +
-    api.properties.scheduled(
-      build_config='Release',
-      mastername='chromium.gpu.testing',
-      buildername='win release builder',
-      buildnumber=571) +
-    api.step_data('gclient revert', retcode=1) +
+    api.test('compile_with_patch_fail') +
+    api.properties.tryserver(
+      mastername='tryserver.chromium.gpu',
+      buildername='mac_gpu') +
+    api.step_data('compile (with patch)', retcode=1) +
     api.platform.name('win')
   )
 
-  # Test one tryserver configuration when the initial compile fails.
   yield (
-    api.test('clobber_after_tryserver_failed_compile') +
-    api.properties.tryserver(build_config='Release') +
-    api.platform.name('linux') +
-    api.step_data('compile', retcode=1)
+    api.test('compile_without_patch_fail') +
+    api.properties.tryserver(
+      mastername='tryserver.chromium.gpu',
+      buildername='mac_gpu') +
+    api.step_data('compile (with patch)', retcode=1) +
+    api.step_data('compile (without patch)', retcode=1) +
+    api.platform.name('win')
   )
 
   yield (

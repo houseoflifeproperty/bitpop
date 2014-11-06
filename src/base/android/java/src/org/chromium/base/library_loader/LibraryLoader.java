@@ -37,6 +37,10 @@ public class LibraryLoader {
     // One-way switch becomes true when the libraries are loaded.
     private static boolean sLoaded = false;
 
+    // One-way switch becomes true when the Java command line is switched to
+    // native.
+    private static boolean sCommandLineSwitched = false;
+
     // One-way switch becomes true when the libraries are initialized (
     // by calling nativeLibraryLoaded, which forwards to LibraryLoaded(...) in
     // library_loader_hooks.cc).
@@ -148,19 +152,47 @@ public class LibraryLoader {
                 long startTime = SystemClock.uptimeMillis();
                 boolean useChromiumLinker = Linker.isUsed();
 
-                if (useChromiumLinker) Linker.prepareLibraryLoad();
+                if (useChromiumLinker) {
+                    // Load libraries using the Chromium linker.
+                    Linker.prepareLibraryLoad();
 
-                for (String library : NativeLibraries.LIBRARIES) {
-                    if (useChromiumLinker) {
+                    for (String library : NativeLibraries.LIBRARIES) {
+                        String zipfile = null;
                         if (Linker.isInZipFile()) {
-                            String zipfile = context.getApplicationInfo().sourceDir;
+                            zipfile = context.getApplicationInfo().sourceDir;
                             Log.i(TAG, "Loading " + library + " from within " + zipfile);
-                            Linker.loadLibraryInZipFile(zipfile, library);
                         } else {
                             Log.i(TAG, "Loading: " + library);
-                            Linker.loadLibrary(library);
                         }
-                    } else {
+
+                        boolean isLoaded = false;
+                        if (Linker.isUsingBrowserSharedRelros()) {
+                            try {
+                                if (zipfile != null) {
+                                    Linker.loadLibraryInZipFile(zipfile, library);
+                                } else {
+                                    Linker.loadLibrary(library);
+                                }
+                                isLoaded = true;
+                            } catch (UnsatisfiedLinkError e) {
+                                Log.w(TAG, "Failed to load native library with shared RELRO, " +
+                                      "retrying without");
+                                Linker.disableSharedRelros();
+                            }
+                        }
+                        if (!isLoaded) {
+                            if (zipfile != null) {
+                                Linker.loadLibraryInZipFile(zipfile, library);
+                            } else {
+                                Linker.loadLibrary(library);
+                            }
+                        }
+                    }
+
+                    Linker.finishLibraryLoad();
+                } else {
+                    // Load libraries using the system linker.
+                    for (String library : NativeLibraries.LIBRARIES) {
                         try {
                             System.loadLibrary(library);
                         } catch (UnsatisfiedLinkError e) {
@@ -174,7 +206,6 @@ public class LibraryLoader {
                         }
                     }
                 }
-                if (useChromiumLinker) Linker.finishLibraryLoad();
 
                 if (context != null
                     && shouldDeleteOldWorkaroundLibraries
@@ -188,9 +219,6 @@ public class LibraryLoader {
                         stopTime - startTime,
                         startTime % 10000,
                         stopTime % 10000));
-
-                nativeInitCommandLine(CommandLine.getJavaSwitchesOrNull());
-                CommandLine.enableNativeProxy();
 
                 sLoaded = true;
             }
@@ -208,10 +236,37 @@ public class LibraryLoader {
         }
     }
 
+    // The WebView requires the Command Line to be switched over before
+    // initialization is done. This is okay in the WebView's case since the
+    // JNI is already loaded by this point.
+    public static void switchCommandLineForWebView() {
+        synchronized (sLock) {
+            ensureCommandLineSwitchedAlreadyLocked();
+        }
+    }
+
+    // Switch the CommandLine over from Java to native if it hasn't already been done.
+    // This must happen after the code is loaded and after JNI is ready (since after the
+    // switch the Java CommandLine will delegate all calls the native CommandLine).
+    private static void ensureCommandLineSwitchedAlreadyLocked() {
+        assert sLoaded;
+        if (sCommandLineSwitched) {
+            return;
+        }
+        nativeInitCommandLine(CommandLine.getJavaSwitchesOrNull());
+        CommandLine.enableNativeProxy();
+        sCommandLineSwitched = true;
+    }
+
     // Invoke base::android::LibraryLoaded in library_loader_hooks.cc
     private static void initializeAlreadyLocked() throws ProcessInitException {
         if (sInitialized) {
             return;
+        }
+
+        // Setup the native command line if necessary.
+        if (!sCommandLineSwitched) {
+            nativeInitCommandLine(CommandLine.getJavaSwitchesOrNull());
         }
 
         if (!nativeLibraryLoaded()) {
@@ -222,6 +277,13 @@ public class LibraryLoader {
         // shouldn't complain from now on (and in fact, it's used by the
         // following calls).
         sInitialized = true;
+
+        // The Chrome JNI is registered by now so we can switch the Java
+        // command line over to delegating to native if it's necessary.
+        if (!sCommandLineSwitched) {
+            CommandLine.enableNativeProxy();
+            sCommandLineSwitched = true;
+        }
 
         // From now on, keep tracing in sync with native.
         TraceEvent.registerNativeEnabledObserver();

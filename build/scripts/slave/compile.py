@@ -13,8 +13,10 @@
 
 import datetime
 import errno
+import getpass
 import glob
 import gzip
+import json
 import multiprocessing
 import optparse
 import os
@@ -109,13 +111,30 @@ def goma_setup(options, env):
     options.goma_dir = None
     return False
 
+  hostname = GetShortHostname()
+  # HACK(yyanagisawa, goma): Enable GOMA_SEND_SUBPROGRAM_SPEC=true
+  # Since goma server won't cache on subprograms mismatch like command mismatch,
+  # we need to find out issues before makingGOMA_SEND_SUBPROGRAM_SPEC=true by
+  # default.
+  # Linux chromium rel
+  if hostname in ['slave%d-c4' % i for i in range(270, 275)]:
+    env['GOMA_SEND_SUBPROGRAM_SPEC'] = 'true'
+  # Linux android
+  if hostname in ['slave%d-c4' % i for i in range(460, 465)]:
+    env['GOMA_SEND_SUBPROGRAM_SPEC'] = 'true'
+  # Mac rel
+  if hostname in ['vm%d-m4' % i for i in range(700, 705)]:
+    env['GOMA_SEND_SUBPROGRAM_SPEC'] = 'true'
+  # Win rel
+  if hostname in ['vm%d-m4' % i for i in range(120, 125)]:
+    env['GOMA_SEND_SUBPROGRAM_SPEC'] = 'true'
+
   # HACK(shinyak, goma): Enable GLOBAL_FILEID_CACHE_PATTERNS only in
   # Chromium Win Ninja Goma and Chromium Win Ninja Goma (shared) builders,
   # so that we can check whether this feature is not harmful and how much
   # this feature can improve compile performance.
   # If this experiment succeeds, I'll enable this in all Win/Mac platforms.
-  hostname = GetShortHostname()
-  if hostname.lower() in ['build28-m1', 'build58-m1']:
+  if hostname in ['build28-m1', 'build58-m1']:
     patterns = r'win_toolchain\vs2013_files,third_party,src\chrome,src\content'
     env['GOMA_GLOBAL_FILEID_CACHE_PATTERNS'] = patterns
 
@@ -213,6 +232,63 @@ def goma_teardown(options, env):
     # Always stop the proxy for now to allow in-place update.
     chromium_utils.RunCommand(goma_ctl_cmd + ['stop'], env=env)
     UploadGomaCompilerProxyInfo()
+
+
+def UploadNinjaLog(options, command, exit_status):
+  """Upload .ninja_log to Google Cloud Storage (gs://chrome-goma-log),
+  in the same folder with goma's compiler_proxy.INFO.
+
+  Args:
+    options: compile.py's options.
+    command: command line.
+    exit_status: ninja's exit status.
+  """
+  ninja_log_path = os.path.join(options.target_output_dir, '.ninja_log')
+  try:
+    st = os.stat(ninja_log_path)
+    mtime = datetime.datetime.fromtimestamp(st.st_mtime)
+  except OSError, e:
+    print(e)
+    return
+
+  cwd = os.getcwd()
+  platform = chromium_utils.PlatformName()
+
+  info = {'cmdline': command,
+          'cwd': cwd,
+          'platform': platform,
+          'exit': exit_status,
+          'argv': sys.argv,
+          'env': {}}
+  for k, v in os.environ.iteritems():
+    info['env'][k] = v
+  if options.compiler:
+    info['compiler'] = options.compiler
+  compiler_proxy_info = GetLatestGomaCompilerProxyInfo()
+  if compiler_proxy_info:
+    info['compiler_proxy_info'] = compiler_proxy_info
+
+  username = getpass.getuser()
+  hostname = GetShortHostname()
+  pid = os.getpid()
+  ninja_log_filename = 'ninja_log.%s.%s.%s.%d' % (
+      hostname, username, mtime.strftime('%Y%m%d-%H%M%S'), pid)
+  today = datetime.datetime.utcnow().date()
+  ninja_log_gs_path = ('gs://chrome-goma-log/%s/%s/%s.gz' % (
+      today.strftime('%Y/%m/%d'), hostname, ninja_log_filename))
+  try:
+    fd, output_filename = tempfile.mkstemp()
+    with open(ninja_log_path) as f_in:
+      with os.fdopen(fd, 'w') as f_out:
+        with gzip.GzipFile(fileobj=f_out, compresslevel=9) as gzipf:
+          gzipf.writelines(f_in)
+          gzipf.write('# end of ninja log\n')
+          gzipf.write(json.dumps(info))
+
+    slave_utils.GSUtilCopy(output_filename, ninja_log_gs_path)
+    print "Copied log file to %s" % ninja_log_gs_path
+  finally:
+    os.remove(output_filename)
 
 
 def common_xcode_settings(command, options, env, compiler=None):
@@ -697,14 +773,36 @@ def main_make_android(options, args):
   env.print_overrides()
   result = 0
 
+  bad_path_patterns = [
+    'out/target/common/obj/JAVA_LIBRARIES/*webview*',
+    'out/target/common/R/com/android/*webview*',
+    'out/target/product/*/obj/SHARED_LIBRARIES/*webview*',
+    'out/target/product/*/system/lib/*webview*',
+    'out/target/product/*/system/app/*webview*',
+    'out/host/*/obj/EXECUTABLES/*gyp*',
+    'out/host/*/obj/STATIC_LIBRARIES/*gyp*',
+    'out/host/*/obj/NOTICE_FILES/*gyp*',
+    'out/host/*/obj/GYP',
+    'out/target/product/*/obj/EXECUTABLES/*gyp*',
+    'out/target/product/*/obj/STATIC_LIBRARIES/*gyp*',
+    'out/target/product/*/obj/NOTICE_FILES/*gyp*',
+    'out/target/product/*/obj/GYP',
+  ]
+
   def clobber():
     print('Removing %s' % options.target_output_dir)
     chromium_utils.RemoveDirectory(options.target_output_dir)
 
   # The Android.mk build system handles deps differently than the 'regular'
   # Chromium makefiles which can lead to targets not being rebuilt properly.
-  # Fixing this is actually quite hard so we make this bot always clobber.
-  clobber()
+  # Fixing this is actually quite hard so we always delete at least
+  # everything Chrome related from out.
+  if options.clobber:
+    clobber()
+  else:
+    for path in bad_path_patterns:
+      paths = chromium_utils.RemoveGlobbedPaths(path)
+      print('\n'.join(['Removed {}'.format(removed) for removed in paths]))
 
   result = chromium_utils.RunCommand(command, env=env)
 
@@ -717,7 +815,9 @@ def main_ninja(options, args):
 
   # Prepare environment.
   env = EchoDict(os.environ)
+  env.setdefault('NINJA_STATUS', '[%s/%t | %e] ')
   goma_ready = goma_setup(options, env)
+  exit_status = -1
   try:
     if not goma_ready:
       assert options.compiler not in ('goma', 'goma-clang')
@@ -798,18 +898,13 @@ def main_ninja(options, args):
       goma_jobs = determine_goma_jobs()
       command.append('-j%d' % goma_jobs)
 
-      if chromium_utils.IsMac():
-        # Work around for crbug.com/347918
-        env['GOMA_HERMETIC'] = 'fallback'
-        if options.clobber:
-          # Enabling this while attempting to solve crbug.com/257467
-          env['GOMA_USE_LOCAL'] = '1'
-
     # Run the build.
     env.print_overrides()
-    return chromium_utils.RunCommand(command, env=env)
+    exit_status = chromium_utils.RunCommand(command, env=env)
+    return exit_status
   finally:
     goma_teardown(options, env)
+    UploadNinjaLog(options, command, exit_status)
 
 
 def main_win(options, args):
@@ -996,20 +1091,29 @@ def main_win(options, args):
   return result
 
 
-def get_target_build_dir(build_tool, src_dir, target, is_iphone=False):
+def get_target_build_dir(args, options):
   """Keep this function in sync with src/build/landmines.py"""
+  build_tool = options.build_tool
+
   ret = None
   if build_tool == 'xcode':
-    ret = os.path.join(src_dir, 'xcodebuild',
-        target + ('-iphoneos' if is_iphone else ''))
+    relpath = os.path.join('xcodebuild',
+        options.target + ('-iphoneos' if 'iphoneos' in args else ''))
   elif build_tool in ['make', 'ninja']:
-    ret = os.path.join(src_dir, 'out', target)
+    if chromium_utils.IsLinux() and options.cros_board:
+      # When building ChromeOS's Simple Chrome workflow, the output directory
+      # has a CROS board name suffix.
+      outdir = 'out_%s' % (options.cros_board,)
+    else:
+      outdir = 'out'
+    relpath = os.path.join(outdir, options.target)
   elif build_tool == 'make-android':
-    ret = os.path.join(src_dir, 'out')
+    relpath = os.path.join('out')
   elif build_tool in ['vs', 'ib']:
-    ret = os.path.join(src_dir, 'build', target)
+    relpath = os.path.join('build', options.target)
   else:
     raise NotImplementedError()
+  ret = os.path.join(options.src_dir, relpath)
   return os.path.abspath(ret)
 
 
@@ -1062,6 +1166,10 @@ def real_main():
     # Mac only.
     option_parser.add_option('--xcode-target', default=None,
                              help='Target from the xcodeproj file')
+  if chromium_utils.IsLinux():
+    option_parser.add_option('--cros-board', action='store',
+                             help='If building for the ChromeOS Simple Chrome '
+                                  'workflow, the name of the ChromeOS board.')
   option_parser.add_option('--goma-dir',
                            default=os.path.join(BUILD_DIR, 'goma'),
                            help='specify goma directory')
@@ -1137,8 +1245,7 @@ def real_main():
       sys.stderr.write('Unknown build tool %s.\n' % repr(options.build_tool))
       return 2
 
-  options.target_output_dir = get_target_build_dir(options.build_tool,
-      options.src_dir, options.target, 'iphoneos' in args)
+  options.target_output_dir = get_target_build_dir(args, options)
 
   return main(options, args)
 

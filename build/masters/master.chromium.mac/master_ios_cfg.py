@@ -11,7 +11,7 @@ m_annotator = annotator_factory.AnnotatorFactory()
 def Update(config, active_master, c):
   c['schedulers'].extend([
       SingleBranchScheduler(name='ios',
-                            branch='src',
+                            branch='master',
                             treeStableTimer=60,
                             builderNames=[
           'iOS Device',

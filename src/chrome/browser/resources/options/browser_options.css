@@ -447,15 +447,25 @@ list:not([disabled]) > .network-group[selected] {
   -webkit-box-align: baseline;
 }
 
-#accessibility-autoclick label + select {
+#accessibility-autoclick-dropdown,
+#accessibility-autoclick-label {
   /* Same as .controlled-setting-with-label > input + span. */
   -webkit-margin-start: 0.6em;
 }
 
-div[guestmode=true] #appearance-section,
-div[guestmode=true] #startup-section,
-div[guestmode=true] #searchBox,
-div[guestmode=true] #reset-profile-settings-section {
+div[guestmode=true] :-webkit-any(
+<if expr="not chromeos">
+    #searchBox,
+</if>
+    #appearance-section,
+    #startup-section,
+    #reset-profile-settings-section) {
+  display: none;
+}
+
+div[supervisedMode=true] :-webkit-any(
+    #profiles-enable-guest,
+    #profiles-enable-add-person) {
   display: none;
 }
 
@@ -463,7 +473,12 @@ footer {
   display: flex;
 }
 
-#version-button {
-  -webkit-margin-start: auto;
-  color: #999;
+#about-button {
+  -webkit-margin-end: 30px;
+}
+
+/* An input that has no function except to take up the same amount of space as
+ * a checkbox. */
+.spacer-checkbox {
+  visibility: hidden;
 }

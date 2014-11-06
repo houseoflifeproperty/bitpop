@@ -22,10 +22,10 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/extensions/updater/extension_downloader.h"
 #include "chrome/browser/extensions/updater/extension_downloader_delegate.h"
-#include "chrome/browser/extensions/updater/manifest_fetch_data.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "extensions/browser/extension_registry_observer.h"
+#include "extensions/browser/updater/manifest_fetch_data.h"
 #include "url/gurl.h"
 
 class ExtensionServiceInterface;
@@ -157,6 +157,11 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
 
   struct ThrottleInfo;
 
+  // Callback used to continue CheckNow after determining which extensions
+  // should be force-updated.
+  void OnForcedUpdatesDetermined(const CheckParams& params,
+                                 const std::set<std::string>& forced_updates);
+
   // Ensure that we have a valid ExtensionDownloader instance referenced by
   // |downloader|.
   void EnsureDownloaderCreated();
@@ -188,7 +193,6 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
       Error error,
       const PingResult& ping,
       const std::set<int>& request_ids) OVERRIDE;
-
   virtual void OnExtensionDownloadFinished(
       const std::string& id,
       const base::FilePath& path,
@@ -197,25 +201,15 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
       const std::string& version,
       const PingResult& ping,
       const std::set<int>& request_id) OVERRIDE;
-
-  // Implementation of ExtensionRegistryObserver.
-  virtual void OnExtensionWillBeInstalled(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      bool is_update,
-      bool from_ephemeral,
-      const std::string& old_name) OVERRIDE;
-
   virtual bool GetPingDataForExtension(
       const std::string& id,
       ManifestFetchData::PingData* ping_data) OVERRIDE;
-
   virtual std::string GetUpdateUrlData(const std::string& id) OVERRIDE;
-
   virtual bool IsExtensionPending(const std::string& id) OVERRIDE;
-
   virtual bool GetExtensionExistingVersion(const std::string& id,
                                            std::string* version) OVERRIDE;
+  virtual bool ShouldForceUpdate(const std::string& extension_id,
+                                 std::string* source) OVERRIDE;
 
   void UpdatePingData(const std::string& id, const PingResult& ping_result);
 
@@ -226,6 +220,14 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
+
+  // Implementation of ExtensionRegistryObserver.
+  virtual void OnExtensionWillBeInstalled(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      bool is_update,
+      bool from_ephemeral,
+      const std::string& old_name) OVERRIDE;
 
   // Send a notification that update checks are starting.
   void NotifyStarted();
@@ -238,8 +240,6 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
 
   // Whether Start() has been called but not Stop().
   bool alive_;
-
-  base::WeakPtrFactory<ExtensionUpdater> weak_ptr_factory_;
 
   // Pointer back to the service that owns this ExtensionUpdater.
   ExtensionServiceInterface* service_;
@@ -283,6 +283,12 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
   // Keeps track of when an extension tried to update itself, so we can throttle
   // checks to prevent too many requests from being made.
   std::map<std::string, ThrottleInfo> throttle_info_;
+
+  // Keeps track of extensions (by ID) whose update should be forced during the
+  // next update check.
+  std::set<std::string> forced_updates_;
+
+  base::WeakPtrFactory<ExtensionUpdater> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionUpdater);
 };

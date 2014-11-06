@@ -111,6 +111,59 @@ config = {
     },
     {
       'auto_reboot': False,
+      'builddir': 'amd64-generic_freon-paladin',
+      'category': '1release full|info',
+      'factory': BuildFactory {
+        steps: [
+          (
+            <class buildbot.steps.shell.ShellCommand>,
+            {
+              'command': ['gclient', 'sync', '--delete_unversioned_trees'],
+              'description': 'Sync buildbot slave files',
+              'name': 'update_scripts',
+              'timeout': 300,
+              'want_stderr': False,
+              'want_stdout': False,
+              'workdir': '/b',
+            },
+          ),
+          (
+            <class buildbot.steps.shell.ShellCommand>,
+            {
+              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
+              'description': 'Clear and Clone chromite',
+              'haltOnFailure': True,
+              'name': 'Clear and Clone chromite',
+            },
+          ),
+          (
+            <class master.chromium_step.AnnotatedCommand>,
+            {
+              'command': [
+                'chromite/bin/cbuildbot',
+                <buildbot.process.properties.WithProperties instance>,
+                '--buildroot=/b/cbuild/external_master',
+                <master.master_utils.ConditionalProperty instance>,
+                '--buildbot',
+                '--debug',
+                <master.master_utils.ConditionalProperty instance>,
+                'amd64-generic_freon-paladin',
+              ],
+              'description': 'cbuildbot',
+              'maxTime': 57600,
+              'name': 'cbuildbot',
+              'timeout': 9000,
+              'usePTY': False,
+            },
+          ),
+        ],
+        properties: Properties(**{}),
+      },
+      'name': 'amd64-generic_freon paladin',
+      'slavenames': ['build182-m2'],
+    },
+    {
+      'auto_reboot': False,
       'builddir': 'gizmo-paladin',
       'category': '1release full|info',
       'factory': BuildFactory {
@@ -588,59 +641,6 @@ config = {
     },
     {
       'auto_reboot': False,
-      'builddir': 'gizmo-full',
-      'category': '1release full|closer',
-      'factory': BuildFactory {
-        steps: [
-          (
-            <class buildbot.steps.shell.ShellCommand>,
-            {
-              'command': ['gclient', 'sync', '--delete_unversioned_trees'],
-              'description': 'Sync buildbot slave files',
-              'name': 'update_scripts',
-              'timeout': 300,
-              'want_stderr': False,
-              'want_stdout': False,
-              'workdir': '/b',
-            },
-          ),
-          (
-            <class buildbot.steps.shell.ShellCommand>,
-            {
-              'command': 'rm -rf "chromite" && /usr/bin/git retry clone https://chromium.googlesource.com/chromiumos/chromite.git && cd "chromite" && /usr/bin/git checkout master',
-              'description': 'Clear and Clone chromite',
-              'haltOnFailure': True,
-              'name': 'Clear and Clone chromite',
-            },
-          ),
-          (
-            <class master.chromium_step.AnnotatedCommand>,
-            {
-              'command': [
-                'chromite/bin/cbuildbot',
-                <buildbot.process.properties.WithProperties instance>,
-                '--buildroot=/b/cbuild/external_master',
-                <master.master_utils.ConditionalProperty instance>,
-                '--buildbot',
-                '--debug',
-                <master.master_utils.ConditionalProperty instance>,
-                'gizmo-full',
-              ],
-              'description': 'cbuildbot',
-              'maxTime': 57600,
-              'name': 'cbuildbot',
-              'timeout': 9000,
-              'usePTY': False,
-            },
-          ),
-        ],
-        properties: Properties(**{}),
-      },
-      'name': 'gizmo full',
-      'slavenames': ['build156-m2'],
-    },
-    {
-      'auto_reboot': False,
       'builddir': 'mipsel-o32-generic-full',
       'category': '1release full|closer',
       'factory': BuildFactory {
@@ -809,7 +809,7 @@ config = {
         ],
         properties: Properties(**{}),
       },
-      'name': 'refresh packages',
+      'name': 'refresh packages (crbug.com/412795)',
       'slavenames': ['build94-m2'],
     },
     {
@@ -928,7 +928,7 @@ config = {
   },
   'change_source': [
     <buildbot.changes.pb.PBChangeSource instance>,
-    <buildbot.changes.gitpoller.GitPoller instance>,
+    <master.chromeos_manifest_scheduler.CommentRespectingGitPoller instance>,
   ],
   'eventHorizon': 200,
   'logHorizon': 500,
@@ -974,7 +974,6 @@ config = {
         'amd64-generic full',
         'daisy full',
         'arm-generic full',
-        'gizmo full',
         'mipsel-o32-generic full',
         'chromiumos sdk',
         'x86-generic ASAN',
@@ -997,7 +996,7 @@ config = {
       master: None,
       branch: None,
       services: [],
-      builderNames: ['refresh packages'],
+      builderNames: ['refresh packages (crbug.com/412795)'],
       properties: Properties(**{'scheduler': 'refresh_pkgs_scheduler'}),
       periodicBuildTimer: 86400,
     },
@@ -1008,7 +1007,6 @@ config = {
     <BuildSlave 'build85-m2', (no builders yet)>,
     <BuildSlave 'build141-m2', (no builders yet)>,
     <BuildSlave 'build91-m2', (no builders yet)>,
-    <BuildSlave 'build156-m2', (no builders yet)>,
     <BuildSlave 'build89-m2', (no builders yet)>,
     <BuildSlave 'build93-m2', (no builders yet)>,
     <BuildSlave 'build174-m2', (no builders yet)>,
@@ -1017,8 +1015,9 @@ config = {
     <BuildSlave 'build112-m2', (no builders yet)>,
     <BuildSlave 'build92-m2', (no builders yet)>,
     <BuildSlave 'build90-m2', (no builders yet)>,
-    <BuildSlave 'build84-m2', (no builders yet)>,
+    <BuildSlave 'build182-m2', (no builders yet)>,
     <BuildSlave 'build94-m2', (no builders yet)>,
+    <BuildSlave 'build84-m2', (no builders yet)>,
     <BuildSlave 'build87-m2', (no builders yet)>,
   ],
   'status': [

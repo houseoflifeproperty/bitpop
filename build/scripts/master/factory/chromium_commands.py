@@ -502,13 +502,15 @@ class ChromiumCommands(commands.FactoryCommands):
                '--test-launcher-print-test-stdio=always']
     tool_options = ['--no-xvfb']
 
-    self.AddAnnotatedPerfStep('tab_capture_performance',
-                              'TabCapturePerformanceTest*', 'graphing',
-                              cmd_name='performance_browser_tests',
-                              step_name='tab_capture_performance_tests',
-                              cmd_options=options,
-                              tool_opts=tool_options,
-                              factory_properties=factory_properties)
+    self.AddAnnotatedPerfStep(
+        'tab_capture_performance',
+        'TabCapturePerformanceTest*:CastV2PerformanceTest*',
+        'graphing',
+        cmd_name='performance_browser_tests',
+        step_name='tab_capture_performance_tests',
+        cmd_options=options,
+        tool_opts=tool_options,
+        factory_properties=factory_properties)
 
   def AddDeps2GitStep(self, verify=True):
     J = self.PathJoin
@@ -826,8 +828,6 @@ class ChromiumCommands(commands.FactoryCommands):
     log_type = 'graphing'
     if test_name.split('.')[0] == 'page_cycler':
       log_type = 'pagecycler'
-    if test_name.split('.')[0] == 'endure':
-      log_type = 'endure'
 
     self.AddAnnotatedPerfStep(step_name, None, log_type, factory_properties,
                               cmd_name=self._telemetry_tool,
@@ -1299,4 +1299,4 @@ def _GetSnapshotUrl(factory_properties=None, builder_name='%(build_name)s'):
   gs_bucket = factory_properties['gs_bucket']
   gs_bucket = re.sub(r'^gs://', 'http://commondatastorage.googleapis.com/',
                      gs_bucket)
-  return ('%s/index.html?path=%s' % (gs_bucket, builder_name), '/')
+  return ('%s/index.html?prefix=%s' % (gs_bucket, builder_name), '')

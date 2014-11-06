@@ -47,11 +47,6 @@ class BotUpdateTestApi(recipe_test_api.RecipeTestApi):
         output['patch_failure'] = True
     return self.m.json.output(output)
 
-  def patch_error_data(self):
-    ret = recipe_test_api.StepTestData()
-    ret.retcode = 1
-    return ret
-
   @staticmethod
   def gen_revision(project, GIT_MODE):
     """Hash project to bogus deterministic revision values."""

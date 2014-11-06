@@ -362,7 +362,8 @@
                 var properties = buildData['properties'];
                 for (var i = 0; i < properties.length; i++) {
                   if (properties[i][0] == 'got_revision') {
-                    lkgrLink.innerHTML = 'LKGR<br>(' + properties[i][1] + ')';
+                    var revision = properties[i][1].substring(0,12);
+                    lkgrLink.innerHTML = 'LKGR<br>(' + revision + ')';
                     return;
                   }
                 }

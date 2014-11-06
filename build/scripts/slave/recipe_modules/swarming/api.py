@@ -235,9 +235,9 @@ class SwarmingApi(recipe_api.RecipeApi):
     results = []
     #TODO(martiniss) convert loop
     for task in tasks:
-      assert task.task_id not in self._pending_tasks, (
-          'Triggered same task twice: %s' % task.task_id)
-      self._pending_tasks.add(task.task_id)
+      assert task.task_name not in self._pending_tasks, (
+          'Triggered same task twice: %s' % task.task_name)
+      self._pending_tasks.add(task.task_name)
 
       # Trigger parameters.
       args = [
@@ -246,7 +246,7 @@ class SwarmingApi(recipe_api.RecipeApi):
         '--isolate-server', self.m.isolate.isolate_server,
         '--priority', str(task.priority),
         '--shards', str(task.shards),
-        '--task-name', task.task_id,
+        '--task-name', task.task_name,
         '--dump-json', self.m.json.output(),
       ]
       for name, value in sorted(task.dimensions.iteritems()):
@@ -300,24 +300,37 @@ class SwarmingApi(recipe_api.RecipeApi):
     assert all(isinstance(t, SwarmingTask) for t in tasks)
     #TODO(martiniss) convert loop
     for task in tasks:
-      assert task.task_id in self._pending_tasks, (
-          'Trying to collect a task that was not triggered: %s' % task.task_id)
-      self._pending_tasks.remove(task.task_id)
+      assert task.task_name in self._pending_tasks, (
+          'Trying to collect a task that was not triggered: %s' %
+          task.task_name)
+      self._pending_tasks.remove(task.task_name)
       try:
         task.collect_step_builder(task, **kwargs)
       finally:
         step_result = self.m.step.active_result
         step_result.swarming_task = task
+      try:
+        json_data = step_result.json.output
+        links = step_result.presentation.links
+        for index, shard in enumerate(json_data['shards']):
+          isolated_out = shard['isolated_out']
+          link_name = 'shard #%d isolated out' % index
+          links[link_name] = isolated_out['view_url']
+      except (KeyError, AttributeError):
+        # No isolated_out data exists (or any JSON at all)
+        pass
       yield step_result
-
 
   def _default_collect_step(self, task, **kwargs):
     """Produces a step that collects a result of an arbitrary task."""
     # By default wait for all tasks to finish even if some of them failed.
+    args = self._get_collect_cmd_args(task)
+    args.extend(['--task-summary-json', self.m.json.output()])
     return self.m.python(
         name=self._get_step_name('swarming', task),
         script=self.m.swarming_client.path.join('swarming.py'),
-        args=self._get_collect_cmd_args(task),
+        args=args,
+        step_test_data=functools.partial(self._gen_collect_step_data, task),
         **kwargs)
 
   def _gtest_collect_step(self, merged_test_output, task, **kwargs):
@@ -382,7 +395,7 @@ class SwarmingApi(recipe_api.RecipeApi):
     ]
     if self.verbose:
       args.append('--verbose')
-    args.append(task.task_id)
+    args.append(task.task_name)
     return args
 
   def _gen_trigger_step_data(self, task):
@@ -397,14 +410,36 @@ class SwarmingApi(recipe_api.RecipeApi):
     else:
       subtasks = [':%d:%d' % (task.shards, i) for i in range(task.shards)]
     return self.m.json.test_api.output({
-      'base_task_name': task.task_id,
+      'base_task_name': task.task_name,
       'tasks': {
-        '%s%s' % (task.task_id, suffix): {
-          'task_id': 'deadbeef%d' % i,
+        '%s%s' % (task.task_name, suffix): {
+          'task_id': '01%02d00' % i,
           'shard_index': i,
-          'view_url': '%s/user/task/deadbeef%d' % (self.swarming_server, i),
+          'view_url': '%s/user/task/01%02d00' % (self.swarming_server, i),
         } for i, suffix in enumerate(subtasks)
       },
+    })
+
+  def _gen_collect_step_data(self, task):
+    """Generates an expected value of --task-summary-json in 'collect' step.
+
+    Used when running recipes to generate test expectations.
+    """
+    if task.shards == 1:
+      subtasks = ['']
+    else:
+      subtasks = [':%d:%d' % (task.shards, i) for i in range(task.shards)]
+    return self.m.json.test_api.output({
+      'task_name': task.task_name,
+      'shards': [
+        {
+          'isolated_out': {
+              'view_url': 'blah',
+          },
+          'machine_id': 'fakemachine',
+          'machine_tag': 'fakemachinetag',
+        } for i, suffix in enumerate(subtasks)
+      ],
     })
 
   def _trigger_followup(self, task, step_result):
@@ -473,8 +508,8 @@ class SwarmingTask(object):
     self._trigger_output = None
 
   @property
-  def task_id(self):
-    """ID of this task, derived from its other properties.
+  def task_name(self):
+    """Name of this task, derived from its other properties.
 
     Task ID identifies what task is doing and what machine configuration it
     expects. It is used as a key in table of a cached results. If Swarming

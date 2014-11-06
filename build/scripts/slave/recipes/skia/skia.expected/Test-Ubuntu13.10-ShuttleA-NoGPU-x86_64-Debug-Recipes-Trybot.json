@@ -1,0 +1,602 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "config",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'deps_file': 'DEPS', 'managed': True, 'name': 'skia', 'url': 'https://skia.googlesource.com/skia.git'}]\ntarget_os = ['android', 'chromeos']"
+    ],
+    "name": "gclient setup"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/gclient_safe_revert.py",
+      ".",
+      "[DEPOT_TOOLS]/gclient"
+    ],
+    "name": "gclient revert"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "sync",
+      "--nohooks",
+      "--force",
+      "--verbose",
+      "--delete_unversioned_trees",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "gclient sync",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"skia/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 164710@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@164710@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/apply_issue.py",
+      "-r",
+      "[SLAVE_BUILD]/skia",
+      "-i",
+      "500",
+      "-p",
+      "1",
+      "-s",
+      "https://codereview.chromium.org",
+      "--no-auth"
+    ],
+    "name": "apply_issue",
+    "~followup_annotations": [
+      "@@@STEP_LINK@Applied issue 500@https://codereview.chromium.org/500@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os\nimport sys\nwith open(sys.argv[1], 'w') as f:\n  f.write(os.path.join(os.path.expanduser('~'), 'src'))\n",
+      "/path/to/tmp/"
+    ],
+    "name": "get CHROME_PATH",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@with open(sys.argv[1], 'w') as f:@@@",
+      "@@@STEP_LOG_LINE@python.inline@  f.write(os.path.join(os.path.expanduser('~'), 'src'))@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "make",
+      "most",
+      "BUILDTYPE=Debug"
+    ],
+    "cwd": "[SLAVE_BUILD]/skia",
+    "env": {
+      "CHROME_PATH": "/home/chrome-bot/src",
+      "GYP_DEFINES": "skia_arch_width=64 skia_gpu=0 skia_warnings_as_errors=0"
+    },
+    "name": "build most"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os, sys\nfrom common import chromium_utils\n\nif os.path.exists(sys.argv[1]):\n  chromium_utils.RemoveDirectory(sys.argv[1])\n",
+      "[SLAVE_BUILD]/gm/actual"
+    ],
+    "name": "rmtree [SLAVE_BUILD]/gm/actual",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os, sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@from common import chromium_utils@@@",
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@if os.path.exists(sys.argv[1]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  chromium_utils.RemoveDirectory(sys.argv[1])@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport sys, os\npath = sys.argv[1]\nmode = int(sys.argv[2])\nif not os.path.isdir(path):\n  if os.path.exists(path):\n    print \"%s exists but is not a dir\" % path\n    sys.exit(1)\n  os.makedirs(path, mode)\n",
+      "[SLAVE_BUILD]/gm/actual",
+      "511"
+    ],
+    "name": "makedirs [SLAVE_BUILD]/gm/actual",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys, os@@@",
+      "@@@STEP_LOG_LINE@python.inline@path = sys.argv[1]@@@",
+      "@@@STEP_LOG_LINE@python.inline@mode = int(sys.argv[2])@@@",
+      "@@@STEP_LOG_LINE@python.inline@if not os.path.isdir(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  if os.path.exists(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@    print \"%s exists but is not a dir\" % path@@@",
+      "@@@STEP_LOG_LINE@python.inline@    sys.exit(1)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  os.makedirs(path, mode)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os, sys\nfrom common import chromium_utils\n\nif os.path.exists(sys.argv[1]):\n  chromium_utils.RemoveDirectory(sys.argv[1])\n",
+      "[SLAVE_BUILD]/gm/actual/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot"
+    ],
+    "name": "rmtree [SLAVE_BUILD]/gm/actual/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os, sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@from common import chromium_utils@@@",
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@if os.path.exists(sys.argv[1]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  chromium_utils.RemoveDirectory(sys.argv[1])@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport sys, os\npath = sys.argv[1]\nmode = int(sys.argv[2])\nif not os.path.isdir(path):\n  if os.path.exists(path):\n    print \"%s exists but is not a dir\" % path\n    sys.exit(1)\n  os.makedirs(path, mode)\n",
+      "[SLAVE_BUILD]/gm/actual/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot",
+      "511"
+    ],
+    "name": "makedirs [SLAVE_BUILD]/gm/actual/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys, os@@@",
+      "@@@STEP_LOG_LINE@python.inline@path = sys.argv[1]@@@",
+      "@@@STEP_LOG_LINE@python.inline@mode = int(sys.argv[2])@@@",
+      "@@@STEP_LOG_LINE@python.inline@if not os.path.isdir(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  if os.path.exists(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@    print \"%s exists but is not a dir\" % path@@@",
+      "@@@STEP_LOG_LINE@python.inline@    sys.exit(1)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  os.makedirs(path, mode)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "catchsegv",
+      "[SLAVE_BUILD]/skia/out/Debug/gm",
+      "--verbose",
+      "--writeChecksumBasedFilenames",
+      "--mismatchPath",
+      "[SLAVE_BUILD]/gm/actual/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot",
+      "--missingExpectationsPath",
+      "[SLAVE_BUILD]/gm/actual/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot",
+      "--writeJsonSummaryPath",
+      "[SLAVE_BUILD]/gm/actual/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot/actual-results.json",
+      "--ignoreErrorTypes",
+      "IntentionallySkipped",
+      "MissingExpectations",
+      "ExpectationsMismatch",
+      "--resourcePath",
+      "[SLAVE_BUILD]/skia/resources",
+      "--readPath",
+      "[SLAVE_BUILD]/skia/expectations/gm/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes/expected-results.json",
+      "--ignoreFailuresFile",
+      "[SLAVE_BUILD]/skia/expectations/gm/ignored-tests.txt"
+    ],
+    "name": "gm"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/skia/gm/display_json_results.py",
+      "[SLAVE_BUILD]/gm/actual/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot/actual-results.json"
+    ],
+    "name": "Compare GMs"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/skia/resources/upload_gm_results.py",
+      "[SLAVE_BUILD]/gm/actual/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot",
+      "Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil"
+    ],
+    "cwd": "[SLAVE_BUILD]/skia",
+    "name": "Upload GM Results"
+  },
+  {
+    "cmd": [
+      "catchsegv",
+      "[SLAVE_BUILD]/skia/out/Debug/dm",
+      "--verbose",
+      "--resourcePath",
+      "[SLAVE_BUILD]/skia/resources",
+      "--skps",
+      "[SLAVE_BUILD]/playback/skps",
+      "--writePath",
+      "[SLAVE_BUILD]/dm",
+      "--nameByHash"
+    ],
+    "name": "dm"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "[SLAVE_BUILD]/skia/SKP_VERSION",
+      "/path/to/tmp/"
+    ],
+    "name": "read [SLAVE_BUILD]/skia/SKP_VERSION"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "[SLAVE_BUILD]/playback/skps/SKP_VERSION",
+      "/path/to/tmp/"
+    ],
+    "name": "read [SLAVE_BUILD]/playback/skps/SKP_VERSION"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os, sys\nfrom common import chromium_utils\n\nif os.path.exists(sys.argv[1]):\n  chromium_utils.RemoveDirectory(sys.argv[1])\n",
+      "[SLAVE_BUILD]/playback/skps"
+    ],
+    "name": "rmtree [SLAVE_BUILD]/playback/skps",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os, sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@from common import chromium_utils@@@",
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@if os.path.exists(sys.argv[1]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  chromium_utils.RemoveDirectory(sys.argv[1])@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport sys, os\npath = sys.argv[1]\nmode = int(sys.argv[2])\nif not os.path.isdir(path):\n  if os.path.exists(path):\n    print \"%s exists but is not a dir\" % path\n    sys.exit(1)\n  os.makedirs(path, mode)\n",
+      "[SLAVE_BUILD]/playback/skps",
+      "511"
+    ],
+    "name": "makedirs [SLAVE_BUILD]/playback/skps",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys, os@@@",
+      "@@@STEP_LOG_LINE@python.inline@path = sys.argv[1]@@@",
+      "@@@STEP_LOG_LINE@python.inline@mode = int(sys.argv[2])@@@",
+      "@@@STEP_LOG_LINE@python.inline@if not os.path.isdir(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  if os.path.exists(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@    print \"%s exists but is not a dir\" % path@@@",
+      "@@@STEP_LOG_LINE@python.inline@    sys.exit(1)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  os.makedirs(path, mode)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "--",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "cp",
+      "-R",
+      "gs://chromium-skia-gm/playback_42/skps",
+      "[SLAVE_BUILD]/playback"
+    ],
+    "name": "gsutil download skps"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "42",
+      "[SLAVE_BUILD]/playback/skps/SKP_VERSION"
+    ],
+    "name": "write [SLAVE_BUILD]/playback/skps/SKP_VERSION"
+  },
+  {
+    "cmd": [
+      "catchsegv",
+      "[SLAVE_BUILD]/skia/out/Debug/render_pdfs",
+      "--inputPaths",
+      "[SLAVE_BUILD]/playback/skps"
+    ],
+    "name": "render_pdfs"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os, sys\nfrom common import chromium_utils\n\nif os.path.exists(sys.argv[1]):\n  chromium_utils.RemoveDirectory(sys.argv[1])\n",
+      "[SLAVE_BUILD]/skimage_in"
+    ],
+    "name": "rmtree [SLAVE_BUILD]/skimage_in",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os, sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@from common import chromium_utils@@@",
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@if os.path.exists(sys.argv[1]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  chromium_utils.RemoveDirectory(sys.argv[1])@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport sys, os\npath = sys.argv[1]\nmode = int(sys.argv[2])\nif not os.path.isdir(path):\n  if os.path.exists(path):\n    print \"%s exists but is not a dir\" % path\n    sys.exit(1)\n  os.makedirs(path, mode)\n",
+      "[SLAVE_BUILD]/skimage_in",
+      "511"
+    ],
+    "name": "makedirs [SLAVE_BUILD]/skimage_in",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys, os@@@",
+      "@@@STEP_LOG_LINE@python.inline@path = sys.argv[1]@@@",
+      "@@@STEP_LOG_LINE@python.inline@mode = int(sys.argv[2])@@@",
+      "@@@STEP_LOG_LINE@python.inline@if not os.path.isdir(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  if os.path.exists(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@    print \"%s exists but is not a dir\" % path@@@",
+      "@@@STEP_LOG_LINE@python.inline@    sys.exit(1)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  os.makedirs(path, mode)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "--",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "cp",
+      "-R",
+      "gs://chromium-skia-gm/skimage/input/*",
+      "[SLAVE_BUILD]/skimage_in"
+    ],
+    "name": "gsutil download skimage files"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os, sys\nfrom common import chromium_utils\n\nif os.path.exists(sys.argv[1]):\n  chromium_utils.RemoveDirectory(sys.argv[1])\n",
+      "[SLAVE_BUILD]/skimage_out"
+    ],
+    "name": "rmtree [SLAVE_BUILD]/skimage_out",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os, sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@from common import chromium_utils@@@",
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@if os.path.exists(sys.argv[1]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  chromium_utils.RemoveDirectory(sys.argv[1])@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport sys, os\npath = sys.argv[1]\nmode = int(sys.argv[2])\nif not os.path.isdir(path):\n  if os.path.exists(path):\n    print \"%s exists but is not a dir\" % path\n    sys.exit(1)\n  os.makedirs(path, mode)\n",
+      "[SLAVE_BUILD]/skimage_out",
+      "511"
+    ],
+    "name": "makedirs [SLAVE_BUILD]/skimage_out",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys, os@@@",
+      "@@@STEP_LOG_LINE@python.inline@path = sys.argv[1]@@@",
+      "@@@STEP_LOG_LINE@python.inline@mode = int(sys.argv[2])@@@",
+      "@@@STEP_LOG_LINE@python.inline@if not os.path.isdir(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  if os.path.exists(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@    print \"%s exists but is not a dir\" % path@@@",
+      "@@@STEP_LOG_LINE@python.inline@    sys.exit(1)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  os.makedirs(path, mode)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os, sys\nfrom common import chromium_utils\n\nif os.path.exists(sys.argv[1]):\n  chromium_utils.RemoveDirectory(sys.argv[1])\n",
+      "[SLAVE_BUILD]/skimage_out/images"
+    ],
+    "name": "rmtree [SLAVE_BUILD]/skimage_out/images",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os, sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@from common import chromium_utils@@@",
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@if os.path.exists(sys.argv[1]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  chromium_utils.RemoveDirectory(sys.argv[1])@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport sys, os\npath = sys.argv[1]\nmode = int(sys.argv[2])\nif not os.path.isdir(path):\n  if os.path.exists(path):\n    print \"%s exists but is not a dir\" % path\n    sys.exit(1)\n  os.makedirs(path, mode)\n",
+      "[SLAVE_BUILD]/skimage_out/images",
+      "511"
+    ],
+    "name": "makedirs [SLAVE_BUILD]/skimage_out/images",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys, os@@@",
+      "@@@STEP_LOG_LINE@python.inline@path = sys.argv[1]@@@",
+      "@@@STEP_LOG_LINE@python.inline@mode = int(sys.argv[2])@@@",
+      "@@@STEP_LOG_LINE@python.inline@if not os.path.isdir(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  if os.path.exists(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@    print \"%s exists but is not a dir\" % path@@@",
+      "@@@STEP_LOG_LINE@python.inline@    sys.exit(1)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  os.makedirs(path, mode)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os, sys\nfrom common import chromium_utils\n\nif os.path.exists(sys.argv[1]):\n  chromium_utils.RemoveDirectory(sys.argv[1])\n",
+      "[SLAVE_BUILD]/skimage_out/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot"
+    ],
+    "name": "rmtree [SLAVE_BUILD]/skimage_out/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os, sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@from common import chromium_utils@@@",
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@if os.path.exists(sys.argv[1]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  chromium_utils.RemoveDirectory(sys.argv[1])@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport sys, os\npath = sys.argv[1]\nmode = int(sys.argv[2])\nif not os.path.isdir(path):\n  if os.path.exists(path):\n    print \"%s exists but is not a dir\" % path\n    sys.exit(1)\n  os.makedirs(path, mode)\n",
+      "[SLAVE_BUILD]/skimage_out/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot",
+      "511"
+    ],
+    "name": "makedirs [SLAVE_BUILD]/skimage_out/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys, os@@@",
+      "@@@STEP_LOG_LINE@python.inline@path = sys.argv[1]@@@",
+      "@@@STEP_LOG_LINE@python.inline@mode = int(sys.argv[2])@@@",
+      "@@@STEP_LOG_LINE@python.inline@if not os.path.isdir(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  if os.path.exists(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@    print \"%s exists but is not a dir\" % path@@@",
+      "@@@STEP_LOG_LINE@python.inline@    sys.exit(1)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  os.makedirs(path, mode)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "catchsegv",
+      "[SLAVE_BUILD]/skia/out/Debug/skimage",
+      "-r",
+      "[SLAVE_BUILD]/skimage_in",
+      "--noreencode",
+      "--writeChecksumBasedFilenames",
+      "--config",
+      "8888",
+      "--mismatchPath",
+      "[SLAVE_BUILD]/skimage_out/images",
+      "--createExpectationsPath",
+      "[SLAVE_BUILD]/skimage_out/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot/actual-results.json"
+    ],
+    "name": "skimage"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "--",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "cp",
+      "-R",
+      "[SLAVE_BUILD]/skimage_out/images",
+      "gs://chromium-skia-gm/skimage/output"
+    ],
+    "name": "gsutil upload skimage actual images",
+    "~followup_annotations": [
+      "@@@STEP_LINK@gsutil.upload@https://storage.cloud.google.com/chromium-skia-gm/skimage/output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "--",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "cp",
+      "[SLAVE_BUILD]/skimage_out/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot/actual-results.json",
+      "gs://chromium-skia-gm/skimage/actuals/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot/actual-results.json"
+    ],
+    "name": "gsutil upload skimage actual summary",
+    "~followup_annotations": [
+      "@@@STEP_LINK@gsutil.upload@https://storage.cloud.google.com/chromium-skia-gm/skimage/actuals/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot/actual-results.json@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os\nimport sys\nif not os.path.isfile(sys.argv[1]):\n  print 'Missing expectations file %s.' % sys.argv[1]\n  print ('In order to blindly use the actual results as '\n         'the expectations, run the following commands:')\n  print ('$ gsutil cp -R '\n         'gs://chromium-skia-gm/skimage/actuals/%s '\n         'expectations/skimage/%s') % (sys.argv[2],\n                                       sys.argv[2])\n  print ('$ mv expectations/skimage/%s/actual-results.json '\n         'expectations/skimage/%s/%s') % (\n             sys.argv[2], sys.argv[2], sys.argv[3])\n  print ''\n  print 'Then check in using git.'\n  sys.exit(1)\n",
+      "[SLAVE_BUILD]/skia/expectations/skimage/Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes/expected-results.json",
+      "Test-Ubuntu13.10-ShuttleA-NoGPU-x86_64-Debug-Recipes-Trybot",
+      "expected-results.json"
+    ],
+    "name": "assert skimage expectations",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@if not os.path.isfile(sys.argv[1]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  print 'Missing expectations file %s.' % sys.argv[1]@@@",
+      "@@@STEP_LOG_LINE@python.inline@  print ('In order to blindly use the actual results as '@@@",
+      "@@@STEP_LOG_LINE@python.inline@         'the expectations, run the following commands:')@@@",
+      "@@@STEP_LOG_LINE@python.inline@  print ('$ gsutil cp -R '@@@",
+      "@@@STEP_LOG_LINE@python.inline@         'gs://chromium-skia-gm/skimage/actuals/%s '@@@",
+      "@@@STEP_LOG_LINE@python.inline@         'expectations/skimage/%s') % (sys.argv[2],@@@",
+      "@@@STEP_LOG_LINE@python.inline@                                       sys.argv[2])@@@",
+      "@@@STEP_LOG_LINE@python.inline@  print ('$ mv expectations/skimage/%s/actual-results.json '@@@",
+      "@@@STEP_LOG_LINE@python.inline@         'expectations/skimage/%s/%s') % (@@@",
+      "@@@STEP_LOG_LINE@python.inline@             sys.argv[2], sys.argv[2], sys.argv[3])@@@",
+      "@@@STEP_LOG_LINE@python.inline@  print ''@@@",
+      "@@@STEP_LOG_LINE@python.inline@  print 'Then check in using git.'@@@",
+      "@@@STEP_LOG_LINE@python.inline@  sys.exit(1)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "catchsegv",
+      "[SLAVE_BUILD]/skia/out/Debug/nanobench",
+      "-i",
+      "[SLAVE_BUILD]/skia/resources",
+      "--skps",
+      "[SLAVE_BUILD]/playback/skps",
+      "--scales",
+      "1.0",
+      "1.1"
+    ],
+    "name": "nanobench"
+  }
+]

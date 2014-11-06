@@ -22,23 +22,16 @@ class Chromium(recipe_util.Recipe):
                  'custom_deps': {},
                  'safesync_url': '',
     }
-    if props.get('webkit_rev', '') == 'ToT':
-      solution['custom_vars'] = {'webkit_rev': ''}
+    if props.get('webkit_revision', '') == 'ToT':
+      solution['custom_vars'] = {'webkit_revision': ''}
     spec = {
       'solutions': [solution],
-      'svn_url': 'svn://svn.chromium.org/chrome',
-      'svn_branch': 'trunk/src',
-      'svn_ref': 'master',
     }
-    if props.get('submodule_git_svn_spec'):
-      spec['submodule_git_svn_spec'] = props['submodule_git_svn_spec']
     if props.get('target_os'):
       spec['target_os'] = props['target_os'].split(',')
     if props.get('target_os_only'):
       spec['target_os_only'] = props['target_os_only']
-    checkout_type = 'gclient_git_svn'
-    if props.get('nosvn'):
-      checkout_type = 'gclient_git'
+    checkout_type = 'gclient_git'
     spec_type = '%s_spec' % checkout_type
     return {
       'type': checkout_type,

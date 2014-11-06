@@ -33,6 +33,7 @@ def main():
       '--browser=' + options.target.lower(),
       '--profile-type-to-generate=' + options.profile_type_to_generate,
       '--output-dir=' + output_dir,
+      '--output-format=buildbot',
       ] + args
 
   return chromium_utils.RunCommand(cmd)

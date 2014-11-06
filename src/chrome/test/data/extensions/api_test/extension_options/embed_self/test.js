@@ -125,16 +125,39 @@ chrome.test.runTests([
 
     extensionoptions.onsizechanged = function(evt) {
       try {
-        chrome.test.assertTrue(evt.width >= 499);
-        chrome.test.assertTrue(evt.height >= 499);
-        chrome.test.assertTrue(evt.width <= 501);
-        chrome.test.assertTrue(evt.height <= 501);
+        chrome.test.assertTrue(evt.newWidth >= 499);
+        chrome.test.assertTrue(evt.newHeight >= 499);
+        chrome.test.assertTrue(evt.newWidth <= 501);
+        chrome.test.assertTrue(evt.newHeight <= 501);
         done();
       } finally {
         document.body.removeChild(extensionoptions);
       }
     };
 
+    document.body.appendChild(extensionoptions);
+  },
+
+  function externalLinksOpenInNewTab() {
+    var done = chrome.test.listenForever(chrome.runtime.onMessage,
+        function(message, sender, sendResponse) {
+      if (message == 'ready') {
+        sendResponse('externalLinksOpenInNewTab');
+      } else if (message == 'done') {
+        try {
+          chrome.tabs.query({url: 'http://www.chromium.org/'}, function(tabs) {
+            chrome.test.assertEq(1, tabs.length);
+            chrome.test.assertEq('http://www.chromium.org/', tabs[0].url);
+            done();
+          });
+        } finally {
+          document.body.removeChild(extensionoptions);
+        }
+      }
+    });
+
+    var extensionoptions = document.createElement('extensionoptions');
+    extensionoptions.setAttribute('extension', chrome.runtime.id);
     document.body.appendChild(extensionoptions);
   }
 ]);

@@ -22,6 +22,8 @@ SPEC = {
       'testing': {
         'platform': 'linux',
       },
+      'use_isolate': True,
+      'enable_swarming': True,
     },
     'Linux Tests': {
       'recipe_config': 'chromium',
@@ -30,9 +32,12 @@ SPEC = {
         'TARGET_BITS': 64,
       },
       'bot_type': 'tester',
+      'test_generators': [
+        steps.generate_gtest,
+      ],
       'tests': [
-        steps.DynamicGTestTests('Linux Tests'),
         steps.MojoPythonTests(),
+        steps.MojoPythonBindingsTests(),
         steps.TelemetryUnitTests(),
         steps.TelemetryPerfUnitTests(),
       ],
@@ -40,25 +45,8 @@ SPEC = {
       'testing': {
         'platform': 'linux',
       },
+      'enable_swarming': True,
     },
-    'Linux Sync': {
-      'recipe_config': 'chromium',
-      'chromium_config_kwargs': {
-        'BUILD_CONFIG': 'Release',
-        'TARGET_BITS': 64,
-      },
-      'bot_type': 'tester',
-      'tests': [
-        steps.GTestTest('sync_integration_tests', args=[
-            '--ui-test-action-max-timeout=120000'
-        ]),
-      ],
-      'parent_buildername': 'Linux Builder',
-      'testing': {
-        'platform': 'linux',
-      },
-    },
-
     'Linux Builder (dbg)(32)': {
       'recipe_config': 'chromium',
       'chromium_config_kwargs': {
@@ -81,8 +69,8 @@ SPEC = {
         'TARGET_BITS': 32,
       },
       'bot_type': 'tester',
-      'tests': [
-        steps.DynamicGTestTests('Linux Tests (dbg)(1)(32)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'parent_buildername': 'Linux Builder (dbg)(32)',
       'testing': {
@@ -96,8 +84,10 @@ SPEC = {
         'TARGET_BITS': 32,
       },
       'bot_type': 'tester',
+      'test_generators': [
+        steps.generate_gtest,
+      ],
       'tests': [
-        steps.DynamicGTestTests('Linux Tests (dbg)(2)(32)'),
         steps.NaclIntegrationTest(),
       ],
       'parent_buildername': 'Linux Builder (dbg)(32)',
@@ -116,6 +106,8 @@ SPEC = {
       'testing': {
         'platform': 'linux',
       },
+      'enable_swarming': True,
+      'use_isolate': True,
     },
     'Linux Tests (dbg)(1)': {
       'recipe_config': 'chromium',
@@ -124,8 +116,10 @@ SPEC = {
         'TARGET_BITS': 64,
       },
       'bot_type': 'tester',
+      'test_generators': [
+        steps.generate_gtest,
+      ],
       'tests': [
-        steps.DynamicGTestTests('Linux Tests (dbg)(1)'),
         steps.TelemetryUnitTests(),
         steps.TelemetryPerfUnitTests(),
       ],
@@ -133,6 +127,7 @@ SPEC = {
       'testing': {
         'platform': 'linux',
       },
+      'enable_swarming': True,
     },
     'Linux Tests (dbg)(2)': {
       'recipe_config': 'chromium',
@@ -141,14 +136,17 @@ SPEC = {
         'TARGET_BITS': 64,
       },
       'bot_type': 'tester',
+      'test_generators': [
+        steps.generate_gtest,
+      ],
       'tests': [
-        steps.DynamicGTestTests('Linux Tests (dbg)(2)'),
         steps.NaclIntegrationTest(),
       ],
       'parent_buildername': 'Linux Builder (dbg)',
       'testing': {
         'platform': 'linux',
       },
+      'enable_swarming': True,
     },
 
     'Linux Clang (dbg)': {
@@ -160,8 +158,8 @@ SPEC = {
       'compile_targets': [
         'all',
       ],
-      'tests': [
-        steps.DynamicGTestTests('Linux Clang (dbg)'),
+      'test_generators': [
+        steps.generate_gtest,
       ],
       'testing': {
         'platform': 'linux',
@@ -193,7 +191,8 @@ SPEC = {
       'android_config': 'tests_base',
       'tests': [
         steps.GTestTest('base_unittests'),
-        steps.AndroidInstrumentationTest('MojoTest', 'mojo_test_apk'),
+        steps.AndroidInstrumentationTest('MojoTest', 'mojo_test_apk',
+            test_data='bindings:mojo/public/interfaces/bindings/tests/data'),
         steps.AndroidInstrumentationTest(
             'AndroidWebViewTest', 'android_webview_test_apk',
             test_data='webview:android_webview/test/data/device_files',
@@ -240,7 +239,8 @@ SPEC = {
       'android_config': 'tests_base',
       'tests': [
         steps.GTestTest('base_unittests'),
-        steps.AndroidInstrumentationTest('MojoTest', 'mojo_test_apk'),
+        steps.AndroidInstrumentationTest('MojoTest', 'mojo_test_apk',
+            test_data='bindings:mojo/public/interfaces/bindings/tests/data'),
         steps.AndroidInstrumentationTest(
             'AndroidWebViewTest', 'android_webview_test_apk',
             test_data='webview:android_webview/test/data/device_files',

@@ -158,14 +158,11 @@ WebInspector.ShortcutRegistry.prototype = {
         var descriptor = WebInspector.KeyboardShortcut.makeDescriptorFromBindingShortcut(shortcut);
         if (!descriptor)
             return;
-        this._defaultActionToShortcut.put(actionId, descriptor);
-        this._defaultKeyToActions.put(String(descriptor.key), actionId);
+        this._defaultActionToShortcut.set(actionId, descriptor);
+        this._defaultKeyToActions.set(String(descriptor.key), actionId);
     },
 
-    /**
-     * @param {!Event} event
-     */
-    _onInput: function(event)
+    dismissPendingShortcutAction: function()
     {
         if (this._pendingActionTimer) {
             clearTimeout(this._pendingActionTimer);
@@ -175,7 +172,7 @@ WebInspector.ShortcutRegistry.prototype = {
 
     _registerBindings: function()
     {
-        document.addEventListener("input", this._onInput.bind(this), true);
+        document.addEventListener("input", this.dismissPendingShortcutAction.bind(this), true);
         var extensions = self.runtime.extensions(WebInspector.ActionDelegate);
         extensions.forEach(registerExtension, this);
 

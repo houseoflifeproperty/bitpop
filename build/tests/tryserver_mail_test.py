@@ -97,10 +97,10 @@ class TestMailNotifier(unittest.TestCase):
 
       # Replace tabs with a space for compat with python 2.6, 2.7, since
       # the mime header wrap whitespace changed between those versions.
-      mail_str = str(mail).replace('\t', ' ')
+      mail_str = str(mail).replace('\t', ' ').rstrip('\n')
       if self.mode == self.TEST_MODE:
         with open(expected, 'rb') as expected_file:
-          self.assertEqual(mail_str, expected_file.read())
+          self.assertEqual(mail_str, expected_file.read().rstrip('\n'))
       elif self.mode == self.TRAIN_MODE:
         with tempfile.NamedTemporaryFile(suffix='.html') as f:
           f.write(mail.get_payload(0).get_payload(decode=True))

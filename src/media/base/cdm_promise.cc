@@ -10,17 +10,46 @@
 
 namespace media {
 
-CdmPromise::CdmPromise() : is_pending_(true) {
+template <typename T>
+struct CdmPromiseTraits {};
+
+template <>
+struct CdmPromiseTraits<void> {
+  static const CdmPromise::ResolveParameterType kType = CdmPromise::VOID_TYPE;
+};
+
+template <>
+struct CdmPromiseTraits<std::string> {
+  static const CdmPromise::ResolveParameterType kType = CdmPromise::STRING_TYPE;
+};
+
+template <>
+struct CdmPromiseTraits<KeyIdsVector> {
+  static const CdmPromise::ResolveParameterType kType =
+      CdmPromise::KEY_IDS_VECTOR_TYPE;
+};
+
+CdmPromise::CdmPromise(ResolveParameterType parameter_type)
+    : parameter_type_(parameter_type), is_pending_(true) {
 }
 
-CdmPromise::CdmPromise(PromiseRejectedCB reject_cb)
-    : reject_cb_(reject_cb), is_pending_(true) {
+CdmPromise::CdmPromise(ResolveParameterType parameter_type,
+                       PromiseRejectedCB reject_cb)
+    : parameter_type_(parameter_type),
+      reject_cb_(reject_cb),
+      is_pending_(true) {
   DCHECK(!reject_cb_.is_null());
 }
 
-CdmPromise::CdmPromise(PromiseRejectedCB reject_cb, const std::string& uma_name)
-    : reject_cb_(reject_cb), is_pending_(true), uma_name_(uma_name) {
+CdmPromise::CdmPromise(ResolveParameterType parameter_type,
+                       PromiseRejectedCB reject_cb,
+                       const std::string& uma_name)
+    : parameter_type_(parameter_type),
+      reject_cb_(reject_cb),
+      is_pending_(true),
+      uma_name_(uma_name) {
   DCHECK(!reject_cb_.is_null());
+  DCHECK(!uma_name_.empty());
 }
 
 CdmPromise::~CdmPromise() {
@@ -52,22 +81,29 @@ static CdmPromise::ResultCodeForUMA ConvertExceptionToUMAResult(
 void CdmPromise::reject(MediaKeys::Exception exception_code,
                         uint32 system_code,
                         const std::string& error_message) {
+  ReportResultToUMA(ConvertExceptionToUMAResult(exception_code));
+  reject_cb_.Run(exception_code, system_code, error_message);
+}
+
+void CdmPromise::ReportResultToUMA(ResultCodeForUMA result) {
   DCHECK(is_pending_);
   is_pending_ = false;
   if (!uma_name_.empty()) {
-    ResultCodeForUMA result_code = ConvertExceptionToUMAResult(exception_code);
     base::LinearHistogram::FactoryGet(
-        uma_name_, 1, NUM_RESULT_CODES, NUM_RESULT_CODES + 1,
-        base::HistogramBase::kUmaTargetedHistogramFlag)->Add(result_code);
+        uma_name_,
+        1,
+        NUM_RESULT_CODES,
+        NUM_RESULT_CODES + 1,
+        base::HistogramBase::kUmaTargetedHistogramFlag)->Add(result);
   }
-  reject_cb_.Run(exception_code, system_code, error_message);
 }
 
 template <typename T>
 CdmPromiseTemplate<T>::CdmPromiseTemplate(
     base::Callback<void(const T&)> resolve_cb,
     PromiseRejectedCB reject_cb)
-    : CdmPromise(reject_cb), resolve_cb_(resolve_cb) {
+    : CdmPromise(CdmPromiseTraits<T>::kType, reject_cb),
+      resolve_cb_(resolve_cb) {
   DCHECK(!resolve_cb_.is_null());
 }
 
@@ -76,60 +112,44 @@ CdmPromiseTemplate<T>::CdmPromiseTemplate(
     base::Callback<void(const T&)> resolve_cb,
     PromiseRejectedCB reject_cb,
     const std::string& uma_name)
-    : CdmPromise(reject_cb, uma_name), resolve_cb_(resolve_cb) {
+    : CdmPromise(CdmPromiseTraits<T>::kType, reject_cb, uma_name),
+      resolve_cb_(resolve_cb) {
   DCHECK(!resolve_cb_.is_null());
 }
 
 template <typename T>
-CdmPromiseTemplate<T>::CdmPromiseTemplate() {
-}
-
-template <typename T>
-CdmPromiseTemplate<T>::~CdmPromiseTemplate() {
-  DCHECK(!is_pending_);
+CdmPromiseTemplate<T>::CdmPromiseTemplate()
+    : CdmPromise(CdmPromiseTraits<T>::kType) {
 }
 
 template <typename T>
 void CdmPromiseTemplate<T>::resolve(const T& result) {
-  DCHECK(is_pending_);
-  is_pending_ = false;
-  if (!uma_name_.empty()) {
-    base::LinearHistogram::FactoryGet(
-        uma_name_, 1, NUM_RESULT_CODES, NUM_RESULT_CODES + 1,
-        base::HistogramBase::kUmaTargetedHistogramFlag)->Add(SUCCESS);
-  }
+  ReportResultToUMA(SUCCESS);
   resolve_cb_.Run(result);
 }
 
 CdmPromiseTemplate<void>::CdmPromiseTemplate(base::Callback<void()> resolve_cb,
                                              PromiseRejectedCB reject_cb)
-    : CdmPromise(reject_cb), resolve_cb_(resolve_cb) {
+    : CdmPromise(CdmPromiseTraits<void>::kType, reject_cb),
+      resolve_cb_(resolve_cb) {
   DCHECK(!resolve_cb_.is_null());
 }
 
 CdmPromiseTemplate<void>::CdmPromiseTemplate(base::Callback<void()> resolve_cb,
                                              PromiseRejectedCB reject_cb,
                                              const std::string& uma_name)
-    : CdmPromise(reject_cb, uma_name), resolve_cb_(resolve_cb) {
+    : CdmPromise(CdmPromiseTraits<void>::kType, reject_cb, uma_name),
+      resolve_cb_(resolve_cb) {
   DCHECK(!resolve_cb_.is_null());
   DCHECK(!uma_name_.empty());
 }
 
-CdmPromiseTemplate<void>::CdmPromiseTemplate() {
-}
-
-CdmPromiseTemplate<void>::~CdmPromiseTemplate() {
-  DCHECK(!is_pending_);
+CdmPromiseTemplate<void>::CdmPromiseTemplate()
+    : CdmPromise(CdmPromiseTraits<void>::kType) {
 }
 
 void CdmPromiseTemplate<void>::resolve() {
-  DCHECK(is_pending_);
-  is_pending_ = false;
-  if (!uma_name_.empty()) {
-    base::LinearHistogram::FactoryGet(
-        uma_name_, 1, NUM_RESULT_CODES, NUM_RESULT_CODES + 1,
-        base::HistogramBase::kUmaTargetedHistogramFlag)->Add(SUCCESS);
-  }
+  ReportResultToUMA(SUCCESS);
   resolve_cb_.Run();
 }
 

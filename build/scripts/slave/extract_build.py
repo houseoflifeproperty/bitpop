@@ -12,7 +12,6 @@ import shutil
 import sys
 import traceback
 import urllib
-import urllib2
 
 from common import chromium_utils
 from slave import build_directory
@@ -25,9 +24,6 @@ class ExtractHandler(object):
 
 
 class GSHandler(ExtractHandler):
-  def is_present(self):
-    return 0 == slave_utils.GSUtilListBucket(self.url, ['-l'])[0]
-
   def download(self):
     status = slave_utils.GSUtilCopy(self.url, '.')
     if 0 != status:
@@ -41,14 +37,6 @@ class GSHandler(ExtractHandler):
 
 
 class WebHandler(ExtractHandler):
-  def is_present(self):
-    try:
-      content = urllib2.urlopen(self.url)
-      content.close()
-    except urllib2.HTTPError:
-      return False
-    return True
-
   @chromium_utils.RunAndPrintDots
   def download(self):
     try:
@@ -139,24 +127,13 @@ def real_main(options):
 
     failure = False
 
-    # Check if the url exists.
-    if not handler.is_present():
-      print '%s is not found' % url
-      failure = True
-
-      # When 'halt_on_missing_build' is present in factory_properties and if
-      # 'revision' is set in build properties, we assume the build is
-      # triggered automatically and so we halt on a missing build zip.  The
-      # other case is if the build is forced, in which case we keep trying
-      # later by looking for the latest build that's available.
-      if (options.factory_properties.get('halt_on_missing_build', False) and
-          'revision' in options.build_properties and
-          options.build_properties['revision'] != ''):
-        return slave_utils.ERROR_EXIT_CODE
-
     # If the url is valid, we download the file.
     if not failure:
       if not handler.download():
+        if (options.factory_properties.get('halt_on_missing_build', False) and
+            'revision' in options.build_properties and
+            options.build_properties['revision'] != ''):
+          return slave_utils.ERROR_EXIT_CODE
         failure = True
 
     # If the versioned url failed, we try to get the latest build.

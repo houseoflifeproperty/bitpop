@@ -13,6 +13,6 @@ GM_ACTUAL_FILENAME = 'actual-results.json'
 GM_EXPECTATIONS_FILENAME = 'expected-results.json'
 GM_IGNORE_TESTS_FILENAME = 'ignored-tests.txt'
 
-GS_GM_BUCKET = 'gs://chromium-skia-gm'
-GS_SUMMARIES_BUCKET = 'gs://chromium-skia-gm-summaries'
+GS_GM_BUCKET = 'chromium-skia-gm'
+GS_SUMMARIES_BUCKET = 'chromium-skia-gm-summaries'
 

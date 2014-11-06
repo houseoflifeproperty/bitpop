@@ -4,12 +4,17 @@
 
 from RECIPE_MODULES.chromium_android import CONFIG_CTX
 
+# This file only exists to get the BUILD_CONFIG set for the chromium_android
+# recipe module for the recipes using it.
 
 @CONFIG_CTX()
-def webrtc_android_apk(c):
+def webrtc_android(c):
   pass
 
-# Only exists to get the BUILD_CONFIG set for the chromium_android config.
+@CONFIG_CTX()
+def webrtc_android_clang(c):
+  pass
+
 @CONFIG_CTX()
 def chromium(c):
   pass

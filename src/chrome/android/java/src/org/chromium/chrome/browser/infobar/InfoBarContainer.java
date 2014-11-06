@@ -16,10 +16,12 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 
-import com.google.common.annotations.VisibleForTesting;
-
 import org.chromium.base.CalledByNative;
+import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.EmptyTabObserver;
+import org.chromium.chrome.browser.Tab;
+import org.chromium.chrome.browser.TabObserver;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.ui.UiUtils;
 import org.chromium.ui.base.DeviceFormFactor;
@@ -111,9 +113,16 @@ public class InfoBarContainer extends ScrollView {
 
     private Paint mTopBorderPaint;
 
+    // Keeps the infobars from becoming visible when they normally would.
+    private boolean mDoStayInvisible;
+    private TabObserver mTabObserver;
+
     public InfoBarContainer(Activity activity, AutoLoginProcessor autoLoginProcessor,
             int tabId, ViewGroup parentView, WebContents webContents) {
         super(activity);
+
+        // Workaround for http://crbug.com/407149. See explanation in onMeasure() below.
+        setVerticalScrollBarEnabled(false);
 
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
@@ -144,6 +153,19 @@ public class InfoBarContainer extends ScrollView {
         mNativeInfoBarContainer = nativeInit(webContents, mAutoLoginDelegate);
     }
 
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+
+        // Only enable scrollbars when the view is actually scrollable.
+        // This prevents 10-15 frames of jank that would otherwise occur 1.2 seconds after the
+        // InfoBarContainer is attached to the window. See: http://crbug.com/407149
+        boolean canScroll = mLinearLayout.getMeasuredHeight() > getMeasuredHeight();
+        if (canScroll != isVerticalScrollBarEnabled()) {
+            setVerticalScrollBarEnabled(canScroll);
+        }
+    }
+
     /**
      * @return The LinearLayout that holds the infobars (i.e. the ContentWrapperViews).
      */
@@ -151,6 +173,7 @@ public class InfoBarContainer extends ScrollView {
         return mLinearLayout;
     }
 
+    @VisibleForTesting
     public void setAnimationListener(InfoBarAnimationListener listener) {
         mAnimationListener = listener;
     }
@@ -190,11 +213,47 @@ public class InfoBarContainer extends ScrollView {
         addToParentView();
     }
 
+    /**
+     * Call with {@code true} when a higher priority bottom element is visible to keep the infobars
+     * from ever becoming visible.  Call with {@code false} to restore normal visibility behavior.
+     * @param doStayInvisible Whether the infobars should stay invisible even when they would
+     *        normally become visible.
+     * @param tab The current Tab.
+     */
+    public void setDoStayInvisible(boolean doStayInvisible, Tab tab) {
+        mDoStayInvisible = doStayInvisible;
+        if (mTabObserver == null) mTabObserver = createTabObserver();
+        if (doStayInvisible) {
+            tab.addObserver(mTabObserver);
+        } else {
+            tab.removeObserver(mTabObserver);
+        }
+    }
+
+    /**
+     * Creates a TabObserver for monitoring a Tab, used to reset internal settings when a
+     * navigation is done.
+     * @return TabObserver that can be used to monitor a Tab.
+     */
+    private TabObserver createTabObserver() {
+        return new EmptyTabObserver() {
+            @Override
+            public void onDidNavigateMainFrame(Tab tab, String url, String baseUrl,
+                    boolean isNavigationToDifferentPage, boolean isFragmentNavigation,
+                    int statusCode) {
+                setDoStayInvisible(false, tab);
+            }
+        };
+    }
+
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        ObjectAnimator.ofFloat(this, "alpha", 0.f, 1.f).setDuration(REATTACH_FADE_IN_MS).start();
-        setVisibility(VISIBLE);
+        if (!mDoStayInvisible) {
+            ObjectAnimator.ofFloat(this, "alpha", 0.f, 1.f).setDuration(REATTACH_FADE_IN_MS)
+                    .start();
+            setVisibility(VISIBLE);
+        }
     }
 
     @Override
@@ -318,7 +377,7 @@ public class InfoBarContainer extends ScrollView {
                 setVisibility(View.INVISIBLE);
             }
         } else {
-            if (!isShowing) {
+            if (!isShowing && !mDoStayInvisible) {
                 setVisibility(View.VISIBLE);
             }
         }

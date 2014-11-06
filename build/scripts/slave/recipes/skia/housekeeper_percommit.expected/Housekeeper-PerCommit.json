@@ -1,0 +1,126 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "config",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'deps_file': 'DEPS', 'managed': True, 'name': 'skia', 'url': 'https://skia.googlesource.com/skia.git'}]\ntarget_os = ['android', 'chromeos']"
+    ],
+    "name": "gclient setup"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "sync",
+      "--nohooks",
+      "--force",
+      "--verbose",
+      "--delete_unversioned_trees",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "gclient sync",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"skia/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 164710@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@164710@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os\nimport sys\nwith open(sys.argv[1], 'w') as f:\n  f.write(os.path.join(os.path.expanduser('~'), 'src'))\n",
+      "/path/to/tmp/"
+    ],
+    "name": "get CHROME_PATH",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@with open(sys.argv[1], 'w') as f:@@@",
+      "@@@STEP_LOG_LINE@python.inline@  f.write(os.path.join(os.path.expanduser('~'), 'src'))@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "make",
+      "tools",
+      "BUILDTYPE=Debug"
+    ],
+    "cwd": "[SLAVE_BUILD]/skia",
+    "env": {
+      "CHROME_PATH": "/home/chrome-bot/src",
+      "GYP_DEFINES": "skia_warnings_as_errors=0"
+    },
+    "name": "build tools"
+  },
+  {
+    "cmd": [
+      "make",
+      "gm",
+      "BUILDTYPE=Debug"
+    ],
+    "cwd": "[SLAVE_BUILD]/skia",
+    "env": {
+      "CHROME_PATH": "/home/chrome-bot/src",
+      "GYP_DEFINES": "skia_warnings_as_errors=0"
+    },
+    "name": "build gm"
+  },
+  {
+    "cmd": [
+      "make",
+      "dm",
+      "BUILDTYPE=Debug"
+    ],
+    "cwd": "[SLAVE_BUILD]/skia",
+    "env": {
+      "CHROME_PATH": "/home/chrome-bot/src",
+      "GYP_DEFINES": "skia_warnings_as_errors=0"
+    },
+    "name": "build dm"
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/skia/tools/tests/run.sh"
+    ],
+    "cwd": "[SLAVE_BUILD]/skia",
+    "name": "tool self-tests"
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/skia/gm/tests/run.sh"
+    ],
+    "cwd": "[SLAVE_BUILD]/skia",
+    "name": "gm self-tests"
+  },
+  {
+    "cmd": [
+      "python",
+      "[SLAVE_BUILD]/skia/platform_tools/android/tests/run_all.py"
+    ],
+    "cwd": "[SLAVE_BUILD]/skia",
+    "name": "android platform self-tests"
+  },
+  {
+    "cmd": [
+      "python",
+      "[BUILD]/scripts/slave/recipe_modules/skia/resources/generate_and_upload_doxygen.py",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil"
+    ],
+    "cwd": "[SLAVE_BUILD]/skia",
+    "name": "generate and upload pydoc"
+  }
+]

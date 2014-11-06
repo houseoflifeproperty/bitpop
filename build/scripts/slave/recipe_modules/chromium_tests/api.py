@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import copy
+
 from slave import recipe_api
 
 
@@ -33,6 +35,17 @@ RECIPE_CONFIGS = {
   'chromium_chromeos': {
     'chromium_config': 'chromium',
     'chromium_apply_config': ['chromeos'],
+    'gclient_config': 'chromium',
+  },
+  'chrome_chromeos': {
+    'chromium_config': 'chromium',
+    'chromium_apply_config': ['chromeos', 'chrome_internal'],
+    'gclient_config': 'chromium',
+    'gclient_apply_config': ['chrome_internal'],
+  },
+  'chromium_chromeos_ozone': {
+    'chromium_config': 'chromium',
+    'chromium_apply_config': ['chromeos', 'ozone'],
     'gclient_config': 'chromium',
   },
   'chromium_chromeos_clang': {
@@ -80,12 +93,20 @@ RECIPE_CONFIGS = {
     'gclient_config': 'chromium',
     'gclient_apply_config': ['chrome_internal'],
   },
+  'perf': {
+    'chromium_config': 'chromium_official',
+    'gclient_config': 'perf',
+  }
 }
 
 
 class ChromiumTestsApi(recipe_api.RecipeApi):
-  def compile_and_return_tests(self, mastername, buildername):
-    master_dict = self.m.chromium.builders.get(mastername, {})
+  def sync_and_configure_build(self, mastername, buildername,
+                               override_bot_type=None, enable_swarming=False):
+    # Make an independent copy so that we don't overwrite global state
+    # with updates made dynamically based on the test specs.
+    master_dict = copy.deepcopy(self.m.chromium.builders.get(mastername, {}))
+
     bot_config = master_dict.get('builders', {}).get(buildername)
     master_config = master_dict.get('settings', {})
     recipe_config_name = bot_config['recipe_config']
@@ -120,7 +141,7 @@ class ChromiumTestsApi(recipe_api.RecipeApi):
           bot_config['android_config'],
           **bot_config.get('chromium_config_kwargs', {}))
 
-    bot_type = bot_config.get('bot_type', 'builder_tester')
+    bot_type = override_bot_type or bot_config.get('bot_type', 'builder_tester')
 
     if bot_config.get('set_component_rev'):
       # If this is a component build and the main revision is e.g. blink,
@@ -133,7 +154,8 @@ class ChromiumTestsApi(recipe_api.RecipeApi):
       # builds to match also the chromium revision from the builder.
       component_rev = self.m.properties.get('revision', 'HEAD')
       if bot_type == 'tester':
-        component_rev = self.m.properties.get('parent_got_revision', component_rev)
+        component_rev = self.m.properties.get(
+            'parent_got_revision', component_rev)
       dep = bot_config.get('set_component_rev')
       self.m.gclient.c.revisions[dep['name']] = dep['rev_str'] % component_rev
 
@@ -146,8 +168,13 @@ class ChromiumTestsApi(recipe_api.RecipeApi):
     # HACK(dnj): Remove after 'crbug.com/398105' has landed
     self.m.chromium.set_build_properties(update_step.json.output['properties'])
 
-    # Whatever step is run right before this line needs to emit got_revision.
-    got_revision = update_step.presentation.properties['got_revision']
+    if not enable_swarming:
+      enable_swarming = bot_config.get('enable_swarming')
+
+    if enable_swarming:
+      self.m.isolate.set_isolate_environment(self.m.chromium.c)
+      self.m.swarming.check_client_version()
+      self.m.swarming.task_priority = 50
 
     if not bot_config.get('disable_runhooks'):
       self.m.chromium.runhooks(env=bot_config.get('runhooks_env', {}))
@@ -156,13 +183,37 @@ class ChromiumTestsApi(recipe_api.RecipeApi):
                                                        '%s.json' % mastername)
     test_spec_path = self.m.path['checkout'].join('testing', 'buildbot',
                                                test_spec_file)
-    test_spec_result = self.m.json.read(
-        'read test spec',
-        test_spec_path,
-        step_test_data=lambda: self.m.json.test_api.output({}))
-    test_spec_result.presentation.step_text = 'path: %s' % test_spec_path
-    for test in bot_config.get('tests', []):
-      test.set_test_spec(test_spec_result.json.output)
+    # TODO(phajdan.jr): Bots should have no generators instead.
+    if bot_config.get('disable_tests'):
+      test_spec = {}
+    else:
+      test_spec_result = self.m.json.read(
+          'read test spec',
+          test_spec_path,
+          step_test_data=lambda: self.m.json.test_api.output({}))
+      test_spec_result.presentation.step_text = 'path: %s' % test_spec_path
+      test_spec = test_spec_result.json.output
+
+    for loop_buildername, builder_dict in master_dict.get(
+        'builders', {}).iteritems():
+      builder_dict.setdefault('tests', [])
+      for generator in builder_dict.get('test_generators', []):
+        builder_dict['tests'] = (
+            list(generator(self.m, mastername, loop_buildername, test_spec,
+                           enable_swarming=enable_swarming)) +
+            builder_dict['tests'])
+
+    return update_step, master_dict, test_spec
+
+  def compile(self, mastername, buildername, update_step, master_dict,
+              test_spec, override_bot_type=None, override_tests=None):
+    bot_config = master_dict.get('builders', {}).get(buildername)
+    master_config = master_dict.get('settings', {})
+    bot_type = override_bot_type or bot_config.get('bot_type', 'builder_tester')
+
+    tests = bot_config.get('tests', [])
+    if override_tests is not None:
+      tests = override_tests
 
     self.m.chromium.cleanup_temp()
     if self.m.chromium.c.TARGET_PLATFORM == 'android':
@@ -170,13 +221,15 @@ class ChromiumTestsApi(recipe_api.RecipeApi):
 
     if bot_type in ['builder', 'builder_tester']:
       compile_targets = set(bot_config.get('compile_targets', []))
-      for test in bot_config.get('tests', []):
-        compile_targets.update(test.compile_targets(self.m))
-      for builder_dict in master_dict.get('builders', {}).itervalues():
+      tests_including_triggered = tests[:]
+      for loop_buildername, builder_dict in master_dict.get(
+          'builders', {}).iteritems():
         if builder_dict.get('parent_buildername') == buildername:
           for test in builder_dict.get('tests', []):
-            test.set_test_spec(test_spec_result.json.output)
-            compile_targets.update(test.compile_targets(self.m))
+            tests_including_triggered.append(test)
+
+      for t in tests_including_triggered:
+        compile_targets.update(t.compile_targets(self.m))
 
       self.m.chromium.compile(targets=sorted(compile_targets))
       self.m.chromium.checkdeps()
@@ -185,26 +238,44 @@ class ChromiumTestsApi(recipe_api.RecipeApi):
         self.m.chromium_android.check_webview_licenses()
         self.m.chromium_android.findbugs()
 
-    if bot_config.get('use_isolate'):
-      test_args_map = {}
-      test_spec = test_spec_result.json.output
-      gtests_tests = test_spec.get(buildername, {}).get('gtest_tests', [])
-      for test in gtests_tests:
-        if isinstance(test, dict):
-          test_args = test.get('args')
-          test_name = test.get('test')
-          if test_name and test_args:
-            test_args_map[test_name] = test_args
-      self.m.isolate.find_isolated_tests(self.m.chromium.output_dir)
+      isolated_targets = [
+        t.name for t in tests_including_triggered if t.uses_swarming
+      ]
+      if isolated_targets:
+        self.m.isolate.find_isolated_tests(
+            self.m.chromium.output_dir, targets=list(set(isolated_targets)))
+
+    got_revision = update_step.presentation.properties['got_revision']
 
     if bot_type == 'builder':
+      if mastername == 'chromium.linux':
+        # TODO(samuong): This is restricted to Linux for now until I have more
+        # confidence that it is not totally broken.
+        self.m.archive.archive_dependencies(
+            'archive dependencies',
+            self.m.chromium.c.build_config_fs,
+            mastername,
+            buildername,
+            self.m.properties.get('buildnumber'))
       self.m.archive.zip_and_upload_build(
           'package build',
           self.m.chromium.c.build_config_fs,
           self.m.archive.legacy_upload_url(
-            master_config.get('build_gs_bucket'),
-            extra_url_components=self.m.properties['mastername']),
-          build_revision=got_revision)
+              master_config.get('build_gs_bucket'),
+              extra_url_components=(None if mastername == 'chromium.perf' else
+                                    self.m.properties['mastername'])),
+          build_revision=got_revision,
+          cros_board=self.m.chromium.c.TARGET_CROS_BOARD,
+      )
+
+  def tests_for_builder(self, mastername, buildername, update_step, master_dict,
+                        override_bot_type=None):
+    got_revision = update_step.presentation.properties['got_revision']
+
+    bot_config = master_dict.get('builders', {}).get(buildername)
+    master_config = master_dict.get('settings', {})
+
+    bot_type = override_bot_type or bot_config.get('bot_type', 'builder_tester')
 
     if bot_type == 'tester':
       # Protect against hard to debug mismatches between directory names
@@ -218,22 +289,25 @@ class ChromiumTestsApi(recipe_api.RecipeApi):
       self.m.path.rmtree(
         'build directory',
         self.m.chromium.c.build_dir.join(self.m.chromium.c.build_config_fs))
-
       self.m.archive.download_and_unzip_build(
         'extract build',
         self.m.chromium.c.build_config_fs,
         self.m.archive.legacy_download_url(
           master_config.get('build_gs_bucket'),
-          extra_url_components=self.m.properties['mastername'],),
-        build_revision=self.m.properties.get('parent_got_revision', got_revision),
+          extra_url_components=(None if mastername == 'chromium.perf' else
+           self.m.properties['mastername'])),
+        build_revision=self.m.properties.get(
+          'parent_got_revision', got_revision),
         build_archive_url=self.m.properties.get('parent_build_archive_url'),
         )
 
+    tests = bot_config.get('tests', [])
+
     # TODO(phajdan.jr): bots should just leave tests empty instead of this.
     if bot_config.get('do_not_run_tests'):
-      return []
+      tests = []
 
-    return bot_config.get('tests', [])
+    return tests
 
   def setup_chromium_tests(self, test_runner):
     if self.m.chromium.c.TARGET_PLATFORM == 'android':

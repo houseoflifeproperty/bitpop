@@ -59,7 +59,7 @@ class GclientApi(recipe_api.RecipeApi):
     self.USE_MIRROR = None
     self._spec_alias = None
 
-  def __call__(self, name, cmd, **kwargs):
+  def __call__(self, name, cmd, infra_step=True, **kwargs):
     """Wrapper for easy calling of gclient steps."""
     assert isinstance(cmd, (list, tuple))
     prefix = 'gclient '
@@ -69,6 +69,7 @@ class GclientApi(recipe_api.RecipeApi):
     return self.m.python(prefix + name,
                          self.m.path['depot_tools'].join('gclient.py'),
                          cmd,
+                         infra_step=infra_step,
                          **kwargs)
 
   @property
@@ -131,9 +132,10 @@ class GclientApi(recipe_api.RecipeApi):
       self.test_api.output_json(test_data_paths, cfg.GIT_MODE))
     try:
       if not cfg.GIT_MODE:
-        self('sync', ['sync', '--nohooks', '--delete_unversioned_trees',
-                   '--force', '--verbose'] +
-                   revisions + ['--output-json', self.m.json.output()],
+        args = ['sync', '--nohooks', '--force', '--verbose']
+        if cfg.delete_unversioned_trees:
+          args.append('--delete_unversioned_trees')
+        self('sync', args + revisions + ['--output-json', self.m.json.output()],
                    step_test_data=step_test_data,
                    **kwargs)
       else:
@@ -151,10 +153,11 @@ class GclientApi(recipe_api.RecipeApi):
         # git-based builds (e.g. maybe some combination of 'git reset/clean -fx'
         # and removing the 'out' directory).
         j = '-j2' if self.m.platform.is_win else '-j8'
-        self('sync',
-                   ['sync', '--verbose', '--with_branch_heads', '--nohooks', j,
-                    '--reset', '--delete_unversioned_trees', '--force',
-                    '--upstream', '--no-nag-max'] + revisions +
+        args = ['sync', '--verbose', '--with_branch_heads', '--nohooks', j,
+                '--reset', '--force', '--upstream', '--no-nag-max']
+        if cfg.delete_unversioned_trees:
+          args.append('--delete_unversioned_trees')
+        self('sync', args + revisions +
                    ['--output-json', self.m.json.output()],
                    step_test_data=step_test_data,
                    **kwargs)
@@ -249,14 +252,15 @@ class GclientApi(recipe_api.RecipeApi):
         self.m.path['build'].join('scripts', 'slave', 'gclient_safe_revert.py'),
         ['.', self.m.path['depot_tools'].join('gclient',
                                               platform_ext={'win': '.bat'})],
+        infra_step=True,
         **kwargs
     )
 
-  def runhooks(self, args=None, **kwargs):
-    """Return a 'gclient runhooks' step."""
+  def runhooks(self, args=None, name='runhooks', **kwargs):
     args = args or []
     assert isinstance(args, (list, tuple))
-    self('runhooks', ['runhooks'] + list(args), **kwargs)
+    return self(
+      name, ['runhooks'] + list(args), infra_step=False, **kwargs)
 
   @property
   def is_blink_mode(self):
@@ -296,5 +300,6 @@ class GclientApi(recipe_api.RecipeApi):
                 print 'deleting %s' % path_to_file
                 os.remove(path_to_file)
       """,
-      args = [self.m.path['slave_build']]
+      args=[self.m.path['slave_build']],
+      infra_step=True,
     )

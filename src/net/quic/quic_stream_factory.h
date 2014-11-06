@@ -103,6 +103,8 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       const QuicVersionVector& supported_versions,
       bool enable_port_selection,
       bool enable_time_based_loss_detection,
+      bool always_require_handshake_confirmation,
+      bool disable_connection_pooling,
       const QuicTagVector& connection_options);
   virtual ~QuicStreamFactory();
 
@@ -154,11 +156,11 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   virtual void OnCertAdded(const X509Certificate* cert) OVERRIDE;
   virtual void OnCACertChanged(const X509Certificate* cert) OVERRIDE;
 
-  bool require_confirmation() const { return require_confirmation_; }
-
-  void set_require_confirmation(bool require_confirmation) {
-    require_confirmation_ = require_confirmation;
+  bool require_confirmation() const {
+    return require_confirmation_;
   }
+
+  void set_require_confirmation(bool require_confirmation);
 
   QuicConnectionHelper* helper() { return helper_.get(); }
 
@@ -274,6 +276,13 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // connection.
   bool enable_port_selection_;
 
+  // Set if we always require handshake confirmation. If true, this will
+  // introduce at least one RTT for the handshake before the client sends data.
+  bool always_require_handshake_confirmation_;
+
+  // Set if we do not want connection pooling.
+  bool disable_connection_pooling_;
+
   // Each profile will (probably) have a unique port_seed_ value.  This value is
   // used to help seed a pseudo-random number generator (PortSuggester) so that
   // we consistently (within this profile) suggest the same ephemeral port when
@@ -281,6 +290,10 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // (probablistically) prevent two profiles from colliding in their ephemeral
   // port requests.
   uint64 port_seed_;
+
+  // Local address of socket that was created in CreateSession.
+  IPEndPoint local_address_;
+  bool check_persisted_supports_quic_;
 
   base::WeakPtrFactory<QuicStreamFactory> weak_factory_;
 

@@ -81,9 +81,9 @@
       "[DEPOT_TOOLS]/gclient.py",
       "sync",
       "--nohooks",
-      "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--delete_unversioned_trees",
       "--revision",
       "src/repo@4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00",
       "--output-json",
@@ -344,8 +344,7 @@
     "~followup_annotations": [
       "@@@STEP_LOG_LINE@json.output@[@@@",
       "@@@STEP_LOG_LINE@json.output@  \"perf_test.foo\", @@@",
-      "@@@STEP_LOG_LINE@json.output@  \"page_cycler.foo\", @@@",
-      "@@@STEP_LOG_LINE@json.output@  \"endure.foo\"@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"page_cycler.foo\"@@@",
       "@@@STEP_LOG_LINE@json.output@]@@@",
       "@@@STEP_LOG_END@json.output@@@"
     ]
@@ -380,7 +379,11 @@
     "env": {
       "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
     },
-    "name": "perf_test.foo"
+    "name": "perf_test.foo",
+    "~followup_annotations": [
+      "step returned non-zero exit code: 1",
+      "@@@STEP_FAILURE@@@"
+    ]
   },
   {
     "allow_subannotations": true,
@@ -413,42 +416,6 @@
       "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
     },
     "name": "page_cycler.foo"
-  },
-  {
-    "allow_subannotations": true,
-    "cmd": [
-      "python",
-      "-u",
-      "[BUILD]/scripts/slave/runtest.py",
-      "--target",
-      "Release",
-      "--no-xvfb",
-      "--factory-properties",
-      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"perf_runner\", \"buildnumber\": 571, \"internal\": true, \"mastername\": \"chromium.testing.master\", \"patch_url\": \"https://the.patch.url/the.patch\", \"recipe\": \"chromium_android:example\", \"repo_name\": \"src/repo\", \"repo_url\": \"svn://svn.chromium.org/chrome/trunk/src\", \"revision\": \"4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00\", \"slavename\": \"tehslave\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
-      "--build-properties",
-      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"perf_runner\", \"buildnumber\": 571, \"internal\": true, \"mastername\": \"chromium.testing.master\", \"patch_url\": \"https://the.patch.url/the.patch\", \"recipe\": \"chromium_android:example\", \"repo_name\": \"src/repo\", \"repo_url\": \"svn://svn.chromium.org/chrome/trunk/src\", \"revision\": \"4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00\", \"slavename\": \"tehslave\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
-      "--annotate=endure",
-      "--results-url=https://chromeperf.appspot.com",
-      "--perf-dashboard-id=endure.foo",
-      "--test-type=endure.foo",
-      "--builder-name=perf_runner",
-      "--slave-name=tehslave",
-      "--build-number=571",
-      "--run-python-script",
-      "[SLAVE_BUILD]/src/build/android/test_runner.py",
-      "perf",
-      "--print-step",
-      "endure.foo",
-      "--verbose"
-    ],
-    "env": {
-      "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
-    },
-    "name": "endure.foo",
-    "~followup_annotations": [
-      "step returned non-zero exit code: 1",
-      "@@@STEP_FAILURE@@@"
-    ]
   },
   {
     "cmd": [
@@ -543,7 +510,7 @@
   },
   {
     "name": "$final_result",
-    "reason": "sharded perf tests failed [StepFailure(\"Step('endure.foo') failed with return_code 1\",)]",
+    "reason": "sharded perf tests failed [StepFailure(\"Step('perf_test.foo') failed with return_code 1\",)]",
     "status_code": 1
   }
 ]

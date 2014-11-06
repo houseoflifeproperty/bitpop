@@ -127,7 +127,6 @@ class AwContents : public FindHelper::Listener,
   void ClearView(JNIEnv* env, jobject obj);
   void SetExtraHeadersForUrl(JNIEnv* env, jobject obj,
                              jstring url, jstring extra_headers);
-  void SendCheckRenderThreadResponsiveness(JNIEnv* env, jobject obj);
 
   void DrawGL(AwDrawGLInfo* draw_info);
 
@@ -193,6 +192,7 @@ class AwContents : public FindHelper::Listener,
   virtual bool RequestDrawGL(jobject canvas, bool wait_for_completion) OVERRIDE;
   virtual void PostInvalidate() OVERRIDE;
   virtual void UpdateParentDrawConstraints() OVERRIDE;
+  virtual void DidSkipCommitFrame() OVERRIDE;
   virtual void OnNewPicture() OVERRIDE;
   virtual gfx::Point GetLocationOnScreen() OVERRIDE;
   virtual void ScrollContainerViewTo(gfx::Vector2d new_value) OVERRIDE;

@@ -26,7 +26,7 @@ defaults['category'] = 'drmemory'
 #
 # Main Dr. Memory release scheduler for src/
 #
-S('win_lkgr_drmemory', branch='src', treeStableTimer=60)
+S('win_lkgr_drmemory', branch='master', treeStableTimer=60)
 
 #
 # Windows LKGR DrMemory Builder

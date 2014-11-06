@@ -39,7 +39,7 @@ F('f_webkit_linux_rel', linux().ChromiumFactory(
     ],
     factory_properties={
         'additional_expectations': [
-            ['webkit', 'tools', 'layout_tests', 'test_expectations.txt' ],
+            ['content', 'test', 'test_expectations.txt' ],
         ],
         'archive_webkit_results': ActiveMaster.is_production_host,
         'gclient_env': {

@@ -28,6 +28,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/compositing/CompositedLayerMapping.h"
 
 namespace blink {
 
@@ -92,7 +93,7 @@ void RenderLayerModelObject::styleWillChange(StyleDifference diff, const RenderS
 
     if (RenderStyle* oldStyle = style()) {
         if (parent() && diff.needsPaintInvalidationLayer()) {
-            if (oldStyle->hasClip() != newStyle.hasClip()
+            if (oldStyle->hasAutoClip() != newStyle.hasAutoClip()
                 || oldStyle->clip() != newStyle.clip())
                 layer()->clipper().clearClipRectsIncludingDescendants();
         }
@@ -104,6 +105,8 @@ void RenderLayerModelObject::styleWillChange(StyleDifference diff, const RenderS
 void RenderLayerModelObject::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
     bool hadTransform = hasTransform();
+    bool hadLayer = hasLayer();
+    bool layerWasSelfPainting = hadLayer && layer()->isSelfPaintingLayer();
 
     RenderObject::styleDidChange(diff, oldStyle);
     updateFromStyle();
@@ -115,9 +118,6 @@ void RenderLayerModelObject::styleDidChange(StyleDifference diff, const RenderSt
                 setChildNeedsLayout();
             createLayer(type);
             if (parent() && !needsLayout()) {
-                // FIXME: This invalidation is overly broad. We should update to
-                // do the correct invalidation at RenderStyle::diff time. crbug.com/349061
-                layer()->renderer()->setShouldDoFullPaintInvalidation(true);
                 // FIXME: We should call a specialized version of this function.
                 layer()->updateLayerPositionsAfterLayout();
             }
@@ -136,7 +136,10 @@ void RenderLayerModelObject::styleDidChange(StyleDifference diff, const RenderSt
         // FIXME: Ideally we shouldn't need this setter but we can't easily infer an overflow-only layer
         // from the style.
         layer()->setLayerType(type);
+
         layer()->styleChanged(diff, oldStyle);
+        if (hadLayer && layer()->isSelfPaintingLayer() != layerWasSelfPainting)
+            setChildNeedsLayout();
     }
 
     if (FrameView *frameView = view()->frameView()) {
@@ -169,25 +172,8 @@ void RenderLayerModelObject::addLayerHitTestRects(LayerHitTestRects& rects, cons
     }
 }
 
-InvalidationReason RenderLayerModelObject::invalidatePaintIfNeeded(const PaintInvalidationState& paintInvalidationState, const RenderLayerModelObject& newPaintInvalidationContainer)
-{
-    const LayoutRect oldPaintInvalidationRect = previousPaintInvalidationRect();
-    const LayoutPoint oldPositionFromPaintInvalidationContainer = previousPositionFromPaintInvalidationContainer();
-    setPreviousPaintInvalidationRect(boundsRectForPaintInvalidation(&newPaintInvalidationContainer, &paintInvalidationState));
-    setPreviousPositionFromPaintInvalidationContainer(RenderLayer::positionFromPaintInvalidationContainer(this, &newPaintInvalidationContainer, &paintInvalidationState));
-
-    // If we are set to do a full paint invalidation that means the RenderView will issue
-    // paint invalidations. We can then skip issuing of paint invalidations for the child
-    // renderers as they'll be covered by the RenderView.
-    if (view()->doingFullPaintInvalidation())
-        return InvalidationNone;
-
-    return RenderObject::invalidatePaintIfNeeded(newPaintInvalidationContainer, oldPaintInvalidationRect, oldPositionFromPaintInvalidationContainer, paintInvalidationState);
-}
-
 void RenderLayerModelObject::invalidateTreeIfNeeded(const PaintInvalidationState& paintInvalidationState)
 {
-    // FIXME: SVG should probably also go through this unified paint invalidation system.
     ASSERT(!needsLayout());
 
     if (!shouldCheckForPaintInvalidation(paintInvalidationState))
@@ -198,11 +184,36 @@ void RenderLayerModelObject::invalidateTreeIfNeeded(const PaintInvalidationState
     ASSERT(&newPaintInvalidationContainer == containerForPaintInvalidation());
 
     InvalidationReason reason = invalidatePaintIfNeeded(paintInvalidationState, newPaintInvalidationContainer);
+    clearPaintInvalidationState(paintInvalidationState);
 
     PaintInvalidationState childTreeWalkState(paintInvalidationState, *this, newPaintInvalidationContainer);
     if (reason == InvalidationLocationChange || reason == InvalidationFull)
         childTreeWalkState.setForceCheckForPaintInvalidation();
-    RenderObject::invalidateTreeIfNeeded(childTreeWalkState);
+    invalidatePaintOfSubtreesIfNeeded(childTreeWalkState);
+}
+
+void RenderLayerModelObject::setBackingNeedsPaintInvalidationInRect(const LayoutRect& r) const
+{
+    // https://bugs.webkit.org/show_bug.cgi?id=61159 describes an unreproducible crash here,
+    // so assert but check that the layer is composited.
+    ASSERT(compositingState() != NotComposited);
+
+    WebInvalidationDebugAnnotations annotations = WebInvalidationDebugAnnotationsNone;
+    if (!hadPaintInvalidation())
+        annotations = WebInvalidationDebugAnnotationsFirstPaint;
+    // FIXME: The callers assume they are calling a const function but this function has a side effect.
+    const_cast<RenderLayerModelObject*>(this)->setHadPaintInvalidation();
+
+    // FIXME: generalize accessors to backing GraphicsLayers so that this code is squashing-agnostic.
+    if (layer()->groupedMapping()) {
+        LayoutRect paintInvalidationRect = r;
+        if (GraphicsLayer* squashingLayer = layer()->groupedMapping()->squashingLayer()) {
+            // Note: the subpixel accumulation of layer() does not need to be added here. It is already taken into account.
+            squashingLayer->setNeedsDisplayInRect(pixelSnappedIntRect(paintInvalidationRect), annotations);
+        }
+    } else {
+        layer()->compositedLayerMapping()->setContentsNeedDisplayInRect(r, annotations);
+    }
 }
 
 } // namespace blink

@@ -14,7 +14,8 @@ DEPS = [
 ]
 
 def GenSteps(api):
-  api.chromium.set_config('blink', TARGET_PLATFORM='android', TARGET_ARCH='arm')
+  api.chromium.set_config(
+      'blink', TARGET_PLATFORM='android', TARGET_ARCH='arm', TARGET_BITS=32)
   api.chromium.apply_config('trybot_flavor')
   api.chromium.apply_config('android')
   api.gclient.apply_config('android')

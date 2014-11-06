@@ -23,35 +23,23 @@ def GenSteps(api):
   api.step.auto_resolve_conflicts = True
 
   bot_update_step = api.bot_update.ensure_checkout()
-  bot_update_mode = bot_update_step.json.output['did_run']
-  if not bot_update_mode:
-    try:
-      api.gclient.checkout(revert=True)
-    except api.step.StepFailure:
-      api.path.rmcontents('slave build directory', api.path['slave_build'])
-      api.gclient.checkout(revert=False)
-    upstream = ''
-  else:
-    relative_root = '%s/%s' % (api.gclient.c.solutions[0].name, root)
-    relative_root = relative_root.strip('/')
-    got_revision_property = api.gclient.c.got_revision_mapping[relative_root]
+  relative_root = '%s/%s' % (api.gclient.c.solutions[0].name, root)
+  relative_root = relative_root.strip('/')
+  got_revision_property = api.gclient.c.got_revision_mapping[relative_root]
+  upstream = bot_update_step.json.output['properties'].get(
+      got_revision_property)
+  if (not upstream or
+      isinstance(upstream, int) or
+      (upstream.isdigit() and len(upstream) < 40)):
+    # If got_revision is an svn revision, then use got_revision_git.
     upstream = bot_update_step.json.output['properties'].get(
-        got_revision_property)
-    if (not upstream or
-        isinstance(upstream, int) or
-        (upstream.isdigit() and len(upstream) < 40)):
-      # If got_revision is an svn revision, then use got_revision_git.
-      upstream = bot_update_step.json.output['properties'].get(
-          '%s_git' % got_revision_property) or ''
-    # TODO(hinoka): Extract email/name from issue?
-    api.git('-c', 'user.email=commit-bot@chromium.org',
-                  '-c', 'user.name=The Commit Bot',
-                  'commit', '-a', '-m', 'Committed patch',
-                  name='commit git patch',
-                  cwd=api.path['checkout'].join(root))
-
-  if not bot_update_mode:
-    api.rietveld.apply_issue(root)
+        '%s_git' % got_revision_property) or ''
+  # TODO(hinoka): Extract email/name from issue?
+  api.git('-c', 'user.email=commit-bot@chromium.org',
+                '-c', 'user.name=The Commit Bot',
+                'commit', '-a', '-m', 'Committed patch',
+                name='commit git patch',
+                cwd=api.path['checkout'].join(root))
 
   api.step('presubmit', [
     api.path['depot_tools'].join('presubmit_support.py'),
@@ -85,10 +73,3 @@ def GenTests(api):
       api.step_data('presubmit', api.json.output([['chromium_presubmit',
                                                    ['compile']]]))
     )
-
-  yield (
-    api.test('gclient_retry') +
-    api.properties.tryserver(repo_name='chromium') +
-    api.step_data('gclient revert', retcode=1) +
-    api.step_data('presubmit', api.json.output([['linux_rel', ['compile']]]))
-  )

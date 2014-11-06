@@ -77,14 +77,15 @@ class ANYBRANCH: pass # a flag value, used below
 
 class CachedStatusBox(object):
     """Basic data class to remember the information for a box on the console."""
-    def __init__(self, color, pageTitle, details, url, tag, builderName):
+    def __init__(self, color, pageTitle, details, url, tag, builderName,
+                 buildNumber=None):
         self.color = color
         self.pageTitle = pageTitle
         self.details = details
         self.url = url
         self.tag = tag
         self.builderName = builderName
-
+        self.buildNumber = buildNumber
 
 class CacheStatus(object):
     """Basic cache of CachedStatusBox based on builder names and revisions.
@@ -105,9 +106,11 @@ class CacheStatus(object):
                                        self.allBoxes[builder][revision].color)
         return data
 
-    def insert(self, builderName, revision, color, pageTitle, details, url, tag):
+    def insert(self, builderName, revision, color, pageTitle, details, url,
+               tag, buildNumber=None):
         """Insert a new build into the cache."""
-        box = CachedStatusBox(color, pageTitle, details, url, tag, builderName)
+        box = CachedStatusBox(color, pageTitle, details, url, tag, builderName,
+                              buildNumber)
         if not self.allBoxes.get(builderName):
             self.allBoxes[builderName] = {}
 
@@ -285,7 +288,7 @@ class ConsoleStatusResource(HtmlResource):
         details = {}
         if not build.getLogs():
             return details
-        
+
         for step in build.getSteps():
             (result, reason) = step.getResults()
             if result == builder.FAILURE:
@@ -294,7 +297,7 @@ class ConsoleStatusResource(HtmlResource):
                 # Remove html tags from the error text.
                 stripHtml = re.compile(r'<.*?>')
                 strippedDetails = stripHtml.sub('', ' '.join(step.getText()))
-                
+
                 details['buildername'] = builderName
                 details['status'] = strippedDetails
                 details['reason'] = reason
@@ -304,7 +307,7 @@ class ConsoleStatusResource(HtmlResource):
                     for log in step.getLogs():
                         logname = log.getName()
                         logurl = request.childLink(
-                          "../builders/%s/builds/%s/steps/%s/logs/%s" % 
+                          "../builders/%s/builds/%s/steps/%s/logs/%s" %
                             (urllib.quote(builderName, safe=''),
                              build.getNumber(),
                              urllib.quote(name, safe=''),
@@ -371,7 +374,7 @@ class ConsoleStatusResource(HtmlResource):
     def getChangeForBuild(self, build, revision):
         if not build or not build.getChanges(): # Forced build
             return DevBuild(revision, build, None)
-        
+
         for change in build.getChanges():
             if change.revision == revision:
                 return change
@@ -380,7 +383,7 @@ class ConsoleStatusResource(HtmlResource):
         changes = list(build.getChanges())
         changes.sort(key=self.comparator.getSortingKey())
         return changes[-1]
-    
+
     def getAllBuildsForRevision(self, status, request, lastRevision, numBuilds,
                                 categories, builders, debugInfo):
         """Returns a dictionary of builds we need to inspect to be able to
@@ -451,9 +454,9 @@ class ConsoleStatusResource(HtmlResource):
 
         categories = builderList.keys()
         categories.sort()
-        
+
         cs = []
-        
+
         for category in categories:
             c = {}
 
@@ -526,14 +529,14 @@ class ConsoleStatusResource(HtmlResource):
         # Sort the categories.
         categories = builderList.keys()
         categories.sort()
-        
+
         builds = {}
-  
+
         # Display the boxes by category group.
         for category in categories:
-  
+
             builds[category] = []
-            
+
             # Display the boxes for each builder in this category.
             for builder in builderList[category]:
                 introducedIn = None
@@ -549,6 +552,7 @@ class ConsoleStatusResource(HtmlResource):
                     b["color"] = cached_value.color
                     b["tag"] = cached_value.tag
                     b["builderName"] = cached_value.builderName
+                    b["buildNumber"] = cached_value.buildNumber
 
                     builds[category].append(b)
 
@@ -564,7 +568,7 @@ class ConsoleStatusResource(HtmlResource):
                         break
                     else:
                         introducedIn = build
-                        
+
                 # Get the results of the first build with the revision, and the
                 # first build that does not include the revision.
                 results = None
@@ -584,11 +588,13 @@ class ConsoleStatusResource(HtmlResource):
                 pageTitle = builder
                 tag = ""
                 current_details = {}
+                buildNumber = None
                 if introducedIn:
                     current_details = introducedIn.details or ""
                     url = "./buildstatus?builder=%s&number=%s" % (
                         urllib.quote(builder, safe=''),
                         introducedIn.number)
+                    buildNumber = introducedIn.number
                     pageTitle += " "
                     pageTitle += urllib.quote(' '.join(introducedIn.text), ' \n\\/:')
 
@@ -600,17 +606,17 @@ class ConsoleStatusResource(HtmlResource):
 
                 if isRunning:
                     pageTitle += ' ETA: %ds' % (introducedIn.eta or 0)
-                    
+
                 resultsClass = getResultsClass(results, previousResults, isRunning,
                                                inProgressResults)
 
-                b = {}                
+                b = {}
                 b["url"] = url
                 b["pageTitle"] = pageTitle
                 b["color"] = resultsClass
                 b["tag"] = tag
                 b["builderName"] = builder
-
+                b["buildNumber"] = buildNumber
                 builds[category].append(b)
 
                 # If the box is red, we add the explaination in the details
@@ -624,7 +630,8 @@ class ConsoleStatusResource(HtmlResource):
                                         "notstarted"):
                   debugInfo["added_blocks"] += 1
                   self.cache.insert(builder, revision.revision, resultsClass,
-                                    pageTitle, current_details, url, tag)
+                                    pageTitle, current_details, url, tag,
+                                    buildNumber)
 
         return (builds, details)
 
@@ -685,10 +692,10 @@ class ConsoleStatusResource(HtmlResource):
         # For each revision we show one line
         for revision in revisions:
             r = {}
-            
+
             # Fill the dictionary with this new information
             r['id'] = revision.revision
-            r['link'] = revision.revlink 
+            r['link'] = revision.revlink
             r['who'] = revision.who
             r['date'] = revision.date
             r['comments'] = revision.comments
@@ -735,7 +742,7 @@ class ConsoleStatusResource(HtmlResource):
         if not reload_time:
             reload_time = 60
 
-        # Append the tag to refresh the page. 
+        # Append the tag to refresh the page.
         if reload_time is not None and reload_time != 0:
             cxt['refresh'] = reload_time
 
@@ -810,6 +817,8 @@ class ConsoleStatusResource(HtmlResource):
 
             templates = request.site.buildbot_service.templates
             template = templates.get_template("console.html")
+            cxt['mastername'] = (
+                request.site.buildbot_service.master.properties['mastername'])
             data = template.render(cxt)
 
             # Clean up the cache.
@@ -825,9 +834,9 @@ class RevisionComparator(object):
     VCS use a plain counter for revisions (like SVN)
     while others use different concepts (see Git).
     """
-    
+
     # TODO (avivby): Should this be a zope interface?
-    
+
     def isRevisionEarlier(self, first_change, second_change):
         """Used for comparing 2 changes"""
         raise NotImplementedError
@@ -838,7 +847,7 @@ class RevisionComparator(object):
 
     def getSortingKey(self):
         raise NotImplementedError
-    
+
 class TimeRevisionComparator(RevisionComparator):
     def isRevisionEarlier(self, first, second):
         return first.when < second.when

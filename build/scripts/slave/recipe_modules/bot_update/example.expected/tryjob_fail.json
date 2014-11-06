@@ -34,12 +34,12 @@
       "@@@STEP_LOG_LINE@json.output@  \"step_text\": \"Some step text\"@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@",
-      "@@@STEP_FAILURE@@@"
+      "@@@STEP_EXCEPTION@@@"
     ]
   },
   {
     "name": "$final_result",
-    "reason": "Bot Update failed, aborting.",
+    "reason": "Infra Failure: Step('bot_update') returned 1",
     "status_code": 1
   }
 ]
