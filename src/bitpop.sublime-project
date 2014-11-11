@@ -1,0 +1,16 @@
+{
+	"folders":
+	[
+		{
+			"path": "/src/chromium_39/src",
+      "folder_exclude_patterns": [
+        "build",
+        "out",
+        "third_party",
+        ".git",
+        "Debug",
+        "Release"
+      ]
+		}
+	]
+}
