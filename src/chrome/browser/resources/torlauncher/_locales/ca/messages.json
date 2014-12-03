@@ -1,0 +1,415 @@
+{
+  "app_name": {
+    "message": "Tor Launcher",
+    "description": ""
+  },
+  "app_description": {
+    "message": "Provides interface between BitPop browser and Tor client",
+    "description": ""
+  },
+  "torsettings.dialog.title": {
+    "message": "Configuració Xarxa Tor",
+    "description": ""
+  },
+  "torsettings.prompt": {
+    "message": "Abans de connectar-te a la xarxa Thor, necessites introduir informació sobre el ordinador que fas servir per la connexió a internet.",
+    "description": ""
+  },
+  "torSettings.yes": {
+    "message": "Sí",
+    "description": ""
+  },
+  "torSettings.no": {
+    "message": "No",
+    "description": ""
+  },
+  "torSettings.firstQuestion": {
+    "message": "Quina de les següuens descriula teva situació?",
+    "description": ""
+  },
+  "torSettings.configurePrompt1": {
+    "message": "La connexió a internet d'aquest ordinador està censurada o configurada amb un proxy. ",
+    "description": ""
+  },
+  "torSettings.configurePrompt2": {
+    "message": "Necessito configurar ajustos de pont o de proxy",
+    "description": ""
+  },
+  "torSettings.configure": {
+    "message": "Configura",
+    "description": ""
+  },
+  "torSettings.connectPrompt2": {
+    "message": "M'agradaria conectar-me directament a la xarxa Tor.",
+    "description": ""
+  },
+  "torSettings.connectPrompt3": {
+    "message": "Això funciona en la majoria dels casos.",
+    "description": ""
+  },
+  "torSettings.connect": {
+    "message": "Conectar",
+    "description": ""
+  },
+  "torSettings.proxyQuestion": {
+    "message": "Necessita aquest ordinador usar un proxy per accedir a internet?",
+    "description": ""
+  },
+  "torSettings.proxyHelp": {
+    "message": "Si no estas segur de com respondre a aquesta pregunta, observa els paràmetres d'Internet en un altre navegador per veure si està configurat per utilitzar un proxy.",
+    "description": ""
+  },
+  "torSettings.enterProxy": {
+    "message": "Introdueix les opcions del proxy.",
+    "description": ""
+  },
+  "torSettings.bridgeQuestion": {
+    "message": "El vostre proveïdor d'Internet (ISP) bloqueja o censura les connexions a la Xarxa Tor?",
+    "description": ""
+  },
+  "torSettings.bridgeHelp": {
+    "message": "Si no esteu segurs de com respondre a aquesta pregunta, escolliu  No.  Si escolliu Sí, se us demanarà que configureu Ponts Tor, que són relés no llistats que fan més dificil de bloquejar les connexions a la Xarxa Tor",
+    "description": ""
+  },
+  "torSettings.bridgeSettingsPrompt": {
+    "message": "Hauries d'utilitzar el set de repetidors provist o customitzar el teu propi.",
+    "description": ""
+  },
+  "torsettings.startingTor": {
+    "message": "Esperant a Tor per començar...",
+    "description": ""
+  },
+  "torsettings.restartTor": {
+    "message": "Reinicia Tor",
+    "description": ""
+  },
+  "torsettings.optional": {
+    "message": "Opcional
+",
+    "description": ""
+  },
+  "torsettings.useProxy.checkbox": {
+    "message": "Aquest ordinador ha de fer servir un proxy per accedir a Internet",
+    "description": ""
+  },
+  "torsettings.useProxy.type": {
+    "message": "Tipus de Proxy:",
+    "description": ""
+  },
+  "torsettings.useProxy.address": {
+    "message": "Adreça:",
+    "description": ""
+  },
+  "torsettings.useProxy.address.placeholder": {
+    "message": "Direcció IP o nom del host",
+    "description": ""
+  },
+  "torsettings.useProxy.port": {
+    "message": "Port:",
+    "description": ""
+  },
+  "torsettings.useProxy.username": {
+    "message": "Nom d'usuari:",
+    "description": ""
+  },
+  "torsettings.useProxy.password": {
+    "message": "Contrasenya:",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks4": {
+    "message": "SOCKS 4",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks5": {
+    "message": "SOCKS 5",
+    "description": ""
+  },
+  "torsettings.useProxy.type.http": {
+    "message": "HTTP / HTTPS",
+    "description": ""
+  },
+  "torsettings.firewall.checkbox": {
+    "message": "Aquest ordinador va a través d'un proxy que només permet connexions a certs ports",
+    "description": ""
+  },
+  "torsettings.firewall.allowedPorts": {
+    "message": "Ports permesos:",
+    "description": ""
+  },
+  "torsettings.useBridges.checkbox": {
+    "message": "El meu proveidor d'internet (ISP) bloqueja les conexions a la xarxa Tor",
+    "description": ""
+  },
+  "torsettings.useBridges.default": {
+    "message": "Connectar amb els repetidors porvistos.",
+    "description": ""
+  },
+  "torsettings.useBridges.type": {
+    "message": "Tipus de transport:",
+    "description": ""
+  },
+  "torsettings.useBridges.custom": {
+    "message": "Entra als repetidors customitzats.",
+    "description": ""
+  },
+  "torsettings.useBridges.label": {
+    "message": "Entra en un o més repetidors (un per linia).",
+    "description": ""
+  },
+  "torsettings.useBridges.placeholder": {
+    "message": "introdueix adreça:port",
+    "description": ""
+  },
+  "torsettings.copyLog": {
+    "message": "Copiar el Log al portapapers",
+    "description": ""
+  },
+  "torsettings.bridgeHelpTitle": {
+    "message": "Ajuda Repetidors",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1": {
+    "message": "Si no sóu capaçps de connectar-vos a la xarxa Tor, pot ser que el vostre proveidor d'internet (ISP) o alguna altra agència estigui bloquejant Tor.  normalment, podeu evitar aquest problema usant Ponts Tor, que son relés no llistats més difícils de bloquejar. ",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1B": {
+    "message": "Podeu usar el conjunt d'adreces pont preconfigurades o podeu obtenir un conjunt personalitzat d'adreces usant un d'aquests tres mètodes: ",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2Heading": {
+    "message": "A través del web",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2": {
+    "message": "Utilitza un navegador web o vés a: https://bridges.torproject.org",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3Heading": {
+    "message": "A través del mail d'autorresposta.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailDesc": {
+    "message": "Envieu un e-mail a bridges@torproject.org només amb el text 'get bridges' al cos del missatge.  No obstant, per a fer més difícil per a l'atacant d'aprendre moltes adreces pont, heu d'enviar aquesta petició des d'un dels proveïdors de correu següents (llistats en ordre de preferència):",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailList": {
+    "message": "https://www.riseup.net, https://mail.google.com, o https://mail.yahoo.com",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4Heading": {
+    "message": "A través del Escriptori d'Ajuda",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4": {
+    "message": "Com a última opció, pots demanar adreces de repetidors enviant un missatge a help@rt.torproject.org.  siusplau recorda que serà una persona qui et respondrà, siguis pacient i amable.",
+    "description": ""
+  },
+  "torprogress.dialog.title": {
+    "message": "Estat del Tor",
+    "description": ""
+  },
+  "torprogress.openSettings": {
+    "message": "Obrir preferències.",
+    "description": ""
+  },
+  "torprogress.heading": {
+    "message": "S'està connectant a la xarxa Tor",
+    "description": ""
+  },
+  "torprogress.pleaseWait": {
+    "message": "Si us plau, espereu mentre establim una connexió a la xarxa Tor.",
+    "description": ""
+  },
+  "torlauncher.error_title": {
+    "message": "Inicialitzador Tor",
+    "description": ""
+  },
+  "torlauncher.tor_exited": {
+    "message": "Tor ha sortit inesperadament. Pot ser degut a un error de Tor, d'un altre programa del vostre sistema, o d'una fallada del maquinari. Fins que no reinicieu Tor, el Navegador Tor no podrà accedir a cap web. Si el problema persisteix, envieu una còpia del vostre registre de Tor a l'equip d'assistència.",
+    "description": ""
+  },
+  "torlauncher.tor_exited2": {
+    "message": "Reiniciar Tor no tancarà les pestanyes del navegador.",
+    "description": ""
+  },
+  "torlauncher.tor_controlconn_failed": {
+    "message": "Nos'ha pogut conectar al port de control Tor",
+    "description": ""
+  },
+  "torlauncher.tor_failed_to_start": {
+    "message": "Tor ha fallat al iniciar.",
+    "description": ""
+  },
+  "torlauncher.tor_control_failed": {
+    "message": "No s'ha pogut prendre el control de Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed": {
+    "message": "Tor no ha pogut establir una connexió de xarxa Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed_details": {
+    "message": "%1$S ha fallat (%2$S).",
+    "description": ""
+  },
+  "torlauncher.unable_to_start_tor": {
+    "message": "Impossible iniciar Tor.\n%S",
+    "description": ""
+  },
+  "torlauncher.tor_missing": {
+    "message": "Falta l'executable de Tor.",
+    "description": ""
+  },
+  "torlauncher.torrc_missing": {
+    "message": "Falta l'arxiu torrc.",
+    "description": ""
+  },
+  "torlauncher.datadir_missing": {
+    "message": "La carpeta de dades de Tor no existeix.",
+    "description": ""
+  },
+  "torlauncher.password_hash_missing": {
+    "message": "Ha fallat l'obtencio de la contrasenya hash.",
+    "description": ""
+  },
+  "torlauncher.failed_to_get_settings": {
+    "message": "Impossible obtenir la configuració de Tor\n%S",
+    "description": ""
+  },
+  "torlauncher.failed_to_save_settings": {
+    "message": "Impossible guardar la configuració de Tor.\n%S",
+    "description": ""
+  },
+  "torlauncher.ensure_tor_is_running": {
+    "message": "Si us plau assegurat de que Tor esta funcionant.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_addr_missing": {
+    "message": "Heu d'especificar tant una adreça IP o domini com un número de port per a configurar el Tor per tal que pugui utilitzar un servidor intermediari per a accedir a Internet.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_type_missing": {
+    "message": "Heu de seleccionar el tipus de proxy.",
+    "description": ""
+  },
+  "torlauncher.error_bridges_missing": {
+    "message": "Has d'especificar un o mes repetidors.",
+    "description": ""
+  },
+  "torlauncher.error_default_bridges_type_missing": {
+    "message": "Heu de seleccionar un tipus de transport per als ponts subministrats.",
+    "description": ""
+  },
+  "torlauncher.error_bridge_bad_default_type": {
+    "message": "No hi ha ponts subministrats que tinguin el tipus de transport %S disponible. Si us plau canvieu la configuració.",
+    "description": ""
+  },
+  "torlauncher.recommended_bridge": {
+    "message": "(recomanat)",
+    "description": ""
+  },
+  "torlauncher.connect": {
+    "message": "Conectar",
+    "description": ""
+  },
+  "torlauncher.restart_tor": {
+    "message": "Reinicia Tor",
+    "description": ""
+  },
+  "torlauncher.quit": {
+    "message": "Surt",
+    "description": ""
+  },
+  "torlauncher.quit_win": {
+    "message": "Surt",
+    "description": ""
+  },
+  "torlauncher.done": {
+    "message": "Fet",
+    "description": ""
+  },
+  "torlauncher.forAssistance": {
+    "message": "Per assistència, contacta %S",
+    "description": ""
+  },
+  "torlauncher.copiedNLogMessages": {
+    "message": "Còpia completada. Els missatges del registre de %S Tor ja es poden enganxar en un editor de text o un missatge de correu.",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_dir": {
+    "message": "Connecting to a relay directory",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_dir": {
+    "message": "S'està establint una connexió a un directori xifrat",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_status": {
+    "message": "S'està rebent l'estat de la xarxa",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_status": {
+    "message": "S'està carregant l'estat de la xarxa",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_keys": {
+    "message": "S'estan carregant les autoritats de certificació",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_descriptors": {
+    "message": "S'està demanant informació del relé",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_descriptors": {
+    "message": "S'està carregant informació del relé",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_or": {
+    "message": "S'està connectant a la xarxa Tor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_or": {
+    "message": "S'està establint un circuit amb el Tor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.done": {
+    "message": "Connectats a la xarxa Tor!",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.done": {
+    "message": "fet",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.connectrefused": {
+    "message": "connexió refusada",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.misc": {
+    "message": "miscel·lània",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.resourcelimit": {
+    "message": "recursos insuficients",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.identity": {
+    "message": "les identitats no coincideixen",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.timeout": {
+    "message": "S'ha excedit el temps d'espera de connexió",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.noroute": {
+    "message": "no hi ha ruta cap al servidor",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.ioerror": {
+    "message": "error de lectura/escriptura",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.pt_missing": {
+    "message": "falta de transport afegible",
+    "description": ""
+  }
+}

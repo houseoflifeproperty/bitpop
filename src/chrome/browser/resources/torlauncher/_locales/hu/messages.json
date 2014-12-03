@@ -1,0 +1,414 @@
+{
+  "app_name": {
+    "message": "Tor Launcher",
+    "description": ""
+  },
+  "app_description": {
+    "message": "Provides interface between BitPop browser and Tor client",
+    "description": ""
+  },
+  "torsettings.dialog.title": {
+    "message": "Tor hálózati beállítások",
+    "description": ""
+  },
+  "torsettings.prompt": {
+    "message": "Mielőtt a Tor hálózatra csatlakoznál, információt kell adj a számítógép internet kapcsolatáról.",
+    "description": ""
+  },
+  "torSettings.yes": {
+    "message": "Igen",
+    "description": ""
+  },
+  "torSettings.no": {
+    "message": "Nem",
+    "description": ""
+  },
+  "torSettings.firstQuestion": {
+    "message": "A következők közül melyik illik jobban a szituációhoz?",
+    "description": ""
+  },
+  "torSettings.configurePrompt1": {
+    "message": "Ennek a számítógépnek a forgalma cenzorált vagy proxizott.",
+    "description": ""
+  },
+  "torSettings.configurePrompt2": {
+    "message": "Szükségem van a bride és proxy beállítások megadására.",
+    "description": ""
+  },
+  "torSettings.configure": {
+    "message": "Beállít",
+    "description": ""
+  },
+  "torSettings.connectPrompt2": {
+    "message": "Szeretnék közvetlenül kapcsolódni a Tor hálózathoz.",
+    "description": ""
+  },
+  "torSettings.connectPrompt3": {
+    "message": "A legtöbb esetben ez működni fog.",
+    "description": ""
+  },
+  "torSettings.connect": {
+    "message": "Csatlakozás",
+    "description": ""
+  },
+  "torSettings.proxyQuestion": {
+    "message": "A számítógépnek proxy használatára van szüksége az internet eléréséhez?",
+    "description": ""
+  },
+  "torSettings.proxyHelp": {
+    "message": "Ha nem vagy biztos a válaszban nézd meg az Internet beállításokat egy másik böngészőben. Nézd meg van-e proxy használat beállítva.",
+    "description": ""
+  },
+  "torSettings.enterProxy": {
+    "message": "Adja meg a proxy beállításokat.",
+    "description": ""
+  },
+  "torSettings.bridgeQuestion": {
+    "message": "Az internet szolgáltatód (ISP) blokkolja vagy cenzúrázza a kapcsolatot a Tor hálózathoz?",
+    "description": ""
+  },
+  "torSettings.bridgeHelp": {
+    "message": "Ha nem vagy biztos a válaszban, válaszd a Nem-et.  Ha az Igen-t választod neked kell konfigurálni a Tor bridges amik nem listázott átjátszók és nehezebbé teszik a Tor hálózat kapcsolódásának a blokkolását.",
+    "description": ""
+  },
+  "torSettings.bridgeSettingsPrompt": {
+    "message": "Használhatod a szolgáltatott bridge címeket vagy beszerezhetsz egyedi bridge címeket.",
+    "description": ""
+  },
+  "torsettings.startingTor": {
+    "message": "Várakozás a Tor indulására...",
+    "description": ""
+  },
+  "torsettings.restartTor": {
+    "message": "Tor újraindítása",
+    "description": ""
+  },
+  "torsettings.optional": {
+    "message": "Opcionális",
+    "description": ""
+  },
+  "torsettings.useProxy.checkbox": {
+    "message": "A számítógépnek szüksége van a proxy használatára az internet kapcsolathoz.",
+    "description": ""
+  },
+  "torsettings.useProxy.type": {
+    "message": "Proxy Típus:",
+    "description": ""
+  },
+  "torsettings.useProxy.address": {
+    "message": "Cím:",
+    "description": ""
+  },
+  "torsettings.useProxy.address.placeholder": {
+    "message": "IP cím vagy gépnév",
+    "description": ""
+  },
+  "torsettings.useProxy.port": {
+    "message": "Port:",
+    "description": ""
+  },
+  "torsettings.useProxy.username": {
+    "message": "Felhasználónév:",
+    "description": ""
+  },
+  "torsettings.useProxy.password": {
+    "message": "Jelszó:",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks4": {
+    "message": "SOCKS 4",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks5": {
+    "message": "SOCKS 5",
+    "description": ""
+  },
+  "torsettings.useProxy.type.http": {
+    "message": "HTTP / HTTPS",
+    "description": ""
+  },
+  "torsettings.firewall.checkbox": {
+    "message": "A számítógép egy tűzfalon keresztül kommunikál ami csak adott portokon keresztül engedélyezi a kapcsolatotokat.",
+    "description": ""
+  },
+  "torsettings.firewall.allowedPorts": {
+    "message": "Engedélyezett portok:",
+    "description": ""
+  },
+  "torsettings.useBridges.checkbox": {
+    "message": "Az internet szolgáltatóm (ISP) blokkolja a Tor hálózathoz való csatlakozásokat",
+    "description": ""
+  },
+  "torsettings.useBridges.default": {
+    "message": "Csatlakozás a szolgáltatott bridge címekkel.",
+    "description": ""
+  },
+  "torsettings.useBridges.type": {
+    "message": "Átvitel típusa:",
+    "description": ""
+  },
+  "torsettings.useBridges.custom": {
+    "message": "Addj meg egyedi bridge címeket",
+    "description": ""
+  },
+  "torsettings.useBridges.label": {
+    "message": "Addj meg egy vagy több bridge relay címet (soronként egy)",
+    "description": ""
+  },
+  "torsettings.useBridges.placeholder": {
+    "message": "Írd cím:port",
+    "description": ""
+  },
+  "torsettings.copyLog": {
+    "message": "A Tor log Vágólapra másolása",
+    "description": ""
+  },
+  "torsettings.bridgeHelpTitle": {
+    "message": "Híd kapcsoló súgó",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1": {
+    "message": "Ha nem tudsz csatlakozni a Tor.  hálózathoz, akkor valószínű az internet szolgáltató (ISP) vagy egy másik szervezet blokkolja. Gyakran megkerülhető a probléma Tor bridges használatával. Ezek nem listázott átjátszók amiket sokkal nehezebb blokkolni.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1B": {
+    "message": "Használhatod az előre beállított bridge címeket vagy beszerezhetsz egyedi címeket ezzel a három módszerrel:",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2Heading": {
+    "message": "Interneten keresztül",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2": {
+    "message": "Használj egy böngészőt megnézni ezt az oldalt: https://bridges.torproject.org",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3Heading": {
+    "message": "Az automata email válaszok által.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailDesc": {
+    "message": "Küldjön emailt a bridges@torproject.org címre 'get bridges' szöveggel a levél törzsében.  Ahhoz, hogy a híd címeket a támadók nehezeben tanulják meg, ezt a kérést az alábbi szolgáltatóktól kell küldenia (a javasolt sorrendben listázva):",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailList": {
+    "message": "https://www.riseup.net, https://mail.google.com, vagy https://mail.yahoo.com",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4Heading": {
+    "message": "A támogatáson keresztül.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4": {
+    "message": "Utolsó lehetőségként küldj egy udvarias bridge igénylő emailt ide: help@rt.torproject.org.  Légyszíves vedd figyelembe az adott személynek több emailt kell megválaszolnia.",
+    "description": ""
+  },
+  "torprogress.dialog.title": {
+    "message": "Tor állapot",
+    "description": ""
+  },
+  "torprogress.openSettings": {
+    "message": "Beállítások megnyitása",
+    "description": ""
+  },
+  "torprogress.heading": {
+    "message": "Kapcsolódás a Tor hálózathoz",
+    "description": ""
+  },
+  "torprogress.pleaseWait": {
+    "message": "Kérlek várj amíg a kapcsolat létrejön a Tor hálózattal.",
+    "description": ""
+  },
+  "torlauncher.error_title": {
+    "message": "Tor Indító",
+    "description": ""
+  },
+  "torlauncher.tor_exited": {
+    "message": "A Tor váratlanul kilépet. Ez bekövetkezhet a Tor-ban található hibából, egy a rendszeren található másik programból, vagy hibás harverből. Amíg nem indítja újra a tor-t addig a Tor böngésző nem ér el semmilyen oldalt. Ha a hiba folyamatosan fennáll, kérjük küldje le a Tor Log-ot a támogatási csoportnak.",
+    "description": ""
+  },
+  "torlauncher.tor_exited2": {
+    "message": "A Tor újraindítása nem fogja bezárni a böngésző füleket.",
+    "description": ""
+  },
+  "torlauncher.tor_controlconn_failed": {
+    "message": "Nem lehetséges csatlakozni a Tor vezérlő portjára",
+    "description": ""
+  },
+  "torlauncher.tor_failed_to_start": {
+    "message": "Nem sikerült elindulnia a Tor-nak.",
+    "description": ""
+  },
+  "torlauncher.tor_control_failed": {
+    "message": "Nem sikerült átvenni a Tor vezérlését.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed": {
+    "message": "A Tor-nak nem sikerült Tor hálózati kapcsolatot létesíteni.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed_details": {
+    "message": "%1$S hiba (%2$S).",
+    "description": ""
+  },
+  "torlauncher.unable_to_start_tor": {
+    "message": "Nem sikerült a Tor-t elindítani.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.tor_missing": {
+    "message": "A Tor futtatható állomány hiányzik.",
+    "description": ""
+  },
+  "torlauncher.torrc_missing": {
+    "message": "A torrc fájl hiányzik.",
+    "description": ""
+  },
+  "torlauncher.datadir_missing": {
+    "message": "A Tor adat könyvtár nem létezik.",
+    "description": ""
+  },
+  "torlauncher.password_hash_missing": {
+    "message": "Nem sikerült megszerezni a hash-elt jelszót.",
+    "description": ""
+  },
+  "torlauncher.failed_to_get_settings": {
+    "message": "Sikertelen a Tor beállítások lekérése.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.failed_to_save_settings": {
+    "message": "Sikertelen a Tor beállítások mentése.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.ensure_tor_is_running": {
+    "message": "Kérjük ellenőrizze, hogy a Tor fut-e.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_addr_missing": {
+    "message": "Meg kell adnia egy IP címet, vagy egy gépnevet (host) és egy portot , ahhoz, hogy a Tor ezen a proxy-n keresztül kapcsolódjon az Internethez.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_type_missing": {
+    "message": "Ki kell választania a proxy típusát.",
+    "description": ""
+  },
+  "torlauncher.error_bridges_missing": {
+    "message": "Meg kell adnia egy vagy több hidat.",
+    "description": ""
+  },
+  "torlauncher.error_default_bridges_type_missing": {
+    "message": "Ki kell választanod egy átviteli típust a felkínált hidakhoz.",
+    "description": ""
+  },
+  "torlauncher.error_bridge_bad_default_type": {
+    "message": "Nincs egy híd sem aminek az átviteli típusa %S elérhető lenne. Kérlek módosítsd a beállításaidat.",
+    "description": ""
+  },
+  "torlauncher.recommended_bridge": {
+    "message": "(ajánlott)",
+    "description": ""
+  },
+  "torlauncher.connect": {
+    "message": "Csatlakozás",
+    "description": ""
+  },
+  "torlauncher.restart_tor": {
+    "message": "Tor újraindítása",
+    "description": ""
+  },
+  "torlauncher.quit": {
+    "message": "Kilépés",
+    "description": ""
+  },
+  "torlauncher.quit_win": {
+    "message": "Kilépés",
+    "description": ""
+  },
+  "torlauncher.done": {
+    "message": "Kész",
+    "description": ""
+  },
+  "torlauncher.forAssistance": {
+    "message": "Segítségér kérjük írjon ide: %S",
+    "description": ""
+  },
+  "torlauncher.copiedNLogMessages": {
+    "message": "Másolás kész. %S Tor log üzenet vár arra, hogy beillesszék egy szövegszerkesztővbe vagy egy emailbe.",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_dir": {
+    "message": "Csatlakozás egy Elosztó címtárhoz",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_dir": {
+    "message": "Titkosított címtárkapcsolat létrehozása",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_status": {
+    "message": "Hálózat státuszának lekérdezése",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_status": {
+    "message": "Hálózat státuszának betöltése",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_keys": {
+    "message": "Tanúsítványkiadó tanúsítványok betöltése",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_descriptors": {
+    "message": "Elosztási adatok lekérdezése",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_descriptors": {
+    "message": "Elosztási adatok betöltése",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_or": {
+    "message": "Kapcsolódás a Tor hálózathoz",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_or": {
+    "message": "Tor kapcsolat felépítése",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.done": {
+    "message": "Kapcsolódva a Tor hálózathoz! ",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.done": {
+    "message": "kész",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.connectrefused": {
+    "message": "kapcsolódás visszautasítva",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.misc": {
+    "message": "egyebek",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.resourcelimit": {
+    "message": "elfogytak az erőforrások",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.identity": {
+    "message": "identitás eltérés",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.timeout": {
+    "message": "a kapcsolódási idő letelt",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.noroute": {
+    "message": "nincs út a kiszolgálóhoz",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.ioerror": {
+    "message": "írás/olvasás hiba",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.pt_missing": {
+    "message": "hiányzó becsatlakoztatható átvitel",
+    "description": ""
+  }
+}

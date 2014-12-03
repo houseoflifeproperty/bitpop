@@ -1,0 +1,414 @@
+{
+  "app_name": {
+    "message": "Tor Launcher",
+    "description": ""
+  },
+  "app_description": {
+    "message": "Provides interface between BitPop browser and Tor client",
+    "description": ""
+  },
+  "torsettings.dialog.title": {
+    "message": "Налаштування мережі Tor",
+    "description": ""
+  },
+  "torsettings.prompt": {
+    "message": "Перед тим, як підключитися до мережі Tor, необхідно надати інформацію про підключення до Інтернету Вашого комп'ютера.",
+    "description": ""
+  },
+  "torSettings.yes": {
+    "message": "Так",
+    "description": ""
+  },
+  "torSettings.no": {
+    "message": "Ні",
+    "description": ""
+  },
+  "torSettings.firstQuestion": {
+    "message": "Яке з наступних тверджень найкраще описує Вашу ситуацію?",
+    "description": ""
+  },
+  "torSettings.configurePrompt1": {
+    "message": "Мережеве з'єднання цього комп'ютера цензурується або йде через проксі-сервер.",
+    "description": ""
+  },
+  "torSettings.configurePrompt2": {
+    "message": "Мені потрібно налаштувати міст або проксі-сервер.",
+    "description": ""
+  },
+  "torSettings.configure": {
+    "message": "Налаштування",
+    "description": ""
+  },
+  "torSettings.connectPrompt2": {
+    "message": "Я бажаю підключатися до Tor напряму ",
+    "description": ""
+  },
+  "torSettings.connectPrompt3": {
+    "message": "Це має працювати у більшості ситуацій.",
+    "description": ""
+  },
+  "torSettings.connect": {
+    "message": "З'єднатися",
+    "description": ""
+  },
+  "torSettings.proxyQuestion": {
+    "message": "Цьому комп'ютеру необхідно використовувати проксі для доступу в Інтернет?",
+    "description": ""
+  },
+  "torSettings.proxyHelp": {
+    "message": "Якщо Ви не знаєте, як відповісти на це питання, подивіться налаштування Інтернету в іншому браузері, щоб побачити чи він налаштований на використання проксі.",
+    "description": ""
+  },
+  "torSettings.enterProxy": {
+    "message": "Задати параметри проксі",
+    "description": ""
+  },
+  "torSettings.bridgeQuestion": {
+    "message": "Ваш Інтернет-провайдер (ISP) блокує чи яким-небудь чином цензурує підключення до Tor мережі?",
+    "description": ""
+  },
+  "torSettings.bridgeHelp": {
+    "message": "Якщо Ви не знаєте, як відповісти на це питання, виберіть Ні.  Якщо Ви виберете Так, Вам буде запропоновано налаштувати мости Tor, що є приватними трансляторами, які роблять більш важким блокування з'єднань з Tor мережі.",
+    "description": ""
+  },
+  "torSettings.bridgeSettingsPrompt": {
+    "message": "Ви можете використати визначений перелік мостів або можете отримати і ввести набір мостів вручну.",
+    "description": ""
+  },
+  "torsettings.startingTor": {
+    "message": "Підключення до Tor...",
+    "description": ""
+  },
+  "torsettings.restartTor": {
+    "message": "Перезапустити Tor",
+    "description": ""
+  },
+  "torsettings.optional": {
+    "message": "Додатково",
+    "description": ""
+  },
+  "torsettings.useProxy.checkbox": {
+    "message": "Цей комп'ютер повинен використовувати проксі для доступу в Інтернет",
+    "description": ""
+  },
+  "torsettings.useProxy.type": {
+    "message": "Тип проксі:",
+    "description": ""
+  },
+  "torsettings.useProxy.address": {
+    "message": "Адреса:",
+    "description": ""
+  },
+  "torsettings.useProxy.address.placeholder": {
+    "message": "ІР адреса або ім'я хосту",
+    "description": ""
+  },
+  "torsettings.useProxy.port": {
+    "message": "Порт:",
+    "description": ""
+  },
+  "torsettings.useProxy.username": {
+    "message": "Ім'я користувача:",
+    "description": ""
+  },
+  "torsettings.useProxy.password": {
+    "message": "Пароль:",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks4": {
+    "message": "SOCKS 4",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks5": {
+    "message": "SOCKS 5",
+    "description": ""
+  },
+  "torsettings.useProxy.type.http": {
+    "message": "HTTP / HTTPS",
+    "description": ""
+  },
+  "torsettings.firewall.checkbox": {
+    "message": "Мій брандмауер дозволяє підключення тільки до певних портів",
+    "description": ""
+  },
+  "torsettings.firewall.allowedPorts": {
+    "message": "Дозволенні порти:",
+    "description": ""
+  },
+  "torsettings.useBridges.checkbox": {
+    "message": "Мій провайдер блокує доступ до мережі Tor",
+    "description": ""
+  },
+  "torsettings.useBridges.default": {
+    "message": "Підключитися з визначеними мостами",
+    "description": ""
+  },
+  "torsettings.useBridges.type": {
+    "message": "Тип транспорту:",
+    "description": ""
+  },
+  "torsettings.useBridges.custom": {
+    "message": "Ввести мости вручну",
+    "description": ""
+  },
+  "torsettings.useBridges.label": {
+    "message": "Введіть один або кілька ретрансляторів типу міст (по одному в рядок).",
+    "description": ""
+  },
+  "torsettings.useBridges.placeholder": {
+    "message": "введіть адресу:порт",
+    "description": ""
+  },
+  "torsettings.copyLog": {
+    "message": "Скопіювати журнал Tor до буферу обміну",
+    "description": ""
+  },
+  "torsettings.bridgeHelpTitle": {
+    "message": "Допомога по ретрансляторам типу міст",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1": {
+    "message": "Якщо Ви не можете підключитися до мережі Tor, може бути, що Ваш інтернет-провайдер (ISP) або інша організація блокує Tor.  Часто можна обійти цю проблему за допомогою Tor мостів, що є приватними трансляторами, які важче заблокувати.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1B": {
+    "message": "Ви можете використати визначений перелік мостів або отримати і ввести набір мостів вручну, використовуючи один з трьох перерахованих методів:",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2Heading": {
+    "message": "Через Веб",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2": {
+    "message": "Відвідайте сторінку https://bridges.torproject.org",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3Heading": {
+    "message": "Через автовідповідач електронної пошти",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailDesc": {
+    "message": "Надішліть повідомлення на адресу bridges@torproject.org із рядком &quot;get bridges&quot; у тілі повідомлення.  Проте, для того, щоб ускладнити визначення великої кількості адрес мостів зловмисниками, необхідно відправити цей запит від поштової скриньки одного з наступних постачальників (перераховано у порядку пріоритетності):",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailList": {
+    "message": "https://www.riseup.net, https://mail.google.com або https://mail.yahoo.com",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4Heading": {
+    "message": "Через допомогу",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4": {
+    "message": "У крайньому випадку, Ви можете отримати адресу мосту, відправивши ввічливе повідомлення на адресу  help@rt.torproject.org.  Зверніть увагу на те, що кожен запит обробляється людиною.",
+    "description": ""
+  },
+  "torprogress.dialog.title": {
+    "message": "Статус Tor",
+    "description": ""
+  },
+  "torprogress.openSettings": {
+    "message": "Відкрити Налаштування",
+    "description": ""
+  },
+  "torprogress.heading": {
+    "message": "Підключення до мережі Tor",
+    "description": ""
+  },
+  "torprogress.pleaseWait": {
+    "message": "Будь ласка, зачекайте, поки ми підключаємося до мережі Tor.",
+    "description": ""
+  },
+  "torlauncher.error_title": {
+    "message": "Завантажувач Tor",
+    "description": ""
+  },
+  "torlauncher.tor_exited": {
+    "message": "Tor несподівано завершив роботу. Це може бути пов'язано з помилкою в Torі, іншою програмою на вашій системі, або несправним обладнанням. Поки ви не перевантажите Tor, браузер Tor буде не в змозі досягти будь-яких веб-сайтів. Якщо проблема не усувається, то, будь ласка, відправте копію журналу Tor у службу підтримки.",
+    "description": ""
+  },
+  "torlauncher.tor_exited2": {
+    "message": "Перезапуск Tor не буде закривати вкладки вашого браузера.",
+    "description": ""
+  },
+  "torlauncher.tor_controlconn_failed": {
+    "message": "Неможливо з'єднатися з портом управління Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_failed_to_start": {
+    "message": "Tor не зміг запуститися.",
+    "description": ""
+  },
+  "torlauncher.tor_control_failed": {
+    "message": "Збій отримання контролю над Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed": {
+    "message": "Tor не вдалося встановити з'єднання з мережею Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed_details": {
+    "message": "%1$S невдало (%2$S).",
+    "description": ""
+  },
+  "torlauncher.unable_to_start_tor": {
+    "message": "Неможливо запустити Tor.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.tor_missing": {
+    "message": "Виконуваний файл Tor відсутній.",
+    "description": ""
+  },
+  "torlauncher.torrc_missing": {
+    "message": "Файл torrc відсутній.",
+    "description": ""
+  },
+  "torlauncher.datadir_missing": {
+    "message": "Каталог даних Tor не існує.",
+    "description": ""
+  },
+  "torlauncher.password_hash_missing": {
+    "message": "Не вдалося отримати хеширований пароль.",
+    "description": ""
+  },
+  "torlauncher.failed_to_get_settings": {
+    "message": "Не вдалося отримати налаштування Tor.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.failed_to_save_settings": {
+    "message": "Неможливо зберегти налаштування Tor.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.ensure_tor_is_running": {
+    "message": "Переконайтеся що Tor запущений.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_addr_missing": {
+    "message": "Ви повинні вказати IP-адресу або ім'я хоста і порт, щоб налаштувати Tor і використовувати проксі для доступу в Інтернет.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_type_missing": {
+    "message": "Ви повинні вибрати тип проксі.",
+    "description": ""
+  },
+  "torlauncher.error_bridges_missing": {
+    "message": "Ви повинні вказати один або кілька мережевих мостів.",
+    "description": ""
+  },
+  "torlauncher.error_default_bridges_type_missing": {
+    "message": "Ви повинні вибрати тип транспорту для наданих мережевих мостів.",
+    "description": ""
+  },
+  "torlauncher.error_bridge_bad_default_type": {
+    "message": "Немає мережевих мостів які мають тип транспорту %S. Будь ласка перевірте ваші налаштування.",
+    "description": ""
+  },
+  "torlauncher.recommended_bridge": {
+    "message": "(рекомендовано)",
+    "description": ""
+  },
+  "torlauncher.connect": {
+    "message": "З'єднатися",
+    "description": ""
+  },
+  "torlauncher.restart_tor": {
+    "message": "Перезапустити Tor",
+    "description": ""
+  },
+  "torlauncher.quit": {
+    "message": "Вийти",
+    "description": ""
+  },
+  "torlauncher.quit_win": {
+    "message": "Вихід",
+    "description": ""
+  },
+  "torlauncher.done": {
+    "message": "Готово",
+    "description": ""
+  },
+  "torlauncher.forAssistance": {
+    "message": "Для допомоги зв'яжіться з %S",
+    "description": ""
+  },
+  "torlauncher.copiedNLogMessages": {
+    "message": "Копіювання завершено. %S повідомлень журналу tor готові до вставки у текстовий редактор або повідомлення електронної пошти.",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_dir": {
+    "message": "З'єднання з довідником маршрутизатора",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_dir": {
+    "message": "Встановлення зашифрованого з'єднання до каталогу",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_status": {
+    "message": "Отримання стану мережі",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_status": {
+    "message": "Завантаження стану мережі",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_keys": {
+    "message": "Завантаження сертифікатів авторизації",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_descriptors": {
+    "message": "Запит інформації про марщрутизацію",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_descriptors": {
+    "message": "Завантаження інформації про маршрутизацію",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_or": {
+    "message": "Підключення до мережі Tor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_or": {
+    "message": "Створення ланцюга Tor ",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.done": {
+    "message": "Підключений до мережі Tor!",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.done": {
+    "message": "виконано",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.connectrefused": {
+    "message": "у підключені відмовлено",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.misc": {
+    "message": "різне",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.resourcelimit": {
+    "message": "недостатні ресурси",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.identity": {
+    "message": "невідповідність ідентифікації",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.timeout": {
+    "message": "тайм-аут з'єднання",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.noroute": {
+    "message": "не вказаний шлях до хосту",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.ioerror": {
+    "message": "помилка читання / запису",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.pt_missing": {
+    "message": "пропущений підключуваний транспорт",
+    "description": ""
+  }
+}

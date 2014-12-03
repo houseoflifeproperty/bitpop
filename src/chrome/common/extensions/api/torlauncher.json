@@ -1,0 +1,94 @@
+[
+  {
+    "namespace": "torlauncher",
+    "description": "none",
+    "properties": {
+      "logLevel": {
+        "nocompile": true,
+        "$ref": "types.private.ChromeDirectSetting",
+        "value": ["extensions.torlauncher.loglevel", {"type":"integer"}],
+        "description": "none"
+      },
+      "logMethod": {
+        "nocompile": true,
+        "$ref": "types.private.ChromeDirectSetting",
+        "value": ["extensions.torlauncher.logmethod", {"type":"integer"}],
+        "description": "none"
+      },
+      "maxTorLogEntries": {
+        "nocompile": true,
+        "$ref": "types.private.ChromeDirectSetting",
+        "value": ["extensions.torlauncher.max_tor_log_entries", {"type":"integer"}],
+        "description": "none"
+      },
+      "controlHost": {
+        "nocompile": true,
+        "$ref": "types.private.ChromeDirectSetting",
+        "value": ["extensions.torlauncher.control_host", {"type":"string"}],
+        "description": "none"
+      },
+      "controlPort": {
+        "nocompile": true,
+        "$ref": "types.private.ChromeDirectSetting",
+        "value": ["extensions.torlauncher.control_port", {"type":"integer"}],
+        "description": "none"
+      },
+      "startTor": {
+        "nocompile": true,
+        "$ref": "types.private.ChromeDirectSetting",
+        "value": ["extensions.torlauncher.start_tor", {"type":"boolean"}],
+        "description": "none"
+      },
+      "promptAtStartup": {
+        "nocompile": true,
+        "$ref": "types.private.ChromeDirectSetting",
+        "value": ["extensions.torlauncher.prompt_at_startup", {"type":"boolean"}],
+        "description": "none"
+      },
+      "onlyConfigureTor": {
+        "nocompile": true,
+        "$ref": "types.private.ChromeDirectSetting",
+        "value": ["extensions.torlauncher.only_configure_tor", {"type":"boolean"}],
+        "description": "none"
+      },
+      "defaultBridgeType": {
+        "nocompile": true,
+        "$ref": "types.private.ChromeDirectSetting",
+        "value": ["extensions.torlauncher.default_bridge_type", {"type":"string"}],
+        "description": "none"
+      },
+      "defaultBridgeRecommendedType": {
+        "nocompile": true,
+        "$ref": "types.private.ChromeDirectSetting",
+        "value": ["extensions.torlauncher.default_bridge_recommended_type", {"type":"string"}],
+        "description": "none"
+      },
+      "defaultBridge": {
+        "nocompile": true,
+        "$ref": "types.private.ChromeDirectSetting",
+        "value": ["extensions.torlauncher.default_bridge", {"type":"object"}],
+        "description": "none"
+      }
+    },
+    "functions": [
+      {
+        "name": "getSyncCategoriesWithoutPassphrase",
+        "description": "Returns a list of sync categories the user has enabled without using a custom passphrase for encryption. The possible values are those that can be returned from syncer::ModelTypeToString in sync/syncable/model_type.cc.",
+        "type": "function",
+        "parameters": [
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": [
+              {
+                "name": "categories",
+                "type": "array",
+                "items": {"type": "string"}
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

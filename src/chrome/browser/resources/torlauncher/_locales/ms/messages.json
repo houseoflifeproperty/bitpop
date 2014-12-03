@@ -1,0 +1,266 @@
+{
+  "app_name": {
+    "message": "Tor Launcher",
+    "description": ""
+  },
+  "app_description": {
+    "message": "Provides interface between BitPop browser and Tor client",
+    "description": ""
+  },
+  "torsettings.dialog.title": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.prompt": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.yes": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.no": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.firstQuestion": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.configurePrompt1": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.configurePrompt2": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.configure": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.connectPrompt1": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.connectPrompt2": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.connect": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.proxyQuestion": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.proxyHelp": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.enterProxy": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.firewallQuestion": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.firewallHelp": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.enterFirewall": {
+    "message": "",
+    "description": ""
+  },
+  "torSettings.bridgeQuestion": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.startingTor": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.restart": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.optional": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.useProxy.checkbox": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.useProxy.type": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.useProxy.address": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.useProxy.address.placeholder": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.useProxy.port": {
+    "message": "Port:",
+    "description": ""
+  },
+  "torsettings.useProxy.username": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.useProxy.password": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks4": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks5": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.useProxy.type.http": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.firewall.checkbox": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.firewall.allowedPorts": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.useBridges.checkbox": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.useBridges.label": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.useBridges.placeholder": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.copyLog": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.bridgeHelpTitle": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3": {
+    "message": "",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4": {
+    "message": "",
+    "description": ""
+  },
+  "# torlauncher.error_title": {
+    "message": "Tor Launcher",
+    "description": ""
+  },
+  "# torlauncher.tor_exited": {
+    "message": "Tor unexpectedly exited.",
+    "description": ""
+  },
+  "# torlauncher.please_restart_app": {
+    "message": "Please restart this application.",
+    "description": ""
+  },
+  "# torlauncher.tor_controlconn_failed": {
+    "message": "Could not connect to Tor control port.",
+    "description": ""
+  },
+  "# torlauncher.tor_failed_to_start": {
+    "message": "Tor failed to start.",
+    "description": ""
+  },
+  "# torlauncher.tor_bootstrap_failed": {
+    "message": "Tor failed to establish a Tor network connection.\n\n%S",
+    "description": ""
+  },
+  "# torlauncher.unable_to_start_tor": {
+    "message": "Unable to start Tor.\n\n%S",
+    "description": ""
+  },
+  "# torlauncher.tor_missing": {
+    "message": "The Tor executable is missing.",
+    "description": ""
+  },
+  "# torlauncher.torrc_missing": {
+    "message": "The torrc file is missing.",
+    "description": ""
+  },
+  "# torlauncher.datadir_missing": {
+    "message": "The Tor data directory does not exist.",
+    "description": ""
+  },
+  "# torlauncher.password_hash_missing": {
+    "message": "Failed to get hashed password.",
+    "description": ""
+  },
+  "# torlauncher.failed_to_get_settings": {
+    "message": "Unable to retrieve Tor settings.\n\n%S",
+    "description": ""
+  },
+  "# torlauncher.failed_to_save_settings": {
+    "message": "Unable to save Tor settings.\n\n%S",
+    "description": ""
+  },
+  "# torlauncher.ensure_tor_is_running": {
+    "message": "Please ensure that Tor is running.",
+    "description": ""
+  },
+  "# torlauncher.error_proxy_addr_missing": {
+    "message": "You must specify both an IP address or hostname and a port number to configure Tor to use a proxy to access the Internet.",
+    "description": ""
+  },
+  "# torlauncher.error_proxy_type_missing": {
+    "message": "You must select the proxy type.",
+    "description": ""
+  },
+  "# torlauncher.error_bridges_missing": {
+    "message": "You must specify one or more bridges.",
+    "description": ""
+  },
+  "# torlauncher.connect": {
+    "message": "Connect",
+    "description": ""
+  },
+  "# torlauncher.quit": {
+    "message": "Quit",
+    "description": ""
+  },
+  "# torlauncher.quit_win": {
+    "message": "Exit",
+    "description": ""
+  },
+  "# torlauncher.done": {
+    "message": "Done",
+    "description": ""
+  },
+  "# torlauncher.forAssistance": {
+    "message": "For assistance, contact %S",
+    "description": ""
+  }
+}

@@ -1,0 +1,415 @@
+{
+  "app_name": {
+    "message": "Tor Launcher",
+    "description": ""
+  },
+  "app_description": {
+    "message": "Provides interface between BitPop browser and Tor client",
+    "description": ""
+  },
+  "torsettings.dialog.title": {
+    "message": "تنظیمات شبکه تور",
+    "description": ""
+  },
+  "torsettings.prompt": {
+    "message": "قبل از اتصال به شبکه تور، باید اطلاعاتی از نحوه اتصال این کامپیوتر به اینترنت فراهم کنید.",
+    "description": ""
+  },
+  "torSettings.yes": {
+    "message": "بله",
+    "description": ""
+  },
+  "torSettings.no": {
+    "message": "نه",
+    "description": ""
+  },
+  "torSettings.firstQuestion": {
+    "message": "کدام یک از موارد زیر وضعیت شما را بهتر بیان می‌کند؟",
+    "description": ""
+  },
+  "torSettings.configurePrompt1": {
+    "message": "اتصال به اینترنت این کامپیوتر یا فیلترینگ شدید دارد و یا پراکسی دارد.",
+    "description": ""
+  },
+  "torSettings.configurePrompt2": {
+    "message": "من نیاز به پیکربندی پل و یا تنظیمات پروکسی دارم.",
+    "description": ""
+  },
+  "torSettings.configure": {
+    "message": "پیکربندی",
+    "description": ""
+  },
+  "torSettings.connectPrompt2": {
+    "message": "تمایل دارم مستقیما به شبکه‌ی تور متصل شوم.",
+    "description": ""
+  },
+  "torSettings.connectPrompt3": {
+    "message": "این در بیشتر مواقع کار خواهد کرد.",
+    "description": ""
+  },
+  "torSettings.connect": {
+    "message": "اتصال",
+    "description": ""
+  },
+  "torSettings.proxyQuestion": {
+    "message": "آیا این رایانه برای اتصال به اینترنت نیاز به استفاده از پراکسی دارد؟",
+    "description": ""
+  },
+  "torSettings.proxyHelp": {
+    "message": "اگر مطمئن نیستید چطور به این سوال پاسخ دهید، به تنظیمات سایر مرورگرهای خود نگاهی بیاندازید تا متوجه شوید که آیا باید یک پروکسی استفاده شود یا خیر.",
+    "description": ""
+  },
+  "torSettings.enterProxy": {
+    "message": "تنظیمات پراکسی را وارد کنید.",
+    "description": ""
+  },
+  "torSettings.bridgeQuestion": {
+    "message": "آیا شرکتی که از آن اینترنت گرفته اید (ISP)، دسترسی به شبکه تور را فیلتر، سانسور و یا مسدود می کند؟",
+    "description": ""
+  },
+  "torSettings.bridgeHelp": {
+    "message": "اگر مطمئن نیستید چطور به این سوال پاسخ دهید، «نه» یا انتخاب کنید.  اگر «بله» را انتخاب کنید، می بایست تنظیمات مربوط به «پل های» تور را انجام دهید. پل ها مسیرهای دور زدن فیلتر هستند که لیست مشخصی از آن ها وجود ندارد و فیلتر کردن آن ها بسیار مشکل است.",
+    "description": ""
+  },
+  "torSettings.bridgeSettingsPrompt": {
+    "message": "شما می‌توانید از مجموعه‌ای از پل‌های آماده و یا پل‌های شخصی خودتان استفاده کنید.",
+    "description": ""
+  },
+  "torsettings.startingTor": {
+    "message": "در انتظار آغاز به کار تور...",
+    "description": ""
+  },
+  "torsettings.restartTor": {
+    "message": "تور را دوباره شوروع کنید.",
+    "description": ""
+  },
+  "torsettings.optional": {
+    "message": "اختیاری",
+    "description": ""
+  },
+  "torsettings.useProxy.checkbox": {
+    "message": "این رایانه برای اتصال به اینترنت نیاز به استفاده از پراکسی دارد.",
+    "description": ""
+  },
+  "torsettings.useProxy.type": {
+    "message": "نوع پراکسی:",
+    "description": ""
+  },
+  "torsettings.useProxy.address": {
+    "message": "آدرس:",
+    "description": ""
+  },
+  "torsettings.useProxy.address.placeholder": {
+    "message": "آدرس آی‌پی یا نام میزبان",
+    "description": ""
+  },
+  "torsettings.useProxy.port": {
+    "message": "پورت:",
+    "description": ""
+  },
+  "torsettings.useProxy.username": {
+    "message": "نام کاربری:",
+    "description": ""
+  },
+  "torsettings.useProxy.password": {
+    "message": "رمز عبور",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks4": {
+    "message": "ساکس ۴",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks5": {
+    "message": "ساکس ۵",
+    "description": ""
+  },
+  "torsettings.useProxy.type.http": {
+    "message": "HTTP / HTTPS",
+    "description": ""
+  },
+  "torsettings.firewall.checkbox": {
+    "message": "به نظر می رسد شبکه ارتباطی شما به اینترنت، از یک فایروال استفاده می کند. یعنی فقط اجازه اتصال از یک سری درگاه های به خصوص را می دهد.",
+    "description": ""
+  },
+  "torsettings.firewall.allowedPorts": {
+    "message": "پورت های مجاز:",
+    "description": ""
+  },
+  "torsettings.useBridges.checkbox": {
+    "message": "‫سرویس دهنده اینترنت (ISP) من اتصال به شبکه تور را مسدود می‌کند.",
+    "description": ""
+  },
+  "torsettings.useBridges.default": {
+    "message": "اتصال از طریق پل‌های انتخاب شده",
+    "description": ""
+  },
+  "torsettings.useBridges.type": {
+    "message": "نوع انتقال:",
+    "description": ""
+  },
+  "torsettings.useBridges.custom": {
+    "message": "پل‌های شخصی را وارد کنید",
+    "description": ""
+  },
+  "torsettings.useBridges.label": {
+    "message": "یک یا چند پل ارتباطی را وارد نمایید. (در هر خط یکی)",
+    "description": ""
+  },
+  "torsettings.useBridges.placeholder": {
+    "message": "آدرس آی‌پی:پورت را وارد کنید",
+    "description": ""
+  },
+  "torsettings.copyLog": {
+    "message": "کپی گزارش وقایع تور",
+    "description": ""
+  },
+  "torsettings.bridgeHelpTitle": {
+    "message": "کمک برای پل ارتباطی",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1": {
+    "message": "اگر نمی توانید به شبکه تور متصل شوید، ممکن است به این دلیل باشد که شرکت ارایه کننده اینترنت شما(ISP) و یا سازمان های دیگر شبکه تور را بسته اند. 
+غالباً می توانید این محدودیت را با استفاده از «پل» های تور دور بزنید. پل ها مسیرهای اضافی دور زدن فیلتر هستند که لیست آن در دسترس نیست و فیلتر کردن آن ها بسیار مشکل است.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1B": {
+    "message": "شما می‌توانید از پل‌های موجود استفاده کنید و یا برای به‌دست آوردن مجموعه‌ای از پل‌های شخصی از یکی از سه روش زیر بهره بگیرید:",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2Heading": {
+    "message": "از طریق اینترنت",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2": {
+    "message": "با استفاده از یک مرورگر به آدرس https://bridges.torproject.org بروید.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3Heading": {
+    "message": "از طریق آدرس ایمیل پاسخگوی خودکار",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailDesc": {
+    "message": "Send email to bridges@torproject.org with the line 'get bridges' by itself in the body of the message.  However, to make it harder for an attacker to learn a lot of bridge addresses, you must send this request from one of the following email providers (listed in order of preference):",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailList": {
+    "message": "https://www.riseup.net, https://mail.google.com, یا https://mail.yahoo.com",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4Heading": {
+    "message": "از طریق واحد کمک رسانی",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4": {
+    "message": "اگر از طریق هیچ کدام از راه حل های فوق به نتیجه نرسیدید، یک درخواست مودبانه به آدرس help@rt.torproject.org ارسال کنید.  در نظر داشته باشید که یک نفر باید ایمیل شما را بخواند و به آن پاسخ دهد. پس صبور باشید.",
+    "description": ""
+  },
+  "torprogress.dialog.title": {
+    "message": "وضعیت تور",
+    "description": ""
+  },
+  "torprogress.openSettings": {
+    "message": "تنظیمات‌را باز کنید",
+    "description": ""
+  },
+  "torprogress.heading": {
+    "message": "درحال اتصال به شبکه تُر",
+    "description": ""
+  },
+  "torprogress.pleaseWait": {
+    "message": "لطفا برای اتصال به شبکه تور منتظر بمانید.",
+    "description": ""
+  },
+  "torlauncher.error_title": {
+    "message": "اجرا کننده تور",
+    "description": ""
+  },
+  "torlauncher.tor_exited": {
+    "message": "Tor به طور غیر منتظره خارج شد. ممکن است به علت یک اشکال در Tor و یا یک برنامه دیگر بر روی سیستم شما و یا یک سخت افزار معیوب اتفاق افتاده باشد، تا زمانی که دوباره Tor را اجرا نمائید. مرورگر Tor قادر است به هر سایتی دسترسی داشته باشد. اگر این مشکل ادامه داشت، لطفا یک کپی از Log Tor خود را به تیم پشتیبانی ارسال کنید.",
+    "description": ""
+  },
+  "torlauncher.tor_exited2": {
+    "message": "شروع مجدد، Tor نمی تواند زبانه های مرورگر را ببندد.",
+    "description": ""
+  },
+  "torlauncher.tor_controlconn_failed": {
+    "message": "اتصال به پورت کنترل تور امکان پذیر نمی‌باشد.",
+    "description": ""
+  },
+  "torlauncher.tor_failed_to_start": {
+    "message": "خطا در راه اندازی.",
+    "description": ""
+  },
+  "torlauncher.tor_control_failed": {
+    "message": "به‌دست گرفتن کنترل تور ناموفق بود.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed": {
+    "message": "تور در برقراری یک ارتباط شبکه‌ای توری ناموفق بود.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed_details": {
+    "message": "%1$S ناموفق بود (%2$S).",
+    "description": ""
+  },
+  "torlauncher.unable_to_start_tor": {
+    "message": "راه اندازی تور امکان پذیر نمی باشد.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.tor_missing": {
+    "message": "فایل اجرایی تور یافت نشد.",
+    "description": ""
+  },
+  "torlauncher.torrc_missing": {
+    "message": "فایل torrc یافت نشد.",
+    "description": ""
+  },
+  "torlauncher.datadir_missing": {
+    "message": "لیست داده تور وجود ندارد.",
+    "description": ""
+  },
+  "torlauncher.password_hash_missing": {
+    "message": "کلمهٔ عبور رمزشده دریافت نشد.",
+    "description": ""
+  },
+  "torlauncher.failed_to_get_settings": {
+    "message": "ناموفق در بازگردانی تنظیمات تور.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.failed_to_save_settings": {
+    "message": "ناموفق در ذخیره تنظیمات تور.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.ensure_tor_is_running": {
+    "message": "لطفا از فعال بودن تور اطمینان حاصل کنید.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_addr_missing": {
+    "message": "شما میبایست یک آدرس آی پی یا یک نام میزبان و یک شماره درگاه برای پیکربندی تُر مشخص کنید جهت استفاده ار یک پیشکار برای دسترسی به اینترنت.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_type_missing": {
+    "message": "شما باید نوع پراکسی را انتخاب کنید.",
+    "description": ""
+  },
+  "torlauncher.error_bridges_missing": {
+    "message": "شما باید یک یا پل های بیشتری را مشخص کنید.",
+    "description": ""
+  },
+  "torlauncher.error_default_bridges_type_missing": {
+    "message": "نوع انتقال باید برای پل‌ها مشخص گردد.",
+    "description": ""
+  },
+  "torlauncher.error_bridge_bad_default_type": {
+    "message": "هیچ پلی از نوع %S  موجود نیست. لطفا تنظیمات را اصلاح کنید.",
+    "description": ""
+  },
+  "torlauncher.recommended_bridge": {
+    "message": "(توصیه شده)",
+    "description": ""
+  },
+  "torlauncher.connect": {
+    "message": "اتصال",
+    "description": ""
+  },
+  "torlauncher.restart_tor": {
+    "message": "تور را دوباره شوروع کنید.",
+    "description": ""
+  },
+  "torlauncher.quit": {
+    "message": "خروج",
+    "description": ""
+  },
+  "torlauncher.quit_win": {
+    "message": "خروج",
+    "description": ""
+  },
+  "torlauncher.done": {
+    "message": "انجام شد",
+    "description": ""
+  },
+  "torlauncher.forAssistance": {
+    "message": "برای دریافت کمک٫ با %S تماس بگیرید",
+    "description": ""
+  },
+  "torlauncher.copiedNLogMessages": {
+    "message": "کپی کامل شد. %S پیامهای ثبت شده آماده است تا Paste شود در ویرایشگر متن یا یک ایمیل.",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_dir": {
+    "message": "اتصال به یک فهرست بازپخش",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_dir": {
+    "message": "برپایی یک اتصال فهرست رمزبندی شده",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_status": {
+    "message": "بازیابی وضیعت شبکه",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_status": {
+    "message": "بارگذاری وضیعت شبکه",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_keys": {
+    "message": "بارگذاری مجوز ها",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_descriptors": {
+    "message": "درخواست اطلاعات باز پخش",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_descriptors": {
+    "message": "بارگذاری اطلاعات بازپخش",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_or": {
+    "message": "درحال اتصال به شبکه تُر",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_or": {
+    "message": "برپایی یک جریان تُر",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.done": {
+    "message": "متصل شده به شبکه تُر",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.done": {
+    "message": "انجام شد",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.connectrefused": {
+    "message": "اتصال ردشد",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.misc": {
+    "message": "گوناگون",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.resourcelimit": {
+    "message": "منابع ناکافی",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.identity": {
+    "message": "عدم تطبیق هویت",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.timeout": {
+    "message": "اتمام وقت اتصال",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.noroute": {
+    "message": "نبود مسیر به میزبان",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.ioerror": {
+    "message": "خطای خواندن/نوشتن",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.pt_missing": {
+    "message": "انتقال جایگزین مفقود است.",
+    "description": ""
+  }
+}

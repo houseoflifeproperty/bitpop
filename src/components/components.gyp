@@ -51,6 +51,7 @@
     'signin.gypi',
     'startup_metric_utils.gypi',
     'suggestions.gypi',
+    'torlauncher.gypi',
     'translate.gypi',
     'url_fixer.gypi',
     'url_matcher.gypi',

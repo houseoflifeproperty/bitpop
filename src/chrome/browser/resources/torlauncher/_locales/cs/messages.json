@@ -1,0 +1,414 @@
+{
+  "app_name": {
+    "message": "Tor Launcher",
+    "description": ""
+  },
+  "app_description": {
+    "message": "Provides interface between BitPop browser and Tor client",
+    "description": ""
+  },
+  "torsettings.dialog.title": {
+    "message": "Síťové nastavení TORu",
+    "description": ""
+  },
+  "torsettings.prompt": {
+    "message": "Než se připojíte s síti TORu je potřeba poskytnout údaje o internetovém připojení tohoto počítače.",
+    "description": ""
+  },
+  "torSettings.yes": {
+    "message": "Ano",
+    "description": ""
+  },
+  "torSettings.no": {
+    "message": "Ne",
+    "description": ""
+  },
+  "torSettings.firstQuestion": {
+    "message": "Která možnost nejlépe popisuje Vaši situaci?",
+    "description": ""
+  },
+  "torSettings.configurePrompt1": {
+    "message": "Připojení k internetu u tohoto pořítače je cenzorováno nebo proxováno.",
+    "description": ""
+  },
+  "torSettings.configurePrompt2": {
+    "message": "Potřebuji nakonfigurovat mosty nebo nastavení proxy.",
+    "description": ""
+  },
+  "torSettings.configure": {
+    "message": "Konfigurovat",
+    "description": ""
+  },
+  "torSettings.connectPrompt2": {
+    "message": "Chtěl bych se přímo připojit k Tor síti.",
+    "description": ""
+  },
+  "torSettings.connectPrompt3": {
+    "message": "Toto bude fungovat ve většině případů.",
+    "description": ""
+  },
+  "torSettings.connect": {
+    "message": "Připojit",
+    "description": ""
+  },
+  "torSettings.proxyQuestion": {
+    "message": "Potřebuje Váš počítač připojení k internetu přes proxy?",
+    "description": ""
+  },
+  "torSettings.proxyHelp": {
+    "message": "Jestli nevíte jak odpovědět na tuto otázku, podívejte se na internetové nastavení v jiném prohlížeči, aby jste zjistili, zda je nakonfigurován k použití proxy.",
+    "description": ""
+  },
+  "torSettings.enterProxy": {
+    "message": "Zadejte nastavení serveru proxy.",
+    "description": ""
+  },
+  "torSettings.bridgeQuestion": {
+    "message": "Blokuje nebo jinak cenzuruje váš poskytovatel internetového připojení (ISP) spojení se sítí TORu?",
+    "description": ""
+  },
+  "torSettings.bridgeHelp": {
+    "message": "Pokud si nejste jistí jak odpovědět na tuto otázku, zvolte No.  Pokud vyberete Ano, budete vyzváni k nastavení Mostů TORu, což jsou přenašeče neuvedené v seznamu, které dělají blokování spojení se sítí TORu složitější.",
+    "description": ""
+  },
+  "torSettings.bridgeSettingsPrompt": {
+    "message": "Můžete použít poskytnutou sadu síťových mostů nebo můžete získat a zadat vlastní sadu.",
+    "description": ""
+  },
+  "torsettings.startingTor": {
+    "message": "Čekání na start TORu",
+    "description": ""
+  },
+  "torsettings.restartTor": {
+    "message": "Restartovat Tor",
+    "description": ""
+  },
+  "torsettings.optional": {
+    "message": "Volitelný",
+    "description": ""
+  },
+  "torsettings.useProxy.checkbox": {
+    "message": "Tento počítač musí používat server proxy pro přístup k Internetu",
+    "description": ""
+  },
+  "torsettings.useProxy.type": {
+    "message": "Typ Proxy:",
+    "description": ""
+  },
+  "torsettings.useProxy.address": {
+    "message": "Adresa:",
+    "description": ""
+  },
+  "torsettings.useProxy.address.placeholder": {
+    "message": "IP adresa nebo jméno hosta",
+    "description": ""
+  },
+  "torsettings.useProxy.port": {
+    "message": "Port:",
+    "description": ""
+  },
+  "torsettings.useProxy.username": {
+    "message": "Uživatel:",
+    "description": ""
+  },
+  "torsettings.useProxy.password": {
+    "message": "Heslo.",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks4": {
+    "message": "SOCKS 4",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks5": {
+    "message": "SOCKS 5",
+    "description": ""
+  },
+  "torsettings.useProxy.type.http": {
+    "message": "HTTP / HTTPS",
+    "description": ""
+  },
+  "torsettings.firewall.checkbox": {
+    "message": "Tento počítač používá firewall, který povoluje připojení pouze přes některé porty.",
+    "description": ""
+  },
+  "torsettings.firewall.allowedPorts": {
+    "message": "Povolené porty:",
+    "description": ""
+  },
+  "torsettings.useBridges.checkbox": {
+    "message": "Můj internetový poskytovatel (ISP) blokuje připojení k Tor síti",
+    "description": ""
+  },
+  "torsettings.useBridges.default": {
+    "message": "Připojit pomocí poskytnuté sady mostů",
+    "description": ""
+  },
+  "torsettings.useBridges.type": {
+    "message": "Typ přenosu:",
+    "description": ""
+  },
+  "torsettings.useBridges.custom": {
+    "message": "Zadejete vlastní mosty",
+    "description": ""
+  },
+  "torsettings.useBridges.label": {
+    "message": "Zadejte jedno nebo více mostních relé (jedno na řádek).",
+    "description": ""
+  },
+  "torsettings.useBridges.placeholder": {
+    "message": "zadej adresu:port",
+    "description": ""
+  },
+  "torsettings.copyLog": {
+    "message": "Zkopíruj logový soubor Toru do schránky",
+    "description": ""
+  },
+  "torsettings.bridgeHelpTitle": {
+    "message": "Nápověda o  mostních relé",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1": {
+    "message": "Pokud nejste schopni se připojit k síti TORu, může to být způsobeno tím, že váš posktytovatel internetu (ISP) nebo nějaká jiná služba blokuje Tor.  Většinou můžete obejít tento problém použitím Mostů TORu, což jsou přenašeče neuvedené v seznamu, které je složitější zablokovat.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1B": {
+    "message": "Můžete použít přednastavenou, poskytnutou sadu síťových mostů, nebo můžete získat vlastní sadu adres použitím jedné z těchto tří metod:",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2Heading": {
+    "message": "Přes síť",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2": {
+    "message": "Použijte internetový prohlížeč k návštěvě https://bridges.torproject.org",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3Heading": {
+    "message": "Přes automatický e-mailový odpovídač",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailDesc": {
+    "message": "Pošlete e-mail na bridges@torproject.org s větou 'get bridges' jako takovou v těle zprávy.  Nicméně abychom ztížili útočníkovi zjištění spousty adres, musíte tento požadavek poslat z e-mailové adresy gmail.com nebo yahoo.com.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailList": {
+    "message": "https://www.riseup.net, https://mail.google.com, nebo https://mail.yahoo.com",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4Heading": {
+    "message": "Přes zákaznickou linku",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4": {
+    "message": "Jako poslední řešení si můžete vyžádat adresy síťových mostů tak, že zašlete slušný e-mail na help@rt.torproject.org.  Vezměte v úvahu si prosím, že na každý požadavek musí odpovědět člověk.",
+    "description": ""
+  },
+  "torprogress.dialog.title": {
+    "message": "Tor Stav",
+    "description": ""
+  },
+  "torprogress.openSettings": {
+    "message": "Otevřít nastavení",
+    "description": ""
+  },
+  "torprogress.heading": {
+    "message": "Připojuji se k síti Tor",
+    "description": ""
+  },
+  "torprogress.pleaseWait": {
+    "message": "Prosím vyčkejte než bude sestaveno připojení k síti Tor.",
+    "description": ""
+  },
+  "torlauncher.error_title": {
+    "message": "Tor spouštěč",
+    "description": ""
+  },
+  "torlauncher.tor_exited": {
+    "message": "Tor byl neočekávaně ukončen. To by mohlo být způsobeno chybou v Toru, jiném programu na vašem systému, nebo vadným hardware. Dokud nerestartujete Tor, nebude Tor Browser schopen dosáhnout jakékoli webové stránky. Pokud problém přetrvává, prosím pošlete týmu podpory kopii souboru Tor Logu.",
+    "description": ""
+  },
+  "torlauncher.tor_exited2": {
+    "message": "Restartování Tor nebude zavírat záložky prohlížeče.",
+    "description": ""
+  },
+  "torlauncher.tor_controlconn_failed": {
+    "message": "Nemohu se připojit ke kontrolnímu portu Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_failed_to_start": {
+    "message": "Tor nenastartoval.",
+    "description": ""
+  },
+  "torlauncher.tor_control_failed": {
+    "message": "Nezdařilo se převzít kontrolu nad Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed": {
+    "message": "Tor selhal při sestavení připojení do sítě Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed_details": {
+    "message": "%1$S selhal (%2$S).",
+    "description": ""
+  },
+  "torlauncher.unable_to_start_tor": {
+    "message": "Tor není schopen startovat\n\n%S",
+    "description": ""
+  },
+  "torlauncher.tor_missing": {
+    "message": "Spustitelný soubor Tor chybí.",
+    "description": ""
+  },
+  "torlauncher.torrc_missing": {
+    "message": "Chybí soubor torrc.",
+    "description": ""
+  },
+  "torlauncher.datadir_missing": {
+    "message": "Adresář s daty Tor neexistuje.",
+    "description": ""
+  },
+  "torlauncher.password_hash_missing": {
+    "message": "Nepovedlo se získat hashované heslo.",
+    "description": ""
+  },
+  "torlauncher.failed_to_get_settings": {
+    "message": "Nelze načíst Tor nastavení.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.failed_to_save_settings": {
+    "message": "Nelze uložit Tor nastavení.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.ensure_tor_is_running": {
+    "message": "Prosím zkontrolujte zda Tor je spuštěn.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_addr_missing": {
+    "message": "Pro nastavení Toru pro použití proxy serveru musíte specifikovat jak IP adresu (nebo jméno hostitele) tak číslo portu",
+    "description": ""
+  },
+  "torlauncher.error_proxy_type_missing": {
+    "message": "Musíte vybrat typ proxy",
+    "description": ""
+  },
+  "torlauncher.error_bridges_missing": {
+    "message": "Musíte specifikovat jeden nebo více mostů.",
+    "description": ""
+  },
+  "torlauncher.error_default_bridges_type_missing": {
+    "message": "Pro zadané bridge musíte zadat typ transportu.",
+    "description": ""
+  },
+  "torlauncher.error_bridge_bad_default_type": {
+    "message": "Nejsou zadané žádné bridge, které by měly ty transportu %S. Změňte prosím nastavení.",
+    "description": ""
+  },
+  "torlauncher.recommended_bridge": {
+    "message": "(doporučeno)",
+    "description": ""
+  },
+  "torlauncher.connect": {
+    "message": "Připojit",
+    "description": ""
+  },
+  "torlauncher.restart_tor": {
+    "message": "Restartovat Tor",
+    "description": ""
+  },
+  "torlauncher.quit": {
+    "message": "Ukoncit",
+    "description": ""
+  },
+  "torlauncher.quit_win": {
+    "message": "Konec",
+    "description": ""
+  },
+  "torlauncher.done": {
+    "message": "Hotovo",
+    "description": ""
+  },
+  "torlauncher.forAssistance": {
+    "message": "Pro asistenci kontaktujte %S",
+    "description": ""
+  },
+  "torlauncher.copiedNLogMessages": {
+    "message": "Kopírování kompletní. %S zprávy protokolu Tor jsou připraveny k vložení do textového editoru nebo e-mailové zprávy.",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_dir": {
+    "message": "Připojování do adresáře uzlu",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_dir": {
+    "message": "Navazuji spojení s šifrovaným adresářem",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_status": {
+    "message": "Zjišťuji stav sítě",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_status": {
+    "message": "Načítam stav sítě",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_keys": {
+    "message": "Nahrávám certifikáty autority",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_descriptors": {
+    "message": "Zjišťuji informace o uzlu",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_descriptors": {
+    "message": "Nahrávám informace o uzlu",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_or": {
+    "message": "Připojuji se k síti Tor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_or": {
+    "message": "Navazuji na okruh Tor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.done": {
+    "message": "Připojen k síti Tor!",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.done": {
+    "message": "hotovo",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.connectrefused": {
+    "message": "připojení odmítnuto",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.misc": {
+    "message": "různý",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.resourcelimit": {
+    "message": "nedostatečné zdroje",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.identity": {
+    "message": "nesouhlasí identita",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.timeout": {
+    "message": "vypršel čas na připojení",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.noroute": {
+    "message": "bez spojení s hostitelem",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.ioerror": {
+    "message": "chyba během čtení/zápisu",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.pt_missing": {
+    "message": "Chybějící zásuvný transport",
+    "description": ""
+  }
+}

@@ -1,0 +1,414 @@
+{
+  "app_name": {
+    "message": "Tor Launcher",
+    "description": ""
+  },
+  "app_description": {
+    "message": "Provides interface between BitPop browser and Tor client",
+    "description": ""
+  },
+  "torsettings.dialog.title": {
+    "message": "Tor Ağ Ayarları",
+    "description": ""
+  },
+  "torsettings.prompt": {
+    "message": "Tor ağa bağlanmadan önce, bu bilgisayarın İnternet bağlantısı hakkında bilgi vermeniz gerekir.",
+    "description": ""
+  },
+  "torSettings.yes": {
+    "message": "Evet",
+    "description": ""
+  },
+  "torSettings.no": {
+    "message": "Hayır",
+    "description": ""
+  },
+  "torSettings.firstQuestion": {
+    "message": "Aşağıdakilerden hangisi durumunuzu en iyi açıklıyor?",
+    "description": ""
+  },
+  "torSettings.configurePrompt1": {
+    "message": "Bu bilgisayarın internet bağlantısı sansürlü veya vekil sunucu arkasında.",
+    "description": ""
+  },
+  "torSettings.configurePrompt2": {
+    "message": "Köprü veya vekil sunucu ayarlarını yapılandırmam gerekli.",
+    "description": ""
+  },
+  "torSettings.configure": {
+    "message": "Yapılandır",
+    "description": ""
+  },
+  "torSettings.connectPrompt2": {
+    "message": "Doğrudan Tor ağına bağlanmak istiyorum",
+    "description": ""
+  },
+  "torSettings.connectPrompt3": {
+    "message": "Bu çoğu durumda çalışır.",
+    "description": ""
+  },
+  "torSettings.connect": {
+    "message": "Bağlan",
+    "description": ""
+  },
+  "torSettings.proxyQuestion": {
+    "message": "Bu bilgisayarın İnternete erişirken bir vekil kullanması gerekiyor mu?",
+    "description": ""
+  },
+  "torSettings.proxyHelp": {
+    "message": "Eğer bu soruyu nasıl yanıtlayacağınızdan emin değilseniz, farklı bir tarayıcıda İnternet seçeneklerine bakın ve bir vekil kullanmak üzere yapılandırılıp yapılandırılmadığına bakın",
+    "description": ""
+  },
+  "torSettings.enterProxy": {
+    "message": "Vekil ayarlarını girin.",
+    "description": ""
+  },
+  "torSettings.bridgeQuestion": {
+    "message": "İnternet Servis Sağlayıcınız (ISS) Tor Ağına bağlantıları engelliyor veya sansürlüyor mu?",
+    "description": ""
+  },
+  "torSettings.bridgeHelp": {
+    "message": "Bu soruyu nasıl cevaplayacağınızdan emin değilseniz Hayır'ı Seçin.  Eğer Evet'i seçerseniz, Tor Ağına bağlantıyı engellemeyi daha zor hale getiren listelenmeyen aynalar olan Tor Köprülerini yapılandırmanız istenecektir.",
+    "description": ""
+  },
+  "torSettings.bridgeSettingsPrompt": {
+    "message": "Sağlanan köprülerin kümesini kullanabilirsiniz veya özel bir köprü seti girebilir veya sağlayabilirsiniz.",
+    "description": ""
+  },
+  "torsettings.startingTor": {
+    "message": "Tor'un başlaması bekleniyor...",
+    "description": ""
+  },
+  "torsettings.restartTor": {
+    "message": "Tor'u Yeniden Başlat",
+    "description": ""
+  },
+  "torsettings.optional": {
+    "message": "İsteğe Bağlı",
+    "description": ""
+  },
+  "torsettings.useProxy.checkbox": {
+    "message": "Bu bilgisayarın İnternet'e erişebilmek için bir vekil sunucu kullanması gerekiyor",
+    "description": ""
+  },
+  "torsettings.useProxy.type": {
+    "message": "Vekil Sunucu Türü:",
+    "description": ""
+  },
+  "torsettings.useProxy.address": {
+    "message": "Adres:",
+    "description": ""
+  },
+  "torsettings.useProxy.address.placeholder": {
+    "message": "IP adresi veya sunucu adı",
+    "description": ""
+  },
+  "torsettings.useProxy.port": {
+    "message": "Bağl. Nok.:",
+    "description": ""
+  },
+  "torsettings.useProxy.username": {
+    "message": "Kullanıcı adı:",
+    "description": ""
+  },
+  "torsettings.useProxy.password": {
+    "message": "Parola:",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks4": {
+    "message": "SOCKS 4",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks5": {
+    "message": "SOCKS 5",
+    "description": ""
+  },
+  "torsettings.useProxy.type.http": {
+    "message": "HTTP / HTTPS",
+    "description": ""
+  },
+  "torsettings.firewall.checkbox": {
+    "message": "Bu bilgisayar, sadece belirli bağlantı noktalarına izin veren bir güvenlik duvarı ile bağlanıyor",
+    "description": ""
+  },
+  "torsettings.firewall.allowedPorts": {
+    "message": "İzin Verilen Bağlantı Noktaları:",
+    "description": ""
+  },
+  "torsettings.useBridges.checkbox": {
+    "message": "İnternet Servis Sağlayıcım (İSS) Tor Ağı ile bağlantılarımı engelliyor",
+    "description": ""
+  },
+  "torsettings.useBridges.default": {
+    "message": "Sağlanan köprüler ile bağlan",
+    "description": ""
+  },
+  "torsettings.useBridges.type": {
+    "message": "Aktarım türü:",
+    "description": ""
+  },
+  "torsettings.useBridges.custom": {
+    "message": "Özel köprüler girin",
+    "description": ""
+  },
+  "torsettings.useBridges.label": {
+    "message": "Bir veya daha fazla köprü aynası girin (her satıra bir tane).",
+    "description": ""
+  },
+  "torsettings.useBridges.placeholder": {
+    "message": "adresi:port şeklinde yazın",
+    "description": ""
+  },
+  "torsettings.copyLog": {
+    "message": "Tor Günlüğünü Panoya Kopyala",
+    "description": ""
+  },
+  "torsettings.bridgeHelpTitle": {
+    "message": "Köprü Ayna Yardımı",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1": {
+    "message": "Tor ağına bağlanamıyorsanız, kullandığınız İnternet Servis Sağlayıcısı (ISS) veya başka bir kurum Tor'u engelliyor olabilir.  Çoğunlukla bu problemi, engellenmesi daha zor listelenmeyen aynalar olan Tor Köprülerini kullanarak çözebilirsiniz.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1B": {
+    "message": "Önceden yapılandırılan sağlanan köprü adresleri setini kullanabilirsiniz veya bu üç yöntemden birini kullanarak adres kümesinden özel bir set sağlayabilirsiniz:",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2Heading": {
+    "message": "Web aracılığıyla.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2": {
+    "message": "https://bridges.torproject.org sitesini ziyaret etmek için web tarayıcısı kullanın.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3Heading": {
+    "message": "E-posta Otomatik Cevaplandırıcı Aracılığıyla",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailDesc": {
+    "message": "bridges@torproject.org adresine, iletide sadece 'get bridges' satırını yazarak bir e-posta gönderin.  Ancak, bir saldırganın çok sayıda köprü adresi öğrenmesini zorlaştırmak için bu e-postayı aşağıdaki e-posta sağlayıcılarından yollamanız gerekmektedir (tercih sırasına göre listelenmiştir):",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailList": {
+    "message": "https://www.riseup.net, https://mail.google.com veya https://mail.yahoo.com",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4Heading": {
+    "message": "Help Desk aracılığıyla.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4": {
+    "message": "Son bir çare olarak köprü adres taleplerini help@rt.torproject.org adresine posta göndererek rica edebilirsiniz.  Birisinin bu talebi cevaplayacağını unutmayın.",
+    "description": ""
+  },
+  "torprogress.dialog.title": {
+    "message": "Tor Durumu",
+    "description": ""
+  },
+  "torprogress.openSettings": {
+    "message": "Ayarları Aç",
+    "description": ""
+  },
+  "torprogress.heading": {
+    "message": "Tor ağına bağlanıyor",
+    "description": ""
+  },
+  "torprogress.pleaseWait": {
+    "message": "Biz Tor şebekesi ile bağlantı kurana kadar lütfen bekleyin.",
+    "description": ""
+  },
+  "torlauncher.error_title": {
+    "message": "Tor Başlatıcı",
+    "description": ""
+  },
+  "torlauncher.tor_exited": {
+    "message": "Tor, beklenmedik şekilde sonlandı. Bu; Tor içerisinde veya sisteminizdeki farklı bir programda bir hatadan ya da sorunlu bir donanımdan kaynaklanmış olabilir. Tor'u yeniden başlatıncaya kadar Tor Tarayıcısı hiçbir web sitesine erişemeyecek. Eğer sorun devam ederse lütfen Tor Günlüğünüzün bir kopyasını destek takımına gönderin.",
+    "description": ""
+  },
+  "torlauncher.tor_exited2": {
+    "message": "Tor'u yeniden başlatmak tarayıcı sekmelerinizi kapatmayacak.",
+    "description": ""
+  },
+  "torlauncher.tor_controlconn_failed": {
+    "message": "Tor yönetim bağlantı noktasına bağlanılamadı.",
+    "description": ""
+  },
+  "torlauncher.tor_failed_to_start": {
+    "message": "Tor başlatılamadı.",
+    "description": ""
+  },
+  "torlauncher.tor_control_failed": {
+    "message": "Tor'u kontrol altına alma başarısız",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed": {
+    "message": "Tor'un ağ bağlantısı kurulumu başarısız oldu.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed_details": {
+    "message": "%1$S başarısız oldu (%2$S).",
+    "description": ""
+  },
+  "torlauncher.unable_to_start_tor": {
+    "message": "Tor başlatılamıyor.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.tor_missing": {
+    "message": "Çalıştırılabilir Tor dosyası bulunamadı.",
+    "description": ""
+  },
+  "torlauncher.torrc_missing": {
+    "message": "torrc dosyası kayıp.",
+    "description": ""
+  },
+  "torlauncher.datadir_missing": {
+    "message": "Tor veri klasörü bulunamadı.",
+    "description": ""
+  },
+  "torlauncher.password_hash_missing": {
+    "message": "Hash'lenmiş şifreye ulaşılamadı.",
+    "description": ""
+  },
+  "torlauncher.failed_to_get_settings": {
+    "message": "Tor ayarlarına ulaşılamıyor.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.failed_to_save_settings": {
+    "message": "Tor ayarları kaydedilemiyor.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.ensure_tor_is_running": {
+    "message": "Lütfen Tor'un çalıştığından emin olun.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_addr_missing": {
+    "message": "İnternete bağlanırken vekil sunucusu kullanmak için IP adresi veya sunucu ve bağlantı noktası numarası girmeniz gerekiyor.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_type_missing": {
+    "message": "Vekil sunucu türünü seçmelisiniz.",
+    "description": ""
+  },
+  "torlauncher.error_bridges_missing": {
+    "message": "Bir ya da daha fazla köprü belirtmelisiniz.",
+    "description": ""
+  },
+  "torlauncher.error_default_bridges_type_missing": {
+    "message": "Sağlanan köprüler için bir aktarım türü seçmelisiniz.",
+    "description": ""
+  },
+  "torlauncher.error_bridge_bad_default_type": {
+    "message": "%S aktarım türü için sağlanan kullanılabilir köprüler yok. Ayarlarınızı lütfen ayarlayın.",
+    "description": ""
+  },
+  "torlauncher.recommended_bridge": {
+    "message": "(önerilen)",
+    "description": ""
+  },
+  "torlauncher.connect": {
+    "message": "Bağlan",
+    "description": ""
+  },
+  "torlauncher.restart_tor": {
+    "message": "Tor'u Yeniden Başlat",
+    "description": ""
+  },
+  "torlauncher.quit": {
+    "message": "Çık",
+    "description": ""
+  },
+  "torlauncher.quit_win": {
+    "message": "Çıkış",
+    "description": ""
+  },
+  "torlauncher.done": {
+    "message": "Tamamlandı",
+    "description": ""
+  },
+  "torlauncher.forAssistance": {
+    "message": "Yardım için %S ile bağlantıya geçin.",
+    "description": ""
+  },
+  "torlauncher.copiedNLogMessages": {
+    "message": "Kopyalama tamamlandı. %S Tor günlük mesajları bir metin düzenleyici veya bir e-posta iletisine kopyalanmaya hazır.",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_dir": {
+    "message": "Bir ayna dizinine bağlanıyor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_dir": {
+    "message": "Şifrelenmiş dizin bağlantısı kuruluyor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_status": {
+    "message": "Ağ durumu güncelliyor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_status": {
+    "message": "Ağ durumu yükleniyor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_keys": {
+    "message": "Doğrulama sertifikalarını yüklüyor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_descriptors": {
+    "message": "Ayna bilgisi isteniyor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_descriptors": {
+    "message": "Ayna bilgisi yükleniyor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_or": {
+    "message": "Tor ağına bağlanıyor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_or": {
+    "message": "Tor ağına bağlantı sağlanıyor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.done": {
+    "message": "Tor ağına bağlandı!",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.done": {
+    "message": "tamam",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.connectrefused": {
+    "message": "Bağlantı red edildi",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.misc": {
+    "message": "Diğer",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.resourcelimit": {
+    "message": "Yetersiz kaynak",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.identity": {
+    "message": "kimlik uyumsuz",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.timeout": {
+    "message": "Zaman aşımı",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.noroute": {
+    "message": "Yönlendirilecek sunucu yok",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.ioerror": {
+    "message": "Okuma/yazma hatası",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.pt_missing": {
+    "message": "takılabilir taşıma kayıp",
+    "description": ""
+  }
+}

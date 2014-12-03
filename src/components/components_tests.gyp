@@ -230,6 +230,7 @@
             'sync_driver/sync_prefs_unittest.cc',
             'sync_driver/system_encryptor_unittest.cc',
             'sync_driver/ui_data_type_controller_unittest.cc',
+            'torlauncher/torlauncher_service_unittest.cc',
             'test/run_all_unittests.cc',
             'translate/core/browser/language_state_unittest.cc',
             'translate/core/browser/translate_browser_metrics_unittest.cc',
@@ -432,6 +433,9 @@
             # Dependencies of sync_driver
             'components.gyp:sync_driver_test_support',
 
+            # Dependencies of torlauncher
+            'components.gyp:torlauncher',
+
             # Dependencies of translate.
             'components.gyp:translate_core_browser',
             'components.gyp:translate_core_common',
@@ -503,6 +507,29 @@
                 # Dependencies of web_modal
                 'components.gyp:web_modal',
                 'components.gyp:web_modal_test_support',
+              ],
+              'actions': [
+                {
+                  'action_name': 'copy_torlauncher_test_data',
+                  'variables': {
+                    'conditions': [
+                      ['OS=="win"', {
+                        'test_data_files': [
+                          '../third_party/tor/win/',
+                          'test/data/torlauncher/', # for auth cookie tests
+                        ],
+                      }],
+                      ['OS=="mac"', {
+                        'test_data_files': [
+                          '../third_party/tor/mac/',
+                          'test/data/torlauncher/', # for auth cookie tests
+                        ],
+                      }],
+                    ],
+                    'test_data_prefix': 'torlauncher',
+                  },
+                  'includes': [ '../build/copy_test_data_torlauncher.gypi' ],
+                }
               ],
             }, { # 'OS == "ios"'
               'includes': ['../chrome/chrome_ios_bundle_resources.gypi'],

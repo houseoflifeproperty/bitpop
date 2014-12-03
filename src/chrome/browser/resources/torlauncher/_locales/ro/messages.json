@@ -1,0 +1,414 @@
+{
+  "app_name": {
+    "message": "Tor Launcher",
+    "description": ""
+  },
+  "app_description": {
+    "message": "Provides interface between BitPop browser and Tor client",
+    "description": ""
+  },
+  "torsettings.dialog.title": {
+    "message": "Setări rețea Tor",
+    "description": ""
+  },
+  "torsettings.prompt": {
+    "message": "Înainte de a vă conecta la rețeaua Tor, trebuie să oferiți informații despre conexiunea acestui computer la Internet.",
+    "description": ""
+  },
+  "torSettings.yes": {
+    "message": "Da",
+    "description": ""
+  },
+  "torSettings.no": {
+    "message": "Nu",
+    "description": ""
+  },
+  "torSettings.firstQuestion": {
+    "message": "Care din următoarele descrie cel mai bine situația dvs?",
+    "description": ""
+  },
+  "torSettings.configurePrompt1": {
+    "message": "This computer's Internet connection is censored or proxied.",
+    "description": ""
+  },
+  "torSettings.configurePrompt2": {
+    "message": "I need to configure bridge or proxy settings.",
+    "description": ""
+  },
+  "torSettings.configure": {
+    "message": "Configuraţi ",
+    "description": ""
+  },
+  "torSettings.connectPrompt2": {
+    "message": "Vreau sa ma conectez direct la reţeaua Tor .",
+    "description": ""
+  },
+  "torSettings.connectPrompt3": {
+    "message": "Aceasta funcționează în cele mai multe situații.",
+    "description": ""
+  },
+  "torSettings.connect": {
+    "message": "Conectare",
+    "description": ""
+  },
+  "torSettings.proxyQuestion": {
+    "message": "Computerul dumneavoastră are nevoie de un proxy sa acceseze Internet-ul ?",
+    "description": ""
+  },
+  "torSettings.proxyHelp": {
+    "message": "Dacă nu sînteți siguri cum să răspundeți la întrebarea aceasta, uitați-vă la setările de Internet din alt browser pentru a vedea dacă este configurat să folosească un proxy.",
+    "description": ""
+  },
+  "torSettings.enterProxy": {
+    "message": "Introduceţi setările pentru proxy .",
+    "description": ""
+  },
+  "torSettings.bridgeQuestion": {
+    "message": "Internet Service Providerul (ISP) dvs blochează sau cenzurează conexiunile către rețeaua Tor?",
+    "description": ""
+  },
+  "torSettings.bridgeHelp": {
+    "message": "Dacă nu sînteți sigur cum să răspundeți la această întrebare, alegeți Nu.  Dacă alegeți Da, vi se va cere să configurați punțile Tor, care sînt relayuri nelistate care fac mai dificilă blocarea conexiunilor la rețeaua Tor.",
+    "description": ""
+  },
+  "torSettings.bridgeSettingsPrompt": {
+    "message": "Puteți folosi setul de punți oferit sau puteți obține și introduce un set particular de punți.",
+    "description": ""
+  },
+  "torsettings.startingTor": {
+    "message": "Aștept Tor să pornească...",
+    "description": ""
+  },
+  "torsettings.restartTor": {
+    "message": "Repornește Tor",
+    "description": ""
+  },
+  "torsettings.optional": {
+    "message": "Opțional",
+    "description": ""
+  },
+  "torsettings.useProxy.checkbox": {
+    "message": "Acest computer are nevoie să folosească un proxy pentru a accesa Internetul",
+    "description": ""
+  },
+  "torsettings.useProxy.type": {
+    "message": "Tip proxy:",
+    "description": ""
+  },
+  "torsettings.useProxy.address": {
+    "message": "Adresă:",
+    "description": ""
+  },
+  "torsettings.useProxy.address.placeholder": {
+    "message": "Adresă IP sau hostname",
+    "description": ""
+  },
+  "torsettings.useProxy.port": {
+    "message": "Port:",
+    "description": ""
+  },
+  "torsettings.useProxy.username": {
+    "message": "Nume utilizator:",
+    "description": ""
+  },
+  "torsettings.useProxy.password": {
+    "message": "Parola:",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks4": {
+    "message": "SOCKS 4",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks5": {
+    "message": "SOCKS 5",
+    "description": ""
+  },
+  "torsettings.useProxy.type.http": {
+    "message": "HTTP / HTTPS",
+    "description": ""
+  },
+  "torsettings.firewall.checkbox": {
+    "message": "Acest computer iese printr-un firewall care permite doar conexiuni către anumite porturi",
+    "description": ""
+  },
+  "torsettings.firewall.allowedPorts": {
+    "message": "Porturi permise:",
+    "description": ""
+  },
+  "torsettings.useBridges.checkbox": {
+    "message": "Internet Service Providerul (ISP) meu blochează conexiunile către rețeaua Tor",
+    "description": ""
+  },
+  "torsettings.useBridges.default": {
+    "message": "Conectați-vă punțile oferite",
+    "description": ""
+  },
+  "torsettings.useBridges.type": {
+    "message": "Tip de transport:",
+    "description": ""
+  },
+  "torsettings.useBridges.custom": {
+    "message": "Introduceți punți personalizate",
+    "description": ""
+  },
+  "torsettings.useBridges.label": {
+    "message": "Introduceți una sau mai multe bridge relays (una pe linie).",
+    "description": ""
+  },
+  "torsettings.useBridges.placeholder": {
+    "message": "scrieți adresă:port",
+    "description": ""
+  },
+  "torsettings.copyLog": {
+    "message": "Copiați jurnalul Tor în Clipboard",
+    "description": ""
+  },
+  "torsettings.bridgeHelpTitle": {
+    "message": "Ajutor Bridge Relay",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1": {
+    "message": "Dacă nu puteți să vă conectați la rețeaua tor, poate să fie din cauză că Internet Service Providerul (ISP) sau altă agenție blochează Tor.  Des, puteți ocoli această problemă folosind Tor Bridges, care sînt relayuri nelistate, mai dificil de blocat.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1B": {
+    "message": "Puteți folosi setul de adrese de punți preconfigurate oferite sau puteți obține un set personalizat de adrese folosind una din aceste trei metode:",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2Heading": {
+    "message": "Prin Web",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2": {
+    "message": "Folosiți un webbrowser pentru a vizita https://bridges.torproject.org",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3Heading": {
+    "message": "Prin email automat",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailDesc": {
+    "message": "Send email to bridges@torproject.org with the line 'get bridges' by itself in the body of the message.  However, to make it harder for an attacker to learn a lot of bridge addresses, you must send this request from one of the following email providers (listed in order of preference):",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailList": {
+    "message": "https://www.riseup.net, https://mail.google.com, or https://mail.yahoo.com",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4Heading": {
+    "message": "Prin Help Desk",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4": {
+    "message": "Ca o ultimă soluție, puteți cere adrese de punți trimițînd un email politicos la help@rt.torproject.org.  Remarcați că o persoană trebuie să răspundă la fiecare cerere.",
+    "description": ""
+  },
+  "torprogress.dialog.title": {
+    "message": "Stare Tor",
+    "description": ""
+  },
+  "torprogress.openSettings": {
+    "message": "Setări",
+    "description": ""
+  },
+  "torprogress.heading": {
+    "message": "Conctare la reţeaua Tor",
+    "description": ""
+  },
+  "torprogress.pleaseWait": {
+    "message": "Așteptați pînă stabilim o conexiune la rețeaua Tor.",
+    "description": ""
+  },
+  "torlauncher.error_title": {
+    "message": "Lansator Tor",
+    "description": ""
+  },
+  "torlauncher.tor_exited": {
+    "message": "Tor s-a închis în mod neașteptat. Acest lucru se datorează fie unei erori în Tor, în alt program de pe sistemul dvs., sau a unei defecțiuni în hardware. Browserul Tor nu va putea accesa nici un site decât dacă reporniți Tor. Dacă problema persistă, vă rugăm să trimiteți o copie a Tor Log către echipa de suport.",
+    "description": ""
+  },
+  "torlauncher.tor_exited2": {
+    "message": "Restartând Tor nu se vor închide ferestrele browserului dvs.",
+    "description": ""
+  },
+  "torlauncher.tor_controlconn_failed": {
+    "message": "Nu sa putut conecta la portul de control Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_failed_to_start": {
+    "message": "Tor nu poate porni.",
+    "description": ""
+  },
+  "torlauncher.tor_control_failed": {
+    "message": "Eșec să preiau controlul Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed": {
+    "message": "Tor nu a reușit să facă o conexiune la rețeaua Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed_details": {
+    "message": "%1$S eșec (%2$S).",
+    "description": ""
+  },
+  "torlauncher.unable_to_start_tor": {
+    "message": "Tor nu poate porni.",
+    "description": ""
+  },
+  "torlauncher.tor_missing": {
+    "message": "Fișierul executabil Tor lipsește.",
+    "description": ""
+  },
+  "torlauncher.torrc_missing": {
+    "message": "Fișierul torrc lipsește",
+    "description": ""
+  },
+  "torlauncher.datadir_missing": {
+    "message": "Tor data directory nu există.",
+    "description": ""
+  },
+  "torlauncher.password_hash_missing": {
+    "message": "Eșec parole hashed.",
+    "description": ""
+  },
+  "torlauncher.failed_to_get_settings": {
+    "message": "Nu pot obține Tor settings.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.failed_to_save_settings": {
+    "message": "Nu pot salva Tor settings.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.ensure_tor_is_running": {
+    "message": "Vă rugăm asigurați-vă că Tor este pornit.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_addr_missing": {
+    "message": "Pentru a folosi Tor ca proxy, prin care să accesaţi internetul, este nevoie să specificaţi atât o adresă de IP, cât şi un port.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_type_missing": {
+    "message": "Trebuie să selectezi un tip de proxy.",
+    "description": ""
+  },
+  "torlauncher.error_bridges_missing": {
+    "message": "Trebuie sa specifici una sau mai multe poduri.",
+    "description": ""
+  },
+  "torlauncher.error_default_bridges_type_missing": {
+    "message": "Trebuie să alegeți un tip de transport pentru punțile oferite",
+    "description": ""
+  },
+  "torlauncher.error_bridge_bad_default_type": {
+    "message": "Nici una din punțile oferite care să ofere transport tip %S este disponibilă. Ajutați setările.",
+    "description": ""
+  },
+  "torlauncher.recommended_bridge": {
+    "message": "(recomandat)",
+    "description": ""
+  },
+  "torlauncher.connect": {
+    "message": "Conectare",
+    "description": ""
+  },
+  "torlauncher.restart_tor": {
+    "message": "Repornește Tor",
+    "description": ""
+  },
+  "torlauncher.quit": {
+    "message": "Revocare",
+    "description": ""
+  },
+  "torlauncher.quit_win": {
+    "message": "Ieşire",
+    "description": ""
+  },
+  "torlauncher.done": {
+    "message": "Gata",
+    "description": ""
+  },
+  "torlauncher.forAssistance": {
+    "message": "Pentru asistență, contactați",
+    "description": ""
+  },
+  "torlauncher.copiedNLogMessages": {
+    "message": "Copiere efectuată. %S Mesajele de log Tor sunt gata pentru a fi lipite într-un editor de text sau un mesaj e-mail.",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_dir": {
+    "message": "Conectare la un director relay",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_dir": {
+    "message": "Se stabileşte o conexiune criptată la director",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_status": {
+    "message": "Se obţin informaţii despre starea reţelei",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_status": {
+    "message": "Se încarcă informaţiile despre starea reţelei",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_keys": {
+    "message": "Se încarcă certificatele de autoritate",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_descriptors": {
+    "message": "Se cer informaţii despre relay",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_descriptors": {
+    "message": "Se încarcă informaţiile despre relay",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_or": {
+    "message": "Conctare la reţeaua Tor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_or": {
+    "message": "Se stabileşte un circuit Tor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.done": {
+    "message": "Conectare efectuată cu succes!",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.done": {
+    "message": "efectuat",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.connectrefused": {
+    "message": "conexiune refuzată",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.misc": {
+    "message": "diverse",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.resourcelimit": {
+    "message": "resurse insuficiente",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.identity": {
+    "message": "identităţile nu se potrivesc",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.timeout": {
+    "message": "timpul alocat pentru conexiune a expirat (timeout)",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.noroute": {
+    "message": "nici o rută către gazdă",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.ioerror": {
+    "message": "eroare la scriere/citire",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.pt_missing": {
+    "message": "pluggable transport lipsă",
+    "description": ""
+  }
+}

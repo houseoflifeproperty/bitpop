@@ -1,0 +1,414 @@
+{
+  "app_name": {
+    "message": "Tor Launcher",
+    "description": ""
+  },
+  "app_description": {
+    "message": "Provides interface between BitPop browser and Tor client",
+    "description": ""
+  },
+  "torsettings.dialog.title": {
+    "message": "Paramètres du réseau Tor",
+    "description": ""
+  },
+  "torsettings.prompt": {
+    "message": "Vous devez fournir des informations concernant la connexion à Internet de cet ordinateur afin que vous puissiez vous connecter au réseau Tor.",
+    "description": ""
+  },
+  "torSettings.yes": {
+    "message": "Oui",
+    "description": ""
+  },
+  "torSettings.no": {
+    "message": "Non",
+    "description": ""
+  },
+  "torSettings.firstQuestion": {
+    "message": "Laquelle des phrases suivantes décrit le mieux votre situation ?",
+    "description": ""
+  },
+  "torSettings.configurePrompt1": {
+    "message": "Le connexion internet de cet ordinateur est bloqué ou utilise un proxy.",
+    "description": ""
+  },
+  "torSettings.configurePrompt2": {
+    "message": "Je doit configurer le pont réseau ou les paramètres du proxy.",
+    "description": ""
+  },
+  "torSettings.configure": {
+    "message": "Configurer",
+    "description": ""
+  },
+  "torSettings.connectPrompt2": {
+    "message": "Je souhaite me connecter directement au réseau Tor.",
+    "description": ""
+  },
+  "torSettings.connectPrompt3": {
+    "message": "Cela fonctionnera dans la plupart des situations.",
+    "description": ""
+  },
+  "torSettings.connect": {
+    "message": "Se connecter",
+    "description": ""
+  },
+  "torSettings.proxyQuestion": {
+    "message": "Est-ce que cet ordinateur a besoin d'un proxy pour accéder à internet ?",
+    "description": ""
+  },
+  "torSettings.proxyHelp": {
+    "message": "Si vous ne savez pas comment répondre à cette question, vous pouvez regarder les paramètres de connexion d'un autre navigateur afin de voir s'il est configuré pour utiliser un proxy.",
+    "description": ""
+  },
+  "torSettings.enterProxy": {
+    "message": "Entrez les paramètres de votre proxy.",
+    "description": ""
+  },
+  "torSettings.bridgeQuestion": {
+    "message": "Est-ce que votre Fournisseur d'Accès Internet (FAI) bloque les connexions au réseau Tor ?",
+    "description": ""
+  },
+  "torSettings.bridgeHelp": {
+    "message": "Si vous ne savez pas comment répondre à cette question, choisissez Non.  Si vous choisissez Oui, il vous sera demandé de configurer les bridges Tor qui sont des relais non listés et qui rendent plus difficile le blocage du réseau Tor.",
+    "description": ""
+  },
+  "torSettings.bridgeSettingsPrompt": {
+    "message": "Vous pouvez utiliser les bridges fournis ou bien saisir votre liste de bridges personnels.",
+    "description": ""
+  },
+  "torsettings.startingTor": {
+    "message": "En attente du démarrage de Tor...",
+    "description": ""
+  },
+  "torsettings.restartTor": {
+    "message": "Relancer Tor",
+    "description": ""
+  },
+  "torsettings.optional": {
+    "message": "Optionnel",
+    "description": ""
+  },
+  "torsettings.useProxy.checkbox": {
+    "message": "Cet ordinateur a besoin d'utiliser un proxy pour accéder à Internet",
+    "description": ""
+  },
+  "torsettings.useProxy.type": {
+    "message": "Type de proxy :",
+    "description": ""
+  },
+  "torsettings.useProxy.address": {
+    "message": "Adresse :",
+    "description": ""
+  },
+  "torsettings.useProxy.address.placeholder": {
+    "message": "Adresse IP ou nom d'hôte",
+    "description": ""
+  },
+  "torsettings.useProxy.port": {
+    "message": "Port :",
+    "description": ""
+  },
+  "torsettings.useProxy.username": {
+    "message": "Nom d'utilisateur :",
+    "description": ""
+  },
+  "torsettings.useProxy.password": {
+    "message": "Mot de passe :",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks4": {
+    "message": "SOCKS 4",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks5": {
+    "message": "SOCKS 5",
+    "description": ""
+  },
+  "torsettings.useProxy.type.http": {
+    "message": "HTTP / HTTPS",
+    "description": ""
+  },
+  "torsettings.firewall.checkbox": {
+    "message": "Cet ordinateur passe par un pare-feu qui autorise uniquement les connexions à certains ports",
+    "description": ""
+  },
+  "torsettings.firewall.allowedPorts": {
+    "message": "Ports autorisés :",
+    "description": ""
+  },
+  "torsettings.useBridges.checkbox": {
+    "message": "Mon Fournisseur d'Accès à Internet (FAI) bloque les connexions au réseau Tor",
+    "description": ""
+  },
+  "torsettings.useBridges.default": {
+    "message": "Se connecter en utilisant les bridges préconfigurés",
+    "description": ""
+  },
+  "torsettings.useBridges.type": {
+    "message": "Mode de transport:",
+    "description": ""
+  },
+  "torsettings.useBridges.custom": {
+    "message": "Entrez vos bridges personnels",
+    "description": ""
+  },
+  "torsettings.useBridges.label": {
+    "message": "Saisir un ou davantage de bridges relais (un par ligne).",
+    "description": ""
+  },
+  "torsettings.useBridges.placeholder": {
+    "message": "type adresse:port",
+    "description": ""
+  },
+  "torsettings.copyLog": {
+    "message": "Copier le journal des messages de Tor dans le presse-papier",
+    "description": ""
+  },
+  "torsettings.bridgeHelpTitle": {
+    "message": "Aide pour les bridges",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1": {
+    "message": "Si vous ne pouvez pas vous connecter au réseau Tor, il se pourrait que votre fournisseur d'accès à Internet (FAI) ou une autre agence bloque le Tor.  Souvent, vous pouvez contourner ce problème en utilisant des ponts Tor, qui sont des relais non listés qui sont plus difficiles à bloquer.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1B": {
+    "message": "Vous pouvez utiliser les liste de bridges préconfigurés par défaut ou en obtenir une liste personnalisée d'adresses en utilisant l'une des trois méthodes ci-dessous :",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2Heading": {
+    "message": "Par le Web",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2": {
+    "message": "Utilisez un navigateur web pour visiter https://bridges.torproject.org",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3Heading": {
+    "message": "Par l'auto-répondeur de courrier électronique",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailDesc": {
+    "message": "Envoyer un e-mail à bridges@torproject.org avec la ligne 'get bridges' dans le corps du message.  Pour rendre plus difficile à un attaquant d'apprendre beaucoup d'adresses de pont, vous devez envoyer cette demande depuis une adresse électronique d'un de ces fournisseurs (listés par ordre de préférence) :",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailList": {
+    "message": "https://www.riseup.net, https://mail.google.com, ou https://mail.yahoo.com",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4Heading": {
+    "message": "Par le bureau d'aide",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4": {
+    "message": "En dernier ressort, vous pouvez demander des adresses de pont en envoyant un message électronique poli à help@rt.torproject.org.  Veuillez noter qu'une personne devra répondre à chaque demande.",
+    "description": ""
+  },
+  "torprogress.dialog.title": {
+    "message": "État de Tor",
+    "description": ""
+  },
+  "torprogress.openSettings": {
+    "message": "Ouvrir les paramètres",
+    "description": ""
+  },
+  "torprogress.heading": {
+    "message": "Connexion au réseau Tor",
+    "description": ""
+  },
+  "torprogress.pleaseWait": {
+    "message": "Veuillez patienter pendant que la connexion au réseau Tor est établie.",
+    "description": ""
+  },
+  "torlauncher.error_title": {
+    "message": "Lanceur Tor",
+    "description": ""
+  },
+  "torlauncher.tor_exited": {
+    "message": "Tor s'est terminé de manière inattendue. Cela pourrait être dû à un bug dans Tor lui-même, à un autre logiciel sur votre système, ou à un défaut matériel. Jusqu'à ce que vous redémarriez Tor, le navigateur Tor sera incapable d'atteindre un site Web. Si le problème persiste, veuillez envoyer une copie de votre historique Tor à l'équipe d'assistance.",
+    "description": ""
+  },
+  "torlauncher.tor_exited2": {
+    "message": "Redémarrer Tor ne fermera pas les onglets de votre navigateur",
+    "description": ""
+  },
+  "torlauncher.tor_controlconn_failed": {
+    "message": "Impossible de se connecter au port de contrôle de Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_failed_to_start": {
+    "message": "Tor n'a pas pu démarrer.",
+    "description": ""
+  },
+  "torlauncher.tor_control_failed": {
+    "message": "Échec lors de la prise de contrôle de Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed": {
+    "message": "Tor n'a pas réussi à établir une connexion au réseau Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed_details": {
+    "message": "%1$S échoué (%2$S).",
+    "description": ""
+  },
+  "torlauncher.unable_to_start_tor": {
+    "message": "Impossible de démarrer Tor.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.tor_missing": {
+    "message": "L'exécutable Tor est introuvable.",
+    "description": ""
+  },
+  "torlauncher.torrc_missing": {
+    "message": "Le fichier torrc est manquant.",
+    "description": ""
+  },
+  "torlauncher.datadir_missing": {
+    "message": "Le répertoire de données de Tor n'existe pas.",
+    "description": ""
+  },
+  "torlauncher.password_hash_missing": {
+    "message": "Impossible d'obtenir le mot de passe chiffré.",
+    "description": ""
+  },
+  "torlauncher.failed_to_get_settings": {
+    "message": "Impossible de récupérer les paramètres de Tor.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.failed_to_save_settings": {
+    "message": "Impossible de sauvegarder les paramètres de Tor.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.ensure_tor_is_running": {
+    "message": "Veuillez-vous assurer que Tor est lancé.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_addr_missing": {
+    "message": "Pour configurer Tor afin qu'il utilise un proxy, vous devez spécifier une adresse IP ou un nom d'hôte ainsi qu'un numéro de port.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_type_missing": {
+    "message": "Vous devez sélectionner un type de proxy.",
+    "description": ""
+  },
+  "torlauncher.error_bridges_missing": {
+    "message": "Vous devez spécifier un ou plusieurs bridges.",
+    "description": ""
+  },
+  "torlauncher.error_default_bridges_type_missing": {
+    "message": "Vous devez sélectionner un type de transport pour les bridges fournis.",
+    "description": ""
+  },
+  "torlauncher.error_bridge_bad_default_type": {
+    "message": "Aucun des bridges fournis n'a le type de transport %S. Merci d'ajuster vos paramètres.",
+    "description": ""
+  },
+  "torlauncher.recommended_bridge": {
+    "message": "(recommandé)",
+    "description": ""
+  },
+  "torlauncher.connect": {
+    "message": "Se connecter",
+    "description": ""
+  },
+  "torlauncher.restart_tor": {
+    "message": "Relancer Tor",
+    "description": ""
+  },
+  "torlauncher.quit": {
+    "message": "Quitter",
+    "description": ""
+  },
+  "torlauncher.quit_win": {
+    "message": "Sortir",
+    "description": ""
+  },
+  "torlauncher.done": {
+    "message": "Terminé",
+    "description": ""
+  },
+  "torlauncher.forAssistance": {
+    "message": "Pour obtenir de l'aide, contactez %S",
+    "description": ""
+  },
+  "torlauncher.copiedNLogMessages": {
+    "message": "Copie terminée. %S messages du journal Tor sont prêt à être collés dans votre éditeur de texte ou dans un mail.",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_dir": {
+    "message": "Connexion à un annuaire de relais",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_dir": {
+    "message": "Établissement d'une connexion annuaire chiffrée",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_status": {
+    "message": "Récupération de l'état du réseau",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_status": {
+    "message": "Chargement de l'état du réseau",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_keys": {
+    "message": "Chargement des certificats d'autorité",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_descriptors": {
+    "message": "Demande d'informations sur le relai",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_descriptors": {
+    "message": "Chargement des informations sur le relais",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_or": {
+    "message": "Connexion au réseau Tor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_or": {
+    "message": "Réalisation d'un circuit Tor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.done": {
+    "message": "Connecté au réseau Tor !",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.done": {
+    "message": "effectué",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.connectrefused": {
+    "message": "connexion refusée",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.misc": {
+    "message": "divers",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.resourcelimit": {
+    "message": "ressources insuffisantes",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.identity": {
+    "message": "identité incorrecte",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.timeout": {
+    "message": "temps de connexion expiré",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.noroute": {
+    "message": "pas de route vers l'hôte",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.ioerror": {
+    "message": "erreur de lecture/écriture",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.pt_missing": {
+    "message": "un transport câblé est manquant",
+    "description": ""
+  }
+}

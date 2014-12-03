@@ -1,0 +1,414 @@
+{
+  "app_name": {
+    "message": "Tor Launcher",
+    "description": ""
+  },
+  "app_description": {
+    "message": "Provides interface between BitPop browser and Tor client",
+    "description": ""
+  },
+  "torsettings.dialog.title": {
+    "message": "ตั้งค่าเครือข่าย Tor",
+    "description": ""
+  },
+  "torsettings.prompt": {
+    "message": "Before you connect to the Tor network, you need to provide information about this computer's Internet connection.",
+    "description": ""
+  },
+  "torSettings.yes": {
+    "message": "ใช่",
+    "description": ""
+  },
+  "torSettings.no": {
+    "message": "ไม่ใช่",
+    "description": ""
+  },
+  "torSettings.firstQuestion": {
+    "message": "สิ่งต่อไปนี้อันไหนบ้างที่บรรยายลักษณะสถานการณ์ของคุณ",
+    "description": ""
+  },
+  "torSettings.configurePrompt1": {
+    "message": "การเชื่อมต่ออินเตอร์เน็ตของคอมพิวเตอร์เครื่องนี้ถูกตรวจสอบหรือมีการใช้พร็อกซี่",
+    "description": ""
+  },
+  "torSettings.configurePrompt2": {
+    "message": "ฉันต้องการตั้งค่าบริดจ์หรือพร็อกซี่",
+    "description": ""
+  },
+  "torSettings.configure": {
+    "message": "ปรับแต่ง",
+    "description": ""
+  },
+  "torSettings.connectPrompt2": {
+    "message": "ฉันอยากจะเชื่อมต่อโดยตรงกับเครือข่าย Tor",
+    "description": ""
+  },
+  "torSettings.connectPrompt3": {
+    "message": "นี่จะทำงานในสถานการณ์ส่วนใหญ่",
+    "description": ""
+  },
+  "torSettings.connect": {
+    "message": "เชื่อมต่อ",
+    "description": ""
+  },
+  "torSettings.proxyQuestion": {
+    "message": "คอมพิวเตอร์เครื่องนี้จำเป็นต้องใช้พร็อกซีเพื่อเข้าถึงอินเทอร์เน็ตหรือไม่?",
+    "description": ""
+  },
+  "torSettings.proxyHelp": {
+    "message": "ถ้าคุณไม่แน่ใจว่าจะตอบคำถามนี้ยังไง ให้ดูค่าติดตั้งอินเทอร์เน็ตในโปรแกรมอื่นๆว่าถูกตั้งค่าให้ใช้พร็อกซีหรือไม่",
+    "description": ""
+  },
+  "torSettings.enterProxy": {
+    "message": "ใส่ค่าติดตั้งพร็อกซี",
+    "description": ""
+  },
+  "torSettings.bridgeQuestion": {
+    "message": "ผู้ให้บริการอินเตอร์เน็ต (ISP) ของคุณปิดกั้นหรือคัดกรองการเชื่อมต่อไปยังเครือข่าย Tor หรือไม่?",
+    "description": ""
+  },
+  "torSettings.bridgeHelp": {
+    "message": "ถ้าคุณไม่แน่ใจ ตอบไม่  ถ้าคุณตอบใช่ คุณจะต้องตั้งค่า Tor Bridge ซึ่งเป็นรีเลย์ที่ไม่ถูกลิสต์ไว้และช่วยให้เป็นไปได้ยากขึ้นที่จะปิดกั้นการเชื่อมต่อไปยังเครือข่าย Tor",
+    "description": ""
+  },
+  "torSettings.bridgeSettingsPrompt": {
+    "message": "You may use the provided set of bridges or you may obtain and enter a custom set of bridges.",
+    "description": ""
+  },
+  "torsettings.startingTor": {
+    "message": "รอให้ Tor เริ่มทำงาน...",
+    "description": ""
+  },
+  "torsettings.restartTor": {
+    "message": "เริ่มการทำงานของ Tor ใหม่",
+    "description": ""
+  },
+  "torsettings.optional": {
+    "message": "ตัวเลือก",
+    "description": ""
+  },
+  "torsettings.useProxy.checkbox": {
+    "message": "คอมพิวเตอร์เครื่องนี้จำเป็นต้องใข้พร็อกซีเพื่อเข้าถึงอินเทอร์เน็ต",
+    "description": ""
+  },
+  "torsettings.useProxy.type": {
+    "message": "ชนิดพร็อกซี:",
+    "description": ""
+  },
+  "torsettings.useProxy.address": {
+    "message": "ที่อยู่:",
+    "description": ""
+  },
+  "torsettings.useProxy.address.placeholder": {
+    "message": "ที่อยู่ IP หรือชื่อโฮสต์",
+    "description": ""
+  },
+  "torsettings.useProxy.port": {
+    "message": "พอร์ต:",
+    "description": ""
+  },
+  "torsettings.useProxy.username": {
+    "message": "ชื่อผู้ใช้:",
+    "description": ""
+  },
+  "torsettings.useProxy.password": {
+    "message": "รหัสผ่าน:",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks4": {
+    "message": "SOCKS 4",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks5": {
+    "message": "SOCKS 5",
+    "description": ""
+  },
+  "torsettings.useProxy.type.http": {
+    "message": "HTTP / HTTPS",
+    "description": ""
+  },
+  "torsettings.firewall.checkbox": {
+    "message": "คอมพิวเตอร์เครื่องนี้ใช้งานผ่านไฟร์วอลล์ที่ยินยอมที่จะให้เชื่อมต่อกับบางพอร์ตเท่านั้น",
+    "description": ""
+  },
+  "torsettings.firewall.allowedPorts": {
+    "message": "พอร์ตที่อนุญาต:",
+    "description": ""
+  },
+  "torsettings.useBridges.checkbox": {
+    "message": "ผู้ให้บริการอินเทอร์เน็ต (ไอเอสพี) ของฉัน ปิดกั้นการเชื่อมต่อกับเครือข่าย Tor",
+    "description": ""
+  },
+  "torsettings.useBridges.default": {
+    "message": "Connect with provided bridges",
+    "description": ""
+  },
+  "torsettings.useBridges.type": {
+    "message": "Transport type:",
+    "description": ""
+  },
+  "torsettings.useBridges.custom": {
+    "message": "Enter custom bridges",
+    "description": ""
+  },
+  "torsettings.useBridges.label": {
+    "message": "ใส่สะพานรีเลย์อย่างน้อยหนึ่งอัน (บรรทัดละอัน)",
+    "description": ""
+  },
+  "torsettings.useBridges.placeholder": {
+    "message": "type address:port",
+    "description": ""
+  },
+  "torsettings.copyLog": {
+    "message": "คัดลอกปูม Tor ไปที่คลิปบอร์ด",
+    "description": ""
+  },
+  "torsettings.bridgeHelpTitle": {
+    "message": "การช่วยเหลือรีเลย์สะพาน",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1": {
+    "message": "If you are unable to connect to the Tor network, it could be that your Internet Service Provider (ISP) or another agency is blocking Tor.  Often, you can work around this problem by using Tor Bridges, which are unlisted relays that are more difficult to block.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1B": {
+    "message": "You may use the preconfigured, provided set of bridge addresses or you may obtain a custom set of addresses by using one of these three methods:",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2Heading": {
+    "message": "Through the Web",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2": {
+    "message": "Use a web browser to visit https://bridges.torproject.org",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3Heading": {
+    "message": "Through the Email Autoresponder",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailDesc": {
+    "message": "Send email to bridges@torproject.org with the line 'get bridges' by itself in the body of the message.  However, to make it harder for an attacker to learn a lot of bridge addresses, you must send this request from one of the following email providers (listed in order of preference):",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailList": {
+    "message": "https://www.riseup.net, https://mail.google.com, or https://mail.yahoo.com",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4Heading": {
+    "message": "Through the Help Desk",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4": {
+    "message": "As a last resort, you can request bridge addresses by sending a polite email message to help@rt.torproject.org.  Please note that a person will need to respond to each request.",
+    "description": ""
+  },
+  "torprogress.dialog.title": {
+    "message": "สถานะ Tor",
+    "description": ""
+  },
+  "torprogress.openSettings": {
+    "message": "การตั้งค่า",
+    "description": ""
+  },
+  "torprogress.heading": {
+    "message": "กำลังเชื่อมต่อสู่เครือข่าย Tor",
+    "description": ""
+  },
+  "torprogress.pleaseWait": {
+    "message": "กรุณารอขณะที่เรากำลังทำการเชื่อมต่อไปยังเครือข่าย Tor",
+    "description": ""
+  },
+  "torlauncher.error_title": {
+    "message": "ตัวเปิด Tor",
+    "description": ""
+  },
+  "torlauncher.tor_exited": {
+    "message": "Tor unexpectedly exited. This might be due to a bug in Tor itself, another program on your system, or faulty hardware. Until you restart Tor, the Tor Browser will not able to reach any websites. If the problem persists, please send a copy of your Tor Log to the support team.",
+    "description": ""
+  },
+  "torlauncher.tor_exited2": {
+    "message": "Restarting Tor will not close your browser tabs.",
+    "description": ""
+  },
+  "torlauncher.tor_controlconn_failed": {
+    "message": "ไม่สามารถเชื่อมต่อกับพอร์ตควบคุมของ Tor ได้",
+    "description": ""
+  },
+  "torlauncher.tor_failed_to_start": {
+    "message": "การเริ่ม Tor ล้มเหลว",
+    "description": ""
+  },
+  "torlauncher.tor_control_failed": {
+    "message": "Failed to take control of Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed": {
+    "message": "Tor failed to establish a Tor network connection.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed_details": {
+    "message": "%1$S failed (%2$S).",
+    "description": ""
+  },
+  "torlauncher.unable_to_start_tor": {
+    "message": "ไม่สามารถเริ่มการทำงานของ Tor ได้\n\n%S",
+    "description": ""
+  },
+  "torlauncher.tor_missing": {
+    "message": "แฟ้มโปรแกรม Tor ขาดหายไป",
+    "description": ""
+  },
+  "torlauncher.torrc_missing": {
+    "message": "แฟ้ม torrc หายไป",
+    "description": ""
+  },
+  "torlauncher.datadir_missing": {
+    "message": "ไม่มีไดเรกทอรีข้อมูลของ Tor",
+    "description": ""
+  },
+  "torlauncher.password_hash_missing": {
+    "message": "ล้มเหลวในการเรียกรหัสผ่านที่ถูกแฮช",
+    "description": ""
+  },
+  "torlauncher.failed_to_get_settings": {
+    "message": "ไม่สามารถเรียกการตั้งค่า Tor ได้\n\n%S",
+    "description": ""
+  },
+  "torlauncher.failed_to_save_settings": {
+    "message": "ไม่สามารถบันทึกการตั้งค่า Tor ได้\n\n%S",
+    "description": ""
+  },
+  "torlauncher.ensure_tor_is_running": {
+    "message": "กรุณาตรวจให้แน่ใจว่า Tor กำลังทำงานอยู่",
+    "description": ""
+  },
+  "torlauncher.error_proxy_addr_missing": {
+    "message": "คุณต้องระบุทั้งที่อยู่ IP หรือชื่อเครื่อง และหมายเลขพอร์ต เพื่อปรับแต่ง Tor ให้ใช้พร็อกซีในการเชื่อมต่ออินเทอร์เน็ต",
+    "description": ""
+  },
+  "torlauncher.error_proxy_type_missing": {
+    "message": "คุณต้องเลือกชนิดพร็อกซี",
+    "description": ""
+  },
+  "torlauncher.error_bridges_missing": {
+    "message": "คุณต้องระบุสะพานอย่างน้อยหนึ่งตัว",
+    "description": ""
+  },
+  "torlauncher.error_default_bridges_type_missing": {
+    "message": "You must select a transport type for the provided bridges.",
+    "description": ""
+  },
+  "torlauncher.error_bridge_bad_default_type": {
+    "message": "No provided bridges that have the transport type %S are available. Please adjust your settings.",
+    "description": ""
+  },
+  "torlauncher.recommended_bridge": {
+    "message": "(แนะนำ)",
+    "description": ""
+  },
+  "torlauncher.connect": {
+    "message": "เชื่อมต่อ",
+    "description": ""
+  },
+  "torlauncher.restart_tor": {
+    "message": "เริ่มการทำงานของ Tor ใหม่",
+    "description": ""
+  },
+  "torlauncher.quit": {
+    "message": "ออก",
+    "description": ""
+  },
+  "torlauncher.quit_win": {
+    "message": "ออก",
+    "description": ""
+  },
+  "torlauncher.done": {
+    "message": "สำเร็จ",
+    "description": ""
+  },
+  "torlauncher.forAssistance": {
+    "message": "ต้องการคำแนะนำ ติดต่อ %S",
+    "description": ""
+  },
+  "torlauncher.copiedNLogMessages": {
+    "message": "Copy complete. %S Tor log messages are ready to be pasted into a text editor or an email message.",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_dir": {
+    "message": "กำลังเชื่อมต่อกับ คลังเก็บรายชื่อ relay (relay directory)",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_dir": {
+    "message": "กำลังสร้างการเชื่อมต่อแบบเข้ารหัสกับคลังเก็บรายชื่อ",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_status": {
+    "message": "กำลังตรวจสถานะเครือข่าย",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_status": {
+    "message": "กำลังดึงข้อมูลสถานะเครือข่าย",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_keys": {
+    "message": "กำลังดึง ใบรับรองการให้สิทธิ (authority certificates)",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_descriptors": {
+    "message": "กำลังร้องขอ ข้อมูล relay",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_descriptors": {
+    "message": "กำลังดึง ข้อมูล relay",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_or": {
+    "message": "กำลังเชื่อมต่อสู่เครือข่าย Tor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_or": {
+    "message": "กำลังสร้างวงจรเชื่อมต่อ Tor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.done": {
+    "message": "เชื่อมต่อสู่เครือข่าย Tor เรียบร้อย!",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.done": {
+    "message": "สำเร็จ",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.connectrefused": {
+    "message": "ถูกปฏิเสธการเชื่อมต่อ",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.misc": {
+    "message": "เบ็ดเตล็ด",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.resourcelimit": {
+    "message": "ทรัพยากรไม่เพียงพอ",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.identity": {
+    "message": "ตัวตนไม่ถูกต้อง",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.timeout": {
+    "message": "นานเกินไปในการเชื่อมต่อ",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.noroute": {
+    "message": "หาเส้นทางไปหา host ไม่พบ",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.ioerror": {
+    "message": "อ่าน/เขียน ผิดพลาด",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.pt_missing": {
+    "message": "missing pluggable transport",
+    "description": ""
+  }
+}

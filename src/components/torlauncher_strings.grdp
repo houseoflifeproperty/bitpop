@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<grit-part>
+
+  <message name="IDS_TORLAUNCHER_ERR_FAILED_TO_FIND_REQUIRED_PATH" desc="">
+    GetTorFile() <ph name="TOR_FILE_TYPE">$1<ex>tordatadir</ex></ph> failed to find the required path.
+  </message>
+  <message name="IDS_TORLAUNCHER_ERR_TOR_BUNDLE_FILE_NOT_FOUND" desc="">
+    Tor bundle file: "<ph name="FILE_PATH">$1<ex>c:\bitpop\Data\Tor\torrc</ex></ph>" not found.
+  </message>
+
+</grit-part>

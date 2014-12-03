@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Tor Network Settings</title>
+  <link rel="stylesheet" href="css/main.css" type="text/css" />
+  <script src="js/network-settings.js"></script>
+</head>
+<body id="network_settings">
+  <div class="container">
+    <div class="box box-top">
+      <header id="ns_head" hidden>
+        <div><!-- flexbox -->
+          <figure>
+            <img src="images/tor_logo.png" class="tor-logo" alt="" />
+          </figure>
+          <p class="rounded-rect-highlight" i18n="torsettings.prompt"></p>
+        </div>
+      </header>
+      <section class="nw-first-question nw-question" hidden>
+        <header>
+          <h1 i18n-data="torSettings.firstQuestion" class="question-head"></h1>
+        </header>
+        <section class="ns-opt-section">
+          <p i18n="torSettings.connectPrompt2"></p>
+          <p i18n="torSettings.connectPrompt3"></p>
+          <p><button id="ns_direct_connect_btn" i18n="torSettings.connect"></button></p>
+        </section>
+        <section class="ns-opt-section" hidden>
+          <p i18n-data="nw_1_censored_p_1">This computer's Internet connection is censored or proxied.</p>
+          <p i18n-data="nw_1_censored_p_2">I need to configure bridge or proxy settings.</p>
+          <p><button id="ns_censored_configure_btn" i18n-data="nw_1_configure_btn_label">Configure</button></p>
+        </section>
+      </section>
+    </div><!-- .box .box-top -->
+    <div class="bottom-hr"></div>
+    <div class="box box-bottom">
+      <section id="ns_extras">
+        <p>
+          <span i18n-data="nw_contact_email_label">For assistance, contact</span>
+          <span id="contact_email">support@bitpop.com</span>
+        </p>
+      </section>
+      <section id="ns_btn_group" class="horz-btn-group">
+        <section class="left-algn-btns">
+          <!-- <button id="ns_cancel_btn" i18n-data="cancel_btn_label">Cancel</button> -->
+          <button id="ns_quit_btn" i18n="torlauncher.quit">Quit</button>
+          <button id="ns_copy_log_btn" i18n="torsettings.copyLog" hidden></button>
+        </section>
+        <!-- <section class="right-algn-btns">
+          <button id="ns_goback_btn" i18n-data="goback_btn_label" hidden>Go Back</button>
+          <button id="ns_continue_btn" i18n-data="continue_btn_label" hidden>Continue</button>
+          <button id="ns_done_btn" i18n-data="done_btn_label" hidden>Done</button>
+          <button id="ns_cancel_btn" i18n-data="cancel_btn_label">Cancel</button>
+          <button id="ns_ok_btn" i18n-data="ok_btn_label" hidden>OK</button>
+          <button id="ns_connect_btn" i18n-data="connect_btn_label" hidden>Connect</button>
+        </section> -->
+      </section>
+    </div>
+  </div><!-- .container -->
+</body>
+</html>

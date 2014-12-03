@@ -1,0 +1,414 @@
+{
+  "app_name": {
+    "message": "Tor Launcher",
+    "description": ""
+  },
+  "app_description": {
+    "message": "Provides interface between BitPop browser and Tor client",
+    "description": ""
+  },
+  "torsettings.dialog.title": {
+    "message": "הגדרות רשת Tor",
+    "description": ""
+  },
+  "torsettings.prompt": {
+    "message": "Before you connect to the Tor network, you need to provide information about this computer's Internet connection.",
+    "description": ""
+  },
+  "torSettings.yes": {
+    "message": "כן",
+    "description": ""
+  },
+  "torSettings.no": {
+    "message": "לא",
+    "description": ""
+  },
+  "torSettings.firstQuestion": {
+    "message": "אילו מן הבאים מתאר את המצב שלך באופן הטוב ביותר?",
+    "description": ""
+  },
+  "torSettings.configurePrompt1": {
+    "message": "This computer's Internet connection is censored or proxied.",
+    "description": ""
+  },
+  "torSettings.configurePrompt2": {
+    "message": "I need to configure bridge or proxy settings.",
+    "description": ""
+  },
+  "torSettings.configure": {
+    "message": "הגדר",
+    "description": ""
+  },
+  "torSettings.connectPrompt2": {
+    "message": "ברצוני להתחבר ישירות אל הרשת Tor.",
+    "description": ""
+  },
+  "torSettings.connectPrompt3": {
+    "message": "This will work in most situations.",
+    "description": ""
+  },
+  "torSettings.connect": {
+    "message": "התחבר",
+    "description": ""
+  },
+  "torSettings.proxyQuestion": {
+    "message": "האם מחשב זה צריך להשתמש בפרוקסי כדי לגשת אל האינטרנט?",
+    "description": ""
+  },
+  "torSettings.proxyHelp": {
+    "message": "If you are not sure how to answer this question, look at the Internet settings in another browser to see whether it is configured to use a proxy.",
+    "description": ""
+  },
+  "torSettings.enterProxy": {
+    "message": "הזן את הגדרות הפרוקסי.",
+    "description": ""
+  },
+  "torSettings.bridgeQuestion": {
+    "message": "Does your Internet Service Provider (ISP) block or otherwise censor connections to the Tor Network?",
+    "description": ""
+  },
+  "torSettings.bridgeHelp": {
+    "message": "If you are not sure how to answer this question, choose No.  If you choose Yes, you will be asked to configure Tor Bridges, which are unlisted relays that make it more difficult to block connections to the Tor Network.",
+    "description": ""
+  },
+  "torSettings.bridgeSettingsPrompt": {
+    "message": "You may use the provided set of bridges or you may obtain and enter a custom set of bridges.",
+    "description": ""
+  },
+  "torsettings.startingTor": {
+    "message": "ממתין כעת עבור Tor כדי להתחיל…",
+    "description": ""
+  },
+  "torsettings.restartTor": {
+    "message": "התחל מחדש את Tor",
+    "description": ""
+  },
+  "torsettings.optional": {
+    "message": "רשות",
+    "description": ""
+  },
+  "torsettings.useProxy.checkbox": {
+    "message": "מחשב זה צריך להשתמש בפרוקסי כדי לגשת אל האינטרנט",
+    "description": ""
+  },
+  "torsettings.useProxy.type": {
+    "message": "טיפוס פרוקסי:",
+    "description": ""
+  },
+  "torsettings.useProxy.address": {
+    "message": "כתובת:",
+    "description": ""
+  },
+  "torsettings.useProxy.address.placeholder": {
+    "message": "כתובת IP או שם מארח",
+    "description": ""
+  },
+  "torsettings.useProxy.port": {
+    "message": "יציאה:",
+    "description": ""
+  },
+  "torsettings.useProxy.username": {
+    "message": "שם משתמש:",
+    "description": ""
+  },
+  "torsettings.useProxy.password": {
+    "message": "סיסמה:",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks4": {
+    "message": "SOCKS 4",
+    "description": ""
+  },
+  "torsettings.useProxy.type.socks5": {
+    "message": "SOCKS 5",
+    "description": ""
+  },
+  "torsettings.useProxy.type.http": {
+    "message": "HTTP / HTTPS",
+    "description": ""
+  },
+  "torsettings.firewall.checkbox": {
+    "message": "מחשב זה עובר דרך חומת אש שרק מאפשר חיבורים ליציאות מסוימות",
+    "description": ""
+  },
+  "torsettings.firewall.allowedPorts": {
+    "message": "יציאות מורשות:",
+    "description": ""
+  },
+  "torsettings.useBridges.checkbox": {
+    "message": "ספק האינטרנט שלי (ISP) חוסם חיבורים אל הרשת Tor",
+    "description": ""
+  },
+  "torsettings.useBridges.default": {
+    "message": "Connect with provided bridges",
+    "description": ""
+  },
+  "torsettings.useBridges.type": {
+    "message": "Transport type:",
+    "description": ""
+  },
+  "torsettings.useBridges.custom": {
+    "message": "Enter custom bridges",
+    "description": ""
+  },
+  "torsettings.useBridges.label": {
+    "message": "הקלד אחד או יותר ממסרי גשר (אחד לכל שורה)",
+    "description": ""
+  },
+  "torsettings.useBridges.placeholder": {
+    "message": "type address:port",
+    "description": ""
+  },
+  "torsettings.copyLog": {
+    "message": "העתק את יומן Tor אל לוח גזירה",
+    "description": ""
+  },
+  "torsettings.bridgeHelpTitle": {
+    "message": "עזרת ממסר גשר",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1": {
+    "message": "If you are unable to connect to the Tor network, it could be that your Internet Service Provider (ISP) or another agency is blocking Tor.  Often, you can work around this problem by using Tor Bridges, which are unlisted relays that are more difficult to block.",
+    "description": ""
+  },
+  "torsettings.bridgeHelp1B": {
+    "message": "You may use the preconfigured, provided set of bridge addresses or you may obtain a custom set of addresses by using one of these three methods:",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2Heading": {
+    "message": "Through the Web",
+    "description": ""
+  },
+  "torsettings.bridgeHelp2": {
+    "message": "Use a web browser to visit https://bridges.torproject.org",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3Heading": {
+    "message": "Through the Email Autoresponder",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailDesc": {
+    "message": "Send email to bridges@torproject.org with the line 'get bridges' by itself in the body of the message.  However, to make it harder for an attacker to learn a lot of bridge addresses, you must send this request from one of the following email providers (listed in order of preference):",
+    "description": ""
+  },
+  "torsettings.bridgeHelp3.emailList": {
+    "message": "https://www.riseup.net, https://mail.google.com, or https://mail.yahoo.com",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4Heading": {
+    "message": "Through the Help Desk",
+    "description": ""
+  },
+  "torsettings.bridgeHelp4": {
+    "message": "As a last resort, you can request bridge addresses by sending a polite email message to help@rt.torproject.org.  Please note that a person will need to respond to each request.",
+    "description": ""
+  },
+  "torprogress.dialog.title": {
+    "message": "מצב Tor",
+    "description": ""
+  },
+  "torprogress.openSettings": {
+    "message": "פתח הגדרות",
+    "description": ""
+  },
+  "torprogress.heading": {
+    "message": "מתחבר כעת אל רשת Tor",
+    "description": ""
+  },
+  "torprogress.pleaseWait": {
+    "message": "Please wait while we establish a connection to the Tor network.",
+    "description": ""
+  },
+  "torlauncher.error_title": {
+    "message": "משגר Tor",
+    "description": ""
+  },
+  "torlauncher.tor_exited": {
+    "message": "Tor unexpectedly exited. This might be due to a bug in Tor itself, another program on your system, or faulty hardware. Until you restart Tor, the Tor Browser will not able to reach any websites. If the problem persists, please send a copy of your Tor Log to the support team.",
+    "description": ""
+  },
+  "torlauncher.tor_exited2": {
+    "message": "התחלה מחדש של Tor לא תסגור את כרטיסיות הדפדפן שלך.",
+    "description": ""
+  },
+  "torlauncher.tor_controlconn_failed": {
+    "message": "לא הצליח להתחבר ליציאת שליטת Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_failed_to_start": {
+    "message": "Tor נכשל בהפעלה.",
+    "description": ""
+  },
+  "torlauncher.tor_control_failed": {
+    "message": "נכשל לקבל שליטה על Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed": {
+    "message": "Tor נכשל לבסס חיבור רשת Tor.",
+    "description": ""
+  },
+  "torlauncher.tor_bootstrap_failed_details": {
+    "message": "%1$S failed (%2$S).",
+    "description": ""
+  },
+  "torlauncher.unable_to_start_tor": {
+    "message": "אין אפשרות להתחיל את Tor.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.tor_missing": {
+    "message": "בר הרצה Tor הינו חסר.",
+    "description": ""
+  },
+  "torlauncher.torrc_missing": {
+    "message": "הקובץ torrc הינו חסר.",
+    "description": ""
+  },
+  "torlauncher.datadir_missing": {
+    "message": "ספריית נתונים Tor לא קיימת.",
+    "description": ""
+  },
+  "torlauncher.password_hash_missing": {
+    "message": "כשל בהשגת סיסמה מעורבלת.",
+    "description": ""
+  },
+  "torlauncher.failed_to_get_settings": {
+    "message": "אין אפשרות לאחזר הגדרות Tor.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.failed_to_save_settings": {
+    "message": "אין אפשרות לשמור הגדרות Tor.\n\n%S",
+    "description": ""
+  },
+  "torlauncher.ensure_tor_is_running": {
+    "message": "אנא וודא כי Tor מורץ כעת.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_addr_missing": {
+    "message": "עליך לציין כתובת IP או שם מארח וגם מספר יציאה בכדי להגדיר את Tor לשימוש בשרת פרוקסי כדי לעשות שימוש בפרוקסי כדי להיכנס אל האינטרנט.",
+    "description": ""
+  },
+  "torlauncher.error_proxy_type_missing": {
+    "message": "עליך לבחור את טיפוס הפרוקסי.",
+    "description": ""
+  },
+  "torlauncher.error_bridges_missing": {
+    "message": "עליך לציין גשר אחד או יותר.",
+    "description": ""
+  },
+  "torlauncher.error_default_bridges_type_missing": {
+    "message": "You must select a transport type for the provided bridges.",
+    "description": ""
+  },
+  "torlauncher.error_bridge_bad_default_type": {
+    "message": "No provided bridges that have the transport type %S are available. Please adjust your settings.",
+    "description": ""
+  },
+  "torlauncher.recommended_bridge": {
+    "message": "(מומלץ)",
+    "description": ""
+  },
+  "torlauncher.connect": {
+    "message": "התחבר",
+    "description": ""
+  },
+  "torlauncher.restart_tor": {
+    "message": "התחל מחדש את Tor",
+    "description": ""
+  },
+  "torlauncher.quit": {
+    "message": "יציאה",
+    "description": ""
+  },
+  "torlauncher.quit_win": {
+    "message": "צא",
+    "description": ""
+  },
+  "torlauncher.done": {
+    "message": "הושלם",
+    "description": ""
+  },
+  "torlauncher.forAssistance": {
+    "message": "לעזרה, צרו קשר עם %S",
+    "description": ""
+  },
+  "torlauncher.copiedNLogMessages": {
+    "message": "Copy complete. %S Tor log messages are ready to be pasted into a text editor or an email message.",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_dir": {
+    "message": "מתחבר כעת אל מדור ממסר",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_dir": {
+    "message": "מקים כעת חיבור ספריות מוצפן",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_status": {
+    "message": "מאתר כעת את מצב הרשת",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_status": {
+    "message": "טוען כעת את מצב הרשת",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_keys": {
+    "message": "טוען כעת אישורים אמינים",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.requesting_descriptors": {
+    "message": "מבקש כעת מידע ממסר",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.loading_descriptors": {
+    "message": "טוען כעת מידע ממסר",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.conn_or": {
+    "message": "מתחבר כעת אל רשת Tor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.handshake_or": {
+    "message": "מקים כעת מעגל Tor",
+    "description": ""
+  },
+  "torlauncher.bootstrapStatus.done": {
+    "message": "מחובר לרשת Tor!",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.done": {
+    "message": "בוצע",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.connectrefused": {
+    "message": "החיבור נדחה",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.misc": {
+    "message": "שונות",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.resourcelimit": {
+    "message": "משאבים לא מספיקים",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.identity": {
+    "message": "זהות אינה תואמת",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.timeout": {
+    "message": "החיבור פקע",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.noroute": {
+    "message": "אין נתיב לארח",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.ioerror": {
+    "message": "שגיאת קריאה/כתיבה",
+    "description": ""
+  },
+  "torlauncher.bootstrapWarning.pt_missing": {
+    "message": "missing pluggable transport",
+    "description": ""
+  }
+}

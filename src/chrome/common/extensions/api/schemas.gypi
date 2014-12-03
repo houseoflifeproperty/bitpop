@@ -79,6 +79,7 @@
       'system_indicator.idl',
       'system_private.json',
       'terminal_private.json',
+      'torlauncher.json',
       'types.json',
       'virtual_keyboard_private.json',
       'web_navigation.json',
