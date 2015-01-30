@@ -66,7 +66,6 @@ const char kTorControlPortEnv[] = "TOR_CONTROL_PORT";
 const char kTorControlPasswdEnv[] = "TOR_CONTROL_PASSWD";
 const char kTorControlCookieAuthFileEnv[] = "TOR_CONTROL_COOKIE_AUTH_FILE";
 
-
 std::string ToHex(char value, int min_len) {
   std::string rv = base::HexEncode(&value, sizeof(value));
   //while (rv.size() > static_cast<size_t>(min_len))
@@ -248,12 +247,7 @@ TorLauncherService::TorLauncherService(PrefService* browser_prefs)
 }
 
 TorLauncherService::~TorLauncherService() {
-  if (tor_process_.get()) {
-    if (base::GetTerminationStatus(tor_process_->handle(), nullptr) ==
-        base::TERMINATION_STATUS_STILL_RUNNING)
-      tor_process_->Terminate(0);
-    tor_process_->Close();
-  }
+  ShutdownTor();
 }
 
 std::string TorLauncherService::TorGetPassword(bool please_hash,
@@ -312,25 +306,46 @@ bool TorLauncherService::StartTor(bool disable_network,
   base::FilePath geoip_file = data_dir.Append(FILE_PATH_LITERAL("geoip"));
   base::FilePath geoip6_file = data_dir.Append(FILE_PATH_LITERAL("geoip6"));
 
-  base::CommandLine cmd_line(exe_file);
-  if (!torrc_defaults_file.empty())
-    cmd_line.AppendSwitchPath("--defaults-torrc", torrc_defaults_file);
-  cmd_line.AppendSwitchPath("-f", torrc_file);
-  cmd_line.AppendSwitchPath("DataDirectory", data_dir);
-  cmd_line.AppendSwitchPath("GeoIPFile", geoip_file);
-  cmd_line.AppendSwitchPath("GeoIPv6File", geoip6_file);
-  cmd_line.AppendSwitchASCII("HashedControlPassword", hashed_password);
+  std::vector<std::string> cmd_line;
+  cmd_line.push_back(exe_file.value());
+
+  // FIXME: add support for windows strings
+  if (!torrc_defaults_file.empty()) {
+    cmd_line.push_back("--defaults-torrc");
+    cmd_line.push_back(torrc_defaults_file.value());
+  }
+  cmd_line.push_back("-f");
+  cmd_line.push_back(torrc_file.value());
+  cmd_line.push_back("DataDirectory");
+  cmd_line.push_back(data_dir.value());
+  cmd_line.push_back("GeoIPFile");
+  cmd_line.push_back(geoip_file.value());
+  cmd_line.push_back("GeoIPv6File");
+  cmd_line.push_back(geoip6_file.value());
+  cmd_line.push_back("HashedControlPassword");
+  cmd_line.push_back(hashed_password);
 
   base::ProcessId pid = base::Process::Current().pid();
   std::ostringstream oss("");
   oss << pid;
-  cmd_line.AppendSwitchASCII("__OwningControllerProcess", oss.str());
+  cmd_line.push_back("__OwningControllerProcess");
+  cmd_line.push_back(oss.str());
 
   // TODO: part of code for starting tor with networking disabled was decided to
   // be transferred to javascript part of tor integration. Add the missing
   // code to javascript app.
-  if (disable_network)
-    cmd_line.AppendSwitchASCII("DisableNetwork", "1");
+  if (disable_network) {
+    cmd_line.push_back("DisableNetwork");
+    cmd_line.push_back("1");
+  }
+
+  std::string cl = "";
+  for (auto it = cmd_line.begin(); it != cmd_line.end(); it++) {
+    cl.append(*it);
+    cl.append(" ");
+  }
+  // TODO: remove this
+  DLOG(INFO) << "Tor launch command line: " << cl;
 
   // On Windows, prepend the Tor program directory to PATH.  This is
   // needed so that pluggable transports can find OpenSSL DLLs, etc.
@@ -349,7 +364,7 @@ bool TorLauncherService::StartTor(bool disable_network,
 
   tor_process_status_ = STARTING;
   if (error_desc)
-    error_desc->log_message = "Starting " + cmd_line.GetCommandLineString();
+    error_desc->log_message = "Starting " + cl;
 
   base::ProcessHandle ph;
   if (base::LaunchProcess(cmd_line, base::LaunchOptions(), &ph)) {
@@ -369,6 +384,15 @@ bool TorLauncherService::StartTor(bool disable_network,
   return true;
 } // StartTor()
 
+void TorLauncherService::ShutdownTor() {
+  if (tor_process_.get()) {
+    if (base::GetTerminationStatus(tor_process_->handle(), nullptr) ==
+        base::TERMINATION_STATUS_STILL_RUNNING)
+      tor_process_->Terminate(0);
+    tor_process_->Close();
+    tor_process_.reset();
+  }
+}
 // Returns a file path.
 // If file doesn't exist, empty path is returned.
 base::FilePath TorLauncherService::GetTorFile(
@@ -379,9 +403,9 @@ base::FilePath TorLauncherService::GetTorFile(
   std::string pref_name = MapTorFileTypeToPrefName(tor_file_type);
   const PrefService::Preference* preference =
       browser_prefs_->FindPreference(pref_name.c_str());
-  std::string path_str;
+  std::string path_str = "";
   if (preference)
-    browser_prefs_->GetString(pref_name.c_str());
+    path_str = browser_prefs_->GetString(pref_name.c_str());
 
   base::FilePath path;
   if (!path_str.empty()) {
@@ -450,6 +474,8 @@ base::FilePath TorLauncherService::GetTorFile(
     }
     path = tor_file_base_dir_.Append(path);
   }
+
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
 
   if (base::PathExists(path))
     return path;

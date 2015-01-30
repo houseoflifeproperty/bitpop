@@ -512,19 +512,8 @@
                 {
                   'action_name': 'copy_torlauncher_test_data',
                   'variables': {
-                    'conditions': [
-                      ['OS=="win"', {
-                        'test_data_files': [
-                          '../third_party/tor/win/',
-                          'test/data/torlauncher/', # for auth cookie tests
-                        ],
-                      }],
-                      ['OS=="mac"', {
-                        'test_data_files': [
-                          '../third_party/tor/mac/',
-                          'test/data/torlauncher/', # for auth cookie tests
-                        ],
-                      }],
+                    'test_data_files': [
+                      'test/data/torlauncher/',
                     ],
                     'test_data_prefix': 'torlauncher',
                   },

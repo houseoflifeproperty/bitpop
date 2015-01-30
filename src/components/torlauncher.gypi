@@ -38,6 +38,25 @@
         'torlauncher/torlauncher_service.cc',
         'torlauncher/torlauncher_service.h',
       ],
+      'copies': [
+        {
+          'destination': '<(PRODUCT_DIR)/torlauncher',
+          'conditions': [
+            ['OS=="win"', {
+              'files': [
+                '../third_party/tor/win/Data',
+                '../third_party/tor/win/Tor',
+              ],
+            }],
+            ['OS=="mac"', {
+              'files': [
+                '../third_party/tor/mac/Data',
+                '../third_party/tor/mac/Tor',
+              ],
+            }],
+          ],
+        }
+      ],
     },
   ],
 }

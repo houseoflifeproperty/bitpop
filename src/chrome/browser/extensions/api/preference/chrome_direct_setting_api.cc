@@ -25,6 +25,21 @@ class PreferenceWhitelist {
  public:
   PreferenceWhitelist() {
     whitelist_.insert("googlegeolocationaccess.enabled");
+
+    whitelist_.insert("extensions.torlauncher.loglevel");
+    whitelist_.insert("extensions.torlauncher.logmethod");
+    whitelist_.insert("extensions.torlauncher.max_tor_log_entries");
+    whitelist_.insert("extensions.torlauncher.control_host");
+    whitelist_.insert("extensions.torlauncher.control_port");
+    whitelist_.insert("extensions.torlauncher.start_tor");
+    whitelist_.insert("extensions.torlauncher.prompt_at_startup");
+    whitelist_.insert("extensions.torlauncher.only_configure_tor");
+    whitelist_.insert("extensions.torlauncher.tor_path");
+    whitelist_.insert("extensions.torlauncher.torrc_path");
+    whitelist_.insert("extensions.torlauncher.tordatadir_path");
+    whitelist_.insert("extensions.torlauncher.default_bridge_type");
+    whitelist_.insert("extensions.torlauncher.default_bridge_recommended_type");
+    whitelist_.insert("extensions.torlauncher.default_bridge");
   }
 
   ~PreferenceWhitelist() {}

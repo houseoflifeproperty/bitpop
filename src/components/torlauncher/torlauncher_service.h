@@ -14,6 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#ifndef COMPONENTS_TORLAUNCHER_TORLAUNCHER_SERVICE_H_
+#define COMPONENTS_TORLAUNCHER_TORLAUNCHER_SERVICE_H_
+
 #include <stdint.h>
 #include <string>
 
@@ -130,3 +133,5 @@ class TorLauncherService : public KeyedService {
 };
 
 }
+
+#endif // COMPONENTS_TORLAUNCHER_TORLAUNCHER_SERVICE_H_

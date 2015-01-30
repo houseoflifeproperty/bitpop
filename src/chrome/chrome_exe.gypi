@@ -332,6 +332,13 @@
                 '<(PRODUCT_DIR)/<(mac_product_name) Helper.app',
               ],
             },
+            {
+              'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/TorBrowser',
+              'files': [
+                '<(PRODUCT_DIR)/torlauncher/Data',
+                '<(PRODUCT_DIR)/torlauncher/Tor',
+              ],
+            }
           ],
           'postbuilds': [
             {

@@ -72,6 +72,7 @@
 #include "chrome/browser/signin/signin_ui_util.h"
 #include "chrome/browser/ssl/chrome_ssl_host_state_delegate.h"
 #include "chrome/browser/ssl/chrome_ssl_host_state_delegate_factory.h"
+#include "chrome/browser/torlauncher/torlauncher_service_factory.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
@@ -453,6 +454,9 @@ ProfileImpl::ProfileImpl(
   else
 #endif
   chrome::RegisterUserProfilePrefs(pref_registry_.get());
+
+  // Needed for pref registration
+  static_cast<void>(torlauncher::TorLauncherServiceFactory::GetInstance());
 
   BrowserContextDependencyManager::GetInstance()->
       RegisterProfilePrefsForServices(this, pref_registry_.get());

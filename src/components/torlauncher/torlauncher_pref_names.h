@@ -14,6 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#ifndef COMPONENTS_TORLAUNCHER_TORLAUNCHER_PREF_NAMES_H_
+#define COMPONENTS_TORLAUNCHER_TORLAUNCHER_PREF_NAMES_H_
+
 namespace torlauncher {
 namespace pref_names {
 
@@ -38,3 +41,5 @@ extern const char kDefaultBridge[];
 
 }
 }
+
+#endif // COMPONENTS_TORLAUNCHER_TORLAUNCHER_PREF_NAMES_H_

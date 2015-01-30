@@ -2,6 +2,26 @@
   {
     "namespace": "torlauncher",
     "description": "none",
+    "types": [
+      {
+        "id": "StartTorErrorDesc",
+        "type": "object",
+        "properties": {
+          "alert_message_key": { "type": "string", "description": "none" },
+          "alert_message_param_key": { "type": "string", "description": "none" },
+          "log_message": { "type": "string", "description": "none" }
+        }
+      },
+      {
+        "id": "TorServiceSettings",
+        "type": "object",
+        "properties": {
+          "controlHost": { "type": "string", "description": "none" },
+          "controlPort": { "type": "integer", "description": "none" },
+          "controlPassword": { "type": "string", "description": "none" }
+        }
+      }
+    ],
     "properties": {
       "logLevel": {
         "nocompile": true,
@@ -33,7 +53,7 @@
         "value": ["extensions.torlauncher.control_port", {"type":"integer"}],
         "description": "none"
       },
-      "startTor": {
+      "startTorPref": {
         "nocompile": true,
         "$ref": "types.private.ChromeDirectSetting",
         "value": ["extensions.torlauncher.start_tor", {"type":"boolean"}],
@@ -72,8 +92,61 @@
     },
     "functions": [
       {
-        "name": "getSyncCategoriesWithoutPassphrase",
-        "description": "Returns a list of sync categories the user has enabled without using a custom passphrase for encryption. The possible values are those that can be returned from syncer::ModelTypeToString in sync/syncable/model_type.cc.",
+        "name": "startTor",
+        "description": "none",
+        "type": "function",
+        "parameters": [
+          {
+            "name": "disable_network",
+            "type": "boolean"
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": [
+              {
+                "name": "success",
+                "type": "boolean"
+              },
+              {
+                "name": "error_desc",
+                "$ref": "StartTorErrorDesc"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "initiateAppQuit",
+        "description": "none",
+        "type": "function",
+        "parameters": [
+          { "name": "restart_with_quit", "type": "boolean" }
+        ]
+      },
+      {
+        "name": "getTorProcessStatus",
+        "description": "none",
+        "type": "function",
+        "parameters": [
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": [
+              { "name": "status", "type": "integer" }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "setTorStatusRunning",
+        "description": "none",
+        "type": "function",
+        "parameters": []
+      },
+      {
+        "name": "getTorServiceSettings",
+        "description": "none",
         "type": "function",
         "parameters": [
           {
@@ -81,9 +154,50 @@
             "type": "function",
             "parameters": [
               {
-                "name": "categories",
-                "type": "array",
-                "items": {"type": "string"}
+                "name": "settings",
+                "$ref": "TorServiceSettings"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "envExists",
+        "description": "none",
+        "type": "function",
+        "parameters": [
+          {
+            "name": "env_var_name",
+            "type": "string"
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": [
+              {
+                "name": "exists",
+                "type": "boolean"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "envGet",
+        "description": "none",
+        "type": "function",
+        "parameters": [
+          {
+            "name": "env_var_name",
+            "type": "string"
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": [
+              {
+                "name": "value",
+                "type": "string"
               }
             ]
           }

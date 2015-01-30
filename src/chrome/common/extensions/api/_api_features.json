@@ -700,6 +700,14 @@
     "dependencies": ["permission:topSites"],
     "contexts": ["blessed_extension"]
   },
+  "torlauncher": {
+    "location": "component",
+    "contexts": ["blessed_extension"],
+    "channel": "stable",
+    "whitelist": [
+      "40264A4C8F0862B67B379E83812542525638309F"
+    ]
+  },
   "tts": {
     "dependencies": ["permission:tts"],
     "contexts": ["blessed_extension"]
