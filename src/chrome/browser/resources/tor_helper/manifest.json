@@ -1,0 +1,18 @@
+{
+  "key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCsCSzqFNNFUXWBdQODnYdVteHaFGdMsnuPMtJB9ebqCsnUmHZ4JEJaOcrDLY1pAjGFd8ULUyve6HHKFGQM9qT2wNgTllMLIodOjFzFYOZBsWU9LUKorWedWPqERruy34iH5JFtltOXcY/09q8+Q4bU9C36ZDT0pd3wVKJPvifLqwIDAQAB",
+  "name": "Tor Support for BitPop browser",
+  "description": "Interacts with Tor Launcher app and provides access to Tor settings",
+  "manifest_version": 2,
+  "version": "0.1",
+  "permissions": [ "tabs" ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

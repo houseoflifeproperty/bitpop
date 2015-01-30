@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Tor launcher</title>
+  <link rel="stylesheet" type="text/css" href="css/network-settings.css">
+  <script src="jquery-1.11.2.min.js"></script>
+  <script src="messages.js"></script>
+  <script src="tl-util.js"></script>
+  <script src="dialog-helpers.js"></script>
+  <script src="network-settings.js"></script>
+</head>
+<body id="TorNetworkSettings" class="dialog">
+  <div class="deck" id="deck">
+    <div class="vbox" id="settings">
+      <!--
+      <div class="vbox">
+        <div orient="horizontal" class="separator thin"></div>
+        <checkbox id="useProxy" groupboxID="proxySpecificSettings"
+                  label="&torsettings.useProxy.checkbox;"
+                  oncommand="toggleElemUI(this)"/>
+        <div class="groupbox" id="proxySpecificSettings"></div>
+      </div>
+
+      <div class="vbox">
+        <checkbox id="useFirewallPorts" groupboxID="firewallSpecificSettings"
+                  label="&torsettings.firewall.checkbox;"
+                  oncommand="toggleElemUI(this)"/>
+        <div class="groupbox" id="firewallSpecificSettings"></div>
+      </div>
+
+      <div class="vbox">
+        <checkbox id="useBridges" groupboxID="bridgeSpecificSettings"
+                  label="&torsettings.useBridges.checkbox;"
+                  oncommand="toggleElemUI(this);" />
+        <div class="groupbox" id="bridgeSpecificSettings"></div>
+      </div>
+      -->
+    </div>
+    <div class="vbox" id="startingTor">
+      <div class="spring flex1"></div>
+      <div class="hbox">
+        <div class="spring flex1"></div>
+        <div class="description" i18n="torsettings.startingTor"></div>
+        <div class="spring flex1"></div>
+      </div>
+      <div class="spring flex1"></div>
+    </div>
+    <div class="vbox" id="errorPanel">
+      <div class="spring flex1"></div>
+      <div class="hbox">
+        <div class="spring flex1"></div>
+        <div class="description flex1" id="errorPanelMessage" />
+        <div class="spring flex1"></div>
+      </div>
+      <div class="separator"></div>
+      <div class="hbox">
+        <div class="spring flex1"></div>
+        <button id="restartTorButton" i18n="torsettings.restartTor" hidden="true"></button>
+        <div class="spring flex1"></div>
+      </div>
+      <div class="spring flex1"></div>
+    </div>
+    <div id="bridgeHelp" class="vbox help">
+      <div class="vbox" id="bridgeHelpContent"></div>
+    </div>
+  </div><!-- .deck -->
+  <div class="spring flex1"></div>
+  <label id="forAssistance"></label>
+  <div class="panel" id="copyLogFeedbackPanel"></div>
+  <div class="hbox">
+    <button type="button" id="extra2Button" i18n="torsettings.copyLog"></button>
+    <div class="spring flex1"></div>
+    <button type="button" id="cancelButton">Cancel</button>
+    <button type="button" id="acceptButton" autofocus>Accept</button>
+  </div>
+</body>
+</html>

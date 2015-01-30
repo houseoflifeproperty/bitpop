@@ -1,14 +1,14 @@
 {
-  "key": "",
-  "name": "__MSG_app_name__",
-  "description": "__MSG_app_description__",
+  "key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDmbUJSlxkpKl8AeMyY29uNfs3Z7kJ/7z408eIciUYfz83mKQqUnve4kmqjXgvAr9JuobxhefR1nob4CnS54mLFVyhoXizFe5su1SApjpqMF54UzKk7paDf5zROYZdb6AHwithh/zMAIXWU/+lJSJhT5BxzriB4Rwoji011cGI0sQIDAQAB",
+  "name": "Tor Launcher",
+  "description": "Launches Tor browser component and provides interaction with it.",
   "version": "0.1",
   "manifest_version": 2,
   "default_locale": "en",
   "author": "Viatcheslav Gachkaylo",
   "app": {
     "background": {
-      "scripts": ["background.js"]
+      "scripts": ["messages.js", " tl-util.js", "tl-protocol.js", "tl-process.js", "background.js"]
     }
   },
   "icons": {
@@ -20,5 +20,11 @@
     "tcp": {
       "connect": "*"
     }
-  }
+  },
+  "permissions": [
+    "alarms",
+    "app.window.alwaysOnTop",
+    "clipboardWrite",
+    "preferencesPrivate"
+  ]
 }

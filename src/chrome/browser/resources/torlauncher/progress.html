@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>---</title>
+  <link rel="stylesheet" type="text/css" href="css/progress.css">
+  <script src="jquery-1.11.2.min.js"></script>
+  <script src="messages.js"></script>
+  <script src="tl-util.js"></script>
+  <script src="dialog-helpers.js"></script>
+  <script src="progress.js"></script>
+</head>
+<body id="TorProgress" class="dialog vbox">
+
+  <div class="vbox">
+    <div class="hbox">
+      <div class="vbox">
+        <div class="spacer flex1"></div>
+        <img id="tbb-icon" src="icon48.png" />
+        <div class="spacer flex1"></div>
+      </div>
+      <div class="separator orient-vertical"></div>
+      <div class="vbox flex1">
+        <label id="progressHeading" i18n="torprogress.heading"></label>
+        <div class="description" id="progressDesc"></div>
+      </div>
+    </div>
+    <progress id="progressMeter" max="100" value="0">0%</progress>
+    <div class="description" id="progressPleaseWait"
+                 hidden="true" i18n="torprogress.pleaseWait"></div>
+  </div>
+
+  <div class="hbox">
+    <button type="button" id="extra2Button"><img src="warning.png" id="warningIcon" class="warning-icon" hidden="true" /></button>
+    <div class="spring flex1"></div>
+    <button type="button" id="cancelButton">Cancel</button>
+  </div>
+
+</body>
+</html>

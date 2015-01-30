@@ -1,4 +1,4 @@
-// BitPop browser. Facebook chat integration part.
+// BitPop browser. Tor launcher integration part.
 // Copyright (C) 2014 BitPop AS
 //
 // This program is free software: you can redistribute it and/or modify
@@ -18,7 +18,8 @@ var torlauncher = torlauncher || {};
 
 // constructor
 torlauncher.TorProcessService = function () {
-  this.mProtocolSvc = torlauncher.protocol_service; // the only instance
+  if (torlauncher.protocolService)
+    this.mProtocolSvc = torlauncher.protocolService; // the only instance
 };
 
 torlauncher.TorProcessService.prototype = {
@@ -41,52 +42,71 @@ torlauncher.TorProcessService.prototype = {
   kNetworkSettingsWindowId: "torlauncher.window.network_settings",
   kProgressDialogWindowId: "torlauncher.window.progress_dialog",
 
-  init: function () {
-    // this.mObsSvc.addObserver(this, "quit-application-granted", false);
-    // this.mObsSvc.addObserver(this, kOpenNetworkSettingsTopic, false);
-    // this.mObsSvc.addObserver(this, kUserQuitTopic, false);
-    // this.mObsSvc.addObserver(this, kBootstrapStatusTopic, false);
+  kTorOpenNewSessionWindowMessage: "open-initial-tor-session-window",
 
-    chrome.runtime.onSuspend.addListener(_.bind(this.onSuspend, this));
-    chrome.alarms.onAlarm.addListener(_.bind(this.onAlarm, this));
+  kTorHelperExtensionId: "nnldggpjfmmhhmjoekppejaejalbchbh",
+
+  init: function () {
+
+    var _this = this;
+
+    chrome.runtime.onSuspend.addListener(function () { _this.onSuspend(); });
+    torlauncher.util.pr_debug('tl-process.after.runtime.onSuspend');
+    //chrome.alarms.onAlarm.addListener(function (alarm) { _this.onAlarm(alarm); });
+    torlauncher.util.pr_debug('tl-process.after.alarms.onAlarm.addListener');
 
     const kOpenNetworkSettingsTopic = "TorOpenNetworkSettings";
     const kUserQuitTopic = "TorUserRequestedQuit";
     const kBootstrapStatusTopic = "TorBootstrapStatus";
 
-    chrome.runtime.onMessage.addListener(_.bind(function (message) {
-      if (message.kind == kOpenNetworkSettingsTopic) {
-        this._openNetworkSettings(false);
-      } else if (message.kind == kUserQuitTopic) {
-        this.mQuitSoon = true;
-        this.mRestartWithQuit = ("restart" == message.param);
-      } else if (message.kind == kBootstrapStatusTopic) {
-        this._processBootstrapStatus(message.subject);
+    chrome.runtime.onMessage.addListener(
+      function (message) {
+        if (message.kind == kOpenNetworkSettingsTopic) {
+          _this._openNetworkSettings(false);
+        } else if (message.kind == kUserQuitTopic) {
+          _this.mQuitSoon = true;
+          _this.mRestartWithQuit = ("restart" == message.param);
+        } else if (message.kind == kBootstrapStatusTopic) {
+          _this._processBootstrapStatus(message.subject);
+        }
       }
-    }, this));
+    );
+    //torlauncher.util.pr_debug('tl-process.after.runtime.onMessage.addListener');
 
     torlauncher.util.getShouldOnlyConfigureTorWithPromise().then(
-      _.bind(function (should_only_configure_tor) {
+      function (should_only_configure_tor) {
+        //torlauncher.util.pr_debug('TorProcessService.init: should_only_configure_tor: ' + should_only_configure_tor);
         if (should_only_configure_tor)
-          this._controlTor();
+          _this._controlTor();
         else
-          torlauncher.util.getShouldStartAndOwnTorWithPromise().then(
-            _.bind(function (should_start_and_own_tor) {
-              if (should_start_and_own_tor) {
-                this._startTor().then(
-                  _.bind(this._controlTor(), this)
-                );
-              }
-            }, this);
+          return torlauncher.util.getShouldStartAndOwnTorWithPromise();
+      }
+    ).then(
+      function (should_start_and_own_tor) {
+        //torlauncher.util.pr_debug('TorProcessService.init: should_start_and_own_tor: ' + should_start_and_own_tor);
+        if (should_start_and_own_tor === undefined)
+          return;
+
+        if (should_start_and_own_tor) {
+          _this._startTor().then(
+            _this._controlTor().bind(_this)
           );
-      }, this);
+        }
+      }
     );
   },
 
   onSuspend: function () {
     this.mIsQuitting = true;
 
-    chrome.alarms.clearAll();
+    if (this._processStatusInterval) {
+      clearInterval(this._processStatusInterval);
+      this._processStatusInterval = null;
+    }
+    if (this.mControlConnTimer) {
+      clearTimeout(this.mControlConnTimer);
+      this.mControlConnTimer = null;
+    }
 
     if (this.mTorProcessStatus != this.kStatusUnknown &&
         this.mTorProcessStatus != this.kStatusExited)
@@ -102,7 +122,7 @@ torlauncher.TorProcessService.prototype = {
       // quitting if the browser did not finish starting up (e.g., when
       // someone presses the Quit button on our Network Settings or progress
       // window during startup).
-      console.info("Disconnecting from tor process");
+      torlauncher.util.pr_debug("Disconnecting from tor process");
       this.mProtocolSvc.TorCleanupConnection();
 
       this.mTorProcessStatus = kStatusExited;
@@ -110,97 +130,101 @@ torlauncher.TorProcessService.prototype = {
   },
 
   onAlarm: function (alarm) {
-    if (alarm.name == kProcessStatusAlarmName) {
-      chrome.torlauncher.getTorProcessStatus(_.bind(function (status) {
-        var changed = (this.mTorProcessStatus != status);
-        this.mTorProcessStatus = status;
+    if (alarm.name == this.kProcessStatusAlarmName) {
+      //torlauncher.util.pr_debug('tl-process.onAlarm: ' + alarm.name);
+      chrome.torlauncher.getTorProcessStatus(
+        function (status) {
+          var changed = (this.mTorProcessStatus != status);
+          this.mTorProcessStatus = status;
 
-        if (changed && this.mTorProcessStatus == this.kStatusExited)
-          this.onTorProcessExited();
+          if (changed && this.mTorProcessStatus == this.kStatusExited)
+            this.onTorProcessExited();
 
-        if (changed) {
-          // TODO: notify observers???
-        }
-      }, this));
-    } else if (alarm.name == kControlConnTimerName) {
+          // if (changed) {
+          //   // TODO: notify observers???
+          // }
+        }.bind(this));
+    } else if (alarm.name == this.kControlConnTimerName) {
+      //torlauncher.util.pr_debug('tl-process.onAlarm: ' + alarm.name);
       this.onControlConnTimer();
     }
   },
 
   onTorProcessExited: function () {
-      if (this.mControlConnTimer)
-      {
-        chrome.alarms.clear(kControlConnTimerName);
-        this.mControlConnTimer = null;
-      }
+    if (this.mControlConnTimer)
+    {
+      clearTimeout(this.mControlConnTimer);
+      this.mControlConnTimer = null;
+    }
 
-      //this.mTorProcess = null;
-      this.mIsBootstrapDone = false;
+    //this.mTorProcess = null;
+    this.mIsBootstrapDone = false;
 
-      chrome.runtime.sendMessage({ 'kind': "TorProcessExited" });
+    chrome.runtime.sendMessage({ 'kind': "TorProcessExited" });
 
-      if (!this.mIsQuitting)
-      {
-        this.mProtocolSvc.TorCleanupConnection();
+    if (!this.mIsQuitting)
+    {
+      this.mProtocolSvc.TorCleanupConnection();
 
-        var s = TorLauncherUtil.getLocalizedString("tor_exited") + "\n\n"
-                + TorLauncherUtil.getLocalizedString("tor_exited2");
-        console.warn(s);
-        var defaultBtnLabel = torlauncher.util.getLocalizedString("restart_tor");
-        var cancelBtnLabel = "OK";
-        // TODO: localize "OK" button label
+      var s = torlauncher.util.getLocalizedString("tor_exited") + "\n\n"
+              + torlauncher.util.getLocalizedString("tor_exited2");
+      console.warn(s);
+      var defaultBtnLabel = torlauncher.util.getLocalizedString("restart_tor");
+      var cancelBtnLabel = "OK";
+      // TODO: localize "OK" button label
 
-        torlauncher.util.showConfirm(null, s, defaultBtnLabel, cancelBtnLabel).then(
-          _.bind(function () {
-            if (!this.mIsQuitting)
-              this._startTor().then(
-                _.bind(this._controlTor(), this)
-              );
-          }, this);
-        );
-      }
+      torlauncher.util.showConfirm(null, s, defaultBtnLabel, cancelBtnLabel).then(
+        function () {
+          if (!this.mIsQuitting)
+            this._startTor().then(
+              this._controlTor().bind(this)
+            );
+        }.bind(this)
+      );
+    }
   },
 
   onControlConnTimer: function () {
-    var haveConnection = this.mProtocolSvc.TorHaveControlConnection();
-    if (haveConnection)
-    {
-      this.mControlConnTimer = null;
-      this.mTorProcessStatus = this.kStatusRunning;
+    this.mProtocolSvc.TorHaveControlConnection().then(
+      function (haveConnection) {
+        if (haveConnection) {
+          this.mControlConnTimer = null;
+          this.mTorProcessStatus = this.kStatusRunning;
 
-      // tor process service does not automatically set status to "running"
-      // that's why we need to do this op
-      chrome.torlauncher.setTorStatusRunning();
+          // tor process service does not automatically set status to "running"
+          // that's why we need to do this op
+          chrome.torlauncher.setTorStatusRunning();
 
-      this.mProtocolSvc.TorStartEventMonitor();
+          this.mProtocolSvc.TorStartEventMonitor();
 
-      this.mProtocolSvc.TorRetrieveBootstrapStatus();
+          this.mProtocolSvc.TorRetrieveBootstrapStatus();
 
-      // if (this._defaultBridgesStatus == this.kDefaultBridgesStatus_InUse)
-      // {
-      //   // We configure default bridges each time we start tor in case
-      //   // new default bridge preference values are available (e.g., due
-      //   // to a TBB update).
-      //   this._configureDefaultBridges();
-      // }
+          // if (this._defaultBridgesStatus == this.kDefaultBridgesStatus_InUse)
+          // {
+          //   // We configure default bridges each time we start tor in case
+          //   // new default bridge preference values are available (e.g., due
+          //   // to a TBB update).
+          //   this._configureDefaultBridges();
+          // }
 
-      chrome.runtime.sendMessage({ 'kind': "TorProcessIsReady" });
-    } else if ((Date.now() - this.mTorProcessStartTime)
-               > this.kControlConnTimeoutMS) {
-      var s = torlauncher.util.getLocalizedString("tor_controlconn_failed");
-      chrome.runtime.sendMessage({ 'kind': "TorProcessDidNotStart", 'param': s });
+          chrome.runtime.sendMessage({ 'kind': "TorProcessIsReady" });
+        } else if ((Date.now() - this.mTorProcessStartTime)
+                   > this.kControlConnTimeoutMS) {
+          var s = torlauncher.util.getLocalizedString("tor_controlconn_failed");
+          chrome.runtime.sendMessage({ 'kind': "TorProcessDidNotStart", 'param': s });
 
-      torlauncher.util.showAlert(null, s);
-      console.warn(s);
-    } else {
-      this.mControlConnDelayMS *= 2;
-      if (this.mControlConnDelayMS > this.kMaxControlConnRetryMS)
-        this.mControlConnDelayMS = this.kMaxControlConnRetryMS;
-      this.mControlConnTimer = true;
-      chrome.alarms.create(kControlConnTimerName, {
-        delayInMinutes: this.mControlConnDelayMS / (1000 * 60)
-      });
-    }
+          torlauncher.util.showAlert(null, s);
+          console.warn(s);
+        } else {
+          this.mControlConnDelayMS *= 2;
+          if (this.mControlConnDelayMS > this.kMaxControlConnRetryMS)
+            this.mControlConnDelayMS = this.kMaxControlConnRetryMS;
+          this.mControlConnTimer = setTimeout(
+              this.onAlarm.bind(this, { name: this.kControlConnTimerName }),
+              this.mControlConnDelayMS);
+        }
+      }.bind(this)
+    );
   },
 
   // Public Properties and Methods ///////////////////////////////////////////
@@ -247,19 +271,20 @@ torlauncher.TorProcessService.prototype = {
   // Private Methods /////////////////////////////////////////////////////////
   _startTor: function()
   {
-    return new Promise(_.bind(function (resolve, reject) {
-      this.mTorProcessStatus = this.kStatusUnknown;
+    //console.log('TorProcessService._startTor: begin');
+    var _this = this;
+    return new Promise(function (resolve, reject) {
+      _this.mTorProcessStatus = _this.kStatusUnknown;
 
       // Start tor with networking disabled if first run or if the
       // "Use Default Bridges of Type" option is turned on.  Networking will
       // be enabled after initial settings are chosen or after the default
       // bridge settings have been configured.
-      var defaultBridgeType =
-                    TorLauncherUtil.getCharPref(this.kPrefDefaultBridgeType);
       torlauncher.util.prefGetWithPromise('defaultBridgeType').then(
-        _.bind(function (defaultBridgeType) {
-          var bridgeConfigIsBad = (this._defaultBridgesStatus ==
-                                   this.kDefaultBridgesStatus_BadConfig);
+        function (defaultBridgeType) {
+          //console.log('TorProcessService._startTor: defaultBridgeType:' + defaultBridgeType);
+          var bridgeConfigIsBad = (_this._defaultBridgesStatus ==
+                                   _this.kDefaultBridgesStatus_BadConfig);
           if (bridgeConfigIsBad) {
             var key = "error_bridge_bad_default_type";
             var err = torlauncher.util.getFormattedLocalizedString(key,
@@ -269,48 +294,54 @@ torlauncher.TorProcessService.prototype = {
 
           var disableNetwork = false;
           torlauncher.util.getShouldShowNetworkSettingsWithPromise().then(
-            _.bind(function (shouldShowNetworkSettings) {
+            function (shouldShowNetworkSettings) {
               if (shouldShowNetworkSettings || defaultBridgeType) {
                 disableNetwork = true;
               }
 
-              chrome.torlauncher.startTor(disableNetwork, _.bind(
-                function (details) {
-                  if (details.succeeded) {
-                    this.mTorProcessStatus = this.kStatusStarting;
-                    this.mTorProcessStartTime = Date.now();
-                    if (details.log_message)
-                      console.info(details.log_message);
+              torlauncher.util.pr_debug("Starting Tor...");
+              chrome.torlauncher.startTor(disableNetwork,
+                function (success, error_desc) {
+                  //torlauncher.util.pr_debug("Starting Tor... Details: " + JSON.stringify({success:success, error_desc: error_desc}));
+                  if (success) {
+                    _this.mTorProcessStatus = _this.kStatusStarting;
+                    _this.mTorProcessStartTime = Date.now();
+                    if (error_desc.log_message)
+                      console.info(error_desc.log_message);
 
-                    chrome.alarms.create(kProcessStatusAlarmName, {
-                      periodInMinutes: 500 / (60 * 1000)  // 500 ms
-                    });
+                    _this._processStatusInterval =
+                        setInterval(
+                            _this.onAlarm.bind(_this,
+                                               { name: _this.kProcessStatusAlarmName}),
+                            500);
 
+                    //torlauncher.util.pr_debug("Starting Tor... Resolving...");
                     resolve();
                   } else {
-                    this.mTorProcessStatus = this.kStatusExited;
-                    if (details.alert_message_key) {
+                    _this.mTorProcessStatus = _this.kStatusExited;
+                    if (error_desc.alert_message_key) {
                       var s = torlauncher.util.getLocalizedString(
-                          details.alert_message_key);
+                          error_desc.alert_message_key);
                       torlauncher.util.showAlert(null, s);
                     }
-                    if (details.log_message)
-                      console.warn(details.log_message);
+                    if (error_desc.log_message)
+                      console.warn(error_desc.log_message);
 
                     reject();
                   }
-                }, this)
+                }
               );
-            }, this)
+            }
           );
-        }, this)
+        }
       );
-    }, this));
+    });
   }, // _startTor()
 
 
   _controlTor: function()
   {
+    torlauncher.util.pr_debug('TorProcessService: _controlTor: begin');
     this._monitorTorProcessStartup();
 
     // var bridgeConfigIsBad = (this._defaultBridgesStatus ==
@@ -325,42 +356,27 @@ torlauncher.TorProcessService.prototype = {
     //   }
     // }
     torlauncher.util.getShouldShowNetworkSettingsWithPromise().then(
-      _.bind(function (shouldShowNetworkSettings) {
+      function (shouldShowNetworkSettings) {
         if (shouldShowNetworkSettings) {
           if (this.mProtocolSvc) {
             panelID = undefined;
             this._openNetworkSettings(true, panelID);
           }
-        } else if (this._networkSettingsWindow != null) {
+        } else if (this._networkSettingsWindow !== null) {
           // If network settings is open, open progress dialog via notification.
           chrome.runtime.sendMessage({ 'kind': "TorOpenProgressDialog" });
         }
-        else
-        {
+        else {
           this._openProgressDialog();
-
-          // Assume that the "Open Settings" button was pressed if Quit was
-          // not pressed and bootstrapping did not finish.
-          if (!this.mQuitSoon && !this.TorIsBootstrapDone)
-            this._openNetworkSettings(true);
         }
-
-        // If the user pressed "Quit" within settings/progress, exit.
-        if (this.mQuitSoon) {
-          this.mQuitSoon = false;
-
-          chrome.torlauncher.initiateAppQuit(this.mRestartWithQuit);
-        }
-      }, this)
-    );
+      }.bind(this));
   }, // controlTor()
 
   _monitorTorProcessStartup: function() {
     this.mControlConnDelayMS = this.kInitialControlConnDelayMS;
-    this.mControlConnTimer = true;
-    chrome.alarms.create(kControlConnTimerName, {
-      delayInMinutes: this.mControlConnDelayMS / (1000 * 60)
-    });
+    this.mControlConnTimer = setTimeout(
+        this.onAlarm.bind(this, { name: this.kControlConnTimerName }),
+        this.mControlConnDelayMS);
   },
 
   _processBootstrapStatus: function(aStatusObj)
@@ -368,19 +384,24 @@ torlauncher.TorProcessService.prototype = {
     if (!aStatusObj)
       return;
 
-    if (100 == aStatusObj.PROGRESS)
-    {
+    if (100 == aStatusObj.PROGRESS) {
       this.mIsBootstrapDone = true;
       this.mBootstrapErrorOccurred = false;
       chrome.torlauncher.promptAtStartup.set({ value: false,
                                                scope: "incognito_persistent" });
+      chrome.runtime.sendMessage(
+          this.kTorHelperExtensionId,
+          {
+            'kind': this.kTorOpenNewSessionWindowMessage
+          },
+          function () {}  // sendResponse callback
+      );
     }
     else
     {
       this.mIsBootstrapDone = false;
 
-      if (aStatusObj._errorOccurred)
-      {
+      if (aStatusObj._errorOccurred) {
         this.mBootstrapErrorOccurred = true;
         chrome.torlauncher.promptAtStartup.set({ value: true,
                                                scope: "incognito_persistent" });
@@ -394,8 +415,7 @@ torlauncher.TorProcessService.prototype = {
                                  "/" + aStatusObj.REASON + "] " + details);
 
         if ((aStatusObj.TAG != this.mLastTorWarningPhase) ||
-            (aStatusObj.REASON != this.mLastTorWarningReason))
-        {
+            (aStatusObj.REASON != this.mLastTorWarningReason)) {
           this.mLastTorWarningPhase = aStatusObj.TAG;
           this.mLastTorWarningReason = aStatusObj.REASON;
 
@@ -428,8 +448,7 @@ torlauncher.TorProcessService.prototype = {
   _openNetworkSettings: function(aIsInitialBootstrap, aStartAtWizardPanel)
   {
     var win = this._networkSettingsWindow;
-    if (win)
-    {
+    if (win) {
       // Return to "Starting tor" panel if being asked to open & dlog already exists.
       win.contentWindow.showStartingTorPanel();
       win.focus();
@@ -448,12 +467,12 @@ torlauncher.TorProcessService.prototype = {
       innerBounds: {
         left:      100,
         top:       100,
-        width:     450,
-        height:    450,
-        minWidth:  450,
-        minHeight: 450,
-        maxWidth:  450,
-        maxHeight: 450
+        width:     600,
+        height:    500,
+        minWidth:  600,
+        minHeight: 500,
+        maxWidth:  600,
+        maxHeight: 500
       }
     }, function (createdWindow) {
       // pass window creation arguments
@@ -461,16 +480,18 @@ torlauncher.TorProcessService.prototype = {
         isInitialBootstrap: aIsInitialBootstrap,
         startAtWizardPanel: aStartAtWizardPanel
       };
+
+      createdWindow.onClosed.addListener(function () {
+        console.log("tl-process: network settings window closed");
+      });
     });
   },
 
-  get _networkSettingsWindow()
-  {
+  get _networkSettingsWindow() {
     return chrome.app.window.get(this.kNetworkSettingsWindowId);
   },
 
-  _openProgressDialog: function()
-  {
+  _openProgressDialog: function() {
     var chromeURL = "progress.html";
 
     chrome.app.window.create(chromeURL, {
@@ -481,19 +502,52 @@ torlauncher.TorProcessService.prototype = {
         left:      100,
         top:       100,
         width:     450,
-        height:    450,
+        height:    250,
         minWidth:  450,
-        minHeight: 450,
+        minHeight: 250,
         maxWidth:  450,
-        maxHeight: 450
+        maxHeight: 250
       }
     }, function (createdWindow) {
       // pass window creation arguments
       createdWindow.contentWindow.windowArgs = {
         isBrowserStartup: true
       };
+
+      createdWindow.onClosed.addListener(function () {
+        console.log("tl-process: progress window closed");
+      });
     });
+  },
+
+  onNetworkSettingsClose: function (quitSoon, restartWithQuit) {
+    this.mQuitSoon = quitSoon;
+    this.mRestartWithQuit = restartWithQuit;
+
+    // If the user pressed "Quit" within settings/progress, exit.
+    if (this.mQuitSoon) {
+      this.mQuitSoon = false;
+
+      chrome.torlauncher.initiateAppQuit(this.mRestartWithQuit);
+    }
+  },
+
+  onProgressDialogClose: function (quitSoon) {
+    this.mQuitSoon = quitSoon;
+    this.mRestartWithQuit = false;
+
+    // Assume that the "Open Settings" button was pressed if Quit was
+    // not pressed and bootstrapping did not finish.
+    if (!this.mQuitSoon && !this.TorIsBootstrapDone)
+      this._openNetworkSettings(true);
+
+    // If the user pressed "Quit" within settings/progress, exit.
+    if (this.mQuitSoon) {
+      this.mQuitSoon = false;
+
+      chrome.torlauncher.initiateAppQuit(this.mRestartWithQuit);
+    }
   },
 };
 
-torlauncher.torProcessService = new TorProcessService();
+torlauncher.torProcessService = new torlauncher.TorProcessService();

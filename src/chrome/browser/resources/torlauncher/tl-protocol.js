@@ -1,5 +1,5 @@
-// BitPop browser. Facebook chat integration part.
-// Copyright (C) 2014 BitPop AS
+// BitPop browser. Tor launcher integration part.
+// Copyright (C) 2015 BitPop AS
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -16,25 +16,18 @@
 
 var torlauncher = torlauncher || {};
 
-// pop front bytes from string that is passed by reference
-// and return bytes' int value
-Object.prototype.readBytes = function (num) {
-  if (num < 1 || num > this.toString().length)
-    return 0;
-
-  var res = this.toString.substr(0, num);
-
-  var val = this.toString().substr(num);
-  obj.valueOf = obj.toSource = obj.toString = function(){ return val; };
-
-  return res;
-}
-
 torlauncher.TorProtocolService = function () {
-  chrome.sockets.tcp.onReceive.addListener(
-      this._onTorSocketDataReceived.bind(this));
-  chrome.sockets.tcp.onReceiveError.addListener(
-      this._onTorSocketReceiveError.bind(this));
+  var _this = this;
+  chrome.sockets.tcp.onReceive.addListener(this._onTorSocketDataReceived.bind(this));
+  chrome.sockets.tcp.onReceiveError.addListener(this._onTorSocketReceiveError.bind(this));
+  chrome.runtime.getPlatformInfo(function (info) {
+    this.mPlatformOs = info.os;
+  }.bind(this));
+  torlauncher.util.prefGetWithPromise('maxTorLogEntries').then(
+    function (maxEntries) {
+      this.kMaxTorLogEntries = maxEntries;
+    }.bind(this)
+  );
 };
 
 torlauncher.TorProtocolService.prototype = {
@@ -45,17 +38,23 @@ torlauncher.TorProtocolService.prototype = {
   mControlPassword: null,
 
   initWithPromise: function () {
-    _this = this;
-    return new Promise(function (resolve, reject) {
-      chrome.alarms.onAlarm.addListener(_this.onAlarm.bind(_this));
+    var _this = this;
+    _this._initPromise = new Promise(function (resolve, reject) {
+      //chrome.alarms.onAlarm.addListener(function (alarm) { _this._onAlarm(alarm); });
 
       chrome.torlauncher.getTorServiceSettings(function (details) {
         _this.mControlHost = details.controlHost;
         _this.mControlPort = details.controlPort;
         _this.mControlPassword = details.controlPassword;
+        //console.log('getTorServiceSettings completed');
         resolve();
       });
     });
+    return _this._initPromise;
+  },
+
+  get initPromise() {
+    return this._initPromise || null;
   },
 
   // Public Constants and Methods ////////////////////////////////////////////
@@ -81,58 +80,63 @@ torlauncher.TorProtocolService.prototype = {
   // returned.
   TorGetConf: function(aKey)
   {
+    var _this = this;
     return new Promise(function (resolve, reject) {
       if (!aKey || (aKey.length < 1))
-        resolve(null);
+        reject(null);
 
       var cmd = "GETCONF";
-      this.TorSendCommand(cmd, aKey).then(function (reply) {
-        if (!this.TorCommandSucceeded(reply)) {
-          resolve(reply);
+      _this.TorSendCommand(cmd, aKey).then(function (reply) {
+        if (!_this.TorCommandSucceeded(reply)) {
+          reject();
           return;
         }
 
-        resolve(this._parseReply(cmd, aKey, reply));
-      }.bind(this), reject);
-    }.bind(this));
+        resolve(_this._parseReply(cmd, aKey, reply));
+      }, reject);
+    });
   },
 
   // Returns a reply object.  If the GETCONF command succeeded, reply.retVal
   // is set (if there is no setting for aKey, it is set to aDefault).
   TorGetConfStr: function(aKey, aDefault)
   {
+    var _this = this;
     return new Promise (function (resolve, reject) {
-      this.TorGetConf(aKey).then(function (reply) {
-        if (this.TorCommandSucceeded(reply))
+      _this.TorGetConf(aKey).then(function (reply) {
+        if (_this.TorCommandSucceeded(reply))
         {
           if (reply.lineArray.length > 0)
             reply.retVal = reply.lineArray[0];
           else
             reply.retVal = aDefault;
-        }
+        } else
+          reject();
 
         resolve(reply);
-      }.bind(this), reject);
-    }.bind(this));
+      }, reject);
+    });
   },
 
   // Returns a reply object.  If the GETCONF command succeeded, reply.retVal
   // is set (if there is no setting for aKey, it is set to aDefault).
   TorGetConfBool: function(aKey, aDefault)
   {
+    var _this = this;
     return new Promise (function (resolve, reject) {
-      this.TorGetConf(aKey).then(function (reply) {
-        if (this.TorCommandSucceeded(reply))
+      _this.TorGetConf(aKey).then(function (reply) {
+        if (_this.TorCommandSucceeded(reply))
         {
           if (reply.lineArray.length > 0)
             reply.retVal = ("1" == reply.lineArray[0]);
           else
             reply.retVal = aDefault;
-        }
+        } else
+          reject();
 
-        return resolve(reply);
-      }.bind(this), reject);
-    }.bind(this));
+        resolve(reply);
+      }, reject);
+    });
   },
 
   // Perform a SETCONF command.
@@ -143,6 +147,7 @@ torlauncher.TorProtocolService.prototype = {
   // returned.
   TorSetConf: function(aSettingsObj)
   {
+    var _this = this;
     return new Promise(function (resolve, reject) {
       if (!aSettingsObj)
         reject();
@@ -166,11 +171,11 @@ torlauncher.TorProtocolService.prototype = {
             {
               if (i > 0)
                 cmdArgs += ' ' + key;
-              cmdArgs += '=' + this._strEscape(val[i]);
+              cmdArgs += '=' + _this._strEscape(val[i]);
             }
           }
           else if ("string" == valType)
-            cmdArgs += '=' + this._strEscape(val);
+            cmdArgs += '=' + _this._strEscape(val);
           else
           {
             console.warn("TorSetConf: unsupported type '" +
@@ -186,18 +191,20 @@ torlauncher.TorProtocolService.prototype = {
         reject();
       }
 
-      this.TorSendCommand("SETCONF", cmdArgs).then(resolve, reject);
+      _this.TorSendCommand("SETCONF", cmdArgs).then(resolve, reject);
 
-    }.bind(this)); // return value of Promise type
+    }); // return value of Promise type
   }, // TorSetConf()
 
-  // Returns true if successful.
-  // Upon failure, aErrorObj.details will be set to a string.
+  // Resolves if successful.
+  // Upon failure, aErrorObj.details will be set to a string and set as
+  // a rejected promise result.
   TorSetConfWithReply: function(aSettingsObj, aErrorObj)
   {
+    var _this = this;
     return new Promise(function (resolve, reject) {
-      this.TorSetConf(aSettingsObj).then(function (reply) {
-        var didSucceed = this.TorCommandSucceeded(reply);
+      _this.TorSetConf(aSettingsObj).then(function (reply) {
+        var didSucceed = _this.TorCommandSucceeded(reply);
         if (!didSucceed)
         {
           var details = "";
@@ -219,22 +226,24 @@ torlauncher.TorProtocolService.prototype = {
           resolve();
         else
           reject(aErrorObj);
-      }.bind(this), reject);
-    }.bind(this));
+      }, reject);
+    });
   },
 
   // If successful, sends a "TorBootstrapStatus" notification.
   TorRetrieveBootstrapStatus: function()
   {
+    var _this = this;
     return new Promise(function (resolve, reject) {
       var onRejectRetrieval = function () {
         console.warn("TorRetrieveBootstrapStatus: command failed")
+        reject();
       };
 
       var cmd = "GETINFO";
       var key = "status/bootstrap-phase";
-      this.TorSendCommand(cmd, key).then(function (reply) {
-        if (!this.TorCommandSucceeded(reply)) {
+      _this.TorSendCommand(cmd, key).then(function (reply) {
+        if (!_this.TorCommandSucceeded(reply)) {
           onRejectRetrieval();
           return;
         }
@@ -242,12 +251,12 @@ torlauncher.TorProtocolService.prototype = {
         // A typical reply looks like:
         //  250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=100 TAG=done SUMMARY="Done"
         //  250 OK
-        reply = this._parseReply(cmd, key, reply);
+        reply = _this._parseReply(cmd, key, reply);
         if (reply.lineArray)
-          this._parseBootstrapStatus(reply.lineArray[0]);
+          _this._parseBootstrapStatus(reply.lineArray[0]);
 
         resolve();
-      }.bind(this), onRejectRetrieval);
+      }, onRejectRetrieval);
     });
   },
 
@@ -262,8 +271,7 @@ torlauncher.TorProtocolService.prototype = {
   //   status.RECOMMENDATION  -- string (optional)
   // A "TorBootstrapStatus" notification is also sent.
   // Returns null upon failure.
-  _parseBootstrapStatus: function(aStatusMsg)
-  {
+  _parseBootstrapStatus: function(aStatusMsg) {
     if (!aStatusMsg || (0 == aStatusMsg.length))
       return null;
 
@@ -274,8 +282,7 @@ torlauncher.TorProtocolService.prototype = {
 
     // The following code assumes that this is a one-line response.
     var paramArray = this._splitReplyLine(aStatusMsg);
-    for (var i = 0; i < paramArray.length; ++i)
-    {
+    for (var i = 0; i < paramArray.length; ++i) {
       var tokenAndVal = paramArray[i];
       var token, val;
       var idx = tokenAndVal.indexOf('=');
@@ -303,10 +310,9 @@ torlauncher.TorProtocolService.prototype = {
         statusObj[token] = val;
     }
 
-    if (!sawBootstrap)
-    {
+    if (!sawBootstrap) {
       var logLevel = ("NOTICE" == statusObj.TYPE) ? 3 : 4;
-      TorLauncherLogger.log(logLevel, aStatusMsg);
+      console.log(aStatusMsg);
       return null;
     }
 
@@ -327,46 +333,56 @@ torlauncher.TorProtocolService.prototype = {
     var _this = this;
     return new Promise(function (rootResolve, rootReject) {
       var attemptFunc = function (resolve, reject) {
+        //torlauncher.util.pr_debug('tl-protocol.TorSendCommand.attemptFunc called');
         _this._getConnection().then(
           function(conn) {
-            if (conn)
-              return _this._sendCommand(conn, aCmd, aArgs);
+            if (!conn) {
+              reject();
+              return;
+            }
+
+            //torlauncher.util.pr_debug('tl-protocol.TorSendCommand _getConnection succeeded. sending command...');
+            _this._sendCommand(conn, aCmd, aArgs).then(
+              function (reply) {
+                //torlauncher.util.pr_debug('tl-protocol.TorSendCommand, _sendCommand succeeded');
+                if (reply) {
+                  //torlauncher.util.pr_debug('tl-protocol.TorSendCommand, _sendCommand succeeded, reply non-empty. resolving...');
+                  _this._returnConnection(conn); // Return for reuse.
+                  resolve(reply);
+                  return;
+                }
+
+                //torlauncher.util.pr_debug('tl-protocol.TorSendCommand, _sendCommand succeeded, reply is null. closing connection and rejecting...');
+                _this._closeConnection(conn);  // Connection is bad.
+                reject();
+              },
+              // error handler for _sendCommand:
+              function () {
+                console.warn("Exception on control port");
+                _this._closeConnection(conn);
+                reject();
+              }
+            );
           },
           function () {
             console.warn("_getConnection failed");;
             reject();
           }
-        ).then(
-          // success handler
-          function (reply) {
-            if (reply === undefined)
-              reject();
-
-            if (reply) {
-              _this._returnConnection(conn); // Return for reuse.
-              resolve(reply);
-              return;
-            }
-
-            _this._closeConnection(conn);  // Connection is bad.
-            reject();
-          },
-
-          // error handler for _sendCommand:
-          function () {
-            console.warn("Exception on control port");
-            this._closeConnection(conn);
-            reject();
-          })
         );
       };
 
       // try to send command two times
       // FIXME: subject for garbage collection
-      new Promise(attemptFunc).then(rootResolve, function () {
-        new Promise(attemptFunc).then(rootResolve, rootReject);
-      });
-    }.bind(this));
+      _this._torSendCommandPromise1 = new Promise(attemptFunc);
+      _this._torSendCommandPromise1.then(
+        rootResolve,
+        function () {
+          //torlauncher.util.pr_debug('tl-protocol.TorSendCommand, 2nd attempt');
+          _this._torSendCommandPromise2 = new Promise(attemptFunc);
+          _this._torSendCommandPromise2.then(rootResolve, rootReject);
+        }
+      );
+    });
   }, // TorSendCommand()
 
   TorCommandSucceeded: function(aReply)
@@ -383,115 +399,118 @@ torlauncher.TorProtocolService.prototype = {
 
   TorStartEventMonitor: function()
   {
+    var _this = this;
     return new Promise(function (resolve, reject) {
-      if (this.mEventMonitorConnection) {
+      if (_this.mEventMonitorConnection) {
         resolve();
         return;
       }
 
-      this._openAuthenticatedConnection(true).then(
+      _this._openAuthenticatedConnection(true).then(
         function (conn) {
           // TODO: optionally monitor INFO and DEBUG log messages.
           var events = "STATUS_CLIENT NOTICE WARN ERR";
 
           var onSetEventsError = function () {
             console.warn("SETEVENTS failed");
-            this._closeConnection(conn);
+            _this.mTempControlConnection = null;
+            _this._closeConnection(conn);
             reject();
-          }.bind(this);
+          };
 
-          var reply = this._sendCommand(conn, "SETEVENTS", events).then(
+          var reply = _this._sendCommand(conn, "SETEVENTS", events).then(
             function (reply) {
-              if (!this.TorCommandSucceeded(reply)) {
+              if (!_this.TorCommandSucceeded(reply)) {
                 onSetEventsError();
                 return;
               }
 
-              this.mEventMonitorConnection = conn;
-              this._waitForEventData();
+              _this.mTempControlConnection = null;
+              _this.mEventMonitorConnection = conn;
+              torlauncher.util.pr_debug("TorStartEventMonitor successfully created event monitor connection");
               resolve();
-            }.bind(this)
-          ).catch(
-            function (nullReply) {
-              console.assert(nullReply === null);
+            },
+
+            function () {
               onSetEventsError();
-            }.bind(this)
+            }
           );
-        }.bind(this)
+        }
       ).catch(
-        // err handler for _openAuthenticatedQuestion
+        // err handler for _openAuthenticatedConnection
         function () {
           console.warn("TorStartEventMonitor failed to create control port connection");
           reject();
         }
       );
-    }.bind(this));
+    });
   },
 
-  // // Returns true if the log messages we have captured contain WARN or ERR.
-  // get TorLogHasWarnOrErr()
-  // {
-  //   if (!this.mTorLog)
-  //     return false;
+  // Returns true if the log messages we have captured contain WARN or ERR.
+  get TorLogHasWarnOrErr()
+  {
+    if (!this.mTorLog)
+      return false;
 
-  //   for (var i = this.mTorLog.length - 1; i >= 0; i--)
-  //   {
-  //     var logObj = this.mTorLog[i];
-  //     if ((logObj.type == "WARN") || (logObj.type == "ERR"))
-  //       return true;
-  //   }
+    for (var i = this.mTorLog.length - 1; i >= 0; i--)
+    {
+      var logObj = this.mTorLog[i];
+      if ((logObj.type == "WARN") || (logObj.type == "ERR"))
+        return true;
+    }
 
-  //   return false;
-  // },
+    return false;
+  },
 
-  // // Returns captured log message as a text string (one message per line).
-  // // If aCountObj is passed, aCountObj.value is set to the message count.
-  // TorGetLog: function(aCountObj)
-  // {
-  //   let s = "";
-  //   if (this.mTorLog)
-  //   {
-  //     let dateFmtSvc = Cc["@mozilla.org/intl/scriptabledateformat;1"]
-  //                     .getService(Ci.nsIScriptableDateFormat);
-  //     let dateFormat = dateFmtSvc.dateFormatShort;
-  //     let timeFormat = dateFmtSvc.timeFormatSecondsForce24Hour;
-  //     let eol = (TorLauncherUtil.isWindows) ? "\r\n" : "\n";
-  //     let count = this.mTorLog.length;
-  //     if (aCountObj)
-  //       aCountObj.value = count;
-  //     for (let i = 0; i < count; ++i)
-  //     {
-  //       let logObj = this.mTorLog[i];
-  //       let secs = logObj.date.getSeconds();
-  //       let timeStr = dateFmtSvc.FormatDateTime("", dateFormat, timeFormat,
-  //                        logObj.date.getFullYear(), logObj.date.getMonth() + 1,
-  //                            logObj.date.getDate(), logObj.date.getHours(),
-  //                            logObj.date.getMinutes(), secs);
-  //       if (' ' == timeStr.substr(-1))
-  //         timeStr = timeStr.substr(0, timeStr.length - 1);
-  //       let fracSecsStr = "" + logObj.date.getMilliseconds();
-  //       while (fracSecsStr.length < 3)
-  //         fracSecsStr += "0";
-  //       timeStr += '.' + fracSecsStr;
+  // Returns captured log message as a text string (one message per line).
+  // If aCountObj is passed, aCountObj.value is set to the message count.
+  TorGetLog: function(aCountObj)
+  {
+    var s = "";
+    if (this.mTorLog)
+    {
+      var eol = (this.mPlatformOs == 'win') ? "\r\n" : "\n";
+      var count = this.mTorLog.length;
+      if (aCountObj)
+        aCountObj.value = count;
+      for (var i = 0; i < count; ++i)
+      {
+        var logObj = this.mTorLog[i];
+        var secs = logObj.date.getSeconds();
+        var timeStr = logObj.date.getFullYear().toString() + '-' +
+                      ('0' + (logObj.date.getMonth() + 1).toString()).slice(-2) + '-' +
+                      ('0' + logObj.date.getDate().toString()).slice(-2) + ' ' +
+                      ('0' + logObj.date.getHours().toString()).slice(-2) + ':' +
+                      ('0' + logObj.date.getMinutes().toString()).slice(-2) + ':' +
+                      ('0' + secs.toString()).slice(-2);
 
-  //       s += timeStr + " [" + logObj.type + "] " + logObj.msg + eol;
-  //     }
-  //   }
+        var fracSecsStr = "" + logObj.date.getMilliseconds();
+        while (fracSecsStr.length < 3)
+          fracSecsStr += "0";
+        timeStr += '.' + fracSecsStr;
 
-  //   return s;
-  // },
+        s += timeStr + " [" + logObj.type + "] " + logObj.msg + eol;
+      }
+    }
+
+    return s;
+  },
 
 
   // Return true if a control connection is established (will create a
   // connection if necessary).
   TorHaveControlConnection: function()
   {
+    var _this = this;
     return new Promise(function (resolve, reject) {
-      this._getConnection().then(function (conn) {
-        this._returnConnection(conn);
-        resolve(conn != null);
-      }.bind(this), function () { resolve(false); });
-    }.bind(this));
+      _this._getConnection().then(
+        function (conn) {
+          _this._returnConnection(conn);
+          resolve(conn != null);
+        },
+        function () { resolve(false); }
+      );
+    });
   },
 
 
@@ -519,22 +538,29 @@ torlauncher.TorProtocolService.prototype = {
   //   binOutStream // nsIBinaryOutputStream
   _getConnection: function()
   {
+    var _this = this;
     return new Promise(function (resolve, reject) {
-      if (this.mControlConnection) {
-        if (this.mControlConnection.inUse) {
+      if (_this.mControlConnection) {
+        if (_this.mControlConnection.inUse) {
           console.warn("control connection is in use");
           reject();
         }
+
+        _this.mControlConnection.inUse = true;
+        resolve(_this.mControlConnection);
       }
       else
-        this._openAuthenticatedConnection(false).then(function (conn) {
-          this.mControlConnection = conn;
-          if (this.mControlConnection)
-            this.mControlConnection.inUse = true;
+        _this._openAuthenticatedConnection(false).then(
+          function (conn) {
+            _this.mControlConnection = conn;
+            if (_this.mControlConnection)
+              _this.mControlConnection.inUse = true;
 
-          resolve(this.mControlConnection);
-        }.bind(this), reject);
-    }.bind(this));
+            resolve(_this.mControlConnection);
+          },
+          reject
+        );
+    });
   },
 
   _returnConnection: function(aConn)
@@ -551,10 +577,13 @@ torlauncher.TorProtocolService.prototype = {
       console.info("Opening control connection to " +
                    _this.mControlHost + ":" + _this.mControlPort);
       chrome.sockets.tcp.create(null, function (createInfo) {
-        conn = { useCount: 0, socketId = createInfo.socketId };
+        conn = { useCount: 0, socketId: createInfo.socketId, inUse: false };
         chrome.sockets.tcp.connect(createInfo.socketId,
             _this.mControlHost, _this.mControlPort,
             function (result) {
+              if (chrome.runtime.lastError)
+                console.warn(chrome.runtime.lastError.message);
+
               if (result < 0) {
                 console.warn('Network error: ' + result +
                              ' Can\'t connect to Tor client');
@@ -562,6 +591,10 @@ torlauncher.TorProtocolService.prototype = {
                 reject();
                 return;
               }
+
+              _this.mTempControlConnection = conn;
+
+              chrome.sockets.tcp.setPaused(conn.socketId, false);
 
               // AUTHENTICATE
               var pwdArg = _this._strEscape(_this.mControlPassword);
@@ -575,9 +608,12 @@ torlauncher.TorProtocolService.prototype = {
                 function (reply) {
                   if (!_this.TorCommandSucceeded(reply)) {
                     console.warn("authenticate failed");
+                    _this.mTempControlConnection = null;
                     reject();
                     return;
                   }
+
+                  //torlauncher.util.pr_debug('authenticate succeeded');
 
                   if (!aIsEventConnection)
                     torlauncher.util.getShouldStartAndOwnTorWithPromise().then(
@@ -614,6 +650,8 @@ torlauncher.TorProtocolService.prototype = {
                     ).then(
                       function (reply) {
                         if (reply === undefined) {
+                          _this.mTempControlConnection = null;
+                          //torlauncher.util.pr_debug('resolving _openAuthenticatedConnection...');
                           resolve(conn);
                           return;
                         }
@@ -621,17 +659,24 @@ torlauncher.TorProtocolService.prototype = {
                         if (!_this.TorCommandSucceeded(reply))
                           console.warn("clear owning controller process failed");
 
+                        _this.mTempControlConnection = null;
+                        //torlauncher.util.pr_debug('resolving _openAuthenticatedConnection...');
+                        resolve(conn);
+                      },
+                      function () {
+                        console.warn("clear owning controller process failed");
+                        _this.mTempControlConnection = null;
+                        //torlauncher.util.pr_debug('resolving _openAuthenticatedConnection...');
                         resolve(conn);
                       }
-                    ),
-                    function () {
-                      console.warn("clear owning controller process failed");
-                      resolve(conn);
-                    }
-                  );
+                    );
+                  // IsEventMonitorConnection == true
+                  else
+                    resolve(conn);
                 },
                 function () {
                   console.warn("authenticate failed");
+                  _this.mTempControlConnection = null;
                   reject();
                 }
               );
@@ -659,21 +704,35 @@ torlauncher.TorProtocolService.prototype = {
 
   _setSocketTimeout: function(aConn)
   {
-    if (aConn && aConn.socketId)
-      aConn.socket.setTimeout(Ci.nsISocketTransport.TIMEOUT_READ_WRITE, 15);
+    if (aConn && aConn.socketId) {
+      aConn._socketTimeout =
+          setTimeout(this._onAlarm.bind(this,
+                                        { name: this.kSocketTimeoutAlarmName, conn: aConn }),
+                     15000);
+    }
   },
 
   _clearSocketTimeout: function(aConn)
   {
-    if (aConn && aConn.socketId)
-    {
-      var secs = Math.pow(2,32) - 1; // UINT32_MAX
-      aConn.socket.setTimeout(Ci.nsISocketTransport.TIMEOUT_READ_WRITE, secs);
+    if (aConn && aConn.socketId && aConn._socketTimeout) {
+      clearTimeout(aConn._socketTimeout);
+      aConn._socketTimeout = null;
+    }
+  },
+
+  _onAlarm: function (alarm) {
+    if (alarm.name == this.kSocketTimeoutAlarmName && alarm.conn) {
+      //torlauncher.util.pr_debug('tl-protocol: _onAlarm timeout fired')
+      if (alarm.conn.mNextControlConnSendCommandTimeoutCallback) {
+        alarm.conn.mNextControlConnSendCommandTimeoutCallback();
+        alarm.conn.mNextControlConnSendCommandTimeoutCallback = null;
+      }
     }
   },
 
   _sendCommand: function(aConn, aCmd, aArgs)
   {
+    //torlauncher.util.pr_debug('tl-protocol._sendCommand: conn = ' + JSON.stringify(aConn))
     var _this = this;
     return new Promise(function (resolve, reject) {
       if (aConn)
@@ -685,68 +744,127 @@ torlauncher.TorProtocolService.prototype = {
         cmd += "\r\n";
 
         ++aConn.useCount;
+        //torlauncher.util.pr_debug('tl-protocol._sendCommand aConn.useCount == ' + aConn.useCount);
         _this._setSocketTimeout(aConn);
+        //torlauncher.util.pr_debug('tl-protocol._sendCommand after _setSocketTimeout');
+
+        aConn.mNextControlConnSendCommandTimeoutCallback = reject;
+
+        aConn.mNextControlConnReadReplyCallback = function (reply) {
+          //torlauncher.util.pr_debug('controlConnReadReplyCallback called. resolving...');
+          _this._clearSocketTimeout(aConn);
+          aConn.mNextControlConnSendCommandTimeoutCallback = null;
+          torlauncher.util.pr_debug(JSON.stringify(reply));
+          resolve(reply);
+        };
 
         chrome.sockets.tcp.send(
           aConn.socketId,
           torlauncher.util.str2ab(cmd),
           function (sendInfo) {
+            //torlauncher.util.pr_debug('chrome.sockets.tcp.send callback called');
             if (sendInfo.resultCode < 0) {
               console.warn("Socket send network error: " +
                            sendInfo.resultCode + ":" +
-                           chrome.extension.lastError);
+                           chrome.runtime.lastError.message);
+
+              _this._clearSocketTimeout(aConn);
+              aConn.mNextControlConnReadReplyCallback = null;
+              aConn.mNextControlConnSendCommandTimeoutCallback = null;
               reject();
               return;
             }
-
-            _this.mNextControlConnReadReplyCallback = function (reply) {
-              _this._clearSocketTimeout(aConn);
-              resolve(reply);
-            }
           }
         );
+        if (chrome.runtime.lastError)
+            console.warn('tl-protocol._sendCommand: ' + chrome.runtime.lastError.message);
       }
     });
   },
 
   _onTorSocketDataReceived: function (info) {
+    var controlConnection = null;
     if (this.mControlConnection &&
-        info.socketId = this.mControlConnection.socketId) {
+        info.socketId == this.mControlConnection.socketId)
+      controlConnection = this.mControlConnection;
+    else if (this.mTempControlConnection &&
+             info.socketId == this.mTempControlConnection.socketId)
+      controlConnection = this.mTempControlConnection;
+
+    if (controlConnection) {
+      //torlauncher.util.pr_debug('tl-protocol._onTorSocketDataReceived: control connection rcvd: ' +
+      //    JSON.stringify(info));
       // process control socket replies
       var strData = torlauncher.util.ab2str(info.data);
-      if (this.mControlConnection.prevReadReplyCallback ==
-          this.mControlConnection.nextReadReplyCallback) {
-        this.mControlConnection.accumBuffer += strData;
+      var arrData = strData.split('');
+
+      controlConnection.nextReadReplyCallback =
+          controlConnection.mNextControlConnReadReplyCallback;
+
+      if (controlConnection.prevReadReplyCallback ==
+          controlConnection.nextReadReplyCallback) {
+        //torlauncher.util.pr_debug('tl-protocol._onTorSocketDataReceived: prevReadReplyCallback == nextReadReplyCallback');
+        //torlauncher.util.pr_debug('tl-protocol._onTorSocketDataReceived strData: ' + strData);
+        if (!controlConnection.accumBuffer)
+          controlConnection.accumBuffer = [];
+        controlConnection.accumBuffer =
+            controlConnection.accumBuffer.concat(arrData);
       } else {
-        this.mControlConnection.accumBuffer = strData;
+        //torlauncher.util.pr_debug('tl-protocol._onTorSocketDataReceived: prevReadReplyCallback != nextReadReplyCallback');
+        controlConnection.accumBuffer = arrData;
       }
 
-      // pass by reference so that we can modify the string in nested function
-      // calls via readBytes() call
-      reply = this._torReadReply(Object(this.mControlConnection.accumBuffer));
-      this.mControlConnection.nextReadReplyCallback &&
-          this.mControlConnection.nextReadReplyCallback(reply);
+      reply = this._torReadReply(controlConnection.accumBuffer);
+      controlConnection.nextReadReplyCallback &&
+          controlConnection.nextReadReplyCallback(reply);
 
-      this.mControlConnection.prevReadReplyCallback =
-          this.mControlConnection.nextReadReplyCallback);
+      controlConnection.prevReadReplyCallback =
+          controlConnection.nextReadReplyCallback;
 
       // clear the reply in case it was read properly, so it's not called again
       if (reply)
-        this.mControlConnection.nextReadReplyCallback = null;
+        controlConnection.nextReadReplyCallback = null;
+    } else if (this.mEventMonitorConnection &&
+               info.socketId == this.mEventMonitorConnection.socketId) {
+      torlauncher.util.pr_debug('tl-protocol._onTorSocketDataReceived: event monitor connection rcvd: ' +
+          JSON.stringify(info));
+
+      var bytes = torlauncher.util.ab2str(info.data);
+
+      if (!this.mEventMonitorBuffer) {
+        torlauncher.util.pr_debug('tl-protocol._onTorSocketDataReceived: mEventMonitorBuffer non-empty');
+        this.mEventMonitorBuffer = bytes;
+      } else {
+        torlauncher.util.pr_debug('tl-protocol._onTorSocketDataReceived: mEventMonitorBuffer empty');
+        this.mEventMonitorBuffer += bytes;
+      }
+      this._processEventData();
     }
   },
 
   _onTorSocketReceiveError: function (info) {
+    var controlConnection = null;
     if (this.mControlConnection &&
-        info.socketId = this.mControlConnection.socketId) {
+        info.socketId == this.mControlConnection.socketId)
+      controlConnection = this.mControlConnection;
+    else if (this.mTempControlConnection &&
+             info.socketId == this.mTempControlConnection.socketId)
+      controlConnection = this.mTempControlConnection;
+
+    if (controlConnection) {
       // process control socket replies
       console.warn("Socket receive error: " + info.resultCode + ": " +
-          chrome.extension.lastError);
-      this.mControlConnection.nextReadReplyCallback &&
-          this.mControlConnection.nextReadReplyCallback(null);
+          chrome.runtime.lastError.message);
+      controlConnection.nextReadReplyCallback &&
+          controlConnection.nextReadReplyCallback(null);
 
       // clear the reply, so it's not called again
-      this.mControlConnection.nextReadReplyCallback = null;
+      controlConnection.nextReadReplyCallback = null;
+    } else if (this.mEventMonitorConnection &&
+               info.socketId == this.mEventMonitorConnection.socketId) {
+      console.warn("Event monitor connection error: " + info.resultCode + ": " +
+                   chrome.runtime.lastError.message);
+      this._shutDownEventMonitor();
     }
   },
 
@@ -767,8 +885,8 @@ torlauncher.TorProtocolService.prototype = {
   _torReadLine: function(aInput)
   {
     var str = "";
-    while(aInput.length) {
-      var bytes = aInput.readBytes(1);
+    while (aInput.length) {
+      var bytes = aInput.shift();
       if ('\n' == bytes)
         break;
 
@@ -1052,51 +1170,6 @@ torlauncher.TorProtocolService.prototype = {
     }
   },
 
-  _waitForEventData: function()
-  {
-    if (!this.mEventMonitorConnection)
-      return;
-
-    var _this = this;
-    var eventReader = // An implementation of nsIInputStreamCallback.
-    {
-      onInputStreamReady: function(aInStream)
-      {
-        if (!_this.mEventMonitorConnection ||
-            (_this.mEventMonitorConnection.inStream != aInStream))
-        {
-          return;
-        }
-
-        try
-        {
-          var binStream = _this.mEventMonitorConnection.binInStream;
-          var bytes = binStream.readBytes(binStream.available());
-          if (!_this.mEventMonitorBuffer)
-            _this.mEventMonitorBuffer = bytes;
-          else
-            _this.mEventMonitorBuffer += bytes;
-          _this._processEventData();
-
-          _this._waitForEventData();
-        }
-        catch (e)
-        {
-          // Probably we got here because tor exited.  If tor is restarted by
-          // Tor Launcher, the event monitor will be restarted too.
-          TorLauncherLogger.safelog(4, "Event monitor read error", e);
-          _this._shutDownEventMonitor();
-        }
-      }
-    };
-
-    var curThread = Cc["@mozilla.org/thread-manager;1"].getService()
-                      .currentThread;
-    var asyncInStream = this.mEventMonitorConnection.inStream
-                            .QueryInterface(Ci.nsIAsyncInputStream);
-    asyncInStream.asyncWait(eventReader, 0, 0, curThread);
-  },
-
   _processEventData: function()
   {
     var replyData = this.mEventMonitorBuffer;
@@ -1109,13 +1182,13 @@ torlauncher.TorProtocolService.prototype = {
       idx = replyData.indexOf('\n');
       if (idx >= 0)
       {
-        let line = replyData.substring(0, idx);
+        var line = replyData.substring(0, idx);
         replyData = replyData.substring(idx + 1);
-        let len = line.length;
+        var len = line.length;
         if ((len > 0) && ('\r' == line.substr(len - 1)))
           line = line.substr(0, len - 1);
 
-        TorLauncherLogger.safelog(2, "Event response: ", line);
+        console.info("Event response: " + line);
         if (!this.mEventMonitorInProgressReply)
           this.mEventMonitorInProgressReply = {};
         var replyObj = this.mEventMonitorInProgressReply;
@@ -1138,51 +1211,49 @@ torlauncher.TorProtocolService.prototype = {
 
     if (aReply.statusCode != this.kCmdStatusEventNotification)
     {
-      TorLauncherLogger.log(4, "Unexpected event status code: "
+      console.warn("Unexpected event status code: "
                                + aReply.statusCode);
       return;
     }
 
     // TODO: do we need to handle multiple lines?
-    let s = aReply.lineArray[0];
-    let idx = s.indexOf(' ');
+    var s = aReply.lineArray[0];
+    var idx = s.indexOf(' ');
     if ((idx > 0))
     {
-      let eventType = s.substring(0, idx);
-      let msg = s.substr(idx + 1);
+      var eventType = s.substring(0, idx);
+      var msg = s.substr(idx + 1);
       switch (eventType)
       {
         case "WARN":
         case "ERR":
           // Notify so that Copy Log can be enabled.
-          var obsSvc = Cc["@mozilla.org/observer-service;1"]
-                         .getService(Ci.nsIObserverService);
-          obsSvc.notifyObservers(null, "TorLogHasWarnOrErr", null);
+          chrome.runtime.sendMessage({ 'kind': 'TorLogHasWarnOrErr' });
           // fallthru
         case "DEBUG":
         case "INFO":
         case "NOTICE":
           var now = new Date();
-          let logObj = { date: now, type: eventType, msg: msg };
+          var logObj = { date: now, type: eventType, msg: msg };
+
           if (!this.mTorLog)
             this.mTorLog = [];
           else
           {
-            var maxEntries =
-                    TorLauncherUtil.getIntPref(this.kPrefMaxTorLogEntries, 0);
+            var maxEntries = this.kMaxTorLogEntries;
             if ((maxEntries > 0) && (this.mTorLog.length >= maxEntries))
               this.mTorLog.splice(0, 1);
           }
+
           this.mTorLog.push(logObj);
 
-          // We could use console.info(), console.error(), and console.warn()
-          // but when those functions are used the console output includes
-          // extraneous double quotes.  See Mozilla bug # 977586.
-          if (this.mConsoleSvc)
-          {
-            let s = "Tor " + logObj.type + ": " + logObj.msg;
-            this.mConsoleSvc.logStringMessage(s);
-          }
+          var s = "Tor " + logObj.type + ": " + logObj.msg;
+
+          if (eventType == "WARN" || eventType == "ERR")
+            console.warn(s);
+          else
+            console.info(s);
+
           break;
         case "STATUS_CLIENT":
           this._parseBootstrapStatus(msg);
@@ -1201,20 +1272,22 @@ torlauncher.TorProtocolService.prototype = {
 
     if (!aObj)
     {
-      dump(aObjDesc + " is undefined" + "\n");
+      console.log(aObjDesc + " is undefined" + "\n");
       return;
     }
 
     for (var prop in aObj)
     {
-      let val = aObj[prop];
+      var val = aObj[prop];
       if (Array.isArray(val))
       {
-        for (let i = 0; i < val.length; ++i)
-          dump(aObjDesc + "." + prop + "[" + i + "]: " + val + "\n");
+        for (var i = 0; i < val.length; ++i)
+          console.log(aObjDesc + "." + prop + "[" + i + "]: " + val + "\n");
       }
       else
-        dump(aObjDesc + "." + prop + ": " + val + "\n");
+        console.log(aObjDesc + "." + prop + ": " + val + "\n");
     }
   }
 };
+
+torlauncher.protocolService = new torlauncher.TorProtocolService();

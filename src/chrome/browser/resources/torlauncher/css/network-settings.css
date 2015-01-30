@@ -1,0 +1,251 @@
+/*
+ * Copyright (c) 2014, The Tor Project, Inc.
+ * See LICENSE for licensing information.
+ *
+ * vim: set sw=2 sts=2 ts=8 et syntax=css:
+ */
+html, body {
+  height: 100%;
+}
+
+button {
+  font-size: 13px;
+  margin: 0 3px;
+}
+
+.window, .page, .dialog, .wizard, .prefwindow {
+  align-items: stretch;
+  background-color: #D8D8D8;
+  color: #000;
+  font: message-box;
+  margin: 25px;
+}
+
+.separator.thin {
+  height: 0.5em;
+}
+
+.separator.thin.orient-vertical {
+  height: 0;
+  width: 0.5em;
+}
+
+.separator {
+  height: 1.5em;
+}
+
+.separator.orient-vertical {
+  height: 0;
+  width: 1.5em;
+}
+
+.dialog {
+  max-height: 41em;
+}
+
+.dialog.os-windows {
+  width: 49em;
+  height: 42em;
+}
+
+.wizard {
+  max-height: 35em;
+  margin-top: 0;
+}
+
+.wizard.os-windows {
+  width: 46em;
+  height: 41em;
+}
+
+.wizard-page-box {
+  padding: 0;
+  margin: 14px 20px 18px 20px;
+}
+
+.wizard .wizard-header { display: none; }
+
+#forAssistance {
+  margin-left: 12px;
+  margin-bottom: 6px;
+  -webkit-user-select: text;
+  -webkit-user-focus: normal;
+  cursor: text;
+}
+
+.wizard label {
+  margin: 0;
+}
+
+.wizard .radiogroup {
+  margin: 5px 0 8px 25px;
+}
+
+.tbb-header .groupbox {
+  margin-left: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.firstResponses button {
+  min-width: 85px;
+  margin-top: 9px;
+}
+
+.separator.tall {
+  height: 2.1em;
+}
+
+.help .heading,
+.question {
+  font-weight: bold;
+}
+
+.questionHelp {
+  margin-right: 20px;
+}
+
+.instructions {
+  margin-bottom: 8px;
+}
+
+button.firstAnswer {
+  margin-top: 0;
+}
+
+.tbb-logo-box {
+  height: 80px;
+}
+
+.tbb-logo {
+  width: 115px;
+  height: 80px;
+  padding-right: 20px;
+}
+
+#bridgeCustomEntry {
+  margin-left: 30px;
+}
+
+.wizardpage[pageid="startingTor"] .description,
+.wizardpage[pageid="errorPanel"] .description,
+#errorPanel .description,
+#startingTor .description {
+  font-size: 120%;
+  font-weight: bold;
+  white-space: pre-wrap;
+  text-align: center;
+}
+
+#restartButton {
+  margin-top: 20px;
+}
+
+.dialog .help {
+  margin: 30px;
+}
+
+.help label {
+  font-size: 120%;
+  font-weight: bold;
+  margin: 0 0 12px 0;
+}
+
+.help div {
+  -webkit-user-select: text;
+  -webkit-user-focus: normal;
+}
+
+.help .description {
+  margin-bottom: 10px;
+  -webkit-user-select: text;
+  -webkit-user-focus: normal;
+  cursor: text;
+}
+
+.help .description.prelist {
+  margin-bottom: 0;
+}
+
+.help ol {
+  padding-top: 0;
+  margin-top: 5px;
+  margin-bottom: 0;
+}
+
+.help li {
+  margin-bottom: 8px;
+}
+
+#copyLogFeedbackPanel {
+  margin: -15px 0 0 0;
+  max-width: 34em;
+}
+
+/* Increase font size on Windows for readability */
+.os-windows div,
+.os-windows label,
+.os-windows .description,
+.os-windows .textbox
+{
+  font-size: 120%;
+}
+
+.torWarning {
+  list-style-image: url("chrome://torlauncher/skin/warning.png");
+}
+
+/* Ensure that our caution icon is always shown on GTK-based platforms. */
+.torWarning .button-icon {
+  display: inline !important;
+}
+
+.hbox, .dialog-buttons {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+}
+
+/*
+.dialog-buttons .spacer {
+  flex-grow: 1;
+  display: inline-block;
+}
+
+.dialog-buttons button {
+  display: inline-block;
+}
+*/
+
+.flex1 {
+  flex-grow: 1;
+}
+
+.wizardpage, .vbox {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+.align-start {
+  align-items: flex-start;
+}
+
+.pack-start {
+  align-content: flex-start;
+}
+
+.for-assistance {
+  min-height: 30px;
+  margin-bottom: 7px;
+}
+
+.panel {
+  border: 1px solid #CCC;
+  background-color: #E8E8E8;
+  padding: 5px 15px;
+}
+
+.warning-icon {
+  vertical-align: middle;
+}

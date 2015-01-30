@@ -1,5 +1,5 @@
-// BitPop browser. Facebook chat integration part.
-// Copyright (C) 2014 BitPop AS
+// BitPop browser. Tor launcher integration part.
+// Copyright (C) 2015 BitPop AS
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -17,10 +17,29 @@
 var torlauncher = torlauncher || {};
 
 const kPropNamePrefix = "torlauncher.";
+var gUILanguage = chrome.i18n.getUILanguage();
 
 torlauncher.util = {
+  is_production: false,
+
   translate: function(messageID, args) {
-    return chrome.i18n.getMessage(messageID, args);
+    if (!torlauncher.messages[gUILanguage]) {
+      if (gUILanguage == "en-US")
+        gUILanguage = "en";
+      else if (gUILanguage == "es-419")
+        gUILanguage = "es";
+
+      if (!torlauncher.messages[gUILanguage])
+        return "";
+    }
+
+    var res = torlauncher.messages[gUILanguage][messageID];
+    if (args && args.length) {
+      for (var i = 1; i <= args.length; ++i) {
+        res = res.replace('$' + i, args[i-1]);
+      }
+    }
+    return res;
   },
 
   localizePage: function() {
@@ -57,7 +76,7 @@ torlauncher.util = {
       return aStringName;
 
     var key = kPropNamePrefix + aStringName;
-    var res = chrome.i18n.getMessage(key);
+    var res = torlauncher.util.translate(key);
 
     return (res) ? res : aStringName;
   },
@@ -68,7 +87,7 @@ torlauncher.util = {
       return aStringName;
 
     var key = kPropNamePrefix + aStringName;
-    var res = chrome.i18n.getMessage(key, aArray.slice(0, aLen));
+    var res = torlauncher.util.translate(key, aArray.slice(0, aLen));
 
     return (res) ? res : aStringName;
   },
@@ -112,36 +131,37 @@ torlauncher.util = {
 
   envExistsWithPromise: function(env_name) {
     return new Promise(function (resolve, reject) {
-      chrome.torlauncher.env.exists(env_name, resolve);
+      chrome.torlauncher.envExists(env_name, resolve);
     });
   },
 
   envGetWithPromise: function(env_name) {
     return new Promise(function (resolve, reject) {
-      chrome.torlauncher.env.get(env_name, resolve);
+      chrome.torlauncher.envGet(env_name, resolve);
     });
   },
 
   prefGetWithPromise: function(pref_name) {
     return new Promise(function (resolve, reject) {
-      chrome.torlauncher[pref_name].get({ incognito: true}, function (details) {
+      chrome.torlauncher[pref_name].get({ incognito: true }, function (details) {
         resolve(details.value);
       });
     });
   },
 
   getShouldStartAndOwnTorWithPromise: function() {
-    return new Promise(function (resolve, reject)) {
+    var _this = this;
+    return new Promise(function (resolve, reject) {
       const kEnvSkipLaunch = "TOR_SKIP_LAUNCH";
-      const kPrefStartTor = "startTor";
+      const kPrefStartTor = "startTorPref";
 
-      envExistsWithPromise(kEnvSkipLaunch).then(function (exists) {
+      _this.envExistsWithPromise(kEnvSkipLaunch).then(function (exists) {
         if (exists)
-          envGetWithPromise(kEnvSkipLaunch).then(function(skip_launch) {
+          _this.envGetWithPromise(kEnvSkipLaunch).then(function(skip_launch) {
             resolve("1" != skip_launch);
           });
         else
-          prefGetWithPromise(kPrefStartTor).then(function (pref_val) {
+          _this.prefGetWithPromise(kPrefStartTor).then(function (pref_val) {
             resolve(pref_val);
           });
       });
@@ -150,17 +170,18 @@ torlauncher.util = {
 
   getShouldShowNetworkSettingsWithPromise: function()
   {
+    var _this = this;
     return new Promise(function (resolve, reject) {
       const kEnvForceShowNetConfig = "TOR_FORCE_NET_CONFIG";
       const kPrefPromptAtStartup = "promptAtStartup";
 
-      envExistsWithPromise(kEnvForceShowNetConfig).then(function (exists) {
+      _this.envExistsWithPromise(kEnvForceShowNetConfig).then(function (exists) {
         if (exists)
-          envGetWithPromise(kEnvForceShowNetConfig).then(function(force_show) {
+          _this.envGetWithPromise(kEnvForceShowNetConfig).then(function(force_show) {
             resolve("1" == force_show);
           });
         else
-          prefGetWithPromise(kPrefPromptAtStartup).then(function (pref_val) {
+          _this.prefGetWithPromise(kPrefPromptAtStartup).then(function (pref_val) {
             resolve(pref_val);
           });
       });
@@ -169,20 +190,33 @@ torlauncher.util = {
 
   getShouldOnlyConfigureTorWithPromise: function()
   {
+    var _this = this;
     return new Promise(function (resolve, reject) {
       const kEnvOnlyConfigureTor = "TOR_CONFIGURE_ONLY";
       const kPrefOnlyConfigureTor = "onlyConfigureTor";
 
-      envExistsWithPromise(kEnvOnlyConfigureTor).then(function (exists) {
+      _this.envExistsWithPromise(kEnvOnlyConfigureTor).then(function (exists) {
         if (exists)
-          envGetWithPromise(kEnvOnlyConfigureTor).then(function(only_configure) {
+          _this.envGetWithPromise(kEnvOnlyConfigureTor).then(function(only_configure) {
             resolve("1" == only_configure);
           });
         else
-          prefGetWithPromise(kPrefOnlyConfigureTor).then(function (pref_val) {
+          _this.prefGetWithPromise(kPrefOnlyConfigureTor).then(function (pref_val) {
             resolve(pref_val);
           });
       });
+    });
+  },
+
+  showConfirm: function () {
+    return new Promise(function (resolve, reject) {
+      resolve();
+    });
+  },
+
+  showAlert: function () {
+    return new Promise(function (resolve, reject) {
+      resolve();
     });
   },
 
@@ -194,11 +228,16 @@ torlauncher.util = {
 
   str2ab: function (str) {
     var buf = new ArrayBuffer(str.length); // 2 bytes for each char
-    var bufView = new Uint8rray(buf);
+    var bufView = new Uint8Array(buf);
     for (var i=0, strLen=str.length; i < strLen; i++) {
       bufView[i] = str.charCodeAt(i);
     }
     return buf;
+  },
+
+  pr_debug: function(message) {
+    if (!torlauncher.util.is_production)
+      console.info(message);
   }
 
 };

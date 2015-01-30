@@ -1,4 +1,4 @@
-// BitPop browser. Facebook chat integration part.
+// BitPop browser. Tor launcher integration part.
 // Copyright (C) 2014 BitPop AS
 //
 // This program is free software: you can redistribute it and/or modify

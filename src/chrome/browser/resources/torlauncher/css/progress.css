@@ -1,0 +1,92 @@
+.dialog {
+  width: 400px;
+}
+
+#progressHeading {
+  font-size: 110%;
+  margin: 8px 0px 8px 0px;
+  font-weight: bold;
+}
+
+#progressPleaseWait {
+  font-size: 110%;
+  margin-bottom: 15px;
+}
+
+#tbb-icon {
+  width: 48px;
+  height: 48px;
+}
+
+#progressDesc {
+  height: 48px;
+}
+
+#progressMeter {
+  margin-bottom: 16px;
+}
+
+/* ------------------------------------------------------------------*/
+
+.dialog {
+  align-items: stretch;
+  background-color: #D8D8D8;
+  color: #000;
+  font: message-box;
+  margin: 25px;
+}
+
+.separator.thin {
+  height: 0.5em;
+}
+
+.separator.thin.orient-vertical {
+  height: 0;
+  width: 0.5em;
+}
+
+.separator {
+  height: 1.5em;
+}
+
+.separator.orient-vertical {
+  height: 0;
+  width: 1.5em;
+}
+
+.separator.tall {
+  height: 2.1em;
+}
+
+.hbox, .dialog-buttons {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+}
+
+.flex1 {
+  flex-grow: 1;
+}
+
+.vbox {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+.align-start {
+  align-items: flex-start;
+}
+
+.pack-start {
+  align-content: flex-start;
+}
+
+.warning-icon {
+  vertical-align: middle;
+}
+
+progress {
+  display: inline-block;
+  width: 100%;
+}
