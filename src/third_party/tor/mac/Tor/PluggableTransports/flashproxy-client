@@ -1,0 +1,1267 @@
+#!/usr/bin/env python
+"""
+The flashproxy client transport plugin.
+"""
+
+import BaseHTTPServer
+import array
+import base64
+import cStringIO
+import getopt
+import os
+import os.path
+import select
+import socket
+import struct
+import subprocess
+import sys
+import threading
+import time
+import traceback
+
+from flashproxy.util import parse_addr_spec, addr_family, format_addr
+
+from hashlib import sha1
+
+try:
+    import numpy
+except ImportError:
+    numpy = None
+
+# Default local port in managed mode (choose one arbitrarily).
+DEFAULT_LOCAL_PORT_MANAGED = 0
+# Default local port in external mode.
+DEFAULT_LOCAL_PORT_EXTERNAL = 9001
+DEFAULT_REMOTE_PORT = 9000
+DEFAULT_REGISTER_METHODS = ["appspot", "email", "http"]
+DEFAULT_PORT_FORWARDING_HELPER = "tor-fw-helper"
+DEFAULT_TRANSPORT = "websocket"
+
+# We will re-register if we have fewer than this many waiting proxies. The
+# facilitator may choose to ignore our requests.
+DESIRED_NUMBER_OF_PROXIES = 3
+
+# We accept up to this many bytes from a socket not yet matched with a partner
+# before disconnecting it.
+UNCONNECTED_BUFFER_LIMIT = 10240
+
+LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+class options(object):
+    local_addrs = []
+    remote_addrs = []
+    register_addr = None
+
+    managed = True
+
+    address_family = socket.AF_UNSPEC
+    daemonize = False
+    facilitator_url = None
+    facilitator_pubkey_filename = None
+    log_filename = None
+    log_file = sys.stdout
+    pid_filename = None
+    port_forwarding = False
+    port_forwarding_helper = DEFAULT_PORT_FORWARDING_HELPER
+    port_forwarding_external = None
+    register = False
+    register_commands = []
+    transport = DEFAULT_TRANSPORT
+    safe_logging = True
+
+def usage(f = sys.stdout):
+    print >> f, """\
+Usage: %(progname)s --register [LOCAL][:PORT] [REMOTE][:PORT]
+Wait for connections on a local and a remote port. When any pair of connections
+exists, data is ferried between them until one side is closed. By default
+LOCAL is localhost addresses on port %(local_port)d and REMOTE is all addresses
+on port %(remote_port)d.
+
+The local connection acts as a SOCKS4a proxy, but the host and port in the SOCKS
+request are ignored and the local connection is always linked to a remote
+connection.
+
+By default, runs as a managed proxy: informs a parent Tor process of support for
+the "flashproxy" or "websocket" pluggable transport. In managed mode,
+the LOCAL port is chosen arbitrarily instead of defaulting to
+%(local_port)d; however this can be overridden by including a LOCAL port
+in the command. This is the way the program should be invoked in a torrc
+ClientTransportPlugin "exec" line. Use the --external option to run as
+an external proxy that does not interact with Tor.
+
+If any of the --register, --register-addr, or --register-methods options are
+used, then your IP address will be sent to the facilitator so that proxies can
+connect to you. You need to register in some way in order to get any service.
+The --facilitator option allows controlling which facilitator is used; if
+omitted, it uses a public default.
+
+  -4                        registration helpers use IPv4.
+  -6                        registration helpers use IPv6.
+      --daemon              daemonize (Unix only).
+      --external            be an external proxy (don't interact with Tor using
+                              environment variables and stdout).
+  -f, --facilitator=URL     advertise willingness to receive connections to URL.
+      --facilitator-pubkey=FILENAME
+                            encrypt registrations to the given PEM-formatted
+                              public key (default built-in).
+  -h, --help                show this help.
+  -l, --log FILENAME        write log to FILENAME (default stdout).
+      --pidfile FILENAME    write PID to FILENAME after daemonizing.
+      --port-forwarding     attempt to forward REMOTE port.
+      --port-forwarding-helper=PROGRAM  use the given PROGRAM to forward ports
+                              (default "%(port_forwarding_helper)s"). Implies --port-forwarding.
+      --port-forwarding-external=PORT  forward the external PORT to REMOTE on
+                              the local host (default same as REMOTE). Implies
+                              --port-forwarding.
+  -r, --register            register with the facilitator.
+      --register-addr=ADDR  register the given address (in case it differs from
+                              REMOTE). Implies --register.
+      --register-methods=METHOD[,METHOD...]
+                            register using the given comma-separated list of
+                              methods. Implies --register. Possible methods are
+                                appspot email http
+                              Default is "%(reg_methods)s".
+      --transport=TRANSPORT  register using the given transport
+                              (default "%(transport)s").
+      --unsafe-logging      don't scrub IP addresses from logs.\
+""" % {
+    "progname": sys.argv[0],
+    "local_port": DEFAULT_LOCAL_PORT_EXTERNAL,
+    "remote_port": DEFAULT_REMOTE_PORT,
+    "reg_methods": ",".join(DEFAULT_REGISTER_METHODS),
+    "port_forwarding_helper": DEFAULT_PORT_FORWARDING_HELPER,
+    "transport": DEFAULT_TRANSPORT,
+}
+
+def safe_str(s):
+    """Return "[scrubbed]" if options.safe_logging is true, and s otherwise."""
+    if options.safe_logging:
+        return "[scrubbed]"
+    else:
+        return s
+
+log_lock = threading.Lock()
+def log(msg):
+    with log_lock:
+        print >> options.log_file, (u"%s %s" % (time.strftime(LOG_DATE_FORMAT), msg)).encode("UTF-8")
+        options.log_file.flush()
+
+def safe_format_addr(addr):
+    return safe_str(format_addr(addr))
+
+def format_sockaddr(sockaddr):
+    host, port = socket.getnameinfo(sockaddr, socket.NI_NUMERICHOST | socket.NI_NUMERICSERV)
+    port = int(port)
+    return format_addr((host, port))
+
+def safe_format_sockaddr(sockaddr):
+    return safe_str(format_sockaddr(sockaddr))
+
+def safe_format_peername(s):
+    try:
+        return safe_format_sockaddr(s.getpeername())
+    except socket.error, e:
+        return "<unconnected>"
+
+
+def apply_mask_numpy(payload, mask_key):
+    if len(payload) == 0:
+        return ""
+    payload_a = numpy.frombuffer(payload, dtype="|u4", count=len(payload)//4)
+    m, = numpy.frombuffer(mask_key, dtype="|u4", count=1)
+    result = numpy.bitwise_xor(payload_a, m).tostring()
+    i = len(payload) // 4 * 4
+    if i < len(payload):
+        remainder = []
+        while i < len(payload):
+            remainder.append(chr(ord(payload[i]) ^ ord(mask_key[i % 4])))
+            i += 1
+        result = result + "".join(remainder)
+    return result
+
+def apply_mask_py(payload, mask_key):
+    result = array.array("B", payload)
+    m = array.array("B", mask_key)
+    i = 0
+    while i < len(result) - 7:
+        result[i] ^= m[0]
+        result[i+1] ^= m[1]
+        result[i+2] ^= m[2]
+        result[i+3] ^= m[3]
+        result[i+4] ^= m[0]
+        result[i+5] ^= m[1]
+        result[i+6] ^= m[2]
+        result[i+7] ^= m[3]
+        i += 8
+    while i < len(result):
+        result[i] ^= m[i%4]
+        i += 1
+    return result.tostring()
+
+if numpy is not None:
+    apply_mask = apply_mask_numpy
+else:
+    apply_mask = apply_mask_py
+
+class WebSocketFrame(object):
+    def __init__(self):
+        self.fin = False
+        self.opcode = None
+        self.payload = None
+
+    def is_control(self):
+        return (self.opcode & 0x08) != 0
+
+class WebSocketMessage(object):
+    def __init__(self):
+        self.opcode = None
+        self.payload = None
+
+    def is_control(self):
+        return (self.opcode & 0x08) != 0
+
+class WebSocketDecoder(object):
+    """RFC 6455 section 5 is about the WebSocket framing format."""
+    # Raise an exception rather than buffer anything larger than this.
+    MAX_MESSAGE_LENGTH = 1024 * 1024
+
+    class MaskingError(ValueError):
+        pass
+
+    def __init__(self, use_mask = False):
+        """use_mask should be True for server-to-client sockets, and False for
+        client-to-server sockets."""
+        self.use_mask = use_mask
+
+        # Per-frame state.
+        self.buf = ""
+
+        # Per-message state.
+        self.message_buf = ""
+        self.message_opcode = None
+
+    def feed(self, data):
+        self.buf += data
+
+    def read_frame(self):
+        """Read a frame from the internal buffer, if one is available. Returns a
+        WebSocketFrame object, or None if there are no complete frames to
+        read."""
+        # RFC 6255 section 5.2.
+        if len(self.buf) < 2:
+            return None
+        offset = 0
+        b0, b1 = struct.unpack_from(">BB", self.buf, offset)
+        offset += 2
+        fin = (b0 & 0x80) != 0
+        opcode = b0 & 0x0f
+        frame_masked = (b1 & 0x80) != 0
+        payload_len = b1 & 0x7f
+
+        if payload_len == 126:
+            if len(self.buf) < offset + 2:
+                return None
+            payload_len, = struct.unpack_from(">H", self.buf, offset)
+            offset += 2
+        elif payload_len == 127:
+            if len(self.buf) < offset + 8:
+                return None
+            payload_len, = struct.unpack_from(">Q", self.buf, offset)
+            offset += 8
+
+        if frame_masked:
+            if not self.use_mask:
+                # "A client MUST close a connection if it detects a masked
+                # frame."
+                raise self.MaskingError("Got masked payload from server")
+            if len(self.buf) < offset + 4:
+                return None
+            mask_key = self.buf[offset:offset+4]
+            offset += 4
+        else:
+            if self.use_mask:
+                # "The server MUST close the connection upon receiving a frame
+                # that is not masked."
+                raise self.MaskingError("Got unmasked payload from client")
+            mask_key = None
+
+        if payload_len > self.MAX_MESSAGE_LENGTH:
+            raise ValueError("Refusing to buffer payload of %d bytes" % payload_len)
+
+        if len(self.buf) < offset + payload_len:
+            return None
+        if mask_key:
+            payload = apply_mask(self.buf[offset:offset+payload_len], mask_key)
+        else:
+            payload = self.buf[offset:offset+payload_len]
+        self.buf = self.buf[offset+payload_len:]
+
+        frame = WebSocketFrame()
+        frame.fin = fin
+        frame.opcode = opcode
+        frame.payload = payload
+
+        return frame
+
+    def read_message(self):
+        """Read a complete message. If the opcode is 1, the payload is decoded
+        from a UTF-8 binary string to a unicode string. If a control frame is
+        read while another fragmented message is in progress, the control frame
+        is returned as a new message immediately. Returns None if there is no
+        complete frame to be read."""
+        # RFC 6455 section 5.4 is about fragmentation.
+        while True:
+            frame = self.read_frame()
+            if frame is None:
+                return None
+            # "Control frames (see Section 5.5) MAY be injected in the middle of
+            # a fragmented message. Control frames themselves MUST NOT be
+            # fragmented."
+            if frame.is_control():
+                if not frame.fin:
+                    raise ValueError("Control frame (opcode %d) has FIN bit clear" % frame.opcode)
+                message = WebSocketMessage()
+                message.opcode = frame.opcode
+                message.payload = frame.payload
+                return message
+
+            if self.message_opcode is None:
+                if frame.opcode == 0:
+                    raise ValueError("First frame has opcode 0")
+                self.message_opcode = frame.opcode
+            else:
+                if frame.opcode != 0:
+                    raise ValueError("Non-first frame has nonzero opcode %d" % frame.opcode)
+            if len(self.message_buf) + len(frame.payload) > self.MAX_MESSAGE_LENGTH:
+                raise ValueError("Refusing to buffer payload of %d bytes" % (len(self.message_buf) + len(frame.payload)))
+            self.message_buf += frame.payload
+
+            if frame.fin:
+                break
+        message = WebSocketMessage()
+        message.opcode = self.message_opcode
+        message.payload = self.message_buf
+        self.postprocess_message(message)
+        self.message_opcode = None
+        self.message_buf = ""
+
+        return message
+
+    def postprocess_message(self, message):
+        if message.opcode == 1:
+            message.payload = message.payload.decode("utf-8")
+        return message
+
+class WebSocketEncoder(object):
+    def __init__(self, use_mask = False):
+        self.use_mask = use_mask
+
+    def encode_frame(self, opcode, payload):
+        if opcode >= 16:
+            raise ValueError("Opcode of %d is >= 16" % opcode)
+        length = len(payload)
+
+        if self.use_mask:
+            mask_key = os.urandom(4)
+            payload = apply_mask(payload, mask_key)
+            mask_bit = 0x80
+        else:
+            mask_key = ""
+            mask_bit = 0x00
+
+        if length < 126:
+            len_b, len_ext = length, ""
+        elif length < 0x10000:
+            len_b, len_ext = 126, struct.pack(">H", length)
+        elif length < 0x10000000000000000:
+            len_b, len_ext = 127, struct.pack(">Q", length)
+        else:
+            raise ValueError("payload length of %d is too long" % length)
+
+        return chr(0x80 | opcode) + chr(mask_bit | len_b) + len_ext + mask_key + payload
+
+    def encode_message(self, opcode, payload):
+        if opcode == 1:
+            payload = payload.encode("utf-8")
+        return self.encode_frame(opcode, payload)
+
+# WebSocket implementations generally support text (opcode 1) messages, which
+# are UTF-8-encoded text. Not all support binary (opcode 2) messages. During the
+# WebSocket handshake, we use the "base64" value of the Sec-WebSocket-Protocol
+# header field to indicate that text frames should encoded UTF-8-encoded
+# base64-encoded binary data. Binary messages are always interpreted verbatim,
+# but text messages are rejected if "base64" was not negotiated.
+#
+# The idea here is that browsers that know they don't support binary messages
+# can negotiate "base64" with both endpoints and still reliably transport binary
+# data. Those that know they can support binary messages can just use binary
+# messages in the straightforward way.
+
+class WebSocketBinaryDecoder(object):
+    def __init__(self, protocols, use_mask = False):
+        self.dec = WebSocketDecoder(use_mask)
+        self.base64 = "base64" in protocols
+
+    def feed(self, data):
+        self.dec.feed(data)
+
+    def read(self):
+        """Returns None when there are currently no data to be read. Returns ""
+        when a close message is received."""
+        while True:
+            message = self.dec.read_message()
+            if message is None:
+                return None
+            elif message.opcode == 1:
+                if not self.base64:
+                    raise ValueError("Received text message on decoder incapable of base64")
+                payload = base64.b64decode(message.payload)
+                if payload:
+                    return payload
+            elif message.opcode == 2:
+                if message.payload:
+                    return message.payload
+            elif message.opcode == 8:
+                return ""
+            # Ignore all other opcodes.
+        return None
+
+class WebSocketBinaryEncoder(object):
+    def __init__(self, protocols, use_mask = False):
+        self.enc = WebSocketEncoder(use_mask)
+        self.base64 = "base64" in protocols
+
+    def encode(self, data):
+        if self.base64:
+            return self.enc.encode_message(1, base64.b64encode(data))
+        else:
+            return self.enc.encode_message(2, data)
+
+
+def listen_socket(addr):
+    """Return a socket listening on the given address."""
+    addrinfo = socket.getaddrinfo(addr[0], addr[1], 0, socket.SOCK_STREAM, socket.IPPROTO_TCP)[0]
+    s = socket.socket(addrinfo[0], addrinfo[1], addrinfo[2])
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if addrinfo[0] == socket.AF_INET6 and socket.has_ipv6:
+        # Set the IPV6_V6ONLY socket option, otherwise some operating systems
+        # will listen on an IPv4 address as well as IPv6 by default. For
+        # example, "::" will listen on both "::" and "0.0.0.0", and "::1" will
+        # listen on both "::1" and "127.0.0.1". See
+        # https://trac.torproject.org/projects/tor/ticket/4760.
+        try:
+            s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        except AttributeError:
+            # Python 2.7.3 on Windows does not define IPPROTO_IPV6; see
+            # http://bugs.python.org/issue6926. IPV6_V6ONLY is the default
+            # behavior on Windows anyway, so we can skip the setsockopt.
+            pass
+        except socket.error:
+            # Seen on Windows XP:
+            # socket.error: [Errno 109] Protocol not available
+            pass
+    s.bind(addr)
+    s.listen(10)
+    return s
+
+# How long to wait for a WebSocket request on the remote socket. It is limited
+# to avoid Slowloris-like attacks.
+WEBSOCKET_REQUEST_TIMEOUT = 2.0
+
+# This subclass of BaseHTTPRequestHandler is essentially a means of parsing an
+# HTTP request.
+class WebSocketRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
+    def __init__(self, request_text, fd):
+        self.rfile = cStringIO.StringIO(request_text)
+        self.wfile = fd.makefile()
+        self.error = False
+        self.raw_requestline = self.rfile.readline()
+        self.parse_request()
+
+    def log_message(self, *args):
+        pass
+
+    def send_error(self, code, message = None):
+        BaseHTTPServer.BaseHTTPRequestHandler.send_error(self, code, message)
+        self.error = True
+
+MAGIC_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+def handle_websocket_request(fd):
+    try:
+        request_text = fd.recv(10 * 1024)
+    except socket.error, e:
+        log(u"Socket error while receiving WebSocket request: %s" % repr(str(e)))
+        return None
+    handler = WebSocketRequestHandler(request_text, fd)
+    if handler.error or not hasattr(handler, "path"):
+        return None
+    method = handler.command
+    path = handler.path
+    headers = handler.headers
+
+    # See RFC 6455 section 4.2.1 for this sequence of checks.
+    #
+    # 1. An HTTP/1.1 or higher GET request, including a "Request-URI"...
+    if method != "GET":
+        handler.send_error(405)
+        return None
+    if path != "/":
+        handler.send_error(404)
+        return None
+
+    # 2. A |Host| header field containing the server's authority.
+    # We deliberately skip this test.
+
+    # 3. An |Upgrade| header field containing the value "websocket", treated as
+    # an ASCII case-insensitive value.
+    upgrade = headers.get("upgrade")
+    if upgrade is None:
+        handler.send_error(400)
+        return None
+    if "websocket" not in [x.strip().lower() for x in upgrade.split(",")]:
+        handler.send_error(400)
+        return None
+
+    # 4. A |Connection| header field that includes the token "Upgrade", treated
+    # as an ASCII case-insensitive value.
+    connection = headers.get("connection")
+    if connection is None:
+        handler.send_error(400)
+        return None
+    if "upgrade" not in [x.strip().lower() for x in connection.split(",")]:
+        handler.send_error(400)
+        return None
+
+    # 5. A |Sec-WebSocket-Key| header field with a base64-encoded value that,
+    # when decoded, is 16 bytes in length.
+    try:
+        key = headers.get("sec-websocket-key")
+        if len(base64.b64decode(key)) != 16:
+            raise TypeError("Sec-WebSocket-Key must be 16 bytes")
+    except TypeError:
+        handler.send_error(400)
+        return None
+
+    # 6. A |Sec-WebSocket-Version| header field, with a value of 13. We also
+    # allow 8 from draft-ietf-hybi-thewebsocketprotocol-10.
+    version = headers.get("sec-websocket-version")
+    KNOWN_VERSIONS = ["8", "13"]
+    if version not in KNOWN_VERSIONS:
+        # "If this version does not match a version understood by the server,
+        # the server MUST abort the WebSocket handshake described in this
+        # section and instead send an appropriate HTTP error code (such as 426
+        # Upgrade Required) and a |Sec-WebSocket-Version| header field
+        # indicating the version(s) the server is capable of understanding."
+        handler.send_response(426)
+        handler.send_header("Sec-WebSocket-Version", ", ".join(KNOWN_VERSIONS))
+        handler.end_headers()
+        return None
+
+    # 7. Optionally, an |Origin| header field.
+
+    # 8. Optionally, a |Sec-WebSocket-Protocol| header field, with a list of
+    # values indicating which protocols the client would like to speak, ordered
+    # by preference.
+    protocols_str = headers.get("sec-websocket-protocol")
+    if protocols_str is None:
+        protocols = []
+    else:
+        protocols = [x.strip().lower() for x in protocols_str.split(",")]
+
+    # 9. Optionally, a |Sec-WebSocket-Extensions| header field...
+
+    # 10. Optionally, other header fields...
+
+    # See RFC 6455 section 4.2.2, item 5 for these steps.
+
+    # 1. A Status-Line with a 101 response code as per RFC 2616.
+    handler.send_response(101)
+    # 2. An |Upgrade| header field with value "websocket" as per RFC 2616.
+    handler.send_header("Upgrade", "websocket")
+    # 3. A |Connection| header field with value "Upgrade".
+    handler.send_header("Connection", "Upgrade")
+    # 4. A |Sec-WebSocket-Accept| header field.  The value of this header field
+    # is constructed by concatenating /key/, defined above in step 4 in Section
+    # 4.2.2, with the string "258EAFA5-E914-47DA-95CA-C5AB0DC85B11", taking the
+    # SHA-1 hash of this concatenated value to obtain a 20-byte value and
+    # base64-encoding (see Section 4 of [RFC4648]) this 20-byte hash.
+    accept_key = base64.b64encode(sha1(key + MAGIC_GUID).digest())
+    handler.send_header("Sec-WebSocket-Accept", accept_key)
+    # 5.  Optionally, a |Sec-WebSocket-Protocol| header field, with a value
+    # /subprotocol/ as defined in step 4 in Section 4.2.2.
+    if "base64" in protocols:
+        handler.send_header("Sec-WebSocket-Protocol", "base64")
+    # 6.  Optionally, a |Sec-WebSocket-Extensions| header field...
+
+    handler.end_headers()
+
+    return protocols
+
+def grab_string(s, pos):
+    """Grab a NUL-terminated string from the given string, starting at the given
+    offset. Return (pos, str) tuple, or (pos, None) on error."""
+    i = pos
+    while i < len(s):
+        if s[i] == '\0':
+            return (i + 1, s[pos:i])
+        i += 1
+    return pos, None
+
+# http://ftp.icm.edu.pl/packages/socks/socks4/SOCKS4.protocol
+# https://en.wikipedia.org/wiki/SOCKS#SOCKS4a
+def parse_socks_request(data):
+    """Parse the 8-byte SOCKS header at the beginning of data. Returns a
+    (dest, port) tuple. Raises ValueError on error."""
+    try:
+        ver, cmd, dport, o1, o2, o3, o4 = struct.unpack(">BBHBBBB", data[:8])
+    except struct.error:
+        raise ValueError("Couldn't unpack SOCKS4 header")
+    if ver != 4:
+        raise ValueError("Wrong SOCKS version (%d)" % ver)
+    if cmd != 1:
+        raise ValueError("Wrong SOCKS command (%d)" % cmd)
+    pos, userid = grab_string(data, 8)
+    if userid is None:
+        raise ValueError("Couldn't read userid")
+    if o1 == 0 and o2 == 0 and o3 == 0 and o4 != 0:
+        pos, dest = grab_string(data, pos)
+        if dest is None:
+            raise ValueError("Couldn't read destination")
+    else:
+        dest = "%d.%d.%d.%d" % (o1, o2, o3, o4)
+    return dest, dport
+
+def handle_socks_request(fd):
+    try:
+        addr = fd.getpeername()
+        data = fd.recv(100)
+    except socket.error, e:
+        log(u"Socket error from SOCKS-pending: %s" % repr(str(e)))
+        return False
+    try:
+        dest_addr = parse_socks_request(data)
+    except ValueError, e:
+        log(u"Error parsing SOCKS request: %s." % str(e))
+        # Error reply.
+        fd.sendall(struct.pack(">BBHBBBB", 0, 91, 0, 0, 0, 0, 0))
+        return False
+    log(u"Got SOCKS request for %s." % safe_format_addr(dest_addr))
+    fd.sendall(struct.pack(">BBHBBBB", 0, 90, dest_addr[1], 127, 0, 0, 1))
+    # Note we throw away the requested address and port.
+    return True
+
+def report_pending():
+    log(u"locals  (%d): %s" % (len(locals), [safe_format_peername(x) for x in locals]))
+    log(u"remotes (%d): %s" % (len(remotes), [safe_format_peername(x) for x in remotes]))
+
+def forward_ports(pairs):
+    """Attempt to forward all given pairs (external, internal) pairs of ports
+    using port_forwarding_helper."""
+    command = [options.port_forwarding_helper]
+    basename = os.path.basename(command[0])
+    for external, internal in pairs:
+        command += ["-p", "%d:%d" % (external, internal)]
+    try:
+        log(u"Running port forwarding command: %s" % " ".join(command))
+        p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = p.communicate()
+    except OSError, e:
+        log(u"Error running %s: %s" % (basename, str(e)))
+        return False
+    for line in stdout.splitlines():
+        log(u"%s: %s" % (basename, line))
+    for line in stderr.splitlines():
+        log(u"%s: %s" % (basename, line))
+    if p.returncode != 0:
+        log("%s exited with status %d." % (basename, p.returncode))
+        return False
+    return True
+
+def forward_listeners(listeners):
+    """Attempt to forward the ports belonging to the given listening sockets.
+    Non-IPv4 addresses are ignored. If options.port_forwarding_external is not
+    None, only the first IPv4 address in the list will be forwarded."""
+    forward_list = []
+    for listener in remote_listen:
+        host, port = socket.getnameinfo(listener.getsockname(), socket.NI_NUMERICHOST | socket.NI_NUMERICSERV)
+        port = int(port)
+        af = addr_family(host)
+        if af != socket.AF_INET:
+            # I guess tor-fw-helper can only handle IPv4.
+            log(u"Not forwarding to %s because it is not an IPv4 address." % format_addr((host, port)))
+            continue
+        if options.port_forwarding_external is not None:
+            forward_list.append((options.port_forwarding_external, port))
+            # A fixed external address means we can forward only one port.
+            break
+        else:
+            forward_list.append((port, port))
+    forward_ports(forward_list)
+
+register_condvar = threading.Condition()
+# register_flag true means registration_thread_func should register at its next
+# opportunity.
+register_flag = False
+def register():
+    global register_flag
+    if not options.register:
+        return
+    with register_condvar:
+        register_flag = True
+        register_condvar.notify()
+
+def register_using_command(command):
+    basename = os.path.basename(command[0])
+    try:
+        log(u"Running command: %s" % " ".join(command))
+        p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = p.communicate()
+    except OSError, e:
+        log(u"Error running %s: %s" % (basename, str(e)))
+        return False
+    for line in stdout.splitlines():
+        log(u"%s: %s" % (basename, line))
+    for line in stderr.splitlines():
+        log(u"%s: %s" % (basename, line))
+    if p.returncode != 0:
+        log("%s exited with status %d." % (basename, p.returncode))
+        return False
+    return True
+
+def register_one():
+    spec = format_addr(options.register_addr)
+    log(u"Trying to register \"%s\"." % spec)
+    for command in options.register_commands:
+        if register_using_command(command + [spec]):
+            break
+    else:
+        log(u"All registration commands failed.")
+
+def registration_thread_func():
+    global register_flag
+    while True:
+        with register_condvar:
+            while not register_flag:
+                register_condvar.wait()
+            register_flag = False
+        if len(unlinked_remotes) < DESIRED_NUMBER_OF_PROXIES:
+            register_one()
+
+def proxy_chunk_local_to_remote(local, remote, data = None):
+    if data is None:
+        try:
+            data = local.recv(65536)
+        except socket.error, e: # Can be "Connection reset by peer".
+            log(u"Socket error from local: %s" % repr(str(e)))
+            remote.close()
+            return False
+    if not data:
+        log(u"EOF from local %s." % safe_format_peername(local))
+        local.close()
+        remote.close()
+        return False
+    else:
+        try:
+            remote.send_chunk(data)
+        except socket.error, e:
+            log(u"Socket error writing to remote: %s" % repr(str(e)))
+            local.close()
+            return False
+        return True
+
+def proxy_chunk_remote_to_local(remote, local, data = None):
+    if data is None:
+        try:
+            data = remote.recv(65536)
+        except socket.error, e: # Can be "Connection reset by peer".
+            log(u"Socket error from remote: %s" % repr(str(e)))
+            local.close()
+            return False
+    if not data:
+        log(u"EOF from remote %s." % safe_format_peername(remote))
+        remote.close()
+        local.close()
+        return False
+    else:
+        remote.dec.feed(data)
+        while True:
+            try:
+                data = remote.dec.read()
+            except (WebSocketDecoder.MaskingError, ValueError), e:
+                log(u"WebSocket decode error from remote: %s" % repr(str(e)))
+                remote.close()
+                local.close()
+                return False
+            if data is None:
+                break
+            elif not data:
+                log(u"WebSocket close from remote %s." % safe_format_peername(remote))
+                remote.close()
+                local.close()
+                return False
+            try:
+                local.send_chunk(data)
+            except socket.error, e:
+                log(u"Socket error writing to local: %s" % repr(str(e)))
+                remote.close()
+                return False
+        return True
+
+def receive_unlinked(fd, label):
+    """Receive and buffer data on a socket that has not been linked yet. Returns
+    True iff there was no error and the socket may still be used; otherwise, the
+    socket will be closed before returning."""
+
+    try:
+        data = fd.recv(1024)
+    except socket.error, e:
+        log(u"Socket error from %s: %s" % (label, repr(str(e))))
+        fd.close()
+        return False
+    if not data:
+        log(u"EOF from unlinked %s %s with %d bytes buffered." % (label, safe_format_peername(fd), len(fd.buf)))
+        fd.close()
+        return False
+    else:
+        log(u"Data from unlinked %s %s (%d bytes)." % (label, safe_format_peername(fd), len(data)))
+        fd.buf += data
+        if len(fd.buf) >= UNCONNECTED_BUFFER_LIMIT:
+            log(u"Refusing to buffer more than %d bytes from %s %s." % (UNCONNECTED_BUFFER_LIMIT, label, safe_format_peername(fd)))
+            fd.close()
+            return False
+        return True
+
+def match_proxies():
+    while unlinked_remotes and unlinked_locals:
+        remote = unlinked_remotes.pop(0)
+        local = unlinked_locals.pop(0)
+        log(u"Linking %s and %s." % (safe_format_peername(local), safe_format_peername(remote)))
+        remote.partner = local
+        local.partner = remote
+        if remote.buf:
+            if not proxy_chunk_remote_to_local(remote, local, remote.buf):
+                remotes.remove(remote)
+                locals.remove(local)
+                register()
+                return
+        if local.buf:
+            if not proxy_chunk_local_to_remote(local, remote, local.buf):
+                remotes.remove(remote)
+                locals.remove(local)
+                return
+
+class TimeoutSocket(object):
+    def __init__(self, fd):
+        self.fd = fd
+        self.birthday = time.time()
+
+    def age(self):
+        return time.time() - self.birthday
+
+    def __getattr__(self, name):
+        return getattr(self.fd, name)
+
+class RemoteSocket(object):
+    def __init__(self, fd, protocols):
+        self.fd = fd
+        self.buf = ""
+        self.partner = None
+        self.dec = WebSocketBinaryDecoder(protocols, use_mask = True)
+        self.enc = WebSocketBinaryEncoder(protocols, use_mask = False)
+
+    def send_chunk(self, data):
+        self.sendall(self.enc.encode(data))
+
+    def __getattr__(self, name):
+        return getattr(self.fd, name)
+
+class LocalSocket(object):
+    def __init__(self, fd):
+        self.fd = fd
+        self.buf = ""
+        self.partner = None
+
+    def send_chunk(self, data):
+        self.sendall(data)
+
+    def __getattr__(self, name):
+        return getattr(self.fd, name)
+
+def proxy_loop():
+    while True:
+        rset = remote_listen + local_listen + websocket_pending + socks_pending + locals + remotes
+        rset, _, _ = select.select(rset, [], [], WEBSOCKET_REQUEST_TIMEOUT)
+        for fd in rset:
+            if fd in remote_listen:
+                remote_c, addr = fd.accept()
+                log(u"Remote connection from %s." % safe_format_sockaddr(addr))
+                websocket_pending.append(TimeoutSocket(remote_c))
+            elif fd in local_listen:
+                local_c, addr = fd.accept()
+                log(u"Local connection from %s." % safe_format_sockaddr(addr))
+                socks_pending.append(local_c)
+                register()
+            elif fd in websocket_pending:
+                log(u"Data from WebSocket-pending %s." % safe_format_peername(fd))
+                protocols = handle_websocket_request(fd)
+                if protocols is not None:
+                    wrapped = RemoteSocket(fd, protocols)
+                    remotes.append(wrapped)
+                    unlinked_remotes.append(wrapped)
+                else:
+                    fd.close()
+                    register()
+                websocket_pending.remove(fd)
+                report_pending()
+            elif fd in socks_pending:
+                log(u"SOCKS request from %s." % safe_format_peername(fd))
+                if handle_socks_request(fd):
+                    wrapped = LocalSocket(fd)
+                    locals.append(wrapped)
+                    unlinked_locals.append(wrapped)
+                else:
+                    fd.close()
+                socks_pending.remove(fd)
+                report_pending()
+            elif fd in remotes:
+                local = fd.partner
+                if local:
+                    if not proxy_chunk_remote_to_local(fd, local):
+                        remotes.remove(fd)
+                        locals.remove(local)
+                        register()
+                else:
+                    if not receive_unlinked(fd, "remote"):
+                        remotes.remove(fd)
+                        unlinked_remotes.remove(fd)
+                        register()
+                    report_pending()
+            elif fd in locals:
+                remote = fd.partner
+                if remote:
+                    if not proxy_chunk_local_to_remote(fd, remote):
+                        remotes.remove(remote)
+                        locals.remove(fd)
+                else:
+                    if not receive_unlinked(fd, "local"):
+                        locals.remove(fd)
+                        unlinked_locals.remove(fd)
+                    report_pending()
+            match_proxies()
+        while websocket_pending:
+            pending = websocket_pending[0]
+            if pending.age() < WEBSOCKET_REQUEST_TIMEOUT:
+                break
+            log(u"Expired remote connection from %s." % safe_format_peername(pending))
+            pending.close()
+            websocket_pending.pop(0)
+            report_pending()
+
+def build_register_command(method):
+    # sys.path[0] usually contains the directory the script is located in.
+    # py2exe overwrites this for bundled executables.
+    if getattr(sys, "frozen", False):
+        script_dir = os.path.dirname(sys.executable)
+    else:
+        script_dir = sys.path[0]
+    if not script_dir:
+        # Maybe the script was read from stdin; in any case don't guess at the directory.
+        raise ValueError("Can't find executable directory for registration helpers")
+
+    # "common" is options shared by every registration helper.
+    common = []
+    if options.address_family == socket.AF_INET:
+        common += ["-4"]
+    elif options.address_family == socket.AF_INET6:
+        common += ["-6"]
+    if options.transport is not None:
+        common += ["--transport", options.transport]
+    if not options.safe_logging:
+        common += ["--unsafe-logging"]
+
+    if method == "appspot":
+        command = [os.path.join(script_dir, "flashproxy-reg-appspot")] + common
+        if options.facilitator_pubkey_filename is not None:
+            command += ["--facilitator-pubkey", options.facilitator_pubkey_filename]
+        return command
+    elif method == "email":
+        command = [os.path.join(script_dir, "flashproxy-reg-email")] + common
+        if options.facilitator_pubkey_filename is not None:
+            command += ["--facilitator-pubkey", options.facilitator_pubkey_filename]
+        return command
+    elif method == "http":
+        command = [os.path.join(script_dir, "flashproxy-reg-http")] + common
+        if options.facilitator_url is not None:
+            command += ["-f", options.facilitator_url]
+        return command
+    else:
+        raise ValueError("Unknown registration method \"%s\"" % method)
+
+def pt_escape(s):
+    result = []
+    for c in s:
+        if c == "\n":
+            result.append("\\n")
+        elif c == "\\":
+            result.append("\\\\")
+        elif 0 < ord(c) < 128:
+            result.append(c)
+        else:
+            result.append("\\x%02x" % ord(c))
+    return "".join(result)
+
+def pt_line(keyword, *args):
+    log(keyword + " " +  " ".join(pt_escape(x) for x in args))
+    print keyword, " ".join(pt_escape(x) for x in args)
+    sys.stdout.flush()
+
+def pt_cmethoderror(msg):
+    pt_line("CMETHOD-ERROR", msg)
+    sys.exit(1)
+
+def pt_get_client_transports(known, wildcard = None):
+    result = []
+    if os.environ.get("TOR_PT_CLIENT_TRANSPORTS") == "*":
+        if wildcard is None:
+            wildcard = known
+        return wildcard
+    for method in os.environ.get("TOR_PT_CLIENT_TRANSPORTS", "").split(","):
+        if method in known:
+            result.append(method)
+    return result
+
+def pt_setup_managed():
+    TOR_PT_MANAGED_TRANSPORT_VER = os.environ.get("TOR_PT_MANAGED_TRANSPORT_VER")
+    if TOR_PT_MANAGED_TRANSPORT_VER is None:
+        pt_line("VERSION-ERROR", "no-version")
+        print >> sys.stderr, """\
+
+No TOR_PT_MANAGED_TRANSPORT_VER found in environment.
+If you are running flashproxy-client from the command line and not from
+a ClientTransportPlugin configuration line, you must use the --external
+option.\
+"""
+        sys.exit(1)
+
+    for ver in TOR_PT_MANAGED_TRANSPORT_VER.split(","):
+        if ver == "1":
+            pt_line("VERSION", ver)
+            break
+    else:
+        pt_line("VERSION-ERROR", "no-version")
+        sys.exit(1)
+
+    client_transports = pt_get_client_transports(["flashproxy", "websocket"], ["flashproxy"])
+    if not client_transports:
+        pt_cmethods_done()
+        sys.exit(1)
+    return client_transports
+
+def pt_cmethod(method_name, addr):
+    pt_line("CMETHOD", method_name, "socks4", format_sockaddr(addr))
+
+def pt_cmethods_done():
+    pt_line("CMETHODS", "DONE")
+
+def main():
+    global remote_listen, local_listen
+    global locals, remotes
+    global websocket_pending, socks_pending
+    global unlinked_locals, unlinked_remotes
+
+    register_addr_spec = None
+    register_methods = []
+
+    opts, args = getopt.gnu_getopt(sys.argv[1:], "46f:hl:r", [
+        "daemon",
+        "external",
+        "facilitator=",
+        "facilitator-pubkey=",
+        "help",
+        "log=",
+        "pidfile=",
+        "register",
+        "register-addr=",
+        "register-methods=",
+        "port-forwarding",
+        "port-forwarding-helper=",
+        "port-forwarding-external=",
+        "transport=",
+        "unsafe-logging",
+    ])
+    for o, a in opts:
+        if o == "-4":
+            options.address_family = socket.AF_INET
+        elif o == "-6":
+            options.address_family = socket.AF_INET6
+        elif o == "--daemon":
+            options.daemonize = True
+        elif o == "--external":
+            options.managed = False
+        elif o == "-f" or o == "--facilitator":
+            options.facilitator_url = a
+        elif o == "--facilitator-pubkey":
+            options.facilitator_pubkey_filename = a
+        elif o == "-h" or o == "--help":
+            usage()
+            sys.exit()
+        elif o == "-l" or o == "--log":
+            options.log_filename = a
+        elif o == "--pidfile":
+            options.pid_filename = a
+        elif o == "-r" or o == "--register":
+            options.register = True
+        elif o == "--register-addr":
+            if register_addr_spec is not None:
+                print >> sys.stderr, "%s: only one --register-addr is allowed." % sys.argv[0]
+                sys.exit(1)
+            options.register = True
+            register_addr_spec = a
+        elif o == "--register-methods":
+            options.register = True
+            register_methods.extend(a.split(","))
+        elif o == "--port-forwarding":
+            options.port_forwarding = True
+        elif o == "--port-forwarding-helper":
+            options.port_forwarding = True
+            options.port_forwarding_helper = a
+        elif o == "--port-forwarding-external":
+            options.port_forwarding = True
+            options.port_forwarding_external = int(a)
+        elif o == "--transport":
+            options.transport = a
+        elif o == "--unsafe-logging":
+            options.safe_logging = False
+
+    if options.log_filename:
+        options.log_file = open(options.log_filename, "a")
+        # Send error tracebacks to the log.
+        sys.stderr = options.log_file
+    else:
+        options.log_file = sys.stderr
+
+    if options.managed:
+        method_names = pt_setup_managed()
+    else:
+        method_names = ["flashproxy"]
+
+    if options.managed:
+        default_local_port = DEFAULT_LOCAL_PORT_MANAGED
+    else:
+        default_local_port = DEFAULT_LOCAL_PORT_EXTERNAL
+    default_remote_port = DEFAULT_REMOTE_PORT
+
+    if len(args) == 0:
+        local_addr = ("", default_local_port)
+        remote_addr = ("", default_remote_port)
+    elif len(args) == 1:
+        local_addr = parse_addr_spec(args[0], defhost="", defport=default_local_port)
+        remote_addr = ("", default_remote_port)
+    elif len(args) == 2:
+        local_addr = parse_addr_spec(args[0], defhost="", defport=default_local_port)
+        remote_addr = parse_addr_spec(args[1], defhost="", defport=default_remote_port)
+    else:
+        usage(sys.stderr)
+        sys.exit(1)
+
+    if local_addr[0]:
+        options.local_addrs.append(local_addr)
+    else:
+        options.local_addrs.append(("127.0.0.1", local_addr[1]))
+        # Listen on both IPv4 and IPv6 if no host is given, unless we are in
+        # managed mode.
+        if not options.managed and socket.has_ipv6:
+            options.local_addrs.append(("::1", local_addr[1]))
+    if remote_addr[0]:
+        options.remote_addrs.append(remote_addr)
+    else:
+        options.remote_addrs.append(("0.0.0.0", remote_addr[1]))
+        if socket.has_ipv6:
+            options.remote_addrs.append(("::", remote_addr[1]))
+
+    if not register_methods:
+        register_methods = DEFAULT_REGISTER_METHODS
+    for method in register_methods:
+        options.register_commands.append(build_register_command(method))
+
+    # Remote sockets, accepting remote WebSocket connections from proxies.
+    remote_listen = []
+    for addr in options.remote_addrs:
+        try:
+            listen = listen_socket(addr)
+        except socket.error, e:
+            log(u"Failed to listen remote on %s: %s." % (addr, str(e)))
+            continue
+        remote_listen.append(listen)
+        log(u"Listening remote on %s." % format_sockaddr(listen.getsockname()))
+        if options.register_addr is None:
+            host, port = socket.getnameinfo(listen.getsockname(), socket.NI_NUMERICHOST | socket.NI_NUMERICSERV)
+            port = int(port)
+            if not remote_addr[0]:
+                # Make host part blank (not 0.0.0.0) if unspecified.
+                host = ""
+            options.register_addr = parse_addr_spec(register_addr_spec or ":", host, port)
+    if not remote_listen:
+        log(u"Failed to open any remote listeners, quitting.")
+        pt_cmethoderror("Failed to open any remote listeners.")
+    # Local sockets, accepting SOCKS requests from localhost
+    local_listen = []
+    for addr in options.local_addrs:
+        for method_name in method_names:
+            try:
+                listen = listen_socket(addr)
+            except socket.error, e:
+                log(u"Failed to listen local on %s: %s." % (addr, str(e)))
+                continue
+            local_listen.append(listen)
+            log(u"Listening local on %s." % format_sockaddr(listen.getsockname()))
+            if options.managed:
+                pt_cmethod(method_name, listen.getsockname())
+    if not local_listen:
+        log(u"Failed to open any local listeners, quitting.")
+        pt_cmethoderror("Failed to open any local listeners.")
+    if options.managed:
+        pt_cmethods_done()
+
+    # Attempt to forward ports if requested.
+    if options.port_forwarding:
+        forward_listeners(remote_listen)
+
+    # New remote sockets waiting to finish their WebSocket negotiation.
+    websocket_pending = []
+    # Remote connection sockets.
+    remotes = []
+    # Remotes not yet linked with a local. This is a subset of remotes.
+    unlinked_remotes = []
+    # New local sockets waiting to finish their SOCKS negotiation.
+    socks_pending = []
+    # Local Tor sockets, after SOCKS negotiation.
+    locals = []
+    # Locals not yet linked with a remote. This is a subset of remotes.
+    unlinked_locals = []
+
+    if options.daemonize:
+        log(u"Daemonizing.")
+        pid = os.fork()
+        if pid != 0:
+            if options.pid_filename:
+                f = open(options.pid_filename, "w")
+                print >> f, pid
+                f.close()
+            sys.exit(0)
+
+    if options.register:
+        registration_thread = threading.Thread(target=registration_thread_func, name="register")
+        registration_thread.daemon = True
+        registration_thread.start()
+        register()
+
+    try:
+        proxy_loop()
+    except Exception:
+        exc = traceback.format_exc()
+        log("".join(exc))
+
+if __name__ == "__main__":
+    main()

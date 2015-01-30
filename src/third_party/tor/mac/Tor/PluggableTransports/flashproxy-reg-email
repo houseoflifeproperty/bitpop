@@ -1,0 +1,231 @@
+#!/usr/bin/env python
+"""Register with a facilitator using the email method."""
+
+import getopt
+import os
+import re
+import smtplib
+import socket
+import sys
+import urllib
+
+from flashproxy.keys import PIN_GOOGLE_CA_CERT, PIN_GOOGLE_PUBKEY_SHA1, DEFAULT_FACILITATOR_PUBKEY_PEM, check_certificate_pin, temp_cert
+from flashproxy.util import parse_addr_spec, format_addr
+
+try:
+    from M2Crypto import BIO, RSA, SSL
+except ImportError:
+    # Defer the error reporting so that --help works even without M2Crypto.
+    BIO = None
+    RSA = None
+    SSL = None
+
+DEFAULT_REMOTE_ADDRESS = ""
+DEFAULT_REMOTE_PORT = 9000
+DEFAULT_EMAIL_ADDRESS = "flashproxyreg.a@gmail.com"
+# dig MX gmail.com
+DEFAULT_SMTP_HOST = "gmail-smtp-in.l.google.com"
+DEFAULT_SMTP_PORT = 25
+DEFAULT_TRANSPORT = "websocket"
+
+# Use this to prevent Python smtplib from guessing and leaking our hostname.
+EHLO_FQDN = "[127.0.0.1]"
+FROM_EMAIL_ADDRESS = "nobody@localhost"
+
+class options(object):
+    remote_addr = None
+
+    address_family = socket.AF_UNSPEC
+    debug = False
+    use_certificate_pin = True
+    email_addr = None
+    facilitator_pubkey_filename = None
+    smtp_addr = None
+    transport = DEFAULT_TRANSPORT
+    safe_logging = True
+
+def usage(f = sys.stdout):
+    print >> f, """\
+Usage: %(progname)s [REMOTE][:PORT]
+Register with a flash proxy facilitator through email. Makes a STARTTLS
+connection to an SMTP server and sends mail with a client IP address to a
+designated address. By default the remote address registered is
+"%(remote_addr)s" (the external IP address is guessed).
+
+Using an SMTP server or email address other than the defaults will not work
+unless you have made special arrangements to connect them to a facilitator.
+
+This program requires the M2Crypto library for Python.
+
+  -4                      name lookups use only IPv4.
+  -6                      name lookups use only IPv6.
+  -d, --debug             enable debugging output (Python smtplib messages).
+      --disable-pin       don't check server public key against a known pin.
+  -e, --email=ADDRESS     send mail to ADDRESS (default "%(email_addr)s").
+      --facilitator-pubkey=FILENAME
+                          encrypt registrations to the given PEM-formatted
+                            public key (default built-in).
+  -h, --help              show this help.
+  -s, --smtp=HOST[:PORT]  use the given SMTP server
+                            (default "%(smtp_addr)s").
+      --transport=TRANSPORT  register using the given transport
+                            (default "%(transport)s").
+      --unsafe-logging    don't scrub IP addresses from logs.\
+""" % {
+    "progname": sys.argv[0],
+    "remote_addr": format_addr((DEFAULT_REMOTE_ADDRESS, DEFAULT_REMOTE_PORT)),
+    "email_addr": DEFAULT_EMAIL_ADDRESS,
+    "smtp_addr": format_addr((DEFAULT_SMTP_HOST, DEFAULT_SMTP_PORT)),
+    "transport": DEFAULT_TRANSPORT,
+}
+
+def safe_str(s):
+    """Return "[scrubbed]" if options.safe_logging is true, and s otherwise."""
+    if options.safe_logging:
+        return "[scrubbed]"
+    else:
+        return s
+
+def safe_format_addr(addr):
+    return safe_str(format_addr(addr))
+
+def build_reg(addr, transport):
+    return urllib.urlencode((
+        ("client", format_addr(addr)),
+        ("client-transport", transport),
+    ))
+
+def get_facilitator_pubkey():
+    if options.facilitator_pubkey_filename is not None:
+        return RSA.load_pub_key(options.facilitator_pubkey_filename)
+    else:
+        return RSA.load_pub_key_bio(BIO.MemoryBuffer(DEFAULT_FACILITATOR_PUBKEY_PEM))
+
+options.email_addr = DEFAULT_EMAIL_ADDRESS
+options.smtp_addr = (DEFAULT_SMTP_HOST, DEFAULT_SMTP_PORT)
+
+opts, args = getopt.gnu_getopt(sys.argv[1:], "46de:hs:", [
+    "debug",
+    "disable-pin",
+    "email=",
+    "facilitator-pubkey=",
+    "help",
+    "smtp=",
+    "transport=",
+    "unsafe-logging",
+])
+for o, a in opts:
+    if o == "-4":
+        options.address_family = socket.AF_INET
+    elif o == "-6":
+        options.address_family = socket.AF_INET6
+    elif o == "-d" or o == "--debug":
+        options.debug = True
+    elif o == "--disable-pin":
+        options.use_certificate_pin = False
+    elif o == "-e" or o == "--email":
+        options.email_addr = a
+    elif o == "--facilitator-pubkey":
+        options.facilitator_pubkey_filename = a
+    elif o == "-h" or o == "--help":
+        usage()
+        sys.exit()
+    elif o == "-s" or o == "--smtp":
+        options.smtp_addr = parse_addr_spec(a, DEFAULT_SMTP_HOST, DEFAULT_SMTP_PORT)
+    elif o == "--transport":
+        options.transport = a
+    elif o == "--unsafe-logging":
+        options.safe_logging = False
+
+if len(args) == 0:
+    options.remote_addr = (DEFAULT_REMOTE_ADDRESS, DEFAULT_REMOTE_PORT)
+elif len(args) == 1:
+    options.remote_addr = parse_addr_spec(args[0], DEFAULT_REMOTE_ADDRESS, DEFAULT_REMOTE_PORT)
+else:
+    usage(sys.stderr)
+    sys.exit(1)
+
+if SSL is None:
+    print >> sys.stderr, """\
+This program requires the M2Crypto library, which is not installed.
+
+You can install it using one of the packages at
+http://chandlerproject.org/Projects/MeTooCrypto#Downloads.
+
+On Debian-like systems, use the command "apt-get install python-m2crypto".\
+"""
+    sys.exit(1)
+
+if options.address_family != socket.AF_UNSPEC:
+    getaddrinfo = socket.getaddrinfo
+    def getaddrinfo_replacement(host, port, family, *args, **kwargs):
+        return getaddrinfo(host, port, options.address_family, *args, **kwargs)
+    socket.getaddrinfo = getaddrinfo_replacement
+
+smtp = smtplib.SMTP(options.smtp_addr[0], options.smtp_addr[1], EHLO_FQDN)
+
+if options.debug:
+    smtp.set_debuglevel(1)
+
+try:
+    ctx = SSL.Context("tlsv1")
+    ctx.set_verify(SSL.verify_peer, 3)
+
+    with temp_cert(PIN_GOOGLE_CA_CERT) as ca_filename:
+        # We roll our own initial EHLO/STARTTLS because smtplib.SMTP.starttls
+        # doesn't allow enough certificate validation.
+        code, msg = smtp.docmd("EHLO", EHLO_FQDN)
+        if code != 250:
+            raise ValueError("Got code %d after EHLO" % code)
+        code, msg = smtp.docmd("STARTTLS")
+        if code != 220:
+            raise ValueError("Got code %d after STARTTLS" % code)
+        ret = ctx.load_verify_locations(ca_filename)
+        assert ret == 1
+
+    smtp.sock = SSL.Connection(ctx, smtp.sock)
+    smtp.sock.setup_ssl()
+    smtp.sock.set_connect_state()
+    smtp.sock.connect_ssl()
+    smtp.file = smtp.sock.makefile()
+
+    if options.use_certificate_pin:
+        check_certificate_pin(smtp.sock, PIN_GOOGLE_PUBKEY_SHA1)
+    smtp.ehlo(EHLO_FQDN)
+
+    if not options.remote_addr[0]:
+        # Grep the EHLO response for our public IP address.
+        m = re.search(r'at your service, \[([0-9a-fA-F.:]+)\]', smtp.ehlo_resp)
+        if not m:
+            raise ValueError("Could not guess external IP address from EHLO response")
+        spec = m.group(1)
+        if ":" in spec:
+            # Guess IPv6.
+            spec = "[" + spec + "]"
+        options.remote_addr = parse_addr_spec(spec, *options.remote_addr)
+
+    body_plain = build_reg(options.remote_addr, options.transport)
+    rsa = get_facilitator_pubkey()
+    body_crypt = rsa.public_encrypt(body_plain, RSA.pkcs1_oaep_padding)
+    body = body_crypt.encode("base64")
+
+    # Add a random subject to keep Gmail from threading everything.
+    rand_string = os.urandom(5).encode("hex")
+    smtp.sendmail(options.email_addr, options.email_addr, """\
+To: %(to_addr)s\r
+From: %(from_addr)s\r
+Subject: client reg %(rand_string)s\r
+\r
+%(body)s
+""" % {
+        "to_addr": options.email_addr,
+        "from_addr": FROM_EMAIL_ADDRESS,
+        "rand_string": rand_string,
+        "body": body,
+    })
+    smtp.quit()
+except Exception, e:
+    print >> sys.stderr, "Failed to register: %s" % str(e)
+    sys.exit(1)
+
+print "Registered \"%s\" with %s." % (safe_format_addr(options.remote_addr), options.email_addr)
