@@ -4,6 +4,26 @@
 		"selected_items":
 		[
 			[
+				"back",
+				"backgroundPage"
+			],
+			[
+				"mCo",
+				"mControlConnDelayMS"
+			],
+			[
+				"_con",
+				"_controlConnTimeout"
+			],
+			[
+				"kPr",
+				"kProcessStatusAlarmName"
+			],
+			[
+				"nex",
+				"nextReadReplyCallback"
+			],
+			[
 				"tor",
 				"tor_file_type_str"
 			],
@@ -494,63 +514,11 @@
 			[
 				"chrom",
 				"chromium_dir"
-			],
-			[
-				"bitpop",
-				"bitpop_specific"
-			],
-			[
-				"login",
-				"loginClicked"
-			],
-			[
-				"popupPointFor",
-				"popupPointForChatWindow"
-			],
-			[
-				"perm",
-				"permission_request"
-			],
-			[
-				"G",
-				"GRAPH_API_URL"
 			]
 		]
 	},
 	"buffers":
 	[
-		{
-			"file": "components/torlauncher/torlauncher_service.h",
-			"settings":
-			{
-				"buffer_size": 1653,
-				"line_ending": "Unix"
-			}
-		},
-		{
-			"file": "components/torlauncher/torlauncher_service.cc",
-			"settings":
-			{
-				"buffer_size": 4202,
-				"line_ending": "Unix"
-			}
-		},
-		{
-			"file": "components/torlauncher/torlauncher_pref_names.h",
-			"settings":
-			{
-				"buffer_size": 1254,
-				"line_ending": "Unix"
-			}
-		},
-		{
-			"file": "components/torlauncher/torlauncher_pref_names.cc",
-			"settings":
-			{
-				"buffer_size": 1774,
-				"line_ending": "Unix"
-			}
-		}
 	],
 	"build_system": "",
 	"command_palette":
@@ -558,6 +526,10 @@
 		"height": 67.0,
 		"selected_items":
 		[
+			[
+				"install",
+				"Package Control: Install Package"
+			],
 			[
 				"insta",
 				"Package Control: Install Package"
@@ -571,11 +543,15 @@
 				"Package Control: Install Package"
 			]
 		],
-		"width": 593.0
+		"width": 467.0
 	},
 	"console":
 	{
-		"height": 125.0
+		"height": 125.0,
+		"history":
+		[
+			"import urllib.request,os,hashlib; h = '2deb499853c4371624f5a07e27c334aa' + 'bf8c4e67d14fb0525ba4f89698a6d7e1'; pf = 'Package Control.sublime-package'; ipp = sublime.installed_packages_path(); urllib.request.install_opener( urllib.request.build_opener( urllib.request.ProxyHandler()) ); by = urllib.request.urlopen( 'http://packagecontrol.io/' + pf.replace(' ', '%20')).read(); dh = hashlib.sha256(by).hexdigest(); print('Error validating download (got %s instead of %s), please try manual install' % (dh, h)) if dh != h else open(os.path.join( ipp, pf), 'wb' ).write(by)"
+		]
 	},
 	"distraction_free":
 	{
@@ -586,8 +562,62 @@
 		"side_bar_visible": true,
 		"status_bar_visible": false
 	},
+	"expanded_folders":
+	[
+		"/src/chromium_39/src",
+		"/src/chromium_39/src/chrome",
+		"/src/chromium_39/src/chrome/browser",
+		"/src/chromium_39/src/chrome/browser/resources/bookmark_manager/js",
+		"/src/chromium_39/src/chrome/browser/resources/torlauncher",
+		"/src/chromium_39/src/chrome/browser/resources/torlauncher/_locales",
+		"/src/chromium_39/src/chrome/browser/resources/torlauncher/_locales/en",
+		"/src/chromium_39/src/chrome/common/extensions",
+		"/src/chromium_39/src/chrome/common/extensions/api"
+	],
 	"file_history":
 	[
+		"/src/chromium_39/src/chrome/browser/resources/torlauncher/tl-process.js",
+		"/src/chromium_39/src/chrome/browser/resources/torlauncher/background.js",
+		"/src/chromium_39/src/chrome/browser/resources/torlauncher/manifest.json",
+		"/src/chromium_39/src/chrome/browser/resources/torlauncher/tl-util.js",
+		"/src/chromium_39/src/chrome/common/extensions/api/torlauncher.json",
+		"/src/chromium_39/src/components/torlauncher/torlauncher_pref_names.cc",
+		"/src/chromium_39/src/components/torlauncher/torlauncher_service.cc",
+		"/src/chromium_39/src/chrome/browser/resources/torlauncher/network-settings.html",
+		"/src/chromium_39/src/chrome/browser/resources/torlauncher/progress.html",
+		"/src/chromium_39/src/chrome/browser/resources/torlauncher/network-settings-wizard.html",
+		"/src/chromium_39/src/chrome/browser/resources/torlauncher/network-settings.js",
+		"/src/chromium_39/src/chrome/browser/resources/torlauncher/tl-protocol.js",
+		"/src/chromium_39/src/chrome/browser/extensions/api/torlauncher/torlauncher_api.h",
+		"/src/chromium_39/src/base/tracked_objects.cc",
+		"/src/chromium_39/src/base/tuple.h",
+		"/src/chromium_39/src/chrome/browser/extensions/api/torlauncher/torlauncher_api.cc",
+		"/src/chromium_39/src/chrome/browser/resources/component_extension_resources.grd",
+		"/src/tor-launcher/src/chrome/locale/ru@petr1708/network-settings.dtd",
+		"/src/tor-launcher/src/chrome/content/network-settings.js",
+		"/src/chromium_39/src/components/network_time.gypi",
+		"/src/chromium_39/src/chrome/common/extensions/docs/examples/api/topsites/magic8ball/newTab.css",
+		"/src/chromium_39/src/net/quic/crypto/null_encrypter_test.cc",
+		"/src/chromium_39/src/chrome/app/nacl64_exe.ver",
+		"/src/chromium_39/src/native_client/NOTICE",
+		"/src/chromium_39/src/components/torlauncher_strings.grdp",
+		"/src/chromium_39/src/chrome/test/data/constrained_files/target_onload_resizeto.html",
+		"/src/chromium_39/src/extensions/browser/extension_function_histogram_value.h",
+		"/src/chromium_39/src/chrome/renderer/extensions/extension_frame_helper.cc",
+		"/src/chromium_39/src/ash/shell/example_factory.h",
+		"/src/chromium_39/src/base/environment.cc",
+		"/src/chromium_39/src/components/torlauncher.gypi",
+		"/src/chromium_39/src/components/torlauncher/torlauncher_pref_names.h",
+		"/src/chromium_39/src/components/torlauncher/torlauncher_service.h",
+		"/src/chromium_39/src/native_client/pnacl/COMPONENT_REVISIONS",
+		"/src/chromium_39/src/components/components.gyp",
+		"/src/chromium_39/src/storage/browser/fileapi/copy_or_move_file_validator.h",
+		"/src/chromium_39/src/chrome/browser/command_observer.h",
+		"/src/chromium_39/src/codereview.settings",
+		"/src/chromium_39/src/BUILD.gn",
+		"/src/chromium_39/src/ash/shelf/background_animator.cc",
+		"/Volumes/Macintosh HD/Users/vian/Library/Application Support/Sublime Text 3/Packages/Default/Preferences.sublime-settings",
+		"/Volumes/Macintosh HD/Users/vian/Library/Application Support/Sublime Text 3/Packages/User/Preferences.sublime-settings",
 		"/src/chromium_39/src/chrome/browser/prefs/pref_service_syncable.h",
 		"/src/chromium_36/src/torlauncher",
 		"/src/chromium_39/src/extensions/browser/pref_names.cc",
@@ -673,49 +703,7 @@
 		"/src/chromium_36/src/chrome/common/pref_names.h",
 		"/src/chromium_36/src/base/prefs/pref_registry_simple.h",
 		"/src/chromium_36/src/chrome/browser/chromeos/language_preferences.cc",
-		"/src/chromium_36/src/base/values.h",
-		"/Volumes/Macintosh HD/Users/vian/Library/Application Support/Sublime Text 2/Packages/Default/Preferences.sublime-settings",
-		"/src/chromium_36/src/bitpop_specific/extensions/facebook_friends/js/roster/controllers/application.js",
-		"/src/chromium_36/src/bitpop_specific/extensions/facebook_friends/manifest.json",
-		"/src/chromium_36/src/bitpop_specific/extensions/facebook_friends/js/chat/controllers/application.js",
-		"/src/chromium_36/src/bitpop_specific/extensions/facebook_messages/js/background.js",
-		"/src/chromium_36/src/bitpop_specific/extensions/facebook_messages/js/desktop_notifications.js",
-		"/src/chromium_36/src/bitpop_specific/extensions/facebook_messages/manifest.json",
-		"/src/chromium_36/.git/COMMIT_EDITMSG",
-		"/Volumes/Macintosh HD/Users/vian/Library/Application Support/Sublime Text 2/Packages/DashDoc/Default (OSX).sublime-keymap",
-		"/src/chromium_36/src/chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_mac.mm",
-		"/src/chromium_36/src/chrome/browser/ui/fullscreen/fullscreen_controller.cc",
-		"/src/chromium_36/src/chrome/browser/ui/fullscreen/fullscreen_controller.h",
-		"/src/chromium_36/src/ui/message_center/notification_list.cc",
-		"/src/chromium_36/src/chrome/browser/ui/cocoa/status_icons/status_icon_mac.h",
-		"/src/chromium_36/src/chrome/browser/ui/cocoa/status_icons/status_icon_mac.mm",
-		"/src/google_api_keys.cc",
-		"/src/chromium_36/src/google_apis/google_api_keys.cc",
-		"/src/chromium_36/src/chrome/browser/facebook_chat/facebook_chatbar.h",
-		"/src/chromium_36/src/chrome/browser/status_icons/desktop_notification_balloon.cc",
-		"/src/chromium_36/src/chrome/browser/status_icons/desktop_notification_balloon.h",
-		"/src/chromium_36/src/chrome/browser/facebook_chat/facebook_chatbar.cc",
-		"/src/chromium_36/src/chrome/browser/ui/extensions/extension_install_ui_default.cc",
-		"/src/gitignore_root.txt",
-		"/Volumes/BOOTCAMP/cygwin/home/vian/contribute/chromium_36/.gitignore",
-		"/src/chromium_37/.gclient",
-		"/src/chromium_36/.gclient",
-		"/src/chromium_37/src/.gitignore",
-		"/src/chromium_36/src/chrome/browser/ui/cocoa/facebook_chat/facebook_sidebar_controller.mm",
-		"/src/chromium_36/src/chrome/browser/ui/cocoa/facebook_chat/facebook_sidebar_controller.h",
-		"/src/chromium_36/src/content/public/browser/web_contents.h",
-		"/src/chromium_36/src/content/public/browser/navigation_controller.h",
-		"/src/chromium_36/src/apps/app_window_contents.cc",
-		"/src/chromium_36/src/content/public/browser/notification_types.h",
-		"/src/chromium_36/src/content/public/browser/web_contents_observer.h",
-		"/src/chromium_36/src/chrome/browser/extensions/api/extension_action/extension_action_api.cc",
-		"/src/chromium_36/src/chrome/browser/ui/browser.h",
-		"/src/chromium_36/src/chrome/browser/ui/browser.cc",
-		"/src/chromium_36/src/chrome/browser/extensions/extension_view_host_mac.mm",
-		"/src/chromium_36/src/chrome/browser/resources/bitpop_helper/manifest.json",
-		"/src/chromium_36/src/components/infobars/core/infobar.h",
-		"/src/chromium_36/src/chrome/browser/extensions/theme_installed_infobar_delegate.h",
-		"/src/chromium_36/src/chrome/browser/extensions/theme_installed_infobar_delegate.cc"
+		"/src/chromium_36/src/base/values.h"
 	],
 	"find":
 	{
@@ -723,7 +711,7 @@
 	},
 	"find_in_files":
 	{
-		"height": 0.0,
+		"height": 93.0,
 		"where_history":
 		[
 			"<open folders>",
@@ -751,6 +739,30 @@
 		"case_sensitive": false,
 		"find_history":
 		[
+			"json",
+			"chrome.extension.get",
+			"document.documentElement.getElementById",
+			"iswindows",
+			"let",
+			"applybridgesettings",
+			"getAndValidatebridgesettings",
+			"parseandvalidatebridges",
+			"mControlConntimer",
+			"mControlConnTimer",
+			"alarms",
+			"chrome.alarms",
+			"kProcessStatus",
+			"onalarm",
+			"setsockettimeout",
+			"_sendCommand",
+			"_this._sendCommand",
+			"_sendCommand",
+			"torsendcommand",
+			"_sendcommand",
+			"_torsendcommand",
+			"onAlarm",
+			"env",
+			"folder",
 			"extensions.torlauncher",
 			"restart chrome",
 			"append",
@@ -854,31 +866,7 @@
 			"addnotification",
 			"addprofilenotification",
 			"blockers_",
-			"UpdateFullscreenexitbubblecontent",
-			"tab_fullscreen_accepted+_",
-			"GetFullscreenSetting",
-			"fullscreen",
-			"chatbar",
-			"fullscreenwithintab",
-			"notifications.clear",
-			"tab_strip_model",
-			"RenderViewHOst",
-			"Observe",
-			"gurl",
-			"Init",
-			"createwithopener",
-			"host_contents",
-			"GetVisibleWebContents",
-			"GetextensionwindowController",
-			"SetAssociatedWebContents",
-			"GetAssociatedWeb",
-			"GetAssociated",
-			"skip_in_browser",
-			"CreateView",
-			"NOTIFICATION_WEB_CONTENT",
-			"web_content_set",
-			"SimpleAler",
-			"WEB_CONTENT_S"
+			"UpdateFullscreenexitbubblecontent"
 		],
 		"highlight": true,
 		"in_selection": false,
@@ -886,6 +874,8 @@
 		"regex": true,
 		"replace_history":
 		[
+			"chrome.runtime.get",
+			"document.getElementById",
 			"TorSocketStream",
 			"InformDelegate",
 			"TorCommandSuccee",
@@ -916,120 +906,14 @@
 	"groups":
 	[
 		{
-			"selected": 3,
 			"sheets":
 			[
-				{
-					"buffer": 0,
-					"file": "components/torlauncher/torlauncher_service.h",
-					"settings":
-					{
-						"buffer_size": 1653,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								903,
-								903
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/C++/C++.tmLanguage"
-						},
-						"translation.x": 0.0,
-						"translation.y": 0.0,
-						"zoom_level": 1.0
-					},
-					"type": "text"
-				},
-				{
-					"buffer": 1,
-					"file": "components/torlauncher/torlauncher_service.cc",
-					"settings":
-					{
-						"buffer_size": 4202,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								1857,
-								1641
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/C++/C++.tmLanguage"
-						},
-						"translation.x": 0.0,
-						"translation.y": 724.0,
-						"zoom_level": 1.0
-					},
-					"type": "text"
-				},
-				{
-					"buffer": 2,
-					"file": "components/torlauncher/torlauncher_pref_names.h",
-					"settings":
-					{
-						"buffer_size": 1254,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								1248,
-								780
-							]
-						],
-						"settings":
-						{
-							"syntax": "Packages/C++/C++.tmLanguage"
-						},
-						"translation.x": 0.0,
-						"translation.y": 0.0,
-						"zoom_level": 1.0
-					},
-					"type": "text"
-				},
-				{
-					"buffer": 3,
-					"file": "components/torlauncher/torlauncher_pref_names.cc",
-					"settings":
-					{
-						"buffer_size": 1774,
-						"regions":
-						{
-						},
-						"selection":
-						[
-							[
-								791,
-								791
-							]
-						],
-						"settings":
-						{
-							"auto_name": "",
-							"syntax": "Packages/C++/C++.tmLanguage"
-						},
-						"translation.x": 0.0,
-						"translation.y": 0.0,
-						"zoom_level": 1.0
-					},
-					"type": "text"
-				}
 			]
 		}
 	],
 	"incremental_find":
 	{
-		"height": 0.0
+		"height": 23.0
 	},
 	"input":
 	{
@@ -1058,6 +942,11 @@
 		]
 	},
 	"menu_visible": true,
+	"output.find_results":
+	{
+		"height": 0.0
+	},
+	"project": "bitpop.sublime-project",
 	"replace":
 	{
 		"height": 64.0
@@ -1068,6 +957,62 @@
 		"height": 0.0,
 		"selected_items":
 		[
+			[
+				"torlauncher_service",
+				"src/components/torlauncher/torlauncher_service.cc"
+			],
+			[
+				"torlauncher_pre",
+				"src/components/torlauncher/torlauncher_pref_names.cc"
+			],
+			[
+				"torlauncher.json",
+				"src/chrome/common/extensions/api/torlauncher.json"
+			],
+			[
+				"torlauncher/tl-",
+				"src/chrome/browser/resources/torlauncher/tl-protocol.js"
+			],
+			[
+				"torlauncher/tl-process",
+				"src/chrome/browser/resources/torlauncher/tl-process.js"
+			],
+			[
+				"torlauncher/tl-pro",
+				"src/chrome/browser/resources/torlauncher/tl-protocol.js"
+			],
+			[
+				"network-settings.js",
+				"src/chrome/browser/resources/torlauncher/network-settings.js"
+			],
+			[
+				"torlaunche_pre",
+				"src/components/torlauncher/torlauncher_pref_names.cc"
+			],
+			[
+				"torlauncher_ser",
+				"src/components/torlauncher/torlauncher_service.cc"
+			],
+			[
+				"efhv",
+				"src/extensions/browser/extension_function_histogram_value.h"
+			],
+			[
+				"torlauncher_ap",
+				"src/chrome/browser/extensions/api/torlauncher/torlauncher_api.h"
+			],
+			[
+				"component_ex",
+				"src/chrome/browser/resources/component_extension_resources.grd"
+			],
+			[
+				"torlauncher/tl-pr",
+				"src/chrome/browser/resources/torlauncher/tl-process.js"
+			],
+			[
+				"torlauncher/back",
+				"src/chrome/browser/resources/torlauncher/background.js"
+			],
 			[
 				"pref_ser",
 				"chrome/browser/prefs/pref_service_syncable.h"
@@ -1267,10 +1212,6 @@
 			[
 				"facebook_cha",
 				"chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_controller.mm"
-			],
-			[
-				"component_ex",
-				"chrome/browser/resources/component_extension_resources.grd"
 			],
 			[
 				"google",
@@ -1527,58 +1468,6 @@
 			[
 				"chrome_web_ui_con",
 				"chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc"
-			],
-			[
-				"web_ui",
-				"content/public/browser/web_ui.h"
-			],
-			[
-				"chrome_web_",
-				"chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc"
-			],
-			[
-				"chrome_conte",
-				"chrome/browser/chrome_content_browser_client.cc"
-			],
-			[
-				"browser_url_handler",
-				"content/browser/browser_url_handler_impl.cc"
-			],
-			[
-				"content_export",
-				"content/common/content_export.h"
-			],
-			[
-				"url_handler",
-				"content/public/browser/browser_url_handler.h"
-			],
-			[
-				"chrome_pages",
-				"chrome/browser/ui/chrome_pages.cc"
-			],
-			[
-				"uber_ui.cc",
-				"chrome/browser/ui/webui/uber/uber_ui.cc"
-			],
-			[
-				"chrome_conten",
-				"chrome/browser/chrome_content_browser_client.cc"
-			],
-			[
-				"browser_url_han",
-				"content/browser/browser_url_handler_impl.cc"
-			],
-			[
-				"browser_navi",
-				"chrome/browser/ui/browser_navigator.cc"
-			],
-			[
-				"url_data_manager_ba",
-				"content/browser/webui/url_data_manager_backend.cc"
-			],
-			[
-				"url_data_source",
-				"content/public/browser/url_data_source.h"
 			]
 		],
 		"width": 0.0
@@ -1591,10 +1480,25 @@
 		],
 		"width": 0.0
 	},
+	"select_symbol":
+	{
+		"height": 0.0,
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"selected_group": 0,
+	"settings":
+	{
+	},
 	"show_minimap": true,
 	"show_open_files": false,
 	"show_tabs": true,
 	"side_bar_visible": true,
-	"side_bar_width": 301.0,
-	"status_bar_visible": true
+	"side_bar_width": 323.0,
+	"status_bar_visible": true,
+	"template_settings":
+	{
+	}
 }

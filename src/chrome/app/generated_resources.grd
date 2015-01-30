@@ -14708,6 +14708,14 @@ Do you accept?
     <message name="IDS_FLAGS_ENABLE_MESSAGE_CENTER_ALWAYS_SCROLL_UP_UPON_REMOVAL_DESCRIPTION" desc="Description of about:flags option for message center always scroll up experiment.">
       Enables experiment that message center always scroll up when a notification is removed.
     </message>
+
+    <!-- Torlauncher strings -->
+    <message name="IDS_TORLAUNCHER_APP_NAME" desc="Component app name as shown on chrome://extensions/ page.">
+      Tor Launcher
+    </message>
+    <message name="IDS_TORLAUNCHER_APP_DESCRIPTION" desc="Component app description as shown on chrome://extensions/ page.">
+      Provides means of communication between browser and Tor proxy client app.
+    </message>
   </messages>
   </release>
 </grit>

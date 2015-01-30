@@ -623,6 +623,15 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
 
   Add(IDR_CRYPTOTOKEN_MANIFEST,
       base::FilePath(FILE_PATH_LITERAL("cryptotoken")));
+
+  // NOTE: Add BitPop background pages component extensions below this line.
+  AddWithNameAndDescription(IDR_TORLAUNCHER_MANIFEST,
+      base::FilePath(FILE_PATH_LITERAL("torlauncher")),
+      IDS_TORLAUNCHER_APP_NAME,
+      IDS_TORLAUNCHER_APP_DESCRIPTION);
+
+  Add(IDR_TOR_HELPER_MANIFEST,
+      base::FilePath(FILE_PATH_LITERAL("tor_helper")));
 }
 
 void ComponentLoader::UnloadComponent(ComponentExtensionInfo* component) {

@@ -27,6 +27,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/crash_keys.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/profiling.h"
 #include "chrome/common/switch_utils.h"
@@ -637,8 +638,20 @@ void ChromeMainDelegate::InitMacCrashReporter(
 
 void ChromeMainDelegate::PreSandboxStartup() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  CommandLine& non_const_cmd_line = const_cast<CommandLine&>(command_line);
+
   std::string process_type =
       command_line.GetSwitchValueASCII(switches::kProcessType);
+
+  if (process_type.empty()) {
+//  if (non_const_cmd_line.HasSwitch(switches::kLaunchTorBrowser)) {
+    non_const_cmd_line.AppendSwitchASCII(switches::kProfileDirectory,
+                                         "TorProfile");
+    non_const_cmd_line.AppendSwitchASCII(switches::kProxyServer,
+                                         "socks5://localhost:9150");
+    non_const_cmd_line.AppendSwitchASCII(switches::kAppId,
+                                         extension_misc::kTorLauncherAppId);
+  }
 
 #if defined(OS_POSIX)
   crash_reporter::SetCrashReporterClient(g_chrome_crash_client.Pointer());

@@ -783,6 +783,9 @@ const char kKioskMode[]                     = "kiosk";
 // See http://crbug.com/31395.
 const char kKioskModePrinting[]             = "kiosk-printing";
 
+// Launch in tor browsing mode with a tor launcher app in background
+const char kLaunchTorBrowser[] = "launch-tor-browser";
+
 // Comma-separated list of directories with component extensions to load.
 const char kLoadComponentExtension[]        = "load-component-extension";
 

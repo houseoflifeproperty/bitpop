@@ -13,6 +13,7 @@
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_agent_host.h"
@@ -563,7 +564,8 @@ void ProcessManager::OnLazyBackgroundPageIdle(const std::string& extension_id,
                                               uint64 sequence_id) {
   ExtensionHost* host = GetBackgroundHostForExtension(extension_id);
   if (host && !background_page_data_[extension_id].is_closing &&
-      sequence_id == background_page_data_[extension_id].close_sequence_id) {
+      sequence_id == background_page_data_[extension_id].close_sequence_id &&
+      extension_id != extension_misc::kTorLauncherAppId) {
     // Tell the renderer we are about to close. This is a simple ping that the
     // renderer will respond to. The purpose is to control sequencing: if the
     // extension remains idle until the renderer responds with an ACK, then we

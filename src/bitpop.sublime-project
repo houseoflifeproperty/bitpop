@@ -2,15 +2,22 @@
 	"folders":
 	[
 		{
-			"path": "/src/chromium_39/src",
-      "folder_exclude_patterns": [
-        "build",
-        "out",
-        "third_party",
-        ".git",
-        "Debug",
-        "Release"
-      ]
+			"folder_exclude_patterns":
+			[
+				"build",
+				"out",
+				"third_party",
+				".git",
+				"Debug",
+				"Release"
+			],
+			"path": "/src/chromium_39/src"
+		},
+		{
+			"path": "/src/tor-launcher"
+		},
+		{
+			"path": "/src/chromium_36/src/tor_support"
 		}
 	]
 }

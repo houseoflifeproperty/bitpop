@@ -106,6 +106,9 @@ extern const char kYoutubeAppId[];
 // The extension id of the in-app payments support application.
 extern const char kInAppPaymentsSupportAppId[];
 
+// The extension id of the Tor integration application.
+extern const char kTorLauncherAppId[];
+
 // The name of the app launch histogram.
 extern const char kAppLaunchHistogram[];
 

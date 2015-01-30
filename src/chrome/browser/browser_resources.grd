@@ -446,6 +446,9 @@
         <include name="IDR_BRAILLE_MANIFEST" file="resources\chromeos\braille_ime\manifest.json" type="BINDATA" />
       </if>
       <include name="IDR_WHISPERNET_PROXY_MANIFEST" file="resources\whispernet_proxy\manifest.json" type="BINDATA" />
+      <!-- Bitpop includes -->
+      <include name="IDR_TORLAUNCHER_MANIFEST" file="resources\torlauncher\manifest.json" type="BINDATA" />
+      <include name="IDR_TOR_HELPER_MANIFEST" file="resources\tor_helper\manifest.json" type="BINDATA" />
     </includes>
   </release>
 </grit>

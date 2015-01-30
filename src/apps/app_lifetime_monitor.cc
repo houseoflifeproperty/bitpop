@@ -4,8 +4,10 @@
 
 #include "apps/app_lifetime_monitor.h"
 
+#include "base/logging.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "extensions/browser/app_window/app_window.h"
@@ -60,6 +62,11 @@ void AppLifetimeMonitor::Observe(int type,
         return;
 
       NotifyAppStart(extension->id());
+      if (extension->id() == extension_misc::kTorLauncherAppId) {
+        DLOG(INFO) << "Starting Tor Launcher app...";
+        NotifyAppActivated(extension->id());
+      }
+
       break;
     }
 
@@ -81,12 +88,14 @@ void AppLifetimeMonitor::Observe(int type,
 }
 
 void AppLifetimeMonitor::OnAppWindowRemoved(AppWindow* app_window) {
-  if (!HasVisibleAppWindows(app_window))
+  if (!HasVisibleAppWindows(app_window) &&
+      app_window->extension_id() != extension_misc::kTorLauncherAppId)
     NotifyAppDeactivated(app_window->extension_id());
 }
 
 void AppLifetimeMonitor::OnAppWindowHidden(AppWindow* app_window) {
-  if (!HasVisibleAppWindows(app_window))
+  if (!HasVisibleAppWindows(app_window) &&
+      app_window->extension_id() != extension_misc::kTorLauncherAppId)
     NotifyAppDeactivated(app_window->extension_id());
 }
 
@@ -94,7 +103,8 @@ void AppLifetimeMonitor::OnAppWindowShown(AppWindow* app_window) {
   if (app_window->window_type() != AppWindow::WINDOW_TYPE_DEFAULT)
     return;
 
-  if (HasVisibleAppWindows(app_window))
+  if (HasVisibleAppWindows(app_window) &&
+      app_window->extension_id() != extension_misc::kTorLauncherAppId)
     NotifyAppActivated(app_window->extension_id());
 }
 
