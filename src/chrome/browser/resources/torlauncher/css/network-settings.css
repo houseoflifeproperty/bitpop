@@ -191,9 +191,6 @@ button.firstAnswer {
   font-size: 120%;
 }
 
-.torWarning {
-  list-style-image: url("chrome://torlauncher/skin/warning.png");
-}
 
 /* Ensure that our caution icon is always shown on GTK-based platforms. */
 .torWarning .button-icon {
@@ -247,5 +244,13 @@ button.firstAnswer {
 }
 
 .warning-icon {
+  display: inline-block;
+}
+
+fieldset td.align-right {
+  text-align: right;
+}
+
+fieldset tr.valign-center {
   vertical-align: middle;
 }

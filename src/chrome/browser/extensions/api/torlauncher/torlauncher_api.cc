@@ -21,6 +21,7 @@
 #include "base/environment.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
+//#include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/torlauncher/torlauncher_service_factory.h"
@@ -67,11 +68,12 @@ ExtensionFunction::ResponseAction TorlauncherInitiateAppQuitFunction::Run() {
       torlauncher::TorLauncherServiceFactory::GetForProfile(profile);
   tl_service->ShutdownTor();
 
-#if defined(OS_MACOSX)
-  chrome_browser_application_mac::Terminate();
-#else
-  chrome::AttemptUserExit();
-#endif
+// #if defined(OS_MACOSX)
+//   chrome_browser_application_mac::Terminate();
+// #else
+//   chrome::AttemptUserExit();
+// #endif
+  chrome::CloseAllBrowsersAndQuit();
 
   results_ = make_scoped_ptr(new base::ListValue());
 

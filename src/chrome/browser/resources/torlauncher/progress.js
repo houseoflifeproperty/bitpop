@@ -18,6 +18,9 @@ const kTorProcessExitedTopic = "TorProcessExited";
 const kBootstrapStatusTopic = "TorBootstrapStatus";
 const kTorLogHasWarnOrErrTopic = "TorLogHasWarnOrErr";
 
+const kTorOpenNewSessionWindowMessage = "open-initial-tor-session-window";
+const kTorHelperExtensionId = "nnldggpjfmmhhmjoekppejaejalbchbh";
+
 var gObsSvc;
 var gOpenerCallbackFunc; // Set when opened from network settings.
 
@@ -89,8 +92,14 @@ function cleanup() {
 function closeThisWindow(aBootstrapDidComplete) {
   cleanup();
 
-  if (gOpenerCallbackFunc)
+  if (gOpenerCallbackFunc) {
     gOpenerCallbackFunc(aBootstrapDidComplete);
+  }
+
+  if (aBootstrapDidComplete) {
+    chrome.runtime.sendMessage(
+        kTorHelperExtensionId,  { 'kind': kTorOpenNewSessionWindowMessage });
+  }
 
   window.close();
 }
@@ -102,19 +111,12 @@ function onCancel() {
   if (gOpenerCallbackFunc) {
     // TODO: stop the bootstrapping process?
     gOpenerCallbackFunc(false);
-    chrome.runtime.getBackgroundPage(function (bgPage) {
-      bgPage.torlauncher.torProcessService.onProgressDialogClose(false);
-      window.close();
-    });
   }
   else {
-    chrome.runtime.getBackgroundPage(function (bgPage) {
-      bgPage.torlauncher.torProcessService.onProgressDialogClose(true);
-      window.close();
-    });
+    chrome.runtime.sendMessage({ kind: 'TorUserRequestedQuit' });
   }
 
-  return true;
+  window.close();
 }
 
 
@@ -122,7 +124,7 @@ function onOpenSettings() {
   cleanup();
 
   chrome.runtime.getBackgroundPage(function (bgPage) {
-    bgPage.torlauncher.torProcessService.onProgressDialogClose(false);
+    bgPage.torlauncher.torProcessService.onProgressDialogClose(false, true);
     window.close();
   });
 }

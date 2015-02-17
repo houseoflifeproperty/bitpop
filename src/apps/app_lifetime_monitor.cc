@@ -5,6 +5,7 @@
 #include "apps/app_lifetime_monitor.h"
 
 #include "base/logging.h"
+#include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -89,13 +90,15 @@ void AppLifetimeMonitor::Observe(int type,
 
 void AppLifetimeMonitor::OnAppWindowRemoved(AppWindow* app_window) {
   if (!HasVisibleAppWindows(app_window) &&
-      app_window->extension_id() != extension_misc::kTorLauncherAppId)
+      ( app_window->extension_id() != extension_misc::kTorLauncherAppId ||
+        browser_shutdown::IsTryingToQuit()))
     NotifyAppDeactivated(app_window->extension_id());
 }
 
 void AppLifetimeMonitor::OnAppWindowHidden(AppWindow* app_window) {
   if (!HasVisibleAppWindows(app_window) &&
-      app_window->extension_id() != extension_misc::kTorLauncherAppId)
+      ( app_window->extension_id() != extension_misc::kTorLauncherAppId ||
+        browser_shutdown::IsTryingToQuit()))
     NotifyAppDeactivated(app_window->extension_id());
 }
 

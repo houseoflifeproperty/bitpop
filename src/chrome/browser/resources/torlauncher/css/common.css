@@ -1,0 +1,45 @@
+.separator.thin {
+  height: 0.5em;
+}
+
+.separator.thin.orient-vertical {
+  height: 0;
+  width: 0.5em;
+}
+
+.separator {
+  height: 1.5em;
+}
+
+.separator.orient-vertical {
+  height: 0;
+  width: 1.5em;
+}
+
+.separator.tall {
+  height: 2.1em;
+}
+
+.hbox {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+}
+
+.flex1 {
+  flex-grow: 1;
+}
+
+.vbox {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+.align-start {
+  align-items: flex-start;
+}
+
+.pack-start {
+  align-content: flex-start;
+}

@@ -14,9 +14,5 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 chrome.app.runtime.onLaunched.addListener(function() {
-  torlauncher.protocolService.initWithPromise().then(
-    function () {
-      torlauncher.torProcessService.init();
-    }
-  );
+  torlauncher.torProcessService.init();
 });

@@ -19,9 +19,13 @@ var torlauncher = torlauncher || {};
 window.addEventListener(
   'load',
   function (ev) {
-    initDialog();
+    torlauncher.util.runGenerator(initDialog);
   },
   false);
+
+const kPrefDefaultBridgeRecommendedType =
+                   "extensions.torlauncher.default_bridge_recommended_type";
+const kPrefDefaultBridgeType = "extensions.torlauncher.default_bridge_type";
 
 const kSupportAddr = "support@bitpop.com";
 
@@ -31,6 +35,22 @@ const kTorProcessDidNotStartTopic = "TorProcessDidNotStart";
 const kTorOpenProgressTopic = "TorOpenProgressDialog";
 const kTorBootstrapErrorTopic = "TorBootstrapError";
 const kTorLogHasWarnOrErrTopic = "TorLogHasWarnOrErr";
+
+const kWizardProxyRadioGroup = "proxyRadio";
+const kWizardUseBridgesRadioGroup = "bridgesRadio";
+
+const kUseProxyCheckbox = "useProxy";
+const kProxyTypeMenulist = "proxyType";
+const kProxyAddr = "proxyAddr";
+const kProxyPort = "proxyPort";
+const kProxyUsername = "proxyUsername";
+const kProxyPassword = "proxyPassword";
+const kUseFirewallPortsCheckbox = "useFirewallPorts";
+const kFirewallAllowedPorts = "firewallAllowedPorts";
+const kUseBridgesCheckbox = "useBridges";
+const kDefaultBridgeTypeMenuList = "defaultBridgeType";
+const kCustomBridgesRadio = "bridgeRadioCustom";
+const kBridgeList = "bridgeList";
 
 const kTorConfKeyDisableNetwork = "DisableNetwork";
 const kTorConfKeySocks4Proxy = "Socks4Proxy";
@@ -43,6 +63,9 @@ const kTorConfKeyReachableAddresses = "ReachableAddresses";
 const kTorConfKeyUseBridges = "UseBridges";
 const kTorConfKeyBridgeList = "Bridge";
 
+const kTorOpenNewSessionWindowMessage = "open-initial-tor-session-window";
+const kTorHelperExtensionId = "nnldggpjfmmhhmjoekppejaejalbchbh";
+
 var gProtocolSvc = null;
 var gTorProcessService = null;
 var gIsInitialBootstrap = false;
@@ -50,172 +73,284 @@ var gIsBootstrapComplete = false;
 var gRestoreAfterHelpPanelID = null;
 var gActiveTopics = [];  // Topics for which an observer is currently installed.
 
-function initDialog()
-{
-  gDialogHelper = new torlauncher.UIHelper();
+function *initDialog() {
+  // initialize wizard helper and setup pageshow and pageadvanced callbacks
+  if ($('.wizard').length) {
+    gDialogHelper = new torlauncher.UIHelper(
+        function *() { showWizardNavButtons(false); });
+    gDialogHelper.setPageShowCallback('proxy',
+        function *() { showWizardNavButtons(true); });
+    gDialogHelper.setPageAdvancedCallback('proxy',
+        function *() {
+          return (yield *onWizardProxyNext(
+                    $('.wizardpage[pageid="proxy"]').get(0)));
+        });
+    gDialogHelper.setPageAdvancedCallback('proxyYES',
+        function *() {
+          return ((yield *getAndValidateProxySettings()) !== null);
+        });
+    gDialogHelper.setPageShowCallback('bridges',
+        function *() {
+          onWizardUseBridgesRadioChange(
+              $('.wizardpage[pageid="bridges"]').get(0));
+        });
+    gDialogHelper.setPageShowCallback('bridgeSettings',
+        onWizardBridgeSettingsShow);
+    gDialogHelper.setPageShowCallback('startingTor',
+        function *() { showWizardNavButtons(false); });
+    gDialogHelper.setPageShowCallback('errorPanel',
+        function *() { showWizardNavButtons(false); });
+    gDialogHelper.setPageAdvancedCallback('bridgeHelp',
+        function *() {
+          closeHelp();
+          return false;
+        });
+  }
 
   //torlauncher.util.pr_debug("UI language: " + chrome.i18n.getUILanguage());
   torlauncher.util.localizePage();
   document.title = torlauncher.util.translate('torsettings.dialog.title');
 
-  chrome.runtime.getPlatformInfo(function (info) {
-    if (info.os == 'win')
-      document.documentElement.setAttribute("class", "os-windows");
+  var info = yield (new Promise(function (resolve, reject) {
+    chrome.runtime.getPlatformInfo(resolve);
+  }));
+  if (info.os == 'win')
+    document.documentElement.setAttribute("class", "os-windows");
 
-    var forAssistance = document.getElementById("forAssistance");
-    if (forAssistance) {
-      forAssistance.textContent = torlauncher.util.getFormattedLocalizedString(
-                                          "forAssistance", [kSupportAddr], 1);
+  var forAssistance = document.getElementById("forAssistance");
+  if (forAssistance) {
+    forAssistance.textContent = torlauncher.util.getFormattedLocalizedString(
+                                        "forAssistance", [kSupportAddr], 1);
+  }
+
+  var cancelBtn = document.getElementById("cancelButton");
+  gIsInitialBootstrap = window.windowArgs.isInitialBootstrap;
+
+  var startAtPanel;
+  if (window.windowArgs.startAtWizardPanel != undefined)
+    startAtPanel = window.windowArgs.startAtWizardPanel;
+
+  if (gIsInitialBootstrap) {
+    if (cancelBtn) {
+      if (info.os == 'win')
+        cancelBtn.innerText = torlauncher.util.getLocalizedString("quit_win");
+      else
+        cancelBtn.innerText = torlauncher.util.getLocalizedString("quit");
     }
 
-    var cancelBtn = document.getElementById("cancelButton");
-    gIsInitialBootstrap = window.windowArgs.isInitialBootstrap;
+    var okBtn = document.getElementById("acceptButton");
+    if (okBtn)
+      okBtn.innerText = torlauncher.util.getLocalizedString("connect");
+  }
 
-    var startAtPanel;
-    if (window.windowArgs.startAtWizardPanel != undefined)
-      startAtPanel = window.windowArgs.startAtWizardPanel;
+  var backgroundPage = yield (new Promise (function (resolve, reject) {
+    chrome.runtime.getBackgroundPage(resolve);
+  }));
 
-    if (gIsInitialBootstrap) {
-      if (cancelBtn) {
-        if (info.os == 'win')
-          cancelBtn.innerText = torlauncher.util.getLocalizedString("quit_win");
-        else
-          cancelBtn.innerText = torlauncher.util.getLocalizedString("quit");
-      }
+  //torlauncher.util.pr_debug('network-settings: Got background page.');
+  gProtocolSvc = backgroundPage.torlauncher.protocolService;
+  yield gProtocolSvc.initPromise;
 
-      var okBtn = document.getElementById("acceptButton");
-      if (okBtn)
-        okBtn.innerText = torlauncher.util.getLocalizedString("connect");
+  //torlauncher.util.pr_debug('network-settings: gProtocolSvc.initPromise resolved');
+  gTorProcessService = backgroundPage.torlauncher.torProcessService;
+
+  var wizardElem = getWizard();
+  var haveWizard = (wizardElem !== null);
+  //torlauncher.util.pr_debug('network-settings: haveWizard == ' + (haveWizard ? 'true' : 'false'));
+  if (haveWizard) {
+    if (gDialogHelper.currentPage.pageid == "first") {
+      showWizardNavButtons(false);
     }
 
-    chrome.runtime.getBackgroundPage(function (backgroundPage) {
-      //torlauncher.util.pr_debug('network-settings: Got background page.');
-      gProtocolSvc = backgroundPage.torlauncher.protocolService;
-      gProtocolSvc.initPromise.then(
-        function () {
-          //torlauncher.util.pr_debug('network-settings: gProtocolSvc.initPromise resolved');
-          gTorProcessService = backgroundPage.torlauncher.torProcessService;
+    // Set "Copy Tor Log" label and move it after the Quit (cancel) button.
+    var copyLogBtn = document.getElementById("extra2Button");
+    if (copyLogBtn) {
+      copyLogBtnTitle = wizardElem.getAttribute("buttonlabelextra2");
+      copyLogBtn.innerHTML +=
+          torlauncher.util.translate(copyLogBtnTitle);
+    }
 
-          var wizardElem = getWizard();
-          var haveWizard = (wizardElem !== null);
-          //torlauncher.util.pr_debug('network-settings: haveWizard == ' + (haveWizard ? 'true' : 'false'));
-          if (haveWizard) {
-            if (gDialogHelper.currentPage.pageid == "first") {
-              showWizardNavButtons(false);
-            }
+    if (gTorProcessService.TorBootstrapErrorOccurred ||
+        gProtocolSvc.TorLogHasWarnOrErr) {
+      showCopyLogButton(true);
+    }
 
-            // Set "Copy Tor Log" label and move it after the Quit (cancel) button.
-            var copyLogBtn = document.getElementById("extra2Button");
-            if (copyLogBtn) {
-              copyLogBtnTitle = wizardElem.getAttribute("buttonlabelextra2");
-              copyLogBtn.innerHTML += copyLogBtnTitle;
-            }
+    // Use "Connect" as the finish button label (on the last wizard page)..
+    var finishBtn = document.getElementById("finishButton");
+    if (finishBtn)
+      finishBtn.innerText =
+          torlauncher.util.getLocalizedString("connect");
 
-            if (gTorProcessService.TorBootstrapErrorOccurred ||
-                gProtocolSvc.TorLogHasWarnOrErr) {
-              showCopyLogButton(true);
-            }
+    // Add label and access key to Help button.
+    var helpBtn = document.getElementById("helpButton");
+    if (helpBtn) {
+      $(helpBtn).click(onOpenHelp);
 
-            // Use "Connect" as the finish button label (on the last wizard page)..
-            var finishBtn = document.getElementById("finishButton");
-            if (finishBtn)
-              finishBtn.innerText = torlauncher.util.getLocalizedString("connect");
+      // TODO: make necessary changes for help button in the wizard
+      // var strBundle = Cc["@mozilla.org/intl/stringbundle;1"]
+      //               .getService(Ci.nsIStringBundleService)
+      //               .createBundle("chrome://global/locale/dialog.properties");
+      // helpBtn.setAttribute("label", strBundle.GetStringFromName("button-help"));
+      // var accessKey = strBundle.GetStringFromName("accesskey-help");
+      // if (accessKey)
+      //   helpBtn.setAttribute("accesskey", accessKey);
+    }
 
-            // Add label and access key to Help button.
-            var helpBtn = document.getElementById("helpButton");
-            // if (helpBtn) {
-              // TODO: make necessary changes for help button in the wizard
-              // var strBundle = Cc["@mozilla.org/intl/stringbundle;1"]
-              //               .getService(Ci.nsIStringBundleService)
-              //               .createBundle("chrome://global/locale/dialog.properties");
-              // helpBtn.setAttribute("label", strBundle.GetStringFromName("button-help"));
-              // var accessKey = strBundle.GetStringFromName("accesskey-help");
-              // if (accessKey)
-              //   helpBtn.setAttribute("accesskey", accessKey);
-            // }
-          }
+    $('input[name="bridgesRadio"]').change(
+        onWizardUseBridgesRadioChange);
+    $('input[name="bridgeType"]').change(
+        onBridgeTypeRadioChange);
+  }
 
-          // initDefaultBridgeTypeMenu();
+  yield *initDefaultBridgeTypeMenu();
 
-          //torlauncher.util.pr_debug('network-settings: adding onMessage listener');
-          chrome.runtime.onMessage.addListener(onMessage);
+  //torlauncher.util.pr_debug('network-settings: adding onMessage listener');
+  chrome.runtime.onMessage.addListener(onMessage);
 
-          //torlauncher.util.pr_debug("network-settings: adding observers");
-          addObserver(kTorBootstrapErrorTopic);
-          addObserver(kTorLogHasWarnOrErrTopic);
-          addObserver(kTorProcessExitedTopic);
-          addObserver(kTorOpenProgressTopic);
+  //torlauncher.util.pr_debug("network-settings: adding observers");
+  addObserver(kTorBootstrapErrorTopic);
+  addObserver(kTorLogHasWarnOrErrTopic);
+  addObserver(kTorProcessExitedTopic);
+  addObserver(kTorOpenProgressTopic);
 
-          //torlauncher.util.pr_debug("network-settings: adding 'click' event listeners");
-          document.getElementById("acceptButton").addEventListener(
-              'click', applySettings, false);
-          document.getElementById("cancelButton").addEventListener(
-              'click', onCancel, false);
-          document.getElementById("restartTorButton").addEventListener(
-              'click', onRestartTor, false);
-          document.getElementById('connectButton').addEventListener(
-              'click', useSettings, false);
-          document.getElementById('extra2Button').addEventListener(
-              'click', onCopyLog, false);
+  //torlauncher.util.pr_debug("network-settings: adding 'click' event listeners");
+  document.getElementById("acceptButton").addEventListener(
+      'click', function () {
+        torlauncher.util.runGenerator(function *() {
+          var ret = yield *applySettings();
+          if (ret)
+            window.close();
+        });
+      }, false);
+  document.getElementById("cancelButton").addEventListener(
+      'click', function () {
+        torlauncher.util.runGenerator(function *() {
+          var ret = yield *onCancel();
+          if (ret)
+            window.close();
+        });
+      }, false);
+  document.getElementById("restartTorButton").addEventListener(
+      'click', function () {
+        torlauncher.util.runGenerator(onRestartTor);
+      }, false);
+  document.getElementById('connectButton').addEventListener(
+      'click', function () {
+        torlauncher.util.runGenerator(useSettings);
+      }, false);
+  document.getElementById('extra2Button').addEventListener(
+      'click', onCopyLog, false);
+  document.getElementById('configureButton').addEventListener(
+      'click', function () {
+        torlauncher.util.runGenerator(onWizardConfigure);
+      }, false);
 
-          var status = gTorProcessService.TorProcessStatus;
-          //torlauncher.util.pr_debug("gTorProcessService.TorProcessStatus: " +
-          //    JSON.stringify(gTorProcessService.TorProcessStatus));
-          torlauncher.util.getShouldStartAndOwnTorWithPromise().then(
-            function (shouldStartAndOwnTor) {
-              //torlauncher.util.pr_debug("network=settings: shouldStartAndOwnTor: " +
-              //    JSON.stringify(shouldStartAndOwnTor));
-              if (shouldStartAndOwnTor &&
-                 (status != gTorProcessService.kStatusRunning)) {
-                if (status == gTorProcessService.kStatusExited)
-                  showErrorMessage(true, null);
-                else
-                  showStartingTorPanel();
+  var status = gTorProcessService.TorProcessStatus;
+  //torlauncher.util.pr_debug("gTorProcessService.TorProcessStatus: " +
+  //    JSON.stringify(gTorProcessService.TorProcessStatus));
+  var shouldStartAndOwnTor =
+      yield *torlauncher.util.shouldStartAndOwnTor();
 
-                //torlauncher.util.pr_debug(
-                //    'network=settings: addObserver for TorProcessReady and TorProcessDidNotStart');
-                addObserver(kTorProcessReadyTopic);
-                addObserver(kTorProcessDidNotStartTopic);
-              }
-              else {
-                readTorSettings();
+  //torlauncher.util.pr_debug("network=settings: shouldStartAndOwnTor: " +
+  //    JSON.stringify(shouldStartAndOwnTor));
+  if (shouldStartAndOwnTor &&
+     (status != gTorProcessService.kStatusRunning)) {
+    if (status == gTorProcessService.kStatusExited)
+      yield *showErrorMessage(true, null);
+    else
+      yield *showStartingTorPanel();
 
-                if (startAtPanel)
-                  advanceToWizardPanel(startAtPanel);
-                else
-                  showPanel();
-              }
+    //torlauncher.util.pr_debug(
+    //    'network=settings: addObserver for TorProcessReady and TorProcessDidNotStart');
+    addObserver(kTorProcessReadyTopic);
+    addObserver(kTorProcessDidNotStartTopic);
+  }
+  else {
+    yield *readTorSettings();
 
-              // Resize this window to fit content.  sizeToContent() alone will not do
-              // the job (it has many limitations and it is buggy).
-              // TODO: account for the following code
-              // sizeToContent();
-              // let w = maxWidthOfContent();
-              // if (w)
-              // {
-              //   let windowFrameWidth = window.outerWidth - window.innerWidth;
-              //   w += windowFrameWidth;
+    if (startAtPanel)
+      yield *advanceToWizardPanel(startAtPanel);
+    else
+      yield *showPanel();
+  }
 
-              //   if (w > window.outerWidth)
-              //     window.resizeTo(w, window.outerHeight);
-              // }
+  // Resize this window to fit content.  sizeToContent() alone will not do
+  // the job (it has many limitations and it is buggy).
+  // TODO: account for the following code
+  // sizeToContent();
+  // let w = maxWidthOfContent();
+  // if (w)
+  // {
+  //   let windowFrameWidth = window.outerWidth - window.innerWidth;
+  //   w += windowFrameWidth;
 
-              console.info("initDialog done");
-            }
-          );
-        }
-      );
-    });
-  });
+  //   if (w > window.outerWidth)
+  //     window.resizeTo(w, window.outerHeight);
+  // }
+
+  console.info("initDialog done");
 }
 
-function getWizard()
-{
+function getWizard() {
   return gDialogHelper.WizardElem;
 }
 
-function showWizardNavButtons(aShowBtns)
-{
+function *onWizardConfigure() {
+  yield *gDialogHelper.advance("proxy");
+}
+
+function onWizardProxyNext(aWizPage) {
+  if (aWizPage) {
+    var hasProxy = document.getElementById('proxyRadioYes').checked;
+    aWizPage.next = (hasProxy) ? "proxyYES" : "bridges";
+  }
+
+  return true;
+}
+
+function onWizardUseBridgesRadioChange(aWizPage) {
+  var wizard = getWizard();
+  if (!aWizPage)
+    aWizPage = gDialogHelper.currentPage;
+  if (aWizPage) {
+    var useBridges = getElemValue("bridgesRadioYes", false);
+    aWizPage.next = (useBridges) ? "bridgeSettings" : "";
+    if (!useBridges)
+      gDialogHelper.lastPage = 'bridges';
+    //wizard.setAttribute("lastpage", !useBridges);
+    //wizard._wizardButtons.onPageChange();
+  }
+}
+
+
+function onWizardBridgeSettingsShow() {
+  //var wizard = getWizard();
+  gDialogHelper.lastPage = 'bridgeSettings';
+  //wizard.setAttribute("lastpage", true);
+  //wizard._wizardButtons.onPageChange();
+  var btn = document.getElementById("acceptButton");
+  if (btn)
+    btn.focus();
+}
+
+
+function onCustomBridgesTextInput() {
+  $(input[name="bridgeType"]).val('custom').change();
+  onBridgeTypeRadioChange();
+}
+
+
+function onBridgeTypeRadioChange() {
+  var useCustom = getElemValue(kCustomBridgesRadio, false);
+  enableElemWithLabel(kDefaultBridgeTypeMenuList, !useCustom);
+  enableElemWithLabel(kBridgeList + "Label", useCustom);
+  var focusElemID = (useCustom) ? kBridgeList : kDefaultBridgeTypeMenuList;
+  var elem = document.getElementById(focusElemID);
+  if (elem)
+    elem.focus();
+}
+
+function showWizardNavButtons(aShowBtns) {
   showOrHideButton("backButton", aShowBtns, false);
   showOrHideButton("nextButton", aShowBtns, false);
 }
@@ -234,24 +369,30 @@ function onMessage(msg) {
   }
 
   if (kTorProcessReadyTopic == aTopic) {
-    removeObserver(kTorProcessReadyTopic);
-    removeObserver(kTorProcessDidNotStartTopic);
-    var haveWizard = (getWizard() !== null);
-    showPanel();
-    if (haveWizard) {
-      showOrHideButton("backButton", true, false);
-      showOrHideButton("nextButton", true, false);
-    }
-    readTorSettings();
+    torlauncher.util.runGenerator(function *() {
+      removeObserver(kTorProcessReadyTopic);
+      removeObserver(kTorProcessDidNotStartTopic);
+      var haveWizard = (getWizard() !== null);
+      yield *showPanel();
+      if (haveWizard) {
+        showOrHideButton("backButton", true, false);
+        showOrHideButton("nextButton", true, false);
+      }
+      yield *readTorSettings();
+    });
   } else if (kTorProcessDidNotStartTopic == aTopic) {
-    removeObserver(kTorProcessReadyTopic);
-    removeObserver(kTorProcessDidNotStartTopic);
-    showErrorMessage(false, aData);
+    torlauncher.util.runGenerator(function *() {
+      removeObserver(kTorProcessReadyTopic);
+      removeObserver(kTorProcessDidNotStartTopic);
+      yield *showErrorMessage(false, aData);
+    });
   } else if (kTorProcessExitedTopic == aTopic) {
-    removeObserver(kTorProcessExitedTopic);
-    showErrorMessage(true, null);
+    torlauncher.util.runGenerator(function *() {
+      removeObserver(kTorProcessExitedTopic);
+      showErrorMessage(true, null);
+    });
   } else if (kTorOpenProgressTopic == aTopic) {
-    openProgressDialog();
+    torlauncher.util.runGenerator(function *() { yield openProgressDialog(); });
   }
 }
 
@@ -275,43 +416,40 @@ function removeAllObservers() {
   gActiveTopics = [];
 }
 
-function readTorSettings()
+function *readTorSettings()
 {
   torlauncher.util.pr_debug('network=settings: readTorSettings ' +
                             '-----------------------------------------------');
-  // TorLauncherLogger.log(2, "readTorSettings " +
-  //                           "----------------------------------------------");
 
-  // var didSucceed = false;
-  // try
-  // {
-  //   // TODO: retrieve > 1 key at one time inside initProxySettings() et al.
-  //   didSucceed = initProxySettings() && initFirewallSettings() &&
-  //                initBridgeSettings();
-  // }
-  // catch (e) { TorLauncherLogger.safelog(4, "Error in readTorSettings: ", e); }
+  var didSucceed = false;
+  try {
+    // TODO: retrieve > 1 key at one time inside initProxySettings() et al.
+    didSucceed = (yield *initProxySettings()) &&
+                 (yield *initFirewallSettings()) &&
+                 (yield *initBridgeSettings());
+  }
+  catch (e) { console.warn("Error in readTorSettings: " + e); }
 
-  // if (!didSucceed)
-  // {
-  //   // Unable to communicate with tor.  Hide settings and display an error.
-  //   showErrorMessage(false, null);
+  if (!didSucceed) {
+    // Unable to communicate with tor.  Hide settings and display an error.
+    yield *showErrorMessage(false, null);
 
-  //   setTimeout(function()
-  //       {
-  //         var details = TorLauncherUtil.getLocalizedString(
-  //                                         "ensure_tor_is_running");
-  //         var s = TorLauncherUtil.getFormattedLocalizedString(
-  //                                     "failed_to_get_settings", [details], 1);
-  //         TorLauncherUtil.showAlert(window, s);
-  //         close();
-  //       }, 0);
-  // }
-  // TorLauncherLogger.log(2, "readTorSettings done");
+    setTimeout(function()
+        {
+          var details = torlauncher.util.getLocalizedString(
+                                          "ensure_tor_is_running");
+          var s = torlauncher.util.getFormattedLocalizedString(
+                                      "failed_to_get_settings", [details], 1);
+          yield torlauncher.util.showAlert(window, s);
+          window.close();
+        }, 0);
+  }
+  console.info("readTorSettings done");
 }
 
 
 // If aPanelID is undefined, the first panel is displayed.
-function showPanel(aPanelID)
+function *showPanel(aPanelID)
 {
   var wizard = getWizard();
   if (!aPanelID)
@@ -321,7 +459,7 @@ function showPanel(aPanelID)
   if (deckElem)
     setSelectedDeckPanel(deckElem, aPanelID);
   else if (wizard.currentPage.pageid != aPanelID)
-    gDialogHelper.goTo(aPanelID);
+    yield *gDialogHelper.goTo(aPanelID);
 
   showOrHideButton("acceptButton", (aPanelID == "settings"), true);
 }
@@ -344,15 +482,15 @@ function advanceToWizardPanel(aPanelID) {
   if (!wizard)
     return;
 
-  onWizardConfigure(); // Equivalent to pressing "Configure"
+  yield *onWizardConfigure(); // Equivalent to pressing "Configure"
 
   const kMaxTries = 10;
   for (var count = 0;
        ((count < kMaxTries) &&
         (gDialogHelper.currentPage.pageid != aPanelID) &&
-        gDialogHelper.canAdvance);
+        yield *gDialogHelper.canAdvance());
        ++count) {
-    gDialogHelper.advance();
+    yield *gDialogHelper.advance();
   }
 }
 
@@ -368,8 +506,7 @@ function showStartingTorPanel() {
 }
 
 
-function showErrorMessage(aTorExited, aErrorMsg)
-{
+function *showErrorMessage(aTorExited, aErrorMsg) {
   var elem = document.getElementById("errorPanelMessage");
   var btn = document.getElementById("restartTorButton");
   if (aTorExited) {
@@ -389,9 +526,9 @@ function showErrorMessage(aTorExited, aErrorMsg)
   }
 
   if (elem)
-    elem.textContent = (aErrorMsg) ? aErrorMsg : "";
+    elem.innerText = (aErrorMsg) ? aErrorMsg : "";
 
-  showPanel("errorPanel");
+  yield *showPanel("errorPanel");
 
   var haveWizard = (getWizard() !== null);
   if (haveWizard) {
@@ -405,12 +542,10 @@ function showErrorMessage(aTorExited, aErrorMsg)
 }
 
 
-function showCopyLogButton(aHaveErrorOrWarning)
-{
+function showCopyLogButton(aHaveErrorOrWarning) {
   torlauncher.util.pr_debug('network-settings: showCopyLogButton');
   var copyLogBtn = document.getElementById("extra2Button");
-  if (copyLogBtn)
-  {
+  if (copyLogBtn) {
     var haveWizard = (getWizard() !== null);
     if (haveWizard)
       copyLogBtn.setAttribute("wizardCanCopyLog", true);
@@ -427,8 +562,7 @@ function showCopyLogButton(aHaveErrorOrWarning)
 }
 
 
-function restoreCopyLogVisibility()
-{
+function restoreCopyLogVisibility() {
   var copyLogBtn = document.getElementById("extra2Button");
   if (!copyLogBtn)
     return;
@@ -441,8 +575,7 @@ function restoreCopyLogVisibility()
 }
 
 
-function showOrHideButton(aID, aShow, aFocus)
-{
+function showOrHideButton(aID, aShow, aFocus) {
   var btn = setButtonAttr(aID, "hidden", !aShow);
   if (btn && aFocus)
     btn.focus();
@@ -450,15 +583,13 @@ function showOrHideButton(aID, aShow, aFocus)
 
 
 // Returns the button element (if found).
-function enableButton(aID, aEnable)
-{
+function enableButton(aID, aEnable) {
   return setButtonAttr(aID, "disabled", !aEnable);
 }
 
 
 // Returns the button element (if found).
-function setButtonAttr(aID, aAttr, aValue)
-{
+function setButtonAttr(aID, aAttr, aValue) {
   if (!aID || !aAttr)
     return null;
 
@@ -481,18 +612,15 @@ function enableElemWithLabel(aID, aEnable)
     return;
 
   var elem = document.getElementById(aID);
-  if (elem)
-  {
+  if (elem) {
     var label = document.getElementById(aID + "Label");
-    if (aEnable)
-    {
+    if (aEnable) {
       if (label)
         label.removeAttribute("disabled");
 
       elem.removeAttribute("disabled");
     }
-    else
-    {
+    else {
       if (label)
         label.setAttribute("disabled", true);
 
@@ -507,16 +635,13 @@ function enableTextBox(aID, aEnable)
 {
   enableElemWithLabel(aID, aEnable);
   var textbox = document.getElementById(aID);
-  if (textbox)
-  {
-    if (aEnable)
-    {
+  if (textbox) {
+    if (aEnable) {
       var s = textbox.getAttribute("origPlaceholder");
       if (s)
         textbox.setAttribute("placeholder", s);
     }
-    else
-    {
+    else {
       textbox.setAttribute("origPlaceholder", textbox.placeholder);
       textbox.removeAttribute("placeholder");
     }
@@ -524,77 +649,56 @@ function enableTextBox(aID, aEnable)
 }
 
 
-function overrideButtonLabel(aID, aLabelKey)
-{
-  var btn = document.documentElement.getButton(aID);
-  if (btn)
-  {
-    btn.setAttribute("origLabel", btn.label);
-    btn.label = TorLauncherUtil.getLocalizedString(aLabelKey);
+function overrideButtonLabel(aID, aLabelKey) {
+  var btn = document.getElementById(aID);
+  if (btn) {
+    btn.setAttribute("origLabel", btn.innerText);
+    btn.innerText = torlauncher.util.getLocalizedString(aLabelKey);
   }
 }
 
 
-function restoreButtonLabel(aID)
-{
-  var btn = document.documentElement.getButton(aID);
-  if (btn)
-  {
+function restoreButtonLabel(aID) {
+  var btn = document.getElementById(aID);
+  if (btn) {
     var oldLabel = btn.getAttribute("origLabel");
-    if (oldLabel)
-    {
-      btn.label = oldLabel;
+    if (oldLabel) {
+      btn.innerText = oldLabel;
       btn.removeAttribute("origLabel");
     }
   }
 }
 
 
-// function onProxyTypeChange()
-// {
-//   var proxyType = getElemValue(kProxyTypeMenulist, null);
-//   var mayHaveCredentials = (proxyType != "SOCKS4");
-//   enableTextBox(kProxyUsername, mayHaveCredentials);
-//   enableTextBox(kProxyPassword, mayHaveCredentials);
-// }
+function onProxyTypeChange() {
+  var proxyType = getElemValue(kProxyTypeMenulist, null);
+  var mayHaveCredentials = (proxyType != "SOCKS4");
+  enableTextBox(kProxyUsername, mayHaveCredentials);
+  enableTextBox(kProxyPassword, mayHaveCredentials);
+}
 
 
 // Called when user clicks "Restart Tor" button after tor unexpectedly quits.
-function onRestartTor()
-{
+function *onRestartTor() {
   // Re-add these observers in case they have been removed.
   addObserver(kTorProcessReadyTopic);
   addObserver(kTorProcessDidNotStartTopic);
   addObserver(kTorProcessExitedTopic);
 
-  gTorProcessService._startTor().then(
-    function () {
-      gTorProcessService._controlTor();
-    }
-  );
+  yield *gTorProcessService._startTor();
+  yield *gTorProcessService._controlTor();
 }
 
 
-function onCancel()
-{
-  if (gRestoreAfterHelpPanelID) // Is help open?
-  {
+function onCancel() {
+  if (gRestoreAfterHelpPanelID) { // Is help open?
     closeHelp();
     return false;
   }
 
   if (gIsInitialBootstrap) {
-    chrome.runtime.getBackgroundPage(function (bgPage) {
-      bgPage.torlauncher.torProcessService.onNetworkSettingsClose(true, false);
-      window.close();
-    });
-    return true;
+    chrome.runtime.sendMessage({ kind: 'TorUserRequestedQuit' });
   }
-
-  chrome.runtime.getBackgroundPage(function (bgPage) {
-    bgPage.torlauncher.torProcessService.onNetworkSettingsClose(false, false);
-    window.close();
-  });
 
   return true;
 }
@@ -642,34 +746,12 @@ function onCopyLog() {
   if (forAssistance && panel) {
     panel.firstChild.textContent = torlauncher.util.getFormattedLocalizedString(
                                      "copiedNLogMessages", [countObj.value], 1);
+    // Display a feedback popup that fades away after a few seconds.
     $(panel).show(400).delay(2000).hide(400);
-    //let rectObj = forAssistance.getBoundingClientRect();
-    //panel.openPopup(null, null, rectObj.left, rectObj.top, false, false);
   }
-
-  // // Display a feedback popup that fades away after a few seconds.
-  // let forAssistance = document.getElementById("forAssistance");
-  // let panel = document.getElementById("copyLogFeedbackPanel");
-  // if (forAssistance && panel)
-  // {
-  //   panel.firstChild.textContent = TorLauncherUtil.getFormattedLocalizedString(
-  //                                    "copiedNLogMessages", [countObj.value], 1);
-  //   let rectObj = forAssistance.getBoundingClientRect();
-  //   panel.openPopup(null, null, rectObj.left, rectObj.top, false, false);
-  // }
 }
 
-
-function closeCopyLogFeedbackPanel()
-{
-  // let panel = document.getElementById("copyLogFeedbackPanel");
-  // if (panel && (panel.state =="open"))
-  //   panel.hidePopup();
-}
-
-
-function onOpenHelp()
-{
+function onOpenHelp() {
   // if (gRestoreAfterHelpPanelID) // Already open?
   //   return;
 
@@ -697,8 +779,7 @@ function onOpenHelp()
 }
 
 
-function closeHelp()
-{
+function closeHelp() {
   // if (!gRestoreAfterHelpPanelID)  // Already closed?
   //   return;
 
@@ -722,195 +803,184 @@ function closeHelp()
 
 
 // Returns true if successful.
-function initProxySettings()
-{
-  // var proxyType, proxyAddrPort, proxyUsername, proxyPassword;
-  // var reply = gProtocolSvc.TorGetConfStr(kTorConfKeySocks4Proxy, null);
-  // if (!gProtocolSvc.TorCommandSucceeded(reply))
-  //   return false;
+function *initProxySettings() {
+  var proxyType, proxyAddrPort, proxyUsername, proxyPassword;
+  var reply =
+      yield *gProtocolSvc.TorGetConfStr(kTorConfKeySocks4Proxy, null);
+  if (!gProtocolSvc.TorCommandSucceeded(reply))
+    return false;
 
-  // if (reply.retVal)
-  // {
-  //   proxyType = "SOCKS4";
-  //   proxyAddrPort = reply.retVal;
-  // }
-  // else
-  // {
-  //   var reply = gProtocolSvc.TorGetConfStr(kTorConfKeySocks5Proxy, null);
-  //   if (!gProtocolSvc.TorCommandSucceeded(reply))
-  //     return false;
+  if (reply.retVal) {
+    proxyType = "SOCKS4";
+    proxyAddrPort = reply.retVal;
+  }
+  else {
+    var reply =
+        yield *gProtocolSvc.TorGetConfStr(kTorConfKeySocks5Proxy, null);
+    if (!gProtocolSvc.TorCommandSucceeded(reply))
+      return false;
 
-  //   if (reply.retVal)
-  //   {
-  //     proxyType = "SOCKS5";
-  //     proxyAddrPort = reply.retVal;
-  //     var reply = gProtocolSvc.TorGetConfStr(kTorConfKeySocks5ProxyUsername,
-  //                                            null);
-  //     if (!gProtocolSvc.TorCommandSucceeded(reply))
-  //       return false;
+    if (reply.retVal) {
+      proxyType = "SOCKS5";
+      proxyAddrPort = reply.retVal;
+      var reply =
+          yield *gProtocolSvc.TorGetConfStr(kTorConfKeySocks5ProxyUsername,
+                                            null);
+      if (!gProtocolSvc.TorCommandSucceeded(reply))
+        return false;
 
-  //     proxyUsername = reply.retVal;
-  //     var reply = gProtocolSvc.TorGetConfStr(kTorConfKeySocks5ProxyPassword,
-  //                                            null);
-  //     if (!gProtocolSvc.TorCommandSucceeded(reply))
-  //       return false;
+      proxyUsername = reply.retVal;
+      var reply =
+          yield *gProtocolSvc.TorGetConfStr(kTorConfKeySocks5ProxyPassword,
+                                            null);
+      if (!gProtocolSvc.TorCommandSucceeded(reply))
+        return false;
 
-  //     proxyPassword = reply.retVal;
-  //   }
-  //   else
-  //   {
-  //     var reply = gProtocolSvc.TorGetConfStr(kTorConfKeyHTTPSProxy, null);
-  //     if (!gProtocolSvc.TorCommandSucceeded(reply))
-  //       return false;
+      proxyPassword = reply.retVal;
+    }
+    else {
+      var reply =
+          yield *gProtocolSvc.TorGetConfStr(kTorConfKeyHTTPSProxy, null);
+      if (!gProtocolSvc.TorCommandSucceeded(reply))
+        return false;
 
-  //     if (reply.retVal)
-  //     {
-  //       proxyType = "HTTP";
-  //       proxyAddrPort = reply.retVal;
-  //       var reply = gProtocolSvc.TorGetConfStr(
-  //                                  kTorConfKeyHTTPSProxyAuthenticator, null);
-  //       if (!gProtocolSvc.TorCommandSucceeded(reply))
-  //         return false;
+      if (reply.retVal) {
+        proxyType = "HTTP";
+        proxyAddrPort = reply.retVal;
+        var reply = yield *gProtocolSvc.TorGetConfStr(
+                                   kTorConfKeyHTTPSProxyAuthenticator, null);
+        if (!gProtocolSvc.TorCommandSucceeded(reply))
+          return false;
 
-  //       var values = parseColonStr(reply.retVal);
-  //       proxyUsername = values[0];
-  //       proxyPassword = values[1];
-  //     }
-  //   }
-  // }
+        var values = parseColonStr(reply.retVal);
+        proxyUsername = values[0];
+        proxyPassword = values[1];
+      }
+    }
+  }
 
-  // var haveProxy = (proxyType != undefined);
-  // setYesNoRadioValue(kWizardProxyRadioGroup, haveProxy);
-  // setElemValue(kUseProxyCheckbox, haveProxy);
-  // setElemValue(kProxyTypeMenulist, proxyType);
-  // onProxyTypeChange();
+  var haveProxy = (proxyType != undefined);
+  setYesNoRadioValue(kWizardProxyRadioGroup, haveProxy);
+  setElemValue(kUseProxyCheckbox, haveProxy);
+  setElemValue(kProxyTypeMenulist, proxyType);
+  onProxyTypeChange();
 
-  // var proxyAddr, proxyPort;
-  // if (proxyAddrPort)
-  // {
-  //   var values = parseColonStr(proxyAddrPort);
-  //   proxyAddr = values[0];
-  //   proxyPort = values[1];
-  // }
+  var proxyAddr, proxyPort;
+  if (proxyAddrPort) {
+    var values = parseColonStr(proxyAddrPort);
+    proxyAddr = values[0];
+    proxyPort = values[1];
+  }
 
-  // setElemValue(kProxyAddr, proxyAddr);
-  // setElemValue(kProxyPort, proxyPort);
-  // setElemValue(kProxyUsername, proxyUsername);
-  // setElemValue(kProxyPassword, proxyPassword);
+  setElemValue(kProxyAddr, proxyAddr);
+  setElemValue(kProxyPort, proxyPort);
+  setElemValue(kProxyUsername, proxyUsername);
+  setElemValue(kProxyPassword, proxyPassword);
 
   return true;
 } // initProxySettings
 
 
 // Returns true if successful.
-function initFirewallSettings()
-{
-  // if (getWizard())
-  //   return true;  // The wizard does not directly expose firewall settings.
+function *initFirewallSettings() {
+  if (getWizard())
+    return true;  // The wizard does not directly expose firewall settings.
 
-  // var allowedPorts;
-  // var reply = gProtocolSvc.TorGetConfStr(kTorConfKeyReachableAddresses, null);
-  // if (!gProtocolSvc.TorCommandSucceeded(reply))
-  //   return false;
+  var allowedPorts;
+  var reply =
+      yield *gProtocolSvc.TorGetConfStr(kTorConfKeyReachableAddresses, null);
+  if (!gProtocolSvc.TorCommandSucceeded(reply))
+    return false;
 
-  // if (reply.retVal)
-  // {
-  //   var portStrArray = reply.retVal.split(',');
-  //   for (var i = 0; i < portStrArray.length; i++)
-  //   {
-  //     var values = parseColonStr(portStrArray[i]);
-  //     if (values[1])
-  //     {
-  //       if (allowedPorts)
-  //         allowedPorts += ',' + values[1];
-  //       else
-  //         allowedPorts = values[1];
-  //     }
-  //   }
-  // }
+  if (reply.retVal) {
+    var portStrArray = reply.retVal.split(',');
+    for (var i = 0; i < portStrArray.length; i++) {
+      var values = parseColonStr(portStrArray[i]);
+      if (values[1]) {
+        if (allowedPorts)
+          allowedPorts += ',' + values[1];
+        else
+          allowedPorts = values[1];
+      }
+    }
+  }
 
-  // var haveFirewall = (allowedPorts != undefined);
-  // setElemValue(kUseFirewallPortsCheckbox, haveFirewall);
-  // if (allowedPorts)
-  //   setElemValue(kFirewallAllowedPorts, allowedPorts);
+  var haveFirewall = (allowedPorts != undefined);
+  setElemValue(kUseFirewallPortsCheckbox, haveFirewall);
+  if (allowedPorts)
+    setElemValue(kFirewallAllowedPorts, allowedPorts);
 
   return true;
 }
 
 
 // Returns true if successful.
-function initBridgeSettings()
-{
-  // var typeList = TorLauncherUtil.defaultBridgeTypes;
-  // var canUseDefaultBridges = (typeList && (typeList.length > 0));
-  // var defaultType = TorLauncherUtil.getCharPref(kPrefDefaultBridgeType);
-  // var useDefault = canUseDefaultBridges && !!defaultType;
+function *initBridgeSettings() {
+  var typeList = yield *torlauncher.util.defaultBridgeTypes();
+  var canUseDefaultBridges = (typeList && (typeList.length > 0));
+  var defaultType = yield torlauncher.util.prefGet(kPrefDefaultBridgeType);
+  var useDefault = canUseDefaultBridges && !!defaultType;
 
-  // // If not configured to use a default set of bridges, get UseBridges setting
-  // // from tor.
-  // var useBridges = useDefault;
-  // if (!useDefault)
-  // {
-  //   var reply = gProtocolSvc.TorGetConfBool(kTorConfKeyUseBridges, false);
-  //   if (!gProtocolSvc.TorCommandSucceeded(reply))
-  //     return false;
+  // If not configured to use a default set of bridges, get UseBridges setting
+  // from tor.
+  var useBridges = useDefault;
+  if (!useDefault) {
+    var reply = yield *gProtocolSvc.TorGetConfBool(kTorConfKeyUseBridges, false);
+    if (!gProtocolSvc.TorCommandSucceeded(reply))
+      return false;
 
-  //   useBridges = reply.retVal;
+    useBridges = reply.retVal;
 
-  //   // Get bridge list from tor.
-  //   var bridgeReply = gProtocolSvc.TorGetConf(kTorConfKeyBridgeList);
-  //   if (!gProtocolSvc.TorCommandSucceeded(bridgeReply))
-  //     return false;
+    // Get bridge list from tor.
+    var bridgeReply = yield *gProtocolSvc.TorGetConf(kTorConfKeyBridgeList);
+    if (!gProtocolSvc.TorCommandSucceeded(bridgeReply))
+      return false;
 
-  //   if (!setBridgeListElemValue(bridgeReply.lineArray))
-  //   {
-  //     if (canUseDefaultBridges)
-  //       useDefault = true;  // We have no custom values... back to default.
-  //     else
-  //       useBridges = false; // No custom or default bridges are available.
-  //   }
-  // }
+    if (!setBridgeListElemValue(bridgeReply.lineArray)) {
+      if (canUseDefaultBridges)
+        useDefault = true;  // We have no custom values... back to default.
+      else
+        useBridges = false; // No custom or default bridges are available.
+    }
+  }
 
-  // setElemValue(kUseBridgesCheckbox, useBridges);
-  // setYesNoRadioValue(kWizardUseBridgesRadioGroup, useBridges);
+  setElemValue(kUseBridgesCheckbox, useBridges);
+  setYesNoRadioValue(kWizardUseBridgesRadioGroup, useBridges);
 
-  // if (!canUseDefaultBridges)
-  // {
-  //   var label = document.getElementById("bridgeSettingsPrompt");
-  //   if (label)
-  //     label.setAttribute("hidden", true);
+  if (!canUseDefaultBridges) {
+    var label = document.getElementById("bridgeSettingsPrompt");
+    if (label)
+      label.setAttribute("hidden", true);
 
-  //   var radioGroup = document.getElementById("bridgeTypeRadioGroup");
-  //   if (radioGroup)
-  //     radioGroup.setAttribute("hidden", true);
-  // }
+    var radioGroup = document.getElementById("bridgeTypeRadioGroup");
+    if (radioGroup)
+      radioGroup.setAttribute("hidden", true);
+  }
 
-  // var radioID = (useDefault) ? "bridgeRadioDefault" : "bridgeRadioCustom";
-  // var radio = document.getElementById(radioID);
-  // if (radio)
-  //   radio.control.selectedItem = radio;
-  // onBridgeTypeRadioChange();
+  var radioID = (useDefault) ? "bridgeRadioDefault" : "bridgeRadioCustom";
+  var radio = document.getElementById(radioID);
+  if (radio)
+    radio.checked = true;
+  onBridgeTypeRadioChange();
 
   return true;
 }
 
 
 // Returns true if settings were successfully applied.
-function applySettings()
+function *applySettings()
 {
-  // TorLauncherLogger.log(2, "applySettings ---------------------" +
-  //                            "----------------------------------------------");
-  // var didSucceed = false;
-  // try
-  // {
-  //   didSucceed = applyProxySettings() && applyFirewallSettings() &&
-  //                applyBridgeSettings();
-  // }
-  // catch (e) { TorLauncherLogger.safelog(4, "Error in applySettings: ", e); }
-
-  var didSucceed = true;
+  console.info("applySettings ---------------------" +
+               "----------------------------------------------");
+  var didSucceed = false;
+  try {
+    didSucceed = (yield *applyProxySettings()) &&
+                 (yield *applyFirewallSettings()) &&
+                 (yield *applyBridgeSettings());
+  }
+  catch (e) { console.warn("Error in applySettings: " + e); }
   if (didSucceed)
-    useSettings();
+    yield *useSettings();
 
   console.info("applySettings done");
 
@@ -918,55 +988,63 @@ function applySettings()
 }
 
 
-function useSettings(callbackAfter)
-{
-  //torlauncher.util.pr_debug('network-settings.useSettings()');
+function *useSettings(callbackAfter) {
+  torlauncher.util.pr_debug('network-settings.useSettings()');
   var settings = {};
   settings[kTorConfKeyDisableNetwork] = false;
-  setConfAndReportErrors(settings, null).then(
-    function (unusedSuccess) {
-      //torlauncher.util.pr_debug('network-settings.useSettings: after setConfAnd...');
-      gProtocolSvc.TorSendCommand("SAVECONF").then(
-        function (reply) {
-          //torlauncher.util.pr_debug('network-settings.useSettings: after saveConf send');
-          gTorProcessService.TorClearBootstrapError();
+  var unusedSuccess = yield *setConfAndReportErrors(settings, null);
+  //torlauncher.util.pr_debug('network-settings.useSettings: after setConfAnd...');
+  var reply = yield *gProtocolSvc.TorSendCommand("SAVECONF");
+  gTorProcessService.TorClearBootstrapError();
 
-          gIsBootstrapComplete = gTorProcessService.TorIsBootstrapDone;
-          if (!gIsBootstrapComplete)
-            openProgressDialog();
-        }
-      );
-    }
+  gIsBootstrapComplete = gTorProcessService.TorIsBootstrapDone;
+  if (!gIsBootstrapComplete)
+    yield openProgressDialog();
+}
+
+function sendOpenBrowserWindowNotification() {
+  chrome.runtime.sendMessage(
+      kTorHelperExtensionId,
+      { 'kind': kTorOpenNewSessionWindowMessage },
+      function () {}  // sendResponse callback
   );
 }
 
 function openProgressDialog()
 {
-  var chromeURL = "progress.html";
+  return new Promise(function (resolve, reject) {
+    var chromeURL = "progress.html";
 
-  chrome.app.window.create(chromeURL, {
-    id: gTorProcessService.kProgressDialogWindowId,
-    state: "normal",
-    alwaysOnTop: true,
-    innerBounds: {
-      left:      100,
-      top:       100,
-      width:     450,
-      height:    250,
-      minWidth:  450,
-      minHeight: 250,
-      maxWidth:  450,
-      maxHeight: 250
-    }
-  }, function (createdWindow) {
-    // pass window creation arguments
-    createdWindow.contentWindow.windowArgs = {
-      isBrowserStartup: gIsInitialBootstrap,
-      openerCallbackFunc: onProgressDialogClose
-    };
+    chrome.app.window.create(chromeURL, {
+      id: gTorProcessService.kProgressDialogWindowId,
+      state: "normal",
+      alwaysOnTop: true,
+      innerBounds: {
+        left:      100,
+        top:       100,
+        width:     450,
+        height:    250,
+        minWidth:  450,
+        minHeight: 250,
+        maxWidth:  450,
+        maxHeight: 250
+      }
+    }, function (createdWindow) {
+      // pass window creation arguments
+      createdWindow.contentWindow.windowArgs = {
+        isBrowserStartup: gIsInitialBootstrap,
+        openerCallbackFunc: onProgressDialogClose
+      };
 
-    createdWindow.onClosed.addListener(function () {
-      console.log('netwokr-settings: progress dialog closed');
+      createdWindow.onClosed.addListener(function () {
+        torlauncher.util.pr_debug('netwokr-settings: progress dialog closed');
+        resolve();
+        // chrome.runtime.sendMessage(
+        // {
+        //       kind: 'TorProgressDialogClose',
+        //   quitSoon: false
+        // });
+      });
     });
   });
 }
@@ -975,29 +1053,22 @@ function openProgressDialog()
 function onProgressDialogClose(aBootstrapCompleted)
 {
   gIsBootstrapComplete = aBootstrapCompleted;
-  if (gIsBootstrapComplete) {
-    chrome.runtime.getBackgroundPage(function (bgPage) {
-      bgPage.torlauncher.torProcessService.onNetworkSettingsClose(false, false);
-      window.close();
-    });
-  }
 }
 
 
 // Returns true if settings were successfully applied.
-function applyProxySettings()
+function *applyProxySettings()
 {
-  var settings = getAndValidateProxySettings();
+  var settings = yield *getAndValidateProxySettings();
   if (!settings)
     return false;
 
-  return setConfAndReportErrors(settings, "proxyYES");
+  return (yield *setConfAndReportErrors(settings, "proxyYES"));
 }
 
 
 // Return a settings object if successful and null if not.
-function getAndValidateProxySettings()
-{
+function *getAndValidateProxySettings() {
   // TODO: validate user-entered data.  See Vidalia's NetworkPage::save()
 
   var settings = {};
@@ -1009,42 +1080,35 @@ function getAndValidateProxySettings()
   settings[kTorConfKeyHTTPSProxyAuthenticator] = null;
 
   var proxyType, proxyAddrPort, proxyUsername, proxyPassword;
-  if (isProxyConfigured())
-  {
+  if (isProxyConfigured()) {
     proxyAddrPort = createColonStr(getElemValue(kProxyAddr, null),
                                    getElemValue(kProxyPort, null));
-    if (!proxyAddrPort)
-    {
-      reportValidationError("error_proxy_addr_missing");
+    if (!proxyAddrPort) {
+      yield *reportValidationError("error_proxy_addr_missing");
       return null;
     }
 
     proxyType = getElemValue(kProxyTypeMenulist, null);
-    if (!proxyType)
-    {
-      reportValidationError("error_proxy_type_missing");
+    if (!proxyType) {
+      yield *reportValidationError("error_proxy_type_missing");
       return null;
     }
 
-    if ("SOCKS4" != proxyType)
-    {
+    if ("SOCKS4" != proxyType) {
       proxyUsername = getElemValue(kProxyUsername);
       proxyPassword = getElemValue(kProxyPassword);
     }
   }
 
-  if ("SOCKS4" == proxyType)
-  {
+  if ("SOCKS4" == proxyType) {
     settings[kTorConfKeySocks4Proxy] = proxyAddrPort;
   }
-  else if ("SOCKS5" == proxyType)
-  {
+  else if ("SOCKS5" == proxyType) {
     settings[kTorConfKeySocks5Proxy] = proxyAddrPort;
     settings[kTorConfKeySocks5ProxyUsername] = proxyUsername;
     settings[kTorConfKeySocks5ProxyPassword] = proxyPassword;
   }
-  else if ("HTTP" == proxyType)
-  {
+  else if ("HTTP" == proxyType) {
     settings[kTorConfKeyHTTPSProxy] = proxyAddrPort;
     // TODO: Does any escaping need to be done?
     settings[kTorConfKeyHTTPSProxyAuthenticator] =
@@ -1055,35 +1119,31 @@ function getAndValidateProxySettings()
 } // getAndValidateProxySettings
 
 
-function isProxyConfigured()
-{
+function isProxyConfigured() {
   return (getWizard()) ? getYesNoRadioValue(kWizardProxyRadioGroup) :
                          getElemValue(kUseProxyCheckbox, false);
 }
 
-
-function reportValidationError(aStrKey)
-{
-  showSaveSettingsAlert(TorLauncherUtil.getLocalizedString(aStrKey));
+// @return: typeof retval == Promise
+function *reportValidationError(aStrKey) {
+  yield showSaveSettingsAlert(torlauncher.util.getLocalizedString(aStrKey));
 }
 
 
 // Returns true if settings were successfully applied.
-function applyFirewallSettings()
-{
+function *applyFirewallSettings() {
   var settings = (getWizard()) ? getAutoFirewallSettings() :
                                  getAndValidateFirewallSettings();
   if (!settings)
     return false;
 
-  return setConfAndReportErrors(settings, null);
+  return (yield *setConfAndReportErrors(settings, null));
 }
 
 
 // Return a settings object if successful and null if not.
 // Not used for the wizard.
-function getAndValidateFirewallSettings()
-{
+function getAndValidateFirewallSettings() {
   // TODO: validate user-entered data.  See Vidalia's NetworkPage::save()
 
   var settings = {};
@@ -1099,8 +1159,7 @@ function getAndValidateFirewallSettings()
 
 // Return a settings object if successful and null if not.
 // Only used for the wizard.
-function getAutoFirewallSettings()
-{
+function getAutoFirewallSettings() {
   // In the wizard, we automatically set firewall ports (ReachableAddresses) to
   // 80 and 443 if and only if the user has configured a proxy but no bridges.
   // Rationale (from ticket #11405):
@@ -1121,20 +1180,16 @@ function getAutoFirewallSettings()
 }
 
 
-function constructFirewallSettings(aAllowedPorts)
-{
+function constructFirewallSettings(aAllowedPorts) {
   var settings = {};
   settings[kTorConfKeyReachableAddresses] = null;
 
-  if (aAllowedPorts)
-  {
+  if (aAllowedPorts) {
     var portsConfStr;
     var portsArray = aAllowedPorts.split(',');
-    for (var i = 0; i < portsArray.length; ++i)
-    {
+    for (var i = 0; i < portsArray.length; ++i) {
       var s = portsArray[i].trim();
-      if (s.length > 0)
-      {
+      if (s.length > 0) {
         if (!portsConfStr)
           portsConfStr = "*:" + s;
         else
@@ -1150,56 +1205,52 @@ function constructFirewallSettings(aAllowedPorts)
 }
 
 
-function initDefaultBridgeTypeMenu()
-{
+function *initDefaultBridgeTypeMenu() {
   var menu = document.getElementById(kDefaultBridgeTypeMenuList);
   if (!menu)
     return;
 
-  menu.removeAllItems();
+  $(menu).empty();
 
-  var typeArray = TorLauncherUtil.defaultBridgeTypes;
+  var typeArray = yield *torlauncher.util.defaultBridgeTypes();
   if (!typeArray || typeArray.length === 0)
     return;
 
-  var recommendedType = TorLauncherUtil.getCharPref(
-                                      kPrefDefaultBridgeRecommendedType, null);
-  var selectedType = TorLauncherUtil.getCharPref(kPrefDefaultBridgeType, null);
+  var recommendedType =
+      yield torlauncher.util.prefGet(kPrefDefaultBridgeRecommendedType);
+  var selectedType =
+      yield torlauncher.util.prefGet(kPrefDefaultBridgeType);
   if (!selectedType)
     selectedType = recommendedType;
 
-  for (var i=0; i < typeArray.length; i++)
-  {
+  for (var i=0; i < typeArray.length; i++) {
     var bridgeType = typeArray[i];
 
     var menuItemLabel = bridgeType;
-    if (bridgeType == recommendedType)
-    {
+    if (bridgeType == recommendedType) {
       const key = "recommended_bridge";
-      menuItemLabel += " " + TorLauncherUtil.getLocalizedString(key);
+      menuItemLabel += " " + torlauncher.util.getLocalizedString(key);
     }
 
-    var mi = menu.appendItem(menuItemLabel, bridgeType);
-    if (bridgeType == selectedType)
-      menu.selectedItem = mi;
+    $(menu).append('<option value="' + bridgeType + '"' +
+                   ((bridgeType == selectedType) ? ' selected="true"' : '') +
+                   '>' + menuItemLabel + '</option>';
   }
 }
 
 
 // Returns true if settings were successfully applied.
-function applyBridgeSettings()
-{
-  var settings = getAndValidateBridgeSettings();
+function *applyBridgeSettings() {
+  var settings = yield *getAndValidateBridgeSettings();
   if (!settings)
     return false;
 
-  return setConfAndReportErrors(settings, "bridgeSettings");
+  return (yield *setConfAndReportErrors(settings, "bridgeSettings"));
 }
 
 
 // Return a settings object if successful and null if not.
-function getAndValidateBridgeSettings()
-{
+function *getAndValidateBridgeSettings() {
   var settings = {};
   settings[kTorConfKeyUseBridges] = null;
   settings[kTorConfKeyBridgeList] = null;
@@ -1207,27 +1258,22 @@ function getAndValidateBridgeSettings()
   var useBridges = isBridgeConfigured();
   var defaultBridgeType;
   var bridgeList;
-  if (useBridges)
-  {
+  if (useBridges) {
     var useCustom = getElemValue(kCustomBridgesRadio, false);
-    if (useCustom)
-    {
+    if (useCustom) {
       var bridgeStr = getElemValue(kBridgeList, null);
       bridgeList = parseAndValidateBridges(bridgeStr);
-      if (!bridgeList)
-      {
-        reportValidationError("error_bridges_missing");
+      if (!bridgeList) {
+        yield *reportValidationError("error_bridges_missing");
         return null;
       }
 
       setBridgeListElemValue(bridgeList);
     }
-    else
-    {
+    else {
       defaultBridgeType = getElemValue(kDefaultBridgeTypeMenuList, null);
-      if (!defaultBridgeType)
-      {
-        reportValidationError("error_default_bridges_type_missing");
+      if (!defaultBridgeType) {
+        yield *reportValidationError("error_default_bridges_type_missing");
         return null;
       }
     }
@@ -1235,12 +1281,16 @@ function getAndValidateBridgeSettings()
 
   // Since it returns a filterd list of bridges, TorLauncherUtil.defaultBridges
   // must be called after setting the kPrefDefaultBridgeType pref.
-  TorLauncherUtil.setCharPref(kPrefDefaultBridgeType, defaultBridgeType);
-  if (defaultBridgeType)
-    bridgeList = TorLauncherUtil.defaultBridges;
 
-  if (useBridges && bridgeList)
-  {
+  yield (new Promise(function (resolve, reject) {
+    chrome.torlauncher.defaultBridgeType.set(
+      { value: defaultBridgeType, scope: "incognito_persistent" }, resolve);
+  }));
+
+  if (defaultBridgeType)
+    bridgeList = yield *torlauncher.util.defaultBridges();
+
+  if (useBridges && bridgeList) {
     settings[kTorConfKeyUseBridges] = true;
     settings[kTorConfKeyBridgeList] = bridgeList;
   }
@@ -1249,16 +1299,14 @@ function getAndValidateBridgeSettings()
 }
 
 
-function isBridgeConfigured()
-{
+function isBridgeConfigured() {
   return (getWizard()) ? getElemValue("bridgesRadioYes", false) :
                          getElemValue(kUseBridgesCheckbox, false);
 }
 
 
 // Returns an array or null.
-function parseAndValidateBridges(aStr)
-{
+function parseAndValidateBridges(aStr) {
   if (!aStr)
     return null;
 
@@ -1270,8 +1318,7 @@ function parseAndValidateBridges(aStr)
 
   var resultArray = new Array;
   var tmpArray = resultStr.split('\n');
-  for (var i = 0; i < tmpArray.length; i++)
-  {
+  for (var i = 0; i < tmpArray.length; i++) {
     var s = tmpArray[i].trim(); // Remove extraneous whitespace.
     resultArray.push(s);
   }
@@ -1282,71 +1329,68 @@ function parseAndValidateBridges(aStr)
 
 // Returns true if successful.
 // aShowOnErrorPanelID is only used when displaying the wizard.
-function setConfAndReportErrors(aSettingsObj, aShowOnErrorPanelID)
-{
-  return new Promise(function (resolve, reject) {
-    var errObj = {};
-    gProtocolSvc.TorSetConfWithReply(aSettingsObj, errObj).then(
-      function (reply) {
-        resolve(true);
-      },
-      function (errObj) {
-        if (aShowOnErrorPanelID) {
-          var wizardElem = getWizard();
-          if (wizardElem) {
-            const kMaxTries = 10;
-            for (var count = 0;
-                 ((count < kMaxTries) &&
-                  (gDialogHelper.currentPage.pageid != aShowOnErrorPanelID) &&
-                  gDialogHelper.canRewind);
-                 ++count) {
-              gDialogHelper.rewind();
-            }
-          }
+function *setConfAndReportErrors(aSettingsObj, aShowOnErrorPanelID) {
+  var errObj = {};
+  var didSucceed =
+      yield *gProtocolSvc.TorSetConfWithReply(aSettingsObj, errObj);
+  if (!didSucceed) {
+    if (aShowOnErrorPanelID) {
+      var wizardElem = getWizard();
+      if (wizardElem) try {
+        const kMaxTries = 10;
+        for (var count = 0;
+             ((count < kMaxTries) &&
+              (gDialogHelper.currentPage.pageid != aShowOnErrorPanelID) &&
+              gDialogHelper.canRewind);
+             ++count) {
+          gDialogHelper.rewind();
         }
+      } catch (e) {}
+    }
 
-        showSaveSettingsAlert(errObj.details);
-        resolve(false);
-      }
-    );
-  });
+    yield *showSaveSettingsAlert(errObj.details);
+  }
+
+  return didSucceed;
 }
 
 
-function showSaveSettingsAlert(aDetails)
-{
-  torlauncher.util.showSaveSettingsAlert(window, aDetails);
+function *showSaveSettingsAlert(aDetails) {
+  yield torlauncher.util.showSaveSettingsAlert(window, aDetails);
   showOrHideButton("extra2", true, false);
   gWizIsCopyLogBtnShowing = true;
 }
 
 
-function setElemValue(aID, aValue)
-{
+function setElemValue(aID, aValue) {
   var elem = document.getElementById(aID);
-  if (elem)
-  {
+  if (elem) {
     var val = aValue;
-    switch (elem.tagName)
-    {
-      case "checkbox":
-        elem.checked = val;
-        toggleElemUI(elem);
+    switch (elem.tagName) {
+      case 'input':
+        switch (elem.getAttribute('type')) {
+          case 'checkbox':
+            elem.checked = val;
+            toggleElemUI(elem);
+            break;
+          case 'text':
+            elem.value = (val) ? val : "";
+            break;
+        }
         break;
-      case "textbox":
-        if (Array.isArray(aValue))
-        {
+      case 'textarea':
+        if (Array.isArray(aValue)) {
           val = "";
-          for (var i = 0; i < aValue.length; ++i)
-          {
+          for (var i = 0; i < aValue.length; ++i) {
             if (val.length > 0)
               val += '\n';
             val += aValue[i];
           }
         }
-        // fallthru
-      case "menulist":
         elem.value = (val) ? val : "";
+        break;
+      case 'select':
+        $(elem).val((val) ? val : "");
         break;
     }
   }
@@ -1385,19 +1429,24 @@ function getElemValue(aID, aDefaultValue)
 {
   var rv = aDefaultValue;
   var elem = document.getElementById(aID);
-  if (elem)
-  {
-    switch (elem.tagName)
-    {
-      case "checkbox":
-        rv = elem.checked;
+  if (elem) {
+    switch (elem.tagName) {
+      case "input":
+        switch (elem.getAttribute('type')) {
+          case 'checkbox':
+          case 'radio':
+            rv = elem.checked;
+            break;
+          case 'text':
+            rv = elem.value;
+            break;
+        }
         break;
-      case "radio":
-        rv = elem.selected;
-        break;
-      case "textbox":
-      case "menulist":
+      case "textarea":
         rv = elem.value;
+        break;
+      case "select":
+        rv = elem.options[elem.selectedIndex].value;
         break;
     }
   }
@@ -1408,21 +1457,17 @@ function getElemValue(aID, aDefaultValue)
   return rv;
 }
 
-
 // This assumes that first radio button is yes.
-function setYesNoRadioValue(aGroupID, aIsYes)
-{
-  var elem = document.getElementById(aGroupID);
-  if (elem)
-    elem.selectedIndex = (aIsYes) ? 0 : 1;
+function setYesNoRadioValue(aGroupID, aIsYes) {
+  $('input[name="' + aGroupID + '"]').val(aIsYes ? 'yes' : 'no');
 }
 
 
 // This assumes that first radio button is yes.
 function getYesNoRadioValue(aGroupID)
 {
-  var elem = document.getElementById(aGroupID);
-  return (elem) ? (0 === elem.selectedIndex) : false;
+  var val = $('input[name="' + aGroupID + '"]').val();
+  return (val) ? ('yes' == val) : false;
 }
 
 
