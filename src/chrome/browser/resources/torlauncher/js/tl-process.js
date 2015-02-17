@@ -204,6 +204,7 @@ torlauncher.TorProcessService.prototype = {
 
         _this.mProtocolSvc.TorRetrieveBootstrapStatus();
 
+        /*
         if ((yield *_this._defaultBridgesStatus()) ==
             _this.kDefaultBridgesStatus_InUse) {
           // We configure default bridges each time we start tor in case
@@ -211,6 +212,7 @@ torlauncher.TorProcessService.prototype = {
           // to a TBB update).
           yield *_this._configureDefaultBridges();
         }
+        */
 
         chrome.runtime.sendMessage({ 'kind': "TorProcessIsReady" });
       } else if ((Date.now() - _this.mTorProcessStartTime)
@@ -281,21 +283,22 @@ torlauncher.TorProcessService.prototype = {
 
     this.mTorProcessStatus = this.kStatusUnknown;
 
-    // Start tor with networking disabled if first run or if the
-    // "Use Default Bridges of Type" option is turned on.  Networking will
-    // be enabled after initial settings are chosen or after the default
-    // bridge settings have been configured.
-    var defaultBridgeType =
-        yield torlauncher.util.prefGet('defaultBridgeType');
-    var bridgeConfigIsBad = ((yield *this._defaultBridgesStatus()) ==
-                             this.kDefaultBridgesStatus_BadConfig);
-    if (bridgeConfigIsBad) {
-      torlauncher.util.pr_debug('bridgeConfigIsBad!');
-      var key = "error_bridge_bad_default_type";
-      var err = torlauncher.util.getFormattedLocalizedString(key,
-                                                   [defaultBridgeType], 1);
-      yield torlauncher.util.showAlert(null, err);
-    }
+
+    // // Start tor with networking disabled if first run or if the
+    // // "Use Default Bridges of Type" option is turned on.  Networking will
+    // // be enabled after initial settings are chosen or after the default
+    // // bridge settings have been configured.
+    // var defaultBridgeType =
+    //     yield torlauncher.util.prefGet('defaultBridgeType');
+    // var bridgeConfigIsBad = ((yield *this._defaultBridgesStatus()) ==
+    //                          this.kDefaultBridgesStatus_BadConfig);
+    // if (bridgeConfigIsBad) {
+    //   torlauncher.util.pr_debug('bridgeConfigIsBad!');
+    //   var key = "error_bridge_bad_default_type";
+    //   var err = torlauncher.util.getFormattedLocalizedString(key,
+    //                                                [defaultBridgeType], 1);
+    //   yield torlauncher.util.showAlert(null, err);
+    // }
 
     var disableNetwork = false;
     if ((yield *torlauncher.util.shouldShowNetworkSettings()) ||
@@ -350,8 +353,8 @@ torlauncher.TorProcessService.prototype = {
     //     this._openNetworkSettings(true, panelID);
     //   }
     // }
-    var bridgeConfigIsBad = ((yield *this._defaultBridgesStatus()) ==
-                             this.kDefaultBridgesStatus_BadConfig);
+    var bridgeConfigIsBad = false;/*((yield *this._defaultBridgesStatus()) ==
+                             this.kDefaultBridgesStatus_BadConfig);*/
     if (yield *torlauncher.util.shouldShowNetworkSettings() ||
         bridgeConfigIsBad) {
       if (this.mProtocolSvc) {
