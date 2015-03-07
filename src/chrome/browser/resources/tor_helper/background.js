@@ -9,11 +9,11 @@
         chrome.windows.create({       url: kInitialUrl,
                                   focused: true,
                                 incognito: true },
-                              function (window) { sendResponse({ success: true }); });
+                              function (window) { /*sendResponse({ success: true });*/ });
         break;
       default:
         console.warn('Invalid message format: ' + JSON.stringify(message));
-        sendResponse({ success: false });
+        /*sendResponse({ success: false });*/
     }
   });
 

@@ -86,11 +86,17 @@
       "defaultBridge": {
         "nocompile": true,
         "$ref": "types.private.ChromeDirectSetting",
-        "value": ["extensions.torlauncher.default_bridge", {"type":"object"}],
+        "value": ["extensions.torlauncher.default_bridge", {"type":"string"}],
         "description": "none"
       }
     },
     "functions": [
+      {
+        "name": "launchTorBrowser",
+        "description": "none",
+        "type": "function",
+        "parameters": []
+      },
       {
         "name": "startTor",
         "description": "none",
@@ -197,6 +203,23 @@
             "parameters": [
               {
                 "name": "value",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "readAuthenticationCookie",
+        "description": "none",
+        "type": "function",
+        "parameters": [
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": [
+              {
+                "name": "cookie_value",
                 "type": "string"
               }
             ]

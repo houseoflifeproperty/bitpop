@@ -8,7 +8,8 @@
   "author": "Viatcheslav Gachkaylo",
   "app": {
     "background": {
-      "scripts": ["js/messages.js", "js/tl-util.js", "js/tl-protocol.js", "js/tl-process.js", "js/background.js"]
+      "scripts": [ "js/messages.js", "js/tl-util.js", "js/bridge_prefs.js",
+                   "js/tl-protocol.js", "js/tl-process.js", "js/background.js"]
     }
   },
   "icons": {

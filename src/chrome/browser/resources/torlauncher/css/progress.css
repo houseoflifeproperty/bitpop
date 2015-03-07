@@ -82,10 +82,6 @@
   align-content: flex-start;
 }
 
-.warning-icon {
-  display: inline-block;
-}
-
 progress {
   display: inline-block;
   width: 100%;

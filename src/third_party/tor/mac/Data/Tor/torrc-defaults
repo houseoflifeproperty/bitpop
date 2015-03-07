@@ -9,17 +9,17 @@ SocksPort 9150
 ControlPort 9151
 CookieAuthentication 1
 ## fteproxy configuration
-# ClientTransportPlugin fte exec PluggableTransports/fteproxy.bin --managed
+ClientTransportPlugin fte exec PluggableTransports/fteproxy.bin --managed
 
 ## obfsproxy configuration
-# ClientTransportPlugin obfs2,obfs3,scramblesuit exec PluggableTransports/obfsproxy.bin managed
+ClientTransportPlugin obfs2,obfs3,scramblesuit exec PluggableTransports/obfsproxy.bin managed
 
 ## flash proxy configuration
 #
 # Change the second number here (9000) to the number of a port that can
 # receive connections from the Internet (the port for which you
 # configured port forwarding).
-# ClientTransportPlugin flashproxy exec PluggableTransports/flashproxy-client --register :0 :9000
+ClientTransportPlugin flashproxy exec PluggableTransports/flashproxy-client --register :0 :9000
 
 ## meek configuration
 # ClientTransportPlugin meek exec PluggableTransports/meek-client-torbrowser -- PluggableTransports/meek-client

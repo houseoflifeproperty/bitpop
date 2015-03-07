@@ -4,7 +4,7 @@
   "description": "Interacts with Tor Launcher app and provides access to Tor settings",
   "manifest_version": 2,
   "version": "0.1",
-  "permissions": [ "tabs" ],
+  "permissions": [ "tabs", "management" ],
   "background": {
     "scripts": [
       "background.js"
@@ -14,5 +14,13 @@
     "16": "icon16.png",
     "48": "icon48.png",
     "128": "icon128.png"
+  },
+  "browser_action": {
+    "default_icon": {
+      "19": "icon19.png",
+      "38": "icon38.png"
+    },
+    "default_title": "Protected Mode Options",
+    "default_popup": "popup.html"
   }
 }

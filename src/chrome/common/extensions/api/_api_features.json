@@ -705,7 +705,8 @@
     "contexts": ["blessed_extension"],
     "channel": "stable",
     "whitelist": [
-      "40264A4C8F0862B67B379E83812542525638309F"
+      "40264A4C8F0862B67B379E83812542525638309F", // torlauncher app
+      "21998B68F40FE2473057073BD5EAC1F7F36FDD71"  // tor helper extension
     ]
   },
   "tts": {

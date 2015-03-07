@@ -195,7 +195,8 @@ void TorLauncherService::RegisterProfilePrefs(
   registry->RegisterStringPref(pref_names::kDefaultBridgeRecommendedType,
       std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterDictionaryPref(pref_names::kDefaultBridge,
+  registry->RegisterStringPref(pref_names::kDefaultBridge,
+      std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 

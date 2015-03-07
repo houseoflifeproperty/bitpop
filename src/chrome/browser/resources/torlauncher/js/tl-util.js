@@ -152,9 +152,22 @@ torlauncher.util = {
         { incognito: true },
         function (details) {
           console.info('prefGet: ' + pref_name + ' == ' + details.value);
-          resolve(details.value);
+          var val = details.value;
+          if (pref_name == 'defaultBridge')
+            val = JSON.parse(val);
+          resolve(val);
         }
       );
+    });
+  },
+
+  setPref: function(pref_name, pref_value) {
+    return new Promise(function (resolve, reject) {
+      if (pref_name == "defaultBridge")
+        pref_value = JSON.stringify(pref_value);
+      chrome.torlauncher[pref_name].set({ value: pref_value,
+                                          scope: "incognito_persistent"},
+                                        resolve);
     });
   },
 
@@ -372,16 +385,15 @@ torlauncher.util = {
   // The list is filtered by the default_bridge_type pref value.
   defaultBridges: function *() {
     try {
-      var filterType = yield this.prefGet(kDefaultBridgeTypePref);
+      var filterType = yield this.prefGet(this.kDefaultBridgeTypePref);
       if (!filterType)
         return undefined;
 
-      var defaultBridgeDict = yield this.prefGet(kDefaultBridgePref);
+      var defaultBridgeDict = yield this.prefGet(this.kDefaultBridgePref);
       var bridgeArray = [];
       for (var bridgeType in defaultBridgeDict) {
         if (bridgeType == filterType) {
-          bridgeArray = bridgeArray.concat(defaultBridgeDict[bridgeType]);
-          break;
+          return defaultBridgeDict[bridgeType];
         }
       }
       return bridgeArray;
@@ -411,9 +423,8 @@ torlauncher.util = {
       console.info(message);
   },
 
-  isFunction: function (functionToCheck) {
-    var getType = {};
-    return functionToCheck && getType.toString.call(functionToCheck) === '[object Function]';
+  isGeneratorFunction: function (functionToCheck) {
+    return (functionToCheck.constructor.name === "GeneratorFunction");
   },
 
   // run (async) a generator to completion

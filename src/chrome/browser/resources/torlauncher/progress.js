@@ -71,10 +71,6 @@ function initDialog() {
       });
     }
 
-    var extraBtnHtml = extraBtn.innerHTML;
-    extraBtn.innerHTML = extraBtnHtml + " " + torlauncher.util.translate(
-        "torprogress.openSettings");
-
     // If opened during browser startup, display the "please wait" message.
     if (isBrowserStartup) {
       var pleaseWait = document.getElementById("progressPleaseWait");
@@ -97,6 +93,7 @@ function closeThisWindow(aBootstrapDidComplete) {
   }
 
   if (aBootstrapDidComplete) {
+    chrome.runtime.sendMessage( { kind: "TorBootstrapCompleteInProgressDialog" });
     chrome.runtime.sendMessage(
         kTorHelperExtensionId,  { 'kind': kTorOpenNewSessionWindowMessage });
   }
@@ -122,11 +119,7 @@ function onCancel() {
 
 function onOpenSettings() {
   cleanup();
-
-  chrome.runtime.getBackgroundPage(function (bgPage) {
-    bgPage.torlauncher.torProcessService.onProgressDialogClose(false, true);
-    window.close();
-  });
+  window.close();
 }
 
 

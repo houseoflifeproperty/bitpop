@@ -12,15 +12,14 @@
   <script src="js/wizard-helpers.js"></script>
   <script src="network-settings.js"></script>
 </head>
-<body id="TorNetworkSettings" class="wizard vbox"
-      buttonlabelextra2="torsettings.copyLog">
+<body id="TorNetworkSettings" class="wizard vbox">
   <div class="wizardpage" pageid="first" next="proxy">
     <div class="tbb-header hbox">
       <div class="tbb-logo-box vbox align-start">
         <img src="img/tbb-logo.png" class="tbb-logo" />
       </div>
       <div class="separator orient-vertical"></div>
-      <div class="groupbox flex1">
+      <div class="groupbox flex1 flex-shrink3">
         <div class="description" i18n="torsettings.prompt"></div>
       </div>
     </div><!-- .tbb-header -->
@@ -46,19 +45,17 @@
     <div class="hbox">
       <div class="vbox flex1">
         <label class="question" i18n="torSettings.proxyQuestion"></label>
-        <br>
         <label for="proxyRadioYes">
           <input id="proxyRadioYes" type="radio" name="proxyRadio"
                  value="yes" />
           <span i18n="torSettings.yes"></span>
         </label>
-        <br>
         <label for="proxyRadioNo">
           <input id="proxyRadioNo" type="radio" name="proxyRadio"
                  checked="true" value="no" />
           <span i18n="torSettings.no"></span>
         </label>
-
+        <div class="separator"></div>
         <div class="description questionHelp" i18n="torSettings.proxyHelp">
         </div>
       </div><!-- vbox -->
@@ -69,6 +66,7 @@
     <div class="tbb-logo-box vbox align-start">
       <img src="img/tbb-logo.png" class="tbb-logo" />
     </div>
+    <div class="separator"></div>
     <fieldset>
       <legend i18n="torSettings.enterProxy"></legend>
       <table>
@@ -82,9 +80,9 @@
                 <option value="" selected="true">---</option>
                 <option i18n="torsettings.useProxy.type.socks4"
                         value="SOCKS4"></option>
-                <option label="torsettings.useProxy.type.socks5"
+                <option i18n="torsettings.useProxy.type.socks5"
                         value="SOCKS5"></option>
-                <option label="torsettings.useProxy.type.http"
+                <option i18n="torsettings.useProxy.type.http"
                         value="HTTP"></option>
               </select>
             </div>
@@ -97,7 +95,7 @@
           <td>
             <div class="hbox align-center">
               <input type="text" id="proxyAddr" size="20" class="flex1"
-                     i18n-placeholder="torsettings.useProxy.address.placeholder"
+                     i18n_placeholder="torsettings.useProxy.address.placeholder"
                      pattern="(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)"/>
               <div class="separator orient-vertical"></div>
               <label i18n="torsettings.useProxy.port" for="proxyPort"></label>
@@ -112,13 +110,13 @@
           <td>
             <div class="hbox align-center">
               <input type="text" id="proxyUsername" size="14" flex="1"
-                     i18n-placeholder="torsettings.optional" />
+                     i18n_placeholder="torsettings.optional" />
               <div class="separator orient-vertical"></div>
               <label id="proxyPasswordLabel"
                      i18n="torsettings.useProxy.password"
                      for="proxyPassword"></label>
               <input id="proxyPassword" size="14" type="password"
-                     i18n-placeholder="torsettings.optional" />
+                     i18n_placeholder="torsettings.optional" />
             </div>
           </td>
         </tr>
@@ -133,22 +131,22 @@
     <div class="separator"></div>
     <div class="hbox">
       <div class="vbox flex1">
-        <label class="question" i18n="torSettings.bridgeQuestion"></label><br>
+        <label class="question" i18n="torSettings.bridgeQuestion"></label>
 
         <label for="bridgesRadioYes">
           <input id="bridgesRadioYes" type="radio" name="bridgesRadio"
                  value="yes" />
           <span i18n="torSettings.yes"></span>
         </label>
-        <br>
         <label for="bridgesRadioNo">
           <input id="bridgesRadioNo" type="radio" name="bridgesRadio"
                  checked="true" value="no" />
           <span i18n="torSettings.no"></span>
         </label>
+        <div class="separator"></div>
         <div class="description questionHelp" i18n="torSettings.bridgeHelp">
         </div>
-      </vbox>
+      </div>
     </div>
   </div>
 
@@ -163,24 +161,25 @@
       <div class="hbox align-end pack-end">
         <!--oncommand="onBridgeTypeRadioChange()"-->
         <div id="bridgeTypeRadioGroup" class="flex1" style="margin: 0">
-          <label for="bridgeRadioDefault">
+          <label for="bridgesRadioYes">
             <input id="bridgesRadioYes" type="radio" name="bridgeType"
                    value="default" checked="true" />
             <span i18n="torsettings.useBridges.default"></span>
           </label>
-          <div class="hbox align-baseline" style="margin-top: -5px">
+          <div class="hbox align-baseline">
             <div class="spacer" style="width: 1.9em"></div>
-            <label id="defaultBridgeTypeLabel" for="defaultBridgeType"
-                   i18n="torsettings.useBridges.type">
-            <select id="defaultBridgeType">
-            </select>
+            <label id="defaultBridgeTypeLabel" for="defaultBridgeType">
+              <span i18n="torsettings.useBridges.type"></span>
+              <select id="defaultBridgeType">
+              </select>
+            </label>
             <!--
             <menulist id="defaultBridgeType">
               <menupopup id="defaultBridgeType_menuPopup" />
             </menulist> -->
             <div class="spring"></div>
           </div>
-          <div class="spacer" style="height: 0.5em" />
+          <div class="spacer" style="height: 0.5em"></div>
 
           <label class="align-start" for="bridgeRadioCustom">
             <input type="radio" id="bridgeRadioCustom" name="bridgeType"
@@ -197,10 +196,10 @@
         </label>
         <!-- oninput="onCustomBridgesTextInput();" -->
         <textarea id="bridgeList" row="3"
-                  i18n-placeholder="torsettings.useBridges.placeholder">
+                  i18n_placeholder="torsettings.useBridges.placeholder">
         </textarea>
       </div>
-    </div>
+    </fieldset>
   </div>
 
   <div class="wizardpage" pageid="startingTor" next="notUsed">
@@ -241,7 +240,9 @@
   <div class="hbox">
     <button type="button" id="cancelButton">Cancel</button>
     <button type="button" id="extra2Button" hidden="true">
-      <img src="img/warning.png" id="warningIcon" class="warning-icon" hidden="true" />
+      <img src="img/warning.png" id="warningIcon" class="warning-icon"
+           hidden="true" />
+      <span i18n="torsettings.copyLog"></span>
     </button>
     <div class="spring flex1"></div>
     <button type="button" id="backButton">Go Back</button>

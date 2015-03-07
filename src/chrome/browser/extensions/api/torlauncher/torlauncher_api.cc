@@ -17,14 +17,21 @@
 #include "chrome/browser/extensions/api/torlauncher/torlauncher_api.h"
 
 #include <string>
+#include <vector>
 
+#include "base/command_line.h"
 #include "base/environment.h"
+#include "base/files/file.h"
+#include "base/files/file_path.h"
+#include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/path_service.h"
+#include "base/process/launch.h"
 #include "base/values.h"
-//#include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/torlauncher/torlauncher_service_factory.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/torlauncher.h"
 #include "components/torlauncher/torlauncher_service.h"
 
@@ -32,7 +39,49 @@
 #include "chrome/browser/chrome_browser_application_mac.h"
 #endif
 
+// namespace {
+
+// class TorLauncherProcessFilter : public base::ProcessFilter {
+//  public:
+//   TorLauncherProcessFilter() {}
+//   virtual bool Includes(const base::ProcessEntry& entry) const OVERRIDE;
+// };
+
+// bool TorLauncherProcessFilter::Includes(const base::ProcessEntry& entry) const {
+//   std::vector<std::string> args = entry.cmd_line_args();
+//   for (auto it = args.cbegin(); it != args.cend(); ++it) {
+//     if (*it == (std::string("--") + switches::kLaunchTorBrowser))
+//       return true;
+//   }
+//   return false;
+// }
+
+// } // anonymous namespace
+
 namespace extensions {
+
+ExtensionFunction::ResponseAction TorlauncherLaunchTorBrowserFunction::Run() {
+  // scoped_ptr<api::torlauncher::LaunchTorBrowser::Params> params(
+  //     api::torlauncher::LaunchTorBrowser::Params::Create(*args_));
+  // EXTENSION_FUNCTION_VALIDATE(params.get());
+  base::CommandLine command_line = *base::CommandLine::ForCurrentProcess();
+  base::FilePath program_path = command_line.GetProgram();
+  base::CommandLine new_command_line(program_path);
+
+  new_command_line.AppendSwitch(switches::kLaunchTorBrowser);
+  base::FilePath user_data_dir = program_path.DirName().DirName().Append(
+      "User Data");
+  new_command_line.AppendSwitchPath(switches::kUserDataDir, user_data_dir);
+
+  base::ProcessHandle ph;
+  if (base::LaunchProcess(new_command_line, base::LaunchOptions(), &ph)) {
+    DLOG(INFO) << "Tor browser instance launched successfully.";
+  }
+
+  results_ = make_scoped_ptr(new base::ListValue());
+
+  return RespondNow(ArgumentList(results_.Pass()));
+}
 
 ExtensionFunction::ResponseAction TorlauncherStartTorFunction::Run() {
   scoped_ptr<api::torlauncher::StartTor::Params> params(
@@ -149,4 +198,41 @@ ExtensionFunction::ResponseAction TorlauncherEnvGetFunction::Run() {
   return RespondNow(ArgumentList(results_.Pass()));
 }
 
+ExtensionFunction::ResponseAction
+TorlauncherReadAuthenticationCookieFunction::Run() {
+  const long long kMaxBytesToRead = 32;
+
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
+
+  base::FilePath path;
+  if (PathService::Get(base::DIR_EXE, &path)) {
+// FIXME: add actual path to Tor file base by modifying tor_file_base_dir_ or appending to it
+#if defined(OS_WIN)
+#elif defined(OS_MACOSX)
+    path = path.DirName().DirName().Append("TorBrowser");
+    path.Append("Data/Tor/control_auth_cookie");
+#endif
+  }
+
+  if (path.empty())
+  // TODO: set lastError here
+  {}
+
+  base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ);
+  // Limit the buffer size to avoid memory excessive usage as a result
+  // of malicious user changing the cookie file path environment variable.
+  int buf_size = std::min(file.GetLength(), kMaxBytesToRead);
+  scoped_ptr<char[]> data(new char[buf_size]);
+  if (!data.get())
+    return "";
+
+  int file_res = file.ReadAtCurrentPos(data.get(), buf_size);
+  std::string res = "";
+  if (file_res != -1) {
+    res = std::string(data.get(), static_cast<size_t>(file_res));
+  }
+
+  results_ = api::torlauncher::ReadAuthenticationCookie::Results::Create(res);
+
+  return RespondNow(ArgumentList(results_.Pass()));
 } // namespace extensions

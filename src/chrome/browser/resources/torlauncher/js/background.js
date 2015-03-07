@@ -16,3 +16,7 @@
 chrome.app.runtime.onLaunched.addListener(function() {
   torlauncher.torProcessService.init();
 });
+
+chrome.runtime.onInstalled.addListener(function (details) {
+  torlauncher.util.runGenerator(torlauncher.registerBridgePrefs);
+});

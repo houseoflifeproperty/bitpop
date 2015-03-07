@@ -353,7 +353,9 @@ void NewEmptyWindow(Profile* profile, HostDesktopType desktop_type) {
   } else if (profile->IsGuestSession() ||
       (browser_defaults::kAlwaysOpenIncognitoWindow &&
       IncognitoModePrefs::ShouldLaunchIncognito(
-          *CommandLine::ForCurrentProcess(), prefs))) {
+          *CommandLine::ForCurrentProcess(), prefs)) ||
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kLaunchTorBrowser)) {
     incognito = true;
   }
 

@@ -111,10 +111,9 @@ torlauncher.TorProtocolService.prototype = {
 
   // Returns a reply object.  If the GETCONF command succeeded, reply.retVal
   // is set (if there is no setting for aKey, it is set to aDefault).
-  TorGetConfBool: function(aKey, aDefault) {
-     var reply = yield *this.TorGetConf(aKey);
-    if (this.TorCommandSucceeded(reply))
-    {
+  TorGetConfBool: function *(aKey, aDefault) {
+    var reply = yield *this.TorGetConf(aKey);
+    if (this.TorCommandSucceeded(reply)) {
       if (reply.lineArray.length > 0)
         reply.retVal = ("1" == reply.lineArray[0]);
       else
@@ -167,7 +166,8 @@ torlauncher.TorProtocolService.prototype = {
       return null;
     }
 
-    return (yield *this.TorSendCommand("SETCONF", cmdArgs));
+    var res = yield *this.TorSendCommand("SETCONF", cmdArgs);
+    return res;
   }, // TorSetConf()
 
   // Resolves if successful.
@@ -207,9 +207,9 @@ torlauncher.TorProtocolService.prototype = {
     // A typical reply looks like:
     //  250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=100 TAG=done SUMMARY="Done"
     //  250 OK
-    reply = _this._parseReply(cmd, key, reply);
+    reply = this._parseReply(cmd, key, reply);
     if (reply.lineArray)
-      _this._parseBootstrapStatus(reply.lineArray[0]);
+      this._parseBootstrapStatus(reply.lineArray[0]);
   },
 
   // If successful, returns a JS object with these fields:
@@ -288,10 +288,12 @@ torlauncher.TorProtocolService.prototype = {
         conn = yield *this._getConnection();
         if (conn) {
           reply = yield this._sendCommand(conn, aCmd, aArgs);
-          if (reply)
+          if (reply) {
             this._returnConnection(conn); // Return for reuse.
-          else
+          }
+          else {
             this._closeConnection(conn);  // Connection is bad.
+          }
         }
       }
       catch(e) {
@@ -301,60 +303,6 @@ torlauncher.TorProtocolService.prototype = {
     }
 
     return reply;
-
-    // var _this = this;
-    // return new Promise(function (rootResolve, rootReject) {
-    //   var attemptFunc = function (resolve, reject) {
-    //     //torlauncher.util.pr_debug('tl-protocol.TorSendCommand.attemptFunc called');
-    //     _this._getConnection().then(
-    //       function(conn) {
-    //         if (!conn) {
-    //           reject();
-    //           return;
-    //         }
-
-    //         //torlauncher.util.pr_debug('tl-protocol.TorSendCommand _getConnection succeeded. sending command...');
-    //         _this._sendCommand(conn, aCmd, aArgs).then(
-    //           function (reply) {
-    //             //torlauncher.util.pr_debug('tl-protocol.TorSendCommand, _sendCommand succeeded');
-    //             if (reply) {
-    //               //torlauncher.util.pr_debug('tl-protocol.TorSendCommand, _sendCommand succeeded, reply non-empty. resolving...');
-    //               _this._returnConnection(conn); // Return for reuse.
-    //               resolve(reply);
-    //               return;
-    //             }
-
-    //             //torlauncher.util.pr_debug('tl-protocol.TorSendCommand, _sendCommand succeeded, reply is null. closing connection and rejecting...');
-    //             _this._closeConnection(conn);  // Connection is bad.
-    //             reject();
-    //           },
-    //           // error handler for _sendCommand:
-    //           function () {
-    //             console.warn("Exception on control port");
-    //             _this._closeConnection(conn);
-    //             reject();
-    //           }
-    //         );
-    //       },
-    //       function () {
-    //         console.warn("_getConnection failed");;
-    //         reject();
-    //       }
-    //     );
-    //   };
-
-    //   // try to send command two times
-    //   // FIXME: subject for garbage collection
-    //   _this._torSendCommandPromise1 = new Promise(attemptFunc);
-    //   _this._torSendCommandPromise1.then(
-    //     rootResolve,
-    //     function () {
-    //       //torlauncher.util.pr_debug('tl-protocol.TorSendCommand, 2nd attempt');
-    //       _this._torSendCommandPromise2 = new Promise(attemptFunc);
-    //       _this._torSendCommandPromise2.then(rootResolve, rootReject);
-    //     }
-    //   );
-    // });
   }, // TorSendCommand()
 
   TorCommandSucceeded: function(aReply) {
@@ -445,7 +393,7 @@ torlauncher.TorProtocolService.prototype = {
   // connection if necessary).
   TorHaveControlConnection: function *() {
     var conn = yield *this._getConnection();
-    _this._returnConnection(conn);
+    this._returnConnection(conn);
     return conn !== null;
   },
 
@@ -523,11 +471,12 @@ torlauncher.TorProtocolService.prototype = {
   _openAuthenticatedConnection: function *(aIsEventConnection)
   {
     console.info("Opening control connection to " +
-                 _this.mControlHost + ":" + _this.mControlPort);
+                 this.mControlHost + ":" + this.mControlPort);
+    var conn = null;
     try {
       var socketId = yield this._createAndConnectSocket(
           this.mControlHost, this.mControlPort);
-      var conn = { useCount: 0, socketId: socketId, inUse: false };
+      conn = { useCount: 0, socketId: socketId, inUse: false };
 
       this.mTempControlConnection = conn;
 
@@ -555,7 +504,7 @@ torlauncher.TorProtocolService.prototype = {
 
       if (!aIsEventConnection && shouldStartAndOwnTor &&
           !shouldOnlyConfigureTor) {
-              // Try to become the primary controller (TAKEOWNERSHIP).
+        // Try to become the primary controller (TAKEOWNERSHIP).
         var reply = yield this._sendCommand(conn, "TAKEOWNERSHIP", null);
         if (!this.TorCommandSucceeded(reply)) {
           console.warn("take ownership failed");
@@ -570,7 +519,8 @@ torlauncher.TorProtocolService.prototype = {
       console.warn("authenticate failed");
       return null;
     } finally {
-      this.mTempControlConnection = null;
+      if (!aIsEventConnection)
+        this.mTempControlConnection = null;
     }
 
     return conn;
@@ -627,8 +577,7 @@ torlauncher.TorProtocolService.prototype = {
     //torlauncher.util.pr_debug('tl-protocol._sendCommand: conn = ' + JSON.stringify(aConn))
     var _this = this;
     return new Promise(function (resolve, reject) {
-      if (aConn)
-      {
+      if (aConn) {
         var cmd = aCmd;
         if (aArgs)
           cmd += ' ' + aArgs;
@@ -708,7 +657,7 @@ torlauncher.TorProtocolService.prototype = {
         controlConnection.accumBuffer = arrData;
       }
 
-      reply = this._torReadReply(controlConnection.accumBuffer);
+      var reply = this._torReadReply(controlConnection.accumBuffer);
       controlConnection.nextReadReplyCallback &&
           controlConnection.nextReadReplyCallback(reply);
 

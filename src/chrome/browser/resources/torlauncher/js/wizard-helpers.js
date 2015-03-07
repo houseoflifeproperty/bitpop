@@ -23,11 +23,21 @@ torlauncher.UIHelper = function (firstPageShowCallback) {
   this.lastPage_ = null;
   this.callbacks = {};
   if (firstPageShowCallback)
-    this.setPageShowCallback($('.wizardpage')[0].attr('pageid'),
+    this.setPageShowCallback($('.wizardpage')[0].getAttribute('pageid'),
                              firstPageShowCallback);
   this._initWizardUI();
 
   this.pagesStack_ = [];
+
+  var _this = this;
+  document.getElementById('nextButton').addEventListener(
+      'click', function (ev) {
+        torlauncher.util.runGenerator(_this.advance.bind(_this));
+      }, false);
+  document.getElementById('backButton').addEventListener(
+      'click', function (ev) {
+        torlauncher.util.runGenerator(_this.rewind.bind(_this));
+      }, false);
 };
 
 
@@ -45,12 +55,12 @@ torlauncher.UIHelper.prototype = {
           } else {
             isFirstPage = false;
             this.openedPage_ = children[i];
-            // call the onshow callback for the first opened page
-            if (this.callbacks[this.currentPage.pageid] &&
-                torlauncher.util.isFunction(
-                    this.callbacks[this.currentPage.pageid].onShow))
-              torlauncher.util.runGenerator(
-                  this.callbacks[this.currentPage.pageid].onShow);
+            var onShowCallback =
+                this.callbacks[this.currentPage.pageid].onShow || null;
+            if (onShowCallback &&
+                torlauncher.util.isGeneratorFunction(onShowCallback))
+              // call the onshow callback for the first opened page
+              torlauncher.util.runGenerator(onShowCallback);
             this._setNextPointer();
           }
         }
@@ -61,7 +71,8 @@ torlauncher.UIHelper.prototype = {
   // @private:
   _setNextPointer: function () {
     var next = this.openedPage_.getAttribute('next');
-    this.openedPage_.next = (next != 'notUsed') ? next : null;
+    if (!this.openedPage_.next)
+      this.openedPage_.next = (next != 'notUsed') ? next : null;
   },
 
   get WizardElem() {
@@ -88,10 +99,12 @@ torlauncher.UIHelper.prototype = {
       }
       this.openedPage_ = gotoPage;
 
-      if (this.callbacks[this.currentPage.pageid] &&
-          torlauncher.util.isFunction(
-              this.callbacks[this.currentPage.pageid].onShow))
-        yield *this.callbacks[this.currentPage.pageid].onShow();
+      var onShowCallback =
+          this.callbacks[this.currentPage.pageid].onShow || null;
+      if (onShowCallback &&
+          torlauncher.util.isGeneratorFunction(onShowCallback))
+        yield *onShowCallback();
+      // TODO: check the needed order of execution for _setNextPointer
       this._setNextPointer();
     }
 
@@ -109,13 +122,14 @@ torlauncher.UIHelper.prototype = {
   canAdvance: function *() {
     if (this.openedPage_) {
       var lastOpenedPage = this.currentPage;
+      var onPageAdvanced =
+          this.callbacks[lastOpenedPage.pageid].onAdvanced || null;
       return ((this.openedPage_.next !== null) &&
           // if callback is not present we cannot advance
           // we cannot advance also if callback returns false
-          (!(this.callbacks[lastOpenedPage.pageid]) ||
-           !torlauncher.util.isFunction(
-                this.callbacks[lastOpenedPage.pageid].onAdvanced) ||
-            (yield *this.callbacks[lastOpenedPage.pageid].onAdvanced(this.openedPage_))
+          (!onPageAdvanced ||
+           !torlauncher.util.isGeneratorFunction(onPageAdvanced) ||
+            (yield *onPageAdvanced(this.openedPage_))
           ));
     }
     return false;
@@ -152,9 +166,11 @@ torlauncher.UIHelper.prototype = {
       if (yield *this.canAdvance()) {
         if (this.openedPage_.next) {
           nextPage = this.openedPage_.next;
+          if (!aPage)
+            aPage = nextPage;
         }
         this.pagesStack_.push(this.openedPage_.getAttribute('pageid'));
-        yield *this.goTo( (aPpage) ? aPage : nextPage,
+        yield *this.goTo( aPage,
                          { from_wizard_method: true });
         this._updateAcceptState();
       }
@@ -172,7 +188,7 @@ torlauncher.UIHelper.prototype = {
                         { from_wizard_method: true });
         this._updateAcceptState();
       }
-    while (page && page != this.currentPage.pageid && ++protector < 100);
+    } while (page && page != this.currentPage.pageid && ++protector < 100);
     if (protector == 100)
       console.error('WizardHelper.rewind: Runtime error: infinite loop.');
   },

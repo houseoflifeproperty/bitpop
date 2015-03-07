@@ -21,6 +21,12 @@
 
 namespace extensions {
 
+class TorlauncherLaunchTorBrowserFunction : public UIThreadExtensionFunction {
+  virtual ~TorlauncherLaunchTorBrowserFunction() {}
+  virtual ResponseAction Run() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION("torlauncher.launchTorBrowser", TORLAUNCHER_LAUNCHTORBROWSER);
+};
+
 class TorlauncherStartTorFunction : public UIThreadExtensionFunction {
   virtual ~TorlauncherStartTorFunction() {}
   virtual ResponseAction Run() OVERRIDE;
@@ -62,6 +68,14 @@ class TorlauncherEnvGetFunction : public UIThreadExtensionFunction {
   DECLARE_EXTENSION_FUNCTION("torlauncher.envGet",
                              TORLAUNCHER_ENVGET)
 };
+class TorlauncherReadAuthenticationCookieFunction:
+    public UIThreadExtensionFunction {
+  virtual ~TorlauncherReadAuthenticationCookieFunction() {}
+  virtual ResponseAction Run() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION("torlauncher.readAuthenticationCookie",
+                             TORLAUNCHER_READAUTHENTICATIONCOOKIE)
+};
+
 } // namespace extensions
 
 #endif // CHROME_BROWSER_EXTENSIONS_API_TORLAUNCHER_TORLAUNCHER_API_H_

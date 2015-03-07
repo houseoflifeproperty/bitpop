@@ -218,6 +218,10 @@ button.firstAnswer {
   flex-grow: 1;
 }
 
+.flex-shrink3 {
+  flex-shrink: 3;
+}
+
 .wizardpage, .vbox {
   display: flex;
   flex-direction: column;
@@ -241,10 +245,6 @@ button.firstAnswer {
   border: 1px solid #CCC;
   background-color: #E8E8E8;
   padding: 5px 15px;
-}
-
-.warning-icon {
-  display: inline-block;
 }
 
 fieldset td.align-right {

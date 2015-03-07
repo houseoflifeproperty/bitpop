@@ -23,7 +23,12 @@
           <structure name="IDR_FIRST_RUN_DIALOG_MAIN" file="chromeos/first_run/app/main.html" flattenhtml="true" allowexternalscript="true" type="chrome_html" variables="GREETING_IMAGE=enabled" expand_variables="true"/>
         </if>
       </if>
-    <structure name="IDR_TORLAUNCHER_NETWORK_SETTINGS_WIZARD_HTML" file="torlauncher/network-settings-wizard.html" flattenhtml="true" allowexternalscript="true" type="chrome_html"/><structure name="IDR_TORLAUNCHER_NETWORK_SETTINGS_HTML" file="torlauncher/network-settings.html" flattenhtml="true" allowexternalscript="true" type="chrome_html"/><structure name="IDR_TORLAUNCHER_PROGRESS_HTML" file="torlauncher/progress.html" flattenhtml="true" allowexternalscript="true" type="chrome_html"/><structure name="IDR_TORLAUNCHER_ALERT_DIALOG_HTML" file="torlauncher/alert-dialog.html" flattenhtml="true" allowexternalscript="true" type="chrome_html"/></structures>
+      <structure name="IDR_TORLAUNCHER_NETWORK_SETTINGS_WIZARD_HTML" file="torlauncher/network-settings-wizard.html" flattenhtml="true" allowexternalscript="true" type="chrome_html"/>
+      <structure name="IDR_TORLAUNCHER_NETWORK_SETTINGS_HTML" file="torlauncher/network-settings.html" flattenhtml="true" allowexternalscript="true" type="chrome_html"/>
+      <structure name="IDR_TORLAUNCHER_PROGRESS_HTML" file="torlauncher/progress.html" flattenhtml="true" allowexternalscript="true" type="chrome_html"/>
+      <structure name="IDR_TORLAUNCHER_ALERT_DIALOG_HTML" file="torlauncher/alert-dialog.html" flattenhtml="true" allowexternalscript="true" type="chrome_html"/>
+      <structure name="IDR_TOR_HELPER_POPUP_HTML" file="tor_helper/popup.html" flattenhtml="true" allowexternalscript="true" type="chrome_html"/>
+    </structures>
     <includes>
       <include name="IDR_NETWORK_SPEECH_SYNTHESIS_JS" file="network_speech_synthesis/tts_extension.js" type="BINDATA"/>
 
@@ -229,6 +234,7 @@
       <include name="IDR_TORLAUNCHER_IMG_TINT20_PNG" file="torlauncher/img/tint20.png" type="BINDATA"/>
       <include name="IDR_TORLAUNCHER_IMG_WARNING_PNG" file="torlauncher/img/warning.png" type="BINDATA"/>
       <include name="IDR_TORLAUNCHER_JS_BACKGROUND_JS" file="torlauncher/js/background.js" type="BINDATA"/>
+      <include name="IDR_TORLAUNCHER_JS_BRIDGE_PREFS_JS" file="torlauncher/js/bridge_prefs.js" type="BINDATA"/>
       <include name="IDR_TORLAUNCHER_JS_DIALOG_HELPERS_JS" file="torlauncher/js/dialog-helpers.js" type="BINDATA"/>
       <include name="IDR_TORLAUNCHER_JS_JQUERY_1_11_2_MIN_JS" file="torlauncher/js/jquery-1.11.2.min.js" type="BINDATA"/>
       <include name="IDR_TORLAUNCHER_JS_JQUERY_1_11_2_MIN_MAP" file="torlauncher/js/jquery-1.11.2.min.map" type="BINDATA"/>
@@ -242,7 +248,11 @@
       <include name="IDR_TOR_HELPER_BACKGROUND_JS" file="tor_helper/background.js" type="BINDATA"/>
       <include name="IDR_TOR_HELPER_ICON128_PNG" file="tor_helper/icon128.png" type="BINDATA"/>
       <include name="IDR_TOR_HELPER_ICON16_PNG" file="tor_helper/icon16.png" type="BINDATA"/>
+      <include name="IDR_TOR_HELPER_ICON19_PNG" file="tor_helper/icon19.png" type="BINDATA"/>
+      <include name="IDR_TOR_HELPER_ICON38_PNG" file="tor_helper/icon38.png" type="BINDATA"/>
       <include name="IDR_TOR_HELPER_ICON48_PNG" file="tor_helper/icon48.png" type="BINDATA"/>
+      <include name="IDR_TOR_HELPER_POPUP_CSS" file="tor_helper/popup.css" type="BINDATA"/>
+      <include name="IDR_TOR_HELPER_POPUP_JS" file="tor_helper/popup.js" type="BINDATA"/>
 
     </includes>
   </release>

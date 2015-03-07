@@ -797,6 +797,10 @@ void ProfileManager::InitProfileUserPrefs(Profile* profile) {
     profile->GetPrefs()->SetString(prefs::kSupervisedUserId,
                                    supervised_user_id);
   }
+
+  if (command_line->HasSwitch(switches::kLaunchTorBrowser))
+    IncognitoModePrefs::SetAvailability(profile->GetPrefs(),
+                                        IncognitoModePrefs::FORCED);
 }
 
 void ProfileManager::RegisterTestingProfile(Profile* profile,

@@ -1,4 +1,4 @@
-$document.ready(function () {
+$(document).ready(function () {
   console.assert(torlauncher && torlauncher.alertWindowType &&
                  torlauncher.alertContent);
 

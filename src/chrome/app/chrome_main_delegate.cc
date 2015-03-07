@@ -643,8 +643,8 @@ void ChromeMainDelegate::PreSandboxStartup() {
   std::string process_type =
       command_line.GetSwitchValueASCII(switches::kProcessType);
 
-  if (process_type.empty()) {
-//  if (non_const_cmd_line.HasSwitch(switches::kLaunchTorBrowser)) {
+  if (process_type.empty() &&
+      non_const_cmd_line.HasSwitch(switches::kLaunchTorBrowser)) {
     non_const_cmd_line.AppendSwitchASCII(switches::kProfileDirectory,
                                          "TorProfile");
     non_const_cmd_line.AppendSwitchASCII(switches::kProxyServer,
