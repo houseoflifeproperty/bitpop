@@ -1,3 +1,6 @@
+// Messages text Copyright (c) 2014, The Tor Project, Inc.
+// See LICENSE.torlauncher for licensing information.
+
 var torlauncher = torlauncher || {};
 
 torlauncher.messages = {

@@ -384,6 +384,10 @@ class Profile : public content::BrowserContext {
   // Creates an OffTheRecordProfile which points to this Profile.
   Profile* CreateOffTheRecordProfile();
 
+  // BITPOP:
+  bool IsProtectedModeEnabled() const;
+  // />
+
  private:
   bool restored_last_session_;
 

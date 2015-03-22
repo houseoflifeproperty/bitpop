@@ -577,6 +577,34 @@ bool PathProvider(int key, base::FilePath* result) {
       break;
 #endif  // !defined(OS_ANDROID)
 
+    case chrome::DIR_TOR_USER_DATA:
+#if defined(OS_WIN)
+      // FIXME: add windows path
+      return false;
+#elif defined(OS_MACOSX)
+      if (!PathService::Get(chrome::DIR_APP, &cur))
+        return false;
+      cur = cur.DirName().DirName().DirName().DirName().Append("User Data");
+      DLOG(INFO) << cur.value();
+#else
+      return false;
+#endif
+      break;
+
+    case chrome::DIR_TOR_BROWSER_COMPONENTS:
+#if defined(OS_WIN)
+      // FIXME: add windows path
+      return false;
+#elif defined(OS_MACOSX)
+      if (!PathService::Get(chrome::DIR_APP, &cur))
+        return false;
+      cur = cur.DirName().DirName().DirName().DirName().Append("TorBrowser");
+      DLOG(INFO) << cur.value();
+#else
+      return false;
+#endif
+      break;
+
     default:
       return false;
   }

@@ -7,6 +7,7 @@
 #include <map>
 #include <utility>
 
+#include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/memory/singleton.h"
 #include "base/prefs/pref_service.h"
@@ -20,6 +21,7 @@
 #include "chrome/browser/extensions/api/proxy/proxy_api.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/translate/core/common/translate_pref_names.h"
 #include "content/public/browser/notification_details.h"
@@ -518,11 +520,16 @@ bool PreferenceFunction::ValidateBrowserPref(
   APIPermission::ID permission = permission_type == PERMISSION_TYPE_READ
                                      ? read_permission
                                      : write_permission;
-  if (!extension()->permissions_data()->HasAPIPermission(permission)) {
+  if (!extension()->permissions_data()->HasAPIPermission(permission) ||
+      (permission_type == PreferenceFunction::PERMISSION_TYPE_WRITE &&
+       extension_pref_key == "proxy" &&
+       base::CommandLine::ForCurrentProcess()->HasSwitch(
+           switches::kLaunchTorBrowser))) {
     error_ = ErrorUtils::FormatErrorMessage(
         keys::kPermissionErrorMessage, extension_pref_key);
     return false;
   }
+
   return true;
 }
 

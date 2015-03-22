@@ -31,6 +31,7 @@
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/torlauncher/torlauncher_service_factory.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/torlauncher.h"
 #include "components/torlauncher/torlauncher_service.h"
@@ -69,8 +70,8 @@ ExtensionFunction::ResponseAction TorlauncherLaunchTorBrowserFunction::Run() {
   base::CommandLine new_command_line(program_path);
 
   new_command_line.AppendSwitch(switches::kLaunchTorBrowser);
-  base::FilePath user_data_dir = program_path.DirName().DirName().Append(
-      "User Data");
+  base::FilePath user_data_dir;
+  PathService::Get(chrome::DIR_TOR_USER_DATA, &user_data_dir);
   new_command_line.AppendSwitchPath(switches::kUserDataDir, user_data_dir);
 
   base::ProcessHandle ph;
@@ -210,7 +211,7 @@ TorlauncherReadAuthenticationCookieFunction::Run() {
 #if defined(OS_WIN)
 #elif defined(OS_MACOSX)
     path = path.DirName().DirName().Append("TorBrowser");
-    path.Append("Data/Tor/control_auth_cookie");
+    path = path.Append("Data/Tor/control_auth_cookie");
 #endif
   }
 
@@ -223,16 +224,18 @@ TorlauncherReadAuthenticationCookieFunction::Run() {
   // of malicious user changing the cookie file path environment variable.
   int buf_size = std::min(file.GetLength(), kMaxBytesToRead);
   scoped_ptr<char[]> data(new char[buf_size]);
-  if (!data.get())
-    return "";
-
-  int file_res = file.ReadAtCurrentPos(data.get(), buf_size);
   std::string res = "";
-  if (file_res != -1) {
-    res = std::string(data.get(), static_cast<size_t>(file_res));
+  if (data.get()) {
+    int file_res = file.ReadAtCurrentPos(data.get(), buf_size);
+
+    if (file_res != -1) {
+      res = std::string(data.get(), static_cast<size_t>(file_res));
+    }
   }
 
   results_ = api::torlauncher::ReadAuthenticationCookie::Results::Create(res);
 
   return RespondNow(ArgumentList(results_.Pass()));
+}
+
 } // namespace extensions

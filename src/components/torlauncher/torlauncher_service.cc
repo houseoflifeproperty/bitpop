@@ -38,6 +38,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
+#include "chrome/common/chrome_paths.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/torlauncher/torlauncher_pref_names.h"
 #include "crypto/random.h"
@@ -457,14 +458,7 @@ base::FilePath TorLauncherService::GetTorFile(
   if (is_relative_path) {
     // Turn into an absolute path
     if (tor_file_base_dir_.empty()) {
-      if (PathService::Get(base::DIR_EXE, &tor_file_base_dir_)) {
-        // FIXME: add actual path to Tor file base by modifying tor_file_base_dir_ or appending to it
-#if defined(OS_WIN)
-#elif defined(OS_MACOSX)
-        tor_file_base_dir_ =
-            tor_file_base_dir_.DirName().DirName().Append("TorBrowser");
-#endif
-      } else {
+      if (!PathService::Get(chrome::DIR_TOR_BROWSER_COMPONENTS, &tor_file_base_dir_)) {
         if (error_message)
           *error_message =
               l10n_util::GetStringFUTF8(

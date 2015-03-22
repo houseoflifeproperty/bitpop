@@ -123,6 +123,13 @@ enum {
                                 // stores its data.
 #endif
 
+  // BitPop additional directories
+  DIR_TOR_USER_DATA,            // Default and only user data folder for Tor
+                                // browsing mode users
+  DIR_TOR_BROWSER_COMPONENTS,   // Directory containing launchable and config
+                                // components of tor. e.g. tor client app,
+                                // tor config files, default transports etc.
+
   // Valid only in development environment; TODO(darin): move these
   DIR_GEN_TEST_DATA,            // Directory where generated test data resides.
   DIR_TEST_DATA,                // Directory where unit test data resides.

@@ -14,6 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+// Copyright (c) 2014, The Tor Project, Inc.
+// See LICENSE.torlauncher for licensing information.
+
 var torlauncher = torlauncher || {};
 
 torlauncher.TorProtocolService = function () {

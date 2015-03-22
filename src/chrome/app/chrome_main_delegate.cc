@@ -649,8 +649,6 @@ void ChromeMainDelegate::PreSandboxStartup() {
                                          "TorProfile");
     non_const_cmd_line.AppendSwitchASCII(switches::kProxyServer,
                                          "socks5://localhost:9150");
-    non_const_cmd_line.AppendSwitchASCII(switches::kAppId,
-                                         extension_misc::kTorLauncherAppId);
   }
 
 #if defined(OS_POSIX)

@@ -54,6 +54,7 @@
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/browser_distribution.h"
@@ -311,15 +312,23 @@ bool StartupBrowserCreator::LaunchBrowser(
       host_desktop_type = chrome::HOST_DESKTOP_TYPE_ASH;
 #endif
 
-    const bool launched = lwp.Launch(profile, urls_to_launch,
-                               in_synchronous_profile_launch_,
-                               host_desktop_type);
-    in_synchronous_profile_launch_ = false;
-    if (!launched) {
-      LOG(ERROR) << "launch error";
-      if (return_code)
-        *return_code = chrome::RESULT_CODE_INVALID_CMDLINE_URL;
-      return false;
+    Browser *browser =
+        chrome::FindTabbedBrowser(profile, false, host_desktop_type);
+    if (!in_synchronous_profile_launch_ &&
+        command_line.HasSwitch(switches::kLaunchTorBrowser) && browser) {
+      browser->window()->Activate();
+      in_synchronous_profile_launch_ = false;
+    } else {
+      const bool launched = lwp.Launch(profile, urls_to_launch,
+                                 in_synchronous_profile_launch_,
+                                 host_desktop_type);
+      in_synchronous_profile_launch_ = false;
+      if (!launched) {
+        LOG(ERROR) << "launch error";
+        if (return_code)
+          *return_code = chrome::RESULT_CODE_INVALID_CMDLINE_URL;
+        return false;
+      }
     }
   } else {
     in_synchronous_profile_launch_ = false;
@@ -471,6 +480,11 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
   if (process_startup) {
     if (command_line.HasSwitch(switches::kDisablePromptOnRepost))
       content::NavigationController::DisablePromptOnRepost();
+
+    if (command_line.HasSwitch(switches::kLaunchTorBrowser) &&
+        !command_line.HasSwitch(switches::kAppId))
+      const_cast<CommandLine&>(command_line).AppendSwitchASCII(
+          switches::kAppId, extension_misc::kTorLauncherAppId);
   }
 
   bool silent_launch = false;

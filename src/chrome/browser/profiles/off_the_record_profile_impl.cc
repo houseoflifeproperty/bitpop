@@ -548,3 +548,4 @@ PrefProxyConfigTracker* OffTheRecordProfileImpl::CreateProxyConfigTracker() {
   return ProxyServiceFactory::CreatePrefProxyConfigTrackerOfProfile(
       GetPrefs(), g_browser_process->local_state());
 }
+

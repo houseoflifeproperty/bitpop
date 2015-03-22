@@ -59,6 +59,7 @@
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/confirm_quit.h"
 #import "chrome/browser/ui/cocoa/confirm_quit_panel_controller.h"
+#import "chrome/browser/ui/cocoa/dock_icon.h"
 #import "chrome/browser/ui/cocoa/encoding_menu_controller_delegate_mac.h"
 #import "chrome/browser/ui/cocoa/history_menu_bridge.h"
 #include "chrome/browser/ui/cocoa/last_active_browser_cocoa.h"
@@ -764,6 +765,10 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
         base::Bind(&chrome::BrowserCommandController::UpdateOpenFileState,
                    menuState_.get()));
   }
+
+  // BITPOP:
+  [[DockIcon sharedDockIcon] updateIcon];
+  // />
 }
 
 // This is called after profiles have been loaded and preferences registered.

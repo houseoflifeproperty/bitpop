@@ -1,5 +1,5 @@
 // BitPop browser. Tor launcher integration part.
-// Copyright (C) 2014 BitPop AS
+// Copyright (C) 2015 BitPop AS
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,6 +13,9 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+// Copyright (c) 2014, The Tor Project, Inc.
+// See LICENSE.torlauncher for licensing information.
 
 var torlauncher = torlauncher || {};
 
@@ -108,46 +111,33 @@ torlauncher.TorProcessService.prototype = {
     );
     torlauncher.util.pr_debug('tl-process.after.runtime.onMessage.addListener');
 
-    chrome.runtime.onMessageExternal.addListener(
-      function (message, sender, sendResponse) {
-        if (message.kind == kLauncherIsRunning)
-          sendResponse({ is_running: true });
-      });
-    var is_protected_mode = yield this.getIsProtectedMode();
+    // chrome.runtime.onMessageExternal.addListener(
+    //   function (message, sender, sendResponse) {
+    //     if (message.kind == kLauncherIsRunning)
+    //       sendResponse({ is_running: true });
+    //   });
 
-    if (is_protected_mode)
-      torlauncher.util.runGenerator(function *main() {
-        var should_only_configure_tor =
-            yield *torlauncher.util.shouldOnlyConfigureTor();
-        var should_start_and_own_tor =
-            yield *torlauncher.util.shouldStartAndOwnTor();
+    torlauncher.util.runGenerator(function *main() {
+      var should_only_configure_tor =
+          yield *torlauncher.util.shouldOnlyConfigureTor();
+      var should_start_and_own_tor =
+          yield *torlauncher.util.shouldStartAndOwnTor();
 
-        torlauncher.util.pr_debug('should_only_configure_tor == ' + should_only_configure_tor);
-        torlauncher.util.pr_debug('should_start_and_own_tor == ' + should_start_and_own_tor);
+      torlauncher.util.pr_debug('should_only_configure_tor == ' + should_only_configure_tor);
+      torlauncher.util.pr_debug('should_start_and_own_tor == ' + should_start_and_own_tor);
 
-        // make sure protocol helper object is constructed
-        yield torlauncher.protocolService.initPromise;
+      // make sure protocol helper object is constructed
+      yield torlauncher.protocolService.initPromise;
 
-        torlauncher.util.pr_debug('initPromise satisfied');
+      torlauncher.util.pr_debug('initPromise satisfied');
 
-        if (should_only_configure_tor)
-          yield *_this.controlTor();
-        else if (should_start_and_own_tor) {
-          yield *_this._startTor();
-          yield *_this._controlTor();
-        }
-      });
-    else // NOT is_protected_mode
-      torlauncher.util.runGenerator(function *main() {
-        var auth_cookie_val = yield (new Promise(function (resolve, reject) {
-          chrome.torlauncher.readAuthenticationCookie(function (result) {
-            if (chrome.runtime.lastError)
-              reject(new Error(chrome.runtime.lastError.message));
-            resolve(result);
-          });
-        }));
-
-      });
+      if (should_only_configure_tor)
+        yield *_this.controlTor();
+      else if (should_start_and_own_tor) {
+        yield *_this._startTor();
+        yield *_this._controlTor();
+      }
+    });
   },
 
   runAsyncFromMessage: function (message, sendResponse) {

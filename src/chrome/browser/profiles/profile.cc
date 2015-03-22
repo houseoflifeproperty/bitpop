@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "build/build_config.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -13,6 +14,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_prefs.h"
 #include "components/pref_registry/pref_registry_syncable.h"
@@ -243,6 +245,14 @@ void Profile::MaybeSendDestroyedNotification() {
         content::NotificationService::NoDetails());
   }
 }
+
+// BITPOP:
+bool Profile::IsProtectedModeEnabled() const {
+  return (GetProfileType() == INCOGNITO_PROFILE &&
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kLaunchTorBrowser));
+}
+// />
 
 bool ProfileCompare::operator()(Profile* a, Profile* b) const {
   DCHECK(a && b);

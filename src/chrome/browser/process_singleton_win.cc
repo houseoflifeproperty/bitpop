@@ -344,9 +344,9 @@ ProcessSingleton::NotifyOtherProcessOrCreate() {
 // isn't one, create a message window with its title set to the profile
 // directory path.
 bool ProcessSingleton::Create() {
-  static const wchar_t kMutexName[] = L"Local\\ChromeProcessSingletonStartup!";
+  static const wchar_t kMutexName[] = L"Local\\BitPopProcessSingletonStartup!";
   static const wchar_t kMetroActivationEventName[] =
-      L"Local\\ChromeProcessSingletonStartupMetroActivation!";
+      L"Local\\BitPopProcessSingletonStartupMetroActivation!";
 
   remote_window_ = chrome::FindRunningChromeWindow(user_data_dir_);
   if (!remote_window_ && !EscapeVirtualization(user_data_dir_)) {

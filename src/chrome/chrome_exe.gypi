@@ -212,6 +212,7 @@
               'mac_bundle_resources': [
                 'app/theme/chromium/mac/app.icns',
                 'app/theme/chromium/mac/document.icns',
+                'app/theme/chromium/mac/Tor.icns',
                 'browser/ui/cocoa/applescript/scripting.sdef',
               ],
             }],

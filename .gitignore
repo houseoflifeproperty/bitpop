@@ -31,3 +31,8 @@
 tags
 Thumbs.db
 src/bitpop_specific/extensions/prodversionmin.csv
+src/build/all.ninja.xcworkspace/contents.xcworkspacedata
+src/build/all.ninja.xcworkspace/xcshareddata/all.ninja.xccheckout
+src/build/all.ninja.xcworkspace/xcuserdata/vian.xcuserdatad/UserInterfaceState.xcuserstate
+src/build/all.ninja.xcworkspace/xcuserdata/vian.xcuserdatad/xcdebugger/Breakpoints_v2.xcbkptlist
+src/npm-debug.log

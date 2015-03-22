@@ -4,9 +4,11 @@
 
 #import "chrome/browser/ui/cocoa/dock_icon.h"
 
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/scoped_nsobject.h"
+#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
@@ -55,7 +57,16 @@ const int64 kUpdateFrequencyMs = 200;
   // Not -[NSApplication applicationIconImage]; that fails to return a pasted
   // custom icon.
   NSString* appPath = [base::mac::MainBundle() bundlePath];
-  NSImage* appIcon = [[NSWorkspace sharedWorkspace] iconForFile:appPath];
+  NSImage* appIcon;
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kLaunchTorBrowser)) {
+    NSString* torIconPath =
+        [base::mac::MainBundle() pathForResource:@"Tor" ofType:@"icns"];
+    appIcon =
+        [[[NSImage alloc] initWithContentsOfFile:torIconPath] autorelease];
+  } else
+    appIcon = [[NSWorkspace sharedWorkspace] iconForFile:appPath];
+
   [appIcon drawInRect:[self bounds]
              fromRect:NSZeroRect
             operation:NSCompositeSourceOver
