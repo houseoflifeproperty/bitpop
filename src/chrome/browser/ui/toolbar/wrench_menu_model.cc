@@ -517,7 +517,11 @@ WrenchMenuModel::WrenchMenuModel()
 }
 
 bool WrenchMenuModel::ShouldShowNewIncognitoWindowMenuItem() {
-  if (browser_->profile()->IsSupervised())
+  if (browser_->profile()->IsSupervised() ||
+      // BITPOP:
+      browser_->profile()->IsProtectedModeEnabled()
+      // />
+      )
     return false;
 
   return !browser_->profile()->IsGuestSession();
@@ -538,7 +542,11 @@ void WrenchMenuModel::Build() {
     CreateExtensionToolbarOverflowMenu();
 
   AddItemWithStringId(IDC_NEW_TAB, IDS_NEW_TAB);
-  AddItemWithStringId(IDC_NEW_WINDOW, IDS_NEW_WINDOW);
+  AddItemWithStringId(IDC_NEW_WINDOW,
+      // BITPOP:
+      browser_->profile()->IsProtectedModeEnabled() ?
+          IDS_PROTECTED_MODE_NEW_WINDOW : IDS_NEW_WINDOW);
+      // />
 
   if (ShouldShowNewIncognitoWindowMenuItem())
     AddItemWithStringId(IDC_NEW_INCOGNITO_WINDOW, IDS_NEW_INCOGNITO_WINDOW);

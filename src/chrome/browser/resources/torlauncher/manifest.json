@@ -27,5 +27,7 @@
     "app.window.alwaysOnTop",
     "clipboardWrite",
     "preferencesPrivate"
-  ]
+  ],
+  "display_in_new_tab_page": false,
+  "display_in_launcher": false
 }

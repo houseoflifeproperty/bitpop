@@ -211,6 +211,9 @@ bool IsProfileSignedOut(Profile* profile) {
 @interface AppController (Private)
 - (void)initMenuState;
 - (void)initProfileMenu;
+// BITPOP:
+- (void)initMenuForProtectedMode;
+// />
 - (void)updateConfirmToQuitPrefMenuItem:(NSMenuItem*)item;
 - (void)updateDisplayMessageCenterPrefMenuItem:(NSMenuItem*)item;
 - (void)registerServicesMenuTypesTo:(NSApplication*)app;
@@ -348,6 +351,11 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
 
   // Initialize the Profile menu.
   [self initProfileMenu];
+
+  // BITPOP:
+  // Adjust menus if in Protected browsing mode
+  [self initMenuForProtectedMode];
+  // />
 }
 
 - (void)unregisterEventHandlers {
@@ -1232,7 +1240,11 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   menuState_.reset(new CommandUpdater(NULL));
   menuState_->UpdateCommandEnabled(IDC_NEW_TAB, true);
   menuState_->UpdateCommandEnabled(IDC_NEW_WINDOW, true);
-  menuState_->UpdateCommandEnabled(IDC_NEW_INCOGNITO_WINDOW, true);
+  // BITPOP:
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kLaunchTorBrowser))
+    menuState_->UpdateCommandEnabled(IDC_NEW_INCOGNITO_WINDOW, false);
+  // />
   menuState_->UpdateCommandEnabled(IDC_OPEN_FILE, true);
   menuState_->UpdateCommandEnabled(IDC_CLEAR_BROWSING_DATA, true);
   menuState_->UpdateCommandEnabled(IDC_RESTORE_TAB, false);
@@ -1267,6 +1279,28 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   profileMenuController_.reset(
       [[ProfileMenuController alloc] initWithMainMenuItem:profileMenu]);
 }
+
+// BITPOP:
+- (void)initMenuForProtectedMode {
+  NSMenu* mainMenu = [NSApp mainMenu];
+  NSMenuItem* fileMenu = [mainMenu itemWithTag:IDC_FILE_MENU];
+  if ([fileMenu hasSubmenu]) {
+    NSMenu* fileSubMenu = [fileMenu submenu];
+    NSMenuItem* newWindowMenu = [fileSubMenu itemWithTag:IDC_NEW_WINDOW];
+    NSMenuItem* newIncognitoWindowMenu =
+        [fileSubMenu itemWithTag:IDC_NEW_INCOGNITO_WINDOW];
+
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kLaunchTorBrowser)) {
+      if (newIncognitoWindowMenu)
+        [fileSubMenu removeItem:newIncognitoWindowMenu];
+      if (newWindowMenu)
+        [newWindowMenu setTitle:
+            l10n_util::GetNSStringWithFixup(IDS_PROTECTED_MODE_NEW_WINDOW_MAC)];
+    }
+  }
+}
+// />
 
 // The Confirm to Quit preference is atypical in that the preference lives in
 // the app menu right above the Quit menu item. This method will refresh the
@@ -1318,7 +1352,11 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   Profile* profile = [self lastProfile];
 
   // Guest sessions must always be OffTheRecord. Use that when opening windows.
-  if (profile->IsGuestSession())
+  if (profile->IsGuestSession() ||
+      // BITPOP:
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kLaunchTorBrowser))
+      // />
     return profile->GetOffTheRecordProfile();
 
   return profile;
@@ -1428,7 +1466,13 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   if (profilesAdded)
     [dockMenu addItem:[NSMenuItem separatorItem]];
 
-  NSString* titleStr = l10n_util::GetNSStringWithFixup(IDS_NEW_WINDOW_MAC);
+  NSString* titleStr = l10n_util::GetNSStringWithFixup(
+      // BITPOP:
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kLaunchTorBrowser) ?
+            IDS_PROTECTED_MODE_NEW_WINDOW_MAC :
+            IDS_NEW_WINDOW_MAC);
+      // />
   base::scoped_nsobject<NSMenuItem> item(
       [[NSMenuItem alloc] initWithTitle:titleStr
                                  action:@selector(commandFromDock:)
@@ -1439,7 +1483,11 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   [dockMenu addItem:item];
 
   // |profile| can be NULL during unit tests.
-  if (!profile || !profile->IsSupervised()) {
+  if ((!profile || !profile->IsSupervised()) &&
+      // BITPOP:
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kLaunchTorBrowser)) {
+      // />
     titleStr = l10n_util::GetNSStringWithFixup(IDS_NEW_INCOGNITO_WINDOW_MAC);
     item.reset(
         [[NSMenuItem alloc] initWithTitle:titleStr

@@ -93,13 +93,21 @@ bool UpdateTaskCategory(
 
   ShellLinkItemList items;
 
+  // BITPOP:
+  bool protected_mode = base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kLaunchTorBrowser);
+  // />
+
   // Create an IShellLink object which launches Chrome, and add it to the
   // collection. We use our application icon as the icon for this item.
   // We remove '&' characters from this string so we can share it with our
   // system menu.
   if (incognito_availability != IncognitoModePrefs::FORCED) {
     scoped_refptr<ShellLinkItem> chrome = CreateShellLink();
-    base::string16 chrome_title = l10n_util::GetStringUTF16(IDS_NEW_WINDOW);
+    base::string16 chrome_title = l10n_util::GetStringUTF16(
+        // BITPOP:
+        protected_mode ? IDS_PROTECTED_MODE_NEW_WINDOW : IDS_NEW_WINDOW);
+        // />
     ReplaceSubstringsAfterOffset(&chrome_title, 0, L"&", L"");
     chrome->set_title(chrome_title);
     chrome->set_icon(chrome_path.value(), 0);
@@ -109,7 +117,10 @@ bool UpdateTaskCategory(
   // Create an IShellLink object which launches Chrome in incognito mode, and
   // add it to the collection. We use our application icon as the icon for
   // this item.
-  if (incognito_availability != IncognitoModePrefs::DISABLED) {
+  if (incognito_availability != IncognitoModePrefs::DISABLED &&
+      // BITPOP:
+      !protected_mode) {
+      // />
     scoped_refptr<ShellLinkItem> incognito = CreateShellLink();
     incognito->GetCommandLine()->AppendSwitch(switches::kIncognito);
     base::string16 incognito_title =

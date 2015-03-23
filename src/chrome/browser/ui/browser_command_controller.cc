@@ -292,7 +292,10 @@ bool BrowserCommandController::IsReservedCommandOrKey(
 
   return command_id == IDC_CLOSE_TAB ||
          command_id == IDC_CLOSE_WINDOW ||
-         command_id == IDC_NEW_INCOGNITO_WINDOW ||
+         (command_id == IDC_NEW_INCOGNITO_WINDOW &&
+          // BITPOP:
+          !profile()->IsProtectedModeEnabled()) ||
+          // />
          command_id == IDC_NEW_TAB ||
          command_id == IDC_NEW_WINDOW ||
          command_id == IDC_RESTORE_TAB ||
@@ -401,7 +404,12 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
 
      // Window management commands
     case IDC_NEW_WINDOW:
-      NewWindow(browser_);
+      // BITPOP:
+      if (profile()->IsProtectedModeEnabled())
+        NewIncognitoWindow(browser_);
+      else
+      // />
+        NewWindow(browser_);
       break;
     case IDC_NEW_INCOGNITO_WINDOW:
       NewIncognitoWindow(browser_);

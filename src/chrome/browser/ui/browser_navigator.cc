@@ -79,6 +79,19 @@ bool WindowCanOpenTabs(Browser* browser) {
 // such Browser is located.
 Browser* GetOrCreateBrowser(Profile* profile,
                             chrome::HostDesktopType host_desktop_type) {
+  // BITPOP:
+  // If opening a new window in a non-incognito profile, make this new window
+  // shown as a popup window with no tabs, omnibox, etc.
+  if (profile->GetOffTheRecordProfile()->IsProtectedModeEnabled() &&
+      profile->GetOriginalProfile()->IsSameProfile(profile)) {
+    Browser::CreateParams params = Browser::CreateParams(
+        Browser::TYPE_POPUP, profile, host_desktop_type);
+    // The following line is needed for the exclusion of omnibox from br. window
+    params.trusted_source = true;
+    return new Browser(params);
+  }
+  // />
+
   Browser* browser = chrome::FindTabbedBrowser(profile, false,
                                                host_desktop_type);
   return browser ? browser : new Browser(

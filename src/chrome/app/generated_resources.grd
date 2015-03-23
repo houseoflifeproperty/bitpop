@@ -14716,6 +14716,13 @@ Do you accept?
     <message name="IDS_TORLAUNCHER_APP_DESCRIPTION" desc="Component app description as shown on chrome://extensions/ page.">
       Provides means of communication between browser and Tor proxy client app.
     </message>
+    <!-- Tor Protected mode messages -->
+    <message name="IDS_PROTECTED_MODE_NEW_WINDOW" desc="Opening of Protected Mode windows command title for menus and links">
+      &amp;New Protected Mode Window
+    </message>
+    <message name="IDS_PROTECTED_MODE_NEW_WINDOW_MAC" desc="Opening of Protected Mode windows command title for menus and links">
+      New Protected Mode Window
+    </message>
   </messages>
   </release>
 </grit>

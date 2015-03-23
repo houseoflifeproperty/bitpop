@@ -581,7 +581,17 @@ void NewTab(Browser* browser) {
     AddTabAt(browser, GURL(), -1, true);
     browser->tab_strip_model()->GetActiveWebContents()->RestoreFocus();
   } else {
-    ScopedTabbedBrowserDisplayer displayer(browser->profile(),
+    // BITPOP:
+    // Force new tabs to open in Incognito Mode when running in
+    // Tor Protected Mode
+    Profile *profile = browser->profile();
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kLaunchTorBrowser) &&
+        profile->IsSameProfile(profile->GetOriginalProfile()))
+      profile = profile->GetOffTheRecordProfile();
+
+    ScopedTabbedBrowserDisplayer displayer(profile,
+    // />
                                            browser->host_desktop_type());
     Browser* b = displayer.browser();
     AddTabAt(b, GURL(), -1, true);
