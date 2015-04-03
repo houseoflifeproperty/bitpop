@@ -31,6 +31,7 @@
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/torlauncher/torlauncher_service_factory.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/torlauncher.h"
@@ -40,43 +41,35 @@
 #include "chrome/browser/chrome_browser_application_mac.h"
 #endif
 
-// namespace {
-
-// class TorLauncherProcessFilter : public base::ProcessFilter {
-//  public:
-//   TorLauncherProcessFilter() {}
-//   virtual bool Includes(const base::ProcessEntry& entry) const OVERRIDE;
-// };
-
-// bool TorLauncherProcessFilter::Includes(const base::ProcessEntry& entry) const {
-//   std::vector<std::string> args = entry.cmd_line_args();
-//   for (auto it = args.cbegin(); it != args.cend(); ++it) {
-//     if (*it == (std::string("--") + switches::kLaunchTorBrowser))
-//       return true;
-//   }
-//   return false;
-// }
-
-// } // anonymous namespace
-
 namespace extensions {
 
 ExtensionFunction::ResponseAction TorlauncherLaunchTorBrowserFunction::Run() {
-  // scoped_ptr<api::torlauncher::LaunchTorBrowser::Params> params(
-  //     api::torlauncher::LaunchTorBrowser::Params::Create(*args_));
-  // EXTENSION_FUNCTION_VALIDATE(params.get());
-  base::CommandLine command_line = *base::CommandLine::ForCurrentProcess();
-  base::FilePath program_path = command_line.GetProgram();
-  base::CommandLine new_command_line(program_path);
+  Profile* profile = Profile::FromBrowserContext(browser_context());
 
-  new_command_line.AppendSwitch(switches::kLaunchTorBrowser);
-  base::FilePath user_data_dir;
-  PathService::Get(chrome::DIR_TOR_USER_DATA, &user_data_dir);
-  new_command_line.AppendSwitchPath(switches::kUserDataDir, user_data_dir);
+  if (profile->IsProtectedModeEnabled())
+    // We are already launched in Protected Tor Mode. Just open a new window.
+    // Protected also means incognito, so no need to GetOffTheRecordProfile().
+    static_cast<void>(
+        chrome::NewEmptyWindow(profile, chrome::HOST_DESKTOP_TYPE_NATIVE));
+  else {
+    // Launch Protected Mode browser instance
+    base::CommandLine command_line = *base::CommandLine::ForCurrentProcess();
+    base::FilePath program_path = command_line.GetProgram();
+    base::CommandLine new_command_line(program_path);
 
-  base::ProcessHandle ph;
-  if (base::LaunchProcess(new_command_line, base::LaunchOptions(), &ph)) {
-    DLOG(INFO) << "Tor browser instance launched successfully.";
+    new_command_line.AppendSwitch(switches::kLaunchTorBrowser);
+    base::FilePath user_data_dir;
+    PathService::Get(chrome::DIR_TOR_USER_DATA, &user_data_dir);
+    new_command_line.AppendSwitchPath(switches::kUserDataDir, user_data_dir);
+
+    base::FilePath original_profile_dir = profile->GetPath();
+    new_command_line.AppendSwitchPath(switches::kOriginalBrowserProfileDir,
+                                      original_profile_dir);
+
+    base::ProcessHandle ph;
+    if (base::LaunchProcess(new_command_line, base::LaunchOptions(), &ph)) {
+      DLOG(INFO) << "Tor browser instance launched successfully.";
+    }
   }
 
   results_ = make_scoped_ptr(new base::ListValue());

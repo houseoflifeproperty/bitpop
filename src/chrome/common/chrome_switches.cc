@@ -879,6 +879,12 @@ const char kOpenInNewWindow[]               = "new-window";
 // Force use of QUIC for requests to the specified origin.
 const char kOriginToForceQuicOn[]           = "origin-to-force-quic-on";
 
+// BITPOP:
+// Launching browser profile directory. Only valid for Protected Mode Instances
+// launched via in-browser extension mechanism.
+const char kOriginalBrowserProfileDir[]     = "original-browser-profile-dir";
+// />
+
 // The time that a new chrome process which is delegating to an already running
 // chrome process started. (See ProcessSingleton for more details.)
 const char kOriginalProcessStartTime[]      = "original-process-start-time";

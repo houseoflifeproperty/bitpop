@@ -50,6 +50,9 @@
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/signin/signin_promo.h"
+// BITPOP:
+#include "chrome/browser/torlauncher/original_profile_data_importer.h"
+// />
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -326,6 +329,30 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
                                        chrome::HostDesktopType desktop_type) {
   DCHECK(profile);
   profile_ = profile;
+
+  // BITPOP: Import bookmarks from regular profile, if launched with
+  // Tor Protected Mode incognito profile option --launch-tor-browser
+  if (process_startup &&
+      command_line_.HasSwitch(switches::kLaunchTorBrowser) &&
+      command_line_.HasSwitch(switches::kOriginalBrowserProfileDir)) {
+    DLOG(INFO) << "Startup of Tor Browser";
+    auto bookmarks_importer = make_scoped_refptr(
+      new OriginalProfileDataImporter(
+        // dst_profile
+        profile_,
+        // src_profile_path
+        command_line_.GetSwitchValuePath(
+            switches::kOriginalBrowserProfileDir),
+        // thread to read bookmarks file from
+        content::BrowserThread::GetMessageLoopProxyForThread(
+            content::BrowserThread::FILE)));
+
+    // the following call will AddRef() the importer
+    bookmarks_importer->LoadBookmarks(
+        content::BrowserThread::GetMessageLoopProxyForThread(
+            content::BrowserThread::UI));
+  }
+  // />
 
   if (command_line_.HasSwitch(switches::kDnsLogDetails))
     chrome_browser_net::EnablePredictorDetailedLog(true);
@@ -914,3 +941,4 @@ void StartupBrowserCreatorImpl::AddStartupURLs(
     }
   }
 }
+

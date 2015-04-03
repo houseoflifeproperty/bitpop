@@ -47,7 +47,7 @@ class StartupBrowserCreatorImpl {
                             const base::CommandLine& command_line,
                             StartupBrowserCreator* browser_creator,
                             chrome::startup::IsFirstRun is_first_run);
-  ~StartupBrowserCreatorImpl();
+  virtual ~StartupBrowserCreatorImpl();
 
   // Creates the necessary windows for startup. Returns true on success,
   // false on failure. process_startup is true if Chrome is just
@@ -150,6 +150,7 @@ class StartupBrowserCreatorImpl {
   Profile* profile_;
   StartupBrowserCreator* browser_creator_;
   bool is_first_run_;
+
   DISALLOW_COPY_AND_ASSIGN(StartupBrowserCreatorImpl);
 };
 

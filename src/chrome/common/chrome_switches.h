@@ -221,7 +221,9 @@ extern const char kJavaScriptHarmony[];
 extern const char kKeepAliveForTest[];
 extern const char kKioskMode[];
 extern const char kKioskModePrinting[];
+// BITPOP:
 extern const char kLaunchTorBrowser[];
+// />
 extern const char kLoadComponentExtension[];
 extern const char kLoadExtension[];
 extern const char kMakeDefaultBrowser[];
@@ -246,6 +248,9 @@ extern const char kNtpAppInstallHint[];
 extern const char kNumPacThreads[];
 extern const char kOpenInNewWindow[];
 extern const char kOriginToForceQuicOn[];
+// BITPOP:
+extern const char kOriginalBrowserProfileDir[];
+// />
 extern const char kOriginalProcessStartTime[];
 extern const char kOutOfProcessPdf[];
 extern const char kPackExtension[];

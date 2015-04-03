@@ -1338,6 +1338,8 @@
       'browser/thumbnails/thumbnailing_algorithm.h',
       'browser/thumbnails/thumbnailing_context.cc',
       'browser/thumbnails/thumbnailing_context.h',
+      'browser/torlauncher/original_profile_data_importer.cc',
+      'browser/torlauncher/original_profile_data_importer.h',
       'browser/torlauncher/torlauncher_service_factory.cc',
       'browser/torlauncher/torlauncher_service_factory.h',
       'browser/translate/chrome_translate_client.cc',
