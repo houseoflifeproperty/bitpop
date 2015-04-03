@@ -46,15 +46,12 @@ void LoadCallback(const base::FilePath& path,
                   const base::WeakPtr<OriginalProfileDataImporter>& importer,
                   scoped_ptr<BookmarkLoadDetails> details,
                   base::SequencedTaskRunner* task_runner) {
-  DLOG(INFO) << "LoadCallback: " << path.value();
   bool bookmark_file_exists = base::PathExists(path);
   if (bookmark_file_exists) {
-    DLOG(INFO) << "Bookmark file exists";
     JSONFileValueSerializer serializer(path);
     scoped_ptr<base::Value> root(serializer.Deserialize(NULL, NULL));
 
     if (root.get()) {
-      DLOG(INFO) << "root.get() returned non-NULL";
       // Building the index can take a while, so we do it on the background
       // thread.
       int64 max_node_id = 0;
@@ -75,7 +72,6 @@ void LoadCallback(const base::FilePath& path,
   // reassigned.
   details->LoadExtraNodes();
 
-  DLOG(INFO) << "Posting task to UI thread";
   task_runner->PostTask(
       FROM_HERE,
       base::Bind(&OriginalProfileDataImporter::OnBookmarksLoadFinished, importer,
@@ -210,9 +206,6 @@ void OriginalProfileDataImporter::CopyBookmarkFolder(const BookmarkNode* src,
 
 void OriginalProfileDataImporter::OnBookmarksLoadFinished(
     scoped_ptr<BookmarkLoadDetails> details) {
-
-  DLOG(INFO) << "OnBookmarksLoadFinished";
-
   BookmarkPermanentNode *bb_bookmarks = details->bb_node();
   BookmarkPermanentNode *mobile_folder_bookmarks =
       details->mobile_folder_node();
@@ -223,10 +216,8 @@ void OriginalProfileDataImporter::OnBookmarksLoadFinished(
       (bb_bookmarks->empty() && mobile_folder_bookmarks->empty() &&
        other_folder_bookmarks->empty()))
     return;
-  DLOG(INFO) << "Not returning early from OnBookmarksLoadFinished";
 
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(dst_profile_);
-  DLOG(INFO) << "model->loaded() == " << model->loaded();
   DCHECK(model->loaded());
 
   model->BeginExtensiveChanges();
@@ -238,8 +229,6 @@ void OriginalProfileDataImporter::OnBookmarksLoadFinished(
   model->EndExtensiveChanges();
 
   ShowBookmarkBar(dst_profile_);
-
-  DLOG(INFO) << "Calling back to delegate";
 
   Release();
 }

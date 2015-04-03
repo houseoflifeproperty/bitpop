@@ -335,7 +335,6 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
   if (process_startup &&
       command_line_.HasSwitch(switches::kLaunchTorBrowser) &&
       command_line_.HasSwitch(switches::kOriginalBrowserProfileDir)) {
-    DLOG(INFO) << "Startup of Tor Browser";
     auto bookmarks_importer = make_scoped_refptr(
       new OriginalProfileDataImporter(
         // dst_profile
