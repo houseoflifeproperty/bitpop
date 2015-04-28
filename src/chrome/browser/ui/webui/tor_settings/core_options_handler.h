@@ -1,4 +1,3 @@
-/*
 // BitPop browser. Tor launcher integration part.
 // Copyright (C) 2015 BitPop AS
 //
@@ -14,44 +13,22 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
 
-html, body {
-  margin: 0;
-  padding: 0;
-}
+#ifndef CHROME_BROWSER_UI_WEBUI_TOR_SETTINGS_CORE_OPTIONS_HANDLER_H_
+#define CHROME_BROWSER_UI_WEBUI_TOR_SETTINGS_CORE_OPTIONS_HANDLER_H_
 
-.menu {
-  width: 200px;
-  margin: 0;
-  padding: 0;
-  list-style-type: none;
-}
+#include "chrome/browser/ui/webui/options/core_options_handler.h"
 
-.menu li, .menu-link {
-  display: block;
-}
+namespace tor_settings {
 
-.menu-link {
-  background-color: lightgray;
-  padding: 4px 5px;
-  color: black;
-  text-decoration: none;
-}
+class CoreOptionsHandler : public options::CoreOptionsHandler {
+ public:
+  CoreOptionsHandler();
+  virtual ~CoreOptionsHandler();
 
-.menu-link:focus {
-  outline: none;
-}
+  virtual void SetTitleString(base::DictionaryValue* localized_strings) override;
+};
 
-.menu-link:hover {
-  background-color: gray;
-  color: white;
-}
+} // namespace tor_settings
 
-.menu-link:visited {
-  color: black;
-}
-
-.menu-link:active {
-  color: white;
-}
+#endif // CHROME_BROWSER_UI_WEBUI_TOR_SETTINGS_CORE_OPTIONS_HANDLER_H_

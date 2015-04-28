@@ -1,4 +1,3 @@
-/*
 // BitPop browser. Tor launcher integration part.
 // Copyright (C) 2015 BitPop AS
 //
@@ -14,44 +13,3 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-html, body {
-  margin: 0;
-  padding: 0;
-}
-
-.menu {
-  width: 200px;
-  margin: 0;
-  padding: 0;
-  list-style-type: none;
-}
-
-.menu li, .menu-link {
-  display: block;
-}
-
-.menu-link {
-  background-color: lightgray;
-  padding: 4px 5px;
-  color: black;
-  text-decoration: none;
-}
-
-.menu-link:focus {
-  outline: none;
-}
-
-.menu-link:hover {
-  background-color: gray;
-  color: white;
-}
-
-.menu-link:visited {
-  color: black;
-}
-
-.menu-link:active {
-  color: white;
-}

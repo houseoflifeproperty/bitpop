@@ -89,6 +89,10 @@ const char kChromeUITermsURL[] = "chrome://terms/";
 const char kChromeUIThemeURL[] = "chrome://theme/";
 const char kChromeUIThumbnailURL[] = "chrome://thumb/";
 const char kChromeUIThumbnailListURL[] = "chrome://thumbnails/";
+// BITPOP:
+const char kChromeUITorSettingsURL[] = "chrome://tor-settings";
+const char kChromeUITorSettingsFrameURL[] = "chrome://tor-settings-frame";
+// />
 const char kChromeUIUberURL[] = "chrome://chrome/";
 const char kChromeUIUberFrameURL[] = "chrome://uber-frame/";
 const char kChromeUIUserActionsURL[] = "chrome://user-actions/";
@@ -244,6 +248,8 @@ const char kChromeUIThemeHost[] = "theme";
 const char kChromeUIThumbnailHost[] = "thumb";
 const char kChromeUIThumbnailHost2[] = "thumb2";
 const char kChromeUIThumbnailListHost[] = "thumbnails";
+const char kChromeUITorSettingsHost[] = "tor-settings";
+const char kChromeUITorSettingsFrameHost[] = "tor-settings-frame";
 const char kChromeUITouchIconHost[] = "touch-icon";
 const char kChromeUITranslateInternalsHost[] = "translate-internals";
 const char kChromeUIUberFrameHost[] = "uber-frame";

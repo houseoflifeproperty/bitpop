@@ -55,6 +55,10 @@ content::WebUIDataSource* CreateUberHTMLSource() {
   source->AddString("historyHost", chrome::kChromeUIHistoryHost);
   source->AddString("settingsFrameURL", chrome::kChromeUISettingsFrameURL);
   source->AddString("settingsHost", chrome::kChromeUISettingsHost);
+  // BITPOP:
+  source->AddString("torSettingsFrameURL", chrome::kChromeUITorSettingsFrameURL);
+  source->AddString("torSettingsHost", chrome::kChromeUITorSettingsHost);
+  // />
 
   return source;
 }
@@ -107,6 +111,11 @@ content::WebUIDataSource* CreateUberFrameHTMLSource(Profile* profile) {
   source->AddString("settingsHost", chrome::kChromeUISettingsHost);
   source->AddLocalizedString("settingsDisplayName", IDS_SETTINGS_TITLE);
   source->AddString("settingsGroup", settings_group);
+  // BITPOP:
+  source->AddString("torSettingsHost", chrome::kChromeUITorSettingsHost);
+  source->AddLocalizedString("torSettingsDisplayName", IDS_TOR_SETTINGS_TITLE);
+  source->AddString("torSettingsGroup", settings_group);
+  // />
   bool overridesHistory =
       HasExtensionType(profile, chrome::kChromeUIHistoryHost);
   source->AddString("overridesHistory", overridesHistory ? "yes" : "no");
@@ -128,6 +137,10 @@ UberUI::UberUI(content::WebUI* web_ui) : WebUIController(web_ui) {
                   chrome::kChromeUIHelpHost);
   RegisterSubpage(chrome::kChromeUIHistoryFrameURL,
                   chrome::kChromeUIHistoryHost);
+  // BITPOP:
+  RegisterSubpage(chrome::kChromeUITorSettingsFrameURL,
+                  chrome::kChromeUITorSettingsHost);
+  // />
   RegisterSubpage(chrome::kChromeUISettingsFrameURL,
                   chrome::kChromeUISettingsHost);
   RegisterSubpage(chrome::kChromeUIUberFrameURL,

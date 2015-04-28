@@ -24,6 +24,10 @@ class CoreOptionsHandler : public OptionsPageUIHandler {
   CoreOptionsHandler();
   virtual ~CoreOptionsHandler();
 
+  // BITPOP:
+  virtual void SetTitleString(base::DictionaryValue* localized_strings);
+  // />
+
   // OptionsPageUIHandler implementation.
   virtual void GetLocalizedValues(
       base::DictionaryValue* localized_strings) OVERRIDE;

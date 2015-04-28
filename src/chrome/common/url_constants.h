@@ -82,6 +82,10 @@ extern const char kChromeUITermsURL[];
 extern const char kChromeUIThemeURL[];
 extern const char kChromeUIThumbnailURL[];
 extern const char kChromeUIThumbnailListURL[];
+// BITPOP:
+extern const char kChromeUITorSettingsURL[];
+extern const char kChromeUITorSettingsFrameURL[];
+// />
 extern const char kChromeUIUberURL[];
 extern const char kChromeUIUberFrameURL[];
 extern const char kChromeUIUserActionsURL[];
@@ -231,6 +235,10 @@ extern const char kChromeUIThemeHost[];
 extern const char kChromeUIThumbnailHost[];
 extern const char kChromeUIThumbnailHost2[];
 extern const char kChromeUIThumbnailListHost[];
+// BITPOP:
+extern const char kChromeUITorSettingsHost[];
+extern const char kChromeUITorSettingsFrameHost[];
+// />
 extern const char kChromeUITouchIconHost[];
 extern const char kChromeUITranslateInternalsHost[];
 extern const char kChromeUIUberFrameHost[];

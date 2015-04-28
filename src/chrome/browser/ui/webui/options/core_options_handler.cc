@@ -82,6 +82,12 @@ CoreOptionsHandler::CoreOptionsHandler()
 
 CoreOptionsHandler::~CoreOptionsHandler() {}
 
+void CoreOptionsHandler::SetTitleString(
+    base::DictionaryValue* localized_strings) {
+  localized_strings->SetString("optionsPageTitle",
+      l10n_util::GetStringUTF16(IDS_SETTINGS_TITLE));
+}
+
 void CoreOptionsHandler::InitializeHandler() {
   Profile* profile = Profile::FromWebUI(web_ui());
 
@@ -113,8 +119,7 @@ void CoreOptionsHandler::GetStaticLocalizedValues(
     base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
   // Main
-  localized_strings->SetString("optionsPageTitle",
-      l10n_util::GetStringUTF16(IDS_SETTINGS_TITLE));
+  SetTitleString(localized_strings);
 
   // Controlled settings bubble.
   localized_strings->SetString("controlledSettingPolicy",

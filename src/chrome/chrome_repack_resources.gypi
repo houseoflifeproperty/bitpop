@@ -31,7 +31,7 @@
           '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_resources.pak',
           '<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.pak',
           '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
-          '<(SHARED_INTERMEDIATE_DIR)/extensions/extensions_renderer_resources.pak', 
+          '<(SHARED_INTERMEDIATE_DIR)/extensions/extensions_renderer_resources.pak',
           '<(SHARED_INTERMEDIATE_DIR)/extensions/extensions_resources.pak',
         ],
       }],
@@ -43,6 +43,7 @@
           '<(grit_out_dir)/options_resources.pak',
           '<(grit_out_dir)/quota_internals_resources.pak',
           '<(grit_out_dir)/sync_file_system_internals_resources.pak',
+          '<(grit_out_dir)/tor_options_resources.pak',
         ],
       }],
       ['enable_extensions==1', {

@@ -99,6 +99,13 @@
               },
               'includes': [ '../build/grit_action.gypi' ],
             },
+            {
+              'action_name': 'generate_tor_options_resources',
+              'variables': {
+                'grit_grd_file': 'browser/resources/tor_options_resources.grd',
+              },
+              'includes': [ '../build/grit_action.gypi' ],
+            },
           ],
           'copies': [
             {
