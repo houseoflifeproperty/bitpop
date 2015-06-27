@@ -75,7 +75,27 @@ class TorlauncherReadAuthenticationCookieFunction:
   DECLARE_EXTENSION_FUNCTION("torlauncher.readAuthenticationCookie",
                              TORLAUNCHER_READAUTHENTICATIONCOOKIE)
 };
-
+class TorlauncherSendTorNetworkSettingsResultFunction:
+    public UIThreadExtensionFunction {
+  virtual ~TorlauncherSendTorNetworkSettingsResultFunction() {}
+  virtual ResponseAction Run() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION("torlauncher.sendTorNetworkSettingsResult",
+                             TORLAUNCHER_SENDTORNETWORKSETTINGSRESULT)
+};
+class TorlauncherNotifyTorOpenControlConnectionSuccessFunction:
+    public UIThreadExtensionFunction {
+  virtual ~TorlauncherNotifyTorOpenControlConnectionSuccessFunction() {}
+  virtual ResponseAction Run() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION("torlauncher.notifyTorOpenControlConnectionSuccess",
+                             TORLAUNCHER_NOTIFYTOROPENCONTROLCONNECTIONSUCCESS)
+};
+class TorlauncherNotifyTorCircuitsEstablishedFunction:
+    public UIThreadExtensionFunction {
+  virtual ~TorlauncherNotifyTorCircuitsEstablishedFunction() {}
+  virtual ResponseAction Run() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION("torlauncher.notifyTorCircuitsEstablished",
+                             TORLAUNCHER_NOTIFYTORCIRCUITSESTABLISHED)
+};
 } // namespace extensions
 
 #endif // CHROME_BROWSER_EXTENSIONS_API_TORLAUNCHER_TORLAUNCHER_API_H_

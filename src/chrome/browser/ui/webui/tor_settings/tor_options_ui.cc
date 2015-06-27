@@ -18,7 +18,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/ui/webui/options/options_ui.h"
+#include "chrome/browser/ui/webui/tor_settings/tor_options_ui.h"
 
 #include <algorithm>
 #include <vector>
@@ -40,19 +40,22 @@
 #include "chrome/browser/ui/webui/metrics_handler.h"
 #include "chrome/browser/ui/webui/options/help_overlay_handler.h"
 #include "chrome/browser/ui/webui/theme_source.h"
-#include "chrome/browser/ui/webui/tor_settings/core_options_handler.h"
+#include "chrome/browser/ui/webui/tor_settings/tor_core_options_handler.h"
+#include "chrome/browser/ui/webui/tor_settings/tor_options_handler.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/locale_settings.h"
 #include "components/omnibox/autocomplete_match.h"
 #include "components/omnibox/autocomplete_result.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_ui.h"
-#include "grit/options_resources.h"
+#include "grit/tor_options_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -60,6 +63,7 @@
 #include "ui/base/webui/jstemplate_builder.h"
 #include "ui/base/webui/web_ui_util.h"
 #include "url/gurl.h"
+
 
 using content::RenderViewHost;
 
@@ -129,11 +133,11 @@ void OptionsUIHTMLSource::StartDataRequest(
   } else if (path == kOptionsBundleJsFile) {
     // Return (and cache) the options javascript code.
     response_bytes = ui::ResourceBundle::GetSharedInstance().
-        LoadDataResourceBytes(IDR_OPTIONS_BUNDLE_JS);
+        LoadDataResourceBytes(IDR_TOR_OPTIONS_BUNDLE_JS);
   } else {
     // Return (and cache) the main options html page as the default.
     response_bytes = ui::ResourceBundle::GetSharedInstance().
-        LoadDataResourceBytes(IDR_OPTIONS_HTML);
+        LoadDataResourceBytes(IDR_TOR_OPTIONS_HTML);
   }
 
   callback.Run(response_bytes.get());
@@ -154,26 +158,16 @@ OptionsUIHTMLSource::~OptionsUIHTMLSource() {}
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// OptionsPageUIHandler
+// OptionsPageUIHandlerStaticContainer
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-const char OptionsPageUIHandler::kSettingsAppKey[] = "torSettingsApp";
-
-OptionsPageUIHandler::OptionsPageUIHandler() {
-}
-
-OptionsPageUIHandler::~OptionsPageUIHandler() {
-}
-
-bool OptionsPageUIHandler::IsEnabled() {
-  return true;
-}
+const char OptionsPageUIHandlerStaticContainer::kSettingsAppKey[] = "torSettingsApp";
 
 // static
-void OptionsPageUIHandler::RegisterStrings(
+void OptionsPageUIHandlerStaticContainer::RegisterStrings(
     base::DictionaryValue* localized_strings,
-    const OptionsStringResource* resources,
+    const options::OptionsPageUIHandler::OptionsStringResource* resources,
     size_t length) {
   for (size_t i = 0; i < length; ++i) {
     base::string16 value;
@@ -188,15 +182,16 @@ void OptionsPageUIHandler::RegisterStrings(
   }
 }
 
-void OptionsPageUIHandler::RegisterTitle(
+// static
+void OptionsPageUIHandlerStaticContainer::RegisterTitle(
     base::DictionaryValue* localized_strings,
     const std::string& variable_name,
     int title_id) {
   localized_strings->SetString(variable_name,
       l10n_util::GetStringUTF16(title_id));
   localized_strings->SetString(variable_name + "TabTitle",
-      l10n_util::GetStringFUTF16(IDS_OPTIONS_TAB_TITLE,
-          l10n_util::GetStringUTF16(IDS_SETTINGS_TITLE),
+      l10n_util::GetStringFUTF16(IDS_TOR_OPTIONS_TAB_TITLE,
+          l10n_util::GetStringUTF16(IDS_TOR_SETTINGS_TITLE),
           l10n_util::GetStringUTF16(title_id)));
 }
 
@@ -211,7 +206,7 @@ OptionsUI::OptionsUI(content::WebUI* web_ui)
       WebContentsObserver(web_ui->GetWebContents()),
       initialized_handlers_(false) {
   base::DictionaryValue* localized_strings = new base::DictionaryValue();
-  localized_strings->Set(OptionsPageUIHandler::kSettingsAppKey,
+  localized_strings->Set(OptionsPageUIHandlerStaticContainer::kSettingsAppKey,
                          new base::DictionaryValue());
 
   CoreOptionsHandler* core_handler;
@@ -219,8 +214,8 @@ OptionsUI::OptionsUI(content::WebUI* web_ui)
   core_handler->set_handlers_host(this);
   AddOptionsPageUIHandler(localized_strings, core_handler);
 
-  BrowserOptionsHandler* browser_options_handler = new BrowserOptionsHandler();
-  AddOptionsPageUIHandler(localized_strings, browser_options_handler);
+  TorOptionsHandler* tor_options_handler = new TorOptionsHandler();
+  AddOptionsPageUIHandler(localized_strings, tor_options_handler);
 
   web_ui->AddMessageHandler(new MetricsHandler());
 
@@ -278,6 +273,22 @@ base::RefCountedMemory* OptionsUI::GetFaviconResourceBytes(
       LoadDataResourceBytesForScale(IDR_SETTINGS_FAVICON, scale_factor);
 }
 
+// static
+void OptionsUI::RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(
+      prefs::kTorSettingsShowProxySection,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kTorSettingsShowFirewallSection,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kTorSettingsShowISPBlockSection,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+}
+
 void OptionsUI::DidStartProvisionalLoadForFrame(
     content::RenderFrameHost* render_frame_host,
     const GURL& validated_url,
@@ -309,7 +320,7 @@ void OptionsUI::InitializeHandlers() {
     handlers_[i]->InitializePage();
 
   web_ui()->CallJavascriptFunction(
-      "BrowserOptions.notifyInitializationComplete");
+      "TorOptions.notifyInitializationComplete");
 }
 
 void OptionsUI::OnFinishedLoading() {
@@ -318,8 +329,8 @@ void OptionsUI::OnFinishedLoading() {
 
 void OptionsUI::AddOptionsPageUIHandler(
     base::DictionaryValue* localized_strings,
-    OptionsPageUIHandler* handler_raw) {
-  scoped_ptr<OptionsPageUIHandler> handler(handler_raw);
+    options::OptionsPageUIHandler* handler_raw) {
+  scoped_ptr<options::OptionsPageUIHandler> handler(handler_raw);
   DCHECK(handler.get());
   // Add only if handler's service is enabled.
   if (handler->IsEnabled()) {

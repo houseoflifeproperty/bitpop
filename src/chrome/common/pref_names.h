@@ -819,6 +819,12 @@ extern const char kBrowserAddPersonEnabled[];
 
 extern const char kEasyUnlockHardlockState[];
 
+// BITPOP:
+extern const char kTorSettingsShowProxySection[];
+extern const char kTorSettingsShowFirewallSection[];
+extern const char kTorSettingsShowISPBlockSection[];
+// />
+
 }  // namespace prefs
 
 #endif  // CHROME_COMMON_PREF_NAMES_H_

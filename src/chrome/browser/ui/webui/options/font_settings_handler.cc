@@ -97,8 +97,8 @@ void FontSettingsHandler::GetLocalizedValues(
       IDS_FONT_LANGUAGE_SETTING_ADVANCED_FONT_SETTINGS_OPTIONS }
   };
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
-  RegisterTitle(localized_strings, "fontSettingsPage",
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "fontSettingsPage",
                 IDS_FONT_LANGUAGE_SETTING_FONT_TAB_TITLE);
   localized_strings->SetString("fontSettingsPlaceholder",
       l10n_util::GetStringUTF16(

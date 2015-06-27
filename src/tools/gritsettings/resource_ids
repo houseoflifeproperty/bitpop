@@ -10,7 +10,7 @@
 # The first entry in the file, SRCDIR, is special: It is a relative path from
 # this file to the base of your checkout.
 #
-# The range of ID values, which is used by pak files, is from 0 to 2^16 - 1. 
+# The range of ID values, which is used by pak files, is from 0 to 2^16 - 1.
 {
   "SRCDIR": "../..",
 
@@ -233,4 +233,8 @@
   "ui/android/java/strings/android_ui_strings.grd": {},
 
   # Resource ids starting at 31000 are reserved for projects built on Chromium.
+  "chrome/browser/resources/tor_options_resources.grd": {
+    "includes": [31000],
+    "structures": [31200],
+  },
 }

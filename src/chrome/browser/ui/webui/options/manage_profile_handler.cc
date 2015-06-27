@@ -116,9 +116,9 @@ void ManageProfileHandler::GetLocalizedValues(
         IDS_PROFILES_IMPORT_EXISTING_SUPERVISED_USER_LINK },
   };
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
-  RegisterTitle(localized_strings, "manageProfile", IDS_PROFILES_MANAGE_TITLE);
-  RegisterTitle(localized_strings, "createProfile", IDS_PROFILES_CREATE_TITLE);
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "manageProfile", IDS_PROFILES_MANAGE_TITLE);
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "createProfile", IDS_PROFILES_CREATE_TITLE);
 
   localized_strings->SetBoolean("profileShortcutsEnabled",
                                 ProfileShortcutManager::IsFeatureEnabled());

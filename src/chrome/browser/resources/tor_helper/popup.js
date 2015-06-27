@@ -28,7 +28,7 @@ window.onload = function () {
 
   if (menuLaunch)
     menuLaunch.addEventListener('click', function (e) {
-      chrome.torlauncher.launchTorBrowser();
+      chrome.torlauncher.launchTorBrowser({});
       return false;
     }, false);
 
@@ -40,7 +40,8 @@ window.onload = function () {
 
   if (menuNetworkSettings)
     menuNetworkSettings.addEventListener('click', function (e) {
-      chrome.runtime.sendMessage(kTorLauncherAppId, { kind: "TorOpenNetworkSettingsDialog" });
+      //chrome.runtime.sendMessage(kTorLauncherAppId, { kind: "TorOpenNetworkSettingsDialog" });
+      chrome.torlauncher.launchTorBrowser({ open_tor_settings: true })
       return false;
     }, false);
 };

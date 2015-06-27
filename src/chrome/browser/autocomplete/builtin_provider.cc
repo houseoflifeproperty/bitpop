@@ -95,6 +95,8 @@ void BuiltinProvider::Start(const AutocompleteInput& input,
 #if !defined(OS_ANDROID)
     AddMatch(base::ASCIIToUTF16(chrome::kChromeUISettingsURL),
              base::string16(), styles);
+    AddMatch(base::ASCIIToUTF16(chrome::kChromeUITorSettingsURL),
+             base::string16(), styles);
 #endif
     AddMatch(base::ASCIIToUTF16(chrome::kChromeUIVersionURL),
              base::string16(), styles);

@@ -55,6 +55,7 @@ button {
   line-height: 1.417em;  /* 17px based on default 12px font size. */
   margin: 6px 0;
   padding: 0;
+  text-align: left;
 }
 
 .selected > button {

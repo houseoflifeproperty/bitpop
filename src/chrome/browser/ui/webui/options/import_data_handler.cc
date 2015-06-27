@@ -73,8 +73,8 @@ void ImportDataHandler::GetLocalizedValues(
 #endif
   };
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
-  RegisterTitle(localized_strings, "importDataOverlay",
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "importDataOverlay",
                 IDS_IMPORT_SETTINGS_TITLE);
 }
 

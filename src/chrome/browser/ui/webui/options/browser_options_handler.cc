@@ -495,14 +495,15 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
       IDS_SETTINGS_APP_LAUNCHER_PRODUCT_NAME },
   };
   base::DictionaryValue* app_values = NULL;
-  CHECK(values->GetDictionary(kSettingsAppKey, &app_values));
-  RegisterStrings(app_values, app_resources, arraysize(app_resources));
+  CHECK(values->GetDictionary(
+      OptionsPageUIHandlerStaticContainer::kSettingsAppKey, &app_values));
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(app_values, app_resources, arraysize(app_resources));
 #endif
 
-  RegisterStrings(values, resources, arraysize(resources));
-  RegisterTitle(values, "doNotTrackConfirmOverlay",
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(values, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(values, "doNotTrackConfirmOverlay",
                 IDS_OPTIONS_ENABLE_DO_NOT_TRACK_BUBBLE_TITLE);
-  RegisterTitle(values, "spellingConfirmOverlay",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(values, "spellingConfirmOverlay",
                 IDS_CONTENT_CONTEXT_SPELLING_ASK_GOOGLE);
 #if defined(ENABLE_FULL_PRINTING)
   RegisterCloudPrintValues(values);
@@ -514,7 +515,7 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
       "defaultSearchGroupLabel",
       l10n_util::GetStringFUTF16(IDS_SEARCH_PREF_EXPLANATION, omnibox_url));
   values->SetString("hotwordLearnMoreURL", chrome::kHotwordLearnMoreURL);
-  RegisterTitle(values, "hotwordConfirmOverlay",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(values, "hotwordConfirmOverlay",
                 IDS_HOTWORD_CONFIRM_BUBBLE_TITLE);
 
 #if defined(OS_CHROMEOS)
@@ -625,7 +626,7 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
       CommandLine::ForCurrentProcess()->HasSwitch(
           chromeos::switches::kEnableConsumerManagement));
 
-  RegisterTitle(values, "thirdPartyImeConfirmOverlay",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(values, "thirdPartyImeConfirmOverlay",
                 IDS_OPTIONS_SETTINGS_LANGUAGES_THIRD_PARTY_WARNING_TITLE);
 #endif
 

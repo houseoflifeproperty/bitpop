@@ -19,7 +19,6 @@
 // found in the LICENSE file.
 
 var AlertOverlay = options.AlertOverlay;
-// FIXME: remove next line, change with appropriate handler
 var TorOptions = options.TorOptions;
 var ConfirmDialog = options.ConfirmDialog;
 var OptionsFocusManager = options.OptionsFocusManager;

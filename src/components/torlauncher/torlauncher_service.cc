@@ -38,12 +38,30 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/torlauncher/torlauncher_pref_names.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/web_contents.h"
 #include "crypto/random.h"
+#include "extensions/browser/extension_host.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/process_manager.h"
 #include "grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
+
+#if defined(OS_MACOSX)
+#include "base/mac/mac_util.h"
+#endif
 
 namespace {
 
@@ -151,6 +169,23 @@ std::string MapTorFileTypeToPrefName(
   return "extensions.torlauncher." + tor_file_type_str + "_path";
 }
 
+void ExecuteScriptInBackgroundPage(Profile* profile,
+                                   const std::string& extension_id,
+                                   const std::string& script) {
+  extensions::ProcessManager* manager =
+      extensions::ExtensionSystem::Get(profile)->process_manager();
+  extensions::ExtensionHost* host =
+      manager->GetBackgroundHostForExtension(extension_id);
+  if (host == NULL) {
+    DLOG(ERROR) << "Extension " << extension_id << " has no background page.";
+    return;
+  }
+  //std::string script2 =
+  //    "window.domAutomationController.setAutomationId(0);" + script;
+  host->render_view_host()->GetMainFrame()->
+      ExecuteJavaScriptForTests(base::UTF8ToUTF16(script));
+}
+
 }
 
 namespace torlauncher {
@@ -201,14 +236,20 @@ void TorLauncherService::RegisterProfilePrefs(
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
-TorLauncherService::TorLauncherService(PrefService* browser_prefs)
-  : tor_file_base_dir_(""),
+TorLauncherService::TorLauncherService(Profile *profile)
+  : profile_(profile),
+    tor_file_base_dir_(""),
     tor_process_status_(UNKNOWN),
     tor_process_(nullptr),
     control_host_(""),
     control_port_(0),
     control_passwd_(""),
-    browser_prefs_(browser_prefs) {
+    tor_circuits_established_(false) {
+  DCHECK(profile);
+  DLOG(INFO) << "TorLauncherService::TorLauncherService(0x" <<
+      base::HexEncode(static_cast<void*>(&profile), sizeof(profile)) << ")";
+
+  browser_prefs_ = profile->GetPrefs();
   DCHECK(browser_prefs_);
 
   scoped_ptr<base::Environment> env(base::Environment::Create());
@@ -246,6 +287,13 @@ TorLauncherService::TorLauncherService(PrefService* browser_prefs)
   }
   if (control_passwd_.empty())
     control_passwd_ = GenerateRandomPassword();
+
+  registrar_.Add(this, chrome::TORLAUNCHER_APP_OPEN_CONTROL_CONNECTION_SUCCESS,
+                 content::Source<Profile>(profile));
+  registrar_.Add(this, chrome::TORLAUNCHER_APP_FINISHED_INITIALIZING_CIRCUITS,
+                 content::Source<Profile>(profile));
+  registrar_.Add(this, chrome::TORLAUNCHER_APP_CIRCUIT_ERROR,
+                 content::Source<Profile>(profile));
 }
 
 TorLauncherService::~TorLauncherService() {
@@ -568,5 +616,58 @@ std::string TorLauncherService::HashPassword(const std::string& hex_password,
 
   return rv;
 }  // HashPassword()
+
+void TorLauncherService::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  switch (type) {
+    case chrome::TORLAUNCHER_APP_OPEN_CONTROL_CONNECTION_SUCCESS:
+      DLOG(INFO) << "Notification received: TORLAUNCHER_APP_OPEN_CONTROL_CONNECTION_SUCCESS";
+      SetTorOpenControlConnectionSuccess();
+      break;
+    case chrome::TORLAUNCHER_APP_FINISHED_INITIALIZING_CIRCUITS:
+      DLOG(INFO) << "Notification received: TORLAUNCHER_APP_FINISHED_INITIALIZING_CIRCUITS";
+      SetTorCircuitsEstablished(true);
+      break;
+    case chrome::TORLAUNCHER_APP_CIRCUIT_ERROR:
+      SetTorCircuitsEstablished(false);
+      break;
+    default:
+      NOTREACHED() << "Error: Unexpected notification received.";
+  }
+}
+
+void TorLauncherService::SetTorOpenControlConnectionSuccess() {
+  base::CommandLine *command_line = base::CommandLine::ForCurrentProcess();
+
+  if (command_line->HasSwitch(switches::kLaunchTorBrowser)) {
+    if (command_line->HasSwitch(switches::kOpenTorSettingsPage)) {
+      chrome::NavigateParams params(
+          profile_,
+          GURL("chrome://chrome/tor-settings/"),
+          ui::PAGE_TRANSITION_LINK);
+      chrome::Navigate(&params);
+    } else {
+      DLOG(INFO) << "Executing: launchControlTorPhaseTwo() ...";
+      ExecuteScriptInBackgroundPage(
+          profile_,
+          extension_misc::kTorLauncherAppId,
+          "torlauncher.torProcessService.launchControlTorPhaseTwo();");
+    }
+  }
+}
+
+void TorLauncherService::SetTorCircuitsEstablished(bool established) {
+  DCHECK_EQ(tor_process_status_, RUNNING);
+  tor_circuits_established_ = established;
+  if (established) {
+      chrome::NavigateParams params(
+          profile_->GetOffTheRecordProfile(),
+          GURL("https://check.torproject.org/?lang=en_US"),
+          ui::PAGE_TRANSITION_LINK);
+      chrome::Navigate(&params);
+  }
+}
 
 } // namespace torlauncher

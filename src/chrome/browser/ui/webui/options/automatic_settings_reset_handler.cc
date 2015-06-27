@@ -53,7 +53,7 @@ void AutomaticSettingsResetHandler::GetLocalizedValues(
         IDS_LEARN_MORE },
   };
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
   localized_strings->SetString(
       "automaticSettingsResetLearnMoreUrl",
       chrome::kAutomaticSettingsResetLearnMoreURL);

@@ -22,10 +22,10 @@
   chrome.runtime.onMessageExternal.addListener(function (message, sender, sendResponse) {
     switch (message.kind) {
       case kOpenInitialTorSessionWindowMessage:
-        chrome.windows.create({       url: kInitialUrl,
-                                  focused: true,
-                                incognito: true },
-                              function (window) { /*sendResponse({ success: true });*/ });
+        // chrome.windows.create({       url: kInitialUrl,
+        //                           focused: true,
+        //                         incognito: true },
+        //                       function (window) { /*sendResponse({ success: true });*/ });
         break;
       default:
         console.warn('Invalid message format: ' + JSON.stringify(message));

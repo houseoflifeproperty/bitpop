@@ -48,9 +48,9 @@ void HandlerOptionsHandler::GetLocalizedValues(
       { "handlers_active_heading", IDS_HANDLERS_ACTIVE_HEADING },
       { "handlers_ignored_heading", IDS_HANDLERS_IGNORED_HEADING },
   };
-  RegisterTitle(localized_strings, "handlersPage",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "handlersPage",
                 IDS_HANDLER_OPTIONS_WINDOW_TITLE);
-  RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
 
   localized_strings->SetString("handlers_learn_more_url",
                                kHandlersLearnMoreUrl);

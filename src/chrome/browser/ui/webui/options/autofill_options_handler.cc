@@ -324,8 +324,8 @@ void AutofillOptionsHandler::GetLocalizedValues(
 #endif  // defined(OS_MACOSX)
   };
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
-  RegisterTitle(localized_strings, "autofillOptionsPage",
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "autofillOptionsPage",
                 IDS_AUTOFILL_OPTIONS_TITLE);
 
   localized_strings->SetString("helpUrl", autofill::kHelpURL);

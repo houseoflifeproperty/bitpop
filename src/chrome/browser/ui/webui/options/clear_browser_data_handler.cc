@@ -99,8 +99,8 @@ void ClearBrowserDataHandler::GetLocalizedValues(
     { "flash_storage_url", IDS_FLASH_STORAGE_URL },
   };
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
-  RegisterTitle(localized_strings, "clearBrowserDataOverlay",
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "clearBrowserDataOverlay",
                 IDS_CLEAR_BROWSING_DATA_TITLE);
   localized_strings->SetString("clearBrowsingDataLearnMoreUrl",
                                kClearBrowsingDataLearnMoreUrl);

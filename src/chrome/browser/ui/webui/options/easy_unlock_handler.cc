@@ -40,7 +40,7 @@ void EasyUnlockHandler::GetLocalizedValues(base::DictionaryValue* values) {
        IDS_OPTIONS_EASY_UNLOCK_TURN_OFF_RETRY_BUTTON},
   };
 
-  RegisterStrings(values, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(values, resources, arraysize(resources));
 }
 
 void EasyUnlockHandler::InitializeHandler() {

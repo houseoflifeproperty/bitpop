@@ -105,8 +105,8 @@ void CookiesViewHandler::GetLocalizedValues(
       IDS_GEOLOCATION_SET_BY_HOVER },  // TODO(bauerb): Use a better string
   };
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
-  RegisterTitle(localized_strings, "cookiesViewPage",
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "cookiesViewPage",
                 IDS_COOKIES_WEBSITE_PERMISSIONS_WINDOW_TITLE);
 }
 

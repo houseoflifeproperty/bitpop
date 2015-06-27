@@ -77,6 +77,8 @@ int StringForChromeHost(const GURL& url) {
 #endif  // ENABLE_FULL_PRINTING
   if (host == chrome::kChromeUISettingsHost)
     return IDS_SETTINGS_TITLE;
+  if (host == chrome::kChromeUITorSettingsHost)
+    return IDS_TOR_SETTINGS_TITLE;
   if (host == chrome::kChromeUIVersionHost)
     return IDS_ABOUT_VERSION_TITLE;
 

@@ -20,7 +20,7 @@ HelpOverlayHandler::~HelpOverlayHandler() {
 
 void HelpOverlayHandler::GetLocalizedValues(
     base::DictionaryValue* localized_strings) {
-  RegisterTitle(localized_strings, "aboutOverlay", IDS_ABOUT_TITLE);
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "aboutOverlay", IDS_ABOUT_TITLE);
   HelpHandler::GetLocalizedValues(localized_strings);
 }
 

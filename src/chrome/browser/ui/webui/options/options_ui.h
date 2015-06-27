@@ -33,13 +33,21 @@ class PointerDeviceObserver;
 }  // namespace chromeos
 #endif
 
+// BiTPOP:
+namespace tor_settings {
+class OptionsPageUIHandlerStaticContainer;
+}
+// />
+
 namespace options {
 
 // The base class handler of Javascript messages of options pages.
 class OptionsPageUIHandler : public content::WebUIMessageHandler {
  public:
-  // Key for identifying the Settings App localized_strings in loadTimeData.
-  static const char kSettingsAppKey[];
+  // BITPOP:
+  // // Key for identifying the Settings App localized_strings in loadTimeData.
+  // static const char kSettingsAppKey[];
+  // />
 
   OptionsPageUIHandler();
   virtual ~OptionsPageUIHandler();
@@ -69,6 +77,9 @@ class OptionsPageUIHandler : public content::WebUIMessageHandler {
   virtual void RegisterMessages() OVERRIDE {}
 
  protected:
+  friend class OptionsPageUIHandlerStaticContainer;
+  friend class tor_settings::OptionsPageUIHandlerStaticContainer;
+
   struct OptionsStringResource {
     // The name of the resource in templateData.
     const char* name;
@@ -79,22 +90,44 @@ class OptionsPageUIHandler : public content::WebUIMessageHandler {
     int substitution_id;
   };
 
-  // A helper to simplify string registration in WebUI for strings which do not
-  // change at runtime and optionally contain a single substitution.
-  static void RegisterStrings(base::DictionaryValue* localized_strings,
-                              const OptionsStringResource* resources,
-                              size_t length);
+  // BITPOP:
+  // // A helper to simplify string registration in WebUI for strings which do not
+  // // change at runtime and optionally contain a single substitution.
+  // static void OptionsPageUIHandlerStaticContainer::RegisterStrings(base::DictionaryValue* localized_strings,
+  //                             const OptionsStringResource* resources,
+  //                             size_t length);
 
-  // Registers string resources for a page's header and tab title.
-  static void RegisterTitle(base::DictionaryValue* localized_strings,
-                            const std::string& variable_name,
-                            int title_id);
+  // // Registers string resources for a page's header and tab title.
+  // static void OptionsPageUIHandlerStaticContainer::RegisterTitle(base::DictionaryValue* localized_strings,
+  //                           const std::string& variable_name,
+  //                           int title_id);
+  // />
 
   content::NotificationRegistrar registrar_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(OptionsPageUIHandler);
 };
+
+// BITPOP:
+class OptionsPageUIHandlerStaticContainer {
+ public:
+  // Key for identifying the Settings App localized_strings in loadTimeData.
+  static const char kSettingsAppKey[];
+
+  // A helper to simplify string registration in WebUI for strings which do not
+  // change at runtime and optionally contain a single substitution.
+  static void RegisterStrings(base::DictionaryValue* localized_strings,
+                              const OptionsPageUIHandler::OptionsStringResource* resources,
+                              size_t length);
+
+  // Registers string resources for a page's header and tab title.
+  static void RegisterTitle(base::DictionaryValue* localized_strings,
+                            const std::string& variable_name,
+                            int title_id);
+};
+// />
+
 
 // An interface for common operations that a host of OptionsPageUIHandlers
 // should provide.

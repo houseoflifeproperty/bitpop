@@ -90,8 +90,8 @@ const char kChromeUIThemeURL[] = "chrome://theme/";
 const char kChromeUIThumbnailURL[] = "chrome://thumb/";
 const char kChromeUIThumbnailListURL[] = "chrome://thumbnails/";
 // BITPOP:
-const char kChromeUITorSettingsURL[] = "chrome://tor-settings";
-const char kChromeUITorSettingsFrameURL[] = "chrome://tor-settings-frame";
+const char kChromeUITorSettingsURL[] = "chrome://tor-settings/";
+const char kChromeUITorSettingsFrameURL[] = "chrome://tor-settings-frame/";
 // />
 const char kChromeUIUberURL[] = "chrome://chrome/";
 const char kChromeUIUberFrameURL[] = "chrome://uber-frame/";
@@ -672,6 +672,10 @@ const char* const kChromeHostURLs[] = {
 #if defined(ENABLE_WEBRTC)
   kChromeUIWebRtcLogsHost,
 #endif
+  // BITPOP:
+  kChromeUITorSettingsHost,
+  kChromeUITorSettingsFrameHost,
+  // />
 };
 const size_t kNumberOfChromeHostURLs = arraysize(kChromeHostURLs);
 

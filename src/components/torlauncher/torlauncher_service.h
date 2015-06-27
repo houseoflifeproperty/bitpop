@@ -25,8 +25,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "components/keyed_service/core/keyed_service.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 class PrefService;
+class Profile;
 
 namespace base {
 class Process;
@@ -38,7 +41,8 @@ class PrefRegistrySyncable;
 
 namespace torlauncher {
 
-class TorLauncherService : public KeyedService {
+class TorLauncherService : public KeyedService,
+                           public content::NotificationObserver {
  public:
   enum TorFileType {
     TOR = 0,
@@ -54,7 +58,7 @@ class TorLauncherService : public KeyedService {
     EXITED
   };
 
-  TorLauncherService(PrefService* browser_prefs);
+  TorLauncherService(Profile *profile);
   virtual ~TorLauncherService();
 
   // data accessors
@@ -62,6 +66,7 @@ class TorLauncherService : public KeyedService {
   uint16_t control_port() const { return control_port_; }
   std::string control_passwd() const { return control_passwd_; }
   base::Time tor_process_start_time() const { return tor_process_start_time_; }
+  bool tor_circuits_established() const { return tor_circuits_established_; }
 
   // Called when network connection with Tor client can be established.
   void set_tor_status_running() {
@@ -95,6 +100,10 @@ class TorLauncherService : public KeyedService {
 
   void ShutdownTor();
 
+  // NotificationObserver overrides
+  virtual void Observe(int type,
+                     const content::NotificationSource& source,
+                     const content::NotificationDetails& details) override;
  private:
   friend class TorLauncherServiceTest;
   FRIEND_TEST_ALL_PREFIXES(TorLauncherServiceTest, GetTorFiles);
@@ -116,7 +125,10 @@ class TorLauncherService : public KeyedService {
                            const char salt[8],
                            std::string* err_msg);
 
+  void SetTorOpenControlConnectionSuccess();
+  void SetTorCircuitsEstablished(bool established);
 
+  Profile* profile_;
   base::FilePath tor_file_base_dir_;
   TorStatus tor_process_status_;
 
@@ -125,9 +137,13 @@ class TorLauncherService : public KeyedService {
 
   std::string control_host_;
   uint16_t control_port_;
-  std::string control_passwd_;
+    std::string control_passwd_;
 
   PrefService* browser_prefs_;
+
+  bool tor_circuits_established_;
+
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(TorLauncherService);
 };

@@ -482,7 +482,8 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
       content::NavigationController::DisablePromptOnRepost();
 
     if (command_line.HasSwitch(switches::kLaunchTorBrowser) &&
-        !command_line.HasSwitch(switches::kAppId))
+        !command_line.HasSwitch(switches::kAppId)) // &&
+        // !command_line.HasSwitch(switches::kOpenTorSettingsPage))
       const_cast<CommandLine&>(command_line).AppendSwitchASCII(
           switches::kAppId, extension_misc::kTorLauncherAppId);
   }

@@ -408,43 +408,43 @@ void ContentSettingsHandler::GetLocalizedValues(
     { "zoomLevelsManage", IDS_ZOOMLEVELS_MANAGE_BUTTON },
   };
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
-  RegisterTitle(localized_strings, "contentSettingsPage",
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "contentSettingsPage",
                 IDS_CONTENT_SETTINGS_TITLE);
 
   // Register titles for each of the individual settings whose exception
   // dialogs will be processed by |ContentSettingsHandler|.
-  RegisterTitle(localized_strings, "cookies",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "cookies",
                 IDS_COOKIES_TAB_LABEL);
-  RegisterTitle(localized_strings, "images",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "images",
                 IDS_IMAGES_TAB_LABEL);
-  RegisterTitle(localized_strings, "javascript",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "javascript",
                 IDS_JAVASCRIPT_TAB_LABEL);
-  RegisterTitle(localized_strings, "plugins",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "plugins",
                 IDS_PLUGIN_TAB_LABEL);
-  RegisterTitle(localized_strings, "popups",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "popups",
                 IDS_POPUP_TAB_LABEL);
-  RegisterTitle(localized_strings, "location",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "location",
                 IDS_GEOLOCATION_TAB_LABEL);
-  RegisterTitle(localized_strings, "notifications",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "notifications",
                 IDS_NOTIFICATIONS_TAB_LABEL);
-  RegisterTitle(localized_strings, "fullscreen",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "fullscreen",
                 IDS_FULLSCREEN_TAB_LABEL);
-  RegisterTitle(localized_strings, "mouselock",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "mouselock",
                 IDS_MOUSE_LOCK_TAB_LABEL);
 #if defined(OS_CHROMEOS)
-  RegisterTitle(localized_strings, "protectedContent",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "protectedContent",
                 IDS_PROTECTED_CONTENT_TAB_LABEL);
 #endif
-  RegisterTitle(localized_strings, "media-stream",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "media-stream",
                 IDS_MEDIA_STREAM_TAB_LABEL);
-  RegisterTitle(localized_strings, "ppapi-broker",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "ppapi-broker",
                 IDS_PPAPI_BROKER_TAB_LABEL);
-  RegisterTitle(localized_strings, "multiple-automatic-downloads",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "multiple-automatic-downloads",
                 IDS_AUTOMATIC_DOWNLOADS_TAB_LABEL);
-  RegisterTitle(localized_strings, "midi-sysex",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "midi-sysex",
                 IDS_MIDI_SYSEX_TAB_LABEL);
-  RegisterTitle(localized_strings, "zoomlevels",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "zoomlevels",
                 IDS_ZOOMLEVELS_HEADER_AND_TAB_LABEL);
 
   localized_strings->SetString("exceptionsLearnMoreUrl",

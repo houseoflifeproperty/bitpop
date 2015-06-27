@@ -57,7 +57,7 @@ KeyedService* TorLauncherServiceFactory::BuildServiceInstanceFor(
 
   Profile* the_profile = static_cast<Profile*>(profile);
 
-  return new TorLauncherService(the_profile->GetPrefs());
+  return new TorLauncherService(the_profile);
 }
 
 void TorLauncherServiceFactory::RegisterProfilePrefs(

@@ -42,8 +42,8 @@ void StartupPagesHandler::GetLocalizedValues(
     { "startupPagesPlaceholder", IDS_OPTIONS_STARTUP_PAGES_PLACEHOLDER },
   };
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
-  RegisterTitle(localized_strings, "startupPagesOverlay",
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "startupPagesOverlay",
                 IDS_OPTIONS_STARTUP_PAGES_DIALOG_TITLE);
 }
 

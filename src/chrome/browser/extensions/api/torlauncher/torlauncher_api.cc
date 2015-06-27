@@ -23,19 +23,28 @@
 #include "base/environment.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/torlauncher/torlauncher_service_factory.h"
 #include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/torlauncher.h"
+#include "chrome/common/url_constants.h"
 #include "components/torlauncher/torlauncher_service.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
 
 #if defined(OS_MACOSX)
 #include "chrome/browser/chrome_browser_application_mac.h"
@@ -44,14 +53,31 @@
 namespace extensions {
 
 ExtensionFunction::ResponseAction TorlauncherLaunchTorBrowserFunction::Run() {
+  scoped_ptr<api::torlauncher::LaunchTorBrowser::Params> params(
+      api::torlauncher::LaunchTorBrowser::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+
+  bool open_tor_settings = false;
+  if (params->options.get() && params->options->open_tor_settings.get())
+    open_tor_settings = *params->options->open_tor_settings;
+
   Profile* profile = Profile::FromBrowserContext(browser_context());
 
-  if (profile->IsProtectedModeEnabled())
-    // We are already launched in Protected Tor Mode. Just open a new window.
-    // Protected also means incognito, so no need to GetOffTheRecordProfile().
-    static_cast<void>(
-        chrome::NewEmptyWindow(profile, chrome::HOST_DESKTOP_TYPE_NATIVE));
-  else {
+  if (profile->IsProtectedModeEnabled()) {
+    if (open_tor_settings) {
+      chrome::NavigateParams params(
+          chrome::FindLastActiveWithProfile(profile,
+                                            chrome::HOST_DESKTOP_TYPE_NATIVE),
+          GURL(chrome::kChromeUITorSettingsURL),
+          ui::PAGE_TRANSITION_LINK);
+      chrome::Navigate(&params);
+    } else {
+      // We are already launched in Protected Tor Mode. Just open a new window.
+      // Protected also means incognito, so no need to GetOffTheRecordProfile().
+      static_cast<void>(
+          chrome::NewEmptyWindow(profile, chrome::HOST_DESKTOP_TYPE_NATIVE));
+    }
+  } else {
     // Launch Protected Mode browser instance
     base::CommandLine command_line = *base::CommandLine::ForCurrentProcess();
     base::FilePath program_path = command_line.GetProgram();
@@ -65,6 +91,9 @@ ExtensionFunction::ResponseAction TorlauncherLaunchTorBrowserFunction::Run() {
     base::FilePath original_profile_dir = profile->GetPath();
     new_command_line.AppendSwitchPath(switches::kOriginalBrowserProfileDir,
                                       original_profile_dir);
+
+    if (open_tor_settings)
+      new_command_line.AppendSwitch(switches::kOpenTorSettingsPage);
 
     base::ProcessHandle ph;
     if (base::LaunchProcess(new_command_line, base::LaunchOptions(), &ph)) {
@@ -227,6 +256,70 @@ TorlauncherReadAuthenticationCookieFunction::Run() {
   }
 
   results_ = api::torlauncher::ReadAuthenticationCookie::Results::Create(res);
+
+  return RespondNow(ArgumentList(results_.Pass()));
+}
+
+ExtensionFunction::ResponseAction
+TorlauncherSendTorNetworkSettingsResultFunction::Run() {
+  scoped_ptr<api::torlauncher::SendTorNetworkSettingsResult::Params> params(
+      api::torlauncher::SendTorNetworkSettingsResult::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+
+  DLOG(INFO) << "CALL: SendTorNetworkSettingsResult('" <<
+      params->settings << "')";
+
+  if (!params->settings.empty()) {
+      base::JSONReader reader(base::JSON_ALLOW_TRAILING_COMMAS);
+      base::Value *result = reader.ReadToValue(params->settings);
+    if (!result)
+      DLOG(ERROR) << reader.GetErrorMessage();
+    else {
+      DLOG(INFO) << "After JSONReader::ReadToValue: " << *result;
+      content::NotificationService::current()->Notify(
+          chrome::NOTIFICATION_TOR_NETWORK_SETTINGS_READY,
+          content::Source<Profile>(profile),
+          content::Details<base::Value>(result)
+        );
+    }
+  }
+
+  results_ = make_scoped_ptr(new base::ListValue());
+
+  return RespondNow(ArgumentList(results_.Pass()));
+}
+
+ExtensionFunction::ResponseAction
+TorlauncherNotifyTorOpenControlConnectionSuccessFunction::Run() {
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+  DLOG(INFO) << "CALL: notifyTorOpenControlConnectionSuccess() ," <<
+      " profile: 0x" <<
+      base::HexEncode(static_cast<void*>(&profile), sizeof(profile));
+
+  content::NotificationService::current()->Notify(
+      chrome::TORLAUNCHER_APP_OPEN_CONTROL_CONNECTION_SUCCESS,
+      content::Source<Profile>(profile),
+      content::NotificationService::NoDetails());
+
+  results_ = make_scoped_ptr(new base::ListValue());
+
+  return RespondNow(ArgumentList(results_.Pass()));
+}
+
+ExtensionFunction::ResponseAction
+TorlauncherNotifyTorCircuitsEstablishedFunction::Run() {
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+  DLOG(INFO) << "CALL: notifyTorCircuitsEstablished() , profile: 0x" <<
+      base::HexEncode(static_cast<void*>(&profile), sizeof(profile));
+
+  content::NotificationService::current()->Notify(
+      chrome::TORLAUNCHER_APP_FINISHED_INITIALIZING_CIRCUITS,
+      content::Source<Profile>(profile),
+      content::NotificationService::NoDetails());
+
+  results_ = make_scoped_ptr(new base::ListValue());
 
   return RespondNow(ArgumentList(results_.Pass()));
 }

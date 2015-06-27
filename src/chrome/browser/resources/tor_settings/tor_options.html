@@ -2,7 +2,7 @@
   <header>
     <h1 i18n-content="torSettingsTitle"></h1>
   </header>
-<!--   <section id="proxy-section">
+  <section id="proxy-section">
     <h3 i18n-content="sectionTitleTorProxy"></h3>
     <div class="checkbox controlled-setting-with-label"
         guest-visibility="disabled">
@@ -16,7 +16,7 @@
         </span>
       </label>
     </div>
-    <div id="tor-proxy-settings-section" hidden>
+    <div id="tor-proxy-settings-section" class="tor-settings-subsection" hidden>
       <div class="settings-row">
         <label for="tor-proxy-type">
           <span i18n-content="torsettings_useProxy_type"></span>
@@ -30,28 +30,32 @@
                     value="HTTP"></option>
           </select>
         </label>
-      </div>
-      <div class="settings-row">
+        <span>&nbsp;&nbsp;&nbsp;</span>
+      <!-- <div class="settings-row"> -->
         <label for="tor-proxy-addr">
           <span i18n-content="torsettings_useProxy_address"></span>
           <input type="text" id="tor-proxy-addr" size="20"
                      i18n-placeholder-text="torsettings_useProxy_address_placeholder"
                      pattern="(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)"/>
         </label>
+        <span>&nbsp;&nbsp;&nbsp;</span>
         <label for="tor-proxy-port">
           <span i18n-content="torsettings_useProxy_port"></span>
           <input type="text" id="tor-proxy-port" size="4" pattern="\d{1,5}"/>
         </label>
       </div>
+      <!-- </div> #settings-row -->
       <div class="settings-row">
         <label for="tor-proxy-username">
           <span i18n-content="torsettings_useProxy_username"></span>
-          <input type="text" id="tor-proxy-username" size="14"
+          <input type="text" id="tor-proxy-username" size="28"
                  i18n-placeholder-text="torsettings_optional"/>
         </label>
+      </div>
+      <div class="settings-row">
         <label for="tor-proxy-password" id="tor-proxy-password-label">
           <span i18n-content="torsettings_useProxy_password"></span>
-          <input id="tor-proxy-password" size="14" type="password"
+          <input id="tor-proxy-password" size="28" type="password"
                  i18n-placeholder-text="torsettings_optional"/>
         </label>
       </div>
@@ -71,7 +75,14 @@
         </span>
       </label>
     </div>
-    <div id="tor-firewall-settings-section" hidden>
+    <div id="tor-firewall-settings-section" class="tor-settings-subsection"
+         hidden>
+      <div class="settings-row">
+        <label for="tor-allowed-ports">
+          <span i18n-content="torsettings_useFirewall_allowedPorts"></span>
+          <input type="text" id="tor-allowed-ports" size="16"/>
+        </label>
+      </div>
     </div>
   </section>
   <section id="isp-block-section">
@@ -88,7 +99,36 @@
         </span>
       </label>
     </div>
-    <div id="tor-isp-block-settings-section" hidden>
-    </div>
-  </section> -->
+    <div id="tor-isp-block-settings-section" class="tor-settings-subsection"
+         hidden>
+      <div class="settings-row">
+        <label for="bridgesRadioYes">
+          <input type="radio" id="bridgesRadioYes" name="bridgeType"
+                 value="default"/>
+          <span i18n-content="torsettings_useBridges_default"></span>
+        </label>
+        <div class="bridge-settings-level-2">
+          <label id="defaultBridgeTypeLabel" for="defaultBridgeType">
+            <span i18n-content="torsettings_useBridges_type"></span>
+            <select id="defaultBridgeType"></select>
+          </label>
+        </div>
+      </div><!-- #settings-row -->
+      <div class="settings-row">
+        <label for="bridgeRadioCustom">
+          <input type="radio" id="bridgeRadioCustom" name="bridgeType"
+                 value="custom"/>
+          <span i18n-content="torsettings_useBridges_custom"></span>
+        </label>
+        <div class="bridge-settings-level-2">
+          <label id="bridgeListLabel" for="bridgeList">
+            <span i18n-content="torsettings_useBridges_label"></span>
+          </label><br>
+          <textarea id="bridgeList" row="3"
+                    i18n-placeholder-text="torsettings_useBridges_placeholder">
+          </textarea>
+        </div>
+      </div><!-- #settings-row -->
+    </div><!-- #tor-isp-block-settings-section -->
+  </section>
 </div>

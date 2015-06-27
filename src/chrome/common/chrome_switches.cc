@@ -876,6 +876,12 @@ const char kNumPacThreads[]                 = "num-pac-threads";
 // Launches URL in new browser window.
 const char kOpenInNewWindow[]               = "new-window";
 
+// BITPOP:
+// Whether to open a chrome://tor-settings non-incognito window on startup
+// Use only with kLaunchTorBrowser set
+const char kOpenTorSettingsPage[]           = "open-tor-settings";
+// />
+
 // Force use of QUIC for requests to the specified origin.
 const char kOriginToForceQuicOn[]           = "origin-to-force-quic-on";
 

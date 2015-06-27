@@ -420,7 +420,7 @@ torlauncher.util = {
 
   pr_debug: function (message) {
     if (!torlauncher.util.is_production)
-      console.info(message);
+      console.log(message);
   },
 
   isGeneratorFunction: function (functionToCheck) {

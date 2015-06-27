@@ -467,7 +467,7 @@ function *readTorSettings() {
                  (yield *initFirewallSettings()) &&
                  (yield *initBridgeSettings());
   }
-  catch (e) { console.warn("Error in readTorSettings: " + e + '\n' + e.stack); }
+  catch (e) { console.log("Error in readTorSettings: " + e + '\n' + e.stack); }
 
   if (!didSucceed) {
     // Unable to communicate with tor.  Hide settings and display an error.
@@ -858,8 +858,10 @@ function *initProxySettings() {
   else {
     var reply = yield torProtocolRemoteMethodCall('TorGetConfStr',
         kTorConfKeySocks5Proxy, null);
-    if (!gProtocolSvc.TorCommandSucceeded(reply))
+    if (!gProtocolSvc.TorCommandSucceeded(reply)) {
+      console.log('TorGetConfStr:kTorConfKeySocks5Proxy shippai');
       return false;
+    }
 
     if (reply.retVal) {
       proxyType = "SOCKS5";
@@ -898,23 +900,27 @@ function *initProxySettings() {
     }
   }
 
-  var haveProxy = (proxyType != undefined);
-  setYesNoRadioValue(kWizardProxyRadioGroup, haveProxy);
-  setElemValue(kUseProxyCheckbox, haveProxy);
-  setElemValue(kProxyTypeMenulist, proxyType);
-  onProxyTypeChange();
+  try {
+    var haveProxy = (proxyType != undefined);
+    setYesNoRadioValue(kWizardProxyRadioGroup, haveProxy);
+    setElemValue(kUseProxyCheckbox, haveProxy);
+    setElemValue(kProxyTypeMenulist, proxyType);
+    onProxyTypeChange();
 
-  var proxyAddr, proxyPort;
-  if (proxyAddrPort) {
-    var values = parseColonStr(proxyAddrPort);
-    proxyAddr = values[0];
-    proxyPort = values[1];
+    var proxyAddr, proxyPort;
+    if (proxyAddrPort) {
+      var values = parseColonStr(proxyAddrPort);
+      proxyAddr = values[0];
+      proxyPort = values[1];
+    }
+
+    setElemValue(kProxyAddr, proxyAddr);
+    setElemValue(kProxyPort, proxyPort);
+    setElemValue(kProxyUsername, proxyUsername);
+    setElemValue(kProxyPassword, proxyPassword);
+  } catch (e) {
+    console.log('Error setting data: ' + e + '\n' + e.stack);
   }
-
-  setElemValue(kProxyAddr, proxyAddr);
-  setElemValue(kProxyPort, proxyPort);
-  setElemValue(kProxyUsername, proxyUsername);
-  setElemValue(kProxyPassword, proxyPassword);
 
   return true;
 } // initProxySettings
@@ -1019,7 +1025,7 @@ function *applySettings()
                  (yield *applyFirewallSettings()) &&
                  (yield *applyBridgeSettings());
   }
-  catch (e) { console.warn("Error in applySettings: " + e + '\n' + e.stack); }
+  catch (e) { console.log("Error in applySettings: " + e + '\n' + e.stack); }
   if (didSucceed)
     yield *useSettings();
 

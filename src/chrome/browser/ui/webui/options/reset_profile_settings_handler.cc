@@ -71,8 +71,8 @@ void ResetProfileSettingsHandler::GetLocalizedValues(
     { "resetProfileSettingsFeedback", IDS_RESET_PROFILE_SETTINGS_FEEDBACK }
   };
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
-  RegisterTitle(localized_strings, "resetProfileSettingsOverlay",
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "resetProfileSettingsOverlay",
                 IDS_RESET_PROFILE_SETTINGS_TITLE);
   localized_strings->SetString(
       "resetProfileSettingsLearnMoreUrl",

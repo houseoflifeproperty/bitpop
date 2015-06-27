@@ -14,21 +14,20 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef CHROME_BROWSER_UI_WEBUI_TOR_SETTINGS_CORE_OPTIONS_HANDLER_H_
-#define CHROME_BROWSER_UI_WEBUI_TOR_SETTINGS_CORE_OPTIONS_HANDLER_H_
+#ifndef CHROME_BROWSER_UI_WEBUI_OPTIONS_COMMON_OPTIONS_PAGE_UI_HANDLER_HOST_H_
+#define CHROME_BROWSER_UI_WEBUI_OPTIONS_COMMON_OPTIONS_PAGE_UI_HANDLER_HOST_H_
 
-#include "chrome/browser/ui/webui/options/core_options_handler.h"
+namespace options {
 
-namespace tor_settings {
-
-class CoreOptionsHandler : public options::CoreOptionsHandler {
+// pure interface
+class CommonOptionsPageUIHandlerHost {
  public:
-  CoreOptionsHandler();
-  virtual ~CoreOptionsHandler();
+  virtual ~CommonOptionsPageUIHandlerHost() {}
 
-  virtual void SetTitleString(base::DictionaryValue* localized_strings) override;
+  virtual void InitializeHandlers() = 0;
+  virtual void OnFinishedLoading() = 0;
 };
 
-} // namespace tor_settings
+} // namespace options
 
-#endif // CHROME_BROWSER_UI_WEBUI_TOR_SETTINGS_CORE_OPTIONS_HANDLER_H_
+#endif  // CHROME_BROWSER_UI_WEBUI_OPTIONS_COMMON_OPTIONS_PAGE_UI_HANDLER_HOST_H_

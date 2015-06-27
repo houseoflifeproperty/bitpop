@@ -247,6 +247,9 @@ extern const char kNoSupervisedUserAcknowledgmentCheck[];
 extern const char kNtpAppInstallHint[];
 extern const char kNumPacThreads[];
 extern const char kOpenInNewWindow[];
+// BITPOP:
+extern const char kOpenTorSettingsPage[];
+// />
 extern const char kOriginToForceQuicOn[];
 // BITPOP:
 extern const char kOriginalBrowserProfileDir[];

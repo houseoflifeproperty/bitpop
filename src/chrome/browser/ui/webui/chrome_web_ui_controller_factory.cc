@@ -49,6 +49,7 @@
 #include "chrome/browser/ui/webui/signin/user_manager_ui.h"
 #include "chrome/browser/ui/webui/signin_internals_ui.h"
 #include "chrome/browser/ui/webui/sync_internals_ui.h"
+#include "chrome/browser/ui/webui/tor_settings/tor_options_ui.h"
 #include "chrome/browser/ui/webui/translate_internals/translate_internals_ui.h"
 #include "chrome/browser/ui/webui/user_actions/user_actions_ui.h"
 #include "chrome/browser/ui/webui/version_ui.h"
@@ -393,6 +394,11 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
        ::switches::AboutInSettingsEnabled())) {
     return &NewWebUI<options::OptionsUI>;
   }
+  if (url.host() == chrome::kChromeUITorSettingsFrameHost ||
+      (url.host() == chrome::kChromeUITorSettingsHost &&
+       ::switches::AboutInSettingsEnabled())) {
+    return &NewWebUI<tor_settings::OptionsUI>;
+  }
   if (url.host() == chrome::kChromeUISuggestionsInternalsHost)
     return &NewWebUI<SuggestionsInternalsUI>;
   if (url.host() == chrome::kChromeUISyncFileSystemInternalsHost)
@@ -715,6 +721,10 @@ base::RefCountedMemory* ChromeWebUIControllerFactory::GetFaviconResourceBytes(
   if (page_url.host() == chrome::kChromeUISettingsHost ||
       page_url.host() == chrome::kChromeUISettingsFrameHost)
     return options::OptionsUI::GetFaviconResourceBytes(scale_factor);
+
+  if (page_url.host() == chrome::kChromeUITorSettingsHost ||
+      page_url.host() == chrome::kChromeUITorSettingsFrameHost)
+    return tor_settings::OptionsUI::GetFaviconResourceBytes(scale_factor);
 
 #if defined(ENABLE_EXTENSIONS)
   if (page_url.host() == chrome::kChromeUIExtensionsHost ||

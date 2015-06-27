@@ -50,7 +50,7 @@ void SupervisedUserCreateConfirmHandler::GetLocalizedValues(
     localized_strings->SetString("custodianEmail", std::string());
   }
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
 }
 
 void SupervisedUserCreateConfirmHandler::RegisterMessages() {

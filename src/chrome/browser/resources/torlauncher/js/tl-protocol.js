@@ -87,22 +87,28 @@ torlauncher.TorProtocolService.prototype = {
   // If a fatal error occurs, null is returned.  Otherwise, a reply object is
   // returned.
   TorGetConf: function *(aKey) {
+    console.log('TorGetConf()');
     if (!aKey || (aKey.length < 1))
       return null;
 
     var cmd = "GETCONF";
     var reply = yield *this.TorSendCommand(cmd, aKey);
-    if (!this.TorCommandSucceeded(reply))
+    if (!this.TorCommandSucceeded(reply)) {
+      console.log('did not succeed');
       return reply;
+    }
 
+    console.log('TorGetConf() succeeded')
     return this._parseReply(cmd, aKey, reply);
   },
 
   // Returns a reply object.  If the GETCONF command succeeded, reply.retVal
   // is set (if there is no setting for aKey, it is set to aDefault).
   TorGetConfStr: function *(aKey, aDefault) {
+    console.log('TorGetConfStr("' + aKey +'")');
     var reply = yield *this.TorGetConf(aKey);
     if (this.TorCommandSucceeded(reply)) {
+      console.log('succeeded');
       if (reply.lineArray.length > 0)
         reply.retVal = reply.lineArray[0];
       else
@@ -284,6 +290,8 @@ torlauncher.TorProtocolService.prototype = {
   // Executes a command on the control port.
   // Return a reply object or null if a fatal error occurs.
   TorSendCommand: function *(aCmd, aArgs) {
+    console.log('TorSendCommand: ' + JSON.stringify(aCmd) + ', ' +
+        JSON.stringify(aArgs));
     var reply;
     for (var attempt = 0; !reply && (attempt < 2); ++attempt) {
       var conn;
@@ -292,15 +300,22 @@ torlauncher.TorProtocolService.prototype = {
         if (conn) {
           reply = yield this._sendCommand(conn, aCmd, aArgs);
           if (reply) {
+            console.log('reply received: ' + JSON.stringify(reply));
             this._returnConnection(conn); // Return for reuse.
           }
           else {
+            console.log('did not receive reply or reply empty');
             this._closeConnection(conn);  // Connection is bad.
           }
+        } else if (attempt == 0) {
+          console.log('TorSendCommand 1st attempt unsuccessful. Retrying in 500 ms...');
+          yield (new Promise(function (resolve, reject) {
+            setTimeout(resolve, 500);
+          }));
         }
       }
       catch(e) {
-        console.warn("Exception on control port " + e);
+        console.log("Exception on control port " + e);
         this._closeConnection(conn);
       }
     }
@@ -1136,4 +1151,5 @@ torlauncher.TorProtocolService.prototype = {
   }
 };
 
-torlauncher.protocolService = new torlauncher.TorProtocolService();
+// This initialization is done in tl-process.js with the same global object name ->
+// torlauncher.protocolService = new torlauncher.TorProtocolService();

@@ -314,7 +314,7 @@ void CertificateManagerHandler::GetLocalizedValues(
     base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
-  RegisterTitle(localized_strings, "certificateManagerPage",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "certificateManagerPage",
                 IDS_CERTIFICATE_MANAGER_TITLE);
 
   // Tabs.

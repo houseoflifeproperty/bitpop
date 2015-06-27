@@ -97,8 +97,9 @@ function closeThisWindow(aBootstrapDidComplete) {
 
   if (aBootstrapDidComplete) {
     chrome.runtime.sendMessage( { kind: "TorBootstrapCompleteInProgressDialog" });
-    chrome.runtime.sendMessage(
-        kTorHelperExtensionId,  { 'kind': kTorOpenNewSessionWindowMessage });
+    // chrome.runtime.sendMessage(
+    //     kTorHelperExtensionId,  { 'kind': kTorOpenNewSessionWindowMessage });
+    chrome.torlauncher.notifyTorCircuitsEstablished();
   }
 
   window.close();

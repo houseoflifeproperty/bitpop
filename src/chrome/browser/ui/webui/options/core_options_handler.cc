@@ -82,12 +82,6 @@ CoreOptionsHandler::CoreOptionsHandler()
 
 CoreOptionsHandler::~CoreOptionsHandler() {}
 
-void CoreOptionsHandler::SetTitleString(
-    base::DictionaryValue* localized_strings) {
-  localized_strings->SetString("optionsPageTitle",
-      l10n_util::GetStringUTF16(IDS_SETTINGS_TITLE));
-}
-
 void CoreOptionsHandler::InitializeHandler() {
   Profile* profile = Profile::FromWebUI(web_ui());
 
@@ -119,7 +113,8 @@ void CoreOptionsHandler::GetStaticLocalizedValues(
     base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
   // Main
-  SetTitleString(localized_strings);
+  localized_strings->SetString("optionsPageTitle",
+      l10n_util::GetStringUTF16(IDS_SETTINGS_TITLE));
 
   // Controlled settings bubble.
   localized_strings->SetString("controlledSettingPolicy",
@@ -151,7 +146,10 @@ void CoreOptionsHandler::GetStaticLocalizedValues(
           IDS_OPTIONS_CONTROLLED_SETTINGS_EXTENSION_WITH_NAME));
 
   // Search
-  RegisterTitle(localized_strings, "searchPage", IDS_OPTIONS_SEARCH_PAGE_TITLE);
+  // BITPOP:
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(
+      localized_strings, "searchPage", IDS_OPTIONS_SEARCH_PAGE_TITLE);
+  // />
   localized_strings->SetString("searchPlaceholder",
       l10n_util::GetStringUTF16(IDS_OPTIONS_SEARCH_PLACEHOLDER));
   localized_strings->SetString("searchPageNoMatches",

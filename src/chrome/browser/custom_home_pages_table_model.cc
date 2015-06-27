@@ -38,13 +38,18 @@ bool ShouldAddPage(const GURL& url) {
     return false;
 
   if (url.SchemeIs(content::kChromeUIScheme)) {
-    if (url.host() == chrome::kChromeUISettingsHost)
+    if (url.host() == chrome::kChromeUISettingsHost ||
+        // BITPOP:
+        url.host() == chrome::kChromeUITorSettingsHost)
+        // />
       return false;
 
     // For a settings page, the path will start with "/settings" not "settings"
     // so find() will return 1, not 0.
     if (url.host() == chrome::kChromeUIUberHost &&
-        url.path().find(chrome::kChromeUISettingsHost) == 1) {
+        // BITPOP:
+        (url.path().find(chrome::kChromeUISettingsHost) == 1 ||
+         url.path().find(chrome::kChromeUITorSettingsHost) == 1)) {
       return false;
     }
   }

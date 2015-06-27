@@ -49,8 +49,10 @@ cr.define('uber', function() {
     // will result in needing background navigation. We shortcut it to avoid
     // flicker on load.
     // HACK(csilv): Search URLs aren't overlays, special case them.
-    if (params.id == 'settings' && params.path &&
-        params.path.indexOf('search') != 0) {
+    // BITPOP:
+    if ((params.id == 'settings' || params.id == 'tor-settings') &&
+    // />
+        params.path && params.path.indexOf('search') != 0) {
       backgroundNavigation();
     }
 

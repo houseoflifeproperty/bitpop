@@ -26,7 +26,7 @@ void SupervisedUserLearnMoreHandler::GetLocalizedValues(
         IDS_SUPERVISED_USER_LEARN_MORE_DONE_BUTTON },
   };
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
 }
 
 }  // namespace options

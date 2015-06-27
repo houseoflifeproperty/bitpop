@@ -2338,4 +2338,14 @@ const char kBrowserAddPersonEnabled[] = "profile.add_person_enabled";
 // A dictionary that maps user id to hardlock state.
 const char kEasyUnlockHardlockState[] = "easy_unlock.hardlock_state";
 
+// BITPOP:
+// Whether the UI should show various Tor-specific sections on tor-settings page
+extern const char kTorSettingsShowProxySection[] =
+    "torlauncher.settings.show_proxy_section";
+extern const char kTorSettingsShowFirewallSection[] =
+    "torlauncher.settings.show_firewall_section";
+extern const char kTorSettingsShowISPBlockSection[] =
+    "torlauncher.settings.show_isp_block_section";
+// />
+
 }  // namespace prefs

@@ -191,28 +191,19 @@ bool OptionsUIHTMLSource::ShouldDenyXFrameOptions() const {
 
 OptionsUIHTMLSource::~OptionsUIHTMLSource() {}
 
+// BITPOP:
 ////////////////////////////////////////////////////////////////////////////////
 //
-// OptionsPageUIHandler
+// OptionsPageUIHandlerStaticContainer
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-const char OptionsPageUIHandler::kSettingsAppKey[] = "settingsApp";
-
-OptionsPageUIHandler::OptionsPageUIHandler() {
-}
-
-OptionsPageUIHandler::~OptionsPageUIHandler() {
-}
-
-bool OptionsPageUIHandler::IsEnabled() {
-  return true;
-}
+const char OptionsPageUIHandlerStaticContainer::kSettingsAppKey[] = "settingsApp";
 
 // static
-void OptionsPageUIHandler::RegisterStrings(
+void OptionsPageUIHandlerStaticContainer::RegisterStrings(
     base::DictionaryValue* localized_strings,
-    const OptionsStringResource* resources,
+    const OptionsPageUIHandler::OptionsStringResource* resources,
     size_t length) {
   for (size_t i = 0; i < length; ++i) {
     base::string16 value;
@@ -227,7 +218,7 @@ void OptionsPageUIHandler::RegisterStrings(
   }
 }
 
-void OptionsPageUIHandler::RegisterTitle(
+void OptionsPageUIHandlerStaticContainer::RegisterTitle(
     base::DictionaryValue* localized_strings,
     const std::string& variable_name,
     int title_id) {
@@ -237,6 +228,23 @@ void OptionsPageUIHandler::RegisterTitle(
       l10n_util::GetStringFUTF16(IDS_OPTIONS_TAB_TITLE,
           l10n_util::GetStringUTF16(IDS_SETTINGS_TITLE),
           l10n_util::GetStringUTF16(title_id)));
+}
+// />
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// OptionsPageUIHandler
+//
+////////////////////////////////////////////////////////////////////////////////
+
+OptionsPageUIHandler::OptionsPageUIHandler() {
+}
+
+OptionsPageUIHandler::~OptionsPageUIHandler() {
+}
+
+bool OptionsPageUIHandler::IsEnabled() {
+  return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -250,7 +258,9 @@ OptionsUI::OptionsUI(content::WebUI* web_ui)
       WebContentsObserver(web_ui->GetWebContents()),
       initialized_handlers_(false) {
   base::DictionaryValue* localized_strings = new base::DictionaryValue();
-  localized_strings->Set(OptionsPageUIHandler::kSettingsAppKey,
+  // BITPOP:
+  localized_strings->Set(OptionsPageUIHandlerStaticContainer::kSettingsAppKey,
+  // />
                          new base::DictionaryValue());
 
   CoreOptionsHandler* core_handler;

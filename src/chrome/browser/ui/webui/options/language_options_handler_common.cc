@@ -101,11 +101,12 @@ void LanguageOptionsHandlerCommon::GetLocalizedValues(
       IDS_SETTINGS_APP_LAUNCHER_PRODUCT_NAME },
   };
   base::DictionaryValue* app_values = NULL;
-  CHECK(localized_strings->GetDictionary(kSettingsAppKey, &app_values));
-  RegisterStrings(app_values, app_resources, arraysize(app_resources));
+  CHECK(localized_strings->GetDictionary(
+      OptionsPageUIHandlerStaticContainer::kSettingsAppKey, &app_values));
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(app_values, app_resources, arraysize(app_resources));
 #endif
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
 
   // The following are resources, rather than local strings.
   std::string application_locale = g_browser_process->GetApplicationLocale();

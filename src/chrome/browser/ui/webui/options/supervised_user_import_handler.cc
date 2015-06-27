@@ -83,7 +83,7 @@ void SupervisedUserImportHandler::GetLocalizedValues(
       { "supervisedUserSelectAvatarOk", IDS_SUPERVISED_USER_SELECT_AVATAR_OK },
   };
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
   localized_strings->Set("avatarIcons", GetAvatarIcons().release());
 }
 

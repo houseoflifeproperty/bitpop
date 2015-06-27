@@ -689,6 +689,13 @@ enum NotificationType {
   // Custom notifications not belonging to Content and Chrome should start
   // from here.
   NOTIFICATION_CHROME_END,
+
+  // BITPOP:
+  NOTIFICATION_TOR_NETWORK_SETTINGS_READY,
+  TORLAUNCHER_APP_OPEN_CONTROL_CONNECTION_SUCCESS,
+  TORLAUNCHER_APP_FINISHED_INITIALIZING_CIRCUITS,
+  TORLAUNCHER_APP_CIRCUIT_ERROR,
+  // />
 };
 
 }  // namespace chrome

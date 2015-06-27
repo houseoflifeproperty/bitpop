@@ -42,7 +42,7 @@ void HomePageOverlayHandler::InitializeHandler() {
 
 void HomePageOverlayHandler::GetLocalizedValues(
     base::DictionaryValue* localized_strings) {
-  RegisterTitle(localized_strings, "homePageOverlay",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "homePageOverlay",
                 IDS_OPTIONS_HOMEPAGE_TITLE);
 }
 

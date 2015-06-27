@@ -25,7 +25,7 @@ LanguageDictionaryOverlayHandler::~LanguageDictionaryOverlayHandler() {
 
 void LanguageDictionaryOverlayHandler::GetLocalizedValues(
     base::DictionaryValue* localized_strings) {
-  RegisterTitle(localized_strings,
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings,
                 "languageDictionaryOverlayPage",
                 IDS_LANGUAGE_DICTIONARY_OVERLAY_TITLE);
   localized_strings->SetString(

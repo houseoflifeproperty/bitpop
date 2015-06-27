@@ -14723,6 +14723,79 @@ Do you accept?
     <message name="IDS_PROTECTED_MODE_NEW_WINDOW_MAC" desc="Opening of Protected Mode windows command title for menus and links">
       New Protected Mode Window
     </message>
+    <!-- Tor settings messages -->
+    <message name="IDS_TOR_SETTINGS_TITLE" desc="Tor Settings Page Title">
+      Tor Protected Mode Settings
+    </message>
+    <message name="IDS_TOR_OPTIONS_TAB_TITLE" desc="The format of the title on the browser tab for a tor options subpage, e.g. Tor Settings - Basics">
+      <ph name="OPTIONS_TITLE">$1<ex>Tor Settings</ex></ph> - <ph name="SUBPAGE_TITLE">$2<ex>Under the Hood</ex></ph>
+    </message>
+    <message name="IDS_TOR_SETTINGS_SECTION_TITLE_PROXY" desc="">
+      Proxy Settings
+    </message>
+    <message name="IDS_TOR_SETTINGS_SHOW_PROXY_SECTION" desc="">
+      This computer needs to use a proxy to access the Internet
+    </message>
+    <message name="IDS_TOR_SETTINGS_SECTION_TITLE_FIREWALL" desc="">
+      Firewall Settings
+    </message>
+    <message name="IDS_TOR_SETTINGS_SHOW_FIREWALL_SECTION" desc="">
+      This computer goes through a firewall that only allows connections to certain ports
+    </message>
+    <message name="IDS_TOR_SETTINGS_SECTION_TITLE_ISP_BLOCK" desc="">
+      ISP Block Settings
+    </message>
+    <message name="IDS_TOR_SETTINGS_SHOW_ISP_BLOCK_SECTION" desc="">
+      My Internet Service Provider (ISP) blocks connections to the Tor network
+    </message>
+    <message name="IDS_TOR_SETTINGS_USEPROXY_TYPE" desc="">
+      Proxy Type:
+    </message>
+    <message name="IDS_TOR_SETTINGS_USEPROXY_TYPE_SOCKS4" desc="">
+      SOCKS 4
+    </message>
+    <message name="IDS_TOR_SETTINGS_USEPROXY_TYPE_SOCKS5" desc="">
+      SOCKS 5
+    </message>
+    <message name="IDS_TOR_SETTINGS_USEPROXY_TYPE_HTTP" desc="">
+      HTTP / HTTPS
+    </message>
+    <message name="IDS_TOR_SETTINGS_USEPROXY_ADDRESS" desc="">
+      Address:
+    </message>
+    <message name="IDS_TOR_SETTINGS_USEPROXY_ADDRESS_PLACEHOLDER" desc="">
+      IP address or hostname
+    </message>
+    <message name="IDS_TOR_SETTINGS_USEPROXY_PORT" desc="">
+      Port:
+    </message>
+    <message name="IDS_TOR_SETTINGS_USEPROXY_USERNAME" desc="">
+      Username:
+    </message>
+    <message name="IDS_TOR_SETTINGS_OPTIONAL" desc="">
+      Optional
+    </message>
+    <message name="IDS_TOR_SETTINGS_USEPROXY_PASSWORD" desc="">
+      Password:
+    </message>
+    <message name="IDS_TOR_SETTINGS_USEFIREWALL_ALLOWED_PORTS" desc="">
+      Allowed ports:
+    </message>
+    <message name="IDS_TOR_SETTINGS_USEBRIDGES_DEFAULT" desc="">
+      Connect with provided bridges
+    </message>
+    <message name="IDS_TOR_SETTINGS_USEBRIDGES_TYPE" desc="">
+      Transport type:
+    </message>
+    <message name="IDS_TOR_SETTINGS_USEBRIDGES_CUSTOM" desc="">
+      Enter custom bridges
+    </message>
+    <message name="IDS_TOR_SETTINGS_USEBRIDGES_LABEL" desc="">
+      Enter one or more bridge relays (one per line).
+    </message>
+    <message name="IDS_TOR_SETTINGS_USEBRIDGES_PLACEHOLDER" desc="">
+      type address:port
+    </message>
   </messages>
   </release>
 </grit>

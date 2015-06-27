@@ -36,7 +36,8 @@
 <include src="../options/confirm_dialog.js">
 <include src="../options/options_focus_manager.js">
 <include src="../options/search_page.js">
-<include src="../help/help_page.js">
+<include src="tor_options.js">
+// <include src="../help/help_page.js">
 <include src="../uber/uber_page_manager_observer.js">
 <include src="../uber/uber_utils.js">
 <include src="options.js">

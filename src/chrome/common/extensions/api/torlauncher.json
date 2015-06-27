@@ -20,6 +20,45 @@
           "controlPort": { "type": "integer", "description": "none" },
           "controlPassword": { "type": "string", "description": "none" }
         }
+      },
+      {
+        "id": "TorNetworkSettings",
+        "type": "object",
+        "properties": {
+          "proxySettings": {
+            "type": "object",
+            "description": "none",
+            "optional": true,
+            "properties": {
+              "haveProxy": { "type": "boolean", "description": "none", "optional": true },
+              "proxyType": { "type": "string", "description": "none", "optional": true },
+              "proxyAddr": { "type": "string", "description": "none", "optional": true },
+              "proxyPort": { "type": "string", "description": "none", "optional": true },
+              "proxyUsername": { "type": "string", "description": "none", "optional": true },
+              "proxyPassword": { "type": "string", "description": "none", "optional": true }
+            }
+          },
+          "firewallSettings": {
+            "type": "object",
+            "description": "none",
+            "optional": true,
+            "properties": {
+              "haveFirewall": { "type": "boolean", "description": "none", "optional": true },
+              "allowedPorts": { "type": "string", "description": "none", "optional": true }
+            }
+          },
+          "bridgeSettings": {
+            "type": "object",
+            "description": "none",
+            "optional": true,
+            "properties": {
+              "useBridges": { "type": "boolean", "description": "none", "optional": true },
+              "canUseDefaultBridges": { "type": "boolean", "description": "none", "optional": true },
+              "useDefault": { "type": "boolean", "description": "none", "optional": true },
+              "bridgeList": { "type": "array", "items": { "type": "string" }, "description": "none", "optional": true}
+            }
+          }
+        }
       }
     ],
     "properties": {
@@ -95,7 +134,17 @@
         "name": "launchTorBrowser",
         "description": "none",
         "type": "function",
-        "parameters": []
+        "parameters": [
+          {
+            "name": "options",
+            "type": "object",
+            "optional": true,
+            "description": "",
+            "properties": {
+              "open_tor_settings": { "type": "boolean", "optional": true, "description": "" }
+            }
+          }
+        ]
       },
       {
         "name": "startTor",
@@ -224,6 +273,31 @@
               }
             ]
           }
+        ]
+      },
+      {
+        "name": "sendTorNetworkSettingsResult",
+        "description": "none",
+        "type": "function",
+        "parameters": [
+          {
+            "name": "settings",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "name": "notifyTorOpenControlConnectionSuccess",
+        "description": "none",
+        "type": "function",
+        "parameters": [
+        ]
+      },
+      {
+        "name": "notifyTorCircuitsEstablished",
+        "description": "none",
+        "type": "function",
+        "parameters": [
         ]
       }
     ]

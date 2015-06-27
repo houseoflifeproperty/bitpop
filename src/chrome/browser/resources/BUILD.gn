@@ -100,4 +100,12 @@ if (!is_ios) {
       "sync_file_system_internals_resources.pak",
     ]
   }
+
+  grit("tor_options_resources") {
+    source = "tor_options_resources.grd"
+    outputs = [
+      "grit/tor_options_resources.h",
+      "tor_options_resources.pak",
+    ]
+  }
 }

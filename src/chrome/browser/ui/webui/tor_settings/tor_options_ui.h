@@ -18,8 +18,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CHROME_BROWSER_UI_WEBUI_TOR_SETTINGS_OPTIONS_UI_H_
-#define CHROME_BROWSER_UI_WEBUI_TOR_SETTINGS_OPTIONS_UI_H_
+#ifndef CHROME_BROWSER_UI_WEBUI_TOR_SETTINGS_TOR_OPTIONS_UI_H_
+#define CHROME_BROWSER_UI_WEBUI_TOR_SETTINGS_TOR_OPTIONS_UI_H_
 
 #include <string>
 #include <vector>
@@ -27,6 +27,7 @@
 #include "base/callback_list.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/ui/webui/options/options_ui.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_ui_controller.h"
@@ -41,84 +42,33 @@ class ListValue;
 class RefCountedMemory;
 }
 
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
+
 namespace tor_settings {
 
-// The base class handler of Javascript messages of options pages.
-class OptionsPageUIHandler : public content::WebUIMessageHandler {
+class OptionsPageUIHandlerStaticContainer {
  public:
   // Key for identifying the Settings App localized_strings in loadTimeData.
   static const char kSettingsAppKey[];
 
-  OptionsPageUIHandler();
-  virtual ~OptionsPageUIHandler();
-
-  // Is this handler enabled?
-  virtual bool IsEnabled();
-
-  // Collects localized strings for options page.
-  virtual void GetLocalizedValues(base::DictionaryValue* localized_strings) = 0;
-
-  virtual void PageLoadStarted() {}
-
-  // Will be called only once in the life time of the handler. Generally used to
-  // add observers, initializes preferences, or start asynchronous calls from
-  // various services.
-  virtual void InitializeHandler() {}
-
-  // Initialize the page. Called once the DOM is available for manipulation.
-  // This will be called when a RenderView is re-used (when navigated to with
-  // back/forward or session restored in some cases) or when created.
-  virtual void InitializePage() {}
-
-  // Uninitializes the page.  Called just before the object is destructed.
-  virtual void Uninitialize() {}
-
-  // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE {}
-
- protected:
-  struct OptionsStringResource {
-    // The name of the resource in templateData.
-    const char* name;
-    // The .grd ID for the resource (IDS_*).
-    int id;
-    // The .grd ID of the string to replace $1 in |id|'s string. If zero or
-    // omitted (default initialized), no substitution is attempted.
-    int substitution_id;
-  };
-
   // A helper to simplify string registration in WebUI for strings which do not
   // change at runtime and optionally contain a single substitution.
   static void RegisterStrings(base::DictionaryValue* localized_strings,
-                              const OptionsStringResource* resources,
+                              const options::OptionsPageUIHandler::OptionsStringResource* resources,
                               size_t length);
 
   // Registers string resources for a page's header and tab title.
   static void RegisterTitle(base::DictionaryValue* localized_strings,
                             const std::string& variable_name,
                             int title_id);
-
-  content::NotificationRegistrar registrar_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(OptionsPageUIHandler);
-};
-
-// An interface for common operations that a host of OptionsPageUIHandlers
-// should provide.
-class OptionsPageUIHandlerHost {
- public:
-  virtual void InitializeHandlers() = 0;
-  virtual void OnFinishedLoading() {}
-
- protected:
-  virtual ~OptionsPageUIHandlerHost() {}
 };
 
 // The WebUI for chrome:tor-settings-frame.
 class OptionsUI : public content::WebUIController,
                   public content::WebContentsObserver,
-                  public OptionsPageUIHandlerHost {
+                  public options::OptionsPageUIHandlerHost {
  public:
   typedef base::CallbackList<void()> OnFinishedLoadingCallbackList;
 
@@ -139,6 +89,8 @@ class OptionsUI : public content::WebUIController,
   static base::RefCountedMemory* GetFaviconResourceBytes(
       ui::ScaleFactor scale_factor);
 
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
+
   // Overridden from content::WebContentsObserver:
   virtual void DidStartProvisionalLoadForFrame(
       content::RenderFrameHost* render_frame_host,
@@ -153,11 +105,11 @@ class OptionsUI : public content::WebUIController,
  private:
   // Adds OptionsPageUiHandler to the handlers list if handler is enabled.
   void AddOptionsPageUIHandler(base::DictionaryValue* localized_strings,
-                               OptionsPageUIHandler* handler);
+                               options::OptionsPageUIHandler* handler);
 
   bool initialized_handlers_;
 
-  std::vector<OptionsPageUIHandler*> handlers_;
+  std::vector<options::OptionsPageUIHandler*> handlers_;
   OnFinishedLoadingCallbackList on_finished_loading_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(OptionsUI);

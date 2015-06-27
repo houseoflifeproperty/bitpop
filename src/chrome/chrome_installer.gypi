@@ -977,7 +977,7 @@
             'installer/mac/third_party/xz/xz.gyp:*',
           ],
           'conditions': [
-            ['buildtype=="Official"', {
+            ['1==1', {
               'actions': [
                 {
                   # Create sign.sh, the script that the packaging system will

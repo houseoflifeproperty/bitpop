@@ -104,8 +104,8 @@ void WebsiteSettingsHandler::GetLocalizedValues(
       {"batteryTabLabel", IDS_WEBSITE_SETTINGS_TYPE_BATTERY},
   };
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
-  RegisterTitle(
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(
       localized_strings, "websiteSettingsPage", IDS_WEBSITE_SETTINGS_TITLE);
 }
 

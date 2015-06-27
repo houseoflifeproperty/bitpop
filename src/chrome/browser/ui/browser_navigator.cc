@@ -83,7 +83,7 @@ Browser* GetOrCreateBrowser(Profile* profile,
   // If opening a new window in a non-incognito profile, make this new window
   // shown as a popup window with no tabs, omnibox, etc.
   if (profile->GetOffTheRecordProfile()->IsProtectedModeEnabled() &&
-      profile->GetOriginalProfile()->IsSameProfile(profile)) {
+      profile->GetProfileType() == Profile::REGULAR_PROFILE) {
     Browser::CreateParams params = Browser::CreateParams(
         Browser::TYPE_POPUP, profile, host_desktop_type);
     // The following line is needed for the exclusion of omnibox from br. window
@@ -743,6 +743,8 @@ bool IsURLAllowedInIncognito(const GURL& url,
   if (url.scheme() == content::kChromeUIScheme &&
       (url.host() == chrome::kChromeUISettingsHost ||
        url.host() == chrome::kChromeUISettingsFrameHost ||
+       url.host() == chrome::kChromeUITorSettingsHost ||
+       url.host() == chrome::kChromeUITorSettingsFrameHost ||
        url.host() == chrome::kChromeUIExtensionsHost ||
        url.host() == chrome::kChromeUIBookmarksHost ||
 #if !defined(OS_CHROMEOS)

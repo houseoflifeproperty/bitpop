@@ -87,8 +87,11 @@ cr.define('options', function() {
      */
     initializationComplete_: false,
 
+    torSettingsInitialized_: false,
+
     /** @override */
     initializePage: function() {
+      console.log('intializePage: {');
       Page.prototype.initializePage.call(this);
       var self = this;
 
@@ -114,6 +117,16 @@ cr.define('options', function() {
       //   });
       // }
 
+      Preferences.getInstance().addEventListener(
+          'torlauncher.settings.show_proxy_section',
+          this.onShowProxySectionChanged_.bind(this));
+      Preferences.getInstance().addEventListener(
+          'torlauncher.settings.show_firewall_section',
+          this.onShowFirewallSectionChanged_.bind(this));
+      Preferences.getInstance().addEventListener(
+          'torlauncher.settings.show_isp_block_section',
+          this.onShowISPBlockSectionChanged_.bind(this));
+
       document.body.addEventListener('click', function(e) {
         var target = assertInstanceof(e.target, Node);
         var button = findAncestor(target, function(el) {
@@ -124,11 +137,14 @@ cr.define('options', function() {
         if (button)
           chrome.send('disableExtension', [button.dataset.extensionId]);
       });
+      console.log('} // intializePage');
     },
 
     /** @override */
     didShowPage: function() {
+      console.log('didShowPage {');
       $('search-field').focus();
+      console.log('} // didShowPage');
     },
 
    /**
@@ -137,8 +153,10 @@ cr.define('options', function() {
     * @private
     */
     notifyInitializationComplete_: function() {
+      console.log('notifyInitializationComplete {');
       this.initializationComplete_ = true;
       cr.dispatchSimpleEvent(document, 'initializationComplete');
+      console.log('} // notifyInitializationComplete');
     },
 
     /**
@@ -147,8 +165,10 @@ cr.define('options', function() {
      * @private
      */
     handleWindowMessage_: function(e) {
+      console.log('handleWindowMessage {')
       if ((/** @type {{method: string}} */(e.data)).method == 'frameSelected')
         $('search-field').focus();
+      console.log('} // handleWindowMessage');
     },
 
     /**
@@ -339,10 +359,102 @@ cr.define('options', function() {
       return url.replace(/^http:\/\//, '');
     },
 
-    samplePublicMethod: function() {
+    initializePageUIWithData_: function(settingsObj) {
+      console.log('initializePageUIWithData {');
+      console.assert(settingsObj);
+      console.assert(settingsObj.hasOwnProperty('proxySettings'));
+      console.assert(settingsObj.hasOwnProperty('firewallSettings'));
+      console.assert(settingsObj.hasOwnProperty('bridgeSettings'));
+
+      // Proxy block initialization
+      var proxySettings = settingsObj.proxySettings;
+      if (proxySettings.hasOwnProperty('haveProxy')) {
+        Preferences.setBooleanPref(
+            'torlauncher.settings.show_proxy_section',
+            proxySettings.haveProxy,
+            true);
+        if (proxySettings.haveProxy) {
+          console.assert(proxySettings.hasOwnProperty('proxyType'));
+          $('tor-proxy-type').value = proxySettings.proxyType;
+          if (proxySettings.hasOwnProperty('proxyAddr') &&
+              proxySettings.hasOwnProperty('proxyPort')) {
+            $('tor-proxy-addr').value = proxySettings.proxyAddr;
+            $('tor-proxy-port').value = proxySettings.proxyPort;
+          }
+          if (proxySettings.hasOwnProperty('proxyUsername'))
+            $('tor-proxy-username').value = proxySettings.proxyUsername;
+          if (proxySettings.hasOwnProperty('proxyPassword'))
+            $('tor-proxy-password').value = proxySettings.proxyPassword;
+        }
+      }
+
+      // // Firewall block initialization
+      // var firewallSettings = settingsObj.firewallSettings;
+      // if (firewallSettings.hasOwnProperty('haveFirewall')) {
+      //   Preferences.getInstance().setBooleanPref(
+      //       'torlauncher.settings.show_firewall_section',
+      //       firewallSettings.haveFirewall,
+      //       true);
+      //   if (firewallSettings.hasOwnProperty('allowedPorts'))
+      //     $('tor-allowed-ports').value = firewallSettings.allowedPorts;
+      // }
+
+      // // Bridge block initialization
+      // var bridgeSettings = settingsObj.bridgeSettings;
+      // if (bridgeSettings.hasOwnProperty('useBridges')) {
+      //   Preferences.getInstance().setBooleanPref(
+      //       'torlauncher.settings.show_isp_block_section',
+      //       bridgeSettings.useBridges,
+      //       true);
+      //   if (bridgeSettings.hasOwnProperty('canUseDefaultBridges') &&
+      //       !bridgeSettings.canUseDefaultBridges) {
+      //     this.enableElemWithLabel_('defaultBridgeType', false);
+      //   } else {
+      //     if (bridgeSettings.hasOwnProperty('useDefault')) {
+      //       $('bridgesRadioYes').checked = bridgeSettings.useDefault;
+      //       $('bridgeRadioCustom').checked = !bridgeSettings.useDefault;
+      //       if (bridgeSettings.useDefault &&
+      //           bridgeSettings.hasOwnProperty('defaultType')&&
+      //           bridgeSettings.hasOwnProperty('typeList')) {
+
+      //       } else {
+      //         if (bridgeSettings.hasOwnProperty('bridgeList')) {
+      //           for (var i = 0; i < bridgeSettings.bridgeList.length)
+      //             $('bridgeList').value +=
+      //                 ((i != 0) ? '\n' : '') + bridgeSettings.bridgeList[i];
+      //         }
+      //       }
+      //     }
+      //   }
+      // }
+
+      console.log('} // initializePageUIWithData');
       return null;
     },
 
+  // Enables / disables aID as well as optional aID+"Label" element.
+  enableElemWithLabel_: function(aID, aEnable)
+  {
+    if (!aID)
+      return;
+
+    var elem = document.getElementById(aID);
+    if (elem) {
+      var label = document.getElementById(aID + "Label");
+      if (aEnable) {
+        if (label)
+          label.removeAttribute("disabled");
+
+        elem.removeAttribute("disabled");
+      }
+      else {
+        if (label)
+          label.setAttribute("disabled", true);
+
+        elem.setAttribute("disabled", true);
+      }
+    }
+  },
     // /**
     //  * Adds hidden warning boxes for settings potentially controlled by
     //  * extensions.
@@ -428,9 +540,26 @@ cr.define('options', function() {
     //   $('proxy-section').hidden = details.proxy.id.length == 0;
     // },
 
+    onShowProxySectionChanged_: function (event) {
+      var container = $('tor-proxy-settings-section');
+      container.hidden = !event.value.value;
+    },
+
+    onShowFirewallSectionChanged_: function (event) {
+      var container = $('tor-firewall-settings-section');
+      container.hidden = !event.value.value;
+    },
+
+    onShowISPBlockSectionChanged_: function (event) {
+      var container = $('tor-isp-block-settings-section');
+      container.hidden = !event.value.value;
+    },
+  };
+
+  console.log('cr.makePublic: before:');
   //Forward public APIs to private implementations.
   cr.makePublic(TorOptions, [
-    'samplePublicMethod',
+    'initializePageUIWithData',
     // 'addBluetoothDevice',
     // 'deleteCurrentProfile',
     // 'enableCertificateButton',
@@ -439,7 +568,7 @@ cr.define('options', function() {
     // 'getCurrentProfile',
     // 'getStartStopSyncButton',
     // 'hideBluetoothSettings',
-    // 'notifyInitializationComplete',
+    'notifyInitializationComplete',
     // 'removeBluetoothDevice',
     // 'scrollToSection',
     // 'setAccountPictureManaged',
@@ -478,6 +607,7 @@ cr.define('options', function() {
     // 'updateSearchEngines',
     // 'updateSyncState',
   ]);
+  console.log(':cr.makePublic: after.')
 
   // Export
   return {

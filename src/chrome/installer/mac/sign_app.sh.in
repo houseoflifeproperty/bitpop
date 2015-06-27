@@ -47,8 +47,8 @@ helper_np_app="${versioned_dir}/@MAC_PRODUCT_NAME@ Helper NP.app"
 
 requirement_string="\
 designated => \
-(identifier \"com.google.Chrome\" or identifier \"com.google.Chrome.canary\") \
-and certificate leaf = H\"85cee8254216185620ddc8851c7a9fc4dfe120ef\"\
+(identifier \"org.chromium.Chromium\") \
+and certificate leaf = H\"7664eb5f9de01e8425edab457dd0542428dbe465\"\
 "
 
 codesign --sign "${codesign_id}" --keychain "${codesign_keychain}" \

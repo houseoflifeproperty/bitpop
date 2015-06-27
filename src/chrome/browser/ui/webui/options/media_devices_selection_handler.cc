@@ -34,7 +34,7 @@ void MediaDevicesSelectionHandler::GetLocalizedValues(
     { "mediaSelectCameraLabel", IDS_MEDIA_SELECTED_CAMERA_LABEL },
   };
 
-  RegisterStrings(values, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(values, resources, arraysize(resources));
 }
 
 void MediaDevicesSelectionHandler::InitializePage() {

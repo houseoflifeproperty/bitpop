@@ -63,8 +63,8 @@ void PasswordManagerHandler::GetLocalizedValues(
       IDS_PASSWORDS_PAGE_VIEW_NO_EXCEPTIONS_DESCRIPTION },
   };
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
-  RegisterTitle(localized_strings, "passwordsPage",
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "passwordsPage",
                 IDS_PASSWORDS_EXCEPTIONS_WINDOW_TITLE);
 
   localized_strings->SetString("passwordManagerLearnMoreURL",

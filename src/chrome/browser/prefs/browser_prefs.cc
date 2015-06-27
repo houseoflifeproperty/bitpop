@@ -77,6 +77,7 @@
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/browser/ui/webui/plugins_ui.h"
 #include "chrome/browser/ui/webui/print_preview/sticky_settings.h"
+#include "chrome/browser/ui/webui/tor_settings/tor_options_ui.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/browser/web_resource/promo_resource_service.h"
 #include "chrome/common/pref_names.h"
@@ -399,6 +400,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   RegisterBrowserUserPrefs(registry);
   SessionStartupPref::RegisterProfilePrefs(registry);
   TemplateURLPrepopulateData::RegisterProfilePrefs(registry);
+  tor_settings::OptionsUI::RegisterProfilePrefs(registry);
   translate::TranslatePrefs::RegisterProfilePrefs(registry);
   ZeroSuggestProvider::RegisterProfilePrefs(registry);
 

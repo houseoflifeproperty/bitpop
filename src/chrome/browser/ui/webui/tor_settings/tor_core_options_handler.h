@@ -14,25 +14,27 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "chrome/browser/ui/webui/tor_settings/core_options_handler.h"
+#ifndef CHROME_BROWSER_UI_WEBUI_TOR_SETTINGS_TOR_CORE_OPTIONS_HANDLER_H_
+#define CHROME_BROWSER_UI_WEBUI_TOR_SETTINGS_TOR_CORE_OPTIONS_HANDLER_H_
 
-#include "chrome/grit/generated_resources.h"
-#include "ui/base/l10n/l10n_util.h"
+#include "chrome/browser/ui/webui/options/core_options_handler.h"
 
 namespace tor_settings {
 
-CoreOptionsHandler::CoreOptionsHandler()
-  : options::CoreOptionsHandler() {
-}
+class CoreOptionsHandler : public options::CoreOptionsHandler {
+ public:
+  CoreOptionsHandler();
+  virtual ~CoreOptionsHandler();
 
-CoreOptionsHandler::~CoreOptionsHandler() {
+  // OptionsPageUIHandler implementation.
+  virtual void GetLocalizedValues(
+      base::DictionaryValue* localized_strings) OVERRIDE;
 
-}
-
-void CoreOptionsHandler::SetTitleString(
-    base::DictionaryValue* localized_strings) {
-  localized_strings->SetString("optionsPageTitle",
-      l10n_util::GetStringUTF16(IDS_TOR_SETTINGS_TITLE));
-}
+  // Adds localized strings to |localized_strings|.
+  static void GetStaticLocalizedValues(
+      base::DictionaryValue* localized_strings);
+};
 
 } // namespace tor_settings
+
+#endif // CHROME_BROWSER_UI_WEBUI_TOR_SETTINGS_TOR_CORE_OPTIONS_HANDLER_H_

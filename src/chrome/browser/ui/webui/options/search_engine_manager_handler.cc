@@ -59,7 +59,7 @@ void SearchEngineManagerHandler::GetLocalizedValues(
     base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
-  RegisterTitle(localized_strings, "searchEngineManagerPage",
+  OptionsPageUIHandlerStaticContainer::RegisterTitle(localized_strings, "searchEngineManagerPage",
                 IDS_SEARCH_ENGINES_EDITOR_WINDOW_TITLE);
   localized_strings->SetString("defaultSearchEngineListTitle",
       l10n_util::GetStringUTF16(IDS_SEARCH_ENGINES_EDITOR_MAIN_SEPARATOR));

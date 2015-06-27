@@ -266,19 +266,10 @@ torlauncher.TorProcessService.prototype = {
         torlauncher.util.pr_debug('onControlConnTimer: TorRetrieveBootstrapStatus()');
         yield *_this.mProtocolSvc.TorRetrieveBootstrapStatus();
 
-        torlauncher.util.pr_debug('onControlConnTimer: _defaultBridgesStatus()');
-        if ((yield *_this._defaultBridgesStatus()) ==
-            _this.kDefaultBridgesStatus_InUse) {
-          // We configure default bridges each time we start tor in case
-          // new default bridge preference values are available (e.g., due
-          // to a TBB update).
-          torlauncher.util.pr_debug('onControlConnTimer: _configureDefaultBridges()');
-          _this.mConfigureDefaultBridgesSucceeded =
-              yield *_this._configureDefaultBridges();
-        }
-
         torlauncher.util.pr_debug('onControlConnTimer: sendMessage: TorProcessIsReady');
         chrome.runtime.sendMessage({ 'kind': "TorProcessIsReady" });
+
+        chrome.torlauncher.notifyTorOpenControlConnectionSuccess();
       } else if ((Date.now() - _this.mTorProcessStartTime)
                  > _this.kControlConnTimeoutMS) {
         var s = torlauncher.util.getLocalizedString("tor_controlconn_failed");
@@ -365,9 +356,9 @@ torlauncher.TorProcessService.prototype = {
       yield torlauncher.util.showAlert(null, err);
     }
 
-    var disableNetwork = false;
-    if ((yield *torlauncher.util.shouldShowNetworkSettings()) ||
-        defaultBridgeType)
+    // var disableNetwork = false;
+    //if ((yield *torlauncher.util.shouldShowNetworkSettings()) ||
+    //    defaultBridgeType)
       disableNetwork = true;
 
     torlauncher.util.pr_debug("Starting Tor...");
@@ -408,36 +399,101 @@ torlauncher.TorProcessService.prototype = {
   }, // _startTor()
 
 
-  _controlTor: function *()
-  {
+  _controlTor: function *() {
     torlauncher.util.pr_debug('TorProcessService: _controlTor: begin');
     this._monitorTorProcessStartup();
 
-    var bridgeConfigIsBad = ((yield *this._defaultBridgesStatus()) ==
-                             this.kDefaultBridgesStatus_BadConfig);
-    if (yield *torlauncher.util.shouldShowNetworkSettings() ||
-        bridgeConfigIsBad) {
-      if (this.mProtocolSvc) {
-        panelID = undefined;
-        yield this._openNetworkSettings(true, panelID);
-      }
-    } else if (chrome.app.window.get(this.kNetworkSettingsWindowId) !== null) {
-      // If network settings is open, open progress dialog via notification.
-      chrome.runtime.sendMessage({ 'kind': "TorOpenProgressDialog" });
-    }
-    else {
-      yield this._openProgressDialog();
+    // var bridgeConfigIsBad = ((yield *this._defaultBridgesStatus()) ==
+    //                          this.kDefaultBridgesStatus_BadConfig);
+    // if (yield *torlauncher.util.shouldShowNetworkSettings() ||
+    //     bridgeConfigIsBad) {
+    //   if (this.mProtocolSvc) {
+    //     panelID = undefined;
+    //     yield this._openNetworkSettings(true, panelID);
+    //   }
+    // } else if (chrome.app.window.get(this.kNetworkSettingsWindowId) !== null) {
+    //   // If network settings is open, open progress dialog via notification.
+    //   chrome.runtime.sendMessage({ 'kind': "TorOpenProgressDialog" });
+    // }
+    // else {
 
-      if (!this.mQuitSoon && !this.TorIsBootstrapDone)
-          yield this._openNetworkSettings(true);
-    }
+      //yield this._openProgressDialog();
+
+      //if (!this.mQuitSoon && !this.TorIsBootstrapDone)
+      //    yield this._openNetworkSettings(true);
+    // }
 
     // If the user pressed "Quit" within settings/progress, exit.
-    if (this.mQuitSoon) {
-      this.mQuitSoon = false;
-      chrome.torlauncher.initiateAppQuit(this.mRestartWithQuit);
-    }
+    // if (this.mQuitSoon) {
+    //   this.mQuitSoon = false;
+    //   chrome.torlauncher.initiateAppQuit(this.mRestartWithQuit);
+    // }
   }, // controlTor()
+
+  // public:
+  launchControlTorPhaseTwo: function () {
+    console.log('inside lctp2');
+    var _this = this;
+    console.log('after assignment');
+    torlauncher.util.runGenerator(function* phaseTwo() {
+      console.log('inside runGenerator');
+      torlauncher.util.pr_debug('onControlConnTimer: _defaultBridgesStatus()');
+      var network_enabled_by_bridges_setup = false;
+      if ((yield *_this._defaultBridgesStatus()) ==
+          _this.kDefaultBridgesStatus_InUse) {
+        // We configure default bridges each time we start tor in case
+        // new default bridge preference values are available (e.g., due
+        // to a TBB update).
+        torlauncher.util.pr_debug('onControlConnTimer: _configureDefaultBridges()');
+        _this.mConfigureDefaultBridgesSucceeded =
+            yield *_this._configureDefaultBridges();
+        network_enabled_by_bridges_setup = true;
+      }
+
+      var bridgeConfigIsBad = ((yield *_this._defaultBridgesStatus()) ==
+                               _this.kDefaultBridgesStatus_BadConfig);
+      if (yield *torlauncher.util.shouldShowNetworkSettings() ||
+          bridgeConfigIsBad) {
+        if (_this.mProtocolSvc) {
+          panelID = undefined;
+          yield _this._openNetworkSettings(true, panelID);
+        }
+      } else if (chrome.app.window.get(_this.kNetworkSettingsWindowId) !== null) {
+        // If network settings is open, open progress dialog via notification.
+        chrome.runtime.sendMessage({ 'kind': "TorOpenProgressDialog" });
+      }
+      else {
+        var didSucceed = true;
+        if (!network_enabled_by_bridges_setup) {
+          var errObj = {};
+          var settings = {};
+          settings["DisableNetwork"] = false;
+          if (!(yield *_this.mProtocolSvc.TorSetConfWithReply(
+                  settings, (didSucceed) ? errObj : null))) {
+            didSucceed = false;
+          }
+
+          if (didSucceed)
+            yield *_this.mProtocolSvc.TorSendCommand("SAVECONF");
+          else
+            yield torlauncher.util.showSaveSettingsAlert(null, errObj.details);
+        }
+
+        if (didSucceed) {
+          yield _this._openProgressDialog();
+
+          if (!_this.mQuitSoon && !_this.TorIsBootstrapDone)
+             yield _this._openNetworkSettings(true);
+        }
+      }
+
+      // If the user pressed "Quit" within settings/progress, exit.
+      if (_this.mQuitSoon) {
+        _this.mQuitSoon = false;
+        chrome.torlauncher.initiateAppQuit(_this.mRestartWithQuit);
+      }
+    }); // runGenerator()
+  }, // launchControlTorPhase2()
 
   _monitorTorProcessStartup: function() {
     this.mControlConnDelayMS = this.kInitialControlConnDelayMS;
